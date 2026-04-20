@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import functools
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 class SwipeAction(DurationAction):
-  TYPE: ActionType = ActionType.SWIPE
+  TYPE: ClassVar[ActionType] = ActionType.SWIPE
 
   @classmethod
   @override

@@ -26,15 +26,17 @@
 
 // We pull in most the core state tracking files
 // gpuav_state_trackers.h should NOT be included by any other header file
+
 #include "state_tracker/buffer_state.h"
-#include "state_tracker/image_state.h"
-#include "state_tracker/tensor_state.h"
 #include "state_tracker/cmd_buffer_state.h"
-#include "state_tracker/queue_state.h"
-#include "state_tracker/sampler_state.h"
-#include "state_tracker/ray_tracing_state.h"
-#include "state_tracker/shader_object_state.h"
+#include "state_tracker/image_state.h"
+#include "state_tracker/pipeline_state.h"
 #include "state_tracker/push_constant_data.h"
+#include "state_tracker/queue_state.h"
+#include "state_tracker/ray_tracing_state.h"
+#include "state_tracker/sampler_state.h"
+#include "state_tracker/shader_object_state.h"
+#include "state_tracker/tensor_state.h"
 
 namespace gpuav {
 
@@ -127,7 +129,8 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
                                       const std::vector<std::string> &initial_label_stack),
                                  288 /*lambda storage size (bytes), large enough to store biggest error lambda*/>;
     struct CommandErrorLogger {
-        Location loc;
+        vvl::LocationCapture loc;
+        LogObjectList objlist;
         ErrorLoggerFunc error_logger_func;
         int32_t label_cmd_i = -1;
     };
@@ -354,6 +357,26 @@ static inline ShaderObjectSubState &SubState(vvl::ShaderObject &obj) {
 }
 static inline const ShaderObjectSubState &SubState(const vvl::ShaderObject &obj) {
     return *static_cast<const ShaderObjectSubState *>(obj.SubState(LayerObjectTypeGpuAssisted));
+}
+
+class PipelineSubState : public vvl::PipelineSubState {
+  public:
+    explicit PipelineSubState(Validator &gpuav, vvl::Pipeline &pipeline);
+
+    void Destroy() override;
+
+    VkPipelineLayout GetPipelineLayoutUnion(const Location &loc) const;
+
+  private:
+    mutable VkPipelineLayout recreated_layout = VK_NULL_HANDLE;
+    Validator &gpuav_;
+};
+
+static inline PipelineSubState &SubState(vvl::Pipeline &pipeline) {
+    return *static_cast<PipelineSubState *>(pipeline.SubState(LayerObjectTypeGpuAssisted));
+}
+static inline const PipelineSubState &SubState(const vvl::Pipeline &pipeline) {
+    return *static_cast<const PipelineSubState *>(pipeline.SubState(LayerObjectTypeGpuAssisted));
 }
 
 }  // namespace gpuav

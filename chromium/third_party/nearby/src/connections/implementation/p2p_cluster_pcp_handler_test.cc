@@ -35,6 +35,7 @@
 #include "connections/implementation/mediums/mediums.h"
 #include "connections/listeners.h"
 #include "connections/medium_selector.h"
+#include "connections/out_of_band_connection_metadata.h"
 #include "connections/status.h"
 #include "connections/strategy.h"
 #include "connections/v3/connection_listening_options.h"
@@ -42,6 +43,7 @@
 #include "internal/platform/byte_array.h"
 #include "internal/platform/count_down_latch.h"
 #include "internal/platform/logging.h"
+#include "internal/platform/mac_address.h"
 #include "internal/platform/medium_environment.h"
 
 namespace nearby {
@@ -80,7 +82,7 @@ constexpr BooleanMediumSelector kTestCases[] = {
 class P2pClusterPcpHandlerTest : public testing::Test {
  protected:
   void SetUp() override {
-    NEARBY_LOGS(INFO) << "SetUp: begin";
+    LOG(INFO) << "SetUp: begin";
     NearbyFlags::GetInstance().OverrideBoolFlagValue(
         config_package_nearby::nearby_connections_feature::kEnableAwdl, true);
     SetBleExtendedAdvertisementsAvailable(true);
@@ -141,6 +143,16 @@ class P2pClusterPcpHandlerTest : public testing::Test {
              .ble = true,
          }},
     };
+  }
+
+  // Returns a 6 bytes mac address from a given address.
+  // address: it is in format of "01:02:03:04:05:06".
+  ByteArray GetSixBytesMacAddress(std::string address) {
+    MacAddress mac_address;
+    MacAddress::FromString(address, mac_address);
+    uint8_t bytes[6];
+    mac_address.ToBytes(bytes);
+    return ByteArray(reinterpret_cast<char*>(bytes), 6);
   }
 
   ClientProxy client_a_;
@@ -213,8 +225,7 @@ TEST_F(P2pClusterPcpHandlerTest,
                   [&latch](const std::string& endpoint_id,
                            const ByteArray& endpoint_info,
                            const std::string& service_id) {
-                    NEARBY_LOGS(INFO)
-                        << "Device discovered: id=" << endpoint_id;
+                    LOG(INFO) << "Device discovered: id=" << endpoint_id;
                     latch.CountDown();
                   },
           }),
@@ -241,7 +252,7 @@ class P2pClusterPcpHandlerTestWithParam
                                  /*disable_bluetooth_scanning*/ bool>> {
  protected:
   void SetUp() override {
-    NEARBY_LOGS(INFO) << "SetUp: begin";
+    LOG(INFO) << "SetUp: begin";
     env_.SetBleExtendedAdvertisementsAvailable(false);
     bool ble_v2_enabled = std::get<1>(GetParam());
     NearbyFlags::GetInstance().OverrideBoolFlagValue(
@@ -255,21 +266,21 @@ class P2pClusterPcpHandlerTestWithParam
             kDisableBluetoothClassicScanning,
         is_disable_bluetooth_scanning);
     if (advertising_options_.allowed.ble) {
-      NEARBY_LOGS(INFO) << "SetUp: BLE enabled";
+      LOG(INFO) << "SetUp: BLE enabled";
     }
     if (advertising_options_.allowed.bluetooth) {
-      NEARBY_LOGS(INFO) << "SetUp: BT enabled";
+      LOG(INFO) << "SetUp: BT enabled";
     }
     if (advertising_options_.allowed.wifi_lan) {
-      NEARBY_LOGS(INFO) << "SetUp: WifiLan enabled";
+      LOG(INFO) << "SetUp: WifiLan enabled";
     }
     if (advertising_options_.allowed.web_rtc) {
-      NEARBY_LOGS(INFO) << "SetUp: WebRTC enabled";
+      LOG(INFO) << "SetUp: WebRTC enabled";
     }
-    NEARBY_LOGS(INFO) << "SetUp: ble v2 enabled: " << ble_v2_enabled;
-    NEARBY_LOGS(INFO) << "SetUp: is_disable_bluetooth_scanning: "
-                      << is_disable_bluetooth_scanning;
-    NEARBY_LOGS(INFO) << "SetUp: end";
+    LOG(INFO) << "SetUp: ble v2 enabled: " << ble_v2_enabled;
+    LOG(INFO) << "SetUp: is_disable_bluetooth_scanning: "
+              << is_disable_bluetooth_scanning;
+    LOG(INFO) << "SetUp: end";
   }
 
   ClientProxy client_a_;
@@ -562,8 +573,7 @@ TEST_P(P2pClusterPcpHandlerTestWithParam, CanDiscover) {
                         [&latch](const std::string& endpoint_id,
                                  const ByteArray& endpoint_info,
                                  const std::string& service_id) {
-                          NEARBY_LOGS(INFO)
-                              << "Device discovered: id=" << endpoint_id;
+                          LOG(INFO) << "Device discovered: id=" << endpoint_id;
                           latch.CountDown();
                         },
                 }),
@@ -602,8 +612,7 @@ TEST_P(P2pClusterPcpHandlerTestWithParam, CanDiscoverLegacy) {
                         [&latch](const std::string& endpoint_id,
                                  const ByteArray& endpoint_info,
                                  const std::string& service_id) {
-                          NEARBY_LOGS(INFO)
-                              << "Device discovered: id=" << endpoint_id;
+                          LOG(INFO) << "Device discovered: id=" << endpoint_id;
                           latch.CountDown();
                         },
                 }),
@@ -687,8 +696,7 @@ TEST_P(P2pClusterPcpHandlerTestWithParam, ResumeBluetoothClassicDiscovery) {
                         [&latch](const std::string& endpoint_id,
                                  const ByteArray& endpoint_info,
                                  const std::string& service_id) {
-                          NEARBY_LOGS(INFO)
-                              << "Device discovered: id=" << endpoint_id;
+                          LOG(INFO) << "Device discovered: id=" << endpoint_id;
                           latch.CountDown();
                         },
                 }),
@@ -765,8 +773,7 @@ TEST_P(P2pClusterPcpHandlerTestWithParam, CanBluetoothDiscoverChangeName) {
                         [&](const std::string& endpoint_id,
                             const ByteArray& endpoint_info,
                             const std::string& service_id) {
-                          NEARBY_LOGS(INFO)
-                              << "Device discovered: id=" << endpoint_id;
+                          LOG(INFO) << "Device discovered: id=" << endpoint_id;
                           if (!first) {
                             first_found_latch.CountDown();
                             first = true;
@@ -776,7 +783,7 @@ TEST_P(P2pClusterPcpHandlerTestWithParam, CanBluetoothDiscoverChangeName) {
                         },
                     .endpoint_lost_cb =
                         [&](const std::string& id) {
-                          NEARBY_LOGS(INFO) << "Device lost: id=" << id;
+                          LOG(INFO) << "Device lost: id=" << id;
                           lost_latch.CountDown();
                         },
                 }),
@@ -885,12 +892,12 @@ TEST_P(P2pClusterPcpHandlerTestWithParam, CanUpdateDiscoveryOptionsNoLowPower) {
             mediums_a.GetWifiLan().IsDiscovering(service_id_));
   EXPECT_EQ(old_enabled.bluetooth,
             mediums_a.GetBluetoothClassic().StopDiscovery(service_id_));
-  NEARBY_LOGS(INFO) << "started discovery";
+  LOG(INFO) << "started discovery";
   // Update discovery options
   EXPECT_TRUE(
       handler_a.UpdateDiscoveryOptions(&client_a_, service_id_, new_options)
           .Ok());
-  NEARBY_LOGS(INFO) << "updated discovery options";
+  LOG(INFO) << "updated discovery options";
   if (std::get<1>(GetParam())) {
     EXPECT_EQ(new_enabled.ble, mediums_a.GetBleV2().IsScanning(service_id_));
   } else {
@@ -944,7 +951,7 @@ TEST_P(P2pClusterPcpHandlerTestWithParam,
   auto result = handler_a.UpdateDiscoveryOptions(&client_a_, service_id_,
                                                  discovery_options_);
   EXPECT_TRUE(result.Ok());
-  NEARBY_LOGS(INFO) << "updated discovery options";
+  LOG(INFO) << "updated discovery options";
   if (std::get<1>(GetParam())) {
     EXPECT_EQ(enabled.ble, mediums_a.GetBleV2().IsScanning(service_id_));
   } else {
@@ -996,7 +1003,7 @@ TEST_P(P2pClusterPcpHandlerTestWithParam, CanConnect) {
                       .initiated_cb =
                           [&connect_latch](const std::string& endpoint_id,
                                            const ConnectionResponseInfo& info) {
-                            NEARBY_LOGS(INFO)
+                            LOG(INFO)
                                 << "StartAdvertising: initiated_cb called";
                             connect_latch.CountDown();
                           },
@@ -1011,10 +1018,9 @@ TEST_P(P2pClusterPcpHandlerTestWithParam, CanConnect) {
                             const std::string& endpoint_id,
                             const ByteArray& endpoint_info,
                             const std::string& service_id) {
-                          NEARBY_LOGS(INFO)
-                              << "Device discovered: id=" << endpoint_id
-                              << ", endpoint_info="
-                              << std::string{endpoint_info};
+                          LOG(INFO) << "Device discovered: id=" << endpoint_id
+                                    << ", endpoint_info="
+                                    << std::string{endpoint_info};
                           discovered = {
                               .endpoint_id = endpoint_id,
                               .endpoint_info = endpoint_info,
@@ -1047,8 +1053,7 @@ TEST_P(P2pClusterPcpHandlerTestWithParam, CanConnect) {
                .initiated_cb =
                    [&connect_latch](const std::string& endpoint_id,
                                     const ConnectionResponseInfo& info) {
-                     NEARBY_LOGS(INFO)
-                         << "RequestConnection: initiated_cb called";
+                     LOG(INFO) << "RequestConnection: initiated_cb called";
                      connect_latch.CountDown();
                    },
            }},
@@ -1345,6 +1350,192 @@ TEST_P(P2pClusterPcpHandlerTestWithParam, CanUpdateAwdlAdvertisingOptions) {
   EXPECT_FALSE(mediums_a.GetWifiLan().IsAdvertising(service_id_));
   EXPECT_TRUE(mediums_a.GetAwdl().IsAdvertising(service_id_));
   handler_a.StopAdvertising(&client_a_);
+  env_.Stop();
+}
+
+TEST_F(P2pClusterPcpHandlerTest, FailedToInjectEndpointWithoutDiscovery) {
+  env_.Start();
+  std::string endpoint_name{"endpoint_name"};
+  Mediums mediums_a;
+  EndpointChannelManager ecm_a;
+  EndpointManager em_a(&ecm_a);
+  BwuManager bwu_a(mediums_a, em_a, ecm_a, {}, {});
+  InjectedBluetoothDeviceStore ibds_a;
+  P2pClusterPcpHandler handler_a(&mediums_a, &em_a, &ecm_a, &bwu_a, ibds_a);
+
+  OutOfBandConnectionMetadata metadata = {
+      .medium = location::nearby::proto::connections::Medium::BLUETOOTH,
+      .endpoint_id = "ABCD",
+      .endpoint_info = ByteArray("endpoint_info"),
+      .remote_bluetooth_mac_address = ByteArray("\x01\x02\x03\x04\x05\x06"),
+  };
+
+  handler_a.InjectEndpoint(&client_a_, service_id_, metadata);
+  env_.Sync();
+
+  EXPECT_FALSE(ibds_a.IsInjectedDevice("01:02:03:04:05:06"));
+  env_.Stop();
+}
+
+TEST_F(P2pClusterPcpHandlerTest, CanInjectEndpoint) {
+  env_.Start();
+  Mediums mediums_a;
+  EndpointChannelManager ecm_a;
+  EndpointManager em_a(&ecm_a);
+  BwuManager bwu_a(mediums_a, em_a, ecm_a, {}, {});
+  InjectedBluetoothDeviceStore ibds_a;
+  P2pClusterPcpHandler handler_a(&mediums_a, &em_a, &ecm_a, &bwu_a, ibds_a);
+
+  DiscoveryOptions discovery_options{
+      {Strategy::kP2pCluster,
+       BooleanMediumSelector{
+           .bluetooth = true,
+       }},
+      /* auto_upgrade_bandwidth= */ false,
+      /* enforce_topology_constraints= */ false,
+      /* is_out_of_band_connection= */ true,
+  };
+
+  CountDownLatch found_latch(1);
+  std::string found_endpoint_id;
+
+  EXPECT_EQ(
+      handler_a.StartDiscovery(&client_a_, service_id_, discovery_options,
+                               {
+                                   .endpoint_found_cb =
+                                       [&](const std::string& endpoint_id,
+                                           const ByteArray& endpoint_info,
+                                           const std::string& service_id) {
+                                         found_endpoint_id = endpoint_id;
+                                         found_latch.CountDown();
+                                       },
+                               }),
+      Status{Status::kSuccess});
+
+  std::string endpoint_id = "ABCD";
+  std::string endpoint_info_name = "endpoint_info";
+  ByteArray endpoint_info(endpoint_info_name);
+
+  OutOfBandConnectionMetadata metadata = {
+      .medium = location::nearby::proto::connections::Medium::BLUETOOTH,
+      .endpoint_id = endpoint_id,
+      .endpoint_info = endpoint_info,
+      .remote_bluetooth_mac_address = GetSixBytesMacAddress(
+          mediums_a.GetBluetoothRadio().GetBluetoothAdapter().GetMacAddress()),
+  };
+
+  handler_a.InjectEndpoint(&client_a_, service_id_, metadata);
+
+  EXPECT_TRUE(found_latch.Await(absl::Milliseconds(1000)).result());
+  EXPECT_EQ(found_endpoint_id, endpoint_id);
+  EXPECT_TRUE(ibds_a.IsInjectedDevice(
+      mediums_a.GetBluetoothRadio().GetBluetoothAdapter().GetMacAddress()));
+
+  handler_a.StopDiscovery(&client_a_);
+  env_.Stop();
+}
+
+TEST_F(P2pClusterPcpHandlerTest, CanConnectToInjectedEndpoint) {
+  env_.Start();
+  // Setup handler_a (advertiser)
+  Mediums mediums_a;
+  EndpointChannelManager ecm_a;
+  EndpointManager em_a(&ecm_a);
+  BwuManager bwu_a(mediums_a, em_a, ecm_a, {}, {});
+  InjectedBluetoothDeviceStore ibds_a;
+  P2pClusterPcpHandler handler_a(&mediums_a, &em_a, &ecm_a, &bwu_a, ibds_a);
+  mediums_a.GetBluetoothRadio().GetBluetoothAdapter().SetName("Device A");
+
+  // Setup handler_b (discoverer)
+  Mediums mediums_b;
+  EndpointChannelManager ecm_b;
+  EndpointManager em_b(&ecm_b);
+  BwuManager bwu_b(mediums_b, em_b, ecm_b, {}, {});
+  InjectedBluetoothDeviceStore ibds_b;
+  P2pClusterPcpHandler handler_b(&mediums_b, &em_b, &ecm_b, &bwu_b, ibds_b);
+  mediums_b.GetBluetoothRadio().GetBluetoothAdapter().SetName("Device B");
+
+  CountDownLatch found_latch(1);
+  CountDownLatch connect_latch(2);
+
+  std::string discovered_endpoint_id;
+  ByteArray discovered_endpoint_info;
+
+  // 1. Advertiser starts advertising
+  std::string endpoint_info_name = "Advertiser Info";
+  EXPECT_EQ(handler_a.StartAdvertising(
+                &client_a_, service_id_, GetBluetoothOnlyAdvertisingOptions(),
+                {
+                    .endpoint_info = ByteArray{endpoint_info_name},
+                    .listener =
+                        {
+                            .initiated_cb =
+                                [&](const std::string& endpoint_id,
+                                    const ConnectionResponseInfo& info) {
+                                  connect_latch.CountDown();
+                                },
+                        },
+                }),
+            Status{Status::kSuccess});
+
+  // 2. Discoverer starts out-of-band discovery
+  DiscoveryOptions discovery_options{
+      {Strategy::kP2pCluster,
+       BooleanMediumSelector{
+           .bluetooth = true,
+       }},
+      /* auto_upgrade_bandwidth= */ false,
+      /* enforce_topology_constraints= */ false,
+      /* is_out_of_band_connection= */ true,
+  };
+
+  EXPECT_EQ(handler_b.StartDiscovery(
+                &client_b_, service_id_, discovery_options,
+                {
+                    .endpoint_found_cb =
+                        [&](const std::string& endpoint_id,
+                            const ByteArray& endpoint_info,
+                            const std::string& service_id) {
+                          discovered_endpoint_id = endpoint_id;
+                          discovered_endpoint_info = endpoint_info;
+                          found_latch.CountDown();
+                        },
+                }),
+            Status{Status::kSuccess});
+
+  // 3. Inject the endpoint into the discoverer
+  OutOfBandConnectionMetadata metadata = {
+      .medium = location::nearby::proto::connections::Medium::BLUETOOTH,
+      .endpoint_id = client_a_.GetLocalEndpointId(),
+      .endpoint_info = ByteArray{endpoint_info_name},
+      .remote_bluetooth_mac_address = GetSixBytesMacAddress(
+          mediums_a.GetBluetoothRadio().GetBluetoothAdapter().GetMacAddress()),
+  };
+
+  handler_b.InjectEndpoint(&client_b_, service_id_, metadata);
+
+  EXPECT_TRUE(found_latch.Await(absl::Milliseconds(1000)).result());
+  EXPECT_EQ(discovered_endpoint_id, client_a_.GetLocalEndpointId());
+
+  // 4. Discoverer requests connection to the injected endpoint
+  client_b_.AddCancellationFlag(discovered_endpoint_id);
+  handler_b.RequestConnection(
+      &client_b_, discovered_endpoint_id,
+      {.endpoint_info = discovered_endpoint_info,
+       .listener =
+           {
+               .initiated_cb =
+                   [&](const std::string& endpoint_id,
+                       const ConnectionResponseInfo& info) {
+                     connect_latch.CountDown();
+                   },
+           }},
+      {});
+
+  EXPECT_TRUE(connect_latch.Await(absl::Milliseconds(2000)).result());
+
+  handler_a.StopAdvertising(&client_a_);
+  handler_b.StopDiscovery(&client_b_);
   env_.Stop();
 }
 

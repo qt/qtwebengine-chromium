@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import functools
-from typing import TYPE_CHECKING, Optional, Type
+from typing import TYPE_CHECKING, ClassVar, Optional, Type
 
 from typing_extensions import override
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 class ScrollAction(InputSourceAction):
-  TYPE: ActionType = ActionType.SCROLL
+  TYPE: ClassVar[ActionType] = ActionType.SCROLL
 
   @classmethod
   @override

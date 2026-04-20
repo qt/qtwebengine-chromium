@@ -287,7 +287,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_NV_device_diagnostics_config", 2},
     {"VK_QCOM_render_pass_store_ops", 2},
     {"VK_NV_cuda_kernel_launch", 2},
-    {"VK_QCOM_tile_shading", 1},
+    {"VK_QCOM_tile_shading", 2},
     {"VK_NV_low_latency", 1},
     {"VK_EXT_metal_objects", 2},
     {"VK_KHR_synchronization2", 1},
@@ -334,7 +334,9 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_EXT_color_write_enable", 1},
     {"VK_EXT_primitives_generated_query", 1},
     {"VK_KHR_ray_tracing_maintenance1", 1},
+    {"VK_KHR_shader_untyped_pointers", 1},
     {"VK_EXT_global_priority_query", 1},
+    {"VK_VALVE_video_encode_rgb_conversion", 1},
     {"VK_EXT_image_view_min_lod", 1},
     {"VK_EXT_multi_draw", 1},
     {"VK_EXT_image_2d_view_of_3d", 1},
@@ -376,6 +378,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_ANDROID_external_format_resolve", 1},
     {"VK_KHR_maintenance5", 1},
     {"VK_AMD_anti_lag", 1},
+    {"VK_AMDX_dense_geometry_format", 1},
     {"VK_KHR_present_id2", 1},
     {"VK_KHR_present_wait2", 1},
     {"VK_KHR_ray_tracing_position_fetch", 1},
@@ -421,6 +424,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_KHR_maintenance6", 1},
     {"VK_NV_descriptor_pool_overallocation", 1},
     {"VK_QCOM_tile_memory_heap", 1},
+    {"VK_KHR_copy_memory_indirect", 1},
     {"VK_KHR_video_encode_intra_refresh", 1},
     {"VK_KHR_video_encode_quantization_map", 2},
     {"VK_NV_raw_access_chains", 1},
@@ -2592,6 +2596,7 @@ static VKAPI_ATTR void VKAPI_CALL CmdTraceRaysIndirect2KHR(
 
 
 
+
 static VKAPI_ATTR void VKAPI_CALL GetDeviceBufferMemoryRequirementsKHR(
     VkDevice                                    device,
     const VkDeviceBufferMemoryRequirements*     pInfo,
@@ -2737,6 +2742,15 @@ static VKAPI_ATTR void VKAPI_CALL CmdSetDescriptorBufferOffsets2EXT(
 static VKAPI_ATTR void VKAPI_CALL CmdBindDescriptorBufferEmbeddedSamplers2EXT(
     VkCommandBuffer                             commandBuffer,
     const VkBindDescriptorBufferEmbeddedSamplersInfoEXT* pBindDescriptorBufferEmbeddedSamplersInfo);
+
+
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryIndirectKHR(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMemoryIndirectInfoKHR*          pCopyMemoryIndirectInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryToImageIndirectKHR(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMemoryToImageIndirectInfoKHR*   pCopyMemoryToImageIndirectInfo);
 
 
 
@@ -4112,6 +4126,7 @@ static VKAPI_ATTR void                                    VKAPI_CALL CmdSetColor
 
 
 
+
 static VKAPI_ATTR void VKAPI_CALL CmdDrawMultiEXT(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    drawCount,
@@ -4547,6 +4562,9 @@ static VKAPI_ATTR void VKAPI_CALL CmdOpticalFlowExecuteNV(
 static VKAPI_ATTR void VKAPI_CALL AntiLagUpdateAMD(
     VkDevice                                    device,
     const VkAntiLagDataAMD*                     pData);
+
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+#endif /* VK_ENABLE_BETA_EXTENSIONS */
 
 
 static VKAPI_ATTR VkResult VKAPI_CALL CreateShadersEXT(
@@ -5464,6 +5482,8 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkCmdPushDescriptorSetWithTemplate2KHR", (void*)CmdPushDescriptorSetWithTemplate2KHR},
     {"vkCmdSetDescriptorBufferOffsets2EXT", (void*)CmdSetDescriptorBufferOffsets2EXT},
     {"vkCmdBindDescriptorBufferEmbeddedSamplers2EXT", (void*)CmdBindDescriptorBufferEmbeddedSamplers2EXT},
+    {"vkCmdCopyMemoryIndirectKHR", (void*)CmdCopyMemoryIndirectKHR},
+    {"vkCmdCopyMemoryToImageIndirectKHR", (void*)CmdCopyMemoryToImageIndirectKHR},
     {"vkCreateDebugReportCallbackEXT", (void*)CreateDebugReportCallbackEXT},
     {"vkDestroyDebugReportCallbackEXT", (void*)DestroyDebugReportCallbackEXT},
     {"vkDebugReportMessageEXT", (void*)DebugReportMessageEXT},

@@ -1068,6 +1068,11 @@ vvl::Extensions stateless::Context::IsValidFlag64Value(vvl::FlagBitmask flag_bit
                     return {vvl::Extension::_VK_ARM_data_graph};
                 }
             }
+            if (value & (VK_PIPELINE_STAGE_2_COPY_INDIRECT_BIT_KHR)) {
+                if (!IsExtEnabled(extensions.vk_khr_copy_memory_indirect)) {
+                    return {vvl::Extension::_VK_KHR_copy_memory_indirect};
+                }
+            }
             return {};
         case vvl::FlagBitmask::VkAccessFlagBits2:
             if (value & (VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR | VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR)) {
@@ -1162,6 +1167,11 @@ vvl::Extensions stateless::Context::IsValidFlag64Value(vvl::FlagBitmask flag_bit
             if (value & (VK_BUFFER_USAGE_2_EXECUTION_GRAPH_SCRATCH_BIT_AMDX)) {
                 if (!IsExtEnabled(extensions.vk_amdx_shader_enqueue)) {
                     return {vvl::Extension::_VK_AMDX_shader_enqueue};
+                }
+            }
+            if (value & (VK_BUFFER_USAGE_2_COMPRESSED_DATA_DGF1_BIT_AMDX)) {
+                if (!IsExtEnabled(extensions.vk_amdx_dense_geometry_format)) {
+                    return {vvl::Extension::_VK_AMDX_dense_geometry_format};
                 }
             }
             if (value & (VK_BUFFER_USAGE_2_DATA_GRAPH_FOREIGN_DESCRIPTOR_BIT_ARM)) {
@@ -1348,6 +1358,8 @@ std::string stateless::Context::DescribeFlagBitmaskValue(vvl::FlagBitmask flag_b
             return string_VkPresentGravityFlagsKHR(value);
         case vvl::FlagBitmask::VkVideoEncodeAV1RateControlFlagBitsKHR:
             return string_VkVideoEncodeAV1RateControlFlagsKHR(value);
+        case vvl::FlagBitmask::VkAddressCopyFlagBitsKHR:
+            return string_VkAddressCopyFlagsKHR(value);
         case vvl::FlagBitmask::VkVideoEncodeIntraRefreshModeFlagBitsKHR:
             return string_VkVideoEncodeIntraRefreshModeFlagsKHR(value);
         case vvl::FlagBitmask::VkDebugReportFlagBitsEXT:
@@ -1394,6 +1406,12 @@ std::string stateless::Context::DescribeFlagBitmaskValue(vvl::FlagBitmask flag_b
 #endif  // VK_USE_PLATFORM_FUCHSIA
         case vvl::FlagBitmask::VkFrameBoundaryFlagBitsEXT:
             return string_VkFrameBoundaryFlagsEXT(value);
+        case vvl::FlagBitmask::VkVideoEncodeRgbModelConversionFlagBitsVALVE:
+            return string_VkVideoEncodeRgbModelConversionFlagsVALVE(value);
+        case vvl::FlagBitmask::VkVideoEncodeRgbRangeCompressionFlagBitsVALVE:
+            return string_VkVideoEncodeRgbRangeCompressionFlagsVALVE(value);
+        case vvl::FlagBitmask::VkVideoEncodeRgbChromaOffsetFlagBitsVALVE:
+            return string_VkVideoEncodeRgbChromaOffsetFlagsVALVE(value);
         case vvl::FlagBitmask::VkBuildMicromapFlagBitsEXT:
             return string_VkBuildMicromapFlagsEXT(value);
         case vvl::FlagBitmask::VkMicromapCreateFlagBitsEXT:

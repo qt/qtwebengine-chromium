@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from typing_extensions import override
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 class CloseAllTabsAction(Action):
-  TYPE: ActionType = ActionType.CLOSE_ALL_TABS
+  TYPE: ClassVar[ActionType] = ActionType.CLOSE_ALL_TABS
 
   @override
   def run_with(self, run: Run, action_runner: ActionRunner) -> None:

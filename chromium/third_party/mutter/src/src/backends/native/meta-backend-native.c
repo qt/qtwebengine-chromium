@@ -39,6 +39,7 @@
 #include <drm_fourcc.h>
 #include <stdlib.h>
 
+#include "backends/meta-a11y-manager.h"
 #include "backends/meta-color-manager.h"
 #include "backends/meta-cursor-tracker-private.h"
 #include "backends/meta-idle-manager.h"
@@ -124,26 +125,6 @@ meta_backend_native_create_clutter_backend (MetaBackend    *backend,
   return CLUTTER_BACKEND (meta_clutter_backend_native_new (backend, context));
 }
 
-static const char *
-get_seat_id (MetaBackendNative *backend_native)
-{
-  MetaBackendNativePrivate *priv =
-    meta_backend_native_get_instance_private (backend_native);
-  MetaLauncher *launcher =
-    meta_backend_get_launcher (META_BACKEND (backend_native));
-
-  switch (priv->mode)
-    {
-    case META_BACKEND_NATIVE_MODE_DEFAULT:
-    case META_BACKEND_NATIVE_MODE_TEST_VKMS:
-      return meta_launcher_get_seat_id (launcher);
-    case META_BACKEND_NATIVE_MODE_HEADLESS:
-    case META_BACKEND_NATIVE_MODE_TEST_HEADLESS:
-      return "seat0";
-    }
-  g_assert_not_reached ();
-}
-
 static ClutterSeat *
 meta_backend_native_create_default_seat (MetaBackend  *backend,
                                          GError      **error)
@@ -153,25 +134,24 @@ meta_backend_native_create_default_seat (MetaBackend  *backend,
     meta_backend_native_get_instance_private (backend_native);
   ClutterContext *clutter_context =
     meta_backend_get_clutter_context (backend);
+  MetaLauncher *launcher = meta_backend_get_launcher (backend);
   const char *seat_id = NULL;
-  MetaSeatNativeFlag flags;
+  MetaSeatNativeFlag flags = META_SEAT_NATIVE_FLAG_NONE;
 
   switch (priv->mode)
     {
     case META_BACKEND_NATIVE_MODE_DEFAULT:
+      seat_id = meta_launcher_get_seat_id (launcher);
+      break;
     case META_BACKEND_NATIVE_MODE_HEADLESS:
     case META_BACKEND_NATIVE_MODE_TEST_HEADLESS:
-      seat_id = get_seat_id (backend_native);
+      seat_id = META_BACKEND_HEADLESS_INPUT_SEAT;
+      flags = META_SEAT_NATIVE_FLAG_NO_LIBINPUT;
       break;
     case META_BACKEND_NATIVE_MODE_TEST_VKMS:
       seat_id = META_BACKEND_TEST_INPUT_SEAT;
       break;
     }
-
-  if (meta_backend_is_headless (backend))
-    flags = META_SEAT_NATIVE_FLAG_NO_LIBINPUT;
-  else
-    flags = META_SEAT_NATIVE_FLAG_NONE;
 
   return CLUTTER_SEAT (g_object_new (META_TYPE_SEAT_NATIVE,
                                      "backend", backend,
@@ -197,6 +177,23 @@ update_viewports (MetaBackend *backend)
   g_object_unref (viewports);
 }
 
+static void
+on_a11y_modifiers_changed (MetaA11yManager *a11y_manager,
+                           MetaBackend     *backend)
+{
+  MetaSeatNative *seat;
+  ClutterBackend *clutter_backend;
+  g_autofree uint32_t *modifiers;
+  int n_modifiers;
+
+  clutter_backend = meta_backend_get_clutter_backend (backend);
+  seat = META_SEAT_NATIVE (clutter_backend_get_default_seat (clutter_backend));
+  modifiers = meta_a11y_manager_get_modifier_keysyms (a11y_manager,
+                                                      &n_modifiers);
+
+  meta_seat_native_set_a11y_modifiers (seat, modifiers, n_modifiers);
+}
+
 static gboolean
 meta_backend_native_init_post (MetaBackend  *backend,
                                GError      **error)
@@ -206,6 +203,7 @@ meta_backend_native_init_post (MetaBackend  *backend,
     meta_backend_native_get_instance_private (backend_native);
   MetaMonitorManager *monitor_manager =
     meta_backend_get_monitor_manager (backend);
+  MetaA11yManager *a11y_manager = meta_backend_get_a11y_manager (backend);
 
   g_clear_pointer (&priv->startup_render_devices,
                    g_hash_table_unref);
@@ -213,6 +211,12 @@ meta_backend_native_init_post (MetaBackend  *backend,
   g_signal_connect_swapped (monitor_manager, "monitors-changed-internal",
                             G_CALLBACK (update_viewports), backend);
   update_viewports (backend);
+
+  g_signal_connect_object (a11y_manager,
+                           "a11y-modifiers-changed",
+                           G_CALLBACK (on_a11y_modifiers_changed),
+                           backend,
+                           G_CONNECT_DEFAULT);
 
   return TRUE;
 }
@@ -396,14 +400,11 @@ static void
 meta_backend_native_update_stage (MetaBackend *backend)
 {
   ClutterActor *stage = meta_backend_get_stage (backend);
-  ClutterStageWindow *stage_window =
-    _clutter_stage_get_window (CLUTTER_STAGE (stage));
-  MetaStageNative *stage_native = META_STAGE_NATIVE (stage_window);
   MetaMonitorManager *monitor_manager =
     meta_backend_get_monitor_manager (backend);
   int width, height;
 
-  meta_stage_native_rebuild_views (stage_native);
+  meta_stage_rebuild_views (META_STAGE (stage));
 
   meta_monitor_manager_get_screen_size (monitor_manager, &width, &height);
   clutter_actor_set_size (stage, width, height);
@@ -745,29 +746,14 @@ meta_backend_native_create_launcher (MetaBackend   *backend,
   MetaBackendNativePrivate *priv =
     meta_backend_native_get_instance_private (native);
   g_autoptr (MetaLauncher) launcher = NULL;
-  const char *session_id = NULL;
-  const char *seat_id = NULL;
 
   *launcher_out = NULL;
-
-  switch (priv->mode)
-    {
-    case META_BACKEND_NATIVE_MODE_DEFAULT:
-      break;
-    case META_BACKEND_NATIVE_MODE_HEADLESS:
-    case META_BACKEND_NATIVE_MODE_TEST_HEADLESS:
-      break;
-    case META_BACKEND_NATIVE_MODE_TEST_VKMS:
-      session_id = "dummy";
-      seat_id = "seat0";
-      break;
-    }
 
   if (priv->mode == META_BACKEND_NATIVE_MODE_HEADLESS ||
       priv->mode == META_BACKEND_NATIVE_MODE_TEST_HEADLESS)
     return TRUE;
 
-  launcher = meta_launcher_new (backend, session_id, seat_id, error);
+  launcher = meta_launcher_new (backend, META_LAUNCHER_FLAG_TAKE_CONTROL, error);
   if (!launcher)
     return FALSE;
 

@@ -1,3 +1,6 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 # Copyright 2020 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -290,6 +293,7 @@ cc_test(
         "base_pcp_handler_test.cc",
         "p2p_cluster_pcp_handler_test.cc",
         "p2p_point_to_point_pcp_handler_test.cc",
+        "p2p_star_pcp_handler_test.cc",
     ],
     shard_count = 8,
     deps = [
@@ -307,6 +311,7 @@ cc_test(
         "//internal/interop:authentication_transport_interface",
         "//internal/interop:device",
         "//internal/platform:base",
+        "//internal/platform:mac_address",
         "//internal/platform:test_util",
         "//internal/platform:types",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
@@ -421,6 +426,7 @@ cc_test(
         "//internal/platform/implementation/g3",  # build_cleaner: keep
         "//internal/test",
         "//proto:connections_enums_cc_proto",
+        "//testing/fuzzing:fuzztest",
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
@@ -546,6 +552,7 @@ cc_test(
     ],
     deps = [
         ":internal",
+        ":types",
         "//internal/platform:base",
         "//internal/platform:comm",
         "//internal/platform:mac_address",

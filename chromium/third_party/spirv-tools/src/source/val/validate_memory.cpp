@@ -196,10 +196,10 @@ bool ContainsInvalidBool(ValidationState_t& _, const Instruction* storage,
   return false;
 }
 
-std::pair<spv::StorageClass, spv::StorageClass> GetStorageClass(
-    ValidationState_t& _, const Instruction* inst) {
-  spv::StorageClass dst_sc = spv::StorageClass::Max;
-  spv::StorageClass src_sc = spv::StorageClass::Max;
+std::pair<Instruction*, Instruction*> GetPointerTypes(ValidationState_t& _,
+                                                      const Instruction* inst) {
+  Instruction* dst_pointer_type = nullptr;
+  Instruction* src_pointer_type = nullptr;
   switch (inst->opcode()) {
     case spv::Op::OpCooperativeMatrixLoadNV:
     case spv::Op::OpCooperativeMatrixLoadTensorNV:
@@ -207,8 +207,7 @@ std::pair<spv::StorageClass, spv::StorageClass> GetStorageClass(
     case spv::Op::OpCooperativeVectorLoadNV:
     case spv::Op::OpLoad: {
       auto load_pointer = _.FindDef(inst->GetOperandAs<uint32_t>(2));
-      auto load_pointer_type = _.FindDef(load_pointer->type_id());
-      dst_sc = load_pointer_type->GetOperandAs<spv::StorageClass>(1);
+      dst_pointer_type = _.FindDef(load_pointer->type_id());
       break;
     }
     case spv::Op::OpCooperativeMatrixStoreNV:
@@ -217,25 +216,23 @@ std::pair<spv::StorageClass, spv::StorageClass> GetStorageClass(
     case spv::Op::OpCooperativeVectorStoreNV:
     case spv::Op::OpStore: {
       auto store_pointer = _.FindDef(inst->GetOperandAs<uint32_t>(0));
-      auto store_pointer_type = _.FindDef(store_pointer->type_id());
-      dst_sc = store_pointer_type->GetOperandAs<spv::StorageClass>(1);
+      dst_pointer_type = _.FindDef(store_pointer->type_id());
       break;
     }
+    // Spec: "Matching Storage Class is not required"
     case spv::Op::OpCopyMemory:
     case spv::Op::OpCopyMemorySized: {
-      auto dst = _.FindDef(inst->GetOperandAs<uint32_t>(0));
-      auto dst_type = _.FindDef(dst->type_id());
-      dst_sc = dst_type->GetOperandAs<spv::StorageClass>(1);
-      auto src = _.FindDef(inst->GetOperandAs<uint32_t>(1));
-      auto src_type = _.FindDef(src->type_id());
-      src_sc = src_type->GetOperandAs<spv::StorageClass>(1);
+      auto dst_pointer = _.FindDef(inst->GetOperandAs<uint32_t>(0));
+      dst_pointer_type = _.FindDef(dst_pointer->type_id());
+      auto src_pointer = _.FindDef(inst->GetOperandAs<uint32_t>(1));
+      src_pointer_type = _.FindDef(src_pointer->type_id());
       break;
     }
     default:
       break;
   }
 
-  return std::make_pair(dst_sc, src_sc);
+  return std::make_pair(dst_pointer_type, src_pointer_type);
 }
 
 // Returns the number of instruction words taken up by a memory access
@@ -288,8 +285,17 @@ bool DoesStructContainRTA(const ValidationState_t& _, const Instruction* inst) {
 
 spv_result_t CheckMemoryAccess(ValidationState_t& _, const Instruction* inst,
                                uint32_t index) {
-  spv::StorageClass dst_sc, src_sc;
-  std::tie(dst_sc, src_sc) = GetStorageClass(_, inst);
+  Instruction* dst_pointer_type = nullptr;
+  Instruction* src_pointer_type = nullptr;  // only used for OpCopyMemory
+  std::tie(dst_pointer_type, src_pointer_type) = GetPointerTypes(_, inst);
+
+  const spv::StorageClass dst_sc =
+      dst_pointer_type ? dst_pointer_type->GetOperandAs<spv::StorageClass>(1)
+                       : spv::StorageClass::Max;
+  const spv::StorageClass src_sc =
+      src_pointer_type ? src_pointer_type->GetOperandAs<spv::StorageClass>(1)
+                       : spv::StorageClass::Max;
+
   if (inst->operands().size() <= index) {
     // Cases where lack of some operand is invalid
     if (src_sc == spv::StorageClass::PhysicalStorageBuffer ||
@@ -390,6 +396,32 @@ spv_result_t CheckMemoryAccess(ValidationState_t& _, const Instruction* inst,
              << "Memory accesses Aligned operand value " << aligned_value
              << " is not a power of two.";
     }
+
+    uint32_t largest_scalar = 0;
+    if (dst_sc == spv::StorageClass::PhysicalStorageBuffer) {
+      if (dst_pointer_type->opcode() != spv::Op::OpTypeUntypedPointerKHR) {
+        largest_scalar =
+            _.GetLargestScalarType(dst_pointer_type->GetOperandAs<uint32_t>(2));
+      } else if (inst->type_id() != 0) {
+        largest_scalar = _.GetLargestScalarType(inst->type_id());
+      } else {
+        // TODO need to handle cases like OpStore and OpCopyMemorySized which
+        // don't have a result type
+      }
+    }
+    // TODO - Handle Untyped in OpCopyMemory
+    if (src_sc == spv::StorageClass::PhysicalStorageBuffer &&
+        src_pointer_type->opcode() != spv::Op::OpTypeUntypedPointerKHR) {
+      largest_scalar = std::max(
+          largest_scalar,
+          _.GetLargestScalarType(src_pointer_type->GetOperandAs<uint32_t>(2)));
+    }
+    if (aligned_value < largest_scalar) {
+      return _.diag(SPV_ERROR_INVALID_ID, inst)
+             << _.VkErrorID(6314) << "Memory accesses Aligned operand value "
+             << aligned_value << " is too small, the largest scalar type is "
+             << largest_scalar << " bytes.";
+    }
   }
 
   return SPV_SUCCESS;
@@ -435,6 +467,7 @@ spv_result_t ValidateVariable(ValidationState_t& _, const Instruction* inst) {
       }
       if (spvIsVulkanEnv(_.context()->target_env)) {
         return _.diag(SPV_ERROR_INVALID_ID, inst)
+               << _.VkErrorID(11167)
                << "Vulkan requires that data type be specified";
       }
     }

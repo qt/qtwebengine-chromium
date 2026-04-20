@@ -172,7 +172,7 @@ class D8(Browser):
   @override
   def show_url(self, url: str, target: Optional[str] = None) -> None:
     if url.startswith("data:text/html;"):
-      self._print_url(url)
+      self._print_data_url(url)
       return
     if file_path := self._url_mapper.lookup(url):
       if d8_shell := self._d8_shell:
@@ -181,9 +181,9 @@ class D8(Browser):
         return
     raise RuntimeError(f"D8 unsupported URL: {url}")
 
-  def _print_url(self, data_url: str) -> None:
+  def _print_data_url(self, data_url: str) -> None:
     logging.debug("D8: SKIPPING data url")
-    with urllib.request.urlopen(data_url) as response:
+    with urllib.request.urlopen(data_url) as response:  # noqa: S310
       info = response.info()
       charset = info.get_content_charset() or "utf-8"
       data_bytes = response.read()

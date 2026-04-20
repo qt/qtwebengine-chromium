@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, Optional, Self
+from typing import Final, Iterable, Optional, Self
 
 from typing_extensions import override
 
@@ -14,8 +14,8 @@ from crossbench.browsers.chromium.version import ChromiumVersion
 
 class EdgeVersion(ChromiumVersion):
 
-  _PREFIX_RE = re.compile(
-      rf"microsoft edge(?:{ChromiumVersion._CHANNEL_RE.pattern})? ", re.I)
+  _PREFIX_RE: Final[re.Pattern] = re.compile(
+      rf"microsoft edge(?:{ChromiumVersion.CHANNEL_RE.pattern})? ", re.I)
 
   @classmethod
   @override

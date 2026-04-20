@@ -20,16 +20,12 @@
 
 #include "meta/meta-debug-control.h"
 
-gboolean meta_debug_control_is_color_management_protocol_enabled (MetaDebugControl *debug_control);
-
 gboolean meta_debug_control_is_linear_blending_forced (MetaDebugControl *debug_control);
 
-gboolean meta_debug_control_is_hdr_enabled (MetaDebugControl *debug_control);
-
 gboolean meta_debug_control_is_hdr_forced (MetaDebugControl *debug_control);
-
-unsigned int meta_debug_control_get_luminance_percentage (MetaDebugControl *debug_control);
 
 gboolean meta_debug_control_is_session_management_protocol_enabled (MetaDebugControl *debug_control);
 
 gboolean meta_debug_control_is_hw_cursor_inhibited (MetaDebugControl *debug_control);
+
+gboolean meta_debug_control_is_a11y_manager_without_access_control (MetaDebugControl *debug_control);

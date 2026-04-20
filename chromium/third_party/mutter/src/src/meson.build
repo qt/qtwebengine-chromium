@@ -135,9 +135,9 @@ if have_wayland
   ]
 endif
 
-if have_libsystemd
+if have_logind
   mutter_pkg_private_deps += [
-    libsystemd_dep,
+    logind_dep,
   ]
 endif
 
@@ -145,7 +145,6 @@ if have_native_backend
   mutter_pkg_private_deps += [
     libinput_dep,
     libgbm_dep,
-    logind_provider_dep,
     xkbcommon_dep,
   ]
 endif
@@ -187,6 +186,8 @@ mutter_sources = [
   'backends/edid.h',
   'backends/edid-parse.c',
   'backends/gsm-inhibitor-flag.h',
+  'backends/meta-a11y-manager.c',
+  'backends/meta-a11y-manager.h',
   'backends/meta-backend.c',
   'backends/meta-backend-private.h',
   'backends/meta-barrier.c',
@@ -212,6 +213,8 @@ mutter_sources = [
   'backends/meta-cursor-sprite-xcursor.h',
   'backends/meta-cursor-tracker.c',
   'backends/meta-cursor-tracker-private.h',
+  'backends/meta-dbus-access-checker.c',
+  'backends/meta-dbus-access-checker.h',
   'backends/meta-dbus-session-manager.c',
   'backends/meta-dbus-session-manager.h',
   'backends/meta-dbus-session-watcher.c',
@@ -241,8 +244,6 @@ mutter_sources = [
   'backends/meta-input-settings-dummy.h',
   'backends/meta-keymap-utils.c',
   'backends/meta-keymap-utils.h',
-  'backends/meta-launcher.c',
-  'backends/meta-launcher.h',
   'backends/meta-logical-monitor.c',
   'backends/meta-logical-monitor.h',
   'backends/meta-monitor.c',
@@ -607,6 +608,8 @@ if have_wayland
     'wayland/meta-wayland-color-management.c',
     'wayland/meta-wayland-color-management.h',
     'wayland/meta-wayland-commit-timing.c',
+    'wayland/meta-wayland-cursor-shape.c',
+    'wayland/meta-wayland-cursor-shape.h',
     'wayland/meta-wayland-fifo.c',
     'wayland/meta-wayland-cursor-surface.c',
     'wayland/meta-wayland-cursor-surface.h',
@@ -925,6 +928,13 @@ if have_libgudev
   ]
 endif
 
+if have_logind
+  mutter_sources += [
+    'backends/meta-launcher.c',
+    'backends/meta-launcher.h',
+  ]
+endif
+
 mutter_private_enum_sources = [
   'core/window-private.h',
 ]
@@ -958,6 +968,11 @@ if mutter_private_enum_sources.length() > 0
 endif
 
 dbus_interfaces = [
+  {
+    'name': 'meta-dbus-a11y',
+    'interface': 'org.freedesktop.a11y.xml',
+    'prefix': 'org.freedesktop.a11y',
+  },
   {
     'name': 'meta-dbus-display-config',
     'interface': 'org.gnome.Mutter.DisplayConfig.xml',
@@ -1105,19 +1120,24 @@ if have_wayland
   #  - protocol stability ('private', 'stable' or 'unstable')
   #  - protocol version (if stability is 'unstable')
   wayland_protocols = [
+    ['color-management', 'staging', 'v1', ],
+    ['commit-timing', 'staging', 'v1', ],
+    ['cursor-shape-v1', 'private', ],
     ['drm-lease', 'staging', 'v1', ],
     ['fractional-scale', 'staging', 'v1', ],
+    ['fifo', 'staging', 'v1', ],
     ['gtk-shell', 'private', ],
     ['idle-inhibit', 'unstable', 'v1', ],
     ['keyboard-shortcuts-inhibit', 'unstable', 'v1', ],
     ['linux-dmabuf', 'stable', 'v1', ],
+    ['linux-drm-syncobj-v1', 'private', ],
     ['pointer-constraints', 'unstable', 'v1', ],
     ['pointer-gestures', 'unstable', 'v1', ],
     ['presentation-time', 'stable', ],
     ['primary-selection', 'unstable', 'v1', ],
     ['relative-pointer', 'unstable', 'v1', ],
+    ['session-management-v1', 'private', ],
     ['single-pixel-buffer', 'staging', 'v1', ],
-    ['xdg-system-bell', 'staging', 'v1', ],
     ['tablet', 'unstable', 'v2', ],
     ['text-input', 'unstable', 'v3', ],
     ['viewporter', 'stable', ],
@@ -1127,14 +1147,10 @@ if have_wayland
     ['xdg-foreign', 'unstable', 'v2', ],
     ['xdg-output', 'unstable', 'v1', ],
     ['xdg-shell', 'stable', ],
+    ['xdg-system-bell', 'staging', 'v1', ],
     ['xdg-toplevel-drag', 'staging', 'v1'],
     ['xwayland-keyboard-grab', 'unstable', 'v1', ],
     ['ui-controls-unstable-v2', 'private', ],
-    ['linux-drm-syncobj-v1', 'private', ],
-    ['color-management-v1', 'private', ],
-    ['session-management-v1', 'private', ],
-    ['commit-timing', 'staging', 'v1', ],
-    ['fifo', 'staging', 'v1', ],
   ]
   if have_wayland_eglstream
     wayland_eglstream_protocols_dir = wayland_eglstream_protocols_dep.get_variable('pkgdatadir')
@@ -1241,7 +1257,7 @@ endforeach
 
 subdir('third_party')
 
-libmutter = shared_library(libmutter_name,
+libmutter = library(libmutter_name,
   mutter_sources,
   mutter_built_sources,
   version: '0.0.0',

@@ -120,11 +120,11 @@ struct _MetaDisplay
   GSList     *pending_pings;
 
   /* Pending focus change */
-  guint       focus_timeout_id;
+  guint focus_timeout_id;
 
   /* Pending autoraise */
-  guint       autoraise_timeout_id;
-  MetaWindow* autoraise_window;
+  guint autoraise_timeout_id;
+  MetaWindow *autoraise_window;
 
   MetaKeyBindingManager key_binding_manager;
 
@@ -157,6 +157,7 @@ struct _MetaDisplay
   guint check_fullscreen_later;
 
   MetaBell *bell;
+  int64_t last_visual_bell_time_us;
   MetaWorkspaceManager *workspace_manager;
 
   MetaSoundPlayer *sound_player;
@@ -195,10 +196,6 @@ MetaDisplay * meta_display_new (MetaContext  *context,
 #ifdef HAVE_X11_CLIENT
 void meta_display_manage_all_xwindows (MetaDisplay *display);
 #endif
-
-/* Utility function to compare the stacking of two windows */
-int           meta_display_stack_cmp           (const void *a,
-                                                const void *b);
 
 /* Each MetaWindow is uniquely identified by a 64-bit "stamp"; unlike a
  * a MetaWindow *, a stamp will never be recycled

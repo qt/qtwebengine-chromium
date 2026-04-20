@@ -324,6 +324,7 @@ static const ExtensionProperties instanceExtensionProperties[] = {
 	{ { VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME, VK_EXT_HEADLESS_SURFACE_SPEC_VERSION } },
 #ifndef __ANDROID__
 	{ { VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_SURFACE_SPEC_VERSION } },
+	{ { VK_KHR_SURFACE_MAINTENANCE_1_EXTENSION_NAME, VK_KHR_SURFACE_MAINTENANCE_1_SPEC_VERSION } },
 	{ { VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME, VK_EXT_SURFACE_MAINTENANCE_1_SPEC_VERSION } },
 	{ { VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME, VK_KHR_GET_SURFACE_CAPABILITIES_2_SPEC_VERSION } },
 	// Used by ANGLE to properly advertise the supported list of EGL configs.
@@ -460,6 +461,7 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_UNIFIED_IMAGE_LAYOUTS_EXTENSION_NAME, VK_KHR_UNIFIED_IMAGE_LAYOUTS_SPEC_VERSION } },
 #ifndef __ANDROID__
 	{ { VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME, VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_SPEC_VERSION } },
+	{ { VK_KHR_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME, VK_KHR_SWAPCHAIN_MAINTENANCE_1_SPEC_VERSION } },
 	{ { VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME, VK_EXT_SWAPCHAIN_MAINTENANCE_1_SPEC_VERSION } },
 #endif
 	{ { VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME, VK_EXT_GRAPHICS_PIPELINE_LIBRARY_SPEC_VERSION } },
@@ -1236,11 +1238,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_EXT:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT:
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_FEATURES_EXT:
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES_EXT:
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES:
 			break;
 		default:
 			// "the [driver] must skip over, without processing (other than reading the sType and pNext members) any structures in the chain with sType values not defined by [supported extenions]"
@@ -4925,6 +4927,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkAcquireNextImage2KHR(VkDevice device, const VkA
 	      device, pAcquireInfo, pImageIndex);
 
 	return vk::Cast(pAcquireInfo->swapchain)->getNextImage(pAcquireInfo->timeout, vk::DynamicCast<vk::BinarySemaphore>(pAcquireInfo->semaphore), vk::Cast(pAcquireInfo->fence), pImageIndex);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkReleaseSwapchainImagesKHR(VkDevice device, const VkReleaseSwapchainImagesInfoKHR *pReleaseInfo)
+{
+	TRACE("(VkDevice device = %p, const VkReleaseSwapchainImagesInfoKHR *pReleaseInfo = %p",
+	      device, pReleaseInfo);
+
+	return vk::Cast(pReleaseInfo->swapchain)->releaseImages(pReleaseInfo->imageIndexCount, pReleaseInfo->pImageIndices);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoEXT *pReleaseInfo)

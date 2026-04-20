@@ -24,6 +24,7 @@
 
 #include "core/events.h"
 
+#include "backends/meta-a11y-manager.h"
 #include "backends/meta-cursor-tracker-private.h"
 #include "backends/meta-dnd-private.h"
 #include "backends/meta-idle-manager.h"
@@ -77,7 +78,7 @@ stage_has_key_focus (MetaDisplay *display)
 {
   ClutterStage *stage = stage_from_display (display);
 
-  return clutter_stage_get_key_focus (stage) == CLUTTER_ACTOR (stage);
+  return clutter_stage_get_key_focus (stage) == NULL;
 }
 
 static gboolean
@@ -203,13 +204,15 @@ maybe_unfreeze_pointer_events (MetaBackend          *backend,
     {
     case EVENTS_UNFREEZE_SYNC:
       event_mode = XISyncDevice;
-      meta_verbose ("Syncing events time %u device %i",
-                    (unsigned int) time_ms, device_id);
+      meta_topic (META_DEBUG_X11,
+                  "Syncing events time %u device %i",
+                  (unsigned int) time_ms, device_id);
       break;
     case EVENTS_UNFREEZE_REPLAY:
       event_mode = XIReplayDevice;
-      meta_verbose ("Replaying events time %u device %i",
-                    (unsigned int) time_ms, device_id);
+      meta_topic (META_DEBUG_X11,
+                  "Replaying events time %u device %i",
+                  (unsigned int) time_ms, device_id);
       break;
     default:
       g_assert_not_reached ();
@@ -228,6 +231,7 @@ meta_display_handle_event (MetaDisplay        *display,
 {
   MetaContext *context = meta_display_get_context (display);
   MetaBackend *backend = meta_context_get_backend (context);
+  MetaA11yManager *a11y_manager = meta_backend_get_a11y_manager (backend);
   MetaCompositor *compositor = meta_display_get_compositor (display);
   ClutterInputDevice *device;
   MetaWindow *window = NULL;
@@ -235,6 +239,7 @@ meta_display_handle_event (MetaDisplay        *display,
   ClutterEventSequence *sequence;
   ClutterEventType event_type;
   gboolean has_grab;
+  gboolean a11y_grabbed;
   MetaTabletActionMapper *mapper;
 #ifdef HAVE_WAYLAND
   MetaWaylandCompositor *wayland_compositor;
@@ -262,6 +267,13 @@ meta_display_handle_event (MetaDisplay        *display,
 
   if (meta_display_process_captured_input (display, event))
     return CLUTTER_EVENT_STOP;
+
+  if (IS_KEY_EVENT (event_type))
+    {
+      a11y_grabbed = meta_a11y_manager_notify_clients (a11y_manager, event);
+      if (a11y_grabbed)
+        return CLUTTER_EVENT_STOP;
+    }
 
   device = clutter_event_get_device (event);
   clutter_input_pointer_a11y_update (device, event);
@@ -381,9 +393,9 @@ meta_display_handle_event (MetaDisplay        *display,
            * nor do we want to use them to sanity check other timestamps.
            * See bug 313490 for more details.
            */
-          meta_warning ("Event has no timestamp! You may be using a broken "
-                        "program such as xse.  Please ask the authors of that "
-                        "program to fix it.");
+          meta_topic (META_DEBUG_X11,
+                      "Event has no timestamp! You may be using a program "
+                      "injecting events with invalid timestamps.");
         }
       else
         {

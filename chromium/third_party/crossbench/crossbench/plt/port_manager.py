@@ -8,7 +8,7 @@ import abc
 import atexit
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Iterator, Self, Tuple
+from typing import TYPE_CHECKING, Final, Iterator, Self, Tuple
 
 from typing_extensions import override
 
@@ -33,11 +33,15 @@ class PortScope:
   def __init__(self,
                manager: PortManager,
                parent_scope: Self | None = None) -> None:
-    self._manager: PortManager = manager
-    self._parent_scope: Self | None = parent_scope
+    self._manager: Final[PortManager] = manager
+    self._parent_scope: Final[Self | None] = parent_scope
     assert parent_scope is not self
     self._forwarded_ports: dict[int, int | str] = {}
     self._reverse_forwarded_ports: dict[int, int] = {}
+
+  @property
+  def parent_scope(self) -> Self | None:
+    return self._parent_scope
 
   @property
   def platform(self) -> Platform:
@@ -70,15 +74,21 @@ class PortScope:
   def is_reverse_forwarded_port_used(self, remote_port: int) -> bool:
     return bool(self.lookup_reverse_forwarded_port(remote_port))
 
+  def is_own_forwarded_port_used(self, local_port: int) -> bool:
+    return local_port in self._forwarded_ports
+
+  def is_own_reverse_forwarded_port_used(self, remote_port: int) -> bool:
+    return remote_port in self._reverse_forwarded_ports
+
   def lookup_forwarded_port(self, local_port: int) -> PortScope | None:
     for current_scope in self:
-      if local_port in current_scope._forwarded_ports:  # pylint: disable=protected-access
+      if current_scope.is_own_forwarded_port_used(local_port):
         return current_scope
     return None
 
   def lookup_reverse_forwarded_port(self, remote_port: int) -> PortScope | None:
     for current_scope in self:
-      if remote_port in current_scope._reverse_forwarded_ports:  # pylint: disable=protected-access
+      if current_scope.is_own_reverse_forwarded_port_used(remote_port):
         return current_scope
     return None
 
@@ -86,7 +96,7 @@ class PortScope:
     current_scope: Self | None = self
     while current_scope:
       yield current_scope
-      current_scope = current_scope._parent_scope
+      current_scope = current_scope.parent_scope
 
   def forward(self, local_port: int, remote_port: int) -> int:
     local_port = NumberParser.port_number_zero(local_port, "local_port")
@@ -175,7 +185,7 @@ class PortManager(abc.ABC):
     self._port_scope: PortScope = PortScope(self, None)
     self._start()
 
-  def _start(self):
+  def _start(self) -> None:
     assert not self._is_active, f"Cannot activate {self} twice"
     assert self._port_scope.is_empty, "Expected empty port scope"
     self._is_active = True
@@ -203,12 +213,12 @@ class PortManager(abc.ABC):
       finally:
         self._port_scope = old_scope
 
-  def assert_is_active(self):
+  def assert_is_active(self) -> None:
     if not self._is_active:
       raise PortForwardException("Need active PortManager")
 
   @property
-  def is_empty(self):
+  def is_empty(self) -> bool:
     return self._port_scope.is_empty and not self.has_nested_scopes
 
   @property
@@ -231,7 +241,7 @@ class PortManager(abc.ABC):
         self._stop_scoped_ports(port_scope, exceptions)
     exceptions.assert_success("Could not stop all port forwarding")
 
-  def _stop_current_scoped_ports(self):
+  def _stop_current_scoped_ports(self) -> None:
     exceptions = exception.Annotator(self._throw)
     self._stop_scoped_ports(self._port_scope, exceptions)
     exceptions.assert_success("Could not stop all port forwarding")

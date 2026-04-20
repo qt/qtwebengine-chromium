@@ -30,11 +30,15 @@ class Instruction;
 void GetShaderSourceInfo(std::ostringstream &ss, const std::vector<uint32_t> &instructions,
                          const spirv::Instruction &last_line_insn);
 
+// Will either call GetShaderSourceInfo or print out the raw SPIR-V info
+void FindShaderSource(std::ostringstream& ss, const std::vector<uint32_t>& instructions, uint32_t instruction_position_offset,
+                      bool debug_printf_only);
+
 // These are used where we can't use normal spirv::Instructions.
 // The main spot is post-processisng error message in GPU-AV, the time it takes to interchange back from a vector<uint32_t> to a
 // vector<Instructions> is too high to do mid-frame. Most things just need these simple helpers
 const char* GetOpString(const std::vector<uint32_t>& instructions, uint32_t string_id);
 uint32_t GetConstantValue(const std::vector<uint32_t>& instructions, uint32_t constant_id);
 void GetExecutionModelNames(const std::vector<uint32_t>& instructions, std::ostringstream& ss);
-uint32_t GetDebugLineOffset(const std::vector<uint32_t>& instructions, uint32_t instruction_position);
+
 }  // namespace spirv

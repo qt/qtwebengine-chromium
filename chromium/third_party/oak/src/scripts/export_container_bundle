@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+# Script to export a container image and convert it into an OCI Runtimte Bundle.
+# (https://github.com/opencontainers/runtime-spec/blob/4e3b9264a330d094b0386c3703c5f379119711e8/bundle.md)
+
+readonly SCRIPTS_DIR="$(dirname "$0")"
+# shellcheck source=scripts/common
+source "$SCRIPTS_DIR/common"
+
+print_usage_and_exit() {
+  echo "Usage:
+  ${0} [-h] \\
+       -c <input-oci-image-tar> \\
+       -o <output-oci-bundle-tar>
+
+  Deterministically converts a container OCI Image to an OCI Runtime Bundle.
+
+Options:
+    -h                    Display this help and exit.
+    -c                    The input tarball of an OCI Image. See: https://github.com/opencontainers/image-spec/blob/main/spec.md
+    -o                    The output tarball of an OCI Runtime Bundle. See: https://github.com/opencontainers/runtime-spec/blob/main/spec.md"
+  exit 0
+}
+
+while getopts "hc:o:" opt; do
+  case $opt in
+    h)
+      print_usage_and_exit;;
+    o)
+      readonly OUTPUT_OCI_BUNDLE_TAR="${OPTARG}";;
+    c)
+      readonly INPUT_OCI_IMAGE_TAR="${OPTARG}";;
+    *)
+      echo "Invalid argument: ${OPTARG}"
+      exit 1;;
+  esac
+done
+
+if [[ -z "${INPUT_OCI_IMAGE_TAR}" ]]; then
+  echo "Missing required option: -c <input-oci-image-tar>"
+  exit 1
+fi
+
+if [[ -z "${OUTPUT_OCI_BUNDLE_TAR}" ]]; then
+  echo "Missing required option: -o <output-oci-bundle-tar>"
+  exit 1
+fi
+
+readonly WORK_DIR="$(mktemp --directory)"
+
+echo "[INFO] Exporting the container as an OCI image"
+readonly OCI_IMAGE_DIR="${WORK_DIR}/image"
+mkdir "${OCI_IMAGE_DIR}"
+tar --extract \
+    --file="${INPUT_OCI_IMAGE_TAR}" \
+    --directory="${OCI_IMAGE_DIR}"
+
+echo "[INFO] Creating runtime bundle"
+readonly OCI_BUNDLE_DIR="${WORK_DIR}/bundle"
+# Deterministically extract the OCI image into an OCI bundle.
+# Note that in addition to this, umoci also creates an mtree spec in the same
+# dir. This mtree is not deterministic. Ref: https://github.com/opencontainers/umoci/blob/main/doc/man/umoci-unpack.1.md
+umoci unpack \
+    --rootless \
+    --image="${OCI_IMAGE_DIR}" \
+    "${OCI_BUNDLE_DIR}"
+
+# Bundle just the files and directories that constitute the deterministically
+# generated OCI bundle.
+tar --create --file="${OUTPUT_OCI_BUNDLE_TAR}" --directory="${OCI_BUNDLE_DIR}" ./rootfs ./config.json

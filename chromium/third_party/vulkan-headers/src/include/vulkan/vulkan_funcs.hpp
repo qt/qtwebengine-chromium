@@ -9,7 +9,7 @@
 #define VULKAN_FUNCS_HPP
 
 // include-what-you-use: make sure, vulkan.hpp is used by code-completers
-// IWYU pragma: private; include "vulkan.hpp"
+// IWYU pragma: private, include "vulkan/vulkan.hpp"
 
 namespace VULKAN_HPP_NAMESPACE
 {
@@ -30357,6 +30357,60 @@ namespace VULKAN_HPP_NAMESPACE
 #  endif
 
     d.vkCmdBindTileMemoryQCOM( m_commandBuffer, reinterpret_cast<const VkTileMemoryBindInfoQCOM *>( tileMemoryBindInfo.get() ) );
+  }
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
+  //=== VK_KHR_copy_memory_indirect ===
+
+  // wrapper function for command vkCmdCopyMemoryIndirectKHR, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCmdCopyMemoryIndirectKHR.html
+  template <typename Dispatch>
+  VULKAN_HPP_INLINE void CommandBuffer::copyMemoryIndirectKHR( const CopyMemoryIndirectInfoKHR * pCopyMemoryIndirectInfo,
+                                                               Dispatch const &                  d ) const VULKAN_HPP_NOEXCEPT
+  {
+    VULKAN_HPP_ASSERT( d.getVkHeaderVersion() == VK_HEADER_VERSION );
+    d.vkCmdCopyMemoryIndirectKHR( static_cast<VkCommandBuffer>( m_commandBuffer ),
+                                  reinterpret_cast<const VkCopyMemoryIndirectInfoKHR *>( pCopyMemoryIndirectInfo ) );
+  }
+
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+  // wrapper function for command vkCmdCopyMemoryIndirectKHR, see https://registry.khronos.org/vulkan/specs/latest/man/html/vkCmdCopyMemoryIndirectKHR.html
+  template <typename Dispatch>
+  VULKAN_HPP_INLINE void CommandBuffer::copyMemoryIndirectKHR( const CopyMemoryIndirectInfoKHR & copyMemoryIndirectInfo,
+                                                               Dispatch const &                  d ) const VULKAN_HPP_NOEXCEPT
+  {
+    VULKAN_HPP_ASSERT( d.getVkHeaderVersion() == VK_HEADER_VERSION );
+#  if ( VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1 )
+    VULKAN_HPP_ASSERT( d.vkCmdCopyMemoryIndirectKHR && "Function <vkCmdCopyMemoryIndirectKHR> requires <VK_KHR_copy_memory_indirect>" );
+#  endif
+
+    d.vkCmdCopyMemoryIndirectKHR( m_commandBuffer, reinterpret_cast<const VkCopyMemoryIndirectInfoKHR *>( &copyMemoryIndirectInfo ) );
+  }
+#endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
+
+  // wrapper function for command vkCmdCopyMemoryToImageIndirectKHR, see
+  // https://registry.khronos.org/vulkan/specs/latest/man/html/vkCmdCopyMemoryToImageIndirectKHR.html
+  template <typename Dispatch>
+  VULKAN_HPP_INLINE void CommandBuffer::copyMemoryToImageIndirectKHR( const CopyMemoryToImageIndirectInfoKHR * pCopyMemoryToImageIndirectInfo,
+                                                                      Dispatch const &                         d ) const VULKAN_HPP_NOEXCEPT
+  {
+    VULKAN_HPP_ASSERT( d.getVkHeaderVersion() == VK_HEADER_VERSION );
+    d.vkCmdCopyMemoryToImageIndirectKHR( static_cast<VkCommandBuffer>( m_commandBuffer ),
+                                         reinterpret_cast<const VkCopyMemoryToImageIndirectInfoKHR *>( pCopyMemoryToImageIndirectInfo ) );
+  }
+
+#ifndef VULKAN_HPP_DISABLE_ENHANCED_MODE
+  // wrapper function for command vkCmdCopyMemoryToImageIndirectKHR, see
+  // https://registry.khronos.org/vulkan/specs/latest/man/html/vkCmdCopyMemoryToImageIndirectKHR.html
+  template <typename Dispatch>
+  VULKAN_HPP_INLINE void CommandBuffer::copyMemoryToImageIndirectKHR( const CopyMemoryToImageIndirectInfoKHR & copyMemoryToImageIndirectInfo,
+                                                                      Dispatch const &                         d ) const VULKAN_HPP_NOEXCEPT
+  {
+    VULKAN_HPP_ASSERT( d.getVkHeaderVersion() == VK_HEADER_VERSION );
+#  if ( VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1 )
+    VULKAN_HPP_ASSERT( d.vkCmdCopyMemoryToImageIndirectKHR && "Function <vkCmdCopyMemoryToImageIndirectKHR> requires <VK_KHR_copy_memory_indirect>" );
+#  endif
+
+    d.vkCmdCopyMemoryToImageIndirectKHR( m_commandBuffer, reinterpret_cast<const VkCopyMemoryToImageIndirectInfoKHR *>( &copyMemoryToImageIndirectInfo ) );
   }
 #endif /* VULKAN_HPP_DISABLE_ENHANCED_MODE */
 

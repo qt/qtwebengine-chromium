@@ -19,6 +19,8 @@
 
 #if VVL_ENABLE_SYNCVAL_STATS != 0
 #include "sync_commandbuffer.h"
+#include "sync_validation.h"
+#include "state_tracker/state_tracker.h"
 
 #include <iostream>
 
@@ -76,20 +78,63 @@ Stats::~Stats() {
     }
 }
 
-void Stats::AddCommandBufferContext() { command_buffer_context_counter.Add(1); }
-void Stats::RemoveCommandBufferContext() { command_buffer_context_counter.Sub(1); }
+void Stats::AddCommandBufferContext() { command_buffer_contexts.Add(1); }
+void Stats::RemoveCommandBufferContext() { command_buffer_contexts.Sub(1); }
 
-void Stats::AddQueueBatchContext() { queue_batch_context_counter.Add(1); }
-void Stats::RemoveQueueBatchContext() { queue_batch_context_counter.Sub(1); }
+void Stats::AddQueueBatchContext() { queue_batch_contexts.Add(1); }
+void Stats::RemoveQueueBatchContext() { queue_batch_contexts.Sub(1); }
 
-void Stats::AddTimelineSignals(uint32_t count) { timeline_signal_counter.Add(count); }
-void Stats::RemoveTimelineSignals(uint32_t count) { timeline_signal_counter.Sub(count); }
+void Stats::AddTimelineSignals(uint32_t count) { timeline_signals.Add(count); }
+void Stats::RemoveTimelineSignals(uint32_t count) { timeline_signals.Sub(count); }
 
-void Stats::AddUnresolvedBatch() { unresolved_batch_counter.Add(1); }
-void Stats::RemoveUnresolvedBatch() { unresolved_batch_counter.Sub(1); }
+void Stats::AddUnresolvedBatch() { unresolved_batches.Add(1); }
+void Stats::RemoveUnresolvedBatch() { unresolved_batches.Sub(1); }
 
-void Stats::AddHandleRecord(uint32_t count) { handle_record_counter.Add(count); }
-void Stats::RemoveHandleRecord(uint32_t count) { handle_record_counter.Sub(count); }
+void Stats::AddHandleRecord(uint32_t count) { handle_records.Add(count); }
+void Stats::RemoveHandleRecord(uint32_t count) { handle_records.Sub(count); }
+
+void AccessContextStats::UpdateMax(const AccessContextStats& cur_stats) {
+#define UPDATE_MAX(field) field = std::max(field, cur_stats.field)
+    UPDATE_MAX(access_contexts);
+    UPDATE_MAX(access_states);
+    UPDATE_MAX(read_states);
+    UPDATE_MAX(write_states);
+    UPDATE_MAX(access_states_with_multiple_reads);
+    UPDATE_MAX(access_states_with_dynamic_allocations);
+    UPDATE_MAX(access_states_dynamic_allocation_size);
+#undef UPDATE_MAX
+}
+
+void UpdateAccessMapStats(const ResourceAccessRangeMap& access_map, AccessContextStats& stats) {
+    stats.access_contexts += 1;
+    stats.access_states += (uint32_t)access_map.size();
+    for (const auto& entry : access_map) {
+        const ResourceAccessState& access_state = entry.second;
+        access_state.UpdateStats(stats);
+    }
+}
+
+void AccessStats::Update(SyncValidator& validator) {
+    std::unique_lock<std::mutex> lock(access_stats_mutex);
+    cb_access_stats = {};
+    queue_access_stats = {};
+    subpass_access_stats = {};
+
+    validator.device_state->ForEachShared<vvl::CommandBuffer>([this](std::shared_ptr<vvl::CommandBuffer> cb) {
+        const CommandBufferAccessContext* cb_access_context = syncval_state::AccessContext(*cb);
+        cb_access_context->UpdateStats(*this);
+    });
+    for (const auto& batch : validator.GetAllQueueBatchContexts()) {
+        const AccessContext& access_context = batch->GetAccessContext();
+        UpdateAccessMapStats(access_context.GetAccessStateMap(), queue_access_stats);
+    }
+
+    max_cb_access_stats.UpdateMax(cb_access_stats);
+    max_queue_access_stats.UpdateMax(queue_access_stats);
+    max_subpass_access_stats.UpdateMax(subpass_access_stats);
+}
+
+void Stats::UpdateAccessStats(SyncValidator& validator) { access_stats.Update(validator); }
 
 void Stats::UpdateMemoryStats() {
 #if defined(USE_MIMALLOC_STATS)
@@ -104,54 +149,86 @@ void Stats::UpdateMemoryStats() {
 void Stats::ReportOnDestruction() { report_on_destruction = true; }
 
 std::string Stats::CreateReport() {
-    std::ostringstream str;
-    {
-        uint32_t cb_contex = command_buffer_context_counter.value.u32;
-        uint32_t cb_context_max = command_buffer_context_counter.max_value.u32;
-        str << "CommandBufferAccessContext:\n";
-        str << "\tcount = " << cb_contex << '\n';
-        str << "\tmax_count = " << cb_context_max << '\n';
-    }
-    {
-        uint32_t qbc_context = queue_batch_context_counter.value.u32;
-        uint32_t qbc_context_max = queue_batch_context_counter.max_value.u32;
-        str << "QueueBatchContext:\n";
-        str << "\tcount = " << qbc_context << "\n";
-        str << "\tmax_count = " << qbc_context_max << "\n";
-    }
-    {
-        uint32_t signal = timeline_signal_counter.value.u32;
-        uint32_t signal_max = timeline_signal_counter.max_value.u32;
-        str << "Timeline signal:\n";
-        str << "\tcount = " << signal << "\n";
-        str << "\tmax_count = " << signal_max << "\n";
-    }
-    {
-        uint32_t unresolved_batch = unresolved_batch_counter.value.u32;
-        uint32_t unresolved_batch_max = unresolved_batch_counter.max_value.u32;
-        str << "Unresolved batch:\n";
-        str << "\tcount = " << unresolved_batch << "\n";
-        str << "\tmax_count = " << unresolved_batch_max << "\n";
-    }
-    {
-        uint32_t handle_record = handle_record_counter.value.u32;
-        uint64_t handle_record_memory = handle_record * sizeof(HandleRecord);
-        uint32_t handle_record_max = handle_record_counter.max_value.u32;
-        uint64_t handle_record_max_memory = handle_record_max * sizeof(HandleRecord);
-        str << "HandleRecord:\n";
-        str << "\tcount = " << handle_record << '\n';
-        str << "\tmemory = " << handle_record_memory << " bytes\n";
-        str << "\tmax_count = " << handle_record_max << '\n';
-        str << "\tmax_memory = " << handle_record_max_memory << " bytes\n";
-    }
+    std::ostringstream ss;
+    ss << std::left;
+
+    auto print_common_stats = [&ss](const char* field_name, const ValueMax32& stat) {
+        ss << std::setw(32) << field_name;
+        ss << std::setw(12) << stat.value.u32 << stat.max_value.u32;
+        ss << "\n";
+    };
+    auto print_common_stats64 = [&ss](const char* field_name, uint64_t v1, uint64_t v2) {
+        ss << std::setw(32) << field_name;
+        ss << std::setw(12) << v1 << v2;
+        ss << "\n";
+    };
+    auto print_access_state_stats = [&ss](const char* context_type, const AccessContextStats& stats) {
+        ss << std::setw(15) << std::string(context_type) + "(" + std::to_string(stats.access_contexts) + ")";
+        ss << std::setw(10) << stats.read_states;
+        ss << std::setw(10) << stats.write_states;
+        ss << std::setw(16) << stats.access_states;
+        ss << std::setw(18) << stats.access_states_with_multiple_reads;
+        ss << std::setw(14) << stats.access_states_with_dynamic_allocations;
+
+        uint64_t access_state_objects_size = sizeof(ResourceAccessState) * stats.access_states;
+        ss << std::setw(16) << access_state_objects_size;
+
+        ss << std::setw(14) << stats.access_states_dynamic_allocation_size;
+        ss << "\n";
+    };
+
+    ss << "-----------------------\n";
+    ss << "Common stats                    count       max_count\n";
+    ss << "-----------------------\n";
+    print_common_stats("CommandBufferAccessContext", command_buffer_contexts);
+    print_common_stats("QueueBatchContext", queue_batch_contexts);
+    print_common_stats("Timeline signal", timeline_signals);
+    print_common_stats("Unresolved batch", unresolved_batches);
+    print_common_stats("HandleRecord", handle_records);
+
+    uint64_t handle_record_memory = handle_records.value.u32 * sizeof(HandleRecord);
+    uint64_t handle_record_max_memory = handle_records.max_value.u32 * sizeof(HandleRecord);
+    print_common_stats64("HandleRecord bytes", handle_record_memory, handle_record_max_memory);
+
+    const char* access_stats_header =
+        "context        reads     writes    access_states   with_multi_read   with_allocs   size (bytes)    alloc_size (bytes)\n";
+
+    ss << "\n";
+    ss << "-----------------------\n";
+    ss << "AccessState stats\n";
+    ss << "-----------------------\n";
+    ss << access_stats_header;
+    print_access_state_stats("CB", access_stats.cb_access_stats);
+    print_access_state_stats("Queue", access_stats.queue_access_stats);
+    print_access_state_stats("Subpass", access_stats.subpass_access_stats);
+
+    ss << "\n";
+    ss << "-----------------------\n";
+    ss << "MAX AccessState stats\n";
+    ss << "-----------------------\n";
+    ss << access_stats_header;
+    print_access_state_stats("CB", access_stats.max_cb_access_stats);
+    print_access_state_stats("Queue", access_stats.max_queue_access_stats);
+    print_access_state_stats("Subpass", access_stats.max_subpass_access_stats);
+
+    ss << "\n";
+    ss << "Max first accesses";
+    ss << ": CB: " << access_stats.cb_access_stats.max_first_accesses_size;
+    ss << ", Queue: " << access_stats.queue_access_stats.max_first_accesses_size;
+    ss << ", Subpass: " << access_stats.subpass_access_stats.max_first_accesses_size;
+    ss << "\n";
 
 #if defined(USE_MIMALLOC_STATS)
-    mi_stats_print_out([](const char* msg, void* arg) { *static_cast<std::ostringstream*>(arg) << msg; }, &str);
     // Print allocation counts (these are not reported by mi_stats_print_out)
-    str << "malloc_normal_count: " << mi_stats.malloc_normal_count.total << "\n";
-    str << "malloc_huge_count: " << mi_stats.malloc_huge_count.total << "\n";
+    ss << "\n";
+    ss << "malloc_normal_count: " << mi_stats.malloc_normal_count.total << "\n";
+    ss << "malloc_huge_count: " << mi_stats.malloc_huge_count.total << "\n";
+    ss << "\n";
+    // Print main mimalloc stats
+    mi_stats_print_out([](const char* msg, void* arg) { *static_cast<std::ostringstream*>(arg) << msg; }, &ss);
+    ss << "\n";
 #endif
-    return str.str();
+    return ss.str();
 }
 
 }  // namespace syncval_stats

@@ -1,0 +1,7 @@
+[profile.default]
+threads-required = 4
+
+[profile.default.junit]
+path = "sponge_log.xml"
+store-success-output = true
+store-failure-output = true

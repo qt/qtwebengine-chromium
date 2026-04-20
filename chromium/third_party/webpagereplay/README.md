@@ -6,36 +6,19 @@ tested with earlier versions of go. It is supported on Windows, MacOS and Linux.
 
 For performance tests, this tool is generally not used directly. Instead, we use [these instructions](https://source.chromium.org/chromium/chromium/src/+/main:tools/perf/recording_benchmarks.md) to record, and [these instructions](https://chromium.googlesource.com/catapult.git/+/HEAD/telemetry/docs/run_benchmarks_locally.md) to replay.
 
-## Set up GOPATH
+## Getting the code
 
-There are two ways to setup your GOPATH. The first is to use the `go get`
-command to fetch this directory. This will use your default GOPATH, which
-is typically `$HOME/go`:
+The first way is to use `go get`. This will use your default GOPATH, which is
+typically `$HOME/go`:
 
 ```shell
-go get github.com/catapult-project/catapult/web_page_replay_go
+go get go.chromium.org/webpagereplay
 ```
 
-You can then find this directory in:
+The second way is to clone the repository.
 
 ```shell
-$HOME/go/src/github.com/catapult-project/catapult/web_page_replay_go
-```
-
-The second approach is to use your current catapult checkout. Assuming your
-"catapult" directory is located at `$CATAPULT`, and assuming `$HOME/go` is in
-your GOPATH, create the following symbolic link:
-
-```shell
-mkdir -p $HOME/go/src/github.com/catapult-project
-ln -s $CATAPULT $HOME/go/src/github.com/catapult-project/catapult
-```
-
-If you take this second approach, you will also need to set up Go to handle
-dependencies for you (if you haven't already):
-
-```shell
-go mod init github.com/catapult-project
+git clone https://chromium.googlesource.com/webpagereplay
 ```
 
 ## Sample usage
@@ -48,7 +31,7 @@ go mod init github.com/catapult-project
   parameters.
 
   ```shell
-  cd path/to/web_page_replay_go
+  cd path/to/webpagereplay
   go run src/wpr.go record --http_port=8080 --https_port=8081 /tmp/archive.wprgo
   ```
   ...
@@ -69,7 +52,7 @@ go mod init github.com/catapult-project
 
   Start wpr in replay mode.
   ```shell
-  cd path/to/web_page_replay_go
+  cd path/to/webpagereplay
   go run src/wpr.go replay --http_port=8080 --https_port=8081 /tmp/archive.wprgo
   ```
 
@@ -115,14 +98,14 @@ supported on Linux and Android.
 Installing the test CA. Specify a `--android_device_id` if you'd like to install
 the root CA on an android device.
 ```shell
-cd path/to/web_page_replay_go
+cd path/to/webpagereplay
 go run src/wpr.go installroot
 ```
 Uninstall the test CA. Specify a `--android_device_id` if you'd like to remove
 the root CA from an android device.
 
 ```shell
-cd path/to/web_page_replay_go
+cd path/to/webpagereplay
 go run src/wpr.go removeroot
 ```
 
@@ -132,7 +115,7 @@ go run src/wpr.go removeroot
 
 * Terminal 1:
 ```shell
-cd path/to/web_page_replay_go
+cd path/to/webpagereplay
 go run src/wpr.go replay --https_port=8081 --https_to_http_port=8082 \
   /tmp/archive.wprgo
 ```
@@ -155,7 +138,7 @@ path (`--full-path`).
 E.g.
 
 ```shell
-cd path/to/web_page_replay_go
+cd path/to/webpagereplay
 go run src/httparchive.go ls /tmp/archive.wprgo --host=example.com --full-path=/index.html
 ```
 
@@ -169,7 +152,7 @@ create a third, or trim request response pairs by host (`--host`) or path
 E.g.
 
 ```shell
-cd path/to/web_page_replay_go
+cd path/to/webpagereplay
 go run src/httparchive.go trim /tmp/archive.wprgo --host=example.com  /tmp/trimmed.wprgo
 ```
 
@@ -177,7 +160,7 @@ go run src/httparchive.go trim /tmp/archive.wprgo --host=example.com  /tmp/trimm
 Run all tests in a specific file. Use '-v' flag to show results.
 Note: proxy_test requires more includes than just proxy.go.
 ```shell
-cd path/to/web_page_replay_go/src/webpagereplay
+cd path/to/webpagereplay/src/webpagereplay
 go test archive_test.go archive.go
 go test transformers_test.go transformers.go
 go test proxy_test.go proxy.go transformers.go archive.go
@@ -185,13 +168,13 @@ go test proxy_test.go proxy.go transformers.go archive.go
 
 Run all tests in `webpagereplay` module.
 ```shell
-cd path/to/web_page_replay_go/src/webpagereplay
+cd path/to/webpagereplay/src/webpagereplay
 go test -run ''
 ```
 Or
 ```shell
-cd path/to/web_page_replay_go
-go test -v github.com/catapult-project/catapult/web_page_replay_go/src/webpagereplay
+cd path/to/webpagereplay
+go test -v go.chromium.org/webpagereplay/src/webpagereplay
 ```
 
 ## Generate public key hash for --ignore-certificate-errors-spki-list
@@ -208,13 +191,7 @@ The run_benchmark and record_wpr tools will build and invoke WPR from this direc
 are run with the --use-local-wpr flag.
 
 ## Contribute
-Please read [contributor's guide][contribute]. We use the Catapult
-[issue tracker][tracker] for bugs and features. Once your change is reviewed
-and ready for landing, please run `telemetry/bin/update_wpr_go_binary` to update
-binaries in Google cloud storage.
 
-## Contact
-Please email telemetry@chromium.org.
-
-[contribute]: https://github.com/catapult-project/catapult/blob/master/CONTRIBUTING.md
-[tracker]: https://github.com/catapult-project/catapult/issues
+You can file bugs [here](https://g-issues.chromium.org/issues/new?component=1456169).
+Patches welcome!
+Please run scripts/upload_new_binaries.py after making changes to go code.

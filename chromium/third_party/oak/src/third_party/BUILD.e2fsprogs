@@ -1,0 +1,53 @@
+#
+# Copyright 2024 The Project Oak Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
+
+package(
+    default_visibility = ["//visibility:public"],
+    licenses = ["notice"],
+)
+
+filegroup(
+    name = "all_files",
+    srcs = glob(["**"]),
+)
+
+configure_make(
+    name = "mke2fs",
+    copts = [
+        # Replace the build root so that the sandbox directory doesn't leak
+        # into the binary.
+        "-ffile-prefix-map=$$EXT_BUILD_ROOT$$=",
+    ],
+    lib_source = ":all_files",
+    out_bin_dir = "sbin",
+    out_binaries = ["mke2fs"],
+    out_include_dir = None,
+    configure_options = [
+        "--with-crond-dir=no",
+        "--disable-uuidd",
+        # Specify an empty prefix so that the build temp directory doesn't leak
+        # into the binary.
+        "--prefix="
+    ],
+    targets = ["all-static"],
+    # There is no `make install` equivalent that installs (or strips) the static
+    # binaries, so we do it by hand.
+    postfix_script = "cp $$BUILD_TMPDIR/misc/mke2fs.static $$INSTALLDIR/sbin/mke2fs && strip $$INSTALLDIR/sbin/mke2fs",
+    # Skip building e2scrub altogether, as that insists on touching /etc.
+    args = ["E2SCRUB_DIR=\"\"", "-j$(nproc)"],
+)

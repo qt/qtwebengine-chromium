@@ -17,6 +17,8 @@
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/window/frame_buttons.h"
 
+class SkBitmap;
+
 namespace aura {
 class Window;
 }
@@ -58,6 +60,10 @@ class CairoSurface {
   // Attaches a cairo surface to an SkBitmap so that GTK can render
   // into it.  |bitmap| must outlive this CairoSurface.
   explicit CairoSurface(SkBitmap& bitmap);
+
+  // Attaches a cairo surface to a pointer to pixel data.  `pixels`
+  // must outlive this CairoSurface.
+  CairoSurface(void* pixels, int width, int height);
 
   // Creates a new cairo surface with the given size.  The memory for
   // this surface is deallocated when this CairoSurface is destroyed.

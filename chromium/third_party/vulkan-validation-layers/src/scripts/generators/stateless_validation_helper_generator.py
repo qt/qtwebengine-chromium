@@ -218,6 +218,9 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             'vkReleaseSwapchainImagesKHR',
             'vkConvertCooperativeVectorMatrixNV',
             'vkCmdConvertCooperativeVectorMatrixNV',
+            'vkCmdBuildPartitionedAccelerationStructuresNV',
+            'vkCmdBuildClusterAccelerationStructureIndirectNV',
+            'vkGetClusterAccelerationStructureBuildSizesNV',
         ]
 
         # Commands to ignore
@@ -280,6 +283,9 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             'VkAccelerationStructureGeometryInstancesDataKHR',
             'VkAccelerationStructureGeometryAabbsDataKHR',
             'VkIndirectExecutionSetPipelineInfoEXT', # VkIndirectExecutionSetShaderInfoEXT is done manually
+            'VkClusterAccelerationStructureTriangleClusterInputNV',
+            'VkClusterAccelerationStructureClustersBottomLevelInputNV',
+            'VkClusterAccelerationStructureMoveObjectsInputNV',
         ]
 
         # These functions entrypoints we as VVL expose
@@ -854,7 +860,10 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
                                 # Handle edge case where XML expresses a non-optional non-pointer value length with noautovalidity
                                 # ex: <param noautovalidity="true"len="commandBufferCount">
                                 countRequiredVuid = self.GetVuid(callerName, f"{lengthMember.name}-arraylength")
-                                if countRequiredVuid in duplicateCountVuid:
+                                if ' ' in member.length:
+                                    # For things like altlen="(rasterizationSamples + 31) / 32" we want to skip these
+                                    countRequiredVuid = None
+                                elif countRequiredVuid in duplicateCountVuid:
                                     countRequiredVuid = None
                                 else:
                                     duplicateCountVuid.append(countRequiredVuid)
@@ -1040,6 +1049,9 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
                         usedLines.append(f'skip |= {context}ValidateFlags({errorLoc}.dot(Field::{member.name}), vvl::FlagBitmask::{flagBitsName}, {allFlagsName}, {valuePrefix}{member.name}, {flagsType}, {invalidVuid}{zeroVuidArg});\n')
                     elif member.type == 'VkBool32':
                         usedLines.append(f'skip |= {context}ValidateBool32({errorLoc}.dot(Field::{member.name}), {valuePrefix}{member.name});\n')
+                    elif member.type == 'VkDeviceAddress' and not member.optional:
+                        vuid = self.GetVuid(callerName, f"{member.name}-parameter")
+                        usedLines.append(f'skip |= {context}ValidateNotZero({valuePrefix}{member.name} == 0, {vuid}, {errorLoc}.dot(Field::{member.name}));\n')
                     elif member.type in self.vk.enums and member.type != 'VkStructureType':
                         vuid = self.GetVuid(callerName, f"{member.name}-parameter")
                         usedLines.append(f'skip |= {context}ValidateRangedEnum({errorLoc}.dot(Field::{member.name}), vvl::Enum::{member.type}, {valuePrefix}{member.name}, {vuid});\n')

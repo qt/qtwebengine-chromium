@@ -897,6 +897,37 @@ FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **i
                     "VkPhysicalDeviceCooperativeVectorFeaturesNV::cooperativeVectorTraining"};
         }
 
+        case Feature::indirectMemoryCopy: {
+            auto vk_struct = const_cast<VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->indirectMemoryCopy, "VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR::indirectMemoryCopy"};
+        }
+
+        case Feature::indirectMemoryToImageCopy: {
+            auto vk_struct = const_cast<VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->indirectMemoryToImageCopy,
+                    "VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR::indirectMemoryToImageCopy"};
+        }
+
         case Feature::indirectCopy: {
             auto vk_struct = const_cast<VkPhysicalDeviceCopyMemoryIndirectFeaturesNV *>(
                 vku::FindStructInPNextChain<VkPhysicalDeviceCopyMemoryIndirectFeaturesNV>(*inout_pnext_chain));
@@ -1111,6 +1142,23 @@ FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **i
             return {&vk_struct->dedicatedAllocationImageAliasing,
                     "VkPhysicalDeviceDedicatedAllocationImageAliasingFeaturesNV::dedicatedAllocationImageAliasing"};
         }
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+
+        case Feature::denseGeometryFormat: {
+            auto vk_struct = const_cast<VkPhysicalDeviceDenseGeometryFormatFeaturesAMDX *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceDenseGeometryFormatFeaturesAMDX>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceDenseGeometryFormatFeaturesAMDX;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->denseGeometryFormat, "VkPhysicalDeviceDenseGeometryFormatFeaturesAMDX::denseGeometryFormat"};
+        }
+#endif  // VK_ENABLE_BETA_EXTENSIONS
 
         case Feature::depthBiasControl: {
             auto vk_struct = const_cast<VkPhysicalDeviceDepthBiasControlFeaturesEXT *>(
@@ -6828,6 +6876,21 @@ FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **i
                     "VkPhysicalDeviceShaderTileImageFeaturesEXT::shaderTileImageStencilReadAccess"};
         }
 
+        case Feature::shaderUntypedPointers: {
+            auto vk_struct = const_cast<VkPhysicalDeviceShaderUntypedPointersFeaturesKHR *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceShaderUntypedPointersFeaturesKHR>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceShaderUntypedPointersFeaturesKHR;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->shaderUntypedPointers, "VkPhysicalDeviceShaderUntypedPointersFeaturesKHR::shaderUntypedPointers"};
+        }
+
         case Feature::shadingRateCoarseSampleOrder: {
             auto vk_struct = const_cast<VkPhysicalDeviceShadingRateImageFeaturesNV *>(
                 vku::FindStructInPNextChain<VkPhysicalDeviceShadingRateImageFeaturesNV>(*inout_pnext_chain));
@@ -7699,6 +7762,22 @@ FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **i
             }
             return {&vk_struct->videoEncodeQuantizationMap,
                     "VkPhysicalDeviceVideoEncodeQuantizationMapFeaturesKHR::videoEncodeQuantizationMap"};
+        }
+
+        case Feature::videoEncodeRgbConversion: {
+            auto vk_struct = const_cast<VkPhysicalDeviceVideoEncodeRgbConversionFeaturesVALVE *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceVideoEncodeRgbConversionFeaturesVALVE>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceVideoEncodeRgbConversionFeaturesVALVE;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->videoEncodeRgbConversion,
+                    "VkPhysicalDeviceVideoEncodeRgbConversionFeaturesVALVE::videoEncodeRgbConversion"};
         }
 
         case Feature::videoMaintenance1: {

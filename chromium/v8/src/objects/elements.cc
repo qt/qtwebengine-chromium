@@ -201,11 +201,12 @@ MaybeDirectHandle<Object> ThrowArrayLengthRangeError(Isolate* isolate) {
   THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kInvalidArrayLength));
 }
 
-WriteBarrierMode GetWriteBarrierMode(Tagged<FixedArrayBase> elements,
-                                     ElementsKind kind,
-                                     const DisallowGarbageCollection& promise) {
-  if (IsSmiElementsKind(kind)) return SKIP_WRITE_BARRIER;
-  if (IsDoubleElementsKind(kind)) return SKIP_WRITE_BARRIER;
+WriteBarrierModeScope GetWriteBarrierMode(
+    Tagged<FixedArrayBase> elements, ElementsKind kind,
+    const DisallowGarbageCollection& promise) {
+  if (IsSmiElementsKind(kind)) return WriteBarrierModeScope(SKIP_WRITE_BARRIER);
+  if (IsDoubleElementsKind(kind))
+    return WriteBarrierModeScope(SKIP_WRITE_BARRIER);
   return elements->GetWriteBarrierMode(promise);
 }
 
@@ -244,12 +245,11 @@ void CopyObjectToObjectElements(Isolate* isolate,
   DCHECK(IsSmiOrObjectElementsKind(from_kind));
   DCHECK(IsSmiOrObjectElementsKind(to_kind));
 
-  WriteBarrierMode write_barrier_mode =
+  WriteBarrierMode mode =
       (IsObjectElementsKind(from_kind) && IsObjectElementsKind(to_kind))
           ? UPDATE_WRITE_BARRIER
           : SKIP_WRITE_BARRIER;
-  to->CopyElements(isolate, to_start, from, from_start, copy_size,
-                   write_barrier_mode);
+  to->CopyElements(isolate, to_start, from, from_start, copy_size, mode);
 }
 
 void CopyDictionaryToObjectElements(Isolate* isolate,
@@ -279,13 +279,13 @@ void CopyDictionaryToObjectElements(Isolate* isolate,
   if (to_start + copy_size > to_length) {
     copy_size = to_length - to_start;
   }
-  WriteBarrierMode write_barrier_mode = GetWriteBarrierMode(to, to_kind, no_gc);
+  WriteBarrierModeScope mode = GetWriteBarrierMode(to, to_kind, no_gc);
   for (int i = 0; i < copy_size; i++) {
     InternalIndex entry = from->FindEntry(isolate, i + from_start);
     if (entry.is_found()) {
       Tagged<Object> value = from->ValueAt(entry);
       DCHECK(!IsTheHole(value, isolate));
-      to->set(i + to_start, value, write_barrier_mode);
+      to->set(i + to_start, value, *mode);
     } else {
       to->set_the_hole(isolate, i + to_start);
     }
@@ -460,7 +460,7 @@ void CopyObjectToDoubleElements(Tagged<FixedArrayBase> from_base,
   if (copy_size == 0) return;
   Tagged<FixedArray> from = Cast<FixedArray>(from_base);
   Tagged<FixedDoubleArray> to = Cast<FixedDoubleArray>(to_base);
-  Tagged<Hole> the_hole = GetReadOnlyRoots().the_hole_value();
+  Tagged<TheHole> the_hole = GetReadOnlyRoots().the_hole_value();
   for (uint32_t from_end = from_start + copy_size; from_start < from_end;
        from_start++, to_start++) {
     Tagged<Object> hole_or_object = from->get(from_start);
@@ -2119,6 +2119,7 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
     }
 
     int capacity = object->GetFastElementsUsage();
+    // TODO(ishell): consider throwing RangeError instead of OOMing.
     DirectHandle<NumberDictionary> dictionary =
         NumberDictionary::New(isolate, capacity);
 
@@ -2484,9 +2485,9 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
 
           for (size_t k = start_from; k < length; ++k) {
             if (elements->is_the_hole(static_cast<int>(k))) return Just(true);
-#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#ifdef V8_ENABLE_UNDEFINED_DOUBLE
             if (elements->is_undefined(static_cast<int>(k))) return Just(true);
-#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#endif  // V8_ENABLE_UNDEFINED_DOUBLE
           }
           return Just(false);
         }
@@ -2524,11 +2525,11 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
           for (size_t k = start_from; k < length; ++k) {
             if (elements->is_the_hole(static_cast<int>(k))) continue;
             if (elements->get_scalar(static_cast<int>(k)) == search_number) {
-#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#ifdef V8_ENABLE_UNDEFINED_DOUBLE
               // This can never be undefined, otherwise search_number would be a
               // NaN.
               DCHECK(!elements->is_undefined(static_cast<int>(k)));
-#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#endif  // V8_ENABLE_UNDEFINED_DOUBLE
               return Just(true);
             }
           }
@@ -2541,6 +2542,7 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
 
           for (size_t k = start_from; k < length; ++k) {
             Tagged<Object> element_k = elements->get(static_cast<int>(k));
+            if (element_k == the_hole) continue;
             if (IsNumber(element_k) &&
                 Object::NumberValue(element_k) == search_number) {
               return Just(true);
@@ -2562,10 +2564,10 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
 
           for (size_t k = start_from; k < length; ++k) {
             if (elements->is_the_hole(static_cast<int>(k))) continue;
-#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#ifdef V8_ENABLE_UNDEFINED_DOUBLE
             // We do not treat the undefined NaN as a NaN.
             if (elements->is_undefined(static_cast<int>(k))) continue;
-#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#endif  // V8_ENABLE_UNDEFINED_DOUBLE
             if (std::isnan(elements->get_scalar(static_cast<int>(k)))) {
               return Just(true);
             }
@@ -2579,7 +2581,9 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
           Tagged<FixedArray> elements = Cast<FixedArray>(receiver->elements());
 
           for (size_t k = start_from; k < length; ++k) {
-            if (IsNaN(elements->get(static_cast<int>(k)))) return Just(true);
+            Tagged<Object> element_k = elements->get(static_cast<int>(k));
+            if (element_k == the_hole) continue;
+            if (IsNaN(element_k)) return Just(true);
           }
           return Just(false);
         }
@@ -2710,12 +2714,12 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
     // Add the provided values.
     DisallowGarbageCollection no_gc;
     Tagged<FixedArrayBase> raw_backing_store = *dst_store;
-    WriteBarrierMode mode = raw_backing_store->GetWriteBarrierMode(no_gc);
+    WriteBarrierModeScope mode = raw_backing_store->GetWriteBarrierMode(no_gc);
     for (uint32_t i = 0; i < copy_size; i++) {
       Tagged<Object> argument = (*args)[src_index + i];
       DCHECK(!IsTheHole(argument));
       Subclass::SetImpl(raw_backing_store, InternalIndex(dst_index + i),
-                        argument, mode);
+                        argument, *mode);
     }
   }
 };
@@ -2863,8 +2867,9 @@ class FastSmiOrObjectElementsAccessor
     static_assert(FixedArray::kMaxLength <=
                   std::numeric_limits<uint32_t>::max());
     for (size_t k = start_from; k < length; ++k) {
-      if (Object::StrictEquals(value,
-                               elements->get(static_cast<uint32_t>(k)))) {
+      auto element = elements->get(static_cast<uint32_t>(k));
+      if (IsAnyHole(element)) continue;
+      if (Object::StrictEquals(value, element)) {
         return Just<int64_t>(k);
       }
     }
@@ -3230,12 +3235,12 @@ class FastDoubleElementsAccessor
 
   static inline void SetImpl(Tagged<FixedArrayBase> backing_store,
                              InternalIndex entry, Tagged<Object> value) {
-#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#ifdef V8_ENABLE_UNDEFINED_DOUBLE
     if (IsUndefined(value)) {
       Cast<FixedDoubleArray>(backing_store)->set_undefined(entry.as_int());
       return;
     }
-#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#endif  // V8_ENABLE_UNDEFINED_DOUBLE
     Cast<FixedDoubleArray>(backing_store)
         ->set(entry.as_int(), Object::NumberValue(value));
   }
@@ -3330,7 +3335,7 @@ class FastDoubleElementsAccessor
     if (start_from >= length) return Just<int64_t>(-1);
 
     if (!IsNumber(value)) {
-#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#ifdef V8_ENABLE_UNDEFINED_DOUBLE
       if (IsUndefined(value)) {
         Tagged<FixedDoubleArray> elements =
             Cast<FixedDoubleArray>(receiver->elements());
@@ -3344,7 +3349,7 @@ class FastDoubleElementsAccessor
           }
         }
       }
-#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#endif  // V8_ENABLE_UNDEFINED_DOUBLE
       return Just<int64_t>(-1);
     }
     if (IsNaN(value)) {
@@ -3685,6 +3690,10 @@ class TypedElementsAccessor
     ElementType* data = static_cast<ElementType*>(typed_array->DataPtr());
     ElementType* first = data + start;
     ElementType* last = data + end;
+
+    // Guard against switching the ElementsKind to make this too big.
+    SBXCHECK(sizeof(ElementType) * end <= ArrayBuffer::kMaxByteLength);
+
     if (typed_array->buffer()->is_shared()) {
       // TypedArrays backed by shared buffers need to be filled using atomic
       // operations. Since 8-byte data are not currently always 8-byte aligned,
@@ -3926,6 +3935,10 @@ class TypedElementsAccessor
     if (len == 0) return;
 
     ElementType* data = static_cast<ElementType*>(typed_array->DataPtr());
+
+    // Guard against switching the ElementsKind to make this too big.
+    SBXCHECK(ElementsKindToByteSize(Kind) * len <= ArrayBuffer::kMaxByteLength);
+
     if (typed_array->buffer()->is_shared()) {
       // TypedArrays backed by shared buffers need to be reversed using atomic
       // operations. Since 8-byte data are not currently always 8-byte aligned,
@@ -4080,6 +4093,10 @@ class TypedElementsAccessor
       size_t source_byte_length = length * source_size;
       size_t dest_byte_length = length * destination_size;
 
+      // Guard against switching the ElementsKind to make this too big.
+      SBXCHECK(source_byte_length <= ArrayBuffer::kMaxByteLength);
+      SBXCHECK(dest_byte_length <= ArrayBuffer::kMaxByteLength);
+
       // If the typedarrays are overlapped, clone the source.
       if (dest_data + dest_byte_length > source_data &&
           source_data + source_byte_length > dest_data) {
@@ -4098,13 +4115,15 @@ class TypedElementsAccessor
       }
 
       switch (source_kind) {
-#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype)                   \
-  case TYPE##_ELEMENTS:                                             \
-    CopyBetweenBackingStores<TYPE##_ELEMENTS>(                      \
-        reinterpret_cast<ctype*>(source_data),                      \
-        reinterpret_cast<ElementType*>(dest_data), length,          \
-        source_shared || destination_shared ? kShared : kUnshared); \
-    break;
+#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype)                              \
+  case TYPE##_ELEMENTS: {                                                      \
+    ctype* source_data_ptr = reinterpret_cast<ctype*>(source_data);            \
+    ElementType* dest_data_ptr = reinterpret_cast<ElementType*>(dest_data);    \
+    CopyBetweenBackingStores<TYPE##_ELEMENTS>(                                 \
+        source_data_ptr, dest_data_ptr, length,                                \
+        source_shared || destination_shared ? kShared : kUnshared);            \
+    break;                                                                     \
+  }
         TYPED_ARRAYS(TYPED_ARRAY_CASE)
         RAB_GSAB_TYPED_ARRAYS(TYPED_ARRAY_CASE)
         default:
@@ -4230,9 +4249,9 @@ class TypedElementsAccessor
           Cast<FixedDoubleArray>(source->elements());
       for (size_t i = 0; i < length; i++) {
         if (source_store->is_the_hole(static_cast<int>(i))
-#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#ifdef V8_ENABLE_UNDEFINED_DOUBLE
             || source_store->is_undefined(static_cast<int>(i))
-#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#endif  // V8_ENABLE_UNDEFINED_DOUBLE
         ) {
           SetImpl(dest_data + i, FromObject(undefined), destination_shared);
         } else {
@@ -4252,6 +4271,11 @@ class TypedElementsAccessor
     Isolate* isolate = Isolate::Current();
     // 8. Let k be 0.
     // 9. Repeat, while k < srcLength,
+
+    // Guard against switching the ElementsKind to make this too big.
+    SBXCHECK(ElementsKindToByteSize(Kind) * length <=
+             ArrayBuffer::kMaxByteLength);
+
     for (size_t i = 0; i < length; i++) {
       DirectHandle<Object> elem;
       // a. Let Pk be ! ToString(𝔽(k)).
@@ -4353,6 +4377,10 @@ struct CopyBetweenBackingStoresImpl {
   static void Copy(TypedArrayCType<SourceKind>* source_data_ptr,
                    TypedArrayCType<Kind>* dest_data_ptr, size_t length,
                    IsSharedBuffer is_shared) {
+    SBXCHECK(ElementsKindToByteSize(SourceKind) * length <=
+             ArrayBuffer::kMaxByteLength);
+    SBXCHECK(ElementsKindToByteSize(Kind) * length <=
+             ArrayBuffer::kMaxByteLength);
     for (; length > 0; --length, ++source_data_ptr, ++dest_data_ptr) {
       // We use scalar accessors to avoid boxing/unboxing, so there are no
       // allocations.
@@ -4370,6 +4398,11 @@ template <ElementsKind DestKind, ElementsKind SourceKind>
 void CopyFromFloat16BackingStore(uint16_t* source_data_ptr,
                                  TypedArrayCType<DestKind>* dest_data_ptr,
                                  size_t length, IsSharedBuffer is_shared) {
+  // Guard against switching the ElementsKind to make this too big.
+  SBXCHECK(ElementsKindToByteSize(DestKind) * length <=
+           ArrayBuffer::kMaxByteLength);
+  SBXCHECK(ElementsKindToByteSize(SourceKind) * length <=
+           ArrayBuffer::kMaxByteLength);
   for (; length > 0; --length, ++source_data_ptr, ++dest_data_ptr) {
     // We use scalar accessors to avoid boxing/unboxing, so there are no
     // allocations.
@@ -5732,15 +5765,15 @@ MaybeDirectHandle<Object> ArrayConstructInitializeElements(
     case HOLEY_ELEMENTS:
     case PACKED_ELEMENTS: {
       DisallowGarbageCollection no_gc;
-      WriteBarrierMode mode = elms->GetWriteBarrierMode(no_gc);
+      WriteBarrierModeScope mode = elms->GetWriteBarrierMode(no_gc);
       auto object_elms = Cast<FixedArray>(elms);
       for (int entry = 0; entry < number_of_elements; entry++) {
-        object_elms->set(entry, (*args)[entry], mode);
+        object_elms->set(entry, (*args)[entry], *mode);
       }
       break;
     }
     case HOLEY_DOUBLE_ELEMENTS:
-#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#ifdef V8_ENABLE_UNDEFINED_DOUBLE
     {
       auto double_elms = Cast<FixedDoubleArray>(elms);
       for (int entry = 0; entry < number_of_elements; entry++) {
@@ -5753,7 +5786,7 @@ MaybeDirectHandle<Object> ArrayConstructInitializeElements(
       }
       break;
     }
-#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+#endif  // V8_ENABLE_UNDEFINED_DOUBLE
     case PACKED_DOUBLE_ELEMENTS: {
       auto double_elms = Cast<FixedDoubleArray>(elms);
       for (int entry = 0; entry < number_of_elements; entry++) {

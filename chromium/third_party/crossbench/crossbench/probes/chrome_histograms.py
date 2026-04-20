@@ -11,7 +11,8 @@ import datetime as dt
 import functools
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Mapping, Optional, Self, Sequence, Type
+from typing import (TYPE_CHECKING, Any, ClassVar, Final, Mapping, Optional,
+                    Self, Sequence, Type)
 
 from typing_extensions import override
 
@@ -21,7 +22,6 @@ from crossbench.browsers.webview.embedder import WebviewEmbedder
 from crossbench.parse import ObjectParser
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import MetricsMerger
-from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
@@ -132,8 +132,7 @@ class ChromeHistogramsProbe(JsonResultProbe):
   """
   Probe that collects UMA histogram metrics from Chrome.
   """
-  NAME = "chrome_histograms"
-  RESULT_LOCATION = ResultLocation.LOCAL
+  NAME: ClassVar = "chrome_histograms"
 
   @classmethod
   @override
@@ -211,7 +210,7 @@ class ChromeHistogramSample:
   # "114   ---O                                              (3 = 3.1%) {92.7%}"
   # "12  ... "
   # "1000..."
-  _BUCKET_RE = re.compile(
+  _BUCKET_RE: Final[re.Pattern] = re.compile(
       r"^(-?\d+) *(?:(?:-*O "  # Bucket min and ASCII bar
       r"+\((\d+) = \d+\.\d%\)(?: \{\d+\.\d%\}"  # Count and optional sum %
       r")?)|(?:\.\.\. ))$"  # Or a "..." line
@@ -221,9 +220,10 @@ class ChromeHistogramSample:
   # Example histogram header lines:
   # "Histogram: UKM.InitSequence recorded 1 samples, mean = 1.0 (flags = 0x41)"
   # "Histogram: WebUI.CreatedForUrl recorded 30 samples (flags = 0x41)"
-  _HEADER_RE = re.compile(r"^Histogram: +.* recorded (\d+) samples"
-                          r"(?:, mean = (-?\d+\.\d+))?"
-                          r"(?: \(flags = (0x[0-9A-Fa-f]+)\))?$")
+  _HEADER_RE: Final[re.Pattern] = re.compile(
+      r"^Histogram: +.* recorded (\d+) samples"
+      r"(?:, mean = (-?\d+\.\d+))?"
+      r"(?: \(flags = (0x[0-9A-Fa-f]+)\))?$")
 
   @classmethod
   def from_json(cls, histogram_dict: Mapping[str,
@@ -353,7 +353,7 @@ class ChromeHistogramsProbeContext(JsonResultProbeContext[ChromeHistogramsProbe]
 
   # JS code that overrides the chrome.send response handler and requests
   # histograms.
-  HISTOGRAM_SEND = """
+  HISTOGRAM_SEND: Final = """
 function webUIResponse(id, isSuccess, response) {
   if (id === "crossbench_histograms_1") {
     window.crossbench_histograms = response;
@@ -364,10 +364,10 @@ chrome.send("requestHistograms", ["crossbench_histograms_1", "", true]);
 """
 
   # JS code that checks if there is a histogram response.
-  HISTOGRAM_WAIT = "return !!window.crossbench_histograms"
+  HISTOGRAM_WAIT: Final = "return !!window.crossbench_histograms"
 
   # JS code that returns the histograms response.
-  HISTOGRAM_DATA = "return window.crossbench_histograms"
+  HISTOGRAM_DATA: Final = "return window.crossbench_histograms"
 
   def __init__(self, probe: ChromeHistogramsProbe, run: Run) -> None:
     super().__init__(probe, run)
@@ -429,6 +429,6 @@ chrome.send("requestHistograms", ["crossbench_histograms_1", "", true]);
                               ChromeHistogramSample(metric.histogram_name))
       try:
         json[metric.name] = metric.compute(delta, baseline)
-      except Exception as e:  # pylint: disable=broad-exception-caught
+      except Exception as e:  # noqa: BLE001
         logging.warning("Failed to log metric %s: %s", metric.name, e)
     return json

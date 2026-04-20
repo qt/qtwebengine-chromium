@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Mapping, Optional
+from typing import TYPE_CHECKING, Final, Mapping, Optional
 
 from crossbench.plt.port_manager import PortManager
 from crossbench.plt.remote import RemotePlatformMixin
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
   import subprocess
 
   from crossbench.plt.base import Platform
-  from crossbench.plt.types import CmdArg, ListCmdArgs
+  from crossbench.plt.types import CmdArg, ListCmdArgs, ProcessIo
 
 
 class SshPortManager(PortManager):
@@ -24,11 +24,11 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
 
   def __init__(self, host_platform: Platform, host: str, port: int,
                ssh_port: int, ssh_user: str) -> None:
+    self._host: Final[str] = host
+    self._port: Final[int] = port
+    self._ssh_port: Final[int] = ssh_port
+    self._ssh_user: Final[str] = ssh_user
     super().__init__(host_platform)
-    self._host = host
-    self._port = port
-    self._ssh_port = ssh_port
-    self._ssh_user = ssh_user
 
   @abc.abstractmethod
   def _create_port_manager(self) -> PortManager:
@@ -62,7 +62,7 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
                       *args: CmdArg,
                       shell: bool = False,
                       quiet: bool = False,
-                      stdin=None,
+                      stdin: ProcessIo = None,
                       env: Optional[Mapping[str, str]] = None,
                       check: bool = True) -> bytes:
     ssh_cmd: ListCmdArgs = self.build_ssh_cmd(*args, shell=shell)
@@ -73,9 +73,9 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
          *args: CmdArg,
          shell: bool = False,
          capture_output: bool = False,
-         stdout=None,
-         stderr=None,
-         stdin=None,
+         stdout: ProcessIo = None,
+         stderr: ProcessIo = None,
+         stdin: ProcessIo = None,
          env: Optional[Mapping[str, str]] = None,
          quiet: bool = False,
          check: bool = True) -> subprocess.CompletedProcess:
@@ -95,9 +95,9 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
             *args: CmdArg,
             bufsize: int = -1,
             shell: bool = False,
-            stdout=None,
-            stderr=None,
-            stdin=None,
+            stdout: ProcessIo = None,
+            stderr: ProcessIo = None,
+            stdin: ProcessIo = None,
             env: Optional[Mapping[str, str]] = None,
             quiet: bool = False) -> subprocess.Popen:
     ssh_cmd: ListCmdArgs = self.build_ssh_cmd(*args, shell=shell)

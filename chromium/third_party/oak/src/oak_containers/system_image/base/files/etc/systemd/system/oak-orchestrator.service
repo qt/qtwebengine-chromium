@@ -1,0 +1,18 @@
+[Unit]
+Description=Oak Containers Orchestrator
+After=network-online.target
+Wants=network-online.target
+FailureAction=poweroff-force
+SuccessAction=poweroff-force
+
+[Service]
+Type=simple
+ExecStart=/bin/oak_containers_orchestrator --container-dir ${RUNTIME_DIRECTORY}/oak_container --ipc-socket-path ${RUNTIME_DIRECTORY}/oak_utils/orchestrator_ipc
+ExecStopPost=/usr/bin/journalctl --sync --flush
+ProtectSystem=strict
+RuntimeDirectory=oak_containers_orchestrator
+ReadWritePaths=/oak
+PassEnvironment=LAUNCHER_ADDR
+
+[Install]
+WantedBy=multi-user.target

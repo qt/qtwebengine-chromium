@@ -52,20 +52,17 @@ struct _MetaKms
   gulong lease_handler_id;
   gulong removed_handler_id;
 
-  MetaKmsImpl *impl;
-  gboolean in_impl_task;
-  gboolean waiting_for_impl_task;
+  GSource *hotplug_timeout;
+  /* Set: Pointer to "<CRTC ID>:<Connector ID>:<device path>" string */
+  GHashTable *hotplug_events;
 
   GList *devices;
-
-  GList *pending_updates;
-
-  GList *pending_callbacks;
-  guint callback_source_id;
 
   int kernel_thread_inhibit_count;
 
   MetaKmsCursorManager *cursor_manager;
+
+  gboolean shutting_down;
 };
 
 G_DEFINE_TYPE (MetaKms, meta_kms, META_TYPE_THREAD)
@@ -180,18 +177,13 @@ meta_kms_is_waiting_for_impl_task (MetaKms *kms)
   return meta_thread_is_waiting_for_impl_task (thread);
 }
 
-typedef struct _UpdateStatesData
-{
-  const char *device_path;
-  uint32_t crtc_id;
-  uint32_t connector_id;
-} UpdateStatesData;
-
 static MetaKmsResourceChanges
-meta_kms_update_states_in_impl (MetaKms          *kms,
-                                UpdateStatesData *update_data)
+meta_kms_update_states_in_impl (MetaKms *kms,
+                                char    *hotplug_event)
 {
   MetaKmsResourceChanges changes = META_KMS_RESOURCE_CHANGE_NONE;
+  uint32_t crtc_id = 0, connector_id = 0;
+  char *path = NULL;
   GList *l;
 
   COGL_TRACE_BEGIN_SCOPED (MetaKmsUpdateStates,
@@ -202,28 +194,30 @@ meta_kms_update_states_in_impl (MetaKms          *kms,
   if (!kms->devices)
     return META_KMS_RESOURCE_CHANGE_NO_DEVICES;
 
+  if (hotplug_event)
+    {
+      sscanf (hotplug_event, "%08x:%08x:%*s", &crtc_id, &connector_id);
+      path = hotplug_event + 2 * strlen ("12345678:");
+    }
+
   for (l = kms->devices; l; l = l->next)
     {
       MetaKmsDevice *kms_device = META_KMS_DEVICE (l->data);
       const char *kms_device_path = meta_kms_device_get_path (kms_device);
 
-      if (update_data->device_path &&
-          g_strcmp0 (kms_device_path, update_data->device_path) != 0)
+      if (path && strcmp (path, kms_device_path) != 0)
         continue;
 
-      if (update_data->crtc_id > 0 &&
-          !meta_kms_device_find_crtc_in_impl (kms_device, update_data->crtc_id))
+      if (crtc_id > 0 &&
+          !meta_kms_device_find_crtc_in_impl (kms_device, crtc_id))
         continue;
 
-      if (update_data->connector_id > 0 &&
-          !meta_kms_device_find_connector_in_impl (kms_device,
-                                                   update_data->connector_id))
+      if (connector_id > 0 &&
+          !meta_kms_device_find_connector_in_impl (kms_device, connector_id))
         continue;
 
       changes |=
-        meta_kms_device_update_states_in_impl (kms_device,
-                                               update_data->crtc_id,
-                                               update_data->connector_id);
+        meta_kms_device_update_states_in_impl (kms_device, crtc_id, connector_id);
     }
 
   return changes;
@@ -234,42 +228,41 @@ update_states_in_impl (MetaThreadImpl  *thread_impl,
                        gpointer         user_data,
                        GError         **error)
 {
-  UpdateStatesData *data = user_data;
+  char *hotplug_event = user_data;
   MetaKmsImpl *impl = META_KMS_IMPL (thread_impl);
   MetaKms *kms = meta_kms_impl_get_kms (impl);
 
-  return GUINT_TO_POINTER (meta_kms_update_states_in_impl (kms, data));
+  return GUINT_TO_POINTER (meta_kms_update_states_in_impl (kms, hotplug_event));
 }
 
-MetaKmsResourceChanges
-meta_kms_update_states_sync (MetaKms     *kms,
-                             GUdevDevice *udev_device)
+static MetaKmsResourceChanges
+update_states_sync (MetaKms *kms,
+                    char    *hotplug_event)
 {
-  UpdateStatesData data = {};
   gpointer ret;
 
-  if (udev_device)
-    {
-      data.device_path = g_udev_device_get_device_file (udev_device);
-      data.crtc_id =
-        CLAMP (g_udev_device_get_property_as_int (udev_device, "CRTC"),
-               0, UINT32_MAX);
-      data.connector_id =
-        CLAMP (g_udev_device_get_property_as_int (udev_device, "CONNECTOR"),
-               0, UINT32_MAX);
-    }
-
-  ret = meta_kms_run_impl_task_sync (kms, update_states_in_impl, &data, NULL);
+  ret = meta_kms_run_impl_task_sync (kms, update_states_in_impl,
+                                     hotplug_event, NULL);
 
   return GPOINTER_TO_UINT (ret);
 }
 
+MetaKmsResourceChanges
+meta_kms_update_states_sync (MetaKms *kms)
+{
+  return update_states_sync (kms, NULL);
+}
+
 static void
 handle_hotplug_event (MetaKms                *kms,
-                      GUdevDevice            *udev_device,
-                      MetaKmsResourceChanges  changes)
+                      char                   *hotplug_event,
+                      MetaKmsResourceChanges  changes,
+                      const char             *caller)
 {
-  changes |= meta_kms_update_states_sync (kms, udev_device);
+  changes |= update_states_sync (kms, hotplug_event);
+
+  meta_topic (META_DEBUG_KMS, "%s -> %s for '%s', changes=0x%x",
+              caller, __func__, hotplug_event, changes);
 
   if (changes != META_KMS_RESOURCE_CHANGE_NONE)
     meta_kms_emit_resources_changed (kms, changes);
@@ -289,9 +282,73 @@ resume_in_impl (MetaThreadImpl  *thread_impl,
 void
 meta_kms_resume (MetaKms *kms)
 {
-  handle_hotplug_event (kms, NULL, META_KMS_RESOURCE_CHANGE_FULL);
+  handle_hotplug_event (kms, NULL, META_KMS_RESOURCE_CHANGE_FULL, __func__);
 
   meta_kms_run_impl_task_sync (kms, resume_in_impl, NULL, NULL);
+}
+
+static gboolean
+hotplug_timeout (gpointer user_data)
+{
+  MetaKms *kms = user_data;
+  GHashTableIter iter;
+  char *hotplug_event;
+
+  if (meta_is_topic_enabled (META_DEBUG_KMS))
+    {
+      int64_t dispatch_time = g_source_get_time (kms->hotplug_timeout);
+      int64_t ready_time = g_source_get_ready_time (kms->hotplug_timeout);
+
+      meta_topic (META_DEBUG_KMS,
+                  "%s: %" G_GINT64_FORMAT " (dispatch time)"
+                  " - %" G_GINT64_FORMAT " (ready time)"
+                  " = %" G_GINT64_FORMAT "µs",
+                  __func__, dispatch_time, ready_time,
+                  dispatch_time - ready_time);
+    }
+
+  g_hash_table_iter_init (&iter, kms->hotplug_events);
+  while (g_hash_table_iter_next (&iter, (gpointer *) &hotplug_event, NULL))
+    {
+      handle_hotplug_event (kms, hotplug_event, META_KMS_RESOURCE_CHANGE_NONE,
+                            __func__);
+      g_hash_table_iter_remove (&iter);
+    }
+
+  kms->hotplug_timeout = NULL;
+  return G_SOURCE_REMOVE;
+}
+
+static void
+ensure_hotplug_timeout_source (MetaKms *kms)
+{
+  if (kms->hotplug_timeout)
+    return;
+
+  kms->hotplug_timeout = g_timeout_source_new_seconds (2);
+  g_source_set_callback (kms->hotplug_timeout, hotplug_timeout, kms, NULL);
+  g_source_set_name (kms->hotplug_timeout, "[mutter] MetaKms hotplug timeout");
+  g_source_attach (kms->hotplug_timeout, NULL);
+  g_source_unref (kms->hotplug_timeout);
+}
+
+static char *
+hotplug_event_from_udev_device (GUdevDevice *udev_device)
+{
+  const gchar *device_path;
+  uint32_t crtc_id, connector_id;
+
+  if (!udev_device)
+    return g_strdup ("");
+
+  device_path = g_udev_device_get_device_file (udev_device);
+  crtc_id =
+    CLAMP (g_udev_device_get_property_as_int (udev_device, "CRTC"),
+           0, UINT32_MAX);
+  connector_id =
+    CLAMP (g_udev_device_get_property_as_int (udev_device, "CONNECTOR"),
+           0, UINT32_MAX);
+  return g_strdup_printf ("%08x:%08x:%s", crtc_id, connector_id, device_path);
 }
 
 static void
@@ -299,7 +356,27 @@ on_udev_hotplug (MetaUdev    *udev,
                  GUdevDevice *udev_device,
                  MetaKms     *kms)
 {
-  handle_hotplug_event (kms, udev_device, META_KMS_RESOURCE_CHANGE_NONE);
+  int64_t now = g_get_monotonic_time ();
+  g_autofree char *hotplug_event = NULL;
+
+  meta_topic (META_DEBUG_KMS,
+              "%s called at %" G_GINT64_FORMAT,
+              __func__, now);
+
+  hotplug_event = hotplug_event_from_udev_device (udev_device);
+
+  if (meta_is_udev_test_device (udev_device))
+    {
+      handle_hotplug_event (kms, hotplug_event,
+                            META_KMS_RESOURCE_CHANGE_NONE, __func__);
+      return;
+    }
+
+  ensure_hotplug_timeout_source (kms);
+  g_source_set_ready_time (kms->hotplug_timeout, now + 3 * G_USEC_PER_SEC);
+
+  g_hash_table_insert (kms->hotplug_events, g_steal_pointer (&hotplug_event),
+                       NULL);
 }
 
 static void
@@ -307,7 +384,7 @@ on_udev_device_removed (MetaUdev    *udev,
                         GUdevDevice *device,
                         MetaKms     *kms)
 {
-  handle_hotplug_event (kms, NULL, META_KMS_RESOURCE_CHANGE_NONE);
+  handle_hotplug_event (kms, NULL, META_KMS_RESOURCE_CHANGE_NONE, __func__);
 }
 
 static void
@@ -352,6 +429,12 @@ meta_kms_create_device (MetaKms            *kms,
   return device;
 }
 
+gboolean
+meta_kms_is_shutting_down (MetaKms *kms)
+{
+  return kms->shutting_down;
+}
+
 static gpointer
 prepare_shutdown_in_impl (MetaThreadImpl  *thread_impl,
                           gpointer         user_data,
@@ -367,6 +450,7 @@ static void
 on_prepare_shutdown (MetaBackend *backend,
                      MetaKms     *kms)
 {
+  kms->shutting_down = TRUE;
   meta_kms_run_impl_task_sync (kms, prepare_shutdown_in_impl, NULL, NULL);
   meta_thread_flush_callbacks (META_THREAD (kms));
 
@@ -476,6 +560,9 @@ meta_kms_finalize (GObject *object)
 
   g_list_free_full (kms->devices, g_object_unref);
 
+  g_clear_pointer (&kms->hotplug_timeout, g_source_destroy);
+  g_hash_table_destroy (kms->hotplug_events);
+
   g_clear_signal_handler (&kms->hotplug_handler_id, udev);
   g_clear_signal_handler (&kms->lease_handler_id, udev);
   g_clear_signal_handler (&kms->removed_handler_id, udev);
@@ -487,6 +574,9 @@ static void
 meta_kms_init (MetaKms *kms)
 {
   kms->cursor_manager = meta_kms_cursor_manager_new (kms);
+
+  kms->hotplug_events =
+    g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
 }
 
 static void

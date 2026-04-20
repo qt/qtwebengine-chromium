@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Final, Iterable, Optional, Type
+from typing import TYPE_CHECKING, Final, Iterable, Iterator, Optional, Type
 
 import sqlalchemy
 import sqlalchemy.engine as orm_engine
@@ -19,6 +19,8 @@ from crossbench.results_db.records.run import RunRecord
 from crossbench.results_db.records.unit import UnitRecord
 
 if TYPE_CHECKING:
+  import sqlite3
+
   from crossbench import path as pth
   from crossbench.browsers.browser import Browser
   from crossbench.plt.base import Platform
@@ -32,7 +34,8 @@ DEFAULT_CLASSES: Final[tuple[Type[BaseRecord],
 
 
 @orm_event.listens_for(orm_engine.Engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
+def set_sqlite_pragma(dbapi_connection: sqlite3.Connection,
+                      connection_record: orm_engine.Connection) -> None:
   """sqlite needs manual foreign key setup"""
   del connection_record
   cursor = dbapi_connection.cursor()
@@ -80,7 +83,7 @@ class ResultsDB:
     return self._engine
 
   @contextlib.contextmanager
-  def session(self):
+  def session(self) -> Iterator[orm.Session]:
     with orm.Session(self._engine) as session:
       yield session
 
@@ -118,8 +121,9 @@ class ResultsDB:
       run_record = session.get(RunRecord, run.index)
       assert run_record, f"Could not find run {run.index}"
       run_record.error_count = len(run.exceptions)
-      run_record.errors = run.exceptions.to_json()
+      # TODO: Fix JSON types and remove the type ignore comment.
+      run_record.errors = run.exceptions.to_json()  # type: ignore
       run_record.start_datetime = run.start_datetime
-      run_record.durations = run.durations.to_json()
+      run_record.durations = run.durations.to_json()  # type: ignore
       session.add(run_record)
       session.commit()

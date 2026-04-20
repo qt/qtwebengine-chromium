@@ -38,7 +38,7 @@ class PageConfig(ConfigObject):
   secrets: Secrets = Secrets()
   login: LoginBlock | None = None
   setup: ActionBlock | None = None
-  blocks: tuple[ActionBlock, ...] = tuple()
+  blocks: tuple[ActionBlock, ...] = ()
   teardown: ActionBlock | None = None
 
   @classmethod
@@ -49,10 +49,7 @@ class PageConfig(ConfigObject):
 
   @classmethod
   @override
-  def parse_str(  # pylint: disable=arguments-differ
-      cls,
-      value: str,
-      label: Optional[str] = None) -> Self:
+  def parse_str(cls, value: str, label: Optional[str] = None) -> Self:
     """
     Simple comma-separated string with optional duration:
       value = URL,[DURATION]
@@ -83,12 +80,11 @@ class PageConfig(ConfigObject):
 
   @classmethod
   @override
-  def parse_dict(  # pylint: disable=arguments-differ
-      cls,
-      config: dict[str, Any],
-      label: Optional[str] = None,
-      secrets: Optional[Secrets] = None,
-      **kwargs) -> Self:
+  def parse_dict(cls,
+                 config: dict[str, Any],
+                 label: Optional[str] = None,
+                 secrets: Optional[Secrets] = None,
+                 **kwargs) -> Self:
     config = ObjectParser.non_empty_dict(config, "story actions or blocks")
     page_config = cls.config_parser().parse(
         config, label=label, secrets=secrets, **kwargs)

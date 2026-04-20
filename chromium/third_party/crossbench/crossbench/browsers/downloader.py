@@ -11,7 +11,7 @@ import plistlib
 import re
 import shutil
 import tempfile
-from typing import TYPE_CHECKING, Final, Iterable, Optional, Type
+from typing import TYPE_CHECKING, ClassVar, Final, Iterable, Optional, Type
 
 from typing_extensions import override
 
@@ -28,24 +28,31 @@ class IncompatibleVersionError(ValueError):
 
 
 class Downloader(abc.ABC):
-  ARCHIVE_SUFFIX: str = ""
+  ARCHIVE_SUFFIX: ClassVar[str] = ""
   ANY_MARKER: Final = 9999
-  APP_VERSION_RE = re.compile(r"(?P<version>[\d\.ab]+)")
+  APP_VERSION_RE: ClassVar[re.Pattern] = re.compile(r"(?P<version>[\d\.ab]+)")
 
   @classmethod
   @abc.abstractmethod
-  def _get_loader_cls(cls, browser_platform: Platform) -> Type[Downloader]:
+  def name(cls) -> str:
+    pass
+
+  @classmethod
+  @abc.abstractmethod
+  def _get_loader_cls(cls,
+                      browser_platform: Platform) -> Type[Downloader] | None:
     pass
 
   @classmethod
   def is_valid(cls, path_or_identifier: pth.AnyPathLike,
                browser_platform: Platform) -> bool:
-    return cls._get_loader_cls(browser_platform).is_valid(
-        path_or_identifier, browser_platform)
+    if loader_cls := cls._get_loader_cls(browser_platform):
+      return loader_cls.is_valid(path_or_identifier, browser_platform)
+    return False
 
   @classmethod
   @abc.abstractmethod
-  def is_valid_version(cls, path_or_identifier: str):
+  def is_valid_version(cls, path_or_identifier: str) -> bool:
     pass
 
   @classmethod
@@ -53,7 +60,10 @@ class Downloader(abc.ABC):
            browser_platform: Platform) -> pth.LocalPath:
     logging.debug("Downloading chrome %s binary for %s",
                   archive_path_or_version_identifier, browser_platform)
-    loader_cls: Type[Downloader] = cls._get_loader_cls(browser_platform)
+    loader_cls: Type[Downloader] | None = cls._get_loader_cls(browser_platform)
+    if not loader_cls:
+      raise ValueError(f"Downloading {cls.name()} is not supported "
+                       f"on {browser_platform.name} {browser_platform.machine}")
     loader: Downloader = loader_cls(archive_path_or_version_identifier, "", "",
                                     browser_platform)
     return loader.app_path
@@ -62,9 +72,9 @@ class Downloader(abc.ABC):
                browser_type: str, platform_name: str,
                browser_platform: Platform) -> None:
     assert browser_type, "Missing browser_type"
-    self._browser_type = browser_type
-    self._browser_platform = browser_platform
-    self._platform_name = platform_name
+    self._browser_type: Final[str] = browser_type
+    self._browser_platform: Final[Platform] = browser_platform
+    self._platform_name: str = platform_name
     assert platform_name, "Missing platform_name"
     self._archive_url: str = ""
     self._archive_path: pth.LocalPath = pth.LocalPath()
@@ -75,8 +85,8 @@ class Downloader(abc.ABC):
     self._archive_dir.mkdir(parents=True, exist_ok=True)
     self._app_path: pth.LocalPath = pth.LocalPath()
     self._requested_version: BrowserVersion = UnknownBrowserVersion()
-    self._spinner = ui.spinner(title="BROWSER: ")
-    with self._spinner:
+    with ui.spinner(title="BROWSER: ") as spinner:
+      self._spinner = spinner
       self._app_path = self.find(archive_path_or_version_identifier)
     self._validate()
 

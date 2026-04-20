@@ -199,11 +199,12 @@ class small_vector {
     bool empty() const { return size_ == 0; }
 
     template <class... Args>
-    void emplace_back(Args &&...args) {
+    reference emplace_back(Args &&...args) {
         assert(size_ < kMaxCapacity);
         reserve(size_ + 1);
         new (GetWorkingStore() + size_) value_type(args...);
         size_++;
+        return back();
     }
 
     // Note: probably should update this to reflect C++23 ranges
@@ -235,6 +236,8 @@ class small_vector {
         }
         size_ = new_size;
     }
+
+    bool Contains(const T &value) const { return std::find(cbegin(), cend(), value) != cend(); }
 
     void reserve(size_type new_cap) {
         // Since this can't shrink, if we're growing we're newing

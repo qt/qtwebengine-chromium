@@ -430,20 +430,12 @@ std::string GetEnumFileName(const GeneratorOptions& options,
 // Returns the message/response ID, if set.
 std::string GetMessageId(const Descriptor* desc) { return std::string(); }
 
-bool IgnoreExtensionField(const FieldDescriptor* field) {
-  // Exclude descriptor extensions from output "to avoid clutter" (from original
-  // codegen).
-  if (!field->is_extension()) return false;
-  const FileDescriptor* file = field->containing_type()->file();
-  return file->name() == "net/proto2/proto/descriptor.proto" ||
-         file->name() == "google/protobuf/descriptor.proto";
-}
-
 // Used inside Google only -- do not remove.
 bool IsResponse(const Descriptor* desc) { return false; }
 
 bool IgnoreField(const FieldDescriptor* field) {
-  return IgnoreExtensionField(field);
+  // no-op in open source
+  return false;
 }
 
 // Do we ignore this message type?
@@ -1087,13 +1079,16 @@ std::string JSBinaryMethodType(const FieldDescriptor* field, bool is_writer) {
 std::string JSBinaryReadWriteMethodName(const FieldDescriptor* field,
                                         bool is_writer) {
   std::string name = JSBinaryMethodType(field, is_writer);
-  if (field->is_packed()) {
+  if (is_writer && field->is_packed()) {
     name = "Packed" + name;
+  } else if (!is_writer && field->is_packable()) {
+    name = "Packable" + name + "Into";
   } else if (is_writer && field->is_repeated()) {
     name = "Repeated" + name;
   }
   return name;
 }
+
 
 std::string JSBinaryReaderMethodName(const GeneratorOptions& options,
                                      const FieldDescriptor* field) {
@@ -1857,6 +1852,7 @@ void Generator::GenerateRequiresImpl(const GeneratorOptions& options,
                                      bool require_map) const {
   if (require_jspb) {
     required->insert("jspb.Message");
+    required->insert("jspb.internal.public_for_gencode");
     required->insert("jspb.BinaryReader");
     required->insert("jspb.BinaryWriter");
   }
@@ -3129,13 +3125,11 @@ void Generator::GenerateClassDeserializeBinaryField(
               : "");
     } else if (field->is_packable()) {
       printer->Print(
-          "      var values = /** @type {$fieldtype$} */ "
-          "(reader.isDelimited() "
-          "? reader.read$reader$() : [reader.read$reader$()]);\n",
-          "fieldtype",
-          JSFieldTypeAnnotation(options, field, false, true,
-                                /* singular_if_not_packed */ false, BYTES_U8),
-          "reader", JSBinaryReadWriteMethodName(field, /* is_writer=*/false));
+          "      reader.read$reader$(msg.get$name$());\n", "reader",
+          JSBinaryReadWriteMethodName(field, /* is_writer=*/false), "name",
+          JSGetterName(options, field, BYTES_DEFAULT, /* drop_list = */ false));
+      printer->Print("      break;\n");
+      return;
     } else {
       printer->Print(
           "      var value = /** @type {$fieldtype$} */ "
@@ -3147,14 +3141,7 @@ void Generator::GenerateClassDeserializeBinaryField(
           JSBinaryReadWriteMethodName(field, /* is_writer = */ false));
     }
 
-    if (field->is_packable()) {
-      printer->Print(
-          "      for (var i = 0; i < values.length; i++) {\n"
-          "        msg.add$name$(values[i]);\n"
-          "      }\n",
-          "name",
-          JSGetterName(options, field, BYTES_DEFAULT, /* drop_list = */ true));
-    } else if (field->is_repeated()) {
+    if (field->is_repeated()) {
       printer->Print(
           "      msg.add$name$(value);\n", "name",
           JSGetterName(options, field, BYTES_DEFAULT, /* drop_list = */ true));
@@ -3215,6 +3202,30 @@ void Generator::GenerateClassSerializeBinary(const GeneratorOptions& options,
       "};\n"
       "\n"
       "\n");
+}
+
+// Generates the code to access a single field value for the binary serializer.
+void GenerateClassSerializeBinaryFieldAccess(const GeneratorOptions& options,
+                                             io::Printer* printer,
+                                             const FieldDescriptor* field) {
+  if (field->cpp_type() != FieldDescriptor::CPPTYPE_MESSAGE) {
+    std::string typed_annotation =
+        JSFieldTypeAnnotation(options, field,
+                              /* is_setter_argument = */ false,
+                              /* force_present = */ false,
+                              /* singular_if_not_packed = */ false,
+                              /* bytes_mode = */ BYTES_DEFAULT);
+    printer->Print(
+        "    /** @type {$type$} */ "
+        "(message.internal_getField($index$))",
+        "index", JSFieldIndex(field), "type", typed_annotation);
+  } else {
+    printer->Print(
+        "    message.get$name$($nolazy$)", "name",
+        JSGetterName(options, field, BYTES_U8),
+        // No lazy creation for maps containers -- fastpath the empty case.
+        "nolazy", field->is_map() ? "true" : "");
+  }
 }
 
 void Generator::GenerateClassSerializeBinaryField(
@@ -3292,15 +3303,20 @@ void Generator::GenerateClassSerializeBinaryField(
   if (field->is_map()) {
     const FieldDescriptor* key_field = MapFieldKey(field);
     const FieldDescriptor* value_field = MapFieldValue(field);
+    printer->Print("jspb.internal.public_for_gencode.serializeMapToBinary(\n");
+    GenerateClassSerializeBinaryFieldAccess(options, printer, field);
     printer->Print(
-        "    f.serializeBinary($index$, writer, "
-        "$keyWriterFn$, $valueWriterFn$",
+        ",\n    $index$,\n"
+        "    writer,\n"
+        "    $keyWriterFn$,\n"
+        "    $valueWriterFn$",
         "index", absl::StrCat(field->number()), "keyWriterFn",
         JSBinaryWriterMethodName(options, key_field), "valueWriterFn",
         JSBinaryWriterMethodName(options, value_field));
 
     if (value_field->type() == FieldDescriptor::TYPE_MESSAGE) {
-      printer->Print(", $messageType$.serializeBinaryToWriter", "messageType",
+      printer->Print(",\n    $messageType$.serializeBinaryToWriter",
+                     "messageType",
                      GetMessagePath(options, value_field->message_type()));
     }
 
@@ -3429,7 +3445,7 @@ void Generator::GenerateExtension(const GeneratorOptions& options,
           : "undefined");
 
   printer->Print("    $isPacked$);\n", "isPacked",
-                 (field->is_packed() ? "true" : "false"));
+                 (field->is_packable() ? "true" : "false"));
 
   printer->Print(
       "// This registers the extension field with the extended class, so that\n"
@@ -3625,26 +3641,7 @@ void Generator::GenerateFile(const GeneratorOptions& options,
     if (options.import_style == GeneratorOptions::kImportCommonJsStrict) {
       printer->Print("var proto = {};\n\n");
     } else {
-      // To get the global object we call a function with .call(null), this will
-      // set "this" inside the function to the global object. This does not work
-      // if we are running in strict mode ("use strict"), so we fallback to the
-      // following things (in order from first to last):
-      // - globalThis: cross-platform standard, might not be defined in older
-      // versions of browsers
-      // - window: defined in browsers
-      // - global: defined in most server side environments like NodeJS
-      // - self: defined inside Web Workers (WorkerGlobalScope)
-      // - Function('return this')(): this will work on most platforms, but it
-      // may be blocked by things like CSP.
-      //   Function('') is almost the same as eval('')
-      printer->Print(
-          "var global =\n"
-          "    (typeof globalThis !== 'undefined' && globalThis) ||\n"
-          "    (typeof window !== 'undefined' && window) ||\n"
-          "    (typeof global !== 'undefined' && global) ||\n"
-          "    (typeof self !== 'undefined' && self) ||\n"
-          "    (function () { return this; }).call(null) ||\n"
-          "    Function('return this')();\n\n");
+      printer->Print("var global = globalThis;\n\n");
     }
 
     for (int i = 0; i < file->dependency_count(); i++) {

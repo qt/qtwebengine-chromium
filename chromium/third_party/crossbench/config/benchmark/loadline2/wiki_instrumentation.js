@@ -5,6 +5,7 @@
 if (window.location.href === 'https://en.m.wikipedia.org/wiki/Taylor_Swift') {
   const language_button_selector = '.language-selector';
   const language_xpath = '//span[text()=\'Afrikaans\']';
+  const image_selector = '.infobox-image';
 
   const button_observer = new MutationObserver(mutations => {
     const button = document.querySelector(language_button_selector);
@@ -26,10 +27,20 @@ if (window.location.href === 'https://en.m.wikipedia.org/wiki/Taylor_Swift') {
     if (!language) {
       return;
     }
-    performance.mark('LoadLine2/wikipedia_article/language_shown');
+    performance.mark('LoadLine2/wikipedia_article/interactive');
     language_observer.disconnect();
+  });
+
+  const image_observer = new MutationObserver(mutations => {
+    const image = document.querySelector(image_selector);
+    if (!image) {
+      return;
+    }
+    image_observer.disconnect();
+    performance.mark('LoadLine2/wikipedia_article/visual');
   });
 
   button_observer.observe(document, {childList: true, subtree: true});
   language_observer.observe(document, {childList: true, subtree: true});
+  image_observer.observe(document, {childList: true, subtree: true});
 }

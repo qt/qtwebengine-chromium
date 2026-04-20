@@ -27,8 +27,8 @@ _MAC_TRACE_TEMPLATE_PATH: Final[pth.LocalPath] = pth.LocalPath(
 
 _XPATH_EXPRESSION: Final[str] = (
     "//trace-toc/run/data/table["
-    "@category=\"PointsOfInterest\" and @schema=\"os-signpost\"]|"
-    "//trace-toc/run/data/table[@schema=\"cpu-profile\"]")
+    '@category="PointsOfInterest" and @schema="os-signpost"]|'
+    '//trace-toc/run/data/table[@schema="cpu-profile"]')
 
 
 class MacOSProfilingContext(PosixProfilingContext):
@@ -82,7 +82,10 @@ class MacOSProfilingContext(PosixProfilingContext):
   def teardown(self) -> ProbeResult:
     self.stop_process()
     trace_xml_path = self._export_trace_xml()
-    return self.browser_result(file=(self.result_path,), xml=(trace_xml_path,))
+    return self.browser_result(traces=(
+        self.result_path,
+        trace_xml_path,
+    ))
 
   def _export_trace_xml(self) -> pth.AnyPath:
     trace_xml_path = self.result_path.with_name("profile.trace.xml")

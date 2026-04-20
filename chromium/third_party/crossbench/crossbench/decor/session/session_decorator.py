@@ -20,7 +20,7 @@ class SessionDecorator(base.Decorator[Run]):
     return self._targets
 
   @abc.abstractmethod
-  def get_context(self: Self, target: Run) -> SessionDecoratorContext[Self]:
+  def create_context(self: Self, target: Run) -> SessionDecoratorContext[Self]:
     pass
 
 

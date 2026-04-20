@@ -20,29 +20,29 @@ classifiers = [
 [tool.poetry_bumpversion.file."crossbench/__init__.py"]
 
 [tool.poetry.dependencies]
-colorama = "^0.4.6"
-google-auth = "^2.36.0"
-hjson = "^3.1.0"
-immutabledict = "^4.1.0"
-mobly = "^1.12.4"
-numpy = "^1.23.5"
-ordered-set = "^4.1.0"
-pandas = "^2.2.3"
-perfetto = "^0.13.1"
-protobuf = "~5.29.3"
-psutil = "^5.9.1"
+colorama = "0.4.6"
+google-auth = "2.40.3"
+google-cloud-storage = "3.3.1"
+hjson = "3.1.0"
+immutabledict = "4.1.0"
+mobly = "1.12.4"
+numpy = "1.26.4"
+ordered-set = "4.1.0"
+pandas = "2.2.3"
+perfetto = "0.13.1"
+protobuf = "~6.32.0"
+psutil = "5.8.0"
+pygments = "2.14.0"
 python = ">=3.11,<3.13"
 python-dateutil = "2.9.0"
-pytz = "^2024.1"
-requests = "^2.32.3"
-selenium = "^4.34.0"
-snippet-uiautomator = "^1.1.2"
-tabulate = "^0.8.10"
-websockets = "^11.0.3"
-pygments = "^2.14.0"
-sqlalchemy = "^2.0.38"
-xlsxwriter = "^3.2.2"
-google-cloud-storage = "^3.2.0"
+pytz = "2024.1"
+requests = "2.32.5"
+selenium = "4.35.0"
+snippet-uiautomator = "1.1.2"
+sqlalchemy = "2.0.4"
+tabulate = "0.9.0"
+websockets = "13.0"
+xlsxwriter = "3.2.2"
 
 [tool.poetry.scripts]
 crossbench = 'crossbench.scripts:crossbench'
@@ -51,21 +51,22 @@ cb_btp = 'crossbench.scripts:cb_btp'
 cb_validate_hjson= 'crossbench.scripts:cb_validate_hjson'
 
 [tool.poetry.group.dev.dependencies]
-debugpy = "^1.6.3"
-isort = "^5.10.1"
-pyfakefs = "^5.7.3"
-pylint = "^3.0"
-pytest = "^7.4.2"
-pytest-cov = "^4.0.0"
-pytest-xdist = "^3.3.1"
-pytest-subtests = "^0.11.0"
-mypy = "^1.8"
-pytest-profiling = "^1.7.0"
-types-psutil = "^7.0.0.20250601"
+debugpy = "1.8.0"
+isort = "5.10.1"
+mypy = "1.13.0"
+pyfakefs = "5.7.3"
+pyrefly = "^0.31.0"
+pytest = "8.3.4"
+pytest-cov = "4.0.0"
+pytest-profiling = "1.7.0"
+pytest-subtests = "0.11.0"
+pytest-xdist = "3.3.1"
+ruff = "^0.12.11"
+types-protobuf = "^6.30.2.20250914"
+types-psutil = "5.8.23"
 
 [tool.poetry.group.dev-pytype.dependencies]
 python = ">=3.11,<3.12"
-pytype = { version = "^2024.10.11", markers = "sys_platform != 'win32'" }
 
 [build-system]
 requires = ["poetry_core>=1.1.5"]
@@ -79,11 +80,93 @@ testpaths = [
     "tests",
 ]
 
+[tool.ruff]
+# The `exclude` list takes a glob pattern of directories and files to ignore.
+# The paths are relative to the project root.
+exclude = [
+    "protoc/gen/*",
+]
+target-version = "py311"
 
 [tool.ruff.lint]
-extend-select = ["TCH"]
+extend-select = [
+    "TCH",  # flake8-type-checking
+    "ANN",  # flake8-annotations
+    "B",    # flake8-bugbear
+    "YTT",  # flake8-2020 sys.version misuse
+    "S",    # flake8-bandit security checks
+    "T10",  # flake8-debugger
+    "C4",   # flake8-comprehensions
+    "BLE",  # flake8-blind-except
+    "FA",   # flake8-future-annotations
+    "ISC",  # flake8-implicit-str-concat
+    "ICN",  # flake8-import-conventions
+    "LOG",  # flake8-logging
+    "G",    # flake8-logging-format
+    "INP",  # flake8-no-pep420
+    "PIE",  # flake8-pie
+    "PYI",  # flake8-pyi
+    "Q",    # flake8-quotes
+    "RSE",  # flake8-raise
+    "RET",  # flake8-return
+    "SLF",  # flake8-self
+    "SIM",  # flake8-simplify
+    "TID",  # flake8-tidy-imports.
+    "TC",   # flake8-type-checking,
+    "ARG",  # flake8-unused-arguments.
+    "PTH",  # lake8-use-pathlib
+    "FLY",  # flynt (static string join)
+    "I",    # isort
+    "N",    # pep8-naming
+    "PERF", # Perflint
+    "E",    # pycodestyle error
+    "W",    # pycodestyle warning
+    "F",    # pyflakes
+    "PLE",  # pylint error
+    "PLC",  # pylint refactor
+    "PLW",  # pylint warnings
+    # TODO: Add more categories
+]
 ignore = [
     "TC006", # Allow non-string type in casts
+    "ANN002", # Missing type annotation for `**args`
+    "ANN003", # Missing type annotation for `**kwargs`
+    "ANN401", # Using typing.Any
+    "B027",   # empty-method-without-abstract-decorator
+    "B019",   # Use of `functools.lru_cache` or `functools.cache` on methods can lead to memory leaks
+    "LOG015", # Disallow root-logger-calls
+    "RET504", # unnecessary-assign
+    "SIM300", # allow yoda-conditions
+    "SIM117", # Allow nested with scopes
+    "SIM102", # Allow nested ifs
+    "SIM108", # Don't force ternary operator
+    "SIM103", # Don't force folded bool returns
+    "E501",   # Line too long
+    "PLW2901", # loop variable overwrite
+    # TODO: try to clean up code for these errors
+    "B008",   # Do not perform function call in default arguments
+    "S101",   # Do not use assert
+    "S603",   # Untrusted shell inputs.
+    "ARG005", # Unused lambda argument
+    "I001",   # Imports sorting and formatting (conflicts if git cl format)
+    "N818",   # Exceptions subclass names must end in "Error"
+    "PERF401", # force list comprehensions
+]
+
+[tool.ruff.lint.per-file-ignores]
+"PRESUBMIT.py" = [
+    "N",
+]
+"tests/*" = [
+    "ANN",      # tests are allowed to skip type annotations
+    "S",        # general security issues and input validation.
+    "B018",     # Found useless attribute access
+    "BLE",      # flake8-blind-except
+    "SLF001",   # Allow private field access for tests.
+    "ARG",      # Allow unused args in tests
+]
+"crossbench/action_runner/chromeos_scripts/*" = [
+    "INP001",   # Need module __init__.py
 ]
 
 [tool.ruff.lint.flake8-type-checking]
@@ -94,6 +177,11 @@ runtime-evaluated-base-classes = [
     "crossbench.results_db.records.base.BaseRecord"
 ]
 
+[tool.ruff.lint.flake8-annotations]
+mypy-init-return = true
+
 [tool.ruff.lint.isort]
 required-imports = [ "from __future__ import annotations" ]
 
+[tool.pyre]
+source_directories = ["crossbench"]

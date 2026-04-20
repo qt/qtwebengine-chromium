@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -26,7 +26,7 @@ class V8TurbolizerProbe(ChromiumProbe):
   Note: This probe can have significant overhead.
   Tool: https://v8.dev/tools/head/turbolizer
   """
-  NAME = "v8.turbolizer"
+  NAME: ClassVar = "v8.turbolizer"
   RESULT_LOCATION = ResultLocation.BROWSER
 
   @override

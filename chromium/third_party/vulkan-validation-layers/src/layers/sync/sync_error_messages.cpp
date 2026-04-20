@@ -17,15 +17,13 @@
 
 #include "sync/sync_error_messages.h"
 #include "sync/sync_commandbuffer.h"
-#include "sync/sync_image.h"
 #include "sync/sync_validation.h"
 #include "error_message/error_strings.h"
-#include "state_tracker/buffer_state.h"
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/pipeline_state.h"
+#include "state_tracker/render_pass_state.h"
 
 #include <cassert>
-#include <cinttypes>
 #include <sstream>
 
 namespace syncval {
@@ -362,7 +360,9 @@ std::string ErrorMessages::RenderPassLayoutTransitionVsStoreOrResolveError(const
     AdditionalMessageInfo additional_info;
     additional_info.properties.Add(kPropertyOldLayout, old_layout_str);
     additional_info.properties.Add(kPropertyNewLayout, new_layout_str);
-    additional_info.access_action = "performs image layout transition";
+    additional_info.access_action =
+        "performs image layout transition during " +
+        validator_.FormatHandle(cb_context.GetCurrentRenderPassContext()->GetRenderPassState()->Handle());
     additional_info.brief_description_end_text = "during store/resolve operation in subpass ";
     additional_info.brief_description_end_text += std::to_string(store_resolve_subpass);
 
@@ -380,7 +380,9 @@ std::string ErrorMessages::RenderPassFinalLayoutTransitionError(const HazardResu
     AdditionalMessageInfo additional_info;
     additional_info.properties.Add(kPropertyOldLayout, old_layout_str);
     additional_info.properties.Add(kPropertyNewLayout, new_layout_str);
-    additional_info.access_action = "performs final image layout transition";
+    additional_info.access_action =
+        "performs final image layout transition during " +
+        validator_.FormatHandle(cb_context.GetCurrentRenderPassContext()->GetRenderPassState()->Handle());
     return Error(hazard, cb_context, command, resource_description, "RenderPassFinalLayoutTransitionError", additional_info);
 }
 
@@ -396,7 +398,9 @@ std::string ErrorMessages::RenderPassFinalLayoutTransitionVsStoreOrResolveError(
     AdditionalMessageInfo additional_info;
     additional_info.properties.Add(kPropertyOldLayout, old_layout_str);
     additional_info.properties.Add(kPropertyNewLayout, new_layout_str);
-    additional_info.access_action = "performs final image layout transition";
+    additional_info.access_action =
+        "performs final image layout transition during " +
+        validator_.FormatHandle(cb_context.GetCurrentRenderPassContext()->GetRenderPassState()->Handle());
     additional_info.brief_description_end_text = "during store/resolve operation in subpass ";
     additional_info.brief_description_end_text += std::to_string(store_resolve_subpass);
 

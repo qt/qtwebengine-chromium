@@ -25,6 +25,7 @@
 #include <vector>
 #include "containers/range.h"
 #include "containers/range_map.h"
+#include "containers/small_range_map.h"
 #include "containers/small_vector.h"
 #include "vulkan/vulkan.h"
 
@@ -37,7 +38,6 @@ namespace subresource_adapter {
 class RangeEncoder;
 using IndexType = uint64_t;  // TODO: just update to 32 bit, but before collect memory usage stats, perf stats
 using IndexRange = vvl::range<IndexType>;
-using split_op_keep_both = sparse_container::split_op_keep_both;
 
 // Interface for aspect specific traits objects (now isolated in the cpp file)
 class AspectParameters {

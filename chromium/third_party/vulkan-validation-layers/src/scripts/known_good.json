@@ -7,7 +7,7 @@
             "sub_dir": "Vulkan-Headers",
             "build_dir": "Vulkan-Headers/build",
             "install_dir": "Vulkan-Headers/build/install",
-            "commit": "v1.4.323"
+            "commit": "v1.4.328"
         },
         {
             "name": "Vulkan-Utility-Libraries",
@@ -15,7 +15,7 @@
             "sub_dir": "Vulkan-Utility-Libraries",
             "build_dir": "Vulkan-Utility-Libraries/build",
             "install_dir": "Vulkan-Utility-Libraries/build/install",
-            "commit": "v1.4.323",
+            "commit": "v1.4.328",
             "deps": [
                 {
                     "var_name": "VULKAN_HEADERS_INSTALL_DIR",
@@ -29,7 +29,7 @@
             "sub_dir": "SPIRV-Headers",
             "build_dir": "SPIRV-Headers/build",
             "install_dir": "SPIRV-Headers/build/install",
-            "commit": "de1807b7cfa8e722979d5ab7b7445b258dbc1836"
+            "commit": "01e0577914a75a2569c846778c2f93aa8e6feddd"
         },
         {
             "name": "SPIRV-Tools",
@@ -43,7 +43,7 @@
                 "-DSPIRV_SKIP_TESTS=ON",
                 "-DSPIRV_SKIP_EXECUTABLES=OFF"
             ],
-            "commit": "286c4a66d950b6ab78b1ed04b14931ac806da99d"
+            "commit": "7f2d9ee926f98fc77a3ed1e1e0f113b8c9c49458"
         },
         {
             "name": "mimalloc",
@@ -57,7 +57,7 @@
                 "-DMI_BUILD_SHARED=OFF",
                 "-DMI_BUILD_TESTS=OFF"
             ],
-            "commit": "v3.0.3",
+            "commit": "v3.1.5",
             "build_platforms": [
                 "windows"
             ]
@@ -84,7 +84,7 @@
             "sub_dir": "glslang",
             "build_dir": "glslang/build",
             "install_dir": "glslang/build/install",
-            "commit": "f43df42fe69bb38d43625b53e0706bbee43d74b4",
+            "commit": "a57276bf558f5cf94d3a9854ebdf5a2236849a5a",
             "cmake_options": [
                 "-DENABLE_OPT=OFF"
             ],
@@ -99,7 +99,7 @@
             "sub_dir": "Vulkan-Loader",
             "build_dir": "Vulkan-Loader/build",
             "install_dir": "Vulkan-Loader/build/install",
-            "commit": "v1.4.323",
+            "commit": "v1.4.328",
             "build_step": "skip",
             "optional": [
                 "tests"
@@ -112,7 +112,7 @@
             "sub_dir": "Vulkan-Profiles",
             "build_dir": "Vulkan-Profiles/build",
             "install_dir": "Vulkan-Profiles/build/install",
-            "commit": "e0093bc4eabf6212194f96e76ab5e05549035da0",
+            "commit": "v1.4.328",
             "build_step": "skip",
             "optional": [
                 "tests"

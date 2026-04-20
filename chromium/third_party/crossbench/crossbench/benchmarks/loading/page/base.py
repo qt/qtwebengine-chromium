@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import abc
 import datetime as dt
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Final, Optional
 
 from typing_extensions import override
 
@@ -20,8 +20,8 @@ if TYPE_CHECKING:
   from crossbench.cli.config.secrets import Secrets
   from crossbench.runner.run import Run
 
-DEFAULT_DURATION_SECONDS = 15
-DEFAULT_DURATION = dt.timedelta(seconds=DEFAULT_DURATION_SECONDS)
+DEFAULT_DURATION_SECONDS: Final = 15
+DEFAULT_DURATION: Final = dt.timedelta(seconds=DEFAULT_DURATION_SECONDS)
 
 # This is initialized in interactive.py to avoid circular dependencies
 PAGE_LIST: list[Page] = []

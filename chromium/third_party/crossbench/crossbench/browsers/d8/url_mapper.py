@@ -49,6 +49,7 @@ class D8URLMapper:
 
 class DummyURLMapper(D8URLMapper):
   def lookup(self, url: str) -> pth.LocalPath | None:
+    del url
     return None
 
 
@@ -67,4 +68,5 @@ class JetStreamURLMapper(D8URLMapper):
     return MOCK_DIR / "jetstream.js"
 
   def lookup(self, url: str) -> pth.LocalPath:
+    del url
     return self._driver_js

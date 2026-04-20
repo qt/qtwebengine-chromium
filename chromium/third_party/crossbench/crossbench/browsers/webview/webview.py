@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Final, Optional
+from typing import TYPE_CHECKING, Optional
 
 from typing_extensions import override
 
@@ -16,8 +16,6 @@ if TYPE_CHECKING:
   from crossbench import path as pth
   from crossbench.browsers.settings import Settings
   from crossbench.browsers.version import BrowserVersion
-
-WEBVIEW_PROVIDER : Final[str] = "com.google.android.webview.debug"
 
 
 # TODO: crbug.com/393058910 - Replace this Webview class stub placeholder
@@ -33,4 +31,6 @@ class Webview(ChromeWebDriverAndroid, metaclass=abc.ABCMeta):
 
   @override
   def _extract_version(self) -> BrowserVersion:
-    return self.version_cls().parse(self.platform.app_version(WEBVIEW_PROVIDER))
+    webview_provider = self.platform.sh_stdout(
+        "settings", "get", "global", "webview_provider").strip()
+    return self.version_cls().parse(self.platform.app_version(webview_provider))

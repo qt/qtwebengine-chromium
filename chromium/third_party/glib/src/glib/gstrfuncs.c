@@ -416,6 +416,8 @@ g_strndup (const gchar *str,
 
   if (str)
     {
+      g_return_val_if_fail (n < G_MAXSIZE, NULL);
+
       new_str = g_new (gchar, n + 1);
       strncpy (new_str, str, n);
       new_str[n] = '\0';
@@ -440,6 +442,8 @@ g_strnfill (gsize length,
             gchar fill_char)
 {
   gchar *str;
+
+  g_return_val_if_fail (length < G_MAXSIZE, NULL);
 
   str = g_new (gchar, length + 1);
   memset (str, (guchar)fill_char, length);
@@ -1250,7 +1254,7 @@ g_ascii_strtoll (const gchar *nptr,
       return G_MAXINT64;
     }
   else if (negative)
-    return - (gint64) result;
+    return (result == (guint64) G_MININT64) ? G_MININT64 : -(gint64) result;
   else
     return (gint64) result;
 #endif
@@ -1602,29 +1606,6 @@ g_ascii_strup (const gchar *str,
     *s = g_ascii_toupper (*s);
 
   return result;
-}
-
-/**
- * g_str_is_ascii:
- * @str: a string
- *
- * Determines if a string is pure ASCII. A string is pure ASCII if it
- * contains no bytes with the high bit set.
- *
- * Returns: true if @str is ASCII
- *
- * Since: 2.40
- */
-gboolean
-g_str_is_ascii (const gchar *str)
-{
-  gsize i;
-
-  for (i = 0; str[i]; i++)
-    if (str[i] & 0x80)
-      return FALSE;
-
-  return TRUE;
 }
 
 /**
@@ -2210,14 +2191,14 @@ out:
  * It replaces the following special characters in the string @source
  * with their corresponding C escape sequence:
  *
- *  Symbol | Escape
- * ---|---
- *  [U+0008 Backspace](https://en.wikipedia.org/wiki/Backspace) | `\b`
- *  [U+000C Form Feed](https://en.wikipedia.org/wiki/Form_feed) | `\f`
- *  [U+000A Line Feed](https://en.wikipedia.org/wiki/Newline) | `\n`
- *  [U+000D Carriage Return](https://en.wikipedia.org/wiki/Carriage_return) | `\r`
- *  [U+0009 Horizontal Tabulation](https://en.wikipedia.org/wiki/Tab_character) | `\t`
- *  [U+000B Vertical Tabulation](https://en.wikipedia.org/wiki/Vertical_Tab) | `\v`
+ * | Symbol                                                                      | Escape |
+ * |-----------------------------------------------------------------------------|--------|
+ * | [U+0008 Backspace](https://en.wikipedia.org/wiki/Backspace)                 | `\b`   |
+ * | [U+000C Form Feed](https://en.wikipedia.org/wiki/Form_feed)                 | `\f`   |
+ * | [U+000A Line Feed](https://en.wikipedia.org/wiki/Newline)                   | `\n`   |
+ * | [U+000D Carriage Return](https://en.wikipedia.org/wiki/Carriage_return)     | `\r`   |
+ * | [U+0009 Horizontal Tabulation](https://en.wikipedia.org/wiki/Tab_character) | `\t`   |
+ * | [U+000B Vertical Tabulation](https://en.wikipedia.org/wiki/Vertical_Tab)    | `\v`   |
  *
  * It also inserts a backslash (`\`) before any backslash or a double quote (`"`).
  * Additionally all characters in the range 0x01-0x1F (everything
@@ -3276,10 +3257,6 @@ g_strv_contains (const gchar * const *strv,
  *
  * Checks if two arrays of strings contain exactly the same elements in
  * exactly the same order.
- *
- * Elements are compared using [func@GLib.str_equal]. To match independently
- * of order, sort the arrays first (using [func@GLib.qsort_with_data]
- * or similar).
  *
  * Elements are compared using [func@GLib.str_equal]. To match independently
  * of order, sort the arrays first (using [func@GLib.qsort_with_data]

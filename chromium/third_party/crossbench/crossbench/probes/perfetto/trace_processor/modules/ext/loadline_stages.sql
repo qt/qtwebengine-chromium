@@ -1,13 +1,34 @@
 -- Create tables with page loading breakdown into stages for the LoadLine
 -- benchmark.
--- TODO(crbug.com/425325733): Support LoadLine 2 as well.
 
 INCLUDE PERFETTO MODULE ext.loadline_benchmark;
 
+DROP VIEW IF EXISTS loadline_complete;
+CREATE VIEW loadline_complete AS
+SELECT
+  first_navigation_start() + 60e9 / loadline_benchmark_score() AS complete;
+
+-- Find the frame in the pipeline which was chosen as the "loading complete"
+-- moment for the purpose of LoadLine score. The exact end timestamp might
+-- differ a little due to rounding error, so we allow 1ms discrepancy while
+-- matching. This should not match any extra frames since frames are aligned to
+-- vsyncs, and vsync interval is usually 8-17ms.
+DROP VIEW IF EXISTS loadline_frame_displayed;
+CREATE VIEW loadline_frame_displayed AS
+SELECT ts as frame_displayed
+FROM slice, loadline_complete
+WHERE
+  name = 'Display::FrameDisplayed'
+  AND ts BETWEEN complete - 1e6 AND complete + 1e6;
+
 DROP VIEW IF EXISTS loadline_presentation;
 CREATE VIEW loadline_presentation AS
-SELECT
-  first_navigation_start() + 60e9 / loadline_benchmark_score() AS presentation;
+SELECT MAX(a.ts + a.dur) AS presentation
+FROM slice s, ancestor_slice(s.id) a, loadline_frame_displayed
+WHERE
+  s.name = 'Commit'
+  AND a.name = 'PipelineReporter'
+  AND a.ts + a.dur <= frame_displayed;
 
 -- Finds the "Commit sent" moment which is the time when the browser gets the
 -- response from the network stack.
@@ -27,18 +48,13 @@ WHERE
   name = 'DocumentLoader::CommitNavigation'
   AND ts >= first_navigation_start();
 
--- Find the frame in the pipeline which was chosen as the "loading complete"
--- moment for the purpose of LoadLine score. The exact end timestamp might
--- differ a little due to rounding error, so we allow 1ms discrepancy while
--- matching. This should not match any extra frames since frames are aligned to
--- vsyncs, and vsync interval is usually 8-17ms.
 DROP VIEW IF EXISTS loadline_frame;
 CREATE VIEW loadline_frame AS
 SELECT id
 FROM slice, loadline_presentation
 WHERE
   name = 'PipelineReporter'
-  AND ts + dur BETWEEN presentation - 1e6 AND presentation + 1e6
+  AND ts + dur = presentation
   AND COALESCE(
     extract_arg(arg_set_id, 'frame_reporter.state'),
     -- TODO(crbug.com/409484302): Remove once Chrome migrates from
@@ -76,7 +92,9 @@ SELECT
   frame_commit,
   submit_compositor_frame,
   frame_swap,
-  presentation
-FROM loadline_presentation, loadline_request, loadline_renderer_ready,
+  -- Using frame_displayed as presentation moment for consistency with the
+  -- LoadLine metric.
+  frame_displayed as presentation
+FROM loadline_frame_displayed, loadline_request, loadline_renderer_ready,
      loadline_frame_commit, loadline_submit_compositor_frame, loadline_frame_swap;
 

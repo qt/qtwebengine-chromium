@@ -52,9 +52,7 @@ class BrowserDriverType(StrEnumWithHelp):
 
   @property
   def is_remote_driver(self) -> bool:
-    if self in (BrowserDriverType.CHROMEOS_SSH, BrowserDriverType.LINUX_SSH):
-      return True
-    return False
+    return self in (BrowserDriverType.CHROMEOS_SSH, BrowserDriverType.LINUX_SSH)
 
   @property
   def is_local_driver(self) -> bool:
@@ -62,10 +60,8 @@ class BrowserDriverType(StrEnumWithHelp):
 
   @property
   def is_remote_browser(self) -> bool:
-    if self in (BrowserDriverType.ANDROID, BrowserDriverType.CHROMEOS_SSH,
-                BrowserDriverType.LINUX_SSH):
-      return True
-    return False
+    return self in (BrowserDriverType.ANDROID, BrowserDriverType.CHROMEOS_SSH,
+                    BrowserDriverType.LINUX_SSH)
 
   @property
   def is_local_browser(self) -> bool:

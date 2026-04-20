@@ -564,13 +564,15 @@ class Device : public vvl::base::Device {
                                                        const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
                                                        const Context &context) const;
     bool ValidateCreateComputePipelinesFlags(const VkPipelineCreateFlags2 flags, const Location &flags_loc) const;
+    bool ValidateCreatePipelinesFlags2(const VkPipelineCreateFlags flags1, const VkPipelineCreateFlags2 flags2,
+                                       const Location &flags1_loc) const;
     bool manual_PreCallValidateCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                       const VkComputePipelineCreateInfo *pCreateInfos,
                                                       const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
                                                       const Context &context) const;
 
     bool ValidateSamplerFilterMinMax(const VkSamplerCreateInfo &create_info, const Location &create_info_loc) const;
-    bool ValidateSamplerCustomBoarderColor(const VkSamplerCreateInfo &create_info, const Location &create_info_loc) const;
+    bool ValidateSamplerCustomBorderColor(const VkSamplerCreateInfo &create_info, const Location &create_info_loc) const;
     bool ValidateSamplerSubsampled(const VkSamplerCreateInfo &create_info, const Location &create_info_loc) const;
     bool ValidateSamplerImageProcessingQCOM(const VkSamplerCreateInfo &create_info, const Location &create_info_loc) const;
     bool ValidateSamplerCreateInfo(const VkSamplerCreateInfo &create_info, const Location &create_info_loc,
@@ -1180,6 +1182,18 @@ class Device : public vvl::base::Device {
     bool manual_PreCallValidateCmdConvertCooperativeVectorMatrixNV(VkCommandBuffer commandBuffer, uint32_t infoCount,
                                                                    const VkConvertCooperativeVectorMatrixInfoNV *pInfos,
                                                                    const Context &context) const;
+
+    bool manual_PreCallValidateCmdBuildClusterAccelerationStructureIndirectNV(
+        VkCommandBuffer commandBuffer, const VkClusterAccelerationStructureCommandsInfoNV *pInfo, const Context &context) const;
+
+    bool manual_PreCallValidateGetClusterAccelerationStructureBuildSizesNV(VkDevice device,
+                                                                           const VkClusterAccelerationStructureInputInfoNV *pInfo,
+                                                                           VkAccelerationStructureBuildSizesInfoKHR *pSizeInfo,
+                                                                           const Context &context) const;
+
+    bool manual_PreCallValidateCmdBuildPartitionedAccelerationStructuresNV(
+        VkCommandBuffer commandBuffer, const VkBuildPartitionedAccelerationStructureInfoNV *pBuildInfo,
+        const Context &context) const;
 
 #include "generated/stateless_device_methods.h"
 };

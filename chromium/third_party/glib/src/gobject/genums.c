@@ -143,10 +143,10 @@ value_flags_enum_lcopy_value (const GValue *value,
 /**
  * g_enum_register_static:
  * @name: A nul-terminated string used as the name of the new type.
- * @const_static_values: An array of #GEnumValue structs for the possible
- *  enumeration values. The array is terminated by a struct with all
- *  members being 0. GObject keeps a reference to the data, so it cannot
- *  be stack-allocated.
+ * @const_static_values: (array zero-terminated=1): An array of
+ *  #GEnumValue structs for the possible enumeration values. The array is
+ *  terminated by a struct with all members being 0. GObject keeps a
+ *  reference to the data, so it cannot be stack-allocated.
  *
  * Registers a new static enumeration type with the name @name.
  *
@@ -187,9 +187,10 @@ g_enum_register_static (const gchar	 *name,
 /**
  * g_flags_register_static:
  * @name: A nul-terminated string used as the name of the new type.
- * @const_static_values: An array of #GFlagsValue structs for the possible
- *  flags values. The array is terminated by a struct with all members being 0.
- *  GObject keeps a reference to the data, so it cannot be stack-allocated.
+ * @const_static_values: (array zero-terminated=1): An array of
+ *  #GFlagsValue structs for the possible flags values. The array is
+ *  terminated by a struct with all members being 0. GObject keeps a
+ *  reference to the data, so it cannot be stack-allocated.
  *
  * Registers a new static flags type with the name @name.
  *
@@ -231,9 +232,9 @@ g_flags_register_static (const gchar	   *name,
  * g_enum_complete_type_info:
  * @g_enum_type: the type identifier of the type being completed
  * @info: (out callee-allocates): the #GTypeInfo struct to be filled in
- * @const_values: An array of #GEnumValue structs for the possible
- *  enumeration values. The array is terminated by a struct with all
- *  members being 0.
+ * @const_values: (array zero-terminated=1): An array of #GEnumValue
+ *  structs for the possible enumeration values. The array is terminated
+ *  by a struct with all members being 0.
  *
  * This function is meant to be called from the `complete_type_info`
  * function of a #GTypePlugin implementation, as in the following
@@ -277,9 +278,9 @@ g_enum_complete_type_info (GType	     g_enum_type,
  * g_flags_complete_type_info:
  * @g_flags_type: the type identifier of the type being completed
  * @info: (out callee-allocates): the #GTypeInfo struct to be filled in
- * @const_values: An array of #GFlagsValue structs for the possible
- *  enumeration values. The array is terminated by a struct with all
- *  members being 0.
+ * @const_values: (array zero-terminated=1): An array of #GFlagsValue
+ *  structs for the possible enumeration values. The array is terminated
+ *  by a struct with all members being 0.
  *
  * This function is meant to be called from the complete_type_info()
  * function of a #GTypePlugin implementation, see the example for

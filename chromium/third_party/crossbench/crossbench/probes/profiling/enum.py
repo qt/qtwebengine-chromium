@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import enum
-from typing import Optional
+from typing import Any, Optional
 
 from crossbench.str_enum_with_help import StrEnumWithHelp
 
@@ -14,7 +14,7 @@ from crossbench.str_enum_with_help import StrEnumWithHelp
 class CleanupMode(StrEnumWithHelp):
 
   @classmethod
-  def _missing_(cls, value) -> Optional[CleanupMode]:
+  def _missing_(cls, value: Any) -> Optional[CleanupMode]:
     if value is True:
       return CleanupMode.ALWAYS
     if value is False:

@@ -12,7 +12,7 @@ import shlex
 import subprocess
 import threading
 import time
-from typing import TYPE_CHECKING, Final, Optional, Sequence
+from typing import IO, TYPE_CHECKING, Final, Optional, Sequence
 
 from crossbench.helper.state import BaseState, StateMachine
 
@@ -22,18 +22,18 @@ if TYPE_CHECKING:
 
 PROMPT: Final[str] = "d8> "
 READ_LEN: Final[int] = len(PROMPT)
-DEFAULT_TIMEOUT = dt.timedelta(seconds=10)
+DEFAULT_TIMEOUT: Final = dt.timedelta(seconds=10)
 
 
 class BackgroundReader(threading.Thread):
 
-  def __init__(self, stream, read_len: int) -> None:
+  def __init__(self, stream: IO[str], read_len: int) -> None:
     super().__init__()
     self.print_output: bool = False
     self.daemon = True
-    self._queue: queue.Queue[str] = queue.Queue()
-    self._stream = stream
-    self._read_len: int = read_len
+    self._queue: Final[queue.Queue[str]] = queue.Queue()
+    self._stream: Final[IO[str]] = stream
+    self._read_len: Final[int] = read_len
 
   def run(self) -> None:
     while True:
@@ -55,12 +55,12 @@ class State(BaseState):
 
 
 class D8Shell:
-  # pylint: disable=redefined-builtin
+
 
   def __init__(self,
                platform: plt.Platform,
                d8_bin: pth.LocalPath,
-               flags: Sequence[str] = tuple(),
+               flags: Sequence[str] = (),
                cwd: Optional[pth.LocalPath] = None):
     self._state = StateMachine(State.INITIAL)
     self._platform = platform
@@ -73,7 +73,7 @@ class D8Shell:
     cmd = [str(d8_bin), *flags]
     logging.debug("SHELL: %s", shlex.join(map(str, cmd)))
     logging.debug("CWD: %s", cwd)
-    self._process = subprocess.Popen(  # pylint: disable=consider-using-with
+    self._process = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,

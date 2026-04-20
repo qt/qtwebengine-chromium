@@ -15,7 +15,8 @@ import re
 import shlex
 import subprocess
 import sys
-from typing import IO, TYPE_CHECKING, Iterator, Optional, Self, TypeVar
+from typing import (IO, TYPE_CHECKING, Final, Iterator, Optional, Self, Type,
+                    TypeVar)
 
 from typing_extensions import override
 
@@ -28,19 +29,22 @@ from crossbench.network.traffic_shaping.base import TrafficShaper
 from crossbench.parse import NumberParser, PathParser
 
 if TYPE_CHECKING:
+  from types import TracebackType
+
   from crossbench.browsers.attributes import BrowserAttributes
   from crossbench.network.base import Network
   from crossbench.path import AnyPath, LocalPath
   from crossbench.plt.base import Platform
   from crossbench.plt.types import ListCmdArgs
   from crossbench.runner.groups.session import BrowserSessionRunGroup
+  TsProxyTrafficShaperT = TypeVar(
+      "TsProxyTrafficShaperT", bound="TsProxyTrafficShaper")
 
 fcntl = None
 try:
   import fcntl  # type: ignore
 except ModuleNotFoundError as not_found:
   logging.debug("No fcntl support %s", not_found)
-
 
 
 class TsProxyServerError(Exception):
@@ -52,7 +56,7 @@ _PORT_RE: re.Pattern[str] = re.compile(r"Started Socks5 proxy server on "
                                        r"(?P<port>\d+)")
 
 
-def parse_ts_socks_proxy_port(output_line) -> Optional[int]:
+def parse_ts_socks_proxy_port(output_line: str) -> Optional[int]:
   if match := _PORT_RE.match(output_line):
     return int(match.group("port"))
   return None
@@ -79,9 +83,10 @@ class TsProxyServer:
                out_kbps: Optional[int] = None,
                window: Optional[int] = None,
                verbose: bool = True) -> None:
-    self._platform = platform
+    self._platform: Final[Platform] = platform
     self._proc: TsProxyProcess | None = None
-    self._ts_proxy_path = PathParser.existing_file_path(ts_proxy_path)
+    self._ts_proxy_path: Final[LocalPath] = PathParser.existing_file_path(
+        ts_proxy_path)
     self._socks_proxy_port = socks_proxy_port
     self._host = host
     self._http_port = http_port
@@ -90,7 +95,7 @@ class TsProxyServer:
     self._in_kbps = in_kbps
     self._out_kbps = out_kbps
     self._window = window
-    self._verbose = verbose
+    self._verbose: Final[bool] = verbose
     self.verify_ports(http_port, https_port)
 
   @classmethod
@@ -167,27 +172,28 @@ class TsProxyServer:
     self.start()
     return self
 
-  def __exit__(self, unused_exc_type, unused_exc_val, unused_exc_tb) -> None:
+  def __exit__(self, exc_type: Optional[Type[BaseException]],
+               exc_value: Optional[BaseException],
+               traceback: Optional[TracebackType]) -> None:
     self.stop()
 
 
 class TsProxyProcess:
   """Separate wrapper around the ts_proxy to simplify pytype testing."""
 
-  def __init__(
-      self,
-      platform: Platform,
-      ts_proxy_path: LocalPath,
-      host: Optional[str] = None,
-      socks_proxy_port: Optional[int] = None,
-      http_port: Optional[int] = None,
-      https_port: Optional[int] = None,
-      rtt_ms: Optional[int] = None,
-      in_kbps: Optional[int] = None,
-      out_kbps: Optional[int] = None,
-      window: Optional[int] = None,
-      verbose: bool = False,
-      timeout: int | float = ts_proxy_settings.DEFAULT_TIMEOUT) -> None:
+  def __init__(self,
+               platform: Platform,
+               ts_proxy_path: LocalPath,
+               host: Optional[str] = None,
+               socks_proxy_port: Optional[int] = None,
+               http_port: Optional[int] = None,
+               https_port: Optional[int] = None,
+               rtt_ms: Optional[int] = None,
+               in_kbps: Optional[int] = None,
+               out_kbps: Optional[int] = None,
+               window: Optional[int] = None,
+               verbose: bool = False,
+               timeout: float = ts_proxy_settings.DEFAULT_TIMEOUT) -> None:
     self._platform = platform
     """Start TsProxy server and verify that it started."""
     cmd: ListCmdArgs = [
@@ -231,7 +237,7 @@ class TsProxyProcess:
     self._verify_default_encoding()
     # In python3 universal_newlines forces subprocess to encode/decode,
     # allowing per-line buffering.
-    process = subprocess.Popen(  # pylint: disable=consider-using-with
+    process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stdin=subprocess.PIPE,
@@ -249,7 +255,7 @@ class TsProxyProcess:
       self._stdin: IO[str] = stdin
     else:
       raise RuntimeError("Missing stdin")
-    if fcntl:  # pylint: disable=using-constant-test
+    if fcntl:
       self._setup_non_blocking_io()
     self._wait_for_startup(timeout)
 
@@ -259,7 +265,7 @@ class TsProxyProcess:
     assert fcntl, "Did not load fcntl module"
     fd = self._stdout.fileno()
     fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-    fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)  # pylint: disable=no-member
+    fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
   @property
   def socks_proxy_port(self) -> int:
@@ -274,7 +280,7 @@ class TsProxyProcess:
     if encoding != "UTF-8":
       logging.warning("Decoding will use %s instead of UTF-8", encoding)
 
-  def _wait_for_startup(self, timeout: int | float) -> None:
+  def _wait_for_startup(self, timeout: float) -> None:
     for _ in wait.wait_with_backoff(timeout):
       if self._has_started():
         logging.info("TsProxy: port=%i", self._socks_proxy_port)
@@ -296,7 +302,7 @@ class TsProxyProcess:
     self._socks_proxy_port = NumberParser.port_number(port, "socks_proxy_port")
     return True
 
-  def _read_line_ts_proxy_stdout(self, timeout: int | float) -> str:
+  def _read_line_ts_proxy_stdout(self, timeout: float) -> str:
     for _ in wait.wait_with_backoff(timeout):
       try:
         return self._stdout.readline().strip()
@@ -304,10 +310,9 @@ class TsProxyProcess:
         logging.debug("TsProxy: Error while reading tsproxy line: %s", io_error)
     return ""
 
-  def _send_command(
-      self,
-      command: str,
-      timeout: int | float = ts_proxy_settings.DEFAULT_TIMEOUT) -> None:
+  def _send_command(self,
+                    command: str,
+                    timeout: float = ts_proxy_settings.DEFAULT_TIMEOUT) -> None:
     logging.debug("TsProxy: Sending command to ts_proxy_server: %s", command)
     self._stdin.write(f"{command}\n")
     command_output = self._wait_for_status_response(timeout)
@@ -317,7 +322,7 @@ class TsProxyProcess:
     if not success:
       raise TsProxyServerError(f"Failed to execute command: {command}")
 
-  def _wait_for_status_response(self, timeout: int | float) -> list[str]:
+  def _wait_for_status_response(self, timeout: float) -> list[str]:
     logging.debug("TsProxy: waiting for status response")
     command_output = []
     for _ in wait.wait_with_backoff(timeout):
@@ -335,7 +340,7 @@ class TsProxyProcess:
       in_kbps: Optional[int] = None,
       out_kbps: Optional[int] = None,
       window: Optional[int] = None,
-      timeout: float | int = ts_proxy_settings.DEFAULT_TIMEOUT) -> None:
+      timeout: float = ts_proxy_settings.DEFAULT_TIMEOUT) -> None:
     if rtt_ms is not None and self._rtt_ms != rtt_ms:
       assert rtt_ms >= 0, f"Invalid rtt value: {rtt_ms}"
       self._send_command(f"set rtt {rtt_ms}", timeout)
@@ -366,8 +371,6 @@ class TsProxyProcess:
     return err
 
 
-TsProxyTrafficShaperT = TypeVar(
-    "TsProxyTrafficShaperT", bound="TsProxyTrafficShaper")
 
 class TsProxyTrafficShaper(TrafficShaper):
 
@@ -401,8 +404,8 @@ class TsProxyTrafficShaper(TrafficShaper):
 
   @contextlib.contextmanager
   @override
-  def open(self: TsProxyTrafficShaperT, network: Network,
-           session: BrowserSessionRunGroup) -> Iterator[TsProxyTrafficShaperT]:
+  def open(self, network: Network,
+           session: BrowserSessionRunGroup) -> Iterator[Self]:
     with exception.annotate("Starting tsproxy traffic shaping"):
       if not network.is_live:
         self._ts_proxy = self._create_remapping_ts_proxy(network)
@@ -415,7 +418,7 @@ class TsProxyTrafficShaper(TrafficShaper):
 
   @contextlib.contextmanager
   @override
-  def pause(self):
+  def pause(self) -> Iterator[None]:
     old_settings = {
         "rtt_ms": self._ts_proxy.rtt_ms,
         "in_kbps": self._ts_proxy.in_kbps,
@@ -426,13 +429,13 @@ class TsProxyTrafficShaper(TrafficShaper):
       logging.info("TRAFFIC SHAPING: Pausing")
       self._ts_proxy.set_traffic_settings(0, 0, 0,
                                           ts_proxy_settings.DEFAULT_WINDOW_SIZE)
-      yield None
+      yield
     finally:
       logging.info("TRAFFIC SHAPING: Restoring settings")
       self._ts_proxy.set_traffic_settings(
           **old_settings, timeout=ts_proxy_settings.DEFAULT_TIMEOUT)
 
-  def _create_remapping_ts_proxy(self, network) -> TsProxyServer:
+  def _create_remapping_ts_proxy(self, network: Network) -> TsProxyServer:
     return TsProxyServer(
         self.host_platform,
         self._ts_proxy.ts_proxy_path,

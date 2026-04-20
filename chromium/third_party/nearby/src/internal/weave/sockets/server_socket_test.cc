@@ -22,6 +22,7 @@
 #include "protobuf-matchers/protocol-buffer-matchers.h"
 #include "gtest/gtest.h"
 #include "absl/synchronization/mutex.h"
+#include "internal/platform/logging.h"
 
 namespace nearby {
 namespace weave {
@@ -52,7 +53,7 @@ class FakeConnection : public Connection {
 
   int GetMaxPacketSize() const override { return max_packet_size_; }
   void Transmit(std::string packet) override {
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     packets_written_.push_back(packet);
     if (instant_transmit_) {
       callback_.on_transmit_cb(absl::OkStatus());
@@ -64,16 +65,16 @@ class FakeConnection : public Connection {
   std::string PollWrittenPacket() {
     absl::SleepFor(absl::Milliseconds(10));
     if (!NoMorePackets()) {
-      absl::MutexLock lock(&mutex_);
+      absl::MutexLock lock(mutex_);
       auto front = packets_written_.front();
       packets_written_.erase(packets_written_.begin());
       return front;
     }
-    NEARBY_LOGS(WARNING) << "No more packets";
+    LOG(WARNING) << "No more packets";
     return "";
   }
   bool NoMorePackets() {
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     return packets_written_.empty();
   }
   void SetInstantTransmit(bool instant_transmit) {
@@ -116,7 +117,7 @@ class ServerSocketTest : public ::testing::Test {
                                      .on_error_cb =
                                          [this](absl::Status status) {
                                            last_error_ = status;
-                                           NEARBY_LOGS(ERROR) << status;
+                                           LOG(ERROR) << status;
                                          },
                                  })) {}
   void SetUp() override { EXPECT_FALSE(socket_.IsConnected()); }

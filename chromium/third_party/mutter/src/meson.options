@@ -51,10 +51,10 @@ option('x11',
   description: 'Enable X11 support'
 )
 
-option('systemd',
+option('logind',
   type: 'boolean',
   value: true,
-  description: 'Enable systemd support'
+  description: 'Enable logind support'
 )
 
 option('native_backend',
@@ -90,7 +90,7 @@ option('wayland_eglstream',
 option('udev',
   type: 'boolean',
   value: true,
-  description: 'Enable udev support when using the X11 backend'
+  description: 'Enable udev support'
 )
 
 option('udev_dir',
@@ -223,4 +223,10 @@ option('fonts',
   type: 'boolean',
   value: true,
   description: 'Enable font rendering integration using Pango'
+)
+
+option('bash_completion',
+  type: 'boolean',
+  value: true,
+  description: 'Integrate bash completion for gdctl'
 )

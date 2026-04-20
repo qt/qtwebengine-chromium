@@ -173,7 +173,7 @@ benchmark score reflects the actual user-observable loading speed.
 ### Web Page Replay
 
 To maintain reproducibility, the benchmark uses the
-[web page replay](https://chromium.googlesource.com/catapult/+/HEAD/web_page_replay_go/README.md)
+[web page replay](https://chromium.googlesource.com/webpagereplay/+/HEAD/README.md)
 mechanism. Archives of the web pages are stored in the
 `chrome-partner-telemetry` cloud bucket, so you'll need access to that bucket to
 run the benchmark on recorded pages.
@@ -238,7 +238,7 @@ Adding `run_on_device: false,` to the corresponding network config file
 `config/benchmark/loadline/network_config_tablet.hjson`.
 
 Note golang must be available on the host machine. Check
-[go.mod](https://chromium.googlesource.com/catapult/+/HEAD/web_page_replay_go/go.mod)
+[go.mod](https://chromium.googlesource.com/webpagereplay/+/HEAD/go.mod)
 for the minimum version.
 
 ### Run the benchmark with full set of experimental metrics

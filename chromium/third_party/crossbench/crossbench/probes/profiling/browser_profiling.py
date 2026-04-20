@@ -153,7 +153,8 @@ class BrowserProfilingProbe(Probe):
         env.handle_warning(f"Probe({self}) conflicts with existing "
                            f"env[{env_var_str}]={browser_env[env_var_str]}")
 
-  def get_context(self, run: Run) -> BrowserProfilingProbeContext:
+  @override
+  def create_context(self, run: Run) -> BrowserProfilingProbeContext:
     attributes = run.browser.attributes()
     if attributes.is_chromium_based:
       return ChromiumWebDriverBrowserProfilingProbeContext(self, run)
@@ -241,7 +242,7 @@ class SafariWebdriverBrowserProfilingProbeContext(BrowserProfilingProbeContext):
   @override
   def setup_selenium_options(self, options: BaseOptions) -> None:
     assert isinstance(options, SafariOptions)
-    cast(SafariOptions, options).automatic_profiling = True
+    options.automatic_profiling = True
 
   @override
   def stop(self) -> None:

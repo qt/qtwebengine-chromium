@@ -23,7 +23,7 @@ class RunRecord(BaseRecord):
   __tablename__ = "run"
 
   @classmethod
-  def create(cls, session, run: Run) -> Self:
+  def create(cls, session: orm.Session, run: Run) -> Self:
     return cls(
         index=run.index,
         repetition=run.repetition,

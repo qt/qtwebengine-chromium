@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import TYPE_CHECKING, Final, Type, cast
+from typing import TYPE_CHECKING, ClassVar, Final, Type, cast
 
 from typing_extensions import override
 
@@ -22,7 +22,7 @@ from crossbench.probes.results import (EmptyProbeResult, LocalProbeResult,
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.env.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.runner.run import Run
 
 DEFAULT_REMOTE_PGO_ROOT_PATH: pth.AnyPath = (
@@ -35,7 +35,7 @@ class ChromiumPgoProbe(ChromiumProbe):
     downloads them.
     The resulting data is used to optimize Chromium.
     """
-  NAME = "chromium_pgo"
+  NAME: ClassVar = "chromium_pgo"
 
   _REMOTE_PGO_CACHE_SUFFIX: Final[str] = "cache/pgo_profiles"
 
@@ -66,7 +66,7 @@ class ChromiumPgoProbe(ChromiumProbe):
     flags["--remote-allow-origins"] = "*"
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     super().validate_browser(env, browser)
     self.expect_android(browser)
 
@@ -126,9 +126,7 @@ class ChromiumPgoProbeContextAndroid(ChromiumPgoProbeContext):
         "id": self.PGO_CMD_ID
     }
     logging.debug("Triggering PGO dump.")
-    devtools_client = self._get_devtools_client()
-    # Ensure devtools_client is connected before sending command
-    with devtools_client:
+    with self._get_devtools_client().open() as devtools_client:
       success, _ = devtools_client.send_command(request)
       if success:
         logging.info("PGO dump triggered successfully.")

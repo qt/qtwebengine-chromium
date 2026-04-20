@@ -10,9 +10,10 @@ import os
 import sys
 import textwrap
 import traceback
-from typing import TYPE_CHECKING, Any, Optional, Sequence, Type
+from typing import IO, TYPE_CHECKING, Any, Optional, Sequence, Type, TypeAlias
 
 import tabulate as tbl
+from typing_extensions import override
 
 import crossbench.benchmarks.all as benchmarks
 from crossbench import __version__
@@ -33,9 +34,11 @@ if TYPE_CHECKING:
   from crossbench.benchmarks.base import Benchmark
   from crossbench.browsers.browser import Browser
   from crossbench.cli.subcommand.base import CrossbenchSubcommand
+  from crossbench.cli.types import Subparsers
   from crossbench.parse import LateArgumentError
-  BenchmarkClsT = Type[Benchmark]
-  BrowserLookupTableT = dict[str, tuple[Type[Browser], pth.LocalPath]]
+
+  BenchmarkClass: TypeAlias = Type[Benchmark]
+  BrowserLookupTable: TypeAlias = dict[str, tuple[Type[Browser], pth.LocalPath]]
 
 
 class CrossBenchArgumentError(argparse.ArgumentError):
@@ -67,20 +70,23 @@ class EnableDebuggingAction(argparse.Action):
                namespace: argparse.Namespace,
                values: str | Sequence[Any] | None,
                option_string: Optional[str] = None) -> None:
-    setattr(namespace, "throw", True)
-    setattr(namespace, "verbosity", 3)
-    setattr(namespace, "driver_logging", True)
+    del parser, values, option_string
+    namespace.throw = True
+    namespace.verbosity = 3
+    namespace.driver_logging = True
 
 
 class MainCrossBenchArgumentParser(CrossBenchArgumentParser):
 
-  def print_help(self, file=None) -> None:
+  @override
+  def print_help(self, file: IO[str] | None = None) -> None:
+    file = file or sys.stdout
     super().print_help(file=file)
     self.print_probes(file=file)
     self.print_urls(file=file)
     self.print_example(file=file)
 
-  def print_probes(self, file=None) -> None:
+  def print_probes(self, file: IO[str] = sys.stdout) -> None:
     lines = [
         "Probes can be added and configured for each benchmark.",
         f"Use `{sys.argv[0]} describe probe $PROBE` for the full help.",
@@ -101,16 +107,14 @@ class MainCrossBenchArgumentParser(CrossBenchArgumentParser):
     file.write(textwrap.indent(contents, "    "))
     file.write("\n")
 
-  def print_urls(self, file=None) -> None:
-    file = file or sys.stdout
+  def print_urls(self, file: IO[str] = sys.stdout) -> None:
     file.write("\n")
     file.write("URLS:\n")
     file.write("  Source: https://chromium.googlesource.com/crossbench\n")
     file.write("  Bugs:   "
                "https://issues.chromium.org/u/1/issues/new?component=1456712\n")
 
-  def print_example(self, file=None) -> None:
-    file = file or sys.stdout
+  def print_example(self, file: IO[str] = sys.stdout) -> None:
     file.write("\n")
     file.write("EXAMPLE:\n")
     file.write("  ./cb.py speedometer --browser=chrome-m131 "
@@ -119,7 +123,7 @@ class MainCrossBenchArgumentParser(CrossBenchArgumentParser):
     file.write(f"  See {readme_file} for more details and instructions.\n")
 
 class CrossBenchCLI:
-  BENCHMARKS: tuple[BenchmarkClsT, ...] = (
+  BENCHMARKS: tuple[BenchmarkClass, ...] = (
       benchmarks.EmbedderBenchmark,
       # JetStream:
       benchmarks.JetStream11Benchmark,
@@ -168,7 +172,7 @@ class CrossBenchCLI:
   def __init__(self, enable_logging: bool = True) -> None:
     self._enable_logging: bool = enable_logging
     self._console_handler: logging.StreamHandler | None = None
-    self._benchmark_subcommands: dict[BenchmarkClsT, BenchmarkSubcommand] = {}
+    self._benchmark_subcommands: dict[BenchmarkClass, BenchmarkSubcommand] = {}
     self.parser = MainCrossBenchArgumentParser(
         description=("A cross browser and cross benchmark runner "
                      "with configurable measurement probes.\n"))
@@ -183,7 +187,7 @@ class CrossBenchCLI:
     self._setup_subcommands()
 
   @property
-  def subparsers(self):
+  def subparsers(self) -> Subparsers:
     return self._subparsers
 
   @property
@@ -202,8 +206,7 @@ class CrossBenchCLI:
     self.add_debugging_arguments(self.parser)
     self.add_base_arguments(self.parser)
 
-  def _setup_subparsers(
-      self) -> argparse._SubParsersAction[CrossBenchArgumentParser]:
+  def _setup_subparsers(self) -> Subparsers:
     subparsers = self.parser.add_subparsers(
         title="Subcommands",
         dest="subcommand",
@@ -211,7 +214,7 @@ class CrossBenchCLI:
         parser_class=CrossBenchArgumentParser)
     return subparsers
 
-  def add_base_arguments(self, parser) -> None:
+  def add_base_arguments(self, parser: argparse.ArgumentParser) -> None:
     # Disable colors by default when piped to a file.
     has_color = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
     parser.add_argument(
@@ -223,7 +226,8 @@ class CrossBenchCLI:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}")
 
-  def add_debugging_arguments(self, parser: argparse.ArgumentParser):
+  def add_debugging_arguments(
+      self, parser: argparse.ArgumentParser) -> argparse._ArgumentGroup:
     debug_group = parser.add_argument_group("Verbosity / Debugging Options")
     verbosity_group = debug_group.add_mutually_exclusive_group()
     verbosity_group.add_argument(
@@ -315,8 +319,8 @@ class CrossBenchCLI:
       choices.update(benchmark_cls.aliases())
 
     if not alternative:
-      message, alternative = close_matches_message(subcommand, set(choices))
-      message = f"Unknown subcommand {repr(subcommand)}: {message}"
+      message, alternative = close_matches_message(subcommand, set(choices),
+                                                   "subcommand")
     if not alternative:
       raise argparse.ArgumentError(None, message)
     return [alternative, *argv[1:]]
@@ -375,9 +379,7 @@ class CrossBenchCLI:
   def _detect_terminal_color(self, argv: Sequence[str]) -> bool:
     if "--no-color" in argv:
       return False
-    if os.environ.get("NO_COLOR", ""):
-      return False
-    return True
+    return not os.environ.get("NO_COLOR", "")
 
   def _setup_logging(self) -> None:
     if not self._enable_logging:

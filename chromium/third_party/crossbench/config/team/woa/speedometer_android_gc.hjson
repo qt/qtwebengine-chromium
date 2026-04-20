@@ -16,11 +16,6 @@ buffers {
 data_sources: {
     config {
         name: "track_event"
-        chrome_config {
-            trace_config: "{\"record_mode\":\"record-until-full\"}"
-            privacy_filtering_enabled: false
-            client_priority: USER_INITIATED
-        }
         track_event_config {
             disabled_categories: "*"
             enabled_categories: "disabled-by-default-v8.gc"
@@ -38,12 +33,7 @@ data_sources: {
 }
 data_sources: {
     config {
-        name: "org.chromium.trace_metadata"
-        chrome_config {
-            trace_config: "{\"record_mode\":\"record-until-full\"}"
-            privacy_filtering_enabled: false
-            client_priority: USER_INITIATED
-        }
+        name: "org.chromium.trace_metadata2"
     }
 }
 '''

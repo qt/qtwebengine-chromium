@@ -42,8 +42,8 @@
         "&ecosia",
         "&bing",
         "&yahoo_at",
-        "&qwant",
-        "&privacywall"
+        "&privacywall",
+        "&qwant"
       ]
     },
     "AU": {
@@ -72,10 +72,10 @@
         "&google",
         "&brave",
         "&duckduckgo",
-        "&bing",
         "&ecosia",
-        "&yahoo_emea",
+        "&bing",
         "&qwant",
+        "&yahoo_emea",
         "&privacywall"
       ]
     },
@@ -87,8 +87,8 @@
         "&duckduckgo",
         "&bing",
         "&yep",
-        "&yahoo_emea",
         "&ecosia",
+        "&yahoo_emea",
         "&qwant"
       ]
     },
@@ -221,10 +221,9 @@
       "search_engines": [
         "&google",
         "&brave",
-        "&bing",
         "&duckduckgo",
+        "&bing",
         "&yahoo_emea",
-
         "&ecosia",
         "&qwant",
         "&privacywall"
@@ -238,10 +237,9 @@
         "&brave",
         "&duckduckgo",
         "&bing",
-
         "&ecosia",
-        "&yahoo_emea",
-        "&privacywall"
+        "&privacywall",
+        "&yahoo_emea"
       ]
     },
     "DE": {
@@ -249,13 +247,12 @@
       "search_engines": [
         "&google",
         "&duckduckgo",
-        "&ecosia",
         "&brave",
+        "&ecosia",
         "&bing",
-
+        "&startpage",
         "&yahoo_de",
-        "&qwant",
-        "&startpage"
+        "&qwant"
       ]
     },
     "DK": {
@@ -266,10 +263,9 @@
         "&duckduckgo",
         "&bing",
         "&ecosia",
-
+        "&qwant",
         "&yahoo_dk",
-        "&privacywall",
-        "&qwant"
+        "&privacywall"
       ]
     },
     "DO": {
@@ -310,10 +306,9 @@
         "&duckduckgo",
         "&bing",
         "&ecosia",
-
-        "&yahoo_emea",
         "&qwant",
-        "&privacywall"
+        "&privacywall",
+        "&yahoo_emea"
       ]
     },
     "EG": {
@@ -334,10 +329,9 @@
         "&bing",
         "&duckduckgo",
         "&ecosia",
-
         "&yahoo_es",
-        "&qwant",
-        "&privacywall"
+        "&privacywall",
+        "&qwant"
       ]
     },
     "FI": {
@@ -348,10 +342,9 @@
         "&duckduckgo",
         "&bing",
         "&ecosia",
-
-        "&yahoo_fi",
+        "&qwant",
         "&privacywall",
-        "&qwant"
+        "&yahoo_fi"
       ]
     },
     "FO": {
@@ -371,11 +364,10 @@
         "&brave",
         "&ecosia",
         "&bing",
-        "&qwant",
-
         "&duckduckgo",
-        "&lilo",
-        "&yahoo_fr"
+        "&qwant",
+        "&yahoo_fr",
+        "&lilo"
       ]
     },
     "GB": {
@@ -396,7 +388,6 @@
         "&duckduckgo",
         "&bing",
         "&yahoo_emea",
-
         "&ecosia",
         "&yep",
         "&qwant"
@@ -433,10 +424,9 @@
         "&brave",
         "&duckduckgo",
         "&bing",
-        "&ecosia",
-
-        "&yahoo_emea",
         "&yep",
+        "&ecosia",
+        "&yahoo_emea",
         "&privacywall"
       ]
     },
@@ -448,9 +438,8 @@
         "&bing",
         "&duckduckgo",
         "&ecosia",
-
-        "&yahoo_emea",
         "&yep",
+        "&yahoo_emea",
         "&qwant"
       ]
     },
@@ -472,7 +461,6 @@
         "&brave",
         "&bing",
         "&yahoo_uk",
-
         "&ecosia",
         "&privacywall",
         "&qwant"
@@ -526,10 +514,9 @@
         "&brave",
         "&bing",
         "&ecosia",
-
         "&privacywall",
-        "&yahoo_emea",
-        "&qwant"
+        "&qwant",
+        "&yahoo_emea"
       ]
     },
     "IT": {
@@ -540,7 +527,6 @@
         "&bing",
         "&duckduckgo",
         "&ecosia",
-
         "&yahoo_it",
         "&qwant",
         "&privacywall"
@@ -573,7 +559,7 @@
         "&yahoo_jp",
         "&bing",
         "&duckduckgo",
-        "&coccoc"
+        "&ecosia"
       ]
     },
     "KE": {
@@ -615,17 +601,16 @@
       ]
     },
     "LI": {
-      // Lichtenstein
+      // Liechtenstein
       "search_engines": [
         "&google",
         "&duckduckgo",
         "&brave",
         "&bing",
         "&ecosia",
-
         "&qwant",
-        "&yahoo_emea",
-        "&privacywall"
+        "&privacywall",
+        "&yahoo_emea"
       ]
     },
     "LT": {
@@ -635,9 +620,8 @@
         "&brave",
         "&duckduckgo",
         "&bing",
-        "&yahoo_emea",
-
         "&ecosia",
+        "&yahoo_emea",
         "&qwant",
         "&yep"
       ]
@@ -650,7 +634,6 @@
         "&duckduckgo",
         "&bing",
         "&ecosia",
-
         "&qwant",
         "&yahoo_emea",
         "&privacywall"
@@ -663,10 +646,9 @@
         "&brave",
         "&duckduckgo",
         "&bing",
-        "&yahoo_emea",
-
         "&ecosia",
         "&privacywall",
+        "&yahoo_emea",
         "&qwant"
       ]
     },
@@ -738,10 +720,9 @@
         "&bing",
         "&duckduckgo",
         "&ecosia",
-
         "&yahoo_emea",
-        "&qwant",
-        "&privacywall"
+        "&privacywall",
+        "&qwant"
       ]
     },
     "MX": {
@@ -782,9 +763,8 @@
         "&brave",
         "&bing",
         "&ecosia",
-
-        "&yahoo_nl",
         "&privacywall",
+        "&yahoo_nl",
         "&qwant"
       ]
     },
@@ -795,9 +775,8 @@
         "&duckduckgo",
         "&brave",
         "&bing",
-        "&yahoo_emea",
-
         "&ecosia",
+        "&yahoo_emea",
         "&privacywall",
         "&qwant"
       ]
@@ -869,9 +848,8 @@
         "&brave",
         "&duckduckgo",
         "&bing",
-        "&ecosia",
-
         "&yahoo_emea",
+        "&ecosia",
         "&privacywall",
         "&qwant"
       ]
@@ -894,10 +872,9 @@
         "&bing",
         "&duckduckgo",
         "&ecosia",
-
         "&yep",
-        "&yahoo_emea",
-        "&qwant"
+        "&qwant",
+        "&yahoo_emea"
       ]
     },
     "PY": {
@@ -925,10 +902,9 @@
       "search_engines": [
         "&google",
         "&brave",
-        "&yahoo_emea",
         "&duckduckgo",
+        "&yahoo_emea",
         "&bing",
-
         "&yep",
         "&ecosia",
         "&qwant"
@@ -982,10 +958,9 @@
         "&brave",
         "&bing",
         "&ecosia",
-
         "&yahoo_se",
-        "&privacywall",
-        "&qwant"
+        "&qwant",
+        "&privacywall"
       ]
     },
     "SG": {
@@ -1006,9 +981,8 @@
         "&duckduckgo",
         "&bing",
         "&ecosia",
-
-        "&yahoo_emea",
         "&yep",
+        "&yahoo_emea",
         "&qwant"
       ]
     },
@@ -1020,10 +994,9 @@
         "&duckduckgo",
         "&bing",
         "&seznam",
-
-        "&yahoo_emea",
         "&ecosia",
-        "&privacywall"
+        "&privacywall",
+        "&yahoo_emea"
       ]
     },
     "SV": {
@@ -1168,7 +1141,6 @@
       // Zimbabwe
       "search_engines": ["&google", "&bing", "&yahoo", "&duckduckgo", "&sogou"]
     },
-
     // Fallback / default country. Occupies a user-assignable alpha-2 code,
     // representing unknown or invalid territory.
     // See https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#ZZ
@@ -1177,7 +1149,6 @@
       "search_engines": ["&google", "&bing", "&yahoo"]
     }
   },
-
   "aggregation": {
     "type": "map",
     "name": "kRegionalSettings",

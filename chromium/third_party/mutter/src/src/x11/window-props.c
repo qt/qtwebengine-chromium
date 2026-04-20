@@ -219,8 +219,9 @@ reload_wm_client_machine (MetaWindow    *window,
   if (value->type != META_PROP_VALUE_INVALID)
     priv->wm_client_machine = g_strdup (value->v.str);
 
-  meta_verbose ("Window has client machine \"%s\"",
-                priv->wm_client_machine ? priv->wm_client_machine : "unset");
+  meta_topic (META_DEBUG_X11,
+              "Window has client machine \"%s\"",
+              priv->wm_client_machine ? priv->wm_client_machine : "unset");
 
   if (priv->wm_client_machine == NULL)
     {
@@ -241,8 +242,8 @@ complain_about_broken_client (MetaWindow    *window,
                               MetaPropValue *value,
                               gboolean       initial)
 {
-  meta_warning ("Broken client! Window %s changed client leader window or SM client ID",
-                window->desc);
+  g_warning ("Window %s changed client leader window or SM client ID",
+             window->desc);
 }
 
 static void
@@ -298,8 +299,9 @@ reload_icon_geometry (MetaWindow    *window,
     {
       if (value->v.cardinal_list.n_cardinals != 4)
         {
-          meta_verbose ("_NET_WM_ICON_GEOMETRY on %s has %d values instead of 4",
-                        window->desc, value->v.cardinal_list.n_cardinals);
+          meta_topic (META_DEBUG_X11,
+                      "_NET_WM_ICON_GEOMETRY on %s has %d values instead of 4",
+                      window->desc, value->v.cardinal_list.n_cardinals);
         }
       else
         {
@@ -373,8 +375,9 @@ reload_gtk_frame_extents (MetaWindow    *window,
     {
       if (value->v.cardinal_list.n_cardinals != 4)
         {
-          meta_verbose ("_GTK_FRAME_EXTENTS on %s has %d values instead of 4",
-                        window->desc, value->v.cardinal_list.n_cardinals);
+          meta_topic (META_DEBUG_X11,
+                      "_GTK_FRAME_EXTENTS on %s has %d values instead of 4",
+                      window->desc, value->v.cardinal_list.n_cardinals);
         }
       else
         {
@@ -609,8 +612,9 @@ reload_net_wm_name (MetaWindow    *window,
       set_window_title (window, value->v.str);
       priv->using_net_wm_name = TRUE;
 
-      meta_verbose ("Using _NET_WM_NAME for new title of %s: \"%s\"",
-                    window->desc, window->title);
+      meta_topic (META_DEBUG_X11,
+                  "Using _NET_WM_NAME for new title of %s: \"%s\"",
+                  window->desc, window->title);
     }
   else
     {
@@ -631,8 +635,9 @@ reload_wm_name (MetaWindow    *window,
 
   if (priv->using_net_wm_name)
     {
-      meta_verbose ("Ignoring WM_NAME \"%s\" as _NET_WM_NAME is set",
-                    value->v.str);
+      meta_topic (META_DEBUG_X11,
+                  "Ignoring WM_NAME \"%s\" as _NET_WM_NAME is set",
+                  value->v.str);
       return;
     }
 
@@ -640,8 +645,9 @@ reload_wm_name (MetaWindow    *window,
     {
       set_window_title (window, value->v.str);
 
-      meta_verbose ("Using WM_NAME for new title of %s: \"%s\"",
-                    window->desc, window->title);
+      meta_topic (META_DEBUG_X11,
+                  "Using WM_NAME for new title of %s: \"%s\"",
+                  window->desc, window->title);
     }
   else
     {
@@ -685,7 +691,8 @@ reload_opaque_region (MetaWindow    *window,
 
       if (nitems % 4 != 0)
         {
-          meta_verbose ("_NET_WM_OPAQUE_REGION does not have a list of 4-tuples.");
+          meta_topic (META_DEBUG_X11,
+                      "_NET_WM_OPAQUE_REGION does not have a list of 4-tuples.");
           goto out;
         }
 
@@ -779,19 +786,15 @@ reload_net_wm_state (MetaWindow    *window,
   MetaX11Display *x11_display = window->display->x11_display;
   MetaWindowX11 *window_x11 = META_WINDOW_X11 (window);
   MetaWindowX11Private *priv = meta_window_x11_get_private (window_x11);
-
   int i;
 
-  /* We know this is only an initial window creation,
-   * clients don't change the property.
-   */
-
-  if (!initial) {
-    /* no, they DON'T change the property */
-    meta_verbose ("Ignoring _NET_WM_STATE: we should be the one who set "
+  if (!initial)
+    {
+      meta_topic (META_DEBUG_X11,
+                  "Ignoring _NET_WM_STATE: we should be the one who set "
                   "the property in the first place");
-    return;
-  }
+      return;
+    }
 
   window->maximized_horizontally = FALSE;
   window->maximized_vertically = FALSE;
@@ -838,8 +841,9 @@ reload_net_wm_state (MetaWindow    *window,
       ++i;
     }
 
-  meta_verbose ("Reloaded _NET_WM_STATE for %s",
-                window->desc);
+  meta_topic (META_DEBUG_X11,
+              "Reloaded _NET_WM_STATE for %s",
+              window->desc);
 
   meta_window_x11_recalc_window_type (window);
   meta_window_recalc_features (window);
@@ -863,7 +867,7 @@ reload_mwm_hints (MetaWindow    *window,
 
   if (value->type == META_PROP_VALUE_INVALID)
     {
-      meta_verbose ("Window %s has no MWM hints", window->desc);
+      meta_topic (META_DEBUG_X11, "Window %s has no MWM hints", window->desc);
       meta_window_recalc_features (window);
       return;
     }
@@ -872,13 +876,13 @@ reload_mwm_hints (MetaWindow    *window,
 
   /* We support those MWM hints deemed non-stupid */
 
-  meta_verbose ("Window %s has MWM hints",
-                window->desc);
+  meta_topic (META_DEBUG_X11, "Window %s has MWM hints",
+              window->desc);
 
   if (hints->flags & MWM_HINTS_DECORATIONS)
     {
-      meta_verbose ("Window %s sets MWM_HINTS_DECORATIONS 0x%x",
-                    window->desc, hints->decorations);
+      meta_topic (META_DEBUG_X11, "Window %s sets MWM_HINTS_DECORATIONS 0x%x",
+                  window->desc, hints->decorations);
 
       if (hints->decorations == 0)
         window->mwm_decorated = FALSE;
@@ -887,14 +891,16 @@ reload_mwm_hints (MetaWindow    *window,
         window->mwm_border_only = TRUE;
     }
   else
-    meta_verbose ("Decorations flag unset");
+    {
+      meta_topic (META_DEBUG_X11, "Decorations flag unset");
+    }
 
   if (hints->flags & MWM_HINTS_FUNCTIONS)
     {
       gboolean toggle_value;
 
-      meta_verbose ("Window %s sets MWM_HINTS_FUNCTIONS 0x%x",
-                    window->desc, hints->functions);
+      meta_topic (META_DEBUG_X11, "Window %s sets MWM_HINTS_FUNCTIONS 0x%x",
+                  window->desc, hints->functions);
 
       /* If _ALL is specified, then other flags indicate what to turn off;
        * if ALL is not specified, flags are what to turn on.
@@ -905,8 +911,8 @@ reload_mwm_hints (MetaWindow    *window,
         {
           toggle_value = TRUE;
 
-          meta_verbose ("Window %s disables all funcs then reenables some",
-                        window->desc);
+          meta_topic (META_DEBUG_X11, "Window %s disables all funcs then reenables some",
+                      window->desc);
           window->mwm_has_close_func = FALSE;
           window->mwm_has_minimize_func = FALSE;
           window->mwm_has_maximize_func = FALSE;
@@ -915,45 +921,45 @@ reload_mwm_hints (MetaWindow    *window,
         }
       else
         {
-          meta_verbose ("Window %s enables all funcs then disables some",
-                        window->desc);
+          meta_topic (META_DEBUG_X11, "Window %s enables all funcs then disables some",
+                      window->desc);
           toggle_value = FALSE;
         }
 
       if ((hints->functions & MWM_FUNC_CLOSE) != 0)
         {
-          meta_verbose ("Window %s toggles close via MWM hints",
-                        window->desc);
+          meta_topic (META_DEBUG_X11, "Window %s toggles close via MWM hints",
+                      window->desc);
           window->mwm_has_close_func = toggle_value;
         }
       if ((hints->functions & MWM_FUNC_MINIMIZE) != 0)
         {
-          meta_verbose ("Window %s toggles minimize via MWM hints",
-                        window->desc);
+          meta_topic (META_DEBUG_X11, "Window %s toggles minimize via MWM hints",
+                      window->desc);
           window->mwm_has_minimize_func = toggle_value;
         }
       if ((hints->functions & MWM_FUNC_MAXIMIZE) != 0)
         {
-          meta_verbose ("Window %s toggles maximize via MWM hints",
-                        window->desc);
+          meta_topic (META_DEBUG_X11, "Window %s toggles maximize via MWM hints",
+                      window->desc);
           window->mwm_has_maximize_func = toggle_value;
         }
       if ((hints->functions & MWM_FUNC_MOVE) != 0)
         {
-          meta_verbose ("Window %s toggles move via MWM hints",
-                        window->desc);
+          meta_topic (META_DEBUG_X11, "Window %s toggles move via MWM hints",
+                      window->desc);
           window->mwm_has_move_func = toggle_value;
         }
       if ((hints->functions & MWM_FUNC_RESIZE) != 0)
         {
-          meta_verbose ("Window %s toggles resize via MWM hints",
-                        window->desc);
+          meta_topic (META_DEBUG_X11, "Window %s toggles resize via MWM hints",
+                      window->desc);
           window->mwm_has_resize_func = toggle_value;
         }
     }
   else
     {
-      meta_verbose ("Functions flag unset");
+      meta_topic (META_DEBUG_X11, "Functions flag unset");
     }
 
   meta_window_recalc_features (window);
@@ -996,10 +1002,10 @@ reload_wm_class (MetaWindow    *window,
       meta_window_set_wm_class (window, NULL, NULL);
     }
 
-  meta_verbose ("Window %s class: '%s' name: '%s'",
-                window->desc,
-                window->res_class ? window->res_class : "none",
-                window->res_name ? window->res_name : "none");
+  meta_topic (META_DEBUG_X11, "Window %s class: '%s' name: '%s'",
+              window->desc,
+              window->res_class ? window->res_class : "none",
+              window->res_name ? window->res_name : "none");
 }
 
 static void
@@ -1052,9 +1058,10 @@ reload_net_startup_id (MetaWindow    *window,
       }
   }
 
-  meta_verbose ("New _NET_STARTUP_ID \"%s\" for %s",
-                window->startup_id ? window->startup_id : "unset",
-                window->desc);
+  meta_topic (META_DEBUG_X11,
+              "New _NET_STARTUP_ID \"%s\" for %s",
+              window->startup_id ? window->startup_id : "unset",
+              window->desc);
 }
 
 static void
@@ -1076,7 +1083,7 @@ reload_update_counter (MetaWindow    *window,
 
       if (value->v.xcounter_list.n_counters == 0)
         {
-          meta_warning ("_NET_WM_SYNC_REQUEST_COUNTER is empty");
+          meta_topic (META_DEBUG_X11, "_NET_WM_SYNC_REQUEST_COUNTER is empty");
           meta_sync_counter_set_counter (sync_counter, None, FALSE);
           return;
         }
@@ -1355,9 +1362,10 @@ reload_wm_protocols (MetaWindow    *window,
       ++i;
     }
 
-  meta_verbose ("New _NET_STARTUP_ID \"%s\" for %s",
-                window->startup_id ? window->startup_id : "unset",
-                window->desc);
+  meta_topic (META_DEBUG_X11,
+              "New _NET_STARTUP_ID \"%s\" for %s",
+              window->startup_id ? window->startup_id : "unset",
+              window->desc);
 }
 
 static void
@@ -1402,17 +1410,19 @@ reload_wm_hints (MetaWindow    *window,
       if (hints->flags & XUrgencyHint)
         urgent = TRUE;
 
-      meta_verbose ("Read WM_HINTS input: %d iconic: %d group leader: 0x%lx pixmap: 0x%lx mask: 0x%lx",
-                    window->input, window->initially_iconic,
-                    priv->xgroup_leader,
-                    priv->wm_hints_pixmap,
-                    priv->wm_hints_mask);
+      meta_topic (META_DEBUG_X11,
+                  "Read WM_HINTS input: %d iconic: %d group leader: 0x%lx pixmap: 0x%lx mask: 0x%lx",
+                  window->input, window->initially_iconic,
+                  priv->xgroup_leader,
+                  priv->wm_hints_pixmap,
+                  priv->wm_hints_mask);
     }
 
   if (priv->xgroup_leader != old_group_leader)
     {
-      meta_verbose ("Window %s changed its group leader to 0x%lx",
-                    window->desc, priv->xgroup_leader);
+      meta_topic (META_DEBUG_X11,
+                  "Window %s changed its group leader to 0x%lx",
+                  window->desc, priv->xgroup_leader);
 
       meta_window_x11_group_leader_changed (window);
     }
@@ -1454,8 +1464,9 @@ reload_transient_for (MetaWindow    *window,
                                                  transient_for);
       if (!parent)
         {
-          meta_warning ("Invalid WM_TRANSIENT_FOR window 0x%lx specified for %s.",
-                        transient_for, window->desc);
+          meta_topic (META_DEBUG_X11,
+                      "Invalid WM_TRANSIENT_FOR window 0x%lx specified for %s.",
+                      transient_for, window->desc);
           transient_for = None;
         }
       else if (parent->override_redirect)
@@ -1468,12 +1479,13 @@ reload_transient_for (MetaWindow    *window,
               /* We don't have to go through the parents, as per this code it is
                * not possible that a window has the WM_TRANSIENT_FOR set to an
                * override-redirect window anyways */
-              meta_warning ("WM_TRANSIENT_FOR window %s for %s window %s is an "
-                            "override-redirect window and this is not correct "
-                            "according to the standard, so we'll fallback to "
-                            "the first non-override-redirect window 0x%lx.",
-                            parent->desc, window->desc, window_kind,
-                            parent_xtransient_for);
+              meta_topic (META_DEBUG_X11,
+                          "WM_TRANSIENT_FOR window %s for %s window %s is an "
+                          "override-redirect window and this is not correct "
+                          "according to the standard, so we'll fallback to "
+                          "the first non-override-redirect window 0x%lx.",
+                          parent->desc, window->desc, window_kind,
+                          parent_xtransient_for);
               transient_for = parent_xtransient_for;
               parent =
                 meta_x11_display_lookup_x_window (parent->display->x11_display,
@@ -1481,11 +1493,12 @@ reload_transient_for (MetaWindow    *window,
             }
           else
             {
-              meta_warning ("WM_TRANSIENT_FOR window %s for %s window %s is an "
-                            "override-redirect window and this is not correct "
-                            "according to the standard, so we'll fallback to "
-                            "the root window.", parent->desc, window_kind,
-                            window->desc);
+              meta_topic (META_DEBUG_X11,
+                          "WM_TRANSIENT_FOR window %s for %s window %s is an "
+                          "override-redirect window and this is not correct "
+                          "according to the standard, so we'll fallback to "
+                          "the root window.",
+                          parent->desc, window_kind, window->desc);
               transient_for = parent->display->x11_display->xroot;
               parent = NULL;
             }
@@ -1494,8 +1507,9 @@ reload_transient_for (MetaWindow    *window,
       /* Make sure there is not a loop */
       if (check_xtransient_for_loop (window, parent))
         {
-          meta_warning ("WM_TRANSIENT_FOR window 0x%lx for %s would create a "
-                        "loop.", transient_for, window->desc);
+          meta_topic (META_DEBUG_X11,
+                      "WM_TRANSIENT_FOR window 0x%lx for %s would create a loop.",
+                      transient_for, window->desc);
           transient_for = None;
         }
     }
@@ -1509,9 +1523,14 @@ reload_transient_for (MetaWindow    *window,
 
   current_transient_for = transient_for;
   if (current_transient_for != None)
-    meta_verbose ("Window %s transient for 0x%lx", window->desc, current_transient_for);
+    {
+      meta_topic (META_DEBUG_X11, "Window %s transient for 0x%lx",
+                  window->desc, current_transient_for);
+    }
   else
-    meta_verbose ("Window %s is not transient", window->desc);
+    {
+      meta_topic (META_DEBUG_X11, "Window %s is not transient", window->desc);
+    }
 
   if (current_transient_for == None ||
       current_transient_for == window->display->x11_display->xroot)
@@ -1533,8 +1552,9 @@ reload_gtk_theme_variant (MetaWindow    *window,
   if (value->type != META_PROP_VALUE_INVALID)
     {
       requested_variant = value->v.str;
-      meta_verbose ("Requested \"%s\" theme variant for window %s.",
-                    requested_variant, window->desc);
+      meta_topic (META_DEBUG_X11,
+                  "Requested \"%s\" theme variant for window %s.",
+                  requested_variant, window->desc);
     }
 
   if (g_strcmp0 (requested_variant, current_variant) != 0)
@@ -1565,11 +1585,19 @@ reload_bypass_compositor (MetaWindow    *window,
     return;
 
   if (requested_value == META_BYPASS_COMPOSITOR_HINT_ON)
-    meta_verbose ("Request to bypass compositor for window %s.", window->desc);
+    {
+      meta_topic (META_DEBUG_X11,
+                  "Request to bypass compositor for window %s.", window->desc);
+    }
   else if (requested_value == META_BYPASS_COMPOSITOR_HINT_OFF)
-    meta_verbose ("Request to don't bypass compositor for window %s.", window->desc);
+    {
+      meta_topic (META_DEBUG_X11,
+                  "Request to don't bypass compositor for window %s.", window->desc);
+    }
   else if (requested_value != META_BYPASS_COMPOSITOR_HINT_AUTO)
-    return;
+    {
+      return;
+    }
 
   priv->bypass_compositor = requested_value;
 }
@@ -1586,6 +1614,49 @@ reload_window_opacity (MetaWindow    *window,
     opacity = (guint8)((gfloat)value->v.cardinal * 255.0 / ((gfloat)0xffffffff));
 
   meta_window_set_opacity (window, opacity);
+}
+
+static void
+reload_fullscreen_monitors (MetaWindow    *window,
+                            MetaPropValue *value,
+                            gboolean       initial)
+{
+  if (value->type != META_PROP_VALUE_INVALID)
+    {
+      if (value->v.cardinal_list.n_cardinals != 4)
+        {
+          meta_topic (META_DEBUG_X11,
+                      "_NET_WM_FULLSCREEN_MONITORS on %s has %d values instead of 4",
+                      window->desc, value->v.cardinal_list.n_cardinals);
+        }
+      else
+        {
+          MetaX11Display *x11_display = window->display->x11_display;
+          int top_xinerama_index, bottom_xinerama_index;
+          int left_xinerama_index, right_xinerama_index;
+          MetaLogicalMonitor *top, *bottom, *left, *right;
+
+          top_xinerama_index = (int)value->v.cardinal_list.cardinals[0];
+          bottom_xinerama_index = (int)value->v.cardinal_list.cardinals[1];
+          left_xinerama_index = (int)value->v.cardinal_list.cardinals[2];
+          right_xinerama_index = (int)value->v.cardinal_list.cardinals[3];
+
+          top =
+            meta_x11_display_xinerama_index_to_logical_monitor (x11_display,
+                                                                top_xinerama_index);
+          bottom =
+            meta_x11_display_xinerama_index_to_logical_monitor (x11_display,
+                                                                bottom_xinerama_index);
+          left =
+            meta_x11_display_xinerama_index_to_logical_monitor (x11_display,
+                                                                left_xinerama_index);
+          right =
+            meta_x11_display_xinerama_index_to_logical_monitor (x11_display,
+                                                                right_xinerama_index);
+
+          meta_window_update_fullscreen_monitors (window, top, bottom, left, right);
+        }
+    }
 }
 
 #define RELOAD_STRING(var_name, propname) \
@@ -1681,6 +1752,7 @@ meta_x11_display_init_window_prop_hooks (MetaX11Display *x11_display)
     { x11_display->atom__NET_WM_STRUT_PARTIAL, META_PROP_VALUE_INVALID, reload_struts, NONE },
     { x11_display->atom__NET_WM_BYPASS_COMPOSITOR, META_PROP_VALUE_CARDINAL,  reload_bypass_compositor, LOAD_INIT | INCLUDE_OR },
     { x11_display->atom__NET_WM_WINDOW_OPACITY, META_PROP_VALUE_CARDINAL, reload_window_opacity, LOAD_INIT | INCLUDE_OR },
+    { x11_display->atom__NET_WM_FULLSCREEN_MONITORS, META_PROP_VALUE_CARDINAL_LIST, reload_fullscreen_monitors, LOAD_INIT | INIT_ONLY },
     { 0 },
   };
   MetaWindowPropHooks *table;

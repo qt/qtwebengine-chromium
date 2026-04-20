@@ -22,7 +22,7 @@ class BrowserRecord(BaseRecord):
   __tablename__ = "browser"
 
   @classmethod
-  def create(cls, session, browser: Browser) -> Self:
+  def create(cls, session: orm.Session, browser: Browser) -> Self:
     js_flags = ""
     if browser.attributes().is_chromium_based:
       js_flags = str(browser.js_flags)

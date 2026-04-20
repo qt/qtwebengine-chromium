@@ -8,7 +8,7 @@ import functools
 import json
 import logging
 import subprocess
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Final, Optional
 
 from typing_extensions import override
 
@@ -24,16 +24,21 @@ if TYPE_CHECKING:
 
 class ChromeOsSshPlatform(LinuxSshPlatform):
 
-  AUTOLOGIN_PATH = pth.AnyPosixPath("/usr/local/autotest/bin/autologin.py")
-  DEVTOOLS_PORT_PATH = pth.AnyPosixPath("/home/chronos/DevToolsActivePort")
+  AUTOLOGIN_PATH: Final = pth.AnyPosixPath(
+      "/usr/local/autotest/bin/autologin.py")
+  DEVTOOLS_PORT_PATH: Final = pth.AnyPosixPath(
+      "/home/chronos/DevToolsActivePort")
 
   def __init__(self, *args, enable_arc: bool = False, **kwargs) -> None:
-    super().__init__(*args, **kwargs)
-    self._enable_arc: bool = enable_arc
+    self._enable_arc: Final[bool] = enable_arc
     self._username: str | None = None
+    super().__init__(*args, **kwargs)
+
+  @override
+  def _create_default_tmp_dir(self) -> pth.AnyPath:
     # `/tmp` on ChromeOS is mounted with `noexec` flag.
     # Instead, we use `/usr/local/tmp`, which allows executions of binaries.
-    self._default_tmp_dir = pth.AnyPosixPath("/usr/local/tmp")
+    return self.path("/usr/local/tmp")
 
   @property
   @override

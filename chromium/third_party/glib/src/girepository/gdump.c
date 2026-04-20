@@ -33,6 +33,7 @@
 
 #include <glib.h>
 #include <glib-object.h>
+#include <glib/gstdio.h>
 #include <gmodule.h>
 
 #include <stdlib.h>
@@ -637,11 +638,11 @@ gi_repository_dump (const char  *input_filename,
       return FALSE;
     }
 
-  input = fopen (input_filename, "rb");
+  input = g_fopen (input_filename, "rbe");
   if (input == NULL)
     {
       int saved_errno = errno;
-      g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (saved_errno),
+      g_set_error (error, G_FILE_ERROR, (int) g_file_error_from_errno (saved_errno),
                    "Failed to open ‘%s’: %s", input_filename, g_strerror (saved_errno));
 
       g_module_close (self);
@@ -649,11 +650,11 @@ gi_repository_dump (const char  *input_filename,
       return FALSE;
     }
 
-  output = fopen (output_filename, "wb");
+  output = g_fopen (output_filename, "wbe");
   if (output == NULL)
     {
       int saved_errno = errno;
-      g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (saved_errno),
+      g_set_error (error, G_FILE_ERROR, (int) g_file_error_from_errno (saved_errno),
                    "Failed to open ‘%s’: %s", output_filename, g_strerror (saved_errno));
 
       fclose (input);
@@ -735,7 +736,7 @@ gi_repository_dump (const char  *input_filename,
       {
         int saved_errno = errno;
 
-        g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (saved_errno),
+        g_set_error (error, G_FILE_ERROR, (int) g_file_error_from_errno (saved_errno),
                      "Error closing input file ‘%s’: %s", input_filename,
                      g_strerror (saved_errno));
         caught_error = TRUE;
@@ -745,7 +746,7 @@ gi_repository_dump (const char  *input_filename,
       {
         int saved_errno = errno;
 
-        g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (saved_errno),
+        g_set_error (error, G_FILE_ERROR, (int) g_file_error_from_errno (saved_errno),
                      "Error closing output file ‘%s’: %s", output_filename,
                      g_strerror (saved_errno));
         caught_error = TRUE;

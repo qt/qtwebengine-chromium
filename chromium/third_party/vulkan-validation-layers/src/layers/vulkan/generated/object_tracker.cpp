@@ -4737,6 +4737,26 @@ bool Device::PreCallValidateCmdBindDescriptorBufferEmbeddedSamplers2EXT(
     return skip;
 }
 
+// vkCmdCopyMemoryIndirectKHR:
+// Checked by chassis: commandBuffer: "VUID-vkCmdCopyMemoryIndirectKHR-commandBuffer-parameter"
+
+bool Device::PreCallValidateCmdCopyMemoryToImageIndirectKHR(
+    VkCommandBuffer commandBuffer, const VkCopyMemoryToImageIndirectInfoKHR* pCopyMemoryToImageIndirectInfo,
+    const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: commandBuffer: "VUID-vkCmdCopyMemoryToImageIndirectKHR-commandBuffer-parameter"
+    if (pCopyMemoryToImageIndirectInfo) {
+        [[maybe_unused]] const Location pCopyMemoryToImageIndirectInfo_loc =
+            error_obj.location.dot(Field::pCopyMemoryToImageIndirectInfo);
+        skip |= ValidateObject(pCopyMemoryToImageIndirectInfo->dstImage, kVulkanObjectTypeImage, false,
+                               "VUID-VkCopyMemoryToImageIndirectInfoKHR-dstImage-parameter",
+                               "UNASSIGNED-VkCopyMemoryToImageIndirectInfoKHR-dstImage-parent",
+                               pCopyMemoryToImageIndirectInfo_loc.dot(Field::dstImage));
+    }
+
+    return skip;
+}
+
 // vkCreateDebugReportCallbackEXT:
 // Checked by chassis: instance: "VUID-vkCreateDebugReportCallbackEXT-instance-parameter"
 
@@ -7927,9 +7947,10 @@ void Device::PostCallRecordCreateDataGraphPipelinesARM(VkDevice device, VkDeferr
                                                        const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
                                                        const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
                                                        const RecordObject& record_obj) {
-    if (record_obj.result < VK_SUCCESS) return;
+    if (VK_ERROR_VALIDATION_FAILED_EXT == record_obj.result) return;
     if (pPipelines) {
         for (uint32_t index = 0; index < createInfoCount; index++) {
+            if (!pPipelines[index]) continue;
             tracker.CreateObject(pPipelines[index], kVulkanObjectTypePipeline, pAllocator,
                                  record_obj.location.dot(Field::pPipelines, index), device);
         }
@@ -7972,7 +7993,7 @@ bool Device::PreCallValidateGetDataGraphPipelineSessionBindPointRequirementsARM(
         [[maybe_unused]] const Location pInfo_loc = error_obj.location.dot(Field::pInfo);
         skip |= ValidateObject(pInfo->session, kVulkanObjectTypeDataGraphPipelineSessionARM, false,
                                "VUID-VkDataGraphPipelineSessionBindPointRequirementsInfoARM-session-parameter",
-                               "UNASSIGNED-VkDataGraphPipelineSessionBindPointRequirementsInfoARM-session-parent",
+                               "VUID-vkGetDataGraphPipelineSessionBindPointRequirementsARM-session-09783",
                                pInfo_loc.dot(Field::session));
     }
 
@@ -8023,8 +8044,9 @@ bool Device::PreCallValidateDestroyDataGraphPipelineSessionARM(VkDevice device, 
     skip |= ValidateObject(session, kVulkanObjectTypeDataGraphPipelineSessionARM, false,
                            "VUID-vkDestroyDataGraphPipelineSessionARM-session-parameter",
                            "VUID-vkDestroyDataGraphPipelineSessionARM-session-parent", error_obj.location.dot(Field::session));
-    skip |= ValidateDestroyObject(session, kVulkanObjectTypeDataGraphPipelineSessionARM, pAllocator, kVUIDUndefined, kVUIDUndefined,
-                                  error_obj.location);
+    skip |= ValidateDestroyObject(session, kVulkanObjectTypeDataGraphPipelineSessionARM, pAllocator,
+                                  "VUID-vkDestroyDataGraphPipelineSessionARM-session-09794",
+                                  "VUID-vkDestroyDataGraphPipelineSessionARM-session-09795", error_obj.location);
 
     return skip;
 }
@@ -8076,7 +8098,7 @@ bool Device::PreCallValidateGetDataGraphPipelinePropertiesARM(VkDevice device, c
         [[maybe_unused]] const Location pPipelineInfo_loc = error_obj.location.dot(Field::pPipelineInfo);
         skip |= ValidateObject(pPipelineInfo->dataGraphPipeline, kVulkanObjectTypePipeline, false,
                                "VUID-VkDataGraphPipelineInfoARM-dataGraphPipeline-parameter",
-                               "UNASSIGNED-VkDataGraphPipelineInfoARM-dataGraphPipeline-parent",
+                               "VUID-vkGetDataGraphPipelinePropertiesARM-dataGraphPipeline-09802",
                                pPipelineInfo_loc.dot(Field::dataGraphPipeline));
     }
 

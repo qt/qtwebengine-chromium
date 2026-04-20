@@ -27,6 +27,7 @@ target_sources(VkLayer_utils PRIVATE
     containers/custom_containers.h
     containers/limits.h
     containers/small_container.h
+    containers/small_range_map.h
     containers/small_vector.h
     containers/span.h
     containers/tls_guard.h
@@ -216,6 +217,7 @@ target_sources(vvl PRIVATE
     core_checks/cc_cmd_buffer.cpp
     core_checks/cc_copy_blit_resolve.cpp
     core_checks/core_validation.h
+    core_checks/cc_data_graph.cpp
     core_checks/cc_descriptor.cpp
     core_checks/cc_device.cpp
     core_checks/cc_device_memory.cpp
@@ -270,6 +272,7 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/dynamic_state_helper.cpp
     ${API_TYPE}/generated/dynamic_state_helper.h
     ${API_TYPE}/generated/enum_flag_bits.h
+    ${API_TYPE}/generated/feature_not_present.cpp
     ${API_TYPE}/generated/dispatch_vector.cpp
     ${API_TYPE}/generated/dispatch_object.cpp
     ${API_TYPE}/generated/validation_object_device_methods.h
@@ -342,6 +345,8 @@ target_sources(vvl PRIVATE
     state_tracker/buffer_state.h
     state_tracker/cmd_buffer_state.cpp
     state_tracker/cmd_buffer_state.h
+    state_tracker/data_graph_pipeline_session_state.cpp
+    state_tracker/data_graph_pipeline_session_state.h
     state_tracker/descriptor_sets.cpp
     state_tracker/descriptor_sets.h
     state_tracker/device_generated_commands_state.cpp
@@ -363,8 +368,8 @@ target_sources(vvl PRIVATE
     state_tracker/pipeline_layout_state.h
     state_tracker/pipeline_state.cpp
     state_tracker/pipeline_state.h
-    state_tracker/pipeline_sub_state.cpp
-    state_tracker/pipeline_sub_state.h
+    state_tracker/pipeline_library_state.cpp
+    state_tracker/pipeline_library_state.h
     state_tracker/push_constant_data.h
     state_tracker/semaphore_state.cpp
     state_tracker/semaphore_state.h

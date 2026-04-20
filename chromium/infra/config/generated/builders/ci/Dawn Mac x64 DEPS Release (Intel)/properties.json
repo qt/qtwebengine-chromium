@@ -7,10 +7,9 @@
             "builder_id": {
               "bucket": "ci",
               "builder": "Dawn Mac x64 DEPS Builder",
-              "project": "chromium-m140"
+              "project": "chromium-m142"
             },
             "builder_spec": {
-              "build_gs_bucket": "chromium-dawn-archive",
               "builder_group": "chromium.dawn",
               "execution_mode": "COMPILE_AND_TEST",
               "legacy_chromium_config": {
@@ -33,10 +32,9 @@
             "builder_id": {
               "bucket": "ci",
               "builder": "Dawn Mac x64 DEPS Release (Intel)",
-              "project": "chromium-m140"
+              "project": "chromium-m142"
             },
             "builder_spec": {
-              "build_gs_bucket": "chromium-dawn-archive",
               "builder_group": "chromium.dawn",
               "execution_mode": "TEST",
               "legacy_chromium_config": {
@@ -55,7 +53,7 @@
               "parent": {
                 "bucket": "ci",
                 "builder": "Dawn Mac x64 DEPS Builder",
-                "project": "chromium-m140"
+                "project": "chromium-m142"
               },
               "run_tests_serially": true
             }
@@ -66,7 +64,7 @@
         {
           "bucket": "ci",
           "builder": "Dawn Mac x64 DEPS Release (Intel)",
-          "project": "chromium-m140"
+          "project": "chromium-m142"
         }
       ],
       "mirroring_builder_group_and_names": [
@@ -75,7 +73,8 @@
           "group": "tryserver.chromium.dawn"
         }
       ],
-      "targets_spec_directory": "src/infra/config/generated/builders/ci/Dawn Mac x64 DEPS Release (Intel)/targets"
+      "targets_spec_directory": "infra/config/generated/builders/ci/Dawn Mac x64 DEPS Release (Intel)/targets",
+      "targets_spec_directory_relative_to_source_dir": true
     }
   },
   "$recipe_engine/resultdb/test_presentation": {
@@ -86,7 +85,7 @@
     ]
   },
   "builder_group": "chromium.dawn",
-  "dawn_ref": "refs/heads/chromium/7339",
+  "dawn_ref": "refs/heads/chromium/7444",
   "gardener_rotations": [
     "chrome_browser_release"
   ],

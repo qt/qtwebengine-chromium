@@ -8,12 +8,14 @@ import abc
 import argparse
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING, Optional, Sequence, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, Sequence, cast
 
 from typing_extensions import override
 
 from crossbench.benchmarks.base import SubStoryBenchmark
 from crossbench.benchmarks.embedder.config.cujs import CUJsConfig
+from crossbench.benchmarks.embedder.config.setup_commands import (
+    SetupCommandsConfig)
 from crossbench.cli.ui import timer
 from crossbench.parse import ObjectParser
 from crossbench.stories.story import Story
@@ -23,6 +25,7 @@ if TYPE_CHECKING:
   from crossbench.benchmarks.loading.config.blocks import ActionBlock
   from crossbench.browsers.webview.embedder import WebviewEmbedder
   from crossbench.cli.parser import CrossBenchArgumentParser
+  from crossbench.cli.types import Subparsers
   from crossbench.runner.run import Run
 
 
@@ -37,7 +40,10 @@ class EmbedderStory(Story, metaclass=abc.ABCMeta):
     # TODO(zbikowski): Add a way to ensure embedder is installed.
     # Launching the Google Quick Search app
     run_browser = cast("WebviewEmbedder", run.browser)
-    run.browser_platform.sh("am", "start", "-S", "-W", "-n",
+    run.browser_platform.sh("am", "start", "-S", "-W",
+                            "-a",
+                            f"{run_browser.android_package}.GOOGLE_SEARCH",
+                            "-n",
                             f"{run_browser.android_package}/.SearchActivity")
     logging.info("Starting Embedder Benchmark...")
 
@@ -66,16 +72,29 @@ class EmbedderBenchmark(SubStoryBenchmark):
   """
   Benchmark runner for a WV embedder app mode.
   """
-  NAME = "embedder"
-  DEFAULT_STORY_CLS = EmbedderStory
+  NAME: ClassVar = "embedder"
+  DEFAULT_STORY_CLS: ClassVar = EmbedderStory
 
   def __init__(
       self,
       stories: Sequence[Story],
-      action_runner_config: Optional[ActionRunnerConfig] = None) -> None:
+      action_runner_config: Optional[ActionRunnerConfig] = None,
+      embedder_process_name: str = "search",
+      embedder_setup_command_config: Optional[SetupCommandsConfig] = None
+  ) -> None:
     for story in stories:
       assert isinstance(story, self.DEFAULT_STORY_CLS)
     super().__init__(stories, action_runner_config)
+    self._embedder_process_name = embedder_process_name
+    self._embedder_setup_command_config = embedder_setup_command_config
+
+  @property
+  def embedder_process_name(self) -> str:
+    return self._embedder_process_name
+
+  @property
+  def embedder_setup_command_config(self) -> Optional[SetupCommandsConfig]:
+    return self._embedder_setup_command_config
 
   @classmethod
   @override
@@ -85,8 +104,7 @@ class EmbedderBenchmark(SubStoryBenchmark):
 
   @classmethod
   @override
-  def add_cli_parser(
-      cls, subparsers: argparse.ArgumentParser) -> CrossBenchArgumentParser:
+  def add_cli_parser(cls, subparsers: Subparsers) -> CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers)
     parser.add_argument(
         "--cujs-config",
@@ -94,6 +112,14 @@ class EmbedderBenchmark(SubStoryBenchmark):
         type=CUJsConfig.parse,
         help="Stories we want to perform in the benchmark run following a"
         "specified scenario.")
+    parser.add_argument(
+        "--embedder-process-name",
+        default="search",
+        help="Name of the embedder process.")
+    parser.add_argument(
+        "--embedder-setup-command-config",
+        type=SetupCommandsConfig.parse,
+        help="Setup commands to run before the benchmark.")
     return parser
 
   @classmethod
@@ -108,6 +134,14 @@ class EmbedderBenchmark(SubStoryBenchmark):
       for cuj_config in config.cujs
     )
     return cujs
+
+  @classmethod
+  @override
+  def kwargs_from_cli(cls, args: argparse.Namespace) -> dict[str, Any]:
+    kwargs = super().kwargs_from_cli(args)
+    kwargs["embedder_process_name"] = args.embedder_process_name
+    kwargs["embedder_setup_command_config"] = args.embedder_setup_command_config
+    return kwargs
 
   @classmethod
   def get_cujs_config(cls, args: argparse.Namespace) -> CUJsConfig:

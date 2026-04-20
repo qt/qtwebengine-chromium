@@ -10,7 +10,7 @@ import logging
 import sys
 import traceback as tb
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional, Type
+from typing import TYPE_CHECKING, Any, Iterator, Optional, Self, Type
 
 from crossbench.helper import collection_helper, txt_helper
 
@@ -78,7 +78,7 @@ class ExceptionAnnotationScope:
     self._throw_cls: Type[BaseException] | None = throw_cls
     self._previous_info_stack: TInfoStack = ()
 
-  def __enter__(self) -> ExceptionAnnotationScope:
+  def __enter__(self) -> Self:
     self._previous_info_stack = self._annotator.enter(
         self._added_info_stack_entries)
     return self
@@ -107,10 +107,7 @@ class ExceptionAnnotationScope:
       if self._throw_cls:
         self._annotator.assert_success(exception_cls=self._throw_cls)
       return True
-    if exception_value not in self._annotator._pending_exceptions:
-      self._annotator._pending_exceptions[
-          exception_value] = self._annotator.info_stack
-    self._annotator._info_stack = self._previous_info_stack
+    self._annotator.leave_pending(exception_value, self._previous_info_stack)
     # False => exception not handled
     return False
 
@@ -172,6 +169,12 @@ class ExceptionAnnotator:
     self._depth -= 1
     self._info_stack = previous_stack
 
+  def leave_pending(self, exception_value: BaseException,
+                    previous_stack: tuple[str, ...]) -> None:
+    if exception_value not in self._pending_exceptions:
+      self._pending_exceptions[exception_value] = self.info_stack
+    self._info_stack = previous_stack
+
   def matching(self, *args: Type[BaseException]) -> list[BaseException]:
     result = []
     for entry in self._exceptions:
@@ -197,13 +200,13 @@ class ExceptionAnnotator:
 
   def info(self, *stack_entries: str) -> ExceptionAnnotationScope:
     """Only sets info stack entries, exceptions are passed-through."""
-    return ExceptionAnnotationScope(self, tuple(), tuple(), stack_entries)
+    return ExceptionAnnotationScope(self, (), (), stack_entries)
 
   def capture(
       self,
       *stack_entries: str,
       exceptions: TExceptionTypes = (Exception,),
-      ignore: TExceptionTypes = tuple(),
+      ignore: TExceptionTypes = (),
   ) -> ExceptionAnnotationScope:
     """Sets info stack entries and captures exceptions.
     - Does not rethrow captured exceptions
@@ -213,10 +216,12 @@ class ExceptionAnnotator:
                                     self._throw_cls)
 
   @contextlib.contextmanager
-  def annotate(self,
-               *stack_entries,
-               exceptions: TExceptionTypes = (Exception,),
-               ignore: TExceptionTypes = tuple()):
+  def annotate(
+      self,
+      *stack_entries,
+      exceptions: TExceptionTypes = (Exception,),
+      ignore: TExceptionTypes = ()
+  ) -> Iterator[Self]:
     """Sets info stack entries and rethrows an annotated
       MultiException by default ."""
     with self.capture(*stack_entries, exceptions=exceptions, ignore=ignore):
@@ -256,7 +261,7 @@ class ExceptionAnnotator:
         stack = self._pending_exceptions[exception]
       self._exceptions.append(Entry(traceback, exception, stack))
     if self.throw:
-      raise  # pylint: disable=misplaced-bare-raise
+      raise  # noqa: PLE0704
 
   def log(self, message: str, separator: str = "=") -> None:
     if self.is_success:
@@ -324,7 +329,7 @@ Annotator = ExceptionAnnotator
 def annotate(
     *stack_entries: str,
     exceptions: TExceptionTypes = (Exception,),
-    ignore: TExceptionTypes = tuple(),
+    ignore: TExceptionTypes = (),
     throw_cls: Optional[Type[BaseException]] = MultiException
 ) -> ExceptionAnnotationScope:
   """Use to annotate an exception.

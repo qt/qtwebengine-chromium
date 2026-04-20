@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -53,7 +53,7 @@ class BaseDurationAction(Action):
 
 
 class DurationAction(BaseDurationAction):
-  TYPE: ActionType = ActionType.WAIT
+  TYPE: ClassVar[ActionType] = ActionType.WAIT
 
   @classmethod
   @override

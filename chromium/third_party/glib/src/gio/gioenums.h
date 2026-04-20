@@ -987,13 +987,20 @@ typedef enum
  * @G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT: Allow another message bus connection to claim the name.
  * @G_BUS_NAME_OWNER_FLAGS_REPLACE: If another message bus connection owns the name and have
  * specified %G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT, then take the name from the other connection.
- * @G_BUS_NAME_OWNER_FLAGS_DO_NOT_QUEUE: If another message bus connection owns the name, immediately
- * return an error from g_bus_own_name() rather than entering the waiting queue for that name. (Since 2.54)
  *
  * Flags used in g_bus_own_name().
  *
  * Since: 2.26
  */
+/**
+ * G_BUS_NAME_OWNER_FLAGS_DO_NOT_QUEUE:
+ *
+ * If another message bus connection owns the name, immediately return an error
+ * from [func@Gio.bus_own_name] rather than entering the waiting queue for that
+ * name.
+ *
+ * Since: 2.54
+ **/
 typedef enum
 {
   G_BUS_NAME_OWNER_FLAGS_NONE = 0,                    /*< nick=none >*/
@@ -1496,9 +1503,6 @@ typedef enum
 
 /**
  * GApplicationFlags:
- * @G_APPLICATION_FLAGS_NONE: Default. Deprecated in 2.74, use
- *   %G_APPLICATION_DEFAULT_FLAGS instead
- * @G_APPLICATION_DEFAULT_FLAGS: Default flags. Since: 2.74
  * @G_APPLICATION_IS_SERVICE: Run as a service. In this mode, registration
  *      fails if the service is already running, and the application
  *      will initially wait up to 10 seconds for an initial activation
@@ -1539,6 +1543,20 @@ typedef enum
  * Flags used to define the behaviour of a #GApplication.
  *
  * Since: 2.28
+ **/
+/**
+ * G_APPLICATION_FLAGS_NONE:
+ *
+ * Default flags.
+ *
+ * Deprecated: 2.74: Use [flags@Gio.ApplicationFlags.DEFAULT_FLAGS].
+ **/
+/**
+ * G_APPLICATION_DEFAULT_FLAGS:
+ *
+ * Default flags.
+ *
+ * Since: 2.74
  **/
 typedef enum /*< prefix=G_APPLICATION >*/
 {

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING, Any, Final, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Final, Optional, Sequence
 
 from typing_extensions import override
 
@@ -15,7 +15,6 @@ from crossbench.action_runner.action.enums import ReadyState
 from crossbench.benchmarks.base import Benchmark
 from crossbench.cli.ui import timer
 from crossbench.flags.base import Flags
-from crossbench.helper import input_helper
 from crossbench.parse import DurationParser
 from crossbench.stories.story import Story
 
@@ -26,55 +25,68 @@ if TYPE_CHECKING:
   from crossbench.action_runner.config import ActionRunnerConfig
   from crossbench.browsers.attributes import BrowserAttributes
   from crossbench.cli.parser import CrossBenchArgumentParser
+  from crossbench.cli.types import Subparsers
   from crossbench.runner.run import Run
 
 
-PLAY_AUDIO_SCRIPT: Final[str] = """
+UNMUTE_AUDIO_SCRIPT: Final[str] = """
   document.getElementById('unmuteButton').click();
 """
 
+REMUTE_AUDIO_SCRIPT: Final[str] = """
+  document.getElementById('audio').muted = true;
+"""
+
+
 class PowerlineStory(Story):
+  STORY_NAME = "podcast_vorbis_remute"
+  URL_BASE = "https://chromium-workloads.web.app/web-tests/main/synthetic/powerline/"
+  STORY_URLS = {
+      "podcast_vorbis": "podcast-vorbis.html",
+      "podcast_vorbis_muted": "podcast-vorbis.html",
+      "podcast_opus": "podcast-opus.html",
+      "podcast_mp3": "podcast-mp3.html",
+      "podcast_aac": "podcast-aac.html"
+  }
 
-  STORY_NAME="podcast"
-  URL="https://chromium-workloads.web.app/web-tests/main/synthetic/powerline/podcast.html"
-
-  def __init__(self, run_for: Optional[dt.timedelta] = dt.timedelta()):
-    duration = (run_for or dt.timedelta(seconds=600))
-    self._run_for = duration
-    super().__init__(self.STORY_NAME, duration)
+  def __init__(self,
+               story_name: str,
+               duration: Optional[dt.timedelta] = dt.timedelta()):
+    duration = (duration or dt.timedelta(seconds=60))
+    super().__init__(story_name, duration)
 
   def run(self, run: Run) -> None:
     with timer():
       with run.actions("Show URL") as actions:
-        actions.show_url(self.URL)
+        actions.show_url(self.url_from_story(run.story.name))
       with run.actions("Autoplay") as actions:
         actions.wait_for_ready_state(
           ReadyState.COMPLETE, timeout=dt.timedelta(seconds=5)
         )
-        actions.js(PLAY_AUDIO_SCRIPT)
+        actions.js(UNMUTE_AUDIO_SCRIPT)
+      if self.should_remute(run.story.name):
+        with run.actions("Remute") as actions:
+          actions.wait(dt.timedelta(seconds=5))
+          actions.js(REMUTE_AUDIO_SCRIPT)
       with run.actions("Screen") as actions:
         actions.wait(dt.timedelta(seconds=5))
-        if actions.platform.is_android:
-          # On Android, put the screen to sleep to simulate playing a
-          # podcast in the background.
-          actions.platform.sh("input", "keyevent", "26")
-      self._wait_for_input()
+        with actions.platform.low_power_mode():
+          # Put the screen to sleep and enter simulated Doze
+          actions.wait(self.duration)
       logging.info("Stopping benchmark...")
 
-  def _wait_for_input(self) -> None:
-    logging.critical(
-        "Measurement has started. The browser will close in %s" +
-        " (or press enter to close immediately)", self._run_for)
-    try:
-      input_helper.input_with_timeout(timeout=self._run_for)
-    except KeyboardInterrupt:
-      pass
+  @classmethod
+  def url_from_story(cls, name: str) -> str:
+    return cls.URL_BASE + cls.STORY_URLS[name]
+
+  @classmethod
+  def should_remute(cls, name: str) -> bool:
+    return name.endswith("_muted")
 
   @classmethod
   @override
-  def all_story_names(cls) -> tuple[str, ...]:
-    return (PowerlineStory.STORY_NAME,)
-
+  def all_story_names(cls) -> Sequence[str]:
+    return sorted(cls.STORY_URLS)
 
 
 class PowerlineBenchmark(Benchmark):
@@ -85,19 +97,19 @@ class PowerlineBenchmark(Benchmark):
   listening to a podcast with the screen off. The test measures the CPU power
   consumption on the Pixel power rails via Perfetto.
   """
-  NAME="powerline"
-  DEFAULT_STORY_CLS = PowerlineStory
+  NAME: ClassVar = "powerline"
+  DEFAULT_STORY_CLS: ClassVar = PowerlineStory
 
   # TODO: we may want to check somehow that the device is a Pixel and therefore
   # has meaningful power rails we can read.
-  # TODO: we may want to unlock the device so we can run further benchmarks
-  # on it without manual intervention.
 
   def __init__(self,
                action_runner_config: Optional[ActionRunnerConfig] = None,
                run_for: Optional[dt.timedelta] = None) -> None:
-    powerline_story = PowerlineStory(run_for)
-    super().__init__([powerline_story], action_runner_config)
+    stories = [
+        PowerlineStory(x, run_for) for x in PowerlineStory.all_story_names()
+    ]
+    super().__init__(stories, action_runner_config)
 
   @classmethod
   def _base_dir(cls) -> pth.LocalPath:
@@ -115,12 +127,15 @@ class PowerlineBenchmark(Benchmark):
     #  HTML5 tag and b) it will not play from JavaScript if the user does not
     # interact with the page first. https://developer.chrome.com/blog/autoplay
     assert browser_attributes.is_chromium_based
-    return Flags({"--autoplay-policy": "no-user-gesture-required"})
+    return Flags({
+      "--autoplay-policy": "no-user-gesture-required",
+      "--enable-renderer-backgrounding": None,
+      "--enable-background-timer-throttling": None
+    })
 
   @classmethod
   @override
-  def add_cli_parser(
-    cls, subparsers: argparse.ArgumentParser) -> CrossBenchArgumentParser:
+  def add_cli_parser(cls, subparsers: Subparsers) -> CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers)
     parser.add_argument(
         "--run-for",

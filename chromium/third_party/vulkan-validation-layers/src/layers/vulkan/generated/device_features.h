@@ -130,6 +130,10 @@ struct DeviceFeatures {
     bool cooperativeVector;
     // VkPhysicalDeviceCooperativeVectorFeaturesNV
     bool cooperativeVectorTraining;
+    // VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR
+    bool indirectMemoryCopy;
+    // VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR
+    bool indirectMemoryToImageCopy;
     // VkPhysicalDeviceCopyMemoryIndirectFeaturesNV
     bool indirectCopy;
     // VkPhysicalDeviceCornerSampledImageFeaturesNV
@@ -158,6 +162,8 @@ struct DeviceFeatures {
     bool dataGraphUpdateAfterBind;
     // VkPhysicalDeviceDedicatedAllocationImageAliasingFeaturesNV
     bool dedicatedAllocationImageAliasing;
+    // VkPhysicalDeviceDenseGeometryFormatFeaturesAMDX
+    bool denseGeometryFormat;
     // VkPhysicalDeviceDepthBiasControlFeaturesEXT
     bool depthBiasControl;
     // VkPhysicalDeviceDepthBiasControlFeaturesEXT
@@ -890,6 +896,8 @@ struct DeviceFeatures {
     bool shaderTileImageDepthReadAccess;
     // VkPhysicalDeviceShaderTileImageFeaturesEXT
     bool shaderTileImageStencilReadAccess;
+    // VkPhysicalDeviceShaderUntypedPointersFeaturesKHR
+    bool shaderUntypedPointers;
     // VkPhysicalDeviceShadingRateImageFeaturesNV
     bool shadingRateCoarseSampleOrder;
     // VkPhysicalDeviceShadingRateImageFeaturesNV
@@ -986,6 +994,8 @@ struct DeviceFeatures {
     bool videoEncodeIntraRefresh;
     // VkPhysicalDeviceVideoEncodeQuantizationMapFeaturesKHR
     bool videoEncodeQuantizationMap;
+    // VkPhysicalDeviceVideoEncodeRgbConversionFeaturesVALVE
+    bool videoEncodeRgbConversion;
     // VkPhysicalDeviceVideoMaintenance1FeaturesKHR
     bool videoMaintenance1;
     // VkPhysicalDeviceVideoMaintenance2FeaturesKHR

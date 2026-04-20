@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import os
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING, Final, Iterable, Optional
 
 from crossbench import plt
 from crossbench.cli.config.env import EnvConfig, ValidationMode
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
   from crossbench.plt.base import Platform
   from crossbench.probes.probe import Probe
 
-STALE_RESULT_ICONS = {
+STALE_RESULT_ICONS: Final = {
     75: "👻",
     100: "👾",
     125: "🎃",
@@ -229,10 +229,10 @@ class RunnerEnv(BaseEnv):
 
   def _check_running_binaries_on_platform(
       self, platform: plt.Platform, platform_browsers: list[Browser]) -> None:
-    # On Android, an app's process lifetime is not controlled by the user or
-    # the app itself. OS can start/terminate processes in the background, so
-    # we don't check for those.
-    if platform.is_android:
+    # On mobile platforms, an app's process lifetime is not controlled by the
+    # user or the app itself. OS can start/terminate processes in the
+    # background, so we don't check for those.
+    if platform.is_android or platform.is_ios:
       return
 
     browser_binaries: dict[str, list[Browser]] = collection_helper.group_by(
@@ -368,9 +368,10 @@ class RunnerEnv(BaseEnv):
 
   def _check_file_access(self) -> None:
     if self._platform.is_macos:
-      has_safari = any(
-          browser.attributes().is_safari for browser in self.browsers)
-      if has_safari:
+      has_desktop_safari = any(
+          browser.attributes().is_safari and not browser.platform.is_ios
+          for browser in self.browsers)
+      if has_desktop_safari:
         self._check_safari_cache_dir_access()
     self._check_results_dir_access()
 
@@ -396,7 +397,7 @@ class RunnerEnv(BaseEnv):
         assert self.platform.read_text(test_file) == test_file.name
         self.platform.rm(test_file)
         return True
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:  # noqa: BLE001
       logging.debug("Failed file access test: %s", e)
       return False
 

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class CloseTabAction(BaseTabAction):
-  TYPE: ActionType = ActionType.CLOSE_TAB
+  TYPE: ClassVar[ActionType] = ActionType.CLOSE_TAB
 
   @classmethod
   @override

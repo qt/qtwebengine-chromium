@@ -1,0 +1,81 @@
+#!/bin/bash
+#
+# Writes a pair of binary and GitHub attestation to discoverability storage,
+# including updating the search index.
+#
+# Needs `gsutil` and the cp-related permissions from
+# https://cloud.google.com/storage/docs/access-control/iam-gsutil:
+# storage.object.create will do, since we set noclobber on gsutil cp.
+# If a destination file already exists in a bucket then it will be ignored.
+# It would be nicer to update its mtime, but this is not possible with create
+# permission only.
+set -o errexit
+set -o nounset
+set -o pipefail
+
+readonly FBUCKET=oak-files  # File bucket on GCS
+readonly IBUCKET=oak-index  # Index bucket on GCS
+
+# ID of index to access binaries by commit hash and package name.
+readonly BINARY_FOR_COMMIT=6
+
+# ID of index to access GitHub attestations by commit hash and package name.
+readonly PROV_FOR_COMMIT=7
+
+# ID of index to access GitHub attestations by binary hash.
+readonly PROV_FOR_BINARY=12
+
+usage_and_exit() {
+  >&2 echo "Usage: $0 <binary_path> <prov_path> sha1:<commit_hash> <package_name>"
+  exit 1
+}
+
+copy_file() {
+  gsutil cp -n "$1" "$2"
+}
+
+# Uploads a file and returns its SHA2_256 hash.
+upload_file() {
+  local file="$1"
+  local hash="sha2-256:$(sha256sum "${file}" | cut -d " " -f 1)"
+  copy_file "${file}" "gs://${FBUCKET}/${hash}"
+
+  # static.space provides a long-term map from file hash to file URL.
+  local url="https://storage.googleapis.com/${FBUCKET}/${hash}"
+  curl --fail --silent \
+    --request POST \
+    --header 'Content-Type: application/json' \
+    --data "{ \"url\": \"${url}\" }" \
+    https://api.static.space/v1/snapshot > /dev/null 2>&1
+
+  echo "${hash}"
+}
+
+publish() {
+  local binary_path="$1"
+  local provenance_path="$2"
+  local commit_hash="$3"
+  local package_name="$4"
+
+  local bhash_path=$(mktemp)
+  local phash_path=$(mktemp)
+  upload_file "${binary_path}" > "${bhash_path}"
+  upload_file "${provenance_path}" > "${phash_path}"
+  bhash=$(cat "${bhash_path}")
+
+  copy_file \
+    "${bhash_path}" \
+    "gs://${IBUCKET}/${BINARY_FOR_COMMIT}/${commit_hash}/${package_name}"
+  copy_file \
+    "${phash_path}" \
+    "gs://${IBUCKET}/${PROV_FOR_COMMIT}/${commit_hash}/${package_name}"
+  copy_file \
+    "${phash_path}" \
+    "gs://${IBUCKET}/${PROV_FOR_BINARY}/${bhash}"
+}
+
+set -o xtrace
+if [[ $# != 4 ]]; then
+  usage_and_exit
+fi
+publish "$1" "$2" "$3" "$4"

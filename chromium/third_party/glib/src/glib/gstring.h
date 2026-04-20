@@ -58,6 +58,8 @@ GString*     g_string_new_len           (const gchar     *init,
                                          gssize           len);
 GLIB_AVAILABLE_IN_ALL
 GString*     g_string_sized_new         (gsize            dfl_size);
+GLIB_AVAILABLE_IN_2_86
+GString     *g_string_copy              (GString         *string);
 GLIB_AVAILABLE_IN_ALL
 gchar*      (g_string_free)             (GString         *string,
                                          gboolean         free_segment);
@@ -232,10 +234,10 @@ g_string_append_len_inline (GString    *gstring,
   else
     len_unsigned = (gsize) len;
 
-  if (G_LIKELY (gstring->len + len_unsigned < gstring->allocated_len))
+  if (G_LIKELY (len_unsigned < gstring->allocated_len - gstring->len))
     {
       char *end = gstring->str + gstring->len;
-      if (G_LIKELY (val + len_unsigned <= end || val > end + len_unsigned))
+      if (G_LIKELY (val + len_unsigned <= end || val >= end + len_unsigned))
         memcpy (end, val, len_unsigned);
       else
         memmove (end, val, len_unsigned);

@@ -7,7 +7,8 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING, Any, MutableMapping, Optional, Sequence, Type
+from typing import (TYPE_CHECKING, Any, ClassVar, MutableMapping, Optional,
+                    Sequence, Type)
 
 from typing_extensions import override
 
@@ -38,7 +39,7 @@ class JetStream2ProbeContext(JetStreamProbeContext):
 
 
 class JetStream2Story(JetStreamStory, metaclass=abc.ABCMeta):
-  SUBSTORIES: tuple[str, ...] = (
+  SUBSTORIES: ClassVar[tuple[str, ...]] = (
       "WSL",
       "UniPoker",
       "uglify-js-wtb",
@@ -212,4 +213,4 @@ class JetStream2BenchmarkStoryFilter(PressBenchmarkStoryFilter):
 
 
 class JetStream2Benchmark(JetStreamBenchmark):
-  STORY_FILTER_CLS = JetStream2BenchmarkStoryFilter
+  STORY_FILTER_CLS: ClassVar = JetStream2BenchmarkStoryFilter

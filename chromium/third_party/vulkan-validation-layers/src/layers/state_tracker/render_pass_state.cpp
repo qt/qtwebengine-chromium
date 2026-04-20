@@ -280,12 +280,15 @@ static void InitRenderPassState(vvl::RenderPass &render_pass) {
 
 namespace vvl {
 
+// vkCreateRenderPass2
 RenderPass::RenderPass(VkRenderPass handle, VkRenderPassCreateInfo2 const *pCreateInfo)
     : StateObject(handle, kVulkanObjectTypeRenderPass),
       create_info(pCreateInfo),
       use_dynamic_rendering(false),
       use_dynamic_rendering_inherited(false),
-      has_multiview_enabled(IsRenderPassMultiViewEnabled(*create_info.ptr())) {
+      has_multiview_enabled(IsRenderPassMultiViewEnabled(*create_info.ptr())),
+      rasterization_enabled(true),
+      dynamic_rendering_color_attachment_count(0) {
     InitRenderPassState(*this);
 }
 
@@ -294,18 +297,22 @@ static vku::safe_VkRenderPassCreateInfo2 ConvertCreateInfo(const VkRenderPassCre
     return create_info_2;
 }
 
+// vkCreateRenderPass
 RenderPass::RenderPass(VkRenderPass handle, VkRenderPassCreateInfo const *pCreateInfo)
     : StateObject(handle, kVulkanObjectTypeRenderPass),
       create_info(ConvertCreateInfo(*pCreateInfo)),
       use_dynamic_rendering(false),
       use_dynamic_rendering_inherited(false),
-      has_multiview_enabled(IsRenderPassMultiViewEnabled(*create_info.ptr())) {
+      has_multiview_enabled(IsRenderPassMultiViewEnabled(*create_info.ptr())),
+      rasterization_enabled(true),
+      dynamic_rendering_color_attachment_count(0) {
     InitRenderPassState(*this);
 }
 
 const VkPipelineRenderingCreateInfo VkPipelineRenderingCreateInfo_default = {
     VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO, nullptr, 0, 0, nullptr, VK_FORMAT_UNDEFINED, VK_FORMAT_UNDEFINED};
 
+// vkCreateGraphicsPipelines (dynamic rendering state tied to pipeline state)
 RenderPass::RenderPass(VkPipelineRenderingCreateInfo const *pPipelineRenderingCreateInfo, bool rasterization_enabled)
     : StateObject(static_cast<VkRenderPass>(VK_NULL_HANDLE), kVulkanObjectTypeRenderPass),
       use_dynamic_rendering(true),
@@ -314,7 +321,8 @@ RenderPass::RenderPass(VkPipelineRenderingCreateInfo const *pPipelineRenderingCr
       rasterization_enabled(rasterization_enabled),
       dynamic_pipeline_rendering_create_info((pPipelineRenderingCreateInfo && rasterization_enabled)
                                                  ? pPipelineRenderingCreateInfo
-                                                 : &VkPipelineRenderingCreateInfo_default) {}
+                                                 : &VkPipelineRenderingCreateInfo_default),
+      dynamic_rendering_color_attachment_count(dynamic_pipeline_rendering_create_info.colorAttachmentCount) {}
 
 bool RenderPass::UsesColorAttachment(uint32_t subpass_num) const {
     bool result = false;
@@ -371,6 +379,15 @@ uint32_t RenderPass::GetDynamicRenderingViewMask() const {
     return 0;
 }
 
+VkRenderingFlags RenderPass::GetRenderingFlags() const {
+    if (use_dynamic_rendering_inherited) {
+        return inheritance_rendering_info.flags;
+    } else if (use_dynamic_rendering) {
+        return dynamic_rendering_begin_rendering_info.flags;
+    }
+    return 0;
+}
+
 uint32_t RenderPass::GetViewMaskBits(uint32_t subpass) const {
     if (use_dynamic_rendering_inherited) {
         return GetBitSetCount(inheritance_rendering_info.viewMask);
@@ -393,6 +410,7 @@ const VkMultisampledRenderToSingleSampledInfoEXT *RenderPass::GetMSRTSSInfo(uint
     return vku::FindStructInPNextChain<VkMultisampledRenderToSingleSampledInfoEXT>(create_info.pSubpasses[subpass].pNext);
 }
 
+// vkCmdBeginRendering
 RenderPass::RenderPass(VkRenderingInfo const *pRenderingInfo, bool rasterization_enabled)
     : StateObject(static_cast<VkRenderPass>(VK_NULL_HANDLE), kVulkanObjectTypeRenderPass),
       use_dynamic_rendering(true),
@@ -400,14 +418,18 @@ RenderPass::RenderPass(VkRenderingInfo const *pRenderingInfo, bool rasterization
       has_multiview_enabled(
           IsDynamicRenderingMultiviewEnabled((pRenderingInfo && rasterization_enabled) ? pRenderingInfo : nullptr)),
       rasterization_enabled(rasterization_enabled),
-      dynamic_rendering_begin_rendering_info((pRenderingInfo && rasterization_enabled) ? pRenderingInfo : nullptr) {}
+      dynamic_rendering_begin_rendering_info((pRenderingInfo && rasterization_enabled) ? pRenderingInfo : nullptr),
+      dynamic_rendering_color_attachment_count(dynamic_rendering_begin_rendering_info.colorAttachmentCount) {}
 
+// vkBeginCommandBuffer (dynamic rendering in secondary command buffer)
 RenderPass::RenderPass(VkCommandBufferInheritanceRenderingInfo const *pInheritanceRenderingInfo)
     : StateObject(static_cast<VkRenderPass>(VK_NULL_HANDLE), kVulkanObjectTypeRenderPass),
       use_dynamic_rendering(false),
       use_dynamic_rendering_inherited(true),
       has_multiview_enabled(false),
-      inheritance_rendering_info(pInheritanceRenderingInfo) {}
+      rasterization_enabled(true),
+      inheritance_rendering_info(pInheritanceRenderingInfo),
+      dynamic_rendering_color_attachment_count(inheritance_rendering_info.colorAttachmentCount) {}
 
 Framebuffer::Framebuffer(VkFramebuffer handle, const VkFramebufferCreateInfo *pCreateInfo, std::shared_ptr<RenderPass> &&rpstate,
                          std::vector<std::shared_ptr<vvl::ImageView>> &&attachments)

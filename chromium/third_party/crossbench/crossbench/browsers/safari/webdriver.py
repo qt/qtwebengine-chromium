@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Optional, Set, Type
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, Set, Type
 
 from selenium import webdriver
 from selenium.webdriver.safari.options import Options as SafariOptions
@@ -20,22 +20,24 @@ from crossbench.browsers.webdriver import DriverException, WebDriverBrowser
 from crossbench.cli import ui
 from crossbench.helper.wait import WaitRange
 from crossbench.path import AnyPath, LocalPath
+from crossbench.plt.ios import IOSPlatform
 
 if TYPE_CHECKING:
+  from crossbench import path as pth
   from crossbench.browsers.settings import Settings
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
 
 class SafariWebDriver(WebDriverBrowser, Safari):
 
-  MAX_STARTUP_TIMEOUT = dt.timedelta(seconds=10)
+  MAX_STARTUP_TIMEOUT: ClassVar[dt.timedelta] = dt.timedelta(seconds=10)
 
   def __init__(self,
                label: str,
                path: AnyPath,
                settings: Optional[Settings] = None) -> None:
     super().__init__(label, path, settings)
-    assert self.platform.is_macos
+    assert self.platform.is_apple
 
   @classmethod
   @override
@@ -45,7 +47,7 @@ class SafariWebDriver(WebDriverBrowser, Safari):
   @override
   def _find_driver(self) -> AnyPath:
     # TODO: support remote platform
-    assert self.platform.is_local, "Remote platform is not supported yet"
+    assert self.host_platform.is_local, "Remote platform is not supported yet"
     return self.host_platform.local_path(
         find_safaridriver(self.path, self.platform))
 
@@ -72,16 +74,16 @@ class SafariWebDriver(WebDriverBrowser, Safari):
 
     with ui.spinner():
       driver = self._start_driver_with_retries(driver_kwargs)
-      self.platform.sleep(0.5)
+      self.host_platform.sleep(0.5)
 
     assert driver.session_id, "Could not start webdriver"
     logs: AnyPath = (
-        self.platform.home() / "Library/Logs/com.apple.WebDriver" /
+        self.host_platform.home() / "Library/Logs/com.apple.WebDriver" /
         driver.session_id)
-    all_logs = list(self.platform.glob(logs, "safaridriver*"))
+    all_logs = list(self.host_platform.glob(logs, "safaridriver*"))
     if all_logs:
       self._driver_log_file = LocalPath(all_logs[0])
-      assert self.platform.is_file(all_logs[0])
+      assert self.host_platform.is_file(all_logs[0])
     return driver
 
   # TODO(cbruni): implement iOS platform
@@ -95,7 +97,7 @@ class SafariWebDriver(WebDriverBrowser, Safari):
         min=2, timeout=self.MAX_STARTUP_TIMEOUT).wait_with_backoff():
       try:
         return webdriver.Safari(**driver_kwargs)
-      except Exception as e:  # pylint: disable=broad-except
+      except Exception as e:  # noqa: BLE001
         retries += 1
         exception_type = type(e)
         logging.warning("SafariWebDriver: startup failed (%s), retrying...",
@@ -131,7 +133,7 @@ class SafariWebDriver(WebDriverBrowser, Safari):
     for parent in self._driver_path.parents:
       if parent == self.path.parent:
         return
-    version = self.platform.sh_stdout(self._driver_path, "--version")
+    version = self.host_platform.sh_stdout(self._driver_path, "--version")
     assert str(self.version.major) in version, (
         f"safaridriver={self._driver_path} version='{version}' "
         f" doesn't match safari version={self.version.major}")
@@ -160,22 +162,23 @@ class SafariWebDriver(WebDriverBrowser, Safari):
       super().force_quit()
     finally:
       # Certain safaridriver versions keep on lingering around when they fail.
-      self.platform.sh("killall", "-9", "safaridriver", check=False)
+      self.host_platform.sh("killall", "-9", "safaridriver", check=False)
 
 
 class SafariWebdriverIOS(SafariWebDriver):
-  MAX_STARTUP_TIMEOUT = dt.timedelta(seconds=15)
+  MAX_STARTUP_TIMEOUT: ClassVar[dt.timedelta] = dt.timedelta(seconds=15)
 
   @override
   def _get_driver_options(self,
                           session: BrowserSessionRunGroup) -> SafariOptions:
     options = super()._get_driver_options(session)
+    assert isinstance(self.platform, IOSPlatform)
     desired_cap = {
         # "browserName": "Safari",
         # "browserVersion": "17.0.3", # iOS version
         # "safari:deviceType": "iPhone",
         # "safari:deviceName": "XXX's iPhone",
-        # "safari:deviceUDID": "...",
+        "safari:deviceUDID": self.platform.udid,
         "platformName": "iOS",
         "safari:initialUrl": "about:blank",
         "safari:openLinksInBackground": True,
@@ -188,3 +191,12 @@ class SafariWebdriverIOS(SafariWebDriver):
   @override
   def _setup_window(self) -> None:
     pass
+
+  @override
+  def _init_resolve_binary(self, path: pth.AnyPath) -> pth.AnyPath:
+    return path
+
+  @override
+  def _setup_cache_dir(self) -> Optional[pth.AnyPath]:
+    # TODO: Can we manage cache dir on iOS?
+    return None

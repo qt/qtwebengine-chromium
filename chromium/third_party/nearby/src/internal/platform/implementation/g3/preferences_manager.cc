@@ -27,9 +27,8 @@
 #include "absl/types/span.h"
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
-#include "internal/platform/device_info_impl.h"
+#include "internal/base/file_path.h"
 #include "internal/platform/implementation/g3/preferences_repository.h"
-#include "internal/platform/implementation/preferences_manager.h"
 #include "internal/platform/logging.h"
 
 namespace nearby {
@@ -38,9 +37,9 @@ namespace {
 using json = ::nlohmann::json;
 }  // namespace
 
-PreferencesManager::PreferencesManager() {
-  auto device_info = std::make_unique<DeviceInfoImpl>();
-  preferences_repository_ = std::make_unique<PreferencesRepository>();
+PreferencesManager::PreferencesManager(FilePath preferences_dir) {
+  preferences_repository_ =
+      std::make_unique<PreferencesRepository>(preferences_dir);
   value_ = preferences_repository_->LoadPreferences();
 }
 
@@ -183,7 +182,7 @@ void PreferencesManager::Remove(absl::string_view key) {
 // Writes data to storage.
 bool PreferencesManager::Commit() {
   if (!preferences_repository_->SavePreferences(value_)) {
-    NEARBY_LOGS(ERROR) << "Failed to save preference." << std::endl;
+    LOG(ERROR) << "Failed to save preference." << std::endl;
     return false;
   }
   return true;

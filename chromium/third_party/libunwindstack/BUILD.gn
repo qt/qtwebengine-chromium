@@ -29,6 +29,13 @@ config("warnings") {
   cflags_cc = [ "-Wno-thread-safety" ]
 }
 
+source_set("posix_strerror_r") {
+  sources = [ "src/android-base/posix_strerror_r.cpp" ]
+
+  # This requires the use of undef, which doesn't play nice with modules.
+  use_libcxx_modules = false
+}
+
 source_set("libunwindstack") {
   include_dirs = [
     "//third_party/libunwindstack/src/android-base/include",
@@ -96,7 +103,6 @@ source_set("libunwindstack") {
     "src/android-base/include/android-base/threads.h",
     "src/android-base/include/android-base/unique_fd.h",
     "src/android-base/include/android-base/utf8.h",
-    "src/android-base/posix_strerror_r.cpp",
     "src/android-base/stringprintf.cpp",
     "src/android-base/strings.cpp",
     "src/android-base/threads.cpp",
@@ -246,6 +252,7 @@ source_set("libunwindstack") {
     sources += [ "src/libunwindstack/AsmGetRegsX86_64.S" ]
   }
   deps = [
+    ":posix_strerror_r",
     "//third_party/lzma_sdk:lzma_sdk_xz",
     "//third_party/rust/rustc_demangle_capi/v0_1:lib",
     "//third_party/zlib:zlib",

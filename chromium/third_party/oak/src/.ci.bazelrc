@@ -1,0 +1,30 @@
+# CI specific config. This config should be safe to use from any presubmit and postsubmit jobs.
+
+# Useful to determine how long individual steps are taking in CI.
+build:ci --show_timestamps
+
+# --show_result leads to all of the built packages being logged at the
+# end, so we can visually verify that CI tasks are building everything we want.
+build:ci --show_result=1000000
+
+# --noshow_progress and --curses=no prevent a lot of progress bar noise in the CI logs.
+build:ci --noshow_progress
+build:ci --curses=no
+
+# Inline CI failures, since log files are hard to access in this enviroment
+build:ci --verbose_failures
+
+# Always show test errors in CI
+test --test_output=errors
+# Show stdout/stderr in test output in CI
+test --test_arg=--nocapture
+
+# The unsafe-fast-presubmit config should only be used in presubmits steps that do not produce
+# binaries that need to be released or trusted (e.g. TEE applications). This is because it enables
+# using a remote cache, which in general may not be considered trustworthy.
+
+# Inherit from the ci config.
+build:unsafe-fast-presubmit --config=ci
+build:unsafe-fast-presubmit --remote_cache=https://storage.googleapis.com/oak-bazel-cache
+build:unsafe-fast-presubmit --remote_upload_local_results=true
+build:unsafe-fast-presubmit --google_default_credentials=true

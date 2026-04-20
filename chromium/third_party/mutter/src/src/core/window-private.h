@@ -577,7 +577,6 @@ struct _MetaWindowClass
                                   MetaGrabOp  op);
   void (*current_workspace_changed) (MetaWindow *window);
   void (*move_resize_internal)   (MetaWindow                *window,
-                                  MetaGravity                gravity,
                                   MtkRectangle               unconstrained_rect,
                                   MtkRectangle               constrained_rect,
                                   MtkRectangle               temporary_rect,
@@ -627,6 +626,8 @@ struct _MetaWindowClass
                              int                 *stage_x,
                              int                 *stage_y,
                              MtkRoundingStrategy  rounding_strategy);
+
+  MetaGravity (* get_gravity) (MetaWindow *window);
 };
 
 void        meta_window_unmanage           (MetaWindow  *window,
@@ -659,11 +660,11 @@ gboolean    meta_window_has_fullscreen_monitors (MetaWindow *window);
 void        meta_window_adjust_fullscreen_monitor_rect (MetaWindow    *window,
                                                         MtkRectangle  *monitor_rect);
 
-void        meta_window_resize_frame_with_gravity (MetaWindow  *window,
-                                                   gboolean     user_op,
-                                                   int          w,
-                                                   int          h,
-                                                   MetaGravity  gravity);
+META_EXPORT_TEST
+void        meta_window_resize_frame (MetaWindow  *window,
+                                      gboolean     user_op,
+                                      int          w,
+                                      int          h);
 
 gboolean    meta_window_should_be_showing_on_workspace (MetaWindow    *window,
                                                         MetaWorkspace *workspace);
@@ -731,6 +732,9 @@ void meta_window_stack_just_below (MetaWindow *window,
 void meta_window_stack_just_above (MetaWindow *window,
                                    MetaWindow *above_this_one);
 
+int meta_window_stack_position_compare (gconstpointer window_a,
+                                        gconstpointer window_b);
+
 void meta_window_set_user_time (MetaWindow *window,
                                 guint32     timestamp);
 
@@ -790,12 +794,6 @@ void meta_window_update_monitor (MetaWindow                   *window,
 
 void meta_window_set_urgent (MetaWindow *window,
                              gboolean    urgent);
-
-void meta_window_move_resize_internal (MetaWindow          *window,
-                                       MetaMoveResizeFlags  flags,
-                                       MetaPlaceFlag        place_flags,
-                                       MetaGravity          gravity,
-                                       MtkRectangle         frame_rect);
 
 void meta_window_move_resize (MetaWindow          *window,
                               MetaMoveResizeFlags  flags,
@@ -898,3 +896,5 @@ gboolean meta_window_is_tiled_left (MetaWindow *window);
 gboolean meta_window_is_tiled_right (MetaWindow *window);
 
 MetaWindowConfig * meta_window_new_window_config (MetaWindow *window);
+
+MetaGravity meta_window_get_gravity (MetaWindow *window);

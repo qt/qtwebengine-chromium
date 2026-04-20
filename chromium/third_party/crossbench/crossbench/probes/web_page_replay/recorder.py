@@ -6,15 +6,15 @@ from __future__ import annotations
 
 import logging
 import shutil
-from typing import TYPE_CHECKING, Any, Iterable, Optional, Self, Type
+from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Optional, Self, Type
 
 from immutabledict import immutabledict
 from typing_extensions import override
 
 from crossbench import plt
 from crossbench.helper import fs_helper
-from crossbench.helper.cwd import ChangeCWD
-from crossbench.helper.path_finder import WprGoToolFinder
+from crossbench.helper.cwd import change_cwd
+from crossbench.helper.path_finder import WprGoFinder
 from crossbench.network.replay.web_page_replay import WprRecorder
 from crossbench.parse import PathParser
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
@@ -39,10 +39,10 @@ class WebPageReplayProbe(Probe):
   replayed using a local proxy server.
 
   Chrome telemetry's wpr.go:
-  https://chromium.googlesource.com/catapult/+/HEAD/web_page_replay_go/README.md
+  https://chromium.googlesource.com/webpagereplay/+/HEAD/README.md
   """
 
-  NAME = "wpr"
+  NAME: ClassVar = "wpr"
 
   @classmethod
   @override
@@ -84,7 +84,7 @@ class WebPageReplayProbe(Probe):
     super().__init__()
     host_platform = plt.PLATFORM
     if not wpr_go_bin:
-      wpr_go_bin = WprGoToolFinder(host_platform).local_path
+      wpr_go_bin = WprGoFinder(host_platform).local_path
     if not wpr_go_bin:
       raise RuntimeError(f"Could not find wpr.go on {host_platform}")
     self._wpr_go_bin: LocalPath = host_platform.parse_local_binary_path(
@@ -176,7 +176,7 @@ class WebPageReplayProbe(Probe):
         input_archive,
         output_archive,
     ]
-    with ChangeCWD(self._wpr_go_bin.parent):
+    with change_cwd(self._wpr_go_bin.parent):
       self.host_platform.sh(*cmd)
 
   @override

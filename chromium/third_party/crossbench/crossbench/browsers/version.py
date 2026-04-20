@@ -13,6 +13,8 @@ from typing import Any, Final, Iterable, Optional, Self
 
 from typing_extensions import override
 
+from crossbench.helper.version import Version, VersionParseError
+
 
 @dataclasses.dataclass
 class _BrowserVersionChannelMixin:
@@ -48,11 +50,6 @@ class BrowserVersionChannel(_BrowserVersionChannelMixin, enum.Enum):
     return self == other
 
 
-class BrowserVersionParseError(ValueError):
-
-  def __init__(self, name: str, msg: str, version: str) -> None:
-    self._version = version
-    super().__init__(f"Invalid {name} {repr(version)}: {msg}")
 
 
 class PartialBrowserVersionError(ValueError):
@@ -71,13 +68,7 @@ _VERSION_DIGITS_ONLY_RE: re.Pattern[str] = re.compile(r"\d+(\.\d+)*")
 
 
 @functools.total_ordering
-class BrowserVersion(abc.ABC):
-
-  _MAX_PART_VALUE: Final[int] = 0xFFFF
-
-  _parts: tuple[int, ...]
-  _channel: BrowserVersionChannel
-  _version_str: str
+class BrowserVersion(Version, metaclass=abc.ABCMeta):
 
   @classmethod
   def parse_unique(cls, value: str) -> Self:
@@ -98,21 +89,11 @@ class BrowserVersion(abc.ABC):
     return cls(parts, channel or parsed_channel, version_str)
 
   @classmethod
-  def _validate_parts(cls, parts: Iterable[int], value: str) -> tuple[int, ...]:
-    if parts is None:
-      raise cls.parse_error("Invalid version format", value)
-    parts_tpl = tuple(parts)
-    for part in parts_tpl:
-      if part < 0:
-        raise cls.parse_error("Version parts must be positive", value)
-    return parts_tpl
-
-  @classmethod
   def is_valid_unique(cls, value: str) -> bool:
     try:
       cls.parse_unique(value)
       return True
-    except BrowserVersionParseError:
+    except VersionParseError:
       return False
 
   @classmethod
@@ -121,10 +102,6 @@ class BrowserVersion(abc.ABC):
       cls,
       full_version: str) -> tuple[tuple[int, ...], BrowserVersionChannel, str]:
     pass
-
-  @classmethod
-  def parse_error(cls, msg: str, version: str) -> BrowserVersionParseError:
-    return BrowserVersionParseError(cls.__name__, msg, version)
 
   @classmethod
   def any(cls, parts: Iterable[int], version_str: str = "") -> Self:
@@ -154,29 +131,11 @@ class BrowserVersion(abc.ABC):
                parts: Iterable[int],
                channel: BrowserVersionChannel = BrowserVersionChannel.STABLE,
                version_str: str = "") -> None:
-    self._parts = self._validate_parts(parts, version_str or repr(parts))
-    self._channel = channel
-    self._version_str = version_str
+    super().__init__(parts, version_str)
+    self._channel: Final[BrowserVersionChannel] = channel
 
   @property
-  def parts(self) -> tuple[int, ...]:
-    return self._parts
-
-  @property
-  def version_str(self) -> str:
-    return self._version_str
-
-  @property
-  def parts_str(self) -> str:
-    return ".".join(map(str, self._parts))
-
-  def comparable_parts(self, padded_len) -> tuple[int, ...]:
-    if self.is_complete:
-      return self._parts
-    padding = (self._MAX_PART_VALUE,) * (padded_len - len(self._parts))
-    return self._parts + padding
-
-  @property
+  @override
   def is_complete(self) -> bool:
     return self.has_complete_parts and self.has_channel
 
@@ -251,13 +210,14 @@ class BrowserVersion(abc.ABC):
     pass
 
   @property
+  @override
   def key(self) -> tuple[tuple[int, ...], BrowserVersionChannel]:
     return (self._parts, self._channel)
 
   def with_channel(self, channel: BrowserVersionChannel) -> Self:
     if self.channel == channel:
       return self
-    return type(self)(self.parts, channel, self.version_str)  # pytype: disable=not-instantiable
+    return type(self)(self.parts, channel, self.version_str)
 
   def __str__(self) -> str:
     if not self._version_str:
@@ -271,14 +231,7 @@ class BrowserVersion(abc.ABC):
         f"{self.__class__.__name__}"
         f"({self.parts_str}, {self.channel_name}, {repr(self._version_str)})")
 
-  def is_compatible_type(self, other: BrowserVersion) -> bool:
-    return isinstance(other, type(self)) or isinstance(self, type(other))
-
-  def __eq__(self, other: Any) -> bool:
-    if not self.is_compatible_type(other):
-      return False
-    return self.key == other.key
-
+  @override
   def __le__(self, other: Any) -> bool:
     if not self.is_compatible_type(other):
       raise TypeError("Cannot compare versions from unrelated browsers: "
@@ -318,6 +271,7 @@ class UnknownBrowserVersion(BrowserVersion):
                parts: tuple[int, ...] = (),
                channel: BrowserVersionChannel = BrowserVersionChannel.ANY,
                version_str: str = "unknown") -> None:
+    del channel
     super().__init__(parts, BrowserVersionChannel.ANY, version_str)
 
   @classmethod

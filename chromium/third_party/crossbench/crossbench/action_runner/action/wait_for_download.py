@@ -5,26 +5,28 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Type
+import re
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
-from crossbench.action_runner.action.action import (ACTION_TIMEOUT, Action,
-                                                    ActionT)
+from crossbench.action_runner.action.action import ACTION_TIMEOUT, ActionT
 from crossbench.action_runner.action.action_type import ActionType
+from crossbench.action_runner.action.base_probe import BaseProbeAction
 from crossbench.parse import ObjectParser
 
 if TYPE_CHECKING:
   import datetime as dt
-  import re
 
-  from crossbench.action_runner.base import ActionRunner
   from crossbench.config import ConfigParser
-  from crossbench.runner.run import Run
+  from crossbench.types import JsonDict
 
 
-class WaitForDownloadAction(Action):
-  TYPE: ActionType = ActionType.WAIT_FOR_DOWNLOAD
+# Left here for backwards compatibility.
+# New probe actions should not have individual class implementations.
+# They should just be used as ProbeActions directly.
+class WaitForDownloadAction(BaseProbeAction):
+  TYPE: ClassVar[ActionType] = ActionType.WAIT_FOR_DOWNLOAD
 
   @classmethod
   @override
@@ -42,12 +44,17 @@ class WaitForDownloadAction(Action):
                pattern: re.Pattern,
                timeout: dt.timedelta = ACTION_TIMEOUT,
                index: int = 0) -> None:
-    self._pattern = pattern
-    super().__init__(timeout, index)
+    kwargs = {
+        "pattern": pattern,
+    }
+    super().__init__(
+        probe="downloads", kwargs=kwargs, timeout=timeout, index=index)
 
-  @property
-  def pattern(self) -> re.Pattern:
-    return self._pattern
+  @override
+  def kwargs_to_json(self) -> JsonDict:
+    pattern = self.kwargs["pattern"]
 
-  def run_with(self, run: Run, action_runner: ActionRunner) -> None:
-    action_runner.wait_for_download(run, self)
+    if isinstance(pattern, re.Pattern):
+      pattern = pattern.pattern
+
+    return {"pattern": pattern}

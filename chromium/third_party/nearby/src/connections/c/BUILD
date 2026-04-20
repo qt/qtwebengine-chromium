@@ -14,13 +14,21 @@
 
 load("@rules_apple//apple:apple.bzl", "apple_static_xcframework")
 load("@rules_apple//apple:macos.bzl", "macos_dylib")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//third_party/cpptoolchains/windows_llvm/build_defs:windows.bzl", "windows")
 
 package(default_visibility = [
     "//connections:__subpackages__",
     "//googlemac/iPhone/Nearby:__subpackages__",
     "//location/nearby:__subpackages__",
+    "//third_party/beto_core/nearby/connections:__subpackages__",
 ])
+
+exports_files(
+    srcs = [
+        "nc.h",
+    ],
+)
 
 licenses(["notice"])
 

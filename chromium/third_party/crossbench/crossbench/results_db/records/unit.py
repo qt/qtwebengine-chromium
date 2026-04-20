@@ -38,7 +38,7 @@ class UnitRecord(BaseRecord):
       orm_types.String(), nullable=True)
 
   @classmethod
-  def create_defaults(cls, session):
+  def create_defaults(cls, session: orm.Session) -> None:
     for name, unit, direction, help_str in _UNIT_PRESETS:
       if direction is ImprovementDirection.UP:
         help_str = f"{help_str} Bigger is better."

@@ -22,6 +22,7 @@
 
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/string_view.h"
 #include "connections/implementation/mediums/multiplex/multiplex_socket.h"
 #include "connections/implementation/mediums/utils.h"
 #include "connections/medium_selector.h"
@@ -41,10 +42,12 @@
 
 namespace nearby {
 namespace connections {
-
 namespace {
+
 using MultiplexSocket = mediums::multiplex::MultiplexSocket;
 using location::nearby::proto::connections::OperationResultCode;
+constexpr absl::string_view kAwdlServiceIdSuffixForServiceType = "_AWDL";
+
 }  // namespace
 
 Awdl::~Awdl() {
@@ -79,7 +82,7 @@ ErrorOr<bool> Awdl::StartAdvertising(const std::string& service_id,
 
   if (!IsAvailableLocked()) {
     LOG(INFO) << "Can't turn on Awdl advertising. Awdl is not available.";
-    return {Error(OperationResultCode::MEDIUM_UNAVAILABLE_LAN_NOT_AVAILABLE)};
+    return {Error(OperationResultCode::MEDIUM_UNAVAILABLE_AWDL_NOT_AVAILABLE)};
   }
 
   if (!nsd_service_info.IsValid()) {
@@ -91,7 +94,7 @@ ErrorOr<bool> Awdl::StartAdvertising(const std::string& service_id,
 
   if (IsAdvertisingLocked(service_id)) {
     LOG(INFO) << "Failed to Awdl advertise because we're already advertising.";
-    return {Error(OperationResultCode::CLIENT_WIFI_LAN_DUPLICATE_ADVERTISING)};
+    return {Error(OperationResultCode::CLIENT_AWDL_DUPLICATE_ADVERTISING)};
   }
 
   if (!IsAcceptingConnectionsLocked(service_id)) {
@@ -101,10 +104,11 @@ ErrorOr<bool> Awdl::StartAdvertising(const std::string& service_id,
               << ", service_id=" << service_id
               << ". Should accept connections before advertising.";
     return {Error(OperationResultCode::
-                      CLIENT_DUPLICATE_ACCEPTING_LAN_CONNECTION_REQUEST)};
+                      CLIENT_DUPLICATE_ACCEPTING_AWDL_CONNECTION_REQUEST)};
   }
 
-  nsd_service_info.SetServiceType(GenerateServiceType(service_id));
+  nsd_service_info.SetServiceType(GenerateServiceType(
+      absl::StrCat(service_id, kAwdlServiceIdSuffixForServiceType)));
   const auto& it = server_sockets_.find(service_id);
   if (it != server_sockets_.end()) {
     nsd_service_info.SetIPAddress(it->second.GetIPAddress());
@@ -116,7 +120,7 @@ ErrorOr<bool> Awdl::StartAdvertising(const std::string& service_id,
               << ", service_name=" << nsd_service_info.GetServiceName()
               << ", service_id=" << service_id;
     return {Error(
-        OperationResultCode::CONNECTIVITY_WIFI_LAN_START_ADVERTISING_FAILURE)};
+        OperationResultCode::CONNECTIVITY_AWDL_START_ADVERTISING_FAILURE)};
   }
 
   LOG(INFO) << "Turned on Awdl advertising with nsd_service_info="
@@ -166,22 +170,23 @@ ErrorOr<bool> Awdl::StartDiscovery(const std::string& service_id,
   if (!IsAvailableLocked()) {
     LOG(INFO) << "Can't discover Awdl services because Awdl isn't available.";
     return {Error(
-        OperationResultCode::MEDIUM_UNAVAILABLE_WIFI_AWARE_NOT_AVAILABLE)};
+        OperationResultCode::MEDIUM_UNAVAILABLE_AWDL_NOT_AVAILABLE)};
   }
 
   if (IsDiscoveringLocked(service_id)) {
     LOG(INFO) << "Refusing to start discovery of Awdl services because another "
                  "discovery is already in-progress.";
-    return {Error(OperationResultCode::CLIENT_WIFI_LAN_DUPLICATE_DISCOVERING)};
+    return {Error(OperationResultCode::CLIENT_AWDL_DUPLICATE_DISCOVERING)};
   }
 
-  std::string service_type = GenerateServiceType(service_id);
+  std::string service_type = GenerateServiceType(
+      absl::StrCat(service_id, kAwdlServiceIdSuffixForServiceType));
   bool ret =
       medium_.StartDiscovery(service_id, service_type, std::move(callback));
   if (!ret) {
     LOG(INFO) << "Failed to start discovery of Awdl services.";
     return {Error(
-        OperationResultCode::CONNECTIVITY_WIFI_LAN_START_DISCOVERY_FAILURE)};
+        OperationResultCode::CONNECTIVITY_AWDL_START_DISCOVERY_FAILURE)};
   }
 
   LOG(INFO) << "Turned on Awdl discovering with service_id=" << service_id;
@@ -199,7 +204,8 @@ bool Awdl::StopDiscovery(const std::string& service_id) {
     return false;
   }
 
-  std::string service_type = GenerateServiceType(service_id);
+  std::string service_type = GenerateServiceType(
+      absl::StrCat(service_id, kAwdlServiceIdSuffixForServiceType));
   LOG(INFO) << "Turned off Awdl discovering with service_id=" << service_id
             << ", service_type=" << service_type;
   bool ret = medium_.StopDiscovery(service_type);
@@ -364,7 +370,7 @@ ErrorOr<bool> Awdl::InternalStartAcceptingConnections(
     LOG(INFO) << "Can't start accepting Awdl connections [service_id="
               << service_id << "]; Awdl not available.";
     return {Error(
-        OperationResultCode::MEDIUM_UNAVAILABLE_WIFI_AWARE_NOT_AVAILABLE)};
+        OperationResultCode::MEDIUM_UNAVAILABLE_AWDL_NOT_AVAILABLE)};
   }
 
   if (IsAcceptingConnectionsLocked(service_id)) {
@@ -372,7 +378,7 @@ ErrorOr<bool> Awdl::InternalStartAcceptingConnections(
               << service_id
               << "]; Awdl server is already in-progress with the same name.";
     return {Error(OperationResultCode::
-                      CLIENT_DUPLICATE_ACCEPTING_LAN_CONNECTION_REQUEST)};
+                      CLIENT_DUPLICATE_ACCEPTING_AWDL_CONNECTION_REQUEST)};
   }
 
   auto port_range = medium_.GetDynamicPortRange();
@@ -392,7 +398,7 @@ ErrorOr<bool> Awdl::InternalStartAcceptingConnections(
     LOG(INFO) << "Failed to start accepting Awdl connections for service_id="
               << service_id;
     return {Error(OperationResultCode::
-                      CLIENT_CANCELLATION_WIFI_LAN_SERVER_SOCKET_CREATION)};
+                      CLIENT_CANCELLATION_AWDL_SERVER_SOCKET_CREATION)};
   }
 
   // Mark the fact that there's an in-progress Awdl server accepting
@@ -441,13 +447,13 @@ ErrorOr<AwdlSocket> Awdl::InternalConnect(
   if (!IsAvailableLocked()) {
     LOG(INFO) << "Can't create client Awdl socket [service_id=" << service_id
               << "]; Awdl isn't available.";
-    return {Error(OperationResultCode::MEDIUM_UNAVAILABLE_LAN_NOT_AVAILABLE)};
+    return {Error(OperationResultCode::MEDIUM_UNAVAILABLE_AWDL_NOT_AVAILABLE)};
   }
 
   if (cancellation_flag->Cancelled()) {
     LOG(INFO) << "Can't create client Awdl socket due to cancel.";
     return {Error(OperationResultCode::
-                      CLIENT_CANCELLATION_CANCEL_LAN_OUTGOING_CONNECTION)};
+                      CLIENT_CANCELLATION_CANCEL_AWDL_OUTGOING_CONNECTION)};
   }
 
   if (service_info.GetServiceName().empty() ||
@@ -455,7 +461,7 @@ ErrorOr<AwdlSocket> Awdl::InternalConnect(
     LOG(INFO) << "Can't create client Awdl socket due to invalid service "
                  "information.";
     return {
-        Error(OperationResultCode::CONNECTIVITY_WIFI_LAN_INVALID_CREDENTIAL)};
+        Error(OperationResultCode::CONNECTIVITY_AWDL_INVALID_CREDENTIAL)};
   }
 
   socket =
@@ -465,7 +471,7 @@ ErrorOr<AwdlSocket> Awdl::InternalConnect(
   if (!socket.IsValid()) {
     LOG(INFO) << "Failed to Connect via Awdl [service_id=" << service_id << "]";
     return {Error(
-        OperationResultCode::CONNECTIVITY_LAN_CLIENT_SOCKET_CREATION_FAILURE)};
+        OperationResultCode::CONNECTIVITY_AWDL_CLIENT_SOCKET_CREATION_FAILURE)};
   }
 
   LOG(INFO) << "Successfully connected via Awdl [service_id=" << service_id

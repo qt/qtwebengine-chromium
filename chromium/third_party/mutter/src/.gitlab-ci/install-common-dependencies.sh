@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -e
 
@@ -33,6 +33,44 @@ pkgconf() {
   ENV=(PKG_CONFIG_PATH=$(echo "${search_dirs[@]}" | tr ' ' :))
 
   env "${ENV[@]}" pkgconf --env-only "$@"
+}
+
+pip_install() {
+  local pkg=$1
+
+  for destdir in "${DESTDIRS[@]}"; do
+    local pypaths=($destdir/usr/lib*/python3*/site-packages)
+    if ! pip3 list "${pypaths[@]/#/--path=}" | grep $pkg >/dev/null
+    then
+      sudo pip3 install --ignore-installed \
+        --root-user-action ignore \
+        --prefix $destdir/usr \
+        $pkg
+    fi
+  done
+}
+
+check_gsettings_key() {
+  local schema=$1
+  local key=$2
+
+  local rv=0
+
+  for destdir in "${DESTDIRS[@]}"; do
+    local schemadir=$(realpath $destdir/usr/share/glib-2.0/schemas/)
+    local targetdir=$(mktemp --directory)
+
+    if ! glib-compile-schemas --targetdir $targetdir $schemadir 2>/dev/null ||\
+       ! env -i "XDG_DATA_DIRS=/dev/null" \
+           gsettings --schemadir $targetdir get $schema $key >/dev/null 2>&1
+    then
+      rv=1
+    fi
+
+    rm -rf $targetdir
+  done
+
+  return $rv
 }
 
 TEMP=$(getopt \
@@ -78,10 +116,18 @@ OPTIONS+=( "${DESTDIRS[@]/#/--destdir=}" )
 
 SCRIPTS_DIR="$(dirname $0)"
 
-if ! pkgconf --atleast-version 48.alpha gsettings-desktop-schemas
+if ! pkgconf --atleast-version 1.83.4 gjs-1.0
 then
     ./$SCRIPTS_DIR/install-meson-project.sh \
       "${OPTIONS[@]}" \
-      https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas.git \
+      https://gitlab.gnome.org/GNOME/gjs.git \
       master
 fi
+
+#if ! pkgconf --atleast-version 1.41 wayland-protocols
+#then
+#    ./$SCRIPTS_DIR/install-meson-project.sh \
+#      "${OPTIONS[@]}" \
+#      https://gitlab.freedesktop.org/wayland/wayland-protocols.git \
+#      1.41
+#fi

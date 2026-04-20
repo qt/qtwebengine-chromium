@@ -30,7 +30,7 @@ class Metric:
   """
 
   @classmethod
-  def format(cls, value: float | int, stddev: Optional[float] = None) -> str:
+  def format(cls, value: float, stddev: Optional[float] = None) -> str:
     """Format value and stdev to only expose significant + 1 digits.
     Example outputs:
       100 ± 10%
@@ -183,7 +183,7 @@ class MetricsMerger:
     return merger
 
   def __init__(self,
-               *args: dict | list[dict],
+               *args: dict | Iterable[dict],
                key_fn: Optional[helper.KeyFnType] = None):
     """Create a new MetricsMerger
 
@@ -193,7 +193,7 @@ class MetricsMerger:
           as keys to group/merge values, or None to skip property paths.
     """
     self._data: dict[str, Metric] = {}
-    self._key_fn: helper.KeyFnType = key_fn or helper._default_flatten_key_fn
+    self._key_fn: helper.KeyFnType = key_fn or helper.default_flatten_key_fn
     self._ignored_keys: Set[str] = set()
     for data in args:
       self.add(data)
@@ -226,16 +226,16 @@ class MetricsMerger:
       else:
         self._data[key] = Metric.from_json(item)
 
-  def add(self, data: dict | list[dict]) -> None:
+  def add(self, data: dict | Iterable[dict]) -> None:
     """ Merge "arbitrary" hierarchical data that ends up having primitive leafs.
     Anything that is not a dict is considered a leaf node.
     """
-    if isinstance(data, list):
+    if isinstance(data, dict):
+      self._merge(data)
+    else:
       # Assume that top-level lists are repetitions of the same data
       for item in data:
         self._merge(item)
-    else:
-      self._merge(data)
 
   def _merge(
       self, data: dict | list[dict], parent_path: tuple[str, ...] = ()) -> None:
@@ -320,7 +320,8 @@ class CSVFormatter:
     max_path_depth += 1
     return max_path_depth
 
-  def append_headers(self, headers, max_path_depth: int) -> None:
+  def append_headers(self, headers: Sequence[tuple[Any, ...]],
+                     max_path_depth: int) -> None:
     header_padding = ("",) * max_path_depth
     for header in headers:
       assert isinstance(header, tuple), (

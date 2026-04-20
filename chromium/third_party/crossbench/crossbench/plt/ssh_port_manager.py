@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Final, cast
 
 from typing_extensions import override
 
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 class SshPortManager(PortManager):
-  PORT_FORWARDING_TIMEOUT = dt.timedelta(seconds=10)
+  PORT_FORWARDING_TIMEOUT: Final = dt.timedelta(seconds=10)
 
   def __init__(self, platform: Platform) -> None:
     assert isinstance(platform, SshPlatformMixin)

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+readonly SCRIPTS_DIR="$(dirname "$0")"
+# shellcheck source=scripts/common
+source "$SCRIPTS_DIR/common"
+
+bazel_build_flags+=(
+  '--config=fuzz'
+)
+
+bazel build "${bazel_build_flags[@]}" //oak/server:wasm_node_fuzz
+./bazel-clang-bin/oak/server/wasm_node_fuzz

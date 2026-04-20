@@ -29,6 +29,13 @@
     }
 }
 
+[[maybe_unused]] static std::string string_AttachmentPointer(const uint32_t *attachment) {
+    if (!attachment) {
+        return "NULL";
+    }
+    return string_Attachment(*attachment);
+}
+
 [[maybe_unused]] static std::string string_VkExtent2D(VkExtent2D extent) {
     std::stringstream ss;
     ss << "width = " << extent.width << ", height = " << extent.height;
@@ -38,6 +45,18 @@
 [[maybe_unused]] static std::string string_VkExtent3D(VkExtent3D extent) {
     std::stringstream ss;
     ss << "width = " << extent.width << ", height = " << extent.height << ", depth = " << extent.depth;
+    return ss.str();
+}
+
+[[maybe_unused]] static std::string string_VkExtentDimensions(VkExtent2D extent) {
+    std::stringstream ss;
+    ss << extent.width << "x" << extent.height;
+    return ss.str();
+}
+
+[[maybe_unused]] static std::string string_VkExtentDimensions(VkExtent3D extent) {
+    std::stringstream ss;
+    ss << extent.width << "x" << extent.height << "x" << extent.depth;
     return ss.str();
 }
 

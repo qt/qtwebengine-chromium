@@ -10,10 +10,9 @@
             "builder_id": {
               "bucket": "ci",
               "builder": "android-12l-x64-rel-cq",
-              "project": "chromium-m140"
+              "project": "chromium-m142"
             },
             "builder_spec": {
-              "build_gs_bucket": "chromium-android-archive",
               "builder_group": "chromium.android",
               "execution_mode": "COMPILE_AND_TEST",
               "legacy_android_config": {
@@ -43,7 +42,7 @@
         {
           "bucket": "ci",
           "builder": "android-12l-x64-rel-cq",
-          "project": "chromium-m140"
+          "project": "chromium-m142"
         }
       ],
       "mirroring_builder_group_and_names": [
@@ -58,7 +57,8 @@
       ],
       "retry_failed_shards": true,
       "retry_invalid_shards": true,
-      "targets_spec_directory": "src/infra/config/generated/builders/ci/android-12l-x64-rel-cq/targets"
+      "targets_spec_directory": "infra/config/generated/builders/ci/android-12l-x64-rel-cq/targets",
+      "targets_spec_directory_relative_to_source_dir": true
     }
   },
   "$build/siso": {

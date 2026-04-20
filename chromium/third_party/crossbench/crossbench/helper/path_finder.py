@@ -5,8 +5,11 @@
 from __future__ import annotations
 
 import abc
+import dataclasses
+import json
 import logging
-from typing import TYPE_CHECKING, Final, Iterator, Optional, Sequence
+import subprocess
+from typing import TYPE_CHECKING, Final, Iterator, Mapping, Optional, Sequence
 
 from typing_extensions import override
 
@@ -16,43 +19,42 @@ if TYPE_CHECKING:
   from crossbench.plt.base import Platform
 
 
-class BaseToolFinder(abc.ABC):
+class BasePathFinder(abc.ABC):
 
-  def __init__(
-      self, platform: Platform, candidates: tuple[pth.AnyPath,
-                                                  ...] = tuple()) -> None:
-    self._platform = platform
-    self._candidates = candidates + self.default_candidates()
-    self._path: pth.AnyPath | None = self._find_path()
-    if self._path:
-      assert self.is_valid_path(self._path)
+  def __init__(self, platform: Platform) -> None:
+    self._platform: Final[Platform] = platform
+    self._path: Final[pth.AnyPath | None] = self._find_path()
+    if self._path and not self.is_valid_path(self._path):
+      raise ValueError(f"Resolved binary path is not valid: {self._path}")
 
   @property
   def platform(self) -> Platform:
     return self._platform
 
   @property
-  def path(self) -> Optional[pth.AnyPath]:
+  def path(self) -> pth.AnyPath | None:
     return self._path
 
   @property
-  def local_path(self) -> Optional[pth.LocalPath]:
+  def local_path(self) -> pth.LocalPath | None:
     if path := self.path:
       return self.platform.local_path(path)
     return None
 
-  @property
   def candidates(self) -> tuple[pth.AnyPath, ...]:
-    return self._candidates
+    return ()
 
-  def default_candidates(self) -> tuple[pth.AnyPath, ...]:
-    return tuple()
-
-  def _find_path(self) -> Optional[pth.AnyPath]:
+  def _find_path(self) -> pth.AnyPath | None:
     # Try potential build location
-    for candidate_path in self._candidates:
+    for candidate_path in self._iterate_candidates():
       if self.is_valid_path(candidate_path):
         return candidate_path
+    return self._find_fallback_path()
+
+  def _iterate_candidates(self) -> Iterator[pth.AnyPath]:
+    yield from self.candidates()
+
+  def _find_fallback_path(self) -> pth.AnyPath | None:
     return None
 
   @abc.abstractmethod
@@ -82,7 +84,7 @@ def default_chromium_candidates(platform: Platform) -> tuple[pth.AnyPath, ...]:
   return tuple(candidates)
 
 
-def chromium_src_relative_local_path():
+def chromium_src_relative_local_path() -> pth.LocalPath:
   """Gets the local relative path of `chromium/src`.
 
   Assuming the cli.py path is `third_party/crossbench/crossbench/cli/cli.py`.
@@ -96,12 +98,12 @@ def is_chromium_checkout_dir(platform: Platform, dir_path: pth.AnyPath) -> bool:
           platform.is_dir(dir_path / ".git"))
 
 
-class ChromiumCheckoutFinder(BaseToolFinder):
+class ChromiumCheckoutFinder(BasePathFinder):
   """Finds a chromium src checkout at either given locations or at
   some preset known checkout locations."""
 
   @override
-  def default_candidates(self) -> tuple[pth.AnyPath, ...]:
+  def candidates(self) -> tuple[pth.AnyPath, ...]:
     return default_chromium_candidates(self.platform)
 
   @override
@@ -109,27 +111,31 @@ class ChromiumCheckoutFinder(BaseToolFinder):
     return is_chromium_checkout_dir(self.platform, candidate)
 
 
-class ChromiumBuildBinaryFinder(BaseToolFinder):
+class ChromiumBuildBinaryFinder(BasePathFinder):
   """Finds a custom-built binary in either a given out/BUILD dir or
   tries to find it in build dirs in common known chromium checkout locations."""
 
   BUILD_DIR_NAMES: Final[Sequence[str]] = ("Release", "release", "rel",
                                            "Optdebug", "optdebug", "opt")
 
-  def __init__(
-      self,
-      platform: Platform,
-      binary_name: str,
-      candidates: tuple[pth.AnyPath, ...] = tuple()) -> None:
-    self._binary_name = binary_name
-    super().__init__(platform, candidates)
+  def __init__(self, platform: Platform, binary_name: str,
+               candidates: tuple[pth.AnyPath, ...]) -> None:
+    self._binary_name: Final[str] = binary_name
+    self._candidates = candidates
+    super().__init__(platform)
+
+  @override
+  def candidates(self) -> tuple[pth.AnyPath, ...]:
+    return self._candidates
 
   @property
   def binary_name(self) -> str:
     return self._binary_name
 
-  def _iterate_candidate_bin_paths(self) -> Iterator[pth.AnyPath]:
-    for candidate_dir in self._candidates:
+  @override
+  def _iterate_candidates(self) -> Iterator[pth.AnyPath]:
+    # TOOD: Use candidates x search_paths like on Platform.
+    for candidate_dir in self.candidates():
       yield candidate_dir / self._binary_name
       for build in self.BUILD_DIR_NAMES:
         yield candidate_dir / build / self._binary_name
@@ -143,13 +149,6 @@ class ChromiumBuildBinaryFinder(BaseToolFinder):
         yield candidate_out / build / self._binary_name
 
   @override
-  def _find_path(self) -> Optional[pth.AnyPath]:
-    for candidate in self._iterate_candidate_bin_paths():
-      if self.is_valid_path(candidate):
-        return candidate
-    return None
-
-  @override
   def is_valid_path(self, candidate: pth.AnyPath) -> bool:
     assert candidate.name == self._binary_name
     if not self.platform.is_file(candidate):
@@ -160,10 +159,10 @@ class ChromiumBuildBinaryFinder(BaseToolFinder):
     return is_chromium_checkout_dir(self._platform, maybe_checkout_dir)
 
 
-class V8CheckoutFinder(BaseToolFinder):
+class V8CheckoutFinder(BasePathFinder):
 
   @override
-  def default_candidates(self) -> tuple[pth.AnyPath, ...]:
+  def candidates(self) -> tuple[pth.AnyPath, ...]:
     if self.platform.is_android:
       return ()
     home_dir = self._platform.home()
@@ -179,9 +178,7 @@ class V8CheckoutFinder(BaseToolFinder):
     )
 
   @override
-  def _find_path(self) -> Optional[pth.AnyPath]:
-    if v8_checkout := super()._find_path():
-      return v8_checkout
+  def _find_fallback_path(self) -> pth.AnyPath | None:
     if chromium_checkout := ChromiumCheckoutFinder(self._platform).path:
       return chromium_checkout / "v8"
     maybe_d8_path = self.platform.environ.get("D8_PATH")
@@ -234,7 +231,7 @@ class V8ToolsFinder:
       if self.platform.is_file(candidate):
         return candidate
     # Try potential build location
-    for candidate_dir in V8CheckoutFinder(self.platform).candidates:
+    for candidate_dir in V8CheckoutFinder(self.platform).candidates():
       for build_type in ("release", "optdebug", "Default", "Release"):
         candidates = list(
             self.platform.glob(candidate_dir, f"out/*{build_type}/d8"))
@@ -245,7 +242,7 @@ class V8ToolsFinder:
           return d8_candidate
     return None
 
-  def _find_v8_tick_processor(self) -> Optional[pth.AnyPath]:
+  def _find_v8_tick_processor(self) -> pth.AnyPath | None:
     if self.platform.is_linux:
       tick_processor = "tools/linux-tick-processor"
     elif self.platform.is_macos:
@@ -274,29 +271,31 @@ class V8ToolsFinder:
     return None
 
 
-class BaseChromiumBinaryToolFinder(BaseToolFinder):
+class BaseChromiumPathFinder(BasePathFinder, metaclass=abc.ABCMeta):
 
   @override
   def is_valid_path(self, candidate: pth.AnyPath) -> bool:
     return self._platform.is_file(candidate)
 
   @classmethod
+  @abc.abstractmethod
   def chrome_path(cls) -> pth.AnyPath:
-    raise NotImplementedError()
+    """ Path within a chromium checkout. """
+    raise NotImplementedError
 
   @override
-  def default_candidates(self) -> tuple[pth.AnyPath, ...]:
+  def candidates(self) -> tuple[pth.AnyPath, ...]:
     relative_path = chromium_src_relative_local_path() / self.chrome_path()
     if maybe_chrome := ChromiumCheckoutFinder(self._platform).path:
       return (relative_path, maybe_chrome / self.chrome_path(),)
     return (relative_path,)
 
 
-class PerfettoToolFinder(BaseChromiumBinaryToolFinder, metaclass=abc.ABCMeta):
+class PerfettoFinder(BaseChromiumPathFinder, metaclass=abc.ABCMeta):
 
   @classmethod
   @abc.abstractmethod
-  def default_binary_name(cls) -> str:
+  def binary_name(cls) -> str:
     pass
 
   @classmethod
@@ -306,41 +305,41 @@ class PerfettoToolFinder(BaseChromiumBinaryToolFinder, metaclass=abc.ABCMeta):
   @classmethod
   @override
   def chrome_path(cls) -> pth.AnyPath:
-    return cls.perfetto_tools_dir() / cls.default_binary_name()
+    return cls.perfetto_tools_dir() / cls.binary_name()
 
 
-class TraceconvFinder(PerfettoToolFinder):
+class TraceconvFinder(PerfettoFinder):
 
   @classmethod
   @override
-  def default_binary_name(cls) -> str:
+  def binary_name(cls) -> str:
     return "traceconv"
 
 
-class TraceboxFinder(PerfettoToolFinder):
+class TraceboxFinder(PerfettoFinder):
 
   @classmethod
   @override
-  def default_binary_name(cls) -> str:
+  def binary_name(cls) -> str:
     return "tracebox"
 
 
-class TraceProcessorFinder(PerfettoToolFinder):
+class TraceProcessorFinder(PerfettoFinder):
 
   @classmethod
   @override
-  def default_binary_name(cls) -> str:
+  def binary_name(cls) -> str:
     return "trace_processor"
 
 
-CROSSBENCH_DIR = pth.LocalPath(__file__).parents[2]
+CROSSBENCH_DIR: Final = pth.LocalPath(__file__).parents[2]
 
 
-class BaseCrossbenchBinaryToolFinder(BaseChromiumBinaryToolFinder):
+class BaseCrossbenchPathFinder(BaseChromiumPathFinder):
 
   @override
-  def default_candidates(self) -> tuple[pth.AnyPath, ...]:
-    candidates = super().default_candidates()
+  def candidates(self) -> tuple[pth.AnyPath, ...]:
+    candidates = super().candidates()
     return (CROSSBENCH_DIR / self.crossbench_path(),) + candidates
 
   @classmethod
@@ -349,7 +348,30 @@ class BaseCrossbenchBinaryToolFinder(BaseChromiumBinaryToolFinder):
     pass
 
 
-class WprGoToolFinder(BaseCrossbenchBinaryToolFinder):
+@dataclasses.dataclass(frozen=True)
+class WprCloudBinary:
+  file_hash: str
+
+  @property
+  def url(self) -> str:
+    return ("gs://chromium-telemetry/binary_dependencies/wpr_go_"
+            f"{self.file_hash}")
+
+
+class WprGoFinder(BaseCrossbenchPathFinder):
+  # See binary_dependencies.json in the WebPageReplay repo.
+  # Public for testing.
+  WPR_PREBUILT_LOOKUP: Final[Mapping[tuple[str, str], str]] = {
+      ("android", "arm64"): "linux_aarch64",
+      ("android", "arm32"): "linux_armv7l",
+      ("android", "x64"): "linux_x86_64",
+      ("chromeos_ssh", "arm64"): "linux_aarch64",
+      ("chromeos_ssh", "x64"): "linux_x86_64",
+      ("linux", "x64"): "linux_x86_64",
+      ("macos", "arm64"): "mac_arm64",
+      ("macos", "x64"): "mac_x86_64",
+      ("win", "x64"): "win_AMD64",
+  }
 
   @classmethod
   @override
@@ -362,7 +384,47 @@ class WprGoToolFinder(BaseCrossbenchBinaryToolFinder):
     return pth.AnyPath("third_party/webpagereplay/src/wpr.go")
 
 
-class TsProxyFinder(BaseCrossbenchBinaryToolFinder):
+  # Info of a prebuilt WPR binary for `browser_platform`, stored in the cloud.
+  def cloud_binary(self, browser_platform: Platform) -> WprCloudBinary:
+    wpr_go_file = self.local_path
+    if not wpr_go_file:
+      raise RuntimeError("Could not find local wpr.go")
+
+    with (wpr_go_file.parents[1] /
+          "scripts/binary_dependencies.json").open() as file:
+      hashes_json = json.load(file)
+    platform_key = self.WPR_PREBUILT_LOOKUP[browser_platform.key]
+    return WprCloudBinary(
+        hashes_json["wpr_go"][platform_key]["cloud_storage_hash"])
+
+
+class BuildtoolFinder(BaseChromiumPathFinder):
+
+  @classmethod
+  @override
+  def chrome_path(cls) -> pth.AnyPath:
+    return pth.AnyPath(
+        "third_party/android_build_tools/bundletool/cipd/bundletool.jar")
+
+  @override
+  def candidates(self) -> tuple[pth.AnyPath, ...]:
+    super_candidates: tuple[pth.AnyPath, ...] = super().candidates()
+    if not self.platform.is_macos:
+      return super_candidates
+
+    try:
+      brew_path: pth.LocalPath = self.platform.local_path(
+          self.platform.sh_stdout("brew", "--prefix").strip("\n"))
+    except FileNotFoundError:
+      return super_candidates
+    except subprocess.CalledProcessError:
+      return super_candidates
+
+    return super_candidates + (self.platform.local_path(
+        brew_path / "bin/bundletool"),)
+
+
+class TsProxyFinder(BaseCrossbenchPathFinder):
 
   @classmethod
   @override

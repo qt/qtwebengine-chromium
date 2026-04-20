@@ -264,9 +264,9 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
         phys_dev_props_core14.pCopyDstLayouts = nullptr;
         instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_feature_version_1_4, &phys_dev_props_core14);
         host_image_copy_props_copy_src_layouts.resize(phys_dev_props_core14.copySrcLayoutCount);
-        host_imape_copy_props_copy_dst_layouts.resize(phys_dev_props_core14.copyDstLayoutCount);
+        host_image_copy_props_copy_dst_layouts.resize(phys_dev_props_core14.copyDstLayoutCount);
         phys_dev_props_core14.pCopySrcLayouts = host_image_copy_props_copy_src_layouts.data();
-        phys_dev_props_core14.pCopyDstLayouts = host_imape_copy_props_copy_dst_layouts.data();
+        phys_dev_props_core14.pCopyDstLayouts = host_image_copy_props_copy_dst_layouts.data();
         instance->GetPhysicalDeviceExtProperties<false>(physical_device, extensions.vk_feature_version_1_4, &phys_dev_props_core14);
     } else {
         if (extensions.vk_khr_line_rasterization) {
@@ -340,16 +340,16 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
             // First call, get copySrcLayoutCount and copyDstLayoutCount
             instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_host_image_copy, &host_image_copy_props);
             host_image_copy_props_copy_src_layouts.resize(host_image_copy_props.copySrcLayoutCount);
-            host_imape_copy_props_copy_dst_layouts.resize(host_image_copy_props.copyDstLayoutCount);
+            host_image_copy_props_copy_dst_layouts.resize(host_image_copy_props.copyDstLayoutCount);
             host_image_copy_props.pCopySrcLayouts = host_image_copy_props_copy_src_layouts.data();
-            host_image_copy_props.pCopyDstLayouts = host_imape_copy_props_copy_dst_layouts.data();
+            host_image_copy_props.pCopyDstLayouts = host_image_copy_props_copy_dst_layouts.data();
             instance->GetPhysicalDeviceExtProperties<false>(physical_device, extensions.vk_ext_host_image_copy,
                                                             &host_image_copy_props);
 
             phys_dev_props_core14.copySrcLayoutCount = host_image_copy_props.copySrcLayoutCount;
             phys_dev_props_core14.pCopySrcLayouts = host_image_copy_props_copy_src_layouts.data();
             phys_dev_props_core14.copyDstLayoutCount = host_image_copy_props.copyDstLayoutCount;
-            phys_dev_props_core14.pCopyDstLayouts = host_imape_copy_props_copy_dst_layouts.data();
+            phys_dev_props_core14.pCopyDstLayouts = host_image_copy_props_copy_dst_layouts.data();
             std::memcpy(phys_dev_props_core14.optimalTilingLayoutUUID, host_image_copy_props.optimalTilingLayoutUUID,
                         sizeof(host_image_copy_props.optimalTilingLayoutUUID));
             phys_dev_props_core14.identicalMemoryTypeRequirements = host_image_copy_props.identicalMemoryTypeRequirements;
@@ -358,7 +358,9 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
 
     // Extensions with properties to extract to DeviceExtensionProperties
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_nv_partitioned_acceleration_structure,
-        &phys_dev_ext_props.partitioned_acceleration_structure_props);
+                                             &phys_dev_ext_props.partitioned_acceleration_structure_props);
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_nv_cluster_acceleration_structure,
+                                             &phys_dev_ext_props.cluster_acceleration_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_nv_shading_rate_image,
                                              &phys_dev_ext_props.shading_rate_image_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_nv_mesh_shader,
@@ -407,6 +409,9 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
                                              &phys_dev_ext_props.blend_operation_advanced_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_conservative_rasterization,
                                              &phys_dev_ext_props.conservative_rasterization_props);
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_khr_copy_memory_indirect,
+                                             &phys_dev_ext_props.copy_memory_indirect_props);
+
     if (api_version >= VK_API_VERSION_1_1) {
         instance->GetPhysicalDeviceExtProperties(physical_device, kEnabledByCreateinfo, &phys_dev_ext_props.subgroup_props);
     }
@@ -606,15 +611,13 @@ void FreeData(void *key, VkDevice device) {
 }
 
 void FreeAllData() {
-    {
-        last_used_device.store(nullptr);
-        WriteLockGuard lock(device_mutex);
-        device_data.clear();
-    }
-    {
-        WriteLockGuard lock(instance_mutex);
-        instance_data.clear();
-    }
+    // We use to have a WriteLockGuard here, but ran into threading issues.
+    // This function is solely called from the atexit() handler, there shouldn't be anything vulkan related going on any more in any
+    // application threads. See https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/10659
+    last_used_device.store(nullptr);
+    device_data.clear();
+
+    instance_data.clear();
 }
 
 HandleWrapper::HandleWrapper(DebugReport *dr) : Logger(dr) {}
@@ -809,7 +812,7 @@ Device::Device(Instance *instance, VkPhysicalDevice gpu, const VkDeviceCreateInf
       phys_dev_props_core13(stateless_device_data.phys_dev_props_core13),
       phys_dev_props_core14(stateless_device_data.phys_dev_props_core14),
       host_image_copy_props_copy_src_layouts(stateless_device_data.host_image_copy_props_copy_src_layouts),
-      host_imape_copy_props_copy_dst_layouts(stateless_device_data.host_imape_copy_props_copy_dst_layouts),
+      host_imape_copy_props_copy_dst_layouts(stateless_device_data.host_image_copy_props_copy_dst_layouts),
       phys_dev_ext_props(stateless_device_data.phys_dev_ext_props),
       physical_device(gpu) {
     InitValidationObjects();
@@ -1862,7 +1865,7 @@ VkResult Device::CreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperati
     // Done with this shared unwrapped_pipelines pointer
     VkPipeline *returned_pipelines = pPipelines;
     std::shared_ptr<std::vector<VkPipeline>> unwrapped_pipelines;
-    // Operation may be deffered, will know when looking at dispatch VkResult,
+    // Operation may be deferred, will know when looking at dispatch VkResult,
     // still we need to prepare
     if (deferredOperation != VK_NULL_HANDLE) {
         unwrapped_pipelines = std::make_shared<std::vector<VkPipeline>>(createInfoCount);
@@ -2416,10 +2419,13 @@ VkResult Device::CreateIndirectExecutionSetEXT(VkDevice device, const VkIndirect
                     shader_info.initialize(pCreateInfo->info.pShaderInfo);
 
                     for (uint32_t index0 = 0; index0 < local_pCreateInfo.info.pShaderInfo->shaderCount; ++index0) {
-                        const auto &set_layout = local_pCreateInfo.info.pShaderInfo->pSetLayoutInfos[index0];
-                        if (set_layout.pSetLayouts) {
-                            for (uint32_t index1 = 0; index1 < set_layout.setLayoutCount; ++index1) {
-                                shader_info.pSetLayoutInfos[index0].pSetLayouts[index1] = Unwrap(set_layout.pSetLayouts[index1]);
+                        if (local_pCreateInfo.info.pShaderInfo->pSetLayoutInfos) {
+                            const auto &set_layout = local_pCreateInfo.info.pShaderInfo->pSetLayoutInfos[index0];
+                            if (set_layout.pSetLayouts) {
+                                for (uint32_t index1 = 0; index1 < set_layout.setLayoutCount; ++index1) {
+                                    shader_info.pSetLayoutInfos[index0].pSetLayouts[index1] =
+                                        Unwrap(set_layout.pSetLayouts[index1]);
+                                }
                             }
                         }
                         shader_info.pInitialShaders[index0] = Unwrap(local_pCreateInfo.info.pShaderInfo->pInitialShaders[index0]);
@@ -2618,5 +2624,47 @@ VkResult Device::CreateShadersEXT(VkDevice device, uint32_t createInfoCount, con
     return result;
 }
 
+VkResult Device::CreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                             VkPipelineCache pipelineCache, uint32_t createInfoCount,
+                                             const VkDataGraphPipelineCreateInfoARM *pCreateInfos,
+                                             const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines) {
+    if (!wrap_handles)
+        return device_dispatch_table.CreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
+                                                            pPipelines);
+    vku::safe_VkDataGraphPipelineCreateInfoARM *local_pCreateInfos = nullptr;
+    {
+        pipelineCache = Unwrap(pipelineCache);
+        if (pCreateInfos) {
+            local_pCreateInfos = new vku::safe_VkDataGraphPipelineCreateInfoARM[createInfoCount];
+            for (uint32_t index0 = 0; index0 < createInfoCount; ++index0) {
+                local_pCreateInfos[index0].initialize(&pCreateInfos[index0]);
+                UnwrapPnextChainHandles(local_pCreateInfos[index0].pNext);
+                if (pCreateInfos[index0].layout) {
+                    local_pCreateInfos[index0].layout = Unwrap(pCreateInfos[index0].layout);
+                }
+            }
+        }
+    }
+    VkResult result = device_dispatch_table.CreateDataGraphPipelinesARM(
+        device, deferredOperation, pipelineCache, createInfoCount, (const VkDataGraphPipelineCreateInfoARM *)local_pCreateInfos,
+        pAllocator, pPipelines);
+    for (uint32_t i = 0; i < createInfoCount; ++i) {
+        if (pCreateInfos[i].pNext != VK_NULL_HANDLE) {
+            CopyCreatePipelineFeedbackData(local_pCreateInfos[i].pNext, pCreateInfos[i].pNext);
+        }
+    }
+
+    if (local_pCreateInfos) {
+        delete[] local_pCreateInfos;
+    }
+    {
+        for (uint32_t index0 = 0; index0 < createInfoCount; index0++) {
+            if (pPipelines[index0] != VK_NULL_HANDLE) {
+                pPipelines[index0] = WrapNew(pPipelines[index0]);
+            }
+        }
+    }
+    return result;
+}
 }  // namespace dispatch
 }  // namespace vvl

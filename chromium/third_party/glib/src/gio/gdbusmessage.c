@@ -984,9 +984,12 @@ g_dbus_message_get_serial (GDBusMessage *message)
 /**
  * g_dbus_message_set_serial:
  * @message: A #GDBusMessage.
- * @serial: A #guint32.
+ * @serial: A #guint32, which must not be zero.
  *
  * Sets the serial for @message.
+ *
+ * The [D-Bus specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-messages)
+ * does not allow the @serial to be zero.
  *
  * Since: 2.26
  */
@@ -995,6 +998,10 @@ g_dbus_message_set_serial (GDBusMessage  *message,
                            guint32        serial)
 {
   g_return_if_fail (G_IS_DBUS_MESSAGE (message));
+
+  /* As per https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-messages,
+   * this must not be zero. */
+  g_return_if_fail (serial != 0);
 
   if (message->locked)
     {
@@ -1982,7 +1989,7 @@ parse_value_from_blob (GMemoryBuffer       *buf,
               goffset offset;
               goffset target;
 
-              g_variant_builder_init (&builder, type);
+              g_variant_builder_init_static (&builder, type);
 
               if (array_len == 0)
                 {
@@ -2091,7 +2098,7 @@ parse_value_from_blob (GMemoryBuffer       *buf,
               const GVariantType *element_type;
               GVariantBuilder builder;
 
-              g_variant_builder_init (&builder, type);
+              g_variant_builder_init_static (&builder, type);
               element_type = g_variant_type_first (type);
               if (!element_type)
                 {
@@ -3028,7 +3035,7 @@ g_dbus_message_to_blob (GDBusMessage          *message,
       goto out;
     }
 
-  g_variant_builder_init (&builder, G_VARIANT_TYPE ("a{yv}"));
+  g_variant_builder_init_static (&builder, G_VARIANT_TYPE ("a{yv}"));
   g_hash_table_iter_init (&hash_iter, message->headers);
   while (g_hash_table_iter_next (&hash_iter, &key, (gpointer) &header_value))
     {

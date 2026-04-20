@@ -361,9 +361,11 @@ add_keysym_keycodes_from_layout (int                           keysym,
                                  GArray                       *keycodes)
 {
   xkb_level_index_t layout_level;
+  int initial_len;
 
+  initial_len = keycodes->len;
   for (layout_level = 0;
-       layout_level < layout->n_levels && keycodes->len == 0;
+       layout_level < layout->n_levels && keycodes->len == initial_len;
        layout_level++)
     {
       FindKeysymData search_data = (FindKeysymData) {
@@ -381,22 +383,18 @@ add_keysym_keycodes_from_layout (int                           keysym,
 /* Original code from gdk_x11_keymap_get_entries_for_keyval() in
  * gdkkeys-x11.c */
 static void
-get_keycodes_for_keysym (MetaKeyBindingManager  *keys,
+add_keycodes_for_keysym (MetaKeyBindingManager  *keys,
                          int                     keysym,
-                         MetaResolvedKeyCombo   *resolved_combo)
+                         GArray                 *keycodes)
 {
   unsigned int i;
-  GArray *keycodes;
-  int keycode;
-
-  keycodes = g_array_new (FALSE, FALSE, sizeof (xkb_keysym_t));
 
   /* Special-case: Fake mutter keysym */
   if (keysym == META_KEY_ABOVE_TAB)
     {
-      keycode = KEY_GRAVE + 8;
+      int keycode = KEY_GRAVE + 8;
       g_array_append_val (keycodes, keycode);
-      goto out;
+      return;
     }
 
   for (i = 0; i < G_N_ELEMENTS (keys->active_layouts); i++)
@@ -408,12 +406,36 @@ get_keycodes_for_keysym (MetaKeyBindingManager  *keys,
 
       add_keysym_keycodes_from_layout (keysym, layout, keycodes);
     }
+}
 
- out:
-  resolved_combo->len = keycodes->len;
-  resolved_combo->keycodes =
-    (xkb_keycode_t *) g_array_free (keycodes,
-                                    keycodes->len == 0 ? TRUE : FALSE);
+static void
+get_keycodes_for_combos (MetaKeyBindingManager *keys,
+                         MetaKeyCombo          *combos,
+                         int                    n_combos,
+                         xkb_keycode_t        **keycodes,
+                         int                   *n_keycodes)
+{
+  GArray *array;
+  int i;
+
+  array = g_array_new (FALSE, FALSE, sizeof (xkb_keysym_t));
+
+  for (i = 0; i < n_combos; i++)
+    {
+      if (combos[i].keysym != 0)
+        {
+          add_keycodes_for_keysym (keys, combos[i].keysym, array);
+        }
+      else if (combos[i].keycode != 0)
+        {
+          g_array_append_val (array, combos[i].keycode);
+        }
+    }
+
+  *n_keycodes = array->len;
+  *keycodes =
+    (xkb_keycode_t *) g_array_free (array,
+                                    array->len == 0 ? TRUE : FALSE);
 }
 
 typedef struct _CalculateLayoutLevelsState
@@ -459,11 +481,12 @@ calculate_n_layout_levels (struct xkb_keymap *keymap,
 static void
 reload_iso_next_group_combos (MetaKeyBindingManager *keys)
 {
+  MetaKeyCombo iso_next_group_combo = { 0 };
   const char *iso_next_group_option;
   int i;
 
   for (i = 0; i < keys->n_iso_next_group_combos; i++)
-    resolved_key_combo_reset (&keys->iso_next_group_combo[i]);
+    resolved_key_combo_reset (&keys->iso_next_group_combos[i]);
 
   keys->n_iso_next_group_combos = 0;
 
@@ -471,9 +494,14 @@ reload_iso_next_group_combos (MetaKeyBindingManager *keys)
   if (iso_next_group_option == NULL)
     return;
 
-  get_keycodes_for_keysym (keys, XKB_KEY_ISO_Next_Group, keys->iso_next_group_combo);
+  iso_next_group_combo.keysym = XKB_KEY_ISO_Next_Group;
+  get_keycodes_for_combos (keys,
+                           &iso_next_group_combo,
+                           1,
+                           &keys->iso_next_group_combos[0].keycodes,
+                           &keys->iso_next_group_combos[0].len);
 
-  if (keys->iso_next_group_combo[0].len == 0)
+  if (keys->iso_next_group_combos[0].len == 0)
     return;
 
   keys->n_iso_next_group_combos = 1;
@@ -490,51 +518,51 @@ reload_iso_next_group_combos (MetaKeyBindingManager *keys)
       g_str_equal (iso_next_group_option, "menu_toggle") ||
       g_str_equal (iso_next_group_option, "caps_toggle"))
     {
-      keys->iso_next_group_combo[0].mask = 0;
+      keys->iso_next_group_combos[0].mask = 0;
     }
   else if (g_str_equal (iso_next_group_option, "shift_caps_toggle") ||
            g_str_equal (iso_next_group_option, "shifts_toggle"))
     {
-      keys->iso_next_group_combo[0].mask = CLUTTER_SHIFT_MASK;
+      keys->iso_next_group_combos[0].mask = CLUTTER_SHIFT_MASK;
     }
   else if (g_str_equal (iso_next_group_option, "alt_caps_toggle") ||
            g_str_equal (iso_next_group_option, "alt_space_toggle"))
     {
-      keys->iso_next_group_combo[0].mask = CLUTTER_MOD1_MASK;
+      keys->iso_next_group_combos[0].mask = CLUTTER_MOD1_MASK;
     }
   else if (g_str_equal (iso_next_group_option, "ctrl_shift_toggle") ||
            g_str_equal (iso_next_group_option, "lctrl_lshift_toggle") ||
            g_str_equal (iso_next_group_option, "rctrl_rshift_toggle"))
     {
-      resolved_key_combo_copy (&keys->iso_next_group_combo[0],
-                               &keys->iso_next_group_combo[1]);
+      resolved_key_combo_copy (&keys->iso_next_group_combos[0],
+                               &keys->iso_next_group_combos[1]);
 
-      keys->iso_next_group_combo[0].mask = CLUTTER_SHIFT_MASK;
-      keys->iso_next_group_combo[1].mask = CLUTTER_CONTROL_MASK;
+      keys->iso_next_group_combos[0].mask = CLUTTER_SHIFT_MASK;
+      keys->iso_next_group_combos[1].mask = CLUTTER_CONTROL_MASK;
       keys->n_iso_next_group_combos = 2;
     }
   else if (g_str_equal (iso_next_group_option, "ctrl_alt_toggle"))
     {
-      resolved_key_combo_copy (&keys->iso_next_group_combo[0],
-                               &keys->iso_next_group_combo[1]);
+      resolved_key_combo_copy (&keys->iso_next_group_combos[0],
+                               &keys->iso_next_group_combos[1]);
 
-      keys->iso_next_group_combo[0].mask = CLUTTER_MOD1_MASK;
-      keys->iso_next_group_combo[1].mask = CLUTTER_CONTROL_MASK;
+      keys->iso_next_group_combos[0].mask = CLUTTER_MOD1_MASK;
+      keys->iso_next_group_combos[1].mask = CLUTTER_CONTROL_MASK;
       keys->n_iso_next_group_combos = 2;
     }
   else if (g_str_equal (iso_next_group_option, "alt_shift_toggle") ||
            g_str_equal (iso_next_group_option, "lalt_lshift_toggle"))
     {
-      resolved_key_combo_copy (&keys->iso_next_group_combo[0],
-                               &keys->iso_next_group_combo[1]);
+      resolved_key_combo_copy (&keys->iso_next_group_combos[0],
+                               &keys->iso_next_group_combos[1]);
 
-      keys->iso_next_group_combo[0].mask = CLUTTER_MOD1_MASK;
-      keys->iso_next_group_combo[1].mask = CLUTTER_SHIFT_MASK;
+      keys->iso_next_group_combos[0].mask = CLUTTER_MOD1_MASK;
+      keys->iso_next_group_combos[1].mask = CLUTTER_SHIFT_MASK;
       keys->n_iso_next_group_combos = 2;
     }
   else
     {
-      resolved_key_combo_reset (keys->iso_next_group_combo);
+      resolved_key_combo_reset (keys->iso_next_group_combos);
       keys->n_iso_next_group_combos = 0;
     }
 }
@@ -591,11 +619,11 @@ index_binding (MetaKeyBindingManager *keys,
           if (i > 0)
             continue;
 
-          meta_warning ("Overwriting existing binding of keysym %x"
-                        " with keysym %x (keycode %x).",
-                        binding->combo.keysym,
-                        existing->combo.keysym,
-                        binding->resolved_combo.keycodes[i]);
+          g_warning ("Overwriting existing binding of keysym %x"
+                     " with keysym %x (keycode %x).",
+                     binding->combo.keysym,
+                     existing->combo.keysym,
+                     binding->resolved_combo.keycodes[i]);
         }
 
       g_hash_table_replace (keys->key_bindings_index,
@@ -604,23 +632,33 @@ index_binding (MetaKeyBindingManager *keys,
 }
 
 static void
+resolve_special_key_combo (MetaKeyBindingManager *keys,
+                           MetaKeyCombo           combos[2],
+                           MetaResolvedKeyCombo  *resolved_combo)
+{
+  resolved_key_combo_reset (resolved_combo);
+
+  get_keycodes_for_combos (keys,
+                           combos,
+                           2,
+                           &resolved_combo->keycodes,
+                           &resolved_combo->len);
+
+  resolved_combo->mask = 0;
+}
+
+static void
 resolve_key_combo (MetaKeyBindingManager *keys,
                    MetaKeyCombo          *combo,
                    MetaResolvedKeyCombo  *resolved_combo)
 {
-
   resolved_key_combo_reset (resolved_combo);
 
-  if (combo->keysym != 0)
-    {
-      get_keycodes_for_keysym (keys, combo->keysym, resolved_combo);
-    }
-  else if (combo->keycode != 0)
-    {
-      resolved_combo->keycodes = g_new0 (xkb_keycode_t, 1);
-      resolved_combo->keycodes[0] = combo->keycode;
-      resolved_combo->len = 1;
-    }
+  get_keycodes_for_combos (keys,
+                           combo,
+                           1,
+                           &resolved_combo->keycodes,
+                           &resolved_combo->len);
 
   devirtualize_modifiers (keys, combo->modifiers, &resolved_combo->mask);
 }
@@ -785,17 +823,21 @@ reload_active_keyboard_layouts (MetaKeyBindingManager *keys)
 static void
 reload_combos (MetaKeyBindingManager *keys)
 {
+  MetaKeyCombo combos[2];
+
   g_hash_table_remove_all (keys->key_bindings_index);
 
   reload_active_keyboard_layouts (keys);
 
-  resolve_key_combo (keys,
-                     &keys->overlay_key_combo,
-                     &keys->overlay_resolved_key_combo);
+  meta_prefs_get_overlay_bindings (combos);
+  resolve_special_key_combo (keys,
+                             combos,
+                             &keys->overlay_resolved_key_combo);
 
-  resolve_key_combo (keys,
-                     &keys->locate_pointer_key_combo,
-                     &keys->locate_pointer_resolved_key_combo);
+  meta_prefs_get_locate_pointer_bindings (combos);
+  resolve_special_key_combo (keys,
+                             combos,
+                             &keys->locate_pointer_resolved_key_combo);
 
   reload_iso_next_group_combos (keys);
 
@@ -879,18 +921,6 @@ rebuild_key_binding_table (MetaKeyBindingManager *keys)
   rebuild_binding_table (keys, prefs, grabs);
   g_list_free (prefs);
   g_list_free (grabs);
-}
-
-static void
-rebuild_special_bindings (MetaKeyBindingManager *keys)
-{
-  MetaKeyCombo combo;
-
-  meta_prefs_get_overlay_binding (&combo);
-  keys->overlay_key_combo = combo;
-
-  meta_prefs_get_locate_pointer_binding (&combo);
-  keys->locate_pointer_key_combo = combo;
 }
 
 static MetaKeyBinding *
@@ -1180,7 +1210,6 @@ prefs_changed_callback (MetaPreference pref,
       meta_x11_keybindings_ungrab_key_bindings (display);
 #endif
       rebuild_key_binding_table (keys);
-      rebuild_special_bindings (keys);
       reload_combos (keys);
 #ifdef HAVE_X11
       meta_x11_keybindings_grab_key_bindings (display);
@@ -1259,9 +1288,9 @@ meta_display_grab_accelerator (MetaDisplay         *display,
 
   if (!meta_parse_accelerator (accelerator, &combo))
     {
-      meta_topic (META_DEBUG_KEYBINDINGS,
-                  "Failed to parse accelerator");
-      meta_warning ("\"%s\" is not a valid accelerator", accelerator);
+      g_warning ("Failed to parse accelerator: "
+                 "\"%s\" is not a valid accelerator",
+                 accelerator);
 
       return META_KEYBINDING_ACTION_NONE;
     }
@@ -1701,40 +1730,35 @@ process_iso_next_group (MetaDisplay  *display,
   MetaContext *context = meta_display_get_context (display);
   MetaBackend *backend = meta_context_get_backend (context);
   MetaKeyBindingManager *keys = &display->key_binding_manager;
-  gboolean activate;
-  xkb_keycode_t keycode =
-    (xkb_keycode_t) clutter_event_get_key_code (event);
+  uint32_t keyval = clutter_event_get_key_symbol (event);
   ClutterModifierType modifiers;
   xkb_mod_mask_t mask;
-  int i, j;
+  int i;
 
   if (clutter_event_type (event) == CLUTTER_KEY_RELEASE)
     return FALSE;
 
-  activate = FALSE;
+  if (keyval != XKB_KEY_ISO_Next_Group)
+    return FALSE;
+
   modifiers = get_modifiers (event);
   mask = mask_from_event_params (keys, modifiers);
 
   for (i = 0; i < keys->n_iso_next_group_combos; ++i)
     {
-      for (j = 0; j <  keys->iso_next_group_combo[i].len; ++j)
+      if (mask == keys->iso_next_group_combos[i].mask)
         {
-          if (keycode == keys->iso_next_group_combo[i].keycodes[j] &&
-              mask == keys->iso_next_group_combo[i].mask)
-            {
-              /* If the signal handler returns TRUE the keyboard will
-                 remain frozen. It's the signal handler's responsibility
-                 to unfreeze it. */
-              if (!meta_display_modifiers_accelerator_activate (display))
-                meta_backend_unfreeze_keyboard (backend,
-                                                clutter_event_get_time (event));
-              activate = TRUE;
-              break;
-            }
+          /* If the signal handler returns TRUE the keyboard will
+             remain frozen. It's the signal handler's responsibility
+             to unfreeze it. */
+          if (!meta_display_modifiers_accelerator_activate (display))
+            meta_backend_unfreeze_keyboard (backend,
+                                            clutter_event_get_time (event));
+          return TRUE;
         }
     }
 
-  return activate;
+  return FALSE;
 }
 
 static gboolean
@@ -2517,7 +2541,7 @@ handle_set_spew_mark (MetaDisplay           *display,
                       MetaKeyBinding        *binding,
                       gpointer               user_data)
 {
-  meta_verbose ("-- MARK MARK MARK MARK --");
+  g_message ("-- MARK MARK MARK MARK --");
 }
 
 #ifdef HAVE_NATIVE_BACKEND
@@ -2864,7 +2888,6 @@ meta_display_init_keys (MetaDisplay *display)
   init_builtin_key_bindings (display);
 
   rebuild_key_binding_table (keys);
-  rebuild_special_bindings (keys);
 
   reload_combos (keys);
 

@@ -8,7 +8,8 @@ import abc
 import argparse
 import enum
 import re
-from typing import TYPE_CHECKING, Any, Hashable, Mapping, Pattern, TypeAlias
+from typing import (TYPE_CHECKING, Any, Final, Hashable, Mapping, Pattern,
+                    TypeAlias)
 
 from immutabledict import immutabledict
 from typing_extensions import override
@@ -22,13 +23,13 @@ if TYPE_CHECKING:
   from crossbench.plt.base import Platform
 
 # Directory exposing info & controls for the frequency of all CPUs.
-_CPUS_DIR: pth.AnyPosixPath = pth.AnyPosixPath("/sys/devices/system/cpu")
+_CPUS_DIR: Final = pth.AnyPosixPath("/sys/devices/system/cpu")
 
 # Used to specify behavior for all CPUs.
-_WILDCARD_CONFIG_KEY = "*"
+_WILDCARD_CONFIG_KEY: Final = "*"
 
 # Matches the CPU names exposed by the system in _CPUS_DIR.
-_CPU_NAME_REGEX: Pattern[str] = re.compile("cpu[0-9]+$")
+_CPU_NAME_REGEX: Final[Pattern[str]] = re.compile("cpu[0-9]+$")
 
 
 class _ExtremeFrequency(enum.StrEnum):
@@ -45,12 +46,12 @@ class CPUFrequencyMap(ConfigObject, metaclass=abc.ABCMeta):
   @abc.abstractmethod
   def get_target_frequencies(
       self, platform: Platform) -> immutabledict[pth.AnyPosixPath, int]:
-    raise NotImplementedError()
+    raise NotImplementedError
 
   @property
   @abc.abstractmethod
   def key(self) -> Hashable:
-    raise NotImplementedError()
+    raise NotImplementedError
 
   @classmethod
   @override
@@ -77,7 +78,7 @@ class CPUFrequencyMap(ConfigObject, metaclass=abc.ABCMeta):
     except argparse.ArgumentTypeError as e:
       raise argparse.ArgumentTypeError(
           f"Invalid value in CPU frequency map: {value}. Should "
-          "have been one of \"max\"|\"min\"|<int>|\"<int>\"") from e
+          'have been one of "max"|"min"|<int>|"<int>"') from e
 
   def _get_target_frequency(self, platform: Platform, cpu_name: str,
                             frequency: FrequencyType) -> int:
@@ -122,7 +123,7 @@ class WildcardCPUFrequencyMap(CPUFrequencyMap):
           f"A wildcard ({_WILDCARD_CONFIG_KEY}) in "
           "the CPU frequency map should be the only key.")
 
-    self._target_frequency = CPUFrequencyMap._parse_frequency(
+    self._target_frequency: Final[FrequencyType] = self._parse_frequency(
         list(frequencies.values())[0])
 
   @override
@@ -147,8 +148,7 @@ class ExplicitCPUFrequencyMap(CPUFrequencyMap):
     typed_map: dict[str, FrequencyType] = {}
     for k, v in frequencies.items():
       with exception.annotate_argparsing(f"Parsing cpu frequency: {k}, {v}"):
-        typed_map[ObjectParser.non_empty_str(k)] = (
-            CPUFrequencyMap._parse_frequency(v))
+        typed_map[ObjectParser.non_empty_str(k)] = self._parse_frequency(v)
     self._frequencies: immutabledict[str,
                                      FrequencyType] = immutabledict(typed_map)
 

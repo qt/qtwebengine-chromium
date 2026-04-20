@@ -5,14 +5,14 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING, Optional, Self, Type
+from typing import TYPE_CHECKING, ClassVar, Self, Type
 
 from typing_extensions import override
 
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
-from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
+  from crossbench import exception
   from crossbench.path import AnyPath
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
@@ -22,8 +22,7 @@ class DumpHtmlProbe(Probe):
   """
   General-purpose Probe that collects HTML dumps.
   """
-  NAME = "dump_html"
-  RESULT_LOCATION = ResultLocation.LOCAL
+  NAME: ClassVar = "dump_html"
 
   @classmethod
   @override
@@ -58,9 +57,22 @@ class DumpHtmlProbeContext(ProbeContext[DumpHtmlProbe]):
   def stop(self) -> None:
     pass
 
-  def dump_html(self, label: Optional[str] = None) -> None:
-    if not label:
-      label = str(dt.datetime.now().strftime("%Y-%m-%d_%H%M%S"))
+  @override
+  def invoke(self, info_stack: exception.TInfoStack, timeout: dt.timedelta,
+             **kwargs) -> None:
+    del timeout
+
+    self._dump(info_stack, **kwargs)
+
+  def _dump(self,
+            info_stack: exception.TInfoStack,
+            suffix: str | None = None,
+            **kwargs) -> None:
+    self.expect_no_extra_kwargs(kwargs)
+
+    if not suffix:
+      suffix = str(dt.datetime.now().strftime("%Y-%m-%d_%H%M%S"))
+    label = "_".join(info_stack) + f"_{suffix}"
     path = self.result_path / f"{label}.html"
     html = self.browser.js("return document.children[0].outerHTML",
                            dt.timedelta(seconds=10))

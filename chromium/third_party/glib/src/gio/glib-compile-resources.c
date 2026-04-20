@@ -606,7 +606,7 @@ parse_resource_file (const gchar *filename,
 
 	  g_free (mykey);
 
-	  g_variant_builder_init (&builder, G_VARIANT_TYPE ("(uuay)"));
+	  g_variant_builder_init_static (&builder, G_VARIANT_TYPE ("(uuay)"));
 
 	  g_variant_builder_add (&builder, "u", data->size); /* Size */
 	  g_variant_builder_add (&builder, "u", data->flags); /* Flags */
@@ -1131,7 +1131,7 @@ main (int argc, char **argv)
     {
       FILE *file;
 
-      file = fopen (target, "w");
+      file = g_fopen (target, "we");
       if (file == NULL)
 	{
 	  g_printerr ("can't write to file %s", target);
@@ -1180,7 +1180,7 @@ main (int argc, char **argv)
 	}
       g_unlink (binary_target);
 
-      file = fopen (target, "w");
+      file = g_fopen (target, "we");
       if (file == NULL)
 	{
 	  g_printerr ("can't write to file %s", target);

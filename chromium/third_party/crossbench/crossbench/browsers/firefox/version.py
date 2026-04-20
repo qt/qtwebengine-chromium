@@ -14,15 +14,17 @@ from crossbench.browsers.version import BrowserVersion, BrowserVersionChannel
 
 class FirefoxVersion(BrowserVersion):
   _PARTS_LEN: Final[int] = 4
-  _PREFIX_RE = re.compile(r"(mozilla )?(ff|firefox)[ -]?", re.I)
-  _VERSION_RE = re.compile(r"(?P<prefix>[^\d]*)"
-                           r"(?P<version>"
-                           r"(?P<parts>\d+\.\d+"
-                           r"(?:(?P<channel_short>[ab.])\d+)?"
-                           r")"
-                           r") ?(?P<channel_long>esr|any)?")
-  _SPLIT_RE = re.compile(r"[ab.]")
-  _CHANNEL_LOOKUP: dict[str, BrowserVersionChannel] = {
+  _PREFIX_RE: Final[re.Pattern] = re.compile(r"(mozilla )?(ff|firefox)[ -]?",
+                                             re.I)
+  _VERSION_RE: Final[re.Pattern] = re.compile(
+      r"(?P<prefix>[^\d]*)"
+      r"(?P<version>"
+      r"(?P<parts>\d+\.\d+"
+      r"(?:(?P<channel_short>[ab.])\d+)?"
+      r")"
+      r") ?(?P<channel_long>esr|any)?")
+  _SPLIT_RE: Final[re.Pattern] = re.compile(r"[ab.]")
+  _CHANNEL_LOOKUP: Final[dict[str, BrowserVersionChannel]] = {
       "esr": BrowserVersionChannel.LTS,
       ".": BrowserVersionChannel.STABLE,
       # IRL Firefox version numbers do not distinct beta from stable, so we
@@ -31,7 +33,7 @@ class FirefoxVersion(BrowserVersion):
       "a": BrowserVersionChannel.ALPHA,
       "any": BrowserVersionChannel.ANY,
   }
-  _CHANNEL_LONG_LOOKUP: dict[str, BrowserVersionChannel] = {
+  _CHANNEL_LONG_LOOKUP: Final[dict[str, BrowserVersionChannel]] = {
       "developer edition": BrowserVersionChannel.BETA,
       "nightly": BrowserVersionChannel.ALPHA,
   }
@@ -60,7 +62,8 @@ class FirefoxVersion(BrowserVersion):
     return parts, browser_channel, version_str
 
   @classmethod
-  def _parse_channel(cls, full_version: str, matches) -> BrowserVersionChannel:
+  def _parse_channel(cls, full_version: str,
+                     matches: re.Match[str]) -> BrowserVersionChannel:
     channel_long: str | None = matches["channel_long"]
     channel_short: str | None = matches["channel_short"]
     if not channel_long and not channel_short:

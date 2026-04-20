@@ -8,7 +8,8 @@ import collections
 import json
 import logging
 import zipfile
-from typing import TYPE_CHECKING, Iterable, Optional, Self, Type
+from typing import (TYPE_CHECKING, ClassVar, Final, Iterable, Optional, Self,
+                    Type)
 
 import pandas as pd
 from google.protobuf import text_format
@@ -38,8 +39,8 @@ if TYPE_CHECKING:
   from crossbench.runner.run import Run
   from crossbench.types import JsonDict
 
-_QUERIES_DIR = pth.LocalPath(__file__).parent / "queries"
-_MODULES_DIR = pth.LocalPath(__file__).parent / "modules/ext"
+_QUERIES_DIR: Final = pth.LocalPath(__file__).parent / "queries"
+_MODULES_DIR: Final = pth.LocalPath(__file__).parent / "modules/ext"
 
 
 class TraceProcessorQueryConfig(ConfigObject):
@@ -91,35 +92,51 @@ class TraceProcessorQueryConfig(ConfigObject):
 
 
 class CrossbenchTraceUriResolver(TraceUriResolver):
-  PREFIX = "crossbench"
+  PREFIX: ClassVar = "crossbench"
 
   def __init__(self,
                traces: Iterable[Run] | TraceProcessorProbeContext) -> None:
+    self._resolved: Final[list[TraceUriResolver.Result]] = self._init_resolved(
+        traces)
 
-    def metadata(run: Run) -> dict[str, str]:
-      return {
-          "cb_browser": run.browser.unique_name,
-          "cb_story": run.story.name,
-          "cb_temperature": run.temperature,
-          "cb_run": str(run.repetition)
-      }
-
+  def _init_resolved(
+      self, traces: Iterable[Run] | TraceProcessorProbeContext
+  ) -> list[TraceUriResolver.Result]:
     if isinstance(traces, TraceProcessorProbeContext):
-      self._resolved = [
-          TraceUriResolver.Result(
-              trace=str(traces.merged_trace_path.absolute()),
-              metadata=metadata(traces.run))
-      ]
-    else:
-      self._resolved = [
-          TraceUriResolver.Result(
-              trace=str(
-                  run.results.get_by_name(
-                      TraceProcessorProbe.NAME).trace.absolute()),
-              metadata=metadata(run)) for run in traces
-      ]
+      return self._init_resolved_from_probe_context(traces)
+    return self._init_resolved_from_runs(traces)
 
-  def resolve(self) -> list["TraceUriResolver.Result"]:
+  def _init_resolved_from_runs(
+      self, traces: Iterable[Run]) -> list[TraceUriResolver.Result]:
+    resolved: list[TraceUriResolver.Result] = []
+    for run in traces:
+      trace_result = run.results.get_by_name(TraceProcessorProbe.NAME)
+      assert trace_result, f"Missing TraceProcessorProbe result in {run}"
+      result = TraceUriResolver.Result(
+          trace=str(trace_result.trace.absolute()),
+          metadata=self._run_metadata(run))
+      resolved.append(result)
+    return resolved
+
+  def _init_resolved_from_probe_context(
+      self, probe_context: TraceProcessorProbeContext
+  ) -> list[TraceUriResolver.Result]:
+    return [
+        TraceUriResolver.Result(
+            trace=str(probe_context.merged_trace_path.absolute()),
+            metadata=self._run_metadata(probe_context.run))
+    ]
+
+  def _run_metadata(self, run: Run) -> dict[str, str]:
+    return {
+        "cb_browser": run.browser.unique_name,
+        "cb_story": run.story.name,
+        "cb_temperature": run.temperature,
+        "cb_run": str(run.repetition)
+    }
+
+  # TODO: add @override once tools support it
+  def resolve(self) -> list[TraceUriResolver.Result]:
     return self._resolved
 
 
@@ -128,7 +145,7 @@ class TraceProcessorProbe(Probe):
   Trace processor probe.
   """
 
-  NAME = "trace_processor"
+  NAME: ClassVar = "trace_processor"
 
   @classmethod
   @override
@@ -146,20 +163,20 @@ class TraceProcessorProbe(Probe):
         "metrics",
         type=str,
         is_list=True,
-        default=tuple(),
+        default=(),
         help="Name of metric to be run (can be any metric from Perfetto)")
     parser.add_argument(
         "metric_definitions",
         type=ObjectParser.str_or_file_contents,
         is_list=True,
-        default=tuple(),
+        default=(),
         help=("Textproto for perfetto metrics v2 definition files. "
               "Can be inline textproto or a path to a .textproto file."))
     parser.add_argument(
         "summary_metrics",
         type=str,
         is_list=True,
-        default=tuple(),
+        default=(),
         help=("Additional metrics to only include in the trace summary. "
               "Includes all of <metrics>. These can be v2 metrics if the "
               "corresponding metric definition is supplied."))
@@ -167,14 +184,20 @@ class TraceProcessorProbe(Probe):
         "queries",
         type=TraceProcessorQueryConfig,
         is_list=True,
-        default=tuple(),
+        default=(),
         help="Name of query to be run (under probes/trace_processor/queries) "
         "or { name: str, sql: str } containing the name and SQL query to run")
+    parser.add_argument(
+        "symbolize_profile",
+        type=ObjectParser.bool,
+        default=True,
+        help="Auto symbolize data from system profiles for "
+        "locally compiled browsers.")
     parser.add_argument(
         "module_paths",
         type=pth.LocalPath,
         is_list=True,
-        default=tuple(),
+        default=(),
         help="Additional paths to include as trace processor modules.")
     parser.add_argument(
         "trace_processor_bin",
@@ -188,18 +211,21 @@ class TraceProcessorProbe(Probe):
                summary_metrics: Iterable[str],
                metrics: Iterable[str],
                queries: Iterable[TraceProcessorQueryConfig],
+               symbolize_profile : bool,
                module_paths: Iterable[pth.LocalPath],
                trace_processor_bin: Optional[pth.LocalPath] = None) -> None:
     super().__init__()
-    self._batch = batch
-    self._metrics = tuple(metrics)
+    self._batch : bool  = batch
+    self._metrics : tuple[str, ...]  = tuple(metrics)
     self._metric_definitions: tuple[str, ...] = tuple(metric_definitions)
     self._summary_metrics: tuple[str,
                                  ...] = tuple(metrics) + tuple(summary_metrics)
     ObjectParser.unique_sequence([query.name for query in queries],
                                  name="query names")
-    self._queries = tuple(queries)
-    self._module_paths = tuple([_MODULES_DIR]) + tuple(module_paths)
+    self._queries: tuple[TraceProcessorQueryConfig, ...] = tuple(queries)
+    self._symbolize_profile: bool = symbolize_profile
+    self._module_paths: tuple[pth.LocalPath,
+                              ...] = (_MODULES_DIR,) + tuple(module_paths)
     self._trace_processor_bin: pth.LocalPath | None = None
     if trace_processor_bin:
       self._trace_processor_bin = plt.PLATFORM.parse_local_binary_path(
@@ -300,7 +326,7 @@ class TraceProcessorProbe(Probe):
       self, runs: Iterable[Run]) -> dict[str, pd.DataFrame]:
     res: dict[str, pd.DataFrame] = {}
     for run in runs:
-      for file in run.results.get(self).csv_list:
+      for file in run.results[self].csv_list:
         df = pd.read_csv(file)
         df = self._add_cb_columns(df, run)
         if file.stem in res:
@@ -350,7 +376,7 @@ class TraceProcessorProbe(Probe):
     return LocalProbeResult(csv=csv_files, json=json_files)
 
   def _run_btp(self, group: BrowsersRunGroup) -> LocalProbeResult:
-    group_dir = group.get_local_probe_result_path(self)
+    group_dir: pth.LocalPath = group.get_local_probe_result_path(self)
     group_dir.mkdir()
     btp_config = BatchTraceProcessorConfig(tp_config=self.tp_config)
 
@@ -358,7 +384,7 @@ class TraceProcessorProbe(Probe):
         traces=CrossbenchTraceUriResolver(group.runs),
         config=btp_config) as btp:
 
-      def run_query(query: TraceProcessorQueryConfig):
+      def run_query(query: TraceProcessorQueryConfig) -> pth.LocalPath:
         csv_file = group_dir / f"{query.name}.csv"
         btp.query_and_flatten(query.sql).to_csv(
             path_or_buf=csv_file, index=False)
@@ -366,7 +392,7 @@ class TraceProcessorProbe(Probe):
 
       csv_files = list(map(run_query, self.queries))
 
-      def run_metric(metric: str):
+      def run_metric(metric: str) -> pth.LocalPath:
         json_file = group_dir / f"{pth.safe_filename(metric)}.json"
         protos = btp.metric([metric])
         with json_file.open("x") as f:
@@ -432,7 +458,7 @@ class TraceProcessorProbeContext(ProbeContext[TraceProcessorProbe]):
 
   def _run_queries(self, tp: TraceProcessor) -> LocalProbeResult:
 
-    def run_query(query: TraceProcessorQueryConfig):
+    def run_query(query: TraceProcessorQueryConfig) -> pth.LocalPath:
       csv_file = self.local_result_path / f"{query.name}.csv"
       tp.query(query.sql).as_pandas_dataframe().to_csv(
           path_or_buf=csv_file, index=False)
@@ -444,7 +470,7 @@ class TraceProcessorProbeContext(ProbeContext[TraceProcessorProbe]):
 
   def _run_metrics(self, tp: TraceProcessor) -> LocalProbeResult:
 
-    def run_metric(metric: str):
+    def run_metric(metric: str) -> pth.LocalPath:
       json_file = self.local_result_path / f"{pth.safe_filename(metric)}.json"
       proto = tp.metric([metric])
       assert not json_file.exists(), (

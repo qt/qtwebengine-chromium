@@ -4,14 +4,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, Optional, Self, Type
+from typing import TYPE_CHECKING, ClassVar, Iterable, Optional, Self, Type
 
 from typing_extensions import override
 
 from crossbench.parse import ObjectParser
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeKeyT
 from crossbench.probes.probe_context import ProbeContext
-from crossbench.probes.result_location import ResultLocation
 from crossbench.probes.results import LocalProbeResult, ProbeResult
 
 if TYPE_CHECKING:
@@ -26,9 +25,7 @@ class ShellProbe(Probe):
   Run an arbitrary shell command on the browser platform and store the
   stdout and stderr of the command as a result file.
   """
-  NAME = "shell"
-  IS_GENERAL_PURPOSE = True
-  RESULT_LOCATION = ResultLocation.LOCAL
+  NAME: ClassVar = "shell"
 
   @classmethod
   @override
@@ -153,7 +150,7 @@ class ShellProbeContext(ProbeContext[ShellProbe]):
     self.host_platform.touch(stderr_path)
     self._result_files.append(stderr_path)
     with stdout_path.open("w") as stdout, stderr_path.open("w") as stderr:
-      self.browser_platform.sh(*cmd, shell=True, stdout=stdout, stderr=stderr)
+      self.browser_platform.sh(*cmd, stdout=stdout, stderr=stderr)
 
   @override
   def setup(self) -> None:

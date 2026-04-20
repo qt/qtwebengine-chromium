@@ -10,7 +10,7 @@ import datetime as dt
 import shlex
 import subprocess
 from math import ceil
-from typing import TYPE_CHECKING, Optional, Self
+from typing import TYPE_CHECKING, ClassVar, Final, Optional, Self
 
 import crossbench.path as pth
 from crossbench.action_runner.default_action_runner import DefaultActionRunner
@@ -27,7 +27,8 @@ if TYPE_CHECKING:
   from crossbench.runner.actions import Actions
   from crossbench.runner.run import Run
 
-SCRIPTS_DIR = pth.LocalPath(__file__).parent / "chromeos_scripts"
+SCRIPTS_DIR: Final[
+    pth.LocalPath] = pth.LocalPath(__file__).parent / "chromeos_scripts"
 
 
 class ChromeOSViewportInfo:
@@ -158,7 +159,7 @@ class ChromeOSTouchEvent:
   # This has been tested to work on dedede, brya, and volteer.
   # Some devices, however, may use a different x-y orientation
   # (such as kukui in landscape mode) and are not currently supported.
-  _TAP_DOWN = """E: <time> 0003 0039 0
+  TAP_DOWN: ClassVar[str] = """E: <time> 0003 0039 0
 E: <time> 0003 0035 <x>
 E: <time> 0003 0036 <y>
 E: <time> 0001 014a 1
@@ -167,14 +168,14 @@ E: <time> 0003 0001 <y>
 E: <time> 0000 0000 0
 """
 
-  _TAP_POSITION = """E: <time> 0003 0035 <x>
+  TAP_POSITION: ClassVar[str] = """E: <time> 0003 0035 <x>
 E: <time> 0003 0036 <y>
 E: <time> 0003 0000 <x>
 E: <time> 0003 0001 <y>
 E: <time> 0000 0000 0
 """
 
-  _TAP_UP = """E: <time> 0003 0039 -1
+  TAP_UP: ClassVar[str] = """E: <time> 0003 0039 -1
 E: <time> 0001 014a 0
 E: <time> 0000 0000 0
 """
@@ -183,7 +184,7 @@ E: <time> 0000 0000 0
   # second.
   # This was chosen arbitrarily, but should balance a realistic swipe action
   # with the size of the playback file that needs to be pushed to the device.
-  _TOUCH_UPDATE_HERTZ = 60
+  TOUCH_UPDATE_HERTZ: ClassVar[int] = 60
 
   def __str__(self) -> str:
     # Not sure why, but evemu-playback does not like it when the event time
@@ -194,14 +195,14 @@ E: <time> 0000 0000 0
     start_position: Point = self._rereference_to_touch_coordinates(
         self.viewport, self.start_position)
 
-    playback_script += self._format_script_block(self._TAP_DOWN,
+    playback_script += self._format_script_block(self.TAP_DOWN,
                                                  current_event_time_seconds,
                                                  start_position)
 
     # Shortcut for long taps
     if not self.end_position:
       current_event_time_seconds += self.duration.total_seconds()
-      playback_script += self._format_script_block(self._TAP_UP,
+      playback_script += self._format_script_block(self.TAP_UP,
                                                    current_event_time_seconds,
                                                    start_position)
       return playback_script
@@ -210,7 +211,7 @@ E: <time> 0000 0000 0
         self.viewport, self.end_position)
 
     num_position_updates: int = round(self.duration.total_seconds() *
-                                      self._TOUCH_UPDATE_HERTZ)
+                                      self.TOUCH_UPDATE_HERTZ)
     assert num_position_updates > 0, "Choose a longer scroll duration."
 
     increment_distance_x = (end_position.x -
@@ -222,14 +223,14 @@ E: <time> 0000 0000 0
     current_position_y: float = start_position.y
 
     for _ in range(num_position_updates):
-      current_event_time_seconds += 1.0 / self._TOUCH_UPDATE_HERTZ
+      current_event_time_seconds += 1.0 / self.TOUCH_UPDATE_HERTZ
       current_position_x += increment_distance_x
       current_position_y += increment_distance_y
       playback_script += self._format_script_block(
-          self._TAP_POSITION, current_event_time_seconds,
+          self.TAP_POSITION, current_event_time_seconds,
           Point(round(current_position_x), round(current_position_y)))
 
-    playback_script += self._format_script_block(self._TAP_UP,
+    playback_script += self._format_script_block(self.TAP_UP,
                                                  current_event_time_seconds,
                                                  end_position)
     return playback_script
@@ -539,7 +540,7 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
     with browser_platform.NamedTemporaryFile() as playback_file:
       browser_platform.write_text(playback_file, touch_event_cmds)
       # Then run evemu-play with the input redirected from the temp file.
-      run.browser_platform.sh(
+      run.browser_platform.sh(  # noqa: S604
           f"evemu-play --insert-slot0 "
           f"{shlex.quote(self._touch_device.device_path)} < "
           f"{playback_file}",

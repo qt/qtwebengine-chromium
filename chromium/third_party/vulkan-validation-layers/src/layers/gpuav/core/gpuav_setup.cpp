@@ -16,8 +16,6 @@
  */
 
 #include <array>
-#include <cmath>
-#include <cstring>
 #include <string>
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__GNU__)
 #include <unistd.h>
@@ -83,6 +81,8 @@ void Validator::Created(vvl::TensorView &obj) {
     obj.SetSubState(container_type, std::make_unique<TensorViewSubState>(obj, desc_heap));
 }
 void Validator::Created(vvl::ShaderObject &obj) { obj.SetSubState(container_type, std::make_unique<ShaderObjectSubState>(obj)); }
+
+void Validator::Created(vvl::Pipeline &obj) { obj.SetSubState(container_type, std::make_unique<PipelineSubState>(*this, obj)); }
 
 // Trampolines to make VMA call Dispatch for Vulkan calls
 static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL gpuVkGetInstanceProcAddr(VkInstance inst, const char *name) {
@@ -364,11 +364,13 @@ void Validator::InitSettings(const Location &loc) {
         }
     }
 
-    if (IsExtEnabled(extensions.vk_ext_descriptor_buffer)) {
+    if (IsExtEnabled(extensions.vk_ext_descriptor_buffer) && !gpuav_settings.descriptor_buffer_override) {
         InternalWarning(
             device, loc,
             "VK_EXT_descriptor_buffer is enabled, but GPU-AV does not currently support validation of descriptor buffers. "
-            "[Disabling all shader instrumentation checks]");
+            "[Disabling all shader instrumentation checks]"
+            "\nThere is a VK_LAYER_GPUAV_DESCRIPTOR_BUFFER_OVERRIDE that can be set to bypass this if you know you are not going "
+            "to use descriptor buffers.");
         // Because of VUs like VUID-VkPipelineLayoutCreateInfo-pSetLayouts-08008 we currently would need to rework the entire shader
         // instrumentation logic
         gpuav_settings.DisableShaderInstrumentationAndOptions();
@@ -376,7 +378,9 @@ void Validator::InitSettings(const Location &loc) {
         if (gpuav_settings.debug_printf_enabled) {
             InternalWarning(device, loc,
                             "VK_EXT_descriptor_buffer is enabled, but DebugPrintf uses a normal descriptor and currently can't "
-                            "exist with descriptor buffers. [Disabling debug_printf]");
+                            "exist with descriptor buffers. [Disabling debug_printf]"
+                            "\nThere is a VK_LAYER_GPUAV_DESCRIPTOR_BUFFER_OVERRIDE that can be set to bypass this if you know you "
+                            "are not going to use descriptor buffers.");
             gpuav_settings.debug_printf_enabled = false;
         }
     }
@@ -399,8 +403,8 @@ void Validator::InternalVmaError(LogObjectList objlist, VkResult result, const c
     error_message += stats_string;
     vmaFreeStatsString(vma_allocator_, stats_string);
 
-    char const *layer_name = gpuav_settings.debug_printf_only ? "DebugPrintf" : "GPU-AV";
-    char const *vuid = gpuav_settings.debug_printf_only ? "UNASSIGNED-DEBUG-PRINTF" : "UNASSIGNED-GPU-Assisted-Validation";
+    const char *layer_name = gpuav_settings.debug_printf_only ? "DebugPrintf" : "GPU-AV";
+    const char *vuid = gpuav_settings.debug_printf_only ? "UNASSIGNED-DEBUG-PRINTF" : "UNASSIGNED-GPU-Assisted-Validation";
 
     LogError(vuid, objlist, Location(vvl::Func::Empty), "Internal VMA Error (%s), %s is being disabled. Details:\n%s",
              string_VkResult(result), layer_name, error_message.c_str());

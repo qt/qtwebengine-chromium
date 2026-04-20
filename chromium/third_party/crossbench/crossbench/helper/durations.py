@@ -4,25 +4,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import logging
-
-
-class DurationMeasureContext:
-
-  def __init__(self, durations: Durations, name: str) -> None:
-    self._start_time = dt.datetime.utcfromtimestamp(0)
-    self._durations = durations
-    self._name = name
-
-  def __enter__(self) -> DurationMeasureContext:
-    self._start_time = dt.datetime.now()
-    return self
-
-  def __exit__(self, exc_type, exc_value, traceback) -> None:
-    assert self._start_time
-    delta = dt.datetime.now() - self._start_time
-    self._durations[self._name] = delta
+from typing import Iterator, Self
 
 
 class Durations:
@@ -43,10 +28,16 @@ class Durations:
   def __len__(self) -> int:
     return len(self._durations)
 
-  def measure(self, name: str) -> DurationMeasureContext:
+  @contextlib.contextmanager
+  def measure(self, name: str) -> Iterator[None]:
     assert name not in self._durations, (
         f"Cannot measure '{name}' duration twice!")
-    return DurationMeasureContext(self, name)
+    start_time = dt.datetime.now()
+    try:
+      yield
+    finally:
+      delta = dt.datetime.now() - start_time
+      self._durations[name] = delta
 
   def to_json(self) -> dict[str, float]:
     return {
@@ -74,11 +65,11 @@ class TimeScope:
   def duration(self) -> dt.timedelta:
     return self._duration
 
-  def __enter__(self) -> TimeScope:
+  def __enter__(self) -> Self:
     self._start = dt.datetime.now()
     return self
 
-  def __exit__(self, exc_type, exc_value, exc_traceback) -> None:
+  def __exit__(self, exc_type, exc_value, traceback) -> None:  # noqa: ANN001
     assert self._start
     self._duration = dt.datetime.now() - self._start
     logging.log(self._level, "%s duration=%s", self._message, self._duration)

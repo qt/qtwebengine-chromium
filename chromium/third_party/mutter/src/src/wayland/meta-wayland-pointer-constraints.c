@@ -474,10 +474,11 @@ should_constraint_be_enabled (MetaWaylandPointerConstraint *constraint)
        * associate the X11 Window with the wl_surface.
        * For subsurfaces the window of the ancestor might be gone already.
        */
+      g_warn_if_fail (
 #ifdef HAVE_XWAYLAND
-      g_warn_if_fail (meta_wayland_surface_is_xwayland (constraint->surface) ||
-                      META_IS_WAYLAND_SUBSURFACE (constraint->surface->role));
+        meta_wayland_surface_is_xwayland (constraint->surface) ||
 #endif
+        META_IS_WAYLAND_SUBSURFACE (constraint->surface->role));
       return FALSE;
     }
 

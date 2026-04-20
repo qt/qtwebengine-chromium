@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import datetime as dt
 import functools
@@ -11,7 +12,7 @@ import logging
 import math
 import re
 import shlex
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Final, Generator, Mapping, Optional
 
 from mobly.controllers import android_device
 from snippet_uiautomator import uiautomator
@@ -19,12 +20,14 @@ from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.flags.base import Flags, FlagsData
+from crossbench.helper.path_finder import BuildtoolFinder
 from crossbench.parse import NumberParser
 from crossbench.plt.arch import MachineArch
 from crossbench.plt.base import SubprocessError
+from crossbench.plt.bin import Binaries
 from crossbench.plt.device_info import DeviceInfo
 from crossbench.plt.port_manager import PortManager
-from crossbench.plt.posix import RemotePosixPlatform
+from crossbench.plt.posix import PosixVersion, RemotePosixPlatform
 from crossbench.plt.process_meminfo import ProcessMeminfo
 from protoc import (activitymanagerservice_pb2, battery_pb2, enums_pb2,
                     windowmanagerservice_pb2)
@@ -34,12 +37,12 @@ if TYPE_CHECKING:
 
   from crossbench.plt.base import Platform
   from crossbench.plt.display_info import DisplayInfo
-  from crossbench.plt.types import CmdArg, ListCmdArgs
+  from crossbench.plt.types import CmdArg, ListCmdArgs, ProcessIo
   from crossbench.types import JsonDict
 
 # Defines the Android permissions to be granted.
 # TODO(381985595): make this configurable.
-ANDROID_PERMISSIONS = ("POST_NOTIFICATIONS", "CAMERA", "RECORD_AUDIO")
+ANDROID_PERMISSIONS: Final = ("POST_NOTIFICATIONS", "CAMERA", "RECORD_AUDIO")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -53,13 +56,11 @@ class AndroidDeviceInfo(DeviceInfo):
     return self.device_id
 
 
-def _find_adb_bin(platform: Platform) -> pth.AnyPath:
-  adb_bin = platform.search_platform_binary(
-      name="adb",
-      macos=["adb", "~/Library/Android/sdk/platform-tools/adb"],
-      linux=["adb"],
-      win=["adb.exe", "Android/sdk/platform-tools/adb.exe"])
+def _find_adb_bin(platform: Platform,
+                  adb_bin: Optional[pth.AnyPath] = None) -> pth.AnyPath:
   if adb_bin:
+    return platform.parse_binary_path(adb_bin)
+  if adb_bin := Binaries.ADB.search(platform):
     return adb_bin
   raise ValueError(
       "Could not find adb binary."
@@ -101,30 +102,33 @@ def _parse_adb_device_info(value: str) -> dict[str, str]:
 
 class Adb:
 
-  _serial_id: str
-  _device_info: AndroidDeviceInfo
-  _adb_bin: pth.AnyPath
-  _bundletool: Optional[pth.AnyPath]
-
   def __init__(self,
                host_platform: Platform,
                device_identifier: Optional[str] = None,
                adb_bin: Optional[pth.AnyPath] = None,
                bundletool: Optional[pth.AnyPath] = None) -> None:
-    self._host_platform = host_platform
-    if adb_bin:
-      self._adb_bin = host_platform.parse_binary_path(adb_bin)
-    else:
-      self._adb_bin = _find_adb_bin(host_platform)
+    self._host_platform: Final[Platform] = host_platform
+    self._adb_bin: Final[pth.AnyPath] = _find_adb_bin(host_platform, adb_bin)
+    self._bundletool: Final[pth.AnyPath
+                            | None] = self._find_bundletool(bundletool)
+    serial_id, device_info = self._start(device_identifier)
+    self._serial_id: Final[str] = serial_id
+    self._device_info: Final[AndroidDeviceInfo] = device_info
+
+  def _find_bundletool(self,
+                       bundletool: Optional[pth.AnyPath]) -> pth.AnyPath | None:
     if bundletool:
-      self._bundletool = host_platform.parse_binary_path(bundletool)
-    else:
-      self._bundletool = pth.LocalPath("bundletool")
+      return self._host_platform.parse_binary_path(bundletool)
+    return BuildtoolFinder(self._host_platform).path
+
+  def _start(
+      self,
+      device_identifier: Optional[str] = None) -> tuple[str, AndroidDeviceInfo]:
     self.start_server()
-    self._serial_id, self._device_info = self._find_serial_id(device_identifier)
-    logging.debug("ADB Selected device: %s %s", self._serial_id,
-                  self._device_info)
-    assert self._serial_id
+    serial_id, device_info = self._find_serial_id(device_identifier)
+    logging.debug("ADB Selected device: %s %s", serial_id, device_info)
+    assert serial_id
+    return serial_id, device_info
 
   def _find_serial_id(
       self,
@@ -176,6 +180,10 @@ class Adb:
   def build_version(self) -> int:
     return int(self.getprop("ro.build.version.release"))
 
+  @functools.cached_property
+  def build_description(self) -> str:
+    return self.getprop("ro.build.description")
+
   @property
   def device_info(self) -> AndroidDeviceInfo:
     return self._device_info
@@ -193,9 +201,9 @@ class Adb:
            *args: CmdArg,
            shell: bool = False,
            capture_output: bool = False,
-           stdout=None,
-           stderr=None,
-           stdin=None,
+           stdout: ProcessIo = None,
+           stderr: ProcessIo = None,
+           stdin: ProcessIo = None,
            env: Optional[Mapping[str, str]] = None,
            quiet: bool = False,
            check: bool = True,
@@ -215,7 +223,7 @@ class Adb:
   def _adb_stdout(self,
                   *args: CmdArg,
                   quiet: bool = False,
-                  stdin=None,
+                  stdin: ProcessIo = None,
                   encoding: str = "utf-8",
                   use_serial_id: bool = True,
                   check: bool = True) -> str:
@@ -230,7 +238,7 @@ class Adb:
   def _adb_stdout_bytes(self,
                         *args: CmdArg,
                         quiet: bool = False,
-                        stdin=None,
+                        stdin: ProcessIo = None,
                         use_serial_id: bool = True,
                         check: bool = True) -> bytes:
     adb_cmd = self._build_adb_cmd(*args, use_serial_id=use_serial_id)
@@ -264,7 +272,7 @@ class Adb:
                    shell: bool = False,
                    quiet: bool = False,
                    encoding: str = "utf-8",
-                   stdin=None,
+                   stdin: ProcessIo = None,
                    env: Optional[Mapping[str, str]] = None,
                    check: bool = True) -> str:
     result = self.shell_stdout_bytes(
@@ -275,7 +283,7 @@ class Adb:
                          *args: CmdArg,
                          shell: bool = False,
                          quiet: bool = False,
-                         stdin=None,
+                         stdin: ProcessIo = None,
                          env: Optional[Mapping[str, str]] = None,
                          check: bool = True) -> bytes:
     # -e: choose escape character, or "none"; default '~'
@@ -293,9 +301,9 @@ class Adb:
             *args: CmdArg,
             shell: bool = False,
             capture_output: bool = False,
-            stdout=None,
-            stderr=None,
-            stdin=None,
+            stdout: ProcessIo = None,
+            stderr: ProcessIo = None,
+            stdin: ProcessIo = None,
             env: Optional[Mapping[str, str]] = None,
             quiet: bool = False,
             check: bool = True) -> subprocess.CompletedProcess:
@@ -456,7 +464,10 @@ class Adb:
                    modules: Optional[str] = None) -> None:
     if not apks.exists():
       raise ValueError(f"APK {apks} does not exist.")
-    if self._bundletool and self._bundletool.suffix == ".jar":
+    if self._bundletool is None:
+      raise RuntimeError(
+          "Could not find bundletool binary required for install_apks")
+    if self._bundletool.suffix == ".jar":
       binary = ["java", "-jar", str(self._bundletool)]
     else:
       binary = [str(self._bundletool)]
@@ -477,7 +488,7 @@ class Adb:
       raise ValueError("Got empty package name")
     try:
       self._adb("uninstall", package_name)
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:  # noqa: BLE001
       if missing_ok:
         logging.debug("Could not uninstall %s: %s", package_name, e)
       else:
@@ -486,7 +497,7 @@ class Adb:
   def grant_permissions(self, package_name: str) -> None:
     if self.build_version < 13:
       # Notification permission setting is needed for Android 13 and above.
-      # https://developer.android.com/develop/ui/views/notifications/notification-permission  # pylint: disable=line-too-long
+      # https://developer.android.com/develop/ui/views/notifications/notification-permission
       return
     if not package_name:
       raise ValueError("Got empty package name")
@@ -549,8 +560,11 @@ class AndroidAdbPortManager(PortManager):
     self._adb.reverse_remove(remote_port, protocol="tcp")
 
 
+class AndroidVersion(PosixVersion):
+  pass
+
 class AndroidAdbPlatform(RemotePosixPlatform):
-  # pylint: disable=redefined-builtin
+
 
   def __init__(self,
                host_platform: Platform,
@@ -558,11 +572,15 @@ class AndroidAdbPlatform(RemotePosixPlatform):
                adb: Optional[Adb] = None) -> None:
     assert not host_platform.is_remote, (
         "adb on remote platform is not supported yet")
-    self._adb = adb or Adb(host_platform, device_identifier)
+    self._adb: Final[Adb] = adb or Adb(host_platform, device_identifier)
     super().__init__(host_platform)
 
   def _create_port_manager(self) -> PortManager:
     return AndroidAdbPortManager(self, self._adb)
+
+  @override
+  def _create_default_tmp_dir(self) -> pth.AnyPath:
+    return self.path("/data/local/tmp/")
 
   @property
   @override
@@ -576,16 +594,21 @@ class AndroidAdbPlatform(RemotePosixPlatform):
 
   @functools.cached_property
   @override
-  def version(self) -> str:  #pylint: disable=invalid-overridden-method
+  def version_str(self) -> str:
     return str(self.adb.build_version)
 
   @functools.cached_property
   @override
-  def device(self) -> str:  #pylint: disable=invalid-overridden-method
+  def version(self) -> AndroidVersion:
+    return AndroidVersion.parse(self.adb.build_description)
+
+  @functools.cached_property
+  @override
+  def model(self) -> str:
     return self.adb.getprop("ro.product.model")
 
   @property
-  def serial_id(self):
+  def serial_id(self) -> str:
     return self._adb.serial_id
 
   @functools.cached_property
@@ -598,7 +621,7 @@ class AndroidAdbPlatform(RemotePosixPlatform):
 
   @functools.cached_property
   @override
-  def cpu(self) -> str:  #pylint: disable=invalid-overridden-method
+  def cpu(self) -> str:
     variant = self.adb.getprop("dalvik.vm.isa.arm.variant")
     platform = self.adb.getprop("ro.board.platform")
     cpu_str = f"{variant} {platform}"
@@ -619,7 +642,7 @@ class AndroidAdbPlatform(RemotePosixPlatform):
   def adb(self) -> Adb:
     return self._adb
 
-  _MACHINE_ARCH_LOOKUP = {
+  _MACHINE_ARCH_LOOKUP: Final = {
       "arm64-v8a": MachineArch.ARM_64,
       "armeabi-v7a": MachineArch.ARM_32,
       "x86": MachineArch.IA32,
@@ -628,7 +651,7 @@ class AndroidAdbPlatform(RemotePosixPlatform):
 
   @functools.cached_property
   @override
-  def machine(self) -> MachineArch:  #pylint: disable=invalid-overridden-method
+  def machine(self) -> MachineArch:
     cpu_abi = self.adb.getprop("ro.product.cpu.abi")
     arch = self._MACHINE_ARCH_LOOKUP.get(cpu_abi, None)
     if not arch:
@@ -666,7 +689,8 @@ class AndroidAdbPlatform(RemotePosixPlatform):
   def home(self) -> pth.AnyPath:
     raise RuntimeError("Cannot access home dir on (non-rooted) android device")
 
-  _VERSION_NAME_RE = re.compile(r"versionName=(?P<version>.+)")
+  _VERSION_NAME_RE: Final[re.Pattern] = re.compile(
+      r"versionName=(?P<version>.+)")
 
   @override
   def app_version(self, app_or_bin: pth.AnyPathLike) -> str:
@@ -698,7 +722,7 @@ class AndroidAdbPlatform(RemotePosixPlatform):
     # TODO: implement.
     return True
 
-  _BRIGHTNESS_RE = re.compile(
+  _BRIGHTNESS_RE: Final[re.Pattern] = re.compile(
       r"mLatestFloatBrightness=(?P<brightness>[0-9]+\.[0-9]+)")
 
   @override
@@ -709,11 +733,6 @@ class AndroidAdbPlatform(RemotePosixPlatform):
       raise ValueError("Could not parse adb display brightness.")
     return int(float(match_result.group("brightness")) * 100)
 
-  @property
-  @override
-  def default_tmp_dir(self) -> pth.AnyPath:
-    return self.path("/data/local/tmp/")
-
   @override
   def build_shell_cmd(self, *args: CmdArg, shell: bool = False) -> ListCmdArgs:
     return self.adb.build_shell_cmd(*args, shell=shell)
@@ -723,9 +742,9 @@ class AndroidAdbPlatform(RemotePosixPlatform):
          *args: CmdArg,
          shell: bool = False,
          capture_output: bool = False,
-         stdout=None,
-         stderr=None,
-         stdin=None,
+         stdout: ProcessIo = None,
+         stderr: ProcessIo = None,
+         stdin: ProcessIo = None,
          env: Optional[Mapping[str, str]] = None,
          quiet: bool = False,
          check: bool = True) -> subprocess.CompletedProcess:
@@ -745,7 +764,7 @@ class AndroidAdbPlatform(RemotePosixPlatform):
                       *args: CmdArg,
                       shell: bool = False,
                       quiet: bool = False,
-                      stdin=None,
+                      stdin: ProcessIo = None,
                       env: Optional[Mapping[str, str]] = None,
                       check: bool = True) -> bytes:
     return self.adb.shell_stdout_bytes(
@@ -795,7 +814,7 @@ class AndroidAdbPlatform(RemotePosixPlatform):
       res.append({"pid": int(tokens[0]), "name": tokens[1]})
     return res
 
-  _DUMPSYS_TIMEOUT_RE = re.compile(
+  _DUMPSYS_TIMEOUT_RE: Final[re.Pattern] = re.compile(
       rb"\*\*\* SERVICE '[^']+' DUMP TIMEOUT \(\d+ms\) EXPIRED \*\*\*")
 
   @override
@@ -822,7 +841,7 @@ class AndroidAdbPlatform(RemotePosixPlatform):
               swap_total=mem_info.dirty_swap_pss_kb or mem_info.dirty_swap_kb))
     return meminfos
 
-  _DUMPSYS_SYSTEM_TOTAL_FREE_RE = re.compile(
+  _DUMPSYS_SYSTEM_TOTAL_FREE_RE: Final[re.Pattern] = re.compile(
       br"Total RAM: (?P<total_ram_kb>[0-9][,0-9]*)K.*"
       br"\n Free RAM: [0-9][,0-9]*K \( *"
       br"(?P<cached_pss_kb>[0-9][,0-9]*)K cached pss \+ +"
@@ -833,7 +852,7 @@ class AndroidAdbPlatform(RemotePosixPlatform):
       br".*$",
       re.DOTALL)
 
-  _DUMPSYS_SYSTEM_DMA_BUF_RE = re.compile(
+  _DUMPSYS_SYSTEM_DMA_BUF_RE: Final[re.Pattern] = re.compile(
       br"DMA-BUF: +(?P<dma_buf_kb>[0-9][,0-9]*)K \("
       br" +(?P<dma_buf_mapped_kb>[0-9][,0-9]*)K mapped \+"
       br" +(?P<dma_buf_unmapped_kb>[0-9][,0-9]*)K unmapped\)", re.DOTALL)
@@ -886,7 +905,8 @@ class AndroidAdbPlatform(RemotePosixPlatform):
         "current frequency": "n/a",
     }
 
-  _GETPROP_RE = re.compile(r"^\[(?P<key>[^\]]+)\]: \[(?P<value>[^\]]+)\]$")
+  _GETPROP_RE: Final[re.Pattern] = re.compile(
+      r"^\[(?P<key>[^\]]+)\]: \[(?P<value>[^\]]+)\]$")
 
   @functools.lru_cache(maxsize=1)
   @override
@@ -927,7 +947,8 @@ class AndroidAdbPlatform(RemotePosixPlatform):
   def screenshot(self, result_path: pth.AnyPath) -> None:
     self.sh("screencap", "-p", result_path)
 
-  _DUMPSYS_WINDOW_DISPLAYS_RE = re.compile(r" cur=(?P<x>\d+)x(?P<y>\d+) ")
+  _DUMPSYS_WINDOW_DISPLAYS_RE: Final[re.Pattern] = re.compile(
+      r" cur=(?P<x>\d+)x(?P<y>\d+) ")
 
   @functools.lru_cache(maxsize=1)
   def display_details(self) -> tuple[DisplayInfo, ...]:
@@ -951,3 +972,30 @@ class AndroidAdbPlatform(RemotePosixPlatform):
 
   def user_id(self) -> int:
     return NumberParser.any_int(self.sh_stdout("am", "get-current-user"))
+
+  @override
+  @contextlib.contextmanager
+  def low_power_mode(self) -> Generator[None, Any, None]:
+    try:
+      self.lock_screen()
+      self.doze()
+      yield
+    finally:
+      self.exit_doze()
+      self.unlock_screen()
+
+  def doze(self) -> None:
+    self.adb.dumpsys("deviceidle", "force-idle")
+
+  def exit_doze(self) -> None:
+    self.adb.dumpsys("deviceidle", "unforce")
+    self.adb.dumpsys("battery", "reset")
+
+  def lock_screen(self) -> None:
+    self.adb.shell("input", "keyevent", "KEYCODE_POWER")
+
+  def unlock_screen(self) -> None:
+    # Wake up the device
+    self.adb.shell("input", "keyevent", "KEYCODE_WAKEUP")
+    # Unlock the device
+    self.adb.shell("input", "keyevent", "KEYCODE_MENU")

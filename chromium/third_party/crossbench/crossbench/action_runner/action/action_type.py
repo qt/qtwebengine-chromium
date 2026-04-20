@@ -38,3 +38,4 @@ class ActionType(ConfigEnum):
   MEET_CREATE = ("meet_create", "Create a Google Meet meeting")
   MEET_SCRIPT = ("meet_script", "Run a script to automate Meet bot actions")
   MEMINFO = ("meminfo", "Dump current memory stats from the device.")
+  PROBE = ("probe", "Invoke an action in the specified probe.")

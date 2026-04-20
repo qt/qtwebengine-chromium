@@ -289,11 +289,11 @@ class ChromiumBased(Browser):
     self._sync_viewport_flag(flags, "--headless", self.viewport.is_headless,
                              Viewport.HEADLESS)
     # M112 added --headless=new as replacement for --headless
-    if "--headless" in flags and (self.version.major
-                                  >= self.MIN_HEADLESS_NEW_VERSION):
-      if flags["--headless"] is None:
-        logging.info("Replacing --headless with --headless=new")
-        flags.set("--headless", "new", should_override=True)
+    if "--headless" in flags and (
+        self.version.major
+        >= self.MIN_HEADLESS_NEW_VERSION) and flags["--headless"] is None:
+      logging.info("Replacing --headless with --headless=new")
+      flags.set("--headless", "new", should_override=True)
 
     if self.viewport.is_default:
       update_viewport = False

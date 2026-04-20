@@ -8,14 +8,19 @@ import abc
 import re
 import shlex
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterable, Set
+from typing import TYPE_CHECKING, ClassVar, Final, Iterable, Set
+
+from typing_extensions import override
 
 import crossbench.path as pth
+from crossbench import exception
 from crossbench.parse import ObjectParser
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
 from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
+  import datetime as dt
+
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
@@ -25,8 +30,8 @@ class DownloadsProbe(Probe):
   Probe that captures downloads from websites and allows loading tests to wait
   for a download to complete.
   """
-  NAME = "downloads"
-  RESULT_LOCATION = ResultLocation.BROWSER
+  NAME: ClassVar = "downloads"
+  RESULT_LOCATION: ClassVar = ResultLocation.BROWSER
 
   CHROME_OS_DOWNLOADS_DIR = pth.AnyPath("/home/chronos/user/MyFiles/Downloads")
 
@@ -55,7 +60,8 @@ class DownloadsProbe(Probe):
     self._clear_downloads: bool = clear_downloads
     self._save_downlaods: bool = save_downloads
 
-  def get_context(self, run: Run) -> DownloadsProbeContext:
+  @override
+  def create_context(self, run: Run) -> DownloadsProbeContext:
     if run.browser_platform.is_android:
       return AndroidWebDriverDownloadsProbeContext(self, run)
 
@@ -84,9 +90,28 @@ class DownloadsProbeContext(ProbeContext[DownloadsProbe]):
     self.browser_platform.mkdir(downloads_dir)
     return downloads_dir
 
+  @override
+  def invoke(self, info_stack: exception.TInfoStack, timeout: dt.timedelta,
+             **kwargs) -> None:
+    del info_stack
+    self._wait_for_download(timeout, **kwargs)
+
+  def _wait_for_download(self, timeout: dt.timedelta, pattern: str | re.Pattern,
+                         **kwargs) -> None:
+    self.expect_no_extra_kwargs(kwargs)
+
+    if not isinstance(pattern, re.Pattern):
+      pattern = re.compile(pattern)
+
+    wait_range = self.run.wait_range(min_interval=0.2, timeout=timeout)
+    for _ in wait_range.wait_with_backoff():
+      if self.download_complete(pattern):
+        return
+
   @abc.abstractmethod
   def download_complete(self, pattern: re.Pattern) -> bool:
     pass
+
 
 
 class FileWatchDownloadsProbeContext(DownloadsProbeContext):
@@ -125,6 +150,7 @@ class FileWatchDownloadsProbeContext(DownloadsProbeContext):
   def teardown(self) -> ProbeResult:
     return self.browser_result(file=self._results)
 
+  @override
   def download_complete(self, pattern: re.Pattern) -> bool:
     return any(pattern.search(file.name) for file in self.downloads())
 
@@ -136,8 +162,9 @@ class AndroidDownload:
 
 
 class AndroidWebDriverDownloadsProbeContext(DownloadsProbeContext):
-  CONTENT_QUERY_RE = re.compile(r"Row: \d+ _display_name=(.*), _id=(\d+)")
-  CONTENT_QUERY_NO_RESULTS = "No result found."
+  CONTENT_QUERY_RE: Final[re.Pattern] = re.compile(
+      r"Row: \d+ _display_name=(.*), _id=(\d+)")
+  CONTENT_QUERY_NO_RESULTS: Final = "No result found."
 
   def __init__(self, probe: DownloadsProbe, run: Run) -> None:
     super().__init__(probe, run)
@@ -198,12 +225,14 @@ class AndroidWebDriverDownloadsProbeContext(DownloadsProbeContext):
       cmd = (
           shlex.join(read_downloads_cmd) + ">" +
           shlex.quote(self.browser_platform.path(to_path).as_posix()))
-      self.browser_platform.sh(cmd, shell=True)
+      # We need shell=True since we pipe to a file.
+      self.browser_platform.sh(cmd, shell=True)  # noqa: S604
       self._results.append(to_path)
 
   def teardown(self) -> ProbeResult:
     return self.browser_result(file=self._results)
 
+  @override
   def download_complete(self, pattern: re.Pattern) -> bool:
     downloads = self.downloads(include_pending=False)
     return any(pattern.search(download.display_name) for download in downloads)

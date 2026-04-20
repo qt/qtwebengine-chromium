@@ -7,7 +7,8 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
-from typing import TYPE_CHECKING, Any, MutableMapping, Optional, Sequence, Type
+from typing import (TYPE_CHECKING, Any, ClassVar, Final, MutableMapping,
+                    Optional, Sequence, Type)
 
 import selenium.common.exceptions
 import urllib3.exceptions
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
 
   from crossbench.action_runner.config import ActionRunnerConfig
   from crossbench.cli.parser import CrossBenchArgumentParser
+  from crossbench.cli.types import Subparsers
   from crossbench.path import LocalPath
   from crossbench.probes.results import ProbeResult, ProbeResultDict
   from crossbench.runner.actions import Actions
@@ -45,7 +47,7 @@ class MemoryProbe(BenchmarkProbeMixin, JsonResultProbe):
   Memory-specific Probe.
   Extracts the number of alive tabs.
   """
-  NAME: str = "memory_probe"
+  NAME: ClassVar[str] = "memory_probe"
 
   @override
   def get_context_cls(self) -> Type[MemoryProbeContext]:
@@ -100,14 +102,13 @@ class MemoryProbeContext(ActionRunnerListener,
 
   def __init__(self, probe: MemoryProbe, run: Run) -> None:
     super().__init__(probe, run)
-    cur_benchmark = probe.benchmark
-    if not isinstance(cur_benchmark, MemoryBenchmark):
+    benchmark = probe.benchmark
+    if not isinstance(benchmark, MemoryBenchmark):
       raise TypeError("The probe only works for MemoryBenchmark")
     run.action_runner.set_listener(self)
-    self._skippable_tab_count = cur_benchmark._skippable_tab_count
-    self._target_tab_count = cur_benchmark.get_target_tab_count()
-    self._intensive_tab_switch_count = \
-      cur_benchmark.get_intensive_tab_switch_count()
+    self._skippable_tab_count = benchmark.skippable_tab_count
+    self._target_tab_count = benchmark.target_tab_count
+    self._intensive_tab_switch_count = benchmark.intensive_tab_switch_count
     # Records the navigation_start_time time for each window handle.
     self._navigation_time_ms: dict[str, float] = {}
     self._tab_count: int = 1
@@ -199,7 +200,7 @@ class MemoryProbeContext(ActionRunnerListener,
     cur_tab_switch_count = 0
     with run.actions("Intensive Tab Switching", measure=False) as action:
       while cur_tab_switch_count < self._intensive_tab_switch_count:
-        for handle, _ in self._navigation_time_ms.items():
+        for handle in self._navigation_time_ms:
           cur_tab_switch_count += 1
           logging.debug(
               "Browser: %s. Switching to handle: %s. "
@@ -227,8 +228,9 @@ class MemoryBenchmarkStoryFilter(StoryFilter[Page]):
   prefill-constant, random style to decide the
   memory workload.
   """
+  URL: ClassVar = (
+      "https://chromium-workloads.web.app/web-tests/main/synthetic/memory")
   stories: Sequence[Page]
-  URL = "https://chromium-workloads.web.app/web-tests/main/synthetic/memory"
 
   @classmethod
   @override
@@ -321,15 +323,14 @@ class MemoryBenchmark(SubStoryBenchmark):
   Benchmark runner for memory stress test.
   """
 
-  NAME = "memory"
-  DEFAULT_STORY_CLS = Page
-  STORY_FILTER_CLS = MemoryBenchmarkStoryFilter
-  PROBES: tuple[Type[MemoryProbe], ...] = (MemoryProbe,)
+  NAME: ClassVar = "memory"
+  DEFAULT_STORY_CLS: ClassVar = Page
+  STORY_FILTER_CLS: ClassVar = MemoryBenchmarkStoryFilter
+  PROBES: ClassVar[tuple[Type[MemoryProbe], ...]] = (MemoryProbe,)
 
   @classmethod
   @override
-  def add_cli_parser(
-      cls, subparsers: argparse.ArgumentParser) -> CrossBenchArgumentParser:
+  def add_cli_parser(cls, subparsers: Subparsers) -> CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers)
     cls.STORY_FILTER_CLS.add_cli_arguments(parser)
     parser.add_argument(
@@ -374,15 +375,22 @@ class MemoryBenchmark(SubStoryBenchmark):
     for story in stories:
       assert isinstance(story, Page)
     super().__init__(stories, action_runner_config)
-    self._skippable_tab_count = skippable_tab_count
-    self._target_tab_count = target_tab_count
-    self._intensive_tab_switch_count = intensive_tab_switch_count
+    self._skippable_tab_count: Final[int] = skippable_tab_count
+    self._target_tab_count: Final[int] = target_tab_count
+    self._intensive_tab_switch_count: Final[int] = intensive_tab_switch_count
 
-  def get_target_tab_count(self) -> int:
+  @property
+  def skippable_tab_count(self) -> int:
+    return self._skippable_tab_count
+
+  @property
+  def target_tab_count(self) -> int:
     return self._target_tab_count
 
-  def get_intensive_tab_switch_count(self) -> int:
+  @property
+  def intensive_tab_switch_count(self) -> int:
     return self._intensive_tab_switch_count
+
 
   @classmethod
   @override

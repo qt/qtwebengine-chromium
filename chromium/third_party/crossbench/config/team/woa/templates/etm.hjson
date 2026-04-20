@@ -1,0 +1,43 @@
+{
+  browsers: {
+    chrome: {
+      browser: chrome-stable
+      driver: {
+        type: adb
+      }
+    }
+  }
+  env: {}
+  probes: {
+    trace_processor: {}
+    perfetto: {
+      textproto:
+        '''
+        buffers {
+          size_kb: 300000
+          fill_policy: DISCARD
+        }
+        data_sources: {
+          config {
+          name: "track_event"
+            track_event_config {
+              disabled_categories: "*"
+              enabled_categories: "blink.user_timing"
+            }
+          }
+        }
+        data_sources {
+          config {
+            name: "org.chromium.trace_metadata"
+          }
+        }
+        '''
+    }
+    etm: {
+      cpu: 7
+      aux_buffer_size: 32M
+      record_timestamp: true
+      record_cycles: true
+    }
+  }
+}

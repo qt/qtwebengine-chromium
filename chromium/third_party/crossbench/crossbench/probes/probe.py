@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import TYPE_CHECKING, Hashable, Optional, Self, Set, Type, TypeVar
+from typing import (TYPE_CHECKING, ClassVar, Hashable, Optional, Self, Set,
+                    Type, TypeVar)
 
 from typing_extensions import override
 
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
   from crossbench.runner.groups.session import BrowserSessionRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
   from crossbench.runner.run import Run
+  from crossbench.runner.runner import Runner
 
 
 ProbeT = TypeVar("ProbeT", bound="Probe")
@@ -55,7 +57,6 @@ class ProbeConfigParser(ConfigParser[ProbeT]):
   @property
   def probe_cls(self) -> Type[ProbeT]:
     return self._probe_cls
-
 
 
 ProbeKeyT = tuple[tuple[str, Hashable], ...]
@@ -86,15 +87,27 @@ class Probe(ProbeResultKey, abc.ABC):
   - teardown(): Used for high-overhead Probe cleanup
 
   """
-  NAME: str = ""
+  NAME: ClassVar[str] = ""
+  # Set to False if the Probe cannot be used with arbitrary Stories or Pages.
+  IS_GENERAL_PURPOSE: ClassVar[bool] = True
+  PRODUCES_DATA: ClassVar[bool] = True
+  # Set the default probe result location, used to figure out whether result
+  # files need to be transferred from a remote machine.
+  RESULT_LOCATION: ClassVar[ResultLocation] = ResultLocation.LOCAL
+  # Set to True if the probe only works on battery power with single runs.
+  BATTERY_ONLY: ClassVar[bool] = False
 
   @classmethod
   def config_parser(cls) -> ProbeConfigParser[Self]:
     return ProbeConfigParser(cls)
 
   @classmethod
-  def from_config(cls: Type[ProbeT], config_data: dict) -> ProbeT:
-    return cls.config_parser().parse(config_data)
+  def parse_str(cls: Type[ProbeT], config_str: str) -> ProbeT:
+    return cls.config_parser().parse_str(config_str)
+
+  @classmethod
+  def parse_dict(cls: Type[ProbeT], config_data: dict) -> ProbeT:
+    return cls.config_parser().parse_dict(config_data)
 
   @classmethod
   def help_text(cls) -> str:
@@ -104,15 +117,6 @@ class Probe(ProbeResultKey, abc.ABC):
   def summary_text(cls) -> str:
     return cls.config_parser().summary
 
-  # Set to False if the Probe cannot be used with arbitrary Stories or Pages
-  IS_GENERAL_PURPOSE: bool = True
-  PRODUCES_DATA: bool = True
-  # Set the default probe result location, used to figure out whether result
-  # files need to be transferred from a remote machine.
-  RESULT_LOCATION = ResultLocation.LOCAL
-  # Set to True if the probe only works on battery power with single runs
-  BATTERY_ONLY: bool = False
-
   def __init__(self) -> None:
     assert self.name is not None, "A Probe must define a name"
     self._browsers: Set[Browser] = set()
@@ -120,12 +124,12 @@ class Probe(ProbeResultKey, abc.ABC):
   def __str__(self) -> str:
     return type(self).__name__
 
-  def __eq__(self, other) -> bool:
+  def __eq__(self, other: object) -> bool:
     if self is other:
       return True
-    if type(self) is not type(other):
-      return False
-    return self.key == other.key
+    if isinstance(other, type(self)):
+      return self.key == other.key
+    return False
 
   @property
   def is_internal(self) -> bool:
@@ -203,9 +207,9 @@ class Probe(ProbeResultKey, abc.ABC):
     if not browser.platform.is_android:
       raise ProbeIncompatibleBrowser(self, browser, "Only supported on Android")
 
-  def setup(self, runner) -> None:
+  def setup(self, runner: Runner) -> None:
     """Called before any runs or browsers have been started."""
-    pass
+    del runner
 
   def merge_cache_temperatures(self,
                                group: CacheTemperaturesRunGroup) -> ProbeResult:
@@ -254,16 +258,16 @@ class Probe(ProbeResultKey, abc.ABC):
     """
     return self.symlinked_single_run_result(group)
 
-  def get_context(self: Self, run: Run) -> Optional[ProbeContext[Self]]:
+  def create_context(self: Self, run: Run) -> ProbeContext[Self]:
     probe_cls: Type[ProbeContext[Self]] = self.get_context_cls()
     return probe_cls(self, run)
 
   def get_context_cls(self: Self) -> Type[ProbeContext[Self]]:
     raise NotImplementedError(f"Missing default ProbeContext class for {self}")
 
-  def get_session_context(  # pylint: disable=useless-return
+  def create_session_context(
       self: Self,
-      session: BrowserSessionRunGroup) -> Optional[ProbeSessionContext[Self]]:
+      session: BrowserSessionRunGroup) -> ProbeSessionContext[Self] | None:
     del session
     return None
 

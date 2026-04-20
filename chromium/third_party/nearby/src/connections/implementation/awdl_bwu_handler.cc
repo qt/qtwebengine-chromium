@@ -50,6 +50,7 @@ constexpr absl::Duration kAwdlDiscoveryTimeout = absl::Seconds(5);
 constexpr int kServiceNameLength = 8;
 constexpr int kPasswordLength = 16;
 constexpr absl::string_view kPskIdentity = "AwdlUpgradeMedium";
+constexpr absl::string_view kAwdlServiceIdSuffixForServiceType = "_AWDL";
 }  // namespace
 
 AwdlBwuHandler::AwdlBwuHandler(
@@ -66,7 +67,7 @@ AwdlBwuHandler::CreateUpgradedEndpointChannel(
   std::string upgrade_service_id = WrapInitiatorUpgradeServiceId(service_id);
   if (!upgrade_path_info.has_awdl_credentials()) {
     return {
-        Error(OperationResultCode::CONNECTIVITY_WIFI_LAN_INVALID_CREDENTIAL)};
+        Error(OperationResultCode::CONNECTIVITY_AWDL_INVALID_CREDENTIAL)};
   }
 
   const UpgradePathInfo::AwdlCredentials& awdl_credentials =
@@ -76,7 +77,7 @@ AwdlBwuHandler::CreateUpgradedEndpointChannel(
       !awdl_credentials.has_password()) {
     LOG(ERROR) << "Failed to upgrade AWDL due to invalid credentials.";
     return {
-        Error(OperationResultCode::CONNECTIVITY_WIFI_LAN_INVALID_CREDENTIAL)};
+        Error(OperationResultCode::CONNECTIVITY_AWDL_INVALID_CREDENTIAL)};
   }
 
   std::string service_name = awdl_credentials.service_name();
@@ -128,7 +129,7 @@ AwdlBwuHandler::CreateUpgradedEndpointChannel(
                << service_name << ", service_type:" << service_type
                << ") for endpoint " << endpoint_id;
     return {Error(
-        OperationResultCode::NEARBY_LAN_ENDPOINT_CHANNEL_CREATION_FAILURE)};
+        OperationResultCode::NEARBY_AWDL_ENDPOINT_CHANNEL_CREATION_FAILURE)};
   }
 
   if (!latch.Await(kAwdlDiscoveryTimeout)) {
@@ -137,7 +138,7 @@ AwdlBwuHandler::CreateUpgradedEndpointChannel(
                << ") due to timeout.";
     awdl_medium_.StopDiscovery(upgrade_service_id);
     return {Error(
-        OperationResultCode::NEARBY_LAN_ENDPOINT_CHANNEL_CREATION_FAILURE)};
+        OperationResultCode::NEARBY_AWDL_ENDPOINT_CHANNEL_CREATION_FAILURE)};
   }
 
   LOG(INFO) << "Discovered the AWDL service "
@@ -173,7 +174,7 @@ AwdlBwuHandler::CreateUpgradedEndpointChannel(
     awdl_medium_.StopDiscovery(upgrade_service_id);
     socket_result.value().Close();
     return {Error(
-        OperationResultCode::NEARBY_LAN_ENDPOINT_CHANNEL_CREATION_FAILURE)};
+        OperationResultCode::NEARBY_AWDL_ENDPOINT_CHANNEL_CREATION_FAILURE)};
   }
 
   return {std::move(channel)};
@@ -205,7 +206,8 @@ ByteArray AwdlBwuHandler::HandleInitializeUpgradedMediumForEndpoint(
     // Need to advertise the service.
     nsd_service_info_ = NsdServiceInfo();
     nsd_service_info_.SetServiceName(GenerateServiceName());
-    nsd_service_info_.SetServiceType(GenerateServiceType(upgrade_service_id));
+    nsd_service_info_.SetServiceType(GenerateServiceType(
+        absl::StrCat(upgrade_service_id, kAwdlServiceIdSuffixForServiceType)));
 
     if (!awdl_medium_.StartAdvertising(upgrade_service_id, nsd_service_info_)) {
       LOG(ERROR) << "Failed to initiate the AWDL upgrade for "

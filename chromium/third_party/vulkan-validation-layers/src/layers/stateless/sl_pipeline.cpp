@@ -170,10 +170,10 @@ bool Device::ValidatePipelineBinaryInfo(const void *next, VkPipelineCreateFlags 
 
     if (binary_info && (binary_info->binaryCount > 0)) {
         if (pipelineCache != VK_NULL_HANDLE) {
-            skip |= LogError(GetPipelineBinaryInfoVUID(flag_loc, vvl::PipelineBinaryInfoError::PNext_09616), device, loc.pNext(Struct::VkPipelineBinaryInfoKHR, Field::binaryCount),
-                             "(%" PRIu32 ") is greated than zero while  "
-                             "pipelineCache is not VK_NULL_HANDLE.",
-                             binary_info->binaryCount);
+            skip |=
+                LogError(GetPipelineBinaryInfoVUID(flag_loc, vvl::PipelineBinaryInfoError::PNext_09616), device,
+                         loc.pNext(Struct::VkPipelineBinaryInfoKHR, Field::binaryCount),
+                         "(%" PRIu32 ") is greater than zero while pipelineCache is not VK_NULL_HANDLE.", binary_info->binaryCount);
         }
 
         const auto creation_feedback = vku::FindStructInPNextChain<VkPipelineCreationFeedbackCreateInfo>(next);
@@ -261,6 +261,20 @@ bool Device::ValidatePipelineRenderingCreateInfo(const Context &context, const V
         }
     }
 
+    return skip;
+}
+
+bool Device::ValidateCreatePipelinesFlags2(const VkPipelineCreateFlags flags1, const VkPipelineCreateFlags2 flags2,
+                                           const Location &flags1_loc) const {
+    bool skip = false;
+    // Discussed in https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/7607
+    // Some wrappers include empty pNext structs which might be undesired here
+    if (flags2 == 0 && flags1 != 0) {
+        skip |= LogWarning("WARNING-VkPipelineCreateFlags2-flags1-zero", device, flags1_loc,
+                           "is %s but is actually now ignored as there is a chained VkPipelineCreateFlags2CreateInfo struct that "
+                           "has flags set to zero.",
+                           string_VkPipelineCreateFlags(flags1).c_str());
+    }
     return skip;
 }
 
@@ -382,6 +396,8 @@ bool Device::manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
         if (!create_flags_2) {
             skip |= context.ValidateFlags(flags_loc, vvl::FlagBitmask::VkPipelineCreateFlagBits, AllVkPipelineCreateFlagBits,
                                           create_info.flags, kOptionalFlags, "VUID-VkGraphicsPipelineCreateInfo-None-09497");
+        } else {
+            skip |= ValidateCreatePipelinesFlags2(create_info.flags, flags, flags_loc);
         }
         skip |= ValidateCreateGraphicsPipelinesFlags(flags, flags_loc);
 
@@ -1007,8 +1023,14 @@ bool Device::manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
                 skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-rasterizerDiscardEnable-09024", device, create_info_loc,
                                  "Rasterization is enabled (pCreateInfos[%" PRIu32
                                  "].pRasterizationState->rasterizerDiscardEnable is VK_FALSE), but pCreateInfos[%" PRIu32
-                                 "].pViewportState is NULL.",
-                                 i, i);
+                                 "].pViewportState is NULL."
+                                 "\nIf the following are all set, it can be NULL"
+                                 "\n  Enable VK_EXT_extended_dynamic_state3 (%senabled)"
+                                 "\n  Use VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT (%s)"
+                                 "\n  Use VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT (%s)\n",
+                                 i, i, IsExtEnabled(extensions.vk_ext_extended_dynamic_state3) ? "" : "not ",
+                                 has_dynamic_viewport_with_count ? "set" : "not set",
+                                 has_dynamic_scissor_with_count ? "set" : "not set");
             }
 
             // It is possible for pCreateInfos[i].pMultisampleState to be null when creating a graphics library
@@ -1345,6 +1367,8 @@ bool Device::manual_PreCallValidateCreateComputePipelines(VkDevice device, VkPip
         if (!create_flags_2) {
             skip |= context.ValidateFlags(flags_loc, vvl::FlagBitmask::VkPipelineCreateFlagBits, AllVkPipelineCreateFlagBits,
                                           create_info.flags, kOptionalFlags, "VUID-VkComputePipelineCreateInfo-None-09497");
+        } else {
+            skip |= ValidateCreatePipelinesFlags2(create_info.flags, flags, flags_loc);
         }
         skip |= ValidateCreateComputePipelinesFlags(flags, flags_loc);
 

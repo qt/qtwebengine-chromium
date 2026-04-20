@@ -434,8 +434,7 @@ void GetExecutionModelNames(const std::vector<uint32_t> &instructions, std::ostr
 
 // Find the OpLine/DebugLine just before the failing instruction indicated by the debug info.
 // Return the offset into the instructions array
-uint32_t GetDebugLineOffset(const std::vector<uint32_t> &instructions, uint32_t instruction_position) {
-    uint32_t index = 0;
+static uint32_t GetDebugLineOffset(const std::vector<uint32_t> &instructions, uint32_t instruction_position_offset) {
     uint32_t shader_debug_info_set_id = 0;
     uint32_t last_line_inst_offset = 0;
 
@@ -461,15 +460,33 @@ uint32_t GetDebugLineOffset(const std::vector<uint32_t> &instructions, uint32_t 
             last_line_inst_offset = 0;  // debug lines can't cross functions boundaries
         }
 
-        if (index == instruction_position) {
+        offset += length;
+
+        if (offset >= instruction_position_offset) {
             break;
         }
-        index++;
-
-        offset += length;
     }
 
     return last_line_inst_offset;
+}
+
+// There are 2 ways to inject source into a shader:
+// 1. The "old" way using OpLine/OpSource
+// 2. The "new" way using NonSemantic Shader DebugInfo
+void FindShaderSource(std::ostringstream &ss, const std::vector<uint32_t> &instructions, uint32_t instruction_position_offset,
+                      bool debug_printf_only) {
+    const uint32_t last_line_offset = GetDebugLineOffset(instructions, instruction_position_offset);
+    if (last_line_offset != 0) {
+        Instruction last_line_inst(instructions.data() + last_line_offset);
+        ss << (debug_printf_only ? "Debug shader printf message generated at " : "Shader validation error occurred at ");
+        GetShaderSourceInfo(ss, instructions, last_line_inst);
+    } else if (instruction_position_offset != 0) {
+        spirv::Instruction target_inst(instructions.data() + instruction_position_offset);
+        ss << "SPIR-V Instruction: " << target_inst.Describe()
+           << "\n(Unable to find shader source, build shader with debug info to get source information)\n";
+    } else {
+        ss << "(This check was instrumented at the start of your entrypoint function)\n";
+    }
 }
 
 }  // namespace spirv

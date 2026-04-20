@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from typing_extensions import override
 
 from crossbench.browsers.applescript import AppleScriptBrowser
@@ -12,11 +14,11 @@ from crossbench.browsers.safari.safari import Safari
 
 
 class SafariAppleScript(Safari, AppleScriptBrowser):
-  APPLE_SCRIPT_ALLOW_JS_MENU: str = (
+  APPLE_SCRIPT_ALLOW_JS_MENU: ClassVar[str] = (
       "Develop > Allow JavaScript from Apple Events")
-  APPLE_SCRIPT_JS_COMMAND: str = (
+  APPLE_SCRIPT_JS_COMMAND: ClassVar[str] = (
       "tell current tab of front window to do javascript %(js_script)s")
-  APPLE_SCRIPT_SET_URL: str = (
+  APPLE_SCRIPT_SET_URL: ClassVar[str] = (
       "set URL of the current tab of front window to %(url)s")
 
   @override

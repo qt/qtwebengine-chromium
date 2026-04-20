@@ -163,6 +163,12 @@ chromium_luci.configure_project(
     ref = settings.ref,
     is_main = settings.is_main,
     platforms = settings.platforms,
+    experiments = [
+        "builder_config.targets_spec_directory_relative_to_source_dir",
+        "targets.module_name_without_slash",
+        "targets.module_scheme_junit_tests",
+        "targets.module_scheme_script_tests",
+    ],
 )
 
 chromium_luci.configure_per_builder_outputs(
@@ -209,7 +215,7 @@ chromium_luci.configure_gardener_rotations(
 
 chromium_luci.configure_targets(
     generate_pyl_files = True,
-    autoshard_exceptions_file = "//targets/autoshard_exceptions.json",
+    autoshard_exceptions_file = "//autoshard_exceptions.json",
 )
 
 chromium_luci.configure_try(
@@ -345,15 +351,8 @@ exec("//swarming.star")
 
 exec("//recipes.star")
 exec("//gn_args/gn_args.star")
-exec("//targets/basic_suites.star")
-exec("//targets/binaries.star")
-exec("//targets/bundles.star")
-exec("//targets/compile_targets.star")
-exec("//targets/compound_suites.star")
-exec("//targets/matrix_compound_suites.star")
-exec("//targets/mixins.star")
-exec("//targets/tests.star")
-exec("//targets/variants.star")
+
+exec("@chromium-targets//declarations.star")
 
 exec("//notifiers.star")
 

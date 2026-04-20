@@ -4,25 +4,38 @@
 
 if (window.location.href ===
     'https://www.amazon.co.uk/NIVEA-Suncream-Spray-Protect-Moisture/dp/B001B0OJXM') {
-  const button_selector = 'input[id=sp-cc-accept]';
+  const button_selector = 'a[id=nav-hamburger-menu]';
+  const menu_selector = '.hmenu';
+  const buy_id = 'buy-now-button';
 
   const button_observer = new MutationObserver(mutations => {
     const button = document.querySelector(button_selector);
-    if (!button) {
+    const menu = document.querySelector(menu_selector);
+    if (!button || !menu) {
       return;
     }
 
     button_observer.disconnect();
 
     const attribute_observer = new MutationObserver(() => {
-      if (button.hasAttribute('data-cel-widget')) {
+      if (menu.classList.contains('hmenu-visible')) {
         attribute_observer.disconnect();
-        performance.mark('LoadLine2/amazon_product/button_click');
-        button.click();
+        performance.mark('LoadLine2/amazon_product/interactive');
       }
     });
-    attribute_observer.observe(button, {attributes: true});
+    attribute_observer.observe(menu, {attributes: true});
+    button.click();
   });
 
+  const buy_observer = new MutationObserver(mutations => {
+    const buy = document.getElementById(buy_id);
+    if (!buy) {
+      return;
+    }
+    buy_observer.disconnect();
+    performance.mark('LoadLine2/amazon_product/visual');
+  });
+
+  buy_observer.observe(document, {childList: true, subtree: true});
   button_observer.observe(document, {childList: true, subtree: true});
 }

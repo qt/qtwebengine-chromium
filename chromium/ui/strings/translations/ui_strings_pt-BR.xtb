@@ -231,7 +231,7 @@
 <translation id="8602707065186045623">Arquivo <ph name="SAVEAS_EXTENSION_TYPE" /> (.<ph name="SAVEAS_EXTENSION_NAME" />)</translation>
 <translation id="8677655579646609597"><ph name="QUANTITY" /> KB/s</translation>
 <translation id="8725488761726303204">mais <ph name="NUMBER" /></translation>
-<translation id="8730621377337864115">Concluir</translation>
+<translation id="8730621377337864115">Concluído</translation>
 <translation id="8772073294905169192">{HOURS,plural, =1{1 h}one{# h}other{# h}}</translation>
 <translation id="8798099450830957504">Padrão</translation>
 <translation id="8841375032071747811">Botão "Voltar"</translation>
@@ -239,13 +239,13 @@
 <translation id="8876215549894133151">Formato:</translation>
 <translation id="8901569739625249689"><ph name="QUANTITY" /> KB</translation>
 <translation id="8927924178504495502">{HOURS,plural, =1{1 hora atrás}one{# hora atrás}other{# horas atrás}}</translation>
-<translation id="8996630695507351249">Verifique se o <ph name="TARGET_DEVICE_NAME" /> está conectado à Internet.</translation>
+<translation id="8996630695507351249">Verifique se o <ph name="TARGET_DEVICE_NAME" /> está conectado à internet.</translation>
 <translation id="9044832324875206639">{SECONDS,plural, =1{1 s}one{# s}other{# s}}</translation>
 <translation id="9059834730836941392">Recolher notificação</translation>
 <translation id="9170848237812810038">&amp;Desfazer</translation>
 <translation id="9195990613383871904">Amanhã</translation>
 <translation id="928628199082367701">Super</translation>
-<translation id="932327136139879170">Início</translation>
+<translation id="932327136139879170">Casa</translation>
 <translation id="944069440740578670">Notificações não lidas</translation>
 <translation id="966963601246348639">{SECONDS,plural, =1{1 segundo atrás}one{# segundo atrás}other{# segundos atrás}}</translation>
 </translationbundle>

@@ -4,12 +4,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import IO, Any, Iterable
 
 import hjson
 
 
-def _check_for_duplicate_keys(key_values) -> dict[str, Any]:
+def _check_for_duplicate_keys(
+    key_values: Iterable[tuple[str, Any]]) -> dict[str, Any]:
   result = {}
   for key, value in key_values:
     if key in result:
@@ -18,8 +19,9 @@ def _check_for_duplicate_keys(key_values) -> dict[str, Any]:
   return result
 
 
-def load_unique_keys(file) -> Any:
-  return hjson.load(file, object_pairs_hook=_check_for_duplicate_keys)
+def load_unique_keys(file: IO[str]) -> Any:
+  return hjson.load(
+      file, object_pairs_hook=_check_for_duplicate_keys)  # type: ignore
 
 
 def loads_unique_keys(string_value: str) -> Any:

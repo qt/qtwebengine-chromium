@@ -2,7 +2,7 @@
 # Copyright (C) 2004 glib's COPYRIGHT HOLDER
 # This file is distributed under the same licence as the GLIB package.
 # Gareth Owen <gowen72@yahoo.com> 2004
-# Philip Withnall <philip@tecnocode.co.uk>, 2010.
+# Philip Withnall <philip@tecnocode.co.uk>, 2010-2024.
 # Zander Brown <zbrown@gnome.org>, 2019-2021.
 # Bruce Cowan <bruce@bcowan.me.uk>, 2009-2024.
 # Andi Chandler <andi@gowling.com>, 2024.
@@ -10,9 +10,9 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: glib\n"
-"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/glib/-/issues\n"
-"POT-Creation-Date: 2024-09-01 21:47+0000\n"
-"PO-Revision-Date: 2024-08-31 16:16+0100\n"
+"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/glib/issues/new\n"
+"POT-Creation-Date: 2024-09-08 16:27+0000\n"
+"PO-Revision-Date: 2024-03-06 13:36+0000\n"
 "Last-Translator: Andi Chandler <andi@gowling.com>\n"
 "Language-Team: English - United Kingdom <en@li.org>\n"
 "Language: en_GB\n"
@@ -312,7 +312,7 @@ msgstr "Stream is already closed"
 msgid "Truncate not supported on base stream"
 msgstr "Truncate not supported on base stream"
 
-#: gio/gcancellable.c:326 gio/gdbusconnection.c:1994 gio/gdbusprivate.c:1434
+#: gio/gcancellable.c:322 gio/gdbusconnection.c:1994 gio/gdbusprivate.c:1434
 #: gio/gsimpleasyncresult.c:871 gio/gsimpleasyncresult.c:897
 #, c-format
 msgid "Operation was cancelled"
@@ -6000,57 +6000,57 @@ msgstr "Child process stopped by signal %ld"
 msgid "Child process exited abnormally"
 msgstr "Child process exited abnormally"
 
-#: glib/gspawn-posix.c:980 glib/gspawn-win32.c:450 glib/gspawn-win32.c:458
+#: glib/gspawn-posix.c:982 glib/gspawn-win32.c:450 glib/gspawn-win32.c:458
 #, c-format
 msgid "Failed to read from child pipe (%s)"
 msgstr "Failed to read from child pipe (%s)"
 
-#: glib/gspawn-posix.c:1361
+#: glib/gspawn-posix.c:1363
 #, c-format
 msgid "Failed to spawn child process “%s” (%s)"
 msgstr "Failed to spawn child process “%s” (%s)"
 
-#: glib/gspawn-posix.c:1485
+#: glib/gspawn-posix.c:1487
 #, c-format
 msgid "Failed to fork (%s)"
 msgstr "Failed to fork (%s)"
 
-#: glib/gspawn-posix.c:1646 glib/gspawn-win32.c:481
+#: glib/gspawn-posix.c:1648 glib/gspawn-win32.c:481
 #, c-format
 msgid "Failed to change to directory “%s” (%s)"
 msgstr "Failed to change to directory “%s” (%s)"
 
-#: glib/gspawn-posix.c:1656
+#: glib/gspawn-posix.c:1658
 #, c-format
 msgid "Failed to execute child process “%s” (%s)"
 msgstr "Failed to execute child process “%s” (%s)"
 
-#: glib/gspawn-posix.c:1666
+#: glib/gspawn-posix.c:1668
 #, c-format
 msgid "Failed to open file to remap file descriptor (%s)"
 msgstr "Failed to open file to remap file descriptor (%s)"
 
-#: glib/gspawn-posix.c:1674
+#: glib/gspawn-posix.c:1676
 #, c-format
 msgid "Failed to duplicate file descriptor for child process (%s)"
 msgstr "Failed to duplicate file descriptor for child process (%s)"
 
-#: glib/gspawn-posix.c:1683
+#: glib/gspawn-posix.c:1685
 #, c-format
 msgid "Failed to fork child process (%s)"
 msgstr "Failed to fork child process (%s)"
 
-#: glib/gspawn-posix.c:1691
+#: glib/gspawn-posix.c:1693
 #, c-format
 msgid "Failed to close file descriptor for child process (%s)"
 msgstr "Failed to close file descriptor for child process (%s)"
 
-#: glib/gspawn-posix.c:1699
+#: glib/gspawn-posix.c:1701
 #, c-format
 msgid "Unknown error executing child process “%s”"
 msgstr "Unknown error executing child process “%s”"
 
-#: glib/gspawn-posix.c:1723
+#: glib/gspawn-posix.c:1725
 #, c-format
 msgid "Failed to read enough data from child pid pipe (%s)"
 msgstr "Failed to read enough data from child pid pipe (%s)"

@@ -549,6 +549,32 @@ gvdb_table_list (GvdbTable   *file,
 }
 
 /**
+ * gvdb_table_n_children:
+ * @file: a #GvdbTable
+ * @key: a string
+ *
+ * Returns the number of keys that appear below @key.
+ *
+ * Returns: the number of keys below @key
+ */
+guint
+gvdb_table_n_children (GvdbTable  *file,
+                       const char *key)
+{
+  const struct gvdb_hash_item *item;
+  const guint32_le *list;
+  guint length;
+
+  if ((item = gvdb_table_lookup (file, key, 'L')) == NULL)
+    return 0;
+
+  if (!gvdb_table_list_from_item (file, item, &list, &length))
+    return 0;
+
+  return length;
+}
+
+/**
  * gvdb_table_has_value:
  * @file: a #GvdbTable
  * @key: a string

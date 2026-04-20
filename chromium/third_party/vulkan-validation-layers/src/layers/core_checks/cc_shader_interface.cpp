@@ -35,6 +35,7 @@
 #include "state_tracker/cmd_buffer_state.h"
 #include "state_tracker/pipeline_state.h"
 #include "containers/limits.h"
+#include "error_message/error_strings.h"
 #include "utils/vk_api_utils.h"
 
 bool CoreChecks::ValidateInterfaceVertexInput(const vvl::Pipeline &pipeline, const spirv::Module &module_state,
@@ -460,6 +461,10 @@ bool CoreChecks::ValidateFsOutputsAgainstRenderPass(const spirv::Module &module_
                                                     const vvl::Pipeline &pipeline, uint32_t subpass_index,
                                                     const Location &create_info_loc) const {
     bool skip = false;
+    // To match with the dynamic rendering case
+    if (global_settings.only_report_errors) {
+        return skip;
+    }
 
     struct Attachment {
         const VkAttachmentReference2 *reference = nullptr;
@@ -547,15 +552,32 @@ bool CoreChecks::ValidateFsOutputsAgainstRenderPass(const spirv::Module &module_
     return skip;
 }
 
+static std::string DescribeMappedLocation(uint32_t shader, uint32_t rendering_info) {
+    std::stringstream msg;
+    if (shader == rendering_info) {
+        msg << shader;
+    } else {
+        msg << shader << " (which was remapped to attachment " << rendering_info << ")";
+    }
+    return msg.str();
+}
+
 // This is validated at draw time unlike the VkRenderPass version
-bool CoreChecks::ValidateDrawDynamicRenderingFsOutputs(const LastBound &last_bound_state, const vvl::RenderPass &rp_state,
+bool CoreChecks::ValidateDrawDynamicRenderingFsOutputs(const LastBound &last_bound_state, const vvl::CommandBuffer &cb_state,
                                                        const Location &loc) const {
     bool skip = false;
-
+    // Some apps do 100k draws a frame and found this function is a bottleneck if an app is violating these warnings
+    if (global_settings.only_report_errors) {
+        return skip;
+    }
+    if (last_bound_state.IsRasterizationDisabled()) {
+        return skip;
+    }
     const spirv::EntryPoint *entrypoint = last_bound_state.GetFragmentEntryPoint();
     if (!entrypoint) {
         return skip;
     }
+    const vvl::RenderPass &rp_state = *cb_state.active_render_pass;
     if (rp_state.use_dynamic_rendering_inherited) {
         return skip;
     }
@@ -564,12 +586,17 @@ bool CoreChecks::ValidateDrawDynamicRenderingFsOutputs(const LastBound &last_bou
     struct Attachment {
         const VkRenderingAttachmentInfo *rendering_attachment_info = nullptr;
         const spirv::StageInterfaceVariable *output = nullptr;
+        std::optional<uint32_t> mapped_location = std::nullopt;
     };
     std::map<uint32_t, Attachment> location_map;
 
-    const uint32_t color_attachment_count = rp_state.dynamic_rendering_begin_rendering_info.colorAttachmentCount;
-    for (uint32_t i = 0; i < color_attachment_count; ++i) {
-        location_map[i].rendering_attachment_info = rp_state.dynamic_rendering_begin_rendering_info.pColorAttachments[i].ptr();
+    const size_t color_attachment_count = cb_state.rendering_attachments.color_locations.size();
+    for (size_t i = 0; i < color_attachment_count; ++i) {
+        uint32_t color_location = cb_state.rendering_attachments.color_locations[i];
+        if (color_location != VK_ATTACHMENT_UNUSED) {
+            location_map[color_location].rendering_attachment_info = rp_state.dynamic_rendering_begin_rendering_info.pColorAttachments[i].ptr();
+            location_map[color_location].mapped_location = static_cast<uint32_t>(i);
+        }
     }
 
     // TODO: dual source blend index (spv::DecIndex, zero if not provided)
@@ -592,6 +619,7 @@ bool CoreChecks::ValidateDrawDynamicRenderingFsOutputs(const LastBound &last_bou
         const bool has_attachment =
             attachment_info.rendering_attachment_info && attachment_info.rendering_attachment_info->imageView != VK_NULL_HANDLE;
         const spirv::StageInterfaceVariable *output = attachment_info.output;
+        uint32_t mapped_loc = attachment_info.mapped_location.value_or(location);
 
         if (has_attachment && !output) {
             // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9616
@@ -602,21 +630,29 @@ bool CoreChecks::ValidateDrawDynamicRenderingFsOutputs(const LastBound &last_bou
                 const bool null_image_view = attachment_info.rendering_attachment_info &&
                                              attachment_info.rendering_attachment_info->imageView == VK_NULL_HANDLE;
                 const LogObjectList objlist = last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
-                skip |= LogUndefinedValue("Undefined-Value-ShaderOutputNotConsumed-DynamicRendering", objlist, loc,
-                                          "Inside the fragment shader, it writes to output Location %" PRIu32
-                                          " but there is no VkRenderingInfo::pColorAttachments[%" PRIu32
-                                          "]%s and this write is unused.\nSpec information at "
-                                          "https://docs.vulkan.org/spec/latest/chapters/interfaces.html#interfaces-fragmentoutput",
-                                          location, location, null_image_view ? " (imageView is VK_NULL_HANDLE)" : "");
+                std::stringstream reason;
+                if (null_image_view || location >= cb_state.rendering_attachments.color_locations.size()) {
+                    reason << "there is no VkRenderingInfo::pColorAttachments[" << mapped_loc << "]";
+                    if (null_image_view) {
+                        reason << " (imageView is VK_NULL_HANDLE)";
+                    }
+                } else {
+                    reason << "none of the attachments were mapped to that location (mapping was [";
+                    for (const uint32_t &mapping : cb_state.rendering_attachments.color_locations) {
+                        if (&mapping != &cb_state.rendering_attachments.color_locations[0]) {
+                            reason << ", ";
+                        }
+                        reason << string_Attachment(mapping);
+                    }
+                    reason << "])";
+                }
+                skip |= LogUndefinedValue(
+                    "Undefined-Value-ShaderOutputNotConsumed-DynamicRendering", objlist, loc,
+                    "Inside the fragment shader, it writes to output Location %s but %s and this write is unused.\n"
+                    "Spec information at https://docs.vulkan.org/spec/latest/chapters/interfaces.html#interfaces-fragmentoutput",
+                    DescribeMappedLocation(location, mapped_loc).c_str(), reason.str().c_str());
             }
         } else if (has_attachment && output) {
-            if (last_bound_state.cb_state.rendering_attachments.set_color_indexes ||
-                last_bound_state.cb_state.rendering_attachments.set_color_locations) {
-                // TODO - Handle VK_KHR_dynamic_rendering_local_read
-                // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/8887
-                continue;
-            }
-
             const auto image_view_state = Get<vvl::ImageView>(attachment_info.rendering_attachment_info->imageView);
             const uint32_t attachment_type = spirv::GetFormatType(image_view_state->create_info.format);
 
@@ -637,15 +673,15 @@ bool CoreChecks::ValidateDrawDynamicRenderingFsOutputs(const LastBound &last_bou
             // Type checking
             if ((output_type & attachment_type) == 0) {
                 const LogObjectList objlist = last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
-                skip |= LogUndefinedValue("Undefined-Value-ShaderFragmentOutputMismatch-DynamicRendering", objlist, loc,
-                                          "Inside the fragment shader, it writes to output Location %" PRIu32
-                                          " with a numeric type of %s but VkRenderingInfo::pColorAttachments[%" PRIu32
-                                          "].imageView is created with %s (numeric type of %s) which does not match and the "
-                                          "resulting values written will be undefined.\nSpec information at "
-                                          "https://docs.vulkan.org/spec/latest/chapters/interfaces.html#interfaces-fragmentoutput",
-                                          location, spirv::string_NumericType(output_type), location,
-                                          string_VkFormat(image_view_state->create_info.format),
-                                          spirv::string_NumericType(attachment_type));
+                skip |= LogUndefinedValue(
+                    "Undefined-Value-ShaderFragmentOutputMismatch-DynamicRendering", objlist, loc,
+                    "Inside the fragment shader, it writes to output Location %s with a numeric type of %s but "
+                    "VkRenderingInfo::pColorAttachments[%" PRIu32
+                    "].imageView is created with %s (numeric type of %s) which does not match and the "
+                    "resulting values written will be undefined.\n"
+                    "Spec information at https://docs.vulkan.org/spec/latest/chapters/interfaces.html#interfaces-fragmentoutput",
+                    DescribeMappedLocation(location, mapped_loc).c_str(), spirv::string_NumericType(output_type), mapped_loc,
+                    string_VkFormat(image_view_state->create_info.format), spirv::string_NumericType(attachment_type));
             }
         } else {  // !attachment && !output
             // Means empty fragment shader and no color attachments
@@ -663,30 +699,34 @@ bool CoreChecks::ValidatePipelineTessellationStages(const spirv::Module &tesc_mo
                                                     const Location &create_info_loc) const {
     bool skip = false;
 
+    // The other tessellation modes (PointMode, Spacing, Orientation) can be in either stage.
+    // OutputVertices needs to be in TESC and Subdivision in TESE, but they can be in the other stage, but needs to match
     const uint32_t tesc_subdivision = tesc_entrypoint.execution_mode.GetTessellationSubdivision();
     const uint32_t tese_subdivision = tese_entrypoint.execution_mode.GetTessellationSubdivision();
     const uint32_t tesc_patch_size = tesc_entrypoint.execution_mode.output_vertices;
     const uint32_t tese_patch_size = tese_entrypoint.execution_mode.output_vertices;
-    if (tesc_subdivision == 0 && tese_subdivision == 0) {
+    if (tesc_subdivision == spirv::kInvalidValue && tese_subdivision == spirv::kInvalidValue) {
         const LogObjectList objlist(tesc_module_state.handle(), tese_module_state.handle());
         skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-pStages-00732", objlist, create_info_loc,
-                         "Subdivision type is not specified in either of tessellation stages");
-    } else if (tesc_subdivision != 0 && tese_subdivision != 0 && tesc_subdivision != tese_subdivision) {
+                         "Subdivision (Triangles/Quads/IsoLines) is not specified in either of tessellation stages");
+    } else if (tesc_subdivision != spirv::kInvalidValue && tese_subdivision != spirv::kInvalidValue &&
+               tesc_subdivision != tese_subdivision) {
         const LogObjectList objlist(tesc_module_state.handle(), tese_module_state.handle());
         skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-pStages-00733", objlist, create_info_loc,
-                         "Subdivision type specified in tessellation control shader is %s, but subdivison type specified in "
+                         "Subdivision specified in tessellation control shader is %s, but subdivison type specified in "
                          "tessellation evaluation shader is %s",
                          string_SpvExecutionMode(tesc_subdivision), string_SpvExecutionMode(tese_subdivision));
     }
-    if (tesc_patch_size == vvl::kU32Max && tese_patch_size == vvl::kU32Max) {
+    if (tesc_patch_size == spirv::kInvalidValue && tese_patch_size == spirv::kInvalidValue) {
         const LogObjectList objlist(tesc_module_state.handle(), tese_module_state.handle());
         skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-pStages-00734", objlist, create_info_loc,
-                         "Output patch size is not specified in either of tessellation stages");
-    } else if (tesc_patch_size != vvl::kU32Max && tese_patch_size != vvl::kU32Max && tesc_patch_size != tese_patch_size) {
+                         "OutputVertices (patch size) is not specified in either of tessellation stages");
+    } else if (tesc_patch_size != spirv::kInvalidValue && tese_patch_size != spirv::kInvalidValue &&
+               tesc_patch_size != tese_patch_size) {
         const LogObjectList objlist(tesc_module_state.handle(), tese_module_state.handle());
         skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-pStages-00735", objlist, create_info_loc,
-                         "Output patch size specified in tessellation control shader is %" PRIu32
-                         ", but subdivison type specified in tessellation evaluation shader is %" PRIu32,
+                         "OutputVertices (patch size) specified in tessellation control shader is %" PRIu32
+                         ", but OutputVertices specified in tessellation evaluation shader is %" PRIu32,
                          tesc_patch_size, tese_patch_size);
     }
     return skip;

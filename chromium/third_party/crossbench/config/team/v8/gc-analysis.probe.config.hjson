@@ -9,11 +9,6 @@
         data_sources {
           config {
             name: "track_event"
-            chrome_config {
-              trace_config: "{\"record_mode\":\"record-until-full\",\"included_categories\":[\"blink.user_timing\",\"disabled-by-default-cppgc\",\"toplevel\",\"v8\",\"disabled-by-default-v8.gc\"],\"excluded_categories\":[\"*\"]}"
-              privacy_filtering_enabled: false
-              client_priority: USER_INITIATED
-            }
             track_event_config {
               disabled_categories: "*"
               enabled_categories: "blink.user_timing"
@@ -31,12 +26,7 @@
         }
         data_sources {
           config {
-            name: "org.chromium.trace_metadata"
-            chrome_config {
-              trace_config: "{\"record_mode\":\"record-until-full\",\"included_categories\":[\"blink.user_timing\",\"disabled-by-default-cppgc\",\"toplevel\",\"v8\",\"disabled-by-default-v8.gc\"],\"excluded_categories\":[\"*\"]}"
-              privacy_filtering_enabled: false
-              client_priority: USER_INITIATED
-            }
+            name: "org.chromium.trace_metadata2"
           }
         }
       ''',

@@ -7,7 +7,8 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, cast
+from typing import (TYPE_CHECKING, Any, Callable, Final, Optional, Sequence,
+                    cast)
 
 from typing_extensions import override
 
@@ -17,14 +18,14 @@ from crossbench.action_runner.default_bond_action_runner import \
     DefaultBondActionRunner
 from crossbench.action_runner.element_not_found_error import \
     ElementNotFoundError
-from crossbench.probes.downloads import DownloadsProbe, DownloadsProbeContext
-from crossbench.probes.dump_html import DumpHtmlProbe, DumpHtmlProbeContext
-from crossbench.probes.meminfo import MeminfoProbe, MeminfoProbeContext
 from crossbench.probes.screenshot import (ScreenshotProbe,
                                           ScreenshotProbeContext)
+from crossbench.runner.probe_context_lookup_error import \
+    ProbeContextLookupError
 
 if TYPE_CHECKING:
   from crossbench.action_runner.action import all as i_action
+  from crossbench.action_runner.action.base_probe import BaseProbeAction
   from crossbench.action_runner.bond_base import BondActionRunner
   from crossbench.action_runner.screenshot_annotation import \
       ScreenshotAnnotation
@@ -35,7 +36,7 @@ if TYPE_CHECKING:
 class DefaultActionRunner(ActionRunner):
   """Default action runner that uses JavaScript for most page interactions."""
 
-  XPATH_SELECT_ELEMENT = """
+  XPATH_SELECT_ELEMENT: Final[str] = """
       let elements = [];
       let xpathResult = document.evaluate(arguments[0], document);
       let currentElement = xpathResult.iterateNext();
@@ -46,42 +47,42 @@ class DefaultActionRunner(ActionRunner):
       }
   """
 
-  CSS_SELECT_ELEMENT = """
+  CSS_SELECT_ELEMENT: Final[str] = """
       let elements = document.querySelectorAll(arguments[0]);
       let element = elements[0];
   """
 
-  CHECK_ELEMENT_EXISTS = """
+  CHECK_ELEMENT_EXISTS: Final[str] = """
       if (!element) return 0;
   """
 
-  ELEMENT_SCROLL_INTO_VIEW = """
+  ELEMENT_SCROLL_INTO_VIEW: Final[str] = """
       element.scrollIntoView();
   """
 
-  CHECK_ELEMENT_RECT = """
+  CHECK_ELEMENT_RECT: Final[str] = """
       const rect = element.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return 0;
   """
 
-  ELEMENT_CLICK = """
+  ELEMENT_CLICK: Final[str] = """
       element.click();
   """
 
-  RETURN_SUCCESS = """
+  RETURN_SUCCESS: Final[str] = """
       return elements.length;
   """
 
-  SELECT_WINDOW = """
+  SELECT_WINDOW: Final[str] = """
       let elements = [window];
       let element = window;
   """
 
-  SCROLL_ELEMENT_TO = """
+  SCROLL_ELEMENT_TO: Final[str] = """
       element.scrollTo({top:arguments[1], behavior:'smooth'});
   """
 
-  GET_CURRENT_SCROLL_POSITION = """
+  GET_CURRENT_SCROLL_POSITION: Final[str] = """
       if (!element) return [0, 0];
       return [elements.length, element[arguments[1]]];
   """
@@ -355,49 +356,26 @@ class DefaultActionRunner(ActionRunner):
             "action's duration otherwise the action may timeout.")
 
   @override
+  def invoke_probe(self, run: Run, action: BaseProbeAction) -> None:
+    ctx = run.get_probe_context(action.probe_cls)
+    if ctx is None:
+      raise ProbeContextLookupError(action.probe_cls)
+
+    with run.actions(f"Invoke Probe ({action.probe_cls.NAME})", measure=False):
+      ctx.invoke(
+          info_stack=self.info_stack, timeout=action.timeout, **action.kwargs)
+
+  @override
   def screenshot_impl(
       self,
       run: Run,
       suffix: str,
       annotations: Optional[Sequence[ScreenshotAnnotation]] = None) -> None:
-    ctx = run.find_probe_context(ScreenshotProbe)
+    # TODO: use invoke_probe helper
+    ctx = run.get_probe_context(ScreenshotProbe)
     if not ctx:
-      logging.warning("No screenshot probe for screenshot on %s",
-                      repr(self.info_stack))
+      logging.debug("No screenshot probe for screenshot on %s",
+                    repr(self.info_stack))
       return
     assert isinstance(ctx, ScreenshotProbeContext)
     ctx.screenshot("_".join(self.info_stack) + f"_{suffix}", annotations)
-
-  @override
-  def dump_html_impl(self, run: Run, suffix: str) -> None:
-    ctx = run.find_probe_context(DumpHtmlProbe)
-    if not ctx:
-      logging.warning("No dump_html probe for dump on %s",
-                      repr(self.info_stack))
-      return
-    assert isinstance(ctx, DumpHtmlProbeContext)
-    ctx.dump_html("_".join(self.info_stack) + f"_{suffix}")
-
-  @override
-  def dump_meminfo_impl(self, run: Run, action: i_action.MeminfoAction) -> None:
-    ctx = run.find_probe_context(MeminfoProbe)
-    if not ctx:
-      logging.warning("No meminfo probe for dump on %s", repr(self.info_stack))
-      return
-    assert isinstance(ctx, MeminfoProbeContext)
-    ctx.dump_meminfo(action.timeout, action.browser, action.system,
-                     action.packages, action.title, self.info_stack)
-
-  def wait_for_download(self, run: Run,
-                        action: i_action.WaitForDownloadAction) -> None:
-    with run.actions("WaitForDownload", measure=False):
-      ctx = run.find_probe_context(DownloadsProbe)
-      if not ctx:
-        raise RuntimeError("No downloads probe for wait_for_download on "
-                           f"{repr(self.info_stack)}")
-      assert isinstance(ctx, DownloadsProbeContext)
-
-      wait_range = run.wait_range(min_interval=0.2, timeout=action.timeout)
-      for _ in wait_range.wait_with_backoff():
-        if ctx.download_complete(action.pattern):
-          return

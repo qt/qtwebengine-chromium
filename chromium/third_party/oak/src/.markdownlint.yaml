@@ -1,0 +1,30 @@
+# Hard tabs
+#
+# Go code uses tabs, so allow them in fenced code blocks.
+MD010:
+  code_blocks: false
+
+# Line length
+#
+# `prettier` seems to have a different heuristic for splitting lines, and sometimes some long lines
+# are left around.
+#
+# https://github.com/DavidAnson/markdownlint/blob/master/doc/Rules.md#md013
+MD013: false
+
+# Inline HTML
+#
+# https://github.com/DavidAnson/markdownlint/blob/master/doc/Rules.md#md033
+MD033:
+  allowed_elements:
+    - img
+
+# Bare URL used
+#
+# https://github.com/DavidAnson/markdownlint/blob/master/doc/Rules.md#md034
+MD034: false
+
+# Images should have alternate text (alt text)
+#
+# https://github.com/DavidAnson/markdownlint/blob/master/doc/Rules.md#md045
+MD045: false

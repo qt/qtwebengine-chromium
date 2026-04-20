@@ -169,6 +169,8 @@ DeprecationData GetDeprecatedData(vvl::Extension extension_name) {
          {DeprecationReason::Promoted, {vvl::Extension::_VK_KHR_depth_clamp_zero_one}}},
         {vvl::Extension::_VK_QCOM_fragment_density_map_offset,
          {DeprecationReason::Promoted, {vvl::Extension::_VK_EXT_fragment_density_map_offset}}},
+        {vvl::Extension::_VK_NV_copy_memory_indirect,
+         {DeprecationReason::Promoted, {vvl::Extension::_VK_KHR_copy_memory_indirect}}},
         {vvl::Extension::_VK_EXT_pipeline_protected_access, {DeprecationReason::Promoted, {vvl::Version::_VK_VERSION_1_4}}},
         {vvl::Extension::_VK_EXT_vertex_attribute_robustness,
          {DeprecationReason::Promoted, {vvl::Extension::_VK_KHR_maintenance9}}},
@@ -1918,7 +1920,8 @@ void BestPractices::PostCallRecordCreateDataGraphPipelinesARM(VkDevice device, V
                                                               VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                               const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
                                                               const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                              const RecordObject& record_obj) {
+                                                              const RecordObject& record_obj, PipelineStates& pipeline_states,
+                                                              chassis::CreateDataGraphPipelinesARM& chassis_state) {
     bp_state::LogResult(*this, device, record_obj);
 }
 

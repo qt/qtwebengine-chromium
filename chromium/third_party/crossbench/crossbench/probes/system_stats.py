@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from typing_extensions import override
 
@@ -15,6 +15,7 @@ from crossbench.probes.probe_error import ProbeValidationError
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
   from crossbench.env.runner_env import RunnerEnv
+  from crossbench.plt.types import TupleCmdArgs
 
 
 class SystemStatsProbe(PollingProbe):
@@ -22,9 +23,9 @@ class SystemStatsProbe(PollingProbe):
   General-purpose probe to periodically collect system-wide CPU and memory
   stats on unix systems.
   """
-  NAME = "system.stats"
-  CMD = ("ps", "-a", "-e", "-o", "pcpu,pmem,args", "-r")
-  IS_GENERAL_PURPOSE = True
+  NAME: ClassVar = "system.stats"
+  CMD: ClassVar[TupleCmdArgs] = ("ps", "-a", "-e", "-o", "pcpu,pmem,args", "-r")
+  IS_GENERAL_PURPOSE: ClassVar = True
 
   def __init__(
       self, interval: dt.timedelta = dt.timedelta(seconds=0.1)) -> None:

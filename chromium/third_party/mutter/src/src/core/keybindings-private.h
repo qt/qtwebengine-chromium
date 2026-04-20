@@ -114,13 +114,11 @@ typedef struct
   xkb_mod_mask_t virtual_super_mask;
   xkb_mod_mask_t meta_mask;
   xkb_mod_mask_t virtual_meta_mask;
-  MetaKeyCombo overlay_key_combo;
   MetaResolvedKeyCombo overlay_resolved_key_combo;
   gboolean overlay_key_only_pressed;
-  MetaKeyCombo locate_pointer_key_combo;
   MetaResolvedKeyCombo locate_pointer_resolved_key_combo;
   gboolean locate_pointer_key_only_pressed;
-  MetaResolvedKeyCombo iso_next_group_combo[2];
+  MetaResolvedKeyCombo iso_next_group_combos[2];
   int n_iso_next_group_combos;
 
   /*
@@ -146,10 +144,10 @@ gboolean meta_prefs_add_keybinding          (const char           *name,
 
 gboolean meta_prefs_remove_keybinding       (const char    *name);
 
-GList *meta_prefs_get_keybindings (void);
-void meta_prefs_get_overlay_binding (MetaKeyCombo *combo);
-void meta_prefs_get_locate_pointer_binding (MetaKeyCombo *combo);
-const char *meta_prefs_get_iso_next_group_option (void);
+GList * meta_prefs_get_keybindings (void);
+void meta_prefs_get_overlay_bindings (MetaKeyCombo combos[2]);
+void meta_prefs_get_locate_pointer_bindings (MetaKeyCombo combos[2]);
+const char * meta_prefs_get_iso_next_group_option (void);
 gboolean meta_prefs_is_locate_pointer_enabled (void);
 
 gboolean meta_display_process_keybinding_event (MetaDisplay        *display,

@@ -1,0 +1,364 @@
+//
+// Copyright 2025 The Project Oak Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Private memory service definition: A memory consists of a datablob content
+// and one or more tags. The service allows users to add a tagged memory and get
+// the memories by tags.
+
+syntax = "proto3";
+
+package oak.private_memory;
+
+import "google/protobuf/timestamp.proto";
+import "proto/session/session.proto";
+
+message Embedding {
+  // Identifier for the model that generated this embedding.
+  // During searching, only the embeddings with the same identifier will
+  // be used to calculate scores.
+  string identifier = 1;
+  // The actual embedding values.
+  repeated float values = 2;
+}
+
+message MemoryValue {
+  oneof value {
+    bytes bytes_val = 1;
+    int64 int64_val = 2;
+    string string_val = 3;
+  }
+
+  string mime_type = 4;
+}
+
+message MemoryContent {
+  map<string, MemoryValue> contents = 1;
+}
+
+message Memory {
+  string id = 1;
+  reserved 2;
+  repeated string tags = 3;
+  repeated Embedding embeddings = 4;
+  MemoryContent content = 5;
+  // The time when the memory is uploaded. Set by backend.
+  google.protobuf.Timestamp created_timestamp = 6;
+  // The time when the event described by the data happens. Should be
+  // set by the client. If not set, the `created_timestamp` will be
+  // used.
+  google.protobuf.Timestamp event_timestamp = 7;
+}
+
+enum MemoryField {
+  UNKNOWN = 0;            // Default value, should not be used.
+  ID = 1;                 // The 'id' field of the Memory message.
+  TAGS = 2;               // The 'tags' field.
+  EMBEDDINGS = 3;         // The 'embeddings' field.
+  CONTENT = 4;            // The 'content' field .
+  CREATED_TIMESTAMP = 5;  // The 'created_timestamp' field.
+  EVENT_TIMESTAMP = 6;    // The 'event_timestamp' field.
+}
+
+message AddMemoryRequest {
+  Memory memory = 1;
+}
+
+message AddMemoryResponse {
+  string id = 1;
+}
+
+message GetMemoriesRequest {
+  string tag = 1;
+  // The maximum number of memories to return. The service may return fewer than
+  // this value.
+  // The `page_size` should keep the same as the previous request if
+  // `page_token` is set.
+  int32 page_size = 2;
+  ResultMask result_mask = 3;
+  // A page token, received from a previous `GetMemories` call.
+  // Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to `GetMemories` must match
+  // the call that provided the page token.
+  string page_token = 4;
+}
+
+message GetMemoriesResponse {
+  repeated Memory memories = 1;
+  // A token to retrieve the next page of results.
+  // If this field is omitted, there are no more results.
+  string next_page_token = 2;
+}
+
+message ResetMemoryRequest {}
+
+message ResetMemoryResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// This is used to indicate that the request is invalid.
+message InvalidRequestResponse {
+  string error_message = 1;
+}
+
+message KeySyncRequest {
+  // The key should be a byte string of size 32 bytes (256 bits).
+  bytes key_encryption_key = 1;
+
+  // The ID of the user. Currently it has one to one mapping to the database.
+  // That is, each id has a unique database.
+  string pm_uid = 2;
+}
+
+message KeySyncResponse {
+  enum Status {
+    // Default status, should ideally not be sent by the server. Client can
+    // treat this as an error if received.
+    UNSPECIFIED = 0;
+    SUCCESS = 1;
+    // The key is incorrect (e.g., derived using wrong algorithm or wrong salt).
+    // The clients should derive the key again with the correct information
+    // (e.g., make sure they use the stored key derivation info from the
+    // server).
+    INVALID_KEY = 3;
+    // The pm_uid doesn't exist. The users should try to register themselves
+    // first
+    INVALID_PM_UID = 4;
+  }
+  Status status = 1;
+}
+
+message GetMemoryByIdRequest {
+  string id = 1;
+  ResultMask result_mask = 2;
+}
+
+message GetMemoryByIdResponse {
+  // If the memory is found, the success field is true. Otherwise, the success
+  // field is false and the memory field is empty.
+  bool success = 1;
+  Memory memory = 2;
+}
+
+// Metric type for comparing embeddings.
+enum EmbeddingQueryMetricType {
+  DOT_PRODUCT = 0;
+  // COSINE, EUCLIDEAN, etc
+}
+
+message ScoreRange {
+  float min = 1;
+  float max = 2;
+}
+
+// Defines the query for an embedding search.
+message EmbeddingQuery {
+  EmbeddingQueryMetricType metric_type = 1;
+  repeated Embedding embedding = 2;
+
+  // If score_range is set, only the embeddings with scores in the
+  // range will be returned.
+  // For example, if the search embedding is [1,1,1], and we have two documents:
+  // Document 1:
+  //   embedding: [{"model1": [1, 0, 1]}, {"model1": [1, 1, 1]}]
+  // Document 2:
+  //   embedding: [{"model1": [1, 0, 0]}, {"model1": [0, 1, 1]}]
+  // If the score_range is [2.5, 4.0] and the aggregate type is SUM with
+  // DOT_PRODUCT metric, then the second document will be filtered out because
+  // none of the embeddings has the score in the range. The first document will
+  // be returned, because its second embedding has the score of 3.0 in the range
+  // [2.5, 4.0]. And its first embedding is filtered out.
+  ScoreRange score_range = 3;
+}
+
+enum MatchType {
+  MATCH_TYPE_UNSPECIFIED = 0;
+  MATCH_TYPE_EQUAL = 1;
+  MATCH_TYPE_GTE = 2;
+  MATCH_TYPE_LTE = 3;
+  MATCH_TYPE_LT = 4;
+  MATCH_TYPE_GT = 5;
+}
+
+// Represents a single clause in a query.
+message TextQuery {
+  MatchType match_type = 1;
+  // The field to search within (e.g., "tags", "id").
+  MemoryField field = 2;
+  // The value to search for in the specified 'field'.
+  oneof value {
+    string string_val = 3;
+    google.protobuf.Timestamp timestamp_val = 4;
+  }
+}
+
+// Logical operator for combining query clauses.
+enum QueryOperator {
+  QUERY_OPERATOR_UNSPECIFIED = 0;
+  QUERY_OPERATOR_AND = 1;  // All clauses must match.
+  QUERY_OPERATOR_OR = 2;   // Any clause can match.
+}
+
+message SearchMemoryQuery {
+  oneof clause {
+    EmbeddingQuery embedding_query = 1;
+    TextQuery text_query = 2;
+    QueryClauses query_clauses = 3;
+  }
+}
+
+message QueryClauses {
+  QueryOperator query_operator = 1;
+  repeated SearchMemoryQuery clauses = 2;
+}
+
+// Defines which parts of the Memory object to return.
+// If `include_*` is provided, only the content defined in it will be returned.
+// `CONTENT` should be provided if `include_content_fields` is not empty.
+message ResultMask {
+  repeated string include_content_fields = 1;
+  repeated MemoryField include_fields = 2;
+}
+
+message SearchMemoryRequest {
+  SearchMemoryQuery query = 1;
+  // The maximum number of memories to return. The service may return fewer than
+  // this value.
+  // The `page_size` should keep the same as the previous request if
+  // `page_token` is set.
+  int32 page_size = 2;
+  // A page token, received from a previous `SearchMemory` call.
+  // Provide this to retrieve the subsequent page.
+  //
+  // When paginating, all other parameters provided to `SearchMemory` must match
+  // the call that provided the page token.
+  string page_token = 3;
+  // Specifies which fields of the matching Memory objects to return or not to
+  // return.
+  ResultMask result_mask = 4;
+}
+
+message SearchMemoryResultItem {
+  Memory memory = 1;
+  float score = 2;
+}
+
+message SearchMemoryResponse {
+  repeated SearchMemoryResultItem results = 1;
+  // A token to retrieve the next page of results.
+  // If this field is omitted, there are no more results.
+  string next_page_token = 2;
+}
+
+message KeyDerivationInfo {
+  bytes kek_salt = 1;     // Salt used for KEK derivation.
+  int32 kek_version = 2;  // Version of the KEK derivation method or key.
+}
+
+message SealedMemoryCredentials {
+  string pm_uid = 1;
+  bytes key_encryption_key = 2;
+}
+
+message UserRegistrationRequest {
+  string pm_uid = 1;
+  bytes key_encryption_key = 2;
+
+  KeyDerivationInfo boot_strap_info = 3;
+}
+
+message UserRegistrationResponse {
+  enum Status {
+    // Default status, should ideally not be sent by the server. Client can
+    // treat this as an error if received.
+    UNSPECIFIED = 0;
+
+    // Successful bootstrap! The user can skip the key sync and directly send
+    // memory related requests.
+    SUCCESS = 1;
+
+    // If the user has been registered, server will return the saved
+    // KeyDerivationInfo with this error. Clients should rederive the key with
+    // the return information.
+    USER_ALREADY_EXISTS = 3;
+  }
+  Status status = 1;
+
+  // Set when status is `USER_ALREADY_EXISTS`
+  KeyDerivationInfo key_derivation_info = 2;
+}
+
+message DeleteMemoryRequest {
+  repeated string ids = 1;
+}
+
+message DeleteMemoryResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message SealedMemoryRequest {
+  oneof request {
+    AddMemoryRequest add_memory_request = 1;
+    GetMemoriesRequest get_memories_request = 2;
+    ResetMemoryRequest reset_memory_request = 3;
+    // Reserved 4 so the request and response have the same field numbers.
+    GetMemoryByIdRequest get_memory_by_id_request = 5;
+
+    KeySyncRequest key_sync_request = 6;
+    SearchMemoryRequest search_memory_request = 7;
+    UserRegistrationRequest user_registration_request = 8;
+    DeleteMemoryRequest delete_memory_request = 9;
+  }
+
+  // Optional unique identifier for this request within the session.
+  // It is set by the clients.
+  int32 request_id = 50;
+}
+
+message SealedMemoryResponse {
+  oneof response {
+    AddMemoryResponse add_memory_response = 1;
+    GetMemoriesResponse get_memories_response = 2;
+    ResetMemoryResponse reset_memory_response = 3;
+    InvalidRequestResponse invalid_request_response = 4;
+    GetMemoryByIdResponse get_memory_by_id_response = 5;
+
+    KeySyncResponse key_sync_response = 6;
+    SearchMemoryResponse search_memory_response = 7;
+    UserRegistrationResponse user_registration_response = 8;
+    DeleteMemoryResponse delete_memory_response = 9;
+  }
+
+  // Propagated from the request_id from the request.
+  int32 request_id = 50;
+}
+
+message SealedMemorySessionRequest {
+  .oak.session.v1.SessionRequest session_request = 1;
+}
+
+message SealedMemorySessionResponse {
+  .oak.session.v1.SessionResponse session_response = 1;
+}
+
+service SealedMemoryService {
+  rpc Invoke(stream oak.session.v1.SessionRequest)
+      returns (stream oak.session.v1.SessionResponse) {}
+
+  rpc StartSession(stream SealedMemorySessionRequest)
+      returns (stream SealedMemorySessionResponse) {}
+}

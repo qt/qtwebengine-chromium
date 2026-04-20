@@ -9,7 +9,7 @@ import json
 import logging
 import re
 from enum import IntEnum
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING, ClassVar, Iterable, Optional
 
 from typing_extensions import override
 
@@ -17,7 +17,6 @@ from crossbench.helper.wait import WaitRange
 from crossbench.probes.internal.base import (InternalJsonResultProbe,
                                              InternalJsonResultProbeContext)
 from crossbench.probes.probe import ProbeIncompatibleBrowser
-from crossbench.probes.result_location import ResultLocation
 from crossbench.probes.results import EmptyProbeResult, LocalProbeResult
 
 if TYPE_CHECKING:
@@ -26,6 +25,7 @@ if TYPE_CHECKING:
   from crossbench.probes.probe_context import ProbeContext
   from crossbench.probes.results import ProbeResult, ProbeResultDict
   from crossbench.runner.actions import Actions
+  from crossbench.runner.groups.base import RunGroup
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.groups.repetitions import RepetitionsRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
@@ -66,8 +66,7 @@ class ThermalMonitorProbe(InternalJsonResultProbe):
   """
   Internal probe to monitor device thermal status.
   """
-  NAME = "cb.thermal_monitor"
-  RESULT_LOCATION = ResultLocation.LOCAL
+  NAME: ClassVar = "cb.thermal_monitor"
 
   def __init__(self,
                cool_down_time: dt.timedelta = dt.timedelta(),
@@ -115,7 +114,7 @@ class ThermalMonitorProbe(InternalJsonResultProbe):
     return self._merge_group(
         group, (story_group.results for story_group in group.story_groups))
 
-  def _merge_group(self, group,
+  def _merge_group(self, group: RunGroup,
                    results_iter: Iterable[ProbeResultDict]) -> ProbeResult:
     group_max_status: ThermalStatus = ThermalStatus.UNAVAILABLE
     has_results: bool = False
@@ -164,7 +163,8 @@ class ThermalMonitorProbe(InternalJsonResultProbe):
       logging.error("Significant thermal throttling detected during execution, "
                     "scores are not representative of the device performance.")
 
-  def get_context(self, run: Run) -> Optional[ProbeContext]:
+  @override
+  def create_context(self, run: Run) -> ProbeContext:
     if run.browser.platform.is_android:
       return AndroidThermalMonitorProbeContext(self, run)
     return ThermalMonitorProbeContext(self, run)

@@ -194,7 +194,8 @@ std::unique_ptr<BleMedium> ImplementationPlatform::CreateBleMedium(
 
 std::unique_ptr<api::ble_v2::BleMedium>
 ImplementationPlatform::CreateBleV2Medium(api::BluetoothAdapter& adapter) {
-  return std::make_unique<g3::BleV2Medium>(adapter);
+  return std::make_unique<g3::BleV2Medium>(
+      dynamic_cast<g3::BluetoothAdapter&>(adapter));
 }
 
 std::unique_ptr<api::CredentialStorage>
@@ -268,7 +269,7 @@ ImplementationPlatform::CreateDeviceInfo() {
 
 std::unique_ptr<nearby::api::PreferencesManager>
 ImplementationPlatform::CreatePreferencesManager(absl::string_view path) {
-  return std::make_unique<g3::PreferencesManager>();
+  return std::make_unique<g3::PreferencesManager>(FilePath(path));
 }
 
 }  // namespace api

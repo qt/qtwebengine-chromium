@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import os
 import shutil
-from typing import TYPE_CHECKING, Final, Iterable, Optional, Type
+from typing import TYPE_CHECKING, ClassVar, Final, Iterable, Optional, Type
 
 from typing_extensions import override
 
@@ -34,20 +34,24 @@ _PLATFORM_NAME_LOOKUP: Final[dict[tuple[str, str], str]] = {
 
 class FirefoxDownloader(Downloader):
   # TODO: support nightly versions as well
-  STORAGE_URL: str = "https://ftp.mozilla.org/pub/firefox/releases/"
+  STORAGE_URL: ClassVar[str] = "https://ftp.mozilla.org/pub/firefox/releases/"
 
   @classmethod
   @override
-  def _get_loader_cls(cls,
-                      browser_platform: Platform) -> Type[FirefoxDownloader]:
+  def name(cls) -> str:
+    return "Firefox"
+
+  @classmethod
+  @override
+  def _get_loader_cls(
+      cls, browser_platform: Platform) -> Type[FirefoxDownloader] | None:
     if browser_platform.is_macos:
       return FirefoxDownloaderMacOS
     if browser_platform.is_linux:
       return FirefoxDownloaderLinux
     if browser_platform.is_win:
       return FirefoxDownloaderWin
-    raise ValueError("Downloading Firefox is not supported "
-                     f"{browser_platform.name} {browser_platform.machine}")
+    return None
 
   @classmethod
   @override
@@ -115,7 +119,7 @@ class FirefoxDownloader(Downloader):
 
 
 class FirefoxDownloaderLinux(FirefoxDownloader):
-  ARCHIVE_SUFFIX: str = ".tar.bz2"
+  ARCHIVE_SUFFIX: ClassVar[str] = ".tar.bz2"
 
   @classmethod
   @override
@@ -140,7 +144,7 @@ class FirefoxDownloaderLinux(FirefoxDownloader):
 
 
 class FirefoxDownloaderMacOS(FirefoxDownloader):
-  ARCHIVE_SUFFIX: str = ".dmg"
+  ARCHIVE_SUFFIX: ClassVar[str] = ".dmg"
   MIN_MAC_ARM64_MILESTONE: Final[int] = 84
 
   @classmethod

@@ -24,6 +24,10 @@ struct ReportProperties;
 struct RecordObject;
 class SyncValidator;
 
+namespace syncval_stats {
+struct AccessStats;
+}  // namespace syncval_stats
+
 namespace syncval {
 class ErrorMessages;
 }  // namespace syncval
@@ -35,10 +39,12 @@ class AlternateResourceUsage {
         using Record = std::unique_ptr<RecordBase>;
         virtual Record MakeRecord() const = 0;
         virtual vvl::Func GetCommand() const = 0;
+        virtual VkSwapchainKHR GetSwapchainHandle() const = 0;
         virtual ~RecordBase() {}
     };
 
     vvl::Func GetCommand() const { return record_->GetCommand(); }
+    VkSwapchainKHR GetSwapchainHandle() const { return record_->GetSwapchainHandle(); }
     AlternateResourceUsage() = default;
     AlternateResourceUsage(const RecordBase &record) : record_(record.MakeRecord()) {}
     AlternateResourceUsage(const AlternateResourceUsage &other) : record_() {
@@ -283,6 +289,8 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     std::string GetDebugRegionName(const ResourceUsageRecord &record) const override;
 
     std::vector<vvl::LabelCommand> &GetProxyLabelCommands() { return proxy_label_commands_; }
+
+    void UpdateStats(syncval_stats::AccessStats &access_stats) const;
 
   private:
     CommandBufferAccessContext(const SyncValidator &sync_validator, VkQueueFlags queue_flags);

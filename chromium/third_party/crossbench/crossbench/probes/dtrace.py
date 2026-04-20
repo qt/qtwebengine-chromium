@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import atexit
 import subprocess
-from typing import TYPE_CHECKING, Self, TextIO, Type
+from typing import TYPE_CHECKING, ClassVar, Self, TextIO, Type
 
 from typing_extensions import override
 
@@ -29,8 +29,8 @@ class DTraceProbe(Probe):
   Probe to collect data using DTrace.
   """
 
-  NAME = "dtrace"
-  RESULT_LOCATION = ResultLocation.BROWSER
+  NAME: ClassVar = "dtrace"
+  RESULT_LOCATION: ClassVar = ResultLocation.BROWSER
 
   @classmethod
   @override
@@ -141,17 +141,19 @@ class DTraceProbeContext(ProbeContext[DTraceProbe]):
     return self.browser_result(file=(self._output_path,))
 
   def stop_dtrace_process(self) -> None:
-    if self._dtrace_process:
-      try:
-        # Wait for the process to terminate normally.
-        returncode = self._dtrace_process.wait(timeout=5)
-        if returncode != 0:
-          raise RuntimeError(f"DTrace exited with error {returncode}.\n"
-                             f"Check {self._log_path} for the program's log.")
-      except subprocess.TimeoutExpired:
-        # DTrace took too long to terminate. Send SIGKILL.
-        # Note: Not using .kill() because the process was started with sudo so
-        # it would raise an PermissionError exception.
-        subprocess.run(
-            ["sudo", "-n", "kill", "-SIGKILL", f"{self._dtrace_process.pid}"],
-            check=True)
+    if not self._dtrace_process:
+      return
+    try:
+      # Wait for the process to terminate normally.
+      returncode = self._dtrace_process.wait(timeout=5)
+      if returncode != 0:
+        raise RuntimeError(f"DTrace exited with error {returncode}.\n"
+                           f"Check {self._log_path} for the program's log.")
+    except subprocess.TimeoutExpired:
+      # DTrace took too long to terminate. Send SIGKILL.
+      # Note: Not using .kill() because the process was started with sudo so
+      # it would raise an PermissionError exception.
+      subprocess.run(
+          (  # noqa: S607
+              "sudo", "-n", "kill", "-SIGKILL", f"{self._dtrace_process.pid}"),
+          check=True)

@@ -759,6 +759,8 @@ gboolean              g_type_is_a                    (GType            type,
 /* Hoist exact GType comparisons into the caller */
 #define g_type_is_a(a,b) ((a) == (b) || (g_type_is_a) ((a), (b)))
 
+GOBJECT_AVAILABLE_IN_2_84
+gpointer              g_type_class_get               (GType            type);
 GOBJECT_AVAILABLE_IN_ALL
 gpointer              g_type_class_ref               (GType            type);
 GOBJECT_AVAILABLE_IN_ALL
@@ -775,6 +777,8 @@ gpointer              g_type_interface_peek          (gpointer         instance_
 GOBJECT_AVAILABLE_IN_ALL
 gpointer              g_type_interface_peek_parent   (gpointer         g_iface);
 
+GOBJECT_AVAILABLE_IN_2_84
+gpointer              g_type_default_interface_get   (GType            g_type);
 GOBJECT_AVAILABLE_IN_ALL
 gpointer              g_type_default_interface_ref   (GType            g_type);
 GOBJECT_AVAILABLE_IN_ALL
@@ -1416,10 +1420,12 @@ typedef gchar * (* GTypeValueLCopyFunc) (const GValue *value,
  *   this value bit-by-bit. Each character in the format represents
  *   an argument to be collected, and the characters themselves indicate
  *   the type of the argument. Currently supported arguments are:
- *    - `'i'`: Integers, passed as `collect_values[].v_int`
- *    - `'l'`: Longs, passed as `collect_values[].v_long`
- *    - `'d'`: Doubles, passed as `collect_values[].v_double`
- *    - `'p'`: Pointers, passed as `collect_values[].v_pointer`
+ *
+ *   - `'i'`: Integers, passed as `collect_values[].v_int`
+ *   - `'l'`: Longs, passed as `collect_values[].v_long`
+ *   - `'d'`: Doubles, passed as `collect_values[].v_double`
+ *   - `'p'`: Pointers, passed as `collect_values[].v_pointer`
+ *
  *   It should be noted that for variable argument list construction,
  *   ANSI C promotes every type smaller than an integer to an int, and
  *   floats to doubles. So for collection of short int or char, `'i'`

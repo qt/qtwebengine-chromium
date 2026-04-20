@@ -8,6 +8,7 @@ if (window.location.href ===
       'div.body.style-scope.ytd-consent-bump-v2-lightbox > div.eom-buttons.style-scope.ytd-consent-bump-v2-lightbox > div:nth-child(1) > ytd-button-renderer:nth-child(1) > yt-button-shape > button';
   const banner_selector =
       'ytd-consent-bump-v2-lightbox > tp-yt-paper-dialog[id=dialog]';
+  const comment_id = 'comment-teaser';
 
   const button_observer = new MutationObserver(mutations => {
     const button = document.querySelector(button_selector);
@@ -23,8 +24,7 @@ if (window.location.href ===
       for (m of e) {
         if (m.type === 'attributes' && banner_node.style.display === 'none') {
           banner_observer.disconnect();
-          performance.mark('LoadLine2/youtube_video/cookie_banner_gone');
-          localStorage.setItem('youtube_complete', true);
+          performance.mark('LoadLine2/youtube_video/interactive');
           break;
         }
       }
@@ -34,5 +34,15 @@ if (window.location.href ===
     button.click();
   });
 
+  const comment_observer = new MutationObserver(mutations => {
+    const comment = document.getElementById(comment_id);
+    if (!comment) {
+      return;
+    }
+    comment_observer.disconnect();
+    performance.mark('LoadLine2/youtube_video/visual');
+  });
+
+  comment_observer.observe(document, {childList: true, subtree: true});
   button_observer.observe(document, {childList: true, subtree: true});
 }

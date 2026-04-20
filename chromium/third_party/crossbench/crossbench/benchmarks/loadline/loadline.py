@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import argparse
 import logging
-from typing import TYPE_CHECKING, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, ClassVar, Mapping, Optional, Sequence
 
 import pandas as pd
 from tabulate import tabulate
@@ -18,6 +18,8 @@ from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
 from crossbench.benchmarks.loading.config.pages import PagesConfig
 from crossbench.benchmarks.loading.loading_benchmark import (LoadingBenchmark,
                                                              LoadingPageFilter)
+from crossbench.probes.perfetto.trace_processor.trace_processor import \
+    TraceProcessorProbe
 from crossbench.probes.probe import Probe
 from crossbench.probes.results import LocalProbeResult
 
@@ -29,11 +31,12 @@ if TYPE_CHECKING:
 
 
 class LoadLineProbe(BenchmarkProbeMixin, Probe):
-  IS_GENERAL_PURPOSE = False
-  BENCHMARK_NAME: str = "LoadLine"
-  BENCHMARK_VERSION: str = ""
+  IS_GENERAL_PURPOSE: ClassVar = False
+  PRODUCES_DATA: ClassVar = False
+  BENCHMARK_NAME: ClassVar[str] = "LoadLine"
+  BENCHMARK_VERSION: ClassVar[str] = ""
 
-  def __init__(self, *args, **kwargs):
+  def __init__(self, *args, **kwargs) -> None:
     super().__init__(*args, **kwargs)
     self._scores_file: Optional[pth.LocalPath] = None
     self._breakdown_file: Optional[pth.LocalPath] = None
@@ -43,17 +46,17 @@ class LoadLineProbe(BenchmarkProbeMixin, Probe):
     logging.critical("%s Benchmark (%s)", self.BENCHMARK_NAME,
                      self.BENCHMARK_VERSION)
     logging.info("-" * 80)
-    logging.critical("%s scores:", self.BENCHMARK_NAME)
-    logging.critical(
-        tabulate(
-            pd.read_csv(self._scores_file), headers="keys", tablefmt="plain"))
-    logging.info("- " * 40)
-    logging.critical("%s breakdown (loading stage durations, in ms):",
-                     self.BENCHMARK_NAME)
-    logging.critical(
-        tabulate(
-            pd.read_csv(self._breakdown_file), headers="keys",
-            tablefmt="plain"))
+    if scores_file := self._scores_file:
+      logging.critical("%s scores:", self.BENCHMARK_NAME)
+      logging.critical(
+          tabulate(pd.read_csv(scores_file), headers="keys", tablefmt="plain"))
+      logging.info("- " * 40)
+    if breakdown_file := self._breakdown_file:
+      logging.critical("%s breakdown (loading stage durations, in ms):",
+                       self.BENCHMARK_NAME)
+      logging.critical(
+          tabulate(
+              pd.read_csv(breakdown_file), headers="keys", tablefmt="plain"))
 
   @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
@@ -64,6 +67,19 @@ class LoadLineProbe(BenchmarkProbeMixin, Probe):
         "breakdown.csv")
     self._compute_breakdown(group).to_csv(self._breakdown_file)
     return LocalProbeResult(csv=(self._scores_file, self._breakdown_file))
+
+  def _load_query_result(self, group: BrowsersRunGroup,
+                         query: str) -> pd.DataFrame:
+    trace_result = group.results.get_by_name(TraceProcessorProbe.NAME)
+    assert trace_result, f"{group} has no TraceProcessorProbe result"
+    all_results = trace_result.csv_list
+    query_result: pth.LocalPath | None = None
+    for result in all_results:
+      if result.stem == query:
+        query_result = result
+        break
+    assert query_result is not None, f"{self.NAME}: {query} result not found"
+    return pd.read_csv(query_result)
 
   @abc.abstractmethod
   def _compute_score(self, group: BrowsersRunGroup) -> pd.DataFrame:
@@ -99,11 +115,11 @@ class LoadLinePageFilter(LoadingPageFilter):
   @classmethod
   @override
   def all_stories(cls) -> tuple[Page, ...]:
-    return tuple()
+    return ()
 
 
 class LoadLineBenchmark(LoadingBenchmark, metaclass=abc.ABCMeta):
-  STORY_FILTER_CLS = LoadLinePageFilter
+  STORY_FILTER_CLS: ClassVar = LoadLinePageFilter
 
   _page_config: PagesConfig | None = None
 

@@ -101,6 +101,9 @@ struct _MetaWaylandPointer
   MetaWaylandSurface *cursor_surface;
   gulong cursor_surface_destroy_id;
 
+  MetaCursor cursor_shape;
+  MetaCursorSpriteXcursor *shape_sprite;
+
   guint32 grab_button;
   guint32 grab_serial;
   guint32 grab_time;
@@ -491,6 +494,7 @@ meta_wayland_pointer_enable (MetaWaylandPointer *pointer)
   ClutterBackend *clutter_backend = meta_backend_get_clutter_backend (backend);
 
   pointer->cursor_surface = NULL;
+  pointer->cursor_shape = META_CURSOR_INVALID;
 
   clutter_seat = clutter_backend_get_default_seat (clutter_backend);
   pointer->device = clutter_seat_get_pointer (clutter_seat);
@@ -528,6 +532,7 @@ meta_wayland_pointer_disable (MetaWaylandPointer *pointer)
   meta_wayland_pointer_set_current (pointer, NULL);
 
   pointer->cursor_surface = NULL;
+  pointer->cursor_shape = META_CURSOR_INVALID;
 }
 
 static int
@@ -694,7 +699,7 @@ handle_button_event (MetaWaylandPointer *pointer,
 {
   gboolean implicit_grab;
 
-  implicit_grab = (clutter_event_type (event) == CLUTTER_BUTTON_PRESS) && (pointer->button_count == 1);
+  implicit_grab = (clutter_event_type (event) == CLUTTER_BUTTON_PRESS) && (count_buttons (event) == 1);
   if (implicit_grab)
     {
       pointer->grab_button = clutter_event_get_button (event);
@@ -923,10 +928,12 @@ meta_wayland_pointer_handle_event (MetaWaylandPointer *pointer,
       return CLUTTER_EVENT_PROPAGATE;
 
     case CLUTTER_TOUCHPAD_PINCH:
-      return meta_wayland_pointer_gesture_pinch_handle_event (pointer, event);
+      meta_wayland_pointer_gesture_pinch_handle_event (pointer, event);
+      return CLUTTER_EVENT_PROPAGATE;
 
     case CLUTTER_TOUCHPAD_HOLD:
-      return meta_wayland_pointer_gesture_hold_handle_event (pointer, event);
+      meta_wayland_pointer_gesture_hold_handle_event (pointer, event);
+      return CLUTTER_EVENT_PROPAGATE;
 
     default:
       return CLUTTER_EVENT_PROPAGATE;
@@ -1138,15 +1145,9 @@ meta_wayland_pointer_update_cursor_surface (MetaWaylandPointer *pointer)
 {
   MetaBackend *backend = backend_from_pointer (pointer);
   MetaCursorTracker *cursor_tracker = meta_backend_get_cursor_tracker (backend);
-  MetaWaylandSeat *seat = meta_wayland_pointer_get_seat (pointer);
-  MetaWaylandDragGrab *drag_grab;
   MetaWaylandSurface *surface;
 
-  drag_grab = meta_wayland_data_device_get_current_grab (&seat->data_device);
-  if (drag_grab)
-    surface = meta_wayland_drag_grab_get_origin (drag_grab);
-  else
-    surface = pointer->focus_surface;
+  surface = pointer->focus_surface;
 
   if (surface)
     {
@@ -1158,6 +1159,17 @@ meta_wayland_pointer_update_cursor_surface (MetaWaylandPointer *pointer)
             META_WAYLAND_CURSOR_SURFACE (pointer->cursor_surface->role);
 
           cursor_sprite = meta_wayland_cursor_surface_get_sprite (cursor_surface);
+        }
+      else if (pointer->cursor_shape != META_CURSOR_INVALID)
+        {
+          if (!pointer->shape_sprite)
+            {
+              pointer->shape_sprite =
+                meta_cursor_sprite_xcursor_new (pointer->cursor_shape,
+                                                cursor_tracker);
+            }
+
+          cursor_sprite = META_CURSOR_SPRITE (pointer->shape_sprite);
         }
 
       meta_cursor_tracker_set_window_cursor (cursor_tracker, cursor_sprite);
@@ -1187,10 +1199,13 @@ meta_wayland_pointer_set_cursor_surface (MetaWaylandPointer *pointer,
 
   prev_cursor_surface = pointer->cursor_surface;
 
-  if (prev_cursor_surface == cursor_surface)
+  if (prev_cursor_surface == cursor_surface &&
+      pointer->cursor_shape == META_CURSOR_INVALID)
     return;
 
   pointer->cursor_surface = cursor_surface;
+  pointer->cursor_shape = META_CURSOR_INVALID;
+  g_clear_object (&pointer->shape_sprite);
 
   if (prev_cursor_surface)
     {
@@ -1210,6 +1225,28 @@ meta_wayland_pointer_set_cursor_surface (MetaWaylandPointer *pointer,
   meta_wayland_pointer_update_cursor_surface (pointer);
 }
 
+void
+meta_wayland_pointer_set_cursor_shape (MetaWaylandPointer *pointer,
+                                       MetaCursor          shape)
+{
+  if (pointer->cursor_surface)
+    {
+      meta_wayland_surface_update_outputs (pointer->cursor_surface);
+      g_clear_signal_handler (&pointer->cursor_surface_destroy_id,
+                              pointer->cursor_surface);
+    }
+  else if (pointer->cursor_shape == shape)
+    {
+      return;
+    }
+
+  pointer->cursor_surface = NULL;
+  pointer->cursor_shape = shape;
+  g_clear_object (&pointer->shape_sprite);
+
+  meta_wayland_pointer_update_cursor_surface (pointer);
+}
+
 static void
 pointer_set_cursor (struct wl_client *client,
                     struct wl_resource *resource,
@@ -1224,14 +1261,10 @@ pointer_set_cursor (struct wl_client *client,
   if (!pointer)
     return;
 
-  surface = (surface_resource ? wl_resource_get_user_data (surface_resource) : NULL);
+  if (!meta_wayland_pointer_check_focus_serial (pointer, client, serial))
+    return;
 
-  if (pointer->focus_surface == NULL)
-    return;
-  if (wl_resource_get_client (pointer->focus_surface->resource) != client)
-    return;
-  if (pointer->focus_serial - serial > G_MAXUINT32 / 2)
-    return;
+  surface = (surface_resource ? wl_resource_get_user_data (surface_resource) : NULL);
 
   if (surface &&
       !meta_wayland_surface_assign_role (surface,
@@ -1504,6 +1537,8 @@ meta_wayland_pointer_finalize (GObject *object)
 {
   MetaWaylandPointer *pointer = META_WAYLAND_POINTER (object);
 
+  g_clear_object (&pointer->shape_sprite);
+
   g_clear_pointer (&pointer->pointer_clients, g_hash_table_unref);
 
   G_OBJECT_CLASS (meta_wayland_pointer_parent_class)->finalize (object);
@@ -1549,4 +1584,19 @@ MetaWaylandPointerClient *
 meta_wayland_pointer_get_focus_client (MetaWaylandPointer *pointer)
 {
   return pointer->focus_client;
+}
+
+gboolean
+meta_wayland_pointer_check_focus_serial (MetaWaylandPointer *pointer,
+                                         struct wl_client   *client,
+                                         uint32_t            serial)
+{
+  if (pointer->focus_surface == NULL)
+    return FALSE;
+  if (wl_resource_get_client (pointer->focus_surface->resource) != client)
+    return FALSE;
+  if (pointer->focus_serial - serial > G_MAXUINT32 / 2)
+    return FALSE;
+
+  return TRUE;
 }

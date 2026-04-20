@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import re
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Final, Optional, cast
 
 from crossbench.action_runner.base import InputSourceNotImplementedError
 from crossbench.action_runner.default_action_runner import DefaultActionRunner
@@ -99,11 +99,11 @@ class AndroidInputActionRunner(DefaultActionRunner):
     assert self._raw_chrome_window_bounds, "Uninitialized chrome window bounds"
     return self._raw_chrome_window_bounds
 
-  _BOUNDS_RE = re.compile(
+  _BOUNDS_RE: Final[re.Pattern] = re.compile(
       r"mAppBounds=Rect\((?P<left>\d+), (?P<top>\d+) - (?P<right>\d+),"
       r" (?P<bottom>\d+)\)")
 
-  _GET_JS_VALUES = """
+  _GET_JS_VALUES: Final[str] = """
 const found_element = arguments[0] && element;
 if(found_element && arguments[1]) element.scrollIntoView();
 rect = found_element ? element.getBoundingClientRect() : new DOMRect();

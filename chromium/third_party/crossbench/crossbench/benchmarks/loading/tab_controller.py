@@ -15,9 +15,6 @@ from crossbench.parse import NumberParser
 
 
 class TabController(ConfigObject):
-  multiple_tabs: bool
-  is_forever: bool
-
   @classmethod
   @override
   def parse_str(cls, value: str) -> TabController:
@@ -52,17 +49,24 @@ class TabController(ConfigObject):
   def __iter__(self) -> Iterator[None]:
     pass
 
+  @property
+  def multiple_tabs(self) -> bool:
+    return True
+
+
 
 @dataclasses.dataclass(frozen=True)
 class SingleTabController(TabController):
   """
   Open given urls in one tab sequentially.
   """
-  multiple_tabs: bool = False
-  is_forever: bool = False
-
   def __iter__(self) -> Iterator[None]:
     yield None
+
+  @property
+  @override
+  def multiple_tabs(self) -> bool:
+    return False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -76,8 +80,6 @@ class ForeverTabController(TabController):
   Example 2: if urls='amazon,cnn', it keeps opening
   amazon,cnn,amazon,cnn,amazon,cnn,.... ....
   """
-  multiple_tabs: bool = True
-  is_forever: bool = True
 
   def __iter__(self) -> Iterator[None]:
     while True:
@@ -95,8 +97,6 @@ class RepeatTabController(TabController):
   amazon,cnn,amazon,cnn,amazon,cnn
   """
   count: int
-  multiple_tabs: bool = True
-  is_forever: bool = False
 
   def __iter__(self) -> Iterator[None]:
     for _ in range(self.count):

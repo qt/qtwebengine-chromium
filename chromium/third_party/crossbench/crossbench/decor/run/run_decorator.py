@@ -19,7 +19,7 @@ class RunDecorator(base.Decorator[Run]):
     return self._targets
 
   @abc.abstractmethod
-  def get_context(self: Self, target: Run) -> RunDecoratorContext[Self]:
+  def create_context(self: Self, target: Run) -> RunDecoratorContext[Self]:
     pass
 
 

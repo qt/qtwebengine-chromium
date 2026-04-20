@@ -70,7 +70,6 @@
 #include "third_party/blink/renderer/core/html/forms/html_data_list_options_collection.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_option_element.h"
-#include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/forms/input_type.h"
 #include "third_party/blink/renderer/core/html/forms/radio_button_group_scope.h"
 #include "third_party/blink/renderer/core/html/forms/search_input_type.h"
@@ -163,7 +162,6 @@ void HTMLInputElement::Trace(Visitor* visitor) const {
   visitor->Trace(input_type_view_);
   visitor->Trace(list_attribute_target_observer_);
   visitor->Trace(image_loader_);
-  visitor->Trace(first_ancestor_select_);
   TextControlElement::Trace(visitor);
 }
 
@@ -1059,6 +1057,10 @@ bool HTMLInputElement::IsTextField() const {
   return input_type_->IsTextFieldInputType();
 }
 
+bool HTMLInputElement::InputSupportsSelectionAPI() const {
+  return input_type_->SupportsSelectionAPI();
+}
+
 bool HTMLInputElement::IsTelephone() const {
   return input_type_->IsTelephoneInputType();
 }
@@ -1235,6 +1237,14 @@ void HTMLInputElement::SetSuggestedValue(const String& value) {
   }
   needs_to_update_view_value_ = true;
   String sanitized_value = SanitizeValue(value);
+
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
+      IsInCanvasSubtree()) {
+    // Hide suggested values when under canvas, to prevent leaking this
+    // information to javascript.
+    sanitized_value = String();
+  }
+
   SetAutofillState(sanitized_value.empty() ? WebAutofillState::kNotFilled
                                            : WebAutofillState::kPreviewed);
   TextControlElement::SetSuggestedValue(sanitized_value);
@@ -1253,6 +1263,15 @@ void HTMLInputElement::SetSuggestedValue(const String& value) {
       kSubtreeStyleChange,
       StyleChangeReasonForTracing::Create(style_change_reason::kControlValue));
   input_type_view_->UpdateView();
+}
+
+void HTMLInputElement::DidChangeIsCanvasOrInCanvasSubtree() {
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
+      IsInCanvasSubtree()) {
+    // Hide suggested values when under canvas, to prevent leaking this
+    // information to javascript.
+    SetSuggestedValue(String());
+  }
 }
 
 void HTMLInputElement::SetInnerEditorValue(const String& value) {
@@ -1527,8 +1546,8 @@ void HTMLInputElement::DefaultEventHandler(Event& evt) {
     if (FormControlType() == FormControlType::kInputSearch) {
       GetDocument()
           .GetTaskRunner(TaskType::kUserInteraction)
-          ->PostTask(FROM_HERE, WTF::BindOnce(&HTMLInputElement::OnSearch,
-                                              WrapPersistent(this)));
+          ->PostTask(FROM_HERE, BindOnce(&HTMLInputElement::OnSearch,
+                                         WrapPersistent(this)));
     }
     // Form submission finishes editing, just as loss of focus does.
     // If there was a change, send the event now.
@@ -1909,8 +1928,7 @@ HTMLInputElement::FilteredDataListOptions() const {
   filtered.reserve(options->length());
   editor_value = editor_value.FoldCase();
 
-  TextBreakIterator* iter =
-      WordBreakIterator(editor_value, 0, editor_value.length());
+  TextBreakIterator* iter = WordBreakIterator(editor_value);
 
   Vector<bool> filtering_flag(options->length(), true);
   if (iter) {
@@ -2479,23 +2497,6 @@ void HTMLInputElement::SetFocused(bool is_focused,
       scope->UpdateLastFocusedState(this);
     }
   }
-}
-
-bool HTMLInputElement::IsFirstTextInputInAncestorSelect() const {
-  if ((!RuntimeEnabledFeatures::SelectAccessibilityReparentInputEnabled() &&
-       !RuntimeEnabledFeatures::SelectAccessibilityNestedInputEnabled()) ||
-      !first_ancestor_select_) {
-    return false;
-  }
-  return first_ancestor_select_->FirstDescendantTextInput() == this;
-}
-
-HTMLSelectElement* HTMLInputElement::FirstAncestorSelectElement() const {
-  if (!RuntimeEnabledFeatures::SelectAccessibilityReparentInputEnabled() &&
-      !RuntimeEnabledFeatures::SelectAccessibilityNestedInputEnabled()) {
-    return nullptr;
-  }
-  return first_ancestor_select_;
 }
 
 }  // namespace blink

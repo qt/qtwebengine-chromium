@@ -25,15 +25,19 @@ namespace nearby {
 bool TimerImpl::Start(int delay, int period,
                       absl::AnyInvocable<void()> callback) {
   if (internal_timer_ != nullptr) {
-    NEARBY_LOGS(INFO) << "The timer is already running.";
+    LOG(INFO) << "The timer is already running.";
     return false;
   }
 
-  delay_ = delay;
-  period_ = period;
+  if (delay < 0) {
+    delay = 0;
+  }
+  if (period < 0) {
+    period = 0;
+  }
   internal_timer_ = api::ImplementationPlatform::CreateTimer();
   if (!internal_timer_->Create(delay, period, std::move(callback))) {
-    NEARBY_LOGS(INFO) << "Failed to create timer.";
+    LOG(INFO) << "Failed to create timer.";
     internal_timer_ = nullptr;
     return false;
   }

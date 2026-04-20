@@ -364,9 +364,21 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
     }
 
     VkResult result = fpCreateDevice(gpu, reinterpret_cast<VkDeviceCreateInfo*>(&modified_create_info), pAllocator, pDevice);
+
     if (result != VK_SUCCESS) {
+        // From https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/10472
+        // While it is not invalid to have unsupported features, we use this time to help the developer bisect what they added that
+        // caused the error from the driver
+        //
+        // Note that VK_ERROR_EXTENSION_NOT_PRESENT will be validated and reported in the Vulkan-Loader
+        if (result == VK_ERROR_FEATURE_NOT_PRESENT) {
+            instance_dispatch->ReportErrorFeatureNotPresent(gpu, *modified_create_info.ptr());
+        }
+
+        // If not successful, don't keep going as things will likely crash
         return result;
     }
+
     record_obj.result = result;
     device_dispatch->device = *pDevice;
 
@@ -402,6 +414,15 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
         }
         vo->FinishDeviceSetup(modified_create_info.ptr(), record_obj.location);
     }
+
+    // Clear global dictionary that stores canonical ids of descriptor set layouts.
+    //
+    // NOTE: we also have the following global dicts related to pipeline layout that do not cause
+    // troubles yet, but in case of issues or part of effort of removing globals they should be considered:
+    //   pipeline_layout_set_layouts_dict
+    //   pipeline_layout_compat_dict
+    //   push_constant_ranges_dict
+    ClearDescriptorSetLayoutCanonicalIdDict();
 
     return result;
 }
@@ -725,6 +746,62 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRayTracingPipelinesKHR(VkDevice device, VkD
             auto lock = vo->WriteLock();
             vo->PostCallRecordCreateRayTracingPipelinesKHR(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos,
                                                            pAllocator, pPipelines, record_obj, pipeline_states, chassis_state);
+        }
+    }
+    return result;
+}
+
+// This API saves some core_validation pipeline state state on the stack for performance purposes
+VKAPI_ATTR VkResult VKAPI_CALL CreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                                           VkPipelineCache pipelineCache, uint32_t createInfoCount,
+                                                           const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
+                                                           const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::dispatch::GetData(device);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkCreateDataGraphPipelinesARM, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
+
+    PipelineStates pipeline_states;
+    chassis::CreateDataGraphPipelinesARM chassis_state(pCreateInfos);
+
+    {
+        VVL_ZoneScopedN("PreCallValidate");
+        for (const auto& vo : device_dispatch->object_dispatch) {
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateCreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount,
+                                                                   pCreateInfos, pAllocator, pPipelines, error_obj,
+                                                                   pipeline_states, chassis_state);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+
+    RecordObject record_obj(vvl::Func::vkCreateDataGraphPipelinesARM);
+    {
+        VVL_ZoneScopedN("PreCallRecord");
+        for (auto& vo : device_dispatch->object_dispatch) {
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordCreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos,
+                                                         pAllocator, pPipelines, record_obj, pipeline_states,
+                                                         chassis_state);
+        }
+    }
+
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch");
+        result = device_dispatch->CreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount,
+                                                              chassis_state.pCreateInfos, pAllocator, pPipelines);
+    }
+    record_obj.result = result;
+
+    {
+        VVL_ZoneScopedN("PostCallRecord");
+        for (auto& vo : device_dispatch->object_dispatch) {
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordCreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos,
+                                                          pAllocator, pPipelines, record_obj, pipeline_states,
+                                                          chassis_state);
         }
     }
     return result;

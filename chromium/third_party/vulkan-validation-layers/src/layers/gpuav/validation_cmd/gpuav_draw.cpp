@@ -47,6 +47,9 @@ struct SharedDrawValidationResources {
         dummy_buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
         VmaAllocationCreateInfo alloc_info = {};
         alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+        if (gpuav.phys_dev_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) {
+            alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+        }
         const bool success = dummy_buffer.Create(&dummy_buffer_info, &alloc_info);
         if (!success) {
             valid = false;
@@ -275,7 +278,8 @@ void FirstInstance(Validator &gpuav, CommandBufferSubState &cb_state, const Loca
         return skip;
     };
 
-    cb_state.command_error_loggers.emplace_back(CommandBufferSubState::CommandErrorLogger{loc, std::move(error_logger)});
+    cb_state.command_error_loggers.emplace_back(
+        CommandBufferSubState::CommandErrorLogger{loc, LogObjectList{}, std::move(error_logger)});
 }
 
 template <>
@@ -454,7 +458,8 @@ void CountBuffer(Validator &gpuav, CommandBufferSubState &cb_state, const Locati
         return skip;
     };
 
-    cb_state.command_error_loggers.emplace_back(CommandBufferSubState::CommandErrorLogger{loc, std::move(error_logger)});
+    cb_state.command_error_loggers.emplace_back(
+        CommandBufferSubState::CommandErrorLogger{loc, LogObjectList{}, std::move(error_logger)});
 }
 
 struct MeshValidationShader {
@@ -713,7 +718,8 @@ void DrawMeshIndirect(Validator &gpuav, CommandBufferSubState &cb_state, const L
         return skip;
     };
 
-    cb_state.command_error_loggers.emplace_back(CommandBufferSubState::CommandErrorLogger{loc, std::move(error_logger)});
+    cb_state.command_error_loggers.emplace_back(
+        CommandBufferSubState::CommandErrorLogger{loc, LogObjectList{}, std::move(error_logger)});
 }
 
 struct DrawIndexedIndirectIndexBufferShader {
@@ -1050,7 +1056,8 @@ void DrawIndexedIndirectIndexBuffer(Validator &gpuav, CommandBufferSubState &cb_
         return skip;
     };
 
-    cb_state.command_error_loggers.emplace_back(CommandBufferSubState::CommandErrorLogger{loc, std::move(error_logger)});
+    cb_state.command_error_loggers.emplace_back(
+        CommandBufferSubState::CommandErrorLogger{loc, LogObjectList{}, std::move(error_logger)});
 }
 
 }  // namespace valcmd

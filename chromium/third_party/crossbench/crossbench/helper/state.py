@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import enum
-from typing import Any, Generic, Iterable, TypeVar
+from typing import Generic, Iterable, TypeVar
 
 
 class UnexpectedStateError(RuntimeError):
@@ -55,7 +55,10 @@ class StateMachine(Generic[StateT]):
   def name(self) -> str:
     return self._state.name
 
-  def __eq__(self, other: Any) -> bool:
+  def __hash__(self) -> int:
+    return hash(self._state)
+
+  def __eq__(self, other: object) -> bool:
     if self is other:
       return True
     if isinstance(other, StateMachine):

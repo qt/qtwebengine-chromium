@@ -20,7 +20,9 @@
 #include "absl/functional/any_invocable.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/synchronization/mutex.h"
 #include "sharing/internal/api/sharing_rpc_client.h"
+#include "sharing/internal/public/logging.h"
 #include "sharing/proto/certificate_rpc.pb.h"
 #include "sharing/proto/contact_rpc.pb.h"
 #include "sharing/proto/device_rpc.pb.h"
@@ -28,19 +30,17 @@
 namespace nearby {
 namespace sharing {
 
-void FakeNearbyShareClient::UpdateDevice(
-    const proto::UpdateDeviceRequest& request,
-    absl::AnyInvocable<
-        void(const absl::StatusOr<proto::UpdateDeviceResponse>& response) &&>
-        callback) {
-  update_device_requests_.emplace_back(request);
-  std::move(callback)(update_device_response_);
-}
+using ::google::nearby::identity::v1::GetAccountInfoRequest;
+using ::google::nearby::identity::v1::GetAccountInfoResponse;
+using ::google::nearby::identity::v1::PublishDeviceRequest;
+using ::google::nearby::identity::v1::PublishDeviceResponse;
+using ::google::nearby::identity::v1::QuerySharedCredentialsRequest;
+using ::google::nearby::identity::v1::QuerySharedCredentialsResponse;
 
 void FakeNearbyShareClient::ListContactPeople(
     const proto::ListContactPeopleRequest& request,
-    absl::AnyInvocable<void(const absl::StatusOr<
-                            proto::ListContactPeopleResponse>& response) &&>
+    absl::AnyInvocable<void(
+        const absl::StatusOr<proto::ListContactPeopleResponse>& response) &&>
         callback) {
   list_contact_people_requests_.emplace_back(request);
   if (list_contact_people_responses_.empty()) {
@@ -52,59 +52,54 @@ void FakeNearbyShareClient::ListContactPeople(
   std::move(callback)(response);
 }
 
-void FakeNearbyShareClient::ListPublicCertificates(
-    const proto::ListPublicCertificatesRequest& request,
-    absl::AnyInvocable<
-        void(const absl::StatusOr<proto::ListPublicCertificatesResponse>&
-                 response) &&>
-        callback) {
-  list_public_certificates_requests_.emplace_back(request);
-  if (list_public_certificates_responses_.empty()) {
-    std::move(callback)(absl::NotFoundError(""));
-    return;
-  }
-  auto response = list_public_certificates_responses_[0];
-  list_public_certificates_responses_.erase(
-      list_public_certificates_responses_.begin());
-  std::move(callback)(response);
-}
-
 void FakeNearbyIdentityClient::QuerySharedCredentials(
-    const google::nearby::identity::v1::QuerySharedCredentialsRequest& request,
+    const QuerySharedCredentialsRequest& request,
     absl::AnyInvocable<
-        void(const absl::StatusOr<
-             google::nearby::identity::v1::QuerySharedCredentialsResponse>&
-                 response) &&>
+        void(const absl::StatusOr<QuerySharedCredentialsResponse>& response) &&>
         callback) {
-  query_shared_credentials_requests_.emplace_back(request);
-  if (query_shared_credentials_responses_.empty()) {
-    std::move(callback)(absl::NotFoundError(""));
-    return;
+  absl::StatusOr<QuerySharedCredentialsResponse> response =
+      absl::NotFoundError("");
+  {
+    absl::MutexLock lock(mutex_);
+    query_shared_credentials_requests_.emplace_back(request);
+    if (!query_shared_credentials_responses_.empty()) {
+      response = query_shared_credentials_responses_[0];
+      query_shared_credentials_responses_.erase(
+          query_shared_credentials_responses_.begin());
+    }
   }
-  auto response = query_shared_credentials_responses_[0];
-  query_shared_credentials_responses_.erase(
-      query_shared_credentials_responses_.begin());
   std::move(callback)(response);
 }
 
 void FakeNearbyIdentityClient::PublishDevice(
-    const google::nearby::identity::v1::PublishDeviceRequest& request,
+    const PublishDeviceRequest& request,
     absl::AnyInvocable<
-        void(const absl::StatusOr<
-             google::nearby::identity::v1::PublishDeviceResponse>& response) &&>
+        void(const absl::StatusOr<PublishDeviceResponse>& response) &&>
         callback) {
-  publish_device_requests_.emplace_back(request);
-  std::move(callback)(publish_device_response_);
+  absl::StatusOr<PublishDeviceResponse> response = absl::NotFoundError("");
+  {
+    absl::MutexLock lock(mutex_);
+    publish_device_requests_.emplace_back(request);
+    if (!publish_device_responses_.empty()) {
+      response = publish_device_responses_[0];
+      publish_device_responses_.erase(publish_device_responses_.begin());
+    }
+  }
+  std::move(callback)(response);
 }
 
 void FakeNearbyIdentityClient::GetAccountInfo(
-    const google::nearby::identity::v1::GetAccountInfoRequest& request,
+    const GetAccountInfoRequest& request,
     absl::AnyInvocable<
-        void(const absl::StatusOr<google::nearby::identity::v1::
-                                      GetAccountInfoResponse>& response) &&>
+        void(const absl::StatusOr<GetAccountInfoResponse>& response) &&>
         callback) {
-  get_account_info_requests_.emplace_back(request);
-  std::move(callback)(get_account_info_response_);
+  absl::StatusOr<GetAccountInfoResponse> response = absl::NotFoundError("");
+  {
+    absl::MutexLock lock(mutex_);
+    get_account_info_requests_.emplace_back(request);
+    response = get_account_info_response_;
+  }
+  std::move(callback)(response);
 }
 
 std::unique_ptr<nearby::sharing::api::SharingRpcClient>

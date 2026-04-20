@@ -10,10 +10,9 @@
             "builder_id": {
               "bucket": "ci",
               "builder": "fuchsia-x64-cast-receiver-dbg",
-              "project": "chromium-m140"
+              "project": "chromium-m142"
             },
             "builder_spec": {
-              "build_gs_bucket": "chromium-linux-archive",
               "builder_group": "chromium.fuchsia",
               "execution_mode": "COMPILE_AND_TEST",
               "legacy_chromium_config": {
@@ -39,10 +38,11 @@
         {
           "bucket": "ci",
           "builder": "fuchsia-x64-cast-receiver-dbg",
-          "project": "chromium-m140"
+          "project": "chromium-m142"
         }
       ],
-      "targets_spec_directory": "src/infra/config/generated/builders/try/fuchsia-x64-cast-receiver-dbg/targets"
+      "targets_spec_directory": "infra/config/generated/builders/try/fuchsia-x64-cast-receiver-dbg/targets",
+      "targets_spec_directory_relative_to_source_dir": true
     }
   },
   "$build/flakiness": {

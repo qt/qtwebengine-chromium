@@ -40,8 +40,7 @@ class ChromeWebDriver(ChromeBaseMixin, ChromiumBasedWebDriver):
             | BrowserAttributes.WEBDRIVER)
 
   @override
-  def _create_driver(self,  # pytype: disable=override-error
-                     options: ChromiumOptions,
+  def _create_driver(self, options: ChromiumOptions,
                      service: ChromiumService) -> ChromiumDriver:
     assert isinstance(options, ChromeOptions)
     assert isinstance(service, ChromeService)

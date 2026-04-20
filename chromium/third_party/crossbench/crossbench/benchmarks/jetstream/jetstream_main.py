@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 class JetStreamMainProbe(JetStream3Probe):
   __doc__ = JetStream3Probe.__doc__
-  NAME: str = "jetstream_main"
+  NAME: ClassVar[str] = "jetstream_main"
 
   @override
   def get_context_cls(self) -> Type[JetStreamMainProbeContext]:
@@ -31,13 +31,15 @@ class JetStreamMainProbeContext(JetStream3ProbeContext):
 
 class JetStreamMainStory(JetStream3Story):
   __doc__ = JetStream3Story.__doc__
-  NAME: str = "jetstream_main"
-  URL: str = "https://chromium-workloads.web.app/jetstream/main/"
-  URL_OFFICIAL: str = "https://chromium-workloads.web.app/jetstream/main/"
-  URL_CHROME_FORK: str = "https://chromium-workloads.web.app/jetstream/main-custom/"
+  NAME: ClassVar[str] = "jetstream_main"
+  URL: ClassVar[str] = "https://chromium-workloads.web.app/jetstream/main/"
+  URL_OFFICIAL: ClassVar[
+      str] = "https://chromium-workloads.web.app/jetstream/main/"
+  URL_CHROME_FORK: ClassVar[
+      str] = "https://chromium-workloads.web.app/jetstream/main-custom/"
   # Contents of running:
   # JSON.stringify(JetStream.benchmarks.map(e => e.name), undefined, " ")
-  SUBSTORIES: tuple[str, ...] = (
+  SUBSTORIES: ClassVar[tuple[str, ...]] = (
       "zlib-wasm",
       "WSL",
       "UniPoker",
@@ -125,11 +127,16 @@ class JetStreamMainBenchmark(JetStream3Benchmark):
   Benchmark runner for the JetStream main developement vresion.
   """
 
-  NAME: str = "jetstream_main"
-  DEFAULT_STORY_CLS = JetStreamMainStory
-  PROBES: ProbeClsTupleT = (JetStreamMainProbe,)
+  NAME: ClassVar[str] = "jetstream_main"
+  DEFAULT_STORY_CLS: ClassVar = JetStreamMainStory
+  PROBES: ClassVar[ProbeClsTupleT] = (JetStreamMainProbe,)
 
   @classmethod
   @override
   def version(cls) -> VersionParts:
     return ("main",)
+
+  @classmethod
+  @override
+  def aliases(cls) -> tuple[str, ...]:
+    return ("jetstream_3", "js3") + super().aliases()

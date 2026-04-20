@@ -5,7 +5,8 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Iterable, Optional, TypeAlias
+from typing import (TYPE_CHECKING, ClassVar, Final, Iterable, Optional,
+                    TypeAlias)
 
 from typing_extensions import override
 
@@ -20,8 +21,8 @@ if TYPE_CHECKING:
 class BinaryNotFoundError(RuntimeError):
 
   def __init__(self, binary: Binary, platform: Platform) -> None:
-    self.binary = binary
-    self.platform = platform
+    self.binary: Final[Binary] = binary
+    self.platform: Final[Platform] = platform
     super().__init__(self._create_message())
 
   def _create_message(self) -> str:
@@ -72,7 +73,7 @@ class Binary:
   def _convert(self,
                paths: Optional[BinaryLookup] = None) -> tuple[pth.AnyPath, ...]:
     if paths is None:
-      return tuple()
+      return ()
     if isinstance(paths, str):
       path: str = paths
       if not path:
@@ -94,16 +95,21 @@ class Binary:
   def __str__(self) -> str:
     return self._name
 
-  @functools.cache  # pylint: disable=method-cache-max-size-none
-  def resolve_cached(self, platform: Platform) -> pth.AnyPath:
-    return self.resolve(platform)
-
-  def resolve(self, platform: Platform) -> pth.AnyPath:
+  def search(self, platform: Platform) -> pth.AnyPath | None:
     self._validate_platform(platform)
     for binary in self.platform_path(platform):
       binary_path = platform.path(binary)
       if result := platform.search_binary(binary_path):
         return result
+    return None
+
+  @functools.cache
+  def resolve_cached(self, platform: Platform) -> pth.AnyPath:
+    return self.resolve(platform)
+
+  def resolve(self, platform: Platform) -> pth.AnyPath:
+    if path := self.search(platform):
+      return path
     raise BinaryNotFoundError(self, platform)
 
   def platform_path(self, platform: Platform) -> tuple[pth.AnyPath, ...]:
@@ -200,41 +206,45 @@ class ChromeOSBinary(Binary):
 
 
 class Binaries:
-  ADB = Binary("adb", default="adb", win="adb.exe")
-  CPIO = LinuxBinary("cpio")
-  FFMPEG = Binary("ffmpeg", posix="ffmpeg")
-  GCERTSTATUS = Binary("gcertstatus", posix="gcertstatus")
-  GO = Binary("go", posix="go")
-  GSUTIL = Binary("gsutil", posix="gsutil")
-  LSCPU = LinuxBinary("lscpu")
-  MONTAGE = Binary("montage", posix="montage")
-  ON_AC_POWER = LinuxBinary("on_ac_power")
-  PERF = LinuxBinary("perf")
-  PPROF = LinuxBinary("pprof")
-  PYTHON3 = Binary("python3", default="python3", win="python3.exe")
-  RPM2CPIO = LinuxBinary("rpm2cpio")
-  SIMPLEPERF = AndroidBinary("simpleperf")
-  XCTRACE = MacOsBinary("xctrace")
-  CHROMEDRIVER = Binary(
+  ADB: ClassVar = Binary(
+      "adb",
+      macos=["adb", "~/Library/Android/sdk/platform-tools/adb"],
+      linux=["adb"],
+      win=["adb.exe", "Android/sdk/platform-tools/adb.exe"])
+  CPIO: ClassVar = LinuxBinary("cpio")
+  FFMPEG: ClassVar = Binary("ffmpeg", posix="ffmpeg")
+  GCERTSTATUS: ClassVar = Binary("gcertstatus", posix="gcertstatus")
+  GO: ClassVar = Binary("go", posix="go")
+  GSUTIL: ClassVar = Binary("gsutil", posix="gsutil")
+  LSCPU: ClassVar = LinuxBinary("lscpu")
+  MONTAGE: ClassVar = Binary("montage", posix="montage")
+  ON_AC_POWER: ClassVar = LinuxBinary("on_ac_power")
+  PERF: ClassVar = LinuxBinary("perf")
+  PPROF: ClassVar = LinuxBinary("pprof")
+  PYTHON3: ClassVar = Binary("python3", default="python3", win="python3.exe")
+  RPM2CPIO: ClassVar = LinuxBinary("rpm2cpio")
+  SIMPLEPERF: ClassVar = AndroidBinary("simpleperf")
+  XCTRACE: ClassVar = MacOsBinary("xctrace")
+  CHROMEDRIVER: ClassVar = Binary(
       "chromedriver",
       chromeos="/usr/local/chromedriver/chromedriver",
       linux="chromedriver")
 
 
 class Browsers:
-  SAFARI = MacOsBinary("Safari.app")
-  SAFARI_TECH_PREVIEW = MacOsBinary("Safari Technology Preview.app")
-  FIREFOX_STABLE = Binary(
+  SAFARI: ClassVar = MacOsBinary("Safari.app")
+  SAFARI_TECH_PREVIEW: ClassVar = MacOsBinary("Safari Technology Preview.app")
+  FIREFOX_STABLE: ClassVar = Binary(
       "firefox stable",
       macos="Firefox.app",
       linux="firefox",
       win="Mozilla Firefox/firefox.exe")
-  FIREFOX_DEV = Binary(
+  FIREFOX_DEV: ClassVar = Binary(
       "firefox developer edition",
       macos="Firefox Developer Edition.app",
       linux="firefox-developer-edition",
       win="Firefox Developer Edition/firefox.exe")
-  FIREFOX_NIGHTLY = Binary(
+  FIREFOX_NIGHTLY: ClassVar = Binary(
       "Firefox nightly",
       macos="Firefox Nightly.app",
       linux=["firefox-nightly", "firefox-trunk"],

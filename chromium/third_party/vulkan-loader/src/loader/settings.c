@@ -306,6 +306,11 @@ VkResult parse_device_configuration(const struct loader_instance* inst, cJSON* d
         res = VK_ERROR_INITIALIZATION_FAILED;
         goto out;
     }
+
+    if (deviceUUID_array->type != cJSON_Array) {
+        res = VK_ERROR_INITIALIZATION_FAILED;
+        goto out;
+    }
     if (VK_UUID_SIZE != loader_cJSON_GetArraySize(deviceUUID_array)) {
         res = VK_ERROR_INITIALIZATION_FAILED;
         goto out;
@@ -368,10 +373,13 @@ VkResult parse_device_configurations(const struct loader_instance* inst, cJSON* 
             res = VK_ERROR_INITIALIZATION_FAILED;
             goto out;
         }
-        res = parse_device_configuration(inst, device, &(loader_settings->device_configurations[i++]));
-        if (VK_SUCCESS != res) {
+        res = parse_device_configuration(inst, device, &(loader_settings->device_configurations[i]));
+        if (res == VK_ERROR_OUT_OF_HOST_MEMORY) {
             goto out;
+        } else if (res != VK_SUCCESS) {
+            continue;
         }
+        i++;
     }
 out:
     if (res != VK_SUCCESS) {
@@ -389,7 +397,7 @@ out:
 
 #if COMMON_UNIX_PLATFORMS
 // Given a base and suffix path, determine if a file at that location exists, and if it is return success.
-// Since base may contain multiple paths seperated by PATH_SEPARATOR, we must extract each segment and check segment + suffix
+// Since base may contain multiple paths separated by PATH_SEPARATOR, we must extract each segment and check segment + suffix
 // individually
 VkResult check_if_settings_path_exists(const struct loader_instance* inst, const char* base, const char* suffix,
                                        char** settings_file_path) {
@@ -606,8 +614,12 @@ void log_settings(const struct loader_instance* inst, loader_settings* settings)
         for (uint32_t i = 0; i < settings->device_configuration_count; i++) {
             loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "---- Device Configuration [%d] ----", i);
             uint8_t* id = settings->device_configurations[i].deviceUUID;
-            loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "deviceUUID: %x%x%x%x-%x%x-%x%x-%x%x-%x%x%x%x%x%x", id[0], id[1], id[2],
+            loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0,
+                       "deviceUUID: %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", id[0], id[1], id[2],
                        id[3], id[4], id[5], id[6], id[7], id[8], id[9], id[10], id[11], id[12], id[13], id[14], id[15]);
+            if ('\0' != settings->device_configurations[i].deviceName[0]) {
+                loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "deviceName: %s", settings->device_configurations[i].deviceName);
+            }
         }
     }
     loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "---------------------------------");
@@ -736,8 +748,10 @@ VkResult get_loader_settings(const struct loader_instance* inst, loader_settings
     cJSON* stderr_filter = loader_cJSON_GetObjectItem(settings_to_use, "stderr_log");
     if (NULL != stderr_filter) {
         struct loader_string_list stderr_log = {0};
-        res = loader_parse_json_array_of_strings(inst, settings_to_use, "stderr_log", &stderr_log);
-        if (VK_ERROR_OUT_OF_HOST_MEMORY == res) {
+        VkResult stderr_log_result = VK_SUCCESS;
+        stderr_log_result = loader_parse_json_array_of_strings(inst, settings_to_use, "stderr_log", &stderr_log);
+        if (VK_ERROR_OUT_OF_HOST_MEMORY == stderr_log_result) {
+            res = VK_ERROR_OUT_OF_HOST_MEMORY;
             goto out;
         }
         loader_settings->debug_level = parse_log_filters_from_strings(&stderr_log);
@@ -751,14 +765,14 @@ VkResult get_loader_settings(const struct loader_instance* inst, loader_settings
         cJSON_ArrayForEach(log_element, logs_to_use) {
             // bool is_valid = true;
             struct loader_string_list log_destinations = {0};
-            res = loader_parse_json_array_of_strings(inst, log_element, "destinations", &log_destinations);
-            if (res != VK_SUCCESS) {
+            VkResult parse_dest_res = loader_parse_json_array_of_strings(inst, log_element, "destinations", &log_destinations);
+            if (parse_dest_res != VK_SUCCESS) {
                 // is_valid = false;
             }
             free_string_list(inst, &log_destinations);
             struct loader_string_list log_filters = {0};
-            res = loader_parse_json_array_of_strings(inst, log_element, "filters", &log_filters);
-            if (res != VK_SUCCESS) {
+            VkResult parse_filters_res = loader_parse_json_array_of_strings(inst, log_element, "filters", &log_filters);
+            if (parse_filters_res != VK_SUCCESS) {
                 // is_valid = false;
             }
             free_string_list(inst, &log_filters);
@@ -961,6 +975,7 @@ TEST_FUNCTION_EXPORT VkResult get_settings_layers(const struct loader_instance* 
             if (0 ==
                 strncmp(settings_layers->list[j].info.layerName, newly_added_layer->info.layerName, VK_MAX_EXTENSION_NAME_SIZE)) {
                 if (0 == (newly_added_layer->type_flags & VK_LAYER_TYPE_FLAG_META_LAYER) &&
+                    settings_layers->list[j].lib_name != NULL && newly_added_layer->lib_name != NULL &&
                     strcmp(settings_layers->list[j].lib_name, newly_added_layer->lib_name) == 0) {
                     should_remove = true;
                     break;

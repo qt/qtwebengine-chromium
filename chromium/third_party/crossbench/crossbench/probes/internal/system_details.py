@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -20,8 +20,8 @@ class SystemDetailsProbe(InternalJsonResultProbe):
   """
   Runner-internal meta-probe: Collects the browser's system/platform details.
   """
-  NAME = "cb.system.details"
-  AUTO_MERGE_REPETITIONS = False
+  NAME: ClassVar = "cb.system.details"
+  AUTO_MERGE_REPETITIONS: ClassVar = False
 
   @override
   def get_context_cls(self) -> Type[InternalJsonResultProbeContext]:

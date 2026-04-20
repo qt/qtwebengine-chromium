@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from crossbench.parse import PathParser
 
@@ -28,7 +28,7 @@ def add_argument(parser: ConfigParser) -> None:
             "If not specified, tries to find it in a v8 or chromium checkout."))
 
 
-_PROTO_SUFFIX_RE = re.compile(r"\.(?:proto|pb|pb\.gz)$")
+_PROTO_SUFFIX_RE: Final[re.Pattern] = re.compile(r"\.(?:proto|pb|pb\.gz)$")
 
 
 def convert_to_json(platform: Platform, traceconv: pth.LocalPath | None,
@@ -51,6 +51,6 @@ def convert_to_json(platform: Platform, traceconv: pth.LocalPath | None,
   try:
     platform.sh(*cmd)
     return output_json
-  except Exception as e:  # pylint: disable=broad-exception-caught
+  except Exception as e:  # noqa: BLE001
     logging.error("traceconv failure: %s", e)
     return None

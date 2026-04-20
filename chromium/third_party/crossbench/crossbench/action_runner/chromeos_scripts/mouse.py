@@ -2,10 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# pytype: skip-file
-
 # This script is to be run directly on a ChromeOS device to emulate a mouse and
 # then move to and click a location.
+from __future__ import annotations
 
 import sys
 import time

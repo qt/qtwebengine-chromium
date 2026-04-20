@@ -95,7 +95,7 @@ client_unref (Client *client)
       if (client->connection != NULL)
         {
           if (client->name_owner_changed_subscription_id > 0)
-            g_dbus_connection_signal_unsubscribe (client->connection, client->name_owner_changed_subscription_id);
+            g_dbus_connection_signal_unsubscribe (client->connection, g_steal_handle_id (&client->name_owner_changed_subscription_id));
           if (client->disconnected_signal_handler_id > 0)
             g_signal_handler_disconnect (client->connection, client->disconnected_signal_handler_id);
           g_object_unref (client->connection);
@@ -306,12 +306,11 @@ on_connection_disconnected (GDBusConnection *connection,
     return;
 
   if (client->name_owner_changed_subscription_id > 0)
-    g_dbus_connection_signal_unsubscribe (client->connection, client->name_owner_changed_subscription_id);
+    g_dbus_connection_signal_unsubscribe (client->connection, g_steal_handle_id (&client->name_owner_changed_subscription_id));
   if (client->disconnected_signal_handler_id > 0)
     g_signal_handler_disconnect (client->connection, client->disconnected_signal_handler_id);
   g_object_unref (client->connection);
   client->disconnected_signal_handler_id = 0;
-  client->name_owner_changed_subscription_id = 0;
   client->connection = NULL;
 
   call_vanished_handler (client);
@@ -574,8 +573,8 @@ connection_get_cb (GObject      *source_object,
  * Starts watching @name on the bus specified by @bus_type and calls
  * @name_appeared_handler and @name_vanished_handler when the name is
  * known to have an owner respectively known to lose its
- * owner. Callbacks will be invoked in the
- * [thread-default main context][g-main-context-push-thread-default]
+ * owner. Callbacks will be invoked in the thread-default main context
+ * (see [method@GLib.MainContext.push_thread_default])
  * of the thread you are calling this function from.
  *
  * You are guaranteed that one of the handlers will be invoked after
@@ -596,7 +595,7 @@ connection_get_cb (GObject      *source_object,
  * will be @name_vanished_handler. The reverse is also true.
  *
  * This behavior makes it very simple to write applications that want
- * to take action when a certain [name exists][gdbus-watching-names].
+ * to take action when a certain [name exists](dbus-name-watching.html#d-bus-name-watching).
  * Basically, the application should create object proxies in
  * @name_appeared_handler and destroy them again (if any) in
  * @name_vanished_handler.

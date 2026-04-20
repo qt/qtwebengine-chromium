@@ -23,7 +23,7 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
-from typing import (TYPE_CHECKING, Any, Callable, Generator, Iterable,
+from typing import (TYPE_CHECKING, Any, Callable, Final, Generator, Iterable,
                     Iterator, Mapping, Optional, Sequence, Type)
 
 import google.cloud.storage as gcloud_storage
@@ -48,7 +48,8 @@ if TYPE_CHECKING:
   from crossbench.plt.display_info import DisplayInfo
   from crossbench.plt.process_meminfo import ProcessMeminfo
   from crossbench.plt.signals import AnySignals, Signals
-  from crossbench.plt.types import CmdArg, ProcessLike, TupleCmdArgs
+  from crossbench.plt.types import CmdArg, ProcessIo, ProcessLike, TupleCmdArgs
+  from crossbench.plt.version import PlatformVersion
   from crossbench.types import JsonDict
 
 
@@ -80,7 +81,8 @@ class LocalEnviron(Environ):
 class SubprocessError(subprocess.CalledProcessError):
   """ Custom version that also prints stderr for debugging"""
 
-  def __init__(self, platform: Platform, process) -> None:
+  def __init__(self, platform: Platform,
+               process: subprocess.CompletedProcess) -> None:
     self.platform = platform
     super().__init__(process.returncode, shlex.join(map(str, process.args)),
                      process.stdout, process.stderr)
@@ -99,18 +101,32 @@ class CPUFreqInfo:
   current: float
 
 
-DEFAULT_CACHE_DIR = pth.LocalPath(__file__).parents[2] / "cache"
+_NEXT_PLATFORM_ID = 0
+
+
+def _next_id() -> int:
+  global _NEXT_PLATFORM_ID  # noqa: PLW0603
+  new_id = _NEXT_PLATFORM_ID
+  _NEXT_PLATFORM_ID += 1
+  return new_id
+
+
+DEFAULT_CACHE_DIR: Final = pth.LocalPath(__file__).parents[2] / "cache"
 
 class Platform(abc.ABC):
-  # pylint: disable=locally-disabled, redefined-builtin
-
   def __init__(self) -> None:
+    self._id: Final[int] = _next_id()
     self._binary_lookup_override: dict[str, pth.AnyPath] = {}
     self._cache_dir_root: pth.AnyPath | None = None
-    self._default_port_manager: PortManager = self._create_port_manager()
+    self._default_port_manager: Final[PortManager] = self._create_port_manager()
+    self._default_tmp_dir: Final[pth.AnyPath] = self._create_default_tmp_dir()
 
   def _create_port_manager(self) -> PortManager:
     return LocalPortManager(self)
+
+  def _create_default_tmp_dir(self) -> pth.AnyPath:
+    self.assert_is_local()
+    return self.path(tempfile.gettempdir())
 
   def assert_is_local(self) -> None:
     if self.is_local:
@@ -126,18 +142,38 @@ class Platform(abc.ABC):
     pass
 
   @property
+  def id(self) -> int:
+    return self._id
+
+  @property
+  def unique_name(self) -> str:
+    """Unique id per platform."""
+    key_str = ".".join(self.key)
+    remote_str = "remote" if self.is_remote else "local"
+    return f"{key_str}.{remote_str}.{self.id}"
+
+  @property
   @abc.abstractmethod
   def name(self) -> str:
+    """Descriptive name e.g. macos of the platform. non-unique."""
+
+  @property
+  @abc.abstractmethod
+  def version_str(self) -> str:
     pass
 
   @property
   @abc.abstractmethod
-  def version(self) -> str:
+  def version(self) -> PlatformVersion:
     pass
 
   @property
+  def version_parts(self) -> tuple[int, ...]:
+    return self.version.parts
+
+  @property
   @abc.abstractmethod
-  def device(self) -> str:
+  def model(self) -> str:
     pass
 
   @property
@@ -154,10 +190,10 @@ class Platform(abc.ABC):
 
   @property
   def full_version(self) -> str:
-    return f"{self.name} {self.version} {self.machine}"
+    return f"{self.name} {self.version_str} {self.machine}"
 
   def __str__(self) -> str:
-    return ".".join(self.key) + (".remote" if self.is_remote else ".local")
+    return self.unique_name
 
   @property
   def is_remote(self) -> bool:
@@ -203,11 +239,20 @@ class Platform(abc.ABC):
 
   @property
   def key(self) -> tuple[str, str]:
+    """Key used for looking up platform specific objects."""
     return (self.name, str(self.machine))
 
   @property
   def is_macos(self) -> bool:
     return False
+
+  @property
+  def is_ios(self) -> bool:
+    return False
+
+  @property
+  def is_apple(self) -> bool:
+    return self.is_macos or self.is_ios
 
   @property
   def is_linux(self) -> bool:
@@ -252,25 +297,15 @@ class Platform(abc.ABC):
   def cpu_details(self) -> dict[str, Any]:
     self.assert_is_local()
     details = {
-        "physical cores":
-            self.cpu_cores(logical=False),
-        "logical cores":
-            self.cpu_cores(logical=True),
-        "usage":
-            psutil.cpu_percent(  # pytype: disable=attribute-error
-                percpu=True, interval=0.1),
-        "total usage":
-            psutil.cpu_percent(),
-        "system load":
-            psutil.getloadavg(),
-        "info":
-            self.cpu,
-        "min frequency":
-            "N/A",
-        "max frequency":
-            "N/A",
-        "current frequency":
-            "N/A",
+        "physical cores": self.cpu_cores(logical=False),
+        "logical cores": self.cpu_cores(logical=True),
+        "usage": psutil.cpu_percent(percpu=True, interval=0.1),
+        "total usage": psutil.cpu_percent(),
+        "system load": psutil.getloadavg(),
+        "info": self.cpu,
+        "min frequency": "N/A",
+        "max frequency": "N/A",
+        "current frequency": "N/A",
     }
     if cpu_freq := self._cpu_freq():
       details.update({
@@ -316,8 +351,7 @@ class Platform(abc.ABC):
 
   def display_details(self) -> tuple[DisplayInfo, ...]:
     # TODO: implement on more platforms
-    return tuple()
-
+    return ()
 
   def get_relative_cpu_speed(self) -> float:
     return 1
@@ -405,7 +439,7 @@ class Platform(abc.ABC):
     This can be false on linux without $DISPLAY, true an all other platforms."""
     return True
 
-  def sleep(self, seconds: int | float | dt.timedelta) -> None:
+  def sleep(self, seconds: float | dt.timedelta) -> None:
     wait.sleep(seconds)
 
   def parse_binary_path(self,
@@ -453,7 +487,7 @@ class Platform(abc.ABC):
 
   @contextlib.contextmanager
   def override_binary(self, binary: pth.AnyPathLike | Binary,
-                      result: Optional[pth.AnyPath]):
+                      result: Optional[pth.AnyPath]) -> Iterator[None]:
     binary_name: pth.AnyPathLike = ""
     if isinstance(binary, Binary):
       if override := binary.platform_path(self):
@@ -505,10 +539,8 @@ class Platform(abc.ABC):
       pid: int = self.process_pid(process)
       ps_process = psutil.Process(pid)
       for child_process in ps_process.children(recursive=True):
-        try:
+        with contextlib.suppress(*proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS):
           callback(child_process)
-        except proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS:
-          pass
       callback(ps_process)
     except proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS:
       pass
@@ -545,10 +577,8 @@ class Platform(abc.ABC):
       self, process_iterator: Iterable[psutil.Process]) -> list[dict[str, Any]]:
     process_info_list: list[dict[str, Any]] = []
     for process in process_iterator:
-      try:
+      with contextlib.suppress(*proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS):
         process_info_list.append(process.as_dict())
-      except proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS:
-        pass
     return process_info_list
 
   def process_info(self, process: ProcessLike) -> Optional[dict[str, Any]]:
@@ -574,8 +604,7 @@ class Platform(abc.ABC):
 
   @property
   def default_tmp_dir(self) -> pth.AnyPath:
-    self.assert_is_local()
-    return self.path(tempfile.gettempdir())
+    return self._default_tmp_dir
 
   @property
   def ports(self) -> PortScope:
@@ -774,11 +803,11 @@ class Platform(abc.ABC):
     return self.path(name)
 
   @contextlib.contextmanager
-  def NamedTemporaryFile(  # pylint: disable=invalid-name
+  def NamedTemporaryFile(  # noqa: N802
       self,
       suffix: Optional[str] = None,
       prefix: Optional[str] = None,
-      dir: Optional[pth.AnyPathLike] = None):
+      dir: Optional[pth.AnyPathLike] = None) -> Iterator[pth.AnyPath]:
     tmp_file: pth.AnyPath = self.mktemp(suffix, prefix, dir)
     try:
       yield tmp_file
@@ -786,11 +815,11 @@ class Platform(abc.ABC):
       self.rm(tmp_file, missing_ok=True)
 
   @contextlib.contextmanager
-  def TemporaryDirectory(  # pylint: disable=invalid-name
+  def TemporaryDirectory(  # noqa: N802
       self,
       suffix: Optional[str] = None,
       prefix: Optional[str] = None,
-      dir: Optional[pth.AnyPathLike] = None):
+      dir: Optional[pth.AnyPathLike] = None) -> Iterator[pth.AnyPath]:
     tmp_dir = self.mkdtemp(suffix, prefix, dir)
     try:
       yield tmp_dir
@@ -830,7 +859,7 @@ class Platform(abc.ABC):
                 shell: bool = False,
                 quiet: bool = False,
                 encoding: str = "utf-8",
-                stdin=None,
+                stdin: ProcessIo = None,
                 env: Optional[Mapping[str, str]] = None,
                 check: bool = True) -> str:
     result = self.sh_stdout_bytes(
@@ -841,7 +870,7 @@ class Platform(abc.ABC):
                       *args: CmdArg,
                       shell: bool = False,
                       quiet: bool = False,
-                      stdin=None,
+                      stdin: ProcessIo = None,
                       env: Optional[Mapping[str, str]] = None,
                       check: bool = True) -> bytes:
     completed_process = self.sh(
@@ -863,16 +892,16 @@ class Platform(abc.ABC):
             *args: CmdArg,
             bufsize: int = -1,
             shell: bool = False,
-            stdout=None,
-            stderr=None,
-            stdin=None,
+            stdout: ProcessIo = None,
+            stderr: ProcessIo = None,
+            stdin: ProcessIo = None,
             env: Optional[Mapping[str, str]] = None,
             quiet: bool = False) -> subprocess.Popen:
     self.assert_is_local()
     self.validate_shell_args(args, shell)
     if not quiet:
       logging.debug("SHELL: %s", shlex.join(map(str, args)))
-      logging.debug("CWD: %s", os.getcwd())
+      logging.debug("CWD: %s", pth.LocalPath.cwd())
     return subprocess.Popen(
         args=args,
         bufsize=bufsize,
@@ -886,9 +915,9 @@ class Platform(abc.ABC):
          *args: CmdArg,
          shell: bool = False,
          capture_output: bool = False,
-         stdout=None,
-         stderr=None,
-         stdin=None,
+         stdout: ProcessIo = None,
+         stderr: ProcessIo = None,
+         stdin: ProcessIo = None,
          env: Optional[Mapping[str, str]] = None,
          quiet: bool = False,
          check: bool = True) -> subprocess.CompletedProcess:
@@ -896,7 +925,7 @@ class Platform(abc.ABC):
     self.validate_shell_args(args, shell)
     if not quiet:
       logging.debug("SHELL: %s", shlex.join(map(str, args)))
-      logging.debug("CWD: %s", os.getcwd())
+      logging.debug("CWD: %s", pth.LocalPath.cwd())
     process = subprocess.run(
         args=args,
         shell=shell,
@@ -929,15 +958,16 @@ class Platform(abc.ABC):
   # TODO(cbruni): split into separate list_system_monitoring and
   # disable_system_monitoring methods
   def check_system_monitoring(self, disable: bool = False) -> bool:
-    # pylint: disable=unused-argument
+    del disable
     return True
 
   def download_to(self, url: str, path: pth.AnyPath) -> pth.AnyPath:
     self.assert_is_local()
     logging.debug("DOWNLOAD: %s\n       TO: %s", url, path)
     assert not self.exists(path), f"Download destination {path} exists already."
+    url = ObjectParser.url_str(url, schemes=("http", "https"))
     try:
-      urllib.request.urlretrieve(url, path)
+      urllib.request.urlretrieve(url, path)  # noqa: S310
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
       raise OSError(f"Could not load {url}") from e
     assert self.exists(path), (
@@ -955,7 +985,7 @@ class Platform(abc.ABC):
     object_name = parsed.path.lstrip("/")
     if not bucket_name:
       raise ValueError(f"Missing bucket name in URL: {gcs_url}")
-    client = gcloud_storage.Client()
+    client = gcloud_storage.Client(project="")
     bucket = client.bucket(bucket_name)
     blob: gcloud_blob.Blob = bucket.blob(object_name)
     blob.reload()
@@ -974,6 +1004,14 @@ class Platform(abc.ABC):
         with input_file.open(encoding="utf-8") as input_f:
           shutil.copyfileobj(input_f, output_f)
     return output
+
+  @contextlib.contextmanager
+  def wakelock(self) -> Iterator[None]:
+    """
+    Prevent the system from going to sleep while running active.
+    """
+    logging.debug("Missing wakelock support on %s", self)
+    yield
 
   def set_main_display_brightness(self, brightness_level: int) -> None:
     raise NotImplementedError(
@@ -1002,6 +1040,11 @@ class Platform(abc.ABC):
     raise NotImplementedError(
         "'display_resolution' is only available on Android and ChromeOS for "
         "now")
+
+  @contextlib.contextmanager
+  def low_power_mode(self) -> Generator[None, Any, None]:
+    raise NotImplementedError("'low_power_mode' is only supported on Android")
+
 
   def user_id(self) -> int:
     self.assert_is_local()

@@ -9,7 +9,7 @@ import datetime as dt
 import itertools
 import json
 import logging
-from typing import TYPE_CHECKING, Any, MutableMapping, Optional, Type
+from typing import TYPE_CHECKING, Any, ClassVar, MutableMapping, Optional, Type
 
 from typing_extensions import override
 
@@ -110,7 +110,7 @@ class MotionMark1Probe(BenchmarkProbeMixin, JsonResultProbe, abc.ABC):
 
 
 class MotionMark1ProbeContext(JsonResultProbeContext):
-  JS = """
+  JS: ClassVar[str] = """
     return window.benchmarkRunnerClient.results.results;
   """
 
@@ -126,8 +126,8 @@ class MotionMark1ProbeContext(JsonResultProbeContext):
 
 
 class MotionMark1Story(PressBenchmarkStory):
-  URL_LOCAL: str = "http://localhost:8000/"
-  ALL_STORIES = {
+  URL_LOCAL: ClassVar[str] = "http://localhost:8000/"
+  ALL_STORIES: ClassVar = {
       "MotionMark": (
           "Multiply",
           "Canvas Arcs",
@@ -220,12 +220,13 @@ class MotionMark1Story(PressBenchmarkStory):
           "Canvas ellipses, fill",
       )
   }
-  SUBSTORIES = tuple(itertools.chain.from_iterable(ALL_STORIES.values()))
-  READY_TIMEOUT: dt.timedelta = dt.timedelta(seconds=10)
-  DEVELOPER_READY_JS: str = (
+  SUBSTORIES: ClassVar = tuple(
+      itertools.chain.from_iterable(ALL_STORIES.values()))
+  READY_TIMEOUT: ClassVar = dt.timedelta(seconds=10)
+  DEVELOPER_READY_JS: ClassVar[str] = (
       "return document.querySelector('tree > li') !== undefined;")
   # The default page is ready immediately.
-  READY_JS: str = "return true;"
+  READY_JS: ClassVar[str] = "return true;"
 
   @classmethod
   @override

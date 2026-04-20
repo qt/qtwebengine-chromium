@@ -9,9 +9,9 @@ import logging
 import os
 import subprocess
 import tempfile
-from typing import TYPE_CHECKING, Self, TextIO, Type
+from typing import TYPE_CHECKING, ClassVar, Final, Self, TextIO, Type
 
-from typing_extensions import Final, override
+from typing_extensions import override
 
 from crossbench.config import ConfigEnum
 from crossbench.helper import collection_helper
@@ -47,12 +47,13 @@ class VideoProbe(Probe):
   It can also produce a timestrip png and creates merged versions of these files
   for visually comparing various browsers / variants / cb.stories
   """
-  NAME = "video"
-  RESULT_LOCATION = ResultLocation.BROWSER
-  VIDEO_QUALITY = ["-vcodec", "libx264", "-crf", "20"]
-  IMAGE_FORMAT = "png"
-  TIMESTRIP_FILE_SUFFIX = f".timestrip.{IMAGE_FORMAT}"
-  FRAMERATE = 60
+  NAME: ClassVar = "video"
+  RESULT_LOCATION: ClassVar = ResultLocation.BROWSER
+  # TODO: Add Final[ClassVar] once supported.
+  VIDEO_QUALITY: Final = ("-vcodec", "libx264", "-crf", "20")
+  IMAGE_FORMAT: Final = "png"
+  TIMESTRIP_FILE_SUFFIX: Final = f".timestrip.{IMAGE_FORMAT}"
+  FRAMERATE: Final = 60
 
   @classmethod
   @override
@@ -102,11 +103,11 @@ class VideoProbe(Probe):
     return self._generate_timestrip
 
   @property
-  def primary_orientation(self):
+  def primary_orientation(self) -> Orientation:
     return self._orientation
 
   @property
-  def secondary_orientation(self):
+  def secondary_orientation(self) -> Orientation:
     if self._orientation == Orientation.VERTICAL:
       return Orientation.HORIZONTAL
     return Orientation.VERTICAL
@@ -167,7 +168,7 @@ class VideoProbe(Probe):
       # In the simple case just copy the files
       run_files = runs[0].results[self].file_list
       group_files = [group.path / f.name for f in run_files]
-      for src, dest in zip(run_files, group_files):
+      for src, dest in zip(run_files, group_files, strict=True):
         self.host_platform.copy(src, dest)
       return LocalProbeResult(file=group_files)
 
@@ -253,8 +254,8 @@ class VideoProbe(Probe):
 
 
 class VideoProbeContext(ProbeContext[VideoProbe]):
-  IMAGE_FORMAT = "png"
-  FFMPEG_TIMELINE_TEXT = (
+  IMAGE_FORMAT: Final = "png"
+  FFMPEG_TIMELINE_TEXT: Final = (
       "drawtext="
       "fontfile=/Library/Fonts/Arial.ttf:"
       "text='%{eif\\:t\\:d}.%{eif\\:t*100-floor(t)*100\\:d}s':"

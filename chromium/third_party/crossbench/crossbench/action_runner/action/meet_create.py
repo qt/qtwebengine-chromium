@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Optional, Type
+from typing import TYPE_CHECKING, ClassVar, Optional, Type
 
 from typing_extensions import override
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 class MeetCreateAction(BondAction):
-  TYPE: ActionType = ActionType.MEET_CREATE
+  TYPE: ClassVar[ActionType] = ActionType.MEET_CREATE
 
   @classmethod
   @override

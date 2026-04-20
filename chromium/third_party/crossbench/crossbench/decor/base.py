@@ -7,7 +7,8 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import enum
-from typing import TYPE_CHECKING, Generic, Set, Type, TypeVar
+from typing import (TYPE_CHECKING, ClassVar, Generic, Optional, Set, Type,
+                    TypeVar)
 
 from crossbench import plt
 from crossbench.config import ConfigParser
@@ -16,6 +17,8 @@ from crossbench.helper.state import BaseState, StateMachine
 from crossbench.probes.results import EmptyProbeResult
 
 if TYPE_CHECKING:
+  from types import TracebackType
+
   from crossbench.probes.results import ProbeResult
 
 DecoratorT = TypeVar("DecoratorT", bound="Decorator")
@@ -34,7 +37,7 @@ class Decorator(abc.ABC, Generic[DecoratorTargetT]):
   temporarily modify Runs or BrowserSessions.
   """
 
-  NAME: str = ""
+  NAME: ClassVar[str] = ""
 
   @classmethod
   def config_parser(cls) -> DecoratorConfigParser:
@@ -144,7 +147,9 @@ class DecoratorContext(abc.ABC, Generic[DecoratorT, DecoratorTargetT]):
         self._state.transition(self._State.STARTING, to=self._State.FAILURE)
         raise
 
-  def __exit__(self, exc_type, exc_value, traceback) -> None:
+  def __exit__(self, exc_type: Optional[Type[BaseException]],
+               exc_value: Optional[BaseException],
+               traceback: Optional[TracebackType]) -> None:
     self._state.expect(self._State.RUNNING, self._State.FAILURE)
     with self._target.exception_capture(f"{self._label} stop"):
       try:

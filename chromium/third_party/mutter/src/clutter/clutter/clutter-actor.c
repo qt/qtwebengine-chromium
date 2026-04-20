@@ -557,6 +557,7 @@ struct _ClutterActorPrivate
   /* Accessibility */
   AtkObject *accessible;
   gchar *accessible_name;
+  AtkStateSet *accessible_state;
 
   /* request mode */
   ClutterRequestMode request_mode;
@@ -1431,7 +1432,6 @@ clutter_actor_real_map (ClutterActor *self)
 {
   ClutterActorPrivate *priv = self->priv;
   ClutterActor *iter;
-  AtkObject *accessible;
 
   g_assert (!clutter_actor_is_mapped (self));
 
@@ -1468,11 +1468,8 @@ clutter_actor_real_map (ClutterActor *self)
    */
   g_object_notify_by_pspec (G_OBJECT (self), obj_props[PROP_MAPPED]);
 
-  accessible = clutter_actor_get_accessible (self);
-  if (accessible && !clutter_actor_is_painting_unmapped (self))
-    atk_object_notify_state_change (accessible,
-                                    ATK_STATE_SHOWING,
-                                    TRUE);
+  if (!clutter_actor_is_painting_unmapped (self))
+    clutter_actor_add_accessible_state (self, ATK_STATE_SHOWING);
 
   for (iter = priv->first_child;
        iter != NULL;
@@ -1573,7 +1570,6 @@ clutter_actor_real_unmap (ClutterActor *self)
 {
   ClutterActorPrivate *priv = self->priv;
   ClutterActor *iter;
-  AtkObject *accessible;
 
   g_assert (clutter_actor_is_mapped (self));
 
@@ -1605,11 +1601,8 @@ clutter_actor_real_unmap (ClutterActor *self)
    */
   g_object_notify_by_pspec (G_OBJECT (self), obj_props[PROP_MAPPED]);
 
-  accessible = clutter_actor_get_accessible (self);
-  if (accessible && !clutter_actor_is_painting_unmapped (self))
-    atk_object_notify_state_change (accessible,
-                                    ATK_STATE_SHOWING,
-                                    FALSE);
+  if (!clutter_actor_is_painting_unmapped (self))
+    clutter_actor_remove_accessible_state (self, ATK_STATE_SHOWING);
 
   if (priv->n_pointers > 0)
     {
@@ -1744,7 +1737,6 @@ void
 clutter_actor_show (ClutterActor *self)
 {
   ClutterActorPrivate *priv;
-  AtkObject *accessible;
 
   g_return_if_fail (CLUTTER_IS_ACTOR (self));
 
@@ -1782,11 +1774,7 @@ clutter_actor_show (ClutterActor *self)
   g_signal_emit (self, actor_signals[SHOW], 0);
   g_object_notify_by_pspec (G_OBJECT (self), obj_props[PROP_VISIBLE]);
 
-  accessible = clutter_actor_get_accessible (self);
-  if (accessible)
-    atk_object_notify_state_change (accessible,
-                                    ATK_STATE_VISIBLE,
-                                    TRUE);
+  clutter_actor_add_accessible_state (self, ATK_STATE_VISIBLE);
 
   if (priv->parent != NULL)
     clutter_actor_queue_redraw (self);
@@ -1842,7 +1830,6 @@ void
 clutter_actor_hide (ClutterActor *self)
 {
   ClutterActorPrivate *priv;
-  AtkObject *accessible;
 
   g_return_if_fail (CLUTTER_IS_ACTOR (self));
 
@@ -1880,12 +1867,7 @@ clutter_actor_hide (ClutterActor *self)
   g_signal_emit (self, actor_signals[HIDE], 0);
   g_object_notify_by_pspec (G_OBJECT (self), obj_props[PROP_VISIBLE]);
 
-  accessible = clutter_actor_get_accessible (self);
-  if (accessible)
-    atk_object_notify_state_change (accessible,
-                                    ATK_STATE_VISIBLE,
-                                    FALSE);
-
+  clutter_actor_remove_accessible_state (self, ATK_STATE_VISIBLE);
 
   if (priv->parent != NULL && priv->needs_allocation)
     clutter_actor_queue_redraw (priv->parent);
@@ -3269,6 +3251,57 @@ cull_actor (ClutterActor        *self,
   return TRUE;
 }
 
+/* Remove any transitions on properties with @prefix. */
+static void
+_clutter_actor_remove_transitions_for_prefix (ClutterActor *actor,
+                                              const char   *prefix)
+{
+  const ClutterAnimationInfo *info;
+
+  info = _clutter_actor_get_animation_info_or_defaults (actor);
+
+  if (info->transitions != NULL)
+    {
+      GHashTableIter iter;
+      gpointer key, value;
+      g_autoptr (GPtrArray) to_remove = g_ptr_array_new_with_free_func (NULL);
+
+      g_hash_table_iter_init (&iter, info->transitions);
+
+      while (g_hash_table_iter_next (&iter, &key, &value))
+        {
+          if (g_str_has_prefix (key, prefix))
+            g_ptr_array_add (to_remove, key);
+        }
+
+      for (unsigned int i = 0; i < to_remove->len; i++)
+        clutter_actor_remove_transition (actor, to_remove->pdata[i]);
+    }
+}
+
+/* Remove any transitions on the properties of @meta.
+ * @section should be "actions", "constraints" or "effects" */
+static void
+_clutter_actor_remove_transitions_for_meta_internal (ClutterActor     *actor,
+                                                     const char       *section,
+                                                     ClutterActorMeta *meta)
+{
+  g_autofree char *meta_prefix =
+      g_strdup_printf ("@%s.%s.", section,
+                       clutter_actor_meta_get_name (meta));
+  _clutter_actor_remove_transitions_for_prefix (actor, meta_prefix);
+}
+
+/* Remove any transitions on the properties of any #ClutterActorMeta in @section.
+ * @section should be "actions", "constraints" or "effects" */
+static void
+_clutter_actor_remove_transitions_for_meta_section_internal (ClutterActor *actor,
+                                                             const char   *section)
+{
+  g_autofree char *meta_prefix = g_strdup_printf ("@%s.", section);
+  _clutter_actor_remove_transitions_for_prefix (actor, meta_prefix);
+}
+
 /* This is the same as clutter_actor_add_effect except that it doesn't
    queue a redraw and it doesn't notify on the effect property */
 static void
@@ -3296,6 +3329,10 @@ _clutter_actor_remove_effect_internal (ClutterActor  *self,
 
   if (priv->effects == NULL)
     return;
+
+  /* Remove any transitions on the effect’s properties. */
+  _clutter_actor_remove_transitions_for_meta_internal (self, "effects",
+                                                       CLUTTER_ACTOR_META (effect));
 
   _clutter_meta_group_remove_meta (priv->effects, CLUTTER_ACTOR_META (effect));
 
@@ -5423,6 +5460,7 @@ clutter_actor_finalize (GObject *object)
   g_free (priv->name);
 
   g_free (priv->debug_name);
+  g_clear_object (&priv->accessible_state);
 
   G_OBJECT_CLASS (clutter_actor_parent_class)->finalize (object);
 }
@@ -11878,7 +11916,6 @@ clutter_actor_set_reactive (ClutterActor *actor,
                             gboolean      reactive)
 {
   ClutterActorPrivate *priv;
-  AtkObject *accessible;
 
   g_return_if_fail (CLUTTER_IS_ACTOR (actor));
 
@@ -11894,11 +11931,16 @@ clutter_actor_set_reactive (ClutterActor *actor,
 
   g_object_notify_by_pspec (G_OBJECT (actor), obj_props[PROP_REACTIVE]);
 
-  accessible = clutter_actor_get_accessible (actor);
-  if (accessible)
-    atk_object_notify_state_change (accessible,
-                                    ATK_STATE_SENSITIVE,
-                                    reactive);
+  if (reactive)
+    {
+      clutter_actor_add_accessible_state (actor, ATK_STATE_SENSITIVE);
+      clutter_actor_add_accessible_state (actor, ATK_STATE_ENABLED);
+    }
+  else
+    {
+      clutter_actor_remove_accessible_state (actor, ATK_STATE_SENSITIVE);
+      clutter_actor_remove_accessible_state (actor, ATK_STATE_ENABLED);
+    }
 
   if (!clutter_actor_get_reactive (actor) && priv->n_pointers > 0)
     {
@@ -12391,8 +12433,6 @@ clutter_actor_set_final_state (ClutterAnimatable *animatable,
             g_object_set_property (G_OBJECT (animatable), pspec->name, final);
         }
     }
-
-  clutter_actor_update_devices (actor);
 }
 
 static ClutterActor *
@@ -13538,6 +13578,13 @@ _clutter_actor_set_has_key_focus (ClutterActor *self,
         return;
 
       if (has_key_focus)
+        clutter_actor_add_accessible_state (self,
+                                            ATK_STATE_FOCUSED);
+      else
+        clutter_actor_remove_accessible_state (self,
+                                               ATK_STATE_FOCUSED);
+
+      if (has_key_focus)
         g_signal_emit (self, actor_signals[KEY_FOCUS_IN], 0);
       else
         g_signal_emit (self, actor_signals[KEY_FOCUS_OUT], 0);
@@ -13734,6 +13781,10 @@ clutter_actor_remove_action (ClutterActor  *self,
   if (priv->actions == NULL)
     return;
 
+  /* Remove any transitions on the actions’s properties. */
+  _clutter_actor_remove_transitions_for_meta_internal (self, "actions",
+                                                       CLUTTER_ACTOR_META (action));
+
   _clutter_meta_group_remove_meta (priv->actions, CLUTTER_ACTOR_META (action));
 
   if (_clutter_meta_group_peek_metas (priv->actions) == NULL)
@@ -13768,6 +13819,9 @@ clutter_actor_remove_action_by_name (ClutterActor *self,
   meta = _clutter_meta_group_get_meta (priv->actions, name);
   if (meta == NULL)
     return;
+
+  /* Remove any transitions on the actions’s properties. */
+  _clutter_actor_remove_transitions_for_meta_internal (self, "actions", meta);
 
   _clutter_meta_group_remove_meta (priv->actions, meta);
 
@@ -13835,6 +13889,7 @@ clutter_actor_clear_actions (ClutterActor *self)
   if (self->priv->actions == NULL)
     return;
 
+  _clutter_actor_remove_transitions_for_meta_section_internal (self, "actions");
   _clutter_meta_group_clear_metas_no_internal (self->priv->actions);
 }
 
@@ -13926,6 +13981,10 @@ clutter_actor_remove_constraint (ClutterActor      *self,
   if (priv->constraints == NULL)
     return;
 
+  /* Remove any transitions on the constraint’s properties. */
+  _clutter_actor_remove_transitions_for_meta_internal (self, "constraints",
+                                                       CLUTTER_ACTOR_META (constraint));
+
   _clutter_meta_group_remove_meta (priv->constraints,
                                    CLUTTER_ACTOR_META (constraint));
 
@@ -13963,6 +14022,9 @@ clutter_actor_remove_constraint_by_name (ClutterActor *self,
   meta = _clutter_meta_group_get_meta (priv->constraints, name);
   if (meta == NULL)
     return;
+
+  /* Remove any transitions on the constraint’s properties. */
+  _clutter_actor_remove_transitions_for_meta_internal (self, "constraints", meta);
 
   _clutter_meta_group_remove_meta (priv->constraints, meta);
   clutter_actor_queue_relayout (self);
@@ -14029,6 +14091,7 @@ clutter_actor_clear_constraints (ClutterActor *self)
   if (self->priv->constraints == NULL)
     return;
 
+  _clutter_actor_remove_transitions_for_meta_section_internal (self, "constraints");
   _clutter_meta_group_clear_metas_no_internal (self->priv->constraints);
 
   clutter_actor_queue_relayout (self);
@@ -14254,6 +14317,7 @@ clutter_actor_clear_effects (ClutterActor *self)
   if (self->priv->effects == NULL)
     return;
 
+  _clutter_actor_remove_transitions_for_meta_section_internal (self, "effects");
   _clutter_meta_group_clear_metas_no_internal (self->priv->effects);
 
   clutter_actor_queue_redraw (self);
@@ -16416,6 +16480,7 @@ on_transition_stopped (ClutterTransition *transition,
                     _clutter_actor_get_debug_name (actor));
 
       g_signal_emit (actor, actor_signals[TRANSITIONS_COMPLETED], 0);
+      clutter_actor_update_devices (actor);
     }
 }
 
@@ -18801,4 +18866,85 @@ clutter_actor_get_accessible_role (ClutterActor *self)
     role = atk_object_get_role (accessible);
 
   return role;
+}
+
+AtkStateSet *
+clutter_actor_get_accessible_state (ClutterActor *actor)
+{
+  ClutterActorPrivate *priv;
+
+  g_return_val_if_fail (CLUTTER_IS_ACTOR (actor), NULL);
+
+  priv = clutter_actor_get_instance_private (actor);
+
+  return priv->accessible_state;
+}
+
+/**
+ * clutter_actor_add_accessible_state:
+ * @actor: A #ClutterActor
+ * @state: #AtkStateType state to add
+ *
+ * This method adds @state as one of the accessible states for
+ * @actor. The list of states of an actor describes the current state
+ * of user interface element @actor and is provided so that assistive
+ * technologies know how to present @actor to the user.
+ *
+ * Usually you will have no need to add accessible states for an
+ * object, as the accessible object can extract most of the states
+ * from the object itself.
+ * This method is only required when one cannot extract the
+ * information automatically from the object itself (i.e.: a generic
+ * container used as a toggle menu item will not automatically include
+ * the toggled state).
+ */
+void
+clutter_actor_add_accessible_state (ClutterActor *actor,
+                                    AtkStateType  state)
+{
+  ClutterActorPrivate *priv;
+  AtkObject *accessible;
+
+  g_return_if_fail (CLUTTER_IS_ACTOR (actor));
+
+  priv = clutter_actor_get_instance_private (actor);
+  accessible = clutter_actor_get_accessible (actor);
+
+  if (G_UNLIKELY (priv->accessible_state == NULL))
+    {
+      priv->accessible_state = atk_state_set_new ();
+      /* Actors are all focusable until we merge focus management from St */
+      atk_state_set_add_state (priv->accessible_state, ATK_STATE_FOCUSABLE);
+    }
+
+  if (atk_state_set_add_state (priv->accessible_state, state) && accessible)
+    atk_object_notify_state_change (accessible, state, TRUE);
+}
+
+/**
+ * clutter_actor_remove_accessible_state:
+ * @actor: A #ClutterActor
+ * @state: #AtkState state to remove
+ *
+ * This method removes @state as on of the accessible states for
+ * @actor. See [method@Clutter.Actor.add_accessible_state] for more information.
+ *
+ */
+void
+clutter_actor_remove_accessible_state (ClutterActor *actor,
+                                       AtkStateType  state)
+{
+  ClutterActorPrivate *priv;
+  AtkObject *accessible;
+
+  g_return_if_fail (CLUTTER_IS_ACTOR (actor));
+
+  priv = clutter_actor_get_instance_private (actor);
+  accessible = clutter_actor_get_accessible (actor);
+
+  if (G_UNLIKELY (priv->accessible_state == NULL))
+    return;
+
+  if (atk_state_set_remove_state (priv->accessible_state, state) && accessible)
+    atk_object_notify_state_change (accessible, state, FALSE);
 }

@@ -1084,6 +1084,12 @@ void Device::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdBindDescriptorBufferEmbeddedSamplers2EXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdBindDescriptorBufferEmbeddedSamplers2EXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdBindDescriptorBufferEmbeddedSamplers2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdCopyMemoryIndirectKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdCopyMemoryIndirectKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdCopyMemoryIndirectKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdCopyMemoryToImageIndirectKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdCopyMemoryToImageIndirectKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdCopyMemoryToImageIndirectKHR);
     BUILD_DISPATCH_VECTOR(PreCallValidateDebugMarkerSetObjectTagEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordDebugMarkerSetObjectTagEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordDebugMarkerSetObjectTagEXT);
@@ -1877,9 +1883,6 @@ void Device::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateQueueNotifyOutOfBandNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordQueueNotifyOutOfBandNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordQueueNotifyOutOfBandNV);
-    BUILD_DISPATCH_VECTOR(PreCallValidateCreateDataGraphPipelinesARM);
-    BUILD_DISPATCH_VECTOR(PreCallRecordCreateDataGraphPipelinesARM);
-    BUILD_DISPATCH_VECTOR(PostCallRecordCreateDataGraphPipelinesARM);
     BUILD_DISPATCH_VECTOR(PreCallValidateCreateDataGraphPipelineSessionARM);
     BUILD_DISPATCH_VECTOR(PreCallRecordCreateDataGraphPipelineSessionARM);
     BUILD_DISPATCH_VECTOR(PostCallRecordCreateDataGraphPipelineSessionARM);

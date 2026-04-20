@@ -224,24 +224,28 @@ url_escape_hostname (const char *url)
 }
 
 static CFURLRef
-create_url_from_cstr (const gchar *cstr,
-                      gboolean     is_file)
+create_url_from_cstr_or_file (gpointer data,
+                              gboolean is_file)
 {
+  const char *cstr;
+  char *cstr_owned = NULL;
   gchar *puny_cstr;
   CFStringRef str;
   CFURLRef url;
 
+  if (is_file)
+    cstr = cstr_owned = g_file_get_uri ((GFile *) data);
+  else
+    cstr = (char *) data;
+
   puny_cstr = url_escape_hostname (cstr);
   str = CFStringCreateWithCString (NULL, puny_cstr ? puny_cstr : cstr, kCFStringEncodingUTF8);
-
-  if (is_file)
-    url = CFURLCreateWithFileSystemPath (NULL, str, kCFURLPOSIXPathStyle, FALSE);
-  else
-    url = CFURLCreateWithString (NULL, str, NULL);
+  url = CFURLCreateWithString (NULL, str, NULL);
 
   if (!url)
     g_debug ("Creating CFURL from %s %s failed!", cstr, is_file ? "file" : "uri");
 
+  g_free (cstr_owned);
   g_free (puny_cstr);
   CFRelease(str);
   return url;
@@ -264,7 +268,8 @@ create_url_list_from_glist (GList    *uris,
 
   for (lst = uris; lst != NULL && lst->data; lst = lst->next)
     {
-      CFURLRef url = create_url_from_cstr ((char*)lst->data, are_files);
+      /* lst->data is either a GFile* or a char* URI, depending on are_files */
+      CFURLRef url = create_url_from_cstr_or_file (lst->data, are_files);
       if (url)
         CFArrayAppendValue (array, url);
     }
@@ -291,7 +296,6 @@ clear_urlspec (LSLaunchURLSpec *urlspec)
       CFArrayRemoveAllValues ((CFMutableArrayRef) urlspec->itemURLs);
       CFRelease (urlspec->itemURLs);
     }
-  CFRelease (urlspec->appURL);
 }
 
 static NSBundle *
@@ -314,7 +318,6 @@ get_bundle_for_id (CFStringRef bundle_id)
   CFURLRef app_url;
   NSBundle *bundle;
 
-#ifdef AVAILABLE_MAC_OS_X_VERSION_10_10_AND_LATER
   CFArrayRef urls = LSCopyApplicationURLsForBundleIdentifier (bundle_id, NULL);
   if (urls)
     {
@@ -326,9 +329,6 @@ get_bundle_for_id (CFStringRef bundle_id)
       CFRelease (urls);
     }
   else
-#else
-  if (LSFindApplicationForInfo (kLSUnknownCreator, bundle_id, NULL, NULL, &app_url) == kLSApplicationNotFoundErr)
-#endif
     {
 #ifdef G_ENABLE_DEBUG /* This can fail often, no reason to alloc strings */
       gchar *id_str = create_cstr_from_cfstring (bundle_id);
@@ -454,10 +454,9 @@ g_osx_app_info_launch_internal (GAppInfo  *appinfo,
   GOsxAppInfo *info = G_OSX_APP_INFO (appinfo);
   LSLaunchURLSpec urlspec = { 0 };
   gint ret, success = TRUE;
+  NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
   g_return_val_if_fail (G_IS_OSX_APP_INFO (appinfo), FALSE);
-  g_return_val_if_fail (uris == NULL, FALSE);
-  g_return_val_if_fail (error == NULL || *error == NULL, FALSE);
 
   fill_urlspec_for_appinfo (&urlspec, info, uris, are_files);
 
@@ -470,6 +469,7 @@ g_osx_app_info_launch_internal (GAppInfo  *appinfo,
     }
 
   clear_urlspec (&urlspec);
+  [pool drain];
   return success;
 }
 
@@ -746,11 +746,7 @@ g_app_info_get_default_for_type_impl (const char *content_type,
   gchar *mime_type;
   CFStringRef type;
   NSBundle *bundle;
-#ifdef AVAILABLE_MAC_OS_X_VERSION_10_10_AND_LATER
   CFURLRef bundle_id;
-#else
-  CFStringRef bundle_id;
-#endif
 
   mime_type = g_content_type_get_mime_type (content_type);
   if (g_str_has_prefix (mime_type, "x-scheme-handler/"))
@@ -765,11 +761,7 @@ g_app_info_get_default_for_type_impl (const char *content_type,
 
   type = create_cfstring_from_cstr (content_type);
 
-#ifdef AVAILABLE_MAC_OS_X_VERSION_10_10_AND_LATER
   bundle_id = LSCopyDefaultApplicationURLForContentType (type, kLSRolesAll, NULL);
-#else
-  bundle_id = LSCopyDefaultRoleHandlerForContentType (type, kLSRolesAll);
-#endif
   CFRelease (type);
 
   if (!bundle_id)
@@ -778,11 +770,7 @@ g_app_info_get_default_for_type_impl (const char *content_type,
       return NULL;
     }
 
-#ifdef AVAILABLE_MAC_OS_X_VERSION_10_10_AND_LATER
   bundle = get_bundle_for_url (bundle_id);
-#else
-  bundle = get_bundle_for_id (bundle_id);
-#endif
   CFRelease (bundle_id);
 
   if (!bundle)

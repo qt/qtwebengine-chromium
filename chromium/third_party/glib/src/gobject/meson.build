@@ -32,8 +32,6 @@ gobject_visibility_h = custom_target(
   command: [gen_visibility_macros, meson.project_version(), 'visibility-macros', 'GOBJECT', '@OUTPUT@'],
   install: true,
   install_dir: gobject_includedir,
-  # FIXME: Not needed with Meson >= 0.64.0
-  install_tag: 'devel',
 )
 gobject_sources += gobject_visibility_h
 
@@ -87,7 +85,7 @@ python_tools = [
 
 python_tools_conf = configuration_data()
 python_tools_conf.set('VERSION', glib_version)
-python_tools_conf.set('PYTHON', python.full_path())
+python_tools_conf.set('PYTHON', python_shebang)
 
 foreach tool: python_tools
   tool_bin = configure_file(
@@ -149,7 +147,7 @@ libgobject = library('gobject-2.0',
   install : true,
   include_directories : [configinc],
   dependencies : [libffi_dep, libglib_dep],
-  c_args : ['-DG_LOG_DOMAIN="GLib-GObject"', '-DGOBJECT_COMPILATION'],
+  c_args : ['-DG_LOG_DOMAIN="GLib-GObject"', '-DGOBJECT_COMPILATION', warning_sign_conversion_args],
   gnu_symbol_visibility : 'hidden',
   link_args : glib_link_flags,
 )

@@ -346,7 +346,9 @@ bool core::Instance::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkD
 void CoreChecks::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) {
     BaseClass::FinishDeviceSetup(pCreateInfo, loc);
 
-    AdjustValidatorOptions(extensions, enabled_features, spirv_val_options, &spirv_val_option_hash);
+    spirv_environment = PickSpirvEnv(api_version, IsExtEnabled(extensions.vk_khr_spirv_1_4));
+    AdjustValidatorOptions(extensions, enabled_features, spirv_environment, spirv_val_options, &spirv_val_option_hash,
+                           spirv_val_command);
 
     // Allocate shader validation cache
     if (!disabled[shader_validation_caching] && !disabled[shader_validation] && !core_validation_cache) {
@@ -537,8 +539,8 @@ bool core::Instance::PreCallValidateGetPhysicalDeviceImageFormatProperties2KHR(
 }
 
 // Access helper functions for external modules
-VkFormatProperties3KHR CoreChecks::GetPDFormatProperties(const VkFormat format) const {
-    VkFormatProperties3KHR fmt_props_3 = vku::InitStructHelper();
+VkFormatProperties3 CoreChecks::GetPDFormatProperties(const VkFormat format) const {
+    VkFormatProperties3 fmt_props_3 = vku::InitStructHelper();
     VkFormatProperties2 fmt_props_2 = vku::InitStructHelper(&fmt_props_3);
 
     if (device_state->special_supported.vk_khr_format_feature_flags2) {
@@ -768,6 +770,10 @@ bool CoreChecks::ValidateDeviceQueueSupport(const Location &loc) const {
         case Func::vkCreateGraphicsPipelines:
             vuid = "VUID-vkCreateGraphicsPipelines-device-09662";
             flags = VK_QUEUE_GRAPHICS_BIT;
+            break;
+        case Func::vkCreateDataGraphPipelinesARM:
+            vuid = "VUID-vkCreateDataGraphPipelinesARM-device-09927";
+            flags = VK_QUEUE_DATA_GRAPH_BIT_ARM;
             break;
         case Func::vkCreateQueryPool:
             vuid = "VUID-vkCreateQueryPool-device-09663";

@@ -76,9 +76,10 @@ meta_sync_counter_set_counter (MetaSyncCounter *sync_counter,
 
   if (sync_counter->sync_request_counter != None)
     {
-      meta_verbose ("Window has _NET_WM_SYNC_REQUEST_COUNTER 0x%lx (extended=%s)",
-                    sync_counter->sync_request_counter,
-                    sync_counter->extended_sync_request_counter ? "true" : "false");
+      meta_topic (META_DEBUG_X11,
+                  "Window has _NET_WM_SYNC_REQUEST_COUNTER 0x%lx (extended=%s)",
+                  sync_counter->sync_request_counter,
+                  sync_counter->extended_sync_request_counter ? "true" : "false");
     }
 
   if (sync_counter->extended_sync_request_counter)
@@ -518,7 +519,7 @@ meta_sync_counter_complete_frame (MetaSyncCounter  *sync_counter,
     {
       GList *l_next = l->next;
       FrameData *frame = l->data;
-      int64_t frame_counter = frame_info->frame_counter;
+      int64_t frame_counter = frame_info->global_frame_counter;
 
       if (frame->frame_counter != -1 && frame->frame_counter <= frame_counter)
         {

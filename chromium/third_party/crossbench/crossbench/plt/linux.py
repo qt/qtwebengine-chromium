@@ -9,7 +9,8 @@ import datetime as dt
 import functools
 import os
 import re
-from typing import TYPE_CHECKING, Any, ClassVar, Iterator, Optional, Type
+from typing import (TYPE_CHECKING, Any, ClassVar, Final, Iterator, Optional,
+                    Type)
 
 from typing_extensions import override
 
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
   from crossbench.plt.display_info import DisplayInfo
 
 
-SCRIPTS_DIR = pth.LocalPath(__file__).parent / "remote_scripts"
+SCRIPTS_DIR: Final = pth.LocalPath(__file__).parent / "remote_scripts"
 
 @dataclasses.dataclass
 class XrandrDisplayInfo:
@@ -64,7 +65,7 @@ def parse_display_xrandr(xrandr_str: str) -> Iterator[DisplayInfo]:
   DUMMY1 disconnected
     1600x1200_60  60.00
     ...
-  """
+  """  # noqa: W291
   display_infos: list[XrandrDisplayInfo] = []
   current_info: XrandrDisplayInfo | None = None
   # Group display info and resolution entries:
@@ -112,11 +113,12 @@ class LinuxPlatform(PosixPlatform):
     return LinuxSignals
 
   def check_system_monitoring(self, disable: bool = False) -> bool:
+    del disable
     return True
 
   @functools.cached_property
   @override
-  def device(self) -> str:  #pylint: disable=invalid-overridden-method
+  def model(self) -> str:
     try:
       id_dir = self.path("/sys/devices/virtual/dmi/id")
       vendor = self.cat(id_dir / "sys_vendor").strip()
@@ -170,14 +172,16 @@ class LinuxPlatform(PosixPlatform):
   @functools.lru_cache(maxsize=1)
   def display_details(self) -> tuple[DisplayInfo, ...]:
     if not self.has_display:
-      return tuple()
+      return ()
     if xrandr_str := self.sh_stdout("xrandr"):
       return tuple(parse_display_xrandr(xrandr_str))
-    return tuple()
+    return ()
 
-  _MEMINFO_SCRIPT_PROCESS_PATTERN = re.compile(r"==== process (\d+) ====")
-  _MEMINFO_SCRIPT_SMAPS_HEADER_PATTERN = re.compile(r"==== smaps_rollup ====")
-  _SMAPS_ROLLUP_PATTERN = re.compile(
+  _MEMINFO_SCRIPT_PROCESS_PATTERN: Final[re.Pattern] = re.compile(
+      r"==== process (\d+) ====")
+  _MEMINFO_SCRIPT_SMAPS_HEADER_PATTERN: Final[re.Pattern] = re.compile(
+      r"==== smaps_rollup ====")
+  _SMAPS_ROLLUP_PATTERN: Final[re.Pattern] = re.compile(
       r".*Rss:\s+(?P<rss_total>\d+) kB.*"
       r"Pss:\s+(?P<pss_total>\d+) kB.*"
       r"Swap:\s+(?P<swap_total>\d+)",

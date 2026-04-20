@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import TYPE_CHECKING, Optional, Type
+from typing import TYPE_CHECKING, ClassVar, Optional, Type
 
 from typing_extensions import override
 
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
   from crossbench.types import JsonDict
 
 class JsAction(Action):
-  TYPE: ActionType = ActionType.JS
+  TYPE: ClassVar[ActionType] = ActionType.JS
 
   @classmethod
   @override

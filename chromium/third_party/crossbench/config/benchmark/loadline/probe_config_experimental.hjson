@@ -49,7 +49,7 @@
         }
         data_sources {
           config {
-            name: "org.chromium.trace_metadata"
+            name: "org.chromium.trace_metadata2"
             target_buffer: 1
           }
         }

@@ -35,7 +35,7 @@ class RepetitionsRunGroup(RunGroup):
              run_groups: Iterable[CacheTemperaturesRunGroup],
              throw: bool = False) -> tuple[RepetitionsRunGroup, ...]:
     return tuple(
-        collection_helper.group_by(
+        collection_helper.group_by_custom(
             run_groups,
             key=lambda group: (group.browser, group.story),
             group=lambda _: cls(throw),

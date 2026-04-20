@@ -156,7 +156,7 @@ send_property_change (GApplicationImpl *impl)
 {
   GVariantBuilder builder;
 
-  g_variant_builder_init (&builder, G_VARIANT_TYPE_ARRAY);
+  g_variant_builder_init_static (&builder, G_VARIANT_TYPE_ARRAY);
   g_variant_builder_add (&builder,
                          "{sv}",
                          "Busy", g_variant_new_boolean (impl->busy));
@@ -311,7 +311,7 @@ g_application_impl_method_call (GDBusConnection       *connection,
           GVariant *value = NULL;
           GVariantBuilder builder;
 
-          g_variant_builder_init (&builder, G_VARIANT_TYPE_TUPLE);
+          g_variant_builder_init_static (&builder, G_VARIANT_TYPE_TUPLE);
 
           while (g_variant_iter_loop (iter, "v", &value))
             {
@@ -544,10 +544,7 @@ g_application_impl_attempt_primary (GApplicationImpl  *impl,
   impl->primary = (rval != DBUS_REQUEST_NAME_REPLY_EXISTS);
 
   if (!impl->primary && impl->name_lost_signal)
-    {
-      g_dbus_connection_signal_unsubscribe (impl->session_bus, impl->name_lost_signal);
-      impl->name_lost_signal = 0;
-    }
+    g_dbus_connection_signal_unsubscribe (impl->session_bus, g_steal_handle_id (&impl->name_lost_signal));
 
   return TRUE;
 }
@@ -592,10 +589,7 @@ g_application_impl_stop_primary (GApplicationImpl *impl)
     }
 
   if (impl->name_lost_signal)
-    {
-      g_dbus_connection_signal_unsubscribe (impl->session_bus, impl->name_lost_signal);
-      impl->name_lost_signal = 0;
-    }
+    g_dbus_connection_signal_unsubscribe (impl->session_bus, g_steal_handle_id (&impl->name_lost_signal));
 
   if (impl->primary && impl->bus_name)
     {
@@ -736,7 +730,7 @@ g_application_impl_open (GApplicationImpl  *impl,
   GVariantBuilder builder;
   gint i;
 
-  g_variant_builder_init (&builder, G_VARIANT_TYPE ("(assa{sv})"));
+  g_variant_builder_init_static (&builder, G_VARIANT_TYPE ("(assa{sv})"));
   g_variant_builder_open (&builder, G_VARIANT_TYPE_STRING_ARRAY);
   for (i = 0; i < n_files; i++)
     {

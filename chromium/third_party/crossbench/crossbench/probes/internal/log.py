@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -22,7 +22,7 @@ class LogProbe(InternalProbe):
   Runner-internal meta-probe: Collects the python logging data from the runner
   itself.
   """
-  NAME = "cb.log"
+  NAME: ClassVar = "cb.log"
 
   @override
   def get_context_cls(self) -> Type[LogProbeContext]:

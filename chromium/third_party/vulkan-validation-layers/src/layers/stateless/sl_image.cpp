@@ -25,6 +25,7 @@
 #include "containers/container_utils.h"
 #include "utils/math_utils.h"
 #include "utils/image_utils.h"
+#include <cmath>
 
 namespace stateless {
 
@@ -784,7 +785,7 @@ bool Device::ValidateCreateImageMetalObject(const VkImageCreateInfo &create_info
             skip |=
                 LogError("VUID-VkImageCreateInfo-pNext-06785", device, texture_info_loc,
                          "is %s, but only VK_IMAGE_ASPECT_PLANE_0_BIT is allowed for an image created with format %s, "
-                         "which is not multiplaner",
+                         "which is not multiplanar",
                          string_VkImageAspectFlags(import_metal_texture_info->plane).c_str(), string_VkFormat(create_info.format));
         }
         if ((format_plane_count == 2) && (import_metal_texture_info->plane == VK_IMAGE_ASPECT_PLANE_2_BIT)) {

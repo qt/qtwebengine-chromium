@@ -517,7 +517,7 @@ bool CoreChecks::ValidateCreateSwapchain(const VkSwapchainCreateInfoKHR &create_
                 }
             }
         }
-        if (!found_match) {
+        if (!found_match && !formats.empty()) {
             if (!found_format) {
                 if (LogError("VUID-VkSwapchainCreateInfoKHR-imageFormat-01273", device, create_info_loc.dot(Field::imageFormat),
                              "is %s.", string_VkFormat(create_info.imageFormat))) {
@@ -588,8 +588,8 @@ bool CoreChecks::ValidateCreateSwapchain(const VkSwapchainCreateInfoKHR &create_
     }
 
     // Validate pCreateInfo->imageUsage against GetPhysicalDeviceFormatProperties
-    const VkFormatProperties3KHR format_properties = GetPDFormatProperties(create_info.imageFormat);
-    const VkFormatFeatureFlags2KHR tiling_features = format_properties.optimalTilingFeatures;
+    const VkFormatProperties3 format_properties = GetPDFormatProperties(create_info.imageFormat);
+    const VkFormatFeatureFlags2 tiling_features = format_properties.optimalTilingFeatures;
 
     if (tiling_features == 0) {
         if (LogError("VUID-VkSwapchainCreateInfoKHR-imageFormat-01778", device, create_info_loc.dot(Field::imageFormat),
@@ -1030,7 +1030,8 @@ bool CoreChecks::PreCallValidateQueuePresentKHR(VkQueue queue, const VkPresentIn
                     if ((swapchain_state->create_info.flags & VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR) == 0) {
                         skip |= LogError("VUID-VkPresentId2KHR-None-10820", pPresentInfo->pSwapchains[i],
                                          present_info_loc.dot(Field::pSwapchain, i),
-                                         "was created with %s, but VkPresentInfoKHR::pNext contains VkPresentId2KHR.",
+                                         "was created without VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR (create flags were %s), but "
+                                         "VkPresentInfoKHR::pNext contains VkPresentId2KHR.",
                                          string_VkSwapchainCreateFlagsKHR(swapchain_state->create_info.flags).c_str());
                     }
                 }

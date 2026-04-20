@@ -49,7 +49,7 @@ bool CoreChecks::ValidateImageFormatFeatures(const VkImageCreateInfo &create_inf
     bool skip = false;
 
     // validates based on imageCreateFormatFeatures from vkspec.html#resources-image-creation-limits
-    VkFormatFeatureFlags2KHR tiling_features = 0;
+    VkFormatFeatureFlags2 tiling_features = 0;
     const VkImageTiling image_tiling = create_info.tiling;
     const VkFormat image_format = create_info.format;
 
@@ -111,7 +111,7 @@ bool CoreChecks::ValidateImageFormatFeatures(const VkImageCreateInfo &create_inf
             }
         }
     } else {
-        VkFormatProperties3KHR format_properties = GetPDFormatProperties(image_format);
+        VkFormatProperties3 format_properties = GetPDFormatProperties(image_format);
         tiling_features = (image_tiling == VK_IMAGE_TILING_LINEAR) ? format_properties.linearTilingFeatures
                                                                    : format_properties.optimalTilingFeatures;
     }
@@ -267,7 +267,7 @@ bool CoreChecks::ValidateImageVideo(const VkImageCreateInfo &create_info, const 
         } else if (video_profiles->profileCount != 1) {
             skip |= LogError("VUID-VkImageCreateInfo-usage-10254", device, create_info_loc.dot(Field::usage),
                              "has VK_IMAGE_USAGE_VIDEO_ENCODE_QUANTIZATION_DELTA_MAP_BIT_KHR or "
-                             "VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR set but %s (%u) does not equal 1.",
+                             "VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR set but %s (%" PRIu32 ") does not equal 1.",
                              create_info_loc.pNext(Struct::VkVideoProfileListInfoKHR, Field::profileCount).Fields().c_str(),
                              video_profiles->profileCount);
             valid_quantization_map_format = false;
@@ -305,8 +305,10 @@ bool CoreChecks::ValidateImageVideo(const VkImageCreateInfo &create_info, const 
                     skip |=
                         LogError("VUID-VkImageCreateInfo-usage-10257", device, create_info_loc.dot(Field::usage),
                                  "has VK_IMAGE_USAGE_VIDEO_ENCODE_QUANTIZATION_DELTA_MAP_BIT_KHR or "
-                                 "VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR set but has extent.width (%u) "
-                                 "larger than the maxQuantizationMapExtent.width (%u) supported by the "
+                                 "VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR set but has extent.width (%" PRIu32
+                                 ") "
+                                 "larger than the maxQuantizationMapExtent.width (%" PRIu32
+                                 ") supported by the "
                                  "encode profile specified in %s.",
                                  create_info.extent.width, profile_caps.encode_ext.quantization_map.maxQuantizationMapExtent.width,
                                  profile_info_loc.Fields().c_str());
@@ -316,8 +318,10 @@ bool CoreChecks::ValidateImageVideo(const VkImageCreateInfo &create_info, const 
                     create_info.extent.height > profile_caps.encode_ext.quantization_map.maxQuantizationMapExtent.height) {
                     skip |= LogError("VUID-VkImageCreateInfo-usage-10258", device, create_info_loc.dot(Field::usage),
                                      "has VK_IMAGE_USAGE_VIDEO_ENCODE_QUANTIZATION_DELTA_MAP_BIT_KHR or "
-                                     "VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR set but has extent.height (%u) "
-                                     "larger than the maxQuantizationMapExtent.height (%u) supported by the "
+                                     "VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR set but has extent.height (%" PRIu32
+                                     ") "
+                                     "larger than the maxQuantizationMapExtent.height (%" PRIu32
+                                     ") supported by the "
                                      "encode profile specified in %s.",
                                      create_info.extent.height,
                                      profile_caps.encode_ext.quantization_map.maxQuantizationMapExtent.height,
@@ -929,7 +933,7 @@ bool CoreChecks::PreCallValidateCmdClearColorImage(VkCommandBuffer commandBuffer
         const Location range_loc = error_obj.location.dot(Field::pRanges, i);
         skip |= ValidateCmdClearColorSubresourceRange(image_state.create_info, pRanges[i], objlist, range_loc);
         skip |= ValidateClearImageSubresourceRange(objlist, pRanges[i], range_loc);
-        skip |= VerifyClearImageLayout(cb_state, image_state, pRanges[i], imageLayout, range_loc);
+        skip |= ValidateClearImageLayout(cb_state, image_state, pRanges[i], imageLayout, range_loc);
     }
 
     const VkFormat format = image_state.create_info.format;
@@ -1009,7 +1013,7 @@ bool CoreChecks::PreCallValidateCmdClearDepthStencilImage(VkCommandBuffer comman
     for (uint32_t i = 0; i < rangeCount; ++i) {
         const Location range_loc = error_obj.location.dot(Field::pRanges, i);
         skip |= ValidateCmdClearDepthSubresourceRange(image_state.create_info, pRanges[i], objlist, range_loc);
-        skip |= VerifyClearImageLayout(cb_state, image_state, pRanges[i], imageLayout, range_loc);
+        skip |= ValidateClearImageLayout(cb_state, image_state, pRanges[i], imageLayout, range_loc);
         // Image aspect must be depth or stencil or both
         VkImageAspectFlags valid_aspects = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
         if (((pRanges[i].aspectMask & valid_aspects) == 0) || ((pRanges[i].aspectMask & ~valid_aspects) != 0)) {
@@ -1172,7 +1176,7 @@ bool CoreChecks::PreCallValidateCmdClearAttachments(VkCommandBuffer commandBuffe
             stencil_view_state = cb_state.GetActiveAttachmentImageViewState(
                 cb_state.GetDynamicRenderingAttachmentIndex(AttachmentInfo::Type::Stencil));
 
-            view_mask = rp_state->dynamic_rendering_begin_rendering_info.viewMask;
+            view_mask = rp_state->GetDynamicRenderingViewMask();
             external_format_resolve = cb_state.HasExternalFormatResolveAttachment();
         } else {
             const auto *renderpass_create_info = rp_state->create_info.ptr();
@@ -1345,10 +1349,9 @@ bool CoreChecks::ValidateImageUsageFlags(VkCommandBuffer commandBuffer, vvl::Ima
 }
 
 bool CoreChecks::ValidateImageFormatFeatureFlags(VkCommandBuffer commandBuffer, vvl::Image const &image_state,
-                                                 VkFormatFeatureFlags2KHR desired, const Location &image_loc,
-                                                 const char *vuid) const {
+                                                 VkFormatFeatureFlags2 desired, const Location &image_loc, const char *vuid) const {
     bool skip = false;
-    const VkFormatFeatureFlags2KHR image_format_features = image_state.format_features;
+    const VkFormatFeatureFlags2 image_format_features = image_state.format_features;
     if ((image_format_features & desired) != desired) {
         const LogObjectList objlist(commandBuffer, image_state.Handle());
         // Same error, but more details if it was an AHB external format
@@ -1624,7 +1627,7 @@ bool CoreChecks::ValidateImageViewFormatFeatures(const vvl::Image &image_state, 
     // Pass in image_usage here instead of extracting it from image_state in case there's a chained VkImageViewUsageCreateInfo
     bool skip = false;
 
-    VkFormatFeatureFlags2KHR tiling_features = 0;
+    VkFormatFeatureFlags2 tiling_features = 0;
     const VkImageTiling image_tiling = image_state.create_info.tiling;
 
     if (image_state.HasAHBFormat()) {
@@ -1670,7 +1673,7 @@ bool CoreChecks::ValidateImageViewFormatFeatures(const vvl::Image &image_state, 
             }
         }
     } else {
-        VkFormatProperties3KHR format_properties = GetPDFormatProperties(view_format);
+        VkFormatProperties3 format_properties = GetPDFormatProperties(view_format);
         tiling_features = (image_tiling == VK_IMAGE_TILING_LINEAR) ? format_properties.linearTilingFeatures
                                                                    : format_properties.optimalTilingFeatures;
     }
@@ -1742,44 +1745,42 @@ bool CoreChecks::ValidateImageViewFormatFeatures(const vvl::Image &image_state, 
                          string_VkFormatFeatureFlags2(tiling_features).c_str());
     }
 
-    if (image_state.create_info.flags & VK_IMAGE_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR) {
-        if ((image_usage & VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR) &&
-            !(tiling_features & VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR)) {
-            skip |= LogError("VUID-VkImageViewCreateInfo-image-08333", image_state.Handle(), create_info_loc.dot(Field::format),
-                             "%s and tiling %s doesn't support VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR.\n"
-                             "(supported features: %s)",
-                             string_VkFormat(view_format), string_VkImageTiling(image_tiling),
-                             string_VkFormatFeatureFlags2(tiling_features).c_str());
-        } else if ((image_usage & VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR) &&
-                   !(tiling_features & VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR)) {
-            skip |= LogError("VUID-VkImageViewCreateInfo-image-08334", image_state.Handle(), create_info_loc.dot(Field::format),
-                             "%s and tiling %s doesn't support VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR.\n"
-                             "(supported features: %s)",
-                             string_VkFormat(view_format), string_VkImageTiling(image_tiling),
-                             string_VkFormatFeatureFlags2(tiling_features).c_str());
-        } else if (image_usage & VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR) {
-            skip |= LogError("VUID-VkImageViewCreateInfo-image-08335", image_state.Handle(), create_info_loc.dot(Field::usage),
-                             "is VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR which is not allowed for image views from video profile "
-                             "independent images.");
-        } else if ((image_usage & VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR) &&
-                   !(tiling_features & VK_FORMAT_FEATURE_VIDEO_ENCODE_INPUT_BIT_KHR)) {
-            skip |= LogError("VUID-VkImageViewCreateInfo-image-08336", image_state.Handle(), create_info_loc.dot(Field::format),
-                             "%s and tiling %s doesn't support VK_FORMAT_FEATURE_VIDEO_ENCODE_INPUT_BIT_KHR.\n"
-                             "(supported features: %s)",
-                             string_VkFormat(view_format), string_VkImageTiling(image_tiling),
-                             string_VkFormatFeatureFlags2(tiling_features).c_str());
-        } else if ((image_usage & VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR) &&
-                   !(tiling_features & VK_FORMAT_FEATURE_VIDEO_ENCODE_DPB_BIT_KHR)) {
-            skip |= LogError("VUID-VkImageViewCreateInfo-image-08337", image_state.Handle(), create_info_loc.dot(Field::format),
-                             "%s and tiling %s doesn't support VK_FORMAT_FEATURE_VIDEO_ENCODE_DPB_BIT_KHR.\n"
-                             "(supported features: %s)",
-                             string_VkFormat(view_format), string_VkImageTiling(image_tiling),
-                             string_VkFormatFeatureFlags2(tiling_features).c_str());
-        } else if (image_usage & VK_IMAGE_USAGE_VIDEO_ENCODE_DST_BIT_KHR) {
-            skip |= LogError("VUID-VkImageViewCreateInfo-image-08338", image_state.Handle(), create_info_loc.dot(Field::usage),
-                             "is VK_IMAGE_USAGE_VIDEO_ENCODE_DST_BIT_KHR which is not allowed for image views from video profile "
-                             "independent images.");
-        }
+    if ((image_usage & VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR) &&
+        !(tiling_features & VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR)) {
+        skip |= LogError("VUID-VkImageViewCreateInfo-image-08333", image_state.Handle(), create_info_loc.dot(Field::format),
+                         "%s and tiling %s doesn't support VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR.\n"
+                         "(supported features: %s)",
+                         string_VkFormat(view_format), string_VkImageTiling(image_tiling),
+                         string_VkFormatFeatureFlags2(tiling_features).c_str());
+    } else if ((image_usage & VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR) &&
+               !(tiling_features & VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR)) {
+        skip |= LogError("VUID-VkImageViewCreateInfo-image-08334", image_state.Handle(), create_info_loc.dot(Field::format),
+                         "%s and tiling %s doesn't support VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR.\n"
+                         "(supported features: %s)",
+                         string_VkFormat(view_format), string_VkImageTiling(image_tiling),
+                         string_VkFormatFeatureFlags2(tiling_features).c_str());
+    } else if (image_usage & VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR) {
+        skip |= LogError("VUID-VkImageViewCreateInfo-image-08335", image_state.Handle(), create_info_loc.dot(Field::usage),
+                         "is VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR which is not allowed for image views from video profile "
+                         "independent images.");
+    } else if ((image_usage & VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR) &&
+               !(tiling_features & VK_FORMAT_FEATURE_VIDEO_ENCODE_INPUT_BIT_KHR)) {
+        skip |= LogError("VUID-VkImageViewCreateInfo-image-08336", image_state.Handle(), create_info_loc.dot(Field::format),
+                         "%s and tiling %s doesn't support VK_FORMAT_FEATURE_VIDEO_ENCODE_INPUT_BIT_KHR.\n"
+                         "(supported features: %s)",
+                         string_VkFormat(view_format), string_VkImageTiling(image_tiling),
+                         string_VkFormatFeatureFlags2(tiling_features).c_str());
+    } else if ((image_usage & VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR) &&
+               !(tiling_features & VK_FORMAT_FEATURE_VIDEO_ENCODE_DPB_BIT_KHR)) {
+        skip |= LogError("VUID-VkImageViewCreateInfo-image-08337", image_state.Handle(), create_info_loc.dot(Field::format),
+                         "%s and tiling %s doesn't support VK_FORMAT_FEATURE_VIDEO_ENCODE_DPB_BIT_KHR.\n"
+                         "(supported features: %s)",
+                         string_VkFormat(view_format), string_VkImageTiling(image_tiling),
+                         string_VkFormatFeatureFlags2(tiling_features).c_str());
+    } else if (image_usage & VK_IMAGE_USAGE_VIDEO_ENCODE_DST_BIT_KHR) {
+        skip |= LogError("VUID-VkImageViewCreateInfo-image-08338", image_state.Handle(), create_info_loc.dot(Field::usage),
+                         "is VK_IMAGE_USAGE_VIDEO_ENCODE_DST_BIT_KHR which is not allowed for image views from video profile "
+                         "independent images.");
     }
 
     return skip;

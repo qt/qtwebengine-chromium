@@ -312,7 +312,7 @@ elseif(UNIX OR MINGW OR (WIN32 AND USE_GAS)) # i.e.: Linux & Apple & MinGW & Win
     if(ASSEMBLER_WORKS)
         add_executable(asm_offset asm_offset.c)
         target_link_libraries(asm_offset loader_specific_options)
-        # If not cross compiling, run asm_offset to generage gen_defines.asm
+        # If not cross compiling, run asm_offset to generate gen_defines.asm
         if (NOT CMAKE_CROSSCOMPILING)
             add_custom_command(OUTPUT gen_defines.asm DEPENDS asm_offset COMMAND asm_offset GAS)
         else()
@@ -393,6 +393,10 @@ if(WIN32)
         set_target_properties(vulkan
                               PROPERTIES
                               PREFIX "")
+        # let the linker just fix up the stdcall mangling, like on msvc
+        if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+            target_link_options(vulkan PRIVATE "-Wl,--enable-stdcall-fixup")
+        endif()
     endif()
 
     if(MSVC AND ENABLE_WIN10_ONECORE)

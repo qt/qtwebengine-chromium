@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import logging
 import shlex
-from typing import (TYPE_CHECKING, Any, Final, Iterable, Optional, Self,
-                    Sequence, cast)
+from typing import (TYPE_CHECKING, Any, ClassVar, Final, Iterable, Optional,
+                    Self, Sequence, cast)
 
 from typing_extensions import override
 
@@ -33,9 +33,8 @@ if TYPE_CHECKING:
   from crossbench.runner.run import Run
 
 
-V8_INTERPRETED_FRAMES_FLAG = "--interpreted-frames-native-stack"
-
-RENDERER_CMD_PATH: Final[pth.LocalPath] = pth.LocalPath(
+V8_INTERPRETED_FRAMES_FLAG: Final = "--interpreted-frames-native-stack"
+RENDERER_CMD_PATH: Final = pth.LocalPath(
     __file__).parent / "linux-perf-chrome-renderer-cmd.sh"
 
 
@@ -58,9 +57,8 @@ class ProfilingProbe(Probe):
   from V8. For Googlers it additionally can auto-upload symbolized profiles to
   pprof.
   """
-  NAME = "profiling"
-  RESULT_LOCATION = ResultLocation.BROWSER
-  IS_GENERAL_PURPOSE = True
+  NAME: ClassVar = "profiling"
+  RESULT_LOCATION: ClassVar = ResultLocation.BROWSER
 
   @classmethod
   @override
@@ -161,7 +159,7 @@ class ProfilingProbe(Probe):
         "cpu",
         type=NumberParser.positive_zero_int,
         is_list=True,
-        default=tuple(),
+        default=(),
         help=("Android/Linux-only: Sample only on the selected cpus, "
               "specified as a list of 0-indexed cpu indices. "
               "Please refer to '--cpu' in the simpleperf/linux-perf "
@@ -170,7 +168,7 @@ class ProfilingProbe(Probe):
         "events",
         type=str,
         is_list=True,
-        default=tuple(),
+        default=(),
         help=("Android/Linux-only-only: Events to record. "
               "Please refer to the '-e' simpleperf/linux-perf "
               "documentation for more details."))
@@ -178,7 +176,7 @@ class ProfilingProbe(Probe):
         "grouped_events",
         type=str,
         is_list=True,
-        default=tuple(),
+        default=(),
         help=("Android-only: Events to record as a single group. "
               "These events are monitored as a group, "
               "and scheduled in and out together. "
@@ -188,7 +186,7 @@ class ProfilingProbe(Probe):
         "add_counters",
         type=str,
         is_list=True,
-        default=tuple(),
+        default=(),
         help=("Android-only: Add additional event counts in samples. NOTE: If "
               "`add_counter` is used, `--no-inherit` is implicitly set, since "
               "this is required by simpleperf. Please refer to simpleperf "
@@ -347,7 +345,7 @@ class ProfilingProbe(Probe):
     if self._start_profiling_after_setup:
       self._validate_benchmarking_extension_version(browser)
 
-  def _validate_perf_settings(self, browser) -> None:
+  def _validate_perf_settings(self, browser: Browser) -> None:
     unsupported_settings = (
         ("frequency", self._frequency),
         ("count", self._count),
@@ -357,7 +355,7 @@ class ProfilingProbe(Probe):
     self._validate_unsupported_settings(browser, unsupported_settings,
                                         "Android and Linux")
 
-  def _validate_non_android_perf_settings(self, browser) -> None:
+  def _validate_non_android_perf_settings(self, browser: Browser) -> None:
     unsupported_settings = (
         ("grouped_events", self._grouped_events),
         ("add_counters", self._add_counters),
@@ -365,10 +363,10 @@ class ProfilingProbe(Probe):
     self._validate_unsupported_settings(browser, unsupported_settings,
                                         "Android")
 
-  def _validate_unsupported_settings(self, browser,
+  def _validate_unsupported_settings(self, browser: Browser,
                                      unsupported_settings: Iterable[tuple[str,
                                                                           Any]],
-                                     platforms) -> None:
+                                     platforms: str) -> None:
     for name, value in unsupported_settings:
       if value:
         raise ProbeIncompatibleBrowser(
@@ -449,7 +447,7 @@ class ProfilingProbe(Probe):
     # Disable sandbox to write profiling data
     browser.flags.set("--no-sandbox")
 
-  def _set_renderer_cmd_prefix(self, browser) -> None:
+  def _set_renderer_cmd_prefix(self, browser: Browser) -> None:
     assert not browser.platform.is_remote, (
         "Copying renderer command prefix to remote platform is "
         "not implemented yet")
@@ -483,7 +481,7 @@ class ProfilingProbe(Probe):
     self._log_results(group.runs)
 
   def _log_results(self, runs: Iterable[Run]) -> None:
-    filtered_runs = list(run for run in runs if self in run.results)
+    filtered_runs = [run for run in runs if self in run.results]
     if not filtered_runs:
       return
     logging.info("-" * 80)
@@ -493,7 +491,7 @@ class ProfilingProbe(Probe):
     for i, run in enumerate(filtered_runs):
       self._log_run_result_summary(run, i)
 
-  def _log_results_overview(self, filtered_runs) -> None:
+  def _log_results_overview(self, filtered_runs: Sequence[Run]) -> None:
     if len(filtered_runs) <= 1:
       return
     if any(run.browser_platform.is_macos for run in filtered_runs):
@@ -525,7 +523,7 @@ class ProfilingProbe(Probe):
     logging.info("    %s/%s: %d more files", largest_perf_file.parent, glob,
                  len(perf_files))
 
-  def get_context(self, run: Run) -> ProfilingContext:
+  def create_context(self, run: Run) -> ProfilingContext:
     if run.browser_platform.is_linux:
       return LinuxProfilingContext(self, run)
     if run.browser_platform.is_macos:

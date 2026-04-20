@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from typing_extensions import override
 
 from crossbench.browsers.applescript import AppleScriptBrowser
@@ -16,11 +18,11 @@ from crossbench.browsers.chromium_based.chromium_based import ChromiumBased
 # TODO: Auto-set: prefs::kAllowJavascriptAppleEvents
 # TODO: add --enable-automation flag
 class ChromiumAppleScript(ChromiumBaseMixin, ChromiumBased, AppleScriptBrowser):
-  APPLE_SCRIPT_ALLOW_JS_MENU: str = (
+  APPLE_SCRIPT_ALLOW_JS_MENU: ClassVar[str] = (
       "View > Developer > Allow JavaScript from Apple Events")
-  APPLE_SCRIPT_JS_COMMAND: str = (
+  APPLE_SCRIPT_JS_COMMAND: ClassVar[str] = (
       "tell the active tab of front window to execute javascript %(js_script)s")
-  APPLE_SCRIPT_SET_URL: str = (
+  APPLE_SCRIPT_SET_URL: ClassVar[str] = (
       "set URL of the active tab of front window to %(url)s")
 
   @override

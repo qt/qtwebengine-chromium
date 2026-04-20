@@ -5,26 +5,26 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Optional, Type
+from typing import TYPE_CHECKING, ClassVar, Optional, Type
 
 from typing_extensions import override
 
-from crossbench.action_runner.action.action import (ACTION_TIMEOUT, Action,
-                                                    ActionT)
+from crossbench.action_runner.action.action import ACTION_TIMEOUT, ActionT
 from crossbench.action_runner.action.action_type import ActionType
+from crossbench.action_runner.action.probe import BaseProbeAction
 from crossbench.parse import ObjectParser
 
 if TYPE_CHECKING:
   import datetime as dt
 
-  from crossbench.action_runner.base import ActionRunner
   from crossbench.config import ConfigParser
-  from crossbench.runner.run import Run
-  from crossbench.types import JsonDict
 
 
-class MeminfoAction(Action):
-  TYPE: ActionType = ActionType.MEMINFO
+# Left here for backwards compatibility.
+# New probe actions should not have individual class implementations.
+# They should just be used as ProbeActions directly.
+class MeminfoAction(BaseProbeAction):
+  TYPE: ClassVar[ActionType] = ActionType.MEMINFO
 
   @classmethod
   @override
@@ -40,51 +40,16 @@ class MeminfoAction(Action):
 
   def __init__(self,
                browser: bool = True,
-               packages: tuple[str, ...] = tuple(),
+               packages: tuple[str, ...] = (),
                title: Optional[str] = None,
                system: bool = False,
                timeout: dt.timedelta = ACTION_TIMEOUT,
                index: int = 0) -> None:
-    self._browser = browser
-    self._packages = packages
-    self._system = system
-    self._title = title
-    super().__init__(timeout, index)
-
-  @override
-  def validate(self) -> None:
-    super().validate()
-    if not self._browser and not self._packages:
-      raise ValueError(
-          f"{self} must specify at least one of 'browser' or 'packages'")
-
-  @property
-  def browser(self) -> bool:
-    return self._browser
-
-  @property
-  def packages(self) -> tuple[str, ...]:
-    return self._packages
-
-  @property
-  def system(self) -> bool:
-    return self._system
-
-  @property
-  def title(self) -> Optional[str]:
-    return self._title
-
-  @override
-  def to_json(self) -> JsonDict:
-    details = super().to_json()
-    details["browser"] = self.browser
-    details["system"] = self.system
-    if self.packages:
-      details["packages"] = list(self.packages)
-    if self.title:
-      details["title"] = self.title
-    return details
-
-  @override
-  def run_with(self, run: Run, action_runner: ActionRunner) -> None:
-    action_runner.dump_meminfo(run, self)
+    kwargs = {
+        "browser": browser,
+        "system": system,
+        "packages": packages,
+        "title": title
+    }
+    super().__init__(
+        probe="meminfo", kwargs=kwargs, timeout=timeout, index=index)

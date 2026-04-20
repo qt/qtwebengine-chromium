@@ -1,4 +1,4 @@
-module github.com/catapult-project/catapult/web_page_replay_go
+module go.chromium.org/webpagereplay
 
 go 1.23.0
 

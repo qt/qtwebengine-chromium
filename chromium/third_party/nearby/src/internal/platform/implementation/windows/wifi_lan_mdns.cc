@@ -122,8 +122,8 @@ bool WifiLanMdns::StartMdnsService(
   DWORD status = DnsServiceRegister(&dns_service_register_request_, nullptr);
 
   if (status != DNS_REQUEST_PENDING) {
-    NEARBY_LOGS(ERROR) << "Failed to start mDNS advertising for service type ="
-                       << service_type;
+    LOG(ERROR) << "Failed to start mDNS advertising for service type ="
+               << service_type;
     return false;
   }
 
@@ -156,7 +156,7 @@ bool WifiLanMdns::StopMdnsService() {
   DWORD status = DnsServiceDeRegister(&dns_service_register_request_, nullptr);
 
   if (status != DNS_REQUEST_PENDING) {
-    NEARBY_LOGS(ERROR) << "Failed to stop mDNS advertising.";
+    LOG(ERROR) << "Failed to stop mDNS advertising.";
     CleanUp();
     return false;
   }
@@ -195,7 +195,7 @@ std::optional<std::string> WifiLanMdns::GetComputerName() {
 
 void WifiLanMdns::DnsServiceRegisterComplete(DWORD Status, PVOID pQueryContext,
                                              PDNS_SERVICE_INSTANCE pInstance) {
-  LOG(INFO) << "DnsServiceRegisterComplete: " << Status;
+  VLOG(1) << "DnsServiceRegisterComplete: " << Status;
   WifiLanMdns* mdns = static_cast<WifiLanMdns*>(pQueryContext);
   mdns->NotifyStatusUpdated(Status);
 }

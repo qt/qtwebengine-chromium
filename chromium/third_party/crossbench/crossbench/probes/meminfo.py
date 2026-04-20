@@ -7,18 +7,16 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import json
-from typing import TYPE_CHECKING, Any, Self, Type
+from typing import TYPE_CHECKING, Any, ClassVar, Self, Type
 
 from typing_extensions import override
 
-from crossbench import exception
-from crossbench.path import safe_filename
-from crossbench.plt.process_meminfo import ProcessMeminfo
+from crossbench.path import AnyPath, LocalPath, safe_filename
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
-from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
-  from crossbench.path import AnyPath, LocalPath
+  from crossbench import exception
+  from crossbench.plt.process_meminfo import ProcessMeminfo
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
@@ -26,10 +24,8 @@ if TYPE_CHECKING:
 class MeminfoProbe(Probe):
   """
     General-purpose Probe that records the specified meminfo.
-    """
-
-  NAME = "meminfo"
-  RESULT_LOCATION = ResultLocation.LOCAL
+  """
+  NAME: ClassVar = "meminfo"
 
   @classmethod
   @override
@@ -61,12 +57,12 @@ class MeminfoProbeContext(ProbeContext[MeminfoProbe]):
     pass
 
   def _dump_file(self, title: str | None,
-                 info_stack: exception.TInfoStack) -> AnyPath:
+                 info_stack: exception.TInfoStack) -> LocalPath:
     name = "_".join(info_stack)
     if title:
       name = f"{title}.{name}"
     name = safe_filename(name).lower() + ".json"
-    return self._default_result_path / name
+    return self.local_result_path / name
 
   def _timeout_from_deadline(self, deadline: dt.datetime) -> dt.timedelta:
     timeout = deadline - dt.datetime.now()
@@ -74,11 +70,26 @@ class MeminfoProbeContext(ProbeContext[MeminfoProbe]):
       raise TimeoutError("dump_meminfo timed out")
     return timeout
 
-  def dump_meminfo(self, timeout: dt.timedelta, browser: bool, system: bool,
-                   packages: tuple[str, ...], title: str | None,
-                   info_stack: exception.TInfoStack) -> None:
+  @override
+  def invoke(self, info_stack: exception.TInfoStack, timeout: dt.timedelta,
+             **kwargs) -> None:
+    self._dump_meminfo(info_stack, timeout, **kwargs)
+
+  def _dump_meminfo(self,
+                    info_stack: exception.TInfoStack,
+                    timeout: dt.timedelta,
+                    browser: bool = True,
+                    system: bool = False,
+                    packages: tuple[str, ...] | None = None,
+                    title: str | None = None,
+                    **kwargs) -> None:
+    self.expect_no_extra_kwargs(kwargs)
+
     deadline = dt.datetime.now() + timeout
     process_meminfos: list[ProcessMeminfo] = []
+
+    if packages is None:
+      packages = ()
     for package in packages:
       process_meminfos += self.browser_platform.process_meminfo(
           package, self._timeout_from_deadline(deadline))
@@ -103,7 +114,7 @@ class MeminfoProbeContext(ProbeContext[MeminfoProbe]):
       meminfo_json["processes"].append(dataclasses.asdict(process_meminfo))
 
     self.browser.performance_mark("meminfo", detail=meminfo_json)
-    with open(self._dump_file(title, info_stack), "x", encoding="utf-8") as f:
+    with self._dump_file(title, info_stack).open("x", encoding="utf-8") as f:
       json.dump(meminfo_json, f)
 
   @override

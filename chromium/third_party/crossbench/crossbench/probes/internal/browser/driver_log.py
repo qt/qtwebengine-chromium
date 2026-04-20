@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -19,7 +19,7 @@ class BrowserDriverLogProbe(InternalProbe):
   """
   Runner-internal: Collects the driver logs
   """
-  NAME = "browser.driver.log"
+  NAME: ClassVar = "browser.driver.log"
 
   @override
   def get_context_cls(self) -> Type[BrowserDriverLogProbeContext]:

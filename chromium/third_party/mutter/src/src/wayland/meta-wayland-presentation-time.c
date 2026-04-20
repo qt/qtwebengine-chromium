@@ -111,19 +111,10 @@ wp_presentation_bind (struct wl_client *client,
   wp_presentation_send_clock_id (resource, CLOCK_MONOTONIC);
 }
 
-static void
-discard_non_cursor_feedbacks (struct wl_list *feedbacks)
-{
-  MetaWaylandPresentationFeedback *feedback, *next;
-
-  wl_list_for_each_safe (feedback, next, feedbacks, link)
-    {
-      if (META_IS_WAYLAND_CURSOR_SURFACE (feedback->surface->role))
-        continue;
-
-      meta_wayland_presentation_feedback_discard (feedback);
-    }
-}
+static struct wl_list *
+meta_wayland_presentation_time_ensure_feedbacks (MetaWaylandPresentationTime *presentation_time,
+                                                 ClutterStageView            *stage_view,
+                                                 int64_t                      view_frame_counter);
 
 static void
 on_after_paint (ClutterStage          *stage,
@@ -134,20 +125,9 @@ on_after_paint (ClutterStage          *stage,
   struct wl_list *feedbacks;
   GList *l;
 
-  /*
-   * We just painted this stage view, which means that all non-cursor feedbacks
-   * that didn't fire (e.g. due to page flip failing) are now obsolete and
-   * should be discarded.
-   *
-   * Cursor feedbacks have a similar mechanism done separately, mainly because
-   * they are painted earlier, in prepare_frame(). This means that the feedbacks
-   * list currently contains stale non-cursor feedbacks and up-to-date cursor
-   * feedbacks.
-   */
   feedbacks =
     meta_wayland_presentation_time_ensure_feedbacks (&compositor->presentation_time,
-                                                     stage_view);
-  discard_non_cursor_feedbacks (feedbacks);
+                                                     stage_view, frame->frame_count);
 
   l = compositor->presentation_time.feedback_surfaces;
   while (l)
@@ -172,8 +152,6 @@ on_after_paint (ClutterStage          *stage,
           wl_list_insert_list (feedbacks,
                                &surface->presentation_time.feedback_list);
           wl_list_init (&surface->presentation_time.feedback_list);
-
-          surface->presentation_time.needs_sequence_update = TRUE;
         }
 
       compositor->presentation_time.feedback_surfaces =
@@ -231,7 +209,8 @@ meta_wayland_init_presentation_time (MetaWaylandCompositor *compositor)
   ClutterActor *stage = meta_backend_get_stage (backend);
 
   compositor->presentation_time.feedbacks =
-    g_hash_table_new_full (NULL, NULL, NULL, destroy_feedback_list);
+    g_hash_table_new_full (NULL, NULL, NULL,
+                           (GDestroyNotify) g_hash_table_destroy);
 
   g_signal_connect (monitor_manager, "monitors-changed-internal",
                     G_CALLBACK (on_monitors_changed), compositor);
@@ -261,10 +240,13 @@ maybe_update_presentation_sequence (MetaWaylandSurface *surface,
 {
   unsigned int sequence_delta;
 
-  if (!surface->presentation_time.needs_sequence_update)
+  if (surface->presentation_time.last_output == output &&
+      surface->presentation_time.last_view_frame_counter ==
+      frame_info->view_frame_counter)
     return;
 
-  surface->presentation_time.needs_sequence_update = FALSE;
+  surface->presentation_time.last_view_frame_counter =
+    frame_info->view_frame_counter;
 
   if (!(frame_info->flags & CLUTTER_FRAME_INFO_FLAG_VSYNC))
     goto invalid_sequence;
@@ -323,6 +305,8 @@ meta_wayland_presentation_feedback_present (MetaWaylandPresentationFeedback *fee
   uint32_t seq_hi, seq_lo;
   uint32_t flags;
   const GList *l;
+  MetaMonitorMode *mode;
+  gboolean is_vrr;
 
   if (output == NULL)
     {
@@ -337,7 +321,16 @@ meta_wayland_presentation_feedback_present (MetaWaylandPresentationFeedback *fee
   tv_sec_lo = time_s;
   tv_nsec = (uint32_t) us2ns (time_us - s2us (time_s));
 
-  refresh_interval_ns = (uint32_t) (0.5 + s2ns (1) / frame_info->refresh_rate);
+  mode = meta_wayland_output_get_monitor_mode (output);
+
+  is_vrr = meta_monitor_mode_get_refresh_rate_mode (mode) ==
+           META_CRTC_REFRESH_RATE_MODE_VARIABLE;
+
+  /* The refresh rate interval is required to be 0 for vrr in version 1.*/
+  if (is_vrr && wl_resource_get_version (feedback->resource) == 1)
+    refresh_interval_ns = 0;
+  else
+    refresh_interval_ns = (uint32_t) (0.5 + s2ns (1) / frame_info->refresh_rate);
 
   maybe_update_presentation_sequence (surface, frame_info, output);
 
@@ -378,52 +371,120 @@ meta_wayland_presentation_feedback_present (MetaWaylandPresentationFeedback *fee
   wl_resource_destroy (feedback->resource);
 }
 
-struct wl_list *
+static struct wl_list *
 meta_wayland_presentation_time_ensure_feedbacks (MetaWaylandPresentationTime *presentation_time,
-                                                 ClutterStageView            *stage_view)
+                                                 ClutterStageView            *stage_view,
+                                                 int64_t                      view_frame_counter)
 {
-  if (!g_hash_table_contains (presentation_time->feedbacks, stage_view))
+  GHashTable *hash_table;
+  struct wl_list *list;
+
+  hash_table = g_hash_table_lookup (presentation_time->feedbacks, stage_view);
+  if (!hash_table)
     {
-      struct wl_list *list;
-
-      list = g_new0 (struct wl_list, 1);
-      wl_list_init (list);
-      g_hash_table_insert (presentation_time->feedbacks, stage_view, list);
-
-      return list;
+      hash_table = g_hash_table_new_full (g_int64_hash, g_int64_equal, g_free,
+                                          destroy_feedback_list);
+      g_hash_table_insert (presentation_time->feedbacks, stage_view, hash_table);
     }
 
-  return g_hash_table_lookup (presentation_time->feedbacks, stage_view);
+  list = g_hash_table_lookup (hash_table, &view_frame_counter);
+  if (!list)
+    {
+      int64_t *key;
+
+      key = g_new (int64_t, 1);
+      *key = view_frame_counter;
+      list = g_new0 (struct wl_list, 1);
+      wl_list_init (list);
+      g_hash_table_insert (hash_table, key, list);
+    }
+
+  return list;
+}
+
+static MetaWaylandOutput *
+get_output_for_stage_view (MetaWaylandCompositor *compositor,
+                           ClutterStageView      *stage_view)
+{
+  MetaCrtc *crtc;
+  MetaOutput *output;
+  MetaMonitor *monitor;
+
+  crtc = meta_renderer_view_get_crtc (META_RENDERER_VIEW (stage_view));
+
+  /*
+   * All outputs occupy the same region of the screen, as their contents are
+   * the same, so pick the first one.
+   */
+  output = meta_crtc_get_outputs (crtc)->data;
+
+  monitor = meta_output_get_monitor (output);
+  return g_hash_table_lookup (compositor->outputs,
+                              meta_monitor_get_spec (monitor));
+}
+
+void
+meta_wayland_presentation_time_present_feedbacks (MetaWaylandCompositor *compositor,
+                                                  ClutterStageView      *stage_view,
+                                                  ClutterFrameInfo      *frame_info)
+{
+  struct wl_list *feedbacks;
+  GHashTable *hash_table;
+  GHashTableIter iter;
+  int64_t *key;
+
+  hash_table = g_hash_table_lookup (compositor->presentation_time.feedbacks,
+                                    stage_view);
+  if (!hash_table)
+    return;
+
+  g_hash_table_iter_init (&iter, hash_table);
+  while (g_hash_table_iter_next (&iter, (gpointer *) &key, (gpointer *)&feedbacks))
+    {
+      MetaWaylandPresentationFeedback *feedback, *next;
+
+      if (*key > frame_info->view_frame_counter)
+        continue;
+
+      if (*key == frame_info->view_frame_counter)
+        {
+          MetaWaylandOutput *output;
+
+          output = get_output_for_stage_view (compositor, stage_view);
+          wl_list_for_each_safe (feedback, next, feedbacks, link)
+            {
+              meta_wayland_presentation_feedback_present (feedback,
+                                                          frame_info,
+                                                          output);
+            }
+        }
+
+      /* This discards feedbacks for older frames which were never presented */
+      g_hash_table_iter_remove (&iter);
+    }
+
+  g_hash_table_remove (hash_table, &frame_info->view_frame_counter);
 }
 
 void
 meta_wayland_presentation_time_cursor_painted (MetaWaylandPresentationTime *presentation_time,
                                                ClutterStageView            *stage_view,
+                                               int64_t                      view_frame_counter,
                                                MetaWaylandCursorSurface    *cursor_surface)
 {
-  struct wl_list *feedbacks;
-  MetaWaylandPresentationFeedback *feedback, *next;
   MetaWaylandSurfaceRole *role = META_WAYLAND_SURFACE_ROLE (cursor_surface);
   MetaWaylandSurface *surface = meta_wayland_surface_role_get_surface (role);
+  struct wl_list *feedbacks;
 
-  feedbacks =
-    meta_wayland_presentation_time_ensure_feedbacks (presentation_time,
-                                                     stage_view);
-
-  /* Discard previous feedbacks for this cursor as now it has gone stale. */
-  wl_list_for_each_safe (feedback, next, feedbacks, link)
-    {
-      if (feedback->surface->role == role)
-        meta_wayland_presentation_feedback_discard (feedback);
-    }
+  if (wl_list_empty (&surface->presentation_time.feedback_list))
+    return;
 
   /* Add new feedbacks. */
-  if (!wl_list_empty (&surface->presentation_time.feedback_list))
-    {
-      wl_list_insert_list (feedbacks,
-                           &surface->presentation_time.feedback_list);
-      wl_list_init (&surface->presentation_time.feedback_list);
-
-      surface->presentation_time.needs_sequence_update = TRUE;
-    }
+  feedbacks =
+    meta_wayland_presentation_time_ensure_feedbacks (presentation_time,
+                                                     stage_view,
+                                                     view_frame_counter);
+  wl_list_insert_list (feedbacks,
+                       &surface->presentation_time.feedback_list);
+  wl_list_init (&surface->presentation_time.feedback_list);
 }

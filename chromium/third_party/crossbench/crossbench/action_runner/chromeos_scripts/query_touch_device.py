@@ -6,14 +6,14 @@
 
 # This script is to be run directly on a ChromeOS device to query and return
 # the touch device information.
+from __future__ import annotations
 
 import logging
 import sys
 
 sys.path.append("/usr/local/autotest/bin")
 
-# pylint: disable=wrong-import-position
-import common  # pylint: disable=unused-import # noqa: F401
+import common  # noqa: F401
 from autotest_lib.client.bin.input import input_device
 from autotest_lib.client.cros.input_playback import input_playback
 

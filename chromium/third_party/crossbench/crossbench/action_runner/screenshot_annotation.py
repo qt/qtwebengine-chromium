@@ -28,7 +28,7 @@ class ScreenshotAnnotation(abc.ABC):
 def annotate_screenshot_svg(screen_width: int, screen_height: int,
                             screenshot_file: str,
                             annotations: Sequence[ScreenshotAnnotation]) -> str:
-  all_annotations = ''.join(
+  all_annotations = "".join(
       [annotation.svg_annotation() for annotation in annotations])
   return (f'<svg version="1.1"'
           f' width="{screen_width}" height="{screen_height}"'

@@ -100,8 +100,8 @@ typedef struct _GSourceCallbackFuncs    GSourceCallbackFuncs;
 
 /**
  * GSourceFuncs:
- * @prepare: Called before all the file descriptors are polled. If the
- *     source can determine that it is ready here (without waiting for the
+ * @prepare: (nullable): Called before all the file descriptors are polled. If
+ *     the source can determine that it is ready here (without waiting for the
  *     results of the poll() call) it should return %TRUE. It can also return
  *     a @timeout_ value which should be the maximum timeout (in milliseconds)
  *     which should be passed to the poll() call. The actual timeout used will
@@ -111,9 +111,9 @@ typedef struct _GSourceCallbackFuncs    GSourceCallbackFuncs;
  *     %FALSE with a timeout of -1.  If @prepare returns a
  *     timeout and the source also has a ready time set, then the
  *     lower of the two will be used.
- * @check: Called after all the file descriptors are polled. The source
- *     should return %TRUE if it is ready to be dispatched. Note that some
- *     time may have passed since the previous prepare function was called,
+ * @check: (nullable): Called after all the file descriptors are polled. The
+ *     source should return %TRUE if it is ready to be dispatched. Note that
+ *     some time may have passed since the previous prepare function was called,
  *     so the source should be checked again here.  Since 2.36 this may
  *     be %NULL, in which case the effect is as if the function always returns
  *     %FALSE.
@@ -127,11 +127,12 @@ typedef struct _GSourceCallbackFuncs    GSourceCallbackFuncs;
  *     The return value of the @dispatch function should be
  *     [const@GLib.SOURCE_REMOVE] if the source should be removed or
  *     [const@GLib.SOURCE_CONTINUE] to keep it.
- * @finalize: Called when the source is finalized. At this point, the source
- *     will have been destroyed, had its callback cleared, and have been removed
- *     from its [struct@GLib.MainContext], but it will still have its final
- *     reference count, so methods can be called on it from within this
- *     function.
+ * @finalize: (nullable): Called when the source is finalized. At this point,
+ *     the source will have been destroyed, had its callback cleared, and have
+ *     been removed from its [struct@GLib.MainContext], but it will still have
+ *     its final reference count, so methods can be called on it from within
+ *     this function. This may be %NULL, in which case the effect is as if the
+ *     function does nothing and returns.
  *
  * The `GSourceFuncs` struct contains a table of
  * functions used to handle event sources in a generic manner.
@@ -275,7 +276,7 @@ struct _GSource
   GMainContext *context;
 
   gint priority;
-  guint flags;
+  guint flags; /* (atomic) */
   guint source_id;
 
   GSList *poll_fds;
@@ -635,6 +636,9 @@ typedef void GMainContextPusher GLIB_AVAILABLE_TYPE_IN_2_64;
  */
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 GLIB_AVAILABLE_STATIC_INLINE_IN_2_64
+static inline GMainContextPusher *g_main_context_pusher_new (GMainContext *main_context);
+
+GLIB_AVAILABLE_STATIC_INLINE_IN_2_64
 static inline GMainContextPusher *
 g_main_context_pusher_new (GMainContext *main_context)
 {
@@ -656,6 +660,9 @@ G_GNUC_END_IGNORE_DEPRECATIONS
  * Since: 2.64
  */
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+GLIB_AVAILABLE_STATIC_INLINE_IN_2_64
+static inline void g_main_context_pusher_free (GMainContextPusher *pusher);
+
 GLIB_AVAILABLE_STATIC_INLINE_IN_2_64
 static inline void
 g_main_context_pusher_free (GMainContextPusher *pusher)
@@ -720,6 +727,8 @@ guint    g_source_get_id          (GSource        *source);
 
 GLIB_AVAILABLE_IN_ALL
 GMainContext *g_source_get_context (GSource       *source);
+GLIB_AVAILABLE_IN_2_86
+GMainContext *g_source_dup_context (GSource       *source);
 
 GLIB_AVAILABLE_IN_ALL
 void     g_source_set_callback    (GSource        *source,
@@ -866,6 +875,54 @@ void    g_clear_handle_id (guint           *tag_ptr,
   } G_STMT_END                                             \
   GLIB_AVAILABLE_MACRO_IN_2_56
 
+/**
+ * g_steal_handle_id:
+ * @handle_pointer: (inout) (not optional): a pointer to a handle ID
+ *
+ * Sets @handle_pointer to `0`, returning the value that was there before.
+ *
+ * Conceptually, this transfers the ownership of the handle ID from the
+ * referenced variable to the ‘caller’ of the macro (ie: ‘steals’ the
+ * handle ID).
+ *
+ * This can be very useful to make ownership transfer explicit, or to prevent
+ * a handle from being released multiple times. For example:
+ *
+ * ```c
+ * void
+ * maybe_unsubscribe_signal (ContextStruct *data)
+ * {
+ *   if (some_complex_logic (data))
+ *     {
+ *       g_dbus_connection_signal_unsubscribe (data->connection,
+ *                                             g_steal_handle_id (&data->subscription_id));
+ *       // now data->subscription_id isn’t a dangling handle
+ *     }
+ * }
+ * ```
+ *
+ * While [func@GLib.clear_handle_id] can be used in many of the same situations
+ * as `g_steal_handle_id()`, this is one situation where it cannot be used, as
+ * there is no way to pass the `GDBusConnection` to a
+ * [type@GLib.ClearHandleFunc].
+ *
+ * Since: 2.84
+ */
+GLIB_AVAILABLE_STATIC_INLINE_IN_2_84
+static inline unsigned int g_steal_handle_id (unsigned int *handle_pointer);
+
+GLIB_AVAILABLE_STATIC_INLINE_IN_2_84
+static inline unsigned int
+g_steal_handle_id (unsigned int *handle_pointer)
+{
+  unsigned int handle;
+
+  handle = *handle_pointer;
+  *handle_pointer = 0;
+
+  return handle;
+}
+
 /* Idles, child watchers and timeouts */
 GLIB_AVAILABLE_IN_ALL
 guint    g_timeout_add_full         (gint            priority,
@@ -929,6 +986,30 @@ GLIB_AVAILABLE_IN_ALL
 void     g_main_context_invoke      (GMainContext   *context,
                                      GSourceFunc     function,
                                      gpointer        data);
+
+/**
+ * g_steal_fd:
+ * @fd_ptr: (not optional) (inout): A pointer to a file descriptor
+ *
+ * Sets @fd_ptr to `-1`, returning the value that was there before.
+ *
+ * Conceptually, this transfers the ownership of the file descriptor
+ * from the referenced variable to the caller of the function (i.e.
+ * ‘steals’ the reference). This is very similar to [func@GLib.steal_pointer],
+ * but for file descriptors.
+ *
+ * On POSIX platforms, this function is async-signal safe
+ * (see [`signal(7)`](man:signal(7)) and
+ * [`signal-safety(7)`](man:signal-safety(7))), making it safe to call from a
+ * signal handler or a #GSpawnChildSetupFunc.
+ *
+ * This function preserves the value of `errno`.
+ *
+ * Returns: the value that @fd_ptr previously had
+ * Since: 2.70
+ */
+GLIB_AVAILABLE_STATIC_INLINE_IN_2_70
+static inline int g_steal_fd (int *fd_ptr);
 
 GLIB_AVAILABLE_STATIC_INLINE_IN_2_70
 static inline int

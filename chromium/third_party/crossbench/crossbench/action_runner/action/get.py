@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import functools
-from typing import TYPE_CHECKING, Self, Type
+from typing import TYPE_CHECKING, ClassVar, Self, Type
 
 from typing_extensions import override
 
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
   from crossbench.types import JsonDict
 
 class GetAction(BaseDurationAction):
-  TYPE: ActionType = ActionType.GET
+  TYPE: ClassVar[ActionType] = ActionType.GET
 
   @classmethod
   @override

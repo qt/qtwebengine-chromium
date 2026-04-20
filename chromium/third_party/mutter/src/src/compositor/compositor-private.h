@@ -52,7 +52,8 @@ int64_t meta_compositor_monotonic_to_high_res_xserver_time (MetaCompositor *comp
                                                             int64_t         monotonic_time_us);
 
 void meta_compositor_flash_window (MetaCompositor *compositor,
-                                   MetaWindow     *window);
+                                   MetaWindow     *window,
+                                   int             n_flashes);
 
 MetaCloseDialog * meta_compositor_create_close_dialog (MetaCompositor *compositor,
                                                        MetaWindow     *window);
@@ -72,11 +73,11 @@ gboolean meta_compositor_is_switching_workspace (MetaCompositor *compositor);
 gboolean meta_compositor_drag_window (MetaCompositor       *compositor,
                                       MetaWindow           *window,
                                       MetaGrabOp            grab_op,
+                                      MetaDragWindowFlags   flags,
                                       ClutterInputDevice   *device,
                                       ClutterEventSequence *sequence,
                                       uint32_t              timestamp,
-                                      graphene_point_t     *pos_hint,
-                                      ClutterActor         *grab_actor);
+                                      graphene_point_t     *pos_hint);
 
 MetaWindowDrag * meta_compositor_get_current_window_drag (MetaCompositor *compositor);
 
@@ -141,7 +142,8 @@ void meta_compositor_sync_stack (MetaCompositor *compositor,
                                  GList          *stack);
 
 void meta_compositor_flash_display (MetaCompositor *compositor,
-                                    MetaDisplay    *display);
+                                    MetaDisplay    *display,
+                                    int             n_flashes);
 
 void meta_compositor_show_tile_preview (MetaCompositor *compositor,
                                         MetaWindow     *window,

@@ -79,8 +79,9 @@ class BaseEnv(abc.ABC):
                       binaries: Iterable[str],
                       message: str = "Missing binaries: {}") -> None:
     assert not isinstance(binaries, str), "Expected iterable of strings."
-    missing_binaries = list(
-        binary for binary in binaries if not self._platform.which(binary))
+    missing_binaries = [
+        binary for binary in binaries if not self._platform.which(binary)
+    ]
     if missing_binaries:
       self.handle_validation_warning(message.format(missing_binaries))
 

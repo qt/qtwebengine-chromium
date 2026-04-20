@@ -366,9 +366,11 @@ meta_x11_display_dispose (GObject *object)
       mtk_x11_error_trap_push (x11_display->xdisplay);
       XSelectInput (x11_display->xdisplay, x11_display->xroot, 0);
       if (mtk_x11_error_trap_pop_with_return (x11_display->xdisplay) != Success)
-        meta_warning ("Could not release screen %d on display \"%s\"",
-                      DefaultScreen (x11_display->xdisplay),
-                      x11_display->name);
+        {
+          g_warning ("Could not release screen %d on display \"%s\"",
+                     DefaultScreen (x11_display->xdisplay),
+                     x11_display->name);
+        }
 
       x11_display->xroot = None;
     }
@@ -479,10 +481,11 @@ query_xsync_extension (MetaX11Display *x11_display)
       XSyncSetPriority (x11_display->xdisplay, None, 10);
     }
 
-  meta_verbose ("Attempted to init Xsync, found version %d.%d error base %d event base %d",
-                major, minor,
-                x11_display->xsync_error_base,
-                x11_display->xsync_event_base);
+  meta_topic (META_DEBUG_X11,
+              "Attempted to init Xsync, found version %d.%d error base %d event base %d",
+              major, minor,
+              x11_display->xsync_error_base,
+              x11_display->xsync_event_base);
 }
 
 static void
@@ -503,9 +506,10 @@ query_xshape_extension (MetaX11Display *x11_display)
   else
     x11_display->have_shape = TRUE;
 
-  meta_verbose ("Attempted to init Shape, found error base %d event base %d",
-                x11_display->shape_error_base,
-                x11_display->shape_event_base);
+  meta_topic (META_DEBUG_X11,
+              "Attempted to init Shape, found error base %d event base %d",
+              x11_display->shape_error_base,
+              x11_display->shape_event_base);
 }
 
 static void
@@ -540,12 +544,13 @@ query_xcomposite_extension (MetaX11Display *x11_display)
         }
     }
 
-  meta_verbose ("Attempted to init Composite, found error base %d event base %d "
-                "extn ver %d %d",
-                x11_display->composite_error_base,
-                x11_display->composite_event_base,
-                x11_display->composite_major_version,
-                x11_display->composite_minor_version);
+  meta_topic (META_DEBUG_X11,
+              "Attempted to init Composite, found error base %d event base %d "
+              "extn ver %d %d",
+              x11_display->composite_error_base,
+              x11_display->composite_event_base,
+              x11_display->composite_major_version,
+              x11_display->composite_minor_version);
 }
 
 static void
@@ -566,9 +571,10 @@ query_xdamage_extension (MetaX11Display *x11_display)
   else
     x11_display->have_damage = TRUE;
 
-  meta_verbose ("Attempted to init Damage, found error base %d event base %d",
-                x11_display->damage_error_base,
-                x11_display->damage_event_base);
+  meta_topic (META_DEBUG_X11,
+              "Attempted to init Damage, found error base %d event base %d",
+              x11_display->damage_error_base,
+              x11_display->damage_event_base);
 }
 
 static void
@@ -593,9 +599,10 @@ query_xfixes_extension (MetaX11Display *x11_display)
       meta_fatal ("Mutter requires XFixes 5.0");
     }
 
-  meta_verbose ("Attempted to init XFixes, found error base %d event base %d",
-                x11_display->xfixes_error_base,
-                x11_display->xfixes_event_base);
+  meta_topic (META_DEBUG_X11,
+              "Attempted to init XFixes, found error base %d event base %d",
+              x11_display->xfixes_error_base,
+              x11_display->xfixes_event_base);
 }
 
 static void
@@ -642,7 +649,7 @@ init_x11_bell (MetaX11Display *x11_display)
                           NULL, NULL))
     {
       x11_display->xkb_base_event_type = -1;
-      meta_warning ("could not find XKB extension.");
+      g_warning ("Could not find XKB extension.");
     }
   else
     {
@@ -703,7 +710,8 @@ set_desktop_geometry_hint (MetaX11Display *x11_display)
   data[0] = monitor_width;
   data[1] = monitor_height;
 
-  meta_verbose ("Setting _NET_DESKTOP_GEOMETRY to %lu, %lu", data[0], data[1]);
+  meta_topic (META_DEBUG_X11,
+              "Setting _NET_DESKTOP_GEOMETRY to %lu, %lu", data[0], data[1]);
 
   mtk_x11_error_trap_push (x11_display->xdisplay);
   XChangeProperty (x11_display->xdisplay,
@@ -728,7 +736,7 @@ set_desktop_viewport_hint (MetaX11Display *x11_display)
   data[0] = 0;
   data[1] = 0;
 
-  meta_verbose ("Setting _NET_DESKTOP_VIEWPORT to 0, 0");
+  meta_topic (META_DEBUG_X11, "Setting _NET_DESKTOP_VIEWPORT to 0, 0");
 
   mtk_x11_error_trap_push (x11_display->xdisplay);
   XChangeProperty (x11_display->xdisplay,
@@ -847,8 +855,10 @@ take_manager_selection (MetaX11Display *x11_display,
         }
       else
         {
-          meta_warning (_("Display “%s” already has a window manager; try using the --replace option to replace the current window manager."),
-                        x11_display->name);
+          g_warning (_("Display “%s” already has a window manager; "
+                       "try using the --replace option to replace "
+                       "the current window manager."),
+                     x11_display->name);
           return None;
         }
     }
@@ -862,7 +872,8 @@ take_manager_selection (MetaX11Display *x11_display,
 
   if (XGetSelectionOwner (x11_display->xdisplay, manager_atom) != new_owner)
     {
-      meta_warning ("Could not acquire selection: %s", XGetAtomName (x11_display->xdisplay, manager_atom));
+      g_warning ("Could not acquire selection: %s",
+                 XGetAtomName (x11_display->xdisplay, manager_atom));
       return None;
     }
 
@@ -891,7 +902,7 @@ take_manager_selection (MetaX11Display *x11_display,
 
       /* We sort of block infinitely here which is probably lame. */
 
-      meta_verbose ("Waiting for old window manager to exit");
+      meta_topic (META_DEBUG_X11, "Waiting for old window manager to exit");
       do
         XWindowEvent (x11_display->xdisplay, current_owner, StructureNotifyMask, &event);
       while (event.type != DestroyNotify);
@@ -992,7 +1003,7 @@ set_active_workspace_hint (MetaWorkspaceManager *workspace_manager,
 
   data[0] = meta_workspace_index (workspace_manager->active_workspace);
 
-  meta_verbose ("Setting _NET_CURRENT_DESKTOP to %lu", data[0]);
+  meta_topic (META_DEBUG_X11, "Setting _NET_CURRENT_DESKTOP to %lu", data[0]);
 
   mtk_x11_error_trap_push (x11_display->xdisplay);
   XChangeProperty (x11_display->xdisplay,
@@ -1016,7 +1027,8 @@ set_number_of_spaces_hint (MetaWorkspaceManager *workspace_manager,
 
   data[0] = meta_workspace_manager_get_n_workspaces (workspace_manager);
 
-  meta_verbose ("Setting _NET_NUMBER_OF_DESKTOPS to %lu", data[0]);
+  meta_topic (META_DEBUG_X11,
+              "Setting _NET_NUMBER_OF_DESKTOPS to %lu", data[0]);
 
   mtk_x11_error_trap_push (x11_display->xdisplay);
   XChangeProperty (x11_display->xdisplay,
@@ -1221,17 +1233,15 @@ open_x_display (MetaDisplay  *display,
       return NULL;
     }
 
-  meta_verbose ("Opening display '%s'", xdisplay_name);
+  meta_topic (META_DEBUG_X11, "Opening display '%s'", xdisplay_name);
 
   xdisplay = XOpenDisplay (xdisplay_name);
 
   if (xdisplay == NULL)
     {
-      meta_warning (_("Failed to open X Window System display “%s”"),
-                    xdisplay_name);
-
       g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                   "Failed to open X11 display");
+                   _("Failed to open X Window System display “%s”"),
+                   xdisplay_name);
 
       return NULL;
     }
@@ -1291,7 +1301,7 @@ stage_has_focus_actor (MetaX11Display *x11_display)
 
   key_focus = clutter_stage_get_key_focus (stage);
 
-  return key_focus != CLUTTER_ACTOR (stage);
+  return key_focus != NULL;
 }
 
 static void
@@ -1462,11 +1472,9 @@ meta_x11_display_new (MetaDisplay  *display,
    */
   if (xroot == None)
     {
-      meta_warning (_("Screen %d on display “%s” is invalid"),
-                    number, XDisplayName (NULL));
-
       g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                   "Failed to open default X11 screen");
+                   _("Screen %d on display “%s” is invalid"),
+                   number, XDisplayName (NULL));
 
       XFlush (xdisplay);
       XCloseDisplay (xdisplay);
@@ -1501,7 +1509,7 @@ meta_x11_display_new (MetaDisplay  *display,
   x11_display->default_xvisual = DefaultVisualOfScreen (xscreen);
   x11_display->default_depth = DefaultDepthOfScreen (xscreen);
 
-  meta_verbose ("Creating %d atoms", (int) G_N_ELEMENTS (atom_names));
+  meta_topic (META_DEBUG_X11, "Creating %d atoms", (int) G_N_ELEMENTS (atom_names));
   XInternAtoms (xdisplay, (char **)atom_names, G_N_ELEMENTS (atom_names),
                 False, atoms);
 
@@ -1758,8 +1766,8 @@ meta_x11_display_restore_active_workspace (MetaX11Display *x11_display)
                               x11_display->atom__NET_CURRENT_DESKTOP,
                               &current_workspace_index))
     {
-      meta_verbose ("Read existing _NET_CURRENT_DESKTOP = %d",
-                    (int) current_workspace_index);
+      meta_topic (META_DEBUG_X11, "Read existing _NET_CURRENT_DESKTOP = %d",
+                  (int) current_workspace_index);
 
       /* Switch to the _NET_CURRENT_DESKTOP workspace */
       current_workspace = meta_workspace_manager_get_workspace_by_index (display->workspace_manager,
@@ -1770,7 +1778,7 @@ meta_x11_display_restore_active_workspace (MetaX11Display *x11_display)
     }
   else
     {
-      meta_verbose ("No _NET_CURRENT_DESKTOP present");
+      meta_topic (META_DEBUG_X11, "No _NET_CURRENT_DESKTOP present");
     }
 
   set_active_workspace_hint (display->workspace_manager, x11_display);
@@ -2253,6 +2261,14 @@ meta_x11_display_update_active_window_hint (MetaX11Display *x11_display)
 
   if (focus_window)
     data[0] = meta_window_x11_get_xwindow (focus_window);
+#ifdef HAVE_XWAYLAND
+  else if (x11_display->focus_xwindow && meta_is_wayland_compositor ())
+    /* On Wayland, when a Wayland window is focused, indicate that an
+     * actual window is focused rather than None, as None is otherwise
+     * also used during transient focus changes.
+     */
+    data[0] = x11_display->no_focus_window;
+#endif
   else
     data[0] = None;
 
@@ -2518,7 +2534,8 @@ meta_x11_display_update_workspace_names (MetaX11Display *x11_display)
                                 x11_display->atom__NET_DESKTOP_NAMES,
                                 &names, &n_names))
     {
-      meta_verbose ("Failed to get workspace names from root window");
+      meta_topic (META_DEBUG_X11,
+                  "Failed to get workspace names from root window");
       return;
     }
 
@@ -2579,7 +2596,8 @@ meta_x11_display_update_workspace_layout (MetaX11Display *x11_display)
               vertical_layout = TRUE;
               break;
             default:
-              meta_warning ("Someone set a weird orientation in _NET_DESKTOP_LAYOUT");
+              meta_topic (META_DEBUG_X11,
+                          "Someone set a weird orientation in _NET_DESKTOP_LAYOUT");
               break;
             }
 
@@ -2588,7 +2606,9 @@ meta_x11_display_update_workspace_layout (MetaX11Display *x11_display)
 
           if (rows <= 0 && cols <= 0)
             {
-              meta_warning ("Columns = %d rows = %d in _NET_DESKTOP_LAYOUT makes no sense", rows, cols);
+              meta_topic (META_DEBUG_X11,
+                          "Columns = %d rows = %d in _NET_DESKTOP_LAYOUT makes no sense",
+                          rows, cols);
             }
           else
             {
@@ -2620,15 +2640,17 @@ meta_x11_display_update_workspace_layout (MetaX11Display *x11_display)
                   starting_corner = META_DISPLAY_BOTTOMLEFT;
                   break;
                 default:
-                  meta_warning ("Someone set a weird starting corner in _NET_DESKTOP_LAYOUT");
+                  meta_topic (META_DEBUG_X11,
+                              "Someone set a weird starting corner in _NET_DESKTOP_LAYOUT");
                   break;
                 }
             }
         }
       else
         {
-          meta_warning ("Someone set _NET_DESKTOP_LAYOUT to %d integers instead of 4 "
-                        "(3 is accepted for backwards compat)", n_items);
+          meta_topic (META_DEBUG_X11,
+                      "Someone set _NET_DESKTOP_LAYOUT to %d integers instead of 4 "
+                      "(3 is accepted for backwards compat)", n_items);
         }
 
       g_free (list);

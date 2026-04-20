@@ -10,23 +10,23 @@
 # Tobias Endrigkeit <tobiasendrigkeit@googlemail.com>, 2012.
 # Tim Sabsch <tim@sabsch.com>, 2018-2023.
 # Philipp Kiemle <philipp.kiemle@gmail.com>, 2021, 2023.
-# Jürgen Benvenuti <gastornis@posteo.org>, 2022-2024.
+# Jürgen Benvenuti <gastornis@posteo.org>, 2022-2025.
 #
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: mutter master\n"
 "Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/mutter/issues/\n"
-"POT-Creation-Date: 2024-09-20 18:26+0000\n"
-"PO-Revision-Date: 2024-09-24 11:37+0200\n"
-"Last-Translator: Jürgen Benvenuti <gastornis@posteo.org>\n"
+"POT-Creation-Date: 2025-03-25 23:05+0000\n"
+"PO-Revision-Date: 2025-04-02 22:41+0200\n"
+"Last-Translator: Christian Kirbach <christian.kirbach@gmail.com>\n"
 "Language-Team: German <gnome-de@gnome.org>\n"
 "Language: de\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
-"X-Generator: Poedit 3.4.4\n"
+"X-Generator: Poedit 3.5\n"
 
 #: data/50-mutter-navigation.xml:6
 msgid "Navigation"
@@ -260,11 +260,11 @@ msgstr "Fenster vertikal maximieren"
 msgid "Maximize window horizontally"
 msgstr "Fenster horizontal maximieren"
 
-#: data/50-mutter-windows.xml:41 data/org.gnome.mutter.gschema.xml.in:174
+#: data/50-mutter-windows.xml:41 data/org.gnome.mutter.gschema.xml.in:187
 msgid "View split on left"
 msgstr "Ansicht links teilen"
 
-#: data/50-mutter-windows.xml:45 data/org.gnome.mutter.gschema.xml.in:179
+#: data/50-mutter-windows.xml:45 data/org.gnome.mutter.gschema.xml.in:192
 msgid "View split on right"
 msgstr "Ansicht rechts teilen"
 
@@ -323,8 +323,8 @@ msgstr "Arbeitsflächen sollen dynamisch verwaltet werden"
 #: data/org.gnome.mutter.gschema.xml.in:50
 msgid ""
 "Determines whether workspaces are managed dynamically or whether there’s a "
-"static number of workspaces (determined by the num-workspaces key in org."
-"gnome.desktop.wm.preferences)."
+"static number of workspaces (determined by the num-workspaces key in "
+"org.gnome.desktop.wm.preferences)."
 msgstr ""
 "Legt fest, ob Arbeitsflächen dynamisch verwaltet werden sollen, oder ob es "
 "eine feste Anzahl Arbeitsflächen gibt (welche durch den Schlüssel num-"
@@ -461,16 +461,34 @@ msgstr ""
 "Kontaktkontrolle antworten muss, um nicht als abgestürzt zu gelten. »0« "
 "bedeutet, dass die Kontaktkontrolle ausgeschaltet wird."
 
-#: data/org.gnome.mutter.gschema.xml.in:184
+#. TRANSLATORS: Luminance is different from brightness.
+#. See https://en.wikipedia.org/wiki/Luminance
+#: data/org.gnome.mutter.gschema.xml.in:171
+msgid "Per output luminance settings"
+msgstr "Leuchtdichteeinstellungen pro Ausgabe"
+
+#: data/org.gnome.mutter.gschema.xml.in:172
+msgid ""
+"Per output and color mode luminance setting. Each entry consists of a tuple "
+"with connector, vendor, product, serial, and a color mode, as well as an "
+"associated floating point value representing the output luminance in percent "
+"(%). The default when not specified is 100%."
+msgstr ""
+"Leuchtdichteeinstellungen pro Ausgabe und Farbmodus. Jeder Eintrag besteht "
+"aus einem Tupel mit Anschluss, Produkt, Seriennummer und einem Farbmodus, "
+"als auch einem zugehörigen Gleitkommawert, der die Ausgabe-Leuchtdichte in "
+"Prozent (%) darstellt. Die Voreinstellung ist 100%, sofern nicht angegeben. "
+
+#: data/org.gnome.mutter.gschema.xml.in:197
 msgid "Switch monitor configurations"
 msgstr "Bildschirmkonfigurationen wechseln"
 
 # Ich denke nicht, dass »rotate« hier die Bildschirmdrehung meint, sondern eher eine Liste aus Konfigurationen rotiert (d.h. umgewälzt) wird.
-#: data/org.gnome.mutter.gschema.xml.in:189
+#: data/org.gnome.mutter.gschema.xml.in:202
 msgid "Rotates the built-in monitor configuration"
 msgstr "Wechselt die Konfiguration des eingebauten Bildschirms"
 
-#: data/org.gnome.mutter.gschema.xml.in:194
+#: data/org.gnome.mutter.gschema.xml.in:207
 msgid "Cancel any active input capture session"
 msgstr "Alle aktiven Eingabeerfassungssitzungen abbrechen"
 
@@ -635,26 +653,26 @@ msgstr ""
 "dieser Einstellung nicht unterstützt. Xwayland muss neu gestartet werden, "
 "damit diese Einstellung wirksam wird."
 
-#: src/backends/meta-monitor.c:240
+#: src/backends/meta-monitor.c:266
 msgid "Built-in display"
 msgstr "Eingebaute Anzeige"
 
-#: src/backends/meta-monitor.c:267
+#: src/backends/meta-monitor.c:293
 msgid "Unknown"
 msgstr "Unbekannt"
 
-#: src/backends/meta-monitor.c:269
+#: src/backends/meta-monitor.c:295
 msgid "Unknown Display"
 msgstr "Unbekannte Anzeige"
 
-#: src/backends/meta-monitor.c:277
+#: src/backends/meta-monitor.c:303
 #, c-format
 msgctxt ""
 "This is a monitor vendor name, followed by a size in inches, like 'Dell 15\"'"
 msgid "%s %s"
 msgstr "%s %s"
 
-#: src/backends/meta-monitor.c:285
+#: src/backends/meta-monitor.c:311
 #, c-format
 msgctxt ""
 "This is a monitor vendor name followed by product/model name where size in "
@@ -666,11 +684,11 @@ msgstr "%s %s"
 msgid "Bell event"
 msgstr "Klangereignis"
 
-#: src/core/display.c:742
+#: src/core/display.c:741
 msgid "Privacy Screen Enabled"
 msgstr "Sichtschutz aktiviert"
 
-#: src/core/display.c:743
+#: src/core/display.c:742
 msgid "Privacy Screen Disabled"
 msgstr "Sichtschutz deaktiviert"
 
@@ -740,21 +758,29 @@ msgid "Enable debug control D-Bus interface"
 msgstr "D-Bus-Schnittstelle zur Steuerung der Fehlerdiagnose aktivieren"
 
 #. TRANSLATORS: This string refers to a button that switches between
-#. * different modes.
+#. * different modes in that button group.
 #.
-#: src/core/meta-pad-action-mapper.c:549
+#: src/core/meta-pad-action-mapper.c:552
 #, c-format
 msgid "Mode Switch (Group %d)"
 msgstr "Moduswechsel (Gruppe %d)"
 
+#. TRANSLATORS: This string refers to a button that switches between
+#. * different modes.
+#.
+#: src/core/meta-pad-action-mapper.c:559
+#, c-format
+msgid "Mode Switch"
+msgstr "Moduswechsel"
+
 #. TRANSLATORS: This string refers to an action, cycles drawing tablets'
 #. * mapping through the available outputs.
 #.
-#: src/core/meta-pad-action-mapper.c:571
+#: src/core/meta-pad-action-mapper.c:582
 msgid "Switch monitor"
 msgstr "Bildschirm wechseln"
 
-#: src/core/meta-pad-action-mapper.c:573
+#: src/core/meta-pad-action-mapper.c:584
 msgid "Show on-screen help"
 msgstr "Bildschirmhilfe anzeigen"
 
@@ -772,12 +798,12 @@ msgstr "Version ausgeben"
 msgid "Mutter plugin to use"
 msgstr "Zu benutzendes Mutter-Plugin"
 
-#: src/core/prefs.c:1842
+#: src/core/prefs.c:1869
 #, c-format
 msgid "Workspace %d"
 msgstr "Arbeitsfläche %d"
 
-#: src/core/util.c:141
+#: src/core/util.c:140
 msgid "Mutter was compiled without support for verbose mode"
 msgstr "Mutter wurde ohne Unterstützung für den ausführlichen Modus kompiliert"
 
@@ -790,7 +816,7 @@ msgstr "Arbeitsfläche gewechselt"
 msgid "Mode Switch: Mode %d"
 msgstr "Moduswechsel: Modus %d"
 
-#: src/x11/meta-x11-display.c:850
+#: src/x11/meta-x11-display.c:858
 #, c-format
 msgid ""
 "Display “%s” already has a window manager; try using the --replace option to "
@@ -799,19 +825,19 @@ msgstr ""
 "Bildschirm »%s« hat bereits einen Fensterverwalter. Versuchen Sie die Option "
 "»--replace«, um den aktuellen Fensterverwalter zu ersetzen."
 
-#: src/x11/meta-x11-display.c:1230
+#: src/x11/meta-x11-display.c:1243
 #, c-format
 msgid "Failed to open X Window System display “%s”"
 msgstr "X-Window-Systemanzeige »%s« konnte nicht geöffnet werden"
 
-#: src/x11/meta-x11-display.c:1465
+#: src/x11/meta-x11-display.c:1476
 #, c-format
 msgid "Screen %d on display “%s” is invalid"
 msgstr "Bildschirm %d auf Anzeige »%s« ist ungültig"
 
 #. This probably means that a non-WM compositor like xcompmgr is running;
 #. * we have no way to get it to exit
-#: src/x11/meta-x11-display.c:2785
+#: src/x11/meta-x11-display.c:2799
 #, c-format
 msgid ""
 "Another compositing manager is already running on screen %i on display “%s”."
@@ -824,7 +850,7 @@ msgstr ""
 msgid "Format %s not supported"
 msgstr "Format %s wird nicht unterstützt"
 
-#: src/x11/window-props.c:548
+#: src/x11/window-props.c:555
 #, c-format
 msgid "%s (on %s)"
 msgstr "%s (auf %s)"

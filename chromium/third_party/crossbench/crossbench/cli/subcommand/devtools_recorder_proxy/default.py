@@ -13,7 +13,7 @@ import secrets
 import shlex
 import sys
 import tempfile
-from typing import TYPE_CHECKING, Any, Coroutine, Optional
+from typing import TYPE_CHECKING, Any, Coroutine, Final, Optional
 
 from websockets import server as websockets
 
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
   import argparse
   from asyncio.subprocess import Process
 
+  from crossbench.cli.types import Subparsers
   from crossbench.plt.types import ListCmdArgs
   from crossbench.types import JsonDict
 
@@ -49,10 +50,10 @@ class AuthenticationError(ValueError):
 
 
 class CrossbenchDevToolsRecorderProxy:
-  DEFAULT_PORT = 44645
+  DEFAULT_PORT: Final = 44645
 
   @classmethod
-  def add_cli_parser(cls, subparsers) -> argparse.ArgumentParser:
+  def add_cli_parser(cls, subparsers: Subparsers) -> argparse.ArgumentParser:
     parser = subparsers.add_parser(
         "devtools-recorder-proxy",
         aliases=["devtools"],
@@ -92,7 +93,7 @@ class CrossbenchDevToolsRecorderProxy:
   async def run_server(self) -> None:
     try:
       serve = websockets.serve(self.handler, "localhost", self.DEFAULT_PORT)
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:  # noqa: BLE001
       logging.exception(e)
       serve = websockets.serve(self.handler, "localhost")
     async with serve as server:
@@ -129,12 +130,12 @@ class CrossbenchDevToolsRecorderProxy:
         response_type, payload = result
         response["payload"] = payload
         response["type"] = response_type.value
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:  # noqa: BLE001
       logging.exception(e)
       response["error"] = str(type(e).__name__)
     try:
       response_json = json.dumps(response)
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:  # noqa: BLE001
       logging.exception(e)
       response["success"] = False
       response["error"] = "Failed to encode message"
@@ -157,8 +158,9 @@ class CrossbenchDevToolsRecorderProxy:
         logging.error("Invalid request token: %s", payload_token)
         raise AuthenticationError("Invalid Token")
     command = payload["command"]
-    args = payload.get("args", None)
+    args = payload.get("args")
     if command == "run":
+      assert isinstance(args, dict)
       return await self._run_command(args)
     if command == "stop":
       return await self._stop_command()
@@ -174,7 +176,7 @@ class CrossbenchDevToolsRecorderProxy:
     self._state.transition(State.CONNECTED, State.CONNECTED, to=State.CONNECTED)
     return await self._status_command()
 
-  async def _run_command(self, args) -> tuple[Response, str]:
+  async def _run_command(self, args: dict[str, str]) -> tuple[Response, str]:
     self._state.transition(State.CONNECTED, to=State.RUNNING)
     assert self._crossbench_process is None
     cb_path = CROSSBENCH_ROOT / "cb.py"
@@ -221,8 +223,10 @@ class CrossbenchDevToolsRecorderProxy:
 
   async def _wait_for_crossbench(self) -> None:
     assert self._crossbench_process
+    assert self._crossbench_process.stdout
     stdout_sender = asyncio.create_task(
         self._send_stdout_incrementally(self._crossbench_process.stdout))
+    assert self._crossbench_process.stderr
     stderr_sender = asyncio.create_task(
         self._send_stderr_incrementally(self._crossbench_process.stderr))
     # TODO: Figure out why waiting on sending the output hangs when the
@@ -240,7 +244,8 @@ class CrossbenchDevToolsRecorderProxy:
 
   _OUTPUT_BUFFER_SIZE = 128
 
-  async def _send_stdout_incrementally(self, stdout) -> None:
+  async def _send_stdout_incrementally(self,
+                                       stdout: asyncio.StreamReader) -> None:
     while self._crossbench_process:
       stdout_data = await stdout.read(self._OUTPUT_BUFFER_SIZE)
       if not stdout_data:
@@ -248,7 +253,8 @@ class CrossbenchDevToolsRecorderProxy:
       stdout_str = stdout_data.decode("utf-8")
       await self._send_message(self._send_output(stdout_str, None))
 
-  async def _send_stderr_incrementally(self, stderr) -> None:
+  async def _send_stderr_incrementally(self,
+                                       stderr: asyncio.StreamReader) -> None:
     while self._crossbench_process:
       stderr_data = await stderr.read(self._OUTPUT_BUFFER_SIZE)
       if not stderr_data:

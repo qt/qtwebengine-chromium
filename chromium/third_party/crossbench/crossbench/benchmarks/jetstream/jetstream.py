@@ -10,7 +10,7 @@ import json
 import logging
 import statistics
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Final, Optional, Sequence, Type, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, Sequence, Type, cast
 
 from typing_extensions import override
 
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
   from crossbench.action_runner.config import ActionRunnerConfig
   from crossbench.cli.parser import CrossBenchArgumentParser
+  from crossbench.cli.types import Subparsers
   from crossbench.path import LocalPath
   from crossbench.probes.results import ProbeResult, ProbeResultDict
   from crossbench.runner.actions import Actions
@@ -43,8 +44,8 @@ class JetStreamProbe(
   Extracts all JetStream times and scores.
   """
 
-  TOTAL_METRIC_KEY: Final[str] = "Total/score"
-  SORT_KEYS: bool = False
+  TOTAL_METRIC_KEY: ClassVar[str] = "Total/score"
+  SORT_KEYS: ClassVar[bool] = False
 
   @property
   def jetstream(self) -> JetStreamBenchmark:
@@ -112,7 +113,8 @@ class JetStreamProbe(
       if self._is_valid_metric_key(key):
         line_item_scores.append(metric.values)
     total_score = Metric()
-    for iteration_line_items_score_values in zip(*line_item_scores):
+    for iteration_line_items_score_values in zip(
+        *line_item_scores, strict=True):
       iteration_score = Metric(iteration_line_items_score_values).geomean
       total_score.append(iteration_score)
     return total_score
@@ -133,7 +135,7 @@ class JetStreamProbe(
 
 
 class JetStreamProbeContext(JsonResultProbeContext):
-  JS: str = """
+  JS: ClassVar[str] = """
   let results = Object.create(null);
   let benchmarks = []
   for (let benchmark of JetStream.benchmarks) {
@@ -175,7 +177,7 @@ class JetStreamProbeContext(JsonResultProbeContext):
                                                    Any]) -> dict[str, float]:
     # Manually add all total scores
     accumulated_metrics = defaultdict(list)
-    for _, metrics in json_data.items():
+    for metrics in json_data.values():
       for metric, value in metrics.items():
         accumulated_metrics[metric].append(value)
     total: dict[str, float] = {}
@@ -185,7 +187,7 @@ class JetStreamProbeContext(JsonResultProbeContext):
 
 
 class JetStreamCSVFormatter(CSVFormatter):
-  TOTAL_METRIC_KEY: Final[str] = JetStreamProbe.TOTAL_METRIC_KEY
+  TOTAL_METRIC_KEY: ClassVar[str] = JetStreamProbe.TOTAL_METRIC_KEY
 
   @override
   def format_items(self, data: dict[str, Json],
@@ -203,7 +205,7 @@ class JetStreamCSVFormatter(CSVFormatter):
 
 
 class JetStreamStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
-  URL_LOCAL: str = "http://localhost:8000/"
+  URL_LOCAL: ClassVar[str] = "http://localhost:8000/"
 
   @property
   @override
@@ -243,8 +245,7 @@ class JetStreamBenchmark(PressBenchmark, metaclass=abc.ABCMeta):
 
   @classmethod
   @override
-  def add_cli_parser(
-      cls, subparsers: argparse.ArgumentParser) -> CrossBenchArgumentParser:
+  def add_cli_parser(cls, subparsers: Subparsers) -> CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers)
     parser.add_argument(
         "--detailed-metrics",

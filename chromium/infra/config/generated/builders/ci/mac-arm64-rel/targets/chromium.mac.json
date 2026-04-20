@@ -10,7 +10,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/abseil-cpp:absl_hardening_tests/",
+        "module_name": "//third_party/abseil-cpp:absl_hardening_tests",
+        "module_scheme": "gtest",
         "name": "absl_hardening_tests",
         "swarming": {
           "dimensions": {
@@ -26,7 +27,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/accessibility:accessibility_unittests/",
+        "module_name": "//ui/accessibility:accessibility_unittests",
+        "module_scheme": "gtest",
         "name": "accessibility_unittests",
         "swarming": {
           "dimensions": {
@@ -42,7 +44,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//third_party/angle/src/tests:angle_unittests/",
+        "module_name": "//third_party/angle/src/tests:angle_unittests",
+        "module_scheme": "gtest",
         "name": "angle_unittests",
         "swarming": {
           "dimensions": {
@@ -59,7 +62,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions/shell:app_shell_unittests/",
+        "module_name": "//extensions/shell:app_shell_unittests",
+        "module_scheme": "gtest",
         "name": "app_shell_unittests",
         "swarming": {
           "dimensions": {
@@ -75,7 +79,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//base:base_unittests/",
+        "module_name": "//base:base_unittests",
+        "module_scheme": "gtest",
         "name": "base_unittests",
         "swarming": {
           "dimensions": {
@@ -91,7 +96,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/common:blink_common_unittests/",
+        "module_name": "//third_party/blink/common:blink_common_unittests",
+        "module_scheme": "gtest",
         "name": "blink_common_unittests",
         "swarming": {
           "dimensions": {
@@ -107,7 +113,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform:blink_fuzzer_unittests/",
+        "module_name": "//third_party/blink/renderer/platform:blink_fuzzer_unittests",
+        "module_scheme": "gtest",
         "name": "blink_fuzzer_unittests",
         "swarming": {
           "dimensions": {
@@ -123,7 +130,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform/heap:blink_heap_unittests/",
+        "module_name": "//third_party/blink/renderer/platform/heap:blink_heap_unittests",
+        "module_scheme": "gtest",
         "name": "blink_heap_unittests",
         "swarming": {
           "dimensions": {
@@ -142,7 +150,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform:blink_platform_unittests/",
+        "module_name": "//third_party/blink/renderer/platform:blink_platform_unittests",
+        "module_scheme": "gtest",
         "name": "blink_platform_unittests",
         "precommit_args": [
           "--gerrit-issue=${patch_issue}",
@@ -163,7 +172,25 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/boringssl:boringssl_crypto_tests/",
+        "module_name": "//third_party/blink/renderer/controller:blink_unittests",
+        "module_scheme": "gtest",
+        "name": "blink_unittests",
+        "swarming": {
+          "dimensions": {
+            "cpu": "arm64",
+            "os": "Mac-12"
+          },
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "blink_unittests",
+        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_gtest_merge.py"
+        },
+        "module_name": "//third_party/boringssl:boringssl_crypto_tests",
+        "module_scheme": "gtest",
         "name": "boringssl_crypto_tests",
         "swarming": {
           "dimensions": {
@@ -179,7 +206,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/boringssl:boringssl_ssl_tests/",
+        "module_name": "//third_party/boringssl:boringssl_ssl_tests",
+        "module_scheme": "gtest",
         "name": "boringssl_ssl_tests",
         "swarming": {
           "dimensions": {
@@ -198,7 +226,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/capture:capture_unittests/",
+        "module_name": "//media/capture:capture_unittests",
+        "module_scheme": "gtest",
         "name": "capture_unittests",
         "swarming": {
           "dimensions": {
@@ -214,7 +243,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/cast:cast_unittests/",
+        "module_name": "//media/cast:cast_unittests",
+        "module_scheme": "gtest",
         "name": "cast_unittests",
         "swarming": {
           "dimensions": {
@@ -230,7 +260,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//cc:cc_unittests/",
+        "module_name": "//cc:cc_unittests",
+        "module_scheme": "gtest",
         "name": "cc_unittests",
         "swarming": {
           "dimensions": {
@@ -246,7 +277,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:chrome_app_unittests/",
+        "module_name": "//chrome/test:chrome_app_unittests",
+        "module_scheme": "gtest",
         "name": "chrome_app_unittests",
         "swarming": {
           "dimensions": {
@@ -262,7 +294,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_unittests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_unittests",
+        "module_scheme": "gtest",
         "name": "chromedriver_unittests",
         "swarming": {
           "dimensions": {
@@ -278,7 +311,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components:components_browsertests/",
+        "module_name": "//components:components_browsertests",
+        "module_scheme": "gtest",
         "name": "components_browsertests",
         "swarming": {
           "dimensions": {
@@ -294,7 +328,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components:components_unittests/",
+        "module_name": "//components:components_unittests",
+        "module_scheme": "gtest",
         "name": "components_unittests",
         "swarming": {
           "dimensions": {
@@ -311,7 +346,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//content/test:content_browsertests/",
+        "module_name": "//content/test:content_browsertests",
+        "module_scheme": "gtest",
         "name": "content_browsertests",
         "swarming": {
           "dimensions": {
@@ -328,7 +364,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//content/test:content_unittests/",
+        "module_name": "//content/test:content_unittests",
+        "module_scheme": "gtest",
         "name": "content_unittests",
         "swarming": {
           "dimensions": {
@@ -344,7 +381,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/crashpad/crashpad:crashpad_tests/",
+        "module_name": "//third_party/crashpad/crashpad:crashpad_tests",
+        "module_scheme": "gtest",
         "name": "crashpad_tests",
         "swarming": {
           "dimensions": {
@@ -360,7 +398,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/cronet:cronet_tests/",
+        "module_name": "//components/cronet:cronet_tests",
+        "module_scheme": "gtest",
         "name": "cronet_tests",
         "swarming": {
           "dimensions": {
@@ -376,7 +415,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/cronet:cronet_unittests/",
+        "module_name": "//components/cronet:cronet_unittests",
+        "module_scheme": "gtest",
         "name": "cronet_unittests",
         "swarming": {
           "dimensions": {
@@ -392,7 +432,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//crypto:crypto_unittests/",
+        "module_name": "//crypto:crypto_unittests",
+        "module_scheme": "gtest",
         "name": "crypto_unittests",
         "swarming": {
           "dimensions": {
@@ -408,7 +449,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//device:device_unittests/",
+        "module_name": "//device:device_unittests",
+        "module_scheme": "gtest",
         "name": "device_unittests",
         "swarming": {
           "dimensions": {
@@ -424,7 +466,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/display:display_unittests/",
+        "module_name": "//ui/display:display_unittests",
+        "module_scheme": "gtest",
         "name": "display_unittests",
         "swarming": {
           "dimensions": {
@@ -441,7 +484,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/leveldatabase:env_chromium_unittests/",
+        "module_name": "//third_party/leveldatabase:env_chromium_unittests",
+        "module_scheme": "gtest",
         "name": "env_chromium_unittests",
         "swarming": {
           "dimensions": {
@@ -457,7 +501,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/events:events_unittests/",
+        "module_name": "//ui/events:events_unittests",
+        "module_scheme": "gtest",
         "name": "events_unittests",
         "swarming": {
           "dimensions": {
@@ -473,7 +518,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions:extensions_browsertests/",
+        "module_name": "//extensions:extensions_browsertests",
+        "module_scheme": "gtest",
         "name": "extensions_browsertests",
         "swarming": {
           "dimensions": {
@@ -489,7 +535,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions:extensions_unittests/",
+        "module_name": "//extensions:extensions_unittests",
+        "module_scheme": "gtest",
         "name": "extensions_unittests",
         "swarming": {
           "dimensions": {
@@ -505,7 +552,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/services/filesystem:filesystem_service_unittests/",
+        "module_name": "//components/services/filesystem:filesystem_service_unittests",
+        "module_scheme": "gtest",
         "name": "filesystem_service_unittests",
         "swarming": {
           "dimensions": {
@@ -521,7 +569,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//testing/libfuzzer/tests:fuzzing_unittests/",
+        "module_name": "//testing/libfuzzer/tests:fuzzing_unittests",
+        "module_scheme": "gtest",
         "name": "fuzzing_unittests",
         "swarming": {
           "dimensions": {
@@ -537,7 +586,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//google_apis/gcm:gcm_unit_tests/",
+        "module_name": "//google_apis/gcm:gcm_unit_tests",
+        "module_scheme": "gtest",
         "name": "gcm_unit_tests",
         "swarming": {
           "dimensions": {
@@ -553,7 +603,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/gfx:gfx_unittests/",
+        "module_name": "//ui/gfx:gfx_unittests",
+        "module_scheme": "gtest",
         "name": "gfx_unittests",
         "swarming": {
           "dimensions": {
@@ -569,7 +620,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//gin:gin_unittests/",
+        "module_name": "//gin:gin_unittests",
+        "module_scheme": "gtest",
         "name": "gin_unittests",
         "swarming": {
           "dimensions": {
@@ -585,7 +637,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//google_apis:google_apis_unittests/",
+        "module_name": "//google_apis:google_apis_unittests",
+        "module_scheme": "gtest",
         "name": "google_apis_unittests",
         "swarming": {
           "dimensions": {
@@ -601,7 +654,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//gpu:gpu_unittests/",
+        "module_name": "//gpu:gpu_unittests",
+        "module_scheme": "gtest",
         "name": "gpu_unittests",
         "swarming": {
           "dimensions": {
@@ -617,7 +671,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/gwp_asan:gwp_asan_unittests/",
+        "module_name": "//components/gwp_asan:gwp_asan_unittests",
+        "module_scheme": "gtest",
         "name": "gwp_asan_unittests",
         "swarming": {
           "dimensions": {
@@ -633,7 +688,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//headless:headless_browsertests/",
+        "module_name": "//headless:headless_browsertests",
+        "module_scheme": "gtest",
         "name": "headless_browsertests",
         "swarming": {
           "dimensions": {
@@ -649,7 +705,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//headless:headless_unittests/",
+        "module_name": "//headless:headless_unittests",
+        "module_scheme": "gtest",
         "name": "headless_unittests",
         "swarming": {
           "dimensions": {
@@ -665,7 +722,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:interactive_ui_tests/",
+        "module_name": "//chrome/test:interactive_ui_tests",
+        "module_scheme": "gtest",
         "name": "interactive_ui_tests",
         "swarming": {
           "dimensions": {
@@ -682,7 +740,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ipc:ipc_tests/",
+        "module_name": "//ipc:ipc_tests",
+        "module_scheme": "gtest",
         "name": "ipc_tests",
         "swarming": {
           "dimensions": {
@@ -698,7 +757,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/latency:latency_unittests/",
+        "module_name": "//ui/latency:latency_unittests",
+        "module_scheme": "gtest",
         "name": "latency_unittests",
         "swarming": {
           "dimensions": {
@@ -715,7 +775,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/leveldatabase:leveldb_unittests/",
+        "module_name": "//third_party/leveldatabase:leveldb_unittests",
+        "module_scheme": "gtest",
         "name": "leveldb_unittests",
         "swarming": {
           "dimensions": {
@@ -731,7 +792,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/libjingle_xmpp:libjingle_xmpp_unittests/",
+        "module_name": "//third_party/libjingle_xmpp:libjingle_xmpp_unittests",
+        "module_scheme": "gtest",
         "name": "libjingle_xmpp_unittests",
         "swarming": {
           "dimensions": {
@@ -747,7 +809,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/liburlpattern:liburlpattern_unittests/",
+        "module_name": "//third_party/liburlpattern:liburlpattern_unittests",
+        "module_scheme": "gtest",
         "name": "liburlpattern_unittests",
         "swarming": {
           "dimensions": {
@@ -763,7 +826,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media:media_unittests/",
+        "module_name": "//media:media_unittests",
+        "module_scheme": "gtest",
         "name": "media_unittests",
         "swarming": {
           "dimensions": {
@@ -779,7 +843,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/message_center:message_center_unittests/",
+        "module_name": "//ui/message_center:message_center_unittests",
+        "module_scheme": "gtest",
         "name": "message_center_unittests",
         "swarming": {
           "dimensions": {
@@ -795,7 +860,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/midi:midi_unittests/",
+        "module_name": "//media/midi:midi_unittests",
+        "module_scheme": "gtest",
         "name": "midi_unittests",
         "swarming": {
           "dimensions": {
@@ -811,7 +877,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//mojo:mojo_unittests/",
+        "module_name": "//mojo:mojo_unittests",
+        "module_scheme": "gtest",
         "name": "mojo_unittests",
         "swarming": {
           "dimensions": {
@@ -827,7 +894,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/native_theme:native_theme_unittests/",
+        "module_name": "//ui/native_theme:native_theme_unittests",
+        "module_scheme": "gtest",
         "name": "native_theme_unittests",
         "swarming": {
           "dimensions": {
@@ -843,7 +911,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//net:net_unittests/",
+        "module_name": "//net:net_unittests",
+        "module_scheme": "gtest",
         "name": "net_unittests",
         "swarming": {
           "dimensions": {
@@ -859,7 +928,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/browser/media/router:openscreen_unittests/",
+        "module_name": "//chrome/browser/media/router:openscreen_unittests",
+        "module_scheme": "gtest",
         "name": "openscreen_unittests",
         "swarming": {
           "dimensions": {
@@ -875,7 +945,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//pdf:pdf_unittests/",
+        "module_name": "//pdf:pdf_unittests",
+        "module_scheme": "gtest",
         "name": "pdf_unittests",
         "swarming": {
           "dimensions": {
@@ -891,7 +962,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/perfetto:perfetto_unittests/",
+        "module_name": "//third_party/perfetto:perfetto_unittests",
+        "module_scheme": "gtest",
         "name": "perfetto_unittests",
         "swarming": {
           "dimensions": {
@@ -907,7 +979,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//tools/mac/power:power_sampler_unittests/",
+        "module_name": "//tools/mac/power:power_sampler_unittests",
+        "module_scheme": "gtest",
         "name": "power_sampler_unittests",
         "swarming": {
           "dimensions": {
@@ -923,7 +996,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//printing:printing_unittests/",
+        "module_name": "//printing:printing_unittests",
+        "module_scheme": "gtest",
         "name": "printing_unittests",
         "swarming": {
           "dimensions": {
@@ -939,7 +1013,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//remoting:remoting_unittests/",
+        "module_name": "//remoting:remoting_unittests",
+        "module_scheme": "gtest",
         "name": "remoting_unittests",
         "swarming": {
           "dimensions": {
@@ -955,7 +1030,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//sandbox:sandbox_unittests/",
+        "module_name": "//sandbox:sandbox_unittests",
+        "module_scheme": "gtest",
         "name": "sandbox_unittests",
         "swarming": {
           "dimensions": {
@@ -971,7 +1047,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//services:services_unittests/",
+        "module_name": "//services:services_unittests",
+        "module_scheme": "gtest",
         "name": "services_unittests",
         "swarming": {
           "dimensions": {
@@ -987,7 +1064,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/shell_dialogs:shell_dialogs_unittests/",
+        "module_name": "//ui/shell_dialogs:shell_dialogs_unittests",
+        "module_scheme": "gtest",
         "name": "shell_dialogs_unittests",
         "swarming": {
           "dimensions": {
@@ -1003,7 +1081,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//skia:skia_unittests/",
+        "module_name": "//skia:skia_unittests",
+        "module_scheme": "gtest",
         "name": "skia_unittests",
         "swarming": {
           "dimensions": {
@@ -1019,7 +1098,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/snapshot:snapshot_unittests/",
+        "module_name": "//ui/snapshot:snapshot_unittests",
+        "module_scheme": "gtest",
         "name": "snapshot_unittests",
         "swarming": {
           "dimensions": {
@@ -1035,7 +1115,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//sql:sql_unittests/",
+        "module_name": "//sql:sql_unittests",
+        "module_scheme": "gtest",
         "name": "sql_unittests",
         "swarming": {
           "dimensions": {
@@ -1051,7 +1132,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//storage:storage_unittests/",
+        "module_name": "//storage:storage_unittests",
+        "module_scheme": "gtest",
         "name": "storage_unittests",
         "swarming": {
           "dimensions": {
@@ -1067,7 +1149,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:sync_integration_tests/",
+        "module_name": "//chrome/test:sync_integration_tests",
+        "module_scheme": "gtest",
         "name": "sync_integration_tests",
         "swarming": {
           "dimensions": {
@@ -1084,7 +1167,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/base:ui_base_unittests/",
+        "module_name": "//ui/base:ui_base_unittests",
+        "module_scheme": "gtest",
         "name": "ui_base_unittests",
         "swarming": {
           "dimensions": {
@@ -1100,7 +1184,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/touch_selection:ui_touch_selection_unittests/",
+        "module_name": "//ui/touch_selection:ui_touch_selection_unittests",
+        "module_scheme": "gtest",
         "name": "ui_touch_selection_unittests",
         "swarming": {
           "dimensions": {
@@ -1116,7 +1201,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/tests:ui_unittests/",
+        "module_name": "//ui/tests:ui_unittests",
+        "module_scheme": "gtest",
         "name": "ui_unittests",
         "swarming": {
           "dimensions": {
@@ -1132,7 +1218,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:unit_tests/",
+        "module_name": "//chrome/test:unit_tests",
+        "module_scheme": "gtest",
         "name": "unit_tests",
         "swarming": {
           "dimensions": {
@@ -1148,7 +1235,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/updater:updater_tests/",
+        "module_name": "//chrome/updater:updater_tests",
+        "module_scheme": "gtest",
         "name": "updater_tests",
         "swarming": {
           "dimensions": {
@@ -1164,7 +1252,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//url:url_unittests/",
+        "module_name": "//url:url_unittests",
+        "module_scheme": "gtest",
         "name": "url_unittests",
         "swarming": {
           "dimensions": {
@@ -1180,7 +1269,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/views:views_unittests/",
+        "module_name": "//ui/views:views_unittests",
+        "module_scheme": "gtest",
         "name": "views_unittests",
         "swarming": {
           "dimensions": {
@@ -1196,7 +1286,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/viz:viz_unittests/",
+        "module_name": "//components/viz:viz_unittests",
+        "module_scheme": "gtest",
         "name": "viz_unittests",
         "swarming": {
           "dimensions": {
@@ -1212,23 +1303,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/controller:blink_unittests/",
-        "name": "webkit_unit_tests",
-        "swarming": {
-          "dimensions": {
-            "cpu": "arm64",
-            "os": "Mac-12"
-          },
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "blink_unittests",
-        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
-      },
-      {
-        "merge": {
-          "script": "//testing/merge_scripts/standard_gtest_merge.py"
-        },
-        "module_name": "//third_party/blink/renderer/platform/wtf:wtf_unittests/",
+        "module_name": "//third_party/blink/renderer/platform/wtf:wtf_unittests",
+        "module_scheme": "gtest",
         "name": "wtf_unittests",
         "swarming": {
           "dimensions": {
@@ -1244,7 +1320,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:xr_browser_tests/",
+        "module_name": "//chrome/test:xr_browser_tests",
+        "module_scheme": "gtest",
         "name": "xr_browser_tests",
         "swarming": {
           "dimensions": {
@@ -1260,7 +1337,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/zlib:zlib_unittests/",
+        "module_name": "//third_party/zlib:zlib_unittests",
+        "module_scheme": "gtest",
         "name": "zlib_unittests",
         "swarming": {
           "dimensions": {
@@ -1278,7 +1356,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//:blink_python_tests/",
+        "module_name": "//:blink_python_tests",
+        "module_scheme": "pyunit",
         "name": "blink_python_tests",
         "resultdb": {
           "enable": true
@@ -1305,7 +1384,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:blink_web_tests/",
+        "module_name": "//:blink_web_tests",
+        "module_scheme": "webtest",
         "name": "blink_web_tests",
         "resultdb": {
           "enable": true,
@@ -1335,7 +1415,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:blink_wpt_tests/",
+        "module_name": "//:blink_wpt_tests",
+        "module_scheme": "webtest",
         "name": "blink_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -1363,7 +1444,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:chrome_wpt_tests/",
+        "module_name": "//:chrome_wpt_tests",
+        "module_scheme": "webtest",
         "name": "chrome_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -1387,7 +1469,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests",
+        "module_scheme": "pyunit",
         "name": "chromedriver_py_tests",
         "resultdb": {
           "enable": true
@@ -1409,7 +1492,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests_headless_shell/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests_headless_shell",
+        "module_scheme": "pyunit",
         "name": "chromedriver_py_tests_headless_shell",
         "resultdb": {
           "enable": true
@@ -1428,7 +1512,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_replay_unittests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_replay_unittests",
+        "module_scheme": "single",
         "name": "chromedriver_replay_unittests",
         "swarming": {
           "dimensions": {
@@ -1450,7 +1535,8 @@
           ],
           "script": "//tools/perf/process_perf_results.py"
         },
-        "module_name": "//components:components_perftests/",
+        "module_name": "//components:components_perftests",
+        "module_scheme": "flat",
         "name": "components_perftests",
         "swarming": {
           "dimensions": {
@@ -1466,7 +1552,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//content/shell:content_shell_crash_test/",
+        "module_name": "//content/shell:content_shell_crash_test",
+        "module_scheme": "single",
         "name": "content_shell_crash_test",
         "resultdb": {
           "enable": true,
@@ -1486,7 +1573,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//third_party/flatbuffers:flatbuffers_unittests/",
+        "module_name": "//third_party/flatbuffers:flatbuffers_unittests",
+        "module_scheme": "single",
         "name": "flatbuffers_unittests",
         "resultdb": {
           "enable": true,
@@ -1518,7 +1606,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:headless_shell_wpt/",
+        "module_name": "//:headless_shell_wpt",
+        "module_scheme": "webtest",
         "name": "headless_shell_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -1540,7 +1629,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/installer/mac:mac_signing_tests/",
+        "module_name": "//chrome/installer/mac:mac_signing_tests",
+        "module_scheme": "pyunit",
         "name": "mac_signing_tests",
         "swarming": {
           "dimensions": {
@@ -1556,7 +1646,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//mojo/public/tools:mojo_python_unittests/",
+        "module_name": "//mojo/public/tools:mojo_python_unittests",
+        "module_scheme": "pyunit",
         "name": "mojo_python_unittests",
         "resultdb": {
           "enable": true
@@ -1575,7 +1666,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test:telemetry_gpu_unittests/",
+        "module_name": "//chrome/test:telemetry_gpu_unittests",
+        "module_scheme": "flat",
         "name": "telemetry_gpu_unittests",
         "resultdb": {
           "enable": true
@@ -1598,7 +1690,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test:telemetry_perf_unittests/",
+        "module_name": "//chrome/test:telemetry_perf_unittests",
+        "module_scheme": "pyunit",
         "name": "telemetry_perf_unittests",
         "resultdb": {
           "enable": true
@@ -1625,7 +1718,8 @@
           ],
           "script": "//tools/perf/process_perf_results.py"
         },
-        "module_name": "//ui/views:views_perftests/",
+        "module_name": "//ui/views:views_perftests",
+        "module_scheme": "single",
         "name": "views_perftests",
         "swarming": {
           "dimensions": {
@@ -1646,7 +1740,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/abseil-cpp:absl_hardening_tests/",
+        "module_name": "//third_party/abseil-cpp:absl_hardening_tests",
+        "module_scheme": "gtest",
         "name": "absl_hardening_tests",
         "swarming": {
           "dimensions": {
@@ -1663,7 +1758,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/accessibility:accessibility_unittests/",
+        "module_name": "//ui/accessibility:accessibility_unittests",
+        "module_scheme": "gtest",
         "name": "accessibility_unittests",
         "swarming": {
           "dimensions": {
@@ -1680,7 +1776,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//third_party/angle/src/tests:angle_unittests/",
+        "module_name": "//third_party/angle/src/tests:angle_unittests",
+        "module_scheme": "gtest",
         "name": "angle_unittests",
         "swarming": {
           "dimensions": {
@@ -1698,7 +1795,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions/shell:app_shell_unittests/",
+        "module_name": "//extensions/shell:app_shell_unittests",
+        "module_scheme": "gtest",
         "name": "app_shell_unittests",
         "swarming": {
           "dimensions": {
@@ -1715,7 +1813,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//base:base_unittests/",
+        "module_name": "//base:base_unittests",
+        "module_scheme": "gtest",
         "name": "base_unittests",
         "swarming": {
           "dimensions": {
@@ -1732,7 +1831,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/common:blink_common_unittests/",
+        "module_name": "//third_party/blink/common:blink_common_unittests",
+        "module_scheme": "gtest",
         "name": "blink_common_unittests",
         "swarming": {
           "dimensions": {
@@ -1749,7 +1849,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform:blink_fuzzer_unittests/",
+        "module_name": "//third_party/blink/renderer/platform:blink_fuzzer_unittests",
+        "module_scheme": "gtest",
         "name": "blink_fuzzer_unittests",
         "swarming": {
           "dimensions": {
@@ -1766,7 +1867,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform/heap:blink_heap_unittests/",
+        "module_name": "//third_party/blink/renderer/platform/heap:blink_heap_unittests",
+        "module_scheme": "gtest",
         "name": "blink_heap_unittests",
         "swarming": {
           "dimensions": {
@@ -1786,7 +1888,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform:blink_platform_unittests/",
+        "module_name": "//third_party/blink/renderer/platform:blink_platform_unittests",
+        "module_scheme": "gtest",
         "name": "blink_platform_unittests",
         "precommit_args": [
           "--gerrit-issue=${patch_issue}",
@@ -1808,7 +1911,26 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/boringssl:boringssl_crypto_tests/",
+        "module_name": "//third_party/blink/renderer/controller:blink_unittests",
+        "module_scheme": "gtest",
+        "name": "blink_unittests",
+        "swarming": {
+          "dimensions": {
+            "cpu": "arm64",
+            "os": "Mac-13"
+          },
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "blink_unittests",
+        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
+      },
+      {
+        "ci_only": true,
+        "merge": {
+          "script": "//testing/merge_scripts/standard_gtest_merge.py"
+        },
+        "module_name": "//third_party/boringssl:boringssl_crypto_tests",
+        "module_scheme": "gtest",
         "name": "boringssl_crypto_tests",
         "swarming": {
           "dimensions": {
@@ -1825,7 +1947,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/boringssl:boringssl_ssl_tests/",
+        "module_name": "//third_party/boringssl:boringssl_ssl_tests",
+        "module_scheme": "gtest",
         "name": "boringssl_ssl_tests",
         "swarming": {
           "dimensions": {
@@ -1845,7 +1968,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/capture:capture_unittests/",
+        "module_name": "//media/capture:capture_unittests",
+        "module_scheme": "gtest",
         "name": "capture_unittests",
         "swarming": {
           "dimensions": {
@@ -1862,7 +1986,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/cast:cast_unittests/",
+        "module_name": "//media/cast:cast_unittests",
+        "module_scheme": "gtest",
         "name": "cast_unittests",
         "swarming": {
           "dimensions": {
@@ -1879,7 +2004,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//cc:cc_unittests/",
+        "module_name": "//cc:cc_unittests",
+        "module_scheme": "gtest",
         "name": "cc_unittests",
         "swarming": {
           "dimensions": {
@@ -1896,7 +2022,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:chrome_app_unittests/",
+        "module_name": "//chrome/test:chrome_app_unittests",
+        "module_scheme": "gtest",
         "name": "chrome_app_unittests",
         "swarming": {
           "dimensions": {
@@ -1913,7 +2040,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_unittests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_unittests",
+        "module_scheme": "gtest",
         "name": "chromedriver_unittests",
         "swarming": {
           "dimensions": {
@@ -1930,7 +2058,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components:components_browsertests/",
+        "module_name": "//components:components_browsertests",
+        "module_scheme": "gtest",
         "name": "components_browsertests",
         "swarming": {
           "dimensions": {
@@ -1947,7 +2076,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components:components_unittests/",
+        "module_name": "//components:components_unittests",
+        "module_scheme": "gtest",
         "name": "components_unittests",
         "swarming": {
           "dimensions": {
@@ -1965,7 +2095,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//content/test:content_browsertests/",
+        "module_name": "//content/test:content_browsertests",
+        "module_scheme": "gtest",
         "name": "content_browsertests",
         "swarming": {
           "dimensions": {
@@ -1983,7 +2114,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//content/test:content_unittests/",
+        "module_name": "//content/test:content_unittests",
+        "module_scheme": "gtest",
         "name": "content_unittests",
         "swarming": {
           "dimensions": {
@@ -2000,7 +2132,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/crashpad/crashpad:crashpad_tests/",
+        "module_name": "//third_party/crashpad/crashpad:crashpad_tests",
+        "module_scheme": "gtest",
         "name": "crashpad_tests",
         "swarming": {
           "dimensions": {
@@ -2017,7 +2150,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/cronet:cronet_tests/",
+        "module_name": "//components/cronet:cronet_tests",
+        "module_scheme": "gtest",
         "name": "cronet_tests",
         "swarming": {
           "dimensions": {
@@ -2034,7 +2168,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/cronet:cronet_unittests/",
+        "module_name": "//components/cronet:cronet_unittests",
+        "module_scheme": "gtest",
         "name": "cronet_unittests",
         "swarming": {
           "dimensions": {
@@ -2051,7 +2186,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//crypto:crypto_unittests/",
+        "module_name": "//crypto:crypto_unittests",
+        "module_scheme": "gtest",
         "name": "crypto_unittests",
         "swarming": {
           "dimensions": {
@@ -2068,7 +2204,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//device:device_unittests/",
+        "module_name": "//device:device_unittests",
+        "module_scheme": "gtest",
         "name": "device_unittests",
         "swarming": {
           "dimensions": {
@@ -2085,7 +2222,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/display:display_unittests/",
+        "module_name": "//ui/display:display_unittests",
+        "module_scheme": "gtest",
         "name": "display_unittests",
         "swarming": {
           "dimensions": {
@@ -2102,7 +2240,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/leveldatabase:env_chromium_unittests/",
+        "module_name": "//third_party/leveldatabase:env_chromium_unittests",
+        "module_scheme": "gtest",
         "name": "env_chromium_unittests",
         "swarming": {
           "dimensions": {
@@ -2119,7 +2258,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/events:events_unittests/",
+        "module_name": "//ui/events:events_unittests",
+        "module_scheme": "gtest",
         "name": "events_unittests",
         "swarming": {
           "dimensions": {
@@ -2136,7 +2276,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions:extensions_browsertests/",
+        "module_name": "//extensions:extensions_browsertests",
+        "module_scheme": "gtest",
         "name": "extensions_browsertests",
         "swarming": {
           "dimensions": {
@@ -2153,7 +2294,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions:extensions_unittests/",
+        "module_name": "//extensions:extensions_unittests",
+        "module_scheme": "gtest",
         "name": "extensions_unittests",
         "swarming": {
           "dimensions": {
@@ -2170,7 +2312,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/services/filesystem:filesystem_service_unittests/",
+        "module_name": "//components/services/filesystem:filesystem_service_unittests",
+        "module_scheme": "gtest",
         "name": "filesystem_service_unittests",
         "swarming": {
           "dimensions": {
@@ -2187,7 +2330,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//testing/libfuzzer/tests:fuzzing_unittests/",
+        "module_name": "//testing/libfuzzer/tests:fuzzing_unittests",
+        "module_scheme": "gtest",
         "name": "fuzzing_unittests",
         "swarming": {
           "dimensions": {
@@ -2204,7 +2348,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//google_apis/gcm:gcm_unit_tests/",
+        "module_name": "//google_apis/gcm:gcm_unit_tests",
+        "module_scheme": "gtest",
         "name": "gcm_unit_tests",
         "swarming": {
           "dimensions": {
@@ -2221,7 +2366,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/gfx:gfx_unittests/",
+        "module_name": "//ui/gfx:gfx_unittests",
+        "module_scheme": "gtest",
         "name": "gfx_unittests",
         "swarming": {
           "dimensions": {
@@ -2238,7 +2384,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//gin:gin_unittests/",
+        "module_name": "//gin:gin_unittests",
+        "module_scheme": "gtest",
         "name": "gin_unittests",
         "swarming": {
           "dimensions": {
@@ -2255,7 +2402,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//google_apis:google_apis_unittests/",
+        "module_name": "//google_apis:google_apis_unittests",
+        "module_scheme": "gtest",
         "name": "google_apis_unittests",
         "swarming": {
           "dimensions": {
@@ -2272,7 +2420,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//gpu:gpu_unittests/",
+        "module_name": "//gpu:gpu_unittests",
+        "module_scheme": "gtest",
         "name": "gpu_unittests",
         "swarming": {
           "dimensions": {
@@ -2289,7 +2438,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/gwp_asan:gwp_asan_unittests/",
+        "module_name": "//components/gwp_asan:gwp_asan_unittests",
+        "module_scheme": "gtest",
         "name": "gwp_asan_unittests",
         "swarming": {
           "dimensions": {
@@ -2306,7 +2456,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//headless:headless_browsertests/",
+        "module_name": "//headless:headless_browsertests",
+        "module_scheme": "gtest",
         "name": "headless_browsertests",
         "swarming": {
           "dimensions": {
@@ -2323,7 +2474,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//headless:headless_unittests/",
+        "module_name": "//headless:headless_unittests",
+        "module_scheme": "gtest",
         "name": "headless_unittests",
         "swarming": {
           "dimensions": {
@@ -2340,7 +2492,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:interactive_ui_tests/",
+        "module_name": "//chrome/test:interactive_ui_tests",
+        "module_scheme": "gtest",
         "name": "interactive_ui_tests",
         "swarming": {
           "dimensions": {
@@ -2358,7 +2511,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ipc:ipc_tests/",
+        "module_name": "//ipc:ipc_tests",
+        "module_scheme": "gtest",
         "name": "ipc_tests",
         "swarming": {
           "dimensions": {
@@ -2375,7 +2529,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/latency:latency_unittests/",
+        "module_name": "//ui/latency:latency_unittests",
+        "module_scheme": "gtest",
         "name": "latency_unittests",
         "swarming": {
           "dimensions": {
@@ -2392,7 +2547,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/leveldatabase:leveldb_unittests/",
+        "module_name": "//third_party/leveldatabase:leveldb_unittests",
+        "module_scheme": "gtest",
         "name": "leveldb_unittests",
         "swarming": {
           "dimensions": {
@@ -2409,7 +2565,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/libjingle_xmpp:libjingle_xmpp_unittests/",
+        "module_name": "//third_party/libjingle_xmpp:libjingle_xmpp_unittests",
+        "module_scheme": "gtest",
         "name": "libjingle_xmpp_unittests",
         "swarming": {
           "dimensions": {
@@ -2426,7 +2583,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/liburlpattern:liburlpattern_unittests/",
+        "module_name": "//third_party/liburlpattern:liburlpattern_unittests",
+        "module_scheme": "gtest",
         "name": "liburlpattern_unittests",
         "swarming": {
           "dimensions": {
@@ -2443,7 +2601,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media:media_unittests/",
+        "module_name": "//media:media_unittests",
+        "module_scheme": "gtest",
         "name": "media_unittests",
         "swarming": {
           "dimensions": {
@@ -2460,7 +2619,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/message_center:message_center_unittests/",
+        "module_name": "//ui/message_center:message_center_unittests",
+        "module_scheme": "gtest",
         "name": "message_center_unittests",
         "swarming": {
           "dimensions": {
@@ -2477,7 +2637,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/midi:midi_unittests/",
+        "module_name": "//media/midi:midi_unittests",
+        "module_scheme": "gtest",
         "name": "midi_unittests",
         "swarming": {
           "dimensions": {
@@ -2494,7 +2655,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//mojo:mojo_unittests/",
+        "module_name": "//mojo:mojo_unittests",
+        "module_scheme": "gtest",
         "name": "mojo_unittests",
         "swarming": {
           "dimensions": {
@@ -2511,7 +2673,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/native_theme:native_theme_unittests/",
+        "module_name": "//ui/native_theme:native_theme_unittests",
+        "module_scheme": "gtest",
         "name": "native_theme_unittests",
         "swarming": {
           "dimensions": {
@@ -2528,7 +2691,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//net:net_unittests/",
+        "module_name": "//net:net_unittests",
+        "module_scheme": "gtest",
         "name": "net_unittests",
         "swarming": {
           "dimensions": {
@@ -2545,7 +2709,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/browser/media/router:openscreen_unittests/",
+        "module_name": "//chrome/browser/media/router:openscreen_unittests",
+        "module_scheme": "gtest",
         "name": "openscreen_unittests",
         "swarming": {
           "dimensions": {
@@ -2562,7 +2727,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//pdf:pdf_unittests/",
+        "module_name": "//pdf:pdf_unittests",
+        "module_scheme": "gtest",
         "name": "pdf_unittests",
         "swarming": {
           "dimensions": {
@@ -2579,7 +2745,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/perfetto:perfetto_unittests/",
+        "module_name": "//third_party/perfetto:perfetto_unittests",
+        "module_scheme": "gtest",
         "name": "perfetto_unittests",
         "swarming": {
           "dimensions": {
@@ -2596,7 +2763,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//tools/mac/power:power_sampler_unittests/",
+        "module_name": "//tools/mac/power:power_sampler_unittests",
+        "module_scheme": "gtest",
         "name": "power_sampler_unittests",
         "swarming": {
           "dimensions": {
@@ -2613,7 +2781,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//printing:printing_unittests/",
+        "module_name": "//printing:printing_unittests",
+        "module_scheme": "gtest",
         "name": "printing_unittests",
         "swarming": {
           "dimensions": {
@@ -2630,7 +2799,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//remoting:remoting_unittests/",
+        "module_name": "//remoting:remoting_unittests",
+        "module_scheme": "gtest",
         "name": "remoting_unittests",
         "swarming": {
           "dimensions": {
@@ -2647,7 +2817,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//sandbox:sandbox_unittests/",
+        "module_name": "//sandbox:sandbox_unittests",
+        "module_scheme": "gtest",
         "name": "sandbox_unittests",
         "swarming": {
           "dimensions": {
@@ -2664,7 +2835,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//services:services_unittests/",
+        "module_name": "//services:services_unittests",
+        "module_scheme": "gtest",
         "name": "services_unittests",
         "swarming": {
           "dimensions": {
@@ -2681,7 +2853,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/shell_dialogs:shell_dialogs_unittests/",
+        "module_name": "//ui/shell_dialogs:shell_dialogs_unittests",
+        "module_scheme": "gtest",
         "name": "shell_dialogs_unittests",
         "swarming": {
           "dimensions": {
@@ -2698,7 +2871,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//skia:skia_unittests/",
+        "module_name": "//skia:skia_unittests",
+        "module_scheme": "gtest",
         "name": "skia_unittests",
         "swarming": {
           "dimensions": {
@@ -2715,7 +2889,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/snapshot:snapshot_unittests/",
+        "module_name": "//ui/snapshot:snapshot_unittests",
+        "module_scheme": "gtest",
         "name": "snapshot_unittests",
         "swarming": {
           "dimensions": {
@@ -2732,7 +2907,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//sql:sql_unittests/",
+        "module_name": "//sql:sql_unittests",
+        "module_scheme": "gtest",
         "name": "sql_unittests",
         "swarming": {
           "dimensions": {
@@ -2749,7 +2925,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//storage:storage_unittests/",
+        "module_name": "//storage:storage_unittests",
+        "module_scheme": "gtest",
         "name": "storage_unittests",
         "swarming": {
           "dimensions": {
@@ -2766,7 +2943,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:sync_integration_tests/",
+        "module_name": "//chrome/test:sync_integration_tests",
+        "module_scheme": "gtest",
         "name": "sync_integration_tests",
         "swarming": {
           "dimensions": {
@@ -2784,7 +2962,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/base:ui_base_unittests/",
+        "module_name": "//ui/base:ui_base_unittests",
+        "module_scheme": "gtest",
         "name": "ui_base_unittests",
         "swarming": {
           "dimensions": {
@@ -2801,7 +2980,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/touch_selection:ui_touch_selection_unittests/",
+        "module_name": "//ui/touch_selection:ui_touch_selection_unittests",
+        "module_scheme": "gtest",
         "name": "ui_touch_selection_unittests",
         "swarming": {
           "dimensions": {
@@ -2818,7 +2998,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/tests:ui_unittests/",
+        "module_name": "//ui/tests:ui_unittests",
+        "module_scheme": "gtest",
         "name": "ui_unittests",
         "swarming": {
           "dimensions": {
@@ -2835,7 +3016,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:unit_tests/",
+        "module_name": "//chrome/test:unit_tests",
+        "module_scheme": "gtest",
         "name": "unit_tests",
         "swarming": {
           "dimensions": {
@@ -2852,7 +3034,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/updater:updater_tests/",
+        "module_name": "//chrome/updater:updater_tests",
+        "module_scheme": "gtest",
         "name": "updater_tests",
         "swarming": {
           "dimensions": {
@@ -2869,7 +3052,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//url:url_unittests/",
+        "module_name": "//url:url_unittests",
+        "module_scheme": "gtest",
         "name": "url_unittests",
         "swarming": {
           "dimensions": {
@@ -2886,7 +3070,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/views:views_unittests/",
+        "module_name": "//ui/views:views_unittests",
+        "module_scheme": "gtest",
         "name": "views_unittests",
         "swarming": {
           "dimensions": {
@@ -2903,7 +3088,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/viz:viz_unittests/",
+        "module_name": "//components/viz:viz_unittests",
+        "module_scheme": "gtest",
         "name": "viz_unittests",
         "swarming": {
           "dimensions": {
@@ -2920,24 +3106,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/controller:blink_unittests/",
-        "name": "webkit_unit_tests",
-        "swarming": {
-          "dimensions": {
-            "cpu": "arm64",
-            "os": "Mac-13"
-          },
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "blink_unittests",
-        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
-      },
-      {
-        "ci_only": true,
-        "merge": {
-          "script": "//testing/merge_scripts/standard_gtest_merge.py"
-        },
-        "module_name": "//third_party/blink/renderer/platform/wtf:wtf_unittests/",
+        "module_name": "//third_party/blink/renderer/platform/wtf:wtf_unittests",
+        "module_scheme": "gtest",
         "name": "wtf_unittests",
         "swarming": {
           "dimensions": {
@@ -2954,7 +3124,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:xr_browser_tests/",
+        "module_name": "//chrome/test:xr_browser_tests",
+        "module_scheme": "gtest",
         "name": "xr_browser_tests",
         "swarming": {
           "dimensions": {
@@ -2971,7 +3142,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/zlib:zlib_unittests/",
+        "module_name": "//third_party/zlib:zlib_unittests",
+        "module_scheme": "gtest",
         "name": "zlib_unittests",
         "swarming": {
           "dimensions": {
@@ -2990,7 +3162,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//:blink_python_tests/",
+        "module_name": "//:blink_python_tests",
+        "module_scheme": "pyunit",
         "name": "blink_python_tests",
         "resultdb": {
           "enable": true
@@ -3017,7 +3190,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:blink_web_tests/",
+        "module_name": "//:blink_web_tests",
+        "module_scheme": "webtest",
         "name": "blink_web_tests",
         "resultdb": {
           "enable": true,
@@ -3047,7 +3221,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:blink_wpt_tests/",
+        "module_name": "//:blink_wpt_tests",
+        "module_scheme": "webtest",
         "name": "blink_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -3076,7 +3251,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:chrome_wpt_tests/",
+        "module_name": "//:chrome_wpt_tests",
+        "module_scheme": "webtest",
         "name": "chrome_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -3101,7 +3277,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests",
+        "module_scheme": "pyunit",
         "name": "chromedriver_py_tests",
         "resultdb": {
           "enable": true
@@ -3124,7 +3301,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests_headless_shell/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests_headless_shell",
+        "module_scheme": "pyunit",
         "name": "chromedriver_py_tests_headless_shell",
         "resultdb": {
           "enable": true
@@ -3144,7 +3322,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_replay_unittests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_replay_unittests",
+        "module_scheme": "single",
         "name": "chromedriver_replay_unittests",
         "swarming": {
           "dimensions": {
@@ -3167,7 +3346,8 @@
           ],
           "script": "//tools/perf/process_perf_results.py"
         },
-        "module_name": "//components:components_perftests/",
+        "module_name": "//components:components_perftests",
+        "module_scheme": "flat",
         "name": "components_perftests",
         "swarming": {
           "dimensions": {
@@ -3184,7 +3364,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//content/shell:content_shell_crash_test/",
+        "module_name": "//content/shell:content_shell_crash_test",
+        "module_scheme": "single",
         "name": "content_shell_crash_test",
         "resultdb": {
           "enable": true,
@@ -3205,7 +3386,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//third_party/flatbuffers:flatbuffers_unittests/",
+        "module_name": "//third_party/flatbuffers:flatbuffers_unittests",
+        "module_scheme": "single",
         "name": "flatbuffers_unittests",
         "resultdb": {
           "enable": true,
@@ -3238,7 +3420,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:headless_shell_wpt/",
+        "module_name": "//:headless_shell_wpt",
+        "module_scheme": "webtest",
         "name": "headless_shell_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -3261,7 +3444,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/installer/mac:mac_signing_tests/",
+        "module_name": "//chrome/installer/mac:mac_signing_tests",
+        "module_scheme": "pyunit",
         "name": "mac_signing_tests",
         "swarming": {
           "dimensions": {
@@ -3278,7 +3462,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//mojo/public/tools:mojo_python_unittests/",
+        "module_name": "//mojo/public/tools:mojo_python_unittests",
+        "module_scheme": "pyunit",
         "name": "mojo_python_unittests",
         "resultdb": {
           "enable": true
@@ -3298,7 +3483,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test:telemetry_gpu_unittests/",
+        "module_name": "//chrome/test:telemetry_gpu_unittests",
+        "module_scheme": "flat",
         "name": "telemetry_gpu_unittests",
         "resultdb": {
           "enable": true
@@ -3322,7 +3508,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test:telemetry_perf_unittests/",
+        "module_name": "//chrome/test:telemetry_perf_unittests",
+        "module_scheme": "pyunit",
         "name": "telemetry_perf_unittests",
         "resultdb": {
           "enable": true
@@ -3350,7 +3537,8 @@
           ],
           "script": "//tools/perf/process_perf_results.py"
         },
-        "module_name": "//ui/views:views_perftests/",
+        "module_name": "//ui/views:views_perftests",
+        "module_scheme": "single",
         "name": "views_perftests",
         "swarming": {
           "dimensions": {
@@ -3371,7 +3559,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/abseil-cpp:absl_hardening_tests/",
+        "module_name": "//third_party/abseil-cpp:absl_hardening_tests",
+        "module_scheme": "gtest",
         "name": "absl_hardening_tests",
         "swarming": {
           "dimensions": {
@@ -3388,7 +3577,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/accessibility:accessibility_unittests/",
+        "module_name": "//ui/accessibility:accessibility_unittests",
+        "module_scheme": "gtest",
         "name": "accessibility_unittests",
         "swarming": {
           "dimensions": {
@@ -3405,7 +3595,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//third_party/angle/src/tests:angle_unittests/",
+        "module_name": "//third_party/angle/src/tests:angle_unittests",
+        "module_scheme": "gtest",
         "name": "angle_unittests",
         "swarming": {
           "dimensions": {
@@ -3423,7 +3614,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions/shell:app_shell_unittests/",
+        "module_name": "//extensions/shell:app_shell_unittests",
+        "module_scheme": "gtest",
         "name": "app_shell_unittests",
         "swarming": {
           "dimensions": {
@@ -3440,7 +3632,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//base:base_unittests/",
+        "module_name": "//base:base_unittests",
+        "module_scheme": "gtest",
         "name": "base_unittests",
         "swarming": {
           "dimensions": {
@@ -3457,7 +3650,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/common:blink_common_unittests/",
+        "module_name": "//third_party/blink/common:blink_common_unittests",
+        "module_scheme": "gtest",
         "name": "blink_common_unittests",
         "swarming": {
           "dimensions": {
@@ -3474,7 +3668,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform:blink_fuzzer_unittests/",
+        "module_name": "//third_party/blink/renderer/platform:blink_fuzzer_unittests",
+        "module_scheme": "gtest",
         "name": "blink_fuzzer_unittests",
         "swarming": {
           "dimensions": {
@@ -3491,7 +3686,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform/heap:blink_heap_unittests/",
+        "module_name": "//third_party/blink/renderer/platform/heap:blink_heap_unittests",
+        "module_scheme": "gtest",
         "name": "blink_heap_unittests",
         "swarming": {
           "dimensions": {
@@ -3511,7 +3707,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform:blink_platform_unittests/",
+        "module_name": "//third_party/blink/renderer/platform:blink_platform_unittests",
+        "module_scheme": "gtest",
         "name": "blink_platform_unittests",
         "precommit_args": [
           "--gerrit-issue=${patch_issue}",
@@ -3533,7 +3730,26 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/boringssl:boringssl_crypto_tests/",
+        "module_name": "//third_party/blink/renderer/controller:blink_unittests",
+        "module_scheme": "gtest",
+        "name": "blink_unittests",
+        "swarming": {
+          "dimensions": {
+            "cpu": "arm64",
+            "os": "Mac-14"
+          },
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "blink_unittests",
+        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
+      },
+      {
+        "ci_only": true,
+        "merge": {
+          "script": "//testing/merge_scripts/standard_gtest_merge.py"
+        },
+        "module_name": "//third_party/boringssl:boringssl_crypto_tests",
+        "module_scheme": "gtest",
         "name": "boringssl_crypto_tests",
         "swarming": {
           "dimensions": {
@@ -3550,7 +3766,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/boringssl:boringssl_ssl_tests/",
+        "module_name": "//third_party/boringssl:boringssl_ssl_tests",
+        "module_scheme": "gtest",
         "name": "boringssl_ssl_tests",
         "swarming": {
           "dimensions": {
@@ -3570,7 +3787,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/capture:capture_unittests/",
+        "module_name": "//media/capture:capture_unittests",
+        "module_scheme": "gtest",
         "name": "capture_unittests",
         "swarming": {
           "dimensions": {
@@ -3587,7 +3805,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/cast:cast_unittests/",
+        "module_name": "//media/cast:cast_unittests",
+        "module_scheme": "gtest",
         "name": "cast_unittests",
         "swarming": {
           "dimensions": {
@@ -3604,7 +3823,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//cc:cc_unittests/",
+        "module_name": "//cc:cc_unittests",
+        "module_scheme": "gtest",
         "name": "cc_unittests",
         "swarming": {
           "dimensions": {
@@ -3626,7 +3846,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:chrome_app_unittests/",
+        "module_name": "//chrome/test:chrome_app_unittests",
+        "module_scheme": "gtest",
         "name": "chrome_app_unittests",
         "swarming": {
           "dimensions": {
@@ -3643,7 +3864,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_unittests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_unittests",
+        "module_scheme": "gtest",
         "name": "chromedriver_unittests",
         "swarming": {
           "dimensions": {
@@ -3660,7 +3882,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components:components_browsertests/",
+        "module_name": "//components:components_browsertests",
+        "module_scheme": "gtest",
         "name": "components_browsertests",
         "swarming": {
           "dimensions": {
@@ -3677,7 +3900,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components:components_unittests/",
+        "module_name": "//components:components_unittests",
+        "module_scheme": "gtest",
         "name": "components_unittests",
         "swarming": {
           "dimensions": {
@@ -3695,7 +3919,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//content/test:content_browsertests/",
+        "module_name": "//content/test:content_browsertests",
+        "module_scheme": "gtest",
         "name": "content_browsertests",
         "swarming": {
           "dimensions": {
@@ -3713,7 +3938,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//content/test:content_unittests/",
+        "module_name": "//content/test:content_unittests",
+        "module_scheme": "gtest",
         "name": "content_unittests",
         "swarming": {
           "dimensions": {
@@ -3730,7 +3956,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/crashpad/crashpad:crashpad_tests/",
+        "module_name": "//third_party/crashpad/crashpad:crashpad_tests",
+        "module_scheme": "gtest",
         "name": "crashpad_tests",
         "swarming": {
           "dimensions": {
@@ -3747,7 +3974,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/cronet:cronet_tests/",
+        "module_name": "//components/cronet:cronet_tests",
+        "module_scheme": "gtest",
         "name": "cronet_tests",
         "swarming": {
           "dimensions": {
@@ -3764,7 +3992,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/cronet:cronet_unittests/",
+        "module_name": "//components/cronet:cronet_unittests",
+        "module_scheme": "gtest",
         "name": "cronet_unittests",
         "swarming": {
           "dimensions": {
@@ -3781,7 +4010,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//crypto:crypto_unittests/",
+        "module_name": "//crypto:crypto_unittests",
+        "module_scheme": "gtest",
         "name": "crypto_unittests",
         "swarming": {
           "dimensions": {
@@ -3798,7 +4028,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//device:device_unittests/",
+        "module_name": "//device:device_unittests",
+        "module_scheme": "gtest",
         "name": "device_unittests",
         "swarming": {
           "dimensions": {
@@ -3820,7 +4051,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/display:display_unittests/",
+        "module_name": "//ui/display:display_unittests",
+        "module_scheme": "gtest",
         "name": "display_unittests",
         "swarming": {
           "dimensions": {
@@ -3842,7 +4074,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/leveldatabase:env_chromium_unittests/",
+        "module_name": "//third_party/leveldatabase:env_chromium_unittests",
+        "module_scheme": "gtest",
         "name": "env_chromium_unittests",
         "swarming": {
           "dimensions": {
@@ -3859,7 +4092,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/events:events_unittests/",
+        "module_name": "//ui/events:events_unittests",
+        "module_scheme": "gtest",
         "name": "events_unittests",
         "swarming": {
           "dimensions": {
@@ -3876,7 +4110,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions:extensions_browsertests/",
+        "module_name": "//extensions:extensions_browsertests",
+        "module_scheme": "gtest",
         "name": "extensions_browsertests",
         "swarming": {
           "dimensions": {
@@ -3893,7 +4128,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions:extensions_unittests/",
+        "module_name": "//extensions:extensions_unittests",
+        "module_scheme": "gtest",
         "name": "extensions_unittests",
         "swarming": {
           "dimensions": {
@@ -3910,7 +4146,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/services/filesystem:filesystem_service_unittests/",
+        "module_name": "//components/services/filesystem:filesystem_service_unittests",
+        "module_scheme": "gtest",
         "name": "filesystem_service_unittests",
         "swarming": {
           "dimensions": {
@@ -3927,7 +4164,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//testing/libfuzzer/tests:fuzzing_unittests/",
+        "module_name": "//testing/libfuzzer/tests:fuzzing_unittests",
+        "module_scheme": "gtest",
         "name": "fuzzing_unittests",
         "swarming": {
           "dimensions": {
@@ -3944,7 +4182,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//google_apis/gcm:gcm_unit_tests/",
+        "module_name": "//google_apis/gcm:gcm_unit_tests",
+        "module_scheme": "gtest",
         "name": "gcm_unit_tests",
         "swarming": {
           "dimensions": {
@@ -3961,7 +4200,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/gfx:gfx_unittests/",
+        "module_name": "//ui/gfx:gfx_unittests",
+        "module_scheme": "gtest",
         "name": "gfx_unittests",
         "swarming": {
           "dimensions": {
@@ -3983,7 +4223,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//gin:gin_unittests/",
+        "module_name": "//gin:gin_unittests",
+        "module_scheme": "gtest",
         "name": "gin_unittests",
         "swarming": {
           "dimensions": {
@@ -4000,7 +4241,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//google_apis:google_apis_unittests/",
+        "module_name": "//google_apis:google_apis_unittests",
+        "module_scheme": "gtest",
         "name": "google_apis_unittests",
         "swarming": {
           "dimensions": {
@@ -4017,7 +4259,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//gpu:gpu_unittests/",
+        "module_name": "//gpu:gpu_unittests",
+        "module_scheme": "gtest",
         "name": "gpu_unittests",
         "swarming": {
           "dimensions": {
@@ -4034,7 +4277,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/gwp_asan:gwp_asan_unittests/",
+        "module_name": "//components/gwp_asan:gwp_asan_unittests",
+        "module_scheme": "gtest",
         "name": "gwp_asan_unittests",
         "swarming": {
           "dimensions": {
@@ -4051,7 +4295,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//headless:headless_browsertests/",
+        "module_name": "//headless:headless_browsertests",
+        "module_scheme": "gtest",
         "name": "headless_browsertests",
         "swarming": {
           "dimensions": {
@@ -4068,7 +4313,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//headless:headless_unittests/",
+        "module_name": "//headless:headless_unittests",
+        "module_scheme": "gtest",
         "name": "headless_unittests",
         "swarming": {
           "dimensions": {
@@ -4085,7 +4331,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:interactive_ui_tests/",
+        "module_name": "//chrome/test:interactive_ui_tests",
+        "module_scheme": "gtest",
         "name": "interactive_ui_tests",
         "swarming": {
           "dimensions": {
@@ -4103,7 +4350,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ipc:ipc_tests/",
+        "module_name": "//ipc:ipc_tests",
+        "module_scheme": "gtest",
         "name": "ipc_tests",
         "swarming": {
           "dimensions": {
@@ -4120,7 +4368,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/latency:latency_unittests/",
+        "module_name": "//ui/latency:latency_unittests",
+        "module_scheme": "gtest",
         "name": "latency_unittests",
         "swarming": {
           "dimensions": {
@@ -4137,7 +4386,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/leveldatabase:leveldb_unittests/",
+        "module_name": "//third_party/leveldatabase:leveldb_unittests",
+        "module_scheme": "gtest",
         "name": "leveldb_unittests",
         "swarming": {
           "dimensions": {
@@ -4154,7 +4404,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/libjingle_xmpp:libjingle_xmpp_unittests/",
+        "module_name": "//third_party/libjingle_xmpp:libjingle_xmpp_unittests",
+        "module_scheme": "gtest",
         "name": "libjingle_xmpp_unittests",
         "swarming": {
           "dimensions": {
@@ -4171,7 +4422,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/liburlpattern:liburlpattern_unittests/",
+        "module_name": "//third_party/liburlpattern:liburlpattern_unittests",
+        "module_scheme": "gtest",
         "name": "liburlpattern_unittests",
         "swarming": {
           "dimensions": {
@@ -4188,7 +4440,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media:media_unittests/",
+        "module_name": "//media:media_unittests",
+        "module_scheme": "gtest",
         "name": "media_unittests",
         "swarming": {
           "dimensions": {
@@ -4205,7 +4458,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/message_center:message_center_unittests/",
+        "module_name": "//ui/message_center:message_center_unittests",
+        "module_scheme": "gtest",
         "name": "message_center_unittests",
         "swarming": {
           "dimensions": {
@@ -4222,7 +4476,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/midi:midi_unittests/",
+        "module_name": "//media/midi:midi_unittests",
+        "module_scheme": "gtest",
         "name": "midi_unittests",
         "swarming": {
           "dimensions": {
@@ -4239,7 +4494,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//mojo:mojo_unittests/",
+        "module_name": "//mojo:mojo_unittests",
+        "module_scheme": "gtest",
         "name": "mojo_unittests",
         "swarming": {
           "dimensions": {
@@ -4256,7 +4512,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/native_theme:native_theme_unittests/",
+        "module_name": "//ui/native_theme:native_theme_unittests",
+        "module_scheme": "gtest",
         "name": "native_theme_unittests",
         "swarming": {
           "dimensions": {
@@ -4273,7 +4530,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//net:net_unittests/",
+        "module_name": "//net:net_unittests",
+        "module_scheme": "gtest",
         "name": "net_unittests",
         "swarming": {
           "dimensions": {
@@ -4290,7 +4548,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/browser/media/router:openscreen_unittests/",
+        "module_name": "//chrome/browser/media/router:openscreen_unittests",
+        "module_scheme": "gtest",
         "name": "openscreen_unittests",
         "swarming": {
           "dimensions": {
@@ -4312,7 +4571,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//pdf:pdf_unittests/",
+        "module_name": "//pdf:pdf_unittests",
+        "module_scheme": "gtest",
         "name": "pdf_unittests",
         "swarming": {
           "dimensions": {
@@ -4329,7 +4589,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/perfetto:perfetto_unittests/",
+        "module_name": "//third_party/perfetto:perfetto_unittests",
+        "module_scheme": "gtest",
         "name": "perfetto_unittests",
         "swarming": {
           "dimensions": {
@@ -4346,7 +4607,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//tools/mac/power:power_sampler_unittests/",
+        "module_name": "//tools/mac/power:power_sampler_unittests",
+        "module_scheme": "gtest",
         "name": "power_sampler_unittests",
         "swarming": {
           "dimensions": {
@@ -4368,7 +4630,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//printing:printing_unittests/",
+        "module_name": "//printing:printing_unittests",
+        "module_scheme": "gtest",
         "name": "printing_unittests",
         "swarming": {
           "dimensions": {
@@ -4385,7 +4648,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//remoting:remoting_unittests/",
+        "module_name": "//remoting:remoting_unittests",
+        "module_scheme": "gtest",
         "name": "remoting_unittests",
         "swarming": {
           "dimensions": {
@@ -4402,7 +4666,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//sandbox:sandbox_unittests/",
+        "module_name": "//sandbox:sandbox_unittests",
+        "module_scheme": "gtest",
         "name": "sandbox_unittests",
         "swarming": {
           "dimensions": {
@@ -4424,7 +4689,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//services:services_unittests/",
+        "module_name": "//services:services_unittests",
+        "module_scheme": "gtest",
         "name": "services_unittests",
         "swarming": {
           "dimensions": {
@@ -4441,7 +4707,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/shell_dialogs:shell_dialogs_unittests/",
+        "module_name": "//ui/shell_dialogs:shell_dialogs_unittests",
+        "module_scheme": "gtest",
         "name": "shell_dialogs_unittests",
         "swarming": {
           "dimensions": {
@@ -4458,7 +4725,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//skia:skia_unittests/",
+        "module_name": "//skia:skia_unittests",
+        "module_scheme": "gtest",
         "name": "skia_unittests",
         "swarming": {
           "dimensions": {
@@ -4475,7 +4743,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/snapshot:snapshot_unittests/",
+        "module_name": "//ui/snapshot:snapshot_unittests",
+        "module_scheme": "gtest",
         "name": "snapshot_unittests",
         "swarming": {
           "dimensions": {
@@ -4492,7 +4761,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//sql:sql_unittests/",
+        "module_name": "//sql:sql_unittests",
+        "module_scheme": "gtest",
         "name": "sql_unittests",
         "swarming": {
           "dimensions": {
@@ -4509,7 +4779,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//storage:storage_unittests/",
+        "module_name": "//storage:storage_unittests",
+        "module_scheme": "gtest",
         "name": "storage_unittests",
         "swarming": {
           "dimensions": {
@@ -4526,7 +4797,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:sync_integration_tests/",
+        "module_name": "//chrome/test:sync_integration_tests",
+        "module_scheme": "gtest",
         "name": "sync_integration_tests",
         "swarming": {
           "dimensions": {
@@ -4544,7 +4816,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/base:ui_base_unittests/",
+        "module_name": "//ui/base:ui_base_unittests",
+        "module_scheme": "gtest",
         "name": "ui_base_unittests",
         "swarming": {
           "dimensions": {
@@ -4561,7 +4834,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/touch_selection:ui_touch_selection_unittests/",
+        "module_name": "//ui/touch_selection:ui_touch_selection_unittests",
+        "module_scheme": "gtest",
         "name": "ui_touch_selection_unittests",
         "swarming": {
           "dimensions": {
@@ -4578,7 +4852,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/tests:ui_unittests/",
+        "module_name": "//ui/tests:ui_unittests",
+        "module_scheme": "gtest",
         "name": "ui_unittests",
         "swarming": {
           "dimensions": {
@@ -4595,7 +4870,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:unit_tests/",
+        "module_name": "//chrome/test:unit_tests",
+        "module_scheme": "gtest",
         "name": "unit_tests",
         "swarming": {
           "dimensions": {
@@ -4617,7 +4893,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/updater:updater_tests/",
+        "module_name": "//chrome/updater:updater_tests",
+        "module_scheme": "gtest",
         "name": "updater_tests",
         "swarming": {
           "dimensions": {
@@ -4639,7 +4916,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//url:url_unittests/",
+        "module_name": "//url:url_unittests",
+        "module_scheme": "gtest",
         "name": "url_unittests",
         "swarming": {
           "dimensions": {
@@ -4656,7 +4934,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/views:views_unittests/",
+        "module_name": "//ui/views:views_unittests",
+        "module_scheme": "gtest",
         "name": "views_unittests",
         "swarming": {
           "dimensions": {
@@ -4673,7 +4952,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/viz:viz_unittests/",
+        "module_name": "//components/viz:viz_unittests",
+        "module_scheme": "gtest",
         "name": "viz_unittests",
         "swarming": {
           "dimensions": {
@@ -4695,24 +4975,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/controller:blink_unittests/",
-        "name": "webkit_unit_tests",
-        "swarming": {
-          "dimensions": {
-            "cpu": "arm64",
-            "os": "Mac-14"
-          },
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "blink_unittests",
-        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
-      },
-      {
-        "ci_only": true,
-        "merge": {
-          "script": "//testing/merge_scripts/standard_gtest_merge.py"
-        },
-        "module_name": "//third_party/blink/renderer/platform/wtf:wtf_unittests/",
+        "module_name": "//third_party/blink/renderer/platform/wtf:wtf_unittests",
+        "module_scheme": "gtest",
         "name": "wtf_unittests",
         "swarming": {
           "dimensions": {
@@ -4729,7 +4993,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:xr_browser_tests/",
+        "module_name": "//chrome/test:xr_browser_tests",
+        "module_scheme": "gtest",
         "name": "xr_browser_tests",
         "swarming": {
           "dimensions": {
@@ -4751,7 +5016,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/zlib:zlib_unittests/",
+        "module_name": "//third_party/zlib:zlib_unittests",
+        "module_scheme": "gtest",
         "name": "zlib_unittests",
         "swarming": {
           "dimensions": {
@@ -4770,7 +5036,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//:blink_python_tests/",
+        "module_name": "//:blink_python_tests",
+        "module_scheme": "pyunit",
         "name": "blink_python_tests",
         "resultdb": {
           "enable": true
@@ -4797,7 +5064,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:blink_web_tests/",
+        "module_name": "//:blink_web_tests",
+        "module_scheme": "webtest",
         "name": "blink_web_tests",
         "resultdb": {
           "enable": true,
@@ -4827,7 +5095,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:blink_wpt_tests/",
+        "module_name": "//:blink_wpt_tests",
+        "module_scheme": "webtest",
         "name": "blink_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -4856,7 +5125,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:chrome_wpt_tests/",
+        "module_name": "//:chrome_wpt_tests",
+        "module_scheme": "webtest",
         "name": "chrome_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -4882,7 +5152,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests",
+        "module_scheme": "pyunit",
         "name": "chromedriver_py_tests",
         "resultdb": {
           "enable": true
@@ -4905,7 +5176,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests_headless_shell/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests_headless_shell",
+        "module_scheme": "pyunit",
         "name": "chromedriver_py_tests_headless_shell",
         "resultdb": {
           "enable": true
@@ -4925,7 +5197,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_replay_unittests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_replay_unittests",
+        "module_scheme": "single",
         "name": "chromedriver_replay_unittests",
         "swarming": {
           "dimensions": {
@@ -4948,7 +5221,8 @@
           ],
           "script": "//tools/perf/process_perf_results.py"
         },
-        "module_name": "//components:components_perftests/",
+        "module_name": "//components:components_perftests",
+        "module_scheme": "flat",
         "name": "components_perftests",
         "swarming": {
           "dimensions": {
@@ -4965,7 +5239,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//content/shell:content_shell_crash_test/",
+        "module_name": "//content/shell:content_shell_crash_test",
+        "module_scheme": "single",
         "name": "content_shell_crash_test",
         "resultdb": {
           "enable": true,
@@ -4986,7 +5261,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//third_party/flatbuffers:flatbuffers_unittests/",
+        "module_name": "//third_party/flatbuffers:flatbuffers_unittests",
+        "module_scheme": "single",
         "name": "flatbuffers_unittests",
         "resultdb": {
           "enable": true,
@@ -5019,7 +5295,8 @@
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:headless_shell_wpt/",
+        "module_name": "//:headless_shell_wpt",
+        "module_scheme": "webtest",
         "name": "headless_shell_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -5042,7 +5319,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/installer/mac:mac_signing_tests/",
+        "module_name": "//chrome/installer/mac:mac_signing_tests",
+        "module_scheme": "pyunit",
         "name": "mac_signing_tests",
         "swarming": {
           "dimensions": {
@@ -5059,7 +5337,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//mojo/public/tools:mojo_python_unittests/",
+        "module_name": "//mojo/public/tools:mojo_python_unittests",
+        "module_scheme": "pyunit",
         "name": "mojo_python_unittests",
         "resultdb": {
           "enable": true
@@ -5079,7 +5358,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test:telemetry_gpu_unittests/",
+        "module_name": "//chrome/test:telemetry_gpu_unittests",
+        "module_scheme": "flat",
         "name": "telemetry_gpu_unittests",
         "resultdb": {
           "enable": true
@@ -5103,7 +5383,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test:telemetry_perf_unittests/",
+        "module_name": "//chrome/test:telemetry_perf_unittests",
+        "module_scheme": "pyunit",
         "name": "telemetry_perf_unittests",
         "resultdb": {
           "enable": true
@@ -5131,7 +5412,8 @@
           ],
           "script": "//tools/perf/process_perf_results.py"
         },
-        "module_name": "//ui/views:views_perftests/",
+        "module_name": "//ui/views:views_perftests",
+        "module_scheme": "single",
         "name": "views_perftests",
         "swarming": {
           "dimensions": {
@@ -5148,16 +5430,21 @@
   "mac15-arm64-rel-tests": {
     "gtest_tests": [
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/abseil-cpp:absl_hardening_tests/",
+        "module_name": "//third_party/abseil-cpp:absl_hardening_tests",
+        "module_scheme": "gtest",
         "name": "absl_hardening_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5165,16 +5452,21 @@
         "test_id_prefix": "ninja://third_party/abseil-cpp:absl_hardening_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/accessibility:accessibility_unittests/",
+        "module_name": "//ui/accessibility:accessibility_unittests",
+        "module_scheme": "gtest",
         "name": "accessibility_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5182,16 +5474,21 @@
         "test_id_prefix": "ninja://ui/accessibility:accessibility_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//third_party/angle/src/tests:angle_unittests/",
+        "module_name": "//third_party/angle/src/tests:angle_unittests",
+        "module_scheme": "gtest",
         "name": "angle_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5200,16 +5497,21 @@
         "use_isolated_scripts_api": true
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions/shell:app_shell_unittests/",
+        "module_name": "//extensions/shell:app_shell_unittests",
+        "module_scheme": "gtest",
         "name": "app_shell_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5217,16 +5519,21 @@
         "test_id_prefix": "ninja://extensions/shell:app_shell_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//base:base_unittests/",
+        "module_name": "//base:base_unittests",
+        "module_scheme": "gtest",
         "name": "base_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5234,16 +5541,21 @@
         "test_id_prefix": "ninja://base:base_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/common:blink_common_unittests/",
+        "module_name": "//third_party/blink/common:blink_common_unittests",
+        "module_scheme": "gtest",
         "name": "blink_common_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5251,16 +5563,21 @@
         "test_id_prefix": "ninja://third_party/blink/common:blink_common_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform:blink_fuzzer_unittests/",
+        "module_name": "//third_party/blink/renderer/platform:blink_fuzzer_unittests",
+        "module_scheme": "gtest",
         "name": "blink_fuzzer_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5268,16 +5585,21 @@
         "test_id_prefix": "ninja://third_party/blink/renderer/platform:blink_fuzzer_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform/heap:blink_heap_unittests/",
+        "module_name": "//third_party/blink/renderer/platform/heap:blink_heap_unittests",
+        "module_scheme": "gtest",
         "name": "blink_heap_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5288,11 +5610,11 @@
         "args": [
           "--git-revision=${got_revision}"
         ],
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/platform:blink_platform_unittests/",
+        "module_name": "//third_party/blink/renderer/platform:blink_platform_unittests",
+        "module_scheme": "gtest",
         "name": "blink_platform_unittests",
         "precommit_args": [
           "--gerrit-issue=${patch_issue}",
@@ -5304,22 +5626,54 @@
             "cpu": "arm64",
             "os": "Mac-15"
           },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
         "test": "blink_platform_unittests",
         "test_id_prefix": "ninja://third_party/blink/renderer/platform:blink_platform_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/boringssl:boringssl_crypto_tests/",
+        "module_name": "//third_party/blink/renderer/controller:blink_unittests",
+        "module_scheme": "gtest",
+        "name": "blink_unittests",
+        "swarming": {
+          "dimensions": {
+            "cpu": "arm64",
+            "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
+          },
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "blink_unittests",
+        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_gtest_merge.py"
+        },
+        "module_name": "//third_party/boringssl:boringssl_crypto_tests",
+        "module_scheme": "gtest",
         "name": "boringssl_crypto_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5327,16 +5681,21 @@
         "test_id_prefix": "ninja://third_party/boringssl:boringssl_crypto_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/boringssl:boringssl_ssl_tests/",
+        "module_name": "//third_party/boringssl:boringssl_ssl_tests",
+        "module_scheme": "gtest",
         "name": "boringssl_ssl_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5347,16 +5706,21 @@
         "args": [
           "--gtest_filter=-*UsingRealWebcam*"
         ],
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/capture:capture_unittests/",
+        "module_name": "//media/capture:capture_unittests",
+        "module_scheme": "gtest",
         "name": "capture_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5364,16 +5728,21 @@
         "test_id_prefix": "ninja://media/capture:capture_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/cast:cast_unittests/",
+        "module_name": "//media/cast:cast_unittests",
+        "module_scheme": "gtest",
         "name": "cast_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5381,16 +5750,21 @@
         "test_id_prefix": "ninja://media/cast:cast_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//cc:cc_unittests/",
+        "module_name": "//cc:cc_unittests",
+        "module_scheme": "gtest",
         "name": "cc_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5398,16 +5772,21 @@
         "test_id_prefix": "ninja://cc:cc_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:chrome_app_unittests/",
+        "module_name": "//chrome/test:chrome_app_unittests",
+        "module_scheme": "gtest",
         "name": "chrome_app_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5415,16 +5794,21 @@
         "test_id_prefix": "ninja://chrome/test:chrome_app_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_unittests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_unittests",
+        "module_scheme": "gtest",
         "name": "chromedriver_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5432,16 +5816,21 @@
         "test_id_prefix": "ninja://chrome/test/chromedriver:chromedriver_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components:components_browsertests/",
+        "module_name": "//components:components_browsertests",
+        "module_scheme": "gtest",
         "name": "components_browsertests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5449,16 +5838,21 @@
         "test_id_prefix": "ninja://components:components_browsertests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components:components_unittests/",
+        "module_name": "//components:components_unittests",
+        "module_scheme": "gtest",
         "name": "components_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
           "shards": 3
@@ -5467,11 +5861,11 @@
         "test_id_prefix": "ninja://components:components_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//content/test:content_browsertests/",
+        "module_name": "//content/test:content_browsertests",
+        "module_scheme": "gtest",
         "name": "content_browsertests",
         "swarming": {
           "dimensions": {
@@ -5485,16 +5879,21 @@
         "test_id_prefix": "ninja://content/test:content_browsertests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//content/test:content_unittests/",
+        "module_name": "//content/test:content_unittests",
+        "module_scheme": "gtest",
         "name": "content_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5502,16 +5901,21 @@
         "test_id_prefix": "ninja://content/test:content_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/crashpad/crashpad:crashpad_tests/",
+        "module_name": "//third_party/crashpad/crashpad:crashpad_tests",
+        "module_scheme": "gtest",
         "name": "crashpad_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5519,16 +5923,21 @@
         "test_id_prefix": "ninja://third_party/crashpad/crashpad:crashpad_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/cronet:cronet_tests/",
+        "module_name": "//components/cronet:cronet_tests",
+        "module_scheme": "gtest",
         "name": "cronet_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5536,16 +5945,21 @@
         "test_id_prefix": "ninja://components/cronet:cronet_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/cronet:cronet_unittests/",
+        "module_name": "//components/cronet:cronet_unittests",
+        "module_scheme": "gtest",
         "name": "cronet_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5553,16 +5967,21 @@
         "test_id_prefix": "ninja://components/cronet:cronet_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//crypto:crypto_unittests/",
+        "module_name": "//crypto:crypto_unittests",
+        "module_scheme": "gtest",
         "name": "crypto_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5570,16 +5989,21 @@
         "test_id_prefix": "ninja://crypto:crypto_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//device:device_unittests/",
+        "module_name": "//device:device_unittests",
+        "module_scheme": "gtest",
         "name": "device_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5587,16 +6011,21 @@
         "test_id_prefix": "ninja://device:device_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/display:display_unittests/",
+        "module_name": "//ui/display:display_unittests",
+        "module_scheme": "gtest",
         "name": "display_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5608,12 +6037,18 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/leveldatabase:env_chromium_unittests/",
+        "module_name": "//third_party/leveldatabase:env_chromium_unittests",
+        "module_scheme": "gtest",
         "name": "env_chromium_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5621,16 +6056,21 @@
         "test_id_prefix": "ninja://third_party/leveldatabase:env_chromium_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/events:events_unittests/",
+        "module_name": "//ui/events:events_unittests",
+        "module_scheme": "gtest",
         "name": "events_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5638,16 +6078,21 @@
         "test_id_prefix": "ninja://ui/events:events_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions:extensions_browsertests/",
+        "module_name": "//extensions:extensions_browsertests",
+        "module_scheme": "gtest",
         "name": "extensions_browsertests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5655,16 +6100,21 @@
         "test_id_prefix": "ninja://extensions:extensions_browsertests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//extensions:extensions_unittests/",
+        "module_name": "//extensions:extensions_unittests",
+        "module_scheme": "gtest",
         "name": "extensions_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5672,16 +6122,21 @@
         "test_id_prefix": "ninja://extensions:extensions_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/services/filesystem:filesystem_service_unittests/",
+        "module_name": "//components/services/filesystem:filesystem_service_unittests",
+        "module_scheme": "gtest",
         "name": "filesystem_service_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5689,16 +6144,21 @@
         "test_id_prefix": "ninja://components/services/filesystem:filesystem_service_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//testing/libfuzzer/tests:fuzzing_unittests/",
+        "module_name": "//testing/libfuzzer/tests:fuzzing_unittests",
+        "module_scheme": "gtest",
         "name": "fuzzing_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5706,16 +6166,21 @@
         "test_id_prefix": "ninja://testing/libfuzzer/tests:fuzzing_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//google_apis/gcm:gcm_unit_tests/",
+        "module_name": "//google_apis/gcm:gcm_unit_tests",
+        "module_scheme": "gtest",
         "name": "gcm_unit_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5723,16 +6188,21 @@
         "test_id_prefix": "ninja://google_apis/gcm:gcm_unit_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/gfx:gfx_unittests/",
+        "module_name": "//ui/gfx:gfx_unittests",
+        "module_scheme": "gtest",
         "name": "gfx_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5740,16 +6210,21 @@
         "test_id_prefix": "ninja://ui/gfx:gfx_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//gin:gin_unittests/",
+        "module_name": "//gin:gin_unittests",
+        "module_scheme": "gtest",
         "name": "gin_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5757,16 +6232,21 @@
         "test_id_prefix": "ninja://gin:gin_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//google_apis:google_apis_unittests/",
+        "module_name": "//google_apis:google_apis_unittests",
+        "module_scheme": "gtest",
         "name": "google_apis_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5774,16 +6254,21 @@
         "test_id_prefix": "ninja://google_apis:google_apis_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//gpu:gpu_unittests/",
+        "module_name": "//gpu:gpu_unittests",
+        "module_scheme": "gtest",
         "name": "gpu_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5791,16 +6276,21 @@
         "test_id_prefix": "ninja://gpu:gpu_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/gwp_asan:gwp_asan_unittests/",
+        "module_name": "//components/gwp_asan:gwp_asan_unittests",
+        "module_scheme": "gtest",
         "name": "gwp_asan_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5808,16 +6298,21 @@
         "test_id_prefix": "ninja://components/gwp_asan:gwp_asan_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//headless:headless_browsertests/",
+        "module_name": "//headless:headless_browsertests",
+        "module_scheme": "gtest",
         "name": "headless_browsertests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5825,16 +6320,21 @@
         "test_id_prefix": "ninja://headless:headless_browsertests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//headless:headless_unittests/",
+        "module_name": "//headless:headless_unittests",
+        "module_scheme": "gtest",
         "name": "headless_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5842,16 +6342,21 @@
         "test_id_prefix": "ninja://headless:headless_unittests/"
       },
       {
-        "ci_only": false,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:interactive_ui_tests/",
+        "module_name": "//chrome/test:interactive_ui_tests",
+        "module_scheme": "gtest",
         "name": "interactive_ui_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
           "shards": 7
@@ -5860,16 +6365,21 @@
         "test_id_prefix": "ninja://chrome/test:interactive_ui_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ipc:ipc_tests/",
+        "module_name": "//ipc:ipc_tests",
+        "module_scheme": "gtest",
         "name": "ipc_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5877,16 +6387,21 @@
         "test_id_prefix": "ninja://ipc:ipc_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/latency:latency_unittests/",
+        "module_name": "//ui/latency:latency_unittests",
+        "module_scheme": "gtest",
         "name": "latency_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5898,12 +6413,18 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/leveldatabase:leveldb_unittests/",
+        "module_name": "//third_party/leveldatabase:leveldb_unittests",
+        "module_scheme": "gtest",
         "name": "leveldb_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5911,16 +6432,21 @@
         "test_id_prefix": "ninja://third_party/leveldatabase:leveldb_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/libjingle_xmpp:libjingle_xmpp_unittests/",
+        "module_name": "//third_party/libjingle_xmpp:libjingle_xmpp_unittests",
+        "module_scheme": "gtest",
         "name": "libjingle_xmpp_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5928,16 +6454,21 @@
         "test_id_prefix": "ninja://third_party/libjingle_xmpp:libjingle_xmpp_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/liburlpattern:liburlpattern_unittests/",
+        "module_name": "//third_party/liburlpattern:liburlpattern_unittests",
+        "module_scheme": "gtest",
         "name": "liburlpattern_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5945,16 +6476,21 @@
         "test_id_prefix": "ninja://third_party/liburlpattern:liburlpattern_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media:media_unittests/",
+        "module_name": "//media:media_unittests",
+        "module_scheme": "gtest",
         "name": "media_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5962,16 +6498,21 @@
         "test_id_prefix": "ninja://media:media_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/message_center:message_center_unittests/",
+        "module_name": "//ui/message_center:message_center_unittests",
+        "module_scheme": "gtest",
         "name": "message_center_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5979,16 +6520,21 @@
         "test_id_prefix": "ninja://ui/message_center:message_center_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//media/midi:midi_unittests/",
+        "module_name": "//media/midi:midi_unittests",
+        "module_scheme": "gtest",
         "name": "midi_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -5996,16 +6542,21 @@
         "test_id_prefix": "ninja://media/midi:midi_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//mojo:mojo_unittests/",
+        "module_name": "//mojo:mojo_unittests",
+        "module_scheme": "gtest",
         "name": "mojo_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6013,16 +6564,21 @@
         "test_id_prefix": "ninja://mojo:mojo_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/native_theme:native_theme_unittests/",
+        "module_name": "//ui/native_theme:native_theme_unittests",
+        "module_scheme": "gtest",
         "name": "native_theme_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6030,16 +6586,21 @@
         "test_id_prefix": "ninja://ui/native_theme:native_theme_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//net:net_unittests/",
+        "module_name": "//net:net_unittests",
+        "module_scheme": "gtest",
         "name": "net_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6047,16 +6608,21 @@
         "test_id_prefix": "ninja://net:net_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/browser/media/router:openscreen_unittests/",
+        "module_name": "//chrome/browser/media/router:openscreen_unittests",
+        "module_scheme": "gtest",
         "name": "openscreen_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6064,16 +6630,21 @@
         "test_id_prefix": "ninja://chrome/browser/media/router:openscreen_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//pdf:pdf_unittests/",
+        "module_name": "//pdf:pdf_unittests",
+        "module_scheme": "gtest",
         "name": "pdf_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6081,16 +6652,21 @@
         "test_id_prefix": "ninja://pdf:pdf_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/perfetto:perfetto_unittests/",
+        "module_name": "//third_party/perfetto:perfetto_unittests",
+        "module_scheme": "gtest",
         "name": "perfetto_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6098,16 +6674,21 @@
         "test_id_prefix": "ninja://third_party/perfetto:perfetto_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//tools/mac/power:power_sampler_unittests/",
+        "module_name": "//tools/mac/power:power_sampler_unittests",
+        "module_scheme": "gtest",
         "name": "power_sampler_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6115,16 +6696,21 @@
         "test_id_prefix": "ninja://tools/mac/power:power_sampler_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//printing:printing_unittests/",
+        "module_name": "//printing:printing_unittests",
+        "module_scheme": "gtest",
         "name": "printing_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6132,16 +6718,21 @@
         "test_id_prefix": "ninja://printing:printing_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//remoting:remoting_unittests/",
+        "module_name": "//remoting:remoting_unittests",
+        "module_scheme": "gtest",
         "name": "remoting_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6149,16 +6740,21 @@
         "test_id_prefix": "ninja://remoting:remoting_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//sandbox:sandbox_unittests/",
+        "module_name": "//sandbox:sandbox_unittests",
+        "module_scheme": "gtest",
         "name": "sandbox_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6166,16 +6762,21 @@
         "test_id_prefix": "ninja://sandbox:sandbox_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//services:services_unittests/",
+        "module_name": "//services:services_unittests",
+        "module_scheme": "gtest",
         "name": "services_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6183,16 +6784,21 @@
         "test_id_prefix": "ninja://services:services_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/shell_dialogs:shell_dialogs_unittests/",
+        "module_name": "//ui/shell_dialogs:shell_dialogs_unittests",
+        "module_scheme": "gtest",
         "name": "shell_dialogs_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6200,16 +6806,21 @@
         "test_id_prefix": "ninja://ui/shell_dialogs:shell_dialogs_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//skia:skia_unittests/",
+        "module_name": "//skia:skia_unittests",
+        "module_scheme": "gtest",
         "name": "skia_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6217,16 +6828,21 @@
         "test_id_prefix": "ninja://skia:skia_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/snapshot:snapshot_unittests/",
+        "module_name": "//ui/snapshot:snapshot_unittests",
+        "module_scheme": "gtest",
         "name": "snapshot_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6234,16 +6850,21 @@
         "test_id_prefix": "ninja://ui/snapshot:snapshot_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//sql:sql_unittests/",
+        "module_name": "//sql:sql_unittests",
+        "module_scheme": "gtest",
         "name": "sql_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6251,16 +6872,21 @@
         "test_id_prefix": "ninja://sql:sql_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//storage:storage_unittests/",
+        "module_name": "//storage:storage_unittests",
+        "module_scheme": "gtest",
         "name": "storage_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6272,12 +6898,18 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:sync_integration_tests/",
+        "module_name": "//chrome/test:sync_integration_tests",
+        "module_scheme": "gtest",
         "name": "sync_integration_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
           "shards": 3
@@ -6286,16 +6918,21 @@
         "test_id_prefix": "ninja://chrome/test:sync_integration_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/base:ui_base_unittests/",
+        "module_name": "//ui/base:ui_base_unittests",
+        "module_scheme": "gtest",
         "name": "ui_base_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6303,16 +6940,21 @@
         "test_id_prefix": "ninja://ui/base:ui_base_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/touch_selection:ui_touch_selection_unittests/",
+        "module_name": "//ui/touch_selection:ui_touch_selection_unittests",
+        "module_scheme": "gtest",
         "name": "ui_touch_selection_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6320,16 +6962,21 @@
         "test_id_prefix": "ninja://ui/touch_selection:ui_touch_selection_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/tests:ui_unittests/",
+        "module_name": "//ui/tests:ui_unittests",
+        "module_scheme": "gtest",
         "name": "ui_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6337,16 +6984,21 @@
         "test_id_prefix": "ninja://ui/tests:ui_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:unit_tests/",
+        "module_name": "//chrome/test:unit_tests",
+        "module_scheme": "gtest",
         "name": "unit_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6354,16 +7006,21 @@
         "test_id_prefix": "ninja://chrome/test:unit_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/updater:updater_tests/",
+        "module_name": "//chrome/updater:updater_tests",
+        "module_scheme": "gtest",
         "name": "updater_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6371,16 +7028,21 @@
         "test_id_prefix": "ninja://chrome/updater:updater_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//url:url_unittests/",
+        "module_name": "//url:url_unittests",
+        "module_scheme": "gtest",
         "name": "url_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6388,16 +7050,21 @@
         "test_id_prefix": "ninja://url:url_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//ui/views:views_unittests/",
+        "module_name": "//ui/views:views_unittests",
+        "module_scheme": "gtest",
         "name": "views_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6405,16 +7072,21 @@
         "test_id_prefix": "ninja://ui/views:views_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//components/viz:viz_unittests/",
+        "module_name": "//components/viz:viz_unittests",
+        "module_scheme": "gtest",
         "name": "viz_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6422,33 +7094,21 @@
         "test_id_prefix": "ninja://components/viz:viz_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/blink/renderer/controller:blink_unittests/",
-        "name": "webkit_unit_tests",
-        "swarming": {
-          "dimensions": {
-            "cpu": "arm64",
-            "os": "Mac-15"
-          },
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "blink_unittests",
-        "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
-      },
-      {
-        "ci_only": true,
-        "merge": {
-          "script": "//testing/merge_scripts/standard_gtest_merge.py"
-        },
-        "module_name": "//third_party/blink/renderer/platform/wtf:wtf_unittests/",
+        "module_name": "//third_party/blink/renderer/platform/wtf:wtf_unittests",
+        "module_scheme": "gtest",
         "name": "wtf_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6456,16 +7116,21 @@
         "test_id_prefix": "ninja://third_party/blink/renderer/platform/wtf:wtf_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//chrome/test:xr_browser_tests/",
+        "module_name": "//chrome/test:xr_browser_tests",
+        "module_scheme": "gtest",
         "name": "xr_browser_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6473,16 +7138,21 @@
         "test_id_prefix": "ninja://chrome/test:xr_browser_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
-        "module_name": "//third_party/zlib:zlib_unittests/",
+        "module_name": "//third_party/zlib:zlib_unittests",
+        "module_scheme": "gtest",
         "name": "zlib_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6492,11 +7162,11 @@
     ],
     "isolated_scripts": [
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//:blink_python_tests/",
+        "module_name": "//:blink_python_tests",
+        "module_scheme": "pyunit",
         "name": "blink_python_tests",
         "resultdb": {
           "enable": true
@@ -6505,6 +7175,11 @@
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6516,14 +7191,14 @@
           "--num-retries=3",
           "--write-run-histories-to=${ISOLATED_OUTDIR}/run_histories.json"
         ],
-        "ci_only": true,
         "merge": {
           "args": [
             "--verbose"
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:blink_web_tests/",
+        "module_name": "//:blink_web_tests",
+        "module_scheme": "webtest",
         "name": "blink_web_tests",
         "resultdb": {
           "enable": true,
@@ -6546,14 +7221,14 @@
           "--num-retries=3",
           "--write-run-histories-to=${ISOLATED_OUTDIR}/run_histories.json"
         ],
-        "ci_only": true,
         "merge": {
           "args": [
             "--verbose"
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:blink_wpt_tests/",
+        "module_name": "//:blink_wpt_tests",
+        "module_scheme": "webtest",
         "name": "blink_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -6575,14 +7250,14 @@
         "args": [
           "--test-launcher-filter-file=../../third_party/blink/web_tests/TestLists/chrome.filter"
         ],
-        "ci_only": true,
         "merge": {
           "args": [
             "--verbose"
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:chrome_wpt_tests/",
+        "module_name": "//:chrome_wpt_tests",
+        "module_scheme": "webtest",
         "name": "chrome_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -6594,6 +7269,11 @@
             "cpu": "arm64",
             "os": "Mac-15"
           },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
         "test": "chrome_wpt_tests",
@@ -6603,11 +7283,11 @@
         "args": [
           "--test-type=integration"
         ],
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests",
+        "module_scheme": "pyunit",
         "name": "chromedriver_py_tests",
         "resultdb": {
           "enable": true
@@ -6626,11 +7306,11 @@
         "args": [
           "--test-type=integration"
         ],
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests_headless_shell/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_py_tests_headless_shell",
+        "module_scheme": "pyunit",
         "name": "chromedriver_py_tests_headless_shell",
         "resultdb": {
           "enable": true
@@ -6646,16 +7326,21 @@
         "test_id_prefix": "ninja://chrome/test/chromedriver:chromedriver_py_tests_headless_shell/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test/chromedriver:chromedriver_replay_unittests/",
+        "module_name": "//chrome/test/chromedriver:chromedriver_replay_unittests",
+        "module_scheme": "single",
         "name": "chromedriver_replay_unittests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6666,19 +7351,24 @@
         "args": [
           "--gtest-benchmark-name=components_perftests"
         ],
-        "ci_only": true,
         "merge": {
           "args": [
             "--smoke-test-mode"
           ],
           "script": "//tools/perf/process_perf_results.py"
         },
-        "module_name": "//components:components_perftests/",
+        "module_name": "//components:components_perftests",
+        "module_scheme": "flat",
         "name": "components_perftests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6686,11 +7376,11 @@
         "test_id_prefix": "ninja://components:components_perftests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//content/shell:content_shell_crash_test/",
+        "module_name": "//content/shell:content_shell_crash_test",
+        "module_scheme": "single",
         "name": "content_shell_crash_test",
         "resultdb": {
           "enable": true,
@@ -6701,17 +7391,22 @@
             "cpu": "arm64",
             "os": "Mac-15"
           },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
         "test": "content_shell_crash_test",
         "test_id_prefix": "ninja://content/shell:content_shell_crash_test/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//third_party/flatbuffers:flatbuffers_unittests/",
+        "module_name": "//third_party/flatbuffers:flatbuffers_unittests",
+        "module_scheme": "single",
         "name": "flatbuffers_unittests",
         "resultdb": {
           "enable": true,
@@ -6722,17 +7417,22 @@
             "cpu": "arm64",
             "os": "Mac-15"
           },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
         "test": "flatbuffers_unittests",
         "test_id_prefix": "ninja://third_party/flatbuffers:flatbuffers_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//tools/grit:grit_python_unittests/",
+        "module_name": "//tools/grit:grit_python_unittests",
+        "module_scheme": "pyunit",
         "name": "grit_python_unittests",
         "resultdb": {
           "enable": true
@@ -6741,6 +7441,11 @@
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6757,14 +7462,14 @@
           "--inverted-test-launcher-filter-file=../../third_party/blink/web_tests/TestLists/chrome.filter",
           "--inverted-test-launcher-filter-file=../../third_party/blink/web_tests/TestLists/content_shell.filter"
         ],
-        "ci_only": true,
         "merge": {
           "args": [
             "--verbose"
           ],
           "script": "//third_party/blink/tools/merge_web_test_results.py"
         },
-        "module_name": "//:headless_shell_wpt/",
+        "module_name": "//:headless_shell_wpt",
+        "module_scheme": "webtest",
         "name": "headless_shell_wpt_tests",
         "resultdb": {
           "enable": true,
@@ -6783,16 +7488,21 @@
         "test_id_prefix": "ninja://:headless_shell_wpt/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/installer/mac:mac_signing_tests/",
+        "module_name": "//chrome/installer/mac:mac_signing_tests",
+        "module_scheme": "pyunit",
         "name": "mac_signing_tests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
@@ -6800,11 +7510,11 @@
         "test_id_prefix": "ninja://chrome/installer/mac:mac_signing_tests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//mojo/public/tools:mojo_python_unittests/",
+        "module_name": "//mojo/public/tools:mojo_python_unittests",
+        "module_scheme": "pyunit",
         "name": "mojo_python_unittests",
         "resultdb": {
           "enable": true
@@ -6814,17 +7524,22 @@
             "cpu": "arm64",
             "os": "Mac-15"
           },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
         "test": "mojo_python_unittests",
         "test_id_prefix": "ninja://mojo/public/tools:mojo_python_unittests/"
       },
       {
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test:telemetry_gpu_unittests/",
+        "module_name": "//chrome/test:telemetry_gpu_unittests",
+        "module_scheme": "flat",
         "name": "telemetry_gpu_unittests",
         "resultdb": {
           "enable": true
@@ -6835,6 +7550,11 @@
             "os": "Mac-15"
           },
           "idempotent": false,
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
         "test": "telemetry_gpu_unittests",
@@ -6848,7 +7568,8 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test:telemetry_perf_unittests/",
+        "module_name": "//chrome/test:telemetry_perf_unittests",
+        "module_scheme": "pyunit",
         "name": "telemetry_perf_unittests",
         "resultdb": {
           "enable": true
@@ -6859,6 +7580,11 @@
             "os": "Mac-15"
           },
           "idempotent": false,
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
           "shards": 12
         },
@@ -6870,11 +7596,11 @@
           "--jobs=1",
           "--extra-browser-args=--disable-gpu"
         ],
-        "ci_only": true,
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "module_name": "//chrome/test:telemetry_unittests/",
+        "module_name": "//chrome/test:telemetry_unittests",
+        "module_scheme": "pyunit",
         "name": "telemetry_unittests",
         "resultdb": {
           "enable": true
@@ -6885,6 +7611,11 @@
             "os": "Mac-15"
           },
           "idempotent": false,
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
           "shards": 8
         },
@@ -6895,19 +7626,24 @@
         "args": [
           "--gtest-benchmark-name=views_perftests"
         ],
-        "ci_only": true,
         "merge": {
           "args": [
             "--smoke-test-mode"
           ],
           "script": "//tools/perf/process_perf_results.py"
         },
-        "module_name": "//ui/views:views_perftests/",
+        "module_name": "//ui/views:views_perftests",
+        "module_scheme": "single",
         "name": "views_perftests",
         "swarming": {
           "dimensions": {
             "cpu": "arm64",
             "os": "Mac-15"
+          },
+          "optional_dimensions": {
+            "30": {
+              "cpu": "Apple_(Virtual)"
+            }
           },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },

@@ -4,9 +4,10 @@
 
 from __future__ import annotations
 
+import abc
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Iterator, Optional, TypeVar
+from typing import TYPE_CHECKING, Final, Iterator, Optional, Self, TypeVar
 from urllib.parse import urlparse
 
 from typing_extensions import override
@@ -22,13 +23,12 @@ if TYPE_CHECKING:
   from crossbench.network.traffic_shaping.base import TrafficShaper
   from crossbench.path import LocalPath
   from crossbench.runner.groups.session import BrowserSessionRunGroup
+  ReplayNetworkT = TypeVar("ReplayNetworkT", bound="ReplayNetwork")
+
+GS_PREFIX: Final[str] = "gs://"
 
 
-GS_PREFIX = "gs://"
-
-ReplayNetworkT = TypeVar("ReplayNetworkT", bound="ReplayNetwork")
-
-class ReplayNetwork(Network):
+class ReplayNetwork(Network, metaclass=abc.ABCMeta):
   """ A network implementation that can be used to replay requests
   from a an archive."""
 
@@ -37,7 +37,7 @@ class ReplayNetwork(Network):
                traffic_shaper: Optional[TrafficShaper] = None,
                browser_platform: Optional[plt.Platform] = None) -> None:
     super().__init__(traffic_shaper, browser_platform)
-    self._archive_path = self._ensure_archive(archive)
+    self._archive_path: Final[LocalPath] = self._ensure_archive(archive)
 
   @property
   @override
@@ -50,8 +50,7 @@ class ReplayNetwork(Network):
 
   @contextlib.contextmanager
   @override
-  def open(self: ReplayNetworkT,
-           session: BrowserSessionRunGroup) -> Iterator[ReplayNetworkT]:
+  def open(self, session: BrowserSessionRunGroup) -> Iterator[Self]:
     with exception.annotate(f"Starting {type(self).__name__}"):
       with super().open(session):
         with self._open_replay_server(session):
@@ -59,7 +58,8 @@ class ReplayNetwork(Network):
             yield self
 
   @contextlib.contextmanager
-  def _open_replay_server(self, session: BrowserSessionRunGroup):
+  def _open_replay_server(self,
+                          session: BrowserSessionRunGroup) -> Iterator[None]:
     del session
     yield
 

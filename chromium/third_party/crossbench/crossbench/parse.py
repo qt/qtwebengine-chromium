@@ -37,10 +37,10 @@ def type_str(value: Any) -> str:
 
 class PathParser:
 
-  PATH_PREFIX = re.compile(r"^(?:"
-                           r"(?:\.\.?|~)?|"
-                           r"[a-zA-Z]:"
-                           r")(\\|/)[^\\/]")
+  PATH_PREFIX: Final[re.Pattern] = re.compile(r"^(?:"
+                                              r"(?:\.\.?|~)?|"
+                                              r"[a-zA-Z]:"
+                                              r")(\\|/)[^\\/]")
 
   @classmethod
   def value_has_path_prefix(cls, value: str) -> bool:
@@ -208,14 +208,14 @@ class ObjectParser:
       assert isinstance(enum_value, enum.Enum)
       assert isinstance(enum_value, enum_cls)
       return enum_value
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:  # noqa: BLE001
       logging.debug("Could not auto-convert data '%s' to enum %s: %s", data,
                     enum_cls, e)
 
     for enum_instance in choices:
       if data in (enum_instance, enum_instance.value):
         return enum_instance
-    choices_str: str = ", ".join(repr(item.value) for item in choices)  # pytype: disable=missing-parameter
+    choices_str: str = ", ".join(repr(item.value) for item in choices)
     raise argparse.ArgumentTypeError(f"Unknown {label}: {repr(data)}.\n"
                                      f"Choices are {choices_str}.")
 
@@ -363,6 +363,12 @@ class ObjectParser:
     return parser
 
   @classmethod
+  def parse_text_or_binary_proto_file(cls, proto_instance: ProtoClassT,
+                                      value: Any) -> ProtoClassT:
+    data: bytes = ObjectParser.bytes_or_file_contents(value)
+    return cls.parse_text_or_binary_proto(proto_instance, data)
+
+  @classmethod
   def parse_text_or_binary_proto(cls, proto_instance: ProtoClassT,
                                  value: bytes) -> ProtoClassT:
     try:
@@ -424,8 +430,8 @@ class ObjectParser:
       raise argparse.ArgumentTypeError(
           f"Invalid {name}: {repr(value)}, {e}") from e
 
-  PORT_URL_PATH_RE = re.compile(r"^[0-9]+(?:/|$)")
-  INVALID_FUZZY_URL_RE = re.compile(r"[^./]+(?:/.+)?")
+  PORT_URL_PATH_RE: Final[re.Pattern] = re.compile(r"^[0-9]+(?:/|$)")
+  INVALID_FUZZY_URL_RE: Final[re.Pattern] = re.compile(r"[^./]+(?:/.+)?")
   COMMON_URL_SCHEMES: Final[tuple[str, ...]] = ("http", "https", "about",
                                                 "file", "data", "chrome")
 
@@ -636,11 +642,10 @@ class NumberParser:
     return cls.float_range(0.0, math.inf, name=name)(value)
 
   @classmethod
-  def float_range(  # pylint: disable=redefined-builtin
-      cls,
-      min: float = 0.0,
-      max: float = math.inf,
-      name: str = "float") -> Callable[[Any], float]:
+  def float_range(cls,
+                  min: float = 0.0,
+                  max: float = math.inf,
+                  name: str = "float") -> Callable[[Any], float]:
     assert min < max, f"Expected min={min} to be less than max={max}"
 
     def float_ranged(value: Any) -> float:
@@ -688,12 +693,11 @@ class NumberParser:
     return value_i
 
   @classmethod
-  def int_range(  # pylint: disable=redefined-builtin
-      cls,
-      min: float = 0.0,
-      max: float = math.inf,
-      name: str = "value",
-      parse_str: bool = True) -> Callable[[Any], int]:
+  def int_range(cls,
+                min: float = 0.0,
+                max: float = math.inf,
+                name: str = "value",
+                parse_str: bool = True) -> Callable[[Any], int]:
     assert min < max, f"Expected min={min} to be less than max={max}"
 
     def int_ranged(value: Any) -> int:
@@ -718,6 +722,40 @@ class NumberParser:
                        name: str = "port",
                        parse_str: bool = True) -> int:
     return cls.int_range(0, 65535, name, parse_str)(value)
+
+  _SIZE_RE: Final[re.Pattern] = re.compile(r"^(?P<value>\d+)(?P<unit>[KMG])?$")
+
+  @classmethod
+  def _parse_power_of_two(cls, value: Any, name: str) -> int:
+    if isinstance(value, int):
+      return value
+    str_value = ObjectParser.non_empty_str(value, name)
+    match = cls._SIZE_RE.fullmatch(str_value)
+    if not match:
+      raise argparse.ArgumentTypeError(
+          f"Invalid {name} format: '{str_value}',"
+          " expected format like '4M' or '256K'")
+    int_value = int(match.group("value"))
+    unit = match.group("unit")
+    if unit == "K":
+      int_value *= 1024
+    elif unit == "M":
+      int_value *= 1024 * 1024
+    elif unit == "G":
+      int_value *= 1024 * 1024 * 1024
+    return int_value
+
+  @classmethod
+  def power_of_two_with_unit(cls, value: Any, name: str = "value") -> str:
+    """
+    Parses a size string (e.g., '4M', '256K') and validates that it's a
+    power of two.
+    """
+    int_value = cls._parse_power_of_two(value, name)
+    if (int_value & (int_value - 1)) != 0 or int_value == 0:
+      raise argparse.ArgumentTypeError(
+          f"Invalid {name}: '{value}' is not a power of two.")
+    return str(value)
 
 
 class LateArgumentError(argparse.ArgumentTypeError):
@@ -762,7 +800,7 @@ class TimeUnit(TimeUnitData, enum.Enum):
     raise DurationParseError(f"Error: {unit} is not supported for duration. "
                              "Make sure to use a supported time unit/suffix")
 
-  def timedelta(self, value: int | float) -> dt.timedelta:
+  def timedelta(self, value: float) -> dt.timedelta:
     return dt.timedelta(**{self.timedelta_kwarg: value})
 
 

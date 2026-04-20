@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2034  # Unused variables OK as this script is `source`d.
+
+set -o xtrace
+set -o errexit
+set -o nounset
+set -o pipefail
+
+# Set the default Rust log level to info if unset.
+# https://docs.rs/env_logger
+export RUST_LOG="${RUST_LOG:-info}"
+
+# See https://pantheon.corp.google.com/artifacts/docker/oak-ci/europe-west2/oak-development?project=oak-ci
+readonly DOCKER_IMAGE_NAME='europe-west2-docker.pkg.dev/oak-ci/oak-development/oak-development:latest'
+
+# The difference between Docker image id and image digest is that the image id corresponds to the
+# hash of the contents of the image, while the image digest is a hash of the image and its metadata,
+# and it is assigned by the specific registry after pushing the image there. Therefore, we should
+# mostly rely on the image id locally, though we need to use the image digest when pulling the image
+# from a registry first.
+
+# Do not modify manually. This value is automatically updated by ./scripts/docker_build .
+readonly DOCKER_IMAGE_ID='sha256:c31859e60b6e6937240deb65177eee8ad7a93ad13868bbe5de40808a4be3c0a4'
+
+# Do not modify manually. This value is automatically updated by ./scripts/docker_push .
+readonly DOCKER_IMAGE_REPO_DIGEST='europe-west2-docker.pkg.dev/oak-ci/oak-development/oak-development@sha256:77c7ddc117fdc82e7fd68ceec3131280de73b8ae32694b0b485eeb6340fd0363'

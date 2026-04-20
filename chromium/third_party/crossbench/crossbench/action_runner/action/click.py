@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import functools
-from typing import TYPE_CHECKING, Optional, Type
+from typing import TYPE_CHECKING, ClassVar, Optional, Type
 
 from typing_extensions import override
 
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 class ClickAction(InputSourceAction):
-  TYPE: ActionType = ActionType.CLICK
+  TYPE: ClassVar[ActionType] = ActionType.CLICK
 
   @classmethod
   @override

@@ -233,6 +233,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_khr_copy_commands2{kNotEnabled};
     ExtEnabled vk_khr_format_feature_flags2{kNotEnabled};
     ExtEnabled vk_khr_ray_tracing_maintenance1{kNotEnabled};
+    ExtEnabled vk_khr_shader_untyped_pointers{kNotEnabled};
     ExtEnabled vk_khr_maintenance4{kNotEnabled};
     ExtEnabled vk_khr_shader_subgroup_rotate{kNotEnabled};
     ExtEnabled vk_khr_shader_maximal_reconvergence{kNotEnabled};
@@ -257,6 +258,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_khr_calibrated_timestamps{kNotEnabled};
     ExtEnabled vk_khr_shader_expect_assume{kNotEnabled};
     ExtEnabled vk_khr_maintenance6{kNotEnabled};
+    ExtEnabled vk_khr_copy_memory_indirect{kNotEnabled};
     ExtEnabled vk_khr_video_encode_intra_refresh{kNotEnabled};
     ExtEnabled vk_khr_video_encode_quantization_map{kNotEnabled};
     ExtEnabled vk_khr_shader_relaxed_extended_instruction{kNotEnabled};
@@ -441,6 +443,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_color_write_enable{kNotEnabled};
     ExtEnabled vk_ext_primitives_generated_query{kNotEnabled};
     ExtEnabled vk_ext_global_priority_query{kNotEnabled};
+    ExtEnabled vk_valve_video_encode_rgb_conversion{kNotEnabled};
     ExtEnabled vk_ext_image_view_min_lod{kNotEnabled};
     ExtEnabled vk_ext_multi_draw{kNotEnabled};
     ExtEnabled vk_ext_image_2d_view_of_3d{kNotEnabled};
@@ -478,6 +481,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_pipeline_protected_access{kNotEnabled};
     ExtEnabled vk_android_external_format_resolve{kNotEnabled};
     ExtEnabled vk_amd_anti_lag{kNotEnabled};
+    ExtEnabled vk_amdx_dense_geometry_format{kNotEnabled};
     ExtEnabled vk_ext_shader_object{kNotEnabled};
     ExtEnabled vk_qcom_tile_properties{kNotEnabled};
     ExtEnabled vk_sec_amigo_profiling{kNotEnabled};
@@ -691,6 +695,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_KHR_copy_commands2:
         case vvl::Extension::_VK_KHR_format_feature_flags2:
         case vvl::Extension::_VK_KHR_ray_tracing_maintenance1:
+        case vvl::Extension::_VK_KHR_shader_untyped_pointers:
         case vvl::Extension::_VK_KHR_maintenance4:
         case vvl::Extension::_VK_KHR_shader_subgroup_rotate:
         case vvl::Extension::_VK_KHR_shader_maximal_reconvergence:
@@ -715,6 +720,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_KHR_calibrated_timestamps:
         case vvl::Extension::_VK_KHR_shader_expect_assume:
         case vvl::Extension::_VK_KHR_maintenance6:
+        case vvl::Extension::_VK_KHR_copy_memory_indirect:
         case vvl::Extension::_VK_KHR_video_encode_intra_refresh:
         case vvl::Extension::_VK_KHR_video_encode_quantization_map:
         case vvl::Extension::_VK_KHR_shader_relaxed_extended_instruction:
@@ -899,6 +905,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_EXT_color_write_enable:
         case vvl::Extension::_VK_EXT_primitives_generated_query:
         case vvl::Extension::_VK_EXT_global_priority_query:
+        case vvl::Extension::_VK_VALVE_video_encode_rgb_conversion:
         case vvl::Extension::_VK_EXT_image_view_min_lod:
         case vvl::Extension::_VK_EXT_multi_draw:
         case vvl::Extension::_VK_EXT_image_2d_view_of_3d:
@@ -936,6 +943,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_EXT_pipeline_protected_access:
         case vvl::Extension::_VK_ANDROID_external_format_resolve:
         case vvl::Extension::_VK_AMD_anti_lag:
+        case vvl::Extension::_VK_AMDX_dense_geometry_format:
         case vvl::Extension::_VK_EXT_shader_object:
         case vvl::Extension::_VK_QCOM_tile_properties:
         case vvl::Extension::_VK_SEC_amigo_profiling:

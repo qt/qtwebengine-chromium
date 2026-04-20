@@ -9,7 +9,7 @@ import json
 import logging
 import multiprocessing
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Final, Optional
 
 from typing_extensions import override
 
@@ -25,9 +25,9 @@ if TYPE_CHECKING:
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
-V8_PERF_PROF_PATH_FLAG_MIN_VERSION = ChromiumVersion((118, 0, 5993, 48))
-PERF_DATA_PATTERN = "*.perf.data"
-JIT_DUMP_PATTERN = "jit-*.dump"
+V8_PERF_PROF_PATH_FLAG_MIN_VERSION: Final = ChromiumVersion((118, 0, 5993, 48))
+PERF_DATA_PATTERN: Final = "*.perf.data"
+JIT_DUMP_PATTERN: Final = "jit-*.dump"
 
 
 class LinuxProfilingContext(PosixProfilingContext):
@@ -142,12 +142,12 @@ class LinuxProfilingContext(PosixProfilingContext):
         f"Probe {self.probe.name}: "
         f"exporting {len(perf_files)} profiles to pprof (slow)",
         verbose=True), ui.spinner():
-      self.browser_platform.sh(
+      self.browser_platform.sh(  # noqa: S604
           "gcertstatus >&/dev/null || "
           "(echo 'Authenticating with gcert:'; gcert)",
           shell=True)
       size = len(perf_files)
-      items = zip(perf_files, [run_details_json] * size)
+      items = zip(perf_files, [run_details_json] * size, strict=True)
       urls: list[str] = []
       if self.browser_platform.is_remote:
         # Use loop, as we cannot easily serialize the remote platform.
@@ -166,7 +166,7 @@ class LinuxProfilingContext(PosixProfilingContext):
         if perf_files:
           # TODO: Add "combined" profile again
           pass
-      except Exception as e:  # pylint: disable=broad-except
+      except Exception as e:  # noqa: BLE001
         logging.debug("Failed to run pprof: %s", e)
       return urls
 

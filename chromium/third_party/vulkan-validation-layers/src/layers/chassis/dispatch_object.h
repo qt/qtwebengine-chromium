@@ -65,6 +65,7 @@ class Device;
 // TODO: this could be defined and initialized via generated code
 struct DeviceExtensionProperties {
     VkPhysicalDevicePartitionedAccelerationStructurePropertiesNV partitioned_acceleration_structure_props;
+    VkPhysicalDeviceClusterAccelerationStructurePropertiesNV cluster_acceleration_props;
     VkPhysicalDeviceShadingRateImagePropertiesNV shading_rate_image_props;
     VkPhysicalDeviceMeshShaderPropertiesNV mesh_shader_props_nv;
     VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_props_ext;
@@ -107,6 +108,7 @@ struct DeviceExtensionProperties {
     VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory_host_props;
     VkPhysicalDeviceMaintenance9PropertiesKHR maintenance9_props;
     VkPhysicalDeviceTensorPropertiesARM tensor_properties;
+    VkPhysicalDeviceCopyMemoryIndirectPropertiesKHR copy_memory_indirect_props;
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
     VkPhysicalDeviceExternalFormatResolvePropertiesANDROID android_format_resolve_props;
 #endif
@@ -132,7 +134,7 @@ class StatelessDeviceData {
     VkPhysicalDeviceVulkan14Properties phys_dev_props_core14{};
     // To store the 2 lists from VkPhysicalDeviceHostImageCopyProperties
     std::vector<VkImageLayout> host_image_copy_props_copy_src_layouts{};
-    std::vector<VkImageLayout> host_imape_copy_props_copy_dst_layouts{};
+    std::vector<VkImageLayout> host_image_copy_props_copy_dst_layouts{};
     DeviceExtensionProperties phys_dev_ext_props = {};
 
     SpecialSupported special_supported;
@@ -280,6 +282,8 @@ class Instance : public HandleWrapper {
             }
         }
     }
+
+    void ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDeviceCreateInfo& create_info);
 };
 
 class Device : public HandleWrapper {

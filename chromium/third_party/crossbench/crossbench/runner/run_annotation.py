@@ -71,7 +71,7 @@ class RunAnnotation:
               annotations: Iterable[RunAnnotation],
               limit: int = 2) -> None:
     groups: dict[WarnLevel, list[RunAnnotation]] = collection_helper.group_by(
-        annotations, lambda annotation: annotation.level)
+        annotations, key=lambda annotation: annotation.level)
     if not groups:
       return
     logging.info("RUN ANNOTATIONS:")

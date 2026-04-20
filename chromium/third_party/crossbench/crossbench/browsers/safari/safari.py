@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Final, Optional
 
 from typing_extensions import override
 
@@ -19,11 +19,16 @@ if TYPE_CHECKING:
   from crossbench.browsers.settings import Settings
 
 
-SAFARIDRIVER_PATH = pth.AnyPosixPath("/usr/bin/safaridriver")
+SAFARIDRIVER_PATH: Final = pth.AnyPosixPath("/usr/bin/safaridriver")
 
 
 def find_safaridriver(bin_path: pth.AnyPath,
                       platform: plt.Platform) -> pth.AnyPath:
+  if platform.is_ios:
+    # Given that Safari will be running on the iOS device, but the driver lives
+    # on the host, it doesn't make sense to look for a path relative to Safari
+    # path.
+    return SAFARIDRIVER_PATH
   assert platform.is_file(bin_path), f"Invalid binary path: {bin_path}"
   driver_path = bin_path.parent / "safaridriver"
   if platform.exists(driver_path):
@@ -60,7 +65,7 @@ class Safari(Browser):
                settings: Optional[Settings] = None) -> None:
     self.bundle_name: str = ""
     super().__init__(label, path, settings=settings)
-    assert self.platform.is_macos, "Safari only works on MacOS"
+    assert self.platform.is_apple, "Safari only works on Apple platforms"
 
   def _init_path_and_version(self, path: Optional[pth.AnyPath] = None) -> None:
     super()._init_path_and_version(path)
@@ -72,7 +77,7 @@ class Safari(Browser):
   def _extract_version(self) -> SafariVersion:
     assert self.path
     app_version: str = self.platform.app_version(self.path)
-    driver_version = self.platform.app_version(
+    driver_version = self.host_platform.app_version(
         find_safaridriver(self.path, self.platform))
     return SafariVersion.parse(f"{app_version} {driver_version}")
 

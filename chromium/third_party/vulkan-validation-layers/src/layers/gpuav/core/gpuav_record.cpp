@@ -29,10 +29,7 @@
 #include "gpuav/validation_cmd/gpuav_dispatch.h"
 #include "gpuav/validation_cmd/gpuav_draw.h"
 #include "gpuav/validation_cmd/gpuav_trace_rays.h"
-#include "utils/assert_utils.h"
 #include "utils/math_utils.h"
-
-#include <cmath>
 
 namespace gpuav {
 
@@ -85,7 +82,7 @@ void Validator::PreCallRecordBeginCommandBuffer(VkCommandBuffer commandBuffer, c
 }
 
 void Instance::InternalWarning(LogObjectList objlist, const Location &loc, const char *const specific_message) const {
-    char const *vuid = gpuav_settings.debug_printf_only ? "WARNING-DEBUG-PRINTF" : "WARNING-GPU-Assisted-Validation";
+    const char *vuid = gpuav_settings.debug_printf_only ? "WARNING-DEBUG-PRINTF" : "WARNING-GPU-Assisted-Validation";
     LogWarning(vuid, objlist, loc, "Internal Warning: %s", specific_message);
 }
 

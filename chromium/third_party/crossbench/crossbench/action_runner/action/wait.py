@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from typing_extensions import override
 
@@ -17,8 +17,7 @@ if TYPE_CHECKING:
 
 
 class WaitAction(DurationAction):
-  TYPE: ActionType = ActionType.WAIT
-
+  TYPE: ClassVar[ActionType] = ActionType.WAIT
 
   @override
   def run_with(self, run: Run, action_runner: ActionRunner) -> None:

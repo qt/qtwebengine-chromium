@@ -48,7 +48,7 @@ class DefaultBondActionRunner(BondActionRunner):
     # Conference code is url path without leading '/'
     return url.path[1:]
 
-  def _timeout_from_deadline(self, deadline: dt.datetime):
+  def _timeout_from_deadline(self, deadline: dt.datetime) -> dt.timedelta:
     timeout = deadline - dt.datetime.now()
     if timeout <= dt.timedelta(0):
       # This should only happen if we have multiple requests in an action, and

@@ -32,7 +32,7 @@ class CacheTemperaturesRunGroup(RunGroup):
              runs: Iterable[Run],
              throw: bool = False) -> tuple[CacheTemperaturesRunGroup, ...]:
     return tuple(
-        collection_helper.group_by(
+        collection_helper.group_by_custom(
             runs,
             key=lambda run: (run.story, run.browser, run.repetition),
             group=lambda _: cls(throw),

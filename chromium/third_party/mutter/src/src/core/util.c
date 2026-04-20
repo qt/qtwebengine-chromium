@@ -49,14 +49,11 @@ static const GDebugKey meta_debug_keys[] = {
   { "window-ops", META_DEBUG_WINDOW_OPS },
   { "geometry", META_DEBUG_GEOMETRY },
   { "placement", META_DEBUG_PLACEMENT },
-  { "ping", META_DEBUG_PING },
+  { "display", META_DEBUG_DISPLAY },
   { "keybindings", META_DEBUG_KEYBINDINGS },
   { "sync", META_DEBUG_SYNC },
   { "startup", META_DEBUG_STARTUP },
   { "prefs", META_DEBUG_PREFS },
-  { "groups", META_DEBUG_GROUPS },
-  { "resizing", META_DEBUG_RESIZING },
-  { "shapes", META_DEBUG_SHAPES },
   { "edge-resistance", META_DEBUG_EDGE_RESISTANCE },
   { "dbus", META_DEBUG_DBUS },
   { "input", META_DEBUG_INPUT },
@@ -71,6 +68,8 @@ static const GDebugKey meta_debug_keys[] = {
   { "eis", META_DEBUG_EIS },
   { "kms-deadline", META_DEBUG_KMS_DEADLINE },
   { "session-management", META_DEBUG_SESSION_MANAGEMENT },
+  { "x11", META_DEBUG_X11 },
+  { "workspaces", META_DEBUG_WORKSPACES },
 };
 
 static gint verbose_topics = 0;
@@ -103,8 +102,8 @@ ensure_logfile (void)
 
       if (err != NULL)
         {
-          meta_warning ("Failed to open debug log: %s",
-                        err->message);
+          g_warning ("Failed to open debug log: %s",
+                     err->message);
           g_error_free (err);
           return;
         }
@@ -113,8 +112,8 @@ ensure_logfile (void)
 
       if (logfile == NULL)
         {
-          meta_warning ("Failed to fdopen() log file %s: %s",
-                        filename, strerror (errno));
+          g_warning ("Failed to fdopen() log file %s: %s",
+                     filename, strerror (errno));
           close (fd);
         }
       else
@@ -284,10 +283,10 @@ meta_topic_to_string (MetaDebugTopic topic)
       return "WINDOW_OPS";
     case META_DEBUG_PLACEMENT:
       return "PLACEMENT";
+    case META_DEBUG_DISPLAY:
+      return "DISPLAY";
     case META_DEBUG_GEOMETRY:
       return "GEOMETRY";
-    case META_DEBUG_PING:
-      return "PING";
     case META_DEBUG_KEYBINDINGS:
       return "KEYBINDINGS";
     case META_DEBUG_SYNC:
@@ -296,12 +295,6 @@ meta_topic_to_string (MetaDebugTopic topic)
       return "STARTUP";
     case META_DEBUG_PREFS:
       return "PREFS";
-    case META_DEBUG_GROUPS:
-      return "GROUPS";
-    case META_DEBUG_RESIZING:
-      return "RESIZING";
-    case META_DEBUG_SHAPES:
-      return "SHAPES";
     case META_DEBUG_EDGE_RESISTANCE:
       return "EDGE_RESISTANCE";
     case META_DEBUG_DBUS:
@@ -332,6 +325,10 @@ meta_topic_to_string (MetaDebugTopic topic)
       return "KMS_DEADLINE";
     case META_DEBUG_SESSION_MANAGEMENT:
       return "SESSION_MANAGEMENT";
+    case META_DEBUG_X11:
+      return "X11";
+    case META_DEBUG_WORKSPACES:
+      return "WORKSPACES";
     }
 
   return "WM";
@@ -379,34 +376,6 @@ meta_bug (const char *format, ...)
 
   /* stop us in a debugger */
   abort ();
-}
-
-void
-meta_warning (const char *format, ...)
-{
-  va_list args;
-  gchar *str;
-  FILE *out;
-
-  g_return_if_fail (format != NULL);
-
-  va_start (args, format);
-  str = g_strdup_vprintf (format, args);
-  va_end (args);
-
-#ifdef WITH_VERBOSE_MODE
-  out = logfile ? logfile : stderr;
-#else
-  out = stderr;
-#endif
-
-  utf8_fputs ("Window manager warning: ", out);
-  utf8_fputs (str, out);
-  utf8_fputs ("\n", out);
-
-  fflush (out);
-
-  g_free (str);
 }
 
 void

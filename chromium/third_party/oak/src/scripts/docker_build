@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+readonly SCRIPTS_DIR="$(dirname "$0")"
+# shellcheck source=scripts/common
+source "${SCRIPTS_DIR}/common"
+
+# Enable BuildKit for improved performance and storage management.
+#
+# See https://docs.docker.com/develop/develop-images/build_enhancements/.
+#
+# TODO(#3225): Re-enable buildkit support when it is compatible with rootless Docker.
+# export DOCKER_BUILDKIT=1
+
+docker build \
+  --cache-from="${DOCKER_IMAGE_NAME}" \
+  --tag="${DOCKER_IMAGE_NAME}" \
+  . 1>&2
+
+readonly NEW_DOCKER_IMAGE_ID="$(docker images --format='{{.ID}}' --no-trunc "${DOCKER_IMAGE_NAME}")"
+
+# Store the id (which corresponds to the SHA256 hash) of the image in the repository, so that it is
+# pinned for all other operations.
+#
+# See https://blog.aquasec.com/docker-image-tags.
+sed --in-place "s|readonly DOCKER_IMAGE_ID=.*|readonly DOCKER_IMAGE_ID='${NEW_DOCKER_IMAGE_ID}'|" "${SCRIPTS_DIR}/common"
+sed --in-place "s|\"image\": .*|\"image\": \"${NEW_DOCKER_IMAGE_ID}\",|" ./.devcontainer.json

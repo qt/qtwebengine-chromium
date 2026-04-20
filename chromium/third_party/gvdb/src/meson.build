@@ -3,7 +3,7 @@
 
 project('gvdb', 'c',
     version: '0.0',
-    meson_version: '>=0.54.0',
+    meson_version: '>=1.1',
 )
 
 libgvdb_sources = files(
@@ -17,4 +17,6 @@ gvdb_dep = declare_dependency(
 )
 meson.override_dependency('gvdb', gvdb_dep)
 
-subdir('gvdb/tests')
+if get_option('tests')
+  subdir('gvdb/tests')
+endif

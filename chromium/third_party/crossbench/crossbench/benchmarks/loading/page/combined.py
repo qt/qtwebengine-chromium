@@ -65,7 +65,7 @@ class CombinedPage(Page):
   @override
   def details_json(self) -> JsonDict:
     result = super().details_json()
-    result["pages"] = list(page.details_json() for page in self._pages)
+    result["pages"] = [page.details_json() for page in self._pages]
     return result
 
   @override

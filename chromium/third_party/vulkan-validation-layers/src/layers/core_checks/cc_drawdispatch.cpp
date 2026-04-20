@@ -22,6 +22,8 @@
 #include "drawdispatch/drawdispatch_vuids.h"
 #include "core_validation.h"
 #include "error_message/error_strings.h"
+#include "error_message/logging.h"
+#include "generated/spirv_grammar_helper.h"
 #include "generated/vk_extension_helper.h"
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/image_state.h"
@@ -1361,7 +1363,7 @@ bool CoreChecks::ValidateActionState(const LastBound &last_bound_state, const Dr
     bool skip = false;
     skip |= ValidateCmd(cb_state, loc);
 
-    // Quick verify that if there is no pipeine, the shade object is being used
+    // Quick verify that if there is no pipeline, the shader object is being used
     if (!pipeline && !enabled_features.shaderObject) {
         return LogError(vuid.pipeline_bound_08606, cb_state.GetObjectList(bind_point), loc,
                         "A valid %s pipeline must be bound with vkCmdBindPipeline before calling this command.",
@@ -1376,9 +1378,10 @@ bool CoreChecks::ValidateActionState(const LastBound &last_bound_state, const Dr
         skip |= ValidateDrawAttachmentColorBlend(last_bound_state, vuid);
         skip |= ValidateDrawAttachmentSampleLocation(last_bound_state, vuid);
         skip |= ValidateDrawDepthStencilAttachments(last_bound_state, vuid);
+        skip |= ValidateDrawTessellation(last_bound_state, vuid);
 
         if (cb_state.active_render_pass && cb_state.active_render_pass->UsesDynamicRendering()) {
-            skip |= ValidateDrawDynamicRenderingFsOutputs(last_bound_state, *cb_state.active_render_pass, loc);
+            skip |= ValidateDrawDynamicRenderingFsOutputs(last_bound_state, cb_state, loc);
             skip |= ValidateDrawDynamicRenderpassExternalFormatResolve(last_bound_state, *cb_state.active_render_pass, vuid);
         }
 
@@ -1547,7 +1550,8 @@ bool CoreChecks::ValidateActionStateDescriptorsPipeline(const LastBound &last_bo
                 const bool need_validate =
                     NeedDrawStateValidated(cb_state, descriptor_set, ds_slot, disabled[image_layout_validation]);
                 if (need_validate) {
-                    skip |= ValidateDrawState(*descriptor_set, set_index, binding_req_map, cb_state, vuid, pipeline.Handle());
+                    skip |= ValidateDrawState(*descriptor_set, set_index, binding_req_map, cb_state, vuid,
+                                              LogObjectList(pipeline.Handle()));
                 }
             }
         }
@@ -1621,8 +1625,8 @@ bool CoreChecks::ValidateActionStateDescriptorsShaderObject(const LastBound &las
                     const bool need_validate =
                         NeedDrawStateValidated(cb_state, descriptor_set, ds_slot, disabled[image_layout_validation]);
                     if (need_validate) {
-                        skip |=
-                            ValidateDrawState(*descriptor_set, set_index, binding_req_map, cb_state, vuid, shader_state->Handle());
+                        skip |= ValidateDrawState(*descriptor_set, set_index, binding_req_map, cb_state, vuid,
+                                                  LogObjectList(shader_state->Handle()));
                     }
                 }
             }
@@ -1918,7 +1922,7 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
         if (!attachment || !attachment_info.IsColor()) {
             continue;
         }
-        const uint32_t color_index = attachment_info.color_index;
+        const uint32_t color_index = attachment_info.type_index;
 
         if (dynamic_write_mask && cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT) &&
             !cb_state.dynamic_state_value.color_write_mask_attachments[color_index]) {
@@ -1950,7 +1954,7 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
             LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
             objlist.add(attachment->Handle());
             skip |= LogError(vuid.blend_enable_04727, objlist, vuid.loc(),
-                             "%s was created with %s which does not have VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT, but %s\n"
+                             "%s was created with %s which doesn't support VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT, but %s\n"
                              "(supported features: %s)",
                              attachment_info.Describe(cb_state, i).c_str(), string_VkFormat(attachment->create_info.format),
                              last_bound_state.DescribeColorBlendEnabled(color_index).c_str(),
@@ -2130,6 +2134,89 @@ bool CoreChecks::ValidateDrawDepthStencilAttachments(const LastBound &last_bound
                 }
             }
         }
+    }
+
+    return skip;
+}
+
+bool CoreChecks::ValidateDrawTessellation(const LastBound &last_bound_state, const vvl::DrawDispatchVuid &vuid) const {
+    bool skip = false;
+    if ((last_bound_state.GetAllActiveBoundStages() & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT) == 0) {
+        return skip;
+    }
+
+    const spirv::ExecutionModeSet *tesc_execution_mode = nullptr;
+    const spirv::ExecutionModeSet *tese_execution_mode = nullptr;
+
+    if (last_bound_state.pipeline_state) {
+        for (const auto &stage_state : last_bound_state.pipeline_state->stage_states) {
+            const VkShaderStageFlagBits stage = stage_state.GetStage();
+            if (stage & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT) {
+                if (stage_state.entrypoint) {
+                    tesc_execution_mode = &stage_state.entrypoint->execution_mode;
+                }
+            } else if (stage & VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT) {
+                if (stage_state.entrypoint) {
+                    tese_execution_mode = &stage_state.entrypoint->execution_mode;
+                }
+            }
+        }
+    } else {
+        const auto tesc_shader = last_bound_state.GetShaderState(ShaderObjectStage::TESSELLATION_CONTROL);
+        if (tesc_shader && tesc_shader->entrypoint) {
+            tesc_execution_mode = &tesc_shader->entrypoint->execution_mode;
+        }
+        const auto tese_shader = last_bound_state.GetShaderState(ShaderObjectStage::TESSELLATION_EVALUATION);
+        if (tese_shader && tese_shader->entrypoint) {
+            tese_execution_mode = &tese_shader->entrypoint->execution_mode;
+        }
+    }
+
+    if (!tesc_execution_mode || !tese_execution_mode) {
+        return skip;  // Occurs if using binary shader object
+    }
+
+    // VUID being added in https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/7694
+    const uint32_t tesc_subdivision = tesc_execution_mode->GetTessellationSubdivision();
+    const uint32_t tese_subdivision = tese_execution_mode->GetTessellationSubdivision();
+    if (tesc_subdivision != spirv::kInvalidValue && tese_subdivision != spirv::kInvalidValue &&
+        tesc_subdivision != tese_subdivision) {
+        skip |= LogError("UNASSIGNED-vkCmdDraw-tessellation-subdivision",
+                         last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                         "The subdivision specified in tessellation control shader (%s) does not match the subdivision in "
+                         "tessellation evaluation shader (%s).",
+                         string_SpvExecutionMode(tesc_subdivision), string_SpvExecutionMode(tese_subdivision));
+    }
+
+    const uint32_t tesc_orientation = tesc_execution_mode->GetTessellationOrientation();
+    const uint32_t tese_orientation = tese_execution_mode->GetTessellationOrientation();
+    if (tesc_orientation != spirv::kInvalidValue && tese_orientation != spirv::kInvalidValue &&
+        tesc_orientation != tese_orientation) {
+        skip |= LogError("UNASSIGNED-vkCmdDraw-tessellation-orientation",
+                         last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                         "The orientation specified in tessellation control shader (%s) does not match the orientation in "
+                         "tessellation evaluation shader (%s).",
+                         string_SpvExecutionMode(tesc_orientation), string_SpvExecutionMode(tese_orientation));
+    }
+
+    const uint32_t tesc_spacing = tesc_execution_mode->GetTessellationSpacing();
+    const uint32_t tese_spacing = tese_execution_mode->GetTessellationSpacing();
+    if (tesc_spacing != spirv::kInvalidValue && tese_spacing != spirv::kInvalidValue && tesc_spacing != tese_spacing) {
+        skip |= LogError("UNASSIGNED-vkCmdDraw-tessellation-spacing",
+                         last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                         "The spacing specified in tessellation control shader (%s) does not match the spacing in "
+                         "tessellation evaluation shader (%s).",
+                         string_SpvExecutionMode(tesc_spacing), string_SpvExecutionMode(tese_spacing));
+    }
+    const uint32_t tesc_patch_size = tesc_execution_mode->output_vertices;
+    const uint32_t tese_patch_size = tese_execution_mode->output_vertices;
+    if (tesc_patch_size != spirv::kInvalidValue && tese_patch_size != spirv::kInvalidValue && tesc_patch_size != tese_patch_size) {
+        skip |= LogError("UNASSIGNED-vkCmdDraw-tessellation-patch-size",
+                         last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                         "The OutputVertices (patch size) specified in tessellation control shader (%" PRIu32
+                         ") does not match the spacing in "
+                         "tessellation evaluation shader (%" PRIu32 ").",
+                         tesc_patch_size, tese_patch_size);
     }
 
     return skip;

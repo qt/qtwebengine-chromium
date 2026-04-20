@@ -10,7 +10,7 @@
             "builder_id": {
               "bucket": "ci",
               "builder": "android-official",
-              "project": "chromium-m140"
+              "project": "chromium-m142"
             },
             "builder_spec": {
               "builder_group": "chromium",
@@ -43,7 +43,7 @@
         {
           "bucket": "ci",
           "builder": "android-official",
-          "project": "chromium-m140"
+          "project": "chromium-m142"
         }
       ],
       "mirroring_builder_group_and_names": [
@@ -52,7 +52,8 @@
           "group": "tryserver.chromium"
         }
       ],
-      "targets_spec_directory": "src/infra/config/generated/builders/ci/android-official/targets"
+      "targets_spec_directory": "infra/config/generated/builders/ci/android-official/targets",
+      "targets_spec_directory_relative_to_source_dir": true
     }
   },
   "$build/siso": {

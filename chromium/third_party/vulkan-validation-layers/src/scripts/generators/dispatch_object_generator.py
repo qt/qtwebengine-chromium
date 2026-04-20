@@ -4,6 +4,7 @@
 # Copyright (c) 2015-2025 Valve Corporation
 # Copyright (c) 2015-2025 LunarG, Inc.
 # Copyright (c) 2015-2025 Google Inc.
+# Copyright (C) 2025 Arm Limited.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,7 +58,7 @@ class APISpecific:
                         'device': 'deprecation::Device',
                         'instance': 'deprecation::Instance',
                         'type': 'LayerObjectTypeDeprecation',
-                        'enabled': 'settings.enabled[deprecation_checks]'
+                        'enabled': 'settings.enabled[deprecation_detection]'
                     },
                     {
                         'include': 'object_tracker/object_lifetime_validation.h',
@@ -129,6 +130,7 @@ class DispatchObjectGenerator(BaseGenerator):
             'vkCreateComputePipelines',
             'vkCreateRayTracingPipelinesNV',
             'vkCreateRayTracingPipelinesKHR',
+            'vkCreateDataGraphPipelinesARM',
             # Need to only wrap on certain cases
             'vkCreateShadersEXT',
             # Need handle which pool descriptors were allocated from
@@ -616,6 +618,11 @@ class DispatchObjectGenerator(BaseGenerator):
                 count_name = member.length
                 if (count_name is not None) and not topLevel:
                     count_name = f'{prefix}{member.length}'
+
+                # Handle the case when the member specifying the count is a pointer
+                for count_member in members:
+                    if count_member.name == member.length and count_member.pointer:
+                        count_name = f'*{count_name}'
 
                 if (not topLevel) or (not isCreate) or (not member.pointer):
                     if count_name is not None:

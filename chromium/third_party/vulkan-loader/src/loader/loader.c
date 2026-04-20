@@ -32,6 +32,7 @@
 
 #include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -305,7 +306,7 @@ VkResult create_string_list(const struct loader_instance *inst, uint32_t allocat
     return VK_SUCCESS;
 }
 
-VkResult incrase_str_capacity_by_at_least_one(const struct loader_instance *inst, struct loader_string_list *string_list) {
+VkResult increase_str_capacity_by_at_least_one(const struct loader_instance *inst, struct loader_string_list *string_list) {
     assert(string_list);
     if (string_list->allocated_count == 0) {
         string_list->allocated_count = 32;
@@ -328,7 +329,7 @@ VkResult incrase_str_capacity_by_at_least_one(const struct loader_instance *inst
 
 VkResult append_str_to_string_list(const struct loader_instance *inst, struct loader_string_list *string_list, char *str) {
     assert(string_list && str);
-    VkResult res = incrase_str_capacity_by_at_least_one(inst, string_list);
+    VkResult res = increase_str_capacity_by_at_least_one(inst, string_list);
     if (res == VK_ERROR_OUT_OF_HOST_MEMORY) {
         loader_instance_heap_free(inst, str);  // Must clean up in case of failure
         return res;
@@ -339,7 +340,7 @@ VkResult append_str_to_string_list(const struct loader_instance *inst, struct lo
 
 VkResult prepend_str_to_string_list(const struct loader_instance *inst, struct loader_string_list *string_list, char *str) {
     assert(string_list && str);
-    VkResult res = incrase_str_capacity_by_at_least_one(inst, string_list);
+    VkResult res = increase_str_capacity_by_at_least_one(inst, string_list);
     if (res == VK_ERROR_OUT_OF_HOST_MEMORY) {
         loader_instance_heap_free(inst, str);  // Must clean up in case of failure
         return res;
@@ -545,7 +546,7 @@ out:
 #endif
 }
 
-// Queries the path to the library that lib_handle & gipa are assoicated with, allocating a string to hold it and returning it in
+// Queries the path to the library that lib_handle & gipa are associated with, allocating a string to hold it and returning it in
 // out_path
 VkResult get_library_path_of_dl_handle(const struct loader_instance *inst, loader_platform_dl_handle lib_handle,
                                        PFN_vkGetInstanceProcAddr gipa, char **out_path) {
@@ -2538,7 +2539,7 @@ bool verify_meta_layer_component_layers(const struct loader_instance *inst, size
             }
             if (comp_prop_index != INT32_MAX && already_checked_meta_layers[comp_prop_index]) {
                 loader_log(inst, VULKAN_LOADER_WARN_BIT, 0,
-                           "verify_meta_layer_component_layers: Recursive depedency between Meta-layer %s and  Meta-layer %s.  "
+                           "verify_meta_layer_component_layers: Recursive dependency between Meta-layer %s and  Meta-layer %s.  "
                            "Skipping this layer.",
                            instance_layers->list[prop_index].info.layerName, comp_prop->info.layerName);
                 return false;
@@ -4249,9 +4250,13 @@ VkResult get_override_layer_override_paths(struct loader_instance *inst, struct 
         for (uint32_t j = 0; j < prop->override_paths.count; j++) {
             copy_data_file_info(prop->override_paths.list[j], NULL, 0, &cur_write_ptr);
         }
+
+        // Subtract one from cur_write_ptr only if something was written so we can set the null terminator
+        if (*override_paths < cur_write_ptr) {
+            --cur_write_ptr;
+            assert(cur_write_ptr - (*override_paths) < (ptrdiff_t)override_path_size);
+        }
         // Remove the last path separator
-        --cur_write_ptr;
-        assert(cur_write_ptr - (*override_paths) < (ptrdiff_t)override_path_size);
         *cur_write_ptr = '\0';
         loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_LAYER_BIT, 0, "Override layer has override paths set to %s",
                    *override_paths);
@@ -4641,15 +4646,20 @@ loader_platform_dl_handle loader_open_layer_file(const struct loader_instance *i
 
 // Go through the search_list and find any layers which match type. If layer
 // type match is found in then add it to ext_list.
-VkResult loader_add_implicit_layers(const struct loader_instance *inst, const struct loader_envvar_all_filters *filters,
-                                    struct loader_pointer_layer_list *target_list,
+// If the layer name is in enabled_layers_env, do not add it to the list, that way it can be ordered alongside the other env-var
+// enabled layers
+VkResult loader_add_implicit_layers(const struct loader_instance *inst, const char *enabled_layers_env,
+                                    const struct loader_envvar_all_filters *filters, struct loader_pointer_layer_list *target_list,
                                     struct loader_pointer_layer_list *expanded_target_list,
                                     const struct loader_layer_list *source_list) {
     for (uint32_t src_layer = 0; src_layer < source_list->count; src_layer++) {
         struct loader_layer_properties *prop = &source_list->list[src_layer];
         if (0 == (prop->type_flags & VK_LAYER_TYPE_FLAG_EXPLICIT_LAYER)) {
-            VkResult result = loader_add_implicit_layer(inst, prop, filters, target_list, expanded_target_list, source_list);
-            if (result == VK_ERROR_OUT_OF_HOST_MEMORY) return result;
+            // If this layer appears in the enabled_layers_env, don't add it. We will let loader_add_environment_layers handle it
+            if (NULL == enabled_layers_env || NULL == strstr(enabled_layers_env, prop->info.layerName)) {
+                VkResult result = loader_add_implicit_layer(inst, prop, filters, target_list, expanded_target_list, source_list);
+                if (result == VK_ERROR_OUT_OF_HOST_MEMORY) return result;
+            }
         }
     }
     return VK_SUCCESS;
@@ -4675,6 +4685,7 @@ VkResult loader_enable_instance_layers(struct loader_instance *inst, const VkIns
                                        const struct loader_layer_list *instance_layers,
                                        const struct loader_envvar_all_filters *layer_filters) {
     VkResult res = VK_SUCCESS;
+    char *enabled_layers_env = NULL;
 
     assert(inst && "Cannot have null instance");
 
@@ -4701,15 +4712,17 @@ VkResult loader_enable_instance_layers(struct loader_instance *inst, const VkIns
         goto out;
     }
 
+    enabled_layers_env = loader_getenv(ENABLED_LAYERS_ENV, inst);
+
     // Add any implicit layers first
-    res = loader_add_implicit_layers(inst, layer_filters, &inst->app_activated_layer_list, &inst->expanded_activated_layer_list,
-                                     instance_layers);
+    res = loader_add_implicit_layers(inst, enabled_layers_env, layer_filters, &inst->app_activated_layer_list,
+                                     &inst->expanded_activated_layer_list, instance_layers);
     if (res != VK_SUCCESS) {
         goto out;
     }
 
     // Add any layers specified via environment variable next
-    res = loader_add_environment_layers(inst, VK_LAYER_TYPE_FLAG_EXPLICIT_LAYER, layer_filters, &inst->app_activated_layer_list,
+    res = loader_add_environment_layers(inst, enabled_layers_env, layer_filters, &inst->app_activated_layer_list,
                                         &inst->expanded_activated_layer_list, instance_layers);
     if (res != VK_SUCCESS) {
         goto out;
@@ -4721,6 +4734,10 @@ VkResult loader_enable_instance_layers(struct loader_instance *inst, const VkIns
 
     warn_if_layers_are_older_than_application(inst);
 out:
+    if (enabled_layers_env != NULL) {
+        loader_free_getenv(enabled_layers_env, inst);
+    }
+
     return res;
 }
 
@@ -5564,6 +5581,7 @@ VkResult loader_validate_instance_extensions(struct loader_instance *inst, const
                                              const VkInstanceCreateInfo *pCreateInfo) {
     VkExtensionProperties *extension_prop;
     char *env_value;
+    char *enabled_layers_env = NULL;
     bool check_if_known = true;
     VkResult res = VK_SUCCESS;
 
@@ -5593,14 +5611,17 @@ VkResult loader_validate_instance_extensions(struct loader_instance *inst, const
             goto out;
         }
     } else {
+        enabled_layers_env = loader_getenv(ENABLED_LAYERS_ENV, inst);
+
         // Build the lists of active layers (including meta layers) and expanded layers (with meta layers resolved to their
         // components)
-        res = loader_add_implicit_layers(inst, layer_filters, &active_layers, &expanded_layers, instance_layers);
+        res =
+            loader_add_implicit_layers(inst, enabled_layers_env, layer_filters, &active_layers, &expanded_layers, instance_layers);
         if (res != VK_SUCCESS) {
             goto out;
         }
-        res = loader_add_environment_layers(inst, VK_LAYER_TYPE_FLAG_EXPLICIT_LAYER, layer_filters, &active_layers,
-                                            &expanded_layers, instance_layers);
+        res = loader_add_environment_layers(inst, enabled_layers_env, layer_filters, &active_layers, &expanded_layers,
+                                            instance_layers);
         if (res != VK_SUCCESS) {
             goto out;
         }
@@ -5686,6 +5707,10 @@ VkResult loader_validate_instance_extensions(struct loader_instance *inst, const
 out:
     loader_destroy_pointer_layer_list(inst, &active_layers);
     loader_destroy_pointer_layer_list(inst, &expanded_layers);
+    if (enabled_layers_env != NULL) {
+        loader_free_getenv(enabled_layers_env, inst);
+    }
+
     return res;
 }
 
@@ -7122,6 +7147,15 @@ out:
 // device_configurations in the settings file.
 VkResult loader_apply_settings_device_configurations(struct loader_instance *inst, uint32_t *pPhysicalDeviceCount,
                                                      VkPhysicalDevice *pPhysicalDevices) {
+    loader_log(inst, VULKAN_LOADER_INFO_BIT, 0,
+               "Reordering the output of vkEnumeratePhysicalDevices to match the loader settings device configurations list");
+
+    bool *pd_was_added = loader_stack_alloc(inst->phys_dev_count_term * sizeof(bool));
+    if (NULL == pd_was_added) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+    memset(pd_was_added, 0, inst->phys_dev_count_term * sizeof(bool));
+
     bool *pd_supports_11 = loader_stack_alloc(inst->phys_dev_count_term * sizeof(bool));
     if (NULL == pd_supports_11) {
         return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -7177,9 +7211,10 @@ VkResult loader_apply_settings_device_configurations(struct loader_instance *ins
                     *pPhysicalDeviceCount = written_output_index;  // write out how many were written
                     return VK_INCOMPLETE;
                 }
+                loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "pPhysicalDevices array index %d is set to \"%s\" ",
+                           written_output_index, pd_props[j].deviceName);
                 pPhysicalDevices[written_output_index++] = (VkPhysicalDevice)inst->phys_devs_term[j];
-                loader_log(inst, VULKAN_LOADER_INFO_BIT, 0, "Insert VkPhysicalDevice \"%s\" to the pPhysicalDevices list",
-                           pd_props[j].deviceName);
+                pd_was_added[j] = true;
                 break;
             }
         }
@@ -7191,7 +7226,7 @@ VkResult loader_apply_settings_device_configurations(struct loader_instance *ins
                     inst, VULKAN_LOADER_WARN_BIT, 0,
                     "loader_apply_settings_device_configurations: settings file contained device_configuration which does not "
                     "appear in the enumerated VkPhysicalDevices. Missing VkPhysicalDevice with deviceName: \"%s\" and deviceUUID: "
-                    "%x%x%x%x-%x%x-%x%x-%x%x-%x%x%x%x%x%x",
+                    "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
                     inst->settings.device_configurations[i].deviceName, id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7],
                     id[8], id[9], id[10], id[11], id[12], id[13], id[14], id[15]);
             } else {
@@ -7199,12 +7234,29 @@ VkResult loader_apply_settings_device_configurations(struct loader_instance *ins
                     inst, VULKAN_LOADER_WARN_BIT, 0,
                     "loader_apply_settings_device_configurations: settings file contained device_configuration which does not "
                     "appear in the enumerated VkPhysicalDevices. Missing VkPhysicalDevice with deviceUUID: "
-                    "%x%x%x%x-%x%x-%x%x-%x%x-%x%x%x%x%x%x",
+                    "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
                     id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7], id[8], id[9], id[10], id[11], id[12], id[13], id[14],
                     id[15]);
             }
         }
     }
+
+    for (uint32_t j = 0; j < inst->phys_dev_count_term; j++) {
+        if (!pd_was_added[j]) {
+            loader_log(inst, VULKAN_LOADER_INFO_BIT, 0,
+                       "VkPhysicalDevice \"%s\" did not appear in the settings file device configurations list, so was not added "
+                       "to the pPhysicalDevices array",
+                       pd_props[j].deviceName);
+        }
+    }
+
+    if (written_output_index == 0) {
+        loader_log(inst, VULKAN_LOADER_WARN_BIT, 0,
+                   "loader_apply_settings_device_configurations: None of the settings file device configurations had "
+                   "deviceUUID's that corresponded to enumerated VkPhysicalDevices. Returning VK_ERROR_INITIALIZATION_FAILED");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
     *pPhysicalDeviceCount = written_output_index;  // update with how many were written
     return VK_SUCCESS;
 }
@@ -7958,4 +8010,134 @@ out:
         *pPhysicalDeviceGroupCount = total_count;
     }
     return res;
+}
+
+VkResult get_device_driver_id(VkPhysicalDevice physicalDevice, VkDriverId *driverId) {
+    VkPhysicalDeviceDriverProperties physical_device_driver_props = {0};
+    physical_device_driver_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
+
+    VkPhysicalDeviceProperties2 props2 = {0};
+    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    props2.pNext = &physical_device_driver_props;
+
+    struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)physicalDevice;
+    struct loader_icd_term *icd_term = phys_dev_term->this_icd_term;
+    const struct loader_instance *inst = icd_term->this_instance;
+
+    assert(inst != NULL);
+
+    // Get the function pointer to use to call into the ICD. This could be the core or KHR version
+    PFN_vkGetPhysicalDeviceProperties2 fpGetPhysicalDeviceProperties2 = NULL;
+    if (loader_check_version_meets_required(LOADER_VERSION_1_1_0, inst->app_api_version)) {
+        fpGetPhysicalDeviceProperties2 = icd_term->dispatch.GetPhysicalDeviceProperties2;
+    }
+    if (fpGetPhysicalDeviceProperties2 == NULL && inst->enabled_extensions.khr_get_physical_device_properties2) {
+        fpGetPhysicalDeviceProperties2 = icd_term->dispatch.GetPhysicalDeviceProperties2KHR;
+    }
+
+    if (fpGetPhysicalDeviceProperties2 == NULL) {
+        *driverId = 0;
+        return VK_ERROR_UNKNOWN;
+    }
+
+    fpGetPhysicalDeviceProperties2(phys_dev_term->phys_dev, &props2);
+
+    *driverId = physical_device_driver_props.driverID;
+    return VK_SUCCESS;
+}
+
+VkResult loader_filter_enumerated_physical_device(const struct loader_instance *inst,
+                                                  const struct loader_envvar_id_filter *device_id_filter,
+                                                  const struct loader_envvar_id_filter *vendor_id_filter,
+                                                  const struct loader_envvar_id_filter *driver_id_filter,
+                                                  const uint32_t in_PhysicalDeviceCount,
+                                                  const VkPhysicalDevice *in_pPhysicalDevices, uint32_t *out_pPhysicalDeviceCount,
+                                                  VkPhysicalDevice *out_pPhysicalDevices) {
+    uint32_t filtered_physical_device_count = 0;
+    for (uint32_t i = 0; i < in_PhysicalDeviceCount; i++) {
+        VkPhysicalDeviceProperties dev_props = {0};
+        inst->disp->layer_inst_disp.GetPhysicalDeviceProperties(in_pPhysicalDevices[i], &dev_props);
+
+        if ((0 != device_id_filter->count) && !check_id_matches_filter_environment_var(dev_props.deviceID, device_id_filter)) {
+            continue;
+        }
+
+        if ((0 != vendor_id_filter->count) && !check_id_matches_filter_environment_var(dev_props.vendorID, vendor_id_filter)) {
+            continue;
+        }
+
+        if (0 != driver_id_filter->count) {
+            VkDriverId driver_id;
+            VkResult res = get_device_driver_id(in_pPhysicalDevices[i], &driver_id);
+
+            if ((res != VK_SUCCESS) || !check_id_matches_filter_environment_var(driver_id, driver_id_filter)) {
+                continue;
+            }
+        }
+
+        if ((NULL != out_pPhysicalDevices) && (filtered_physical_device_count < *out_pPhysicalDeviceCount)) {
+            out_pPhysicalDevices[filtered_physical_device_count] = in_pPhysicalDevices[i];
+        }
+        filtered_physical_device_count++;
+    }
+
+    if ((NULL == out_pPhysicalDevices) || (filtered_physical_device_count < *out_pPhysicalDeviceCount)) {
+        *out_pPhysicalDeviceCount = filtered_physical_device_count;
+    }
+
+    return (*out_pPhysicalDeviceCount < filtered_physical_device_count) ? VK_INCOMPLETE : VK_SUCCESS;
+}
+
+VkResult loader_filter_enumerated_physical_device_groups(
+    const struct loader_instance *inst, const struct loader_envvar_id_filter *device_id_filter,
+    const struct loader_envvar_id_filter *vendor_id_filter, const struct loader_envvar_id_filter *driver_id_filter,
+    const uint32_t in_PhysicalDeviceGroupCount, const VkPhysicalDeviceGroupProperties *in_pPhysicalDeviceGroupProperties,
+    uint32_t *out_PhysicalDeviceGroupCount, VkPhysicalDeviceGroupProperties *out_pPhysicalDeviceGroupProperties) {
+    uint32_t filtered_physical_device_group_count = 0;
+    for (uint32_t i = 0; i < in_PhysicalDeviceGroupCount; i++) {
+        const VkPhysicalDeviceGroupProperties *device_group = &in_pPhysicalDeviceGroupProperties[i];
+
+        bool skip_group = false;
+        for (uint32_t j = 0; j < device_group->physicalDeviceCount; j++) {
+            VkPhysicalDeviceProperties dev_props = {0};
+            inst->disp->layer_inst_disp.GetPhysicalDeviceProperties(device_group->physicalDevices[j], &dev_props);
+
+            if ((0 != device_id_filter->count) && !check_id_matches_filter_environment_var(dev_props.deviceID, device_id_filter)) {
+                skip_group = true;
+                break;
+            }
+
+            if ((0 != vendor_id_filter->count) && !check_id_matches_filter_environment_var(dev_props.vendorID, vendor_id_filter)) {
+                skip_group = true;
+                break;
+            }
+
+            if (0 != driver_id_filter->count) {
+                VkDriverId driver_id;
+                VkResult res = get_device_driver_id(device_group->physicalDevices[j], &driver_id);
+
+                if ((res != VK_SUCCESS) || !check_id_matches_filter_environment_var(driver_id, driver_id_filter)) {
+                    skip_group = true;
+                    break;
+                }
+            }
+        }
+
+        if (skip_group) {
+            continue;
+        }
+
+        if ((NULL != out_pPhysicalDeviceGroupProperties) &&
+            (filtered_physical_device_group_count < *out_PhysicalDeviceGroupCount)) {
+            out_pPhysicalDeviceGroupProperties[filtered_physical_device_group_count] = *device_group;
+        }
+
+        filtered_physical_device_group_count++;
+    }
+
+    if ((NULL == out_pPhysicalDeviceGroupProperties) || (filtered_physical_device_group_count < *out_PhysicalDeviceGroupCount)) {
+        *out_PhysicalDeviceGroupCount = filtered_physical_device_group_count;
+    }
+
+    return (*out_PhysicalDeviceGroupCount < filtered_physical_device_group_count) ? VK_INCOMPLETE : VK_SUCCESS;
 }

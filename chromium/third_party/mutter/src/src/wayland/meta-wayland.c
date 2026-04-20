@@ -41,6 +41,7 @@
 #include "wayland/meta-wayland-buffer.h"
 #include "wayland/meta-wayland-color-management.h"
 #include "wayland/meta-wayland-commit-timing.h"
+#include "wayland/meta-wayland-cursor-shape.h"
 #include "wayland/meta-wayland-fifo.h"
 #include "wayland/meta-wayland-data-device.h"
 #include "wayland/meta-wayland-dma-buf.h"
@@ -538,49 +539,15 @@ meta_wayland_compositor_update (MetaWaylandCompositor *compositor,
   meta_wayland_seat_update (compositor->seat, event);
 }
 
-static MetaWaylandOutput *
-get_output_for_stage_view (MetaWaylandCompositor *compositor,
-                           ClutterStageView      *stage_view)
-{
-  MetaCrtc *crtc;
-  MetaOutput *output;
-  MetaMonitor *monitor;
-
-  crtc = meta_renderer_view_get_crtc (META_RENDERER_VIEW (stage_view));
-
-  /*
-   * All outputs occupy the same region of the screen, as their contents are
-   * the same, so pick the first one.
-   */
-  output = meta_crtc_get_outputs (crtc)->data;
-
-  monitor = meta_output_get_monitor (output);
-  return g_hash_table_lookup (compositor->outputs,
-                              meta_monitor_get_spec (monitor));
-}
-
 static void
 on_presented (ClutterStage          *stage,
               ClutterStageView      *stage_view,
               ClutterFrameInfo      *frame_info,
               MetaWaylandCompositor *compositor)
 {
-  MetaWaylandPresentationFeedback *feedback, *next;
-  struct wl_list *feedbacks;
-  MetaWaylandOutput *output;
-
-  feedbacks =
-    meta_wayland_presentation_time_ensure_feedbacks (&compositor->presentation_time,
-                                                     stage_view);
-
-  output = get_output_for_stage_view (compositor, stage_view);
-
-  wl_list_for_each_safe (feedback, next, feedbacks, link)
-    {
-      meta_wayland_presentation_feedback_present (feedback,
-                                                  frame_info,
-                                                  output);
-    }
+  meta_wayland_presentation_time_present_feedbacks (compositor,
+                                                    stage_view,
+                                                    frame_info);
 }
 
 static void
@@ -756,12 +723,17 @@ set_gnome_env (const char *name,
   if (error)
     {
       char *remote_error;
+      const char *ignored_remote_errors[] = {
+        "org.gnome.SessionManager.NotInInitialization",
+        "org.freedesktop.DBus.Error.NameHasNoOwner",
+        NULL,
+      };
 
       remote_error = g_dbus_error_get_remote_error (error);
-      if (g_strcmp0 (remote_error, "org.gnome.SessionManager.NotInInitialization") != 0)
+      if (!g_strv_contains (ignored_remote_errors, remote_error))
         {
-          meta_warning ("Failed to set environment variable %s for gnome-session: %s",
-                        name, error->message);
+          g_warning ("Failed to set environment variable %s for gnome-session: %s",
+                     name, error->message);
         }
 
       g_free (remote_error);
@@ -996,7 +968,6 @@ meta_wayland_compositor_new (MetaContext *context)
 
   meta_wayland_init_egl (compositor);
   meta_wayland_init_shm (compositor);
-
   meta_wayland_outputs_init (compositor);
   meta_wayland_data_device_manager_init (compositor);
   meta_wayland_data_device_primary_manager_init (compositor);
@@ -1030,6 +1001,7 @@ meta_wayland_compositor_new (MetaContext *context)
 #endif
   meta_wayland_commit_timing_init (compositor);
   meta_wayland_fifo_init (compositor);
+  meta_wayland_init_cursor_shape (compositor);
 
 #ifdef HAVE_WAYLAND_EGLSTREAM
   {

@@ -31,7 +31,7 @@
 /* This class aims at helping with the validation of a family of VUIDs referring to the same buffer device address.
    For example, take those VUIDs for VkDescriptorBufferBindingInfoEXT:
 
-   VUID-VkDescriptorBufferBindingInfoEXT-usage-08122:
+   VUID-VkDescriptorBufferBindingInfoEXT-usage-08122
    If usage includes VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT, address must be an address within a valid buffer that was
    created with VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT
 
@@ -81,10 +81,12 @@ class BufferAddressValidation {
     [[nodiscard]] bool ValidateDeviceAddress(const CoreChecks& validator, const Location& device_address_loc,
                                              const LogObjectList& objlist, VkDeviceAddress device_address) noexcept {
         bool skip = false;
-        // Assumes the caller checks if the device_address can be null or not
+        // There will be an implicit VU like "must be a valid VkDeviceAddress value" and if can't be zero, stateless validation
+        // should have caught this already
         if (device_address == 0) {
             return skip;
         }
+
         vvl::span<vvl::Buffer* const> buffer_list = validator.GetBuffersByAddress(device_address);
         if (buffer_list.empty()) {
             skip |= validator.LogError(
@@ -228,8 +230,8 @@ bool BufferAddressValidation<ChecksCount>::LogInvalidBuffers(const CoreChecks& v
 [[maybe_unused]] static std::string PrintBufferRanges(const CoreChecks& validator, vvl::span<vvl::Buffer* const> buffers) {
     std::ostringstream ss;
     for (const auto& buffer : buffers) {
-        ss << "  " << validator.FormatHandle(buffer->Handle()) << " : range " << string_range_hex(buffer->DeviceAddressRange())
-           << '\n';
+        ss << "  " << validator.FormatHandle(buffer->Handle()) << " : size " << buffer->create_info.size << " : range "
+           << string_range_hex(buffer->DeviceAddressRange()) << '\n';
     }
     return ss.str();
 }

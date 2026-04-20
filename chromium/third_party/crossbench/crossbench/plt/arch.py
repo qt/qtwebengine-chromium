@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import enum
+from typing import Final
 
 
 class MachineArch(enum.Enum):
@@ -14,9 +15,9 @@ class MachineArch(enum.Enum):
   ARM_64 = ("arm64", "arm", 64)
 
   def __init__(self, name: str, arch: str, bits: int) -> None:
-    self.identifier = name
-    self.arch = arch
-    self.bits = bits
+    self.identifier: Final[str] = name
+    self.arch: Final[str] = arch
+    self.bits: Final[int] = bits
 
   @property
   def is_arm(self) -> bool:

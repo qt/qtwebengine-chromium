@@ -34,7 +34,9 @@ typedef enum
   META_STAGE_WATCH_AFTER_ACTOR_PAINT,
   META_STAGE_WATCH_AFTER_OVERLAY_PAINT,
   META_STAGE_WATCH_AFTER_PAINT,
+  META_STAGE_WATCH_SKIPPED_PAINT,
 } MetaStageWatchPhase;
+#define META_N_WATCH_MODES (META_STAGE_WATCH_SKIPPED_PAINT + 1)
 
 typedef void (* MetaStageWatchFunc) (MetaStage        *stage,
                                      ClutterStageView *view,
@@ -67,5 +69,7 @@ MetaStageWatch * meta_stage_watch_view (MetaStage           *stage,
 META_EXPORT_TEST
 void meta_stage_remove_watch (MetaStage      *stage,
                               MetaStageWatch *watch);
+
+void meta_stage_rebuild_views (MetaStage *stage);
 
 G_END_DECLS

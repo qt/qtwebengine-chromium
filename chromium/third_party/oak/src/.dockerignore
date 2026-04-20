@@ -1,0 +1,2 @@
+# We don't need anything from docker context when building the image.
+/*

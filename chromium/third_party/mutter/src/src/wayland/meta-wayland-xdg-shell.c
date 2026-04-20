@@ -1236,7 +1236,9 @@ finish_popup_setup (MetaWaylandXdgPopup *xdg_popup)
 
   if (!meta_wayland_surface_get_window (parent_surface))
     {
-      xdg_popup_send_popup_done (xdg_popup->resource);
+      if (xdg_popup->resource)
+        xdg_popup_send_popup_done (xdg_popup->resource);
+
       return;
     }
 
@@ -1263,10 +1265,14 @@ finish_popup_setup (MetaWaylandXdgPopup *xdg_popup)
     }
 
   xdg_popup->parent_surface = parent_surface;
-  xdg_popup->parent_surface_unmapped_handler_id =
-    g_signal_connect (parent_surface, "unmapped",
-                      G_CALLBACK (on_parent_surface_unmapped),
-                      xdg_popup);
+
+  if (xdg_popup->resource)
+    {
+      xdg_popup->parent_surface_unmapped_handler_id =
+        g_signal_connect (parent_surface, "unmapped",
+                          G_CALLBACK (on_parent_surface_unmapped),
+                          xdg_popup);
+    }
 
   meta_wayland_shell_surface_destroy_window (shell_surface);
   meta_wayland_actor_surface_reset_actor (META_WAYLAND_ACTOR_SURFACE (surface_role));
@@ -1298,7 +1304,9 @@ finish_popup_setup (MetaWaylandXdgPopup *xdg_popup)
 
       if (popup == NULL)
         {
-          xdg_popup_send_popup_done (xdg_popup->resource);
+          if (xdg_popup->resource)
+            xdg_popup_send_popup_done (xdg_popup->resource);
+
           meta_wayland_shell_surface_destroy_window (shell_surface);
           return;
         }
@@ -1335,7 +1343,9 @@ dismiss_invalid_popup (MetaWaylandXdgPopup *xdg_popup)
 
           top_xdg_popup = meta_wayland_xdg_popup_from_surface (top_popup_surface);
 
-          xdg_popup_send_popup_done (top_xdg_popup->resource);
+          if (top_xdg_popup->resource)
+            xdg_popup_send_popup_done (top_xdg_popup->resource);
+
           meta_wayland_popup_dismiss (top_xdg_popup->popup);
 
           if (top_xdg_popup == xdg_popup)
@@ -1344,7 +1354,9 @@ dismiss_invalid_popup (MetaWaylandXdgPopup *xdg_popup)
     }
   else
     {
-      xdg_popup_send_popup_done (xdg_popup->resource);
+      if (xdg_popup->resource)
+        xdg_popup_send_popup_done (xdg_popup->resource);
+
       meta_wayland_xdg_popup_unmap (xdg_popup);
     }
 }

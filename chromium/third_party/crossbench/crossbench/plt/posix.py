@@ -5,14 +5,15 @@
 from __future__ import annotations
 
 import abc
+import contextlib
 import datetime as dt
 import functools
 import logging
 import pathlib
 import re
 import shlex
-from typing import (TYPE_CHECKING, Any, Generator, Iterator, Mapping, Optional,
-                    Set, Type)
+from typing import (TYPE_CHECKING, Any, Final, Generator, Iterator, Mapping,
+                    Optional, Set, Type)
 
 from typing_extensions import override
 
@@ -22,21 +23,39 @@ from crossbench.plt import proc_helper
 from crossbench.plt.base import Environ, Platform, SubprocessError
 from crossbench.plt.remote import RemotePlatformMixin, RemotePopen
 from crossbench.plt.signals import PosixBaseSignal
+from crossbench.plt.version import PlatformVersion
 
 if TYPE_CHECKING:
   import subprocess
 
   from crossbench.plt.signals import AnyPosixSignals, Signals
-  from crossbench.plt.types import CmdArg, ListCmdArgs, ProcessLike
+  from crossbench.plt.types import CmdArg, ListCmdArgs, ProcessIo, ProcessLike
   from crossbench.types import JsonDict
 
 
-class PosixPlatform(Platform, metaclass=abc.ABCMeta):
-  # pylint: disable=locally-disabled, redefined-builtin
+class PosixVersion(PlatformVersion):
+  pass
 
-  def __init__(self) -> None:
-    super().__init__()
-    self._default_tmp_dir: pth.AnyPath | None = None
+
+class PosixPlatform(Platform, metaclass=abc.ABCMeta):
+
+  @override
+  def _create_default_tmp_dir(self) -> pth.AnyPath:
+    if self.is_local:
+      return super()._create_default_tmp_dir()
+    env = self.environ
+
+    for tmp_var in ("TMPDIR", "TEMP", "TMP"):
+      if tmp_var not in env:
+        continue
+      tmp_path = self.path(env[tmp_var])
+      if self.is_dir(tmp_path):
+        assert self.is_absolute(tmp_path)
+        return tmp_path
+    tmp_path = self.path("/tmp")  # noqa: S108
+    assert self.is_dir(tmp_path), (
+        f"Fallback tmp dir does not exist: {tmp_path}")
+    return tmp_path
 
   @property
   def signals(self) -> Type[AnyPosixSignals]:
@@ -44,8 +63,13 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
 
   @functools.cached_property
   @override
-  def version(self) -> str:  #pylint: disable=invalid-overridden-method
+  def version_str(self) -> str:
     return self.sh_stdout("uname", "-r").strip()
+
+  @functools.cached_property
+  @override
+  def version(self) -> PlatformVersion:
+    return PosixVersion.parse(self.version_str)
 
   @functools.lru_cache(maxsize=1)
   def _raw_machine_arch(self) -> str:
@@ -55,7 +79,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
 
   @functools.cached_property
   @override
-  def cpu(self) -> str:  #pylint: disable=invalid-overridden-method
+  def cpu(self) -> str:
     cpu_str = "UNKNOWN"
     for line in self.cat(self.path("/proc/cpuinfo")).splitlines():
       if line.startswith("model name"):
@@ -104,7 +128,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
 
     if core_ids:
       if len(core_ids) == len(physical_ids):
-        pairs = set(zip(core_ids, physical_ids))
+        pairs = set(zip(core_ids, physical_ids, strict=True))
         return len(pairs)
       logging.debug("Invalid cpuinfo data: Cannot determine core counts.")
 
@@ -155,12 +179,13 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       }
     return {"version": "unknown", "bits": 64}
 
-  UPTIME_RE = re.compile(r"up\s+"
-                         r"(?:(?P<days>\d+)\s+days?,\s*)?"
-                         r"(?:"
-                         r"(?:(?P<hm_hours>\d+):(?P<hm_mins>\d+))|"
-                         r"(?:(?P<mins_only>\d+)\s+min)"
-                         r")")
+  UPTIME_RE: Final[re.Pattern] = re.compile(
+      r"up\s+"
+      r"(?:(?P<days>\d+)\s+days?,\s*)?"
+      r"(?:"
+      r"(?:(?P<hm_hours>\d+):(?P<hm_mins>\d+))|"
+      r"(?:(?P<mins_only>\d+)\s+min)"
+      r")")
 
   @override
   def uptime(self) -> dt.timedelta:
@@ -194,28 +219,6 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       raise ValueError(f"Binary {app_or_bin} does not exist.")
     return self.sh_stdout(app_or_bin, "--version")
 
-  @property
-  @override
-  def default_tmp_dir(self) -> pth.AnyPath:
-    if self._default_tmp_dir and self._default_tmp_dir.parts:
-      return self._default_tmp_dir
-    if self.is_local:
-      self._default_tmp_dir = self.path(super().default_tmp_dir)
-      return self._default_tmp_dir
-    env = self.environ
-
-    for tmp_var in ("TMPDIR", "TEMP", "TMP"):
-      if tmp_var not in env:
-        continue
-      tmp_path = self.path(env[tmp_var])
-      if self.is_dir(tmp_path):
-        self._default_tmp_dir = tmp_path
-        assert self.is_absolute(self._default_tmp_dir)
-        return tmp_path
-    self._default_tmp_dir = self.path("/tmp")
-    assert self.is_dir(self._default_tmp_dir), (
-        f"Fallback tmp dir does not exist: {self._default_tmp_dir}")
-    return self._default_tmp_dir
 
   @override
   def path(self, path: pth.AnyPathLike) -> pth.AnyPath:
@@ -382,6 +385,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     # TODO: implement stdin bypass for small content
     dest_file = self.path(file)
     with self.host_platform.NamedTemporaryFile("push.data") as tmp_file:
+      tmp_file = self.host_platform.local_path(tmp_file)
       self.host_platform.write_text(tmp_file, data, encoding=encoding)
       self.push(tmp_file, dest_file)
 
@@ -393,6 +397,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     # TODO: implement stdin bypass for small content
     dest_file = self.path(file)
     with self.host_platform.NamedTemporaryFile("push.data") as tmp_file:
+      tmp_file = self.host_platform.local_path(tmp_file)
       self.host_platform.write_bytes(tmp_file, data)
       self.push(tmp_file, dest_file)
 
@@ -457,20 +462,16 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     if self.is_local:
       super().terminate(process)
     else:
-      try:
+      with contextlib.suppress(*proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS):
         self.send_signal(process, self.signals.SIGTERM)
-      except proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS:
-        pass
 
   @override
   def kill(self, process: ProcessLike) -> None:
     if self.is_local:
       super().kill(process)
     else:
-      try:
+      with contextlib.suppress(*proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS):
         self.send_signal(process, self.signals.SIGKILL)
-      except proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS:
-        pass
 
   @override
   def process_info(self, process: ProcessLike) -> Optional[dict[str, Any]]:
@@ -550,9 +551,9 @@ class RemotePosixPlatform(RemotePlatformMixin, PosixPlatform):
             *args: CmdArg,
             bufsize: int = -1,
             shell: bool = False,
-            stdout=None,
-            stderr=None,
-            stdin=None,
+            stdout: ProcessIo = None,
+            stderr: ProcessIo = None,
+            stdin: ProcessIo = None,
             env: Optional[Mapping[str, str]] = None,
             quiet: bool = False) -> subprocess.Popen:
     del shell
@@ -566,8 +567,9 @@ class RemotePosixPlatform(RemotePlatformMixin, PosixPlatform):
       shell_cmd += f" & PID=$! && echo $PID >{temp_pid_file} && wait $PID"
       if not quiet:
         logging.debug("REMOTE SHELL: %s", shell_cmd)
-
-      host_platform_cmd = self.build_shell_cmd(shell_cmd, shell=True)
+      # Run with shell=True since we use '>' and use shlex.join.
+      host_platform_cmd = self.build_shell_cmd(  # noqa: S604
+          shell_cmd, shell=True)
 
       remote_popen = RemotePopen(
           self, host_platform_cmd, bufsize=bufsize, stdout=stdout,

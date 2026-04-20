@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import abc
 from typing import TYPE_CHECKING, Type
 
 from crossbench.browsers.chrome.version import ChromeVersion
@@ -15,7 +14,7 @@ if TYPE_CHECKING:
   from crossbench.path import AnyPath
 
 
-class ChromeBaseMixin(abc.ABC):
+class ChromeBaseMixin:
 
   @classmethod
   def version_cls(cls) -> Type[ChromiumVersion]:

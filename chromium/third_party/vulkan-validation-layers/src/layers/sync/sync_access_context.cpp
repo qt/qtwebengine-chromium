@@ -44,7 +44,7 @@ class HazardDetectorWithOrdering {
 
   public:
     HazardResult Detect(const ResourceAccessRangeMap::const_iterator &pos) const {
-        const OrderingBarrier &ordering = ResourceAccessState::GetOrderingRules(ordering_rule_);
+        const OrderingBarrier &ordering = GetOrderingRules(ordering_rule_);
         return pos->second.DetectHazard(access_info_, ordering, flags_, kQueueIdInvalid);
     }
     HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag,
@@ -71,6 +71,14 @@ class HazardDetectFirstUse {
     const ResourceAccessState &recorded_use_;
     const QueueId queue_id_;
     const ResourceUsageRange &tag_range_;
+};
+
+struct HazardDetectorMarker {
+    HazardResult Detect(const ResourceAccessRangeMap::const_iterator &pos) const { return pos->second.DetectMarkerHazard(); }
+    HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag,
+                             QueueId queue_id) const {
+        return pos->second.DetectAsyncHazard(GetAccessInfo(SYNC_COPY_TRANSFER_WRITE), start_tag, queue_id);
+    }
 };
 
 AccessContext::AccessContext(uint32_t subpass, VkQueueFlags queue_flags,
@@ -101,7 +109,7 @@ AccessContext::AccessContext(uint32_t subpass, VkQueueFlags queue_flags,
         src_external_ = &prev_.back();
     }
     if (subpass_dep.barrier_to_external.size()) {
-        dst_external_ = TrackBack(this, queue_flags, subpass_dep.barrier_to_external);
+        dst_external_ = SubpassBarrierTrackback(this, queue_flags, subpass_dep.barrier_to_external);
     }
 }
 
@@ -144,8 +152,8 @@ void AccessContext::ConstForAll(Action &&action) const {
 }
 
 void AccessContext::ResolveFromContext(const AccessContext &from) {
-    const NoopBarrierAction noop_barrier;
-    from.ResolveAccessRange(kFullRange, noop_barrier, &access_state_map_, nullptr);
+    auto noop_action = [](ResourceAccessState *access) {};
+    from.ResolveAccessRange(kFullRange, noop_action, &access_state_map_, nullptr);
 }
 
 void AccessContext::ResolvePreviousAccess(const ResourceAccessRange &range, ResourceAccessRangeMap *descent_map,
@@ -182,7 +190,7 @@ void AccessContext::ResolvePreviousAccesses() {
 }
 
 void AccessContext::UpdateAccessState(const vvl::Buffer &buffer, SyncAccessIndex current_usage, SyncOrdering ordering_rule,
-                                      const ResourceAccessRange &range, ResourceUsageTagEx tag_ex) {
+                                      const ResourceAccessRange &range, ResourceUsageTagEx tag_ex, SyncFlags flags) {
     if (current_usage == SYNC_ACCESS_INDEX_NONE) {
         return;
     }
@@ -190,8 +198,8 @@ void AccessContext::UpdateAccessState(const vvl::Buffer &buffer, SyncAccessIndex
         return;
     }
     const auto base_address = ResourceBaseAddress(buffer);
-    UpdateMemoryAccessStateFunctor action(*this, current_usage, ordering_rule, tag_ex);
-    UpdateMemoryAccessRangeState(access_state_map_, action, range + base_address);
+    UpdateMemoryAccessStateFunctor action(*this, current_usage, ordering_rule, tag_ex, flags);
+    UpdateMemoryAccessRangeState(action, range + base_address);
 }
 
 void AccessContext::UpdateAccessState(const vvl::Image &image, SyncAccessIndex current_usage, SyncOrdering ordering_rule,
@@ -273,7 +281,8 @@ void AccessContext::ImportAsyncContexts(const AccessContext &from) {
 }
 
 // Suitable only for *subpass* access contexts
-HazardResult AccessContext::DetectSubpassTransitionHazard(const TrackBack &track_back, const AttachmentViewGen &attach_view) const {
+HazardResult AccessContext::DetectSubpassTransitionHazard(const SubpassBarrierTrackback &track_back,
+                                                          const AttachmentViewGen &attach_view) const {
     if (!attach_view.IsValid()) return HazardResult();
 
     // We should never ask for a transition from a context we don't have
@@ -521,14 +530,14 @@ HazardResult AccessContext::DetectImageBarrierHazard(const AttachmentViewGen &vi
 
 HazardResult AccessContext::DetectImageBarrierHazard(const vvl::Image &image, VkPipelineStageFlags2 src_exec_scope,
                                                      const SyncAccessFlags &src_access_scope,
-                                                     const VkImageSubresourceRange &subresource_range,
+                                                     const VkImageSubresourceRange &subresource_range, bool is_depth_sliced,
                                                      const DetectOptions options) const {
     BarrierHazardDetector detector(SyncAccessIndex::SYNC_IMAGE_LAYOUT_TRANSITION, src_exec_scope, src_access_scope);
-    return DetectHazard(detector, image, subresource_range, false, options);
+    return DetectHazard(detector, image, subresource_range, is_depth_sliced, options);
 }
 
 ResourceAccessRangeMap::iterator AccessContext::UpdateMemoryAccessStateFunctor::Infill(ResourceAccessRangeMap *accesses,
-                                                                                       const Iterator &pos,
+                                                                                       const Iterator &pos_hint,
                                                                                        const ResourceAccessRange &range) const {
     // this is only called on gaps, and never returns a gap.
     ResourceAccessState default_state;
@@ -554,6 +563,15 @@ HazardResult AccessContext::DetectFirstUseHazard(QueueId queue_id, const Resourc
         }
     }
     return {};
+}
+
+HazardResult AccessContext::DetectMarkerHazard(const vvl::Buffer &buffer, const ResourceAccessRange &range) const {
+    if (!SimpleBinding(buffer)) {
+        return HazardResult();
+    }
+    const VkDeviceSize base_address = ResourceBaseAddress(buffer);
+    HazardDetectorMarker detector;
+    return DetectHazardRange(detector, (range + base_address), DetectOptions::kDetectAll);
 }
 
 // For RenderPass time validation this is "start tag", for QueueSubmit, this is the earliest

@@ -52,6 +52,12 @@ SyncValidator::~SyncValidator() {
 // Location to add per-queue submit debug info if built with -D DEBUG_CAPTURE_KEYBOARD=ON.
 void SyncValidator::DebugCapture() {
     if (report_stats_) {
+        stats.UpdateAccessStats(*this);
+
+        // NOTE: mimalloc stats are not updated here - mostly because they are tracked
+        // per thread and updating stats only for current thread feels a bit unbalanced.
+        // Instead we have specific places to trigger memory stats collection.
+
         const std::string report = stats.CreateReport();
         std::cout << report;
 #ifdef VK_USE_PLATFORM_WIN32_KHR
@@ -167,9 +173,10 @@ void SyncValidator::ApplySignalsUpdate(SignalsUpdate &update, const QueueBatchCo
     EnsureTimelineSignalsLimit(kMaxTimelineSignalsPerQueue);
 }
 
-void SyncValidator::ApplyTaggedWait(QueueId queue_id, ResourceUsageTag tag) {
-    auto tagged_wait_op = [queue_id, tag](const QueueBatchContext::Ptr &batch) {
-        batch->ApplyTaggedWait(queue_id, tag);
+void SyncValidator::ApplyTaggedWait(QueueId queue_id, ResourceUsageTag tag,
+                                    const LastSynchronizedPresent &last_synchronized_present) {
+    for (const auto &batch : GetAllQueueBatchContexts()) {
+        batch->ApplyTaggedWait(queue_id, tag, last_synchronized_present);
         batch->Trim();
 
         // If there is a *pending* last batch then apply tagged wait for its accesses too.
@@ -179,23 +186,20 @@ void SyncValidator::ApplyTaggedWait(QueueId queue_id, ResourceUsageTag tag) {
         auto batch_queue_state = batch->GetQueueSyncState();
         auto pending_batch = batch_queue_state ? batch_queue_state->PendingLastBatch() : nullptr;
         if (pending_batch) {
-            pending_batch->ApplyTaggedWait(queue_id, tag);
+            pending_batch->ApplyTaggedWait(queue_id, tag, last_synchronized_present);
             pending_batch->Trim();
         }
-    };
-    ForAllQueueBatchContexts(tagged_wait_op);
+    }
 }
 
 void SyncValidator::ApplyAcquireWait(const AcquiredImage &acquired) {
-    auto acq_wait_op = [&acquired](const QueueBatchContext::Ptr &batch) {
+    for (const auto &batch : GetAllQueueBatchContexts()) {
         batch->ApplyAcquireWait(acquired);
         batch->Trim();
-    };
-    ForAllQueueBatchContexts(acq_wait_op);
+    }
 }
 
-template <typename BatchOp>
-void SyncValidator::ForAllQueueBatchContexts(BatchOp &&op) {
+std::vector<QueueBatchContext::Ptr> SyncValidator::GetAllQueueBatchContexts() {
     // Get last batch from each queue
     std::vector<QueueBatchContext::Ptr> batch_contexts = GetLastBatches([](auto) { return true; });
 
@@ -219,14 +223,7 @@ void SyncValidator::ForAllQueueBatchContexts(BatchOp &&op) {
         sync_swapchain.GetPresentBatches(batch_contexts);
     });
 
-    // Note: The const is to force the reference to const be on all platforms.
-    //
-    // It's not obivious (nor cross platform consitent), that the batch reference should be const
-    // but since it's pointing to the actual *key* for the set it must be. This doesn't make the
-    // object the shared pointer is referencing constant however.
-    for (const auto &batch : batch_contexts) {
-        op(batch);
-    }
+    return batch_contexts;
 }
 
 void SyncValidator::UpdateFenceHostSyncPoint(VkFence fence, FenceHostSyncPoint &&sync_point) {
@@ -243,7 +240,7 @@ void SyncValidator::WaitForFence(VkFence fence) {
         FenceHostSyncPoint &wait_for = fence_it->second;
         if (wait_for.acquired.Invalid()) {
             // This is just a normal fence wait
-            ApplyTaggedWait(wait_for.queue_id, wait_for.tag);
+            ApplyTaggedWait(wait_for.queue_id, wait_for.tag, {});
         } else {
             // This a fence wait for a present operation
             ApplyAcquireWait(wait_for.acquired);
@@ -264,7 +261,9 @@ void SyncValidator::WaitForSemaphore(VkSemaphore semaphore, uint64_t value) {
     }
 
     const TimelineHostSyncPoint &sync_point = *sync_point_it;
-    ApplyTaggedWait(sync_point.queue_id, sync_point.tag);
+    const auto queue_state = GetQueueSyncStateShared(sync_point.queue_id);
+
+    ApplyTaggedWait(sync_point.queue_id, sync_point.tag, queue_state->GetLastSynchronizedPresent());
 
     // Remove signals before the resolving one (keep the resolving signal).
     std::vector<SignalInfo> &signals = timeline_signals_[semaphore];
@@ -304,6 +303,15 @@ std::shared_ptr<const QueueSyncState> SyncValidator::GetQueueSyncStateShared(VkQ
     return {};
 }
 
+std::shared_ptr<const QueueSyncState> SyncValidator::GetQueueSyncStateShared(QueueId queue_id) const {
+    for (const auto &queue_sync_state : queue_sync_states_) {
+        if (queue_sync_state->GetQueueId() == queue_id) {
+            return queue_sync_state;
+        }
+    }
+    return {};
+}
+
 void SyncValidator::Created(vvl::CommandBuffer &cb_state) {
     cb_state.SetSubState(container_type, std::make_unique<syncval_state::CommandBufferSubState>(*this, cb_state));
 }
@@ -321,18 +329,17 @@ void SyncValidator::PreCallRecordDestroyBuffer(VkDevice device, VkBuffer buffer,
     if (const auto buffer_state = Get<vvl::Buffer>(buffer)) {
         const VkDeviceSize base_address = ResourceBaseAddress(*buffer_state);
         const ResourceAccessRange buffer_range(base_address, base_address + buffer_state->create_info.size);
-        auto batch_op = [&buffer_range](const QueueBatchContext::Ptr &batch) {
+        for (const auto &batch : GetAllQueueBatchContexts()) {
             batch->OnResourceDestroyed(buffer_range);
             batch->Trim();
-        };
-        ForAllQueueBatchContexts(batch_op);
+        }
     }
 }
 
 void SyncValidator::PreCallRecordDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks *pAllocator,
                                               const RecordObject &record_obj) {
     if (const auto image_state = Get<vvl::Image>(image)) {
-        auto batch_op = [&image_state](const QueueBatchContext::Ptr &batch) {
+        for (const auto &batch : GetAllQueueBatchContexts()) {
             const auto &sub_state = syncval_state::SubState(*image_state);
             ImageRangeGen range_gen = sub_state.MakeImageRangeGen(image_state->full_range, false);
             for (; range_gen->non_empty(); ++range_gen) {
@@ -340,8 +347,14 @@ void SyncValidator::PreCallRecordDestroyImage(VkDevice device, VkImage image, co
                 batch->OnResourceDestroyed(subresource_range);
             }
             batch->Trim();
-        };
-        ForAllQueueBatchContexts(batch_op);
+        }
+    }
+}
+
+void SyncValidator::PreCallRecordDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
+                                                     const VkAllocationCallbacks *pAllocator, const RecordObject &record_obj) {
+    for (const auto &batch : GetAllQueueBatchContexts()) {
+        batch->last_synchronized_present.OnDestroySwapchain(swapchain);
     }
 }
 
@@ -373,7 +386,7 @@ bool SyncValidator::PreCallValidateCmdCopyBuffer(VkCommandBuffer commandBuffer, 
                 skip |= SyncError(hazard.Hazard(), objlist, error_obj.location, error);
             }
         }
-        if (dst_buffer && !skip) {
+        if (dst_buffer) {
             const ResourceAccessRange dst_range = MakeRange(*dst_buffer, copy_region.dstOffset, copy_region.size);
             auto hazard = context->DetectHazard(*dst_buffer, SYNC_COPY_TRANSFER_WRITE, dst_range);
             if (hazard.IsHazard()) {
@@ -383,7 +396,9 @@ bool SyncValidator::PreCallValidateCmdCopyBuffer(VkCommandBuffer commandBuffer, 
                 skip |= SyncError(hazard.Hazard(), objlist, error_obj.location, error);
             }
         }
-        if (skip) break;
+        if (skip) {
+            break;
+        }
     }
     return skip;
 }
@@ -475,7 +490,9 @@ bool SyncValidator::PreCallValidateCmdCopyImage(VkCommandBuffer commandBuffer, V
                     copy_region.dstOffset, copy_region.extent, copy_region.dstSubresource);
                 skip |= SyncError(hazard.Hazard(), objlist, error_obj.location, error);
             }
-            if (skip) break;
+        }
+        if (skip) {
+            break;
         }
     }
 
@@ -1767,19 +1784,13 @@ bool SyncValidator::PreCallValidateCmdWriteBufferMarkerAMD(VkCommandBuffer comma
                                                            const ErrorObject &error_obj) const {
     bool skip = false;
     const auto cb_state = Get<vvl::CommandBuffer>(commandBuffer);
-    assert(cb_state);
-    if (!cb_state) return skip;
+    ASSERT_AND_RETURN_SKIP(cb_state);
     const auto *cb_access_context = syncval_state::AccessContext(*cb_state);
+    const AccessContext &context = *cb_access_context->GetCurrentAccessContext();
 
-    const auto *context = cb_access_context->GetCurrentAccessContext();
-    assert(context);
-    if (!context) return skip;
-
-    auto dst_buffer = Get<vvl::Buffer>(dstBuffer);
-
-    if (dst_buffer) {
+    if (auto dst_buffer = Get<vvl::Buffer>(dstBuffer)) {
         const ResourceAccessRange range = MakeRange(dstOffset, 4);
-        auto hazard = context->DetectHazard(*dst_buffer, SYNC_COPY_TRANSFER_WRITE, range);
+        auto hazard = context.DetectMarkerHazard(*dst_buffer, range);
         if (hazard.IsHazard()) {
             const std::string resource_description = "dstBuffer " + FormatHandle(dstBuffer);
             const auto error =
@@ -1794,19 +1805,16 @@ void SyncValidator::PostCallRecordCmdWriteBufferMarkerAMD(VkCommandBuffer comman
                                                           VkBuffer dstBuffer, VkDeviceSize dstOffset, uint32_t marker,
                                                           const RecordObject &record_obj) {
     auto cb_state = Get<vvl::CommandBuffer>(commandBuffer);
-    assert(cb_state);
-    if (!cb_state) return;
+    ASSERT_AND_RETURN(cb_state);
     auto *cb_access_context = syncval_state::AccessContext(*cb_state);
     const auto tag = cb_access_context->NextCommandTag(record_obj.location.function);
-    auto *context = cb_access_context->GetCurrentAccessContext();
-    assert(context);
+    AccessContext &context = *cb_access_context->GetCurrentAccessContext();
 
-    auto dst_buffer = Get<vvl::Buffer>(dstBuffer);
-
-    if (dst_buffer) {
+    if (auto dst_buffer = Get<vvl::Buffer>(dstBuffer)) {
         const ResourceAccessRange range = MakeRange(dstOffset, 4);
         const ResourceUsageTagEx tag_ex = cb_access_context->AddCommandHandle(tag, dst_buffer->Handle());
-        context->UpdateAccessState(*dst_buffer, SYNC_COPY_TRANSFER_WRITE, SyncOrdering::kNonAttachment, range, tag_ex);
+        context.UpdateAccessState(*dst_buffer, SYNC_COPY_TRANSFER_WRITE, SyncOrdering::kNonAttachment, range, tag_ex,
+                                  SyncFlag::kMarker);
     }
 }
 
@@ -2335,7 +2343,7 @@ void SyncValidator::PostCallRecordQueueWaitIdle(VkQueue queue, const RecordObjec
     const auto queue_state = GetQueueSyncStateShared(queue);
     if (!queue_state) return;  // Invalid queue
     QueueId waited_queue = queue_state->GetQueueId();
-    ApplyTaggedWait(waited_queue, ResourceUsageRecord::kMaxIndex);
+    ApplyTaggedWait(waited_queue, ResourceUsageRecord::kMaxIndex, queue_state->GetLastSynchronizedPresent());
 
     // For each timeline, remove all signals signaled on the waited queue, except the last one.
     // The last signal is needed to represent the current timeline state.
@@ -2349,9 +2357,19 @@ void SyncValidator::PostCallRecordQueueWaitIdle(VkQueue queue, const RecordObjec
 }
 
 void SyncValidator::PostCallRecordDeviceWaitIdle(VkDevice device, const RecordObject &record_obj) {
-    // We need to treat this a fence waits for all queues... noting that present engine ops will be preserved.
-    ForAllQueueBatchContexts(
-        [](const QueueBatchContext::Ptr &batch) { batch->ApplyTaggedWait(kQueueAny, ResourceUsageRecord::kMaxIndex); });
+    const auto batches = GetAllQueueBatchContexts();
+
+    // Collect information about last synchronized present over all queues
+    LastSynchronizedPresent global_last_synchronized_present;
+    for (const auto &batch : batches) {
+        global_last_synchronized_present.Merge(batch->last_synchronized_present);
+    }
+
+    // DeviceWaitIdle is equivalent to waiting on the fence on all queues.
+    // Tagged wait will preserve unsynchronized present operations.
+    for (const auto &batch : batches) {
+        batch->ApplyTaggedWait(kQueueAny, ResourceUsageRecord::kMaxIndex, global_last_synchronized_present);
+    }
 
     // For each timeline keep only the last signal per queue.
     // The last signal is needed to represent the current timeline state.
@@ -2443,6 +2461,7 @@ uint32_t SyncValidator::SetupPresentInfo(const VkPresentInfoKHR &present_info, Q
 
 void SyncValidator::PostCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo,
                                                   const RecordObject &record_obj) {
+    stats.UpdateAccessStats(*this);
     stats.UpdateMemoryStats();
 
     if (!syncval_settings.submit_time_validation) {

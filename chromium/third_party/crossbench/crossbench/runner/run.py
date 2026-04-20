@@ -18,7 +18,7 @@ from crossbench.cli.config.env import ValidationMode
 from crossbench.env.run_env import RunEnv
 from crossbench.env.runner_env import ValidationError
 from crossbench.exception import Annotator, TInfoStack
-from crossbench.helper.cwd import ChangeCWD
+from crossbench.helper.cwd import change_cwd
 from crossbench.helper.durations import Durations
 from crossbench.helper.state import State, StateMachine
 from crossbench.probes.probe_context import ProbeContext
@@ -92,7 +92,7 @@ class Run(ResultOrigin):
     self._out_dir = self._get_out_dir().absolute()
     self._probe_results = ProbeResultDict(self._out_dir)
     self._durations = Durations()
-    self._start_datetime = dt.datetime.utcfromtimestamp(0)
+    self._start_datetime = dt.datetime.fromtimestamp(0, dt.timezone.utc)
     self._timeout = timeout
     self._exceptions = Annotator(throw)
     self._browser_tmp_dir: pth.AnyPath | None = None
@@ -314,7 +314,7 @@ class Run(ResultOrigin):
   def setup(self, is_dry_run: bool) -> None:
     self._state.transition(State.INITIAL, to=State.SETUP)
     self._setup_dirs()
-    with ChangeCWD(self._out_dir), self.exception_info(*self.info_stack):
+    with change_cwd(self._out_dir), self.exception_info(*self.info_stack):
       self._probe_context_manager.setup(self.probes, is_dry_run)
     self._log_setup()
 
@@ -372,11 +372,11 @@ class Run(ResultOrigin):
   def run(self, is_dry_run: bool) -> None:
     self._state.transition(State.SETUP, to=State.READY)
     self._start_datetime = dt.datetime.now()
-    with ChangeCWD(self._out_dir), self.exception_info(*self.info_stack):
+    with change_cwd(self._out_dir), self.exception_info(*self.info_stack):
       assert self._probe_context_manager.is_ready
       try:
         self._run(is_dry_run)
-      except Exception as e:  # pylint: disable=broad-except
+      except Exception as e:  # noqa: BLE001
         self._exceptions.append(e)
       finally:
         self.teardown(is_dry_run)
@@ -464,7 +464,7 @@ class Run(ResultOrigin):
         "Quit browser"):
       try:
         self._browser.quit()
-      except Exception as e:  # pylint: disable=broad-except
+      except Exception as e:  # noqa: BLE001
         logging.warning("Error quitting browser: %s", e)
         return
 
@@ -487,9 +487,9 @@ class Run(ResultOrigin):
     logging.info("- " * 40)
     RunAnnotation.log_all(self.annotations, limit=10)
 
-  def find_probe_context(
-      self, probe_cls: Type[ProbeT]) -> Optional[ProbeContext[ProbeT]]:
-    return self._probe_context_manager.find_probe_context(probe_cls)
+  def get_probe_context(self,
+                        probe_cls: Type[ProbeT]) -> ProbeContext[ProbeT] | None:
+    return self._probe_context_manager.get_probe_context(probe_cls)
 
 
 class ProbeRunContextManager(ProbeContextManager[Run, ProbeContext]):
@@ -501,8 +501,9 @@ class ProbeRunContextManager(ProbeContextManager[Run, ProbeContext]):
   def run(self) -> Run:
     return self._origin
 
-  def get_probe_context(self, probe: Probe) -> Optional[ProbeContext]:
-    return probe.get_context(self.run)
+  @override
+  def _create_probe_context(self, probe: Probe) -> ProbeContext:
+    return probe.create_context(self.run)
 
   def setup_selenium_options(self, options: ArgOptions) -> None:
     for probe_context in self._probe_contexts.values():

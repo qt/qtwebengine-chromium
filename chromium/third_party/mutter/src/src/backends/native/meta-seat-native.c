@@ -143,6 +143,7 @@ meta_seat_native_constructed (GObject *object)
   MetaSeatNative *seat = META_SEAT_NATIVE (object);
 
   seat->impl = meta_seat_impl_new (seat, seat->seat_id, seat->flags);
+  meta_seat_impl_setup (seat->impl);
   g_signal_connect (seat->impl, "kbd-a11y-flags-changed",
                     G_CALLBACK (proxy_kbd_a11y_flags_changed), seat);
   g_signal_connect (seat->impl, "kbd-a11y-mods-state-changed",
@@ -654,6 +655,14 @@ meta_seat_native_set_viewports (MetaSeatNative   *seat,
                                 MetaViewportInfo *viewports)
 {
   meta_seat_impl_set_viewports (seat->impl, viewports);
+}
+
+void
+meta_seat_native_set_a11y_modifiers (MetaSeatNative *seat,
+                                     const uint32_t *modifiers,
+                                     int             n_modifiers)
+{
+  meta_seat_impl_set_a11y_modifiers (seat->impl, modifiers, n_modifiers);
 }
 
 void

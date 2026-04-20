@@ -81,7 +81,7 @@ RenderWidgetHostViewChildFrame::~RenderWidgetHostViewChildFrame() {
     DetachFromTouchSelectionClientManagerIfNecessary();
 
   if (is_frame_sink_id_owner() && GetHostFrameSinkManager()) {
-    GetHostFrameSinkManager()->InvalidateFrameSinkId(frame_sink_id_, this);
+    GetHostFrameSinkManager()->InvalidateFrameSinkId(frame_sink_id_, this, {});
   }
 }
 
@@ -349,7 +349,10 @@ gfx::NativeView RenderWidgetHostViewChildFrame::GetNativeView() {
 
 gfx::NativeViewAccessible
 RenderWidgetHostViewChildFrame::GetNativeViewAccessible() {
-  NOTREACHED();
+  if (!GetRootView()) {
+    return gfx::NativeViewAccessible();
+  }
+  return GetRootView()->GetNativeViewAccessible();
 }
 
 void RenderWidgetHostViewChildFrame::UpdateFrameSinkIdRegistration() {
@@ -564,7 +567,10 @@ void RenderWidgetHostViewChildFrame::RegisterFrameSinkId() {
 
 void RenderWidgetHostViewChildFrame::UnregisterFrameSinkId() {
   DCHECK(host());
-  UpdateFrameSinkIdRegistration();
+  if (host()->delegate() && host()->delegate()->GetInputEventRouter()) {
+    host()->delegate()->GetInputEventRouter()->RemoveFrameSinkIdOwner(
+        frame_sink_id_);
+  }
   DetachFromTouchSelectionClientManagerIfNecessary();
 }
 
@@ -839,7 +845,7 @@ void RenderWidgetHostViewChildFrame::SetWindowFrameInScreen(
 void RenderWidgetHostViewChildFrame::ShowSharePicker(
     const std::string& title,
     const std::string& text,
-    const std::string& url,
+    const GURL& url,
     const std::vector<std::string>& file_paths,
     blink::mojom::ShareService::ShareCallback callback) {}
 
@@ -966,6 +972,13 @@ RenderWidgetHostViewChildFrame::DidUpdateVisualProperties(
           &RenderWidgetHostViewChildFrame::OnDidUpdateVisualPropertiesComplete),
       weak_factory_.GetWeakPtr(), metadata);
   return viz::ScopedSurfaceIdAllocator(std::move(allocation_task));
+}
+
+input::CursorManager* RenderWidgetHostViewChildFrame::GetCursorManager() {
+  if (!GetRootView()) {
+    return nullptr;
+  }
+  return GetRootView()->GetCursorManager();
 }
 
 ui::TextInputType RenderWidgetHostViewChildFrame::GetTextInputType() const {

@@ -8,7 +8,7 @@ import abc
 import datetime as dt
 import json
 import logging
-from typing import (TYPE_CHECKING, Any, Final, Mapping, MutableMapping,
+from typing import (TYPE_CHECKING, Any, ClassVar, Mapping, MutableMapping,
                     Optional, Sequence, Type)
 
 from immutabledict import immutabledict
@@ -46,8 +46,8 @@ class SpeedometerProbe(
   Speedometer-specific probe (compatible with v2.X and v3.X).
   Extracts all speedometer times and scores.
   """
-  SORT_KEYS: bool = False
-  SCORE_METRIC_KEY: Final[str] = "Score"
+  SORT_KEYS: ClassVar[bool] = False
+  SCORE_METRIC_KEY: ClassVar[str] = "Score"
 
   @abc.abstractmethod
   @override
@@ -69,7 +69,8 @@ class SpeedometerProbe(
       if self._is_valid_metric_key(key):
         line_item_scores.append(metric.values)
     total_score = Metric()
-    for iteration_line_items_score_values in zip(*line_item_scores):
+    for iteration_line_items_score_values in zip(
+        *line_item_scores, strict=True):
       iteration_score = Metric(iteration_line_items_score_values).geomean
       total_score.append(iteration_score)
     return total_score
@@ -126,7 +127,7 @@ class SpeedometerProbe(
 
 
 class SpeedometerProbeContext(JsonResultProbeContext):
-  JS = "return JSON.stringify(window.suiteValues);"
+  JS: ClassVar = "return JSON.stringify(window.suiteValues);"
 
   @override
   def to_json(self, actions: Actions) -> Json:
@@ -146,8 +147,8 @@ class SpeedometerProbeContext(JsonResultProbeContext):
 
 
 class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
-  URL_LOCAL: str = "http://localhost:8000/"
-  DEFAULT_ITERATIONS: int = 10
+  URL_LOCAL: ClassVar[str] = "http://localhost:8000/"
+  DEFAULT_ITERATIONS: ClassVar[int] = 10
 
   def __init__(self,
                substories: Sequence[str] = (),
@@ -191,14 +192,12 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
       params["iterationCount"] = str(self.iterations)
     return params
 
-
   @override
   def setup(self, run: Run) -> None:
     updated_url = self.get_run_url(run)
     with run.actions("Setup") as actions:
       actions.show_url(updated_url)
-      actions.wait_js_condition(
-          "return window.Suites !== undefined;", 0.5, timeout=10)
+      self._wait_for_ready(actions)
       self._setup_substories(actions)
       self._setup_benchmark_client(actions)
       actions.wait(0.5)
@@ -210,6 +209,10 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
     if url != self.url:
       logging.info("CUSTOM URL: %s", url)
     return url
+
+  def _wait_for_ready(self, actions: Actions) -> None:
+    actions.wait_js_condition(
+        "return window.Suites !== undefined;", 0.5, timeout=10)
 
   def _setup_substories(self, actions: Actions) -> None:
     if self._substories == self.SUBSTORIES:
@@ -325,8 +328,8 @@ class SpeedometerBenchmarkStoryFilter(PressBenchmarkStoryFilter):
 
 class SpeedometerBenchmark(PressBenchmark, metaclass=abc.ABCMeta):
 
-  DEFAULT_STORY_CLS = SpeedometerStory
-  STORY_FILTER_CLS = SpeedometerBenchmarkStoryFilter
+  DEFAULT_STORY_CLS: ClassVar = SpeedometerStory
+  STORY_FILTER_CLS: ClassVar = SpeedometerBenchmarkStoryFilter
 
   @classmethod
   @override

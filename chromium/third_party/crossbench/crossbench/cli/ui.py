@@ -12,6 +12,7 @@ import threading
 from typing import TYPE_CHECKING, Final, Iterator, Optional, Type
 
 import colorama
+from typing_extensions import override
 
 from crossbench.helper import terminal
 from crossbench.helper.spinner import Spinner
@@ -27,9 +28,9 @@ COLOR_LOGGING: bool = True
 
 class ColoredLogFormatter(logging.Formatter):
 
-  FORMAT = "%(message)s"
+  FORMAT: Final = "%(message)s"
 
-  FORMATS = {
+  FORMATS: Final = {
       logging.DEBUG:
           FORMAT,
       logging.INFO:
@@ -47,14 +48,18 @@ class ColoredLogFormatter(logging.Formatter):
     formatter = logging.Formatter(log_fmt)
     return formatter.format(record)
 
+  @override
   def formatException(
       self,
       ei: tuple[Type[BaseException], BaseException, Optional[TracebackType]]
       | tuple[None, ...]
   ) -> str:
+    del ei
     return ""
 
+  @override
   def formatStack(self, stack_info: str) -> str:
+    del stack_info
     return ""
 
 
@@ -91,37 +96,45 @@ DEFAULT_INTERVAL_S: Final[float] = 0.5
 
 @contextlib.contextmanager
 def timer(msg: str = "Elapsed Time",
-          update_interval=DEFAULT_INTERVAL_S) -> Iterator[None]:
+          update_interval: float = DEFAULT_INTERVAL_S) -> Iterator[None]:
   if not IS_ATTY:
     yield
     return
 
   start_time = dt.datetime.now()
-  def print_timer():
+
+  def print_timer() -> None:
     delta = dt.datetime.now() - start_time
     write_indented(f"{msg}: {format_duration(delta)}")
-  with RepeatTimer(interval=update_interval, function=print_timer):
-    yield
-  clear_indented()
+
+  try:
+    with RepeatTimer(interval=update_interval, function=print_timer):
+      yield
+  finally:
+    clear_indented()
 
 
 @contextlib.contextmanager
 def countdown(duration: dt.timedelta,
               msg: str = "Waiting",
-              update_interval=DEFAULT_INTERVAL_S) -> Iterator[None]:
+              update_interval: float = DEFAULT_INTERVAL_S) -> Iterator[None]:
   if not IS_ATTY:
     print(f"{msg}: {format_duration(duration)}")
     yield
     return
 
   start_time = dt.datetime.now()
-  def print_timer():
+
+  def print_timer() -> None:
     delta = dt.datetime.now() - start_time
     time_left = duration - delta
     write_indented(f"{msg}: {format_duration(time_left)}")
-  with RepeatTimer(interval=update_interval, function=print_timer):
-    yield
-  clear_indented()
+
+  try:
+    with RepeatTimer(interval=update_interval, function=print_timer):
+      yield
+  finally:
+    clear_indented()
 
 
 class RepeatTimer(threading.Timer):
@@ -137,5 +150,7 @@ class RepeatTimer(threading.Timer):
     self.cancel()
 
 
-def spinner(sleep: float = 0.5, title: str = "") -> Spinner:
-  return Spinner(IS_ATTY, sleep, title)
+@contextlib.contextmanager
+def spinner(sleep: float = 0.5, title: str = "") -> Iterator[Spinner]:
+  with Spinner(IS_ATTY, sleep, title).open() as spinner_instance:
+    yield spinner_instance

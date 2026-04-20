@@ -4,9 +4,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import datetime as dt
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Self, Tuple
 
 import websocket
 
@@ -59,7 +61,7 @@ class DevToolsClient:
     if self._devtools_port:
       try:
         self._platform.ports.stop_forward(self._devtools_port)
-      except Exception as e:  # pylint: disable=broad-except
+      except Exception as e:  # noqa: BLE001
         # Best effort to remove forwarding, log if it fails but don't crash
         logging.warning(
             "Error removing DevTools port forwarding for port %s: %s",
@@ -138,39 +140,47 @@ class DevToolsClient:
       self,
       condition_fn: Callable[[], bool],
       process_fn: Callable[[dict], None],
-      timeout: float = 1.0,
+      timeout: dt.timedelta = dt.timedelta(seconds=1),
   ) -> bool:
-    """Dispatches a command to DevTools. Does not wait for any response.
+    """Polls for DevTools events and processes them until a condition is met or
+       a timeout occurs.
 
     Args:
       condition_fn: A boolean function that determines whether we should
-                    poll for more events.
+                    continue polling for more events. Polling stops when this
+                    function returns False.
       process_fn:   Function that takes each response as input for
                     processing.
-      timeout:      Number of seconds to wait before timeout due to no
-                    more incoming messages.
+      timeout:      Total number of seconds to poll for events before timing
+                    out.
 
     Returns:
-      bool: True if the condition was exited successfully, False otherwise.
+      bool: True if the condition was met (condition_fn returned False),
+            False if the timeout was reached.
     """
     if not self._ws or not self._ws.connected:
       logging.error("DevTools is not connected. Cannot poll events.")
       return False
+    deadline = dt.datetime.now() + timeout
     try:
-      self._ws.settimeout(timeout)
+      self._ws.settimeout(timeout.total_seconds())
       while condition_fn():
         data = self._ws.recv()
         response = json.loads(data)
         process_fn(response)
+        if dt.datetime.now() > deadline:
+          return False
+        self._ws.settimeout((deadline - dt.datetime.now()).total_seconds())
     except (TimeoutError, json.JSONDecodeError):
       return False
     finally:
       self._ws.settimeout(None)
     return True
 
-  def __enter__(self) -> DevToolsClient:
+  @contextlib.contextmanager
+  def open(self) -> Iterator[Self]:
     self.connect()
-    return self
-
-  def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-    self.disconnect()
+    try:
+      yield self
+    finally:
+      self.disconnect()

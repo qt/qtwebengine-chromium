@@ -1,0 +1,11 @@
+UseColor: true
+
+Checks: >
+    bugprone-*,
+    google-*,
+    misc-*,
+    performance-*,
+    -bugprone-reserved-identifier,
+    -bugprone-narrowing-conversions,
+
+WarningsAsErrors: "*"

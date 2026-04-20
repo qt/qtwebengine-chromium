@@ -200,9 +200,11 @@ using DescriptorSetLayoutId = vvl::DescriptorSetLayoutId;
 // Canonical dictionary of DescriptorSetLayoutDef (without any handle/device specific information)
 vvl::DescriptorSetLayoutDict descriptor_set_layout_dict;
 
-DescriptorSetLayoutId GetCanonicalId(const VkDescriptorSetLayoutCreateInfo *p_create_info) {
-    return descriptor_set_layout_dict.LookUp(DescriptorSetLayoutDef(p_create_info));
+static DescriptorSetLayoutId GetCanonicalId(const VkDescriptorSetLayoutCreateInfo *p_create_info, vvl::DeviceState &device_state) {
+    return descriptor_set_layout_dict.LookUp(DescriptorSetLayoutDef(device_state, p_create_info));
 }
+
+void ClearDescriptorSetLayoutCanonicalIdDict() { descriptor_set_layout_dict.Clear(); }
 
 std::string DescriptorSetLayoutDef::DescribeDifference(uint32_t index, const DescriptorSetLayoutDef &other) const {
     std::ostringstream ss;
@@ -248,9 +250,8 @@ std::string DescriptorSetLayoutDef::DescribeDifference(uint32_t index, const Des
                 ss << "binding " << i << " stageFlags " << string_VkShaderStageFlags(l.stageFlags) << " doesn't match "
                    << string_VkShaderStageFlags(r.stageFlags);
                 break;
-            } else if (l.pImmutableSamplers != r.pImmutableSamplers) {
-                ss << "binding " << i << " pImmutableSamplers " << l.pImmutableSamplers << " doesn't match "
-                   << r.pImmutableSamplers;
+            } else if ((l.pImmutableSamplers && !r.pImmutableSamplers) || (!l.pImmutableSamplers && r.pImmutableSamplers)) {
+                ss << "binding " << i << " pImmutableSamplers doesn't match as one is null and one in non-null";
                 break;
             } else if (l.pImmutableSamplers) {
                 for (uint32_t s = 0; s < l.descriptorCount; s++) {
@@ -273,13 +274,13 @@ std::string DescriptorSetLayoutDef::DescribeDifference(uint32_t index, const Des
 
 // Construct DescriptorSetLayout instance from given create info
 // Proactively reserve and resize as possible, as the reallocation was visible in profiling
-vvl::DescriptorSetLayoutDef::DescriptorSetLayoutDef(const VkDescriptorSetLayoutCreateInfo *p_create_info)
+vvl::DescriptorSetLayoutDef::DescriptorSetLayoutDef(vvl::DeviceState &device_state,
+                                                    const VkDescriptorSetLayoutCreateInfo *p_create_info)
     : flags_(p_create_info->flags),
       binding_count_(0),
       descriptor_count_(0),
       non_inline_descriptor_count_(0),
-      dynamic_descriptor_count_(0),
-      has_immutable_samplers_(false) {
+      dynamic_descriptor_count_(0) {
     const auto *flags_create_info = vku::FindStructInPNextChain<VkDescriptorSetLayoutBindingFlagsCreateInfo>(p_create_info->pNext);
 
     binding_type_stats_ = {0, 0};
@@ -308,7 +309,7 @@ vvl::DescriptorSetLayoutDef::DescriptorSetLayoutDef(const VkDescriptorSetLayoutC
     }
 
     // Store the create info in the sorted order from above
-    uint32_t index = 0;
+    uint32_t binding_index = 0;
     binding_count_ = static_cast<uint32_t>(sorted_bindings.size());
     bindings_.reserve(binding_count_);
     binding_flags_.reserve(binding_count_);
@@ -316,7 +317,7 @@ vvl::DescriptorSetLayoutDef::DescriptorSetLayoutDef(const VkDescriptorSetLayoutC
     for (const auto &input_binding : sorted_bindings) {
         // Add to binding and map, s.t. it is robust to invalid duplication of binding_num
         const auto binding_num = input_binding.layout_binding->binding;
-        binding_to_index_map_[binding_num] = index++;
+        binding_to_index_map_[binding_num] = binding_index;
         bindings_.emplace_back(input_binding.layout_binding);
         // safe_VkDescriptorSetLayoutBinding will do some extra "cleanup" logic, so want to use it
         auto &binding_info = bindings_.back();
@@ -342,8 +343,24 @@ vvl::DescriptorSetLayoutDef::DescriptorSetLayoutDef(const VkDescriptorSetLayoutC
                 binding_type_stats_.non_dynamic_buffer_count++;
             }
         }
-
-        has_immutable_samplers_ |= (binding_info.pImmutableSamplers != nullptr);
+        // Get immutable samplers info
+        if (binding_info.pImmutableSamplers != nullptr) {
+            if (immutable_sampler_create_infos_.empty()) {
+                immutable_sampler_create_infos_.resize(binding_count_);
+                immutable_sampler_combined_hashes_.resize(binding_count_, 0);
+            }
+            immutable_sampler_create_infos_[binding_index].resize(binding_info.descriptorCount, {});
+            hash_util::HashCombiner samplers_hc;
+            for (uint32_t array_index = 0; array_index < binding_info.descriptorCount; array_index++) {
+                if (auto sampler = device_state.Get<vvl::Sampler>(binding_info.pImmutableSamplers[array_index])) {
+                    immutable_sampler_create_infos_[binding_index][array_index] = sampler->safe_create_info;
+                    const size_t sampler_hash = HashSamplerCreateInfo(*sampler->safe_create_info.ptr());
+                    samplers_hc << sampler_hash;
+                }
+            }
+            immutable_sampler_combined_hashes_[binding_index] = samplers_hc.Value();
+        }
+        binding_index++;
     }
     assert(bindings_.size() == binding_count_);
     assert(binding_flags_.size() == binding_count_);
@@ -358,13 +375,17 @@ vvl::DescriptorSetLayoutDef::DescriptorSetLayoutDef(const VkDescriptorSetLayoutC
 }
 
 size_t vvl::DescriptorSetLayoutDef::hash() const {
+    static const std::vector<size_t> empty_sampler_hashes;
     hash_util::HashCombiner hc;
     hc << flags_;
-    hc.Combine(bindings_);
+    for (auto [i, safe_binding] : vvl::enumerate(bindings_)) {
+        const VkDescriptorSetLayoutBinding &binding = *safe_binding.ptr();
+        const size_t samplers_combined_hash = binding.pImmutableSamplers ? immutable_sampler_combined_hashes_[i] : 0;
+        hc.Combine(DescriptorSetLayoutBindingHashingData{binding, samplers_combined_hash});
+    }
     hc.Combine(binding_flags_);
     return hc.Value();
 }
-//
 
 // Return valid index or "end" i.e. binding_count_;
 // The asserts in "Get" are reduced to the set where no valid answer(like null or 0) could be given
@@ -416,12 +437,18 @@ uint32_t vvl::DescriptorSetLayoutDef::GetNextValidBinding(const uint32_t binding
     if (it != non_empty_bindings_.cend()) return *it;
     return GetMaxBinding() + 1;
 }
-// For given index, return ptr to ImmutableSampler array
-VkSampler const *vvl::DescriptorSetLayoutDef::GetImmutableSamplerPtrFromIndex(const uint32_t index) const {
-    if (index < bindings_.size()) {
-        return bindings_[index].pImmutableSamplers;
+
+const std::vector<vku::safe_VkSamplerCreateInfo> &DescriptorSetLayoutDef::GetImmutableSamplerCreateInfosFromIndex(
+    uint32_t index) const {
+    static const std::vector<vku::safe_VkSamplerCreateInfo> empty_sampler_infos;
+    if (immutable_sampler_create_infos_.empty()) {
+        return empty_sampler_infos;
     }
-    return nullptr;
+    return immutable_sampler_create_infos_[index];
+}
+
+size_t DescriptorSetLayoutDef::GetImmutableSamplersCombinedHashFromIndex(uint32_t index) const {
+    return immutable_sampler_combined_hashes_.empty() ? 0 : immutable_sampler_combined_hashes_[index];
 }
 
 bool vvl::DescriptorSetLayoutDef::IsTypeMutable(const VkDescriptorType type, uint32_t binding) const {
@@ -487,6 +514,63 @@ std::string vvl::DescriptorSetLayoutDef::DescribeDescriptorBufferSizeAndOffests(
     return ss.str();
 }
 
+bool vvl::ImmutableSamplersAreEqual(const DescriptorSetLayoutDef &dsl_def1, const DescriptorSetLayoutDef &dsl_def2,
+                                    uint32_t binding_index) {
+    const size_t hash1 = dsl_def1.GetImmutableSamplersCombinedHashFromIndex(binding_index);
+    const size_t hash2 = dsl_def2.GetImmutableSamplersCombinedHashFromIndex(binding_index);
+    if (hash1 != hash2) {
+        return false;
+    }
+    for (uint32_t i = 0; i < binding_index; i++) {
+        const std::vector<vku::safe_VkSamplerCreateInfo> &create_infos1 =
+            dsl_def1.GetImmutableSamplerCreateInfosFromIndex(binding_index);
+        const std::vector<vku::safe_VkSamplerCreateInfo> &create_infos2 =
+            dsl_def1.GetImmutableSamplerCreateInfosFromIndex(binding_index);
+        if (create_infos1.size() != create_infos2.size()) {
+            return false;
+        }
+        for (size_t s = 0; s < create_infos1.size(); s++) {
+            if (!CompareSamplerCreateInfo(*create_infos1[s].ptr(), *create_infos2[s].ptr())) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool vvl::operator==(const DescriptorSetLayoutDef &lhs, const DescriptorSetLayoutDef &rhs) {
+    // trivial types
+    if ((lhs.GetCreateFlags() != rhs.GetCreateFlags()) || (lhs.GetBindingFlags() != rhs.GetBindingFlags())) {
+        return false;
+    }
+    // vectors of vku::safe_VkDescriptorSetLayoutBinding structures
+    const auto &lhs_bindings = lhs.GetBindings();
+    const auto &rhs_bindings = rhs.GetBindings();
+    if (lhs_bindings.size() != rhs_bindings.size()) {
+        return false;
+    }
+    for (uint32_t i = 0; i < lhs_bindings.size(); i++) {
+        const auto &l = lhs_bindings[i];
+        const auto &r = rhs_bindings[i];
+        // For things where we are comparing with the bound pipeline, the binding will always be right, but when comparing two
+        // arbitrary layouts (ex. templates, DeviceState Generated Commands, etc) the bindings might be different
+        if (l.binding != r.binding) {
+            return false;
+        }
+        if (l.descriptorType != r.descriptorType || l.descriptorCount != r.descriptorCount || l.stageFlags != r.stageFlags) {
+            return false;
+        }
+        if (!ImmutableSamplersAreEqual(lhs, rhs, i)) {
+            return false;
+        }
+        // These have been sorted already so can direct compare
+        if (lhs.GetMutableTypes(i) != rhs.GetMutableTypes(i)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // If our layout is compatible with rh_ds_layout, return true.
 bool vvl::DescriptorSetLayout::IsCompatible(DescriptorSetLayout const *rh_ds_layout) const {
     return (this == rh_ds_layout) || (GetLayoutDef() == rh_ds_layout->GetLayoutDef());
@@ -494,11 +578,18 @@ bool vvl::DescriptorSetLayout::IsCompatible(DescriptorSetLayout const *rh_ds_lay
 
 // The DescriptorSetLayout stores the per handle data for a descriptor set layout, and references the common defintion for the
 // handle invariant portion
-vvl::DescriptorSetLayout::DescriptorSetLayout(VkDevice device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
+vvl::DescriptorSetLayout::DescriptorSetLayout(vvl::DeviceState &device_state, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
                                               const VkDescriptorSetLayout handle)
-    : StateObject(handle, kVulkanObjectTypeDescriptorSetLayout), layout_id_(GetCanonicalId(pCreateInfo)) {
+    : StateObject(handle, kVulkanObjectTypeDescriptorSetLayout),
+      layout_id_(GetCanonicalId(pCreateInfo, device_state)),
+      desc_set_layout_ci(pCreateInfo) {
     if (pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) {
-        DispatchGetDescriptorSetLayoutSizeEXT(device, handle, &layout_size_in_bytes_);
+        DispatchGetDescriptorSetLayoutSizeEXT(device_state.VkHandle(), handle, &layout_size_in_bytes_);
+    }
+    if (pCreateInfo->pBindings) {
+        for (uint32_t i = 0; i < pCreateInfo->bindingCount; i++) {
+            binding_to_original_index_map_[pCreateInfo->pBindings[i].binding] = i;
+        }
     }
 }
 
@@ -798,6 +889,10 @@ bool vvl::DescriptorSet::ValidateBindingOnGPU(const DescriptorBinding &binding,
     // Some applications (notably Doom Eternal) might have large non-bindless descriptors attached (basically doing Descriptor
     // Indexing without the extension). Trying to loop through these on the CPU will bring FPS down by over 50% so we make use of
     // the post processing to detect which descriptors were actually accessed
+    //
+    // TODO - Currently we will conflate large descriptor arrays as being "bindless" because they come out of GPU-AV. what this just
+    // means that we are miss validating non-bindless rules on these arrays if the app is doing illegal aliasing of the descriptor
+    // array, but its a non-trival perf operation to track the difference for very little ROI
     static constexpr uint32_t max_descriptor_on_cpu = 1024;
     if (GetNonInlineDescriptorCount() > max_descriptor_on_cpu) {
         // If too much CPU work

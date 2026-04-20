@@ -92,6 +92,12 @@ meta_wayland_output_get_monitor (MetaWaylandOutput *wayland_output)
   return wayland_output->monitor;
 }
 
+MetaMonitorMode *
+meta_wayland_output_get_monitor_mode (MetaWaylandOutput *wayland_output)
+{
+  return wayland_output->mode;
+}
+
 static void
 output_resource_destroy (struct wl_resource *res)
 {
@@ -379,12 +385,13 @@ bind_output (struct wl_client *client,
   logical_monitor = meta_monitor_get_logical_monitor (monitor);
   meta_monitor_mode_get_resolution (wayland_output->mode, &mode_width, &mode_height);
 
-  meta_verbose ("Binding monitor %p/%s (%u, %u, %u, %u) x %f",
-                logical_monitor,
-                meta_monitor_get_product (monitor),
-                wayland_output->layout.x, wayland_output->layout.y,
-                mode_width, mode_height,
-                meta_monitor_mode_get_refresh_rate (wayland_output->mode));
+  meta_topic (META_DEBUG_WAYLAND,
+              "Binding monitor %p/%s (%u, %u, %u, %u) x %f",
+              logical_monitor,
+              meta_monitor_get_product (monitor),
+              wayland_output->layout.x, wayland_output->layout.y,
+              mode_width, mode_height,
+              meta_monitor_mode_get_refresh_rate (wayland_output->mode));
 #endif
 
   send_output_events (resource, wayland_output, monitor, TRUE, NULL);

@@ -200,6 +200,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME, VK_KHR_COPY_COMMANDS_2_SPEC_VERSION},
     {VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME, VK_KHR_FORMAT_FEATURE_FLAGS_2_SPEC_VERSION},
     {VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME, VK_KHR_RAY_TRACING_MAINTENANCE_1_SPEC_VERSION},
+    {VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME, VK_KHR_SHADER_UNTYPED_POINTERS_SPEC_VERSION},
     {VK_KHR_MAINTENANCE_4_EXTENSION_NAME, VK_KHR_MAINTENANCE_4_SPEC_VERSION},
     {VK_KHR_SHADER_SUBGROUP_ROTATE_EXTENSION_NAME, VK_KHR_SHADER_SUBGROUP_ROTATE_SPEC_VERSION},
     {VK_KHR_SHADER_MAXIMAL_RECONVERGENCE_EXTENSION_NAME, VK_KHR_SHADER_MAXIMAL_RECONVERGENCE_SPEC_VERSION},
@@ -224,6 +225,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME, VK_KHR_CALIBRATED_TIMESTAMPS_SPEC_VERSION},
     {VK_KHR_SHADER_EXPECT_ASSUME_EXTENSION_NAME, VK_KHR_SHADER_EXPECT_ASSUME_SPEC_VERSION},
     {VK_KHR_MAINTENANCE_6_EXTENSION_NAME, VK_KHR_MAINTENANCE_6_SPEC_VERSION},
+    {VK_KHR_COPY_MEMORY_INDIRECT_EXTENSION_NAME, VK_KHR_COPY_MEMORY_INDIRECT_SPEC_VERSION},
     {VK_KHR_VIDEO_ENCODE_INTRA_REFRESH_EXTENSION_NAME, VK_KHR_VIDEO_ENCODE_INTRA_REFRESH_SPEC_VERSION},
     {VK_KHR_VIDEO_ENCODE_QUANTIZATION_MAP_EXTENSION_NAME, VK_KHR_VIDEO_ENCODE_QUANTIZATION_MAP_SPEC_VERSION},
     {VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME, VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_SPEC_VERSION},
@@ -427,6 +429,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_EXT_COLOR_WRITE_ENABLE_EXTENSION_NAME, VK_EXT_COLOR_WRITE_ENABLE_SPEC_VERSION},
     {VK_EXT_PRIMITIVES_GENERATED_QUERY_EXTENSION_NAME, VK_EXT_PRIMITIVES_GENERATED_QUERY_SPEC_VERSION},
     {VK_EXT_GLOBAL_PRIORITY_QUERY_EXTENSION_NAME, VK_EXT_GLOBAL_PRIORITY_QUERY_SPEC_VERSION},
+    {VK_VALVE_VIDEO_ENCODE_RGB_CONVERSION_EXTENSION_NAME, VK_VALVE_VIDEO_ENCODE_RGB_CONVERSION_SPEC_VERSION},
     {VK_EXT_IMAGE_VIEW_MIN_LOD_EXTENSION_NAME, VK_EXT_IMAGE_VIEW_MIN_LOD_SPEC_VERSION},
     {VK_EXT_MULTI_DRAW_EXTENSION_NAME, VK_EXT_MULTI_DRAW_SPEC_VERSION},
     {VK_EXT_IMAGE_2D_VIEW_OF_3D_EXTENSION_NAME, VK_EXT_IMAGE_2D_VIEW_OF_3D_SPEC_VERSION},
@@ -468,6 +471,9 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_ANDROID_EXTERNAL_FORMAT_RESOLVE_EXTENSION_NAME, VK_ANDROID_EXTERNAL_FORMAT_RESOLVE_SPEC_VERSION},
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
     {VK_AMD_ANTI_LAG_EXTENSION_NAME, VK_AMD_ANTI_LAG_SPEC_VERSION},
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+    {VK_AMDX_DENSE_GEOMETRY_FORMAT_EXTENSION_NAME, VK_AMDX_DENSE_GEOMETRY_FORMAT_SPEC_VERSION},
+#endif  // VK_ENABLE_BETA_EXTENSIONS
     {VK_EXT_SHADER_OBJECT_EXTENSION_NAME, VK_EXT_SHADER_OBJECT_SPEC_VERSION},
     {VK_QCOM_TILE_PROPERTIES_EXTENSION_NAME, VK_QCOM_TILE_PROPERTIES_SPEC_VERSION},
     {VK_SEC_AMIGO_PROFILING_EXTENSION_NAME, VK_SEC_AMIGO_PROFILING_SPEC_VERSION},
@@ -1365,6 +1371,10 @@ static VKAPI_ATTR void VKAPI_CALL CmdSetDescriptorBufferOffsets2EXT(
     VkCommandBuffer commandBuffer, const VkSetDescriptorBufferOffsetsInfoEXT* pSetDescriptorBufferOffsetsInfo);
 static VKAPI_ATTR void VKAPI_CALL CmdBindDescriptorBufferEmbeddedSamplers2EXT(
     VkCommandBuffer commandBuffer, const VkBindDescriptorBufferEmbeddedSamplersInfoEXT* pBindDescriptorBufferEmbeddedSamplersInfo);
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryIndirectKHR(VkCommandBuffer commandBuffer,
+                                                           const VkCopyMemoryIndirectInfoKHR* pCopyMemoryIndirectInfo);
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryToImageIndirectKHR(
+    VkCommandBuffer commandBuffer, const VkCopyMemoryToImageIndirectInfoKHR* pCopyMemoryToImageIndirectInfo);
 static VKAPI_ATTR VkResult VKAPI_CALL CreateDebugReportCallbackEXT(VkInstance instance,
                                                                    const VkDebugReportCallbackCreateInfoEXT* pCreateInfo,
                                                                    const VkAllocationCallbacks* pAllocator,
@@ -2631,6 +2641,8 @@ static const std::unordered_map<std::string, void*> name_to_func_ptr_map = {
     {"vkCmdPushDescriptorSetWithTemplate2KHR", (void*)CmdPushDescriptorSetWithTemplate2KHR},
     {"vkCmdSetDescriptorBufferOffsets2EXT", (void*)CmdSetDescriptorBufferOffsets2EXT},
     {"vkCmdBindDescriptorBufferEmbeddedSamplers2EXT", (void*)CmdBindDescriptorBufferEmbeddedSamplers2EXT},
+    {"vkCmdCopyMemoryIndirectKHR", (void*)CmdCopyMemoryIndirectKHR},
+    {"vkCmdCopyMemoryToImageIndirectKHR", (void*)CmdCopyMemoryToImageIndirectKHR},
     {"vkCreateDebugReportCallbackEXT", (void*)CreateDebugReportCallbackEXT},
     {"vkDestroyDebugReportCallbackEXT", (void*)DestroyDebugReportCallbackEXT},
     {"vkDebugReportMessageEXT", (void*)DebugReportMessageEXT},
@@ -4426,6 +4438,12 @@ static VKAPI_ATTR void VKAPI_CALL CmdBindDescriptorBufferEmbeddedSamplers2EXT(
     VkCommandBuffer commandBuffer, const VkBindDescriptorBufferEmbeddedSamplersInfoEXT* pBindDescriptorBufferEmbeddedSamplersInfo) {
 }
 
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryIndirectKHR(VkCommandBuffer commandBuffer,
+                                                           const VkCopyMemoryIndirectInfoKHR* pCopyMemoryIndirectInfo) {}
+
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryToImageIndirectKHR(
+    VkCommandBuffer commandBuffer, const VkCopyMemoryToImageIndirectInfoKHR* pCopyMemoryToImageIndirectInfo) {}
+
 static VKAPI_ATTR VkResult VKAPI_CALL CreateDebugReportCallbackEXT(VkInstance instance,
                                                                    const VkDebugReportCallbackCreateInfoEXT* pCreateInfo,
                                                                    const VkAllocationCallbacks* pAllocator,
@@ -5608,10 +5626,6 @@ static VKAPI_ATTR void VKAPI_CALL GetDeviceTensorMemoryRequirementsARM(VkDevice 
 
 static VKAPI_ATTR void VKAPI_CALL CmdCopyTensorARM(VkCommandBuffer commandBuffer, const VkCopyTensorInfoARM* pCopyTensorInfo) {}
 
-static VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceExternalTensorPropertiesARM(
-    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceExternalTensorInfoARM* pExternalTensorInfo,
-    VkExternalTensorPropertiesARM* pExternalTensorProperties) {}
-
 static VKAPI_ATTR VkResult VKAPI_CALL GetTensorOpaqueCaptureDescriptorDataARM(VkDevice device,
                                                                               const VkTensorCaptureDescriptorDataInfoARM* pInfo,
                                                                               void* pData) {
@@ -5735,16 +5749,6 @@ static VKAPI_ATTR VkResult VKAPI_CALL CreateDataGraphPipelineSessionARM(VkDevice
     return VK_SUCCESS;
 }
 
-static VKAPI_ATTR VkResult VKAPI_CALL GetDataGraphPipelineSessionBindPointRequirementsARM(
-    VkDevice device, const VkDataGraphPipelineSessionBindPointRequirementsInfoARM* pInfo, uint32_t* pBindPointRequirementCount,
-    VkDataGraphPipelineSessionBindPointRequirementARM* pBindPointRequirements) {
-    return VK_SUCCESS;
-}
-
-static VKAPI_ATTR void VKAPI_CALL GetDataGraphPipelineSessionMemoryRequirementsARM(
-    VkDevice device, const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements) {
-}
-
 static VKAPI_ATTR VkResult VKAPI_CALL BindDataGraphPipelineSessionMemoryARM(
     VkDevice device, uint32_t bindInfoCount, const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos) {
     return VK_SUCCESS;
@@ -5808,9 +5812,6 @@ static VKAPI_ATTR void VKAPI_CALL DestroyExternalComputeQueueNV(VkDevice device,
 
 static VKAPI_ATTR void VKAPI_CALL GetExternalComputeQueueDataNV(VkExternalComputeQueueNV externalQueue,
                                                                 VkExternalComputeQueueDataParamsNV* params, void* pData) {}
-
-static VKAPI_ATTR void VKAPI_CALL GetClusterAccelerationStructureBuildSizesNV(
-    VkDevice device, const VkClusterAccelerationStructureInputInfoNV* pInfo, VkAccelerationStructureBuildSizesInfoKHR* pSizeInfo) {}
 
 static VKAPI_ATTR void VKAPI_CALL CmdBuildClusterAccelerationStructureIndirectNV(
     VkCommandBuffer commandBuffer, const VkClusterAccelerationStructureCommandsInfoNV* pCommandInfos) {}

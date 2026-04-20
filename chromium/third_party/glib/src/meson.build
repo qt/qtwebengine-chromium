@@ -1,10 +1,14 @@
 project('glib', 'c',
-  version : '2.82.1',
+  version : '2.85.4',
   # NOTE: See the policy in docs/meson-version.md before changing the Meson dependency
-  meson_version : '>= 1.2.0',
+  meson_version : '>= 1.4.0',
   default_options : [
     'buildtype=debugoptimized',
     'warning_level=3',
+    # FIXME: After https://github.com/mesonbuild/meson/issues/13639 is
+    # fixed, change this to
+    # meson.version().version_compare('>=FIXED_MESON_VERSION') ? 'c_std=gnu99,c99' : 'c_std=gnu99'
+    # to avoid a warning on MSVC.
     'c_std=gnu99'
   ]
 )
@@ -20,6 +24,17 @@ foreach std : ['89', '99', '11', '17']
     c_standards += { std: arg }
   endif
 endforeach
+
+# In the 2.85 cycle, this soft-dependency on C11 will become a hard dependency.
+# If this is a problem on your toolchain or platform, please file an issue
+# (https://gitlab.gnome.org/GNOME/glib/-/issues) and let us know. We have very
+# few metrics on the toolchains which are used to build GLib.
+if '11' not in c_standards
+  warning('Toolchain support for C11 will become a requirement for building ' +
+          'GLib in the next unstable development series (2.85). If this is ' +
+          'problematic for you, please file an issue ' +
+          '(https://gitlab.gnome.org/GNOME/glib/-/issues) now')
+endif
 
 have_cxx = add_languages('cpp', native: false, required: get_option('oss_fuzz').enabled())
 if have_cxx
@@ -105,6 +120,7 @@ glib_bindir = join_paths(glib_prefix, get_option('bindir'))
 glib_libdir = join_paths(glib_prefix, get_option('libdir'))
 glib_libexecdir = join_paths(glib_prefix, get_option('libexecdir'))
 glib_datadir = join_paths(glib_prefix, get_option('datadir'))
+glib_localedir = join_paths(glib_prefix, get_option('localedir'))
 glib_pkgdatadir = join_paths(glib_datadir, 'glib-2.0')
 glib_includedir = join_paths(glib_prefix, get_option('includedir'), 'glib-2.0')
 if get_option('gio_module_dir') != ''
@@ -183,7 +199,7 @@ test_timeout = 30
 test_timeout_slow = 90
 
 add_test_setup('default',
-  is_default: true,
+  is_default: not meson.is_subproject(),
   exclude_suites: ['flaky', 'failing'],
   env: common_test_env,
   timeout_multiplier: 2,
@@ -222,8 +238,7 @@ if valgrind.found()
       '--num-callers=50',
       '--show-leak-kinds=definite,possible',
       '--show-error-list=yes',
-      '--suppressions=@0@'.format(meson.project_source_root() /
-        '@0@'.format(valgrind_suppression_file)),
+      '--suppressions=' + valgrind_suppression_file.full_path(),
     ],
     env: common_test_env,
     timeout_multiplier: 20,
@@ -234,6 +249,8 @@ add_project_arguments('-D_GNU_SOURCE', language: 'c')
 
 if host_system == 'qnx'
   add_project_arguments('-D_QNX_SOURCE', language: 'c')
+elif host_system == 'sunos'
+  add_project_arguments('-D__EXTENSIONS__', language: 'c')
 endif
 
 # dummy/empty dependency() object to declare fallbacks and simpler dependencies
@@ -395,10 +412,13 @@ headers = [
   'inttypes.h',
   'libproc.h',
   'limits.h',
+  'linux/netlink.h',
   'locale.h',
   'mach/mach_time.h',
   'memory.h',
   'mntent.h',
+  'netlink/netlink.h',
+  'netlink/netlink_route.h',
   'poll.h',
   'pwd.h',
   'sched.h',
@@ -410,6 +430,7 @@ headers = [
   'strings.h',
   'sys/auxv.h',
   'sys/event.h',
+  'sys/uio.h',
   'sys/filio.h',
   'sys/inotify.h',
   'sys/mkdev.h',
@@ -427,6 +448,7 @@ headers = [
   'sys/time.h', # MSC does not come with this by default
   'sys/times.h',
   'sys/types.h',
+  'sys/ucred.h',
   'sys/uio.h',
   'sys/vfs.h',
   'sys/vfstab.h',
@@ -455,7 +477,8 @@ if cc.check_header('malloc.h')
   glib_conf_prefix = glib_conf_prefix + '#define HAVE_MALLOC_H 1\n'
 endif
 
-if cc.check_header('linux/netlink.h')
+if (glib_conf.has('HAVE_LINUX_NETLINK_H') or
+    (glib_conf.has('HAVE_NETLINK_NETLINK_H') and glib_conf.has('HAVE_NETLINK_NETLINK_ROUTE_H')))
   glib_conf.set('HAVE_NETLINK', 1)
 endif
 
@@ -551,6 +574,7 @@ endforeach
 if cc.get_id() == 'gcc' or cc.get_id() == 'clang'
   warning_common_args = [
     '-Wduplicated-branches',
+    '-Wfloat-conversion',
     '-Wimplicit-fallthrough',
     '-Wmisleading-indentation',
     '-Wmissing-field-initializers',
@@ -637,6 +661,13 @@ if have_cxx
   add_project_arguments(cxx.get_supported_arguments(warning_cxx_args), language: 'cpp')
 endif
 
+# FIXME: This is checked and implemented separately from warning_common_args for
+# now because it causes so many warnings. Adding it as a variable in various
+# directories allows us to gradually tighten up support for it. Eventually, the
+# warning can be enabled unconditionally in warning_c_args, and this variable
+# removed. See https://gitlab.gnome.org/GNOME/glib/-/issues/3405
+warning_sign_conversion_args = cc.get_supported_arguments(['-Wsign-conversion'])
+
 # FIXME: We cannot build some of the GResource tests with -z nodelete, which
 # means we cannot use that flag in add_project_link_arguments(), and must add
 # it to the relevant targets manually. We do the same with -Bsymbolic-functions
@@ -678,6 +709,7 @@ functions = [
   'endmntent',
   'endservent',
   'epoll_create1',
+  'faccessat',
   'fallocate',
   'fchmod',
   'fchown',
@@ -688,9 +720,12 @@ functions = [
   'ftruncate64',
   'getauxval',
   'getc_unlocked',
+  'getfsent',
   'getfsstat',
   'getgrgid_r',
+  'getifaddrs',
   'getmntent_r',
+  'getpwnam_r',
   'getpwuid_r',
   'getresuid',
   'getvfsstat',
@@ -707,6 +742,7 @@ functions = [
   'lstat',
   'mbrtowc',
   'memalign',
+  'memmem',
   'mmap',
   'newlocale',
   'pipe2',
@@ -724,6 +760,7 @@ functions = [
   'strtoll_l',
   'strtoull_l',
   'symlink',
+  'sysinfo',
   'timegm',
   'unsetenv',
   'uselocale',
@@ -954,12 +991,18 @@ if host_system == 'linux'
 endif
 
 osx_ldflags = []
-glib_have_os_x_9_or_later = false
 glib_have_carbon = false
 glib_have_cocoa = false
 if host_system == 'darwin'
   add_languages('objc', native: false, required: true)
   objcc = meson.get_compiler('objc')
+  if not objcc.compiles('''#include <AvailabilityMacros.h>
+                           #if MAC_OS_X_VERSION_MIN_REQUIRED < 101300
+                           #error message "GLib requires macOS 10.13 or later."
+                           #endif''',
+                         name : 'macOS 10.13 or later')
+    error('GLib requires macOS 10.13 or later.')
+  endif
 
   add_project_arguments(objcc.get_supported_arguments(warning_objc_args), language: 'objc')
 
@@ -970,11 +1013,6 @@ if host_system == 'darwin'
 
   if glib_have_carbon
     glib_conf.set('HAVE_CARBON', true)
-    glib_have_os_x_9_or_later = objcc.compiles('''#include <AvailabilityMacros.h>
-                                                  #if MAC_OS_X_VERSION_MIN_REQUIRED < 1090
-                                                  #error Compiling for minimum OS X version before 10.9
-                                                  #endif''',
-                                               name : 'OS X 9 or later')
   endif
 
   # Mac OS X Cocoa support
@@ -1734,7 +1772,7 @@ glibconfig_conf.set('guint64_constant', guint64_constant)
 if host_system == 'windows'
   glibconfig_conf.set('g_pid_type', 'void*')
   glibconfig_conf.set_quoted('g_pid_format', 'p')
-  if host_machine.cpu_family() == 'x86_64'
+  if host_machine.cpu_family() in ['x86_64', 'aarch64']
     glibconfig_conf.set_quoted('g_pollfd_format', '%#' + int64_m + 'x')
   else
     glibconfig_conf.set_quoted('g_pollfd_format', '%#x')
@@ -2200,9 +2238,13 @@ else
 endif
 
 pcre2_req = '>=10.32'
+pcre2_options = [
+  'default_library=static',
+  'test=false',
+]
 
 # Pick up pcre from the system, or if "--force-fallback-for libpcre2-8" was specified
-pcre2 = dependency('libpcre2-8', version: pcre2_req, required: false, default_options: ['default_library=static'])
+pcre2 = dependency('libpcre2-8', version: pcre2_req, required: false, default_options: pcre2_options)
 if not pcre2.found()
   if cc.get_id() == 'msvc' or cc.get_id() == 'clang-cl'
   # MSVC: Search for the PCRE2 library by the configuration, which corresponds
@@ -2218,7 +2260,7 @@ endif
 
 # Try again with the fallback
 if not pcre2.found()
-  pcre2 = dependency('libpcre2-8', version: pcre2_req, allow_fallback: true, default_options: ['default_library=static'])
+  pcre2 = dependency('libpcre2-8', version: pcre2_req, allow_fallback: true, default_options: pcre2_options)
   assert(pcre2.type_name() == 'internal')
   # static flags are automatically enabled by the subproject if it's built
   # with default_library=static
@@ -2240,7 +2282,7 @@ else
 endif
 
 # Import the gvdb sources as a subproject to avoid having the copylib in-tree
-subproject('gvdb')
+subproject('gvdb', default_options: {'tests': false})
 gvdb_dep = dependency('gvdb')
 
 libm = cc.find_library('m', required : false)
@@ -2307,7 +2349,7 @@ glib_conf.set('HAVE_BIND_TEXTDOMAIN_CODESET', have_bind_textdomain_codeset)
 glib_conf.set('HAVE_DCGETTEXT', 1)
 glib_conf.set('HAVE_GETTEXT', 1)
 
-glib_conf.set_quoted('GLIB_LOCALE_DIR', join_paths(glib_datadir, 'locale'))
+glib_conf.set_quoted('GLIB_LOCALE_DIR', glib_localedir)
 
 glib_conf.set_quoted('GLIB_LOCALSTATEDIR', glib_localstatedir)
 glib_conf.set_quoted('GLIB_RUNSTATEDIR', glib_runstatedir)
@@ -2326,8 +2368,11 @@ endif
 
 if host_system == 'windows'
   winsock2 = cc.find_library('ws2_32')
+  # Used for g_win32_clear_com() tests...
+  wincodecs = cc.find_library('windowscodecs')
 else
   winsock2 = not_found
+  wincodecs = not_found
 endif
 
 selinux_dep = []
@@ -2459,10 +2504,39 @@ glib_conf.set('HAVE_PROC_SELF_CMDLINE', have_proc_self_cmdline)
 
 python = import('python').find_installation()
 
+# Sets the shebang on script files. This has been changed many times including
+# using env, the absolute path to the Python executable, and using both python
+# and python3 names. Please review the history here, prior to suggesting
+# further changes: https://gitlab.gnome.org/GNOME/glib/-/merge_requests/4391
+python_shebang = '/usr/bin/env python3'
+
 python_version = python.language_version()
 python_version_req = '>=3.7'
+python_test_libraries_path = meson.project_source_root() / 'tests' / 'lib'
+assert(fs.exists(python_test_libraries_path))
 if not python_version.version_compare(python_version_req)
   error('Requires Python @0@, @1@ found.'.format(python_version_req, python_version))
+endif
+python_test_libraries_built = meson.project_build_root() / 'tests' / 'lib'
+
+# FIXME: https://github.com/mesonbuild/meson/issues/4668
+#
+# If we have a Python test which spawns a built native binary, that binary is
+# listed in the `depends` argument of the `test()`. On Linux, this results in
+# the directories containing the built libraries which the binary depends on
+# being added to the `LD_LIBRARY_PATH` of the test invocation. On Windows,
+# however, Meson currently doesn’t add those directories to `PATH` (which is the
+# equivalent of `LD_LIBRARY_PATH`), so we have to do it manually.
+python_test_env_common_path = []
+if host_system == 'windows'
+  build_root = meson.project_build_root()
+  python_test_env_common_path += [
+    build_root / 'gmodule',
+    build_root / 'girepository',
+    build_root / 'gio',
+    build_root / 'glib',
+    build_root / 'gobject',
+  ]
 endif
 
 # Determine which user environment-dependent files that we want to install
@@ -2475,10 +2549,23 @@ have_pkg_config = find_program('pkg-config', required: false).found()
 # Some installed tests require a custom environment
 env_program = find_program('env', required: installed_tests_enabled)
 
-# FIXME: How to detect Solaris? https://github.com/mesonbuild/meson/issues/1578
+# illumos & Solaris may need extra definitions to expose some SUS/POSIX
+# interfaces in headers that conflict with previous Solaris headers.
+# But if we define them to request an older version of the standards,
+# we may hide things introduced in newer versions.  We only check the
+# versions that are supported on systems new enough that meson runs on them.
 if host_system == 'sunos'
-  glib_conf.set('_XOPEN_SOURCE_EXTENDED', 1)
-  glib_conf.set('_XOPEN_SOURCE', 2)
+  xopen_test_code = '''#include <unistd.h>
+  #if _XOPEN_VERSION != _XOPEN_SOURCE
+  #error "XOPEN_SOURCE of _XOPEN_SOURCE not supported"
+  #endif'''
+  foreach std : ['800', '700', '600']
+    if cc.compiles(xopen_test_code, args: '-D_XOPEN_SOURCE=' + std, name: 'building with _XOPEN_SOURCE=' + std)
+      xopen_version = std
+      break
+    endif
+  endforeach
+  glib_conf.set('_XOPEN_SOURCE', xopen_version)
   glib_conf.set('__EXTENSIONS__',1)
 endif
 
@@ -2595,13 +2682,22 @@ if enable_systemtap
   endif
   stp_cdata = configuration_data()
   stp_cdata.set('ABS_GLIB_RUNTIME_LIBDIR', glib_libdir)
-  stp_cdata.set('LT_CURRENT', minor_version * 100)
-  stp_cdata.set('LT_REVISION', micro_version)
+  stp_cdata.set('LT_CURRENT', current)
+  stp_cdata.set('LT_REVISION', interface_age)
 endif
 
-# introspection
-gir_scanner = find_program('g-ir-scanner', required: get_option('introspection'))
-enable_gir = get_option('introspection').allowed() and gir_scanner.found() and meson.can_run_host_binaries()
+# Introspection
+#
+# We depend on g-ir-scanner from gobject-introspection-1.0 to scan our source
+# to build GIR files. We then use gi-compile-repository from the local build
+# tree to build the typelibs (rather than using g-ir-compiler from
+# gobject-introspection). However, we use Meson’s gnome.generate_gir() function,
+# which adds a hard dependency on gobject-introspection-1.0, so we’d better
+# check for that here.
+gobject_introspection_required_version = '>= 1.80.0'
+gir_scanner = find_program('g-ir-scanner', required: get_option('introspection'), version: gobject_introspection_required_version)
+gobject_introspection = dependency('gobject-introspection-1.0', required: get_option('introspection'), version: gobject_introspection_required_version)
+enable_gir = get_option('introspection').allowed() and gir_scanner.found() and gobject_introspection.found() and meson.can_run_host_binaries()
 
 if get_option('introspection').enabled() and not meson.can_run_host_binaries()
   error('Running binaries on the build host needs to be supported to build with -Dintrospection=enabled')
@@ -2610,6 +2706,11 @@ endif
 gir_args = [
   '--quiet',
 ]
+if gobject_introspection.version().version_compare('>=1.83.2')
+  gir_args += [
+    '--doc-format=gi-docgen',
+  ]
+endif
 
 pkg = import('pkgconfig')
 windows = import('windows')
@@ -2623,7 +2724,9 @@ subdir('gmodule')
 subdir('gio')
 subdir('girepository')
 subdir('fuzzing')
-subdir('tests')
+if get_option('tests')
+  subdir('tests')
+endif
 
 # xgettext is optional (on Windows for instance)
 if find_program('xgettext', required : get_option('nls')).found()
@@ -2695,6 +2798,7 @@ summary({
   'libexecdir' : glib_libexecdir,
   'pkgdatadir' : glib_pkgdatadir,
   'datadir' : glib_datadir,
+  'localedir' : glib_localedir,
   'includedir' : glib_includedir,
   'giomodulesdir' : glib_giomodulesdir,
   'localstatedir' : glib_localstatedir,
@@ -2738,4 +2842,5 @@ summary({
   'libelf' : get_option('libelf'),
   'multiarch' : get_option('multiarch'),
   'introspection' : enable_gir,
+  'file_monitor_backend' : get_option('file_monitor_backend'),
 }, section: 'Options')

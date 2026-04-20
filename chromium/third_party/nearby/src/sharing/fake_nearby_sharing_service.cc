@@ -22,7 +22,6 @@
 #include "internal/base/observer_list.h"
 #include "sharing/advertisement.h"
 #include "sharing/attachment_container.h"
-#include "sharing/internal/api/sharing_rpc_notifier.h"
 #include "sharing/local_device_data/nearby_share_local_device_data_manager.h"
 #include "sharing/nearby_sharing_service.h"
 #include "sharing/nearby_sharing_settings.h"
@@ -35,17 +34,12 @@
 namespace nearby {
 namespace sharing {
 
-using ::nearby::sharing::api::SharingRpcNotifier;
-
 void FakeNearbySharingService::AddObserver(Observer* observer) {
   observers_.AddObserver(observer);
 }
 
 void FakeNearbySharingService::RemoveObserver(Observer* observer) {
   observers_.RemoveObserver(observer);
-}
-bool FakeNearbySharingService::HasObserver(Observer* observer) {
-  return observers_.HasObserver(observer);
 }
 
 // Shutdown the Nearby Sharing service, and cleanup.
@@ -154,10 +148,6 @@ std::string FakeNearbySharingService::Dump() const { return ""; }
 
 NearbyShareSettings* FakeNearbySharingService::GetSettings() { return nullptr; }
 
-SharingRpcNotifier* FakeNearbySharingService::GetRpcNotifier() {
-  return nullptr;
-}
-
 NearbyShareLocalDeviceDataManager*
 FakeNearbySharingService::GetLocalDeviceDataManager() {
   return nullptr;
@@ -198,30 +188,6 @@ void FakeNearbySharingService::FireStartAdvertisingFailure() {
 void FakeNearbySharingService::FireStartDiscoveryResult(bool success) {
   for (auto& observer : observers_.GetObservers()) {
     observer->OnStartDiscoveryResult(success);
-  }
-}
-
-void FakeNearbySharingService::FireFastInitiationDevicesDetected() {
-  for (auto& observer : observers_.GetObservers()) {
-    observer->OnFastInitiationDevicesDetected();
-  }
-}
-
-void FakeNearbySharingService::FireFastInitiationDevicesNotDetected() {
-  for (auto& observer : observers_.GetObservers()) {
-    observer->OnFastInitiationDevicesNotDetected();
-  }
-}
-
-void FakeNearbySharingService::FireFastInitiationScanningStopped() {
-  for (auto& observer : observers_.GetObservers()) {
-    observer->OnFastInitiationScanningStopped();
-  }
-}
-
-void FakeNearbySharingService::FireShutdown() {
-  for (auto& observer : observers_.GetObservers()) {
-    observer->OnShutdown();
   }
 }
 

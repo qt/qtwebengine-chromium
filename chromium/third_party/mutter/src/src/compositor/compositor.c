@@ -753,8 +753,9 @@ meta_compositor_sync_stack (MetaCompositor  *compositor,
           stack_actor = meta_window_actor_from_window (stack_window);
           if (!stack_actor)
             {
-              meta_verbose ("Failed to find corresponding MetaWindowActor "
-                            "for window %s", meta_window_get_description (stack_window));
+              meta_topic (META_DEBUG_RENDER,
+                          "Failed to find corresponding MetaWindowActor "
+                          "for window %s", meta_window_get_description (stack_window));
               stack = g_list_delete_link (stack, stack);
             }
           else
@@ -1281,7 +1282,8 @@ flash_out_completed (ClutterTimeline *timeline,
 
 void
 meta_compositor_flash_display (MetaCompositor *compositor,
-                               MetaDisplay    *display)
+                               MetaDisplay    *display,
+                               int             n_flashes)
 {
   MetaBackend *backend;
   ClutterActor *stage;
@@ -1307,7 +1309,7 @@ meta_compositor_flash_display (MetaCompositor *compositor,
 
   transition = clutter_actor_get_transition (flash, "opacity");
   clutter_timeline_set_auto_reverse (CLUTTER_TIMELINE (transition), TRUE);
-  clutter_timeline_set_repeat_count (CLUTTER_TIMELINE (transition), 2);
+  clutter_timeline_set_repeat_count (CLUTTER_TIMELINE (transition), n_flashes);
 
   g_signal_connect (transition, "stopped",
                     G_CALLBACK (flash_out_completed), flash);
@@ -1326,7 +1328,8 @@ window_flash_out_completed (ClutterTimeline *timeline,
 
 void
 meta_compositor_flash_window (MetaCompositor *compositor,
-                              MetaWindow     *window)
+                              MetaWindow     *window,
+                              int             n_flashes)
 {
   ClutterActor *window_actor =
     CLUTTER_ACTOR (meta_window_actor_from_window (window));
@@ -1355,7 +1358,7 @@ meta_compositor_flash_window (MetaCompositor *compositor,
   if (transition)
     {
       clutter_timeline_set_auto_reverse (CLUTTER_TIMELINE (transition), TRUE);
-      clutter_timeline_set_repeat_count (CLUTTER_TIMELINE (transition), 2);
+      clutter_timeline_set_repeat_count (CLUTTER_TIMELINE (transition), n_flashes);
 
       g_signal_connect (transition, "stopped",
                         G_CALLBACK (window_flash_out_completed), flash);
@@ -1553,11 +1556,11 @@ gboolean
 meta_compositor_drag_window (MetaCompositor       *compositor,
                              MetaWindow           *window,
                              MetaGrabOp            grab_op,
+                             MetaDragWindowFlags   flags,
                              ClutterInputDevice   *device,
                              ClutterEventSequence *sequence,
                              uint32_t              timestamp,
-                             graphene_point_t     *pos_hint,
-                             ClutterActor         *grab_actor)
+                             graphene_point_t     *pos_hint)
 {
   MetaCompositorPrivate *priv =
     meta_compositor_get_instance_private (compositor);
@@ -1574,7 +1577,7 @@ meta_compositor_drag_window (MetaCompositor       *compositor,
   priv->current_drag = g_steal_pointer (&window_drag);
 
   if (!meta_window_drag_begin (priv->current_drag, device,
-                               sequence, timestamp, grab_actor))
+                               sequence, timestamp, flags))
     {
       g_clear_object (&priv->current_drag);
       return FALSE;

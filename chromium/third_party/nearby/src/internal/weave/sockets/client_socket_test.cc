@@ -60,7 +60,7 @@ class FakeConnection : public Connection {
 
   int GetMaxPacketSize() const override { return max_packet_size_; }
   void Transmit(std::string packet) override {
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     packets_written_.push_back(packet);
     if (instant_transmit_) {
       callback_.on_transmit_cb(absl::OkStatus());
@@ -71,16 +71,16 @@ class FakeConnection : public Connection {
   bool IsOpen() { return open_; }
   std::string PollWrittenPacket() {
     if (!NoMorePackets()) {
-      absl::MutexLock lock(&mutex_);
+      absl::MutexLock lock(mutex_);
       auto front = packets_written_.front();
       packets_written_.erase(packets_written_.begin());
       return front;
     }
-    NEARBY_LOGS(WARNING) << "No more packets";
+    LOG(WARNING) << "No more packets";
     return "";
   }
   bool NoMorePackets() {
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     return packets_written_.empty();
   }
   void SetInstantTransmit(bool instant_transmit) {
@@ -123,7 +123,7 @@ class ClientSocketTest : public ::testing::Test {
                                      .on_error_cb =
                                          [this](absl::Status status) {
                                            last_error_ = status;
-                                           NEARBY_LOGS(ERROR) << status;
+                                           LOG(ERROR) << status;
                                          },
                                  })) {}
   void SetUp() override { EXPECT_FALSE(socket_.IsConnected()); }
@@ -134,7 +134,7 @@ class ClientSocketTest : public ::testing::Test {
   void RunConnect(int client_size, int server_size,
                   absl::string_view initial_data) {
     connection_.SetMaxPacketSize(client_size);
-    NEARBY_LOGS(INFO) << "connect";
+    LOG(INFO) << "connect";
     socket_.Connect();
     absl::SleepFor(absl::Milliseconds(10));
     auto packet = Packet::FromBytes(ByteArray(connection_.PollWrittenPacket()));
@@ -349,8 +349,7 @@ TEST_F(ClientSocketTest, TestSocketWithRandomDataProvider) {
                 MutexLock lock(&mutex_);
                 messages_read_.push_back(message);
               },
-          .on_error_cb =
-              [](absl::Status status) { NEARBY_LOGS(ERROR) << status; },
+          .on_error_cb = [](absl::Status status) { LOG(ERROR) << status; },
       },
       std::move(provider));
   socket.Connect();

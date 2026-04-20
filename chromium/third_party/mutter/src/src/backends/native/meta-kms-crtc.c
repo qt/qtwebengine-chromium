@@ -28,7 +28,7 @@
 #include "backends/native/meta-kms-update-private.h"
 #include "backends/native/meta-kms-utils.h"
 
-#define DEADLINE_EVASION_CONSTANT_US 200
+#define DEADLINE_EVASION_CONSTANT_US 800
 
 #define MINIMUM_REFRESH_RATE 30.f
 
@@ -302,11 +302,24 @@ meta_kms_crtc_read_state (MetaKmsCrtc             *crtc,
   if (!crtc_state.is_active)
     {
       if (crtc->current_state.is_active)
-        changes |= META_KMS_RESOURCE_CHANGE_FULL;
+        {
+          meta_topic (META_DEBUG_KMS,
+                      "%s: CRTC is_active disabled",
+                      __func__);
+          changes |= META_KMS_RESOURCE_CHANGE_FULL;
+        }
     }
   else
     {
       changes = meta_kms_crtc_state_changes (&crtc->current_state, &crtc_state);
+
+      if (changes & META_KMS_RESOURCE_CHANGE_FULL)
+        {
+          meta_topic (META_DEBUG_KMS,
+                      "%s: meta_kms_crtc_state_changes returned "
+                      "META_KMS_RESOURCE_CHANGE_FULL",
+                      __func__);
+        }
     }
 
   g_clear_pointer (&crtc->current_state.gamma.value,
@@ -346,6 +359,9 @@ meta_kms_crtc_update_state_in_impl (MetaKmsCrtc *crtc)
       crtc->current_state.is_active = FALSE;
       crtc->current_state.rect = (MtkRectangle) { };
       crtc->current_state.is_drm_mode_valid = FALSE;
+      meta_topic (META_DEBUG_KMS,
+                  "%s: drm_crtc=%p drm_props=%p",
+                  __func__, drm_crtc, drm_props);
       changes = META_KMS_RESOURCE_CHANGE_FULL;
       goto out;
     }
@@ -593,6 +609,18 @@ maybe_update_deadline_evasion (MetaKmsCrtc *crtc,
   crtc->deadline_evasion_update_time_us = next_presentation_time_us;
 }
 
+static int64_t
+extrapolate_next_interval_boundary (int64_t base_us,
+                                    int64_t interval_us)
+{
+  int64_t now_us;
+  int64_t num_intervals;
+
+  now_us = g_get_monotonic_time ();
+  num_intervals = MAX ((now_us - base_us + interval_us - 1) / interval_us, 0);
+  return base_us + num_intervals * interval_us;
+}
+
 gboolean
 meta_kms_crtc_determine_deadline (MetaKmsCrtc  *crtc,
                                   int64_t      *out_next_deadline_us,
@@ -674,17 +702,24 @@ meta_kms_crtc_determine_deadline (MetaKmsCrtc  *crtc,
       now_us = g_get_monotonic_time ();
       if (now_us > next_deadline_us)
         {
+          int64_t skip_us;
+
+          skip_us =
+            extrapolate_next_interval_boundary (next_deadline_us,
+                                                refresh_interval_us) -
+            next_deadline_us;
+
           if (meta_is_topic_enabled (META_DEBUG_KMS_DEADLINE))
             {
               meta_topic (META_DEBUG_KMS_DEADLINE,
                           "Missed deadline by %3"G_GINT64_FORMAT "µs, "
                           "skipping by %"G_GINT64_FORMAT "µs",
                           now_us - next_deadline_us,
-                          refresh_interval_us);
+                          skip_us);
             }
 
-          next_presentation_us += refresh_interval_us;
-          next_deadline_us += refresh_interval_us;
+          next_presentation_us += skip_us;
+          next_deadline_us += skip_us;
         }
     }
 

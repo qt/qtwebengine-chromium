@@ -242,6 +242,13 @@ bool StructTraits<blink::mojom::WebPreferencesDataView,
       data.api_based_fingerprinting_interventions_enabled();
   out->content_based_fingerprinting_protection_enabled =
       data.content_based_fingerprinting_protection_enabled();
+  out->ai_prompt_api_enabled = data.ai_prompt_api_enabled();
+
+#if BUILDFLAG(IS_ANDROID)
+  out->increment_local_surface_id_for_mainframe_same_doc_navigation =
+      data.increment_local_surface_id_for_mainframe_same_doc_navigation();
+#endif  // BUILDFLAG(IS_ANDROID)
+
   return true;
 }
 

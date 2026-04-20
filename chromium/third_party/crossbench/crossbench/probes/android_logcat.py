@@ -4,13 +4,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, Self, Type, cast
+from typing import TYPE_CHECKING, ClassVar, Iterable, Self, Type, cast
 
 from typing_extensions import override
 
 from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
                                      ProbeIncompatibleBrowser)
-from crossbench.probes.result_location import ResultLocation
 from crossbench.probes.results import LocalProbeResult, ProbeResult
 
 if TYPE_CHECKING:
@@ -24,9 +23,7 @@ class LogcatAndroidProbe(Probe):
   """
   Android-only probe to collect logcat traces.
   """
-  NAME = "logcat"
-  RESULT_LOCATION = ResultLocation.LOCAL
-  IS_GENERAL_PURPOSE = True
+  NAME: ClassVar = "logcat"
 
   @classmethod
   @override
@@ -36,7 +33,7 @@ class LogcatAndroidProbe(Probe):
         "filterspec",
         type=str,
         is_list=True,
-        default=tuple(),
+        default=(),
         help="Filter specifications are a series of <tag>[:priority]")
     return parser
 

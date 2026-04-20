@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# This script should be used by logged-in users with write access to the Google Container Registry
+# to push a new version of the image.
+#
+# In order to set up the necessary credentials:
+#
+# - Install `gcloud`: https://cloud.google.com/sdk/docs/downloads-interactive
+# - `gcloud auth login`
+# - `gcloud config set project oak-ci`
+# - `gcloud auth configure-docker`
+# - `gcloud auth configure-docker europe-west2-docker.pkg.dev`
+
+readonly SCRIPTS_DIR="$(dirname "$0")"
+# shellcheck source=scripts/common
+source "$SCRIPTS_DIR/common"
+
+# We need to push the image to a registry in order to be able to retrieve its digest.
+# See https://github.com/moby/moby/issues/16482.
+docker push "${DOCKER_IMAGE_NAME}"
+
+# Store the full name (including repo and digest) of the image in the repository, so that it can be
+# pulled easily.
+readonly NEW_DOCKER_IMAGE_REPO_DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${DOCKER_IMAGE_NAME}")"
+sed --in-place "s|readonly DOCKER_IMAGE_REPO_DIGEST=.*|readonly DOCKER_IMAGE_REPO_DIGEST='${NEW_DOCKER_IMAGE_REPO_DIGEST}'|" "${SCRIPTS_DIR}/common"

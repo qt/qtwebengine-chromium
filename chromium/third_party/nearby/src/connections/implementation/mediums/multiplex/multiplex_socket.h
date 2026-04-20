@@ -20,6 +20,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/functional/any_invocable.h"
 #include "connections/implementation/mediums/multiplex/multiplex_output_stream.h"
@@ -92,7 +93,7 @@ class MultiplexSocket {
 
   bool IsEnabled() { return enabled_.Get(); }
   void Enable() {
-    NEARBY_LOGS(INFO) << "Enable the Multiplex MediumSocket.";
+    LOG(INFO) << "Enable the Multiplex MediumSocket.";
     enabled_.Set(true);
   }
 
@@ -101,7 +102,8 @@ class MultiplexSocket {
   // Gets the virtual socket count.
   int GetVirtualSocketCount();
 
-  void ListVirtualSocket();
+  void ListVirtualSocket()
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(virtual_socket_mutex_);
 
   // Establishes the virtual socket by service id.
   MediumSocket* EstablishVirtualSocket(const std::string& service_id);
@@ -194,8 +196,7 @@ class MultiplexSocket {
   // MultiplexSocket object
   mutable Mutex virtual_socket_mutex_;
   absl::flat_hash_map<std::string, std::shared_ptr<MediumSocket>>
-      // virtual_sockets_ ABSL_GUARDED_BY(virtual_socket_mutex_);
-      virtual_sockets_;
+      virtual_sockets_ ABSL_GUARDED_BY(virtual_socket_mutex_);
 
   // The thread to receive incoming MultiplexFrame from the physical socket.
   SingleThreadExecutor physical_reader_thread_;

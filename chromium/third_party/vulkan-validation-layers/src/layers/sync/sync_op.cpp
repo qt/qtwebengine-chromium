@@ -20,12 +20,13 @@
 #include "sync/sync_access_context.h"
 #include "sync/sync_commandbuffer.h"
 #include "sync/sync_image.h"
+#include "sync/sync_validation.h"
 
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/cmd_buffer_state.h"
 #include "state_tracker/render_pass_state.h"
 
-#include "sync/sync_validation.h"
+#include "utils/image_utils.h"
 #include "utils/sync_utils.h"
 
 // Range generators for to allow event scope filtration to be limited to the top of the resource access traversal pipeline
@@ -195,93 +196,6 @@ class FilteredGeneratorGenerator {
 
 using EventImageRangeGenerator = FilteredGeneratorGenerator<AccessContext::ScopeMap, subresource_adapter::ImageRangeGenerator>;
 
-// Helper functions for SyncOpPipelineBarrier::ReplayRecord
-namespace PipelineBarrier {
-void ApplyBarriers(const std::vector<SyncBufferMemoryBarrier> &barriers, QueueId queue_id, AccessContext *access_context) {
-    for (const SyncBufferMemoryBarrier &barrier : barriers) {
-        ApplyBarrierFunctor update_action(PipelineBarrierOp(queue_id, barrier.barrier, false));
-
-        const auto base_address = ResourceBaseAddress(*barrier.buffer);
-        ResourceAccessRange range = SimpleBinding(*barrier.buffer) ? (barrier.range + base_address) : ResourceAccessRange();
-        SingleRangeGenerator<ResourceAccessRange> range_gen(range);
-
-        access_context->UpdateMemoryAccessState(update_action, range_gen);
-    }
-}
-
-void ApplyBarriers(const std::vector<SyncImageMemoryBarrier> &barriers, QueueId queue_id, AccessContext *access_context) {
-    for (const SyncImageMemoryBarrier &barrier : barriers) {
-        ApplyBarrierFunctor update_action(
-            PipelineBarrierOp(queue_id, barrier.barrier, barrier.layout_transition, barrier.handle_index));
-        const auto &sub_state = syncval_state::SubState(*barrier.image);
-        auto range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, false);
-        access_context->UpdateMemoryAccessState(update_action, range_gen);
-    }
-}
-
-void ApplyGlobalBarriers(const std::vector<SyncBarrier> &barriers, QueueId queue_id, ResourceUsageTag tag,
-                         AccessContext *access_context) {
-    auto barriers_functor = ApplyBarrierOpsFunctor<PipelineBarrierOp>(true, barriers.size(), tag);
-    for (const auto &barrier : barriers) {
-        barriers_functor.EmplaceBack(PipelineBarrierOp(queue_id, barrier, false));
-    }
-    auto range_gen = SingleRangeGenerator<ResourceAccessRange>(kFullRange);
-    access_context->UpdateMemoryAccessState(barriers_functor, range_gen);
-}
-}  // namespace PipelineBarrier
-
-// Helper functions for SyncOpWaitEvents::ReplayRecord
-namespace Events {
-
-// Need to restrict to only valid exec and access scope for this event
-SyncBarrier RestrictToEvent(const SyncBarrier &barrier, const SyncEventState &sync_event) {
-    SyncBarrier result = barrier;
-    result.src_exec_scope.exec_scope = sync_event.scope.exec_scope & barrier.src_exec_scope.exec_scope;
-    result.src_access_scope = sync_event.scope.valid_accesses & barrier.src_access_scope;
-    return result;
-}
-
-void ApplyBarriers(const std::vector<SyncBufferMemoryBarrier> &barriers, QueueId queue_id, AccessContext *access_context,
-                   const SyncEventState &sync_event) {
-    for (const SyncBufferMemoryBarrier &barrier : barriers) {
-        auto sync_barrier = RestrictToEvent(barrier.barrier, sync_event);
-        ApplyBarrierFunctor update_action(WaitEventBarrierOp(queue_id, sync_event.first_scope_tag, sync_barrier, false));
-
-        const auto base_address = ResourceBaseAddress(*barrier.buffer);
-        ResourceAccessRange range = SimpleBinding(*barrier.buffer) ? (barrier.range + base_address) : ResourceAccessRange();
-        EventSimpleRangeGenerator range_gen(sync_event.FirstScope(), range);
-
-        access_context->UpdateMemoryAccessState(update_action, range_gen);
-    }
-}
-
-void ApplyBarriers(const std::vector<SyncImageMemoryBarrier> &barriers, QueueId queue_id, AccessContext *access_context,
-                   const SyncEventState &sync_event) {
-    for (const SyncImageMemoryBarrier &barrier : barriers) {
-        auto sync_barrier = RestrictToEvent(barrier.barrier, sync_event);
-        ApplyBarrierFunctor update_action(
-            WaitEventBarrierOp(queue_id, sync_event.first_scope_tag, sync_barrier, barrier.layout_transition));
-
-        const auto &sub_state = syncval_state::SubState(*barrier.image);
-        auto range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, false);
-        EventImageRangeGenerator filtered_range_gen(sync_event.FirstScope(), range_gen);
-
-        access_context->UpdateMemoryAccessState(update_action, filtered_range_gen);
-    }
-}
-
-void ApplyGlobalBarriers(const std::vector<SyncBarrier> &barriers, QueueId queue_id, ResourceUsageTag tag,
-                         AccessContext *access_context, const SyncEventState &sync_event) {
-    auto barriers_functor = ApplyBarrierOpsFunctor<WaitEventBarrierOp>(false, barriers.size(), tag);
-    for (const auto &barrier : barriers) {
-        auto restricted_barrier = RestrictToEvent(barrier, sync_event);
-        barriers_functor.EmplaceBack(WaitEventBarrierOp(queue_id, sync_event.first_scope_tag, restricted_barrier, false));
-    }
-    auto range_gen = EventSimpleRangeGenerator(sync_event.FirstScope(), kFullRange);
-    access_context->UpdateMemoryAccessState(barriers_functor, range_gen);
-}
-}  // namespace Events
-
 void BarrierSet::MakeMemoryBarriers(const SyncExecScope &src, const SyncExecScope &dst, uint32_t memory_barrier_count,
                                     const VkMemoryBarrier *barriers) {
     memory_barriers.reserve(std::max<uint32_t>(1, memory_barrier_count));
@@ -289,8 +203,12 @@ void BarrierSet::MakeMemoryBarriers(const SyncExecScope &src, const SyncExecScop
         SyncBarrier sync_barrier(src, barrier.srcAccessMask, dst, barrier.dstAccessMask);
         memory_barriers.emplace_back(sync_barrier);
     }
+
+    // Ensure we have a barrier that handles execution dependencies.
+    // NOTE: the reason to have execution barrier is explained in details in the comment for Sync2
+    // MakeMemoryBarriers overload. The Sync1 implementation is much simpler since execution scopes
+    // are the same for all barriers.
     if (memory_barrier_count == 0) {
-        // If there are no global memory barriers, force an exec barrier
         memory_barriers.emplace_back(SyncBarrier(src, dst));
     }
     single_exec_scope = true;
@@ -308,13 +226,44 @@ void BarrierSet::MakeBufferMemoryBarriers(const SyncValidator &sync_state, const
     }
 }
 
-void BarrierSet::MakeMemoryBarriers(VkQueueFlags queue_flags, uint32_t memory_barrier_count, const VkMemoryBarrier2 *barriers) {
-    memory_barriers.reserve(memory_barrier_count);
-    for (const VkMemoryBarrier2 &barrier : vvl::make_span(barriers, memory_barrier_count)) {
+void BarrierSet::MakeMemoryBarriers(VkQueueFlags queue_flags, const VkDependencyInfo &dep_info) {
+    // Collect unique execution dependencies from buffer and image barriers.
+    //
+    // NOTE: the reason to collect execution dependencies in addition to original buffer/image
+    // barriers is because syncval applies buffer/image barriers to the memory ranges defined
+    // by the resource. But execution dependency can affect any resource/memory range, not
+    // only the one specified by the barrier. For example, execution dependency synchronizes
+    // all READ accesses that are in scope. To emulate this behavior we collect unique
+    // execution dependencies and apply them to all memory accesses (don't specify access mask).
+    small_vector<std::pair<VkPipelineStageFlags2, VkPipelineStageFlags2>, 4> buffer_image_barrier_exec_deps;
+    for (const VkBufferMemoryBarrier2 &buffer_barrier :
+         vvl::make_span(dep_info.pBufferMemoryBarriers, dep_info.bufferMemoryBarrierCount)) {
+        const auto src_dst = std::make_pair(buffer_barrier.srcStageMask, buffer_barrier.dstStageMask);
+        if (!buffer_image_barrier_exec_deps.Contains(src_dst)) {
+            buffer_image_barrier_exec_deps.emplace_back(src_dst);
+        }
+    }
+    for (const VkImageMemoryBarrier2 &image_barrier :
+         vvl::make_span(dep_info.pImageMemoryBarriers, dep_info.imageMemoryBarrierCount)) {
+        const auto src_dst = std::make_pair(image_barrier.srcStageMask, image_barrier.dstStageMask);
+        if (!buffer_image_barrier_exec_deps.Contains(src_dst)) {
+            buffer_image_barrier_exec_deps.emplace_back(src_dst);
+        }
+    }
+
+    memory_barriers.reserve(dep_info.memoryBarrierCount + buffer_image_barrier_exec_deps.size());
+
+    // Add global memory barriers specified in VkDependencyInfo
+    for (const VkMemoryBarrier2 &barrier : vvl::make_span(dep_info.pMemoryBarriers, dep_info.memoryBarrierCount)) {
         auto src = SyncExecScope::MakeSrc(queue_flags, barrier.srcStageMask);
         auto dst = SyncExecScope::MakeDst(queue_flags, barrier.dstStageMask);
-        SyncBarrier sync_barrier(src, barrier.srcAccessMask, dst, barrier.dstAccessMask);
-        memory_barriers.emplace_back(sync_barrier);
+        memory_barriers.emplace_back(SyncBarrier(src, barrier.srcAccessMask, dst, barrier.dstAccessMask));
+    }
+    // Add execution dependencies from buffer and image barriers
+    for (const auto &src_dst : buffer_image_barrier_exec_deps) {
+        auto src = SyncExecScope::MakeSrc(queue_flags, src_dst.first);
+        auto dst = SyncExecScope::MakeDst(queue_flags, src_dst.second);
+        memory_barriers.emplace_back(SyncBarrier(src, dst));
     }
     single_exec_scope = false;
 }
@@ -334,11 +283,19 @@ void BarrierSet::MakeBufferMemoryBarriers(const SyncValidator &sync_state, VkQue
 }
 
 void BarrierSet::MakeImageMemoryBarriers(const SyncValidator &sync_state, const SyncExecScope &src, const SyncExecScope &dst,
-                                         uint32_t barrier_count, const VkImageMemoryBarrier *barriers) {
+                                         uint32_t barrier_count, const VkImageMemoryBarrier *barriers,
+                                         const DeviceExtensions &extensions) {
     image_memory_barriers.reserve(barrier_count);
     for (const auto [index, barrier] : vvl::enumerate(barriers, barrier_count)) {
         if (auto image = sync_state.Get<vvl::Image>(barrier.image)) {
             auto subresource_range = image->NormalizeSubresourceRange(barrier.subresourceRange);
+
+            // VK_REMAINING_ARRAY_LAYERS for sliced 3d image in the context of layout transition means image's depth extent.
+            if (barrier.subresourceRange.layerCount == VK_REMAINING_ARRAY_LAYERS &&
+                CanTransitionDepthSlices(extensions, image->create_info)) {
+                subresource_range.layerCount = image->create_info.extent.depth - subresource_range.baseArrayLayer;
+            }
+
             const SyncBarrier sync_barrier(src, barrier.srcAccessMask, dst, barrier.dstAccessMask);
             const bool layout_transition = barrier.oldLayout != barrier.newLayout;
             image_memory_barriers.emplace_back(image, sync_barrier, subresource_range, layout_transition, index);
@@ -347,7 +304,7 @@ void BarrierSet::MakeImageMemoryBarriers(const SyncValidator &sync_state, const 
 }
 
 void BarrierSet::MakeImageMemoryBarriers(const SyncValidator &sync_state, VkQueueFlags queue_flags, uint32_t barrier_count,
-                                         const VkImageMemoryBarrier2 *barriers) {
+                                         const VkImageMemoryBarrier2 *barriers, const DeviceExtensions &extensions) {
     image_memory_barriers.reserve(barrier_count);
     for (const auto [index, barrier] : vvl::enumerate(barriers, barrier_count)) {
         auto src = SyncExecScope::MakeSrc(queue_flags, barrier.srcStageMask);
@@ -355,6 +312,13 @@ void BarrierSet::MakeImageMemoryBarriers(const SyncValidator &sync_state, VkQueu
         auto image = sync_state.Get<vvl::Image>(barrier.image);
         if (image) {
             auto subresource_range = image->NormalizeSubresourceRange(barrier.subresourceRange);
+
+            // VK_REMAINING_ARRAY_LAYERS for sliced 3d image in the context of layout transition means image's depth extent.
+            if (barrier.subresourceRange.layerCount == VK_REMAINING_ARRAY_LAYERS &&
+                CanTransitionDepthSlices(extensions, image->create_info)) {
+                subresource_range.layerCount = image->create_info.extent.depth - subresource_range.baseArrayLayer;
+            }
+
             const SyncBarrier sync_barrier(src, barrier.srcAccessMask, dst, barrier.dstAccessMask);
             const bool layout_transition = barrier.oldLayout != barrier.newLayout;
             image_memory_barriers.emplace_back(image, sync_barrier, subresource_range, layout_transition, index);
@@ -375,7 +339,8 @@ SyncOpPipelineBarrier::SyncOpPipelineBarrier(vvl::Func command, const SyncValida
     barrier_set_.MakeMemoryBarriers(src_exec_scope, dst_exec_scope, memoryBarrierCount, pMemoryBarriers);
     barrier_set_.MakeBufferMemoryBarriers(sync_state, src_exec_scope, dst_exec_scope, bufferMemoryBarrierCount,
                                           pBufferMemoryBarriers);
-    barrier_set_.MakeImageMemoryBarriers(sync_state, src_exec_scope, dst_exec_scope, imageMemoryBarrierCount, pImageMemoryBarriers);
+    barrier_set_.MakeImageMemoryBarriers(sync_state, src_exec_scope, dst_exec_scope, imageMemoryBarrierCount, pImageMemoryBarriers,
+                                         sync_state.device_state->extensions);
 }
 
 SyncOpPipelineBarrier::SyncOpPipelineBarrier(vvl::Func command, const SyncValidator &sync_state, VkQueueFlags queue_flags,
@@ -384,10 +349,12 @@ SyncOpPipelineBarrier::SyncOpPipelineBarrier(vvl::Func command, const SyncValida
     const ExecScopes stage_masks = sync_utils::GetExecScopes(dep_info);
     barrier_set_.src_exec_scope = SyncExecScope::MakeSrc(queue_flags, stage_masks.src);
     barrier_set_.dst_exec_scope = SyncExecScope::MakeDst(queue_flags, stage_masks.dst);
-    barrier_set_.MakeMemoryBarriers(queue_flags, dep_info.memoryBarrierCount, dep_info.pMemoryBarriers);
+    barrier_set_.MakeMemoryBarriers(queue_flags, dep_info);
+
     barrier_set_.MakeBufferMemoryBarriers(sync_state, queue_flags, dep_info.bufferMemoryBarrierCount,
                                           dep_info.pBufferMemoryBarriers);
-    barrier_set_.MakeImageMemoryBarriers(sync_state, queue_flags, dep_info.imageMemoryBarrierCount, dep_info.pImageMemoryBarriers);
+    barrier_set_.MakeImageMemoryBarriers(sync_state, queue_flags, dep_info.imageMemoryBarrierCount, dep_info.pImageMemoryBarriers,
+                                         sync_state.device_state->extensions);
 }
 
 bool SyncOpPipelineBarrier::Validate(const CommandBufferAccessContext &cb_context) const {
@@ -402,9 +369,11 @@ bool SyncOpPipelineBarrier::Validate(const CommandBufferAccessContext &cb_contex
             continue;
         }
         const vvl::Image &image_state = *image_barrier.image;
-        const auto hazard = context->DetectImageBarrierHazard(image_state, image_barrier.barrier.src_exec_scope.exec_scope,
-                                                              image_barrier.barrier.src_access_scope,
-                                                              image_barrier.subresource_range, AccessContext::kDetectAll);
+        const bool can_transition_depth_slices =
+            CanTransitionDepthSlices(cb_context.GetSyncState().extensions, image_state.create_info);
+        const auto hazard = context->DetectImageBarrierHazard(
+            image_state, image_barrier.barrier.src_exec_scope.exec_scope, image_barrier.barrier.src_access_scope,
+            image_barrier.subresource_range, can_transition_depth_slices, AccessContext::kDetectAll);
         if (hazard.IsHazard()) {
             LogObjectList objlist(cb_context.GetCBState().Handle(), image_state.Handle());
             const Location loc(command_);
@@ -433,15 +402,116 @@ ResourceUsageTag SyncOpPipelineBarrier::Record(CommandBufferAccessContext *cb_co
     return tag;
 }
 
+struct ApplyGlobalBarrierFunctor {
+    ApplyGlobalBarrierFunctor(QueueId queue_id, const SyncBarrier &barrier) : barrier_scope(barrier, queue_id), barrier(barrier) {}
+
+    using Iterator = ResourceAccessRangeMap::iterator;
+    Iterator Infill(ResourceAccessRangeMap *accesses, const Iterator &pos_hint, const ResourceAccessRange &range) const {
+        return pos_hint;
+    }
+
+    void operator()(const Iterator &pos) const {
+        ResourceAccessState &access_state = pos->second;
+        access_state.ApplyBarrier(barrier_scope, barrier);
+    }
+
+    const BarrierScope barrier_scope;
+    SyncBarrier barrier;
+};
+
+// TODO: support more uses cases of a single barrier: if single barrier is an image/buffer
+// barrier then we need consider three ranges - range of the resource where to apply
+// full fledged barrier and also two ranges before and after the resource where it is
+// enough to apply execution dependency.
+void SyncOpPipelineBarrier::ApplySingleBarrier(CommandExecutionContext &exec_context) const {
+    AccessContext *access_context = exec_context.GetCurrentAccessContext();
+    const QueueId queue_id = exec_context.GetQueueId();
+
+    for (const SyncBarrier &barrier : barrier_set_.memory_barriers) {
+        ApplyGlobalBarrierFunctor apply_barrier(queue_id, barrier);
+        access_context->UpdateMemoryAccessRangeState(apply_barrier, kFullRange);
+    }
+}
+
+void SyncOpPipelineBarrier::ApplyMultipleBarriers(CommandExecutionContext &exec_context, const ResourceUsageTag exec_tag) const {
+    AccessContext *access_context = exec_context.GetCurrentAccessContext();
+    const QueueId queue_id = exec_context.GetQueueId();
+
+    // Apply markup action.
+    // The markup action does not change any access state but it can trim the access map according to the
+    // provided range and creates infill ranges if necessary (for layout transitions). The purpose of all
+    // this is to ensure that after markup action the topology of access map ranges is finalized so we can
+    // safely cache pointers to specific access states with a goal to apply pending barriers in the end.
+    //
+    // NOTE: it is enough to apply markup action to buffer and image barriers. The global barriers
+    // do not use infill operations (no layout transitions) and also do not split access map ranges
+    // because global barriers are applied to the full range.
+    for (const SyncBufferMemoryBarrier &barrier : barrier_set_.buffer_memory_barriers) {
+        if (SimpleBinding(*barrier.buffer)) {
+            const VkDeviceSize base_address = ResourceBaseAddress(*barrier.buffer);
+            const ResourceAccessRange range = barrier.range + base_address;
+            ApplyMarkupFunctor markup_action(false);
+            access_context->UpdateMemoryAccessRangeState(markup_action, range);
+        }
+    }
+    for (const SyncImageMemoryBarrier &barrier : barrier_set_.image_memory_barriers) {
+        const auto &sub_state = syncval_state::SubState(*barrier.image);
+        const bool can_transition_depth_slices =
+            CanTransitionDepthSlices(exec_context.GetSyncState().extensions, sub_state.base.create_info);
+        auto range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, can_transition_depth_slices);
+        // TODO: check if we need: barrier.layout_transition && (queue_id == kQueueIdInvalid)
+        ApplyMarkupFunctor markup_action(barrier.layout_transition);
+        access_context->UpdateMemoryAccessState(markup_action, range_gen);
+    }
+
+    // Apply barriers independently and store the result in the pending object.
+    PendingBarriers pending_barriers;
+    for (const SyncBufferMemoryBarrier &barrier : barrier_set_.buffer_memory_barriers) {
+        if (SimpleBinding(*barrier.buffer)) {
+            const BarrierScope barrier_scope(barrier.barrier, queue_id);
+            CollectBarriersFunctor collect_barriers(barrier_scope, barrier.barrier, false, vvl::kNoIndex32, pending_barriers);
+
+            const VkDeviceSize base_address = ResourceBaseAddress(*barrier.buffer);
+            const ResourceAccessRange range = barrier.range + base_address;
+
+            access_context->UpdateMemoryAccessRangeState(collect_barriers, range);
+        }
+    }
+    for (const SyncImageMemoryBarrier &barrier : barrier_set_.image_memory_barriers) {
+        const BarrierScope barrier_scope(barrier.barrier, queue_id);
+        CollectBarriersFunctor collect_barriers(barrier_scope, barrier.barrier, barrier.layout_transition, barrier.handle_index,
+                                                pending_barriers);
+
+        const auto &sub_state = syncval_state::SubState(*barrier.image);
+        const bool can_transition_depth_slices =
+            CanTransitionDepthSlices(exec_context.GetSyncState().extensions, sub_state.base.create_info);
+        auto range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, can_transition_depth_slices);
+
+        access_context->UpdateMemoryAccessState(collect_barriers, range_gen);
+    }
+    for (const SyncBarrier &barrier : barrier_set_.memory_barriers) {
+        const BarrierScope barrier_scope(barrier, queue_id);
+        CollectBarriersFunctor collect_barriers(barrier_scope, barrier, false, vvl::kNoIndex32, pending_barriers);
+        access_context->UpdateMemoryAccessRangeState(collect_barriers, kFullRange);
+    }
+
+    // Update access states with collected barriers
+    pending_barriers.Apply(exec_tag);
+}
+
 void SyncOpPipelineBarrier::ReplayRecord(CommandExecutionContext &exec_context, const ResourceUsageTag exec_tag) const {
-    if (!exec_context.ValidForSyncOps()) return;
+    if (!exec_context.ValidForSyncOps()) {
+        return;
+    }
+
+    if (barrier_set_.memory_barriers.size() == 1 && barrier_set_.buffer_memory_barriers.empty() &&
+        barrier_set_.image_memory_barriers.empty()) {
+        ApplySingleBarrier(exec_context);
+    } else {
+        ApplyMultipleBarriers(exec_context, exec_tag);
+    }
 
     SyncEventsContext *events_context = exec_context.GetCurrentEventsContext();
-    AccessContext *access_context = exec_context.GetCurrentAccessContext();
-    const auto queue_id = exec_context.GetQueueId();
-    PipelineBarrier::ApplyBarriers(barrier_set_.buffer_memory_barriers, queue_id, access_context);
-    PipelineBarrier::ApplyBarriers(barrier_set_.image_memory_barriers, queue_id, access_context);
-    PipelineBarrier::ApplyGlobalBarriers(barrier_set_.memory_barriers, queue_id, exec_tag, access_context);
     if (barrier_set_.single_exec_scope) {
         events_context->ApplyBarrier(barrier_set_.src_exec_scope, barrier_set_.dst_exec_scope, exec_tag);
     } else {
@@ -472,7 +542,8 @@ SyncOpWaitEvents::SyncOpWaitEvents(vvl::Func command, const SyncValidator &sync_
     barrier_set.MakeMemoryBarriers(src_exec_scope, dst_exec_scope, memoryBarrierCount, pMemoryBarriers);
     barrier_set.MakeBufferMemoryBarriers(sync_state, src_exec_scope, dst_exec_scope, bufferMemoryBarrierCount,
                                          pBufferMemoryBarriers);
-    barrier_set.MakeImageMemoryBarriers(sync_state, src_exec_scope, dst_exec_scope, imageMemoryBarrierCount, pImageMemoryBarriers);
+    barrier_set.MakeImageMemoryBarriers(sync_state, src_exec_scope, dst_exec_scope, imageMemoryBarrierCount, pImageMemoryBarriers,
+                                        sync_state.device_state->extensions);
     MakeEventsList(sync_state, eventCount, pEvents);
 }
 
@@ -485,11 +556,11 @@ SyncOpWaitEvents::SyncOpWaitEvents(vvl::Func command, const SyncValidator &sync_
         auto stage_masks = sync_utils::GetExecScopes(dep_info);
         barrier_set.src_exec_scope = SyncExecScope::MakeSrc(queue_flags, stage_masks.src);
         barrier_set.dst_exec_scope = SyncExecScope::MakeDst(queue_flags, stage_masks.dst);
-        barrier_set.MakeMemoryBarriers(queue_flags, dep_info.memoryBarrierCount, dep_info.pMemoryBarriers);
+        barrier_set.MakeMemoryBarriers(queue_flags, dep_info);
         barrier_set.MakeBufferMemoryBarriers(sync_state, queue_flags, dep_info.bufferMemoryBarrierCount,
                                              dep_info.pBufferMemoryBarriers);
         barrier_set.MakeImageMemoryBarriers(sync_state, queue_flags, dep_info.imageMemoryBarrierCount,
-                                            dep_info.pImageMemoryBarriers);
+                                            dep_info.pImageMemoryBarriers, sync_state.device_state->extensions);
     }
     MakeEventsList(sync_state, eventCount, pEvents);
 }
@@ -679,6 +750,14 @@ ResourceUsageTag SyncOpWaitEvents::Record(CommandBufferAccessContext *cb_context
     return tag;
 }
 
+// Need to restrict to only valid exec and access scope for this event
+static SyncBarrier RestrictToEvent(const SyncBarrier &barrier, const SyncEventState &sync_event) {
+    SyncBarrier result = barrier;
+    result.src_exec_scope.exec_scope = sync_event.scope.exec_scope & barrier.src_exec_scope.exec_scope;
+    result.src_access_scope = sync_event.scope.valid_accesses & barrier.src_access_scope;
+    return result;
+}
+
 void SyncOpWaitEvents::ReplayRecord(CommandExecutionContext &exec_context, ResourceUsageTag exec_tag) const {
     // Unlike PipelineBarrier, WaitEvent is *not* limited to accesses within the current subpass (if any) and thus needs to import
     // all accesses. Can instead import for all first_scopes, or a union of them, if this becomes a performance/memory issue,
@@ -690,9 +769,20 @@ void SyncOpWaitEvents::ReplayRecord(CommandExecutionContext &exec_context, Resou
 
     access_context->ResolvePreviousAccesses();
 
+    assert(barrier_sets_.size() == 1 || (barrier_sets_.size() == events_.size()));
+
+    // Apply markup action.
+    // The markup action does not change any access state but it can trim the access map according to the
+    // provided range and creates infill ranges if necessary (for layout transitions). The purpose of all
+    // this is to ensure that after markup action the topology of access map ranges is finalized for the
+    // duration of barrier application (so we can cache pointers to specific access states with a goal
+    // to apply pending barriers in the end).
+    //
+    // NOTE: event's global barriers can split() access map because EventSimpleRangeGenerator filters kFullRange.
+    // That's why, in contrast to SyncOpPipelineBarrier, we need apply markup action also to global barriers.
+    // TODO: need a test that demonstrates this (when doing some work on syncval events)
     size_t barrier_set_index = 0;
     size_t barrier_set_incr = (barrier_sets_.size() == 1) ? 0 : 1;
-    assert(barrier_sets_.size() == 1 || (barrier_sets_.size() == events_.size()));
     for (auto &event_shared : events_) {
         if (!event_shared.get()) continue;
         auto *sync_event = events_context->GetFromShared(event_shared);
@@ -701,14 +791,85 @@ void SyncOpWaitEvents::ReplayRecord(CommandExecutionContext &exec_context, Resou
         sync_event->last_command_tag = exec_tag;
 
         const auto &barrier_set = barrier_sets_[barrier_set_index];
+        if (!sync_event->IsIgnoredByWait(command_, barrier_set.src_exec_scope.mask_param)) {
+            for (const SyncBufferMemoryBarrier &barrier : barrier_set.buffer_memory_barriers) {
+                if (SimpleBinding(*barrier.buffer)) {
+                    const VkDeviceSize base_address = ResourceBaseAddress(*barrier.buffer);
+                    const ResourceAccessRange range = barrier.range + base_address;
+                    EventSimpleRangeGenerator filtered_range_gen(sync_event->FirstScope(), range);
+                    ApplyMarkupFunctor markup_action(false);
+                    access_context->UpdateMemoryAccessState(markup_action, filtered_range_gen);
+                }
+            }
+            for (const SyncImageMemoryBarrier &barrier : barrier_set.image_memory_barriers) {
+                const auto &sub_state = syncval_state::SubState(*barrier.image);
+                const bool can_transition_depth_slices =
+                    CanTransitionDepthSlices(exec_context.GetSyncState().extensions, sub_state.base.create_info);
+                ImageRangeGen range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, can_transition_depth_slices);
+                EventImageRangeGenerator filtered_range_gen(sync_event->FirstScope(), range_gen);
+                ApplyMarkupFunctor markup_action(barrier.layout_transition);
+                access_context->UpdateMemoryAccessState(markup_action, filtered_range_gen);
+            }
+            auto global_barriers_range_gen = EventSimpleRangeGenerator(sync_event->FirstScope(), kFullRange);
+            ApplyMarkupFunctor markup_action(false);
+            access_context->UpdateMemoryAccessState(markup_action, global_barriers_range_gen);
+        }
+        barrier_set_index += barrier_set_incr;
+    }
+
+    // Apply barriers independently and store the result in the pending object.
+    PendingBarriers pending_barriers;
+    barrier_set_index = 0;
+    barrier_set_incr = (barrier_sets_.size() == 1) ? 0 : 1;
+    for (auto &event_shared : events_) {
+        if (!event_shared.get()) continue;
+        auto *sync_event = events_context->GetFromShared(event_shared);
+
+        const auto &barrier_set = barrier_sets_[barrier_set_index];
         const auto &dst = barrier_set.dst_exec_scope;
         if (!sync_event->IsIgnoredByWait(command_, barrier_set.src_exec_scope.mask_param)) {
             // These apply barriers one at a time as the are restricted to the resource ranges specified per each barrier,
             // but do not update the dependency chain information (but set the "pending" state) // s.t. the order independence
             // of the barriers is maintained.
-            Events::ApplyBarriers(barrier_set.buffer_memory_barriers, queue_id, access_context, *sync_event);
-            Events::ApplyBarriers(barrier_set.image_memory_barriers, queue_id, access_context, *sync_event);
-            Events::ApplyGlobalBarriers(barrier_set.memory_barriers, queue_id, exec_tag, access_context, *sync_event);
+
+            for (const SyncBufferMemoryBarrier &barrier : barrier_set.buffer_memory_barriers) {
+                if (SimpleBinding(*barrier.buffer)) {
+                    const SyncBarrier event_barrier = RestrictToEvent(barrier.barrier, *sync_event);
+                    const BarrierScope barrier_scope(event_barrier, queue_id, sync_event->first_scope_tag);
+                    CollectBarriersFunctor collect_barriers(barrier_scope, event_barrier, false, vvl::kNoIndex32, pending_barriers);
+
+                    const VkDeviceSize base_address = ResourceBaseAddress(*barrier.buffer);
+                    const ResourceAccessRange range = barrier.range + base_address;
+                    EventSimpleRangeGenerator range_gen(sync_event->FirstScope(), range);
+
+                    access_context->UpdateMemoryAccessState(collect_barriers, range_gen);
+                }
+            }
+            for (const SyncImageMemoryBarrier &barrier : barrier_set.image_memory_barriers) {
+                const SyncBarrier event_barrier = RestrictToEvent(barrier.barrier, *sync_event);
+                const BarrierScope barrier_scope(event_barrier, queue_id, sync_event->first_scope_tag);
+                CollectBarriersFunctor collect_barriers(barrier_scope, event_barrier, barrier.layout_transition,
+                                                        barrier.handle_index, pending_barriers);
+
+                const auto &sub_state = syncval_state::SubState(*barrier.image);
+                const bool can_transition_depth_slices =
+                    CanTransitionDepthSlices(exec_context.GetSyncState().extensions, sub_state.base.create_info);
+                ImageRangeGen range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, can_transition_depth_slices);
+                EventImageRangeGenerator filtered_range_gen(sync_event->FirstScope(), range_gen);
+
+                access_context->UpdateMemoryAccessState(collect_barriers, filtered_range_gen);
+            }
+            // TODO: because each iteration applies functor to the same range, investigate if it is
+            // beneficial for the functor to support multiple barriers, so we traverse access map once.
+            auto global_range_gen = EventSimpleRangeGenerator(sync_event->FirstScope(), kFullRange);
+            for (const auto &barrier : barrier_set.memory_barriers) {
+                const SyncBarrier event_barrier = RestrictToEvent(barrier, *sync_event);
+                const BarrierScope barrier_scope(event_barrier, queue_id, sync_event->first_scope_tag);
+                CollectBarriersFunctor collect_barriers(barrier_scope, event_barrier, false, vvl::kNoIndex32, pending_barriers);
+
+                auto range_gen = global_range_gen;  // intentional copy
+                access_context->UpdateMemoryAccessState(collect_barriers, range_gen);
+            }
 
             // Apply the global barrier to the event itself (for race condition tracking)
             // Events don't happen at a stage, so we need to store the unexpanded ALL_COMMANDS if set for inter-event-calls
@@ -721,9 +882,8 @@ void SyncOpWaitEvents::ReplayRecord(CommandExecutionContext &exec_context, Resou
         barrier_set_index += barrier_set_incr;
     }
 
-    // Apply the pending barriers
-    ResolvePendingBarrierFunctor apply_pending_action(exec_tag);
-    access_context->ApplyToContext(apply_pending_action);
+    // Update access states with collected barriers
+    pending_barriers.Apply(exec_tag);
 }
 
 bool SyncOpWaitEvents::ReplayValidate(ReplayState &replay, ResourceUsageTag recorded_tag) const {

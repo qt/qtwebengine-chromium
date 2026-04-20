@@ -18,6 +18,7 @@ from crossbench.action_runner.action.js import JsAction
 from crossbench.action_runner.action.meet_create import MeetCreateAction
 from crossbench.action_runner.action.meet_script import MeetScriptAction
 from crossbench.action_runner.action.meminfo import MeminfoAction
+from crossbench.action_runner.action.probe import ProbeAction
 from crossbench.action_runner.action.screenshot import ScreenshotAction
 from crossbench.action_runner.action.scroll import ScrollAction
 from crossbench.action_runner.action.swipe import SwipeAction
@@ -44,6 +45,7 @@ ACTIONS_TUPLE: tuple[Type[Action], ...] = (
     MeetCreateAction,
     MeetScriptAction,
     MeminfoAction,
+    ProbeAction,
     ScreenshotAction,
     ScrollAction,
     SwipeAction,

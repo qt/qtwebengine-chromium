@@ -253,7 +253,6 @@ meta_window_wayland_grab_op_ended (MetaWindow *window,
 
 static void
 meta_window_wayland_move_resize_internal (MetaWindow                *window,
-                                          MetaGravity                gravity,
                                           MtkRectangle               unconstrained_rect,
                                           MtkRectangle               constrained_rect,
                                           MtkRectangle               temporary_rect,
@@ -266,6 +265,7 @@ meta_window_wayland_move_resize_internal (MetaWindow                *window,
   gboolean can_move_now = FALSE;
   MtkRectangle configured_rect;
   MtkRectangle frame_rect;
+  MetaGravity gravity;
   int geometry_scale;
   int new_x;
   int new_y;
@@ -275,6 +275,8 @@ meta_window_wayland_move_resize_internal (MetaWindow                *window,
   /* don't do anything if we're dropping the window, see #751847 */
   if (window->unmanaging)
     return;
+
+  gravity = meta_window_get_gravity (window);
 
   configured_rect.x = constrained_rect.x;
   configured_rect.y = constrained_rect.y;
@@ -545,7 +547,7 @@ meta_window_wayland_update_main_monitor (MetaWindow                   *window,
     }
 
   frame_rect = meta_window_config_get_rect (window->config);
-  if (frame_rect.width == 0 || frame_rect.height == 0)
+  if (frame_rect.width == 0 || frame_rect.height == 0 || !window->placed)
     {
       window->monitor = meta_window_find_monitor_from_id (window);
       return;
@@ -868,6 +870,22 @@ meta_window_wayland_protocol_to_stage (MetaWindow          *window,
     *stage_y = protocol_y;
 }
 
+static MetaGravity
+meta_window_wayland_get_gravity (MetaWindow *window)
+{
+  MetaWindowWayland *wl_window = META_WINDOW_WAYLAND (window);
+  MetaWaylandSurface *surface = wl_window->surface;
+  MetaWaylandToplevelDrag *toplevel_drag;
+
+  /* Force nortwest gravity on toplevel drags */
+  toplevel_drag = get_toplevel_drag (window);
+
+  if (toplevel_drag && surface == toplevel_drag->dragged_surface)
+    return META_GRAVITY_NORTH_WEST;
+
+  return META_WINDOW_CLASS (meta_window_wayland_parent_class)->get_gravity (window);
+}
+
 static MetaStackLayer
 meta_window_wayland_calculate_layer (MetaWindow *window)
 {
@@ -986,6 +1004,7 @@ meta_window_wayland_class_init (MetaWindowWaylandClass *klass)
   window_class->set_transient_for = meta_window_wayland_set_transient_for;
   window_class->stage_to_protocol = meta_window_wayland_stage_to_protocol;
   window_class->protocol_to_stage = meta_window_wayland_protocol_to_stage;
+  window_class->get_gravity = meta_window_wayland_get_gravity;
 
   obj_props[PROP_SURFACE] =
     g_param_spec_object ("surface", NULL, NULL,
@@ -1188,7 +1207,6 @@ meta_window_wayland_finish_move_resize (MetaWindow              *window,
   MetaWaylandSurface *surface = wl_window->surface;
   int dx, dy;
   int geometry_scale;
-  MetaGravity gravity;
   MtkRectangle rect;
   MetaMoveResizeFlags flags;
   MetaWaylandWindowConfiguration *acked_configuration;
@@ -1317,25 +1335,14 @@ meta_window_wayland_finish_move_resize (MetaWindow              *window,
                    meta_wayland_window_configuration_free);
   wl_window->last_acked_configuration = g_steal_pointer (&acked_configuration);
 
-  if (window_drag &&
-      meta_window_drag_get_window (window_drag) == window)
-    gravity = meta_resize_gravity_from_grab_op (meta_window_drag_get_grab_op (window_drag));
-  else
-    gravity = META_GRAVITY_STATIC;
-
-  /* Force unconstrained move + northwest gravity when running toplevel drags */
+  /* Force unconstrained move when running toplevel drags */
   if (toplevel_drag && surface == toplevel_drag->dragged_surface)
     {
-      gravity = META_GRAVITY_NORTH_WEST;
       window_actor = meta_window_actor_from_window (window);
       meta_window_actor_set_tied_to_drag (window_actor, TRUE);
     }
 
-  meta_window_move_resize_internal (window,
-                                    flags,
-                                    META_PLACE_FLAG_NONE,
-                                    gravity,
-                                    rect);
+  meta_window_move_resize (window, flags, rect);
 }
 
 void

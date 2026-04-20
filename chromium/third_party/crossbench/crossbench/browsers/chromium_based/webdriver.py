@@ -9,7 +9,7 @@ import datetime as dt
 import logging
 import os
 from typing import (TYPE_CHECKING, Any, Iterable, Optional, Sequence, TextIO,
-                    Type, cast)
+                    Type)
 
 from selenium.webdriver.chromium.options import ChromiumOptions
 from selenium.webdriver.chromium.service import ChromiumService
@@ -48,7 +48,7 @@ class ChromiumBasedWebDriver(
 
   def __init__(self, *args, **kwargs) -> None:
     super().__init__(*args, **kwargs)
-    self._script_identifier_kwargs: dict[Any, Any] | None = None
+    self._script_id_kwargs_by_window_id: dict[str, Any] = {}
     self._tracer: DevToolsTracer | None = None
     self._stdout_log_file: TextIO | None = None
 
@@ -70,7 +70,7 @@ class ChromiumBasedWebDriver(
     return None
 
   def _execute_cdp_cmd(self, driver: webdriver.Remote, cmd: str,
-                       cmd_args: dict):
+                       cmd_args: dict) -> Any:
     return driver.execute("executeCdpCommand", {
         "cmd": cmd,
         "params": cmd_args
@@ -79,7 +79,7 @@ class ChromiumBasedWebDriver(
   @override
   def _filter_flags_for_run(self, flags: FlagsT) -> FlagsT:
     assert isinstance(flags, ChromeFlags)
-    chrome_flags: ChromeFlags = cast(ChromeFlags, flags)
+    chrome_flags: ChromeFlags = flags
     for flag in self.UNSUPPORTED_FLAGS:
       if flag not in chrome_flags:
         continue
@@ -133,7 +133,7 @@ class ChromiumBasedWebDriver(
     if adb_port and adb_port.isdigit():
       service_args += ["--adb-port=" + adb_port]
 
-    # pytype: disable=wrong-keyword-args
+
     assert self._stdout_log_file is None
     # On desktop platforms service logs contain browser stdout, hence the name.
     self._stdout_log_file = self.log_file.with_stem("browser.stdout").open("w+")
@@ -145,11 +145,10 @@ class ChromiumBasedWebDriver(
     if hasattr(service, "log_file"):
       # TODO: remove once we upgrade the min selenium version
       # Workaround for older selenium versions which ignore the log_file kwarg.
-      setattr(service, "log_file", self._stdout_log_file)
+      service.log_file = self._stdout_log_file
 
     # TODO: support remote platforms
     driver = self._create_driver(options, service)
-    # pytype: enable=wrong-keyword-args
     # Prevent debugging overhead.
     self._execute_cdp_cmd(driver, "Runtime.setMaxCallStackSizeToCapture",
                           {"size": 0})
@@ -210,17 +209,18 @@ class ChromiumBasedWebDriver(
 
   @override
   def run_script_on_new_document(self, script: str) -> None:
-    if self._script_identifier_kwargs is not None:
+    window_id = self.current_window_id()
+    if window_id in self._script_id_kwargs_by_window_id:
       self._execute_cdp_cmd(self._private_driver,
                             "Page.removeScriptToEvaluateOnNewDocument",
-                            self._script_identifier_kwargs)
-    self._script_identifier_kwargs = self._execute_cdp_cmd(
+                            self._script_id_kwargs_by_window_id[window_id])
+    self._script_id_kwargs_by_window_id[window_id] = self._execute_cdp_cmd(
         self._private_driver, "Page.addScriptToEvaluateOnNewDocument",
         {"source": script})
 
   @override
   def quit(self) -> None:
-    self._script_identifier_kwargs = None
+    self._script_id_kwargs_by_window_id.clear()
     super().quit()
 
   @override
@@ -260,12 +260,10 @@ class ChromiumBasedWebDriver(
 
       for handle in handles:
         driver.switch_to.window(handle)
-        if title is not None:
-          if title.search(driver.title) is None:
-            continue
-        if url is not None:
-          if url.search(driver.current_url) is None:
-            continue
+        if title is not None and title.search(driver.title) is None:
+          continue
+        if url is not None and url.search(driver.current_url) is None:
+          continue
         return handle
     error = "No new tab found"
     if title is not None:

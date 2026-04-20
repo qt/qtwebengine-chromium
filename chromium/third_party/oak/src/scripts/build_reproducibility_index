@@ -1,0 +1,26 @@
+#!/bin/bash
+#
+# Check that artifacts can be reproducibly built, both when re-building them on the same machine
+# over time, but also when built on different machines (e.g. locally vs on GCP).
+#
+# This script should be re-run every time any of these artifacts changes, and should be checked in
+# so that we can enforce in CI that the hashes are indeed consistent.
+
+readonly SCRIPTS_DIR="$(dirname "$0")"
+# shellcheck source=scripts/common
+source "$SCRIPTS_DIR/common"
+
+# Convert the input arguments to a list of artifacts that are expected to be reproducibly built.
+readonly REPRODUCIBLE_ARTIFACTS=( "$@" )
+
+# Index file containing hashes of the reproducible artifacts, alongside their file names.
+readonly REPRODUCIBILITY_INDEX='./reproducibility_index'
+
+# Wipe out everything in the reproducibility index.
+echo "" | tee "${REPRODUCIBILITY_INDEX}"
+
+# Regenerate the index file by appending to it decoded base64 digests of the artifacts.
+for encoded in "${REPRODUCIBLE_ARTIFACTS[@]}"
+do
+    echo "${encoded}" | base64 -d | tee -a "${REPRODUCIBILITY_INDEX}"
+done

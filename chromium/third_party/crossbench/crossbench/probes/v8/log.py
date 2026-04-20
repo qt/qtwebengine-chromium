@@ -10,7 +10,8 @@ import multiprocessing
 import os
 import re
 import subprocess
-from typing import TYPE_CHECKING, Iterable, Optional, Self, Type, cast
+from typing import (TYPE_CHECKING, ClassVar, Final, Iterable, Optional, Self,
+                    Type, cast)
 
 from typing_extensions import override
 
@@ -32,8 +33,17 @@ if TYPE_CHECKING:
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.run import Run
 
-_PROF_FLAG = "--prof"
-_LOG_ALL_FLAG = "--log-all"
+_LOG_FLAG: Final = "--log"
+_PROF_FLAG: Final = "--prof"
+_LOG_ALL_FLAG: Final = "--log-all"
+DEFAULT_LOG_FLAGS: Final[tuple[str, ...]] = (
+    "--log",
+    "--log-code",
+    "--log-deopt",
+    "--log-source-code",
+    "--log-source-position",
+    "--log-code-disassemble",
+)
 
 
 class V8LogProbe(ChromiumProbe):
@@ -45,10 +55,10 @@ class V8LogProbe(ChromiumProbe):
   http://v8.dev/tools/head/profview. See de d8_binary and v8_checkout
   config-properties for more details.
   """
-  NAME = "v8.log"
+  NAME: ClassVar = "v8.log"
   RESULT_LOCATION = ResultLocation.BROWSER
 
-  _FLAG_RE = re.compile("^--(prof|log-|no-log-).*$")
+  _FLAG_RE: Final[re.Pattern] = re.compile("^--(?:prof|log|no-log)(?:-.*)?$")
 
   @classmethod
   @override
@@ -57,8 +67,8 @@ class V8LogProbe(ChromiumProbe):
     parser.add_argument(
         "log_all",
         type=bool,
-        default=True,
-        help="Enable all v8 logging (equivalent to --log-all)")
+        default=False,
+        help="Enable all (slow) v8 logging (equivalent to --log-all).")
     parser.add_argument(
         "prof",
         type=bool,
@@ -73,9 +83,9 @@ class V8LogProbe(ChromiumProbe):
     parser.add_argument(
         "js_flags",
         type=str,
-        default=[],
+        default=list(DEFAULT_LOG_FLAGS),
         is_list=True,
-        help="Manually pass --log-.* flags to V8")
+        help="Manually pass --log-.* flags to V8.")
     parser.add_argument(
         "d8_binary",
         type=PathParser.file_path,
@@ -97,10 +107,10 @@ class V8LogProbe(ChromiumProbe):
 
   def __init__(
       self,
-      log_all: bool = True,
+      log_all: bool = False,
       prof: bool = True,
       profview: bool = True,
-      js_flags: Optional[Iterable[str]] = None,
+      js_flags: Optional[Iterable[str]] = DEFAULT_LOG_FLAGS,
       prof_sampling_interval: Optional[dt.timedelta] = None,
       # TODO: support remote platform
       d8_binary: Optional[LocalPath] = None,
@@ -119,7 +129,7 @@ class V8LogProbe(ChromiumProbe):
       self._js_flags.set(_LOG_ALL_FLAG)
     elif prof:
       self._js_flags.set(_PROF_FLAG)
-    elif profview:
+    if profview and not (log_all or prof):
       raise ValueError(f"{self}: Need prof:true with profview:true")
     if self._prof_sampling_interval:
       if not prof:
@@ -128,6 +138,8 @@ class V8LogProbe(ChromiumProbe):
       self._js_flags["--prof-sampling-interval"] = str(
           round(self._prof_sampling_interval / dt.timedelta(microseconds=1)))
     js_flags = js_flags or []
+    if log_all and js_flags == DEFAULT_LOG_FLAGS:
+      js_flags = []
     for flag in js_flags:
       if self._FLAG_RE.match(flag):
         self._js_flags.set(flag)
@@ -135,6 +147,9 @@ class V8LogProbe(ChromiumProbe):
         raise ValueError(f"{self}: Non-v8.log-related flag detected: {flag}")
     if len(self._js_flags) == 0:
       raise ValueError(f"{self}: V8LogProbe has no effect")
+    # Add at least one logging flag:
+    if not log_all and not prof:
+      self._js_flags.set(_LOG_FLAG)
 
   @property
   @override
@@ -211,7 +226,7 @@ class V8LogProbe(ChromiumProbe):
 
   @override
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
-    runs: list[Run] = list(run for run in group.runs if self in run.results)
+    runs: list[Run] = [run for run in group.runs if self in run.results]
     if not runs:
       return
     logging.info("-" * 80)

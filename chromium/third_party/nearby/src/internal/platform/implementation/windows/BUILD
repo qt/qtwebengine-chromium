@@ -12,7 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 licenses(["notice"])
+
+cc_library(
+    name = "device_paths",
+    srcs = [
+        "device_paths.cc",
+    ],
+    hdrs = [
+        "device_paths.h",
+    ],
+    compatible_with = ["//buildenv/target:non_prod"],
+    linkopts = [
+        "ole32.lib",
+        "shell32.lib",
+    ],
+    tags = ["windows"],
+    visibility = [
+        "//location/nearby/apps/better_together/plugins/crashpad/windows:__pkg__",
+        "//location/nearby/apps/better_together/plugins/logging/windows:__pkg__",
+        "//location/nearby/apps/better_together/windows/common:__pkg__",
+    ],
+    deps = [
+        "//internal/base:file_path",
+        "//internal/base:files",
+        "@com_google_absl//absl/strings",
+    ],
+)
 
 cc_library(
     name = "types",
@@ -39,11 +68,13 @@ cc_library(
         "utils.h",
     ],
     defines = ["_SILENCE_CLANG_COROUTINE_MESSAGE"],
+    tags = ["windows"],
     visibility = [
         "//sharing/internal/impl/windows:__pkg__",
     ],
     deps = [
         ":comm",
+        ":device_paths",
         "//internal/base:bluetooth_address",
         "//internal/base:file_path",
         "//internal/base:files",
@@ -108,6 +139,7 @@ cc_library(
         "wifi_lan_mdns.h",
     ],
     copts = ["-DNO_INTEL_PIE"],
+    tags = ["windows"],
     visibility = ["//visibility:private"],
     deps = [
         "//connections/implementation/flags:connections_flags",
@@ -139,6 +171,7 @@ cc_library(
     srcs = [
         "crypto.cc",
     ],
+    tags = ["windows"],
     visibility = ["//visibility:private"],
     deps = [
         "//internal/platform:base",
@@ -156,6 +189,7 @@ cc_library(
     hdrs = [
         "string_utils.h",
     ],
+    tags = ["windows"],
     visibility = [
         "//:__subpackages__",
         "//location/nearby:__subpackages__",
@@ -224,6 +258,7 @@ cc_library(
         "-Wno-unused-value",
     ],
     defines = ["_SILENCE_CLANG_COROUTINE_MESSAGE"],
+    tags = ["windows"],
     visibility = [
         "//chrome/chromeos/assistant/data_migration/lib:__pkg__",
         "//connections:__subpackages__",
@@ -260,6 +295,7 @@ cc_library(
         "//internal/platform/implementation/shared:count_down_latch",
         "//internal/platform/implementation/windows/generated:types",
         "//third_party/intel/pie",
+        "//third_party/webrtc/files/stable/webrtc/api:create_modular_peer_connection_factory",
         "//third_party/webrtc/files/stable/webrtc/api:libjingle_peerconnection_api",
         "//third_party/webrtc/files/stable/webrtc/api:scoped_refptr",
         "//third_party/webrtc/files/stable/webrtc/rtc_base:threading",
@@ -359,6 +395,36 @@ cc_test(
     ],
     deps = [
         ":string_utils",
+        "@com_github_protobuf_matchers//protobuf-matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "file_test",
+    size = "small",
+    timeout = "short",
+    srcs = [
+        "file_test.cc",
+    ],
+    tags = ["nozapfhahn"],
+    deps = [
+        ":windows",
+        "@com_github_protobuf_matchers//protobuf-matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "device_paths_test",
+    size = "small",
+    timeout = "short",
+    srcs = [
+        "device_paths_test.cc",
+    ],
+    deps = [
+        ":device_paths",
+        "//internal/base:file_path",
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_googletest//:gtest_main",
     ],

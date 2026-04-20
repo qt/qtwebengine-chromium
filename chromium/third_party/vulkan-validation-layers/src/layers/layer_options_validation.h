@@ -49,7 +49,7 @@ static void ValidateLayerSettingsProvided(const VkLayerSettingsCreateInfoEXT &la
         else if (strcmp(VK_LAYER_CHECK_SHADERS, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_CHECK_SHADERS_CACHING, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_DEBUG_ACTION, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_STRING_EXT; }
-        else if (strcmp(VK_LAYER_DEPRECATION, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
+        else if (strcmp(VK_LAYER_DEPRECATION_DETECTION, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_DUPLICATE_MESSAGE_LIMIT, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_UINT32_EXT; }
         else if (strcmp(VK_LAYER_ENABLE_MESSAGE_LIMIT, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_FINE_GRAINED_LOCKING, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
@@ -96,7 +96,7 @@ static void ValidateLayerSettingsProvided(const VkLayerSettingsCreateInfoEXT &la
         else if (strcmp(VK_LAYER_VALIDATE_SYNC, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else {
             setting_warnings.emplace_back("The setting \"" + std::string(name) +
-                                          "\" in VkLayerSettingsCreateInfoEXT was not recognize by the Validation Layers. Please "
+                                          "\" in VkLayerSettingsCreateInfoEXT was not recognized by the Validation Layers. Please "
                                           "view the VkLayer_khronos_validation.json for a list of all settings.");
         }
 

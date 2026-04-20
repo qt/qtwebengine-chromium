@@ -788,6 +788,12 @@ bool PreCallValidateCmdSetDescriptorBufferOffsets2EXT(VkCommandBuffer commandBuf
 bool PreCallValidateCmdBindDescriptorBufferEmbeddedSamplers2EXT(
     VkCommandBuffer commandBuffer, const VkBindDescriptorBufferEmbeddedSamplersInfoEXT* pBindDescriptorBufferEmbeddedSamplersInfo,
     const ErrorObject& error_obj) const override;
+bool PreCallValidateCmdCopyMemoryIndirectKHR(VkCommandBuffer commandBuffer,
+                                             const VkCopyMemoryIndirectInfoKHR* pCopyMemoryIndirectInfo,
+                                             const ErrorObject& error_obj) const override;
+bool PreCallValidateCmdCopyMemoryToImageIndirectKHR(VkCommandBuffer commandBuffer,
+                                                    const VkCopyMemoryToImageIndirectInfoKHR* pCopyMemoryToImageIndirectInfo,
+                                                    const ErrorObject& error_obj) const override;
 bool PreCallValidateDebugMarkerSetObjectTagEXT(VkDevice device, const VkDebugMarkerObjectTagInfoEXT* pTagInfo,
                                                const ErrorObject& error_obj) const override;
 bool PreCallValidateDebugMarkerSetObjectNameEXT(VkDevice device, const VkDebugMarkerObjectNameInfoEXT* pNameInfo,
@@ -1693,4 +1699,12 @@ bool ValidateAccelerationStructureGeometryAabbsDataKHR(const Context& context,
                                                        const Location& loc) const;
 bool ValidateIndirectExecutionSetPipelineInfoEXT(const Context& context, const VkIndirectExecutionSetPipelineInfoEXT& info,
                                                  const Location& loc) const;
+bool ValidateClusterAccelerationStructureTriangleClusterInputNV(const Context& context,
+                                                                const VkClusterAccelerationStructureTriangleClusterInputNV& info,
+                                                                const Location& loc) const;
+bool ValidateClusterAccelerationStructureClustersBottomLevelInputNV(
+    const Context& context, const VkClusterAccelerationStructureClustersBottomLevelInputNV& info, const Location& loc) const;
+bool ValidateClusterAccelerationStructureMoveObjectsInputNV(const Context& context,
+                                                            const VkClusterAccelerationStructureMoveObjectsInputNV& info,
+                                                            const Location& loc) const;
 // NOLINTEND

@@ -191,12 +191,12 @@
  *     alternative to handling some commandline options locally
  * @before_emit: invoked on the primary instance before 'activate', 'open',
  *     'command-line' or any action invocation, gets the 'platform data' from
- *     the calling instance
+ *     the calling instance. Must chain up
  * @after_emit: invoked on the primary instance after 'activate', 'open',
  *     'command-line' or any action invocation, gets the 'platform data' from
- *     the calling instance
+ *     the calling instance. Must chain up
  * @add_platform_data: invoked (locally) to add 'platform data' to be sent to
- *     the primary instance when activating, opening or invoking actions
+ *     the primary instance when activating, opening or invoking actions. Must chain up
  * @quit_mainloop: Used to be invoked on the primary instance when the use
  *     count of the application drops to zero (and after any inactivity
  *     timeout, if requested). Not used anymore since 2.32
@@ -459,7 +459,7 @@ g_application_pack_option_entries (GApplication *application,
           break;
 
         case G_OPTION_ARG_DOUBLE:
-          if (*(gdouble *) entry->arg_data)
+          if (*(gdouble *) entry->arg_data != 0.0)
             value = g_variant_new_double (*(gdouble *) entry->arg_data);
           break;
 
@@ -1094,6 +1094,14 @@ g_application_call_command_line (GApplication        *application,
       GApplicationCommandLine *cmdline;
       GVariant *v;
       gint handler_exit_status;
+      GVariant *platform_data;
+
+      if (options != NULL)
+        g_variant_ref_sink (options);
+
+      platform_data = g_variant_ref_sink (get_platform_data (application, options));
+
+      G_APPLICATION_GET_CLASS (application)->before_emit (application, platform_data);
 
       v = g_variant_new_bytestring_array ((const gchar **) arguments, -1);
       cmdline = g_object_new (G_TYPE_APPLICATION_COMMAND_LINE,
@@ -1107,6 +1115,11 @@ g_application_call_command_line (GApplication        *application,
       *exit_status = g_application_command_line_get_exit_status (cmdline);
 
       g_object_unref (cmdline);
+
+      G_APPLICATION_GET_CLASS (application)->after_emit (application, platform_data);
+      g_variant_unref (platform_data);
+      if (options != NULL)
+        g_variant_unref (options);
     }
 }
 
@@ -2066,10 +2079,10 @@ g_application_get_resource_base_path (GApplication *application)
  *
  * Sets (or unsets) the base resource path of @application.
  *
- * The path is used to automatically load various [application
- * resources][gresource] such as menu layouts and action descriptions.
- * The various types of resources will be found at fixed names relative
- * to the given base path.
+ * The path is used to automatically load various
+ * [application resources][struct@Gio.Resource] such as menu layouts and
+ * action descriptions. The various types of resources will be found at
+ * fixed names relative to the given base path.
  *
  * By default, the resource base path is determined from the application
  * ID by prefixing '/' and replacing each '.' with '/'.  This is done at
@@ -2451,7 +2464,14 @@ g_application_activate (GApplication *application)
                                  get_platform_data (application, NULL));
 
   else
-    g_signal_emit (application, g_application_signals[SIGNAL_ACTIVATE], 0);
+    {
+      GVariant *platform_data = g_variant_ref_sink (get_platform_data (application, NULL));
+
+      G_APPLICATION_GET_CLASS (application)->before_emit (application, platform_data);
+      g_signal_emit (application, g_application_signals[SIGNAL_ACTIVATE], 0);
+      G_APPLICATION_GET_CLASS (application)->after_emit (application, platform_data);
+      g_variant_unref (platform_data);
+    }
 }
 
 /**
@@ -2495,8 +2515,14 @@ g_application_open (GApplication  *application,
                              get_platform_data (application, NULL));
 
   else
-    g_signal_emit (application, g_application_signals[SIGNAL_OPEN],
-                   0, files, n_files, hint);
+    {
+      GVariant *platform_data = g_variant_ref_sink (get_platform_data (application, NULL));
+
+      G_APPLICATION_GET_CLASS (application)->before_emit (application, platform_data);
+      g_signal_emit (application, g_application_signals[SIGNAL_OPEN], 0, files, n_files, hint);
+      G_APPLICATION_GET_CLASS (application)->after_emit (application, platform_data);
+      g_variant_unref (platform_data);
+    }
 }
 
 /* Run {{{1 */

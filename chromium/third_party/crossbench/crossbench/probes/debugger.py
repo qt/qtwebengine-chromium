@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import shlex
-from typing import TYPE_CHECKING, Iterable, Self, Type
+from typing import TYPE_CHECKING, ClassVar, Final, Iterable, Self, Type
 
 from typing_extensions import override
 
@@ -22,21 +22,20 @@ if TYPE_CHECKING:
   from crossbench.path import LocalPath
   from crossbench.probes.results import ProbeResult
 
-_DEBUGGER_LOOKUP: dict[str, str] = {
+_DEBUGGER_LOOKUP: Final[dict[str, str]] = {
     "macos": "lldb",
     "linux": "gdb",
 }
 
-DEFAULT_GEOMETRY = "80x70"
+DEFAULT_GEOMETRY: Final = "80x70"
 
 
 class DebuggerProbe(Probe):
   """
   Probe debugging chrome's renderer process.
   """
-  NAME = "debugger"
-  RESULT_LOCATION = ResultLocation.BROWSER
-  IS_GENERAL_PURPOSE = True
+  NAME: ClassVar = "debugger"
+  RESULT_LOCATION: ClassVar = ResultLocation.BROWSER
 
   @classmethod
   @override
@@ -70,7 +69,7 @@ class DebuggerProbe(Probe):
     parser.add_argument(
         "args",
         type=str,
-        default=tuple(),
+        default=(),
         is_list=True,
         help="Additional args that are passed to the debugger.")
     return parser

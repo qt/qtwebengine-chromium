@@ -1,0 +1,31 @@
+buffers {
+  size_kb: 524288
+  fill_policy: DISCARD
+}
+data_sources {
+  config {
+    name: "track_event"
+    track_event_config {
+      disabled_categories: "*"
+      enabled_categories: "blink.console"
+      enabled_categories: "blink.net"
+      enabled_categories: "blink.resource"
+      enabled_categories: "blink.user_timing"
+      enabled_categories: "blink.worker"
+      enabled_categories: "disabled-by-default-network"
+      enabled_categories: "toplevel"
+      enabled_categories: "disabled-by-default-v8"
+      enabled_categories: "v8"
+      enabled_categories: "disabled-by-default-v8.compile"
+      enabled_categories: "v8.console"
+      enabled_categories: "v8.execute"
+      enabled_categories: "disabled-by-default-v8.gc"
+      enabled_categories: "v8.wasm"
+      enabled_categories: "__metadata"
+      timestamp_unit_multiplier: 1000
+      filter_debug_annotations: false
+      enable_thread_time_sampling: true
+      filter_dynamic_event_names: false
+    }
+  }
+}

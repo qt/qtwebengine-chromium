@@ -16,20 +16,20 @@ class ProbeResultOrigin(typing.Protocol):
 
   @property
   def browser_platform(self) -> Platform:
-    raise NotImplementedError()
+    raise NotImplementedError
 
   @property
   def host_platform(self) -> Platform:
-    raise NotImplementedError()
+    raise NotImplementedError
 
   @property
   def browser_tmp_dir(self) -> pth.AnyPath:
-    raise NotImplementedError()
+    raise NotImplementedError
 
   @property
   def is_remote(self) -> bool:
-    raise NotImplementedError()
+    raise NotImplementedError
 
   @property
   def out_dir(self) -> pth.LocalPath:
-    raise NotImplementedError()
+    raise NotImplementedError

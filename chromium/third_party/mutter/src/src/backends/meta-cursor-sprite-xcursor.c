@@ -24,10 +24,17 @@
 #include "backends/meta-cursor.h"
 #include "backends/meta-cursor-renderer.h"
 #include "backends/meta-cursor-tracker-private.h"
+#include "backends/meta-logical-monitor.h"
 #include "clutter/clutter.h"
 #include "cogl/cogl.h"
 #include "meta/prefs.h"
 #include "meta/util.h"
+
+typedef struct _MetaCursorSpriteXcursorKey
+{
+  MetaCursor cursor;
+  int theme_scale;
+} MetaCursorSpriteXcursorKey;
 
 struct _MetaCursorSpriteXcursor
 {
@@ -39,12 +46,68 @@ struct _MetaCursorSpriteXcursor
   XcursorImages *xcursor_images;
 
   int theme_scale;
-  gboolean theme_dirty;
   gboolean invalidated;
 };
 
 G_DEFINE_TYPE (MetaCursorSpriteXcursor, meta_cursor_sprite_xcursor,
                META_TYPE_CURSOR_SPRITE)
+
+static unsigned int
+sprite_key_hash (gconstpointer data)
+{
+  const MetaCursorSpriteXcursorKey *key = data;
+
+  return key->cursor << 0  &
+         key->theme_scale << 8;
+}
+
+static gboolean
+sprite_key_equal (gconstpointer data1,
+                  gconstpointer data2)
+{
+  const MetaCursorSpriteXcursorKey *key1 = data1;
+  const MetaCursorSpriteXcursorKey *key2 = data2;
+
+  return (key1->cursor == key2->cursor &&
+          key1->theme_scale == key2->theme_scale);
+}
+
+static GHashTable *
+ensure_cache (MetaCursorSpriteXcursor *sprite_xcursor)
+{
+  MetaCursorSprite *sprite = META_CURSOR_SPRITE (sprite_xcursor);
+  MetaCursorTracker *cursor_tracker =
+    meta_cursor_sprite_get_cursor_tracker (sprite);
+  GHashTable *cache;
+  static GOnce quark_once = G_ONCE_INIT;
+
+  g_once (&quark_once, (GThreadFunc) g_quark_from_static_string,
+          (gpointer) "-meta-cursor-sprite-xcursor-cache");
+
+  cache = g_object_get_qdata (G_OBJECT (cursor_tracker),
+                              GPOINTER_TO_INT (quark_once.retval));
+  if (!cache)
+    {
+      cache = g_hash_table_new_full (sprite_key_hash, sprite_key_equal,
+                                     g_free,
+                                     (GDestroyNotify) xcursor_images_destroy);
+
+      g_object_set_qdata_full (G_OBJECT (cursor_tracker),
+                               GPOINTER_TO_INT (quark_once.retval),
+                               cache,
+                               (GDestroyNotify) g_hash_table_unref);
+    }
+
+  return cache;
+}
+
+static void
+drop_cache (MetaCursorSpriteXcursor *sprite_xcursor)
+{
+  GHashTable *cache = ensure_cache (sprite_xcursor);
+
+  g_hash_table_remove_all (cache);
+}
 
 const char *
 meta_cursor_get_name (MetaCursor cursor)
@@ -53,43 +116,78 @@ meta_cursor_get_name (MetaCursor cursor)
     {
     case META_CURSOR_DEFAULT:
       return "default";
-    case META_CURSOR_NORTH_RESIZE:
-      return "n-resize";
-    case META_CURSOR_SOUTH_RESIZE:
-      return "s-resize";
-    case META_CURSOR_WEST_RESIZE:
-      return "w-resize";
-    case META_CURSOR_EAST_RESIZE:
+    case META_CURSOR_CONTEXT_MENU:
+        return "context-menu";
+    case META_CURSOR_HELP:
+        return "help";
+    case META_CURSOR_POINTER:
+        return "pointer";
+    case META_CURSOR_PROGRESS:
+        return "progress";
+    case META_CURSOR_WAIT:
+      return "wait";
+    case META_CURSOR_CELL:
+      return "cell";
+    case META_CURSOR_CROSSHAIR:
+      return "crosshair";
+    case META_CURSOR_TEXT:
+      return "text";
+    case META_CURSOR_VERTICAL_TEXT:
+        return "vertical-text";
+    case META_CURSOR_ALIAS:
+        return "alias";
+    case META_CURSOR_COPY:
+      return "copy";
+    case META_CURSOR_MOVE:
+      return "move";
+    case META_CURSOR_NO_DROP:
+      return "no-drop";
+    case META_CURSOR_NOT_ALLOWED:
+      return "not-allowed";
+    case META_CURSOR_GRAB:
+      return "grab";
+    case META_CURSOR_GRABBING:
+      return "grabbing";
+    case META_CURSOR_E_RESIZE:
       return "e-resize";
-    case META_CURSOR_SE_RESIZE:
-      return "se-resize";
-    case META_CURSOR_SW_RESIZE:
-      return "sw-resize";
+    case META_CURSOR_N_RESIZE:
+      return "n-resize";
     case META_CURSOR_NE_RESIZE:
       return "ne-resize";
     case META_CURSOR_NW_RESIZE:
       return "nw-resize";
-    case META_CURSOR_MOVE_OR_RESIZE_WINDOW:
-      return "move";
-    case META_CURSOR_BUSY:
-      return "wait";
-    case META_CURSOR_DND_IN_DRAG:
-      return "default";
-    case META_CURSOR_DND_MOVE:
-      return "default";
-    case META_CURSOR_DND_COPY:
-      return "copy";
-    case META_CURSOR_DND_UNSUPPORTED_TARGET:
-      return "no-drop";
-    case META_CURSOR_POINTING_HAND:
-      return "pointer";
-    case META_CURSOR_CROSSHAIR:
-      return "crosshair";
-    case META_CURSOR_IBEAM:
-      return "text";
-    case META_CURSOR_BLANK:
+    case META_CURSOR_S_RESIZE:
+      return "s-resize";
+    case META_CURSOR_SE_RESIZE:
+      return "se-resize";
+    case META_CURSOR_SW_RESIZE:
+      return "sw-resize";
+    case META_CURSOR_W_RESIZE:
+      return "w-resize";
+    case META_CURSOR_EW_RESIZE:
+      return "ew-resize";
+    case META_CURSOR_NS_RESIZE:
+        return "ns-resize";
+    case META_CURSOR_NESW_RESIZE:
+        return "nesw-resize";
+    case META_CURSOR_NWSE_RESIZE:
+        return "nwse-resize";
+    case META_CURSOR_COL_RESIZE:
+        return "col-resize";
+    case META_CURSOR_ROW_RESIZE:
+        return "row-resize";
+    case META_CURSOR_ALL_SCROLL:
+      return "all-scroll";
+    case META_CURSOR_ZOOM_IN:
+      return "zoom-in";
+    case META_CURSOR_ZOOM_OUT:
+      return "zoom-out";
+    case META_CURSOR_DND_ASK:
+      return "dnd-ask";
+    case META_CURSOR_ALL_RESIZE:
+      return "all-resize";
+    case META_CURSOR_INVALID:
     case META_CURSOR_NONE:
-    case META_CURSOR_LAST:
       break;
     }
 
@@ -104,43 +202,78 @@ meta_cursor_get_legacy_name (MetaCursor cursor)
     {
     case META_CURSOR_DEFAULT:
       return "left_ptr";
-    case META_CURSOR_NORTH_RESIZE:
-      return "top_side";
-    case META_CURSOR_SOUTH_RESIZE:
-      return "bottom_side";
-    case META_CURSOR_WEST_RESIZE:
-      return "left_side";
-    case META_CURSOR_EAST_RESIZE:
+    case META_CURSOR_CONTEXT_MENU:
+        return "left_ptr";
+    case META_CURSOR_HELP:
+        return "question_arrow";
+    case META_CURSOR_POINTER:
+        return "hand";
+    case META_CURSOR_PROGRESS:
+        return "left_ptr_watch";
+    case META_CURSOR_WAIT:
+      return "watch";
+    case META_CURSOR_CELL:
+      return "crosshair";
+    case META_CURSOR_CROSSHAIR:
+      return "cross";
+    case META_CURSOR_TEXT:
+      return "xterm";
+    case META_CURSOR_VERTICAL_TEXT:
+        return "xterm";
+    case META_CURSOR_ALIAS:
+        return "dnd-link";
+    case META_CURSOR_COPY:
+      return "dnd-copy";
+    case META_CURSOR_MOVE:
+      return "dnd-move";
+    case META_CURSOR_NO_DROP:
+      return "dnd-none";
+    case META_CURSOR_NOT_ALLOWED:
+      return "crossed_circle";
+    case META_CURSOR_GRAB:
+      return "hand2";
+    case META_CURSOR_GRABBING:
+      return "hand2";
+    case META_CURSOR_E_RESIZE:
       return "right_side";
-    case META_CURSOR_SE_RESIZE:
-      return "bottom_right_corner";
-    case META_CURSOR_SW_RESIZE:
-      return "bottom_left_corner";
+    case META_CURSOR_N_RESIZE:
+      return "top_side";
     case META_CURSOR_NE_RESIZE:
       return "top_right_corner";
     case META_CURSOR_NW_RESIZE:
       return "top_left_corner";
-    case META_CURSOR_MOVE_OR_RESIZE_WINDOW:
-      return "fleur";
-    case META_CURSOR_BUSY:
-      return "watch";
-    case META_CURSOR_DND_IN_DRAG:
-      return "dnd-none";
-    case META_CURSOR_DND_MOVE:
-      return "dnd-move";
-    case META_CURSOR_DND_COPY:
+    case META_CURSOR_S_RESIZE:
+      return "bottom_side";
+    case META_CURSOR_SE_RESIZE:
+      return "bottom_right_corner";
+    case META_CURSOR_SW_RESIZE:
+      return "bottom_left_corner";
+    case META_CURSOR_W_RESIZE:
+      return "left_side";
+    case META_CURSOR_EW_RESIZE:
+      return "h_double_arrow";
+    case META_CURSOR_NS_RESIZE:
+        return "v_double_arrow";
+    case META_CURSOR_NESW_RESIZE:
+        return "fd_double_arrow";
+    case META_CURSOR_NWSE_RESIZE:
+        return "bd_double_arrow";
+    case META_CURSOR_COL_RESIZE:
+        return "h_double_arrow";
+    case META_CURSOR_ROW_RESIZE:
+        return "v_double_arrow";
+    case META_CURSOR_ALL_SCROLL:
+      return "left_ptr";
+    case META_CURSOR_ZOOM_IN:
+      return "left_ptr";
+    case META_CURSOR_ZOOM_OUT:
+      return "left_ptr";
+    case META_CURSOR_DND_ASK:
       return "dnd-copy";
-    case META_CURSOR_DND_UNSUPPORTED_TARGET:
-      return "dnd-none";
-    case META_CURSOR_POINTING_HAND:
-      return "hand2";
-    case META_CURSOR_CROSSHAIR:
-      return "crosshair";
-    case META_CURSOR_IBEAM:
-      return "xterm";
-    case META_CURSOR_BLANK:
+    case META_CURSOR_ALL_RESIZE:
+      return "dnd-move";
+    case META_CURSOR_INVALID:
     case META_CURSOR_NONE:
-    case META_CURSOR_LAST:
       break;
     }
 
@@ -177,7 +310,7 @@ load_cursor_on_client (MetaCursor cursor,
   int fallback_size, i;
   const char *cursor_names[2];
 
-  if (cursor == META_CURSOR_BLANK)
+  if (cursor == META_CURSOR_NONE)
     return create_blank_cursor_images ();
 
   cursor_names[0] = meta_cursor_get_name (cursor);
@@ -222,7 +355,7 @@ load_from_current_xcursor_image (MetaCursorSpriteXcursor *sprite_xcursor)
   GError *error = NULL;
   int hotspot_x, hotspot_y;
 
-  g_assert (!meta_cursor_sprite_get_cogl_texture (sprite));
+  meta_cursor_sprite_clear_texture (sprite);
 
   xc_image = meta_cursor_sprite_xcursor_get_current_image (sprite_xcursor);
   width = (int) xc_image->width;
@@ -274,9 +407,11 @@ void
 meta_cursor_sprite_xcursor_set_theme_scale (MetaCursorSpriteXcursor *sprite_xcursor,
                                             int                      theme_scale)
 {
-  if (sprite_xcursor->theme_scale != theme_scale)
-    sprite_xcursor->theme_dirty = TRUE;
+  if (sprite_xcursor->theme_scale == theme_scale)
+    return;
+
   sprite_xcursor->theme_scale = theme_scale;
+  sprite_xcursor->xcursor_images = NULL;
 }
 
 void
@@ -326,7 +461,6 @@ meta_cursor_sprite_xcursor_tick_frame (MetaCursorSprite *sprite)
   if (sprite_xcursor->current_frame >= sprite_xcursor->xcursor_images->nimage)
     sprite_xcursor->current_frame = 0;
 
-  meta_cursor_sprite_clear_texture (sprite);
   load_from_current_xcursor_image (sprite_xcursor);
 }
 
@@ -342,28 +476,37 @@ meta_cursor_sprite_xcursor_get_current_frame_time (MetaCursorSprite *sprite)
   return xcursor_images->images[sprite_xcursor->current_frame]->delay;
 }
 
-static void
+static gboolean
 load_cursor_from_theme (MetaCursorSprite *sprite)
 {
   MetaCursorSpriteXcursor *sprite_xcursor = META_CURSOR_SPRITE_XCURSOR (sprite);
+  GHashTable *cache = ensure_cache (sprite_xcursor);
+  XcursorImages *xcursor_images;
+  MetaCursorSpriteXcursorKey key = {
+    .cursor = sprite_xcursor->cursor,
+    .theme_scale = sprite_xcursor->theme_scale,
+  };
 
-  g_assert (sprite_xcursor->cursor != META_CURSOR_NONE);
+  g_assert (sprite_xcursor->cursor != META_CURSOR_INVALID);
 
-  sprite_xcursor->theme_dirty = FALSE;
-
-  /* We might be reloading with a different scale. If so clear the old data. */
-  if (sprite_xcursor->xcursor_images)
+  xcursor_images = g_hash_table_lookup (cache, &key);
+  if (!xcursor_images)
     {
-      meta_cursor_sprite_clear_texture (sprite);
-      xcursor_images_destroy (sprite_xcursor->xcursor_images);
+      xcursor_images = load_cursor_on_client (sprite_xcursor->cursor,
+                                              sprite_xcursor->theme_scale);
+
+      g_hash_table_insert (cache,
+                           g_memdup2 (&key, sizeof (key)),
+                           xcursor_images);
     }
 
-  sprite_xcursor->current_frame = 0;
-  sprite_xcursor->xcursor_images =
-    load_cursor_on_client (sprite_xcursor->cursor,
-                           sprite_xcursor->theme_scale);
+  if (sprite_xcursor->xcursor_images == xcursor_images)
+    return FALSE;
 
+  sprite_xcursor->xcursor_images = xcursor_images;
+  sprite_xcursor->current_frame = 0;
   load_from_current_xcursor_image (sprite_xcursor);
+  return TRUE;
 }
 
 static gboolean
@@ -372,11 +515,8 @@ meta_cursor_sprite_xcursor_realize_texture (MetaCursorSprite *sprite)
   MetaCursorSpriteXcursor *sprite_xcursor = META_CURSOR_SPRITE_XCURSOR (sprite);
   gboolean retval = sprite_xcursor->invalidated;
 
-  if (sprite_xcursor->theme_dirty)
-    {
-      load_cursor_from_theme (sprite);
-      retval = TRUE;
-    }
+  if (load_cursor_from_theme (sprite))
+    retval = TRUE;
 
   sprite_xcursor->invalidated = FALSE;
 
@@ -389,6 +529,60 @@ meta_cursor_sprite_xcursor_invalidate (MetaCursorSprite *sprite)
   MetaCursorSpriteXcursor *sprite_xcursor = META_CURSOR_SPRITE_XCURSOR (sprite);
 
   sprite_xcursor->invalidated = TRUE;
+}
+
+static void
+meta_cursor_sprite_xcursor_prepare_at (MetaCursorSprite *sprite,
+                                       float             best_scale,
+                                       int               x,
+                                       int               y)
+{
+  MetaCursorSpriteXcursor *sprite_xcursor = META_CURSOR_SPRITE_XCURSOR (sprite);
+  MetaCursorTracker *cursor_tracker =
+    meta_cursor_sprite_get_cursor_tracker (sprite);
+  MetaBackend *backend =
+    meta_cursor_tracker_get_backend (cursor_tracker);
+
+  if (!meta_is_wayland_compositor ())
+    return;
+
+  if (meta_backend_is_stage_views_scaled (backend))
+    {
+      if (best_scale != 0.0f)
+        {
+          float ceiled_scale;
+          int cursor_width, cursor_height;
+
+          ceiled_scale = ceilf (best_scale);
+          meta_cursor_sprite_xcursor_set_theme_scale (sprite_xcursor,
+                                                      (int) ceiled_scale);
+
+          meta_cursor_sprite_realize_texture (sprite);
+          meta_cursor_sprite_xcursor_get_scaled_image_size (sprite_xcursor,
+                                                            &cursor_width,
+                                                            &cursor_height);
+          meta_cursor_sprite_set_viewport_dst_size (sprite,
+                                                    cursor_width,
+                                                    cursor_height);
+        }
+    }
+  else
+    {
+      MetaMonitorManager *monitor_manager =
+        meta_backend_get_monitor_manager (backend);
+      MetaLogicalMonitor *logical_monitor;
+
+      logical_monitor =
+        meta_monitor_manager_get_logical_monitor_at (monitor_manager, x, y);
+
+      /* Reload the cursor texture if the scale has changed. */
+      if (logical_monitor)
+        {
+          meta_cursor_sprite_xcursor_set_theme_scale (sprite_xcursor,
+                                                      (int) logical_monitor->scale);
+          meta_cursor_sprite_set_texture_scale (sprite, 1.0f);
+        }
+    }
 }
 
 static ClutterColorState *
@@ -422,6 +616,17 @@ ensure_xcursor_color_state (MetaCursorTracker *cursor_tracker)
   return color_state;
 }
 
+static void
+on_prefs_changed (MetaCursorSprite *cursor,
+                  gpointer          user_data)
+{
+  MetaCursorSpriteXcursor *sprite_xcursor =
+    META_CURSOR_SPRITE_XCURSOR (user_data);
+
+  drop_cache (sprite_xcursor);
+  sprite_xcursor->xcursor_images = NULL;
+}
+
 MetaCursorSpriteXcursor *
 meta_cursor_sprite_xcursor_new (MetaCursor         cursor,
                                 MetaCursorTracker *cursor_tracker)
@@ -437,34 +642,24 @@ meta_cursor_sprite_xcursor_new (MetaCursor         cursor,
                                  NULL);
   sprite_xcursor->cursor = cursor;
 
+  g_signal_connect_object (cursor_tracker, "cursor-prefs-changed",
+                           G_CALLBACK (on_prefs_changed),
+                           sprite_xcursor,
+                           G_CONNECT_DEFAULT);
+
   return sprite_xcursor;
-}
-
-static void
-meta_cursor_sprite_xcursor_finalize (GObject *object)
-{
-  MetaCursorSpriteXcursor *sprite_xcursor = META_CURSOR_SPRITE_XCURSOR (object);
-
-  g_clear_pointer (&sprite_xcursor->xcursor_images,
-                   xcursor_images_destroy);
-
-  G_OBJECT_CLASS (meta_cursor_sprite_xcursor_parent_class)->finalize (object);
 }
 
 static void
 meta_cursor_sprite_xcursor_init (MetaCursorSpriteXcursor *sprite_xcursor)
 {
   sprite_xcursor->theme_scale = 1;
-  sprite_xcursor->theme_dirty = TRUE;
 }
 
 static void
 meta_cursor_sprite_xcursor_class_init (MetaCursorSpriteXcursorClass *klass)
 {
-  GObjectClass *object_class = G_OBJECT_CLASS (klass);
   MetaCursorSpriteClass *cursor_sprite_class = META_CURSOR_SPRITE_CLASS (klass);
-
-  object_class->finalize = meta_cursor_sprite_xcursor_finalize;
 
   cursor_sprite_class->realize_texture =
     meta_cursor_sprite_xcursor_realize_texture;
@@ -474,4 +669,5 @@ meta_cursor_sprite_xcursor_class_init (MetaCursorSpriteXcursorClass *klass)
   cursor_sprite_class->tick_frame = meta_cursor_sprite_xcursor_tick_frame;
   cursor_sprite_class->get_current_frame_time =
     meta_cursor_sprite_xcursor_get_current_frame_time;
+  cursor_sprite_class->prepare_at = meta_cursor_sprite_xcursor_prepare_at;
 }

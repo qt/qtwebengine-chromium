@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -23,7 +23,7 @@ class V8BuiltinsPGOProbe(ChromiumProbe):
   Chromium-only Probe to extract V8 builtins PGO data.
   The resulting data is used to optimize Torque and CSA builtins.
   """
-  NAME = "v8.builtins.pgo"
+  NAME: ClassVar = "v8.builtins.pgo"
 
   @override
   def attach(self, browser: Browser) -> None:

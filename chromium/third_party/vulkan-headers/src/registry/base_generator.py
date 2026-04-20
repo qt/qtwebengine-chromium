@@ -11,7 +11,7 @@ import copy
 from vulkan_object import (VulkanObject,
     Extension, Version, Deprecate, Handle, Param, Queues, CommandScope, Command,
     EnumField, Enum, Flag, Bitmask, ExternSync, Flags, Member, Struct,
-    Constant, FormatComponent, FormatPlane, Format,
+    Constant, FormatComponent, FormatPlane, Format, FeatureRequirement,
     SyncSupport, SyncEquivalent, SyncStage, SyncAccess, SyncPipelineStage, SyncPipeline,
     SpirvEnables, Spirv,
     VideoCodec, VideoFormat, VideoProfiles, VideoProfileMember, VideoRequiredCapabilities,
@@ -65,18 +65,25 @@ def externSyncGet(elem):
 
 
 def getQueues(elem) -> Queues:
+    queuemap = {
+        'VK_QUEUE_COMPUTE_BIT':          Queues.COMPUTE,
+        'VK_QUEUE_DATA_GRAPH_BIT_ARM':   Queues.DATA_GRAPH,
+        'VK_QUEUE_GRAPHICS_BIT':         Queues.GRAPHICS,
+        'VK_QUEUE_OPTICAL_FLOW_BIT_NV':  Queues.OPTICAL_FLOW,
+        'VK_QUEUE_PROTECTED_BIT':        Queues.PROTECTED,
+        'VK_QUEUE_SPARSE_BINDING_BIT':   Queues.SPARSE_BINDING,
+        'VK_QUEUE_TRANSFER_BIT':         Queues.TRANSFER,
+        'VK_QUEUE_VIDEO_DECODE_BIT_KHR': Queues.DECODE,
+        'VK_QUEUE_VIDEO_ENCODE_BIT_KHR': Queues.ENCODE,
+    }
+
     queues = 0
     queues_list = splitIfGet(elem, 'queues')
-    if len(queues_list) > 0:
-        queues |= Queues.TRANSFER if 'transfer' in queues_list else 0
-        queues |= Queues.GRAPHICS if 'graphics' in queues_list else 0
-        queues |= Queues.COMPUTE if 'compute' in queues_list else 0
-        queues |= Queues.PROTECTED if 'protected' in queues_list else 0
-        queues |= Queues.SPARSE_BINDING if 'sparse_binding' in queues_list else 0
-        queues |= Queues.OPTICAL_FLOW if 'opticalflow' in queues_list else 0
-        queues |= Queues.DECODE if 'decode' in queues_list else 0
-        queues |= Queues.ENCODE if 'encode' in queues_list else 0
-        queues |= Queues.DATA_GRAPH if 'data_graph' in queues_list else 0
+
+    for queue in queues_list:
+        if queue in queuemap:
+            queues |= queuemap[queue]
+
     return queues
 
 # Shared object used by Sync elements that do not have ones
@@ -114,7 +121,7 @@ def EnableCaching() -> None:
 class APISpecific:
     # Version object factory method
     @staticmethod
-    def createApiVersion(targetApiName: str, name: str) -> Version:
+    def createApiVersion(targetApiName: str, name: str, featureRequirement) -> Version:
         match targetApiName:
 
             # Vulkan SC specific API version creation
@@ -122,13 +129,13 @@ class APISpecific:
                 nameApi = name.replace('VK_', 'VK_API_')
                 nameApi = nameApi.replace('VKSC_', 'VKSC_API_')
                 nameString = f'"{name}"'
-                return Version(name, nameString, nameApi)
+                return Version(name, nameString, nameApi, featureRequirement)
 
             # Vulkan specific API version creation
             case 'vulkan':
                 nameApi = name.replace('VK_', 'VK_API_')
                 nameString = f'"{name}"'
-                return Version(name, nameString, nameApi)
+                return Version(name, nameString, nameApi, featureRequirement)
 
     # TODO - Currently genType in reg.py does not provide a good way to get this string to apply the C-macro
     # We do our best to emulate the answer here the way the spec/headers will with goal to have a proper fix before these assumptions break
@@ -404,7 +411,11 @@ class BaseGenerator(OutputGenerator):
                     member.type = self.dealias(member.type, self.structAliasMap)
             # Replace string with Version class now we have all version created
             if command.deprecate and command.deprecate.version:
-                command.deprecate.version = self.vk.versions[command.deprecate.version]
+                if command.deprecate.version not in self.vk.versions:
+                    # occurs if something like VK_VERSION_1_0, in which case we will always warn for deprecation
+                    command.deprecate.version = None
+                else:
+                    command.deprecate.version = self.vk.versions[command.deprecate.version]
 
         # Could build up a reverse lookup map, but since these are not too large of list, just do here
         # (Need to be done after we have found all the aliases)
@@ -583,6 +594,16 @@ class BaseGenerator(OutputGenerator):
         protect = self.vk.platforms[platform] if platform in self.vk.platforms else None
         name = interface.get('name')
 
+        # TODO - This is just mimicking featurerequirementsgenerator.py and works because the logic is simple enough (for now)
+        featureRequirement = []
+        requires = interface.findall('./require')
+        for require in requires:
+            requireDepends = require.get('depends')
+            for feature in require.findall('./feature'):
+                featureStruct = feature.get('struct')
+                featureName = feature.get('name')
+                featureRequirement.append(FeatureRequirement(featureStruct, featureName, requireDepends))
+
         if interface.tag == 'extension':
             # Generator scripts built on BaseGenerator do not handle the `supported` attribute of extensions
             # therefore historically the `generate_source.py` in individual ecosystem components hacked the
@@ -614,12 +635,12 @@ class BaseGenerator(OutputGenerator):
 
             self.currentExtension = Extension(name, nameString, specVersion, instance, device, depends, vendorTag,
                                             platform, protect, provisional, promotedto, deprecatedby,
-                                            obsoletedby, specialuse, ratified)
+                                            obsoletedby, specialuse, featureRequirement, ratified)
             self.vk.extensions[name] = self.currentExtension
         else: # version
             number = interface.get('number')
             if number != '1.0':
-                self.currentVersion = APISpecific.createApiVersion(self.targetApiName, name)
+                self.currentVersion = APISpecific.createApiVersion(self.targetApiName, name, featureRequirement)
                 self.vk.versions[name] = self.currentVersion
 
     def endFeature(self):

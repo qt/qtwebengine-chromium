@@ -432,6 +432,23 @@ try_.builder(
 )
 
 try_.builder(
+    name = "android-dawn-arm64-p10-rel",
+    description_html = "Runs ToT Dawn tests on Pixel 10 devices",
+    mirrors = [
+        "ci/Dawn Android arm64 Builder",
+        "ci/Dawn Android arm64 Release (Pixel 10)",
+    ],
+    gn_args = "ci/Dawn Android arm64 Builder",
+    pool = "luci.chromium.gpu.try",
+    builderless = True,
+    os = os.LINUX_DEFAULT,
+    max_concurrent_builds = 1,
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
+)
+
+try_.builder(
     # This is not part of "android-dawn-arm64-rel" at the moment since there is
     # not sufficient S24 capacity for that.
     name = "android-dawn-arm64-s24-rel",
@@ -536,20 +553,6 @@ try_.builder(
     cpu = cpu.ARM64,
     free_space = None,
     max_concurrent_builds = 3,
-    test_presentation = resultdb.test_presentation(
-        grouping_keys = ["status", "v.test_suite", "v.gpu"],
-    ),
-)
-
-try_.builder(
-    name = "dawn-try-chromeos-volteer-rel",
-    mirrors = [
-        "ci/Dawn ChromeOS Skylab Release (volteer)",
-    ],
-    gn_args = "ci/Dawn ChromeOS Skylab Release (volteer)",
-    pool = "luci.chromium.gpu.try",
-    builderless = True,
-    max_concurrent_builds = 1,
     test_presentation = resultdb.test_presentation(
         grouping_keys = ["status", "v.test_suite", "v.gpu"],
     ),

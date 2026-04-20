@@ -938,7 +938,7 @@ get_contents_posix (const gchar  *filename,
       FILE *f;
       gboolean retval;
 
-      f = fdopen (fd, "r");
+      f = fdopen (fd, "re");
       
       if (f == NULL)
         {
@@ -969,7 +969,7 @@ get_contents_win32 (const gchar  *filename,
   FILE *f;
   gboolean retval;
   
-  f = g_fopen (filename, "rb");
+  f = g_fopen (filename, "rbe");
 
   if (f == NULL)
     {
@@ -1318,8 +1318,8 @@ g_file_set_contents (const gchar  *filename,
  * to 7 characters to @filename.
  *
  * If the file didn’t exist before and is created, it will be given the
- * permissions from @mode. Otherwise, the permissions of the existing file may
- * be changed to @mode depending on @flags, or they may remain unchanged.
+ * permissions from @mode. Otherwise, the permissions of the existing file will
+ * remain unchanged.
  *
  * Returns: %TRUE on success, %FALSE if an error occurred
  *
@@ -1362,6 +1362,7 @@ g_file_set_contents_full (const gchar            *filename,
       gboolean retval;
       int fd;
       gboolean do_fsync;
+      GStatBuf old_stat;
 
       tmp_filename = g_strdup_printf ("%s.XXXXXX", filename);
 
@@ -1377,6 +1378,26 @@ g_file_set_contents_full (const gchar            *filename,
                             saved_errno);
           retval = FALSE;
           goto consistent_out;
+        }
+
+      /* Maintain the permissions of the file if it exists */
+      if (!g_stat (filename, &old_stat))
+        {
+#ifndef G_OS_WIN32
+          if (fchmod (fd, old_stat.st_mode))
+#else  /* G_OS_WIN32 */
+          if (chmod (tmp_filename, old_stat.st_mode))
+#endif /* G_OS_WIN32 */
+            {
+              int saved_errno = errno;
+              if (error)
+                set_file_error (error,
+                                tmp_filename, _ ("Failed to set permissions of “%s”: %s"),
+                                saved_errno);
+              g_unlink (tmp_filename);
+              retval = FALSE;
+              goto consistent_out;
+            }
         }
 
       do_fsync = fd_should_be_fsynced (fd, filename, flags);
@@ -1517,9 +1538,9 @@ get_tmp_file (gchar            *tmpl,
   static const char letters[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   static const int NLETTERS = sizeof (letters) - 1;
-  gint64 value;
-  gint64 now_us;
-  static int counter = 0;
+  guint64 value;
+  guint64 now_us;
+  static guint counter = 0;
 
   g_return_val_if_fail (tmpl != NULL, -1);
 
@@ -1538,7 +1559,7 @@ get_tmp_file (gchar            *tmpl,
 
   for (count = 0; count < 100; value += 7777, ++count)
     {
-      gint64 v = value;
+      guint64 v = value;
 
       /* Fill in the random bits.  */
       XXXXXX[0] = letters[v % NLETTERS];
@@ -1597,8 +1618,9 @@ wrap_g_open (const gchar *filename,
  * @tmpl: (type filename): template directory name
  * @mode: permissions to create the temporary directory with
  *
- * Creates a temporary directory. See the mkdtemp() documentation
- * on most UNIX-like systems.
+ * Creates a temporary directory in the current directory.
+ *
+ * See the [`mkdtemp()`](man:mkdtemp(3)) documentation on most UNIX-like systems.
  *
  * The parameter is a string that should follow the rules for
  * mkdtemp() templates, i.e. contain the string "XXXXXX".
@@ -1633,8 +1655,9 @@ g_mkdtemp_full (gchar *tmpl,
  * g_mkdtemp: (skip)
  * @tmpl: (type filename): template directory name
  *
- * Creates a temporary directory. See the mkdtemp() documentation
- * on most UNIX-like systems.
+ * Creates a temporary directory in the current directory.
+ *
+ * See the [`mkdtemp()`](man:mkdtemp(3)) documentation on most UNIX-like systems.
  *
  * The parameter is a string that should follow the rules for
  * mkdtemp() templates, i.e. contain the string "XXXXXX".
@@ -1668,8 +1691,9 @@ g_mkdtemp (gchar *tmpl)
  *   and O_CREAT, which are passed automatically
  * @mode: permissions to create the temporary file with
  *
- * Opens a temporary file. See the mkstemp() documentation
- * on most UNIX-like systems.
+ * Opens a temporary file in the current directory.
+ *
+ * See the [`mkstemp()`](man:mkstemp(3)) documentation on most UNIX-like systems.
  *
  * The parameter is a string that should follow the rules for
  * mkstemp() templates, i.e. contain the string "XXXXXX".
@@ -1701,8 +1725,9 @@ g_mkstemp_full (gchar *tmpl,
  * g_mkstemp: (skip)
  * @tmpl: (type filename): template filename
  *
- * Opens a temporary file. See the mkstemp() documentation
- * on most UNIX-like systems.
+ * Opens a temporary file in the current directory.
+ *
+ * See the [`mkstemp()`](man:mkstemp(3)) documentation on most UNIX-like systems.
  *
  * The parameter is a string that should follow the rules for
  * mkstemp() templates, i.e. contain the string "XXXXXX".
@@ -1903,13 +1928,13 @@ g_build_path_va (const gchar  *separator,
 		 gchar       **str_array)
 {
   GString *result;
-  gint separator_len = strlen (separator);
+  size_t separator_len = strlen (separator);
   gboolean is_first = TRUE;
   gboolean have_leading = FALSE;
   const gchar *single_element = NULL;
   const gchar *next_element;
   const gchar *last_trailing = NULL;
-  gint i = 0;
+  size_t i = 0;
 
   result = g_string_new (NULL);
 
@@ -2097,7 +2122,7 @@ g_build_pathname_va (const gchar  *first_element,
   const gchar *next_element;
   const gchar *last_trailing = NULL;
   gchar current_separator = '\\';
-  gint i = 0;
+  size_t i = 0;
 
   result = g_string_new (NULL);
 
@@ -2991,6 +3016,7 @@ g_get_current_dir (void)
     {
       /* Fallback return value */
       g_assert (buffer_size >= 2);
+      g_assert (buffer != NULL);
       buffer[0] = G_DIR_SEPARATOR;
       buffer[1] = 0;
     }

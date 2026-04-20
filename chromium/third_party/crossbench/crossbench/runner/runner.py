@@ -7,7 +7,8 @@ from __future__ import annotations
 import datetime as dt
 import enum
 import logging
-from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence, Set, Type
+from typing import (TYPE_CHECKING, Any, Final, Iterable, Optional, Sequence,
+                    Set, Type)
 
 from crossbench import exception
 from crossbench import path as pth
@@ -18,7 +19,6 @@ from crossbench.env.runner_env import EnvConfig, RunnerEnv, ValidationMode
 from crossbench.helper import collection_helper
 from crossbench.helper.state import BaseState, StateMachine
 from crossbench.helper.wait import WaitRange
-from crossbench.helper.wake_lock import WakeLock
 from crossbench.parse import NumberParser, ObjectParser
 from crossbench.probes import all as all_probes
 from crossbench.probes.internal.summary import ResultsSummaryProbe
@@ -76,13 +76,13 @@ class ThreadMode(StrEnumWithHelp):
     groups: dict[Any, list[Run]] = {}
     if self == ThreadMode.SESSION:
       groups = collection_helper.group_by(
-          runs, lambda run: run.browser_session, sort_key=None)
+          runs, key=lambda run: run.browser_session, sort_key=None)
     elif self == ThreadMode.PLATFORM:
       groups = collection_helper.group_by(
-          runs, lambda run: run.browser_platform, sort_key=None)
+          runs, key=lambda run: run.browser_platform, sort_key=None)
     elif self == ThreadMode.BROWSER:
       groups = collection_helper.group_by(
-          runs, lambda run: run.browser, sort_key=None)
+          runs, key=lambda run: run.browser, sort_key=None)
     else:
       raise ValueError(f"Unexpected thread mode: {self}")
     return [
@@ -97,6 +97,9 @@ class RunnerState(BaseState):
   SETUP = enum.auto()
   RUNNING = enum.auto()
   TEARDOWN = enum.auto()
+
+
+_DEFAULT_TIMING: Final[Timing] = Timing()
 
 class Runner:
 
@@ -142,6 +145,11 @@ class Runner:
         help=("Number of times each benchmark story is repeated for warmup. "
               "Defaults to 0. "
               "Metrics for warmup-repetitions are discarded."))
+    run_group.add_argument(
+        "--ignore-partial-failures",
+        action="store_true",
+        default=False,
+        help="Do not fail on partial run failures.")
     run_group.add_argument(
         "--cache-temperatures",
         default=["default"],
@@ -222,6 +230,7 @@ class Runner:
         "create_symlinks": args.create_symlinks,
         "cool_down_threshold": args.cool_down_threshold,
         "step_by_step_mode": args.step_by_step_mode,
+        "ignore_partial_failures": args.ignore_partial_failures,
     }
 
   def __init__(self,
@@ -235,13 +244,14 @@ class Runner:
                repetitions: int = 1,
                warmup_repetitions: int = 0,
                cache_temperatures: Iterable[str] = ("default",),
-               timing: Timing = Timing(),
+               timing: Timing = _DEFAULT_TIMING,
                cool_down_threshold: Optional[ThermalStatus] = None,
                thread_mode: ThreadMode = ThreadMode.NONE,
                throw: bool = False,
                create_symlinks: bool = True,
                in_memory_result_db: bool = False,
-               step_by_step_mode: bool = False) -> None:
+               step_by_step_mode: bool = False,
+               ignore_partial_failures: bool = False) -> None:
     self._state = StateMachine(RunnerState.INITIAL)
     self.out_dir = out_dir.absolute()
     assert not self.out_dir.exists(), f"out_dir={self.out_dir} exists already"
@@ -279,14 +289,15 @@ class Runner:
     self._browser_group: BrowsersRunGroup | None = None
     self._create_symlinks: bool = create_symlinks
     self._step_by_step_mode: bool = step_by_step_mode
+    self._ignore_partial_failures: bool = ignore_partial_failures
 
   def _prepare_benchmark(self) -> None:
     benchmark_validator.validate_cls(type(self._benchmark))
     for benchmark_probe_cls in self._benchmark.PROBES:
       probe = benchmark_probe_cls(benchmark=self._benchmark)
-      assert (isinstance(probe, Probe) and
-              isinstance(probe, BenchmarkProbeMixin)), (
-                  f"Expected BenchmarkProbe, got {probe}")
+      assert isinstance(
+          probe, BenchmarkProbeMixin), f"Expected BenchmarkProbe, got {probe}"
+      assert isinstance(probe, Probe), f"Expected Probe, got {probe}"
       self.attach_probe(probe)
 
   def _validate_browser_labels(self) -> None:
@@ -310,7 +321,7 @@ class Runner:
 
   def _attach_internal_probes(self) -> None:
     for probe_cls in all_probes.NON_CONFIGURABLE_INTERNAL_PROBES:
-      default_probe: Probe = probe_cls()  # pytype: disable=not-instantiable
+      default_probe: Probe = probe_cls()
       self._attach_default_probe(default_probe)
 
     thermal_monitor_probe = all_probes.ThermalMonitorProbe(
@@ -392,6 +403,10 @@ class Runner:
     return self._create_symlinks
 
   @property
+  def ignore_partial_failures(self) -> bool:
+    return self._ignore_partial_failures
+
+  @property
   def exceptions(self) -> exception.Annotator:
     return self._exceptions
 
@@ -409,7 +424,7 @@ class Runner:
 
   @property
   def platforms(self) -> Set[plt.Platform]:
-    return set(browser.platform for browser in self.browsers)
+    return {browser.platform for browser in self.browsers}
 
   @property
   def results_db(self) -> ResultsDB:
@@ -466,7 +481,7 @@ class Runner:
 
   def run(self, is_dry_run: bool = False) -> None:
     self._state.expect(RunnerState.INITIAL)
-    with WakeLock(self._platform):
+    with self._platform.wakelock():
       with self._exceptions.annotate("Preparing"):
         self._setup()
       with self._exceptions.capture("Running"):
@@ -586,7 +601,7 @@ class Runner:
   def assert_successful_sessions_and_runs(self) -> None:
     if self._exceptions.is_success:
       return
-    failed_runs: int = len(list(run for run in self.runs if not run.is_success))
+    failed_runs: int = len([run for run in self.runs if not run.is_success])
     all_runs: int = len(tuple(self.runs))
     num_exceptions = len(self._exceptions)
     message: str = (
@@ -603,7 +618,10 @@ class Runner:
       logging.error("❗ %s", message.upper())
       logging.error("=" * 80)
     # Raise a RunnerException to be handled in the CLI.
-    self._exceptions.assert_success(message, RunnerException)
+    if (not self.ignore_partial_failures
+        or all_runs == failed_runs
+        or self._exceptions.throw):
+      self._exceptions.assert_success(message, RunnerException)
 
   def _get_thread_groups(self) -> list[RunThreadGroup]:
     # Also include warmup runs here.
@@ -726,7 +744,7 @@ class Runner:
     out_dir = self.out_dir
     sessions_dir = out_dir / "sessions"
     sessions_dir.mkdir()
-    for session in set(run.browser_session for run in runs):
+    for session in {run.browser_session for run in runs}:
       relative = pth.LocalPath("..") / session.path.relative_to(out_dir)
       (sessions_dir / str(session.index)).symlink_to(relative)
 

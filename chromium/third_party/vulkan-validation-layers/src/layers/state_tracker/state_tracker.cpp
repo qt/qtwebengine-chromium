@@ -23,8 +23,8 @@
 #include <vulkan/utility/vk_format_utils.h>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/utility/vk_struct_helper.hpp>
-
-#include "state_tracker/state_tracker.h"
+#include "containers/custom_containers.h"
+#include "state_tracker/data_graph_pipeline_session_state.h"
 #include "state_tracker/shader_stage_state.h"
 #include "state_tracker/image_state.h"
 #include "state_tracker/buffer_state.h"
@@ -141,8 +141,8 @@ std::vector<std::shared_ptr<const ImageView>> DeviceState::GetAttachmentViews(co
 // Android-specific validation that uses types defined only with VK_USE_PLATFORM_ANDROID_KHR
 // This could also move into a seperate core_validation_android.cpp file... ?
 
-VkFormatFeatureFlags2KHR DeviceState::GetExternalFormatFeaturesANDROID(const void *pNext) const {
-    VkFormatFeatureFlags2KHR format_features = 0;
+VkFormatFeatureFlags2 DeviceState::GetExternalFormatFeaturesANDROID(const void *pNext) const {
+    VkFormatFeatureFlags2 format_features = 0;
     const uint64_t external_format = GetExternalFormat(pNext);
     if ((0 != external_format)) {
         // VUID 01894 will catch if not found in map
@@ -169,7 +169,7 @@ void DeviceState::PostCallRecordGetAndroidHardwareBufferPropertiesANDROID(VkDevi
         auto ahb_format_props = vku::FindStructInPNextChain<VkAndroidHardwareBufferFormatPropertiesANDROID>(pProperties->pNext);
         if (ahb_format_props) {
             external_format = ahb_format_props->externalFormat;
-            ahb_ext_formats_map.insert(external_format, static_cast<VkFormatFeatureFlags2KHR>(ahb_format_props->formatFeatures));
+            ahb_ext_formats_map.insert(external_format, static_cast<VkFormatFeatureFlags2>(ahb_format_props->formatFeatures));
         }
     }
 
@@ -195,7 +195,7 @@ void DeviceState::PostCallRecordGetAndroidHardwareBufferPropertiesANDROID(VkDevi
 
 #else
 
-VkFormatFeatureFlags2KHR DeviceState::GetExternalFormatFeaturesANDROID(const void *pNext) const {
+VkFormatFeatureFlags2 DeviceState::GetExternalFormatFeaturesANDROID(const void *pNext) const {
     (void)pNext;
     return 0;
 }
@@ -211,7 +211,7 @@ VkFormatFeatureFlags2 InstanceState::GetImageFormatFeatures(VkPhysicalDevice phy
     // if format is AHB external format then the features are already set
     if (has_format_feature2) {
         VkDrmFormatModifierPropertiesList2EXT fmt_drm_props = vku::InitStructHelper();
-        auto fmt_props_3 = vku::InitStruct<VkFormatProperties3KHR>(has_drm_modifiers ? &fmt_drm_props : nullptr);
+        auto fmt_props_3 = vku::InitStruct<VkFormatProperties3>(has_drm_modifiers ? &fmt_drm_props : nullptr);
         VkFormatProperties2 fmt_props_2 = vku::InitStructHelper(&fmt_props_3);
 
         DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, format, &fmt_props_2);
@@ -288,7 +288,7 @@ void DeviceState::PostCallRecordCreateImage(VkDevice device, const VkImageCreate
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    VkFormatFeatureFlags2KHR format_features = 0;
+    VkFormatFeatureFlags2 format_features = 0;
     if (IsExtEnabled(extensions.vk_android_external_memory_android_hardware_buffer)) {
         format_features = GetExternalFormatFeaturesANDROID(pCreateInfo->pNext);
     }
@@ -510,7 +510,7 @@ void DeviceState::PostCallRecordBindTensorMemoryARM(VkDevice device, uint32_t bi
         auto mem_info = Get<vvl::DeviceMemory>(pBindInfos[i].memory);
         ASSERT_AND_RETURN(tensor_state && mem_info);
         tensor_state->BindMemory(tensor_state.get(), mem_info, pBindInfos[i].memoryOffset, 0u,
-                                    tensor_state->MemReqs()->memoryRequirements.size);
+                                 tensor_state->MemReqs()->memoryRequirements.size);
     }
 }
 
@@ -552,7 +552,7 @@ void DeviceState::PostCallRecordCreateBuffer(VkDevice device, const VkBufferCrea
 
 std::shared_ptr<BufferView> DeviceState::CreateBufferViewState(const std::shared_ptr<Buffer> &buffer, VkBufferView handle,
                                                                const VkBufferViewCreateInfo *create_info,
-                                                               VkFormatFeatureFlags2KHR format_features) {
+                                                               VkFormatFeatureFlags2 format_features) {
     return std::make_shared<BufferView>(buffer, handle, create_info, format_features);
 }
 
@@ -564,9 +564,9 @@ void DeviceState::PostCallRecordCreateBufferView(VkDevice device, const VkBuffer
     }
     auto buffer_state = Get<Buffer>(pCreateInfo->buffer);
 
-    VkFormatFeatureFlags2KHR buffer_features;
+    VkFormatFeatureFlags2 buffer_features;
     if (special_supported.vk_khr_format_feature_flags2) {
-        VkFormatProperties3KHR fmt_props_3 = vku::InitStructHelper();
+        VkFormatProperties3 fmt_props_3 = vku::InitStructHelper();
         VkFormatProperties2 fmt_props_2 = vku::InitStructHelper(&fmt_props_3);
         DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, pCreateInfo->format, &fmt_props_2);
         buffer_features = fmt_props_3.bufferFeatures | fmt_props_2.formatProperties.bufferFeatures;
@@ -579,9 +579,40 @@ void DeviceState::PostCallRecordCreateBufferView(VkDevice device, const VkBuffer
     Add(CreateBufferViewState(buffer_state, *pView, pCreateInfo, buffer_features));
 }
 
+std::shared_ptr<vvl::DataGraphPipelineSession> DeviceState::CreateDataGraphPipelineSessionState(
+    VkDataGraphPipelineSessionARM handle, const VkDataGraphPipelineSessionCreateInfoARM *pCreateInfo) {
+    return std::make_shared<vvl::DataGraphPipelineSession>(*this, handle, pCreateInfo);
+}
+
+void DeviceState::PostCallRecordCreateDataGraphPipelineSessionARM(
+    VkDevice device, const VkDataGraphPipelineSessionCreateInfoARM *pCreateInfo, const VkAllocationCallbacks *pAllocator,
+    VkDataGraphPipelineSessionARM *pSession, const RecordObject &record_obj) {
+    if (record_obj.result != VK_SUCCESS) return;
+    std::shared_ptr<vvl::DataGraphPipelineSession> pipeline_session_state =
+        CreateDataGraphPipelineSessionState(*pSession, pCreateInfo);
+    Add(std::move(pipeline_session_state));
+}
+
+void DeviceState::PostCallRecordBindDataGraphPipelineSessionMemoryARM(
+    VkDevice device, uint32_t bindInfoCount, const VkBindDataGraphPipelineSessionMemoryInfoARM *pBindInfos,
+    const RecordObject &record_obj) {
+    if (VK_SUCCESS != record_obj.result) {
+        return;
+    }
+    for (uint32_t i = 0; i < bindInfoCount; i++) {
+        auto &bind_info = pBindInfos[i];
+        auto session_state = Get<vvl::DataGraphPipelineSession>(bind_info.session);
+        if (session_state) {
+            auto mem_info = std::shared_ptr<vvl::DeviceMemory>(Get<vvl::DeviceMemory>(bind_info.memory));
+            vvl::MemoryBinding binding = { mem_info, bind_info.memoryOffset, 0 };
+            session_state->AddBoundMemory(bind_info.bindPoint, binding);
+        }
+    }
+}
+
 std::shared_ptr<ImageView> DeviceState::CreateImageViewState(const std::shared_ptr<Image> &image_state, VkImageView handle,
                                                              const VkImageViewCreateInfo *create_info,
-                                                             VkFormatFeatureFlags2KHR format_features,
+                                                             VkFormatFeatureFlags2 format_features,
                                                              const VkFilterCubicImageViewImageFormatPropertiesEXT &cubic_props) {
     return std::make_shared<ImageView>(*this, image_state, handle, create_info, format_features, cubic_props);
 }
@@ -595,7 +626,7 @@ void DeviceState::PostCallRecordCreateImageView(VkDevice device, const VkImageVi
     auto image_state = Get<Image>(pCreateInfo->image);
     ASSERT_AND_RETURN(image_state);
 
-    VkFormatFeatureFlags2KHR format_features = 0;
+    VkFormatFeatureFlags2 format_features = 0;
     if (image_state->HasAHBFormat() == true) {
         // The ImageView uses same Image's format feature since they share same AHB
         format_features = image_state->format_features;
@@ -836,13 +867,13 @@ void DeviceState::PostCallRecordCmdCopyBufferToImage2(VkCommandBuffer commandBuf
 
 // Gets union of all features defined by Potential Format Features
 // except, does not handle the external format case for AHB as that only can be used for sampled images
-VkFormatFeatureFlags2KHR DeviceState::GetPotentialFormatFeatures(VkFormat format) const {
-    VkFormatFeatureFlags2KHR format_features = 0;
+VkFormatFeatureFlags2 DeviceState::GetPotentialFormatFeatures(VkFormat format) const {
+    VkFormatFeatureFlags2 format_features = 0;
 
     if (format != VK_FORMAT_UNDEFINED) {
         if (special_supported.vk_khr_format_feature_flags2) {
             VkDrmFormatModifierPropertiesList2EXT fmt_drm_props = vku::InitStructHelper();
-            auto fmt_props_3 = vku::InitStruct<VkFormatProperties3KHR>(
+            auto fmt_props_3 = vku::InitStruct<VkFormatProperties3>(
                 IsExtEnabled(extensions.vk_ext_image_drm_format_modifier) ? &fmt_drm_props : nullptr);
             VkFormatProperties2 fmt_props_2 = vku::InitStructHelper(&fmt_props_3);
 
@@ -918,8 +949,7 @@ void DeviceState::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const
         uint32_t num_queue_families = 0;
         DispatchGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, nullptr);
         std::vector<VkQueueFamilyProperties> queue_family_properties_list(num_queue_families);
-        DispatchGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families,
-                                                                       queue_family_properties_list.data());
+        DispatchGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, queue_family_properties_list.data());
 
         for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; ++i) {
             const VkDeviceQueueCreateInfo &queue_create_info = pCreateInfo->pQueueCreateInfos[i];
@@ -1411,7 +1441,7 @@ void DeviceState::PreCallRecordQueueBindSparse(VkQueue queue, uint32_t bindInfoC
                 }
             }
         }
-        auto* timeline_info = vku::FindStructInPNextChain<VkTimelineSemaphoreSubmitInfo>(bind_info.pNext);
+        auto *timeline_info = vku::FindStructInPNextChain<VkTimelineSemaphoreSubmitInfo>(bind_info.pNext);
         Location submit_loc = record_obj.location.dot(Struct::VkBindSparseInfo, Field::pBindInfo, bind_idx);
         QueueSubmission submission(submit_loc);
         for (uint32_t i = 0; i < bind_info.waitSemaphoreCount; ++i) {
@@ -1578,8 +1608,7 @@ void DeviceState::RecordGetDeviceQueueState(uint32_t queue_family_index, uint32_
         uint32_t num_queue_families = 0;
         DispatchGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, nullptr);
         std::vector<VkQueueFamilyProperties> queue_family_properties_list(num_queue_families);
-        DispatchGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families,
-                                                                       queue_family_properties_list.data());
+        DispatchGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, queue_family_properties_list.data());
 
         Add(CreateQueue(queue, queue_family_index, queue_index, flags, queue_family_properties_list[queue_family_index]));
     }
@@ -1950,7 +1979,7 @@ bool DeviceState::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipe
             // The rasterization_enabled is our way to hint to vvl::RenderPass to ignore a possible VkPipelineRenderingCreateInfo
             // that contains bad pointers (when using GPL)
             const bool has_fragment_output_state =
-                Pipeline::ContainsSubState(*this, create_info, VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT);
+                Pipeline::ContainsLibraryState(*this, create_info, VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT);
             const bool rasterization_enabled =
                 has_fragment_output_state && Pipeline::EnablesRasterizationStates(*this, create_info);
 
@@ -2129,6 +2158,49 @@ void DeviceState::PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, Vk
     }
 }
 
+std::shared_ptr<vvl::Pipeline> DeviceState::CreateDataGraphPipelineState(
+    const VkDataGraphPipelineCreateInfoARM *pCreateInfo, std::shared_ptr<const vvl::PipelineCache> pipeline_cache,
+    std::shared_ptr<const vvl::PipelineLayout> &&layout, spirv::StatelessData *stateless_data) const {
+    return std::make_shared<vvl::Pipeline>(*this, pCreateInfo, std::move(pipeline_cache), std::move(layout), stateless_data);
+}
+
+bool DeviceState::PreCallValidateCreateDataGraphPipelinesARM(
+    VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache, uint32_t count,
+    const VkDataGraphPipelineCreateInfoARM *pCreateInfos, const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
+    const ErrorObject &error_obj, PipelineStates &pipeline_states, chassis::CreateDataGraphPipelinesARM &chassis_state) const {
+    pipeline_states.reserve(count);
+    auto pipeline_cache = Get<vvl::PipelineCache>(pipelineCache);
+    for (uint32_t i = 0; i < count; i++) {
+        // Create and initialize internal tracking data structure
+        pipeline_states.push_back(CreateDataGraphPipelineState(
+            &pCreateInfos[i], pipeline_cache, Get<vvl::PipelineLayout>(pCreateInfos[i].layout), &chassis_state.stateless_data));
+    }
+    return false;
+}
+
+void DeviceState::PostCallRecordCreateDataGraphPipelinesARM(
+    VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache, uint32_t count,
+    const VkDataGraphPipelineCreateInfoARM *pCreateInfos, const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
+    const RecordObject &record_obj, PipelineStates &pipeline_states, chassis::CreateDataGraphPipelinesARM &chassis_state) {
+    // This API may create pipelines regardless of the return value
+    for (uint32_t i = 0; i < count; i++) {
+        if (pPipelines[i] != VK_NULL_HANDLE) {
+            pipeline_states[i]->SetHandle(pPipelines[i]);
+            Add(std::move(pipeline_states[i]));
+        }
+    }
+    pipeline_states.clear();
+}
+
+void DeviceState::PostCallRecordCmdDispatchDataGraphARM(VkCommandBuffer commandBuffer,
+                                                        VkDataGraphPipelineSessionARM session,
+                                                        const VkDataGraphPipelineDispatchInfoARM *pInfo,
+                                                        const RecordObject &record_obj) {
+    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
+    std::shared_ptr<vvl::DataGraphPipelineSession> pipeline_session = Get<vvl::DataGraphPipelineSession>(session);
+    cb_state->AddChild(pipeline_session);
+}
+
 void DeviceState::PostCallRecordCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
                                               const VkAllocationCallbacks *pAllocator, VkSampler *pSampler,
                                               const RecordObject &record_obj) {
@@ -2149,7 +2221,7 @@ void DeviceState::PostCallRecordCreateDescriptorSetLayout(VkDevice device, const
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    Add(std::make_shared<DescriptorSetLayout>(device, pCreateInfo, *pSetLayout));
+    Add(std::make_shared<DescriptorSetLayout>(*this, pCreateInfo, *pSetLayout));
 }
 
 void DeviceState::PostCallRecordCreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *pCreateInfo,
@@ -2758,6 +2830,7 @@ void DeviceState::PostCallRecordCmdBindDescriptorSets(VkCommandBuffer commandBuf
 
     // legacy descriptor binding invalidates any previous call to vkCmdBindDescriptorBuffersEXT
     cb_state->descriptor_buffer_binding_info.clear();
+    cb_state->descriptor_mode = DescriptorMode::Classic;
 
     std::shared_ptr<DescriptorSet> no_push_desc;
 
@@ -2776,6 +2849,7 @@ void DeviceState::PostCallRecordCmdBindDescriptorSets2(VkCommandBuffer commandBu
 
     // legacy descriptor binding invalidates any previous call to vkCmdBindDescriptorBuffersEXT
     cb_state->descriptor_buffer_binding_info.clear();
+    cb_state->descriptor_mode = DescriptorMode::Classic;
 
     std::shared_ptr<DescriptorSet> no_push_desc;
 
@@ -2860,6 +2934,7 @@ void DeviceState::PostCallRecordCmdBindDescriptorBuffersEXT(VkCommandBuffer comm
 
     cb_state->descriptor_buffer_binding_info.resize(bufferCount);
     cb_state->descriptor_buffer_ever_bound = true;
+    cb_state->descriptor_mode = DescriptorMode::DescriptorBuffer;
 
     std::copy(pBindingInfos, pBindingInfos + bufferCount, cb_state->descriptor_buffer_binding_info.data());
 }
@@ -4674,7 +4749,7 @@ void DeviceState::PostCallRecordCreateSamplerYcbcrConversion(VkDevice device, co
     if (record_obj.result != VK_SUCCESS) {
         return;
     }
-    VkFormatFeatureFlags2KHR format_features = 0;
+    VkFormatFeatureFlags2 format_features = 0;
 
     if (pCreateInfo->format != VK_FORMAT_UNDEFINED) {
         format_features = GetPotentialFormatFeatures(pCreateInfo->format);
@@ -4984,12 +5059,12 @@ void DeviceState::PreCallRecordCreateShaderModule(VkDevice device, const VkShade
         return;
     } else if (chassis_state.module_state) {
         // We store the shader module at a chassis stack level (because we need it for PostCallRecord in things like GPU-AV)
-        // Only one validaiton object needs to create it
+        // Only one validation object needs to create it
         return;
     }
 
     chassis_state.module_state =
-        std::make_shared<spirv::Module>(pCreateInfo->codeSize, pCreateInfo->pCode, &chassis_state.stateless_data);
+        CreateSpirvModuleState(pCreateInfo->codeSize, pCreateInfo->pCode, global_settings, &chassis_state.stateless_data);
     if (chassis_state.module_state && chassis_state.stateless_data.has_group_decoration) {
         spv_target_env spirv_environment = PickSpirvEnv(api_version, IsExtEnabled(extensions.vk_khr_spirv_1_4));
         spvtools::Optimizer optimizer(spirv_environment);
@@ -5002,9 +5077,11 @@ void DeviceState::PreCallRecordCreateShaderModule(VkDevice device, const VkShade
         if (result) {
             // Easier to just re-create the ShaderModule as StaticData uses itself when building itself up
             // It is really rare this will get here as Group Decorations have been deprecated and before this was added no one ever
-            // raised an issue for a bug that would crash the layers that was around for many releases
-            chassis_state.module_state = std::make_shared<spirv::Module>(optimized_binary.size() * sizeof(uint32_t),
-                                                                         optimized_binary.data(), &chassis_state.stateless_data);
+            // raised an issue for a bug that would crash the layers that was around for many releases.
+            //
+            // We also ignore doing this for any newer way to provide SPIR-V (GPL, shaderObject, RTX, etc) for same reason.
+            chassis_state.module_state = CreateSpirvModuleState(optimized_binary.size() * sizeof(uint32_t), optimized_binary.data(),
+                                                                global_settings, &chassis_state.stateless_data);
         }
     }
 }
@@ -5018,9 +5095,9 @@ void DeviceState::PreCallRecordCreateShadersEXT(VkDevice device, uint32_t create
         if (create_info.codeSize == 0 || !create_info.pCode || create_info.codeType != VK_SHADER_CODE_TYPE_SPIRV_EXT) {
             continue;
         }
-        // don't need to worry about GroupDecoration with VK_EXT_shader_object
-        chassis_state.module_states[i] = std::make_shared<spirv::Module>(
-            create_info.codeSize, static_cast<const uint32_t *>(create_info.pCode), &chassis_state.stateless_data[i]);
+        chassis_state.module_states[i] =
+            CreateSpirvModuleState(create_info.codeSize, static_cast<const uint32_t *>(create_info.pCode), global_settings,
+                                   &chassis_state.stateless_data[i]);
     }
 }
 
@@ -5397,13 +5474,7 @@ void DeviceState::PostCallRecordCmdSetRenderingAttachmentLocations(VkCommandBuff
                                                                    const VkRenderingAttachmentLocationInfo *pLocationInfo,
                                                                    const RecordObject &record_obj) {
     auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
-
-    cb_state->rendering_attachments.set_color_locations = true;
-    cb_state->rendering_attachments.color_locations.resize(pLocationInfo->colorAttachmentCount);
-    for (uint32_t i = 0; i < pLocationInfo->colorAttachmentCount; ++i) {
-        cb_state->rendering_attachments.color_locations[i] =
-            pLocationInfo->pColorAttachmentLocations ? pLocationInfo->pColorAttachmentLocations[i] : i;
-    }
+    cb_state->RecordSetRenderingAttachmentLocations(pLocationInfo);
 }
 
 void DeviceState::PostCallRecordCmdSetRenderingAttachmentLocationsKHR(VkCommandBuffer commandBuffer,

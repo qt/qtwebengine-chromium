@@ -4,14 +4,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Self, Type
+from typing import TYPE_CHECKING, ClassVar, Optional, Self, Type
 
 from typing_extensions import override
 
 from crossbench.parse import ObjectParser
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import MetricsMerger
-from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
   from crossbench.probes.probe import ProbeConfigParser, ProbeKeyT
@@ -31,9 +30,7 @@ class JSProbe(JsonResultProbe):
   """
   Probe for extracting arbitrary metrics using custom javascript code.
   """
-  NAME = "js"
-  RESULT_LOCATION = ResultLocation.LOCAL
-  IS_GENERAL_PURPOSE = True
+  NAME: ClassVar = "js"
 
   @classmethod
   @override
@@ -46,7 +43,7 @@ class JSProbe(JsonResultProbe):
             "Optional JavaScript code that is run immediately before a story. "
             "This can be used for setting up some JS tracking code or patch "
             "existing code for custom metric tracking."))
-    parser.add_argument(
+    parser.add_default_argument(
         "js",
         type=parse_javascript,
         required=True,

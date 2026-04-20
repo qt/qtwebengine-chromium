@@ -43,7 +43,9 @@ class ChromeFlags(Flags):
   USER_DATA_DIR_FLAG: Final[str] = "--user-data-dir"
 
   @classmethod
-  def for_milestone(cls, initial_data: FlagsData = None, milestone: int = 0):
+  def for_milestone(cls,
+                    initial_data: FlagsData = None,
+                    milestone: int = 0) -> ChromeFlags:
     if milestone in ChromePreM139Flags.VERSION_RANGE:
       return ChromePreM139Flags(initial_data)
     return ChromeFlags(initial_data)
@@ -63,9 +65,9 @@ class ChromeFlags(Flags):
     self._extensions.freeze()
     return self
 
-  def __getitem__(self, key):
+  def __getitem__(self, key: str) -> str | None:
     if key == self.JS_FLAG and self._js_flags:
-      return self._js_flags
+      return str(self._js_flags)
     if key == ChromeFeatures.ENABLE_FLAG and self._features.enabled:
       return self._features.enabled_str()
     if key == ChromeFeatures.DISABLE_FLAG and self._features.disabled:
@@ -85,7 +87,6 @@ class ChromeFlags(Flags):
            flag_value: Optional[str] = None,
            should_override: bool = False) -> None:
     self.assert_not_frozen()
-    # pylint: disable=signature-differs
     if self._set_special_flags(flag_name, flag_value, should_override):
       return
     if candidate := self._find_misspelled_flag(flag_name):
@@ -185,7 +186,7 @@ class ChromeFlags(Flags):
       return name
     return None
 
-  def _set_user_data_dir(self, value: Optional[str]):
+  def _set_user_data_dir(self, value: Optional[str]) -> None:
     if not value or not value.strip():
       raise ValueError("--user-data-dir cannot be the empty string.")
     # TODO: support remote platforms
@@ -279,7 +280,7 @@ class ChromePreM139Flags(ChromeFlags):
           # with field trials.
           "--enable-benchmarking",)
 
-  def has_enable_benchmarking_field_trials(self):
+  def has_enable_benchmarking_field_trials(self) -> bool:
     # Enable the benchmarking extension with field trial configs which
     # requires a special value. See `ShouldUseFieldTrialTestingConfig()`.
     # https://crsrc.org/c/components/variations/service/variations_field_trial_creator_base.cc;l=138;drc=27d34700b83f381c62e3a348de2e6dfdc08364b8

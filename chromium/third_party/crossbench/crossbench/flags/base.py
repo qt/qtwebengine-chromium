@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import collections
 import re
-from typing import (Any, Iterable, Iterator, Optional, Self, Set, TypeAlias,
-                    TypeVar, Union)
+from typing import (Any, ClassVar, Final, Iterable, Iterator, Optional, Self,
+                    Set, TypeAlias, TypeVar, Union)
 
 from typing_extensions import override
 
@@ -54,16 +54,17 @@ class BasicFlags(Freezable, collections.UserDict):
   don't end up having contradicting values.
   """
 
-  _WHITE_SPACE_RE = re.compile(r"\s+")
-  _BASIC_FLAG_NAME_RE = re.compile(r"(--?)[^\s=-][^\s=]*")
+  _WHITE_SPACE_RE: Final[re.Pattern] = re.compile(r"\s+")
+  _BASIC_FLAG_NAME_RE: Final[re.Pattern] = re.compile(r"(--?)[^\s=-][^\s=]*")
   # Handles space-separated flags: --foo="1" --bar  --baz='2'  --boo=3
-  _VALUE_PATTERN = (r"('(?P<value_single_quotes>[^']*)')|"
-                    r"(\"(?P<value_double_quotes>[^\"]*)\")|"
-                    r"(?P<value_no_quotes>[^'\" ]+)")
-  _END_OR_SEPARATOR_PATTERN = r"(\s*\s\s*|$)"
-  _PARSE_RE = re.compile(fr"(?P<name>{_BASIC_FLAG_NAME_RE.pattern})"
-                         fr"((?P<equal>=)({_VALUE_PATTERN})?)?"
-                         fr"{_END_OR_SEPARATOR_PATTERN}")
+  VALUE_PATTERN: ClassVar[str] = (r"('(?P<value_single_quotes>[^']*)')|"
+                                  r"(\"(?P<value_double_quotes>[^\"]*)\")|"
+                                  r"(?P<value_no_quotes>[^'\" ]+)")
+  END_OR_SEPARATOR_PATTERN: ClassVar[str] = r"(\s*\s\s*|$)"
+  _PARSE_RE: ClassVar[re.Pattern] = re.compile(
+      fr"(?P<name>{_BASIC_FLAG_NAME_RE.pattern})"
+      fr"((?P<equal>=)({VALUE_PATTERN})?)?"
+      fr"{END_OR_SEPARATOR_PATTERN}")
 
   @classmethod
   def split(cls, flag_str: str) -> tuple[str, Optional[str]]:
@@ -175,12 +176,12 @@ class BasicFlags(Freezable, collections.UserDict):
       raise ValueError(f"Flag {flag_name}={repr(flag_value)} was already set "
                        f"with a different previous value: {repr(old_value)}")
 
-  # pylint: disable=arguments-differ
+
   def update(  # type: ignore
       self,
       initial_data: FlagsData = None,
       should_override: bool = False) -> None:
-    # pylint: disable=arguments-differ
+
     if initial_data is None:
       return
     if isinstance(initial_data, (Flags, dict)):
@@ -200,7 +201,7 @@ class BasicFlags(Freezable, collections.UserDict):
   def copy(self: Self) -> Self:
     return self.__class__(self)
 
-  def merge_copy(self, other: FlagsData):
+  def merge_copy(self, other: FlagsData) -> Self:
     ret = self.copy()
     ret.merge(other)
     return ret
@@ -226,7 +227,7 @@ class BasicFlags(Freezable, collections.UserDict):
   def to_dict(self) -> dict[str, Optional[str]]:
     return dict(self.items())
 
-  def clear(self):
+  def clear(self) -> None:
     self.data.clear()
 
   def __iter__(self) -> Iterator[str]:
@@ -262,8 +263,8 @@ class Flags(BasicFlags):
   """
   _FLAG_NAME_RE = re.compile(r"(--?)[a-zA-Z0-9][a-zA-Z0-9_-]*")
   _PARSE_RE = re.compile(fr"(?P<name>{_FLAG_NAME_RE.pattern})"
-                         fr"((?P<equal>=)({BasicFlags._VALUE_PATTERN})?)?"
-                         fr"{BasicFlags._END_OR_SEPARATOR_PATTERN}")
+                         fr"((?P<equal>=)({BasicFlags.VALUE_PATTERN})?)?"
+                         fr"{BasicFlags.END_OR_SEPARATOR_PATTERN}")
 
   @override
   def _validate_flag_name(self, flag_name: str) -> None:

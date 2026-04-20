@@ -666,6 +666,12 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 features->rayTracingPipelineTraceRaysIndirect2 |= enabled->rayTracingPipelineTraceRaysIndirect2 == VK_TRUE;
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_UNTYPED_POINTERS_FEATURES_KHR: {
+                const VkPhysicalDeviceShaderUntypedPointersFeaturesKHR *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceShaderUntypedPointersFeaturesKHR *>(pNext);
+                features->shaderUntypedPointers |= enabled->shaderUntypedPointers == VK_TRUE;
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MAXIMAL_RECONVERGENCE_FEATURES_KHR: {
                 const VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR *enabled =
                     reinterpret_cast<const VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR *>(pNext);
@@ -739,6 +745,13 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                     reinterpret_cast<const VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR *>(pNext);
                 features->unifiedImageLayouts |= enabled->unifiedImageLayouts == VK_TRUE;
                 features->unifiedImageLayoutsVideo |= enabled->unifiedImageLayoutsVideo == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COPY_MEMORY_INDIRECT_FEATURES_KHR: {
+                const VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR *>(pNext);
+                features->indirectMemoryCopy |= enabled->indirectMemoryCopy == VK_TRUE;
+                features->indirectMemoryToImageCopy |= enabled->indirectMemoryToImageCopy == VK_TRUE;
                 break;
             }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_INTRA_REFRESH_FEATURES_KHR: {
@@ -1284,6 +1297,12 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                     enabled->primitivesGeneratedQueryWithNonZeroStreams == VK_TRUE;
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_RGB_CONVERSION_FEATURES_VALVE: {
+                const VkPhysicalDeviceVideoEncodeRgbConversionFeaturesVALVE *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceVideoEncodeRgbConversionFeaturesVALVE *>(pNext);
+                features->videoEncodeRgbConversion |= enabled->videoEncodeRgbConversion == VK_TRUE;
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_VIEW_MIN_LOD_FEATURES_EXT: {
                 const VkPhysicalDeviceImageViewMinLodFeaturesEXT *enabled =
                     reinterpret_cast<const VkPhysicalDeviceImageViewMinLodFeaturesEXT *>(pNext);
@@ -1554,6 +1573,14 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 features->antiLag |= enabled->antiLag == VK_TRUE;
                 break;
             }
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DENSE_GEOMETRY_FORMAT_FEATURES_AMDX: {
+                const VkPhysicalDeviceDenseGeometryFormatFeaturesAMDX *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceDenseGeometryFormatFeaturesAMDX *>(pNext);
+                features->denseGeometryFormat |= enabled->denseGeometryFormat == VK_TRUE;
+                break;
+            }
+#endif  // VK_ENABLE_BETA_EXTENSIONS
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT: {
                 const VkPhysicalDeviceShaderObjectFeaturesEXT *enabled =
                     reinterpret_cast<const VkPhysicalDeviceShaderObjectFeaturesEXT *>(pNext);

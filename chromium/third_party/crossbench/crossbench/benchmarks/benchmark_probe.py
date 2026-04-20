@@ -4,15 +4,15 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
   from crossbench.benchmarks.base import Benchmark
 
 
 class BenchmarkProbeMixin:
-  NAME: str = ""
-  IS_GENERAL_PURPOSE: bool = False
+  NAME: ClassVar[str] = ""
+  IS_GENERAL_PURPOSE: ClassVar[bool] = False
 
   def __init__(self, *args, **kwargs) -> None:
     self._benchmark: Benchmark = kwargs.pop("benchmark")

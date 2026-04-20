@@ -20,10 +20,8 @@
 
 #include <bitset>
 #include <cassert>
-#include <cctype>
-#include <cmath>
 #include <cstdint>
-#include <cstring>
+#include <limits>
 #include <type_traits>
 
 #ifdef WIN32
@@ -146,4 +144,12 @@ static inline VkDeviceSize SafeDivision(VkDeviceSize dividend, VkDeviceSize divi
         result = dividend / divisor;
     }
     return result;
+}
+
+// For spots we care if one pointer is null, or if both are not null, are the same values
+static inline bool EqualValuesOrBothNull(const uint32_t *a, const uint32_t *b) {
+    if (!a || !b) {
+        return a == b;
+    }
+    return *a == *b;
 }

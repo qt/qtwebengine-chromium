@@ -128,7 +128,7 @@ on_wayland_input_event_handled (MetaWaylandUiControls *ui_controls,
                     }
                 }
               if (timed_out)
-                meta_warning ("timed out waiting for surface to have pointer "
+                g_warning ("timed out waiting for surface to have pointer "
                               "focus before signaling done");
               else
                 g_clear_handle_id (&timeout_id, g_source_remove);
@@ -156,7 +156,7 @@ notify_request_done_during_grab (MetaWaylandUiControls *ui_controls,
       // In case a test issues multiple release requests during window
       // grab, which is unlikely, release all of them on grab end as
       // best-effort.
-      meta_warning ("Multiple release events were received during window "
+      g_warning ("Multiple release events were received during window "
                     "grab, so releasing all of them on grab end. Note: "
                     "This likely indicates a test bug.");
     }

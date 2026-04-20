@@ -61,6 +61,7 @@ export interface ItemDelegate {
   recordUserAction(metricName: string): void;
   getItemStateChangedTarget():
       ChromeEvent<(data: chrome.developerPrivate.EventData) => void>;
+  showSiteSettings(id: string): void;
 }
 
 export class FakeChromeEvent {
@@ -114,6 +115,7 @@ export class DummyItemDelegate {
   getItemStateChangedTarget() {
     return new FakeChromeEvent();
   }
+  showSiteSettings(_id: string) {}
 }
 
 export interface ExtensionsItemElement {
@@ -441,6 +443,17 @@ export class ExtensionsItemElement extends ExtensionsItemElementBase {
     // the allowlist warning will still be shown in the item detail view.
     return this.hasAllowlistWarning_() && !this.hasSevereWarnings_() &&
         !this.hasMv2DeprecationWarning_();
+  }
+
+  protected showErrorsAsWarningsButtonLabel_(): boolean {
+    // If there are runtime errors or install warnings, show as errors.
+    if (this.data.runtimeErrors?.length || this.data.installWarnings?.length) {
+      return false;
+    }
+
+    // All manifest errors are considered warnings, so if there are no
+    // runtime/install issues, label is 'Warnings'.
+    return true;
   }
 }
 

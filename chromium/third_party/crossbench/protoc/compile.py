@@ -2,18 +2,18 @@
 # Copyright 2025 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import importlib
 import importlib.metadata
 import logging
-import os
 import re
 import shutil
 import subprocess
 import sys
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Final, Sequence
 
@@ -33,14 +33,14 @@ PROTO_MODULES = [
 class RepoConfig:
   name: str
   url: str
-  sparse_dirs: Sequence[str] = tuple()
+  sparse_dirs: Sequence[str] = ()
   proto_dir: str = ""
 
   def checkout(self, repos_dir: Path) -> None:
     repo_dir = repos_dir / self.name
     repos_exists = repo_dir.exists()
     repo_dir.mkdir(parents=True, exist_ok=True)
-    with change_cwd(repo_dir):
+    with contextlib.chdir(repo_dir):
       if not repos_exists:
         sh("git", "init")
         sh("git", "remote", "add", "origin", self.url)
@@ -72,17 +72,7 @@ REPOS: Sequence[RepoConfig] = (
                ("protos/perfetto",), "protos/perfetto"))
 
 
-@contextmanager
-def change_cwd(cwd):
-  previous_cwd = os.getcwd()
-  try:
-    os.chdir(str(cwd))
-    yield
-  finally:
-    os.chdir(previous_cwd)
-
-
-def sh(*args):
+def sh(*args: str | Path) -> None:
   logging.debug("Running: %s", " ".join(map(str, args)))
   subprocess.run(args, check=True)
 
@@ -147,7 +137,7 @@ def compile_missing_file(protos_dir: Path, protoc_bin: str,
   compile_proto(protoc_bin, protos_dir, proto_file)
 
 
-ROOT_MODULE_PROLOGUE: Final[str] = '''# Copyright 2025 The Chromium Authors
+ROOT_MODULE_PROLOGUE: Final[str] = """# Copyright 2025 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -155,7 +145,7 @@ ROOT_MODULE_PROLOGUE: Final[str] = '''# Copyright 2025 The Chromium Authors
 from protoc.sys_path import protoc_in_sys_path
 
 with protoc_in_sys_path():
-'''
+"""
 
 
 def write_root_module(root_dir: Path) -> None:
@@ -211,7 +201,7 @@ easier importing into Crossbench.
 """
 
 
-def main():
+def main() -> None:
   parser = argparse.ArgumentParser(description=HELP)
   parser.add_argument("--version", action="version", version="%(prog)s 1.0")
   parser.add_argument(
@@ -246,7 +236,7 @@ def main():
   # python will find it.
   sys.path.insert(0, str(OUT_DIR))
 
-  with change_cwd(OUT_DIR):
+  with contextlib.chdir(OUT_DIR):
     for module in PROTO_MODULES:
       logging.debug("Compiling all dependencies for %s", module)
       compile_imports(OUT_DIR, PROTOS_DIR, protoc_bin, module)

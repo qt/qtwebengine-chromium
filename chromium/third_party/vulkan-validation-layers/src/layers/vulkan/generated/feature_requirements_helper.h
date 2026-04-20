@@ -122,6 +122,10 @@ enum class Feature {
     cooperativeVector,
     // VkPhysicalDeviceCooperativeVectorFeaturesNV
     cooperativeVectorTraining,
+    // VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR
+    indirectMemoryCopy,
+    // VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR
+    indirectMemoryToImageCopy,
     // VkPhysicalDeviceCopyMemoryIndirectFeaturesNV
     indirectCopy,
     // VkPhysicalDeviceCornerSampledImageFeaturesNV
@@ -150,6 +154,8 @@ enum class Feature {
     dataGraphUpdateAfterBind,
     // VkPhysicalDeviceDedicatedAllocationImageAliasingFeaturesNV
     dedicatedAllocationImageAliasing,
+    // VkPhysicalDeviceDenseGeometryFormatFeaturesAMDX
+    denseGeometryFormat,
     // VkPhysicalDeviceDepthBiasControlFeaturesEXT
     depthBiasControl,
     // VkPhysicalDeviceDepthBiasControlFeaturesEXT
@@ -880,6 +886,8 @@ enum class Feature {
     shaderTileImageDepthReadAccess,
     // VkPhysicalDeviceShaderTileImageFeaturesEXT
     shaderTileImageStencilReadAccess,
+    // VkPhysicalDeviceShaderUntypedPointersFeaturesKHR
+    shaderUntypedPointers,
     // VkPhysicalDeviceShadingRateImageFeaturesNV
     shadingRateCoarseSampleOrder,
     // VkPhysicalDeviceShadingRateImageFeaturesNV
@@ -976,6 +984,8 @@ enum class Feature {
     videoEncodeIntraRefresh,
     // VkPhysicalDeviceVideoEncodeQuantizationMapFeaturesKHR
     videoEncodeQuantizationMap,
+    // VkPhysicalDeviceVideoEncodeRgbConversionFeaturesVALVE
+    videoEncodeRgbConversion,
     // VkPhysicalDeviceVideoMaintenance1FeaturesKHR
     videoMaintenance1,
     // VkPhysicalDeviceVideoMaintenance2FeaturesKHR

@@ -21,7 +21,7 @@
 #pragma once
 #include "state_tracker/state_object.h"
 #include "state_tracker/image_layout_map.h"
-#include "state_tracker/pipeline_sub_state.h"
+#include "state_tracker/pipeline_library_state.h"
 #include "state_tracker/video_session_state.h"
 #include "state_tracker/last_bound_state.h"
 #include "state_tracker/query_state.h"
@@ -87,28 +87,31 @@ struct AttachmentInfo {
     VkImageLayout separate_stencil_layout;
     // When dealing with color attachments, need to know the index for things such as
     // VkPipelineColorBlendStateCreateInfo::pAttachments or vkCmdSetColorBlendEnableEXT
-    uint32_t color_index;
+    //
+    // This index is tied to a Attachment::Type and will line up to the index in either:
+    //   VkRenderingInfo::pColorAttachments
+    //   VkSubpassDescription::pColorAttachments
+    //   VkSubpassDescription::pInputAttachments
+    //   VkSubpassDescription::pResolveAttachments
+    uint32_t type_index;
 
     AttachmentInfo()
         : image_view(nullptr),
           type(Type::Empty),
           layout(VK_IMAGE_LAYOUT_UNDEFINED),
           separate_stencil_layout(VK_IMAGE_LAYOUT_UNDEFINED),
-          color_index(0) {}
+          type_index(0) {}
 
     bool IsResolve() const { return type == Type::ColorResolve || type == Type::DepthResolve || type == Type::StencilResolve; }
     bool IsInput() const { return type == Type::Input; }
     bool IsColor() const { return type == Type::Color; }
     bool IsDepth() const;
     bool IsStencil() const;
-    bool IsDepthOrStencil() const {
-        return type == Type::DepthStencil || type == Type::Depth || type == Type::DepthResolve || type == Type::Stencil ||
-               type == Type::StencilResolve;
-    }
+    bool IsDepthOrStencil() const { return type == Type::DepthStencil || type == Type::Depth || type == Type::Stencil; }
     bool IsFragmentDensityMap() const { return type == Type::FragmentDensityMap; }
     bool IsFragmentShadingRate() const { return type == Type::FragmentShadingRate; }
 
-    std::string Describe(const vvl::CommandBuffer &cb_state, uint32_t index) const;
+    std::string Describe(const vvl::CommandBuffer &cb_state, uint32_t rp_index) const;
 };
 
 struct SubpassInfo {
@@ -172,6 +175,12 @@ class CommandPool : public StateObject {
 struct LabelCommand {
     bool begin = false;      // vkCmdBeginDebugUtilsLabelEXT or vkCmdEndDebugUtilsLabelEXT
     std::string label_name;  // used when begin == true
+};
+
+enum class DescriptorMode {
+    Unknown,           // Has not been set yet
+    Classic,           // Vulkan 1.0
+    DescriptorBuffer,  // VK_EXT_descriptor_buffer
 };
 
 class CommandBuffer : public RefcountedStateObject, public SubStateManager<CommandBufferSubState> {
@@ -403,6 +412,7 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     const LastBound &GetLastBoundGraphics() const { return lastBound[vvl::BindPointGraphics]; }
     const LastBound &GetLastBoundCompute() const { return lastBound[vvl::BindPointCompute]; }
     const LastBound &GetLastBoundRayTracing() const { return lastBound[vvl::BindPointRayTracing]; }
+    const LastBound &GetLastBoundDataGraph() const { return lastBound[vvl::BindPointDataGraph]; }
 
     // Use the casting boilerplate from StateObject to implement the derived shared_from_this
     std::shared_ptr<const CommandBuffer> shared_from_this() const { return SharedFromThisImpl(this); }
@@ -465,6 +475,8 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
         std::vector<uint32_t> color_indexes;
         const uint32_t *depth_index = nullptr;
         const uint32_t *stencil_index = nullptr;
+        uint32_t depth_index_storage;
+        uint32_t stencil_index_storage;
         void Reset() {
             color_locations.clear();
             color_indexes.clear();
@@ -512,6 +524,7 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
 
     std::vector<VkDescriptorBufferBindingInfoEXT> descriptor_buffer_binding_info;
     bool descriptor_buffer_ever_bound{false};
+    DescriptorMode descriptor_mode = DescriptorMode::Unknown;
 
     mutable std::shared_mutex lock;
     ReadLockGuard ReadLock() const { return ReadLockGuard(lock); }
@@ -664,6 +677,7 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     void RecordBeginConditionalRendering();
     void RecordEndConditionalRendering();
 
+    void RecordSetRenderingAttachmentLocations(const VkRenderingAttachmentLocationInfo *pLocationInfo);
     void RecordSetRenderingInputAttachmentIndices(const VkRenderingInputAttachmentIndexInfo *pLocationInfo);
 
     void RecordBarrierObjects(uint32_t buffer_barrier_count, const VkBufferMemoryBarrier *buffer_barriers,
@@ -688,6 +702,7 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     // Helpers to offset into |active_attachments|
     // [all color, all color resolve, depth, depth resolve, stencil, stencil resolve, FragmentDensityMap]
     uint32_t GetDynamicRenderingColorAttachmentCount() const;
+    // Used to keep naming convention consistent
     uint32_t GetDynamicRenderingColorAttachmentIndex(uint32_t index) const { return index; }
     uint32_t GetDynamicRenderingColorResolveAttachmentIndex(uint32_t index) const {
         return index + GetDynamicRenderingColorAttachmentCount();

@@ -72,11 +72,11 @@ class ChromeBaseFeatures(Freezable, abc.ABC):
           f"Cannot disable previously enabled feature={repr(name)}")
     self._disabled.add(name)
 
-  def clear_enabled(self):
+  def clear_enabled(self) -> None:
     self.assert_not_frozen()
     self._enabled = {}
 
-  def clear_disabled(self):
+  def clear_disabled(self) -> None:
     self.assert_not_frozen()
     self._disabled = OrderedSet()
 

@@ -17,12 +17,10 @@
 
 #include <vulkan/vulkan.h>
 #include "gpuav/debug_printf/debug_printf.h"
-#include "chassis/dispatch_object.h"
 #include "gpuav/shaders/gpuav_error_header.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/core/gpuav.h"
-#include "state_tracker/shader_instruction.h"
 #include "error_message/spirv_logging.h"
 
 #include <iostream>
@@ -172,7 +170,7 @@ static std::vector<Substring> ParseFormatString(const std::string &format_string
 struct OutputRecord {
     uint32_t size;
     uint32_t shader_id;
-    uint32_t instruction_position;
+    uint32_t instruction_position_offset;
     uint32_t format_string_id;
     uint32_t double_bitmask;     // used to distinguish if float is 1 or 2 dwords
     uint32_t signed_8_bitmask;   // used to distinguish if signed int is a int8_t
@@ -353,9 +351,12 @@ void AnalyzeAndGenerateMessage(Validator &gpuav, VkCommandBuffer command_buffer,
 
         const bool use_stdout = gpuav.gpuav_settings.debug_printf_to_stdout;
         if (gpuav.gpuav_settings.debug_printf_verbose) {
-            GpuShaderInstrumentor::ShaderMessageInfo shader_info{
-                debug_record->stage_id,     debug_record->stage_info_0,         debug_record->stage_info_1,
-                debug_record->stage_info_2, debug_record->instruction_position, debug_record->shader_id};
+            GpuShaderInstrumentor::ShaderMessageInfo shader_info{debug_record->stage_id,
+                                                                 debug_record->stage_info_0,
+                                                                 debug_record->stage_info_1,
+                                                                 debug_record->stage_info_2,
+                                                                 debug_record->instruction_position_offset,
+                                                                 debug_record->shader_id};
 
             std::string debug_info_message =
                 gpuav.GenerateDebugInfoMessage(command_buffer, shader_info, instrumented_shader, buffer_info.pipeline_bind_point,

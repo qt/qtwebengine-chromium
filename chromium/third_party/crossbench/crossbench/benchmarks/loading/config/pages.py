@@ -123,7 +123,7 @@ class PagesConfig(ConfigObject):
       with exception.annotate_argparsing("Parsing config 'pages'"):
         pages = cls._parse_pages(pages_config, secrets)
         return cls(pages, secrets)
-    raise exception.UnreachableError()
+    raise exception.UnreachableError
 
   @classmethod
   def _parse_pages(cls,
@@ -137,6 +137,9 @@ class PagesConfig(ConfigObject):
         pages.append(page)
     return tuple(pages)
 
+  def __hash__(self) -> int:
+    return hash((self.pages, self.secrets))
+
   def __eq__(self, value: object) -> bool:
     if not isinstance(value, PagesConfig):
       return False
@@ -148,7 +151,7 @@ class DevToolsRecorderPagesConfig(PagesConfig):
   @classmethod
   @override
   def parse_str(cls, value: str) -> Self:
-    raise NotImplementedError()
+    raise NotImplementedError
 
   @classmethod
   @override
@@ -161,7 +164,7 @@ class DevToolsRecorderPagesConfig(PagesConfig):
       blocks = (ActionBlock(actions=actions),)
       pages = (PageConfig(label=title, blocks=blocks),)
       return cls(pages)
-    raise exception.UnreachableError()
+    raise exception.UnreachableError
 
   @classmethod
   def _parse_steps(cls, steps: list[dict[str, Any]]) -> tuple[Action, ...]:
@@ -288,4 +291,4 @@ class ListPagesConfig(PagesConfig):
         raise argparse.ArgumentTypeError(
             f"Expected list/tuple for pages, but got {type(pages)}")
       return cls.parse_sequence(pages)
-    raise exception.UnreachableError()
+    raise exception.UnreachableError

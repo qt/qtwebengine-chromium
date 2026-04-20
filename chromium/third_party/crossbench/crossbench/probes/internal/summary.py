@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -30,10 +30,10 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
   Runner-internal meta-probe: Collects a summary results.json with all the Run
   information, including all paths to the results of all attached Probes.
   """
-  NAME = "cb.results"
+  NAME: ClassVar = "cb.results"
   # Given that this is  a meta-Probe that summarizes the data from other
   # probes we exclude it from the default results lists.
-  PRODUCES_DATA = False
+  PRODUCES_DATA: ClassVar = False
 
   @property
   @override

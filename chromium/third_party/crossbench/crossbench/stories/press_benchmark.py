@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING, Optional, Self, Sequence
+from typing import TYPE_CHECKING, ClassVar, Optional, Self, Sequence
 
 from typing_extensions import override
 
@@ -19,11 +19,11 @@ if TYPE_CHECKING:
 
 
 class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
-  NAME: str = ""
-  URL: str = ""
-  URL_OFFICIAL: str = ""
-  URL_LOCAL: str = ""
-  SUBSTORIES: tuple[str, ...] = ()
+  NAME: ClassVar[str] = ""
+  URL: ClassVar[str] = ""
+  URL_OFFICIAL: ClassVar[str] = ""
+  URL_LOCAL: ClassVar[str] = ""
+  SUBSTORIES: ClassVar[tuple[str, ...]] = ()
 
   @classmethod
   @override
@@ -61,17 +61,10 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
       raise ValueError("No substories provided")
     if separate:
       return [
-          cls(  # pytype: disable=not-instantiable
-              url=url,
-              substories=[substory],
-              **kwargs) for substory in substories
+          cls(url=url, substories=[substory], **kwargs)
+          for substory in substories
       ]
-    return [
-        cls(  # pytype: disable=not-instantiable
-            url=url,
-            substories=substories,
-            **kwargs)
-    ]
+    return [cls(url=url, substories=substories, **kwargs)]
 
   def __init__(self,
                *args,
@@ -170,8 +163,8 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
     if self._substories == self.SUBSTORIES:
       return
     for substory in self._substories:
-      assert substory in self.SUBSTORIES, (f"Unknown {self.NAME} substory %s" %
-                                           substory)
+      if substory not in self.SUBSTORIES:
+        raise ValueError(f"Unknown {self.NAME} substory %s" % substory)
 
   @override
   def log_run_details(self, run: Run) -> None:

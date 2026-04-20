@@ -87,7 +87,7 @@
 #  define VULKAN_HPP_SUPPORT_SPAN
 #endif
 
-#if defined( __cpp_lib_modules ) && !defined( VULKAN_HPP_STD_MODULE ) && defined( VULKAN_HPP_ENABLE_STD_MODULE )
+#if !defined( VULKAN_HPP_STD_MODULE ) && defined( VULKAN_HPP_ENABLE_STD_MODULE )
 #  define VULKAN_HPP_STD_MODULE std.compat
 #endif
 
@@ -274,6 +274,21 @@ namespace VULKAN_HPP_NAMESPACE
   }  // namespace detail
 }  // namespace VULKAN_HPP_NAMESPACE
 
+#if !defined( VULKAN_HPP_DISPATCH_LOADER_DYNAMIC_TYPE )
+#  define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC_TYPE VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic
+#endif
+#if !defined( VULKAN_HPP_DISPATCH_LOADER_STATIC_TYPE )
+#  define VULKAN_HPP_DISPATCH_LOADER_STATIC_TYPE VULKAN_HPP_NAMESPACE::detail::DispatchLoaderStatic
+#endif
+
+#if !defined( VULKAN_HPP_DEFAULT_DISPATCHER_TYPE )
+#  if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1
+#    define VULKAN_HPP_DEFAULT_DISPATCHER_TYPE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC_TYPE
+#  else
+#    define VULKAN_HPP_DEFAULT_DISPATCHER_TYPE VULKAN_HPP_DISPATCH_LOADER_STATIC_TYPE
+#  endif
+#endif
+
 #if !defined( VULKAN_HPP_DEFAULT_DISPATCHER )
 #  if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1
 #    define VULKAN_HPP_DEFAULT_DISPATCHER ::VULKAN_HPP_NAMESPACE::detail::defaultDispatchLoaderDynamic
@@ -288,14 +303,6 @@ namespace VULKAN_HPP_NAMESPACE
 #  else
 #    define VULKAN_HPP_DEFAULT_DISPATCHER ::VULKAN_HPP_NAMESPACE::detail::getDispatchLoaderStatic()
 #    define VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
-#  endif
-#endif
-
-#if !defined( VULKAN_HPP_DEFAULT_DISPATCHER_TYPE )
-#  if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1
-#    define VULKAN_HPP_DEFAULT_DISPATCHER_TYPE ::VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic
-#  else
-#    define VULKAN_HPP_DEFAULT_DISPATCHER_TYPE ::VULKAN_HPP_NAMESPACE::detail::DispatchLoaderStatic
 #  endif
 #endif
 

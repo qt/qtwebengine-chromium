@@ -74,8 +74,6 @@ gmodule_visibility_h = custom_target(
   command: [gen_visibility_macros, meson.project_version(), 'visibility-macros', 'GMODULE', '@OUTPUT@'],
   install: true,
   install_dir: g_module_includedir,
-  # FIXME: Not needed with Meson >= 0.64.0
-  install_tag: 'devel',
 )
 
 gmodule_sources = [gmodule_c, gmodule_visibility_h, gmodule_deprecated_c]
@@ -98,7 +96,7 @@ libgmodule = library('gmodule-2.0',
   install : true,
   include_directories : [configinc, gmoduleinc],
   dependencies : [libdl_dep, libglib_dep],
-  c_args : ['-DG_LOG_DOMAIN="GModule"', '-DGMODULE_COMPILATION'],
+  c_args : ['-DG_LOG_DOMAIN="GModule"', '-DGMODULE_COMPILATION', warning_sign_conversion_args],
   gnu_symbol_visibility : 'hidden',
   link_args : [glib_link_flags],
 )

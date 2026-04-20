@@ -179,6 +179,17 @@ chromium-metrics-reviews@google.com.
   <int value="4" label="AutoPreload is handling fallback"/>
 </enum>
 
+<!-- LINT.IfChange(ServiceWorkerIPAddressSpace) -->
+
+<enum name="ServiceWorkerIPAddressSpace">
+  <int value="0" label="Loopback"/>
+  <int value="1" label="Local"/>
+  <int value="2" label="Public"/>
+  <int value="3" label="Unknown"/>
+</enum>
+
+<!-- LINT.ThenChange(//components/services/storage/service_worker/service_worker_database.cc:ServiceWorkerIPAddressSpace) -->
+
 <enum name="ServiceWorkerMetrics.EventType">
   <int value="0" label="ACTIVATE"/>
   <int value="1" label="INSTALL"/>
@@ -283,13 +294,14 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="NotEligibleByNoHeaderStored"/>
 </enum>
 
-<!-- LINT.ThenChange(//content/browser/service_worker/service_worker_main_resource_loader.cc:SyntheticResponseEligibility) -->
+<!-- LINT.ThenChange(//content/browser/service_worker/service_worker_metrics.h:SyntheticResponseEligibility) -->
 
 <!-- LINT.IfChange(SyntheticResponseReloadReason) -->
 
 <enum name="SyntheticResponseReloadReason">
   <int value="0" label="CachedResponseHeadCleared"/>
   <int value="1" label="HeaderInconsistent"/>
+  <int value="2" label="Redirect"/>
 </enum>
 
 <!-- LINT.ThenChange(//content/browser/service_worker/service_worker_synthetic_response_manager.cc:SyntheticResponseReloadReason) -->

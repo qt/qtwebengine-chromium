@@ -122,13 +122,14 @@
 
 #include "glibintl.h"
 
-#define G_DBUS_CONNECTION_FLAGS_ALL \
-  (G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT | \
-   G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_SERVER | \
-   G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_ALLOW_ANONYMOUS | \
-   G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION | \
-   G_DBUS_CONNECTION_FLAGS_DELAY_MESSAGE_PROCESSING | \
-   G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_REQUIRE_SAME_USER)
+#define G_DBUS_CONNECTION_FLAGS_ALL                           \
+  (G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT |            \
+   G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_SERVER |            \
+   G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_ALLOW_ANONYMOUS |   \
+   G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION |           \
+   G_DBUS_CONNECTION_FLAGS_DELAY_MESSAGE_PROCESSING |         \
+   G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_REQUIRE_SAME_USER | \
+   G_DBUS_CONNECTION_FLAGS_CROSS_NAMESPACE)
 
 /**
  * GDBusConnection:
@@ -1367,15 +1368,15 @@ flush_in_thread_func (GTask         *task,
  * @user_data: The data to pass to @callback
  *
  * Asynchronously flushes @connection, that is, writes all queued
- * outgoing message to the transport and then flushes the transport
+ * outgoing messages to the transport and then flushes the transport
  * (using g_output_stream_flush_async()). This is useful in programs
- * that wants to emit a D-Bus signal and then exit immediately. Without
- * flushing the connection, there is no guaranteed that the message has
+ * that want to emit a D-Bus signal and then exit immediately. Without
+ * flushing the connection, there is no guarantee that the message has
  * been sent to the networking buffers in the OS kernel.
  *
  * This is an asynchronous method. When the operation is finished,
- * @callback will be invoked in the
- * [thread-default main context][g-main-context-push-thread-default]
+ * @callback will be invoked in the thread-default main context
+ * (see [method@GLib.MainContext.push_thread_default])
  * of the thread you are calling this method from. You can
  * then call g_dbus_connection_flush_finish() to get the result of the
  * operation. See g_dbus_connection_flush_sync() for the synchronous
@@ -1560,13 +1561,13 @@ schedule_closed_unlocked (GDBusConnection *connection,
  * %G_IO_ERROR_CLOSED.
  *
  * When @connection has been closed, the #GDBusConnection::closed
- * signal is emitted in the
- * [thread-default main context][g-main-context-push-thread-default]
+ * signal is emitted in the thread-default main context
+ * (see [method@GLib.MainContext.push_thread_default])
  * of the thread that @connection was constructed in.
  *
  * This is an asynchronous method. When the operation is finished,
- * @callback will be invoked in the 
- * [thread-default main context][g-main-context-push-thread-default]
+ * @callback will be invoked in the thread-default main context
+ * (see [method@GLib.MainContext.push_thread_default])
  * of the thread you are calling this method from. You can
  * then call g_dbus_connection_close_finish() to get the result of the
  * operation. See g_dbus_connection_close_sync() for the synchronous
@@ -1762,9 +1763,22 @@ g_dbus_connection_send_message_unlocked (GDBusConnection   *connection,
     return FALSE;
 
   if (flags & G_DBUS_SEND_MESSAGE_FLAGS_PRESERVE_SERIAL)
-    serial_to_use = g_dbus_message_get_serial (message);
+    {
+      serial_to_use = g_dbus_message_get_serial (message);
+    }
   else
-    serial_to_use = ++connection->last_serial; /* TODO: handle overflow */
+    {
+      /* The serial_to_use must not be zero, as per
+       * https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-messages. */
+      if (connection->last_serial == G_MAXUINT32)
+        connection->last_serial = 1;
+      else
+        connection->last_serial++;
+
+      serial_to_use = connection->last_serial;
+    }
+
+  g_assert (serial_to_use != 0);
 
   switch (blob[0])
     {
@@ -1838,7 +1852,8 @@ g_dbus_connection_send_message_unlocked (GDBusConnection   *connection,
  * %G_IO_ERROR_CLOSED. If @message is not well-formed,
  * the operation fails with %G_IO_ERROR_INVALID_ARGUMENT.
  *
- * See this [server][gdbus-server] and [client][gdbus-unix-fd-client]
+ * See this [server][class@Gio.DBusConnection#an-example-d-bus-server]
+ * and [client][class@Gio.DBusConnection#an-example-for-file-descriptor-passing]
  * for an example of how to use this low-level API to send and receive
  * UNIX file descriptors.
  *
@@ -2124,8 +2139,8 @@ g_dbus_connection_send_message_with_reply_unlocked (GDBusConnection     *connect
  * the operation fails with %G_IO_ERROR_INVALID_ARGUMENT.
  *
  * This is an asynchronous method. When the operation is finished, @callback
- * will be invoked in the 
- * [thread-default main context][g-main-context-push-thread-default]
+ * will be invoked in the thread-default main context
+ * (see [method@GLib.MainContext.push_thread_default])
  * of the thread you are calling this method from. You can then call
  * g_dbus_connection_send_message_with_reply_finish() to get the result of the operation.
  * See g_dbus_connection_send_message_with_reply_sync() for the synchronous version.
@@ -2133,7 +2148,8 @@ g_dbus_connection_send_message_with_reply_unlocked (GDBusConnection     *connect
  * Note that @message must be unlocked, unless @flags contain the
  * %G_DBUS_SEND_MESSAGE_FLAGS_PRESERVE_SERIAL flag.
  *
- * See this [server][gdbus-server] and [client][gdbus-unix-fd-client]
+ * See this [server][class@Gio.DBusConnection#an-example-d-bus-server]
+ * and [client][class@Gio.DBusConnection#an-example-for-file-descriptor-passing]
  * for an example of how to use this low-level API to send and receive
  * UNIX file descriptors.
  *
@@ -2180,7 +2196,8 @@ g_dbus_connection_send_message_with_reply (GDBusConnection       *connection,
  * be of type %G_DBUS_MESSAGE_TYPE_ERROR. Use
  * g_dbus_message_to_gerror() to transcode this to a #GError.
  *
- * See this [server][gdbus-server] and [client][gdbus-unix-fd-client]
+ * See this [server][class@Gio.DBusConnection#an-example-d-bus-server]
+ * and [client][class@Gio.DBusConnection#an-example-for-file-descriptor-passing]
  * for an example of how to use this low-level API to send and receive
  * UNIX file descriptors.
  *
@@ -2256,7 +2273,8 @@ send_message_with_reply_sync_cb (GDBusConnection *connection,
  * be of type %G_DBUS_MESSAGE_TYPE_ERROR. Use
  * g_dbus_message_to_gerror() to transcode this to a #GError.
  *
- * See this [server][gdbus-server] and [client][gdbus-unix-fd-client]
+ * See this [server][class@Gio.DBusConnection#an-example-d-bus-server]
+ * and [client][class@Gio.DBusConnection#an-example-for-file-descriptor-passing]
  * for an example of how to use this low-level API to send and receive
  * UNIX file descriptors.
  *
@@ -3781,8 +3799,8 @@ add_signal_data (GDBusConnection *connection,
  *     subscription is removed or %NULL
  *
  * Subscribes to signals on @connection and invokes @callback whenever
- * the signal is received. Note that @callback will be invoked in the 
- * [thread-default main context][g-main-context-push-thread-default]
+ * the signal is received. Note that @callback will be invoked in the
+ * thread-default main context (see [method@GLib.MainContext.push_thread_default])
  * of the thread you are calling this method from.
  *
  * If @connection is not a message bus connection, @sender must be
@@ -5087,7 +5105,7 @@ invoke_get_all_properties_in_idle_cb (gpointer _data)
    *       We could fail the whole call if just a single get_property() call
    *       returns an error. We need clarification in the D-Bus spec about this.
    */
-  g_variant_builder_init (&builder, G_VARIANT_TYPE ("(a{sv})"));
+  g_variant_builder_init_static (&builder, G_VARIANT_TYPE ("(a{sv})"));
   g_variant_builder_open (&builder, G_VARIANT_TYPE ("a{sv}"));
   for (n = 0; data->interface_info->properties != NULL && data->interface_info->properties[n] != NULL; n++)
     {
@@ -5696,8 +5714,8 @@ obj_message_func (GDBusConnection *connection,
  * D-Bus interface that is described in @interface_info.
  *
  * Calls to functions in @vtable (and @user_data_free_func) will happen
- * in the 
- * [thread-default main context][g-main-context-push-thread-default]
+ * in the thread-default main context
+ * (see [method@GLib.MainContext.push_thread_default])
  * of the thread you are calling this method from.
  *
  * Note that all #GVariant values passed to functions in @vtable will match
@@ -5729,7 +5747,8 @@ obj_message_func (GDBusConnection *connection,
  * reference count is -1, see g_dbus_interface_info_ref()) for as long
  * as the object is exported. Also note that @vtable will be copied.
  *
- * See this [server][gdbus-server] for an example of how to use this method.
+ * See this [server][class@Gio.DBusConnection#an-example-d-bus-server]
+ * for an example of how to use this method.
  *
  * Returns: 0 if @error is set, otherwise a registration id (never 0)
  *     that can be used with g_dbus_connection_unregister_object()
@@ -5950,6 +5969,11 @@ register_with_closures_on_method_call (GDBusConnection       *connection,
   g_value_set_variant (&params[5], parameters);
 
   g_value_init (&params[6], G_TYPE_DBUS_METHOD_INVOCATION);
+  /* NOTE: This is deliberately *not* g_value_take_object(). A reference to
+   * `invocation` is transferred in to this function, and it needs to be
+   * transferred onwards to the `g_dbus_method_invocation_return_*()` method
+   * call which must eventually happen (either in the closure function, or in
+   * a delayed consequence from it). Changing this will break API. */
   g_value_set_object (&params[6], invocation);
 
   g_closure_invoke (data->method_call_closure, NULL, G_N_ELEMENTS (params), params, NULL);
@@ -6084,10 +6108,18 @@ register_with_closures_on_set_property (GDBusConnection *connection,
  * Version of g_dbus_connection_register_object() using closures instead of a
  * #GDBusInterfaceVTable for easier binding in other languages.
  *
+ * Note that the reference counting semantics of the function wrapped by
+ * @method_call_closure are the same as those of
+ * [callback@Gio.DBusInterfaceMethodCallFunc]: ownership of a reference to the
+ * [class@Gio.DBusMethodInvocation] is transferred to the function.
+ *
  * Returns: 0 if @error is set, otherwise a registration ID (never 0)
  * that can be used with g_dbus_connection_unregister_object() .
  *
  * Since: 2.46
+ * Deprecated: 2.84: Deprecated in favour of
+ *    [method@Gio.DBusConnection.register_object_with_closures2], which has more
+ *    binding-friendly reference counting semantics.
  */
 guint
 g_dbus_connection_register_object_with_closures (GDBusConnection     *connection,
@@ -6102,6 +6134,117 @@ g_dbus_connection_register_object_with_closures (GDBusConnection     *connection
   GDBusInterfaceVTable vtable =
     {
       method_call_closure != NULL  ? register_with_closures_on_method_call  : NULL,
+      get_property_closure != NULL ? register_with_closures_on_get_property : NULL,
+      set_property_closure != NULL ? register_with_closures_on_set_property : NULL,
+      { 0 }
+    };
+
+  data = register_object_data_new (method_call_closure, get_property_closure, set_property_closure);
+
+  return g_dbus_connection_register_object (connection,
+                                            object_path,
+                                            interface_info,
+                                            &vtable,
+                                            g_steal_pointer (&data),
+                                            register_object_free_func,
+                                            error);
+}
+
+static void
+register_with_closures_on_method_call2 (GDBusConnection       *connection,
+                                        const gchar           *sender,
+                                        const gchar           *object_path,
+                                        const gchar           *interface_name,
+                                        const gchar           *method_name,
+                                        GVariant              *parameters,
+                                        GDBusMethodInvocation *invocation,
+                                        gpointer               user_data)
+{
+  RegisterObjectData *data = user_data;
+  GValue params[] = { G_VALUE_INIT, G_VALUE_INIT, G_VALUE_INIT, G_VALUE_INIT, G_VALUE_INIT, G_VALUE_INIT, G_VALUE_INIT };
+
+  g_value_init (&params[0], G_TYPE_DBUS_CONNECTION);
+  g_value_set_object (&params[0], connection);
+
+  g_value_init (&params[1], G_TYPE_STRING);
+  g_value_set_string (&params[1], sender);
+
+  g_value_init (&params[2], G_TYPE_STRING);
+  g_value_set_string (&params[2], object_path);
+
+  g_value_init (&params[3], G_TYPE_STRING);
+  g_value_set_string (&params[3], interface_name);
+
+  g_value_init (&params[4], G_TYPE_STRING);
+  g_value_set_string (&params[4], method_name);
+
+  g_value_init (&params[5], G_TYPE_VARIANT);
+  g_value_set_variant (&params[5], parameters);
+
+  g_value_init (&params[6], G_TYPE_DBUS_METHOD_INVOCATION);
+  /* NOTE: This is deliberately *not* g_value_set_object(), in contrast with the
+   * deprecated implementation in register_with_closures_on_method_call().
+   *
+   * A reference to `invocation` is transferred in to this function, but
+   * bindings don’t expect a `GClosure` to provide any (transfer full)
+   * arguments, so consume the reference here. Bindings need to add an
+   * additional reference to the `GDBusMethodInvocation` before calling any
+   * `g_dbus_method_invocation_return_*()` methods on it. They can do this
+   * automatically based on the introspection annotations for those methods. */
+  g_value_take_object (&params[6], invocation);
+
+  g_closure_invoke (data->method_call_closure, NULL, G_N_ELEMENTS (params), params, NULL);
+
+  g_value_unset (params + 0);
+  g_value_unset (params + 1);
+  g_value_unset (params + 2);
+  g_value_unset (params + 3);
+  g_value_unset (params + 4);
+  g_value_unset (params + 5);
+  g_value_unset (params + 6);
+}
+
+/**
+ * g_dbus_connection_register_object_with_closures2:
+ * @connection: A [class@Gio.DBusConnection].
+ * @object_path: The object path to register at.
+ * @interface_info: Introspection data for the interface.
+ * @method_call_closure: (nullable): [type@GObject.Closure] for handling incoming method calls.
+ * @get_property_closure: (nullable): [type@GObject.Closure] for getting a property.
+ * @set_property_closure: (nullable): [type@GObject.Closure] for setting a property.
+ * @error: Return location for error or `NULL`.
+ *
+ * Version of [method@Gio.DBusConnection.register_object] using closures instead
+ * of a [type@Gio.DBusInterfaceVTable] for easier binding in other languages.
+ *
+ * In contrast to [method@Gio.DBusConnection.register_object] and
+ * [method@Gio.DBusConnection.register_object_with_closures], the reference
+ * counting semantics of the function wrapped by @method_call_closure are *not*
+ * the same as those of [callback@Gio.DBusInterfaceMethodCallFunc]. Ownership of
+ * a reference to the [class@Gio.DBusMethodInvocation] is *not* transferred to
+ * the function. Bindings must ensure that they add a reference to the
+ * [class@Gio.DBusMethodInvocation] before calling any
+ * `g_dbus_method_invocation_return_*()` methods on it. This should be automatic
+ * as a result of the introspection annotations on those methods.
+ *
+ * Returns: `0` if @error is set, otherwise a registration ID (never `0`)
+ * that can be used with [method@Gio.DBusConnection.unregister_object].
+ *
+ * Since: 2.84
+ */
+guint
+g_dbus_connection_register_object_with_closures2 (GDBusConnection     *connection,
+                                                  const gchar         *object_path,
+                                                  GDBusInterfaceInfo  *interface_info,
+                                                  GClosure            *method_call_closure,
+                                                  GClosure            *get_property_closure,
+                                                  GClosure            *set_property_closure,
+                                                  GError             **error)
+{
+  RegisterObjectData *data;
+  GDBusInterfaceVTable vtable =
+    {
+      method_call_closure != NULL  ? register_with_closures_on_method_call2  : NULL,
       get_property_closure != NULL ? register_with_closures_on_get_property : NULL,
       set_property_closure != NULL ? register_with_closures_on_set_property : NULL,
       { 0 }
@@ -6677,8 +6820,8 @@ g_dbus_connection_call_sync_internal (GDBusConnection         *connection,
  * ]|
  *
  * This is an asynchronous method. When the operation is finished,
- * @callback will be invoked in the
- * [thread-default main context][g-main-context-push-thread-default]
+ * @callback will be invoked in the thread-default main context
+ * (see [method@GLib.MainContext.push_thread_default])
  * of the thread you are calling this method from. You can then call
  * g_dbus_connection_call_finish() to get the result of the operation.
  * See g_dbus_connection_call_sync() for the synchronous version of this
@@ -6866,7 +7009,7 @@ g_dbus_connection_call_with_unix_fd_list (GDBusConnection     *connection,
 /**
  * g_dbus_connection_call_with_unix_fd_list_finish:
  * @connection: a #GDBusConnection
- * @out_fd_list: (out) (optional): return location for a #GUnixFDList or %NULL
+ * @out_fd_list: (out) (optional) (nullable): return location for a #GUnixFDList or %NULL
  * @res: a #GAsyncResult obtained from the #GAsyncReadyCallback passed to
  *     g_dbus_connection_call_with_unix_fd_list()
  * @error: return location for error or %NULL
@@ -6913,7 +7056,7 @@ g_dbus_connection_call_with_unix_fd_list_finish (GDBusConnection  *connection,
  * @timeout_msec: the timeout in milliseconds, -1 to use the default
  *     timeout or %G_MAXINT for no timeout
  * @fd_list: (nullable): a #GUnixFDList or %NULL
- * @out_fd_list: (out) (optional): return location for a #GUnixFDList or %NULL
+ * @out_fd_list: (out) (optional) (nullable): return location for a #GUnixFDList or %NULL
  * @cancellable: (nullable): a #GCancellable or %NULL
  * @error: return location for error or %NULL
  *
@@ -7388,8 +7531,8 @@ subtree_message_func (GDBusConnection *connection,
  * #gpointer will be used to call into the interface vtable for processing
  * the request.
  *
- * All calls into user-provided code will be invoked in the
- * [thread-default main context][g-main-context-push-thread-default]
+ * All calls into user-provided code will be invoked in the thread-default
+ * main context (see [method@GLib.MainContext.push_thread_default])
  * of the thread you are calling this method from.
  *
  * If an existing subtree is already registered at @object_path or
@@ -7405,8 +7548,8 @@ subtree_message_func (GDBusConnection *connection,
  * Note that @vtable will be copied so you cannot change it after
  * registration.
  *
- * See this [server][gdbus-subtree-server] for an example of how to use
- * this method.
+ * See this [server][class@Gio.DBusConnection#an-example-for-exporting-a-subtree]
+ * for an example of how to use this method.
  *
  * Returns: 0 if @error is set, otherwise a subtree registration ID (never 0)
  * that can be used with g_dbus_connection_unregister_subtree()

@@ -443,6 +443,7 @@ struct demo {
     struct wl_seat *seat;
     struct wl_pointer *pointer;
     struct wl_keyboard *keyboard;
+    int pending_width, pending_height;
 #endif
 #if defined(VK_USE_PLATFORM_DIRECTFB_EXT)
     IDirectFB *dfb;
@@ -1371,6 +1372,12 @@ static void demo_prepare_framebuffers(struct demo *demo);
 static void demo_prepare_swapchain(struct demo *demo) {
     VkResult U_ASSERT_ONLY err;
     VkSwapchainKHR oldSwapchain = demo->swapchain;
+
+#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
+    if (demo->wsi_platform == WSI_PLATFORM_WAYLAND && !demo->xdg_surface_has_been_configured) {
+        return;
+    }
+#endif
 
     // Check the surface capabilities and formats
     VkSurfaceCapabilitiesKHR surfCapabilities;
@@ -2854,6 +2861,7 @@ static void demo_create_xlib_window(struct demo *demo) {
     XMapWindow(demo->xlib_display, demo->xlib_window);
     XFlush(demo->xlib_display);
     demo->xlib_wm_delete_window = XInternAtom(demo->xlib_display, "WM_DELETE_WINDOW", False);
+    XSetWMProtocols(demo->xlib_display, demo->xlib_window, &demo->xlib_wm_delete_window, 1);
 }
 static void demo_handle_xlib_event(struct demo *demo, const XEvent *event) {
     switch (event->type) {
@@ -2991,6 +2999,15 @@ static void demo_create_xcb_window(struct demo *demo) {
     xcb_create_window(demo->connection, XCB_COPY_FROM_PARENT, demo->xcb_window, demo->screen->root, 0, 0, demo->width, demo->height,
                       0, XCB_WINDOW_CLASS_INPUT_OUTPUT, demo->screen->root_visual, value_mask, value_list);
 
+    char *name = "Vkcube X11";
+    xcb_intern_atom_cookie_t net_wm_name_cookie = xcb_intern_atom(demo->connection, 0, strlen("_NET_WM_NAME"), "_NET_WM_NAME");
+    xcb_intern_atom_cookie_t utf8_string_cookie = xcb_intern_atom(demo->connection, 0, strlen("UTF8_STRING"), "UTF8_STRING");
+    xcb_intern_atom_reply_t *net_wm_name_reply = xcb_intern_atom_reply(demo->connection, net_wm_name_cookie, NULL);
+    xcb_intern_atom_reply_t *utf8_string_reply = xcb_intern_atom_reply(demo->connection, utf8_string_cookie, NULL);
+    xcb_change_property(demo->connection, XCB_PROP_MODE_REPLACE,
+                        demo->xcb_window, net_wm_name_reply->atom,
+                        utf8_string_reply->atom, 8, strlen(name), name);
+
     /* Magic code that will send notification when window is destroyed */
     xcb_intern_atom_cookie_t cookie = xcb_intern_atom(demo->connection, 1, 12, "WM_PROTOCOLS");
     xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply(demo->connection, cookie, 0);
@@ -3045,10 +3062,14 @@ static void demo_run(struct demo *demo) {
 static void handle_surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
     struct demo *demo = (struct demo *)data;
     xdg_surface_ack_configure(xdg_surface, serial);
-    if (demo->xdg_surface_has_been_configured) {
-        demo_resize(demo);
-    }
     demo->xdg_surface_has_been_configured = 1;
+    if (demo->pending_width > 0) {
+        demo->width = demo->pending_width;
+    }
+    if (demo->pending_height > 0) {
+        demo->height = demo->pending_height;
+    }
+    demo_resize(demo);
 }
 
 static const struct xdg_surface_listener xdg_surface_listener = {handle_surface_configure};
@@ -3059,10 +3080,10 @@ static void handle_toplevel_configure(void *data, struct xdg_toplevel *xdg_tople
     /* zero values imply the program may choose its own size, so in that case
      * stay with the existing value (which on startup is the default) */
     if (width > 0) {
-        demo->width = width;
+        demo->pending_width = width;
     }
     if (height > 0) {
-        demo->height = height;
+        demo->pending_height = height;
     }
     /* This should be followed by a surface configure */
 }
@@ -3886,7 +3907,7 @@ static void demo_check_and_set_wsi_platform(struct demo *demo) {
             }
         }
         if (qnx_extension_available) {
-            demo->wsi_platform = WSI_PLATFORM_ANDROID;
+            demo->wsi_platform = WSI_PLATFORM_QNX;
             return;
         }
     }

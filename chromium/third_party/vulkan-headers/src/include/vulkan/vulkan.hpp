@@ -12,7 +12,8 @@
 
 #if defined( VULKAN_HPP_ENABLE_STD_MODULE ) && defined( VULKAN_HPP_STD_MODULE )
 #  include <cassert>
-#  include <string.h>
+#  include <cstdlib>
+#  include <cstring>
 import VULKAN_HPP_STD_MODULE;
 #else
 #  include <algorithm>
@@ -56,7 +57,7 @@ extern "C" __declspec( dllimport ) FARPROC __stdcall GetProcAddress( HINSTANCE h
 #  endif
 #endif
 
-static_assert( VK_HEADER_VERSION == 324, "Wrong VK_HEADER_VERSION!" );
+static_assert( VK_HEADER_VERSION == 328, "Wrong VK_HEADER_VERSION!" );
 
 // <tuple> includes <sys/sysmacros.h> through some other header
 // this results in major(x) being resolved to gnu_dev_major(x)
@@ -6340,6 +6341,19 @@ namespace VULKAN_HPP_NAMESPACE
         return ::vkCmdBindTileMemoryQCOM( commandBuffer, pTileMemoryBindInfo );
       }
 
+      //=== VK_KHR_copy_memory_indirect ===
+
+      void vkCmdCopyMemoryIndirectKHR( VkCommandBuffer commandBuffer, const VkCopyMemoryIndirectInfoKHR * pCopyMemoryIndirectInfo ) const VULKAN_HPP_NOEXCEPT
+      {
+        return ::vkCmdCopyMemoryIndirectKHR( commandBuffer, pCopyMemoryIndirectInfo );
+      }
+
+      void vkCmdCopyMemoryToImageIndirectKHR( VkCommandBuffer                            commandBuffer,
+                                              const VkCopyMemoryToImageIndirectInfoKHR * pCopyMemoryToImageIndirectInfo ) const VULKAN_HPP_NOEXCEPT
+      {
+        return ::vkCmdCopyMemoryToImageIndirectKHR( commandBuffer, pCopyMemoryToImageIndirectInfo );
+      }
+
       //=== VK_NV_external_compute_queue ===
 
       VkResult vkCreateExternalComputeQueueNV( VkDevice                                   device,
@@ -8874,9 +8888,17 @@ namespace VULKAN_HPP_NAMESPACE
   VULKAN_HPP_CONSTEXPR_INLINE auto KHRRayTracingMaintenance1ExtensionName = VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME;
   VULKAN_HPP_CONSTEXPR_INLINE auto KHRRayTracingMaintenance1SpecVersion   = VK_KHR_RAY_TRACING_MAINTENANCE_1_SPEC_VERSION;
 
+  //=== VK_KHR_shader_untyped_pointers ===
+  VULKAN_HPP_CONSTEXPR_INLINE auto KHRShaderUntypedPointersExtensionName = VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME;
+  VULKAN_HPP_CONSTEXPR_INLINE auto KHRShaderUntypedPointersSpecVersion   = VK_KHR_SHADER_UNTYPED_POINTERS_SPEC_VERSION;
+
   //=== VK_EXT_global_priority_query ===
   VULKAN_HPP_CONSTEXPR_INLINE auto EXTGlobalPriorityQueryExtensionName = VK_EXT_GLOBAL_PRIORITY_QUERY_EXTENSION_NAME;
   VULKAN_HPP_CONSTEXPR_INLINE auto EXTGlobalPriorityQuerySpecVersion   = VK_EXT_GLOBAL_PRIORITY_QUERY_SPEC_VERSION;
+
+  //=== VK_VALVE_video_encode_rgb_conversion ===
+  VULKAN_HPP_CONSTEXPR_INLINE auto VALVEVideoEncodeRgbConversionExtensionName = VK_VALVE_VIDEO_ENCODE_RGB_CONVERSION_EXTENSION_NAME;
+  VULKAN_HPP_CONSTEXPR_INLINE auto VALVEVideoEncodeRgbConversionSpecVersion   = VK_VALVE_VIDEO_ENCODE_RGB_CONVERSION_SPEC_VERSION;
 
   //=== VK_EXT_image_view_min_lod ===
   VULKAN_HPP_CONSTEXPR_INLINE auto EXTImageViewMinLodExtensionName = VK_EXT_IMAGE_VIEW_MIN_LOD_EXTENSION_NAME;
@@ -9256,6 +9278,10 @@ namespace VULKAN_HPP_NAMESPACE
   VULKAN_HPP_CONSTEXPR_INLINE auto QCOMTileMemoryHeapExtensionName = VK_QCOM_TILE_MEMORY_HEAP_EXTENSION_NAME;
   VULKAN_HPP_CONSTEXPR_INLINE auto QCOMTileMemoryHeapSpecVersion   = VK_QCOM_TILE_MEMORY_HEAP_SPEC_VERSION;
 
+  //=== VK_KHR_copy_memory_indirect ===
+  VULKAN_HPP_CONSTEXPR_INLINE auto KHRCopyMemoryIndirectExtensionName = VK_KHR_COPY_MEMORY_INDIRECT_EXTENSION_NAME;
+  VULKAN_HPP_CONSTEXPR_INLINE auto KHRCopyMemoryIndirectSpecVersion   = VK_KHR_COPY_MEMORY_INDIRECT_SPEC_VERSION;
+
   //=== VK_NV_display_stereo ===
   VULKAN_HPP_CONSTEXPR_INLINE auto NVDisplayStereoExtensionName = VK_NV_DISPLAY_STEREO_EXTENSION_NAME;
   VULKAN_HPP_CONSTEXPR_INLINE auto NVDisplayStereoSpecVersion   = VK_NV_DISPLAY_STEREO_SPEC_VERSION;
@@ -9429,7 +9455,7 @@ namespace VULKAN_HPP_NAMESPACE
   };
 
   template <>
-  struct StructExtends<ShaderModuleCreateInfo, DataGraphPipelineShaderModuleCreateInfoARM>
+  struct StructExtends<ShaderModuleCreateInfo, DataGraphPipelineCreateInfoARM>
   {
     enum
     {
@@ -15649,6 +15675,71 @@ namespace VULKAN_HPP_NAMESPACE
     };
   };
 
+  //=== VK_KHR_shader_untyped_pointers ===
+  template <>
+  struct StructExtends<PhysicalDeviceShaderUntypedPointersFeaturesKHR, PhysicalDeviceFeatures2>
+  {
+    enum
+    {
+      value = true
+    };
+  };
+
+  template <>
+  struct StructExtends<PhysicalDeviceShaderUntypedPointersFeaturesKHR, DeviceCreateInfo>
+  {
+    enum
+    {
+      value = true
+    };
+  };
+
+  //=== VK_VALVE_video_encode_rgb_conversion ===
+  template <>
+  struct StructExtends<PhysicalDeviceVideoEncodeRgbConversionFeaturesVALVE, PhysicalDeviceFeatures2>
+  {
+    enum
+    {
+      value = true
+    };
+  };
+
+  template <>
+  struct StructExtends<PhysicalDeviceVideoEncodeRgbConversionFeaturesVALVE, DeviceCreateInfo>
+  {
+    enum
+    {
+      value = true
+    };
+  };
+
+  template <>
+  struct StructExtends<VideoEncodeRgbConversionCapabilitiesVALVE, VideoCapabilitiesKHR>
+  {
+    enum
+    {
+      value = true
+    };
+  };
+
+  template <>
+  struct StructExtends<VideoEncodeProfileRgbConversionInfoVALVE, VideoProfileInfoKHR>
+  {
+    enum
+    {
+      value = true
+    };
+  };
+
+  template <>
+  struct StructExtends<VideoEncodeSessionRgbConversionCreateInfoVALVE, VideoSessionCreateInfoKHR>
+  {
+    enum
+    {
+      value = true
+    };
+  };
+
   //=== VK_EXT_image_view_min_lod ===
   template <>
   struct StructExtends<PhysicalDeviceImageViewMinLodFeaturesEXT, PhysicalDeviceFeatures2>
@@ -16111,15 +16202,6 @@ namespace VULKAN_HPP_NAMESPACE
 
   template <>
   struct StructExtends<PhysicalDeviceCopyMemoryIndirectFeaturesNV, DeviceCreateInfo>
-  {
-    enum
-    {
-      value = true
-    };
-  };
-
-  template <>
-  struct StructExtends<PhysicalDeviceCopyMemoryIndirectPropertiesNV, PhysicalDeviceProperties2>
   {
     enum
     {
@@ -18237,6 +18319,34 @@ namespace VULKAN_HPP_NAMESPACE
 
   template <>
   struct StructExtends<TileMemorySizeInfoQCOM, RenderingInfo>
+  {
+    enum
+    {
+      value = true
+    };
+  };
+
+  //=== VK_KHR_copy_memory_indirect ===
+  template <>
+  struct StructExtends<PhysicalDeviceCopyMemoryIndirectFeaturesKHR, PhysicalDeviceFeatures2>
+  {
+    enum
+    {
+      value = true
+    };
+  };
+
+  template <>
+  struct StructExtends<PhysicalDeviceCopyMemoryIndirectFeaturesKHR, DeviceCreateInfo>
+  {
+    enum
+    {
+      value = true
+    };
+  };
+
+  template <>
+  struct StructExtends<PhysicalDeviceCopyMemoryIndirectPropertiesKHR, PhysicalDeviceProperties2>
   {
     enum
     {
@@ -20639,6 +20749,10 @@ namespace VULKAN_HPP_NAMESPACE
       //=== VK_QCOM_tile_memory_heap ===
       PFN_vkCmdBindTileMemoryQCOM vkCmdBindTileMemoryQCOM = 0;
 
+      //=== VK_KHR_copy_memory_indirect ===
+      PFN_vkCmdCopyMemoryIndirectKHR        vkCmdCopyMemoryIndirectKHR        = 0;
+      PFN_vkCmdCopyMemoryToImageIndirectKHR vkCmdCopyMemoryToImageIndirectKHR = 0;
+
       //=== VK_NV_external_compute_queue ===
       PFN_vkCreateExternalComputeQueueNV  vkCreateExternalComputeQueueNV  = 0;
       PFN_vkDestroyExternalComputeQueueNV vkDestroyExternalComputeQueueNV = 0;
@@ -22245,6 +22359,10 @@ namespace VULKAN_HPP_NAMESPACE
         //=== VK_QCOM_tile_memory_heap ===
         vkCmdBindTileMemoryQCOM = PFN_vkCmdBindTileMemoryQCOM( vkGetInstanceProcAddr( instance, "vkCmdBindTileMemoryQCOM" ) );
 
+        //=== VK_KHR_copy_memory_indirect ===
+        vkCmdCopyMemoryIndirectKHR        = PFN_vkCmdCopyMemoryIndirectKHR( vkGetInstanceProcAddr( instance, "vkCmdCopyMemoryIndirectKHR" ) );
+        vkCmdCopyMemoryToImageIndirectKHR = PFN_vkCmdCopyMemoryToImageIndirectKHR( vkGetInstanceProcAddr( instance, "vkCmdCopyMemoryToImageIndirectKHR" ) );
+
         //=== VK_NV_external_compute_queue ===
         vkCreateExternalComputeQueueNV  = PFN_vkCreateExternalComputeQueueNV( vkGetInstanceProcAddr( instance, "vkCreateExternalComputeQueueNV" ) );
         vkDestroyExternalComputeQueueNV = PFN_vkDestroyExternalComputeQueueNV( vkGetInstanceProcAddr( instance, "vkDestroyExternalComputeQueueNV" ) );
@@ -23477,6 +23595,10 @@ namespace VULKAN_HPP_NAMESPACE
 
         //=== VK_QCOM_tile_memory_heap ===
         vkCmdBindTileMemoryQCOM = PFN_vkCmdBindTileMemoryQCOM( vkGetDeviceProcAddr( device, "vkCmdBindTileMemoryQCOM" ) );
+
+        //=== VK_KHR_copy_memory_indirect ===
+        vkCmdCopyMemoryIndirectKHR        = PFN_vkCmdCopyMemoryIndirectKHR( vkGetDeviceProcAddr( device, "vkCmdCopyMemoryIndirectKHR" ) );
+        vkCmdCopyMemoryToImageIndirectKHR = PFN_vkCmdCopyMemoryToImageIndirectKHR( vkGetDeviceProcAddr( device, "vkCmdCopyMemoryToImageIndirectKHR" ) );
 
         //=== VK_NV_external_compute_queue ===
         vkCreateExternalComputeQueueNV  = PFN_vkCreateExternalComputeQueueNV( vkGetDeviceProcAddr( device, "vkCreateExternalComputeQueueNV" ) );

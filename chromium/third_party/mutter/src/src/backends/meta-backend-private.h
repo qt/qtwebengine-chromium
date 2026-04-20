@@ -28,6 +28,7 @@
 #include "meta/meta-backend.h"
 #include "meta/meta-idle-monitor.h"
 #include "meta/meta-orientation-manager.h"
+#include "backends/meta-a11y-manager.h"
 #include "backends/meta-backend-types.h"
 #include "backends/meta-cursor-renderer.h"
 #include "backends/meta-egl.h"
@@ -162,8 +163,10 @@ MetaIdleManager * meta_backend_get_idle_manager (MetaBackend *backend);
 META_EXPORT_TEST
 MetaColorManager * meta_backend_get_color_manager (MetaBackend *backend);
 
+#ifdef HAVE_LOGIND
 META_EXPORT_TEST
 MetaLauncher * meta_backend_get_launcher (MetaBackend *backend);
+#endif
 
 #ifdef HAVE_LIBGUDEV
 META_EXPORT_TEST
@@ -181,12 +184,15 @@ MetaEgl * meta_backend_get_egl (MetaBackend *backend);
 MetaDbusSessionWatcher * meta_backend_get_dbus_session_watcher (MetaBackend *backend);
 
 #ifdef HAVE_REMOTE_DESKTOP
+META_EXPORT_TEST
 MetaRemoteDesktop * meta_backend_get_remote_desktop (MetaBackend *backend);
 
 MetaScreenCast * meta_backend_get_screen_cast (MetaBackend *backend);
 #endif
 
 MetaInputCapture * meta_backend_get_input_capture (MetaBackend *backend);
+
+MetaA11yManager * meta_backend_get_a11y_manager (MetaBackend *backend);
 
 gboolean meta_backend_grab_device (MetaBackend *backend,
                                    int          device_id,
@@ -240,8 +246,10 @@ void meta_backend_add_hw_cursor_inhibitor (MetaBackend           *backend,
 void meta_backend_remove_hw_cursor_inhibitor (MetaBackend           *backend,
                                               MetaHwCursorInhibitor *inhibitor);
 
+META_EXPORT_TEST
 void meta_backend_inhibit_hw_cursor (MetaBackend *backend);
 
+META_EXPORT_TEST
 void meta_backend_uninhibit_hw_cursor (MetaBackend *backend);
 
 META_EXPORT_TEST
@@ -252,6 +260,12 @@ void meta_backend_update_from_event (MetaBackend  *backend,
 
 char * meta_backend_get_vendor_name (MetaBackend *backend,
                                      const char  *pnp_id);
+
+META_EXPORT_TEST
+void meta_backend_pause (MetaBackend *backend);
+
+META_EXPORT_TEST
+void meta_backend_resume (MetaBackend *backend);
 
 META_EXPORT_TEST
 uint32_t meta_clutter_button_to_evdev (uint32_t clutter_button);

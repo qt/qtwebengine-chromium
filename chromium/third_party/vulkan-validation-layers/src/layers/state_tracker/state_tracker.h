@@ -80,6 +80,7 @@ struct ShaderModule;
 struct ShaderObject;
 class VideoSession;
 class VideoSessionParameters;
+class DataGraphPipelineSession;
 }  // namespace vvl
 
 namespace chassis {
@@ -89,6 +90,12 @@ struct CreateShaderModule;
 namespace spirv {
 struct StatelessData;
 }  // namespace spirv
+
+namespace subresource_adapter {
+class RangeGenerator;
+}  // namespace subresource_adapter
+
+class CommandBufferImageLayoutMap;
 
 #define VALSTATETRACK_MAP_AND_TRAITS(handle_type, state_type, map_member)                 \
     vvl::concurrent_unordered_map<handle_type, std::shared_ptr<state_type>> map_member;   \
@@ -157,6 +164,7 @@ VALSTATETRACK_STATE_OBJECT(VkBufferView, vvl::BufferView)
 VALSTATETRACK_STATE_OBJECT(VkBuffer, vvl::Buffer)
 VALSTATETRACK_STATE_OBJECT(VkPipelineCache, vvl::PipelineCache)
 VALSTATETRACK_STATE_OBJECT(VkPipeline, vvl::Pipeline)
+VALSTATETRACK_STATE_OBJECT(VkDataGraphPipelineSessionARM, vvl::DataGraphPipelineSession)
 VALSTATETRACK_STATE_OBJECT(VkShaderEXT, vvl::ShaderObject)
 VALSTATETRACK_STATE_OBJECT(VkDeviceMemory, vvl::DeviceMemory)
 VALSTATETRACK_STATE_OBJECT(VkFramebuffer, vvl::Framebuffer)
@@ -252,9 +260,8 @@ class InstanceState : public vvl::base::Instance {
                                             const VkDisplayModeCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator,
                                             VkDisplayModeKHR* pMode, const RecordObject& record_obj) override;
 
-    VkFormatFeatureFlags2KHR GetImageFormatFeatures(VkPhysicalDevice physical_device, bool has_format_feature2,
-                                                    bool has_drm_modifiers, VkDevice device, VkImage image, VkFormat format,
-                                                    VkImageTiling tiling);
+    VkFormatFeatureFlags2 GetImageFormatFeatures(VkPhysicalDevice physical_device, bool has_format_feature2, bool has_drm_modifiers,
+                                                 VkDevice device, VkImage image, VkFormat format, VkImageTiling tiling);
     void RecordVulkanSurface(VkSurfaceKHR* pSurface);
     void PostCallRecordCreateDisplayPlaneSurfaceKHR(VkInstance instance, const VkDisplaySurfaceCreateInfoKHR* pCreateInfo,
                                                     const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
@@ -855,7 +862,7 @@ class DeviceState : public vvl::base::Device {
 
     virtual std::shared_ptr<vvl::BufferView> CreateBufferViewState(const std::shared_ptr<vvl::Buffer>& buffer, VkBufferView handle,
                                                                    const VkBufferViewCreateInfo* create_info,
-                                                                   VkFormatFeatureFlags2KHR format_features);
+                                                                   VkFormatFeatureFlags2 format_features);
     void PostCallRecordCreateBufferView(VkDevice device, const VkBufferViewCreateInfo* pCreateInfo,
                                         const VkAllocationCallbacks* pAllocator, VkBufferView* pView,
                                         const RecordObject& record_obj) override;
@@ -1037,6 +1044,38 @@ class DeviceState : public vvl::base::Device {
                                                     const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
                                                     const RecordObject& record_obj, PipelineStates& pipeline_states,
                                                     std::shared_ptr<chassis::CreateRayTracingPipelinesKHR> chassis_state) override;
+    virtual std::shared_ptr<vvl::Pipeline> CreateDataGraphPipelineState(const VkDataGraphPipelineCreateInfoARM* pCreateInfo,
+                                                                        std::shared_ptr<const vvl::PipelineCache> pipeline_cache,
+                                                                        std::shared_ptr<const vvl::PipelineLayout>&& layout,
+                                                                        spirv::StatelessData* stateless_data) const;
+    bool PreCallValidateCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                                    VkPipelineCache pipelineCache, uint32_t count,
+                                                    const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
+                                                    const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+                                                    const ErrorObject& error_obj, PipelineStates& pipeline_states,
+                                                    chassis::CreateDataGraphPipelinesARM& chassis_state) const override;
+    void PostCallRecordCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                                   VkPipelineCache pipelineCache, uint32_t count,
+                                                   const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
+                                                   const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+                                                   const RecordObject& record_obj, PipelineStates& pipeline_states,
+                                                   chassis::CreateDataGraphPipelinesARM& chassis_state) override;
+    std::shared_ptr<vvl::DataGraphPipelineSession> CreateDataGraphPipelineSessionState(
+        VkDataGraphPipelineSessionARM handle, const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo);
+    void PostCallRecordCreateDataGraphPipelineSessionARM(VkDevice device,
+                                                         const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo,
+                                                         const VkAllocationCallbacks* pAllocator,
+                                                         VkDataGraphPipelineSessionARM* pSession,
+                                                         const RecordObject& record_obj) override;
+
+    void PostCallRecordBindDataGraphPipelineSessionMemoryARM(VkDevice device, uint32_t bindInfoCount,
+                                                             const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos,
+                                                             const RecordObject& record_obj) override;
+    void PostCallRecordCmdDispatchDataGraphARM(VkCommandBuffer commandBuffer,
+                                               VkDataGraphPipelineSessionARM session,
+                                               const VkDataGraphPipelineDispatchInfoARM *pInfo,
+                                               const RecordObject& record_obj) override;
+
     void PostCallRecordCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo* pCreateInfo,
                                         const VkAllocationCallbacks* pAllocator, VkRenderPass* pRenderPass,
                                         const RecordObject& record_obj) override;
@@ -1619,7 +1658,7 @@ class DeviceState : public vvl::base::Device {
     void PostCallRecordLatencySleepNV(VkDevice device, VkSwapchainKHR swapchain, const VkLatencySleepInfoNV* pSleepInfo,
                                       const RecordObject& record_obj) override;
 
-    VkFormatFeatureFlags2KHR GetExternalFormatFeaturesANDROID(const void* pNext) const;
+    VkFormatFeatureFlags2 GetExternalFormatFeaturesANDROID(const void* pNext) const;
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
     void PostCallRecordGetAndroidHardwareBufferPropertiesANDROID(VkDevice device, const struct AHardwareBuffer* buffer,
                                                                  VkAndroidHardwareBufferPropertiesANDROID* pProperties,
@@ -1635,7 +1674,7 @@ class DeviceState : public vvl::base::Device {
     std::vector<std::shared_ptr<const vvl::ImageView>> GetAttachmentViews(const VkRenderPassBeginInfo& rp_begin,
                                                                           const vvl::Framebuffer& fb_state) const;
 
-    VkFormatFeatureFlags2KHR GetPotentialFormatFeatures(VkFormat format) const;
+    VkFormatFeatureFlags2 GetPotentialFormatFeatures(VkFormat format) const;
     void PerformUpdateDescriptorSetsWithTemplateKHR(VkDescriptorSet descriptorSet,
                                                     const vvl::DescriptorUpdateTemplate& template_state, const void* pData);
     void RecordAcquireNextImageState(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore,
@@ -1964,7 +2003,7 @@ class DeviceState : public vvl::base::Device {
     mutable std::shared_mutex buffer_address_lock_;
 
     // < external format, features >
-    vvl::concurrent_unordered_map<uint64_t, VkFormatFeatureFlags2KHR> ahb_ext_formats_map;
+    vvl::concurrent_unordered_map<uint64_t, VkFormatFeatureFlags2> ahb_ext_formats_map;
     // < external format, colorAttachmentFormat > (VK_ANDROID_external_format_resolve)
     vvl::concurrent_unordered_map<uint64_t, VkFormat> ahb_ext_resolve_formats_map;
 
@@ -1999,6 +2038,7 @@ class DeviceState : public vvl::base::Device {
     VALSTATETRACK_MAP_AND_TRAITS(VkBuffer, vvl::Buffer, buffer_map_)
     VALSTATETRACK_MAP_AND_TRAITS(VkPipelineCache, vvl::PipelineCache, pipeline_cache_map_)
     VALSTATETRACK_MAP_AND_TRAITS(VkPipeline, vvl::Pipeline, pipeline_map_)
+    VALSTATETRACK_MAP_AND_TRAITS(VkDataGraphPipelineSessionARM, vvl::DataGraphPipelineSession, pipeline_session_map_)
     VALSTATETRACK_MAP_AND_TRAITS(VkShaderEXT, vvl::ShaderObject, shader_object_map_)
     VALSTATETRACK_MAP_AND_TRAITS(VkDeviceMemory, vvl::DeviceMemory, mem_obj_map_)
     VALSTATETRACK_MAP_AND_TRAITS(VkFramebuffer, vvl::Framebuffer, frame_buffer_map_)
@@ -2108,7 +2148,7 @@ class DeviceProxy : public vvl::base::Device {
         return const_cast<const vvl::DeviceState*>(device_state)->GetBuffersByAddress(address);
     }
 
-    VkFormatFeatureFlags2KHR GetPotentialFormatFeatures(VkFormat format) const {
+    VkFormatFeatureFlags2 GetPotentialFormatFeatures(VkFormat format) const {
         return device_state->GetPotentialFormatFeatures(format);
     }
 
@@ -2127,6 +2167,7 @@ class DeviceProxy : public vvl::base::Device {
     virtual void Created(vvl::Swapchain& state) {}
     virtual void Created(vvl::DescriptorSet& state) {}
     virtual void Created(vvl::ShaderObject& state) {}
+    virtual void Created(vvl::Pipeline& state){};
 
     // callbacks for image layout validation, which is implemented in both core validation and gpu-av
     // TODO - It would be nice to have a way to not need a duplicate copy in both CoreChecks and GPU-AV code
@@ -2156,9 +2197,11 @@ class DeviceProxy : public vvl::base::Device {
     }
 
     // Currently no GPU-AV check
-    virtual bool VerifyImageLayout(const vvl::CommandBuffer& cb_state, const vvl::ImageView& image_view_state,
-                                   VkImageLayout explicit_layout, const Location& image_loc, const char* mismatch_layout_vuid,
-                                   bool* error) const {
+    virtual bool ValidateDescriptorImageLayout(const LogObjectList& objlist, const vvl::Image& image_state,
+                                               VkImageAspectFlags aspect_mask, VkImageLayout explicit_layout,
+                                               const CommandBufferImageLayoutMap& cb_layout_map,
+                                               subresource_adapter::RangeGenerator&& range_gen, const Location& image_loc,
+                                               std::function<std::string()> describe_descriptor_callback) const {
         return false;
     }
 

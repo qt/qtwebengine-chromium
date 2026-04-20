@@ -165,6 +165,7 @@ enum
   PREPARE_FRAME,
   BEFORE_PAINT,
   AFTER_PAINT,
+  SKIPPED_PAINT,
   AFTER_UPDATE,
   PAINT_VIEW,
   PRESENTED,
@@ -528,6 +529,14 @@ clutter_stage_emit_after_paint (ClutterStage     *stage,
 }
 
 void
+clutter_stage_emit_skipped_paint (ClutterStage     *stage,
+                                  ClutterStageView *view,
+                                  ClutterFrame     *frame)
+{
+  g_signal_emit (stage, stage_signals[SKIPPED_PAINT], 0, view, frame);
+}
+
+void
 clutter_stage_after_update (ClutterStage     *stage,
                             ClutterStageView *view,
                             ClutterFrame     *frame)
@@ -634,24 +643,12 @@ clutter_stage_emit_key_focus_event (ClutterStage *stage,
                                     gboolean      focus_in)
 {
   ClutterStagePrivate *priv = clutter_stage_get_instance_private (stage);
-  AtkObject *old_accessible, *new_accessible = NULL;
 
   if (priv->key_focused_actor == NULL)
     return;
 
-  old_accessible = clutter_actor_get_accessible (priv->key_focused_actor);
-  new_accessible = clutter_actor_get_accessible (CLUTTER_ACTOR (stage));
-
   _clutter_actor_set_has_key_focus (CLUTTER_ACTOR (stage), focus_in);
 
-  if (old_accessible)
-    atk_object_notify_state_change (old_accessible,
-                                    ATK_STATE_FOCUSED,
-                                    !focus_in);
-  if (new_accessible)
-    atk_object_notify_state_change (new_accessible,
-                                    ATK_STATE_FOCUSED,
-                                    focus_in);
   g_object_notify_by_pspec (G_OBJECT (stage), obj_props[PROP_KEY_FOCUS]);
 }
 
@@ -682,12 +679,17 @@ clutter_stage_set_active (ClutterStage *stage,
     return;
 
   priv->is_active = is_active;
+
+  if (is_active)
+    clutter_actor_add_accessible_state (CLUTTER_ACTOR (stage),
+                                        ATK_STATE_ACTIVE);
+  else
+    clutter_actor_remove_accessible_state (CLUTTER_ACTOR (stage),
+                                           ATK_STATE_ACTIVE);
+
   accessible = clutter_actor_get_accessible (CLUTTER_ACTOR (stage));
   if (accessible)
     {
-      atk_object_notify_state_change (accessible,
-                                      ATK_STATE_ACTIVE,
-                                      priv->is_active);
       /* Emit AtkWindow signals */
       if (priv->is_active)
         g_signal_emit_by_name (accessible, "activate", 0);
@@ -1633,6 +1635,29 @@ clutter_stage_class_init (ClutterStageClass *klass)
                               _clutter_marshal_VOID__OBJECT_BOXEDv);
 
   /**
+   * ClutterStage::skipped-paint:
+   * @stage: the stage that received the event
+   * @view: a #ClutterStageView
+   * @frame: a #ClutterFrame
+   *
+   * The ::skipped-paint signal is emitted after relayout, if no damage
+   * was posted and the paint was skipped.
+   */
+  stage_signals[SKIPPED_PAINT] =
+    g_signal_new (I_("skipped-paint"),
+                  G_TYPE_FROM_CLASS (gobject_class),
+                  G_SIGNAL_RUN_LAST,
+                  G_STRUCT_OFFSET (ClutterStageClass, skipped_paint),
+                  NULL, NULL,
+                  _clutter_marshal_VOID__OBJECT_BOXED,
+                  G_TYPE_NONE, 2,
+                  CLUTTER_TYPE_STAGE_VIEW,
+                  CLUTTER_TYPE_FRAME | G_SIGNAL_TYPE_STATIC_SCOPE);
+  g_signal_set_va_marshaller (stage_signals[SKIPPED_PAINT],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _clutter_marshal_VOID__OBJECT_BOXEDv);
+
+  /**
    * ClutterStage::after-update:
    * @stage: the #ClutterStage
    * @view: a #ClutterStageView
@@ -2077,7 +2102,6 @@ clutter_stage_set_key_focus (ClutterStage *stage,
                              ClutterActor *actor)
 {
   ClutterStagePrivate *priv;
-  AtkObject *old_accessible, *new_accessible = NULL;
 
   g_return_if_fail (CLUTTER_IS_STAGE (stage));
   g_return_if_fail (actor == NULL || CLUTTER_IS_ACTOR (actor));
@@ -2086,7 +2110,11 @@ clutter_stage_set_key_focus (ClutterStage *stage,
 
   /* normalize the key focus. NULL == stage */
   if (actor == CLUTTER_ACTOR (stage))
-    actor = NULL;
+    {
+      g_warning ("Stage key focus was set to stage itself, "
+                 "unsetting focus instead");
+      actor = NULL;
+    }
 
   /* avoid emitting signals and notifications if we're setting the same
    * actor as the key focus
@@ -2099,7 +2127,6 @@ clutter_stage_set_key_focus (ClutterStage *stage,
       ClutterActor *old_focused_actor;
 
       old_focused_actor = priv->key_focused_actor;
-      old_accessible = clutter_actor_get_accessible (old_focused_actor);
 
       /* set key_focused_actor to NULL before emitting the signal or someone
        * might hide the previously focused actor in the signal handler
@@ -2110,7 +2137,6 @@ clutter_stage_set_key_focus (ClutterStage *stage,
     }
   else
     {
-      old_accessible = clutter_actor_get_accessible (CLUTTER_ACTOR (stage));
       _clutter_actor_set_has_key_focus (CLUTTER_ACTOR (stage), FALSE);
     }
   /* Note, if someone changes key focus in focus-out signal handler we'd be
@@ -2132,25 +2158,13 @@ clutter_stage_set_key_focus (ClutterStage *stage,
     {
       if (actor != NULL)
         {
-          new_accessible = clutter_actor_get_accessible (actor);
           _clutter_actor_set_has_key_focus (actor, TRUE);
         }
       else
         {
-          new_accessible = clutter_actor_get_accessible (CLUTTER_ACTOR (stage));
           _clutter_actor_set_has_key_focus (CLUTTER_ACTOR (stage), TRUE);
         }
     }
-
-  if (old_accessible)
-    atk_object_notify_state_change (old_accessible,
-                                    ATK_STATE_FOCUSED,
-                                    FALSE);
-  if (new_accessible)
-    atk_object_notify_state_change (new_accessible,
-                                    ATK_STATE_FOCUSED,
-                                    TRUE);
-
 
   g_object_notify_by_pspec (G_OBJECT (stage), obj_props[PROP_KEY_FOCUS]);
 }
@@ -2161,7 +2175,7 @@ clutter_stage_set_key_focus (ClutterStage *stage,
  *
  * Retrieves the actor that is currently under key focus.
  *
- * Return value: (transfer none): the actor with key focus, or the stage
+ * Return value: (transfer none) (nullable): the actor with key focus
  */
 ClutterActor *
 clutter_stage_get_key_focus (ClutterStage *stage)
@@ -2171,10 +2185,7 @@ clutter_stage_get_key_focus (ClutterStage *stage)
   g_return_val_if_fail (CLUTTER_IS_STAGE (stage), NULL);
 
   priv = clutter_stage_get_instance_private (stage);
-  if (priv->key_focused_actor)
-    return priv->key_focused_actor;
-
-  return CLUTTER_ACTOR (stage);
+  return priv->key_focused_actor;
 }
 
 /*** Perspective boxed type ******/
@@ -4168,9 +4179,12 @@ clutter_stage_get_event_actor (ClutterStage       *stage,
 {
   ClutterInputDevice *device;
   ClutterEventSequence *sequence;
+  ClutterStagePrivate *priv;
 
   g_return_val_if_fail (CLUTTER_IS_STAGE (stage), NULL);
   g_return_val_if_fail (event != NULL, NULL);
+
+  priv = clutter_stage_get_instance_private (stage);
 
   switch (clutter_event_type (event))
     {
@@ -4183,7 +4197,8 @@ clutter_stage_get_event_actor (ClutterStage       *stage,
     case CLUTTER_IM_COMMIT:
     case CLUTTER_IM_DELETE:
     case CLUTTER_IM_PREEDIT:
-      return clutter_stage_get_key_focus (stage);
+      return priv->key_focused_actor ?
+             priv->key_focused_actor : CLUTTER_ACTOR (stage);
     case CLUTTER_MOTION:
     case CLUTTER_ENTER:
     case CLUTTER_LEAVE:

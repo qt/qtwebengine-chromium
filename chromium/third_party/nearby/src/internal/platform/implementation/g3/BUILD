@@ -1,3 +1,5 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 # Copyright 2020 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,6 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 licenses(["notice"])
+
+cc_library(
+    name = "linux_path_util",
+    hdrs = ["linux_path_util.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/base:file_path",
+        "//internal/base:files",
+    ],
+)
 
 cc_library(
     name = "types",
@@ -35,6 +47,7 @@ cc_library(
     ],
     visibility = ["//visibility:private"],
     deps = [
+        ":linux_path_util",
         ":preferences_repository",
         "//internal/base:file_path",
         "//internal/base:files",
@@ -113,6 +126,30 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
+    ],
+)
+
+cc_test(
+    name = "comm_test",
+    srcs = [
+        "awdl_test.cc",
+        "ble_v2_test.cc",
+    ],
+    deps = [
+        ":comm",
+        ":g3",
+        "//internal/platform:base",
+        "//internal/platform:cancellation_flag",
+        "//internal/platform:test_util",
+        "//internal/platform:uuid",
+        "//internal/platform/implementation:comm",
+        "@com_github_protobuf_matchers//protobuf-matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_nisaba//nisaba/port:thread_pool/fiber",
     ],
 )
 

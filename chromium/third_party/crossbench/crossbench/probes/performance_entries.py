@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -30,7 +30,7 @@ class PerformanceEntriesProbe(JsonResultProbe):
 
   [1] https://developer.mozilla.org/en-US/docs/Web/API/PerformanceEntry
   """
-  NAME = "performance.entries"
+  NAME: ClassVar = "performance.entries"
 
   @override
   def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:

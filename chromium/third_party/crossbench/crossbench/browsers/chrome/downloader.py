@@ -10,7 +10,8 @@ import os
 import shutil
 import tempfile
 import zipfile
-from typing import TYPE_CHECKING, Final, Iterable, Optional, Type, cast
+from typing import (TYPE_CHECKING, ClassVar, Final, Iterable, Iterator,
+                    Optional, Type, cast)
 
 from typing_extensions import override
 
@@ -30,11 +31,11 @@ if TYPE_CHECKING:
 
 
 class ChromeDownloader(Downloader):
-  STORAGE_URL: str = "gs://chrome-signed/desktop-5c0tCh/"
-  VERSION_URL = (
+  STORAGE_URL: ClassVar[str] = "gs://chrome-signed/desktop-5c0tCh/"
+  VERSION_URL: ClassVar = (
       "https://versionhistory.googleapis.com/v1/"
       "chrome/platforms/{platform}/channels/{channel}/versions?filter={filter}")
-  VERSION_URL_PLATFORM_LOOKUP: dict[tuple[str, str], str] = {
+  VERSION_URL_PLATFORM_LOOKUP: ClassVar[dict[tuple[str, str], str]] = {
       ("win", "arm64"): "win_arm64",
       ("win", "ia32"): "win",
       ("win", "x64"): "win64",
@@ -44,9 +45,10 @@ class ChromeDownloader(Downloader):
       ("android", "arm64"): "android",
   }
 
-  def __init__(self, *args, **kwargs) -> None:
-    self._gsutil: pth.AnyPath | None = None
-    super().__init__(*args, **kwargs)
+  @classmethod
+  @override
+  def name(cls) -> str:
+    return "Chrome"
 
   @classmethod
   @override
@@ -64,8 +66,8 @@ class ChromeDownloader(Downloader):
 
   @classmethod
   @override
-  def _get_loader_cls(cls,
-                      browser_platform: Platform) -> Type[ChromeDownloader]:
+  def _get_loader_cls(
+      cls, browser_platform: Platform) -> Type[ChromeDownloader] | None:
     if browser_platform.is_macos:
       return ChromeDownloaderMacOS
     if browser_platform.is_linux:
@@ -74,9 +76,11 @@ class ChromeDownloader(Downloader):
       return ChromeDownloaderWin
     if browser_platform.is_android:
       return ChromeDownloaderAndroid
-    raise ValueError(
-        "Downloading chrome is only supported on linux and macOS, "
-        f"but not on {browser_platform.name} {browser_platform.machine}")
+    return None
+
+  def __init__(self, *args, **kwargs) -> None:
+    self._gsutil: pth.AnyPath | None = None
+    super().__init__(*args, **kwargs)
 
   @override
   def _pre_check(self,
@@ -215,8 +219,8 @@ class ChromeDownloader(Downloader):
 
 
 class ChromeDownloaderLinux(ChromeDownloader):
-  ARCHIVE_SUFFIX: str = ".rpm"
-  CHANNEL_BINARY_LOOKUP: dict[BrowserVersionChannel, str] = {
+  ARCHIVE_SUFFIX: ClassVar[str] = ".rpm"
+  CHANNEL_BINARY_LOOKUP: ClassVar[dict[BrowserVersionChannel, str]] = {
       BrowserVersionChannel.PRE_ALPHA: "chrome-canary",
       BrowserVersionChannel.ALPHA: "chrome-unstable",
       BrowserVersionChannel.BETA: "chrome-beta",
@@ -247,7 +251,7 @@ class ChromeDownloaderLinux(ChromeDownloader):
     if version.has_channel:
       channel_name = self.CHANNEL_BINARY_LOOKUP[version.channel]
       return base_dir / channel_name / "chrome"
-    for _, channel_name in self.CHANNEL_BINARY_LOOKUP.items():
+    for channel_name in self.CHANNEL_BINARY_LOOKUP.values():
       bin_path: pth.LocalPath = base_dir / channel_name / "chrome"
       if bin_path.exists():
         return bin_path
@@ -288,8 +292,8 @@ class ChromeDownloaderLinux(ChromeDownloader):
 
 
 class ChromeDownloaderMacOS(ChromeDownloader):
-  ARCHIVE_SUFFIX: str = ".dmg"
-  MIN_MAC_ARM64_MILESTONE: Final[int] = 87
+  ARCHIVE_SUFFIX: ClassVar[str] = ".dmg"
+  MIN_MAC_ARM64_MILESTONE: ClassVar[int] = 87
 
   @classmethod
   @override
@@ -370,26 +374,27 @@ class ChromeDownloaderMacOS(ChromeDownloader):
 class ChromeDownloaderAndroid(ChromeDownloader):
   """The android downloader for Chrome pulls .apks and the
   corresponding .apk library and installs both on the attached device."""
-  ARCHIVE_SUFFIX: str = ".apks"
-  LIBRARY_ARCHIVE_SUFFIX: str = ".lib.apk"
-  STORAGE_URL: str = "gs://chrome-signed/android-B0urB0N/"
+  ARCHIVE_SUFFIX: ClassVar[str] = ".apks"
+  LIBRARY_ARCHIVE_SUFFIX: ClassVar[str] = ".lib.apk"
+  STORAGE_URL: ClassVar[str] = "gs://chrome-signed/android-B0urB0N/"
 
   MIN_HIGH_ARM_64_MILESTONE: Final[int] = 104
   ARM_32_BUILD: Final[str] = "arm"
   ARM_64_BUILD: Final[str] = "arm_64"
   ARM_64_HIGH_BUILD: Final[str] = "high-arm_64"
 
-  CHANNEL_PACKAGE_LOOKUP: dict[str, tuple[str, BrowserVersionChannel]] = {
-      "Beta": (
-          "com.chrome.beta",
-          BrowserVersionChannel.BETA,
-      ),
-      "Dev": ("com.chrome.dev", BrowserVersionChannel.ALPHA),
-      "Canary": ("com.chrome.canary", BrowserVersionChannel.PRE_ALPHA),
-      # Let's check stable last to avoid overriding the default installation
-      # if possible.
-      "Stable": ("com.android.chrome", BrowserVersionChannel.STABLE),
-  }
+  CHANNEL_PACKAGE_LOOKUP: ClassVar[dict[str, tuple[
+      str, BrowserVersionChannel]]] = {
+          "Beta": (
+              "com.chrome.beta",
+              BrowserVersionChannel.BETA,
+          ),
+          "Dev": ("com.chrome.dev", BrowserVersionChannel.ALPHA),
+          "Canary": ("com.chrome.canary", BrowserVersionChannel.PRE_ALPHA),
+          # Let's check stable last to avoid overriding the default installation
+          # if possible.
+          "Stable": ("com.android.chrome", BrowserVersionChannel.STABLE),
+      }
 
   @classmethod
   @override
@@ -516,7 +521,8 @@ class ChromeDownloaderAndroid(ChromeDownloader):
       super()._download_archive(lib_archive_url, lib_tmp_dir)
 
   @contextlib.contextmanager
-  def _prepare_lib_archive_download(self, archive_url: str):
+  def _prepare_lib_archive_download(
+      self, archive_url: str) -> Iterator[tuple[str, pth.LocalPath]]:
     # Also download the trichrome library (such a mess)
     main_archive_path = self._archive_path
     lib_archive_path = main_archive_path.with_suffix(
@@ -527,10 +533,12 @@ class ChromeDownloaderAndroid(ChromeDownloader):
     lib_url = archive_url.replace("TrichromeChromeGoogle",
                                   "TrichromeLibraryGoogle")
     lib_url = lib_url.replace(self.ARCHIVE_SUFFIX, ".apk")
-    with tempfile.TemporaryDirectory(prefix="cb_download_") as tmp_dir_name:
-      lib_tmp_dir = pth.LocalPath(tmp_dir_name)
-      yield lib_url, lib_tmp_dir
-    self._archive_path = main_archive_path
+    try:
+      with tempfile.TemporaryDirectory(prefix="cb_download_") as tmp_dir_name:
+        lib_tmp_dir = pth.LocalPath(tmp_dir_name)
+        yield lib_url, lib_tmp_dir
+    finally:
+      self._archive_path = main_archive_path
 
   @override
   def _install_archive(self, archive_path: pth.LocalPath) -> None:
@@ -545,11 +553,11 @@ class ChromeDownloaderAndroid(ChromeDownloader):
 
 
 class ChromeDownloaderWin(ChromeDownloader):
-  ARCHIVE_SUFFIX: str = ".zip"
-  ARCHIVE_STEM_X64: str = "chrome-win64-clang"
-  ARCHIVE_STEM_ARM: str = "chrome-win-arm64-clang"
-  STORAGE_URL: str = "gs://chrome-unsigned/desktop-5c0tCh/"
-  MIN_WIN_ARM64_MILESTONE: Final[int] = 118
+  ARCHIVE_SUFFIX: ClassVar[str] = ".zip"
+  ARCHIVE_STEM_X64: ClassVar[str] = "chrome-win64-clang"
+  ARCHIVE_STEM_ARM: ClassVar[str] = "chrome-win-arm64-clang"
+  STORAGE_URL: ClassVar[str] = "gs://chrome-unsigned/desktop-5c0tCh/"
+  MIN_WIN_ARM64_MILESTONE: ClassVar[int] = 118
 
   @classmethod
   @override

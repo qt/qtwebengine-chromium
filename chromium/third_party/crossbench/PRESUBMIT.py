@@ -9,13 +9,14 @@ import pathlib
 import platform
 import re
 import subprocess
-from typing import Iterable, Optional
+from typing import Any, Callable
 
 USE_PYTHON3 = True
 
 SOURCE_SKIP_RE = [r"^protoc/gen.*", r"^third_party/.*"]
 
-def SourceFileFilter(input_api):
+
+def SourceFileFilter(input_api: Any) -> Callable:
   """Returns filter that selects source code files only."""
   files_to_skip = list(input_api.DEFAULT_FILES_TO_SKIP) + SOURCE_SKIP_RE
   files_to_check = list(input_api.DEFAULT_FILES_TO_CHECK)
@@ -23,15 +24,15 @@ def SourceFileFilter(input_api):
       x, files_to_check=files_to_check, files_to_skip=files_to_skip)
 
 
-def GlobalSkipChecks(input_api, file_path: str):
+def GlobalSkipChecks(input_api: Any, file_path: str) -> bool:
   if input_api.fnmatch.fnmatch(file_path, "*protoc/gen/*"):
     return True
-  if input_api.fnmatch.fnmatch(file_path, "*third_party/*"):
+  if input_api.fnmatch.fnmatch(file_path, "*crossbench/third_party/*"):
     return True
   return False
 
 
-def CheckChange(input_api, output_api, on_commit):
+def CheckChange(input_api: Any, output_api: Any, on_commit: bool) -> Any:
   tests = []
   results = []
   testing_env = dict(input_api.environ)
@@ -41,8 +42,8 @@ def CheckChange(input_api, output_api, on_commit):
       map(str, [root_path, crossbench_test_path]))
   # ---------------------------------------------------------------------------
   source_file_filter = SourceFileFilter(input_api)
-  modified_py_files: list[str] | None = ModifiedFiles(input_api, on_commit)
-  modified_hjson_files: list[str] | None = ModifiedFiles(
+  modified_py_files: list[str] = ModifiedFiles(input_api, on_commit)
+  modified_hjson_files: list[str] = ModifiedFiles(
       input_api, False, filename_pattern="*.hjson")
 
   # ---------------------------------------------------------------------------
@@ -59,24 +60,31 @@ def CheckChange(input_api, output_api, on_commit):
       source_file_filter=source_file_filter)
 
   # ---------------------------------------------------------------------------
-  # Pylint:
+  # Ruff:
   # ---------------------------------------------------------------------------
-  pylint_file_patterns_to_check: list[str] = PylintFilePatternsToCheck(
-      on_commit, modified_py_files)
-  if pylint_file_patterns_to_check:
-    tests += input_api.canned_checks.GetPylint(
-        input_api,
-        output_api,
-        files_to_check=pylint_file_patterns_to_check,
-        files_to_skip=SOURCE_SKIP_RE,
-        pylintrc=".pylintrc",
-        version="3.2")
+  # Ruff is fast, let's run it on all sources, excludes are configured
+  # separately in pyproject.toml.
+  tests.append(
+      input_api.Command(
+          name="ruff",
+          cmd=[
+              input_api.python3_executable,
+              "-m",
+              "ruff",
+              "check",
+              str(root_path),
+          ],
+          message=output_api.PresubmitError,
+          kwargs={},
+          python3=True,
+      ))
+
 
   # ---------------------------------------------------------------------------
   # MyPy:
   # ---------------------------------------------------------------------------
-  mypy_files_to_check: list[str] = MypyFilesToCheck(input_api, on_commit,
-                                                  modified_py_files)
+  mypy_files_to_check: list[str] = TyperPaths(input_api, on_commit,
+                                              modified_py_files)
   if mypy_files_to_check:
     tests.append(
         input_api.Command(
@@ -99,6 +107,12 @@ def CheckChange(input_api, output_api, on_commit):
   SortImports(input_api, output_api, results, modified_py_files)
 
   # ---------------------------------------------------------------------------
+  # js:
+  # ---------------------------------------------------------------------------
+  results += input_api.canned_checks.CheckPatchFormatted(
+      input_api, output_api, check_js=True)
+
+  # ---------------------------------------------------------------------------
   # hjson:
   # ---------------------------------------------------------------------------
   FormatHjsonFiles(input_api, output_api, results, modified_hjson_files)
@@ -106,23 +120,11 @@ def CheckChange(input_api, output_api, on_commit):
   # ---------------------------------------------------------------------------
   # Unittest:
   # ---------------------------------------------------------------------------
-  test_dirs_to_check, test_file_patterns_to_check = TestFilePatternsToCheck(
-      on_commit, crossbench_test_path)
-  for test_dir_to_check in test_dirs_to_check:
-    # Skip potentially empty dirs
-    if test_dir_to_check.name == "__pycache__":
-      continue
-    # End-to-end tests require custom setup and are not suited for presubmits.
-    if "end2end" in test_dir_to_check.parts:
-      continue
-    tests += input_api.canned_checks.GetUnitTestsInDirectory(
-        input_api,
-        output_api,
-        directory=test_dir_to_check,
-        env=testing_env,
-        files_to_check=test_file_patterns_to_check,
-        skip_shebang_check=True,
-        run_on_python2=False)
+  test_dir, file_pattern = TestFilePatternsToCheck(on_commit,
+                                                   crossbench_test_path)
+  unit_tests = [str(path) for path in test_dir.glob(f"**/{file_pattern}")]
+  tests += input_api.canned_checks.GetUnitTests(
+      input_api, output_api, unit_tests, env=testing_env)
 
   # ---------------------------------------------------------------------------
   # Run all test
@@ -131,8 +133,9 @@ def CheckChange(input_api, output_api, on_commit):
   return results
 
 
-def SortImports(input_api, output_api, results, modified_py_files):
-  for py_file in (modified_py_files or []):
+def SortImports(input_api: Any, output_api: Any, results: list,
+                modified_py_files: list[str]) -> None:
+  for py_file in modified_py_files:
     if GlobalSkipChecks(input_api, py_file):
       continue
     full_py_path = pathlib.Path(
@@ -151,8 +154,9 @@ def SortImports(input_api, output_api, results, modified_py_files):
             long_text="Please update your commit with the formatted file."))
 
 
-def FormatHjsonFiles(input_api, output_api, results, modified_hjson_files):
-  for hjson_file in (modified_hjson_files or []):
+def FormatHjsonFiles(input_api: Any, output_api: Any, results: list,
+                     modified_hjson_files: list[str]) -> None:
+  for hjson_file in modified_hjson_files:
     full_hjson_path = pathlib.Path(
       input_api.change.RepositoryRoot()) / hjson_file
 
@@ -176,11 +180,11 @@ def FormatHjsonFiles(input_api, output_api, results, modified_hjson_files):
             long_text="Please update your commit with the formatted file."))
 
 
-def ModifiedFiles(input_api,
+def ModifiedFiles(input_api: Any,
                   on_commit: bool,
-                  filename_pattern="*.py") -> Optional[list[str]]:
+                  filename_pattern: str = "*.py") -> list[str]:
   if on_commit:
-    return None
+    return []
   files = [file.AbsoluteLocalPath() for file in input_api.AffectedFiles()]
   files_to_check = []
   for file_path in files:
@@ -196,7 +200,8 @@ def ModifiedFiles(input_api,
   return files_to_check
 
 
-def PylintFilePatternsToCheck(on_commit, modified_py_files) -> list[str]:
+def LinterFilePatterns(on_commit: bool,
+                       modified_py_files: list[str]) -> list[str]:
   if on_commit:
     # Test all files on commit
     return [r"^[^\.]+\.py$"]
@@ -206,7 +211,8 @@ def PylintFilePatternsToCheck(on_commit, modified_py_files) -> list[str]:
   return [re.escape(file) for file in modified_py_files]
 
 
-def MypyFilesToCheck(input_api, on_commit, modified_py_files) -> list[str]:
+def TyperPaths(input_api: Any, on_commit: bool,
+               modified_py_files: list[str]) -> list[str]:
   root_path = pathlib.Path(input_api.PresubmitLocalPath())
   mypy_files_to_check = {"PRESUBMIT.py"}
   crossbench_path = root_path / "crossbench"
@@ -225,7 +231,7 @@ def MypyFilesToCheck(input_api, on_commit, modified_py_files) -> list[str]:
   return result
 
 
-def GetNodeExecutable(input_api) -> str:
+def GetNodeExecutable(input_api: Any) -> str:
   node_base: pathlib.Path = pathlib.Path(
       input_api.change.RepositoryRoot()) / "third_party" / "node"
 
@@ -249,7 +255,7 @@ def GetNodeExecutable(input_api) -> str:
   return node_bin
 
 
-def FormatHjsonFile(input_api, hjson_file: pathlib.Path) -> str:
+def FormatHjsonFile(input_api: Any, hjson_file: pathlib.Path) -> str:
   node_bin = GetNodeExecutable(input_api)
 
   hjson_js_bin = str(
@@ -268,21 +274,23 @@ def FormatHjsonFile(input_api, hjson_file: pathlib.Path) -> str:
     raise ValueError(f"Failed to parse hjson file: {error}") from e
 
 
-def TestFilePatternsToCheck(on_commit, crossbench_test_path):
+def TestFilePatternsToCheck(
+    on_commit: bool,
+    crossbench_test_path: pathlib.Path) -> tuple[pathlib.Path, str]:
   # Only run test_cli to speed up the presubmit checks
   if on_commit:
-    test_dirs_to_check: Iterable[pathlib.Path] = crossbench_test_path.glob("**")
-    test_files_to_check = [r".*test_.*\.py$"]
+    test_dir: pathlib.Path = crossbench_test_path
+    file_pattern = "*test_*.py"
   else:
     # Only check a small subset on upload
-    test_dirs_to_check = [crossbench_test_path / "cli"]
-    test_files_to_check = [r".*test_cli_fast_.*\.py$"]
-  return test_dirs_to_check, test_files_to_check
+    test_dir = crossbench_test_path / "cli"
+    file_pattern = "*test_cli_fast_.*.py"
+  return test_dir, file_pattern
 
 
-def CheckChangeOnUpload(input_api, output_api):
+def CheckChangeOnUpload(input_api: Any, output_api: Any) -> Any:
   return CheckChange(input_api, output_api, on_commit=False)
 
 
-def CheckChangeOnCommit(input_api, output_api):
+def CheckChangeOnCommit(input_api: Any, output_api: Any) -> Any:
   return CheckChange(input_api, output_api, on_commit=True)

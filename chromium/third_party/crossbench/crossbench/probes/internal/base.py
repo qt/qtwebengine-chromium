@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Type, TypeVar
+from typing import TYPE_CHECKING, ClassVar, Type, TypeVar
 
 from typing_extensions import override
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class InternalProbe(Probe):
-  IS_GENERAL_PURPOSE = False
+  IS_GENERAL_PURPOSE: ClassVar = False
 
   @property
   @override
@@ -25,7 +25,7 @@ class InternalProbe(Probe):
 
 
 class InternalJsonResultProbe(JsonResultProbe, InternalProbe):
-  IS_GENERAL_PURPOSE = False
+  IS_GENERAL_PURPOSE: ClassVar = False
 
   @override
   def get_context_cls(self) -> Type[InternalJsonResultProbeContext]:
@@ -38,7 +38,7 @@ InternalJsonResultProbeT = TypeVar(
 
 class InternalJsonResultProbeContext(
     JsonResultProbeContext[InternalJsonResultProbeT]):
-  FLATTEN = False
+  FLATTEN: ClassVar = False
 
   @override
   def stop(self) -> None:
@@ -47,5 +47,5 @@ class InternalJsonResultProbeContext(
 
   @override
   def teardown(self) -> ProbeResult:
-    self._json_data = self.extract_json(self.run)  # pylint: disable=no-member
+    self._json_data = self.extract_json(self.run)
     return super().teardown()

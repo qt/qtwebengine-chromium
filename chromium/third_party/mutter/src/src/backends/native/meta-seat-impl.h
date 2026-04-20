@@ -81,9 +81,6 @@ struct _MetaSeatImpl
   GHashTable *cursor_renderers;
 
   struct xkb_state *xkb;
-  xkb_led_index_t caps_lock_led;
-  xkb_led_index_t num_lock_led;
-  xkb_led_index_t scroll_lock_led;
   xkb_layout_index_t layout_idx;
   uint32_t button_state;
   int button_count[KEY_CNT];
@@ -129,6 +126,8 @@ G_DECLARE_FINAL_TYPE (MetaSeatImpl, meta_seat_impl,
 MetaSeatImpl * meta_seat_impl_new (MetaSeatNative     *seat_native,
                                    const char         *seat_id,
                                    MetaSeatNativeFlag  flags);
+
+void meta_seat_impl_setup (MetaSeatImpl *seat_impl);
 
 void meta_seat_impl_start (MetaSeatImpl *seat_impl);
 
@@ -263,3 +262,7 @@ void meta_seat_impl_add_virtual_input_device (MetaSeatImpl       *seat_impl,
 
 void meta_seat_impl_remove_virtual_input_device (MetaSeatImpl       *seat_impl,
                                                  ClutterInputDevice *device);
+
+void meta_seat_impl_set_a11y_modifiers (MetaSeatImpl   *seat_impl,
+                                        const uint32_t *modifiers,
+                                        int             n_modifiers);

@@ -534,6 +534,11 @@ meta_renderer_native_setup_egl_display (CoglDisplay *cogl_display,
 
   cogl_display_egl->platform = renderer_native;
 
+#ifdef HAVE_EGL_DEVICE
+  if (renderer_gpu_data->mode == META_RENDERER_NATIVE_MODE_EGL_DEVICE)
+    cogl_renderer_egl->needs_config = TRUE;
+#endif
+
   /* Force a full modeset / drmModeSetCrtc on
    * the first swap buffers call.
    */
@@ -740,17 +745,24 @@ configure_disabled_crtcs (MetaKmsDevice      *kms_device,
     }
 }
 
-static void
+static gboolean
 dummy_power_save_page_flip_cb (gpointer user_data)
 {
   MetaRendererNative *renderer_native = user_data;
+  g_autolist (GObject) old_list = NULL;
 
-  g_list_foreach (renderer_native->power_save_page_flip_onscreens,
+  old_list = g_steal_pointer (&renderer_native->power_save_page_flip_onscreens);
+
+  g_list_foreach (old_list,
                   (GFunc) meta_onscreen_native_dummy_power_save_page_flip,
                   NULL);
-  g_clear_list (&renderer_native->power_save_page_flip_onscreens,
-                g_object_unref);
+
+  if (renderer_native->power_save_page_flip_onscreens != NULL)
+    return G_SOURCE_CONTINUE;
+
   renderer_native->power_save_page_flip_source_id = 0;
+
+  return G_SOURCE_REMOVE;
 }
 
 void
@@ -759,12 +771,15 @@ meta_renderer_native_queue_power_save_page_flip (MetaRendererNative *renderer_na
 {
   const unsigned int timeout_ms = 100;
 
+  if (g_list_find (renderer_native->power_save_page_flip_onscreens, onscreen))
+    return;
+
   if (!renderer_native->power_save_page_flip_source_id)
     {
       renderer_native->power_save_page_flip_source_id =
-        g_timeout_add_once (timeout_ms,
-                            dummy_power_save_page_flip_cb,
-                            renderer_native);
+        g_timeout_add (timeout_ms,
+                       dummy_power_save_page_flip_cb,
+                       renderer_native);
     }
 
   renderer_native->power_save_page_flip_onscreens =
@@ -1566,6 +1581,26 @@ detach_onscreens (MetaRenderer *renderer)
 }
 
 static void
+discard_pending_swaps (MetaRenderer *renderer)
+{
+  GList *views = meta_renderer_get_views (renderer);;
+  GList *l;
+
+  for (l = views; l; l = l->next)
+    {
+      ClutterStageView *stage_view = l->data;
+      CoglFramebuffer *fb = clutter_stage_view_get_onscreen (stage_view);
+      CoglOnscreen *onscreen;
+
+      if (!COGL_IS_ONSCREEN (fb))
+        continue;
+
+      onscreen = COGL_ONSCREEN (fb);
+      meta_onscreen_native_discard_pending_swaps (onscreen);
+    }
+}
+
+static void
 meta_renderer_native_rebuild_views (MetaRenderer *renderer)
 {
   MetaRendererNative *renderer_native = META_RENDERER_NATIVE (renderer);
@@ -1575,6 +1610,7 @@ meta_renderer_native_rebuild_views (MetaRenderer *renderer)
   MetaRendererClass *parent_renderer_class =
     META_RENDERER_CLASS (meta_renderer_native_parent_class);
 
+  discard_pending_swaps (renderer);
   meta_kms_discard_pending_page_flips (kms);
   g_hash_table_remove_all (renderer_native->mode_set_updates);
 
@@ -1878,6 +1914,33 @@ maybe_restore_cogl_egl_api (MetaRendererNative *renderer_native)
   cogl_renderer_bind_api (cogl_renderer);
 }
 
+static void
+set_default_secondary_gpu_copy_mode (MetaRendererNativeGpuData *gpu_data)
+{
+  const char *copy_mode;
+
+  gpu_data->secondary.copy_mode =
+    META_SHARED_FRAMEBUFFER_COPY_MODE_SECONDARY_GPU;
+
+  copy_mode = getenv ("MUTTER_DEBUG_MULTI_GPU_FORCE_COPY_MODE");
+  if (!copy_mode || *copy_mode == '\0')
+    return;
+
+  if (strcmp (copy_mode, "primary-gpu-gpu") == 0)
+    {
+      gpu_data->secondary.copy_mode = META_SHARED_FRAMEBUFFER_COPY_MODE_PRIMARY;
+    }
+  else if (strcmp (copy_mode, "primary-gpu-cpu") == 0)
+    {
+      gpu_data->secondary.copy_mode = META_SHARED_FRAMEBUFFER_COPY_MODE_PRIMARY;
+      gpu_data->secondary.copy_mode_primary_force_cpu = TRUE;
+    }
+  else if (strcmp (copy_mode, "zero-copy") == 0)
+    {
+      gpu_data->secondary.copy_mode = META_SHARED_FRAMEBUFFER_COPY_MODE_ZERO;
+    }
+}
+
 static gboolean
 init_secondary_gpu_data_gpu (MetaRendererNativeGpuData *renderer_gpu_data,
                              GError                   **error)
@@ -1953,7 +2016,7 @@ init_secondary_gpu_data_gpu (MetaRendererNativeGpuData *renderer_gpu_data,
 
   renderer_gpu_data->secondary.egl_context = egl_context;
   renderer_gpu_data->secondary.egl_config = egl_config;
-  renderer_gpu_data->secondary.copy_mode = META_SHARED_FRAMEBUFFER_COPY_MODE_SECONDARY_GPU;
+  set_default_secondary_gpu_copy_mode (renderer_gpu_data);
 
   renderer_gpu_data->secondary.has_EGL_EXT_image_dma_buf_import_modifiers =
     meta_egl_has_extensions (egl, egl_display, NULL,
@@ -2487,6 +2550,16 @@ initable_iface_init (GInitableIface *initable_iface)
 }
 
 static void
+meta_renderer_native_dispose (GObject *object)
+{
+  MetaRendererNative *renderer_native = META_RENDERER_NATIVE (object);
+
+  clear_detached_onscreens (renderer_native);
+
+  G_OBJECT_CLASS (meta_renderer_native_parent_class)->dispose (object);
+}
+
+static void
 meta_renderer_native_finalize (GObject *object)
 {
   MetaRendererNative *renderer_native = META_RENDERER_NATIVE (object);
@@ -2501,7 +2574,6 @@ meta_renderer_native_finalize (GObject *object)
 
   g_clear_handle_id (&renderer_native->release_unused_gpus_idle_id,
                      g_source_remove);
-  clear_detached_onscreens (renderer_native);
 
   g_hash_table_destroy (renderer_native->gpu_datas);
   g_clear_object (&renderer_native->gles3);
@@ -2550,6 +2622,7 @@ meta_renderer_native_class_init (MetaRendererNativeClass *klass)
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
   MetaRendererClass *renderer_class = META_RENDERER_CLASS (klass);
 
+  object_class->dispose = meta_renderer_native_dispose;
   object_class->finalize = meta_renderer_native_finalize;
   object_class->constructed = meta_renderer_native_constructed;
 

@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 # Placeholder: load py_test
 
 licenses(["notice"])
@@ -80,6 +83,7 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -259,7 +263,6 @@ cc_library(
         "//internal/interop:__pkg__",
         "//internal/network:__subpackages__",
         "//internal/platform:__subpackages__",
-        "//internal/platform/implementation/g3:__pkg__",
         "//internal/preferences:__subpackages__",
         "//internal/proto/analytics:__subpackages__",
         "//internal/test:__subpackages__",
@@ -349,6 +352,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:optional",
     ],
 )
@@ -363,6 +367,7 @@ cc_library(
     deps = [
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -410,7 +415,7 @@ cc_test(
     deps = [
         ":base",
         ":test_util",
-        "//internal/platform/implementation/g3",  # build_cleaner: keep
+        "//internal/platform/implementation:platform_impl",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_absl//absl/hash:hash_testing",
         "@com_google_absl//absl/status",
@@ -445,7 +450,7 @@ cc_test(
         ":base",
         ":cancellation_flag",
         ":test_util",
-        "//internal/platform/implementation/g3",  # build_cleaner: keep
+        "//internal/platform/implementation:platform_impl",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_googletest//:gtest_main",
     ],
@@ -470,7 +475,7 @@ cc_test(
     deps = [
         ":error_code_recorder",
         ":test_util",
-        "//internal/platform/implementation/g3",  # build_cleaner: keep
+        "//internal/platform/implementation:platform_impl",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_googletest//:gtest_main",
     ],
@@ -507,7 +512,7 @@ cc_test(
         "//connections/implementation/flags:connections_flags",
         "//internal/flags:nearby_flags",
         "//internal/platform/implementation:comm",
-        "//internal/platform/implementation/g3",  # build_cleaner: keep
+        "//internal/platform/implementation:platform_impl",  # build_cleaner: keep
         "//proto:connections_enums_cc_proto",
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_absl//absl/status",
@@ -523,7 +528,7 @@ cc_test(
     deps = [
         ":comm",
         "//internal/platform/implementation:comm",
-        "//internal/platform/implementation/g3",  # build_cleaner: keep
+        "//internal/platform/implementation:platform_impl",  # build_cleaner: keep
         "//internal/proto:credential_cc_proto",
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_absl//absl/status",
@@ -572,6 +577,8 @@ cc_test(
         "//internal/flags:nearby_flags",
         "//internal/platform/flags:platform_flags",
         "//internal/platform/implementation:comm",
+        "//internal/platform/implementation:platform_impl",  # build_cleaner: keep
+        "//internal/platform/implementation:types",
         "//internal/proto:credential_cc_proto",
         "//internal/test",
         "//proto:connections_enums_cc_proto",
@@ -585,14 +592,7 @@ cc_test(
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:variant",
         "@com_google_googletest//:gtest_main",
-    ] + select({
-        "@platforms//os:windows": [
-            "//internal/platform/implementation/windows",
-        ],
-        "//conditions:default": [
-            "//internal/platform/implementation/g3",
-        ],
-    }),
+    ],
 )
 
 cc_test(

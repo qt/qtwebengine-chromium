@@ -4,21 +4,24 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
-from typing_extensions import override
-
-from crossbench.action_runner.action.action import Action
+from crossbench.action_runner.action.action import ACTION_TIMEOUT
 from crossbench.action_runner.action.action_type import ActionType
+from crossbench.action_runner.action.base_probe import BaseProbeAction
 
 if TYPE_CHECKING:
-  from crossbench.action_runner.base import ActionRunner
-  from crossbench.runner.run import Run
+  import datetime as dt
 
 
-class ScreenshotAction(Action):
-  TYPE: ActionType = ActionType.SCREENSHOT
+# Left here for backwards compatibility.
+# New probe actions should not have individual class implementations.
+# They should just be used as ProbeActions directly.
+class ScreenshotAction(BaseProbeAction):
+  TYPE: ClassVar[ActionType] = ActionType.SCREENSHOT
 
-  @override
-  def run_with(self, run: Run, action_runner: ActionRunner) -> None:
-    action_runner.screenshot(run, self)
+  def __init__(self,
+               timeout: dt.timedelta = ACTION_TIMEOUT,
+               index: int = 0) -> None:
+    super().__init__(
+        probe="screenshot", kwargs={}, timeout=timeout, index=index)

@@ -512,6 +512,26 @@ workspace_switch_sound (MetaWorkspace *from,
   meta_workspace_manager_free_workspace_layout (&layout);
 }
 
+static void
+workspace_a11y_notification (MetaWorkspace *workspace)
+{
+  MetaContext *context = meta_display_get_context (workspace->display);
+  MetaBackend *backend = meta_context_get_backend (context);
+  ClutterActor *stage = meta_backend_get_stage (backend);
+  AtkObject *stage_accessible = clutter_actor_get_accessible (stage);
+  int index;
+
+  if (!stage_accessible)
+    return;
+
+  index = meta_workspace_index (workspace);
+  g_signal_emit_by_name (stage_accessible,
+                         "notification",
+                         meta_prefs_get_workspace_name (index),
+                         ATK_LIVE_POLITE,
+                         NULL);
+}
+
 /**
  * meta_workspace_activate_with_focus:
  * @workspace: a #MetaWorkspace
@@ -547,8 +567,9 @@ meta_workspace_activate_with_focus (MetaWorkspace *workspace,
   g_return_if_fail (META_IS_WORKSPACE (workspace));
   g_return_if_fail (meta_workspace_index (workspace) != -1);
 
-  meta_verbose ("Activating workspace %d",
-                meta_workspace_index (workspace));
+  meta_topic (META_DEBUG_WORKSPACES,
+              "Activating workspace %d",
+              meta_workspace_index (workspace));
 
   if (workspace->manager->active_workspace == workspace)
     {
@@ -576,6 +597,8 @@ meta_workspace_activate_with_focus (MetaWorkspace *workspace,
   g_signal_emit_by_name (workspace->manager, "active-workspace-changed");
 
   g_object_notify_by_pspec (G_OBJECT (workspace), obj_props[PROP_ACTIVE]);
+
+  workspace_a11y_notification (workspace);
 
   if (old == NULL)
     return;
@@ -913,9 +936,9 @@ ensure_work_areas_validated (MetaWorkspace *workspace)
   if (work_area.width < MIN_SANE_AREA &&
       work_area.width != display_rect.width)
     {
-      meta_warning ("struts occupy an unusually large percentage of the screen; "
-                    "available remaining width = %d < %d",
-                    work_area.width, MIN_SANE_AREA);
+      g_warning ("struts occupy an unusually large percentage of the screen; "
+                 "available remaining width = %d < %d",
+                 work_area.width, MIN_SANE_AREA);
       if (work_area.width < 1)
         {
           work_area.x = (display_rect.width - MIN_SANE_AREA)/2;
@@ -931,9 +954,9 @@ ensure_work_areas_validated (MetaWorkspace *workspace)
   if (work_area.height < MIN_SANE_AREA &&
       work_area.height != display_rect.height)
     {
-      meta_warning ("struts occupy an unusually large percentage of the screen; "
-                    "available remaining height = %d < %d",
-                    work_area.height, MIN_SANE_AREA);
+      g_warning ("struts occupy an unusually large percentage of the screen; "
+                 "available remaining height = %d < %d",
+                 work_area.height, MIN_SANE_AREA);
       if (work_area.height < 1)
         {
           work_area.y = (display_rect.height - MIN_SANE_AREA)/2;
@@ -1261,8 +1284,9 @@ meta_workspace_get_neighbor (MetaWorkspace      *workspace,
   meta_workspace_manager_calc_workspace_layout (workspace->manager, num_workspaces,
                                                 current_space, &layout);
 
-  meta_verbose ("Getting neighbor of %d in direction %s",
-                current_space, meta_motion_direction_to_string (direction));
+  meta_topic (META_DEBUG_WORKSPACES,
+              "Getting neighbor of %d in direction %s",
+              current_space, meta_motion_direction_to_string (direction));
 
   ltr = (clutter_get_text_direction () == CLUTTER_TEXT_DIRECTION_LTR);
 
@@ -1301,8 +1325,9 @@ meta_workspace_get_neighbor (MetaWorkspace      *workspace,
     meta_bug ("calc_workspace_layout left an invalid (too-high) workspace number %d in the grid",
               i);
 
-  meta_verbose ("Neighbor workspace is %d at row %d col %d",
-                i, layout.current_row, layout.current_col);
+  meta_topic (META_DEBUG_WORKSPACES,
+              "Neighbor workspace is %d at row %d col %d",
+              i, layout.current_row, layout.current_col);
 
   meta_workspace_manager_free_workspace_layout (&layout);
 
@@ -1334,8 +1359,11 @@ meta_workspace_focus_default_window (MetaWorkspace *workspace,
   MetaWindow *current_focus_window = NULL;
 
   if (timestamp == META_CURRENT_TIME)
-    meta_warning ("META_CURRENT_TIME used to choose focus window; "
+    {
+      meta_topic (META_DEBUG_FOCUS,
+                  "META_CURRENT_TIME used to choose focus window; "
                   "focus window may not be correct.");
+    }
 
   current_focus_window = workspace_find_focused_window (workspace);
 
@@ -1574,8 +1602,9 @@ try_to_set_focus_and_check (MetaWindow *window,
   if (not_this_one &&
       meta_display_get_focus_window (window->display) == not_this_one)
     {
-      meta_warning ("Failed to focus window %s while avoiding %s",
-                    window->desc, not_this_one->desc);
+      meta_topic (META_DEBUG_FOCUS,
+                  "Failed to focus window %s while avoiding %s",
+                  window->desc, not_this_one->desc);
 
       return FALSE;
     }

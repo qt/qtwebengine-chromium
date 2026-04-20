@@ -283,6 +283,7 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo>& GetSpirvCapabilites(
         {spv::CapabilityFloat8EXT, {0, &DeviceFeatures::shaderFloat8, nullptr, ""}},
         {spv::CapabilityFloat8CooperativeMatrixEXT, {0, &DeviceFeatures::shaderFloat8CooperativeMatrix, nullptr, ""}},
         {spv::CapabilityGraphARM, {0, &DeviceFeatures::dataGraph, nullptr, ""}},
+        {spv::CapabilityUntypedPointersKHR, {0, &DeviceFeatures::shaderUntypedPointers, nullptr, ""}},
     };
     // clang-format on
     return spirv_capabilities;
@@ -384,7 +385,6 @@ const std::unordered_multimap<std::string_view, RequiredSpirvInfo>& GetSpirvExte
         {"SPV_EXT_opacity_micromap", {0, nullptr, &DeviceExtensions::vk_ext_opacity_micromap, ""}},
         {"SPV_KHR_cooperative_matrix", {0, nullptr, &DeviceExtensions::vk_khr_cooperative_matrix, ""}},
         {"SPV_ARM_core_builtins", {0, nullptr, &DeviceExtensions::vk_arm_shader_core_builtins, ""}},
-        {"SPV_AMDX_shader_enqueue", {0, nullptr, &DeviceExtensions::vk_amdx_shader_enqueue, ""}},
         {"SPV_HUAWEI_cluster_culling_shader", {0, nullptr, &DeviceExtensions::vk_huawei_cluster_culling_shader, ""}},
         {"SPV_HUAWEI_subpass_shading", {0, nullptr, &DeviceExtensions::vk_huawei_subpass_shading, ""}},
         {"SPV_NV_ray_tracing_motion_blur", {0, nullptr, &DeviceExtensions::vk_nv_ray_tracing_motion_blur, ""}},
@@ -410,6 +410,7 @@ const std::unordered_multimap<std::string_view, RequiredSpirvInfo>& GetSpirvExte
         {"SPV_ARM_tensors", {0, nullptr, &DeviceExtensions::vk_arm_tensors, ""}},
         {"SPV_EXT_float8", {0, nullptr, &DeviceExtensions::vk_ext_shader_float8, ""}},
         {"SPV_ARM_graph", {0, nullptr, &DeviceExtensions::vk_arm_data_graph, ""}},
+        {"SPV_KHR_untyped_pointers", {0, nullptr, &DeviceExtensions::vk_khr_shader_untyped_pointers, ""}},
     };
     // clang-format on
     return spirv_extensions;
@@ -609,10 +610,8 @@ static inline const char* string_SpvCapability(uint32_t input_value) {
             return "RayQueryProvisionalKHR";
         case spv::CapabilityRayQueryKHR:
             return "RayQueryKHR";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case spv::CapabilityUntypedPointersKHR:
             return "UntypedPointersKHR";
-#endif
         case spv::CapabilityRayTraversalPrimitiveCullingKHR:
             return "RayTraversalPrimitiveCullingKHR";
         case spv::CapabilityRayTracingKHR:
@@ -833,6 +832,8 @@ static inline const char* string_SpvCapability(uint32_t input_value) {
             return "SubgroupMatrixMultiplyAccumulateINTEL";
         case spv::CapabilityTernaryBitwiseFunctionINTEL:
             return "TernaryBitwiseFunctionINTEL";
+        case spv::CapabilityUntypedVariableLengthArrayINTEL:
+            return "UntypedVariableLengthArrayINTEL";
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case spv::CapabilitySpecConditionalINTEL:
             return "SpecConditionalINTEL";
@@ -1215,6 +1216,7 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityFloat8EXT, "VkPhysicalDeviceShaderFloat8FeaturesEXT::shaderFloat8"},
     {spv::CapabilityFloat8CooperativeMatrixEXT, "VkPhysicalDeviceShaderFloat8FeaturesEXT::shaderFloat8CooperativeMatrix"},
     {spv::CapabilityGraphARM, "VkPhysicalDeviceDataGraphFeaturesARM::dataGraph"},
+    {spv::CapabilityUntypedPointersKHR, "VkPhysicalDeviceShaderUntypedPointersFeaturesKHR::shaderUntypedPointers"},
     };
 
     // VUs before catch unknown capabilities
@@ -1299,7 +1301,6 @@ static inline std::string SpvExtensionRequirements(std::string_view extension) {
     {"SPV_EXT_opacity_micromap", {{vvl::Extension::_VK_EXT_opacity_micromap}}},
     {"SPV_KHR_cooperative_matrix", {{vvl::Extension::_VK_KHR_cooperative_matrix}}},
     {"SPV_ARM_core_builtins", {{vvl::Extension::_VK_ARM_shader_core_builtins}}},
-    {"SPV_AMDX_shader_enqueue", {{vvl::Extension::_VK_AMDX_shader_enqueue}}},
     {"SPV_HUAWEI_cluster_culling_shader", {{vvl::Extension::_VK_HUAWEI_cluster_culling_shader}}},
     {"SPV_HUAWEI_subpass_shading", {{vvl::Extension::_VK_HUAWEI_subpass_shading}}},
     {"SPV_NV_ray_tracing_motion_blur", {{vvl::Extension::_VK_NV_ray_tracing_motion_blur}}},
@@ -1322,6 +1323,7 @@ static inline std::string SpvExtensionRequirements(std::string_view extension) {
     {"SPV_ARM_tensors", {{vvl::Extension::_VK_ARM_tensors}}},
     {"SPV_EXT_float8", {{vvl::Extension::_VK_EXT_shader_float8}}},
     {"SPV_ARM_graph", {{vvl::Extension::_VK_ARM_data_graph}}},
+    {"SPV_KHR_untyped_pointers", {{vvl::Extension::_VK_KHR_shader_untyped_pointers}}},
     };
 
     // VUs before catch unknown extensions

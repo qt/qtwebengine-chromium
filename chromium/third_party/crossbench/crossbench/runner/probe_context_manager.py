@@ -8,7 +8,8 @@ import abc
 import contextlib
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING, Generic, Iterable, Optional, Type, TypeVar
+from typing import (TYPE_CHECKING, Generic, Iterable, Iterator, Self, Type,
+                    TypeVar)
 
 from crossbench.helper.state import State, StateMachine
 from crossbench.probes.probe_context import BaseProbeContext, ProbeContext
@@ -23,7 +24,7 @@ ResultOriginT = TypeVar("ResultOriginT", bound=ResultOrigin)
 ProbeContextT = TypeVar("ProbeContextT", bound=BaseProbeContext)
 
 
-class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
+class ProbeContextManager(abc.ABC, Generic[ResultOriginT, ProbeContextT]):
 
   def __init__(self, result_origin: ResultOriginT,
                probe_results: ProbeResultDict) -> None:
@@ -50,11 +51,13 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
   def is_success(self) -> bool:
     return self._exceptions.is_success
 
-  def _measure(self, name: str):
-    return self._origin.measure(name)
+  @contextlib.contextmanager
+  def _measure(self, name: str) -> Iterator[None]:
+    with self._origin.measure(name):
+      yield
 
   @contextlib.contextmanager
-  def _capture(self, label: str, measure: bool = False):
+  def _capture(self, label: str, measure: bool = False) -> Iterator[None]:
     with self._exceptions.capture(label):
       if not measure:
         yield
@@ -92,7 +95,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
       if probe.PRODUCES_DATA:
         self._probe_results[probe] = EmptyProbeResult()
       with self._capture(f"{probe.name} get_context"):
-        if probe_context := self.get_probe_context(probe):
+        if probe_context := self._create_probe_context(probe):
           assert probe_context not in unique_contexts
           unique_contexts.add(probe_context)
           probe_cls = type(probe)
@@ -110,7 +113,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
           raise
 
   @contextlib.contextmanager
-  def open(self, is_dry_run: bool):
+  def open(self, is_dry_run: bool) -> Iterator[Self]:
     self._state.transition(State.READY, to=State.RUN)
     probe_start_time = dt.datetime.now()
     combined_contexts = contextlib.ExitStack()
@@ -160,11 +163,11 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
                     self._origin)
 
   @abc.abstractmethod
-  def get_probe_context(self, probe: Probe) -> Optional[ProbeContextT]:
+  def _create_probe_context(self, probe: Probe) -> ProbeContextT | None:
     pass
 
-  def find_probe_context(
-      self, probe_cls: Type[ProbeT]) -> Optional[ProbeContext[ProbeT]]:
+  def get_probe_context(self,
+                        probe_cls: Type[ProbeT]) -> ProbeContext[ProbeT] | None:
     if probe_context := self._probe_contexts.get(probe_cls):
       assert isinstance(probe_context.probe, probe_cls), (
           f"Expected instance of {probe_cls}: got {probe_context.probe}")

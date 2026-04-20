@@ -1,0 +1,22 @@
+[
+  {
+    "URL":"https://edition.cnn.com/2024/04/21/china/china-spy-agency-public-profile-intl-hnk/index.html",
+    "InjectedScript":"cnn_instrumentation.js"
+  },
+  {
+    "URL":"https://www.amazon.co.uk/NIVEA-Suncream-Spray-Protect-Moisture/dp/B001B0OJXM",
+    "InjectedScript":"amazon_instrumentation.js"
+  },
+  {
+    "URL":"https://en.m.wikipedia.org/wiki/Taylor_Swift",
+    "InjectedScript":"wiki_instrumentation.js"
+  },
+  {
+    "URL":"https://www.globo.com/",
+    "InjectedScript":"globo_instrumentation.js"
+  },
+  {
+    "URL":"https://www.google.com/search?q=cats",
+    "InjectedScript":"google_search_instrumentation.js"
+  }
+]

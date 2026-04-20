@@ -5,9 +5,10 @@
 from __future__ import annotations
 
 import abc
+import contextlib
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from typing_extensions import override
 
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 
   from crossbench.action_runner.config import ActionRunnerConfig
   from crossbench.cli.parser import CrossBenchArgumentParser
+  from crossbench.cli.types import Subparsers
   from crossbench.runner.run import Run
 
 
@@ -49,7 +51,7 @@ class ManualStory(Story, metaclass=abc.ABCMeta):
     elif self._start_after.total_seconds():
       logging.critical("-" * 80)
       logging.critical(
-          "The browser has launched. Measurement will start in %s" +
+          "The browser has launched. Measurement will start in %s"
           " (or press enter to start immediately)", self._start_after)
       input_helper.input_with_timeout(timeout=self._start_after)
     logging.info("Starting Manual Benchmark...")
@@ -68,13 +70,11 @@ class ManualStory(Story, metaclass=abc.ABCMeta):
   def _wait_for_input(self) -> None:
     if self._run_for is None:
       logging.critical("Press enter to stop:")
-      try:
+      with contextlib.suppress(KeyboardInterrupt):
         input()
-      except KeyboardInterrupt:
-        pass
     else:
       logging.critical(
-          "Measurement has started. The browser will close in %s" +
+          "Measurement has started. The browser will close in %s"
           " (or press enter to close immediately)", self._run_for)
       input_helper.input_with_timeout(timeout=self._run_for)
 
@@ -92,8 +92,8 @@ class ManualBenchmark(Benchmark, metaclass=abc.ABCMeta):
   Optionally waits for |start_after| seconds, then runs measurements for
   |run_for| seconds, then closes the browser.
   """
-  NAME = "manual"
-  DEFAULT_STORY_CLS = ManualStory
+  NAME: ClassVar = "manual"
+  DEFAULT_STORY_CLS: ClassVar = ManualStory
 
   def __init__(self,
                action_runner_config: Optional[ActionRunnerConfig] = None,
@@ -106,8 +106,7 @@ class ManualBenchmark(Benchmark, metaclass=abc.ABCMeta):
 
   @classmethod
   @override
-  def add_cli_parser(
-      cls, subparsers: argparse.ArgumentParser) -> CrossBenchArgumentParser:
+  def add_cli_parser(cls, subparsers: Subparsers) -> CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers)
     parser.add_argument(
         "--start-after",

@@ -8,6 +8,7 @@ import abc
 from typing import TYPE_CHECKING, Iterable
 
 from crossbench import exception
+from crossbench.path import AnyPath
 from crossbench.probes.results import ProbeResult, ProbeResultDict
 
 if TYPE_CHECKING:
@@ -22,7 +23,7 @@ class RunGroup(abc.ABC):
   def __init__(self, throw: bool = False) -> None:
     self._exceptions = exception.Annotator(throw)
     self._path: LocalPath | None = None
-    self._merged_probe_results: ProbeResultDict | None = None
+    self._merged_probe_results: ProbeResultDict = ProbeResultDict(AnyPath())
 
   def _set_path(self, path: LocalPath) -> None:
     assert self._path is None
@@ -31,7 +32,7 @@ class RunGroup(abc.ABC):
 
   @property
   def results(self) -> ProbeResultDict:
-    assert self._merged_probe_results is not None
+    assert self._path, "uninitialized probe results"
     return self._merged_probe_results
 
   @property
@@ -91,7 +92,6 @@ class RunGroup(abc.ABC):
     return path
 
   def merge(self, probes: Iterable[Probe]) -> None:
-    assert self._merged_probe_results is not None
     with self._exceptions.info(*self.info_stack):
       for probe in reversed(tuple(probes)):
         with self._exceptions.capture(f"Probe {probe.name} merge results"):

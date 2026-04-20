@@ -1,0 +1,190 @@
+# Copyright 2024 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Test file with demo configs of all actions.
+{
+  pages: {
+    get: [
+      {
+        action: get
+        url: http://crossben.ch
+      }
+    ]
+    js: [
+      {
+        action: js
+        script: alert(1)
+      }
+    ]
+    wait: [
+      {
+        action: wait
+        duration: 1s
+      }
+    ]
+    scroll: [
+      {
+        action: scroll
+      }
+      {
+        action: scroll
+        distance: 1000
+        duration: 2s
+        selector: "#my-scrolling-element"
+        required: true
+      }
+    ]
+    click: [
+      {
+        action: click
+        selector: "#button"
+      }
+      {
+        action: click
+        position: {
+          selector: "#button"
+          required: true
+        }
+        duration: 500ms
+        attempts: 3
+        verify: window.location.href.includes('success')
+      }
+    ]
+    swipe: [
+      {
+        action: swipe
+        startx: 1
+        starty: 2
+        endx: 3
+        endy: 4
+        duration: 1s
+      }
+      {
+        action: swipe
+        start_x: 100
+        start_y: 200
+        end_x: 100
+        end_y: 500
+        duration: 500ms
+      }
+    ]
+    text_input: [
+      {
+        action: text_input
+        text: some text
+      }
+      {
+        action: text_input
+        keyevent: KEYCODE_ENTER
+        duration: 100ms
+      }
+    ]
+    wait_for_condition: [
+      {
+        action: wait_for_condition
+        condition: return true
+      }
+      {
+        action: wait_for_condition
+        condition: return document.readyState === 'complete'
+      }
+    ]
+    wait_for_element: [
+      {
+        action: wait_for_element
+        selector: "#button"
+      }
+      {
+        action: wait_for_element
+        selector: .my-class
+        expected_count: 5
+        or_more: true
+      }
+    ]
+    inject_new_document_script: [
+      {
+        action: inject_new_document_script
+        script: alert(1)
+      }
+      {
+        action: inject_new_document_script
+        script_path: ./script.js
+        replacements: {
+          "{{some_placeholder}}": some_value
+        }
+      }
+    ]
+    screenshot: [
+      {
+        action: screenshot
+      }
+    ]
+    switch_tab: [
+      {
+        action: switch_tab
+        tab_index: 0
+      }
+      {
+        action: switch_tab
+        relative_tab_index: -1
+      }
+      {
+        action: switch_tab
+        title: .*Google.*
+      }
+      {
+        action: switch_tab
+        url: .*crossbench\.ch.*
+      }
+    ]
+    close_all_tabs: [
+      {
+        action: close_all_tabs
+      }
+    ]
+    close_tab: [
+      {
+        action: close_tab
+      }
+    ]
+    wait_for_download: [
+      {
+        action: wait_for_download
+        pattern: .*
+      }
+    ]
+    wait_for_ready_state: [
+      {
+        action: wait_for_ready_state
+      }
+    ]
+    dump_html: [
+      {
+        action: dump_html
+      }
+    ]
+    meet_create: [
+      {
+        action: meet_create
+      }
+    ]
+    meet_script: [
+      {
+        action: meet_script
+        script: foo
+      }
+    ]
+    meminfo: [
+      {
+        action: meminfo
+      }
+    ]
+    probe: [
+      {
+        action: probe
+        probe: js
+      }
+    ]
+  }
+}

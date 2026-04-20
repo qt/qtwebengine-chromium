@@ -107,6 +107,19 @@ bool CoreChecks::ValidateRayTracingPipeline(const vvl::Pipeline &pipeline,
             }
         }
     }
+    if (const auto *cluster_accel_info =
+            vku::FindStructInPNextChain<VkRayTracingPipelineClusterAccelerationStructureCreateInfoNV>(create_info.pNext)) {
+        const Location cluster_loc = create_info_loc.pNext(Struct::VkRayTracingPipelineClusterAccelerationStructureCreateInfoNV);
+
+        if (cluster_accel_info->allowClusterAccelerationStructure == VK_TRUE) {
+            if (!enabled_features.clusterAccelerationStructure) {
+                skip |=
+                    LogError("VUID-VkRayTracingPipelineClusterAccelerationStructureCreateInfoNV-clusterAccelerationStructure-10576",
+                             device, cluster_loc.dot(Field::allowClusterAccelerationStructure),
+                             "is VK_TRUE, the clusterAccelerationStructure feature was not enabled.");
+            }
+        }
+    }
     return skip;
 }
 
@@ -252,7 +265,9 @@ bool CoreChecks::ValidateRayTracingPipelineLibrary(const vvl::Pipeline &pipeline
     for (uint32_t i = 0; i < library_create_info.libraryCount; i++) {
         const Location library_loc = library_info_loc.dot(Field::pLibraries, i);
         const auto lib = Get<vvl::Pipeline>(library_create_info.pLibraries[i]);
-        if (!lib) continue;
+        if (!lib) {
+            continue;
+        }
 
         if ((lib->create_flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR) == 0) {
             skip |= LogError("VUID-VkPipelineLibraryCreateInfoKHR-pLibraries-03381", device, library_loc, "was created with %s.",

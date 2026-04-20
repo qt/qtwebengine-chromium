@@ -10,7 +10,7 @@ import datetime as dt
 import enum
 import logging
 import subprocess
-from typing import TYPE_CHECKING, Optional, Self, Sequence, Type
+from typing import TYPE_CHECKING, ClassVar, Optional, Self, Sequence, Type
 
 from typing_extensions import override
 
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
   from crossbench.env.runner_env import RunnerEnv
   from crossbench.path import AnyPath
+  from crossbench.plt.base import Platform
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
@@ -55,12 +56,12 @@ class PowerSamplerProbe(Probe):
   this probe mostly makes sense for long-running benchmarks.
   """
 
-  NAME = "powersampler"
-  RESULT_LOCATION = ResultLocation.BROWSER
-  BATTERY_ONLY: bool = True
-  SAMPLERS: tuple[SamplerType,
-                  ...] = (SamplerType.SMC, SamplerType.USER_IDLE_LEVEL,
-                          SamplerType.MAIN_DISPLAY)
+  NAME: ClassVar = "powersampler"
+  RESULT_LOCATION: ClassVar = ResultLocation.BROWSER
+  BATTERY_ONLY: ClassVar[bool] = True
+  SAMPLERS: ClassVar[tuple[SamplerType, ...]] = (SamplerType.SMC,
+                                                 SamplerType.USER_IDLE_LEVEL,
+                                                 SamplerType.MAIN_DISPLAY)
 
   @classmethod
   @override
@@ -149,8 +150,9 @@ class PowerSamplerProbe(Probe):
         return maybe_path
     raise self.missing_power_sampler_error(browser_platform, maybe_build_dir)
 
-  def missing_power_sampler_error(self, browser_platform,
-                                  maybe_build_dir) -> ProbeValidationError:
+  def missing_power_sampler_error(
+      self, browser_platform: Platform,
+      maybe_build_dir: AnyPath) -> ProbeValidationError:
     is_build_dir = browser_platform.is_file(maybe_build_dir / "args.gn")
     if not is_build_dir:
       maybe_build_dir = browser_platform.path(

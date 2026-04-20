@@ -4,12 +4,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import threading
+from typing import Optional
 
 
-def input_with_timeout(
-    timeout: dt.timedelta = dt.timedelta(seconds=10), default=None):
+def input_with_timeout(timeout: dt.timedelta = dt.timedelta(seconds=10),
+                       default: Optional[str] = None) -> str | None:
   result_container = [default]
   wait = threading.Thread(
       target=_input, args=[
@@ -21,8 +23,6 @@ def input_with_timeout(
   return result_container[0]
 
 
-def _input(results_container) -> None:
-  try:
+def _input(results_container: list[str | None]) -> None:
+  with contextlib.suppress(KeyboardInterrupt):
     results_container[0] = input()
-  except KeyboardInterrupt:
-    pass

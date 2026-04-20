@@ -5,6 +5,7 @@
 if (window.location.href === 'https://www.globo.com/') {
   const button_selector = 'button[aria-label=Consent]';
   const banner_selector = 'div[class=fc-consent-root]';
+  const headline_selector = '.post__title';
   let banner_observer;
 
   const button_observer = new MutationObserver(mutations => {
@@ -18,7 +19,7 @@ if (window.location.href === 'https://www.globo.com/') {
       for (const mutation of mutations) {
         for (const node of mutation.removedNodes) {
           if (node === banner_node) {
-            performance.mark('LoadLine2/globo_homepage/cookie_banner_gone');
+            performance.mark('LoadLine2/globo_homepage/interactive');
             banner_observer.disconnect();
             return;
           }
@@ -29,5 +30,15 @@ if (window.location.href === 'https://www.globo.com/') {
     button.click();
   });
 
+  const headline_observer = new MutationObserver(mutations => {
+    const headline = document.querySelector(headline_selector);
+    if (!headline) {
+      return;
+    }
+    headline_observer.disconnect();
+    performance.mark('LoadLine2/globo_homepage/visual');
+  });
+
   button_observer.observe(document, {childList: true, subtree: true});
+  headline_observer.observe(document, {childList: true, subtree: true});
 }

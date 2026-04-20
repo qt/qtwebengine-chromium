@@ -8,7 +8,7 @@ import argparse
 import dataclasses
 import logging
 import re
-from typing import Any, Optional, Self, Type, cast
+from typing import Any, Optional, Self, Type
 
 from immutabledict import immutabledict
 from typing_extensions import override
@@ -70,7 +70,7 @@ class DriverConfig(ConfigObject):
     except argparse.ArgumentTypeError as original_error:
       try:
         return cls.parse_short_settings(value, plt.PLATFORM)
-      except AmbiguousDriverIdentifier:  # pylint: disable=try-except-raise
+      except AmbiguousDriverIdentifier:
         raise
       except ValueError as e:
         logging.debug("Parsing short inline driver config failed: %s", e)
@@ -159,7 +159,7 @@ class DriverConfig(ConfigObject):
   def compile_search_pattern(cls, maybe_pattern: str) -> re.Pattern:
     try:
       return re.compile(maybe_pattern)
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:  # noqa: BLE001
       logging.debug(
           "Falling back to full string match for "
           "invalid regexp search pattern: %s %s", maybe_pattern, e)
@@ -264,7 +264,6 @@ class DriverConfig(ConfigObject):
     platform = self.get_platform()
     assert isinstance(platform, ChromeOsSshPlatform), \
            f"Invalid platform: {platform}"
-    platform = cast(ChromeOsSshPlatform, platform)
     if not platform.exists(platform.AUTOLOGIN_PATH):
       raise ValueError(f"Could not find `autotest` on {platform.host}."
                        "Please ensure that it is running a test image:"

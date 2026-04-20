@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import TYPE_CHECKING, Any, Iterable, Optional, cast
+from typing import TYPE_CHECKING, Iterable, Optional, TypeVar, cast, overload
 
 from immutabledict import immutabledict
 from ordered_set import OrderedSet
@@ -119,10 +119,14 @@ class ProbeResult(abc.ABC):
   def is_remote(self) -> bool:
     return False
 
+  @abc.abstractmethod
   def __bool__(self) -> bool:
-    return not self.is_empty
+    pass
 
-  def __eq__(self, other: Any) -> bool:
+  def __hash__(self) -> int:
+    return hash((self._files, self._url_list))
+
+  def __eq__(self, other: object) -> bool:
     if not isinstance(other, ProbeResult):
       return False
     if self is other:
@@ -216,6 +220,7 @@ class EmptyProbeResult(ProbeResult):
   def __init__(self) -> None:
     super().__init__()
 
+  @override
   def __bool__(self) -> bool:
     return False
 
@@ -223,6 +228,10 @@ class EmptyProbeResult(ProbeResult):
 class LocalProbeResult(ProbeResult):
   """LocalProbeResult can be used for files that are always available on the
   runner/local machine."""
+
+  @override
+  def __bool__(self) -> bool:
+    return not self.is_empty
 
 
 class BrowserProbeResult(ProbeResult):
@@ -252,6 +261,10 @@ class BrowserProbeResult(ProbeResult):
 
     super().__init__(url, local_file, **local_kwargs)
 
+  @override
+  def __bool__(self) -> bool:
+    return not self.is_empty
+
   @property
   @override
   def is_remote(self) -> bool:
@@ -279,6 +292,8 @@ class BrowserProbeResult(ProbeResult):
       local_result_paths.append(local_result_path)
     return local_result_paths
 
+
+DefaultT = TypeVar("DefaultT")
 
 class ProbeResultDict:
   """
@@ -308,13 +323,25 @@ class ProbeResultDict:
   def __len__(self) -> int:
     return len(self._dict)
 
-  def get(self, probe: ProbeResultKey, default: Any = None) -> ProbeResult:
+  @overload
+  def get(self, probe: ProbeResultKey, /) -> ProbeResult | None:
+    pass
+
+  @overload
+  def get(self, probe: ProbeResultKey, default: DefaultT,
+          /) -> ProbeResult | DefaultT:
+    pass
+
+  def get(self,
+          probe: ProbeResultKey,
+          default: Optional[DefaultT] = None,
+          /) -> ProbeResult | DefaultT | None:
     return self._dict.get(probe.name, default)
 
-  def get_by_name(self, name: str, default: Any = None) -> ProbeResult:
+  def get_by_name(self, name: str) -> ProbeResult | None:
     # Debug helper only.
     # Use bracket `results[probe]` or `results.get(probe)` instead.
-    return self._dict.get(name, default)
+    return self._dict.get(name)
 
   def to_json(self) -> JsonDict:
     data: JsonDict = {}

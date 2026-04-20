@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, Optional, Self
+from typing import Final, Iterable, Optional, Self
 
 from typing_extensions import override
 
@@ -14,10 +14,10 @@ from crossbench.browsers.chromium.version import ChromiumVersion
 
 class ChromeVersion(ChromiumVersion):
 
-  _PREFIX_RE = re.compile(
+  _PREFIX_RE: Final[re.Pattern] = re.compile(
       r"(?:google )?chr(?:ome(?: for testing)?)?[- ]?"
       r"(?:latest)?[- ]?"
-      rf"(?:{ChromiumVersion._CHANNEL_RE.pattern})?[- ]?m?", re.I)
+      rf"(?:{ChromiumVersion.CHANNEL_RE.pattern})?[- ]?m?", re.I)
 
   @classmethod
   @override

@@ -840,7 +840,11 @@ g_data_input_stream_read_line_utf8 (GDataInputStream  *stream,
       g_set_error_literal (error, G_CONVERT_ERROR,
 			   G_CONVERT_ERROR_ILLEGAL_SEQUENCE,
 			   _("Invalid byte sequence in conversion input"));
+
+      if (length != NULL)
+        *length = 0;
       g_free (res);
+
       return NULL;
     }
   return res;
@@ -857,11 +861,8 @@ scan_for_chars (GDataInputStream *stream,
   gsize start, end, peeked;
   gsize i;
   gsize available, checked;
-  const char *stop_char;
-  const char *stop_end;
 
   bstream = G_BUFFERED_INPUT_STREAM (stream);
-  stop_end = stop_chars + stop_chars_len;
 
   checked = *checked_out;
 
@@ -870,13 +871,28 @@ scan_for_chars (GDataInputStream *stream,
   end = available;
   peeked = end - start;
 
-  for (i = 0; checked < available && i < peeked; i++)
+  /* For single-char case such as \0, defer the entire operation to memchr which
+   * can take advantage of simd/etc.
+   */
+  if (stop_chars_len == 1)
     {
-      for (stop_char = stop_chars; stop_char != stop_end; stop_char++)
-	{
-	  if (buffer[i] == *stop_char)
-	    return (start + i);
-	}
+      const char *p = memchr (buffer, stop_chars[0], peeked);
+
+      if (p != NULL)
+        return start + (p - buffer);
+    }
+  else
+    {
+      for (i = 0; checked < available && i < peeked; i++)
+        {
+          /* We can use memchr() the other way round. Less fast than the
+           * single-char case above, but still faster than doing our own inner
+           * loop. */
+          const char *p = memchr (stop_chars, buffer[i], stop_chars_len);
+
+          if (p != NULL)
+            return (start + i);
+        }
     }
 
   checked = end;

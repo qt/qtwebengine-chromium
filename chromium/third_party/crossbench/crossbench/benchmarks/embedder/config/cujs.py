@@ -20,7 +20,7 @@ from crossbench.parse import ObjectParser
 @dataclasses.dataclass(frozen=True)
 class CUJConfig:
   label: str
-  blocks: tuple[ActionBlock, ...] = tuple()
+  blocks: tuple[ActionBlock, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -37,7 +37,7 @@ class CUJsConfig(ConfigObject):
 
   @classmethod
   @override
-  def parse_str(cls, value: str):
+  def parse_str(cls, value: str) -> Self:
     del value
     raise NotImplementedError("Cannot create CUJsConfig from string")
 
@@ -56,7 +56,7 @@ class CUJsConfig(ConfigObject):
       with exception.annotate_argparsing("Parsing config 'cujs'"):
         cujs = cls._parse_cujs(cujs_config)
         return cls(cujs)
-    raise exception.UnreachableError()
+    raise exception.UnreachableError
 
   @classmethod
   def _parse_cujs(cls, data: dict[str, Any]) -> tuple[CUJConfig, ...]:

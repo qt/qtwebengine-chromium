@@ -14,7 +14,7 @@ from crossbench.browsers.version import BrowserVersion, BrowserVersionChannel
 
 class D8Version(BrowserVersion):
   _PARTS_LEN: Final[int] = 3
-  _VERSION_RE = re.compile(
+  _VERSION_RE: Final[re.Pattern] = re.compile(
       r"(?P<prefix>V8\D+)"
       r"(?P<parts>(?:\d+(\.\d+)+))"
       r"(?:.*)", re.I)

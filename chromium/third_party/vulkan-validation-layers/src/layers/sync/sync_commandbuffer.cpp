@@ -21,7 +21,6 @@
 #include "sync/sync_op.h"
 #include "sync/sync_reporting.h"
 #include "sync/sync_validation.h"
-#include "sync/sync_image.h"
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/image_state.h"
 #include "state_tracker/buffer_state.h"
@@ -1358,6 +1357,22 @@ void CommandBufferAccessContext::CheckCommandTagDebugCheckpoint() {
                                 sync_state_.debug_reset_count);
         }
     }
+}
+
+namespace syncval_stats {
+void UpdateAccessMapStats(const ResourceAccessRangeMap &access_map, syncval_stats::AccessContextStats &stats);
+}
+
+void CommandBufferAccessContext::UpdateStats(syncval_stats::AccessStats &access_stats) const {
+#if VVL_ENABLE_SYNCVAL_STATS != 0
+    UpdateAccessMapStats(cb_access_context_.GetAccessStateMap(), access_stats.cb_access_stats);
+
+    for (const auto &render_pass_context : render_pass_contexts_) {
+        for (const AccessContext &subpass_access_context : render_pass_context->GetContexts()) {
+            UpdateAccessMapStats(subpass_access_context.GetAccessStateMap(), access_stats.subpass_access_stats);
+        }
+    }
+#endif
 }
 
 namespace syncval_state {

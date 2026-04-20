@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import subprocess
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from typing_extensions import override
 
@@ -13,14 +13,14 @@ if TYPE_CHECKING:
   from crossbench.path import AnyPathLike, LocalPath
   from crossbench.plt.base import Platform
   from crossbench.plt.signals import Signals
-  from crossbench.plt.types import CmdArg, ListCmdArgs
+  from crossbench.plt.types import CmdArg, ListCmdArgs, ProcessIo
 
 
 class RemotePlatformMixin:
 
   def __init__(self, host_platform: Platform) -> None:
+    self._host_platform: Final[Platform] = host_platform
     super().__init__()
-    self._host_platform: Platform = host_platform
 
   @property
   def is_remote(self) -> bool:
@@ -34,7 +34,7 @@ class RemotePlatformMixin:
     return self._host_platform.local_path(path)
 
   def build_shell_cmd(self, *args: CmdArg, shell: bool = False) -> ListCmdArgs:
-    raise NotImplementedError()
+    raise NotImplementedError
 
 
 class RemotePopen(subprocess.Popen):
@@ -50,9 +50,9 @@ class RemotePopen(subprocess.Popen):
                platform: Platform,
                args: ListCmdArgs,
                bufsize: int = -1,
-               stdout=None,
-               stderr=None,
-               stdin=None) -> None:
+               stdout: ProcessIo = None,
+               stderr: ProcessIo = None,
+               stdin: ProcessIo = None) -> None:
     self._platform: Platform = platform
     assert self._platform.is_remote, (
         f"Cannot create remote process on local platform {self._platform}")

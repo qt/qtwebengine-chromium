@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import contextlib
 import datetime as dt
-from typing import (TYPE_CHECKING, Generic, Iterable, Iterator, Optional,
+from typing import (TYPE_CHECKING, Any, Generic, Iterable, Iterator, Optional,
                     TypeVar)
 
 from typing_extensions import override
@@ -18,7 +18,7 @@ from crossbench.probes.results import (BrowserProbeResult, EmptyProbeResult,
 if TYPE_CHECKING:
   from selenium.webdriver.common.options import BaseOptions
 
-  from crossbench import plt
+  from crossbench import exception, plt
   from crossbench.browsers.browser import Browser
   from crossbench.path import AnyPath, LocalPath
   from crossbench.probes.probe import Probe
@@ -179,6 +179,19 @@ class BaseProbeContext(Generic[ProbeT], metaclass=abc.ABCMeta):
   def teardown(self) -> ProbeResult:
     pass
 
+  @classmethod
+  def expect_no_extra_kwargs(cls, kwargs: dict[str, Any]) -> None:
+    if kwargs:
+      raise RuntimeError(f"Got unexpected keyword arguments: {kwargs}")
+
+  def invoke(self, info_stack: exception.TInfoStack, timeout: dt.timedelta,
+             **kwargs) -> None:
+    """
+    Called from the "probe" action in the ActionRunner.
+    """
+    del info_stack, timeout, kwargs
+    raise RuntimeError(f"Invoke not implemented for probe: {self}")
+
 
 class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
   """
@@ -250,7 +263,6 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     This method should have as little overhead as possible. If possible,
     delegate heavy computation to the "teardown" method.
     """
-    return None
 
   @abc.abstractmethod
   @override

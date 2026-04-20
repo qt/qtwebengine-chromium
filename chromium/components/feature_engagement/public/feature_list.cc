@@ -35,6 +35,7 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHAutoDarkUserEducationMessageFeature,
     &kIPHAutoDarkUserEducationMessageOptInFeature,
     &kIPHAppSpecificHistory,
+    &kIPHBookmarksBarFeature,
     &kIPHCCTHistory,
     &kIPHCCTMinimized,
     &kIPHDataSaverDetailFeature,
@@ -76,6 +77,7 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHPageZoomFeature,
     &kIPHPdfPageDownloadFeature,
     &kIPHPreviewsOmniboxUIFeature,
+    &kIPHReaderModeDistillInAppFeature,
     &kIPHReadAloudAppMenuFeature,
     &kIPHReadAloudExpandedPlayerFeature,
     &kIPHReadAloudPlaybackModeFeature,
@@ -136,6 +138,7 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHBadgedReadingListFeature,
     &kIPHWhatsNewFeature,
     &kIPHWhatsNewUpdatedFeature,
+    &kIPHBadgedReaderModeFeature,
     &kIPHReadingListMessagesFeature,
     &kIPHBadgedTranslateManualTriggerFeature,
     &kIPHDiscoverFeedHeaderFeature,
@@ -196,6 +199,8 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHIOSPageActionMenu,
     &kIPHiOSHomepageLensNewBadge,
     &kIPHiOSHomepageCustomizationNewBadge,
+    &kIPHiOSAIHubNewBadge,
+    &kIPHiOSReaderModeOptionsFeature,
 #endif  // BUILDFLAG(IS_IOS)
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA)
@@ -209,11 +214,11 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHComposeNewBadgeFeature,
     &kIPHDesktopCustomizeChromeFeature,
     &kIPHDesktopCustomizeChromeRefreshFeature,
-    &kIPHDesktopNewTabPageModulesCustomizeFeature,
     &kIPHDiscardRingFeature,
     &kIPHDownloadEsbPromoFeature,
     &kIPHExplicitBrowserSigninPreferenceRememberedFeature,
     &kIPHGlicPromoFeature,
+    &kIPHGlicTryItFeature,
     &kIPHHistorySearchFeature,
 #if BUILDFLAG(ENABLE_EXTENSIONS)
     &kIPHExtensionsMenuFeature,
@@ -248,6 +253,8 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHReadingListInSidePanelFeature,
     &kIPHReadingModeSidePanelFeature,
     &kIPHShoppingCollectionFeature,
+    &kIPHSideBySidePinnableFeature,
+    &kIPHSideBySideTabSwitchFeature,
     &kIPHSidePanelGenericPinnableFeature,
     &kIPHSidePanelLensOverlayPinnableFeature,
     &kIPHSidePanelLensOverlayPinnableFollowupFeature,
@@ -282,6 +289,7 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHAutofillEnableLoyaltyCardsFeature,
     &kIPHAutofillExternalAccountProfileSuggestionFeature,
     &kIPHAutofillHomeWorkProfileSuggestionFeature,
+    &kIPHAutofillAccountNameEmailSuggestionFeature,
     &kIPHAutofillVirtualCardCVCSuggestionFeature,
     &kIPHAutofillVirtualCardSuggestionFeature,
     &kIPHCookieControlsFeature,
@@ -331,13 +339,16 @@ const base::Feature* const kAllFeatures[] = {
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
     &kIPHDesktopPWAsLinkCapturingLaunch,
     &kIPHDesktopPWAsLinkCapturingLaunchAppInTab,
+    &kIPHSignInBenefitsFeature,
     &kIPHSupervisedUserProfileSigninFeature,
 #endif  // BUILDFLAG(IS_WIN) ||  BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 
 #if !BUILDFLAG(IS_ANDROID)
     &kIPHiOSPasswordPromoDesktopFeature,
     &kIPHiOSAddressPromoDesktopFeature,
-    &kIPHiOSPaymentPromoDesktopFeature
+    &kIPHiOSPaymentPromoDesktopFeature,
+    &kIPHiOSLensPromoDesktopFeature,
+    &kIPHiOSEnhancedBrowsingDesktopFeature
 #endif  // !BUILDFLAG(IS_ANDROID)
 };
 }  // namespace

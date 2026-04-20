@@ -11,8 +11,8 @@ import json
 import logging
 import os
 import threading
-from typing import (TYPE_CHECKING, Final, Iterator, Mapping, Optional, Type,
-                    TypeVar)
+from typing import (TYPE_CHECKING, Final, Iterator, Mapping, Optional, Self,
+                    Type, TypeVar)
 
 from immutabledict import immutabledict
 from typing_extensions import override
@@ -26,16 +26,17 @@ if TYPE_CHECKING:
   from crossbench.network.traffic_shaping.base import TrafficShaper
   from crossbench.path import LocalPath
   from crossbench.runner.groups.session import BrowserSessionRunGroup
+  LocalFileNetworkT = TypeVar("LocalFileNetworkT", bound="LocalFileNetwork")
 
-_DEFAULT_HOST = "localhost"
-_DEFAULT_PORT = 8000
+_DEFAULT_HOST: Final[str] = "localhost"
+_DEFAULT_PORT: Final[int] = 8000
 
 # List of known headers that are served by the default HTTPServer and might
 # be accidentally overridden by provided extra headers.
 _CONFLICTING_EXTRA_HEADERS: Final[frozenset[str]] = frozenset(
-    map(lambda header: header.lower(),
-        ("Content-Type", "Content-Length", "Last-Modified", "Server", "Date",
-         "Connection", "Location")))
+    header.lower()
+    for header in ("Content-Type", "Content-Length", "Last-Modified", "Server",
+                   "Date", "Connection", "Location"))
 
 # Enable cross original isolation for high-precision timers.
 # This can be easily override by profiling a custom HEADER.txt file in the
@@ -56,7 +57,7 @@ class CustomHeadersRequestHandler(http.server.SimpleHTTPRequestHandler):
     # Use a temporary class to bind arguments.
     class BoundDirectoryRequestHandler(cls):  # type: ignore
 
-      def __init__(self, *args, **kwargs):
+      def __init__(self, *args, **kwargs) -> None:
         super().__init__(
             *args,
             directory=os.fspath(server_dir),
@@ -70,7 +71,7 @@ class CustomHeadersRequestHandler(http.server.SimpleHTTPRequestHandler):
                directory: Optional[str] = None,
                extra_headers: Optional[Mapping[str, str]] = None,
                **kwargs) -> None:
-    self._extra_headers: immutabledict[str, str] = (
+    self._extra_headers: Final[immutabledict[str, str]] = (
         immutabledict(extra_headers) if extra_headers else immutabledict())
     super().__init__(*args, directory=directory, **kwargs)
 
@@ -84,8 +85,6 @@ class CustomHeadersRequestHandler(http.server.SimpleHTTPRequestHandler):
       self.send_header(key, value)
 
 
-LocalFileNetworkT = TypeVar("LocalFileNetworkT", bound="LocalFileNetwork")
-
 class LocalFileNetwork(Network):
 
   def __init__(self,
@@ -94,10 +93,13 @@ class LocalFileNetwork(Network):
                traffic_shaper: Optional[TrafficShaper] = None,
                browser_platform: Optional[plt.Platform] = None) -> None:
     super().__init__(traffic_shaper, browser_platform)
-    self._path = path
-    self._host, self._port = self._parse_url(url)
+    self._path: Final[LocalPath] = path
+    (host, port) = self._parse_url(url)
+    self._host: Final[str] = host
+    self._port: int = port
     # TODO: support custom headers via command line
-    self._extra_headers: immutabledict[str, str] = self._try_parse_headers()
+    self._extra_headers: Final[immutabledict[str,
+                                             str]] = self._try_parse_headers()
     if self._extra_headers:
       self._validate_extra_headers()
 
@@ -144,8 +146,7 @@ class LocalFileNetwork(Network):
 
   @contextlib.contextmanager
   @override
-  def open(self: LocalFileNetworkT,
-           session: BrowserSessionRunGroup) -> Iterator[LocalFileNetworkT]:
+  def open(self, session: BrowserSessionRunGroup) -> Iterator[Self]:
     with super().open(session):
       with self._open_local_file_server():
         # TODO: properly hook up traffic shaper for the local http server
@@ -154,7 +155,7 @@ class LocalFileNetwork(Network):
             yield self
 
   @contextlib.contextmanager
-  def _open_local_file_server(self):
+  def _open_local_file_server(self) -> Iterator[None]:
     # TODO: write request log file to session results folder.
     # TODO: support  https server using SSLContext.wrap_socket(httpd.socket)
     request_handler_cls = CustomHeadersRequestHandler.bind(
@@ -182,7 +183,7 @@ class LocalFileNetwork(Network):
         server_thread.join()
 
   @contextlib.contextmanager
-  def _forward_ports(self, session: BrowserSessionRunGroup) -> Iterator:
+  def _forward_ports(self, session: BrowserSessionRunGroup) -> Iterator[None]:
     browser_platform = session.browser_platform
     ports = browser_platform.ports
     if browser_platform.is_remote:
@@ -212,6 +213,7 @@ class LocalFileNetwork(Network):
   def host(self) -> Optional[str]:
     return self._host
 
+  @override
   def __str__(self) -> str:
     extra_headers_str = ""
     if self._extra_headers:

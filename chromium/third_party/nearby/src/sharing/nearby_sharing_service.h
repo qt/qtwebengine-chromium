@@ -26,7 +26,6 @@
 #include "sharing/advertisement.h"
 #include "sharing/attachment_container.h"
 #include "sharing/certificates/nearby_share_certificate_manager.h"
-#include "sharing/internal/api/sharing_rpc_notifier.h"
 #include "sharing/local_device_data/nearby_share_local_device_data_manager.h"
 #include "sharing/nearby_sharing_settings.h"
 #include "sharing/share_target_discovered_callback.h"
@@ -40,7 +39,6 @@ namespace sharing {
 
 class NearbyNotificationDelegate;
 class NearbyShareContactManager;
-class NearbyShareHttpNotifier;
 
 // This service implements Nearby Sharing on top of the Nearby Connections mojo.
 // Currently, only single profile will be allowed to be bound at a time and only
@@ -111,20 +109,11 @@ class NearbySharingService {
     virtual void OnStartAdvertisingFailure() {}
     virtual void OnStartDiscoveryResult(bool success) {}
 
-    virtual void OnFastInitiationDevicesDetected() {}
-    virtual void OnFastInitiationDevicesNotDetected() {}
-    virtual void OnFastInitiationScanningStopped() {}
-
     virtual void OnBluetoothStatusChanged(AdapterState state) {}
-    virtual void OnWifiStatusChanged(AdapterState state) {}
     virtual void OnLanStatusChanged(AdapterState state) {}
     virtual void OnIrrecoverableHardwareErrorReported() {}
 
     virtual void OnCredentialError() {}
-
-    // Called during the |KeyedService| shutdown, but before everything has been
-    // cleaned up. It is safe to remove any observers on this event.
-    virtual void OnShutdown() = 0;
   };
 
   static std::string StatusCodeToString(StatusCodes status_code);
@@ -133,7 +122,6 @@ class NearbySharingService {
 
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
-  virtual bool HasObserver(Observer* observer) = 0;
 
   // Shutdown the Nearby Sharing service, and cleanup.
   virtual void Shutdown(
@@ -196,12 +184,6 @@ class NearbySharingService {
   // Returns true if the PC is connected to LAN (wifi/ethernet).
   virtual bool IsLanConnected() const = 0;
 
-  // Returns true if the Wi-Fi adapter is present.
-  virtual bool IsWifiPresent() const = 0;
-
-  // Returns true if the Wi-Fi adapter is powered.
-  virtual bool IsWifiPowered() const = 0;
-
   // Returns the QR Code Url.
   virtual std::string GetQrCodeUrl() const = 0;
 
@@ -236,7 +218,6 @@ class NearbySharingService {
   virtual void UpdateFilePathsInProgress(bool update_file_paths) = 0;
 
   virtual NearbyShareSettings* GetSettings() = 0;
-  virtual nearby::sharing::api::SharingRpcNotifier* GetRpcNotifier() = 0;
   virtual NearbyShareLocalDeviceDataManager* GetLocalDeviceDataManager() = 0;
   virtual NearbyShareContactManager* GetContactManager() = 0;
   virtual NearbyShareCertificateManager* GetCertificateManager() = 0;

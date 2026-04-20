@@ -134,27 +134,22 @@ void       meta_stack_remove (MetaStack  *stack,
 /**
  * meta_stack_update_layer:
  * @stack: The stack to recalculate
- * @window: Dummy parameter
  *
  * Recalculates the correct layer for all windows in the stack,
  * and moves them about accordingly.
  *
  */
-void       meta_stack_update_layer (MetaStack  *stack,
-                                    MetaWindow *window);
+void       meta_stack_update_layer (MetaStack *stack);
 
 /**
  * meta_stack_update_transient:
  * @stack: The stack to recalculate
- * @window: Dummy parameter
  *
  * Recalculates the correct stacking order for all windows in the stack
  * according to their transience, and moves them about accordingly.
  *
- * FIXME: What's with the dummy parameter?
  */
-void       meta_stack_update_transient (MetaStack  *stack,
-                                        MetaWindow *window);
+void       meta_stack_update_transient (MetaStack *stack);
 
 /**
  * meta_stack_raise:
@@ -263,29 +258,6 @@ GList * meta_stack_list_windows (MetaStack     *stack,
                                  MetaWorkspace *workspace);
 
 /**
- * meta_stack_windows_cmp:
- * @stack: A stack containing both window_a and window_b
- * @window_a: A window
- * @window_b  Another window
- *
- * Comparison function for windows within a stack.  This is not directly
- * suitable for use within a standard comparison routine, because it takes
- * an extra parameter; you will need to wrap it.
- *
- * (FIXME: We could remove the stack parameter and use the stack of
- * the screen of window A, and complain if the stack of the screen of
- * window B differed; then this would be a usable general comparison function.)
- *
- * (FIXME: Apparently identical to compare_window_position(). Merge them.)
- *
- * \return -1 if window_a is below window_b, honouring layers; 1 if it's
- *         above it; 0 if you passed in the same window twice!
- */
-int meta_stack_windows_cmp (MetaStack  *stack,
-                            MetaWindow *window_a,
-                            MetaWindow *window_b);
-
-/**
  * meta_window_set_stack_position:
  * @window: The window which is moving.
  * @position:  Where it should move to (0 is the bottom).
@@ -301,3 +273,5 @@ void meta_window_set_stack_position (MetaWindow *window,
 
 void meta_stack_update_window_tile_matches (MetaStack     *stack,
                                             MetaWorkspace *workspace);
+
+void meta_stack_ensure_sorted (MetaStack *stack);

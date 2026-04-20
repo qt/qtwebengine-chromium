@@ -18,10 +18,6 @@ from crossbench.parse import NumberParser, PathParser
 if TYPE_CHECKING:
   from crossbench import path as pth
 
-# We're using 'type' here a lot, let's skip the warnings from pylint.
-# pylint: disable=redefined-builtin
-
-
 def _settings_str(name: str) -> str:
   settings = ts_proxy_settings.TRAFFIC_SETTINGS[name]
   return (f"rtt={settings['rtt_ms']}ms, "

@@ -97,7 +97,7 @@ class GoogleLogin(PresetLoginBlock):
          f"document.querySelector(\"[aria-label='{aria_label}']\") != null &&"
          f"document.getElementById({repr(button_name)}) != null;"),
         0.2,
-        timeout=10)
+        timeout=20)
     action.js("const inputField ="
               f" document.querySelector(\"[aria-label='{aria_label}']\");"
               f"inputField.value = {repr(input_val)};"
@@ -106,7 +106,7 @@ class GoogleLogin(PresetLoginBlock):
   def timeout(self, secret: UsernamePassword) -> dt.timedelta:
     if secret.is_interactive:
       return dt.timedelta(seconds=60)
-    return dt.timedelta(seconds=10)
+    return dt.timedelta(seconds=20)
 
   @override
   def run_with(self, runner: ActionRunner, run: Run,
@@ -119,7 +119,10 @@ class GoogleLogin(PresetLoginBlock):
       return
 
     with run.actions("Login", measure=False) as action:
-      action.show_url(GOOGLE_LOGIN_URL)
+      action.show_url(
+          GOOGLE_LOGIN_URL,
+          ready_state=ReadyState.INTERACTIVE,
+          timeout=self.timeout(secret))
       self._submit_login_field(action, secret, "Email or phone",
                                secret.username, "identifierNext")
       self._submit_login_field(action, secret, "Enter your password",
@@ -165,7 +168,7 @@ class GoogleLogin(PresetLoginBlock):
     action.wait_for_ready_state(ReadyState.COMPLETE, timeout)
 
   def _clear_suspicious_activity(self, action: Actions, runner: ActionRunner,
-                                 run: Run):
+                                 run: Run) -> None:
     has_suspicious_activity = action.js(
         "return document.querySelector("
         "\"[aria-label='Check activity']\") != null;")

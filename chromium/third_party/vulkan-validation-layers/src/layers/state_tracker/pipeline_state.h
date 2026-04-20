@@ -21,7 +21,7 @@
 
 #include <vulkan/utility/vk_safe_struct.hpp>
 
-#include "state_tracker/pipeline_sub_state.h"
+#include "state_tracker/pipeline_library_state.h"
 #include "generated/dynamic_state_helper.h"
 #include "state_tracker/state_tracker.h"
 #include "state_tracker/shader_stage_state.h"
@@ -66,7 +66,9 @@ class PipelineCache : public StateObject {
     }
 };
 
-class Pipeline : public StateObject {
+class PipelineSubState;
+
+class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
   protected:
     // NOTE: The style guide suggests private data appear at the end, but we need this populated first, so placing it here
 
@@ -77,7 +79,7 @@ class Pipeline : public StateObject {
 
   public:
     const std::variant<vku::safe_VkGraphicsPipelineCreateInfo, vku::safe_VkComputePipelineCreateInfo,
-                       vku::safe_VkRayTracingPipelineCreateInfoCommon>
+                       vku::safe_VkRayTracingPipelineCreateInfoCommon, vku::safe_VkDataGraphPipelineCreateInfoARM>
         create_info;
 
     // Pipeline cache state
@@ -94,12 +96,16 @@ class Pipeline : public StateObject {
     // If using a shader module identifier, the module itself is not validated, but the shader stage is still known
     const bool uses_shader_module_id;
 
-    // State split up based on library types
-    const std::shared_ptr<VertexInputState> vertex_input_state;  // VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT
-    const std::shared_ptr<PreRasterState> pre_raster_state;      // VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT
-    const std::shared_ptr<FragmentShaderState> fragment_shader_state;  // VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT
-    const std::shared_ptr<FragmentOutputState>
-        fragment_output_state;  // VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT
+    // State split up based on the 4 library states
+    //
+    // VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT
+    const std::shared_ptr<VertexInputState> vertex_input_state;
+    // VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT
+    const std::shared_ptr<PreRasterState> pre_raster_state;
+    // VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT
+    const std::shared_ptr<FragmentShaderState> fragment_shader_state;
+    // VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT
+    const std::shared_ptr<FragmentOutputState> fragment_output_state;
 
     // Additional metadata needed by pipeline_state initialization and validation
     const std::vector<ShaderStageState> stage_states;
@@ -121,14 +127,14 @@ class Pipeline : public StateObject {
     const ActiveSlotMap active_slots;
     const uint32_t max_active_slot = 0;  // the highest set number in active_slots for pipeline layout compatibility checks
 
-    // Which state is dynamic from pipeline creation, factors in GPL sub state as well
+    // Which state is dynamic from pipeline creation, factors in GPL library state as well
     CBDynamicFlags dynamic_state;
 
     const VkPrimitiveTopology topology_at_rasterizer = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
     const bool descriptor_buffer_mode = false;
-    const bool uses_pipeline_robustness;
-    const bool uses_pipeline_vertex_robustness;
-    bool ignore_color_attachments;
+    const bool uses_pipeline_robustness = false;
+    const bool uses_pipeline_vertex_robustness = false;
+    bool ignore_color_attachments = true;
 
     mutable bool binary_data_released = false;
 
@@ -163,6 +169,11 @@ class Pipeline : public StateObject {
              std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
              spirv::StatelessData *stateless_data);
 
+    Pipeline(const DeviceState &state_data, const VkDataGraphPipelineCreateInfoARM *pCreateInfo,
+             std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
+             spirv::StatelessData *stateless_data);
+
+    void Destroy() override;
     VkPipeline VkHandle() const { return handle_.Cast<VkPipeline>(); }
 
     void SetHandle(VkPipeline p) { handle_.handle = CastToUint64(p); }
@@ -172,8 +183,7 @@ class Pipeline : public StateObject {
         if (pipeline_type != VK_PIPELINE_BIND_POINT_GRAPHICS) {
             return true;
         }
-        // First make sure that this pipeline is a "classic" pipeline, or is linked together with the appropriate sub-state
-        // libraries
+        // First make sure that this pipeline is a "classic" pipeline, or is linked together with the appropriate library state
         if (graphics_lib_type && (graphics_lib_type != (VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT |
                                                         VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT |
                                                         VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT |
@@ -201,39 +211,42 @@ class Pipeline : public StateObject {
     }
 
     template <VkGraphicsPipelineLibraryFlagBitsEXT type_flag>
-    struct SubStateTraits {};
+    struct LibraryStateTraits {};
 
     template <VkGraphicsPipelineLibraryFlagBitsEXT type_flag>
-    static inline typename SubStateTraits<type_flag>::type GetSubState(const Pipeline &) {
+    static inline typename LibraryStateTraits<type_flag>::type GetLibraryState(const Pipeline &) {
         return {};
     }
 
-    std::shared_ptr<const vvl::ShaderModule> GetSubStateShader(VkShaderStageFlagBits state) const;
+    std::shared_ptr<const vvl::ShaderModule> GetLibraryStateShader(VkShaderStageFlagBits state) const;
 
     template <VkGraphicsPipelineLibraryFlagBitsEXT type_flag>
-    static inline typename SubStateTraits<type_flag>::type GetLibSubState(const DeviceState &device_state,
-                                                                          const VkPipelineLibraryCreateInfoKHR &link_info) {
+    static inline typename LibraryStateTraits<type_flag>::type GetLibraryState(const DeviceState &device_state,
+                                                                               const VkPipelineLibraryCreateInfoKHR &link_info) {
         for (uint32_t i = 0; i < link_info.libraryCount; ++i) {
             const auto lib_state = device_state.Get<vvl::Pipeline>(link_info.pLibraries[i]);
             if (lib_state && ((lib_state->graphics_lib_type & type_flag) != 0)) {
-                return GetSubState<type_flag>(*lib_state);
+                return GetLibraryState<type_flag>(*lib_state);
             }
         }
         return {};
     }
 
-    // Used to know if the pipeline substate is being created (as opposed to being linked)
-    // Important as some pipeline checks need pipeline state that won't be there if the substate is from linking
+    // Used to know if the pipeline library is being created (as opposed to being linked)
+    // Important as some pipeline checks need pipeline state that won't be there if the library is from linking
     // Many VUs say "the pipeline require" which means "not being linked in as a library"
     // If the VUs says "created with" then you should NOT use this function
     // TODO - This could probably just be a check to VkGraphicsPipelineLibraryCreateInfoEXT::flags
-    bool OwnsSubState(const std::shared_ptr<PipelineSubState> sub_state) const { return sub_state && (&sub_state->parent == this); }
+    bool OwnsLibState(const std::shared_ptr<PipelineLibraryState> lib_state) const {
+        return lib_state && (&lib_state->parent == this);
+    }
 
     // This grabs the render pass at pipeline creation time, if you are inside a command buffer, use the vvl::RenderPass inside the
     // command buffer! (The render pass can be different as they just have to be compatible, see
     // vkspec.html#renderpass-compatibility)
     const std::shared_ptr<const vvl::RenderPass> RenderPassState() const {
-        // TODO A render pass object is required for all of these sub-states. Which one should be used for an "executable pipeline"?
+        // TODO A render pass object is required for all of these library states. Which one should be used for an "executable
+        // pipeline"?
         if (fragment_output_state && fragment_output_state->rp_state) {
             return fragment_output_state->rp_state;
         } else if (fragment_shader_state && fragment_shader_state->rp_state) {
@@ -246,14 +259,15 @@ class Pipeline : public StateObject {
 
     // A pipeline does not "require" state that is specified in a library.
     bool IsRenderPassStateRequired() const {
-        return OwnsSubState(pre_raster_state) || OwnsSubState(fragment_shader_state) || OwnsSubState(fragment_output_state);
+        return OwnsLibState(pre_raster_state) || OwnsLibState(fragment_shader_state) || OwnsLibState(fragment_output_state);
     }
 
-    // There could be an invalid RenderPass which will not come as as null, need to check RenderPassState() if it is valid
+    // There could be an invalid RenderPass which will not come as null, need to check RenderPassState() if it is valid
     bool IsRenderPassNull() const { return GraphicsCreateInfo().renderPass == VK_NULL_HANDLE; }
 
     const std::shared_ptr<const vvl::PipelineLayout> PipelineLayoutState() const {
-        // TODO A render pass object is required for all of these sub-states. Which one should be used for an "executable pipeline"?
+        // TODO A render pass object is required for all of these library states. Which one should be used for an "executable
+        // pipeline"?
         if (merged_graphics_layout) {
             return merged_graphics_layout;
         } else if (pre_raster_state) {
@@ -282,7 +296,8 @@ class Pipeline : public StateObject {
 
     // the VkPipelineMultisampleStateCreateInfo need to be identically defined so can safely grab both
     const vku::safe_VkPipelineMultisampleStateCreateInfo *MultisampleState() const {
-        // TODO A render pass object is required for all of these sub-states. Which one should be used for an "executable pipeline"?
+        // TODO A render pass object is required for all of these library states. Which one should be used for an "executable
+        // pipeline"?
         if (fragment_shader_state && fragment_shader_state->ms_state &&
             (fragment_shader_state->ms_state->rasterizationSamples >= VK_SAMPLE_COUNT_1_BIT) &&
             (fragment_shader_state->ms_state->rasterizationSamples < VK_SAMPLE_COUNT_FLAG_BITS_MAX_ENUM)) {
@@ -296,7 +311,8 @@ class Pipeline : public StateObject {
     }
 
     const vku::safe_VkPipelineRasterizationStateCreateInfo *RasterizationState() const {
-        // TODO A render pass object is required for all of these sub-states. Which one should be used for an "executable pipeline"?
+        // TODO A render pass object is required for all of these library states. Which one should be used for an "executable
+        // pipeline"?
         if (pre_raster_state) {
             return pre_raster_state->raster_state;
         }
@@ -320,7 +336,8 @@ class Pipeline : public StateObject {
     }
 
     const vku::safe_VkPipelineViewportStateCreateInfo *ViewportState() const {
-        // TODO A render pass object is required for all of these sub-states. Which one should be used for an "executable pipeline"?
+        // TODO A render pass object is required for all of these library states. Which one should be used for an "executable
+        // pipeline"?
         if (pre_raster_state) {
             return pre_raster_state->viewport_state;
         }
@@ -356,7 +373,8 @@ class Pipeline : public StateObject {
     }
 
     uint32_t Subpass() const {
-        // TODO A render pass object is required for all of these sub-states. Which one should be used for an "executable pipeline"?
+        // TODO A render pass object is required for all of these library states. Which one should be used for an "executable
+        // pipeline"?
         if (pre_raster_state) {
             return pre_raster_state->subpass;
         } else if (fragment_shader_state) {
@@ -390,6 +408,9 @@ class Pipeline : public StateObject {
     const vku::safe_VkRayTracingPipelineCreateInfoCommon &RayTracingCreateInfo() const {
         return std::get<vku::safe_VkRayTracingPipelineCreateInfoCommon>(create_info);
     }
+    const vku::safe_VkDataGraphPipelineCreateInfoARM &DataGraphCreateInfo() const {
+        return std::get<vku::safe_VkDataGraphPipelineCreateInfoARM>(create_info);
+    }
 
     VkStructureType GetCreateInfoSType() const {
         const auto *gfx = std::get_if<vku::safe_VkGraphicsPipelineCreateInfo>(&create_info);
@@ -401,7 +422,14 @@ class Pipeline : public StateObject {
             return cmp->sType;
         }
         const auto *rt = std::get_if<vku::safe_VkRayTracingPipelineCreateInfoCommon>(&create_info);
-        return rt->sType;
+        if (rt) {
+            return rt->sType;
+        }
+        const auto *dg = std::get_if<vku::safe_VkDataGraphPipelineCreateInfoARM>(&create_info);
+        if (dg) {
+            return dg->sType;
+        }
+        return VK_STRUCTURE_TYPE_MAX_ENUM;
     }
 
     const void *GetCreateInfoPNext() const {
@@ -475,8 +503,8 @@ class Pipeline : public StateObject {
     }
 
     template <typename CreateInfo>
-    static bool ContainsSubState(const vvl::DeviceState &device_state, const CreateInfo &create_info,
-                                 VkGraphicsPipelineLibraryFlagsEXT sub_state) {
+    static bool ContainsLibraryState(const vvl::DeviceState &device_state, const CreateInfo &create_info,
+                                     VkGraphicsPipelineLibraryFlagsEXT lib_flags) {
         constexpr VkGraphicsPipelineLibraryFlagsEXT null_lib = static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0);
         VkGraphicsPipelineLibraryFlagsEXT current_state = null_lib;
 
@@ -501,12 +529,12 @@ class Pipeline : public StateObject {
             return true;
         }
 
-        return (current_state & sub_state) != null_lib;
+        return (current_state & lib_flags) != null_lib;
     }
 
     // Version used at dispatch time for stateless VOs
     template <typename CreateInfo>
-    static bool ContainsSubState(const CreateInfo &create_info, VkGraphicsPipelineLibraryFlagsEXT sub_state) {
+    static bool ContainsLibraryState(const CreateInfo &create_info, VkGraphicsPipelineLibraryFlagsEXT lib_flags) {
         constexpr VkGraphicsPipelineLibraryFlagsEXT null_lib = static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0);
         VkGraphicsPipelineLibraryFlagsEXT current_state = null_lib;
 
@@ -524,7 +552,7 @@ class Pipeline : public StateObject {
             return true;
         }
 
-        return (current_state & sub_state) != null_lib;
+        return (current_state & lib_flags) != null_lib;
     }
 
     // This is a helper that is meant to be used during safe_VkPipelineRenderingCreateInfo construction to determine whether or not
@@ -534,8 +562,8 @@ class Pipeline : public StateObject {
         // "safe_struct" is assumed to be non-null as it should be the "this" member of calling class instance
         assert(safe_struct);
         if (safe_struct->sType == VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO) {
-            const bool has_fo_state = Pipeline::ContainsSubState(device_state, graphics_info,
-                                                                 VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT);
+            const bool has_fo_state = Pipeline::ContainsLibraryState(
+                device_state, graphics_info, VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT);
             if (!has_fo_state) {
                 // Clear out all pointers except for viewMask. Since viewMask is a scalar, it has already been copied at this point
                 // in vku::safe_VkPipelineRenderingCreateInfo construction.
@@ -597,55 +625,65 @@ class Pipeline : public StateObject {
         return EnablesRasterizationStates(pre_raster_state->parent.GraphicsCreateInfo());
     }
 
-    // Merged layouts
     std::shared_ptr<const vvl::PipelineLayout> merged_graphics_layout;
 };
 
+class PipelineSubState {
+  public:
+    explicit PipelineSubState(Pipeline &pipeline) : base(pipeline) {}
+    PipelineSubState(const PipelineSubState &) = delete;
+    PipelineSubState &operator=(const PipelineSubState &) = delete;
+    virtual ~PipelineSubState() {}
+    virtual void Destroy() {}
+
+    Pipeline &base;
+};
+
 template <>
-struct Pipeline::SubStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT> {
+struct Pipeline::LibraryStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT> {
     using type = std::shared_ptr<VertexInputState>;
 };
 
 // static
 template <>
-inline Pipeline::SubStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT>::type
-Pipeline::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT>(const Pipeline &pipe_state) {
+inline Pipeline::LibraryStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT>::type
+Pipeline::GetLibraryState<VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT>(const Pipeline &pipe_state) {
     return pipe_state.vertex_input_state;
 }
 
 template <>
-struct Pipeline::SubStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT> {
+struct Pipeline::LibraryStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT> {
     using type = std::shared_ptr<PreRasterState>;
 };
 
 // static
 template <>
-inline Pipeline::SubStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT>::type
-Pipeline::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT>(const Pipeline &pipe_state) {
+inline Pipeline::LibraryStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT>::type
+Pipeline::GetLibraryState<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT>(const Pipeline &pipe_state) {
     return pipe_state.pre_raster_state;
 }
 
 template <>
-struct Pipeline::SubStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT> {
+struct Pipeline::LibraryStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT> {
     using type = std::shared_ptr<FragmentShaderState>;
 };
 
 // static
 template <>
-inline Pipeline::SubStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT>::type
-Pipeline::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT>(const Pipeline &pipe_state) {
+inline Pipeline::LibraryStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT>::type
+Pipeline::GetLibraryState<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT>(const Pipeline &pipe_state) {
     return pipe_state.fragment_shader_state;
 }
 
 template <>
-struct Pipeline::SubStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT> {
+struct Pipeline::LibraryStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT> {
     using type = std::shared_ptr<FragmentOutputState>;
 };
 
 // static
 template <>
-inline Pipeline::SubStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT>::type
-Pipeline::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT>(const Pipeline &pipe_state) {
+inline Pipeline::LibraryStateTraits<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT>::type
+Pipeline::GetLibraryState<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT>(const Pipeline &pipe_state) {
     return pipe_state.fragment_output_state;
 }
 

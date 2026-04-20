@@ -16,6 +16,12 @@ from typing_extensions import override
 from crossbench import path as pth
 from crossbench.plt.base import Platform
 from crossbench.plt.signals import WinSignals
+from crossbench.plt.version import PlatformVersion
+
+
+class WinVersion(PlatformVersion):
+  pass
+
 
 
 class WinPlatform(Platform):
@@ -44,7 +50,7 @@ class WinPlatform(Platform):
 
   @property
   @override
-  def device(self) -> str:
+  def model(self) -> str:
     # TODO: implement
     return ""
 
@@ -59,12 +65,17 @@ class WinPlatform(Platform):
 
   @functools.cached_property
   @override
-  def version(self) -> str:  #pylint: disable=invalid-overridden-method
+  def version_str(self) -> str:
     return self.cmd_stdout("ver").strip()
 
   @functools.cached_property
   @override
-  def cpu(self) -> str:  #pylint: disable=invalid-overridden-method
+  def version(self) -> WinVersion:
+    return WinVersion.parse(self.version_str)
+
+  @functools.cached_property
+  @override
+  def cpu(self) -> str:
     return self.powershell_stdout(
         "Get-CIMInstance -query 'select * from Win32_Processor' | ft Name"
     ).strip().splitlines()[2].strip()
@@ -154,7 +165,7 @@ class WinPlatform(Platform):
       # Fall back to command-line tools.
       if version := self.sh_stdout(app_or_bin, "--version").strip():
         return version
-    except Exception as e:  # pylint: disable=broad-exception-caught
+    except Exception as e:  # noqa: BLE001
       logging.debug("Failed to extract binary tool version: %s", e)
     raise ValueError(f"Could not extract version for {app_or_bin}")
 

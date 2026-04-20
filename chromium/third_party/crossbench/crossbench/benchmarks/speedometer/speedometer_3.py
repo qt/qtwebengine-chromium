@@ -7,7 +7,8 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import enum
-from typing import TYPE_CHECKING, Any, MutableMapping, Optional, Sequence, cast
+from typing import (TYPE_CHECKING, Any, ClassVar, MutableMapping, Optional,
+                    Sequence, cast)
 
 from typing_extensions import override
 
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 
   from crossbench.action_runner.config import ActionRunnerConfig
   from crossbench.cli.parser import CrossBenchArgumentParser
+  from crossbench.cli.types import Subparsers
   from crossbench.runner.actions import Actions
   from crossbench.stories.story import Story
   from crossbench.types import Json
@@ -56,7 +58,7 @@ class Speedometer3Probe(SpeedometerProbe, metaclass=abc.ABCMeta):
 
 
 class Speedometer3ProbeContext(SpeedometerProbeContext, metaclass=abc.ABCMeta):
-  JS = "return JSON.stringify(window.benchmarkClient.metrics);"
+  JS: ClassVar = "return JSON.stringify(window.benchmarkClient.metrics);"
 
   @override
   def to_json(self, actions: Actions) -> Json:
@@ -234,16 +236,23 @@ SPEEDOMETER_3_STORY_DATA = {
 
 class Speedometer3Story(SpeedometerStory, metaclass=abc.ABCMeta):
   __doc__ = SpeedometerStory.__doc__
-  URL_LOCAL: str = "http://127.0.0.1:8080"
-  SUBSTORIES: tuple[str, ...] = tuple(SPEEDOMETER_3_STORY_DATA.keys())
+  URL_LOCAL: ClassVar[str] = "http://127.0.0.1:8080"
+  SUBSTORIES: ClassVar[tuple[str, ...]] = tuple(SPEEDOMETER_3_STORY_DATA.keys())
 
   @classmethod
   @override
   def default_story_names(cls) -> tuple[str, ...]:
-    return tuple(
-        tuple(name for name, data in SPEEDOMETER_3_STORY_DATA.items()
-              if data["enabled"]))
+    return tuple(name for name, data in SPEEDOMETER_3_STORY_DATA.items()
+                 if data["enabled"])
 
+  @override
+  def _wait_for_ready(self, actions: Actions) -> None:
+    actions.wait_js_condition(
+        "return !!window.benchmarkClient", 0.5, timeout=10)
+
+  def _setup_substories(self, actions: Actions) -> None:
+    # Handled via URL params
+    pass
 
   @property
   @override
@@ -340,12 +349,11 @@ class Speedometer3Benchmark(SpeedometerBenchmark, metaclass=abc.ABCMeta):
   """
   Abstract benchmark runner for Speedometer 3.
   """
-  STORY_FILTER_CLS = Speedometer3BenchmarkStoryFilter
+  STORY_FILTER_CLS: ClassVar = Speedometer3BenchmarkStoryFilter
 
   @classmethod
   @override
-  def add_cli_parser(
-      cls, subparsers: argparse.ArgumentParser) -> CrossBenchArgumentParser:
+  def add_cli_parser(cls, subparsers: Subparsers) -> CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers)
     parser.add_argument(
         "--detailed-metrics",

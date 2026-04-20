@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 class JetStream11Probe(JetStreamProbe):
   __doc__ = JetStreamProbe.__doc__
-  NAME: str = "jetstream_1.1"
+  NAME: ClassVar[str] = "jetstream_1.1"
 
   @override
   def get_context_cls(self) -> Type[JetStream11ProbeContext]:
@@ -31,7 +31,7 @@ class JetStream11Probe(JetStreamProbe):
 
 
 class JetStream11ProbeContext(JetStreamProbeContext):
-  JS: str = f"""
+  JS: ClassVar[str] = f"""
   let results = Object.create(null);
   for (let name in JetStream.results) {{
     const benchmark = JetStream.results[name];
@@ -44,12 +44,12 @@ class JetStream11ProbeContext(JetStreamProbeContext):
 
 
 class JetStream11Story(JetStreamStory):
-  NAME: str = "jetstream_1.1"
-  URL: str = "https://chromium-workloads.web.app/jetstream/v1.1/"
+  NAME: ClassVar[str] = "jetstream_1.1"
+  URL: ClassVar[str] = "https://chromium-workloads.web.app/jetstream/v1.1/"
   # TODO: host v1.1-custom on chromium-workloads.web.app/
   # URL_CHROME_FORK: str = "https://chromium-workloads.web.app/jetstream/v1.1-custom/"
-  URL_OFFICIAL: str = "https://browserbench.org/JetStream1.1/"
-  SUBSTORIES: tuple[str, ...] = (
+  URL_OFFICIAL: ClassVar[str] = "https://browserbench.org/JetStream1.1/"
+  SUBSTORIES: ClassVar[tuple[str, ...]] = (
       "3d-cube",
       "3d-raytrace",
       "base64",
@@ -134,9 +134,9 @@ class JetStream11Benchmark(JetStreamBenchmark):
   Benchmark runner for JetStream 1.1.
   """
 
-  NAME: str = "jetstream_1.1"
-  DEFAULT_STORY_CLS = JetStream11Story
-  PROBES: ProbeClsTupleT = (JetStream11Probe,)
+  NAME: ClassVar[str] = "jetstream_1.1"
+  DEFAULT_STORY_CLS: ClassVar = JetStream11Story
+  PROBES: ClassVar[ProbeClsTupleT] = (JetStream11Probe,)
 
   @classmethod
   @override

@@ -1681,64 +1681,6 @@ meta_display_notify_window_created (MetaDisplay  *display,
   g_signal_emit (display, display_signals[WINDOW_CREATED], 0, window);
 }
 
-static void
-root_cursor_prepare_at (MetaCursorSpriteXcursor *sprite_xcursor,
-                        float                    best_scale,
-                        int                      x,
-                        int                      y,
-                        MetaDisplay             *display)
-{
-  MetaCursorSprite *cursor_sprite = META_CURSOR_SPRITE (sprite_xcursor);
-  MetaBackend *backend = backend_from_display (display);
-
-  if (meta_backend_is_stage_views_scaled (backend))
-    {
-      if (best_scale != 0.0f)
-        {
-          float ceiled_scale;
-          int cursor_width, cursor_height;
-
-          ceiled_scale = ceilf (best_scale);
-          meta_cursor_sprite_xcursor_set_theme_scale (sprite_xcursor,
-                                                      (int) ceiled_scale);
-
-          meta_cursor_sprite_realize_texture (cursor_sprite);
-          meta_cursor_sprite_xcursor_get_scaled_image_size (sprite_xcursor,
-                                                            &cursor_width,
-                                                            &cursor_height);
-          meta_cursor_sprite_set_viewport_dst_size (cursor_sprite,
-                                                    cursor_width,
-                                                    cursor_height);
-        }
-    }
-  else
-    {
-      MetaMonitorManager *monitor_manager =
-        meta_backend_get_monitor_manager (backend);
-      MetaLogicalMonitor *logical_monitor;
-
-      logical_monitor =
-        meta_monitor_manager_get_logical_monitor_at (monitor_manager, x, y);
-
-      /* Reload the cursor texture if the scale has changed. */
-      if (logical_monitor)
-        {
-          meta_cursor_sprite_xcursor_set_theme_scale (sprite_xcursor,
-                                                      (int) logical_monitor->scale);
-          meta_cursor_sprite_set_texture_scale (cursor_sprite, 1.0f);
-        }
-    }
-}
-
-static void
-manage_root_cursor_sprite_scale (MetaDisplay             *display,
-                                 MetaCursorSpriteXcursor *sprite_xcursor)
-{
-  meta_cursor_sprite_set_prepare_func (META_CURSOR_SPRITE (sprite_xcursor),
-                                       (MetaCursorPrepareFunc) root_cursor_prepare_at,
-                                       display);
-}
-
 void
 meta_display_reload_cursor (MetaDisplay *display)
 {
@@ -1748,10 +1690,6 @@ meta_display_reload_cursor (MetaDisplay *display)
   MetaCursorTracker *cursor_tracker = meta_backend_get_cursor_tracker (backend);
 
   sprite_xcursor = meta_cursor_sprite_xcursor_new (cursor, cursor_tracker);
-
-  if (meta_is_wayland_compositor ())
-    manage_root_cursor_sprite_scale (display, sprite_xcursor);
-
   meta_cursor_tracker_set_root_cursor (cursor_tracker,
                                        META_CURSOR_SPRITE (sprite_xcursor));
   g_object_unref (sprite_xcursor);
@@ -1831,7 +1769,7 @@ meta_display_ping_timeout (gpointer data)
 
   ping_data->ping_timeout_id = 0;
 
-  meta_topic (META_DEBUG_PING,
+  meta_topic (META_DEBUG_DISPLAY,
               "Ping %u on window %s timed out",
               ping_data->serial, ping_data->window->desc);
 
@@ -1872,8 +1810,8 @@ meta_display_ping_window (MetaWindow *window,
 
   if (serial == 0)
     {
-      meta_warning ("Tried to ping window %s with a bad serial! Not allowed.",
-                    window->desc);
+      g_warning ("Tried to ping window %s with a bad serial! Not allowed.",
+                 window->desc);
       return;
     }
 
@@ -1886,7 +1824,7 @@ meta_display_ping_window (MetaWindow *window,
 
       if (window == pending_ping_data->window)
         {
-          meta_topic (META_DEBUG_PING,
+          meta_topic (META_DEBUG_DISPLAY,
                       "Window %s already is being pinged with serial %u",
                       window->desc, pending_ping_data->serial);
           return;
@@ -1894,9 +1832,10 @@ meta_display_ping_window (MetaWindow *window,
 
       if (serial == pending_ping_data->serial)
         {
-          meta_warning ("Ping serial %u was reused for window %s, "
-                        "previous use was for window %s.",
-                        serial, window->desc, pending_ping_data->window->desc);
+          meta_topic (META_DEBUG_DISPLAY,
+                      "Ping serial %u was reused for window %s, "
+                      "previous use was for window %s.",
+                      serial, window->desc, pending_ping_data->window->desc);
           return;
         }
     }
@@ -1912,7 +1851,7 @@ meta_display_ping_window (MetaWindow *window,
 
   display->pending_pings = g_slist_prepend (display->pending_pings, ping_data);
 
-  meta_topic (META_DEBUG_PING,
+  meta_topic (META_DEBUG_DISPLAY,
               "Sending ping with serial %u to window %s",
               serial, window->desc);
 
@@ -1936,7 +1875,7 @@ meta_display_pong_for_serial (MetaDisplay    *display,
 {
   GSList *tmp;
 
-  meta_topic (META_DEBUG_PING, "Received a pong with serial %u", serial);
+  meta_topic (META_DEBUG_DISPLAY, "Received a pong with serial %u", serial);
 
   for (tmp = display->pending_pings; tmp; tmp = tmp->next)
     {
@@ -1944,7 +1883,7 @@ meta_display_pong_for_serial (MetaDisplay    *display,
 
       if (serial == ping_data->serial)
         {
-          meta_topic (META_DEBUG_PING,
+          meta_topic (META_DEBUG_DISPLAY,
                       "Matching ping found for pong %u",
                       ping_data->serial);
 
@@ -2360,7 +2299,7 @@ meta_display_unmanage_windows (MetaDisplay *display,
 
   winlist = meta_display_list_windows (display,
                                        META_LIST_INCLUDE_OVERRIDE_REDIRECT);
-  winlist = g_slist_sort (winlist, meta_display_stack_cmp);
+  winlist = g_slist_sort (winlist, meta_window_stack_position_compare);
   g_slist_foreach (winlist, (GFunc)g_object_ref, NULL);
 
   /* Unmanage all windows */
@@ -2380,16 +2319,6 @@ meta_display_unmanage_windows (MetaDisplay *display,
       tmp = tmp->next;
     }
   g_slist_free (winlist);
-}
-
-int
-meta_display_stack_cmp (const void *a,
-                        const void *b)
-{
-  MetaWindow *aw = (void*) a;
-  MetaWindow *bw = (void*) b;
-
-  return meta_stack_windows_cmp (aw->display->stack, aw, bw);
 }
 
 /**
@@ -2415,7 +2344,7 @@ meta_display_sort_windows_by_stacking (MetaDisplay *display,
 {
   GSList *copy = g_slist_copy (windows);
 
-  copy = g_slist_sort (copy, meta_display_stack_cmp);
+  copy = g_slist_sort (copy, meta_window_stack_position_compare);
 
   return copy;
 }
@@ -2446,11 +2375,12 @@ meta_display_sanity_check_timestamps (MetaDisplay *display,
 {
   if (XSERVER_TIME_IS_BEFORE (timestamp, display->last_focus_time))
     {
-      meta_warning ("last_focus_time (%u) is greater than comparison "
-                    "timestamp (%u).  This most likely represents a buggy "
-                    "client sending inaccurate timestamps in messages such as "
-                    "_NET_ACTIVE_WINDOW.  Trying to work around...",
-                    display->last_focus_time, timestamp);
+      meta_topic (META_DEBUG_X11,
+                  "last_focus_time (%u) is greater than comparison "
+                  "timestamp (%u).  This most likely represents a buggy "
+                  "client sending inaccurate timestamps in messages such as "
+                  "_NET_ACTIVE_WINDOW.  Trying to work around...",
+                  display->last_focus_time, timestamp);
       display->last_focus_time = timestamp;
     }
   if (XSERVER_TIME_IS_BEFORE (timestamp, display->last_user_time))
@@ -2458,11 +2388,12 @@ meta_display_sanity_check_timestamps (MetaDisplay *display,
       GSList *windows;
       GSList *tmp;
 
-      meta_warning ("last_user_time (%u) is greater than comparison "
-                    "timestamp (%u).  This most likely represents a buggy "
-                    "client sending inaccurate timestamps in messages such as "
-                    "_NET_ACTIVE_WINDOW.  Trying to work around...",
-                    display->last_user_time, timestamp);
+      meta_topic (META_DEBUG_X11,
+                  "last_user_time (%u) is greater than comparison "
+                  "timestamp (%u).  This most likely represents a buggy "
+                  "client sending inaccurate timestamps in messages such as "
+                  "_NET_ACTIVE_WINDOW.  Trying to work around...",
+                  display->last_user_time, timestamp);
       display->last_user_time = timestamp;
 
       windows = meta_display_list_windows (display, META_LIST_DEFAULT);
@@ -2473,9 +2404,10 @@ meta_display_sanity_check_timestamps (MetaDisplay *display,
 
           if (XSERVER_TIME_IS_BEFORE (timestamp, window->net_wm_user_time))
             {
-              meta_warning ("%s appears to be one of the offending windows "
-                            "with a timestamp of %u.  Working around...",
-                            window->desc, window->net_wm_user_time);
+              meta_topic (META_DEBUG_X11,
+                          "%s appears to be one of the offending windows "
+                          "with a timestamp of %u.  Working around...",
+                          window->desc, window->net_wm_user_time);
               window->net_wm_user_time_set = FALSE;
               meta_window_set_user_time (window, timestamp);
             }
@@ -3224,7 +3156,7 @@ check_fullscreen_func (gpointer data)
          status so we need to trigger a re-layering. */
       MetaWindow *top_window = meta_stack_get_top (display->stack);
       if (top_window)
-        meta_stack_update_layer (display->stack, top_window);
+        meta_stack_update_layer (display->stack);
 
       g_signal_emit (display, display_signals[IN_FULLSCREEN_CHANGED], 0, NULL);
     }
@@ -3548,17 +3480,6 @@ static const char* meta_window_queue_names[META_N_QUEUE_TYPES] =
   };
 #endif
 
-static int
-window_stack_cmp (gconstpointer a,
-                  gconstpointer b)
-{
-  MetaWindow *aw = (gpointer) a;
-  MetaWindow *bw = (gpointer) b;
-
-  return meta_stack_windows_cmp (aw->display->stack,
-                                 aw, bw);
-}
-
 static void
 warn_on_incorrectly_unmanaged_window (MetaWindow *window)
 {
@@ -3590,11 +3511,11 @@ update_window_visibilities (MetaDisplay *display,
     }
 
   /* Sort bottom to top */
-  unplaced = g_list_sort (unplaced, window_stack_cmp);
-  should_hide = g_list_sort (should_hide, window_stack_cmp);
+  unplaced = g_list_sort (unplaced, meta_window_stack_position_compare);
+  should_hide = g_list_sort (should_hide, meta_window_stack_position_compare);
 
   /* Sort top to bottom */
-  should_show = g_list_sort (should_show, window_stack_cmp);
+  should_show = g_list_sort (should_show, meta_window_stack_position_compare);
   should_show = g_list_reverse (should_show);
 
   COGL_TRACE_BEGIN_SCOPED (MetaDisplayShowUnplacedWindows,

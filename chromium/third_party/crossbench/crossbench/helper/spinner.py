@@ -4,16 +4,17 @@
 
 from __future__ import annotations
 
+import contextlib
 import sys
 import threading
 import time
-from typing import Iterable
+from typing import Final, Iterable, Iterator, Self
 
 from crossbench.helper import terminal
 
 
 class Spinner:
-  CURSORS = "◐◓◑◒"
+  CURSORS: Final = "◐◓◑◒"
 
   def __init__(self, is_atty: bool, sleep: float, title: str) -> None:
     self._is_running: bool = False
@@ -24,16 +25,18 @@ class Spinner:
     self._message: str = ""
     self._cursor: str = " "
 
-  def __enter__(self) -> None:
+  @contextlib.contextmanager
+  def open(self) -> Iterator[Self]:
     if self._is_atty:
       self._is_running = True
       threading.Thread(target=self._spin).start()
     elif self._title:
       # Write single title line.
       self._write_message()
-
-  def __exit__(self, exc_type, exc_value, traceback) -> None:
-    self._is_running = False
+    try:
+      yield self
+    finally:
+      self._is_running = False
 
   def _cursors(self) -> Iterable[str]:
     while True:

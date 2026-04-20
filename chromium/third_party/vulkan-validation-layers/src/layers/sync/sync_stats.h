@@ -26,6 +26,7 @@
 
 #if VVL_ENABLE_SYNCVAL_STATS != 0
 #include <atomic>
+#include <mutex>
 
 // NOTE: mimalloc should be built with MI_STAT=1 to enable stats module
 #if defined(USE_MIMALLOC)
@@ -33,11 +34,12 @@
 #if MI_MALLOC_VERSION >= 300
 #define USE_MIMALLOC_STATS
 #include "mimalloc-stats.h"
-#include <mutex>
 #endif
 #endif  // defined(USE_MIMALLOC)
 
 #endif  // VVL_ENABLE_SYNCVAL_STATS != 0
+
+class SyncValidator;
 
 namespace syncval_stats {
 #if VVL_ENABLE_SYNCVAL_STATS != 0
@@ -72,6 +74,41 @@ struct ValueMax64 {
     void Sub(uint64_t n);
 };
 
+// NOTE: Update of AccessContextStats counters is not thread-safe but it is fine until it works for development purposes.
+// Thread-safe version will need to inject atomic counters in various places to track all relevant state.
+// Current non-thread-safe implementation is very simple: iterate over everything and collect data.
+struct AccessContextStats {
+    uint32_t access_contexts = 0;
+    uint32_t access_states = 0;
+    uint32_t read_states = 0;
+    uint32_t write_states = 0;
+
+    uint32_t access_states_with_multiple_reads = 0;
+    uint32_t access_states_with_dynamic_allocations = 0;
+    uint64_t access_states_dynamic_allocation_size = 0;
+
+    // We are not interested in collecting the total number of first access objects
+    // per context, but rather want to get intuition how large ResourceAccessState's
+    // first accesses array can be
+    uint32_t max_first_accesses_size = 0;
+
+    void UpdateMax(const AccessContextStats& cur_stats);
+};
+
+struct AccessStats {
+    AccessContextStats cb_access_stats;
+    AccessContextStats max_cb_access_stats;
+
+    AccessContextStats queue_access_stats;
+    AccessContextStats max_queue_access_stats;
+
+    AccessContextStats subpass_access_stats;
+    AccessContextStats max_subpass_access_stats;
+
+    void Update(SyncValidator& validator);
+    std::mutex access_stats_mutex;
+};
+
 struct Stats {
     ~Stats();
     bool report_on_destruction = false;
@@ -81,25 +118,28 @@ struct Stats {
     std::mutex mi_stats_mutex;
 #endif
 
-    ValueMax32 command_buffer_context_counter;
+    ValueMax32 command_buffer_contexts;
     void AddCommandBufferContext();
     void RemoveCommandBufferContext();
 
-    ValueMax32 queue_batch_context_counter;
+    ValueMax32 queue_batch_contexts;
     void AddQueueBatchContext();
     void RemoveQueueBatchContext();
 
-    ValueMax32 timeline_signal_counter;
+    ValueMax32 timeline_signals;
     void AddTimelineSignals(uint32_t count);
     void RemoveTimelineSignals(uint32_t count);
 
-    ValueMax32 unresolved_batch_counter;
+    ValueMax32 unresolved_batches;
     void AddUnresolvedBatch();
     void RemoveUnresolvedBatch();
 
-    ValueMax32 handle_record_counter;
+    ValueMax32 handle_records;
     void AddHandleRecord(uint32_t count = 1);
     void RemoveHandleRecord(uint32_t count = 1);
+
+    AccessStats access_stats;
+    void UpdateAccessStats(SyncValidator& validator);
 
     void UpdateMemoryStats();
     void ReportOnDestruction();
@@ -118,6 +158,8 @@ struct Stats {
     void RemoveTimelineSignals(uint32_t count) {}
     void AddUnresolvedBatch() {}
     void RemoveUnresolvedBatch() {}
+
+    void UpdateAccessStats(SyncValidator& validator) {}
 
     void UpdateMemoryStats() {}
     void ReportOnDestruction() {}

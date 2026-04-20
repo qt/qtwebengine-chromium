@@ -9,13 +9,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
   import argparse
 
+  from crossbench.cli.types import Subparsers
+
 
 class CrossbenchDevToolsRecorderProxy:
   """Empty dummy implementation that can be used in case async is not
   supported."""
 
   @classmethod
-  def add_cli_parser(cls, subparsers) -> argparse.ArgumentParser:
+  def add_cli_parser(cls, subparsers: Subparsers) -> argparse.ArgumentParser:
     return subparsers.add_parser(
         "devtools-recorder-proxy",
         aliases=["devtools"],
@@ -23,4 +25,4 @@ class CrossbenchDevToolsRecorderProxy:
 
   @classmethod
   def run_subcommand(cls, args: argparse.Namespace) -> None:
-    raise NotImplementedError()
+    raise NotImplementedError

@@ -134,5 +134,5 @@ class RunThreadGroup(threading.Thread):
 class RunMainGroup(RunThreadGroup):
   """ Renamed subclass for single-threaded runs"""
 
-  def start(self):
+  def start(self) -> None:
     raise RuntimeError("RunMainGroup cannot run on a background thread")

@@ -194,8 +194,8 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                             const uint32_t shader_id = slot.meta_data & glsl::kShaderIdMask;
                             const uint32_t error_logger_i = (slot.meta_data & glsl::kPostProcessMetaMaskErrorLoggerIndex) >>
                                                             glsl::kPostProcessMetaShiftErrorLoggerIndex;
-                            descriptor_access_map[shader_id].emplace_back(
-                                DescriptorAccess{binding, descriptor_i, slot.variable_id, error_logger_i});
+                            descriptor_access_map[shader_id].emplace_back(DescriptorAccess{
+                                binding, descriptor_i, slot.variable_id, slot.instruction_position_offset, error_logger_i});
                         }
                     }
                 }
@@ -215,15 +215,15 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                 if (it->second.pipeline != VK_NULL_HANDLE) {
                     // We use pipeline over vkShaderModule as likely they will have been destroyed by now
                     pipeline_state = gpuav.Get<vvl::Pipeline>(it->second.pipeline).get();
-                    context.SetShaderHandleForGpuAv(&pipeline_state->Handle());
                 } else if (it->second.shader_object != VK_NULL_HANDLE) {
                     shader_object_state = gpuav.Get<vvl::ShaderObject>(it->second.shader_object).get();
                     ASSERT_AND_CONTINUE(shader_object_state->entrypoint);
-                    context.SetShaderHandleForGpuAv(&shader_object_state->Handle());
                 } else {
                     assert(false);
                     continue;
                 }
+
+                context.SetOriginalSpirv(&it->second.original_spirv);
 
                 for (const DescriptorAccess& descriptor_access : descriptor_accesses) {
                     auto descriptor_binding = desc_set->GetBinding(descriptor_access.binding);
@@ -256,18 +256,21 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                         continue;
                     }
 
+                    context.SetInstructionPositionOffset(descriptor_access.instruction_position_offset);
+
                     // This will represent the Set that was accessed in the shader, which might not match the
                     // vkCmdBindDescriptorSet index if sets are aliased
                     context.SetSetIndexForGpuAv(resource_variable->decorations.set);
 
                     const CommandBufferSubState::CommandErrorLogger& cmd_error_logger =
                         cb.command_error_loggers[descriptor_access.error_logger_i];
+                    context.SetObjlistForGpuAv(&cmd_error_logger.objlist);
                     std::string debug_region_name;
                     if (cmd_error_logger.label_cmd_i >= 0) {
                         debug_region_name = cb.GetDebugLabelRegion(cmd_error_logger.label_cmd_i, label_logging.initial_label_stack);
                     }
 
-                    Location access_loc(cmd_error_logger.loc, debug_region_name);
+                    Location access_loc(cmd_error_logger.loc.Get(), debug_region_name);
                     context.SetLocationForGpuAv(access_loc);
                     context.ValidateBindingDynamic(*resource_variable, *descriptor_binding, descriptor_access.index);
                 }

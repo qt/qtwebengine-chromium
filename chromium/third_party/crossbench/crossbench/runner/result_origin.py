@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Iterable, Iterator
 
 from typing_extensions import override
 
@@ -16,13 +16,11 @@ from crossbench.probes.result_location import ResultLocation
 from crossbench.runner.probe_result_origin import ProbeResultOrigin
 
 if TYPE_CHECKING:
-  from collections.abc import Generator
-
   from crossbench import plt
   from crossbench.browsers.browser import Browser
   from crossbench.exception import (Annotator, ExceptionAnnotationScope,
                                     TExceptionTypes)
-  from crossbench.helper.durations import DurationMeasureContext, Durations
+  from crossbench.helper.durations import Durations
   from crossbench.path import AnyPath, LocalPath
   from crossbench.probes.probe import Probe
   from crossbench.runner.runner import Runner
@@ -87,15 +85,9 @@ class ResultOrigin(DecoratorTargetProtocol, ProbeResultOrigin, abc.ABC):
     return self.runner.probes
 
   @contextlib.contextmanager
-  def measure(
-      self, label: str
-  ) -> Generator[tuple[ExceptionAnnotationScope, DurationMeasureContext], None,
-                 None]:
-    # Return a combined context manager that adds an named exception info
-    # and measures the time during the with-scope.
-    with self.exceptions.info(label) as stack, self.durations.measure(
-        label) as timer:
-      yield (stack, timer)
+  def measure(self, label: str) -> Iterator[None]:
+    with self.exceptions.info(label), self.durations.measure(label):
+      yield
 
   def exception_info(self, *stack_entries: str) -> ExceptionAnnotationScope:
     return self.exceptions.info(*stack_entries)

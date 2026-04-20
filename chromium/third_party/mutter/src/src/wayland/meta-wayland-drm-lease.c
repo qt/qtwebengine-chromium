@@ -35,6 +35,7 @@
 #include "backends/native/meta-kms-impl-device.h"
 #include "backends/native/meta-kms.h"
 #include "backends/edid.h"
+#include "backends/meta-launcher.h"
 #include "wayland/meta-wayland-private.h"
 
 #include "drm-lease-v1-server-protocol.h"
@@ -65,6 +66,11 @@ typedef struct _MetaWaylandDrmLeaseDevice
   GHashTable *connectors;
 
   GList *resources;
+
+  /* List of pointers to struct wl_resource with the clients that are waiting
+   * for a drm_fd event.
+   */
+  GList *pending_resources;
 } MetaWaylandDrmLeaseDevice;
 
 typedef struct _MetaWaylandDrmLeaseConnector
@@ -488,7 +494,7 @@ send_connectors (MetaWaylandDrmLeaseDevice *lease_device,
     send_new_connector_resource (lease_device, device_resource, lease_connector);
 }
 
-static void
+static gboolean
 send_drm_fd (struct wl_client          *client,
              MetaWaylandDrmLeaseDevice *lease_device,
              struct wl_resource        *device_resource)
@@ -499,13 +505,23 @@ send_drm_fd (struct wl_client          *client,
   impl_device = meta_kms_device_get_impl_device (lease_device->kms_device);
   fd = meta_kms_impl_device_open_non_privileged_fd (impl_device);
   if (fd < 0)
-    {
-      wl_client_post_implementation_error (client,
-                                           "Error getting DRM lease device fd");
-      return;
-    }
+    return FALSE;
 
   wp_drm_lease_device_v1_send_drm_fd (device_resource, fd);
+  return TRUE;
+}
+
+static gboolean
+send_on_device_bind_events (struct wl_client          *client,
+                            MetaWaylandDrmLeaseDevice *lease_device,
+                            struct wl_resource        *device_resource)
+{
+  if (!send_drm_fd (client, lease_device, device_resource))
+    return FALSE;
+
+  send_connectors (lease_device, device_resource);
+  wp_drm_lease_device_v1_send_done (device_resource);
+  return TRUE;
 }
 
 static void
@@ -515,6 +531,8 @@ wp_drm_lease_device_destructor (struct wl_resource *resource)
     wl_resource_get_user_data (resource);
 
   lease_device->resources = g_list_remove (lease_device->resources, resource);
+  lease_device->pending_resources =
+    g_list_remove (lease_device->pending_resources, resource);
   meta_wayland_drm_lease_device_release (lease_device);
 }
 
@@ -534,11 +552,16 @@ lease_device_bind (struct wl_client *client,
                                   g_rc_box_acquire (lease_device),
                                   wp_drm_lease_device_destructor);
 
-  send_drm_fd (client, lease_device, resource);
-  send_connectors (lease_device, resource);
-  wp_drm_lease_device_v1_send_done (resource);
-
-  lease_device->resources = g_list_prepend (lease_device->resources, resource);
+  if (send_on_device_bind_events (client, lease_device, resource))
+    {
+      lease_device->resources = g_list_prepend (lease_device->resources,
+                                                resource);
+    }
+  else
+    {
+      lease_device->pending_resources =
+        g_list_prepend (lease_device->pending_resources, resource);
+    }
 }
 
 static void
@@ -623,6 +646,49 @@ on_device_removed (MetaDrmLeaseManager        *drm_lease_manager,
 }
 
 static void
+send_pending_on_device_bind_events (MetaWaylandDrmLeaseManager *lease_manager,
+                                    MetaWaylandDrmLeaseDevice  *lease_device)
+{
+  GList *l;
+
+  for (l = lease_device->pending_resources; l;)
+    {
+      struct wl_resource *resource = l->data;
+      struct wl_client *client = resource->client;
+      GList *l_next = l->next;
+
+      if (send_on_device_bind_events (client, lease_device, resource))
+        {
+          lease_device->pending_resources =
+            g_list_remove_link (lease_device->pending_resources, l);
+          lease_device->resources =
+            g_list_insert_before_link (lease_device->resources,
+                                       lease_device->resources,
+                                       l);
+        }
+
+      l = l_next;
+    }
+}
+
+static void
+on_active_session_changed (MetaLauncher *launcher,
+                           GParamSpec   *pspec,
+                           gpointer      user_data)
+{
+  MetaWaylandDrmLeaseManager *lease_manager = user_data;
+  MetaWaylandDrmLeaseDevice *lease_device;
+  GHashTableIter iter;
+
+  if (!meta_launcher_is_session_active (launcher))
+    return;
+
+  g_hash_table_iter_init (&iter, lease_manager->devices);
+  while (g_hash_table_iter_next (&iter, NULL, (gpointer *) &lease_device))
+    send_pending_on_device_bind_events (lease_manager, lease_device);
+}
+
+static void
 on_connector_added (MetaDrmLeaseManager        *drm_lease_manager,
                     MetaKmsConnector           *kms_connector,
                     gboolean                    is_last_connector_update,
@@ -692,6 +758,7 @@ meta_wayland_drm_lease_manager_new (MetaWaylandCompositor *compositor)
 {
   MetaContext *context = meta_wayland_compositor_get_context (compositor);
   MetaBackend *backend = meta_context_get_backend (context);
+  MetaLauncher *launcher = meta_backend_get_launcher (backend);
   MetaBackendNative *backend_native;
   MetaKms *kms;
   MetaWaylandDrmLeaseManager *lease_manager;
@@ -730,6 +797,13 @@ meta_wayland_drm_lease_manager_new (MetaWaylandCompositor *compositor)
   g_signal_connect (lease_manager->drm_lease_manager, "connector-removed",
                     G_CALLBACK (on_connector_removed),
                     lease_manager);
+
+  if (launcher)
+    {
+      g_signal_connect (launcher, "notify::session-active",
+                        G_CALLBACK (on_active_session_changed),
+                        lease_manager);
+    }
 
   return lease_manager;
 }

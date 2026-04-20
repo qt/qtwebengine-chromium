@@ -16,7 +16,7 @@ INTERNAL_NAME_PREFIX: Final[str] = "cb."
 KeyFnType = Callable[[tuple[str, ...]], Optional[str]]
 
 
-def _default_flatten_key_fn(path: tuple[str, ...]) -> str:
+def default_flatten_key_fn(path: tuple[str, ...]) -> str:
   return "/".join(path)
 
 
@@ -43,7 +43,7 @@ class Flatten:
           as final result keys, or None to skip property paths.
     """
     self._accumulator: dict[str, Any] = {}
-    self._key_fn: KeyFnType = key_fn or _default_flatten_key_fn
+    self._key_fn: KeyFnType = key_fn or default_flatten_key_fn
     self._sort: bool = sort
     self.append(*args)
 
@@ -55,7 +55,7 @@ class Flatten:
     return dict(items)
 
   def append(self, *args: Mapping, ignore_toplevel: bool = False) -> None:
-    toplevel_path: tuple[str, ...] = tuple()
+    toplevel_path: tuple[str, ...] = ()
     for merged_data in args:
       self._flatten(toplevel_path, merged_data, ignore_toplevel)
 
@@ -131,7 +131,7 @@ def merge_csv(csv_list: Sequence[LocalPath],
 
   # Fill in the header column taken from the first file
   if headers:
-    table_headers = [None] * row_header_len
+    table_headers: list[str | None] = [None] * row_header_len
   else:
     table_headers = []
 
@@ -176,8 +176,10 @@ def _detect_row_header_len(row: list[str]) -> int:
 
 
 def _merge_csv_append(csv_data: list[list[Any]], table: list[list[Any]],
-                      table_headers, row_header_len: int, headers,
-                      known_row_headers, table_row_len) -> int:
+                      table_headers: list[str | None], row_header_len: int,
+                      headers: Optional[list[str]],
+                      known_row_headers: Set[tuple[str, ...]],
+                      table_row_len: int) -> int:
   # Find the max row width in added csv_data.
   max_csv_row_len = max(len(row) for row in csv_data) - row_header_len
   if table:

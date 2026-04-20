@@ -52,7 +52,7 @@ void Instance::InitValidationObjects() {
     if (!settings.disabled[stateless_checks]) {
         object_dispatch.emplace_back(new stateless::Instance(this));
     }
-    if (settings.enabled[deprecation_checks]) {
+    if (settings.enabled[deprecation_detection]) {
         object_dispatch.emplace_back(new deprecation::Instance(this));
     }
     if (!settings.disabled[object_tracking]) {
@@ -87,7 +87,7 @@ void Device::InitValidationObjects() {
         object_dispatch.emplace_back(new stateless::Device(
             this, static_cast<stateless::Instance*>(dispatch_instance->GetValidationObject(LayerObjectTypeParameterValidation))));
     }
-    if (settings.enabled[deprecation_checks]) {
+    if (settings.enabled[deprecation_detection]) {
         object_dispatch.emplace_back(new deprecation::Device(
             this, static_cast<deprecation::Instance*>(dispatch_instance->GetValidationObject(LayerObjectTypeDeprecation))));
     }
@@ -552,6 +552,13 @@ void HandleWrapper::UnwrapPnextChainHandles(const void* pNext) {
                     safe_struct->tensorView = Unwrap(safe_struct->tensorView);
                 }
             } break;
+            case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT: {
+                auto* safe_struct = reinterpret_cast<vku::safe_VkAccelerationStructureTrianglesOpacityMicromapEXT*>(cur_pnext);
+
+                if (safe_struct->micromap) {
+                    safe_struct->micromap = Unwrap(safe_struct->micromap);
+                }
+            } break;
             case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM: {
                 auto* safe_struct = reinterpret_cast<vku::safe_VkDataGraphPipelineShaderModuleCreateInfoARM*>(cur_pnext);
 
@@ -583,13 +590,6 @@ void HandleWrapper::UnwrapPnextChainHandles(const void* pNext) {
                 }
             } break;
 #endif  // VK_ENABLE_BETA_EXTENSIONS
-            case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT: {
-                auto* safe_struct = reinterpret_cast<vku::safe_VkAccelerationStructureTrianglesOpacityMicromapEXT*>(cur_pnext);
-
-                if (safe_struct->micromap) {
-                    safe_struct->micromap = Unwrap(safe_struct->micromap);
-                }
-            } break;
 
             default:
                 break;
@@ -5183,6 +5183,29 @@ void Device::CmdBindDescriptorBufferEmbeddedSamplers2EXT(
         commandBuffer, (const VkBindDescriptorBufferEmbeddedSamplersInfoEXT*)local_pBindDescriptorBufferEmbeddedSamplersInfo);
 }
 
+void Device::CmdCopyMemoryIndirectKHR(VkCommandBuffer commandBuffer, const VkCopyMemoryIndirectInfoKHR* pCopyMemoryIndirectInfo) {
+    device_dispatch_table.CmdCopyMemoryIndirectKHR(commandBuffer, pCopyMemoryIndirectInfo);
+}
+
+void Device::CmdCopyMemoryToImageIndirectKHR(VkCommandBuffer commandBuffer,
+                                             const VkCopyMemoryToImageIndirectInfoKHR* pCopyMemoryToImageIndirectInfo) {
+    if (!wrap_handles) return device_dispatch_table.CmdCopyMemoryToImageIndirectKHR(commandBuffer, pCopyMemoryToImageIndirectInfo);
+    vku::safe_VkCopyMemoryToImageIndirectInfoKHR var_local_pCopyMemoryToImageIndirectInfo;
+    vku::safe_VkCopyMemoryToImageIndirectInfoKHR* local_pCopyMemoryToImageIndirectInfo = nullptr;
+    {
+        if (pCopyMemoryToImageIndirectInfo) {
+            local_pCopyMemoryToImageIndirectInfo = &var_local_pCopyMemoryToImageIndirectInfo;
+            local_pCopyMemoryToImageIndirectInfo->initialize(pCopyMemoryToImageIndirectInfo);
+
+            if (pCopyMemoryToImageIndirectInfo->dstImage) {
+                local_pCopyMemoryToImageIndirectInfo->dstImage = Unwrap(pCopyMemoryToImageIndirectInfo->dstImage);
+            }
+        }
+    }
+    device_dispatch_table.CmdCopyMemoryToImageIndirectKHR(
+        commandBuffer, (const VkCopyMemoryToImageIndirectInfoKHR*)local_pCopyMemoryToImageIndirectInfo);
+}
+
 VkResult Instance::CreateDebugReportCallbackEXT(VkInstance instance, const VkDebugReportCallbackCreateInfoEXT* pCreateInfo,
                                                 const VkAllocationCallbacks* pAllocator, VkDebugReportCallbackEXT* pCallback) {
     if (!wrap_handles) return instance_dispatch_table.CreateDebugReportCallbackEXT(instance, pCreateInfo, pAllocator, pCallback);
@@ -8356,51 +8379,6 @@ void Device::GetLatencyTimingsNV(VkDevice device, VkSwapchainKHR swapchain, VkGe
 
 void Device::QueueNotifyOutOfBandNV(VkQueue queue, const VkOutOfBandQueueTypeInfoNV* pQueueTypeInfo) {
     device_dispatch_table.QueueNotifyOutOfBandNV(queue, pQueueTypeInfo);
-}
-
-VkResult Device::CreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
-                                             VkPipelineCache pipelineCache, uint32_t createInfoCount,
-                                             const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
-                                             const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines) {
-    if (!wrap_handles)
-        return device_dispatch_table.CreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount,
-                                                                 pCreateInfos, pAllocator, pPipelines);
-    vku::safe_VkDataGraphPipelineCreateInfoARM* local_pCreateInfos = nullptr;
-    {
-        deferredOperation = Unwrap(deferredOperation);
-        pipelineCache = Unwrap(pipelineCache);
-        if (pCreateInfos) {
-            local_pCreateInfos = new vku::safe_VkDataGraphPipelineCreateInfoARM[createInfoCount];
-            for (uint32_t index0 = 0; index0 < createInfoCount; ++index0) {
-                local_pCreateInfos[index0].initialize(&pCreateInfos[index0]);
-                UnwrapPnextChainHandles(local_pCreateInfos[index0].pNext);
-
-                if (pCreateInfos[index0].layout) {
-                    local_pCreateInfos[index0].layout = Unwrap(pCreateInfos[index0].layout);
-                }
-            }
-        }
-    }
-    VkResult result = device_dispatch_table.CreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount,
-                                                                        (const VkDataGraphPipelineCreateInfoARM*)local_pCreateInfos,
-                                                                        pAllocator, pPipelines);
-    if (local_pCreateInfos) {
-        // Fix check for deferred ray tracing pipeline creation
-        // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5817
-        const bool is_operation_deferred = (deferredOperation != VK_NULL_HANDLE) && (result == VK_OPERATION_DEFERRED_KHR);
-        if (is_operation_deferred) {
-            std::vector<std::function<void()>> cleanup{[local_pCreateInfos]() { delete[] local_pCreateInfos; }};
-            deferred_operation_post_completion.insert(deferredOperation, cleanup);
-        } else {
-            delete[] local_pCreateInfos;
-        }
-    }
-    if (result == VK_SUCCESS) {
-        for (uint32_t index0 = 0; index0 < createInfoCount; index0++) {
-            pPipelines[index0] = WrapNew(pPipelines[index0]);
-        }
-    }
-    return result;
 }
 
 VkResult Device::CreateDataGraphPipelineSessionARM(VkDevice device, const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo,

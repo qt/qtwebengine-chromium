@@ -711,17 +711,46 @@ meta_wayland_buffer_inc_use_count (MetaWaylandBuffer *buffer)
   buffer->use_count++;
 }
 
-void
-meta_wayland_buffer_dec_use_count (MetaWaylandBuffer *buffer)
+static void
+handle_release_points (MetaWaylandBuffer *buffer)
 {
   MetaContext *context = meta_wayland_compositor_get_context (buffer->compositor);
   MetaBackend *backend = meta_context_get_backend (context);
-  ClutterBackend *clutter_backend = meta_backend_get_clutter_backend (backend);
-  CoglContext *cogl_context = clutter_backend_get_cogl_context (clutter_backend);
+  ClutterBackend *clutter_backend;
+  CoglContext *cogl_context;
   MetaWaylandSyncPoint *sync_point;
-  g_autoptr(GError) error = NULL;
+  g_autoptr (GError) error = NULL;
   g_autofd int sync_fd = -1;
 
+  if (!backend)
+    return;
+
+  clutter_backend = meta_backend_get_clutter_backend (backend);
+  cogl_context = clutter_backend_get_cogl_context (clutter_backend);
+  sync_fd = cogl_context_get_latest_sync_fd (cogl_context);
+  if (sync_fd < 0)
+    {
+      meta_topic (META_DEBUG_WAYLAND, "Invalid Sync Fd returned by COGL");
+      return;
+    }
+
+  for (int i = 0; i < buffer->release_points->len; i++)
+    {
+      sync_point = g_ptr_array_index (buffer->release_points, i);
+      if (!meta_wayland_sync_timeline_set_sync_point (sync_point->timeline,
+                                                      sync_point->sync_point,
+                                                      sync_fd,
+                                                      &error))
+        g_warning ("Failed to import sync point: %s", error->message);
+    }
+
+  g_ptr_array_remove_range (buffer->release_points, 0,
+                            buffer->release_points->len);
+}
+
+void
+meta_wayland_buffer_dec_use_count (MetaWaylandBuffer *buffer)
+{
   g_return_if_fail (buffer->use_count > 0);
 
   buffer->use_count--;
@@ -731,26 +760,8 @@ meta_wayland_buffer_dec_use_count (MetaWaylandBuffer *buffer)
       if (buffer->resource)
         wl_buffer_send_release (buffer->resource);
 
-      sync_fd = cogl_context_get_latest_sync_fd (cogl_context);
-      if (sync_fd < 0)
-        {
-          meta_topic (META_DEBUG_WAYLAND, "Invalid Sync Fd returned by COGL");
-          return;
-        }
-
-      for (int i = 0; i < buffer->release_points->len; i++)
-        {
-          sync_point = g_ptr_array_index (buffer->release_points, i);
-          if (!meta_wayland_sync_timeline_set_sync_point (sync_point->timeline,
-                                                          sync_point->sync_point,
-                                                          sync_fd,
-                                                          &error))
-            {
-              g_warning ("Failed to import sync point: %s", error->message);
-            }
-        }
-      g_ptr_array_remove_range (buffer->release_points, 0,
-                                buffer->release_points->len);
+      if (buffer->release_points->len)
+        handle_release_points (buffer);
     }
 }
 
@@ -950,6 +961,7 @@ scanout_destroyed (gpointer  data,
 CoglScanout *
 meta_wayland_buffer_try_acquire_scanout (MetaWaylandBuffer     *buffer,
                                          CoglOnscreen          *onscreen,
+                                         ClutterStageView      *stage_view,
                                          const graphene_rect_t *src_rect,
                                          const MtkRectangle    *dst_rect)
 {
@@ -991,6 +1003,7 @@ meta_wayland_buffer_try_acquire_scanout (MetaWaylandBuffer     *buffer,
       {
         scanout = meta_wayland_dma_buf_try_acquire_scanout (buffer,
                                                             onscreen,
+                                                            stage_view,
                                                             src_rect,
                                                             dst_rect);
         break;

@@ -40,6 +40,12 @@ typedef enum
   META_OUTPUT_HDR_METADATA_EOTF_HLG,
 } MetaOutputHdrMetadataEOTF;
 
+enum _MetaColorMode
+{
+  META_COLOR_MODE_DEFAULT = 0,
+  META_COLOR_MODE_BT2100 = 1,
+};
+
 typedef enum _MetaOutputRGBRange
 {
   META_OUTPUT_RGB_RANGE_UNKNOWN = 0,
@@ -273,15 +279,11 @@ gboolean meta_output_set_privacy_screen_enabled (MetaOutput  *output,
                                                  gboolean     enabled,
                                                  GError     **error);
 
-void meta_output_set_color_space (MetaOutput           *output,
-                                  MetaOutputColorspace  color_space);
+void meta_output_get_color_metadata (MetaOutput            *output,
+                                     MetaOutputHdrMetadata *hdr_metadata,
+                                     MetaOutputColorspace  *colorspace);
 
-MetaOutputColorspace meta_output_peek_color_space (MetaOutput *output);
-
-void meta_output_set_hdr_metadata (MetaOutput            *output,
-                                   MetaOutputHdrMetadata *metadata);
-
-MetaOutputHdrMetadata * meta_output_peek_hdr_metadata (MetaOutput *output);
+MetaColorMode meta_output_get_color_mode (MetaOutput *output);
 
 META_EXPORT_TEST
 MetaOutputRGBRange meta_output_peek_rgb_range (MetaOutput *output);

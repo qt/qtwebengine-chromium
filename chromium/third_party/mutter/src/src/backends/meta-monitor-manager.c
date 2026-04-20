@@ -52,6 +52,7 @@
 #include "backends/meta-monitor.h"
 #include "backends/meta-monitor-config-manager.h"
 #include "backends/meta-monitor-config-store.h"
+#include "backends/meta-monitor-config-utils.h"
 #include "backends/meta-output.h"
 #include "backends/meta-virtual-monitor.h"
 #include "clutter/clutter.h"
@@ -130,6 +131,8 @@ G_DEFINE_TYPE_WITH_PRIVATE (MetaMonitorManager, meta_monitor_manager,
 static void initialize_dbus_interface (MetaMonitorManager *manager);
 static void monitor_manager_setup_dbus_config_handlers (MetaMonitorManager *manager);
 
+static gboolean meta_monitors_config_has_monitors_connected (MetaMonitorsConfig *config,
+                                                             MetaMonitorManager *manager);
 static gboolean
 meta_monitor_manager_is_config_complete (MetaMonitorManager *manager,
                                          MetaMonitorsConfig *config);
@@ -692,6 +695,82 @@ should_use_stored_config (MetaMonitorManager *manager)
           !meta_monitor_manager_has_hotplug_mode_update (manager));
 }
 
+static gboolean
+is_logical_monitor_config_amend_needed (MetaMonitorManager       *manager,
+                                        MetaLogicalMonitorConfig *logical_monitor_config)
+{
+  GList *l;
+
+  for (l = logical_monitor_config->monitor_configs; l; l = l->next)
+    {
+      MetaMonitorConfig *monitor_config = l->data;
+      MetaMonitorSpec *monitor_spec = monitor_config->monitor_spec;
+      MetaMonitor *monitor;
+
+      monitor = meta_monitor_manager_get_monitor_from_spec (manager,
+                                                            monitor_spec);
+      if (!meta_monitor_is_color_mode_supported (monitor,
+                                                 monitor_config->color_mode))
+        return TRUE;
+    }
+
+  return FALSE;
+}
+
+static gboolean
+is_monitors_config_amend_needed (MetaMonitorManager *manager,
+                                 MetaMonitorsConfig *config)
+{
+  GList *l;
+
+  g_assert (meta_monitors_config_has_monitors_connected (config, manager));
+
+  for (l = config->logical_monitor_configs; l; l = l->next)
+    {
+      MetaLogicalMonitorConfig *logical_monitor_config = l->data;
+
+      if (is_logical_monitor_config_amend_needed (manager,
+                                                  logical_monitor_config))
+        return TRUE;
+    }
+
+  return FALSE;
+}
+
+static void
+amend_monitor_config (MetaMonitorConfig  *monitor_config,
+                      MetaMonitorManager *manager)
+{
+  MetaMonitorSpec *monitor_spec = monitor_config->monitor_spec;
+  MetaMonitor *monitor;
+
+  monitor = meta_monitor_manager_get_monitor_from_spec (manager,
+                                                        monitor_spec);
+  if (!meta_monitor_is_color_mode_supported (monitor,
+                                             monitor_config->color_mode))
+    monitor_config->color_mode = META_COLOR_MODE_DEFAULT;
+}
+
+static void
+amend_logical_monitor_config (MetaLogicalMonitorConfig *logical_monitor_config,
+                              MetaMonitorManager       *manager)
+{
+  g_list_foreach (logical_monitor_config->monitor_configs,
+                  (GFunc) amend_monitor_config,
+                  manager);
+}
+
+static void
+amend_monitors_config (MetaMonitorManager *manager,
+                       MetaMonitorsConfig *config,
+                       MetaMonitorsConfig *base_config)
+{
+  g_list_foreach (config->logical_monitor_configs,
+                  (GFunc) amend_logical_monitor_config,
+                  manager);
+  meta_monitors_config_set_parent_config (config, base_config);
+}
+
 MetaMonitorsConfig *
 meta_monitor_manager_ensure_configured (MetaMonitorManager *manager)
 {
@@ -714,6 +793,7 @@ meta_monitor_manager_ensure_configured (MetaMonitorManager *manager)
       if (config)
         {
           g_autoptr (MetaMonitorsConfig) oriented_config = NULL;
+          g_autoptr (MetaMonitorsConfig) amended_config = NULL;
 
           if (manager->panel_orientation_managed)
             {
@@ -722,6 +802,13 @@ meta_monitor_manager_ensure_configured (MetaMonitorManager *manager)
 
               if (oriented_config)
                 config = oriented_config;
+            }
+
+          if (is_monitors_config_amend_needed (manager, config))
+            {
+              amended_config = meta_monitors_config_copy (config);
+              amend_monitors_config (manager, amended_config, config);
+              config = amended_config;
             }
 
           if (!meta_monitor_manager_apply_monitors_config (manager,
@@ -798,6 +885,7 @@ meta_monitor_manager_ensure_configured (MetaMonitorManager *manager)
   if (config)
     {
       g_autoptr (MetaMonitorsConfig) oriented_config = NULL;
+      g_autoptr (MetaMonitorsConfig) amended_config = NULL;
 
       if (manager->panel_orientation_managed)
         {
@@ -809,26 +897,35 @@ meta_monitor_manager_ensure_configured (MetaMonitorManager *manager)
             config = oriented_config;
         }
 
-      config = g_object_ref (config);
-
       if (meta_monitor_manager_is_config_complete (manager, config))
         {
+          if (is_monitors_config_amend_needed (manager, config))
+            {
+              amended_config = meta_monitors_config_copy (config);
+              amend_monitors_config (manager, amended_config, config);
+              config = amended_config;
+            }
+
           if (!meta_monitor_manager_apply_monitors_config (manager,
                                                            config,
                                                            method,
                                                            &error))
             {
+              config = NULL;
               g_warning ("Failed to use suggested monitor configuration: %s",
                          error->message);
               g_clear_error (&error);
             }
           else
             {
+              config = g_object_ref (config);
               goto done;
             }
         }
-
-      g_clear_object (&config);
+      else
+        {
+          config = NULL;
+        }
     }
 
   config = meta_monitor_config_manager_create_linear (manager->config_manager);
@@ -1110,6 +1207,71 @@ apply_privacy_screen_settings (MetaMonitorManager *manager)
 }
 
 static void
+update_output_luminance (MetaMonitorManager *monitor_manager)
+{
+  MetaSettings *settings = meta_backend_get_settings (monitor_manager->backend);
+  GVariantBuilder builder;
+  GList *l;
+
+  g_variant_builder_init (&builder, G_VARIANT_TYPE ("aa{sv}"));
+
+  for (l = meta_monitor_manager_get_monitors (monitor_manager); l; l = l->next)
+    {
+      MetaMonitor *monitor = META_MONITOR (l->data);
+      MetaMonitorSpec *monitor_spec = meta_monitor_get_spec (monitor);
+      GVariantBuilder luminance_dic_builder;
+      const char *connector;
+      GList *l_color_mode;
+
+      for (l_color_mode = meta_monitor_get_supported_color_modes (monitor);
+           l_color_mode;
+           l_color_mode = l_color_mode->next)
+        {
+          MetaColorMode color_mode = GPOINTER_TO_INT (l_color_mode->data);
+          double luminance;
+          double default_luminance;
+          gboolean is_unset;
+
+          connector = meta_monitor_get_connector (monitor);
+          luminance = meta_settings_get_output_luminance (settings,
+                                                          monitor_spec,
+                                                          color_mode);
+          default_luminance =
+            meta_settings_get_default_output_luminance (settings,
+                                                        monitor_spec,
+                                                        color_mode);
+          is_unset = !meta_settings_has_output_luminance (settings,
+                                                          monitor_spec,
+                                                          color_mode);
+
+          g_variant_builder_init (&luminance_dic_builder,
+                                  G_VARIANT_TYPE ("a{sv}"));
+          g_variant_builder_add (&luminance_dic_builder, "{sv}",
+                                 "connector",
+                                 g_variant_new_string (connector));
+          g_variant_builder_add (&luminance_dic_builder, "{sv}",
+                                 "color-mode",
+                                 g_variant_new_uint32 (color_mode));
+          g_variant_builder_add (&luminance_dic_builder, "{sv}",
+                                 "luminance",
+                                 g_variant_new_double (luminance));
+          g_variant_builder_add (&luminance_dic_builder, "{sv}",
+                                 "default",
+                                 g_variant_new_double (default_luminance));
+          g_variant_builder_add (&luminance_dic_builder, "{sv}",
+                                 "is-unset",
+                                 g_variant_new_boolean (is_unset));
+
+          g_variant_builder_add (&builder, "a{sv}",
+                                 &luminance_dic_builder);
+        }
+    }
+
+  meta_dbus_display_config_set_luminance (monitor_manager->display_config,
+                                          g_variant_builder_end (&builder));
+}
+
+static void
 update_panel_orientation_managed (MetaMonitorManager *manager)
 {
   MetaOrientationManager *orientation_manager;
@@ -1311,11 +1473,16 @@ meta_monitor_manager_constructed (GObject *object)
   g_signal_connect_object (settings,
                            "experimental-features-changed",
                            G_CALLBACK (experimental_features_changed),
-                           manager, 0);
+                           manager, G_CONNECT_DEFAULT);
 
   g_signal_connect_object (settings,
                            "privacy-screen-changed",
                            G_CALLBACK (apply_privacy_screen_settings),
+                           manager, G_CONNECT_SWAPPED);
+
+  g_signal_connect_object (settings,
+                           "output-luminance-changed",
+                           G_CALLBACK (update_output_luminance),
                            manager, G_CONNECT_SWAPPED);
 
   monitor_manager_setup_dbus_config_handlers (manager);
@@ -1327,7 +1494,7 @@ meta_monitor_manager_constructed (GObject *object)
   g_signal_connect_object (meta_backend_get_orientation_manager (backend),
                            "orientation-changed",
                            G_CALLBACK (orientation_changed),
-                           manager, 0);
+                           manager, G_CONNECT_DEFAULT);
 
   g_signal_connect_object (meta_backend_get_orientation_manager (backend),
                            "notify::has-accelerometer",
@@ -1337,7 +1504,7 @@ meta_monitor_manager_constructed (GObject *object)
   g_signal_connect_object (backend,
                            "lid-is-closed-changed",
                            G_CALLBACK (lid_is_closed_changed),
-                           manager, 0);
+                           manager, G_CONNECT_DEFAULT);
 
   g_signal_connect (context, "started", G_CALLBACK (on_started), manager);
   g_signal_connect (backend, "prepare-shutdown",
@@ -2002,6 +2169,23 @@ request_persistent_confirmation (MetaMonitorManager *manager)
 #define LOGICAL_MONITOR_FORMAT "(iidub" LOGICAL_MONITOR_MONITORS_FORMAT "a{sv})"
 #define LOGICAL_MONITORS_FORMAT "a" LOGICAL_MONITOR_FORMAT
 
+static GVariant *
+generate_color_modes_variant (MetaMonitor *monitor)
+{
+  GVariantBuilder builder;
+  GList *l;
+
+  g_variant_builder_init (&builder, G_VARIANT_TYPE ("au"));
+  for (l = meta_monitor_get_supported_color_modes (monitor); l; l = l->next)
+    {
+      MetaColorMode color_mode = GPOINTER_TO_INT (l->data);
+
+      g_variant_builder_add (&builder, "u", color_mode);
+    }
+
+  return g_variant_builder_end (&builder);
+}
+
 static gboolean
 meta_monitor_manager_handle_get_current_state (MetaDBusDisplayConfig *skeleton,
                                                GDBusMethodInvocation *invocation,
@@ -2033,6 +2217,7 @@ meta_monitor_manager_handle_get_current_state (MetaDBusDisplayConfig *skeleton,
       GList *k;
       gboolean is_builtin;
       gboolean is_for_lease;
+      MetaColorMode color_mode;
       const char *display_name;
 
       current_mode = meta_monitor_get_current_mode (monitor);
@@ -2158,6 +2343,15 @@ meta_monitor_manager_handle_get_current_state (MetaDBusDisplayConfig *skeleton,
       g_variant_builder_add (&monitor_properties_builder, "{sv}",
                              "is-for-lease",
                              g_variant_new_boolean (is_for_lease));
+
+      color_mode = meta_monitor_get_color_mode (monitor);
+      g_variant_builder_add (&monitor_properties_builder, "{sv}",
+                             "color-mode",
+                             g_variant_new_uint32 (color_mode));
+
+      g_variant_builder_add (&monitor_properties_builder, "{sv}",
+                             "supported-color-modes",
+                             generate_color_modes_variant (monitor));
 
       g_variant_builder_add (&monitors_builder, MONITOR_FORMAT,
                              monitor_spec->connector,
@@ -2385,22 +2579,25 @@ meta_monitor_manager_is_config_applicable (MetaMonitorManager *manager,
 }
 
 static gboolean
-meta_monitor_manager_is_config_complete (MetaMonitorManager *manager,
-                                         MetaMonitorsConfig *config)
+meta_monitors_config_has_monitors_connected (MetaMonitorsConfig *config,
+                                             MetaMonitorManager *manager)
 {
-  MetaMonitorsConfigKey *current_state_key;
-  gboolean is_config_complete;
+  g_autoptr (MetaMonitorsConfigKey) current_state_key = NULL;
 
   current_state_key =
     meta_create_monitors_config_key_for_current_state (manager);
   if (!current_state_key)
     return FALSE;
 
-  is_config_complete = meta_monitors_config_key_equal (current_state_key,
-                                                       config->key);
-  meta_monitors_config_key_free (current_state_key);
+  return meta_monitors_config_key_equal (current_state_key,
+                                         config->key);
+}
 
-  if (!is_config_complete)
+static gboolean
+meta_monitor_manager_is_config_complete (MetaMonitorManager *manager,
+                                         MetaMonitorsConfig *config)
+{
+  if (!meta_monitors_config_has_monitors_connected (config, manager))
     return FALSE;
 
   return meta_monitor_manager_is_config_applicable (manager, config, NULL);
@@ -2450,6 +2647,8 @@ create_monitor_config_from_variant (MetaMonitorManager *manager,
   g_autoptr (GVariant) properties_variant = NULL;
   gboolean enable_underscanning = FALSE;
   gboolean set_underscanning = FALSE;
+  MetaColorMode color_mode = META_COLOR_MODE_DEFAULT;
+  uint32_t color_mode_value;
 
   g_variant_get (monitor_config_variant, "(ss@a{sv})",
                  &connector,
@@ -2485,6 +2684,10 @@ create_monitor_config_from_variant (MetaMonitorManager *manager,
         }
     }
 
+  if (g_variant_lookup (properties_variant, "color-mode", "u",
+                        &color_mode_value))
+    color_mode = color_mode_value;
+
   monitor_spec = meta_monitor_spec_clone (meta_monitor_get_spec (monitor));
 
   monitor_mode_spec = g_new0 (MetaMonitorModeSpec, 1);
@@ -2494,7 +2697,8 @@ create_monitor_config_from_variant (MetaMonitorManager *manager,
   *monitor_config = (MetaMonitorConfig) {
     .monitor_spec = monitor_spec,
     .mode_spec = monitor_mode_spec,
-    .enable_underscanning = enable_underscanning
+    .enable_underscanning = enable_underscanning,
+    .color_mode = color_mode,
   };
 
   return monitor_config;
@@ -3101,6 +3305,103 @@ meta_monitor_manager_handle_set_backlight (MetaDBusDisplayConfig *skeleton,
 }
 
 static gboolean
+validate_color_mode_value (uint32_t       color_mode_value,
+                           MetaColorMode *color_mode)
+{
+  switch (color_mode_value)
+    {
+    case META_COLOR_MODE_DEFAULT:
+    case META_COLOR_MODE_BT2100:
+      *color_mode = (MetaColorMode) color_mode_value;
+      return TRUE;
+    }
+
+  return FALSE;
+}
+
+static gboolean
+meta_monitor_manager_handle_set_luminance (MetaDBusDisplayConfig *skeleton,
+                                           GDBusMethodInvocation *invocation,
+                                           const char *           connector,
+                                           uint32_t               color_mode_value,
+                                           double                 value,
+                                           MetaMonitorManager    *monitor_manager)
+{
+  MetaSettings *settings = meta_backend_get_settings (monitor_manager->backend);
+  MetaMonitor *monitor;
+  MetaColorMode color_mode;
+
+  monitor = meta_monitor_manager_get_monitor_from_connector (monitor_manager,
+                                                             connector);
+  if (!monitor)
+    {
+      g_dbus_method_invocation_return_error (invocation,
+                                             G_DBUS_ERROR,
+                                             G_DBUS_ERROR_FAILED,
+                                             "The connector doesn't have a connected monitor");
+      return G_DBUS_METHOD_INVOCATION_HANDLED;
+    }
+
+  if (!validate_color_mode_value (color_mode_value, &color_mode))
+    {
+      g_dbus_method_invocation_return_error (invocation,
+                                             G_DBUS_ERROR,
+                                             G_DBUS_ERROR_FAILED,
+                                             "Invalid color mode");
+      return G_DBUS_METHOD_INVOCATION_HANDLED;
+    }
+
+  meta_settings_set_output_luminance (settings,
+                                      meta_monitor_get_spec (monitor),
+                                      color_mode,
+                                      value);
+
+  meta_dbus_display_config_complete_set_luminance (monitor_manager->display_config,
+                                                   invocation);
+  return G_DBUS_METHOD_INVOCATION_HANDLED;
+}
+
+static gboolean
+meta_monitor_manager_handle_reset_luminance (MetaDBusDisplayConfig *skeleton,
+                                             GDBusMethodInvocation *invocation,
+                                             const char *           connector,
+                                             uint32_t               color_mode_value,
+                                             MetaMonitorManager    *monitor_manager)
+{
+  MetaSettings *settings = meta_backend_get_settings (monitor_manager->backend);
+  MetaMonitor *monitor;
+  MetaColorMode color_mode;
+
+  monitor = meta_monitor_manager_get_monitor_from_connector (monitor_manager,
+                                                             connector);
+  if (!monitor)
+    {
+      g_dbus_method_invocation_return_error (invocation,
+                                             G_DBUS_ERROR,
+                                             G_DBUS_ERROR_FAILED,
+                                             "The connector doesn't have a connected monitor");
+      return G_DBUS_METHOD_INVOCATION_HANDLED;
+    }
+
+  if (!validate_color_mode_value (color_mode_value, &color_mode))
+    {
+      g_dbus_method_invocation_return_error (invocation,
+                                             G_DBUS_ERROR,
+                                             G_DBUS_ERROR_FAILED,
+                                             "Invalid color mode");
+      return G_DBUS_METHOD_INVOCATION_HANDLED;
+    }
+
+  meta_settings_reset_output_luminance (settings,
+                                        meta_monitor_get_spec (monitor),
+                                        color_mode);
+
+  meta_dbus_display_config_complete_reset_luminance (monitor_manager->display_config,
+                                                     invocation);
+  return G_DBUS_METHOD_INVOCATION_HANDLED;
+}
+
+static gboolean
 meta_monitor_manager_handle_get_crtc_gamma  (MetaDBusDisplayConfig *skeleton,
                                              GDBusMethodInvocation *invocation,
                                              guint                  serial,
@@ -3278,28 +3579,34 @@ monitor_manager_setup_dbus_config_handlers (MetaMonitorManager *manager)
 {
   g_signal_connect_object (manager->display_config, "handle-get-resources",
                            G_CALLBACK (meta_monitor_manager_handle_get_resources),
-                           manager, 0);
+                           manager, G_CONNECT_DEFAULT);
   g_signal_connect_object (manager->display_config, "handle-change-backlight",
                            G_CALLBACK (meta_monitor_manager_handle_change_backlight),
-                           manager, 0);
+                           manager, G_CONNECT_DEFAULT);
   g_signal_connect_object (manager->display_config, "handle-set-backlight",
                            G_CALLBACK (meta_monitor_manager_handle_set_backlight),
-                           manager, 0);
+                           manager, G_CONNECT_DEFAULT);
+  g_signal_connect_object (manager->display_config, "handle-set-luminance",
+                           G_CALLBACK (meta_monitor_manager_handle_set_luminance),
+                           manager, G_CONNECT_DEFAULT);
+  g_signal_connect_object (manager->display_config, "handle-reset-luminance",
+                           G_CALLBACK (meta_monitor_manager_handle_reset_luminance),
+                           manager, G_CONNECT_DEFAULT);
   g_signal_connect_object (manager->display_config, "handle-get-crtc-gamma",
                            G_CALLBACK (meta_monitor_manager_handle_get_crtc_gamma),
-                           manager, 0);
+                           manager, G_CONNECT_DEFAULT);
   g_signal_connect_object (manager->display_config, "handle-set-crtc-gamma",
                            G_CALLBACK (meta_monitor_manager_handle_set_crtc_gamma),
-                           manager, 0);
+                           manager, G_CONNECT_DEFAULT);
   g_signal_connect_object (manager->display_config, "handle-get-current-state",
                            G_CALLBACK (meta_monitor_manager_handle_get_current_state),
-                           manager, 0);
+                           manager, G_CONNECT_DEFAULT);
   g_signal_connect_object (manager->display_config, "handle-apply-monitors-config",
                            G_CALLBACK (meta_monitor_manager_handle_apply_monitors_config),
-                           manager, 0);
+                           manager, G_CONNECT_DEFAULT);
   g_signal_connect_object (manager->display_config, "handle-set-output-ctm",
                            G_CALLBACK (meta_monitor_manager_handle_set_output_ctm),
-                           manager, 0);
+                           manager, G_CONNECT_DEFAULT);
 }
 
 static void
@@ -3904,6 +4211,7 @@ meta_monitor_manager_update_logical_state (MetaMonitorManager *manager,
       manager->current_switch_config = META_MONITOR_SWITCH_CONFIG_UNKNOWN;
     }
 
+  update_output_luminance (manager);
   meta_monitor_manager_rebuild_logical_monitors (manager, config);
 }
 
@@ -3995,6 +4303,7 @@ meta_monitor_manager_update_logical_state_derived (MetaMonitorManager *manager,
 
   manager->layout_mode = META_LOGICAL_MONITOR_LAYOUT_MODE_PHYSICAL;
 
+  update_output_luminance (manager);
   meta_monitor_manager_rebuild_logical_monitors_derived (manager, config);
 }
 

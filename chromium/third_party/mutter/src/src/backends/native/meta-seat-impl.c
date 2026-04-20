@@ -100,9 +100,33 @@ enum
 
 static guint signals[N_SIGNALS] = { 0 };
 
+/* Index matches libinput_led bit offsets */
+typedef enum _MetaKeyboardLed MetaKeyboardLed;
+enum _MetaKeyboardLed
+{
+  KEYBOARD_LED_NUM_LOCK,
+  KEYBOARD_LED_CAPS_LOCK,
+  KEYBOARD_LED_SCROLL_LOCK,
+#ifdef HAVE_XKBCOMMON_KANA_COMPOSE_LEDS
+  KEYBOARD_LED_COMPOSE,
+  KEYBOARD_LED_KANA,
+#endif
+  N_KEYBOARD_LEDS,
+};
+
 typedef struct _MetaSeatImplPrivate
 {
   GHashTable *device_files;
+
+  xkb_led_index_t keyboard_leds[N_KEYBOARD_LEDS];
+
+  struct {
+    GHashTable *grabbed_modifiers;
+    GHashTable *pressed_modifiers;
+    uint32_t last_keysym;
+    uint32_t last_keysym_time;
+    gboolean saw_first_release;
+  } a11y;
 } MetaSeatImplPrivate;
 
 static void meta_seat_impl_initable_iface_init (GInitableIface *iface);
@@ -148,24 +172,24 @@ meta_seat_impl_run_input_task (MetaSeatImpl *seat_impl,
 void
 meta_seat_impl_sync_leds_in_impl (MetaSeatImpl *seat_impl)
 {
+  MetaSeatImplPrivate *priv =
+    meta_seat_impl_get_instance_private (seat_impl);
   GSList *iter;
   MetaInputDeviceNative *device_native;
-  int caps_lock, num_lock, scroll_lock;
   enum libinput_led leds = 0;
+  int i;
 
-  caps_lock = xkb_state_led_index_is_active (seat_impl->xkb,
-                                             seat_impl->caps_lock_led);
-  num_lock = xkb_state_led_index_is_active (seat_impl->xkb,
-                                            seat_impl->num_lock_led);
-  scroll_lock = xkb_state_led_index_is_active (seat_impl->xkb,
-                                               seat_impl->scroll_lock_led);
+  for (i = 0; i < N_KEYBOARD_LEDS; i++)
+    {
+      xkb_led_index_t led_idx = priv->keyboard_leds[i];
 
-  if (caps_lock)
-    leds |= LIBINPUT_LED_CAPS_LOCK;
-  if (num_lock)
-    leds |= LIBINPUT_LED_NUM_LOCK;
-  if (scroll_lock)
-    leds |= LIBINPUT_LED_SCROLL_LOCK;
+      if (led_idx == XKB_LED_INVALID)
+        continue;
+      if (!xkb_state_led_index_is_active (seat_impl->xkb, led_idx))
+        continue;
+
+      leds |= 1 << i;
+    }
 
   for (iter = seat_impl->devices; iter; iter = iter->next)
     {
@@ -389,6 +413,65 @@ emit_signal (MetaSeatImpl *seat_impl,
                                          (GDestroyNotify) signal_data_free);
 }
 
+static gboolean
+is_a11y_modifier_first_click (MetaSeatImpl *seat_impl,
+                              uint32_t      keysym,
+                              uint32_t      event_time,
+                              gboolean      is_press)
+{
+  MetaSeatImplPrivate *priv = meta_seat_impl_get_instance_private (seat_impl);
+  gboolean is_same_keysym = keysym == priv->a11y.last_keysym;
+  gboolean event_soon_enough =
+    event_time - priv->a11y.last_keysym_time < seat_impl->repeat_delay;
+  gboolean is_grabbed_modifier =
+    g_hash_table_contains (priv->a11y.grabbed_modifiers, GUINT_TO_POINTER (keysym));
+
+  priv->a11y.last_keysym = keysym;
+  priv->a11y.last_keysym_time = event_time;
+
+  /* This is not an event for a grabbed modifier */
+  if (!is_grabbed_modifier)
+    return FALSE;
+
+  if (!is_press && g_hash_table_contains (priv->a11y.pressed_modifiers,
+                                          GUINT_TO_POINTER (keysym)))
+    {
+      g_hash_table_remove (priv->a11y.pressed_modifiers,
+                           GUINT_TO_POINTER (keysym));
+      /* This is a release event for a previously pressed modifier */
+      return FALSE;
+    }
+
+  if (is_same_keysym && event_soon_enough)
+    {
+      if (is_press && priv->a11y.saw_first_release)
+        {
+          priv->a11y.saw_first_release = FALSE;
+          g_hash_table_add (priv->a11y.pressed_modifiers,
+                            GUINT_TO_POINTER (keysym));
+
+          /* This is the second press event and it is on time, process
+           * it normally
+           */
+          return FALSE;
+        }
+      else
+        {
+          priv->a11y.saw_first_release = TRUE;
+          /* This is the first release event, wait for the second press event */
+          return TRUE;
+        }
+    }
+  else
+    {
+      /* This is either a different modifier, the first press
+       * event, or not on time to progress
+       */
+      priv->a11y.saw_first_release = FALSE;
+      return TRUE;
+    }
+}
+
 void
 meta_seat_impl_notify_key_in_impl (MetaSeatImpl       *seat_impl,
                                    ClutterInputDevice *device,
@@ -401,6 +484,8 @@ meta_seat_impl_notify_key_in_impl (MetaSeatImpl       *seat_impl,
   ClutterEventFlags flags = CLUTTER_EVENT_NONE;
   enum xkb_state_component changed_state;
   uint32_t keycode;
+  uint32_t keysym;
+  gboolean should_ignore;
 
   if (state != AUTOREPEAT_VALUE)
     {
@@ -421,6 +506,16 @@ meta_seat_impl_notify_key_in_impl (MetaSeatImpl       *seat_impl,
       flags = CLUTTER_EVENT_FLAG_REPEATED;
     }
 
+  keycode = meta_xkb_evdev_to_keycode (key);
+  keysym = xkb_state_key_get_one_sym (seat_impl->xkb, keycode);
+
+  should_ignore = is_a11y_modifier_first_click (seat_impl,
+                                                keysym,
+                                                time_us / 1000,
+                                                state);
+  if (should_ignore)
+    flags |= CLUTTER_EVENT_FLAG_A11Y_MODIFIER_FIRST_CLICK;
+
   event = meta_key_event_new_from_evdev (device,
                                          seat_impl->core_keyboard,
                                          flags,
@@ -428,11 +523,9 @@ meta_seat_impl_notify_key_in_impl (MetaSeatImpl       *seat_impl,
                                          seat_impl->button_state,
                                          time_us, key, state);
 
-  keycode = meta_xkb_evdev_to_keycode (key);
-
   /* We must be careful and not pass multiple releases to xkb, otherwise it gets
      confused and locks the modifiers */
-  if (state != AUTOREPEAT_VALUE)
+  if (!should_ignore && state != AUTOREPEAT_VALUE)
     {
       changed_state = xkb_state_update_key (seat_impl->xkb, keycode,
                                             state ? XKB_KEY_DOWN : XKB_KEY_UP);
@@ -1125,7 +1218,7 @@ meta_seat_impl_notify_discrete_scroll_in_impl (MetaSeatImpl        *seat_impl,
   evdev_device->value120.acc_dx += (int32_t) dx_value120;
   evdev_device->value120.acc_dy += (int32_t) dy_value120;
 
-  if (abs (evdev_device->value120.acc_dx) >= 60)
+  if (dx_value120 != 0 && abs (evdev_device->value120.acc_dx) >= 60)
     {
       low_res_value = (evdev_device->value120.acc_dx / 120);
       if (low_res_value == 0)
@@ -1137,7 +1230,7 @@ meta_seat_impl_notify_discrete_scroll_in_impl (MetaSeatImpl        *seat_impl,
       evdev_device->value120.acc_dx -= (low_res_value * 120);
     }
 
-  if (abs (evdev_device->value120.acc_dy) >= 60)
+  if (dy_value120 != 0 && abs (evdev_device->value120.acc_dy) >= 60)
     {
       low_res_value = (evdev_device->value120.acc_dy / 120);
       if (low_res_value == 0)
@@ -2912,6 +3005,34 @@ init_core_devices (MetaSeatImpl *seat_impl)
   seat_impl->core_keyboard = device;
 }
 
+static void
+update_keyboard_leds (MetaSeatImpl *seat_impl)
+{
+  MetaSeatImplPrivate *priv =
+    meta_seat_impl_get_instance_private (seat_impl);
+  struct xkb_keymap *xkb_keymap;
+  /* Index matches MetaKeyboardLed enum */
+  const char *led_map[] = {
+    XKB_LED_NAME_NUM,
+    XKB_LED_NAME_CAPS,
+    XKB_LED_NAME_SCROLL,
+#ifdef HAVE_XKBCOMMON_KANA_COMPOSE_LEDS
+    XKB_LED_NAME_COMPOSE,
+    XKB_LED_NAME_KANA,
+#endif
+  };
+  int i;
+
+  G_STATIC_ASSERT (G_N_ELEMENTS (led_map) == N_KEYBOARD_LEDS);
+
+  xkb_keymap = meta_keymap_native_get_keyboard_map_in_impl (seat_impl->keymap);
+  if (!xkb_keymap)
+    return;
+
+  for (i = 0; i < G_N_ELEMENTS (led_map); i++)
+    priv->keyboard_leds[i] = xkb_keymap_led_get_index (xkb_keymap, led_map[i]);
+}
+
 static gpointer
 input_thread (MetaSeatImpl *seat_impl)
 {
@@ -2938,6 +3059,9 @@ input_thread (MetaSeatImpl *seat_impl)
                            NULL,
                            (GDestroyNotify) meta_device_file_release);
 
+  priv->a11y.grabbed_modifiers = g_hash_table_new (NULL, NULL);
+  priv->a11y.pressed_modifiers = g_hash_table_new (NULL, NULL);
+
   seat_impl->input_settings = meta_input_settings_native_new_in_impl (seat_impl);
   g_signal_connect_object (seat_impl->input_settings, "kbd-a11y-changed",
                            G_CALLBACK (kbd_a11y_changed_cb), seat_impl, 0);
@@ -2949,13 +3073,7 @@ input_thread (MetaSeatImpl *seat_impl)
   if (xkb_keymap)
     {
       seat_impl->xkb = xkb_state_new (xkb_keymap);
-
-      seat_impl->caps_lock_led =
-        xkb_keymap_led_get_index (xkb_keymap, XKB_LED_NAME_CAPS);
-      seat_impl->num_lock_led =
-        xkb_keymap_led_get_index (xkb_keymap, XKB_LED_NAME_NUM);
-      seat_impl->scroll_lock_led =
-        xkb_keymap_led_get_index (xkb_keymap, XKB_LED_NAME_SCROLL);
+      update_keyboard_leds (seat_impl);
     }
 
   if (meta_input_settings_maybe_restore_numlock_state (seat_impl->input_settings))
@@ -3098,6 +3216,9 @@ destroy_in_impl (GTask *task)
   meta_seat_impl_clear_repeat_source (seat_impl);
 
   g_clear_pointer (&priv->device_files, g_hash_table_destroy);
+
+  g_clear_pointer (&priv->a11y.grabbed_modifiers, g_hash_table_destroy);
+  g_clear_pointer (&priv->a11y.pressed_modifiers, g_hash_table_destroy);
 
   g_main_loop_quit (seat_impl->input_loop);
   g_task_return_boolean (task, TRUE);
@@ -3430,12 +3551,7 @@ meta_seat_impl_update_xkb_state_in_impl (MetaSeatImpl *seat_impl)
                          locked_mods,
                          0, 0, seat_impl->layout_idx);
 
-  seat_impl->caps_lock_led =
-    xkb_keymap_led_get_index (xkb_keymap, XKB_LED_NAME_CAPS);
-  seat_impl->num_lock_led =
-    xkb_keymap_led_get_index (xkb_keymap, XKB_LED_NAME_NUM);
-  seat_impl->scroll_lock_led =
-    xkb_keymap_led_get_index (xkb_keymap, XKB_LED_NAME_SCROLL);
+  update_keyboard_leds (seat_impl);
 
   meta_seat_impl_sync_leds_in_impl (seat_impl);
   meta_keymap_native_update_in_impl (seat_impl->keymap,
@@ -3820,17 +3936,66 @@ meta_seat_impl_set_viewports (MetaSeatImpl     *seat_impl,
   g_cond_clear (&data.cond);
 }
 
+static gboolean
+set_a11y_modifiers (GTask *task)
+{
+  MetaSeatImpl *seat_impl = g_task_get_source_object (task);
+  MetaSeatImplPrivate *priv = meta_seat_impl_get_instance_private (seat_impl);
+  GArray *modifiers = g_task_get_task_data (task);
+  int i;
+
+  g_hash_table_remove_all (priv->a11y.grabbed_modifiers);
+
+  for (i = 0; i < modifiers->len; i++)
+    {
+      uint32_t keysym;
+
+      keysym = g_array_index (modifiers, uint32_t, i);
+      g_hash_table_add (priv->a11y.grabbed_modifiers,
+                        GUINT_TO_POINTER (keysym));
+    }
+
+  g_task_return_boolean (task, TRUE);
+
+  return G_SOURCE_REMOVE;
+}
+
+void
+meta_seat_impl_set_a11y_modifiers (MetaSeatImpl   *seat_impl,
+                                   const uint32_t *modifiers,
+                                   int             n_modifiers)
+{
+  g_autoptr (GTask) task = NULL;
+  GArray *modifiers_copy;
+
+  g_return_if_fail (META_IS_SEAT_IMPL (seat_impl));
+
+  modifiers_copy = g_array_new (FALSE, FALSE, sizeof (uint32_t));
+  g_array_append_vals (modifiers_copy, modifiers, n_modifiers);
+
+  task = g_task_new (seat_impl, NULL, NULL, NULL);
+  g_task_set_task_data (task, modifiers_copy,
+                        (GDestroyNotify) g_array_unref);
+  meta_seat_impl_run_input_task (seat_impl, task,
+                                 (GSourceFunc) set_a11y_modifiers);
+}
+
 MetaSeatImpl *
 meta_seat_impl_new (MetaSeatNative     *seat_native,
                     const char         *seat_id,
                     MetaSeatNativeFlag  flags)
 {
-  return g_initable_new (META_TYPE_SEAT_IMPL,
-                         NULL, NULL,
-                         "seat", seat_native,
-                         "seat-id", seat_id,
-                         "flags", flags,
-                         NULL);
+  return g_object_new (META_TYPE_SEAT_IMPL,
+                       "seat", seat_native,
+                       "seat-id", seat_id,
+                       "flags", flags,
+                       NULL);
+}
+
+void
+meta_seat_impl_setup (MetaSeatImpl *seat_impl)
+{
+  g_initable_init (G_INITABLE (seat_impl), NULL, NULL);
 }
 
 static gboolean

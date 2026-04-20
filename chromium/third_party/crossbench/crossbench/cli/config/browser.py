@@ -9,7 +9,7 @@ import dataclasses
 import logging
 import os
 import re
-from typing import Any, Optional, Self, cast
+from typing import Any, Optional, Self
 
 from typing_extensions import override
 
@@ -18,6 +18,8 @@ from crossbench import path as pth
 from crossbench import plt
 from crossbench.browsers.chrome.downloader import ChromeDownloader
 from crossbench.browsers.firefox.downloader import FirefoxDownloader
+from crossbench.browsers.webkit.downloader import WebKitDownloader
+from crossbench.browsers.webview.embedder import EMBEDDER_SHORT_NAME_TO_PACKAGE
 from crossbench.cli.config.driver import DriverConfig
 from crossbench.cli.config.driver_type import BrowserDriverType
 from crossbench.cli.config.env import ENV_CONFIG_PRESETS, EnvConfig
@@ -26,10 +28,12 @@ from crossbench.cli.config.network import NetworkConfig
 from crossbench.cli.config.network_speed import NetworkSpeedPreset
 from crossbench.config import ConfigObject, ConfigParser
 from crossbench.parse import NumberParser, ObjectParser, PathParser
+from crossbench.plt.android_adb import adb_devices
+from crossbench.plt.ios import ios_devices
 
-SUPPORTED_EMBEDDER = ("googlequicksearchbox",)
-SUPPORTED_BROWSER = ("chromium", "chrome", "safari", "edge", "firefox",
-                     "d8") + SUPPORTED_EMBEDDER
+SUPPORTED_EMBEDDER = tuple(EMBEDDER_SHORT_NAME_TO_PACKAGE)
+SUPPORTED_BROWSER = ("chrome", "chromium", "d8", "edge", "firefox", "safari",
+                     "webkit") + SUPPORTED_EMBEDDER
 
 # Split inputs like:
 # - "/out/x64.release/chrome"
@@ -41,11 +45,11 @@ SUPPORTED_BROWSER = ("chromium", "chrome", "safari", "edge", "firefox",
 # - "selenium:C:\out\x64.release\chrome"
 # - "selenium:C:\out\x64.release\chrome:4G"
 NETWORK_PRESETS: str = "|".join(
-    re.escape(preset.value) for preset in NetworkSpeedPreset)  # pytype: disable=missing-parameter
+    re.escape(preset.value) for preset in NetworkSpeedPreset)
 ENV_PRESETS: str = "|".join(re.escape(preset) for preset in ENV_CONFIG_PRESETS)
 
 SHORT_FORM_RE: re.Pattern[str] = re.compile(
-    r"((?P<driver>\w{3,}):)??"
+    r"((?P<driver>[\w-]{3,}):)??"
     r"(?P<path>([A-Z]:[/\\])?[^:]+)"
     f"(:(?P<network>{NETWORK_PRESETS}))?"
     f"(:(?P<env>{ENV_PRESETS}))?")
@@ -66,7 +70,7 @@ class BrowserConfig(ConfigObject):
 
   cache_dir: pth.AnyPath | None = None
   clear_cache: bool | None = None
-  extensions: tuple[ExtensionConfig, ...] = tuple()
+  extensions: tuple[ExtensionConfig, ...] = ()
 
   def __post_init__(self) -> None:
     if not self.browser:
@@ -114,10 +118,30 @@ class BrowserConfig(ConfigObject):
   def _parse_with_range(cls, value: str) -> tuple[Self, ...]:
     if not value:
       raise argparse.ArgumentTypeError("Cannot parse empty string")
+
+    if ":" not in value:
+      return tuple(
+          cls.parse(f"{browser}") for browser in cls._expand_versions(value))
+
+    [driver_str, browser_str] = value.split(":", maxsplit=1)
+    return tuple(
+        cls.parse(f"{driver}:{browser}")
+        for driver in cls._expand_devices(driver_str)
+        for browser in cls._expand_versions(browser_str))
+
+  @classmethod
+  def _expand_versions(cls, value: str) -> tuple[str, ...]:
+    """
+    A valid `value` can look like either of these:
+    - "chrome" (no range, a single version). The method returns ("chrome",).
+    - "chrome-m130...132", "chrome-m130...m132" or "chrome-m130...chrome-m132"
+      (a range). The method returns ("chrome-m130", "chrome-m131",
+      "chrome-m132").
+    """
     parts = value.split("...", maxsplit=1)
     start_version: str = parts.pop(0)
     if not parts:
-      return (cls.parse(start_version),)
+      return (start_version,)
     limit_version = parts[0]
 
     start_match = VERSION_FOR_RANGE_RE.fullmatch(start_version)
@@ -152,8 +176,23 @@ class BrowserConfig(ConfigObject):
     versions = []
     for milestone in range(start_milestone, limit_milestone + 1):
       version_str = f"{start_prefix}{milestone}"
-      versions.append(cls.parse(version_str))
+      versions.append(version_str)
     return tuple(versions)
+
+  @classmethod
+  def _expand_devices(cls, value: str) -> tuple[str, ...]:
+    """
+    A valid `value` can look like either of these:
+    - "android", "ios", "win" or any other valid driver identifier. The method
+      returns (value,).
+    - "ios-all", "adb-all" or "android-all". The method returns ("<serial_id1>",
+      ..., "<serial_idN>")
+    """
+    if value in ("android-all", "adb-all"):
+      return tuple(adb_devices(plt.PLATFORM).keys())
+    if value == "ios-all":
+      return tuple(ios_devices(plt.PLATFORM).keys())
+    return (value,)
 
   @classmethod
   def _parse_path_or_identifier(
@@ -208,11 +247,10 @@ class BrowserConfig(ConfigObject):
   def _is_downloadable_identifier(cls, maybe_path_or_identifier: str) -> bool:
     # TODO: handle remote platforms.
     platform = plt.PLATFORM
-    if ChromeDownloader.is_valid(maybe_path_or_identifier, platform):
-      return True
-    if FirefoxDownloader.is_valid(maybe_path_or_identifier, platform):
-      return True
-    return False
+    return any(
+        downloader_cls.is_valid(maybe_path_or_identifier, platform)
+        for downloader_cls in (ChromeDownloader, FirefoxDownloader,
+                               WebKitDownloader))
 
   @classmethod
   def _try_parse_short_name(
@@ -291,7 +329,7 @@ class BrowserConfig(ConfigObject):
           "Browser short form: missing path or browser identifier.")
     driver = DriverConfig.default()
     if driver_identifier := match.group("driver"):
-      driver = cast(DriverConfig, DriverConfig.parse(driver_identifier))
+      driver = DriverConfig.parse(driver_identifier)
     path: pth.AnyPathLike = cls._parse_path_or_identifier(
         path_or_identifier, driver.type)
     network = None
@@ -340,7 +378,8 @@ class BrowserConfig(ConfigObject):
 
   @property
   def path(self) -> pth.AnyPath:
-    assert isinstance(self.browser, pth.AnyPath)
+    assert isinstance(self.browser,
+                      pth.AnyPath), f"Expected path got {self.browser}"
     return self.browser
 
   def get_platform(self) -> plt.Platform:

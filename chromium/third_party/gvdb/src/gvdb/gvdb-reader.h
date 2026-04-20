@@ -59,6 +59,11 @@ gchar **                gvdb_table_get_names                            (GvdbTab
 G_GNUC_INTERNAL GVDB_GNUC_WEAK
 gchar **                gvdb_table_list                                 (GvdbTable    *table,
                                                                          const gchar  *key);
+
+G_GNUC_INTERNAL GVDB_GNUC_WEAK
+guint                   gvdb_table_n_children                           (GvdbTable    *table,
+                                                                         const char   *key);
+
 G_GNUC_INTERNAL GVDB_GNUC_WEAK
 GvdbTable *             gvdb_table_get_table                            (GvdbTable    *table,
                                                                          const gchar  *key);

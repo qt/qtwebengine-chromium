@@ -9,4 +9,4 @@ from typing import Final
 CLEAR_END: Final[str] = "\x1b[J"
 STORE_CURSOR_POS: Final[str] = "\x1b[s"
 RESTORE_CURSOR_POS: Final[str] = "\x1b[u"
-CURSOR_RIGHT = "\x1b[%sC"
+CURSOR_RIGHT: Final[str] = "\x1b[%sC"

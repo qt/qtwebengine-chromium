@@ -11,7 +11,7 @@ import shutil
 import stat
 import tempfile
 import zipfile
-from typing import TYPE_CHECKING, Final, Optional
+from typing import TYPE_CHECKING, Any, Final, Optional, TypeAlias
 
 from crossbench import exception
 from crossbench import path as pth
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
   from crossbench.browsers.version import BrowserVersion
   from crossbench.plt.base import Platform
 
+  VersionData: TypeAlias = dict[str, Any]
 
 class ChromeDriverFinder:
 
@@ -179,7 +180,8 @@ class ChromeDriverFinder:
                                                        platform_name)
     return (listing_url, download_url)
 
-  def _get_cft_version_data(self, milestone: int) -> tuple[str, Optional[dict]]:
+  def _get_cft_version_data(
+      self, milestone: int) -> tuple[str, Optional[VersionData]]:
     logging.debug("ChromeDriverFinder: Trying direct download url")
     listing_url, data = self._get_cft_precise_version_data(self.browser.version)
     if data:
@@ -190,7 +192,7 @@ class ChromeDriverFinder:
     return self._get_ctf_milestone_data(milestone)
 
   def _get_cft_precise_version_data(
-      self, version: BrowserVersion) -> tuple[str, Optional[dict]]:
+      self, version: BrowserVersion) -> tuple[str, Optional[VersionData]]:
     version_url: str = self.CFT_VERSION_URL.format(version=version.parts_str)
     try:
       response = url_helper.get(version_url)
@@ -201,8 +203,8 @@ class ChromeDriverFinder:
                     "Precise version download failed %s", e)
       return (version_url, None)
 
-  def _get_ctf_milestone_data(self,
-                              milestone: int) -> tuple[str, Optional[dict]]:
+  def _get_ctf_milestone_data(
+      self, milestone: int) -> tuple[str, Optional[VersionData]]:
     latest_version_url: str = self.CFT_LATEST_URL.format(major=milestone)
     try:
       response = url_helper.get(latest_version_url)
@@ -214,8 +216,8 @@ class ChromeDriverFinder:
     except url_helper.RequestException:
       return (self.CFT_BASE_URL, None)
 
-  def _get_cft_driver_download_url(self, version_data,
-                                   platform_name) -> Optional[str]:
+  def _get_cft_driver_download_url(self, version_data: VersionData,
+                                   platform_name: str) -> Optional[str]:
     if all_downloads := version_data.get("downloads"):
       driver_downloads: dict = all_downloads.get("chromedriver", [])
       for download in driver_downloads:
@@ -259,7 +261,7 @@ class ChromeDriverFinder:
            f"chromedriver_{arch_suffix}.zip")
     return listing_url, url
 
-  def _get_pre_115_driver_version(self, milestone) -> Optional[str]:
+  def _get_pre_115_driver_version(self, milestone: int) -> Optional[str]:
     if milestone < 70:
       return self._get_pre_70_driver_version(milestone)
     url = f"{self.PRE_115_STABLE_URL}/LATEST_RELEASE_{milestone}"
@@ -273,7 +275,7 @@ class ChromeDriverFinder:
                     e)
     return None
 
-  def _get_pre_70_driver_version(self, milestone) -> Optional[str]:
+  def _get_pre_70_driver_version(self, milestone: int) -> Optional[str]:
     response = url_helper.get(f"{self.PRE_115_STABLE_URL}/2.46/notes.txt")
     lines: list[str] = response.text.splitlines()
     for i, line in enumerate(lines):

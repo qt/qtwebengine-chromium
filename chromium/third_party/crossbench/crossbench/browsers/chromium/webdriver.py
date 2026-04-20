@@ -9,7 +9,7 @@ import logging
 import re
 import subprocess
 import sys
-from typing import TYPE_CHECKING, Any, Optional, Sequence, cast
+from typing import TYPE_CHECKING, Any, Final, Optional, Sequence
 
 from immutabledict import immutabledict
 from selenium.webdriver.chromium import webdriver as chromium_webdriver
@@ -99,7 +99,7 @@ class ChromiumWebDriverAndroid(ChromiumBasedWebDriver):
     assert isinstance(
         self._platform,
         AndroidAdbPlatform), (f"Invalid platform: {self._platform}")
-    return cast(AndroidAdbPlatform, self._platform)
+    return self._platform
 
   def _init_resolve_binary(self, path: pth.AnyPath) -> pth.AnyPath:
     return path
@@ -185,7 +185,7 @@ class ChromiumWebDriverAndroid(ChromiumBasedWebDriver):
     return options
 
   @override
-  def _setup_binary(self) -> None:  # pytype: disable=override-error
+  def _setup_binary(self) -> None:
     super()._setup_binary()
     self._setup_binary_permissions()
 
@@ -196,7 +196,7 @@ class ChromiumWebDriverAndroid(ChromiumBasedWebDriver):
       logging.warning("Error setting app permissions: %s", e)
 
   @override
-  def _setup_window(self) -> None:  # pytype: disable=override-error
+  def _setup_window(self) -> None:
     logging.debug("%s: Skipping viewport settings %s on %s",
                   type(self).__name__, self.viewport, self)
 
@@ -275,7 +275,7 @@ class AutoForwardingRemoteWebDriver(RemoteWebDriver):
 
   # Example ss output line (with whitespace shortened):
   # LISTEN 0 5 127.0.0.1:34595 0.0.0.0:* users:(("chromedriver",pid=80388,fd=8))
-  SS_CHROMEDRIVER_LINE_RE = re.compile(
+  SS_CHROMEDRIVER_LINE_RE: Final[re.Pattern] = re.compile(
       r"^LISTEN\s+"
       # Recv-Q
       r"\d+\s+"
@@ -291,7 +291,6 @@ class AutoForwardingRemoteWebDriver(RemoteWebDriver):
       r"\)\)\s*$",
       re.MULTILINE)
 
-  _platform: LinuxSshPlatform
   _forward_port: int
   _chromedriver: subprocess.Popen | None
 
@@ -301,8 +300,8 @@ class AutoForwardingRemoteWebDriver(RemoteWebDriver):
       chromedriver_path: Optional[pth.AnyPath],
       options: ChromiumOptions,
   ) -> None:
+    self._platform: Final[LinuxSshPlatform] = platform
     with exception.annotate("Starting chromedriver"):
-      self._platform = platform
       self._killall_chromedriver()
       self._chromedriver = platform.popen(
           chromedriver_path or Binaries.CHROMEDRIVER.resolve(platform),
@@ -354,7 +353,7 @@ class ChromiumWebDriverSsh(ChromiumBasedWebDriver):
   def platform(self) -> LinuxSshPlatform:
     assert isinstance(self._platform,
                       LinuxSshPlatform), (f"Invalid platform: {self._platform}")
-    return cast(LinuxSshPlatform, self._platform)
+    return self._platform
 
   @override
   def _start_driver(self, session: BrowserSessionRunGroup,
@@ -380,7 +379,7 @@ class ChromiumWebDriverChromeOsSsh(ChromiumBasedWebDriver):
     assert isinstance(
         self._platform,
         ChromeOsSshPlatform), (f"Invalid platform: {self._platform}")
-    return cast(ChromeOsSshPlatform, self._platform)
+    return self._platform
 
   UNSUPPORTED_FLAGS: tuple[str, ...] = (
       "--user-data-dir",

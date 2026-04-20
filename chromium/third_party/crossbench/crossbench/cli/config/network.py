@@ -32,7 +32,15 @@ if TYPE_CHECKING:
   from crossbench.plt.base import Platform
 
 # We're using 'type' here a lot, let's skip the warnings from pylint.
-# pylint: disable=redefined-builtin
+
+
+def _parse_existing_file_path_and_resolve(value: str) -> pth.LocalPath:
+  # During config parsing, a ChangePWD call ensures that config paths can be
+  # specified as relative to the config directory. But the PWD is later reverted
+  # to the original one. Resolving to an absolute path upfront ensures we're
+  # always looking at the correct file.
+  # It would be best to implement this in PathParser, e.g. crrev.com/c/6713595.
+  return PathParser.json_file_path(value).resolve()
 
 @enum.unique
 class NetworkType(ConfigEnum):
@@ -55,7 +63,8 @@ class NetworkConfig(ConfigObject):
   wpr_go_bin: pth.LocalPath | None = None
   persist_server: bool = False
   run_on_device: bool = False
-  skip_injection: bool = False
+  skip_deterministic_script_injection: bool = False
+  response_transformations_file: pth.LocalPath | None = None
 
   @classmethod
   def default(cls, type: Optional[NetworkType] = None) -> Self:
@@ -66,7 +75,7 @@ class NetworkConfig(ConfigObject):
   def config_parser(cls) -> ConfigParser[Self]:
     parser = ConfigParser(cls, default=cls.default())
     parser.add_argument("type", type=NetworkType, default=NetworkType.LIVE)
-    preset_choices = tuple(str(preset) for preset in NetworkSpeedPreset) # pytype: disable=missing-parameter
+    preset_choices = tuple(str(preset) for preset in NetworkSpeedPreset)
     parser.add_argument(
         "speed",
         type=NetworkSpeedConfig,
@@ -93,11 +102,17 @@ class NetworkConfig(ConfigObject):
         help=("For 'wpr' network only: switch to enable running on-device "
               "to reduce delays caused by traffic forwarding over adb."))
     parser.add_argument(
-        "skip_injection",
+        "skip_deterministic_script_injection",
         type=bool,
         default=False,
         help=("Don't inject the deterministic.js script into every response "
-              "in WPR replay mode. Makes WPR response timings more stable."))
+              "in WPR replay mode. See crbug.com/428945380"))
+    parser.add_argument(
+        "response_transformations_file",
+        type=_parse_existing_file_path_and_resolve,
+        help=("Path to a JSON file specifying transformation rules to apply to "
+              "specific responses, e.g. inject a script in google.com. See "
+              "WebPageReplay docs for more info on the expected file format."))
     return parser
 
   @classmethod
@@ -113,7 +128,7 @@ class NetworkConfig(ConfigObject):
 
   @classmethod
   def parse_local(cls, value: Any) -> Self:
-    config = cls.parse(value, type=NetworkType.LOCAL)
+    config: Self = cls.parse(value, type=NetworkType.LOCAL)
     if config.type != NetworkType.LOCAL:
       raise argparse.ArgumentTypeError(
           f"Expected local file server, but got {config.type}. ")
@@ -121,10 +136,7 @@ class NetworkConfig(ConfigObject):
 
   @classmethod
   @override
-  def parse_str(  # pylint: disable=arguments-differ
-      cls,
-      value: str,
-      type: Optional[NetworkType] = None) -> Self:
+  def parse_str(cls, value: str, type: Optional[NetworkType] = None) -> Self:
     if not value:
       raise argparse.ArgumentTypeError("Network: Cannot parse empty string")
     if value == "default":
@@ -139,7 +151,7 @@ class NetworkConfig(ConfigObject):
     with exception.annotate_argparsing("Live network with speed config"):
       speed = NetworkSpeedConfig.parse(value)
       return cls(NetworkType.LIVE, speed)
-    raise exception.UnreachableError()
+    raise exception.UnreachableError
 
   @classmethod
   def parse_url(cls,
@@ -221,9 +233,15 @@ class NetworkConfig(ConfigObject):
     if self.run_on_device and self.type is not NetworkType.WPR:
       raise argparse.ArgumentTypeError(
           "run_on_device can only be used for the WPR replay network")
-    if self.skip_injection and self.type is not NetworkType.WPR:
+    if (self.skip_deterministic_script_injection and
+        self.type is not NetworkType.WPR):
       raise argparse.ArgumentTypeError(
-          "skip_injection can only be used for the WPR replay network")
+          "skip_deterministic_script_injection can only be used for the WPR "
+          "replay network")
+    if self.response_transformations_file and self.type is not NetworkType.WPR:
+      raise argparse.ArgumentTypeError(
+          "response_transformations_file can only be used for the WPR replay "
+          "network")
 
   def create(self, browser_platform: Platform) -> Network:
     with exception.annotate_argparsing(
@@ -246,14 +264,18 @@ class NetworkConfig(ConfigObject):
               self.wpr_go_bin,
               browser_platform,
               self.persist_server,
-              inject_deterministic_script=not self.skip_injection)
+              response_transformations_file=self.response_transformations_file,
+              inject_deterministic_script=not self
+              .skip_deterministic_script_injection)
         return LocalWprReplayNetwork(
             self.url or str(self.path),
             traffic_shaper,
             self.wpr_go_bin,
             browser_platform,
             self.persist_server,
-            inject_deterministic_script=not self.skip_injection)
+            response_transformations_file=self.response_transformations_file,
+            inject_deterministic_script=not self
+            .skip_deterministic_script_injection)
     raise ValueError(f"Unknown network type {self.type}")
 
   def _create_traffic_shaper(self, browser_platform: Platform) -> TrafficShaper:

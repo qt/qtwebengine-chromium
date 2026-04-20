@@ -806,7 +806,7 @@ get_mount_info (GFileInfo             *fs_info,
 					     g_free, NULL);
 
 
-  if (g_unix_mounts_changed_since (mount_info_hash_cache_time))
+  if (g_unix_mount_entries_changed_since (mount_info_hash_cache_time))
     g_hash_table_remove_all (mount_info_hash);
   
   got_info = g_hash_table_lookup_extended (mount_info_hash,
@@ -826,15 +826,15 @@ get_mount_info (GFileInfo             *fs_info,
       if (mountpoint == NULL)
 	mountpoint = g_strdup ("/");
 
-      mount = g_unix_mount_at (mountpoint, &cache_time);
+      mount = g_unix_mount_entry_at (mountpoint, &cache_time);
       if (mount)
 	{
-	  if (g_unix_mount_is_readonly (mount))
+	  if (g_unix_mount_entry_is_readonly (mount))
 	    mount_info |= MOUNT_INFO_READONLY;
-          if (is_remote_fs_type (g_unix_mount_get_fs_type (mount)))
+          if (is_remote_fs_type (g_unix_mount_entry_get_fs_type (mount)))
             is_remote = TRUE;
 	  
-	  g_unix_mount_free (mount);
+	  g_unix_mount_entry_free (mount);
 	}
 
       g_free (mountpoint);
@@ -1189,6 +1189,7 @@ g_local_file_set_display_name (GFile         *file,
       if (errsv != ENOENT)
         {
           g_set_io_error (error, _("Error renaming file %s: %s"), new_file, errsv);
+          g_object_unref (new_file);
           return NULL;
         }
     }
@@ -1196,6 +1197,7 @@ g_local_file_set_display_name (GFile         *file,
     {
       g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_EXISTS,
                            _("Can’t rename file, filename already exists"));
+      g_object_unref (new_file);
       return NULL;
     }
 
@@ -1258,6 +1260,25 @@ g_local_file_query_info (GFile                *file,
 
   return info;
 }
+
+/* FIXME: faccessat() is available on FreeBSD but appears to not work correctly
+ * here. This needs diagnosing; https://gitlab.gnome.org/GNOME/glib/-/issues/3495
+ *
+ * On Android (bionic as of 2015-02-24), faccess() returns EINVAL if any flags are set,
+ * so we have to use the fallback path. See
+ * https://cs.android.com/android/_/android/platform/bionic/+/35778253a5ed71e87a608ca590b63729d9f88567
+ */
+#if defined(HAVE_FACCESSAT) && !defined(__FreeBSD__) && !defined(__ANDROID__) && \
+    !defined(__OpenBSD__)
+static gboolean
+g_local_file_query_exists (GFile        *file,
+                           GCancellable *cancellable)
+{
+  GLocalFile *local = G_LOCAL_FILE (file);
+
+  return faccessat (0, local->filename, F_OK, AT_EACCESS | AT_SYMLINK_NOFOLLOW) == 0;
+}
+#endif
 
 static GFileAttributeInfoList *
 g_local_file_query_settable_attributes (GFile         *file,
@@ -1808,10 +1829,10 @@ ignore_trash_mount (GUnixMountEntry *mount)
   GUnixMountPoint *mount_point = NULL;
   const gchar *mount_options;
 
-  mount_options = g_unix_mount_get_options (mount);
+  mount_options = g_unix_mount_entry_get_options (mount);
   if (mount_options == NULL)
     {
-      mount_point = g_unix_mount_point_at (g_unix_mount_get_mount_path (mount),
+      mount_point = g_unix_mount_point_at (g_unix_mount_entry_get_mount_path (mount),
                                            NULL);
       if (mount_point != NULL)
         mount_options = g_unix_mount_point_get_options (mount_point);
@@ -1828,7 +1849,7 @@ ignore_trash_mount (GUnixMountEntry *mount)
         return TRUE;
     }
 
-  if (g_unix_mount_is_system_internal (mount))
+  if (g_unix_mount_entry_is_system_internal (mount))
     return TRUE;
 
   return FALSE;
@@ -1840,14 +1861,14 @@ ignore_trash_path (const gchar *topdir)
   GUnixMountEntry *mount;
   gboolean retval = TRUE;
 
-  mount = g_unix_mount_at (topdir, NULL);
+  mount = g_unix_mount_entry_at (topdir, NULL);
   if (mount == NULL)
     goto out;
 
   retval = ignore_trash_mount (mount);
 
  out:
-  g_clear_pointer (&mount, g_unix_mount_free);
+  g_clear_pointer (&mount, g_unix_mount_entry_free);
 
   return retval;
 }
@@ -1979,6 +2000,79 @@ _g_local_file_is_lost_found_dir (const char *path, dev_t path_dev)
 }
 #endif
 
+/* Check whether subsequently deleting the original file from the trash
+ * (in the gvfsd-trash process) will succeed. If we think it won’t, return
+ * an error, as the trash spec says trashing should not be allowed.
+ * https://specifications.freedesktop.org/trash-spec/latest/#implementation-notes
+ *
+ * Check ownership to see if we can delete. gvfsd will automatically chmod
+ * a file to allow it to be deleted, so checking the permissions bitfield isn’t
+ * relevant.
+ */
+static gboolean
+check_removing_recursively (GFile        *file,
+                            gboolean      user_owned,
+                            uid_t         uid,
+                            GCancellable *cancellable,
+                            GError       **error)
+{
+  GFileEnumerator *enumerator;
+
+  enumerator = g_file_enumerate_children (file,
+                                          G_FILE_ATTRIBUTE_STANDARD_TYPE ","
+                                          G_FILE_ATTRIBUTE_UNIX_UID,
+                                          G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+                                          cancellable,
+                                          error);
+
+  if (!enumerator)
+    return FALSE;
+
+  while (TRUE)
+    {
+      GFileInfo *info;
+      GFile *child;
+
+      if (!g_file_enumerator_iterate (enumerator, &info, &child, cancellable, error))
+        {
+          g_object_unref (enumerator);
+          return FALSE;
+        }
+
+      if (!info)
+        break;
+
+      if (!user_owned)
+        {
+          GLocalFile *local = G_LOCAL_FILE (child);
+
+          g_set_error (error, G_IO_ERROR, G_IO_ERROR_PERMISSION_DENIED,
+                       _("Unable to trash child file %s"), local->filename);
+          g_object_unref (enumerator);
+          return FALSE;
+        }
+
+      if ((g_file_info_get_file_type (info) == G_FILE_TYPE_DIRECTORY))
+        {
+          uid_t fuid;
+
+          fuid = g_file_info_get_attribute_uint32 (info,
+                                                   G_FILE_ATTRIBUTE_UNIX_UID);
+          if (!check_removing_recursively (child,
+                                           fuid == uid,
+                                           uid,
+                                           cancellable,
+                                           error))
+            {
+              g_object_unref (enumerator);
+              return FALSE;
+            }
+        }
+    }
+  g_object_unref (enumerator);
+  return TRUE;
+}
+
 static gboolean
 g_local_file_trash (GFile         *file,
 		    GCancellable  *cancellable,
@@ -1986,6 +2080,7 @@ g_local_file_trash (GFile         *file,
 {
   GLocalFile *local = G_LOCAL_FILE (file);
   GStatBuf file_stat, home_stat;
+  dev_t checked_st_dev;
   const char *homedir;
   char *trashdir, *topdir, *infodir, *filesdir;
   char *basename, *trashname, *trashfile, *infoname, *infofile;
@@ -2031,6 +2126,8 @@ g_local_file_trash (GFile         *file,
   is_homedir_trash = FALSE;
   trashdir = NULL;
 
+  checked_st_dev = file_stat.st_dev;
+
   /* On overlayfs, a file's st_dev will be different to the home directory's.
    * We still want to create our trash directory under the home directory, so
    * instead we should stat the directory that the file we're deleting is in as
@@ -2038,13 +2135,14 @@ g_local_file_trash (GFile         *file,
    */
   if (!S_ISDIR (file_stat.st_mode))
     {
+      GStatBuf parent_stat;
       path = g_path_get_dirname (local->filename);
       /* If the parent is a symlink to a different device then it might have
        * st_dev equal to the home directory's, in which case we will end up
        * trying to rename across a filesystem boundary, which doesn't work. So
        * we use g_stat here instead of g_lstat, to know where the symlink
        * points to. */
-      if (g_stat (path, &file_stat))
+      if (g_stat (path, &parent_stat))
 	{
 	  errsv = errno;
 	  g_free (path);
@@ -2054,10 +2152,11 @@ g_local_file_trash (GFile         *file,
 			  file, errsv);
 	  return FALSE;
 	}
+      checked_st_dev = parent_stat.st_dev;
       g_free (path);
     }
 
-  if (file_stat.st_dev == home_stat.st_dev)
+  if (checked_st_dev == home_stat.st_dev)
     {
       is_homedir_trash = TRUE;
       errno = 0;
@@ -2359,9 +2458,22 @@ g_local_file_trash (GFile         *file,
 
   g_clear_pointer (&data, g_free);
 
-  /* TODO: Maybe we should verify that you can delete the file from the trash
-   * before moving it? OTOH, that is hard, as it needs a recursive scan
-   */
+  if (S_ISDIR (file_stat.st_mode))
+    {
+      uid_t uid = geteuid ();
+
+      if (file_stat.st_uid == uid &&
+          !check_removing_recursively (file, TRUE, uid, cancellable, error))
+        {
+          g_unlink (infofile);
+
+          g_free (filesdir);
+          g_free (trashname);
+          g_free (infofile);
+
+          return FALSE;
+        }
+    }
 
   trashfile = g_build_filename (filesdir, trashname, NULL);
 
@@ -3142,6 +3254,10 @@ g_local_file_file_iface_init (GFileIface *iface)
   iface->monitor_dir = g_local_file_monitor_dir;
   iface->monitor_file = g_local_file_monitor_file;
   iface->measure_disk_usage = g_local_file_measure_disk_usage;
+#if defined(HAVE_FACCESSAT) && !defined(__FreeBSD__) && !defined(__ANDROID__) && \
+    !defined(__OpenBSD__)
+  iface->query_exists = g_local_file_query_exists;
+#endif
 
   iface->supports_thread_contexts = TRUE;
 }

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    // Demo server. See ./mcp_server/README.md for details.
+    "demoServer": {
+      "httpUrl": "http://localhost:8080/mcp",
+      "timeout": 5000
+    }
+  }
+}

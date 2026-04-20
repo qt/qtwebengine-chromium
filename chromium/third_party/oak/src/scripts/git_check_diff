@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+readonly SCRIPTS_DIR="$(dirname "$0")"
+# shellcheck source=scripts/common
+source "$SCRIPTS_DIR/common"
+
+# Solves the following error when running on GitHub Actions:
+#
+# fatal: detected dubious ownership in repository at '/workspace'
+#   To add an exception for this directory, call:
+#   git config --global --add safe.directory /workspace
+git config --global --add safe.directory /workspace
+# Same, but specific for the Kokoro host git root. Note that the variables terminate with a slash
+# already, therefore we need to concatenate them without adding additional slashes.
+git config --global --add safe.directory "${KOKORO_HOST_ROOT_DIR}src/git/oak"
+git config --global --add safe.directory "${KOKORO_ROOT_DIR}src/git/oak"
+
+# Check that any generated files match those that are checked in.
+if [[ $(git status --short) ]]; then
+    echo "Some files are either modified or newly generated, please commit them and try again."
+    echo "Here is a list of files that are different:"
+    git status
+    git diff
+    # One or more files are either modified or newly generated, exit with an error code
+    exit 1
+fi
