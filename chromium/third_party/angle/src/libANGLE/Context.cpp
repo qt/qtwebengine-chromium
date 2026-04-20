@@ -645,7 +645,8 @@ Context::Context(egl::Display *display,
       mFrameCapture(new angle::FrameCapture),
       mRefCount(0),
       mOverlay(mImplementation.get()),
-      mIsDestroyed(false)
+      mIsDestroyed(false),
+      mDestroyedManagers(false)
 {
     for (angle::SubjectIndex uboIndex = kUniformBuffer0SubjectIndex;
          uboIndex < kUniformBufferMaxSubjectIndex; ++uboIndex)
@@ -946,19 +947,40 @@ egl::Error Context::onDestroy(const egl::Display *display)
 
 void Context::releaseSharedObjects()
 {
+    mDestroyedManagers = true;
+
     mState.mBufferManager->release(this);
+    mState.mBufferManager = nullptr;
+
     // mProgramPipelineManager must be before mShaderProgramManager to give each
     // PPO the chance to release any references they have to the Programs that
     // are bound to them before the Programs are released()'ed.
     mState.mProgramPipelineManager->release(this);
+    mState.mProgramPipelineManager = nullptr;
+
     mState.mShaderProgramManager->release(this);
+    mState.mShaderProgramManager = nullptr;
+
     mState.mTextureManager->release(this);
+    mState.mTextureManager = nullptr;
+
     mState.mRenderbufferManager->release(this);
+    mState.mRenderbufferManager = nullptr;
+
     mState.mSamplerManager->release(this);
+    mState.mSamplerManager = nullptr;
+
     mState.mSyncManager->release(this);
+    mState.mSyncManager = nullptr;
+
     mState.mFramebufferManager->release(this);
+    mState.mFramebufferManager = nullptr;
+
     mState.mMemoryObjectManager->release(this);
+    mState.mMemoryObjectManager = nullptr;
+
     mState.mSemaphoreManager->release(this);
+    mState.mSemaphoreManager = nullptr;
 }
 
 Context::~Context() {}
@@ -10190,6 +10212,51 @@ size_t Context::getMemoryUsage() const
     memoryUsage += mState.mTextureManager->getTotalMemorySize();
 
     return memoryUsage;
+}
+
+bool Context::retainIdUntilObjectDestroyed() const
+{
+    // If BindGeneratesResource is disabled, then we can defer recycling the handle ID until the
+    // object has had the `onDestroy` method called, preventing ID reuse bugs.
+    //
+    // If the context is being destroyed however, we don't want to try to recycle as the handle
+    // manager may be gone.
+    return !mDestroyedManagers && !mState.isBindGeneratesResourceEnabled();
+}
+
+void Context::onBufferDestroy(const Buffer *buffer) const
+{
+    mState.mBufferManager->recycleHandle(buffer->id());
+}
+
+void Context::onTextureDestroy(const Texture *texture) const
+{
+    mState.mTextureManager->recycleHandle(texture->id());
+}
+
+void Context::onRenderbufferDestroy(const Renderbuffer *renderBuffer) const
+{
+    mState.mRenderbufferManager->recycleHandle(renderBuffer->id());
+}
+
+void Context::onSamplerDestroy(const Sampler *sampler) const
+{
+    mState.mSamplerManager->recycleHandle(sampler->id());
+}
+
+void Context::onSyncDestroy(const Sync *sync) const
+{
+    mState.mSyncManager->recycleHandle(sync->id());
+}
+
+void Context::onFramebufferDestroy(const Framebuffer *framebuffer) const
+{
+    mState.mFramebufferManager->recycleHandle(framebuffer->id());
+}
+
+void Context::onProgramPipelineDestroy(const ProgramPipeline *programPipeline) const
+{
+    mState.mProgramPipelineManager->recycleHandle(programPipeline->id());
 }
 
 // ErrorSet implementation.

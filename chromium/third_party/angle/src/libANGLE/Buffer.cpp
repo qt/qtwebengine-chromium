@@ -19,7 +19,7 @@ namespace gl
 namespace
 {
 constexpr angle::SubjectIndex kImplementationSubjectIndex = 0;
-constexpr size_t kInvalidContentsObserverIndex            = std::numeric_limits<size_t>::max();
+constexpr size_t kInvalidContentsObserverIndex = std::numeric_limits<size_t>::max();
 }  // anonymous namespace
 
 BufferState::BufferState()
@@ -60,9 +60,16 @@ void Buffer::onDestroy(const Context *context)
 {
     mContentsObservers.clear();
 
+    if (context && context->retainIdUntilObjectDestroyed())
+    {
+        context->onBufferDestroy(this);
+    }
+
     // In tests, mImpl might be null.
     if (mImpl)
+    {
         mImpl->destroy(context);
+    }
 }
 
 void Buffer::onBind(const Context *context, BufferBinding target)
