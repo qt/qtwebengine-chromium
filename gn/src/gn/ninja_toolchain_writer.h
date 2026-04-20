@@ -31,6 +31,7 @@ class NinjaToolchainWriter {
  private:
   FRIEND_TEST_ALL_PREFIXES(NinjaToolchainWriter, WriteToolRule);
   FRIEND_TEST_ALL_PREFIXES(NinjaToolchainWriter, WriteToolRuleWithLauncher);
+  FRIEND_TEST_ALL_PREFIXES(NinjaToolchainWriter, WriteToolRuleWithInputsPhony);
 
   NinjaToolchainWriter(const Settings* settings,
                        const Toolchain* toolchain,

@@ -11,6 +11,7 @@
 #include "gn/lib_file.h"
 #include "gn/source_dir.h"
 #include "gn/source_file.h"
+#include "gn/substitution_pattern.h"
 
 // Holds the values (include_dirs, defines, compiler flags, etc.) for a given
 // config or target.
@@ -44,6 +45,7 @@ class ConfigValues {
   DIR_VALUES_ACCESSOR(framework_dirs)
   STRING_VALUES_ACCESSOR(frameworks)
   STRING_VALUES_ACCESSOR(weak_frameworks)
+  STRING_VALUES_ACCESSOR(weak_libraries)
   DIR_VALUES_ACCESSOR(include_dirs)
   STRING_VALUES_ACCESSOR(ldflags)
   DIR_VALUES_ACCESSOR(lib_dirs)
@@ -60,6 +62,13 @@ class ConfigValues {
 
   const std::vector<SourceFile>& inputs() const { return inputs_; }
   std::vector<SourceFile>& inputs() { return inputs_; }
+
+  const std::vector<SubstitutionPattern>& c_additional_outputs() const {
+    return c_additional_outputs_;
+  }
+  std::vector<SubstitutionPattern>& c_additional_outputs() {
+    return c_additional_outputs_;
+  }
 
   const std::vector<LibFile>& libs() const { return libs_; }
   std::vector<LibFile>& libs() { return libs_; }
@@ -90,6 +99,7 @@ class ConfigValues {
   std::vector<SourceDir> framework_dirs_;
   std::vector<std::string> frameworks_;
   std::vector<std::string> weak_frameworks_;
+  std::vector<std::string> weak_libraries_;
   std::vector<SourceFile> inputs_;
   std::vector<std::string> ldflags_;
   std::vector<SourceDir> lib_dirs_;
@@ -98,6 +108,7 @@ class ConfigValues {
   std::vector<std::string> rustenv_;
   std::vector<std::string> swiftflags_;
   std::vector<std::pair<std::string, LibFile>> externs_;
+  std::vector<SubstitutionPattern> c_additional_outputs_;
   // If you add a new one, be sure to update AppendValues().
 
   std::string precompiled_header_;

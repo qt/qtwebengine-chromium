@@ -38,6 +38,14 @@ extern const char kDotfile[];
 extern const char kDotfile_HelpShort[];
 extern const char kDotfile_Help[];
 
+extern const char kEnumerateFilesWithGit[];
+extern const char kEnumerateFilesWithGit_HelpShort[];
+extern const char kEnumerateFilesWithGit_Help[];
+
+extern const char kErrorLimit[];
+extern const char kErrorLimit_HelpShort[];
+extern const char kErrorLimit_Help[];
+
 extern const char kFailOnUnusedArgs[];
 extern const char kFailOnUnusedArgs_HelpShort[];
 extern const char kFailOnUnusedArgs_Help[];

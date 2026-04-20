@@ -21,6 +21,8 @@ class NinjaBinaryTargetWriter : public NinjaTargetWriter {
   ~NinjaBinaryTargetWriter() override;
 
   void Run() override;
+  void WritePublicModuleMap(std::ostream& out, const SourceDir& out_dir);
+  void WritePrivateModuleMap(std::ostream& out, const SourceDir& out_dir);
 
  protected:
   // Structure used to return the classified deps from |GetDeps| method.
@@ -46,6 +48,10 @@ class NinjaBinaryTargetWriter : public NinjaTargetWriter {
   // object files from source sets we need to link.
   ClassifiedDeps GetClassifiedDeps() const;
 
+  // Expands group dependencies and returns order-only dependencies.
+  std::vector<OutputFile> GetOrderOnlyDepsFromNonLinkableDeps(
+      const UniqueVector<const Target*>& non_linkable_deps) const;
+
   // Classifies the dependency as linkable or nonlinkable with the current
   // target, adding it to the appropriate vector of |classified_deps|. If the
   // dependency is a source set we should link in, the source set's object
@@ -56,7 +62,7 @@ class NinjaBinaryTargetWriter : public NinjaTargetWriter {
   void WriteCompilerBuildLine(const std::vector<SourceFile>& sources,
                               const std::vector<OutputFile>& extra_deps,
                               const std::vector<OutputFile>& order_only_deps,
-                              const char* tool_name,
+                              const Tool* tool,
                               const std::vector<OutputFile>& outputs,
                               bool can_write_source_info = true,
                               bool restat_output_allowed = false);

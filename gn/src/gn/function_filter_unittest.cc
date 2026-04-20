@@ -24,7 +24,7 @@ TEST(FilterExcludeTest, Filter) {
   Err err;
   Value result =
       functions::RunFilterExclude(setup.scope(), &function, args, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(result.type(), Value::LIST);
   ASSERT_EQ(result.list_value().size(), 2);
   EXPECT_EQ(result.list_value()[0].type(), Value::STRING);
@@ -143,7 +143,7 @@ TEST(FilterIncludeTest, Filter) {
   Err err;
   Value result =
       functions::RunFilterInclude(setup.scope(), &function, args, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(result.type(), Value::LIST);
   ASSERT_EQ(result.list_value().size(), 1);
   EXPECT_EQ(result.list_value()[0].type(), Value::STRING);

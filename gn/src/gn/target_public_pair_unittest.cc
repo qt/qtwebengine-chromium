@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "gn/target_public_pair.h"
+#include "gn/target.h"
 #include "util/test/test.h"
 
 TEST(TargetPublicPairTest, ConstructionAndMutation) {

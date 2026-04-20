@@ -11,7 +11,7 @@
 #include "gn/unique_vector.h"
 
 struct EscapeOptions;
-struct ModuleDep;
+struct ClangModuleDep;
 
 // Writes a .ninja file for a binary target type (an executable, a shared
 // library, or a static library).
@@ -26,13 +26,16 @@ class NinjaCBinaryTargetWriter : public NinjaBinaryTargetWriter {
   using OutputFileSet = std::set<OutputFile>;
 
   // Writes all flags for the compiler: includes, defines, cflags, etc.
-  void WriteCompilerVars(const std::vector<ModuleDep>& module_dep_info);
+  void WriteCompilerVars(const std::set<ClangModuleDep>& module_dep_info);
 
   // Write module_deps or module_deps_no_self flags for clang modulemaps.
   void WriteModuleDepsSubstitution(
       const Substitution* substitution,
-      const std::vector<ModuleDep>& module_dep_info,
+      const std::set<ClangModuleDep>& module_dep_info,
       bool include_self);
+
+  // Writes module_name substitution for clang modulemaps.
+  void WriteModuleNameSubstitution();
 
   // Writes build lines required for precompiled headers. Any generated
   // object files will be appended to the |object_files|. Any generated
@@ -48,7 +51,7 @@ class NinjaCBinaryTargetWriter : public NinjaBinaryTargetWriter {
 
   // Writes a .pch compile build line for a language type.
   void WritePCHCommand(const Substitution* flag_type,
-                       const char* tool_name,
+                       const Tool* tool,
                        CTool::PrecompiledHeaderType header_type,
                        const std::vector<OutputFile>& input_deps,
                        const std::vector<OutputFile>& order_only_deps,
@@ -56,13 +59,13 @@ class NinjaCBinaryTargetWriter : public NinjaBinaryTargetWriter {
                        std::vector<OutputFile>* other_files);
 
   void WriteGCCPCHCommand(const Substitution* flag_type,
-                          const char* tool_name,
+                          const Tool* tool,
                           const std::vector<OutputFile>& input_deps,
                           const std::vector<OutputFile>& order_only_deps,
                           std::vector<OutputFile>* gch_files);
 
   void WriteWindowsPCHCommand(const Substitution* flag_type,
-                              const char* tool_name,
+                              const Tool* tool,
                               const std::vector<OutputFile>& input_deps,
                               const std::vector<OutputFile>& order_only_deps,
                               std::vector<OutputFile>* object_files);
@@ -77,8 +80,9 @@ class NinjaCBinaryTargetWriter : public NinjaBinaryTargetWriter {
   void WriteSources(const std::vector<OutputFile>& pch_deps,
                     const std::vector<OutputFile>& input_deps,
                     const std::vector<OutputFile>& order_only_deps,
-                    const std::vector<ModuleDep>& module_dep_info,
+                    const std::set<ClangModuleDep>& module_dep_info,
                     std::vector<OutputFile>* object_files,
+                    std::vector<OutputFile>* extra_files,
                     std::vector<SourceFile>* other_files);
   void WriteSwiftSources(const std::vector<OutputFile>& input_deps,
                          const std::vector<OutputFile>& order_only_deps,
@@ -102,13 +106,6 @@ class NinjaCBinaryTargetWriter : public NinjaBinaryTargetWriter {
   // argument, plus the data file dependencies in the target.
   void WriteOrderOnlyDependencies(
       const UniqueVector<const Target*>& non_linkable_deps);
-
-  // Writes the validations for the link or stamp line. This is
-  // the "|@" and everything following it on the ninja line.
-  //
-  // The validations are the non-linkable deps passed in as an argument, plus
-  // the data file dependencies in the target.
-  void WriteValidations(const UniqueVector<const Target*>& non_linkable_deps);
 
   // Checks for duplicates in the given list of output files. If any duplicates
   // are found, throws an error and return false.

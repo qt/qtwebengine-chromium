@@ -21,10 +21,10 @@ TEST(Commands, FilterOutMatch) {
   Err err;
   LabelPattern pattern_a = LabelPattern::GetPattern(
       current_dir, std::string_view(), Value(nullptr, "//a:*"), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   LabelPattern pattern_ef = LabelPattern::GetPattern(
       current_dir, std::string_view(), Value(nullptr, "//e:f"), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   std::vector<LabelPattern> label_patterns{pattern_a, pattern_ef};
 
   std::vector<const Target*> output;

@@ -21,7 +21,7 @@ TEST(FunctionProcessFileTemplates, SingleString) {
   Err err;
   Value result =
       functions::RunProcessFileTemplate(setup.scope(), nullptr, args, &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   ASSERT_TRUE(result.type() == Value::LIST);
   ASSERT_EQ(1u, result.list_value().size());
@@ -49,7 +49,7 @@ TEST(FunctionProcessFileTemplates, MultipleStrings) {
   Err err;
   Value result =
       functions::RunProcessFileTemplate(setup.scope(), nullptr, args, &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   ASSERT_TRUE(result.type() == Value::LIST);
   ASSERT_EQ(4u, result.list_value().size());

@@ -25,7 +25,6 @@ std::vector<std::pair<OutputFile, const Target*>> ComputeRuntimeDeps(
 // Writes all runtime deps files requested on the command line, or does nothing
 // if no files were specified.
 bool WriteRuntimeDepsFilesIfNecessary(const BuildSettings* build_settings,
-                                      const Builder& builder,
-                                      Err* err);
+                                      const Builder& builder);
 
 #endif  // TOOLS_GN_RUNTIME_DEPS_H

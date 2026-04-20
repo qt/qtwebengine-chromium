@@ -27,7 +27,7 @@ TEST_F(ActionTargetGenerator, ActionOutputSubstitutions) {
   // This should run fine.
   Err err;
   input_good.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   // Same thing with a pattern in the output should fail.
   TestParseInput input_bad(
@@ -76,7 +76,7 @@ TEST_F(ActionTargetGenerator, ActionForeachSubstitutions) {
          })");
   ASSERT_FALSE(input_resp_file.has_error());
   input_resp_file.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   // Defining a response file but not referencing it should fail.
   err = Err();

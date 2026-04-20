@@ -98,7 +98,12 @@ class Err {
 
   void AppendSubErr(const Err& err);
 
-  void PrintToStdout() const;
+  // Prints the error to standard out.
+  // Returns true if the error was actually printed, or false if it was
+  // suppressed (e.g., due to reaching the error limit). Callers can use this
+  // return value to determine whether to print additional formatting like
+  // newlines or separators.
+  bool PrintToStdout() const;
 
   // Prints to standard out but uses a "WARNING" messaging instead of the
   // normal "ERROR" messaging. This is a property of the printing system rather
@@ -110,10 +115,12 @@ class Err {
   // nonfatal error to the screen instead of returning it. In these cases, that
   // code can decide at printing time whether it will continue (and use this
   // method) or not (and use PrintToStdout()).
-  void PrintNonfatalToStdout() const;
+  //
+  // Returns true if the warning was actually printed, or false if suppressed.
+  bool PrintNonfatalToStdout() const;
 
  private:
-  void InternalPrintToStdout(bool is_sub_err, bool is_fatal) const;
+  bool InternalPrintToStdout(bool is_sub_err, bool is_fatal) const;
 
   std::unique_ptr<ErrInfo> info_;  // Non-null indicates error.
 };

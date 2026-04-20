@@ -21,6 +21,7 @@
 #include "gn/standard_out.h"
 #include "gn/switches.h"
 #include "gn/target.h"
+#include "gn/unique_vector.h"
 
 namespace commands {
 
@@ -37,6 +38,8 @@ void FillDepMap(Setup* setup, DepMap* dep_map) {
   for (auto* target : setup->builder().GetAllResolvedTargets()) {
     for (const auto& dep_pair : target->GetDeps(Target::DEPS_ALL))
       dep_map->insert(std::make_pair(dep_pair.ptr, target));
+    for (const auto& validation_pair : target->validations())
+      dep_map->insert(std::make_pair(validation_pair.ptr, target));
   }
 }
 
@@ -296,6 +299,13 @@ Options
     TARGET_TYPE_FILTER_COMMAND_LINE_HELP
 
     R"(
+  --relation=(source|public|input|data|script|output)
+      Restricts output to targets which refer to input files by a specific
+      relation. Defaults to any relation. Can be provided multiple times to
+      include multiple relations.
+    )"
+
+    R"(
 
 Examples (target input)
 
@@ -349,6 +359,26 @@ int RunRefs(const std::vector<std::string>& args) {
   const base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
   bool tree = cmdline->HasSwitch("tree");
   bool all = cmdline->HasSwitch("all");
+  UniqueVector<HowTargetContainsFile> include_relations;
+  for (const std::string& relation :
+       cmdline->GetSwitchValueStrings("relation")) {
+    if (relation == "source") {
+      include_relations.push_back(HowTargetContainsFile::kSources);
+    } else if (relation == "public") {
+      include_relations.push_back(HowTargetContainsFile::kPublic);
+    } else if (relation == "input") {
+      include_relations.push_back(HowTargetContainsFile::kInputs);
+    } else if (relation == "data") {
+      include_relations.push_back(HowTargetContainsFile::kData);
+    } else if (relation == "script") {
+      include_relations.push_back(HowTargetContainsFile::kScript);
+    } else if (relation == "output") {
+      include_relations.push_back(HowTargetContainsFile::kOutput);
+    } else {
+      Err(Location(), "Unknown relation: " + relation).PrintToStdout();
+      return 1;
+    }
+  }
   bool default_toolchain_only = cmdline->HasSwitch(switches::kDefaultToolchain);
 
   // Deliberately leaked to avoid expensive process teardown.
@@ -404,8 +434,13 @@ int RunRefs(const std::vector<std::string>& args) {
                              &target_containing);
 
     // Extract just the Target*.
-    for (const TargetContainingFile& pair : target_containing)
+    for (const TargetContainingFile& pair : target_containing) {
+      if (!include_relations.empty() &&
+          !include_relations.Contains(pair.second)) {
+        continue;
+      }
       explicit_target_matches.push_back(pair.first);
+    }
   }
   for (auto* config : config_matches) {
     GetTargetsReferencingConfig(setup, all_targets, config,

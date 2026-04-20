@@ -170,7 +170,7 @@ TEST(NinjaCreateBundleTargetWriter, JustPartialInfoPlist) {
       "baz/bar/bar_partial_info.plist || phony/foo/bar\n"
       "build bar.bundle: phony phony/baz/bar\n";
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 // Tests multiple files from asset catalog.
@@ -276,7 +276,7 @@ TEST(NinjaCreateBundleTargetWriter, PhonyTarget) {
       "build phony/baz/bar: phony || phony/foo/action\n"
       "build bar.bundle: phony phony/baz/bar\n";
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 // Tests complex target with multiple bundle_data sources, including
@@ -420,7 +420,7 @@ TEST(NinjaCreateBundleTargetWriter, Complex) {
       "baz/bar/bar_partial_info.plist || phony/baz/bar.inputdeps\n"
       "build bar.bundle: phony phony/baz/bar\n";
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 // Tests post-processing step.
@@ -500,7 +500,7 @@ TEST(NinjaCreateBundleTargetWriter, PostProcessing) {
       "bar.bundle/_CodeSignature/CodeResources || phony/baz/bar.inputdeps\n"
       "build bar.bundle: phony phony/baz/bar\n";
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << out_str << "\n" << expected;
+  EXPECT_EQ(expected, out_str);
 }
 
 TEST(NinjaCreateBundleTargetWriter, PostProcessingNoStampFilesCustomToolchain) {
@@ -587,5 +587,5 @@ TEST(NinjaCreateBundleTargetWriter, PostProcessingNoStampFilesCustomToolchain) {
       "toolchain/phony/baz/bar.inputdeps\n"
       "build bar.bundle: phony toolchain/phony/baz/bar\n";
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }

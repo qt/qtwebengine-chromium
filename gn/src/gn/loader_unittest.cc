@@ -129,13 +129,13 @@ void MockInputFileManager::AddCannedResponse(const SourceFile& source_file,
   // Tokenize.
   Err err;
   canned->tokens = Tokenizer::Tokenize(canned->input_file.get(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   // Parse.
   canned->root = Parser::Parse(canned->tokens, &err);
   if (err.has_error())
     err.PrintToStdout();
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   canned_responses_[source_file] = std::move(canned);
 }

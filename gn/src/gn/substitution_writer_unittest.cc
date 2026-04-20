@@ -95,7 +95,7 @@ TEST(SubstitutionWriter, WriteWithNinjaVariables) {
   SubstitutionPattern pattern;
   ASSERT_TRUE(pattern.Parse("-i {{source}} --out=bar\"{{source_name_part}}\".o",
                             nullptr, &err));
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   EscapeOptions options;
   options.mode = ESCAPE_NONE;

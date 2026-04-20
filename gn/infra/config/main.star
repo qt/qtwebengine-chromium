@@ -102,6 +102,7 @@ luci.bucket(
             roles = "role/buildbucket.creator",
             groups = [
                 "project-gn-committers",
+                "mdb/chrome-build-access-sphinx",
             ],
         ),
     ],
@@ -116,7 +117,7 @@ def ci_builder(name, os, caches = None):
         short_name = name,
     )
 
-ci_builder("linux", "Ubuntu-22.04")
+ci_builder("linux", "Ubuntu-24.04")
 
 # macOS version for this builder should be synced with
 # https://source.corp.google.com/h/chromium/infra/infra_superproject/+/main:infra_internal/infra/config/subprojects/gn.star
@@ -177,6 +178,7 @@ luci.bucket(
             roles = "role/buildbucket.creator",
             groups = [
                 "project-gn-committers",
+                "mdb/chrome-build-access-sphinx",
             ],
         ),
     ],
@@ -196,7 +198,7 @@ def try_builder(name, os, caches = None):
         cq_group = "gn",
     )
 
-try_builder("linux", "Ubuntu-22.04")
+try_builder("linux", "Ubuntu-24.04")
 
 # macOS version for this builder should be synced with
 # https://source.corp.google.com/h/chromium/infra/infra_superproject/+/main:infra_internal/infra/config/subprojects/gn.star

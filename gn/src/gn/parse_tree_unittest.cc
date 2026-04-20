@@ -55,7 +55,7 @@ TEST(ParseTree, Accessor) {
       ->scope_value()
       ->SetValue("b", Value(nullptr, kBValue), nullptr);
   result = accessor.Execute(setup.scope(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   ASSERT_EQ(Value::INTEGER, result.type());
   EXPECT_EQ(kBValue, result.int_value());
 }
@@ -73,29 +73,29 @@ TEST(ParseTree, SubscriptedAccess) {
       "second_element_idx = 1");
   values.parsed()->Execute(setup.scope(), &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   Value first = setup.ExecuteExpression("list[0]", &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(first.type(), Value::INTEGER);
   EXPECT_EQ(first.int_value(), 2);
 
   Value second = setup.ExecuteExpression("list[second_element_idx]", &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(second.type(), Value::INTEGER);
   EXPECT_EQ(second.int_value(), 3);
 
   const Scope* scope_var = setup.scope()->GetValue("scope")->scope_value();
   EXPECT_TRUE(scope_var->IsSetButUnused("foo"));
   Value foo = setup.ExecuteExpression("scope[\"foo\"]", &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(foo.type(), Value::INTEGER);
   EXPECT_EQ(foo.int_value(), 5);
   EXPECT_FALSE(scope_var->IsSetButUnused("foo"));
 
   EXPECT_TRUE(scope_var->IsSetButUnused("bar"));
   Value bar = setup.ExecuteExpression("scope[bar_key]", &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(bar.type(), Value::INTEGER);
   EXPECT_EQ(bar.int_value(), 8);
   EXPECT_FALSE(scope_var->IsSetButUnused("bar"));
@@ -136,7 +136,7 @@ TEST(ParseTree, BlockUnusedVars) {
 
   Err err;
   input_all_used.parsed()->Execute(setup.scope(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   // Skipping one should throw an unused var error.
   TestParseInput input_unused(
@@ -162,7 +162,7 @@ TEST(ParseTree, OriginForDereference) {
   TestParseInput input(
       "a = 6\n"
       "get_target_outputs(a)");
-  EXPECT_FALSE(input.has_error());
+  EXPECT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
@@ -185,7 +185,7 @@ TEST(ParseTree, ShortenTargets) {
       "  \"//efg/hij:hij\",\n"
       "  \"//efg/hij:hihihi\",\n"
       "]\n");
-  EXPECT_FALSE(input.has_error());
+  EXPECT_SUCCESS(input);
   ASSERT_TRUE(input.parsed()->AsBlock());
   ASSERT_TRUE(input.parsed()->AsBlock()->statements()[0]->AsBinaryOp());
   const BinaryOpNode* binop =
@@ -246,7 +246,7 @@ TEST(ParseTree, SortRangeExtraction) {
         "  \"c\","
         "  \"d\","
         "]\n");
-    EXPECT_FALSE(input.has_error());
+    EXPECT_SUCCESS(input);
     ASSERT_TRUE(input.parsed()->AsBlock());
     ASSERT_TRUE(input.parsed()->AsBlock()->statements()[0]->AsBinaryOp());
     const BinaryOpNode* binop =
@@ -272,7 +272,7 @@ TEST(ParseTree, SortRangeExtraction) {
         "  \"c\","
         "  \"d\","
         "]\n");
-    EXPECT_FALSE(input.has_error());
+    EXPECT_SUCCESS(input);
     ASSERT_TRUE(input.parsed()->AsBlock());
     ASSERT_TRUE(input.parsed()->AsBlock()->statements()[0]->AsBinaryOp());
     const BinaryOpNode* binop =
@@ -294,7 +294,7 @@ TEST(ParseTree, SortRangeExtraction) {
         "  # At end of list.\n"
         "  \"zzzzzzzzzzz.cc\","
         "]\n");
-    EXPECT_FALSE(input.has_error());
+    EXPECT_SUCCESS(input);
     ASSERT_TRUE(input.parsed()->AsBlock());
     ASSERT_TRUE(input.parsed()->AsBlock()->statements()[0]->AsBinaryOp());
     const BinaryOpNode* binop =
@@ -316,7 +316,7 @@ TEST(ParseTree, SortRangeExtraction) {
         "  \"z.cc\","
         "  \"y.cc\","
         "]\n");
-    EXPECT_FALSE(input.has_error());
+    EXPECT_SUCCESS(input);
     ASSERT_TRUE(input.parsed()->AsBlock());
     ASSERT_TRUE(input.parsed()->AsBlock()->statements()[0]->AsBinaryOp());
     const BinaryOpNode* binop =
@@ -341,12 +341,12 @@ TEST(ParseTree, Integers) {
   };
   for (auto* s : kGood) {
     TestParseInput input(std::string("x = ") + s);
-    EXPECT_FALSE(input.has_error());
+    EXPECT_SUCCESS(input);
 
     TestWithScope setup;
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
   }
 
   static const char* const kBad[] = {
@@ -358,7 +358,7 @@ TEST(ParseTree, Integers) {
   };
   for (auto* s : kBad) {
     TestParseInput input(std::string("x = ") + s);
-    EXPECT_FALSE(input.has_error());
+    EXPECT_SUCCESS(input);
 
     TestWithScope setup;
     Err err;

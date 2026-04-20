@@ -19,6 +19,7 @@
     *   [outputs: Which files a source/target make.](#cmd_outputs)
     *   [path: Find paths between two targets.](#cmd_path)
     *   [refs: Find stuff referencing a target or file.](#cmd_refs)
+    *   [suggest: Suggest fixes to build graph based on includes.](#cmd_suggest)
 *   [Target declarations](#targets)
     *   [action: Declare a target that runs a script a single time.](#func_action)
     *   [action_foreach: Declare a target that runs a script over a set of files.](#func_action_foreach)
@@ -41,6 +42,7 @@
     *   [declare_args: Declare build arguments.](#func_declare_args)
     *   [defined: Returns whether an identifier is defined.](#func_defined)
     *   [exec_script: Synchronously run a script and return the output.](#func_exec_script)
+    *   [expand_directory: Expand a source directory and return files.](#func_expand_directory)
     *   [filter_exclude: Remove values that match a set of patterns.](#func_filter_exclude)
     *   [filter_include: Remove values that do not match a set of patterns.](#func_filter_include)
     *   [filter_labels_exclude: Remove labels that match a set of patterns.](#func_filter_labels_exclude)
@@ -53,6 +55,7 @@
     *   [getenv: Get an environment variable.](#func_getenv)
     *   [import: Import a file into the current scope.](#func_import)
     *   [label_matches: Returns whether a label matches any of a list of patterns.](#func_label_matches)
+    *   [len: Returns the length of a string or a list.](#func_len)
     *   [not_needed: Mark variables from scope as not needed.](#func_not_needed)
     *   [path_exists: Returns whether the given path exists.](#func_path_exists)
     *   [pool: Defines a pool object.](#func_pool)
@@ -64,6 +67,7 @@
     *   [set_default_toolchain: Sets the default toolchain name.](#func_set_default_toolchain)
     *   [set_defaults: Set default values for a target type.](#func_set_defaults)
     *   [split_list: Splits a list into N different sub-lists.](#func_split_list)
+    *   [string_hash: Calculates a stable hash of the given string.](#func_string_hash)
     *   [string_join: Concatenates a list of strings with a separator.](#func_string_join)
     *   [string_replace: Replaces substring in the given string.](#func_string_replace)
     *   [string_split: Split string into a list of strings.](#func_string_split)
@@ -76,6 +80,7 @@
     *   [current_os: [string] The operating system of the current toolchain.](#var_current_os)
     *   [current_toolchain: [string] Label of the current toolchain.](#var_current_toolchain)
     *   [default_toolchain: [string] Label of the default toolchain.](#var_default_toolchain)
+    *   [generate_modulemap: [string] Mode for generating modulemaps.](#var_generate_modulemap)
     *   [gn_version: [number] The version of gn.](#var_gn_version)
     *   [host_cpu: [string] The processor architecture that GN is running on.](#var_host_cpu)
     *   [host_os: [string] The operating system that GN is running on.](#var_host_os)
@@ -103,6 +108,7 @@
     *   [bundle_executable_dir: Expansion of {{bundle_executable_dir}} in create_bundle](#var_bundle_executable_dir)
     *   [bundle_resources_dir: Expansion of {{bundle_resources_dir}} in create_bundle.](#var_bundle_resources_dir)
     *   [bundle_root_dir: Expansion of {{bundle_root_dir}} in create_bundle.](#var_bundle_root_dir)
+    *   [c_additional_outputs: [string list] Additional outputs for the compiler.](#var_c_additional_outputs)
     *   [cflags: [string list] Flags passed to all C compiler variants.](#var_cflags)
     *   [cflags_c: [string list] Flags passed to the C compiler.](#var_cflags_c)
     *   [cflags_cc: [string list] Flags passed to the C++ compiler.](#var_cflags_cc)
@@ -163,9 +169,11 @@
     *   [target_xcode_platform: [string] The desired platform for the build.](#var_target_xcode_platform)
     *   [testonly: [boolean] Declares a target must only be used for testing.](#var_testonly)
     *   [transparent: [bool] True if the bundle is transparent.](#var_transparent)
+    *   [validations: [label list] Validation dependencies.](#var_validations)
     *   [visibility: [label list] A list of labels that can depend on a target.](#var_visibility)
     *   [walk_keys: [string list] Key(s) for managing the metadata collection walk.](#var_walk_keys)
     *   [weak_frameworks: [name list] Name of frameworks that must be weak linked.](#var_weak_frameworks)
+    *   [weak_libraries: [file list] File of libraries that must be weak linked.](#var_weak_libraries)
     *   [write_runtime_deps: Writes the target's runtime_deps to the given path.](#var_write_runtime_deps)
     *   [xcasset_compiler_flags: [string list] Flags passed to xcassets compiler](#var_xcasset_compiler_flags)
     *   [xcode_extra_attributes: [scope] Extra attributes for Xcode projects.](#var_xcode_extra_attributes)
@@ -565,9 +573,11 @@
   script
   sources
   testonly
+  validations
   visibility
   walk_keys
   weak_frameworks
+  weak_libraries
 
   runtime_deps
       Compute all runtime deps for the given target. This is a computed list
@@ -771,6 +781,19 @@
       dependency database after the ninja build graph has been generated. This
       option requires a ninja executable of at least version 1.10.0. It can be
       provided by the --ninja-executable switch. Also see "gn help clean_stale".
+```
+
+#### **IDE support**
+
+```
+  QtCreator (version 20 and newer) has built-in support for GN-based projects.
+  A GN project can be opened directly by selecting the top-level .gn or BUILD.gn file.
+
+  QtCreator's GN support plugin provides:
+    - Project tree with all targets, sources & data files
+    - Accurate code model based on defines and compile flags
+    - Code navigation and completion
+    - Ability to run and debug targets directly
 ```
 
 #### **IDE options**
@@ -1321,6 +1344,12 @@
           source_set|static_library)
       Restrict outputs to targets matching the given type. If
       unspecified, no filtering will be performed.
+
+  --relation=(source|public|input|data|script|output)
+      Restricts output to targets which refer to input files by a specific
+      relation. Defaults to any relation. Can be provided multiple times to
+      include multiple relations.
+    
 ```
 
 #### **Examples (target input)**
@@ -1365,6 +1394,23 @@
           --all --as=output
       Display the executable file names of all test executables
       potentially affected by a change to the given file.
+```
+### <a name="cmd_suggest"></a>**suggest**: Suggest fixes to build graph based on includes.&nbsp;[Back to Top](#gn-reference)
+
+```
+  gn suggest <out_dir> includer1=included1 includer2=included2...
+
+  Where each includer or included is either:
+  * A label
+  * A module name (usually the same as the label)
+  * A file path relative to the build directory
+  * An absolute file path (eg. "//foo/bar.txt")
+
+  Eg. gn suggest out_dir path/to/target.cc=foo/bar.h
+
+  Will print a suggestion like:
+  Request: path/to/target.cc wants to depend on foo/bar.h
+  Suggestion: add deps = [ "//foo:bar" ] to "//path/to:target" (defined in //path/to/BUILD.gn:1234)
 ```
 ## <a name="targets"></a>Target declarations
 
@@ -2598,6 +2644,25 @@
   # result.
   exec_script("//foo/bar/myscript.py")
 ```
+### <a name="func_expand_directory"></a>**expand_directory**: Expand a source directory and return files.&nbsp;[Back to Top](#gn-reference)
+
+```
+  expand_directory(directory, recursive)
+
+  Returns a list of all files contained within the specified directory.
+
+  Arguments:
+    directory: A string representing the directory to search, relative to
+               the current BUILD file or source-absolute (starting with "//").
+    recursive: A boolean indicating whether to search recursively.
+
+  Returns:
+    A list of source-absolute paths representing the files found, sorted
+    alphabetically.
+
+  Example:
+    files = expand_directory("src/data", true)
+```
 ### <a name="func_filter_exclude"></a>**filter_exclude**: Remove values that match a set of patterns.&nbsp;[Back to Top](#gn-reference)
 
 ```
@@ -3047,6 +3112,19 @@
   result = label_matches("//baz:bar", [ "//foo/bar/*", "//baz:*" ])
   # result will be true
 ```
+### <a name="func_len"></a>**len**: Returns the length of a string or a list.&nbsp;[Back to Top](#gn-reference)
+
+```
+  len(item)
+
+  The argument can be a string or a list.
+```
+
+#### **Examples**:
+```
+  len("foo")  # 3
+  len([ "a", "b", "c" ])  # 3
+```
 ### <a name="func_not_needed"></a>**not_needed**: Mark variables from scope as not needed.&nbsp;[Back to Top](#gn-reference)
 
 ```
@@ -3434,6 +3512,33 @@
 
   Will print:
     [[1, 2], [3, 4], [5, 6]
+```
+### <a name="func_string_hash"></a>**string_hash**: Calculates a stable hash of the given string.&nbsp;[Back to Top](#gn-reference)
+
+```
+  hash = string_hash(long_string)
+
+  `string_hash` returns a string that contains a hash of the argument.  The hash
+  is computed by first calculating the SHA256 hash of the argument, and then
+  returning the first 8 characters of the lowercase-ASCII, hexadecimal encoding
+  of the SHA256 hash.
+
+  `string_hash` is intended to be used when it is desirable to translate,
+  globally unique strings (such as GN labels) into short filenames that are
+  still globally unique.  This is useful when supporting filesystems and build
+  systems which impose limits on the length of the supported filenames and/or on
+  the total path length.
+
+  Warning: This hash should never be used for cryptographic purposes.
+  Unique inputs can be assumed to result in unique hashes if the inputs
+  are trustworthy, but malicious inputs may be able to trigger collisions.
+  Directories and names of GN labels are usually considered trustworthy.
+```
+
+#### **Examples**:
+
+```
+    string_hash("abc")  -->  "ba7816bf"
 ```
 ### <a name="func_string_join"></a>**string_join**: Concatenates a list of strings with a separator.&nbsp;[Back to Top](#gn-reference)
 
@@ -4069,6 +4174,9 @@
     {{cflags_cc}}
     {{cflags_objc}}
     {{cflags_objcc}}
+    {{cc_module_name}}
+        The C++ module name for the current target, if one is being built.
+        This is used when compiling C++ modules.
     {{defines}}
     {{include_dirs}}
         Strings correspond that to the processed flags/defines/include
@@ -4422,6 +4530,11 @@
 
     This concept is somewhat inefficient to express in Ninja (it requires a lot
     of duplicate of rules) so should only be used when absolutely necessary.
+
+  inputs [string list]
+    A list of files needed to execute the tool.
+    For example, if your tool command is "python3 foo.py", and foo.py imports
+    bar.py, you should set inputs to [ "foo.py", "bar.py" ].
 ```
 
 #### **Example of defining a toolchain**
@@ -4554,6 +4667,14 @@
 ```
   A fully-qualified label representing the default toolchain, which may not
   necessarily be the current one (see "current_toolchain").
+```
+### <a name="var_generate_modulemap"></a>**generate_modulemap**: [string] Mode for generating modulemaps.&nbsp;[Back to Top](#gn-reference)
+
+#### **Possible values**:
+```
+  "none" (default): Don't generate a modulemap file for the target.
+  "textual": Generate a modulemap file for the target.
+    All public headers will be marked as textual.
 ```
 ### <a name="var_gn_version"></a>**gn_version**: [number] The version of gn.&nbsp;[Back to Top](#gn-reference)
 
@@ -5228,6 +5349,25 @@
     bundle_resources_dir = "${bundle_contents_dir}/Resources"
     bundle_executable_dir = "${bundle_contents_dir}/MacOS"
   }
+```
+### <a name="var_c_additional_outputs"></a>**c_additional_outputs**: [string list] Additional outputs for the compiler.&nbsp;[Back to Top](#gn-reference)
+
+```
+  A list of substitution expressions that will be evaluated in the context
+  of the compiler tool (e.g. "cc") and added to its outputs when this config
+  is applied to a target.
+
+  This is useful for tools that produce side-artifacts like .dwo files
+  when specific flags (like -gsplit-dwarf) are used.
+
+  "c_additional_outputs" are applied to all invocations of the C, C++,
+  Objective C, and Objective C++ compilers.
+
+  Example:
+    config("split_dwarf") {
+      cflags = [ "-gsplit-dwarf" ]
+      c_additional_outputs = [ "{{source_out_dir}}/{{source_name_part}}.dwo" ]
+    }
 ```
 ### <a name="var_cflags"></a>**cflags***: Flags passed to the C compiler.&nbsp;[Back to Top](#gn-reference)
 
@@ -6218,7 +6358,7 @@
 ### <a name="var_module_name"></a>**module_name**: [string] The name for the compiled module.&nbsp;[Back to Top](#gn-reference)
 
 ```
-  Valid for binary targets that contain Swift sources.
+  Valid for binary targets that contain Swift sources, and for C++ modules.
 
   If module_name is not set, then this rule will use the target name.
 ```
@@ -6913,6 +7053,31 @@
   depends on it (unless the "bundle_data" target sets "product_type" to the
   same value as the "create_bundle" target).
 ```
+### <a name="var_validations"></a>**validations**: Validation dependencies.&nbsp;[Back to Top](#gn-reference)
+
+```
+  A list of target labels.
+
+  "Validations" are a list of targets that should be built if the current
+  target is built, but which do not effect the result of the current target.
+  This is used to declare things like static analysis, style checking, or
+  other checks that should run in parallel with the build.
+```
+
+#### **Example**
+
+```
+  executable("my_program") {
+    sources = [ "my_program.cc" ]
+    validations = [ ":my_program_style_check" ]
+  }
+
+  action("my_program_style_check") {
+    script = "//tools/style_checker.py"
+    sources = [ "my_program.cc" ]
+    outputs = [ "$target_gen_dir/my_program_style_check.stamp" ]
+  }
+```
 ### <a name="var_visibility"></a>**visibility**: A list of labels that can depend on a target.&nbsp;[Back to Top](#gn-reference)
 
 ```
@@ -7017,6 +7182,42 @@
 
 ```
   weak_frameworks = [ "OnlyOnNewerOSes.framework" ]
+```
+### <a name="var_weak_libraries"></a>**weak_libraries**: [file list] File of libraries that must be weak linked.&nbsp;[Back to Top](#gn-reference)
+
+```
+  A list of library files.
+
+  The library files in that list will be weak linked with any dynamic link
+  type target. Weak linking instructs the dynamic loader to attempt to load
+  the library, but if it is not able to do so, it leaves any imported symbols
+  unresolved. This is typically used when a library is present in a new
+  version of an SDK but not on older versions of the OS that the software runs
+  on.
+```
+
+#### **Ordering of flags and values**
+
+```
+  1. Those set on the current target (not in a config).
+  2. Those set on the "configs" on the target in order that the
+     configs appear in the list.
+  3. Those set on the "all_dependent_configs" on the target in order
+     that the configs appear in the list.
+  4. Those set on the "public_configs" on the target in order that
+     those configs appear in the list.
+  5. all_dependent_configs pulled from dependencies, in the order of
+     the "deps" list. This is done recursively. If a config appears
+     more than once, only the first occurrence will be used.
+  6. public_configs pulled from dependencies, in the order of the
+     "deps" list. If a dependency is public, they will be applied
+     recursively.
+```
+
+#### **Example**
+
+```
+  weak_libraries = [ rebase_path("//path/to/libOnlyOnNewerOSes.dylib") ]
 ```
 ### <a name="var_write_runtime_deps"></a>**write_runtime_deps**: Writes the target's runtime_deps to the given path.&nbsp;[Back to Top](#gn-reference)
 
@@ -7227,6 +7428,21 @@
       compatibility. New code should use "exec_script_allowlist" instead.
       If both values are set, only the value in "exec_script_allowlist" will
       have any effect (so don't set both!).
+
+  expand_directory_allowlist [optional]
+      A list of .gn/.gni files (not labels) that have permission to call the
+      expand_directory function. If this list is defined, calls to
+      expand_directory will be checked against this list and GN will fail if
+      the current file isn't in the list.
+
+      The use of expand_directory is restricted because it encourages
+      monolithic build targets with redundant inputs, which can slow down
+      the build.
+
+      Example:
+        expand_directory_allowlist = [
+          "//base/BUILD.gn",
+        ]
 
   export_compile_commands [optional]
       A list of label patterns for which to generate a Clang compilation
@@ -8368,6 +8584,8 @@
     *   --args: Specifies build arguments overrides.
     *   --color: Force colored output.
     *   --dotfile: Override the name of the ".gn" file.
+    *   --enumerate-files-with-git: Use git to list files.
+    *   --error-limit: Limit the number of errors or warnings to print.
     *   --fail-on-unused-args: Treat unused build args as fatal errors.
     *   --markdown: Write help output in the Markdown format.
     *   --ninja-executable: Set the Ninja executable.
@@ -8384,4 +8602,3 @@
     *   -v: Verbose logging.
     *   --version: Prints the GN version number and exits.
 ```
-

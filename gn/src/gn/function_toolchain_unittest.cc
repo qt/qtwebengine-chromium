@@ -18,7 +18,7 @@ TEST_F(FunctionToolchain, NoArguments) {
   // Check that creating a toolchain with no name reports an error.
   {
     TestParseInput input(R"(toolchain() {})");
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
 
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
@@ -28,7 +28,7 @@ TEST_F(FunctionToolchain, NoArguments) {
   // Check that creating a toolchain with too many arguments is an error.
   {
     TestParseInput input(R"(toolchain("too", "many", "arguments") {})");
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
 
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
@@ -72,7 +72,7 @@ TEST_F(FunctionToolchain, RuntimeOutputs) {
 
       Err err;
       input.parsed()->Execute(setup.scope(), &err);
-      ASSERT_FALSE(err.has_error()) << err.message();
+      ASSERT_SUCCESS(err);
 
       // It should have generated a toolchain.
       ASSERT_EQ(1u, setup.items().size());
@@ -100,7 +100,7 @@ TEST_F(FunctionToolchain, RuntimeOutputs) {
           })";
       std::string input_str = StrSubstitute(kInput, "{{name}}", tool_type);
       TestParseInput input(input_str);
-      ASSERT_FALSE(input.has_error());
+      ASSERT_SUCCESS(input);
 
       Err err;
       input.parsed()->Execute(setup.scope(), &err);
@@ -154,11 +154,11 @@ TEST_F(FunctionToolchain, Rust) {
             description = "RUST {{output}}"
           }
         })");
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
 
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
-    ASSERT_FALSE(err.has_error()) << err.message();
+    ASSERT_SUCCESS(err);
 
     // It should have generated a toolchain.
     ASSERT_EQ(1u, setup.items().size());
@@ -189,11 +189,11 @@ TEST_F(FunctionToolchain, RustLinkDependAndRuntimeOutputs) {
             runtime_outputs = [ "stripped" ]
           }
         })");
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
 
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
-    ASSERT_FALSE(err.has_error()) << err.message();
+    ASSERT_SUCCESS(err);
 
     // It should have generated a toolchain.
     ASSERT_EQ(1u, setup.items().size());
@@ -225,7 +225,7 @@ TEST_F(FunctionToolchain, Command) {
       R"(toolchain("missing_command") {
         tool("cxx") {}
       })");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
@@ -242,11 +242,11 @@ TEST_F(FunctionToolchain, CommandLauncher) {
           command_launcher = "/usr/goma/gomacc"
         }
       })");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   // It should have generated a toolchain.
   ASSERT_EQ(1u, setup.items().size());

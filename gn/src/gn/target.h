@@ -5,8 +5,10 @@
 #ifndef TOOLS_GN_TARGET_H_
 #define TOOLS_GN_TARGET_H_
 
+#include <bitset>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
@@ -21,6 +23,7 @@
 #include "gn/output_file.h"
 #include "gn/pointer_set.h"
 #include "gn/rust_values.h"
+#include "gn/settings.h"
 #include "gn/source_file.h"
 #include "gn/swift_values.h"
 #include "gn/toolchain.h"
@@ -58,6 +61,15 @@ class Target : public Item {
     DEPS_LINKED,  // Iterates through all non-data dependencies.
   };
 
+  enum ModuleTypeBits {
+    HAS_MODULEMAP,
+    MODULEMAP_IS_GENERATED,
+    MODULEMAP_IS_TEXTUAL,
+
+    N_MODULE_TYPE_BITS,
+  };
+  using ModuleType = std::bitset<N_MODULE_TYPE_BITS>;
+
   using FileList = std::vector<SourceFile>;
   using StringVector = std::vector<std::string>;
 
@@ -74,7 +86,22 @@ class Target : public Item {
   // Item overrides.
   Target* AsTarget() override;
   const Target* AsTarget() const override;
+
+  // NOTE: This calls OnResolvedWithoutChecks followed by
+  // RunChecksAfterResolution.
   bool OnResolved(Err* err) override;
+
+  // Perform all resolution steps except for checks. When this function
+  // returns, the content of the Target instance, as well as all its
+  // standard dependencies (i.e. without validations and gen_deps) are
+  // considered final and immutable. This allows running checks in background
+  // threads while the rest of the resolution algorithm continues in the main
+  // thread.
+  bool OnResolvedWithoutChecks(Err* err);
+
+  // Run checks. This requires OnResolvedWithoutChecks() to have been called
+  // first. This can run in a background thread.
+  bool RunChecksAfterResolution(Err* err);
 
   OutputType output_type() const { return output_type_; }
   void set_output_type(OutputType t) { output_type_ = t; }
@@ -260,6 +287,10 @@ class Target : public Item {
   const LabelTargetVector& data_deps() const { return data_deps_; }
   LabelTargetVector& data_deps() { return data_deps_; }
 
+  // Validation dependencies.
+  const LabelTargetVector& validations() const { return validations_; }
+  LabelTargetVector& validations() { return validations_; }
+
   // gen_deps only propagate the "should_generate" flag. These dependencies can
   // have cycles so care should be taken if iterating over them recursively.
   const LabelTargetVector& gen_deps() const { return gen_deps_; }
@@ -328,6 +359,11 @@ class Target : public Item {
   const std::vector<LabelPattern>& assert_no_deps() const {
     return assert_no_deps_;
   }
+
+  ModuleType module_type() const { return module_type_; }
+  void set_module_type(ModuleType type);
+  const SourceFile* modulemap_file() const;
+  const SourceFile* private_modulemap_file() const;
 
   // The toolchain is only known once this target is resolved (all if its
   // dependencies are known). They will be null until then. Generally, this can
@@ -408,6 +444,19 @@ class Target : public Item {
   // The subset of computed_outputs that are considered runtime outputs.
   const std::vector<OutputFile>& runtime_outputs() const {
     return runtime_outputs_;
+  }
+
+  // The module name for the target.
+  std::string module_name() const { return module_name_; }
+  void set_module_name(std::string module_name) {
+    module_name_ = std::move(module_name);
+  }
+
+  // Similar to defined_from(), but for targets created via templates, returns
+  // the invoker of the template rather than the template definition.
+  Location user_friendly_location() const;
+  void set_user_friendly_location(Location location) {
+    user_friendly_location_ = location;
   }
 
   // Computes and returns the outputs of this target expressed as SourceFiles.
@@ -497,6 +546,16 @@ class Target : public Item {
   std::string output_extension_;
   bool output_extension_set_ = false;
 
+  std::string module_name_;
+  ModuleType module_type_;
+  Location user_friendly_location_;
+  // Only filled if the module type is GENERATED_*
+  SourceFile generated_modulemap_file_;
+  // For performance reasons we cache private_modulemap_file.
+  // Modulemap files are passed as pointers, so to keep them as pointers instead
+  // of values we need to store them somewhere.
+  mutable SourceFile private_modulemap_file_;
+
   FileList sources_;
   SourceFileTypeSet source_types_used_;
   bool all_headers_public_ = true;
@@ -510,6 +569,7 @@ class Target : public Item {
   LabelTargetVector private_deps_;
   LabelTargetVector public_deps_;
   LabelTargetVector data_deps_;
+  LabelTargetVector validations_;
   LabelTargetVector gen_deps_;
 
   // See getters for more info.
@@ -556,6 +616,8 @@ class Target : public Item {
   Target(const Target&) = delete;
   Target& operator=(const Target&) = delete;
 };
+
+std::string Pretty(const Target& target);
 
 extern const char kExecution_Help[];
 

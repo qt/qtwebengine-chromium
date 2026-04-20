@@ -28,7 +28,7 @@ TEST_F(SetupTest, DotGNFileIsGenDep) {
   // pass it as --root.
   base::ScopedTempDir in_temp_dir;
   ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
-  base::FilePath in_path = in_temp_dir.GetPath();
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
   base::FilePath dot_gn_name = in_path.Append(FILE_PATH_LITERAL(".gn"));
   WriteFile(dot_gn_name, "buildconfig = \"//BUILDCONFIG.gn\"\n");
   WriteFile(in_path.Append(FILE_PATH_LITERAL("BUILDCONFIG.gn")), "");
@@ -59,7 +59,7 @@ script_executable = ""
   // pass it as --root.
   base::ScopedTempDir in_temp_dir;
   ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
-  base::FilePath in_path = in_temp_dir.GetPath();
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
   base::FilePath dot_gn_name = in_path.Append(FILE_PATH_LITERAL(".gn"));
   WriteFile(dot_gn_name, kDotfileContents);
 
@@ -90,7 +90,7 @@ script_executable = "this_does_not_exist"
   // pass it as --root.
   base::ScopedTempDir in_temp_dir;
   ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
-  base::FilePath in_path = in_temp_dir.GetPath();
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
   base::FilePath dot_gn_name = in_path.Append(FILE_PATH_LITERAL(".gn"));
   WriteFile(dot_gn_name, kDotfileContents);
 
@@ -119,7 +119,7 @@ static void RunExtensionCheckTest(std::string extension,
   // pass it as --root.
   base::ScopedTempDir in_temp_dir;
   ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
-  base::FilePath in_path = in_temp_dir.GetPath();
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
   base::FilePath dot_gn_name = in_path.Append(FILE_PATH_LITERAL(".gn"));
   WriteFile(dot_gn_name,
             "buildconfig = \"//BUILDCONFIG.gn\"\n\
@@ -168,7 +168,7 @@ export_compile_commands = [ "//base/*" ]
   // Create a temp directory containing the build.
   base::ScopedTempDir in_temp_dir;
   ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
-  base::FilePath in_path = in_temp_dir.GetPath();
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
   base::FilePath dot_gn_name = in_path.Append(FILE_PATH_LITERAL(".gn"));
   WriteFile(dot_gn_name, kDotfileContents);
 
@@ -210,7 +210,7 @@ root_patterns = [ "//:*" ]
   // Create a temp directory containing the build.
   base::ScopedTempDir in_temp_dir;
   ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
-  base::FilePath in_path = in_temp_dir.GetPath();
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
 
   WriteFile(in_path.Append(FILE_PATH_LITERAL("BUILDCONFIG.gn")), "");
   WriteFile(in_path.Append(FILE_PATH_LITERAL(".gn")), kDotfileContents);
@@ -245,7 +245,7 @@ root_patterns = [ "//:foo" ]
   // Create a temp directory containing the build.
   base::ScopedTempDir in_temp_dir;
   ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
-  base::FilePath in_path = in_temp_dir.GetPath();
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
 
   WriteFile(in_path.Append(FILE_PATH_LITERAL("BUILDCONFIG.gn")), "");
   WriteFile(in_path.Append(FILE_PATH_LITERAL(".gn")), kDotfileContents);
@@ -310,7 +310,7 @@ toolchain("toolchain") {
   // Create a temp directory containing the build.
   base::ScopedTempDir in_temp_dir;
   ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
-  base::FilePath in_path = in_temp_dir.GetPath();
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
 
   WriteFile(in_path.Append(FILE_PATH_LITERAL("BUILD.gn")), kBuildGnContents);
   WriteFile(in_path.Append(FILE_PATH_LITERAL("BUILDCONFIG.gn")),
@@ -359,4 +359,196 @@ toolchain("toolchain") {
   EXPECT_TRUE(bar_record->should_generate());
   EXPECT_FALSE(qux_record->should_generate());
   EXPECT_FALSE(zoo_record->should_generate());
+}
+
+TEST_F(SetupTest, ArgsGnRelativeAndAbsoluteImports) {
+  base::CommandLine cmdline(base::CommandLine::NO_PROGRAM);
+
+  const char kDotfileContents[] = R"(
+    buildconfig = "//BUILDCONFIG.gn"
+    script_executable = ""
+  )";
+
+  // Create a temp directory containing a .gn file and a BUILDCONFIG.gn file,
+  // pass it as --root.
+  base::ScopedTempDir in_temp_dir;
+  ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
+  base::FilePath dot_gn_name = in_path.Append(FILE_PATH_LITERAL(".gn"));
+  WriteFile(dot_gn_name, kDotfileContents);
+
+  WriteFile(in_path.Append(FILE_PATH_LITERAL("BUILDCONFIG.gn")), "");
+  cmdline.AppendSwitchPath(switches::kRoot, in_path);
+
+  WriteFile(in_path.Append(FILE_PATH_LITERAL("build_defines.gni")),
+            "variable1 = true");
+
+  // Create another temp dir and write the args.gn with imports.
+  base::ScopedTempDir build_temp_dir;
+  ASSERT_TRUE(build_temp_dir.CreateUniqueTempDir());
+  WriteFile(build_temp_dir.GetPath().Append(FILE_PATH_LITERAL("args.gn")), R"(
+    import("//build_defines.gni")
+    import("params.gni")
+  )");
+  WriteFile(build_temp_dir.GetPath().Append(FILE_PATH_LITERAL("params.gni")),
+            "variable2 = true");
+
+  // Run setup and check that the args.gn imports are in dependency files.
+  Setup setup;
+  Err err;
+  EXPECT_TRUE(setup.DoSetupWithErr(FilePathToUTF8(build_temp_dir.GetPath()),
+                                   true, cmdline, &err));
+
+  const auto& dependency_files =
+      setup.build_settings().build_args().build_args_dependency_files();
+  ASSERT_EQ(2u, dependency_files.size());
+  const auto dependency_includes_file = [&](std::string_view file_name) {
+    return std::any_of(
+        dependency_files.begin(), dependency_files.end(),
+        [&](const SourceFile& file) { return file.GetName() == file_name; });
+  };
+  EXPECT_TRUE(dependency_includes_file("build_defines.gni"));
+  EXPECT_TRUE(dependency_includes_file("params.gni"));
+}
+
+TEST_F(SetupTest, AbsolutePythonPathInsideRootDir) {
+  base::CommandLine cmdline(base::CommandLine::NO_PROGRAM);
+
+  const char kDotfileContents[] = R"(
+buildconfig = "//BUILDCONFIG.gn"
+script_executable = ""
+)";
+
+  // Create a temp directory containing a .gn file and a BUILDCONFIG.gn file,
+  // pass it as --root.
+  base::ScopedTempDir in_temp_dir;
+  ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
+  base::FilePath dot_gn_name = in_path.Append(FILE_PATH_LITERAL(".gn"));
+  WriteFile(dot_gn_name, kDotfileContents);
+
+  base::FilePath absolute_bin_dir = in_path.Append(FILE_PATH_LITERAL("bin"));
+  base::FilePath script_executable =
+      absolute_bin_dir.Append(FILE_PATH_LITERAL("python"));
+
+  WriteFile(in_path.Append(FILE_PATH_LITERAL("BUILDCONFIG.gn")), "");
+  cmdline.AppendSwitchPath(switches::kRoot, in_path);
+  cmdline.AppendSwitchPath(switches::kScriptExecutable, script_executable);
+
+  base::FilePath build_dir = in_path.Append(FILE_PATH_LITERAL("out"));
+
+  // Run setup and check that python_path_is_relative_to_build_dir is true and
+  // python_path is relative to the build directory.
+  Setup setup;
+  Err err;
+  EXPECT_TRUE(
+      setup.DoSetupWithErr(FilePathToUTF8(build_dir), true, cmdline, &err));
+  EXPECT_TRUE(setup.build_settings().python_path_is_relative_to_build_dir());
+  EXPECT_EQ(setup.build_settings().python_path(),
+            base::FilePath(FILE_PATH_LITERAL("../bin/python")));
+}
+
+TEST_F(SetupTest, AbsolutePythonPathOutsideRootDir) {
+  base::CommandLine cmdline(base::CommandLine::NO_PROGRAM);
+
+  const char kDotfileContents[] = R"(
+buildconfig = "//BUILDCONFIG.gn"
+script_executable = ""
+)";
+
+  // Create a temp directory containing a .gn file and a BUILDCONFIG.gn file,
+  // pass it as --root.
+  base::ScopedTempDir in_temp_dir;
+  ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
+  base::FilePath dot_gn_name = in_path.Append(FILE_PATH_LITERAL(".gn"));
+  WriteFile(dot_gn_name, kDotfileContents);
+
+  base::ScopedTempDir other_temp_dir;
+  ASSERT_TRUE(other_temp_dir.CreateUniqueTempDir());
+  base::FilePath absolute_bin_dir =
+      other_temp_dir.GetPath().Append(FILE_PATH_LITERAL("bin"));
+  base::FilePath script_executable =
+      absolute_bin_dir.Append(FILE_PATH_LITERAL("python"));
+
+  WriteFile(in_path.Append(FILE_PATH_LITERAL("BUILDCONFIG.gn")), "");
+  cmdline.AppendSwitchPath(switches::kRoot, in_path);
+  cmdline.AppendSwitchPath(switches::kScriptExecutable, script_executable);
+
+  base::FilePath build_dir = in_path.Append(FILE_PATH_LITERAL("out"));
+
+  // Run setup and check that python_path_is_relative_to_build_dir is false and
+  // python_path is unchanged (apart from normalization).
+  Setup setup;
+  Err err;
+  EXPECT_TRUE(
+      setup.DoSetupWithErr(FilePathToUTF8(build_dir), true, cmdline, &err));
+  EXPECT_FALSE(setup.build_settings().python_path_is_relative_to_build_dir());
+  EXPECT_EQ(setup.build_settings().python_path(),
+            script_executable.NormalizePathSeparatorsTo('/'));
+}
+
+TEST_F(SetupTest, RelativePythonPath) {
+  base::CommandLine cmdline(base::CommandLine::NO_PROGRAM);
+
+  const char kDotfileContents[] = R"(
+buildconfig = "//BUILDCONFIG.gn"
+script_executable = ""
+)";
+
+  // Create a temp directory containing a .gn file and a BUILDCONFIG.gn file,
+  // pass it as --root.
+  base::ScopedTempDir in_temp_dir;
+  ASSERT_TRUE(in_temp_dir.CreateUniqueTempDir());
+  base::FilePath in_path = base::MakeAbsoluteFilePath(in_temp_dir.GetPath());
+  base::FilePath dot_gn_name = in_path.Append(FILE_PATH_LITERAL(".gn"));
+  WriteFile(dot_gn_name, kDotfileContents);
+
+  base::FilePath relative_bin_dir(FILE_PATH_LITERAL("bin"));
+  base::FilePath script_executable =
+      relative_bin_dir.Append(FILE_PATH_LITERAL("python"));
+
+#if defined(OS_WIN)
+  // On Windows, if script executable is a relative path, then it must exist in
+  // either the current directory or PATH with a `.exe` or `.bat` extension,
+  // otherwise `FindWindowsPython` fails.
+  base::FilePath original_cwd;
+  base::GetCurrentDirectory(&original_cwd);
+
+  // Switch to another temporary directory for the test.
+  base::ScopedTempDir cwd_temp_dir;
+  ASSERT_TRUE(cwd_temp_dir.CreateUniqueTempDir());
+
+  base::FilePath absolute_script_executable = cwd_temp_dir.GetPath()
+                                                  .Append(script_executable)
+                                                  .ReplaceExtension(u".exe");
+  ASSERT_TRUE(base::CreateDirectoryAndGetError(
+      absolute_script_executable.DirName(), nullptr));
+  WriteFile(absolute_script_executable, "");
+  base::SetCurrentDirectory(cwd_temp_dir.GetPath());
+#endif
+
+  WriteFile(in_path.Append(FILE_PATH_LITERAL("BUILDCONFIG.gn")), "");
+  cmdline.AppendSwitchPath(switches::kRoot, in_path);
+  cmdline.AppendSwitchPath(switches::kScriptExecutable, script_executable);
+
+  base::FilePath build_dir = in_path.Append(FILE_PATH_LITERAL("out"));
+
+  // Run setup and check that python_path_is_relative_to_build_dir is false and
+  // python_path is made absolute on Windows, and unchanged on other platforms.
+  Setup setup;
+  Err err;
+  EXPECT_TRUE(
+      setup.DoSetupWithErr(FilePathToUTF8(build_dir), true, cmdline, &err));
+  EXPECT_FALSE(setup.build_settings().python_path_is_relative_to_build_dir());
+
+#if defined(OS_WIN)
+  EXPECT_EQ(setup.build_settings().python_path(),
+            absolute_script_executable.NormalizePathSeparatorsTo('/'));
+
+  // Change back to the original cwd.
+  base::SetCurrentDirectory(original_cwd);
+#else
+  EXPECT_EQ(setup.build_settings().python_path(), script_executable);
+#endif
 }

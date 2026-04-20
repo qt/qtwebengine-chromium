@@ -127,6 +127,21 @@ Variables
       If both values are set, only the value in "exec_script_allowlist" will
       have any effect (so don't set both!).
 
+  expand_directory_allowlist [optional]
+      A list of .gn/.gni files (not labels) that have permission to call the
+      expand_directory function. If this list is defined, calls to
+      expand_directory will be checked against this list and GN will fail if
+      the current file isn't in the list.
+
+      The use of expand_directory is restricted because it encourages
+      monolithic build targets with redundant inputs, which can slow down
+      the build.
+
+      Example:
+        expand_directory_allowlist = [
+          "//base/BUILD.gn",
+        ]
+
   export_compile_commands [optional]
       A list of label patterns for which to generate a Clang compilation
       database (see "gn help label_pattern" for the string format).
@@ -255,6 +270,28 @@ base::FilePath FindDotFile(const base::FilePath& current_dir) {
     return base::FilePath();  // Got to the top.
 
   return FindDotFile(up_one_dir);
+}
+
+std::unique_ptr<SourceFileSet> FillAllowlist(const Value* value,
+                                             const SourceDir& current_dir,
+                                             Err* err) {
+  if (!value)
+    return nullptr;
+
+  if (!value->VerifyTypeIs(Value::LIST, err)) {
+    return nullptr;
+  }
+  auto allowlist = std::make_unique<SourceFileSet>();
+  for (const auto& item : value->list_value()) {
+    if (!item.VerifyTypeIs(Value::STRING, err)) {
+      return nullptr;
+    }
+    allowlist->insert(current_dir.ResolveRelativeFile(item, err));
+    if (err->has_error()) {
+      return nullptr;
+    }
+  }
+  return allowlist;
 }
 
 // Called on any thread. Post the item to the builder on the main thread.
@@ -625,10 +662,8 @@ bool Setup::FillArgsFromArgsInputFile(Err* err) {
   }
 
   Scope arg_scope(&dotfile_settings_);
-  // Set soure dir so relative imports in args work.
-  SourceDir root_source_dir =
-      SourceDirForCurrentDirectory(build_settings_.root_path());
-  arg_scope.set_source_dir(root_source_dir);
+  // Set source dir so relative imports in args work.
+  arg_scope.set_source_dir(args_input_file_->dir());
   args_root_->Execute(&arg_scope, err);
   if (err->has_error()) {
     return false;
@@ -831,7 +866,7 @@ bool Setup::FillPythonPath(const base::CommandLine& cmdline, Err* err) {
   if (cmdline.HasSwitch(switches::kScriptExecutable)) {
     auto script_executable =
         cmdline.GetSwitchValuePath(switches::kScriptExecutable);
-    build_settings_.set_python_path(ProcessFileExtensions(script_executable));
+    build_settings_.SetPythonPath(ProcessFileExtensions(script_executable));
   } else if (value) {
     if (!value->VerifyTypeIs(Value::STRING, err)) {
       return false;
@@ -848,7 +883,7 @@ bool Setup::FillPythonPath(const base::CommandLine& cmdline, Err* err) {
         return false;
       }
     }
-    build_settings_.set_python_path(python_path);
+    build_settings_.SetPythonPath(std::move(python_path));
   } else {
 #if defined(OS_WIN)
     base::FilePath python_path =
@@ -859,9 +894,9 @@ bool Setup::FillPythonPath(const base::CommandLine& cmdline, Err* err) {
                      "just \"python.exe\"");
       python_path = base::FilePath(u"python.exe");
     }
-    build_settings_.set_python_path(python_path);
+    build_settings_.SetPythonPath(std::move(python_path));
 #else
-    build_settings_.set_python_path(base::FilePath("python"));
+    build_settings_.SetPythonPath(base::FilePath("python"));
 #endif
   }
   return true;
@@ -1109,24 +1144,28 @@ bool Setup::FillOtherConfig(const base::CommandLine& cmdline, Err* err) {
     exec_script_allowlist_value =
         dotfile_scope_.GetValue("exec_script_whitelist", true);
   }
-
   if (exec_script_allowlist_value) {
-    // Fill the list of targets to check.
-    if (!exec_script_allowlist_value->VerifyTypeIs(Value::LIST, err)) {
+    build_settings_.set_exec_script_allowlist(
+        FillAllowlist(exec_script_allowlist_value, current_dir, err));
+    if (err->has_error()) {
       return false;
     }
-    std::unique_ptr<SourceFileSet> allowlist =
-        std::make_unique<SourceFileSet>();
-    for (const auto& item : exec_script_allowlist_value->list_value()) {
-      if (!item.VerifyTypeIs(Value::STRING, err)) {
-        return false;
-      }
-      allowlist->insert(current_dir.ResolveRelativeFile(item, err));
-      if (err->has_error()) {
-        return false;
-      }
+  }
+
+  // Fill expand_directory_allowlist.
+  const Value* expand_directory_allowlist_value =
+      dotfile_scope_.GetValue("expand_directory_allowlist", true);
+
+  if (expand_directory_allowlist_value) {
+    build_settings_.set_expand_directory_allowlist(
+        FillAllowlist(expand_directory_allowlist_value, current_dir, err));
+    if (err->has_error()) {
+      return false;
     }
-    build_settings_.set_exec_script_allowlist(std::move(allowlist));
+  } else {
+    // Treat unspecified as empty.
+    build_settings_.set_expand_directory_allowlist(
+        std::make_unique<SourceFileSet>());
   }
 
   // Fill optional default_args.
@@ -1184,17 +1223,6 @@ bool Setup::FillOtherConfig(const base::CommandLine& cmdline, Err* err) {
       return false;
     }
     export_compile_commands_.push_back(std::move(pat));
-  }
-
-  // Async non-linkable deps.
-  const Value* async_non_linkable_deps =
-      dotfile_scope_.GetValue("async_non_linkable_deps", true);
-  if (async_non_linkable_deps) {
-    if (!async_non_linkable_deps->VerifyTypeIs(Value::BOOLEAN, err)) {
-      return false;
-    }
-    build_settings_.set_async_non_linkable_deps(
-        async_non_linkable_deps->boolean_value());
   }
 
   return true;

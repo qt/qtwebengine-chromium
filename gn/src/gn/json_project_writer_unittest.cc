@@ -36,7 +36,7 @@ TEST_F(JSONWriter, ActionWithResponseFile) {
   target.action_values().outputs() =
       SubstitutionList::MakeForTest("//out/Debug/output1.out");
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
   std::vector<const Target*> targets;
   targets.push_back(&target);
@@ -274,7 +274,7 @@ TEST_F(JSONWriter, ActionWithResponseFile) {
    }
 }
 )_";
-  EXPECT_EQ(expected_json, out) << out;
+  EXPECT_EQ(expected_json, out);
 }
 
 TEST_F(JSONWriter, RustTarget) {
@@ -514,7 +514,7 @@ TEST_F(JSONWriter, RustTarget) {
    }
 }
 )_";
-  EXPECT_EQ(expected_json, out) << out;
+  EXPECT_EQ(expected_json, out);
 }
 
 TEST_F(JSONWriter, ForEachWithResponseFile) {
@@ -539,7 +539,7 @@ TEST_F(JSONWriter, ForEachWithResponseFile) {
   target.action_values().outputs() =
       SubstitutionList::MakeForTest("//out/Debug/{{source_name_part}}.out");
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
   std::vector<const Target*> targets;
   targets.push_back(&target);
@@ -778,7 +778,7 @@ TEST_F(JSONWriter, ForEachWithResponseFile) {
    }
 }
 )_";
-  EXPECT_EQ(expected_json, out) << out;
+  EXPECT_EQ(expected_json, out);
 }
 
 TEST_F(JSONWriter, FilterTargetsWithDataDeps) {

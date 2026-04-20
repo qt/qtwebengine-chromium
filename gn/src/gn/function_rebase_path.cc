@@ -4,6 +4,8 @@
 
 #include <stddef.h>
 
+#include <utility>
+
 #include "gn/build_settings.h"
 #include "gn/filesystem_utils.h"
 #include "gn/functions.h"
@@ -53,6 +55,15 @@ bool ValueLooksLikeDir(const std::string& value) {
   return false;
 }
 
+void AddCallLocationToError(const ParseNode* blame_node, Err* err) {
+  if (blame_node && err->has_error()) {
+    Err new_err(blame_node, err->message(), err->help_text());
+    new_err.AppendSubErr(
+        Err(err->location(), "The value that caused the error."));
+    *err = std::move(new_err);
+  }
+}
+
 Value ConvertOnePath(const Scope* scope,
                      const FunctionCallNode* function,
                      const Value& value,
@@ -93,19 +104,21 @@ Value ConvertOnePath(const Scope* scope,
 
   result = Value(function, Value::STRING);
   if (looks_like_dir) {
-    result.string_value() = RebasePath(
-        from_dir
-            .ResolveRelativeDir(
-                value, err,
-                scope->settings()->build_settings()->root_path_utf8())
-            .value(),
-        to_dir, scope->settings()->build_settings()->root_path_utf8());
+    SourceDir resolved = from_dir.ResolveRelativeDir(
+        value, err, scope->settings()->build_settings()->root_path_utf8());
+    if (err->has_error()) {
+      return Value();
+    }
+    result.string_value() =
+        RebasePath(resolved.value(), to_dir,
+                   scope->settings()->build_settings()->root_path_utf8());
     MakeSlashEndingMatchInput(string_value, &result.string_value());
   } else {
     SourceFile resolved_file = from_dir.ResolveRelativeFile(
         value, err, scope->settings()->build_settings()->root_path_utf8());
-    if (err->has_error())
+    if (err->has_error()) {
       return Value();
+    }
     result.string_value() =
         RebasePath(resolved_file.value(), to_dir,
                    scope->settings()->build_settings()->root_path_utf8());
@@ -227,6 +240,11 @@ Value RunRebasePath(Scope* scope,
     return result;
   }
   const Value& inputs = args[kArgIndexInputs];
+  const ParseNode* inputs_origin = nullptr;
+  if (function->args() &&
+      function->args()->contents().size() > kArgIndexInputs) {
+    inputs_origin = function->args()->contents()[kArgIndexInputs].get();
+  }
 
   // To path.
   bool convert_to_system_absolute = true;
@@ -262,8 +280,12 @@ Value RunRebasePath(Scope* scope,
 
   // Path conversion.
   if (inputs.type() == Value::STRING) {
-    return ConvertOnePath(scope, function, inputs, from_dir, to_dir,
-                          convert_to_system_absolute, err);
+    Value ret = ConvertOnePath(scope, function, inputs, from_dir, to_dir,
+                               convert_to_system_absolute, err);
+    if (err->has_error()) {
+      AddCallLocationToError(inputs_origin, err);
+    }
+    return ret;
 
   } else if (inputs.type() == Value::LIST) {
     result = Value(function, Value::LIST);
@@ -274,6 +296,7 @@ Value RunRebasePath(Scope* scope,
           ConvertOnePath(scope, function, input, from_dir, to_dir,
                          convert_to_system_absolute, err));
       if (err->has_error()) {
+        AddCallLocationToError(inputs_origin, err);
         result = Value();
         return result;
       }

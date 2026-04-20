@@ -110,18 +110,18 @@ TEST(Operators, SourcesAppend) {
   // Append an integer.
   node.SetRightToListOfValue(Value(nullptr, static_cast<int64_t>(5)));
   node.Execute(setup.scope(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   // Append a string that doesn't match the pattern, it should get appended.
   const char string1[] = "good";
   node.SetRightToListOfValue(Value(nullptr, string1));
   node.Execute(setup.scope(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   // Append a list with the two strings from above.
   node.SetRightToListOfValue(Value(nullptr, string1));
   node.Execute(setup.scope(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   // The sources variable in the scope should now have: [ 5, "good", "good" ]
   const Value* value = setup.scope()->GetValue(sources);
@@ -154,7 +154,7 @@ TEST(Operators, ListAppend) {
 
   Value ret = ExecuteBinaryOperator(setup.scope(), &node, node.left(),
                                     node.right(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   // Return from the operator should always be "none", it should update the
   // value only.
@@ -205,7 +205,7 @@ TEST(Operators, ListRemove) {
   node.SetRightToListOfValue(Value(nullptr, foo_str));
   Value result = ExecuteBinaryOperator(setup.scope(), &node, node.left(),
                                        node.right(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   // -= returns an empty value to reduce the possibility of writing confusing
   // cases like foo = bar += 1.
@@ -249,7 +249,7 @@ TEST(Operators, ListSubtractWithScope) {
   node.SetRightToValue(rval);
   Value ret = ExecuteBinaryOperator(setup.scope(), &node, node.left(),
                                     node.right(), &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(Value::LIST, ret.type());
 
   std::vector<Value> expected;
@@ -269,7 +269,7 @@ TEST(Operators, IntegerAdd) {
   node.SetRightToValue(Value(nullptr, static_cast<int64_t>(456)));
   Value ret = ExecuteBinaryOperator(setup.scope(), &node, node.left(),
                                     node.right(), &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(Value::INTEGER, ret.type());
   EXPECT_EQ(579, ret.int_value());
 }
@@ -283,7 +283,7 @@ TEST(Operators, IntegerSubtract) {
   node.SetRightToValue(Value(nullptr, static_cast<int64_t>(456)));
   Value ret = ExecuteBinaryOperator(setup.scope(), &node, node.left(),
                                     node.right(), &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(Value::INTEGER, ret.type());
   EXPECT_EQ(-333, ret.int_value());
 }
@@ -303,7 +303,7 @@ TEST(Operators, ShortCircuitAnd) {
 
   Value ret = ExecuteBinaryOperator(setup.scope(), &node, node.left(),
                                     node.right(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 }
 
 TEST(Operators, ShortCircuitOr) {
@@ -321,7 +321,7 @@ TEST(Operators, ShortCircuitOr) {
 
   Value ret = ExecuteBinaryOperator(setup.scope(), &node, node.left(),
                                     node.right(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 }
 
 // Overwriting nonempty lists and scopes with other nonempty lists and scopes
@@ -349,7 +349,7 @@ TEST(Operators, NonemptyOverwriting) {
   // Assigning an empty list should succeed.
   node.SetRightToValue(Value(nullptr, Value::LIST));
   node.Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   const Value* new_value = setup.scope()->GetValue(foo);
   ASSERT_TRUE(new_value);
   ASSERT_EQ(Value::LIST, new_value->type());
@@ -372,7 +372,7 @@ TEST(Operators, NonemptyOverwriting) {
   node.SetRightToValue(
       Value(nullptr, std::make_unique<Scope>(setup.settings())));
   node.Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   new_value = setup.scope()->GetValue(foo);
   ASSERT_TRUE(new_value);
   ASSERT_EQ(Value::SCOPE, new_value->type());
@@ -403,7 +403,7 @@ TEST(Operators, PlusEqualsUsed) {
   node.SetLeftToIdentifier(foo);
   node.SetRightToValue(Value(nullptr, static_cast<int64_t>(1)));
   node.Execute(&nested, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
 
   // Outer foo should be used, inner foo should not be.
   EXPECT_FALSE(setup.scope()->IsSetButUnused(foo));

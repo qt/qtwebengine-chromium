@@ -16,11 +16,11 @@ TEST(Template, Basic) {
       "foo(\"lala\") {\n"
       "  bar = 42\n"
       "}");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ("lala\n42\n", setup.print_output());
 }
@@ -34,7 +34,7 @@ TEST(Template, UnusedTargetNameShouldThrowError) {
       "foo(\"lala\") {\n"
       "  bar = 42\n"
       "}");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
@@ -50,7 +50,7 @@ TEST(Template, UnusedInvokerShouldThrowError) {
       "foo(\"lala\") {\n"
       "  bar = 42\n"
       "}");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
@@ -68,7 +68,7 @@ TEST(Template, UnusedVarInInvokerShouldThrowError) {
       "  bar = 42\n"
       "  baz = [ \"foo\" ]\n"
       "}");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
@@ -89,5 +89,5 @@ TEST(Template, MemoryBlowUp) {
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 }

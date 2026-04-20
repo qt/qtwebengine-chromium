@@ -33,7 +33,7 @@ bool Scheduler::Run() {
     // Flush any posted tasks (that were posted from the UI thread).
     main_thread_run_loop_->PostQuit();
     main_thread_run_loop_->Run();
-    return is_failed_;
+    return !is_failed_;
   }
 
   has_been_shutdown_ = false;

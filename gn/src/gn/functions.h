@@ -146,6 +146,14 @@ Value RunExecutable(Scope* scope,
                     BlockNode* block,
                     Err* err);
 
+extern const char kExpandDirectory[];
+extern const char kExpandDirectory_HelpShort[];
+extern const char kExpandDirectory_Help[];
+Value RunExpandDirectory(Scope* scope,
+                         const FunctionCallNode* function,
+                         const std::vector<Value>& args,
+                         Err* err);
+
 extern const char kFilterExclude[];
 extern const char kFilterExclude_HelpShort[];
 extern const char kFilterExclude_Help[];
@@ -259,6 +267,14 @@ Value RunLabelMatches(Scope* scope,
                       const FunctionCallNode* function,
                       const std::vector<Value>& args,
                       Err* err);
+
+extern const char kLen[];
+extern const char kLen_HelpShort[];
+extern const char kLen_Help[];
+Value RunLen(Scope* scope,
+             const FunctionCallNode* function,
+             const std::vector<Value>& args,
+             Err* err);
 
 extern const char kLoadableModule[];
 extern const char kLoadableModule_HelpShort[];

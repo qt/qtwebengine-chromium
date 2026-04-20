@@ -95,6 +95,7 @@ void SummarizeCoalesced(std::vector<const TraceItem*>& items,
 
   // Sort by duration.
   std::vector<Coalesced> sorted;
+  sorted.reserve(coalesced.size());
   for (const auto& pair : coalesced)
     sorted.push_back(pair.second);
   std::sort(sorted.begin(), sorted.end(), &CoalescedDurationGreater);

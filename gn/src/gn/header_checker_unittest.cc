@@ -88,7 +88,7 @@ TEST_F(HeaderCheckerTest, IsDependencyOf) {
   Target p(setup_.settings(), Label(SourceDir("//p/"), "p"));
   p.set_output_type(Target::SOURCE_SET);
   p.SetToolchain(setup_.toolchain(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   p.private_deps().push_back(LabelTargetPair(&c_));
   p.visibility().SetPublic();
   p.OnResolved(&err);
@@ -98,12 +98,13 @@ TEST_F(HeaderCheckerTest, IsDependencyOf) {
   // A does not depend on itself.
   bool is_permitted = false;
   HeaderChecker::Chain chain;
-  EXPECT_FALSE(checker->IsDependencyOf(&a_, &a_, &chain, &is_permitted));
+  auto& a_cache = checker->GetReachabilityCacheForTarget(&a_);
+  EXPECT_FALSE(checker->IsDependencyOf(&a_, a_cache, &chain, &is_permitted));
 
   // A depends publicly on B.
   chain.clear();
   is_permitted = false;
-  EXPECT_TRUE(checker->IsDependencyOf(&b_, &a_, &chain, &is_permitted));
+  EXPECT_TRUE(checker->IsDependencyOf(&b_, a_cache, &chain, &is_permitted));
   ASSERT_EQ(2u, chain.size());
   EXPECT_EQ(HeaderChecker::ChainLink(&b_, true), chain[0]);
   EXPECT_EQ(HeaderChecker::ChainLink(&a_, true), chain[1]);
@@ -113,7 +114,7 @@ TEST_F(HeaderCheckerTest, IsDependencyOf) {
   // be identified.
   chain.clear();
   is_permitted = false;
-  EXPECT_TRUE(checker->IsDependencyOf(&c_, &a_, &chain, &is_permitted));
+  EXPECT_TRUE(checker->IsDependencyOf(&c_, a_cache, &chain, &is_permitted));
   ASSERT_EQ(3u, chain.size());
   EXPECT_EQ(HeaderChecker::ChainLink(&c_, true), chain[0]);
   EXPECT_EQ(HeaderChecker::ChainLink(&b_, true), chain[1]);
@@ -123,7 +124,8 @@ TEST_F(HeaderCheckerTest, IsDependencyOf) {
   // C does not depend on A.
   chain.clear();
   is_permitted = false;
-  EXPECT_FALSE(checker->IsDependencyOf(&a_, &c_, &chain, &is_permitted));
+  auto& c_cache = checker->GetReachabilityCacheForTarget(&c_);
+  EXPECT_FALSE(checker->IsDependencyOf(&a_, c_cache, &chain, &is_permitted));
   EXPECT_TRUE(chain.empty());
   EXPECT_FALSE(is_permitted);
 
@@ -132,7 +134,9 @@ TEST_F(HeaderCheckerTest, IsDependencyOf) {
   chain.clear();
   EXPECT_EQ(&c_, b_.public_deps()[0].ptr);  // Validate it's the right one.
   b_.public_deps().erase(b_.public_deps().begin());
-  EXPECT_TRUE(checker->IsDependencyOf(&c_, &a_, &chain, &is_permitted));
+  checker = CreateChecker();
+  auto& a_cache2 = checker->GetReachabilityCacheForTarget(&a_);
+  EXPECT_TRUE(checker->IsDependencyOf(&c_, a_cache2, &chain, &is_permitted));
   EXPECT_EQ(3u, chain.size());
   EXPECT_EQ(HeaderChecker::ChainLink(&c_, false), chain[0]);
   EXPECT_EQ(HeaderChecker::ChainLink(&p, true), chain[1]);
@@ -143,7 +147,8 @@ TEST_F(HeaderCheckerTest, IsDependencyOf) {
   // one hop.
   chain.clear();
   is_permitted = false;
-  EXPECT_TRUE(checker->IsDependencyOf(&c_, &p, &chain, &is_permitted));
+  auto& p_cache = checker->GetReachabilityCacheForTarget(&p);
+  EXPECT_TRUE(checker->IsDependencyOf(&c_, p_cache, &chain, &is_permitted));
   ASSERT_EQ(2u, chain.size());
   EXPECT_EQ(HeaderChecker::ChainLink(&c_, false), chain[0]);
   EXPECT_EQ(HeaderChecker::ChainLink(&p, true), chain[1]);
@@ -197,46 +202,36 @@ TEST_F(HeaderCheckerTest, CheckInclude) {
 
   auto checker = CreateChecker();
 
-  std::set<std::pair<const Target*, const Target*>> no_dependency_cache;
   // A file in target A can't include a header from D because A has no
   // dependency on D.
   std::vector<Err> errors;
-  checker->CheckInclude(&a_, input_file, d_header, range, &no_dependency_cache,
-                        &errors);
+  auto& a_cache = checker->GetReachabilityCacheForTarget(&a_);
+  checker->CheckInclude(a_cache, input_file, d_header, range, &errors);
   EXPECT_GT(errors.size(), 0);
 
   // A can include the public header in B.
   errors.clear();
-  no_dependency_cache.clear();
-  checker->CheckInclude(&a_, input_file, b_public, range, &no_dependency_cache,
-                        &errors);
+  checker->CheckInclude(a_cache, input_file, b_public, range, &errors);
   EXPECT_EQ(errors.size(), 0);
 
   // Check A depending on the public and private headers in C.
   errors.clear();
-  no_dependency_cache.clear();
-  checker->CheckInclude(&a_, input_file, c_public, range, &no_dependency_cache,
-                        &errors);
+  checker->CheckInclude(a_cache, input_file, c_public, range, &errors);
   EXPECT_EQ(errors.size(), 0);
   errors.clear();
-  no_dependency_cache.clear();
-  checker->CheckInclude(&a_, input_file, c_private, range, &no_dependency_cache,
-                        &errors);
+  checker->CheckInclude(a_cache, input_file, c_private, range, &errors);
   EXPECT_GT(errors.size(), 0);
 
   // A can depend on a random file unknown to the build.
   errors.clear();
-  no_dependency_cache.clear();
-  checker->CheckInclude(&a_, input_file, SourceFile("//random.h"), range,
-                        &no_dependency_cache, &errors);
+  checker->CheckInclude(a_cache, input_file, SourceFile("//random.h"), range,
+                        &errors);
   EXPECT_EQ(errors.size(), 0);
 
   // A can depend on a file present only in another toolchain even with no
   // dependency path.
   errors.clear();
-  no_dependency_cache.clear();
-  checker->CheckInclude(&a_, input_file, otc_header, range,
-                        &no_dependency_cache, &errors);
+  checker->CheckInclude(a_cache, input_file, otc_header, range, &errors);
   EXPECT_EQ(errors.size(), 0);
 }
 
@@ -255,12 +250,15 @@ TEST_F(HeaderCheckerTest, PublicFirst) {
 
   a_.private_deps().push_back(LabelTargetPair(&z));
 
+  // Update checker because we modified the target graph.
+  auto checker = CreateChecker();
+  auto& a_cache = checker->GetReachabilityCacheForTarget(&a_);
+
   // Check that D can be found from A, but since it's private, it will be
   // marked as not permitted.
   bool is_permitted = false;
   HeaderChecker::Chain chain;
-  auto checker = CreateChecker();
-  EXPECT_TRUE(checker->IsDependencyOf(&d_, &a_, &chain, &is_permitted));
+  EXPECT_TRUE(checker->IsDependencyOf(&d_, a_cache, &chain, &is_permitted));
 
   EXPECT_FALSE(is_permitted);
   ASSERT_EQ(3u, chain.size());
@@ -272,8 +270,9 @@ TEST_F(HeaderCheckerTest, PublicFirst) {
   // search for D again.
   c_.public_deps().push_back(LabelTargetPair(&d_));
   checker = CreateChecker();
+  auto& a_cache2 = checker->GetReachabilityCacheForTarget(&a_);
   chain.clear();
-  EXPECT_TRUE(checker->IsDependencyOf(&d_, &a_, &chain, &is_permitted));
+  EXPECT_TRUE(checker->IsDependencyOf(&d_, a_cache2, &chain, &is_permitted));
 
   // This should have found the long public one.
   EXPECT_TRUE(is_permitted);
@@ -295,12 +294,11 @@ TEST_F(HeaderCheckerTest, CheckIncludeAllowCircular) {
   a_.sources().push_back(a_public);
 
   auto checker = CreateChecker();
+  auto& b_cache = checker->GetReachabilityCacheForTarget(&b_);
 
   // A depends on B. So B normally can't include headers from A.
   std::vector<Err> errors;
-  std::set<std::pair<const Target*, const Target*>> no_dependency_cache;
-  checker->CheckInclude(&b_, input_file, a_public, range, &no_dependency_cache,
-                        &errors);
+  checker->CheckInclude(b_cache, input_file, a_public, range, &errors);
   EXPECT_GT(errors.size(), 0);
 
   // Add an allow_circular_includes_from on A that lists B.
@@ -308,9 +306,7 @@ TEST_F(HeaderCheckerTest, CheckIncludeAllowCircular) {
 
   // Now the include from B to A should be allowed.
   errors.clear();
-  no_dependency_cache.clear();
-  checker->CheckInclude(&b_, input_file, a_public, range, &no_dependency_cache,
-                        &errors);
+  checker->CheckInclude(b_cache, input_file, a_public, range, &errors);
   EXPECT_EQ(errors.size(), 0);
 }
 
@@ -322,7 +318,7 @@ TEST_F(HeaderCheckerTest, CheckIncludeSwiftModule) {
 
   Err err;
   s.SetToolchain(setup_.toolchain(), &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
 
   const SourceFile bridge_header("//bridge.h");
   const SourceFile generated_header("//out/Debug/gen/s/s.h");
@@ -335,30 +331,26 @@ TEST_F(HeaderCheckerTest, CheckIncludeSwiftModule) {
   s.visibility().SetPublic();
 
   s.OnResolved(&err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   targets_.push_back(&s);
 
   auto checker = CreateChecker();
+  auto& d_cache = checker->GetReachabilityCacheForTarget(&d_);
 
   InputFile input_file(SourceFile("//some_file.cc"));
   input_file.SetContents(std::string());
   LocationRange range;  // Dummy value.
 
   std::vector<Err> errors;
-  std::set<std::pair<const Target*, const Target*>> no_dependency_cache;
 
   // Check that unrelated target D cannot include header generated by S.
   errors.clear();
-  no_dependency_cache.clear();
-  checker->CheckInclude(&d_, input_file, generated_header, range,
-                        &no_dependency_cache, &errors);
+  checker->CheckInclude(d_cache, input_file, generated_header, range, &errors);
   EXPECT_GT(errors.size(), 0);
 
   // Check that unrelated target D cannot include S's bridge header.
   errors.clear();
-  no_dependency_cache.clear();
-  checker->CheckInclude(&d_, input_file, bridge_header, range,
-                        &no_dependency_cache, &errors);
+  checker->CheckInclude(d_cache, input_file, bridge_header, range, &errors);
   EXPECT_GT(errors.size(), 0);
 }
 
@@ -380,7 +372,7 @@ TEST_F(HeaderCheckerTest, SourceFileForInclude) {
     include.contents = "lib/header1.h";
     SourceFile source_file = checker->SourceFileForInclude(
         include, kIncludeDirs, dummy_input_file, &err);
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
     EXPECT_EQ(SourceFile("//lib/header1.h"), source_file);
   }
 
@@ -390,7 +382,7 @@ TEST_F(HeaderCheckerTest, SourceFileForInclude) {
     include.contents = "header2.h";
     SourceFile source_file = checker->SourceFileForInclude(
         include, kIncludeDirs, dummy_input_file, &err);
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
     EXPECT_EQ(SourceFile("/c/custom_include/header2.h"), source_file);
   }
 
@@ -403,7 +395,7 @@ TEST_F(HeaderCheckerTest, SourceFileForInclude) {
     include.system_style_include = false;
     SourceFile source_file = checker->SourceFileForInclude(
         include, kIncludeDirs, dummy_input_file, &err);
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
     EXPECT_EQ(SourceFile("/d/subdir/header3.h"), source_file);
   }
 
@@ -417,7 +409,7 @@ TEST_F(HeaderCheckerTest, SourceFileForInclude) {
     SourceFile source_file = checker->SourceFileForInclude(
         include, kIncludeDirs, dummy_input_file, &err);
     EXPECT_TRUE(source_file.is_null());
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
   }
 }
 
@@ -436,7 +428,7 @@ TEST_F(HeaderCheckerTest, SourceFileForInclude_FileNotFound) {
   SourceFile source_file =
       checker->SourceFileForInclude(include, kIncludeDirs, input_file, &err);
   EXPECT_TRUE(source_file.is_null());
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 }
 
 TEST_F(HeaderCheckerTest, Friend) {
@@ -454,22 +446,20 @@ TEST_F(HeaderCheckerTest, Friend) {
   Err err;
   c_.friends().push_back(LabelPattern::GetPattern(
       SourceDir("//"), std::string_view(), Value(nullptr, "//a:*"), &err));
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
 
   // Must be after setting everything up for it to find the files.
   auto checker = CreateChecker();
+  auto& b_cache = checker->GetReachabilityCacheForTarget(&b_);
+  auto& a_cache = checker->GetReachabilityCacheForTarget(&a_);
 
   // B should not be allowed to include C's private header.
   std::vector<Err> errors;
-  std::set<std::pair<const Target*, const Target*>> no_dependency_cache;
-  checker->CheckInclude(&b_, input_file, c_private, range, &no_dependency_cache,
-                        &errors);
+  checker->CheckInclude(b_cache, input_file, c_private, range, &errors);
   EXPECT_GT(errors.size(), 0);
 
   // A should be able to because of the friend declaration.
   errors.clear();
-  no_dependency_cache.clear();
-  checker->CheckInclude(&a_, input_file, c_private, range, &no_dependency_cache,
-                        &errors);
+  checker->CheckInclude(a_cache, input_file, c_private, range, &errors);
   EXPECT_EQ(errors.size(), 0);
 }

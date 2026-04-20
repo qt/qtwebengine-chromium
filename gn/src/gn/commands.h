@@ -98,6 +98,11 @@ extern const char kRefs_HelpShort[];
 extern const char kRefs_Help[];
 int RunRefs(const std::vector<std::string>& args);
 
+extern const char kSuggest[];
+extern const char kSuggest_HelpShort[];
+extern const char kSuggest_Help[];
+int RunSuggest(const std::vector<std::string>& args);
+
 extern const char kCleanStale[];
 extern const char kCleanStale_HelpShort[];
 extern const char kCleanStale_Help[];
@@ -256,6 +261,20 @@ bool PrepareForRegeneration(const BuildSettings* settings);
 const Target* ResolveTargetFromCommandLineString(
     Setup* setup,
     const std::string& label_string);
+
+enum class ApiScope {
+  kPublic,
+  kPrivate,
+};
+
+// Resolves an input to a list of targets for suggestion.
+// Specifically also decides whether it resolves to the public or private API
+// of the target.
+std::pair<std::vector<std::pair<const Target*, ApiScope>>, bool>
+ResolveSuggestionToTarget(const BuildSettings* build_settings,
+                          const std::vector<const Target*>& all_targets,
+                          const Label& current_toolchain,
+                          std::string_view input);
 
 // Resolves a vector of command line inputs and figures out the full set of
 // things they resolve to.

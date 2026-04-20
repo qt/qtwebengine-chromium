@@ -80,7 +80,15 @@ extern const char kTargetOutDir[];
 extern const char kTargetOutDir_HelpShort[];
 extern const char kTargetOutDir_Help[];
 
+extern const char kGenerateModulemap[];
+extern const char kGenerateModulemap_HelpShort[];
+extern const char kGenerateModulemap_Help[];
+
 // Target vars -----------------------------------------------------------------
+
+extern const char kCAdditionalOutputs[];
+extern const char kCAdditionalOutputs_HelpShort[];
+extern const char kCAdditionalOutputs_Help[];
 
 extern const char kAllDependentConfigs[];
 extern const char kAllDependentConfigs_HelpShort[];
@@ -230,6 +238,10 @@ extern const char kMetadata[];
 extern const char kMetadata_HelpShort[];
 extern const char kMetadata_Help[];
 
+extern const char kModuleName[];
+extern const char kModuleName_HelpShort[];
+extern const char kModuleName_Help[];
+
 extern const char kOutputDir[];
 extern const char kOutputDir_HelpShort[];
 extern const char kOutputDir_Help[];
@@ -334,6 +346,10 @@ extern const char kTestonly[];
 extern const char kTestonly_HelpShort[];
 extern const char kTestonly_Help[];
 
+extern const char kValidations[];
+extern const char kValidations_HelpShort[];
+extern const char kValidations_Help[];
+
 extern const char kVisibility[];
 extern const char kVisibility_HelpShort[];
 extern const char kVisibility_Help[];
@@ -345,6 +361,10 @@ extern const char kWalkKeys_Help[];
 extern const char kWeakFrameworks[];
 extern const char kWeakFrameworks_HelpShort[];
 extern const char kWeakFrameworks_Help[];
+
+extern const char kWeakLibraries[];
+extern const char kWeakLibraries_HelpShort[];
+extern const char kWeakLibraries_Help[];
 
 extern const char kWriteValueContents[];
 extern const char kWriteValueContents_HelpShort[];

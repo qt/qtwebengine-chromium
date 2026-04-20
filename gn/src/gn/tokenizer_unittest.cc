@@ -234,7 +234,7 @@ TEST(Tokenizer, WhitespaceTransformToSpace) {
   Err err;
   std::vector<Token> results =
       Tokenizer::Tokenize(&input, &err, WhitespaceTransform::kInvalidToSpace);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   ASSERT_EQ(results.size(), 4u);
   EXPECT_EQ(results[0].type(), Token::IDENTIFIER);
   EXPECT_EQ(results[0].value(), "a");

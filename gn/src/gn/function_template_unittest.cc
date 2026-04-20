@@ -18,12 +18,12 @@ TEST(FunctionTemplate, MarkUsed) {
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   // Normally the loader calls CheckForUnusedVars() when it loads a file
   // since normal blocks don't do this check. To avoid having to make this
   // test much more complicated, just explicitly do the check to make sure
   // things are marked properly.
   setup.scope()->CheckForUnusedVars(&err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 }

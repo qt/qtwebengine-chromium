@@ -8,6 +8,15 @@
 
 ResolvedTargetData::TargetInfo* ResolvedTargetData::GetTargetInfo(
     const Target* target) const {
+  {
+    std::shared_lock<std::shared_mutex> lock(map_mutex_);
+    size_t index = targets_.IndexOf(target);
+    if (index != UniqueVector<const Target*>::kIndexNone) {
+      return infos_[index].get();
+    }
+  }
+
+  std::unique_lock<std::shared_mutex> lock(map_mutex_);
   auto ret = targets_.PushBackWithIndex(target);
   if (ret.first) {
     infos_.push_back(std::make_unique<TargetInfo>(target));
@@ -41,12 +50,14 @@ void ResolvedTargetData::ComputeFrameworkInfo(TargetInfo* info) const {
   UniqueVector<SourceDir> all_framework_dirs;
   UniqueVector<std::string> all_frameworks;
   UniqueVector<std::string> all_weak_frameworks;
+  UniqueVector<std::string> all_weak_libraries;
 
   for (ConfigValuesIterator iter(info->target); !iter.done(); iter.Next()) {
     const ConfigValues& cur = iter.cur();
     all_framework_dirs.Append(cur.framework_dirs());
     all_frameworks.Append(cur.frameworks());
     all_weak_frameworks.Append(cur.weak_frameworks());
+    all_weak_libraries.Append(cur.weak_libraries());
   }
   for (const Target* dep : info->deps.linked_deps()) {
     if (!dep->IsFinal() || dep->output_type() == Target::STATIC_LIBRARY) {
@@ -54,12 +65,14 @@ void ResolvedTargetData::ComputeFrameworkInfo(TargetInfo* info) const {
       all_framework_dirs.Append(dep_info->framework_dirs);
       all_frameworks.Append(dep_info->frameworks);
       all_weak_frameworks.Append(dep_info->weak_frameworks);
+      all_weak_libraries.Append(dep_info->weak_libraries);
     }
   }
 
   info->framework_dirs = all_framework_dirs.release();
   info->frameworks = all_frameworks.release();
   info->weak_frameworks = all_weak_frameworks.release();
+  info->weak_libraries = all_weak_libraries.release();
   info->has_framework_info = true;
 }
 

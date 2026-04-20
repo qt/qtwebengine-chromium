@@ -25,7 +25,7 @@ TEST_F(FunctionsTarget, CheckUnused) {
   ASSERT_FALSE(good_input.has_error());
   Err err;
   good_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   // Test a source set with an unused variable.
   TestParseInput source_set_input(
@@ -54,7 +54,7 @@ TEST_F(FunctionsTarget, CheckNotNeeded) {
   ASSERT_FALSE(nonscoped_input.has_error());
   Err err;
   nonscoped_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   TestParseInput scoped_input(
       "source_set(\"foo\") {\n"
@@ -64,7 +64,7 @@ TEST_F(FunctionsTarget, CheckNotNeeded) {
   ASSERT_FALSE(scoped_input.has_error());
   err = Err();
   scoped_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   TestParseInput nonexistent_arg_input(
       "source_set(\"foo\") {\n"
@@ -74,7 +74,7 @@ TEST_F(FunctionsTarget, CheckNotNeeded) {
   ASSERT_FALSE(nonexistent_arg_input.has_error());
   err = Err();
   nonexistent_arg_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   TestParseInput exclusion_input(
       "source_set(\"foo\") {\n"
@@ -149,7 +149,7 @@ TEST_F(FunctionsTarget, CheckNotNeeded) {
   ASSERT_FALSE(template_input.has_error());
   err = Err();
   template_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 }
 
 // Checks that the defaults applied to a template invoked by target() use
@@ -182,7 +182,7 @@ TEST_F(FunctionsTarget, TemplateDefaults) {
   ASSERT_FALSE(good_input.has_error());
   Err err;
   good_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 }
 
 // Checks that we find unused identifiers in targets.

@@ -163,8 +163,7 @@ FileEnumerator::FileInfo FileEnumerator::GetInfo() const {
 }
 
 bool FileEnumerator::IsPatternMatched(const FilePath& path) const {
-  return pattern_.empty() ||
-         !fnmatch(pattern_.c_str(), path.value().c_str(), FNM_NOESCAPE);
+  return pattern_.empty() || path.IsMatchingPattern(pattern_);
 }
 
 }  // namespace base

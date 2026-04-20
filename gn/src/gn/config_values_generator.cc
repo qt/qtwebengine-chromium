@@ -7,6 +7,7 @@
 #include "base/strings/string_util.h"
 #include "gn/build_settings.h"
 #include "gn/config_values.h"
+#include "gn/filesystem_utils.h"
 #include "gn/frameworks_utils.h"
 #include "gn/scope.h"
 #include "gn/settings.h"
@@ -26,6 +27,20 @@ void GetStringList(Scope* scope,
     return;  // No value, empty input and succeed.
 
   ExtractListOfStringValues(*value, &(config_values->*accessor)(), err);
+  if (err->has_error())
+    return;
+
+  const auto& strings = (config_values->*accessor)();
+  for (size_t i = 0; i < strings.size(); i++) {
+    if (strings[i].find('\n') != std::string::npos) {
+      *err = Err(value->list_value()[i],
+                 "Newlines in " + std::string(var_name) +
+                     " values are not "
+                     "supported.",
+                 "The value `" + strings[i] + "` contains a newline.");
+      return;
+    }
+  }
 }
 
 void GetDirList(Scope* scope,
@@ -70,6 +85,34 @@ void GetFrameworksList(Scope* scope,
   }
 
   (config_values->*accessor)().swap(frameworks);
+}
+
+void GetWeakLibrariesList(Scope* scope,
+                          const char* var_name,
+                          ConfigValues* config_values,
+                          std::vector<std::string>& (ConfigValues::*accessor)(),
+                          Err* err) {
+  const Value* value = scope->GetValue(var_name, true);
+  if (!value)
+    return;
+
+  std::vector<std::string> weak_libraries;
+  if (!ExtractListOfStringValues(*value, &weak_libraries, err))
+    return;
+
+  // All strings must end with ".dylib".
+  for (const std::string& weak_library : weak_libraries) {
+    std::string_view extension = FindExtension(&weak_library);
+    if (extension != "dylib") {
+      *err = Err(
+          *value,
+          "This weak_libraries value is wrong. "
+          "All listed weak_libraries files must have \".dylib\" extension.");
+      return;
+    }
+  }
+
+  (config_values->*accessor)().swap(weak_libraries);
 }
 
 }  // namespace
@@ -138,6 +181,8 @@ void ConfigValuesGenerator::Run() {
                     &ConfigValues::frameworks, err_);
   GetFrameworksList(scope_, variables::kWeakFrameworks, config_values_,
                     &ConfigValues::weak_frameworks, err_);
+  GetWeakLibrariesList(scope_, variables::kWeakLibraries, config_values_,
+                       &ConfigValues::weak_libraries, err_);
 
   // Precompiled headers.
   const Value* precompiled_header_value =
@@ -166,5 +211,22 @@ void ConfigValuesGenerator::Run() {
         scope_->settings()->build_settings()->root_path_utf8()));
     if (err_->has_error())
       return;
+  }
+
+  // C/C++/ObjectiveC/ObjectiveC++ additional outputs.
+  const Value* c_additional_outputs_value =
+      scope_->GetValue(variables::kCAdditionalOutputs, true);
+  if (c_additional_outputs_value) {
+    if (!c_additional_outputs_value->VerifyTypeIs(Value::LIST, err_))
+      return;
+
+    for (const Value& val : c_additional_outputs_value->list_value()) {
+      SubstitutionPattern pattern;
+      if (!pattern.Parse(val, err_))
+        return;
+      if (!pattern.IsInOutputDir(scope_->settings()->build_settings(), err_))
+        return;
+      config_values_->c_additional_outputs().push_back(std::move(pattern));
+    }
   }
 }

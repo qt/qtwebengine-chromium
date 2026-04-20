@@ -104,6 +104,13 @@ class SourceFile {
   bool operator<(const SourceFile& other) const {
     return value_ < other.value_;
   }
+  // Needs to be overridden because == has custom logic.
+  std::strong_ordering operator<=>(const SourceFile& other) const {
+    if (*this == other)
+      return std::strong_ordering::equal;
+    return *this < other ? std::strong_ordering::less
+                         : std::strong_ordering::greater;
+  }
 
   struct PtrCompare {
     bool operator()(const SourceFile& a, const SourceFile& b) const noexcept {
@@ -146,6 +153,9 @@ struct hash<SourceFile> {
 // std::unordered_set<> container. E.g. for the Fuchsia Zircon build, the
 // overall difference in "gn gen" time is about 10%.
 using SourceFileSet = base::flat_set<SourceFile, SourceFile::PtrCompare>;
+
+class ParseNode;
+bool InSourceAllowList(const ParseNode* node, const SourceFileSet* allowlist);
 
 // Represents a set of tool types.
 class SourceFileTypeSet {

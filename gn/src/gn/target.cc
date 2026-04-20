@@ -25,6 +25,8 @@
 
 namespace {
 
+constexpr std::string_view kModuleMapExt = ".modulemap";
+
 using ConfigSet = std::set<const Config*>;
 
 // Used to optimize the search for a target generating a given output file.
@@ -405,9 +407,17 @@ Dependencies
 Target::Target(const Settings* settings,
                const Label& label,
                const SourceFileSet& build_dependency_files)
-    : Item(settings, label, build_dependency_files) {}
+    : Item(settings, label, build_dependency_files),
+      module_name_(
+          label.GetUserVisibleName(settings->default_toolchain_label())) {}
 
 Target::~Target() = default;
+
+Location Target::user_friendly_location() const {
+  if (!user_friendly_location_.is_null())
+    return user_friendly_location_;
+  return defined_from()->GetRange().begin();
+}
 
 // A technical note on accessors defined below: Using a static global
 // constant is much faster at runtime than using a static local one.
@@ -566,6 +576,10 @@ const Target* Target::AsTarget() const {
 }
 
 bool Target::OnResolved(Err* err) {
+  return OnResolvedWithoutChecks(err) && RunChecksAfterResolution(err);
+}
+
+bool Target::OnResolvedWithoutChecks(Err* err) {
   DCHECK(output_type_ != UNKNOWN);
   DCHECK(toolchain_) << "Toolchain should have been set before resolving.";
 
@@ -608,16 +622,6 @@ bool Target::OnResolved(Err* err) {
   if (!SwiftValues::OnTargetResolved(this, err))
     return false;
 
-  if (!CheckSourceSetLanguages(err))
-    return false;
-  if (!CheckVisibility(err))
-    return false;
-  if (!CheckTestonly(err))
-    return false;
-  if (!CheckAssertNoDeps(err))
-    return false;
-  CheckSourcesGenerated();
-
   if (!write_runtime_deps_output_.value().empty())
     g_scheduler->AddWriteRuntimeDepsTarget(this);
 
@@ -627,6 +631,19 @@ bool Target::OnResolved(Err* err) {
         computed_outputs_[0].AsSourceFile(settings()->build_settings()));
   }
 
+  return true;
+}
+
+bool Target::RunChecksAfterResolution(Err* err) {
+  if (!CheckSourceSetLanguages(err))
+    return false;
+  if (!CheckVisibility(err))
+    return false;
+  if (!CheckTestonly(err))
+    return false;
+  if (!CheckAssertNoDeps(err))
+    return false;
+  CheckSourcesGenerated();
   return true;
 }
 
@@ -913,6 +930,12 @@ bool Target::HasRealInputs() const {
     }
   }
 
+  // Targets with validations must be written to ensure the validations run,
+  // even if they have no other inputs or dependencies.
+  if (!validations_.empty()) {
+    return true;
+  }
+
   if (output_type() == BUNDLE_DATA) {
     return !sources().empty();
   }
@@ -1158,6 +1181,10 @@ bool Target::CheckVisibility(Err* err) const {
     if (!Visibility::CheckItemVisibility(this, pair.ptr, err))
       return false;
   }
+  for (const auto& pair : validations_) {
+    if (!Visibility::CheckItemVisibility(this, pair.ptr, err))
+      return false;
+  }
   return true;
 }
 
@@ -1189,6 +1216,14 @@ bool Target::CheckTestonly(Err* err) const {
 
   // Verify no deps have "testonly" set.
   for (const auto& pair : GetDeps(DEPS_ALL)) {
+    if (pair.ptr->testonly()) {
+      *err = MakeTestOnlyError(this, pair.ptr);
+      return false;
+    }
+  }
+
+  // Verify no validations have "testonly" set.
+  for (const auto& pair : validations_) {
     if (pair.ptr->testonly()) {
       *err = MakeTestOnlyError(this, pair.ptr);
       return false;
@@ -1295,6 +1330,14 @@ bool Target::GetMetadata(const std::vector<std::string>& keys_to_extract,
             return false;
         }
       }
+      for (const auto& dep : validations_) {
+        // If we haven't walked this dep yet, go down into it.
+        if (targets_walked->add(dep.ptr)) {
+          if (!dep.ptr->GetMetadata(keys_to_extract, keys_to_walk, rebase_dir,
+                                    false, result, targets_walked, err))
+            return false;
+        }
+      }
 
       // Any other walk keys are superfluous, as they can only be a subset of
       // all deps.
@@ -1327,6 +1370,22 @@ bool Target::GetMetadata(const std::vector<std::string>& keys_to_extract,
         break;
       }
     }
+    if (!found_next) {
+      for (const auto& dep : validations_) {
+        // Match against the label with the toolchain.
+        if (dep.label.GetUserVisibleName(true) == canonicalize_next_label) {
+          // If we haven't walked this dep yet, go down into it.
+          if (targets_walked->add(dep.ptr)) {
+            if (!dep.ptr->GetMetadata(keys_to_extract, keys_to_walk, rebase_dir,
+                                      false, result, targets_walked, err))
+              return false;
+          }
+          // We found it, so we can exit this search now.
+          found_next = true;
+          break;
+        }
+      }
+    }
     // If we didn't find the specified dep in the target, that's an error.
     // Propagate it back to the user.
     if (!found_next) {
@@ -1342,4 +1401,47 @@ bool Target::GetMetadata(const std::vector<std::string>& keys_to_extract,
   result->insert(result->end(), std::make_move_iterator(current_result.begin()),
                  std::make_move_iterator(current_result.end()));
   return true;
+}
+
+void Target::set_module_type(ModuleType type) {
+  module_type_ = type;
+  if (module_type_.test(MODULEMAP_IS_GENERATED)) {
+    auto source_dir = GetBuildDirForTargetAsOutputFile(this, BuildDirType::GEN)
+                          .AsSourceDir(settings()->build_settings());
+
+    generated_modulemap_file_ = SourceFile(base::StringPrintf(
+        "%s%s.modulemap", source_dir.value().c_str(), label().name().c_str()));
+  }
+}
+
+const SourceFile* Target::modulemap_file() const {
+  if (module_type_.test(MODULEMAP_IS_GENERATED)) {
+    return &generated_modulemap_file_;
+  }
+  if (module_type_.any()) {
+    for (const SourceFile& sf : sources_) {
+      if (sf.IsModuleMapType()) {
+        return &sf;
+      }
+    }
+  }
+  return nullptr;
+}
+
+const SourceFile* Target::private_modulemap_file() const {
+  if (private_modulemap_file_.is_null() &&
+      module_type_.test(MODULEMAP_IS_GENERATED)) {
+    auto public_modulemap = modulemap_file();
+    std::string private_name = public_modulemap->GetName();
+    // foo.modulemap -> foo.private.modulemap
+    private_name.insert(private_name.length() - kModuleMapExt.size(),
+                        ".private");
+    private_modulemap_file_ = public_modulemap->GetDir().ResolveRelativeFile(
+        Value(nullptr, private_name), nullptr);
+  }
+  return &private_modulemap_file_;
+}
+
+std::string Pretty(const Target& target) {
+  return "Target for " + target.label().GetUserVisibleName(true);
 }

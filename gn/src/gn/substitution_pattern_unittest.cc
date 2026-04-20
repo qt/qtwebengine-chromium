@@ -12,7 +12,7 @@ TEST(SubstitutionPattern, ParseLiteral) {
   SubstitutionPattern pattern;
   Err err;
   EXPECT_TRUE(pattern.Parse("This is a literal", nullptr, &err));
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   ASSERT_EQ(1u, pattern.ranges().size());
   EXPECT_EQ(&SubstitutionLiteral, pattern.ranges()[0].type);
   EXPECT_EQ("This is a literal", pattern.ranges()[0].literal);
@@ -23,7 +23,7 @@ TEST(SubstitutionPattern, ParseComplex) {
   Err err;
   EXPECT_TRUE(pattern.Parse(
       "AA{{source}}{{source_name_part}}BB{{source_file_part}}", nullptr, &err));
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   ASSERT_EQ(5u, pattern.ranges().size());
 
   EXPECT_EQ(&SubstitutionLiteral, pattern.ranges()[0].type);
@@ -56,7 +56,7 @@ TEST(SubstitutionPattern, ParseRust) {
   EXPECT_TRUE(pattern.Parse(
       "AA{{rustflags}}{{rustenv}}BB{{crate_name}}{{rustdeps}}CC{{externs}}",
       nullptr, &err));
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   ASSERT_EQ(8u, pattern.ranges().size());
 
   EXPECT_EQ(&SubstitutionLiteral, pattern.ranges()[0].type);

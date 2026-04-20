@@ -11,6 +11,10 @@
 #include "base/strings/string_util.h"
 #include "gn/scope.h"
 
+ValueList::ValueList() = default;
+ValueList::ValueList(std::vector<Value> v) : values_(std::move(v)) {}
+ValueList::~ValueList() = default;
+
 // NOTE: Cannot use = default here due to the use of a union member.
 Value::Value() {}
 
@@ -28,7 +32,7 @@ Value::Value(const ParseNode* origin, Type t) : type_(t), origin_(origin) {
       new (&string_value_) std::string();
       break;
     case LIST:
-      new (&list_value_) std::vector<Value>();
+      new (&list_ptr_) scoped_refptr<ValueList>();
       break;
     case SCOPE:
       new (&scope_value_) std::unique_ptr<Scope>();
@@ -65,7 +69,7 @@ Value::Value(const Value& other) : type_(other.type_), origin_(other.origin_) {
       new (&string_value_) std::string(other.string_value_);
       break;
     case LIST:
-      new (&list_value_) std::vector<Value>(other.list_value_);
+      new (&list_ptr_) scoped_refptr<ValueList>(other.list_ptr_);
       break;
     case SCOPE:
       new (&scope_value_) std::unique_ptr<Scope>(
@@ -90,7 +94,7 @@ Value::Value(Value&& other) noexcept
       new (&string_value_) std::string(std::move(other.string_value_));
       break;
     case LIST:
-      new (&list_value_) std::vector<Value>(std::move(other.list_value_));
+      new (&list_ptr_) scoped_refptr<ValueList>(std::move(other.list_ptr_));
       break;
     case SCOPE:
       new (&scope_value_) std::unique_ptr<Scope>(std::move(other.scope_value_));
@@ -121,10 +125,10 @@ Value::~Value() {
       string_value_.~string();
       break;
     case LIST:
-      list_value_.~vector<Value>();
+      list_ptr_.~scoped_refptr();
       break;
     case SCOPE:
-      scope_value_.~unique_ptr<Scope>();
+      scope_value_.~unique_ptr();
       break;
     default:;
   }
@@ -149,6 +153,30 @@ const char* Value::DescribeType(Type t) {
       NOTREACHED();
       return "UNKNOWN";
   }
+}
+
+std::vector<Value>& Value::list_value() {
+  DCHECK(type_ == LIST);
+  if (!list_ptr_) {
+    list_ptr_ = new ValueList();
+  } else if (!list_ptr_->HasOneRef()) {
+    // Copy-On-Write (COW): If this ValueList is shared with other Value objects
+    // (reference count is > 1), we must not modify the shared vector directly.
+    // Doing so would incorrectly mutate the other Values sharing this data.
+    // Instead, we create a deep copy of the vector for this Value to safely
+    // modify.
+    list_ptr_ = new ValueList(list_ptr_->values_);
+  }
+  return list_ptr_->values_;
+}
+
+const std::vector<Value>& Value::list_value() const {
+  DCHECK(type_ == LIST);
+  if (!list_ptr_) {
+    static const std::vector<Value>* empty_list = new std::vector<Value>();
+    return *empty_list;
+  }
+  return list_ptr_->values_;
 }
 
 void Value::SetScopeValue(std::unique_ptr<Scope> scope) {
@@ -191,10 +219,13 @@ std::string Value::ToString(bool quote_string) const {
       return string_value_;
     case LIST: {
       std::string result = "[";
-      for (size_t i = 0; i < list_value_.size(); i++) {
-        if (i > 0)
-          result += ", ";
-        result += list_value_[i].ToString(true);
+      if (list_ptr_) {
+        const std::vector<Value>& list = list_value();
+        for (size_t i = 0; i < list.size(); i++) {
+          if (i > 0)
+            result += ", ";
+          result += list[i].ToString(true);
+        }
       }
       result.push_back(']');
       return result;
@@ -240,13 +271,9 @@ bool Value::operator==(const Value& other) const {
     case Value::STRING:
       return string_value() == other.string_value();
     case Value::LIST:
-      if (list_value().size() != other.list_value().size())
-        return false;
-      for (size_t i = 0; i < list_value().size(); i++) {
-        if (list_value()[i] != other.list_value()[i])
-          return false;
-      }
-      return true;
+      if (list_ptr_ == other.list_ptr_)
+        return true;
+      return list_value() == other.list_value();
     case Value::SCOPE:
       return scope_value()->CheckCurrentScopeValuesEqual(other.scope_value());
     case Value::NONE:

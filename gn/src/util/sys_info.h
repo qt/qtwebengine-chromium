@@ -11,4 +11,9 @@ bool IsLongPathsSupportEnabled();
 std::string OperatingSystemArchitecture();
 int NumberOfProcessors();
 
+// Returns the number of high-performance processors on the system.
+// currently only implemented on macOS.
+// On other platforms, returns NumberOfProcessors().
+int NumberOfPerformanceProcessors();
+
 #endif  // UTIL_SYS_INFO_H_

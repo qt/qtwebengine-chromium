@@ -28,6 +28,12 @@ class TestingNinjaTargetWriter : public NinjaTargetWriter {
     return NinjaTargetWriter::WriteInputDepsStampOrPhonyAndGetDep(
         additional_hard_deps, num_stamp_uses);
   }
+
+  void WriteStampOrPhonyForTarget(
+      const std::vector<OutputFile>& deps,
+      const std::vector<OutputFile>& order_only_deps) {
+    NinjaTargetWriter::WriteStampOrPhonyForTarget(deps, order_only_deps);
+  }
 };
 
 }  // namespace
@@ -299,4 +305,88 @@ TEST(NinjaTargetWriter, WriteInputDepsStampOrPhonyAndGetDepWithToolchainDeps) {
   ASSERT_EQ(1u, dep.size());
   EXPECT_EQ("phony/foo/setup", dep[0].value());
   EXPECT_EQ("", stream.str());
+}
+
+// Tests that validation dependencies are written to the generated Ninja file
+// with the "|@" syntax for a generic target.
+TEST(NinjaTargetWriter, WriteValidations) {
+  TestWithScope setup;
+  setup.build_settings()->set_no_stamp_files(false);
+  Err err;
+
+  Target validation_target(setup.settings(), Label(SourceDir("//foo/"), "val"));
+  validation_target.set_output_type(Target::ACTION);
+  validation_target.visibility().SetPublic();
+  validation_target.SetToolchain(setup.toolchain());
+  validation_target.action_values().set_script(SourceFile("//foo/script.py"));
+  ASSERT_TRUE(validation_target.OnResolved(&err));
+
+  Target target(setup.settings(), Label(SourceDir("//foo/"), "target"));
+  target.set_output_type(Target::GROUP);
+  target.visibility().SetPublic();
+  target.SetToolchain(setup.toolchain());
+  target.validations().push_back(LabelTargetPair(&validation_target));
+  ASSERT_TRUE(target.OnResolved(&err));
+
+  std::ostringstream stream;
+  TestingNinjaTargetWriter writer(&target, setup.toolchain(), stream);
+
+  std::vector<OutputFile> deps;
+  std::vector<OutputFile> order_only;
+  deps.push_back(OutputFile("obj/foo/target.stamp"));
+
+  writer.WriteStampOrPhonyForTarget(deps, order_only);
+
+  std::string out = stream.str();
+  EXPECT_EQ(
+      "build obj/foo/target.stamp: stamp obj/foo/target.stamp |@ "
+      "obj/foo/val.stamp\n",
+      out);
+}
+
+// Tests that if a validation target has no output (e.g., an empty group),
+// no validation dependency is written to the Ninja file.
+TEST(NinjaTargetWriter, ValidationsWithNoOutput) {
+  TestWithScope setup;
+  setup.build_settings()->set_no_stamp_files(true);
+  Err err;
+
+  // Validation target with no output (empty group, no stamp files).
+  Target validation_target(setup.settings(), Label(SourceDir("//foo/"), "val"));
+  validation_target.set_output_type(Target::GROUP);
+  validation_target.visibility().SetPublic();
+  validation_target.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(validation_target.OnResolved(&err));
+  ASSERT_FALSE(validation_target.has_dependency_output());
+
+  // A dependency that HAS an output, so 'target' will have an output alias.
+  Target real_dep(setup.settings(), Label(SourceDir("//foo/"), "dep"));
+  real_dep.set_output_type(Target::ACTION);
+  real_dep.visibility().SetPublic();
+  real_dep.SetToolchain(setup.toolchain());
+  real_dep.action_values().set_script(SourceFile("//foo/script.py"));
+  ASSERT_TRUE(real_dep.OnResolved(&err));
+
+  Target target(setup.settings(), Label(SourceDir("//foo/"), "target"));
+  target.set_output_type(Target::GROUP);
+  target.visibility().SetPublic();
+  target.SetToolchain(setup.toolchain());
+  target.public_deps().push_back(LabelTargetPair(&real_dep));
+  target.validations().push_back(LabelTargetPair(&validation_target));
+  ASSERT_TRUE(target.OnResolved(&err));
+  ASSERT_TRUE(target.has_dependency_output());
+
+  std::ostringstream stream;
+  TestingNinjaTargetWriter writer(&target, setup.toolchain(), stream);
+
+  std::vector<OutputFile> deps;
+  std::vector<OutputFile> order_only;
+  deps.push_back(OutputFile("phony/foo/dep"));
+
+  writer.WriteStampOrPhonyForTarget(deps, order_only);
+
+  std::string out = stream.str();
+  // Should not contain validation separator since the validation target has no
+  // output.
+  EXPECT_EQ("build phony/foo/target: phony phony/foo/dep\n", out);
 }

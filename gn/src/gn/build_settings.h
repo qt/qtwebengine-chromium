@@ -60,7 +60,10 @@ class BuildSettings {
 
   // Path of the python executable to run scripts with.
   base::FilePath python_path() const { return python_path_; }
-  void set_python_path(const base::FilePath& p) { python_path_ = p; }
+  void SetPythonPath(base::FilePath p);
+  bool python_path_is_relative_to_build_dir() const {
+    return python_path_is_relative_to_build_dir_;
+  }
 
   // Required Ninja version.
   const Version& ninja_required_version() const {
@@ -75,16 +78,6 @@ class BuildSettings {
   bool no_stamp_files() const { return no_stamp_files_; }
   void set_no_stamp_files(bool no_stamp_files) {
     no_stamp_files_ = no_stamp_files;
-  }
-
-  // The 'async_non_linkable_deps' boolean flag can be set to generate Ninja
-  // files that build non-linkable deps asynchronously using Ninja validations
-  // instead of order-only dependencies.
-  // This speeds up build by increasing the parallerism of the build graph.
-  // This requires Ninja 1.11 for the `validations` feature.
-  bool async_non_linkable_deps() const { return async_non_linkable_deps_; }
-  void set_async_non_linkable_deps(bool async_non_linkable_deps) {
-    async_non_linkable_deps_ = async_non_linkable_deps;
   }
 
   const SourceFile& build_config_file() const { return build_config_file_; }
@@ -151,6 +144,15 @@ class BuildSettings {
     exec_script_allowlist_ = std::move(list);
   }
 
+  // A list of files that can call expand_directory(). If the returned pointer
+  // is null, expand_directory may be called from anywhere.
+  const SourceFileSet* expand_directory_allowlist() const {
+    return expand_directory_allowlist_.get();
+  }
+  void set_expand_directory_allowlist(std::unique_ptr<SourceFileSet> list) {
+    expand_directory_allowlist_ = std::move(list);
+  }
+
  private:
   Label root_target_label_;
   std::vector<LabelPattern> root_patterns_;
@@ -159,11 +161,11 @@ class BuildSettings {
   std::string root_path_utf8_;
   base::FilePath secondary_source_path_;
   base::FilePath python_path_;
+  bool python_path_is_relative_to_build_dir_ = false;
 
   // See 40045b9 for the reason behind using 1.7.2 as the default version.
   Version ninja_required_version_{1, 7, 2};
   bool no_stamp_files_ = true;
-  bool async_non_linkable_deps_ = false;
 
   SourceFile build_config_file_;
   SourceFile arg_file_template_path_;
@@ -174,6 +176,8 @@ class BuildSettings {
   PrintCallback print_callback_;
 
   std::unique_ptr<SourceFileSet> exec_script_allowlist_;
+  std::unique_ptr<SourceFileSet> expand_directory_allowlist_ =
+      std::make_unique<SourceFileSet>();
 
   BuildSettings& operator=(const BuildSettings&) = delete;
 };

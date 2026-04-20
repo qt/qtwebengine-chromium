@@ -18,7 +18,11 @@
 #include <string.h>
 
 #include "base/command_line.h"
-#include "util/build_config.h"
+#include "base/files/file_util.h"
+#include "base/files/scoped_temp_dir.h"
+#include "base/strings/stringprintf.h"
+#include "gn/exec_process.h"
+#include "gn/standard_out.h"
 #include "util/test/test.h"
 
 #if defined(OS_WIN)
@@ -29,6 +33,76 @@
 
 namespace testing {
 Test* g_current_test;
+
+std::string Pretty(bool value) {
+  return value ? "true" : "false";
+}
+
+std::string Indent(std::string_view value) {
+  std::stringstream ss;
+  ss << "  ";
+  for (auto c : value) {
+    switch (c) {
+      case '\n':
+        ss << c;
+        ss << "  ";
+        break;
+      default:
+        ss << c;
+    }
+  }
+  return ss.str();
+}
+
+std::string DiffStrings(std::string_view expected, std::string_view actual) {
+  if (expected == actual) {
+    return "Different values with the same representation:\n" +
+           std::string(expected);
+  }
+  base::ScopedTempDir temp_dir;
+  auto fallback = [&]() {
+    return base::StringPrintf(
+        "Expected:\n%.*s\n\nActual:\n%.*s", static_cast<int>(expected.size()),
+        expected.data(), static_cast<int>(actual.size()), actual.data());
+  };
+  if (!temp_dir.CreateUniqueTempDir()) {
+    return fallback();
+  }
+
+  base::FilePath expected_path = temp_dir.GetPath().AppendASCII("expected.txt");
+  base::FilePath actual_path = temp_dir.GetPath().AppendASCII("actual.txt");
+
+  if (base::WriteFile(expected_path, expected.data(), expected.size()) !=
+      static_cast<int>(expected.size())) {
+    return fallback();
+  }
+  if (base::WriteFile(actual_path, actual.data(), actual.size()) !=
+      static_cast<int>(actual.size())) {
+    return fallback();
+  }
+
+  base::CommandLine cmdline(base::CommandLine::NO_PROGRAM);
+  cmdline.SetParseSwitches(false);
+  cmdline.SetProgram(base::FilePath(FILE_PATH_LITERAL("git")));
+  cmdline.AppendArg("diff");
+  cmdline.AppendArg("--no-index");
+  if (::IsColorEnabled()) {
+    cmdline.AppendArg("--color");
+  }
+  cmdline.AppendArgPath(expected_path);
+  cmdline.AppendArgPath(actual_path);
+
+  std::string output;
+  std::string stderr_output;
+  int exit_code = 0;
+  ::internal::ExecProcess(cmdline, base::FilePath(FILE_PATH_LITERAL(".")),
+                          &output, &stderr_output, &exit_code);
+  if (output.empty()) {
+    return fallback();
+  }
+  return output;
+}
+
 }  // namespace testing
 
 struct RegisteredTest {

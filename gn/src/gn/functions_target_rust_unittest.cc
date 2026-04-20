@@ -28,7 +28,7 @@ TEST_F(RustFunctionsTarget, CrateName) {
   ASSERT_FALSE(exe_input.has_error());
   Err err;
   exe_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(item_collector.back()->AsTarget()->rust_values().crate_name(),
             "foo_crate");
 
@@ -39,7 +39,7 @@ TEST_F(RustFunctionsTarget, CrateName) {
   ASSERT_FALSE(lib_input.has_error());
   err = Err();
   lib_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(item_collector.back()->AsTarget()->rust_values().crate_name(),
             "foo")
       << item_collector.back()->AsTarget()->rust_values().crate_name();
@@ -62,7 +62,7 @@ TEST_F(RustFunctionsTarget, CrateRootFind) {
   ASSERT_FALSE(normal_input.has_error());
   Err err;
   normal_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(
       item_collector.back()->AsTarget()->rust_values().crate_root().value(),
       "/foo.rs");
@@ -76,7 +76,7 @@ TEST_F(RustFunctionsTarget, CrateRootFind) {
   ASSERT_FALSE(normal_shlib_input.has_error());
   err = Err();
   normal_shlib_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(
       item_collector.back()->AsTarget()->rust_values().crate_root().value(),
       "/foo.rs");
@@ -88,7 +88,7 @@ TEST_F(RustFunctionsTarget, CrateRootFind) {
   ASSERT_FALSE(exe_input.has_error());
   err = Err();
   exe_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(
       item_collector.back()->AsTarget()->rust_values().crate_root().value(),
       "/main.rs");
@@ -100,7 +100,7 @@ TEST_F(RustFunctionsTarget, CrateRootFind) {
   ASSERT_FALSE(lib_input.has_error());
   err = Err();
   lib_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(
       item_collector.back()->AsTarget()->rust_values().crate_root().value(),
       "/lib.rs");
@@ -112,7 +112,7 @@ TEST_F(RustFunctionsTarget, CrateRootFind) {
   ASSERT_FALSE(singlesource_input.has_error());
   err = Err();
   singlesource_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(
       item_collector.back()->AsTarget()->rust_values().crate_root().value(),
       "/bar.rs");
@@ -135,7 +135,7 @@ TEST_F(RustFunctionsTarget, CrateRootFind) {
   ASSERT_FALSE(nosources_input.has_error());
   err = Err();
   nosources_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(
       item_collector.back()->AsTarget()->rust_values().crate_root().value(),
       "/bar.rs");
@@ -158,7 +158,7 @@ TEST_F(RustFunctionsTarget, CrateTypeSelection) {
   ASSERT_FALSE(lib_input.has_error());
   Err err;
   lib_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(item_collector.back()->AsTarget()->rust_values().crate_type(),
             RustValues::CRATE_DYLIB);
 
@@ -170,7 +170,7 @@ TEST_F(RustFunctionsTarget, CrateTypeSelection) {
   ASSERT_FALSE(exe_non_default_input.has_error());
   err = Err();
   exe_non_default_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(item_collector.back()->AsTarget()->rust_values().crate_type(),
             RustValues::CRATE_RLIB);
 
@@ -214,7 +214,7 @@ TEST_F(RustFunctionsTarget, ConfigValues) {
   ASSERT_FALSE(exe_input.has_error());
   Err err;
   exe_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ(item_collector.back()->AsConfig()->own_values().rustflags().size(),
             1U);
@@ -246,7 +246,7 @@ TEST_F(RustFunctionsTarget, SetDefaults) {
   ASSERT_FALSE(exe_input.has_error());
   Err err;
   exe_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message() << err.message();
+  EXPECT_SUCCESS(err);
 
   EXPECT_EQ(setup.scope()
                 ->GetTargetDefaults("rust_library")
@@ -294,7 +294,7 @@ TEST_F(RustFunctionsTarget, AliasedDeps) {
   ASSERT_FALSE(exe_input.has_error());
   Err err;
   exe_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ(
       item_collector.back()->AsTarget()->rust_values().aliased_deps().size(),
@@ -320,5 +320,5 @@ TEST_F(RustFunctionsTarget, PublicConfigs) {
   ASSERT_FALSE(exe_input.has_error());
   Err err;
   exe_input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 }

@@ -69,7 +69,7 @@ TEST_F(GetTargetOutputsTest, Copy) {
 
   Err err;
   Value result = GetTargetOutputs("//foo:bar", &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   AssertSingleStringEquals(result, "//out/Debug/file.txt.one");
 }
 
@@ -84,7 +84,7 @@ TEST_F(GetTargetOutputsTest, Action) {
 
   Err err;
   Value result = GetTargetOutputs("//foo:bar", &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   AssertTwoStringsEqual(result, "//output1.txt", "//output2.txt");
 }
 
@@ -101,7 +101,7 @@ TEST_F(GetTargetOutputsTest, ActionForeach) {
 
   Err err;
   Value result = GetTargetOutputs("//foo:bar", &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   AssertTwoStringsEqual(result, "//out/Debug/file.txt.one",
                         "//out/Debug/file.txt.two");
 }

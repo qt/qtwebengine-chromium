@@ -12,6 +12,11 @@
 #include <unistd.h>
 #endif
 
+#if defined(OS_MACOSX)
+#include <sys/sysctl.h>
+#include <sys/types.h>
+#endif
+
 #if defined(OS_WIN)
 #include <windows.h>
 #include "base/win/registry.h"
@@ -134,4 +139,22 @@ int NumberOfProcessors() {
 #else
 #error
 #endif
+}
+
+int NumberOfPerformanceProcessors() {
+#if defined(OS_MACOSX) && defined(ARCH_CPU_ARM64)
+  int nperflevels;
+  size_t len = sizeof(nperflevels);
+  if (sysctlbyname("hw.nperflevels", &nperflevels, &len, nullptr, 0) == 0) {
+    if (nperflevels > 0) {
+      int perflevel0_cores;
+      len = sizeof(perflevel0_cores);
+      if (sysctlbyname("hw.perflevel0.physicalcpu", &perflevel0_cores, &len,
+                       nullptr, 0) == 0) {
+        return perflevel0_cores;
+      }
+    }
+  }
+#endif
+  return NumberOfProcessors();
 }

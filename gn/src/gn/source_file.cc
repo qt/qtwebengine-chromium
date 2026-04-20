@@ -4,6 +4,8 @@
 
 #include <string.h>
 
+#include "gn/input_file.h"
+#include "gn/parse_tree.h"
 #include "gn/source_file.h"
 
 #include "base/logging.h"
@@ -221,4 +223,15 @@ bool SourceFileTypeSet::MixedSourceUsed() const {
             << static_cast<int>(RustSourceUsed())
             << static_cast<int>(GoSourceUsed())
             << static_cast<int>(SwiftSourceUsed())) > 2;
+}
+
+bool InSourceAllowList(const ParseNode* node, const SourceFileSet* allowlist) {
+  if (!allowlist)
+    return true;
+
+  LocationRange range = node->GetRange();
+  if (!range.begin().file())
+    return true;
+
+  return allowlist->find(range.begin().file()->name()) != allowlist->end();
 }

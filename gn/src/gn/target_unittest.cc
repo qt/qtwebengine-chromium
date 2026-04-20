@@ -1282,7 +1282,7 @@ TEST(TargetTest, CollectMetadataNoRecurse) {
   TargetSet targets;
   one.GetMetadata(data_keys, walk_keys, SourceDir(), false, &result, &targets,
                   &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   std::vector<Value> expected;
   expected.push_back(Value(nullptr, "foo"));
@@ -1323,7 +1323,7 @@ TEST(TargetTest, CollectMetadataWithRecurse) {
   TargetSet targets;
   one.GetMetadata(data_keys, walk_keys, SourceDir(), false, &result, &targets,
                   &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   std::vector<Value> expected;
   expected.push_back(Value(nullptr, "bar"));
@@ -1370,7 +1370,7 @@ TEST(TargetTest, CollectMetadataWithRecurseHole) {
   TargetSet targets;
   one.GetMetadata(data_keys, walk_keys, SourceDir(), false, &result, &targets,
                   &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   std::vector<Value> expected;
   expected.push_back(Value(nullptr, "bar"));
@@ -1419,7 +1419,7 @@ TEST(TargetTest, CollectMetadataWithBarrier) {
   TargetSet targets;
   one.GetMetadata(data_keys, walk_keys, SourceDir(), false, &result, &targets,
                   &err);
-  EXPECT_FALSE(err.has_error()) << err.message();
+  EXPECT_SUCCESS(err);
 
   std::vector<Value> expected;
   expected.push_back(Value(nullptr, "bar"));
@@ -1537,4 +1537,32 @@ TEST_F(TargetTest, ModuleMap) {
   // Outputs are relative to the build directory "//out/Debug/".
   ASSERT_EQ(1u, output.size());
   EXPECT_EQ("input.modulemap.pcm", output[0].value()) << output[0].value();
+}
+
+TEST(TargetTest, CollectMetadataWithValidation) {
+  TestWithScope setup;
+
+  TestTarget a(setup, "//foo:a", Target::SOURCE_SET);
+  Value a_expected(nullptr, Value::LIST);
+  a_expected.list_value().push_back(Value(nullptr, "foo"));
+  a.metadata().contents().emplace("walk", a_expected);
+
+  TestTarget b(setup, "//foo:b", Target::SOURCE_SET);
+  Value b_expected(nullptr, Value::LIST);
+  b_expected.list_value().push_back(Value(nullptr, "bar"));
+  b.metadata().contents().emplace("walk", b_expected);
+
+  a.validations().push_back(LabelTargetPair(&b));
+
+  std::vector<std::string> data_keys = {"walk"};
+  std::vector<std::string> walk_keys;
+  std::vector<Value> result;
+  TargetSet targets;
+  Err err;
+  a.GetMetadata(data_keys, walk_keys, SourceDir(), false, &result, &targets,
+                &err);
+  EXPECT_SUCCESS(err);
+
+  std::vector<Value> expected = {Value(nullptr, "bar"), Value(nullptr, "foo")};
+  EXPECT_EQ(result, expected);
 }

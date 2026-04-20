@@ -58,3 +58,23 @@ TEST(Value, ToString) {
   Value nested_scopeval(nullptr, std::unique_ptr<Scope>(nested_scope));
   EXPECT_FALSE(nested_scopeval == nested_scopeval);
 }
+
+TEST(Value, ListEquality) {
+  Value empty_list1(nullptr, Value::LIST);
+  Value empty_list2(nullptr, Value::LIST);
+  EXPECT_TRUE(empty_list1 == empty_list2);
+
+  // Trigger one to allocate its ValueList.
+  empty_list1.list_value();
+  EXPECT_TRUE(empty_list1 == empty_list2);
+  EXPECT_TRUE(empty_list2 == empty_list1);
+
+  // Trigger both to allocate.
+  empty_list2.list_value();
+  EXPECT_TRUE(empty_list1 == empty_list2);
+
+  // Add an item to one list.
+  empty_list1.list_value().push_back(Value(nullptr, "foo"));
+  EXPECT_FALSE(empty_list1 == empty_list2);
+  EXPECT_FALSE(empty_list2 == empty_list1);
+}

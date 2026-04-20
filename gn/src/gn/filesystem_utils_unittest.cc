@@ -113,10 +113,10 @@ TEST(FilesystemUtils, EnsureStringIsInOutputDir) {
   err = Err();
   EXPECT_TRUE(
       EnsureStringIsInOutputDir(output_dir, "//out/Debug/", nullptr, &err));
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_TRUE(
       EnsureStringIsInOutputDir(output_dir, "//out/Debug/foo", nullptr, &err));
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   // Pattern but no template expansions are allowed.
   EXPECT_FALSE(EnsureStringIsInOutputDir(output_dir, "{{source_gen_dir}}",

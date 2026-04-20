@@ -11,23 +11,17 @@
 #include "gn/value.h"
 #include "util/test/test.h"
 
-namespace {
-
-struct PatternCase {
-  const char* input;
-  bool success;
-
-  LabelPattern::Type type;
-  const char* dir;
-  const char* name;
-  const char* toolchain;
-};
-
-}  // namespace
-
 TEST(LabelPattern, PatternParse) {
   SourceDir current_dir("//foo/");
-  PatternCase cases[] = {
+  const struct TestCase {
+    const char* input;
+    bool success;
+
+    LabelPattern::Type type;
+    const char* dir;
+    const char* name;
+    const char* toolchain;
+  } test_cases[] = {
       // Missing stuff.
       {"", false, LabelPattern::MATCH, "", "", ""},
       {":", false, LabelPattern::MATCH, "", "", ""},
@@ -71,18 +65,17 @@ TEST(LabelPattern, PatternParse) {
 #endif
   };
 
-  for (size_t i = 0; i < std::size(cases); i++) {
-    const PatternCase& cur = cases[i];
+  for (const auto& test_case : test_cases) {
     Err err;
     LabelPattern result = LabelPattern::GetPattern(
-        current_dir, std::string_view(), Value(nullptr, cur.input), &err);
+        current_dir, std::string_view(), Value(nullptr, test_case.input), &err);
 
-    EXPECT_EQ(cur.success, !err.has_error()) << i << " " << cur.input;
-    EXPECT_EQ(cur.type, result.type()) << i << " " << cur.input;
-    EXPECT_EQ(cur.dir, result.dir().value()) << i << " " << cur.input;
-    EXPECT_EQ(cur.name, result.name()) << i << " " << cur.input;
-    EXPECT_EQ(cur.toolchain, result.toolchain().GetUserVisibleName(false))
-        << i << " " << cur.input;
+    EXPECT_EQ(test_case.success, !err.has_error()) << test_case.input;
+    EXPECT_EQ(test_case.type, result.type()) << test_case.input;
+    EXPECT_EQ(test_case.dir, result.dir().value()) << test_case.input;
+    EXPECT_EQ(test_case.name, result.name()) << test_case.input;
+    EXPECT_EQ(test_case.toolchain, result.toolchain().GetUserVisibleName(false))
+        << test_case.input;
   }
 }
 
@@ -95,7 +88,7 @@ TEST(LabelPattern, PatternParseAboveSourceRoot) {
   Err err;
   LabelPattern result = LabelPattern::GetPattern(
       current_dir, source_root, Value(nullptr, "../../../*"), &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ(LabelPattern::RECURSIVE_DIRECTORY, result.type());
   EXPECT_EQ("/foo/", result.dir().value()) << result.dir().value();

@@ -183,7 +183,7 @@ class AccessorNode : public ParseNode {
   // The member is the identifier on the right hand side of the dot. Will be
   // null if the index is set.
   const IdentifierNode* member() const { return member_.get(); }
-  void set_member(std::unique_ptr<IdentifierNode> i) { member_ = std::move(i); }
+  void set_member(std::unique_ptr<IdentifierNode> i);
 
   void SetNewLocation(int line_number);
 
@@ -292,7 +292,7 @@ class BlockNode : public ParseNode {
   static std::unique_ptr<BlockNode> NewFromJSON(const base::Value& value);
 
   void set_begin_token(const Token& t) { begin_token_ = t; }
-  void set_end(std::unique_ptr<EndNode> e) { end_ = std::move(e); }
+  void set_end(std::unique_ptr<EndNode> e);
   const EndNode* End() const { return end_.get(); }
 
   ResultMode result_mode() const { return result_mode_; }
@@ -391,7 +391,7 @@ class FunctionCallNode : public ParseNode {
   void set_function(Token t) { function_ = t; }
 
   const ListNode* args() const { return args_.get(); }
-  void set_args(std::unique_ptr<ListNode> a) { args_ = std::move(a); }
+  void set_args(std::unique_ptr<ListNode> a);
 
   const BlockNode* block() const { return block_.get(); }
   void set_block(std::unique_ptr<BlockNode> b) { block_ = std::move(b); }
@@ -458,7 +458,7 @@ class ListNode : public ParseNode {
 
   void set_begin_token(const Token& t) { begin_token_ = t; }
   const Token& Begin() const { return begin_token_; }
-  void set_end(std::unique_ptr<EndNode> e) { end_ = std::move(e); }
+  void set_end(std::unique_ptr<EndNode> e);
   const EndNode* End() const { return end_.get(); }
 
   void append_item(std::unique_ptr<ParseNode> s) {

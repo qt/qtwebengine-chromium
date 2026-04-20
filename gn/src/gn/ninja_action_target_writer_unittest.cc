@@ -54,7 +54,7 @@ TEST(NinjaActionTargetWriter, ActionNoSources) {
   target.SetToolchain(setup.toolchain());
   ASSERT_TRUE(target.OnResolved(&err));
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
 
   std::ostringstream out;
@@ -96,7 +96,7 @@ TEST(NinjaActionTargetWriter, ActionNoSourcesConsole) {
   target.SetToolchain(setup.toolchain());
   ASSERT_TRUE(target.OnResolved(&err));
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
 
   std::ostringstream out;
@@ -138,7 +138,7 @@ TEST(NinjaActionTargetWriter, ActionWithSources) {
   target.SetToolchain(setup.toolchain());
   ASSERT_TRUE(target.OnResolved(&err));
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
 
   std::ostringstream out;
@@ -195,7 +195,7 @@ TEST(NinjaActionTargetWriter, ActionWithOrderOnlyDeps) {
   target.SetToolchain(setup.toolchain());
   ASSERT_TRUE(target.OnResolved(&err));
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
 
   std::ostringstream out;
@@ -266,7 +266,7 @@ TEST(NinjaActionTargetWriter, ForEach) {
   target.SetToolchain(setup.toolchain());
   ASSERT_TRUE(target.OnResolved(&err));
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
 
   std::ostringstream out;
@@ -333,7 +333,7 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
 
   target.config_values().inputs().push_back(SourceFile("//foo/included.txt"));
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
   setup.build_settings()->set_ninja_required_version(Version{1, 9, 0});
 
@@ -391,7 +391,7 @@ TEST(NinjaActionTargetWriter, ForEachWithResponseFile) {
   target.action_values().outputs() =
       SubstitutionList::MakeForTest("//out/Debug/{{source_name_part}}.out");
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
 
   std::ostringstream out;
@@ -449,7 +449,7 @@ TEST(NinjaActionTargetWriter, ForEachWithPool) {
   target.action_values().outputs() =
       SubstitutionList::MakeForTest("//out/Debug/{{source_name_part}}.out");
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
 
   std::ostringstream out;
@@ -478,7 +478,7 @@ TEST(NinjaActionTargetWriter, NoTransitiveHardDeps) {
   Err err;
   TestWithScope setup;
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
 
   Target dep(setup.settings(), Label(SourceDir("//foo/"), "dep"));
@@ -552,7 +552,7 @@ TEST(NinjaActionTargetWriter, SeesConfig) {
   Err err;
   TestWithScope setup;
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
 
   Config farcfg(setup.settings(), Label(SourceDir("//foo/"), "farcfg"));
@@ -604,7 +604,7 @@ TEST(NinjaActionTargetWriter, SeesConfig) {
         "\n"
         "build phony/foo/foo: phony foo.out\n";
     std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 }
 
@@ -626,7 +626,7 @@ TEST(NinjaActionTargetWriter, ActionWithSpaces) {
   target.SetToolchain(setup.toolchain());
   ASSERT_TRUE(target.OnResolved(&err));
 
-  setup.build_settings()->set_python_path(
+  setup.build_settings()->SetPythonPath(
       base::FilePath(FILE_PATH_LITERAL("/Program Files/python")));
 
   std::ostringstream out;
@@ -652,4 +652,48 @@ build foo.out: __foo_bar___rule | ../../foo/my$ script.py ../../foo/input$ file.
 build phony/foo/bar: phony foo.out
 )";
   EXPECT_EQ(expected, out.str()) << expected << "--" << out.str();
+}
+
+// Tests that validation dependencies are correctly written for an action
+// target.
+TEST(NinjaActionTargetWriter, ActionWithValidations) {
+  Err err;
+  TestWithScope setup;
+
+  Target validation_target(setup.settings(), Label(SourceDir("//foo/"), "val"));
+  validation_target.set_output_type(Target::ACTION);
+  validation_target.visibility().SetPublic();
+  validation_target.action_values().set_script(SourceFile("//foo/script.py"));
+  validation_target.action_values().outputs() =
+      SubstitutionList::MakeForTest("//out/Debug/val.out");
+  validation_target.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(validation_target.OnResolved(&err));
+
+  Target target(setup.settings(), Label(SourceDir("//foo/"), "bar"));
+  target.set_output_type(Target::ACTION);
+  target.action_values().set_script(SourceFile("//foo/script.py"));
+  target.action_values().outputs() =
+      SubstitutionList::MakeForTest("//out/Debug/foo.out");
+  target.validations().push_back(LabelTargetPair(&validation_target));
+  target.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target.OnResolved(&err)) << err.message();
+
+  setup.build_settings()->SetPythonPath(
+      base::FilePath(FILE_PATH_LITERAL("/usr/bin/python")));
+
+  std::ostringstream out;
+  NinjaActionTargetWriter writer(&target, out);
+  writer.Run();
+
+  const char expected[] =
+      "rule __foo_bar___rule\n"
+      "  command = /usr/bin/python ../../foo/script.py\n"
+      "  description = ACTION //foo:bar()\n"
+      "  restat = 1\n"
+      "\n"
+      "build foo.out: __foo_bar___rule | ../../foo/script.py |@ phony/foo/val\n"
+      "\n"
+      "build phony/foo/bar: phony foo.out |@ phony/foo/val\n";
+
+  EXPECT_EQ(expected, out.str());
 }

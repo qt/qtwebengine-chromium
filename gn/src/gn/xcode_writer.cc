@@ -4,16 +4,20 @@
 
 #include "gn/xcode_writer.h"
 
+#include <algorithm>
+#include <condition_variable>
 #include <iomanip>
 #include <iterator>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
 
+#include "base/command_line.h"
 #include "base/environment.h"
 #include "base/files/file_enumerator.h"
 #include "base/logging.h"
@@ -28,6 +32,7 @@
 #include "gn/bundle_data.h"
 #include "gn/commands.h"
 #include "gn/deps_iterator.h"
+#include "gn/exec_process.h"
 #include "gn/filesystem_utils.h"
 #include "gn/item.h"
 #include "gn/loader.h"
@@ -36,6 +41,7 @@
 #include "gn/source_file.h"
 #include "gn/string_output_buffer.h"
 #include "gn/substitution_writer.h"
+#include "gn/switches.h"
 #include "gn/target.h"
 #include "gn/value.h"
 #include "gn/variables.h"
@@ -251,7 +257,7 @@ std::vector<base::FilePath::StringType> GetAdditionalFilesPatterns(
     const XcodeWriter::Options& options) {
   return base::SplitString(options.additional_files_patterns,
                            FILE_PATH_LITERAL(";"), base::TRIM_WHITESPACE,
-                           base::SPLIT_WANT_ALL);
+                           base::SPLIT_WANT_NONEMPTY);
 }
 
 // Returns the list of roots to use when looking for additional files
@@ -278,6 +284,69 @@ std::vector<base::FilePath> GetAdditionalFilesRoots(
   }
 
   return root_paths;
+}
+
+// Returns the path of files in `root`. If `use_git` is true, then it will
+// first try to use `git ls-files`. If false or if the git command fails,
+// will fall-back to traversing the filesystem.
+std::vector<base::FilePath> FindFilesInRoot(const base::FilePath& root,
+                                            bool use_git) {
+  if (use_git) {
+    base::CommandLine cmdline(base::FilePath(FILE_PATH_LITERAL("git")));
+    cmdline.AppendArg("ls-files");
+    cmdline.AppendArg("--cached");
+    cmdline.AppendArg("--others");
+    cmdline.AppendArg("--exclude-standard");
+    cmdline.AppendArg("-z");  // Use NUL as separator.
+
+    // A string view that is a single NUL terminator (which is used by
+    // git ls-files to seperate the file paths while using -z option).
+    constexpr std::string_view kSeparator = std::string_view("\0", 1);
+
+    int exit = 0;
+    std::string std_out;
+    std::string std_err;
+    if (::internal::ExecProcess(cmdline, root, &std_out, &std_err, &exit)) {
+      if (exit == 0) {
+        std::vector<std::string_view> lines =
+            base::SplitStringPiece(std_out, kSeparator, base::KEEP_WHITESPACE,
+                                   base::SPLIT_WANT_NONEMPTY);
+
+        std::vector<base::FilePath> files;
+        for (std::string_view line : lines) {
+          base::FilePath path = root.Append(UTF8ToFilePath(std::string(line)));
+          files.push_back(std::move(path));
+        }
+        return files;
+      }
+    }
+  }
+
+  std::vector<base::FilePath> files;
+  base::FileEnumerator e(root, /*recursive=*/true, base::FileEnumerator::FILES);
+  for (base::FilePath path = e.Next(); !path.empty(); path = e.Next()) {
+    files.push_back(std::move(path));
+  }
+  return files;
+}
+
+// Filters `paths` to return only the files matching `patterns`.
+std::vector<base::FilePath> FilterPathsMatchingPatterns(
+    std::vector<base::FilePath> paths,
+    const std::vector<base::FilePath::StringType>& patterns) {
+  std::vector<base::FilePath> filtered_paths;
+  for (base::FilePath& path : paths) {
+    const base::FilePath filename = path.BaseName();
+    const bool is_matching_any_pattern =
+        std::ranges::any_of(patterns, [&](const auto& pattern) {
+          return filename.IsMatchingPattern(pattern);
+        });
+
+    if (is_matching_any_pattern) {
+      filtered_paths.push_back(std::move(path));
+    }
+  }
+  return filtered_paths;
 }
 
 // Helper class to resolve list of XCTest files per target.
@@ -799,17 +868,37 @@ bool XcodeProject::AddSourcesFromBuilder(const Builder& builder, Err* err) {
     const std::vector<base::FilePath> roots =
         GetAdditionalFilesRoots(build_settings_, options_);
 
-    for (const base::FilePath& root : roots) {
-      for (const base::FilePath::StringType& pattern : patterns) {
-        base::FileEnumerator it(root, /*recursive*/ true,
-                                base::FileEnumerator::FILES, pattern,
-                                base::FileEnumerator::FolderSearchPolicy::ALL);
+    std::mutex lock;
+    std::condition_variable cv;
+    size_t pending_tasks = roots.size();
 
-        for (base::FilePath path = it.Next(); !path.empty(); path = it.Next()) {
-          const SourceFile source = FilePathToSourceFile(build_settings_, path);
-          sources.AddSourceFile(source);
+    const bool use_git = base::CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kEnumerateFilesWithGit);
+
+    std::set<base::FilePath> collected_paths;
+    for (const base::FilePath& root : roots) {
+      g_scheduler->ScheduleWork([&, root]() {
+        std::vector<base::FilePath> local_paths = FilterPathsMatchingPatterns(
+            FindFilesInRoot(root, use_git), patterns);
+
+        std::lock_guard<std::mutex> l(lock);
+        if (!local_paths.empty()) {
+          for (base::FilePath& path : local_paths) {
+            collected_paths.insert(std::move(path));
+          }
         }
-      }
+
+        if (--pending_tasks == 0) {
+          cv.notify_one();
+        }
+      });
+    }
+
+    std::unique_lock<std::mutex> l(lock);
+    cv.wait(l, [&] { return pending_tasks == 0; });
+
+    for (const base::FilePath& path : collected_paths) {
+      sources.AddSourceFile(FilePathToSourceFile(build_settings_, path));
     }
   }
 

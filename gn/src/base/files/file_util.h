@@ -58,8 +58,8 @@ int64_t ComputeDirectorySize(const FilePath& root_path);
 // Returns true if successful, false otherwise. It is considered successful
 // to attempt to delete a file that does not exist.
 //
-// In posix environment and if |path| is a symbolic link, this deletes only
-// the symlink. (even if the symlink points to a non-existent file)
+// If |path| is a symbolic link, this deletes only the symlink. (even if the
+// symlink points to a non-existent file)
 //
 // WARNING: USING THIS WITH recursive==true IS EQUIVALENT
 //          TO "rm -rf", SO USE WITH CAUTION.

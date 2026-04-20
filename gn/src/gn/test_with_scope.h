@@ -98,6 +98,7 @@ class TestParseInput {
   // Indicates whether and what error occurred during tokenizing and parsing.
   bool has_error() const { return parse_err_.has_error(); }
   const Err& parse_err() const { return parse_err_; }
+  const std::string& message() const { return parse_err_.message(); }
 
   const InputFile& input_file() const { return input_file_; }
   const std::vector<Token>& tokens() const { return tokens_; }

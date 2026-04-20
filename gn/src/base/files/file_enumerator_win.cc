@@ -186,7 +186,7 @@ bool FileEnumerator::IsPatternMatched(const FilePath& src) const {
     case FolderSearchPolicy::ALL:
       // ALL policy enumerates all files, we need to check pattern match
       // manually.
-      return PathMatchSpec(ToWCharT(&src.value()), ToWCharT(&pattern_)) == TRUE;
+      return pattern_.empty() || src.IsMatchingPattern(pattern_);
   }
   NOTREACHED();
   return false;

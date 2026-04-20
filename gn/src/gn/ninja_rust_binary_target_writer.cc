@@ -139,6 +139,12 @@ void NinjaRustBinaryTargetWriter::Run() {
   implicit_deps.Append(classified_deps.extra_object_files.begin(),
                        classified_deps.extra_object_files.end());
 
+  if (auto phony = tool_->inputs_phony_or_file(rule_prefix_,
+                                               *settings_->build_settings());
+      phony) {
+    implicit_deps.emplace_back(std::move(*phony));
+  }
+
   std::vector<OutputFile> rustdeps;
   std::vector<OutputFile> nonrustdeps;
   std::vector<OutputFile> swiftmodules;
@@ -162,9 +168,13 @@ void NinjaRustBinaryTargetWriter::Run() {
           non_linkable_dep->output_type() != Target::SOURCE_SET) {
         rustdeps.push_back(non_linkable_dep->dependency_output());
       }
-      order_only_deps.push_back(non_linkable_dep->dependency_output());
     }
   }
+
+  std::vector<OutputFile> group_order_only_deps =
+      GetOrderOnlyDepsFromNonLinkableDeps(classified_deps.non_linkable_deps);
+  order_only_deps.insert(order_only_deps.end(), group_order_only_deps.begin(),
+                         group_order_only_deps.end());
   for (const auto* linkable_dep : classified_deps.linkable_deps) {
     // Rust cdylibs are treated as non-Rust dependencies for linking purposes.
     if (linkable_dep->source_types_used().RustSourceUsed() &&
@@ -213,7 +223,7 @@ void NinjaRustBinaryTargetWriter::Run() {
   SubstitutionWriter::ApplyListToLinkerAsOutputFile(
       target_, tool_, tool_->outputs(), &tool_outputs);
   WriteCompilerBuildLine({target_->rust_values().crate_root()},
-                         implicit_deps.vector(), order_only_deps, tool_->name(),
+                         implicit_deps.vector(), order_only_deps, tool_,
                          tool_outputs);
 
   std::vector<const Target*> extern_deps(

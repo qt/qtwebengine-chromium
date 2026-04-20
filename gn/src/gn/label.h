@@ -132,6 +132,8 @@ class Label {
   // NOTE: Must be initialized by constructors with ComputeHash() value.
 };
 
+std::string Pretty(const Label& label);
+
 namespace std {
 
 template <>

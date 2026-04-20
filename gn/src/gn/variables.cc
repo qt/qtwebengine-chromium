@@ -405,6 +405,41 @@ Example
   }
 )";
 
+const char kGenerateModulemap[] = "generate_modulemap";
+const char kGenerateModulemap_HelpShort[] =
+    "generate_modulemap: [string] Mode for generating modulemaps.";
+const char kGenerateModulemap_Help[] =
+    R"(generate_modulemap: [string] Mode for generating modulemaps.
+
+Possible values:
+  "none" (default): Don't generate a modulemap file for the target.
+  "textual": Generate a modulemap file for the target.
+    All public headers will be marked as textual.
+)";
+
+const char kCAdditionalOutputs[] = "c_additional_outputs";
+const char kCAdditionalOutputs_HelpShort[] =
+    "c_additional_outputs: [string list] Additional outputs for the compiler.";
+const char kCAdditionalOutputs_Help[] =
+    R"(c_additional_outputs: [string list] Additional outputs for the compiler.
+
+  A list of substitution expressions that will be evaluated in the context
+  of the compiler tool (e.g. "cc") and added to its outputs when this config
+  is applied to a target.
+
+  This is useful for tools that produce side-artifacts like .dwo files
+  when specific flags (like -gsplit-dwarf) are used.
+
+  "c_additional_outputs" are applied to all invocations of the C, C++,
+  Objective C, and Objective C++ compilers.
+
+  Example:
+    config("split_dwarf") {
+      cflags = [ "-gsplit-dwarf" ]
+      c_additional_outputs = [ "{{source_out_dir}}/{{source_name_part}}.dwo" ]
+    }
+)";
+
 // Target variables ------------------------------------------------------------
 
 #define COMMON_ORDERING_HELP                                                 \
@@ -1476,6 +1511,17 @@ Example
   }
 )";
 
+const char kModuleName[] = "module_name";
+const char kModuleName_HelpShort[] =
+    "module_name: [string] The name for the compiled module.";
+const char kModuleName_Help[] =
+    R"(module_name: [string] The name for the compiled module.
+
+  Valid for binary targets that contain Swift sources, and for C++ modules.
+
+  If module_name is not set, then this rule will use the target name.
+)";
+
 const char kOutputExtension[] = "output_extension";
 const char kOutputExtension_HelpShort[] =
     "output_extension: [string] Value to use for the output's file extension.";
@@ -2201,6 +2247,33 @@ Example
   }
 )";
 
+const char kValidations[] = "validations";
+const char kValidations_HelpShort[] =
+    "validations: [label list] Validation dependencies.";
+const char kValidations_Help[] =
+    R"(validations: Validation dependencies.
+
+  A list of target labels.
+
+  "Validations" are a list of targets that should be built if the current
+  target is built, but which do not effect the result of the current target.
+  This is used to declare things like static analysis, style checking, or
+  other checks that should run in parallel with the build.
+
+Example
+
+  executable("my_program") {
+    sources = [ "my_program.cc" ]
+    validations = [ ":my_program_style_check" ]
+  }
+
+  action("my_program_style_check") {
+    script = "//tools/style_checker.py"
+    sources = [ "my_program.cc" ]
+    outputs = [ "$target_gen_dir/my_program_style_check.stamp" ]
+  }
+)";
+
 const char kVisibility[] = "visibility";
 const char kVisibility_HelpShort[] =
     "visibility: [label list] A list of labels that can depend on a target.";
@@ -2296,6 +2369,27 @@ Example
   weak_frameworks = [ "OnlyOnNewerOSes.framework" ]
 )";
 
+const char kWeakLibraries[] = "weak_libraries";
+const char kWeakLibraries_HelpShort[] =
+    "weak_libraries: [file list] File of libraries that must be weak linked.";
+const char kWeakLibraries_Help[] =
+    R"(weak_libraries: [file list] File of libraries that must be weak linked.
+
+  A list of library files.
+
+  The library files in that list will be weak linked with any dynamic link
+  type target. Weak linking instructs the dynamic loader to attempt to load
+  the library, but if it is not able to do so, it leaves any imported symbols
+  unresolved. This is typically used when a library is present in a new
+  version of an SDK but not on older versions of the OS that the software runs
+  on.
+)" COMMON_ORDERING_HELP
+    R"(
+Example
+
+  weak_libraries = [ rebase_path("//path/to/libOnlyOnNewerOSes.dylib") ]
+)";
+
 const char kWriteValueContents[] = "contents";
 const char kWriteValueContents_HelpShort[] =
     "contents: Contents to write to file.";
@@ -2370,6 +2464,7 @@ const VariableInfoMap& GetBuiltinVariables() {
     INSERT_VARIABLE(CurrentOs)
     INSERT_VARIABLE(CurrentToolchain)
     INSERT_VARIABLE(DefaultToolchain)
+    INSERT_VARIABLE(GenerateModulemap)
     INSERT_VARIABLE(GnVersion)
     INSERT_VARIABLE(HostCpu)
     INSERT_VARIABLE(HostOs)
@@ -2404,6 +2499,7 @@ const VariableInfoMap& GetTargetVariables() {
     INSERT_VARIABLE(BundleExecutableDir)
     INSERT_VARIABLE(XcassetCompilerFlags)
     INSERT_VARIABLE(Transparent)
+    INSERT_VARIABLE(CAdditionalOutputs)
     INSERT_VARIABLE(Cflags)
     INSERT_VARIABLE(CflagsC)
     INSERT_VARIABLE(CflagsCC)
@@ -2429,6 +2525,7 @@ const VariableInfoMap& GetTargetVariables() {
     INSERT_VARIABLE(Libs)
     INSERT_VARIABLE(LibDirs)
     INSERT_VARIABLE(Metadata)
+    INSERT_VARIABLE(ModuleName)
     INSERT_VARIABLE(OutputDir)
     INSERT_VARIABLE(OutputExtension)
     INSERT_VARIABLE(OutputName)
@@ -2456,9 +2553,11 @@ const VariableInfoMap& GetTargetVariables() {
     INSERT_VARIABLE(XcodeTestApplicationName)
     INSERT_VARIABLE(TargetXcodePlatform)
     INSERT_VARIABLE(Testonly)
+    INSERT_VARIABLE(Validations)
     INSERT_VARIABLE(Visibility)
     INSERT_VARIABLE(WalkKeys)
     INSERT_VARIABLE(WeakFrameworks)
+    INSERT_VARIABLE(WeakLibraries)
     INSERT_VARIABLE(WriteOutputConversion)
     INSERT_VARIABLE(WriteValueContents)
     INSERT_VARIABLE(WriteRuntimeDeps)

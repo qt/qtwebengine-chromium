@@ -42,7 +42,7 @@ TEST_F(OutputConversionTest, ListLines) {
   ConvertValueToOutput(settings(), output, Value(nullptr, "list lines"), result,
                        &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ("\nfoo\n\nbar\n", result.str());
 }
 
@@ -53,7 +53,7 @@ TEST_F(OutputConversionTest, String) {
   ConvertValueToOutput(settings(), output, Value(nullptr, "string"), result,
                        &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "foo bar");
 }
 
@@ -64,7 +64,7 @@ TEST_F(OutputConversionTest, StringInt) {
   ConvertValueToOutput(settings(), output, Value(nullptr, "string"), result,
                        &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "\"6\"");
 }
 
@@ -75,7 +75,7 @@ TEST_F(OutputConversionTest, StringBool) {
   ConvertValueToOutput(settings(), output, Value(nullptr, "string"), result,
                        &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "\"true\"");
 }
 
@@ -89,7 +89,7 @@ TEST_F(OutputConversionTest, StringList) {
   ConvertValueToOutput(settings(), output, Value(nullptr, "string"), result,
                        &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "\"[\"foo\", \"bar\", 6]\"");
 }
 
@@ -106,7 +106,7 @@ TEST_F(OutputConversionTest, StringScope) {
   std::ostringstream result;
   ConvertValueToOutput(settings(), Value(nullptr, std::move(new_scope)),
                        Value(nullptr, "string"), result, &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "\"{\n  _private = \"hello\"\n  v = \"hello\"\n}\"");
 }
 
@@ -117,7 +117,7 @@ TEST_F(OutputConversionTest, ValueString) {
   ConvertValueToOutput(settings(), output, Value(nullptr, "value"), result,
                        &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "\"foo bar\"");
 }
 
@@ -128,7 +128,7 @@ TEST_F(OutputConversionTest, ValueInt) {
   ConvertValueToOutput(settings(), output, Value(nullptr, "value"), result,
                        &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "6");
 }
 
@@ -139,7 +139,7 @@ TEST_F(OutputConversionTest, ValueBool) {
   ConvertValueToOutput(settings(), output, Value(nullptr, "value"), result,
                        &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "true");
 }
 
@@ -153,7 +153,7 @@ TEST_F(OutputConversionTest, ValueList) {
   ConvertValueToOutput(settings(), output, Value(nullptr, "value"), result,
                        &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "[\"foo\", \"bar\", 6]");
 }
 
@@ -170,7 +170,7 @@ TEST_F(OutputConversionTest, ValueScope) {
   std::ostringstream result;
   ConvertValueToOutput(settings(), Value(nullptr, std::move(new_scope)),
                        Value(nullptr, "value"), result, &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "{\n  _private = \"hello\"\n  v = \"hello\"\n}");
 }
 
@@ -216,7 +216,7 @@ TEST_F(OutputConversionTest, JSON) {
   std::ostringstream result;
   ConvertValueToOutput(settings(), Value(nullptr, std::move(new_scope)),
                        Value(nullptr, "json"), result, &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), expected);
 }
 
@@ -224,7 +224,7 @@ TEST_F(OutputConversionTest, ValueEmpty) {
   Err err;
   std::ostringstream result;
   ConvertValueToOutput(settings(), Value(), Value(nullptr, ""), result, &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "<void>");
 }
 
@@ -234,7 +234,7 @@ TEST_F(OutputConversionTest, DefaultValue) {
   std::ostringstream result;
   ConvertValueToOutput(settings(), output, Value(nullptr, ""), result, &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(result.str(), "foo bar");
 }
 
@@ -248,7 +248,7 @@ TEST_F(OutputConversionTest, DefaultListLines) {
   std::ostringstream result;
   ConvertValueToOutput(settings(), output, Value(nullptr, ""), result, &err);
 
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ("\nfoo\n\nbar\n", result.str());
 }
 
@@ -257,14 +257,13 @@ TEST_F(OutputConversionTest, ReverseString) {
   std::string input("foo bar");
   Value result = ConvertInputToValue(settings(), input, nullptr,
                                      Value(nullptr, "string"), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   std::ostringstream reverse;
   ConvertValueToOutput(settings(), result, Value(nullptr, "string"), reverse,
                        &err);
-  EXPECT_FALSE(err.has_error());
-  EXPECT_EQ(reverse.str(), input)
-      << "actual: " << reverse.str() << "expected:" << input;
+  EXPECT_SUCCESS(err);
+  EXPECT_EQ(reverse.str(), input);
 }
 
 TEST_F(OutputConversionTest, ReverseListLines) {
@@ -272,14 +271,13 @@ TEST_F(OutputConversionTest, ReverseListLines) {
   std::string input("\nfoo\nbar\n\n");
   Value result = ConvertInputToValue(settings(), input, nullptr,
                                      Value(nullptr, "list lines"), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   std::ostringstream reverse;
   ConvertValueToOutput(settings(), result, Value(nullptr, "list lines"),
                        reverse, &err);
-  EXPECT_FALSE(err.has_error());
-  EXPECT_EQ(reverse.str(), input)
-      << "actual: " << reverse.str() << "expected:" << input;
+  EXPECT_SUCCESS(err);
+  EXPECT_EQ(reverse.str(), input);
 }
 
 TEST_F(OutputConversionTest, ReverseValueString) {
@@ -287,14 +285,13 @@ TEST_F(OutputConversionTest, ReverseValueString) {
   std::string input("\"str\"");
   Value result = ConvertInputToValue(settings(), input, nullptr,
                                      Value(nullptr, "value"), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   std::ostringstream reverse;
   ConvertValueToOutput(settings(), result, Value(nullptr, "value"), reverse,
                        &err);
-  EXPECT_FALSE(err.has_error());
-  EXPECT_EQ(reverse.str(), input)
-      << "actual: " << reverse.str() << "expected:" << input;
+  EXPECT_SUCCESS(err);
+  EXPECT_EQ(reverse.str(), input);
 }
 
 TEST_F(OutputConversionTest, ReverseValueInt) {
@@ -302,14 +299,13 @@ TEST_F(OutputConversionTest, ReverseValueInt) {
   std::string input("6");
   Value result = ConvertInputToValue(settings(), input, nullptr,
                                      Value(nullptr, "value"), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   std::ostringstream reverse;
   ConvertValueToOutput(settings(), result, Value(nullptr, "value"), reverse,
                        &err);
-  EXPECT_FALSE(err.has_error());
-  EXPECT_EQ(reverse.str(), input)
-      << "actual: " << reverse.str() << "expected:" << input;
+  EXPECT_SUCCESS(err);
+  EXPECT_EQ(reverse.str(), input);
 }
 
 TEST_F(OutputConversionTest, ReverseValueList) {
@@ -317,14 +313,13 @@ TEST_F(OutputConversionTest, ReverseValueList) {
   std::string input("[\"a\", 5]");
   Value result = ConvertInputToValue(settings(), input, nullptr,
                                      Value(nullptr, "value"), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   std::ostringstream reverse;
   ConvertValueToOutput(settings(), result, Value(nullptr, "value"), reverse,
                        &err);
-  EXPECT_FALSE(err.has_error());
-  EXPECT_EQ(reverse.str(), input)
-      << "actual: " << reverse.str() << "expected:" << input;
+  EXPECT_SUCCESS(err);
+  EXPECT_EQ(reverse.str(), input);
 }
 
 TEST_F(OutputConversionTest, ReverseValueDict) {
@@ -332,25 +327,24 @@ TEST_F(OutputConversionTest, ReverseValueDict) {
   std::string input("  a = 5\n  b = \"foo\"\n  c = 7\n");
   Value result = ConvertInputToValue(settings(), input, nullptr,
                                      Value(nullptr, "scope"), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   std::ostringstream reverse;
   ConvertValueToOutput(settings(), result, Value(nullptr, "scope"), reverse,
                        &err);
-  EXPECT_FALSE(err.has_error());
-  EXPECT_EQ(reverse.str(), input)
-      << "actual: " << reverse.str() << "expected:" << input;
+  EXPECT_SUCCESS(err);
+  EXPECT_EQ(reverse.str(), input);
 }
 
 TEST_F(OutputConversionTest, ReverseValueEmpty) {
   Err err;
   Value result = ConvertInputToValue(settings(), "", nullptr,
                                      Value(nullptr, "value"), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   std::ostringstream reverse;
   ConvertValueToOutput(settings(), result, Value(nullptr, "value"), reverse,
                        &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   EXPECT_EQ(reverse.str(), "");
 }

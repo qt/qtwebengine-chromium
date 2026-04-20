@@ -6,6 +6,7 @@
 
 #include "gn/config.h"
 #include "gn/config_values_extractors.h"
+#include "gn/config_values_generator.h"
 #include "gn/target.h"
 #include "gn/test_with_scope.h"
 #include "util/test/test.h"
@@ -146,4 +147,58 @@ TEST(ConfigValuesExtractors, IncludeOrdering) {
   EXPECT_EQ(include_out.str(),
             "//target/ //target/config/ //target/all/ //target/direct/ "
             "//dep1/all/ //dep2/all/ //dep1/direct/ ");
+}
+
+TEST(ConfigValuesGenerator, DefinesWithNewlineError) {
+  TestWithScope setup;
+  Err err;
+
+  // Set up a scope with a defines list containing a newline.
+  Value defines_value(nullptr, Value::LIST);
+  defines_value.list_value().push_back(Value(nullptr, "GOOD"));
+  defines_value.list_value().push_back(Value(nullptr, "BAD=a\nb"));
+  setup.scope()->SetValue("defines", defines_value, nullptr);
+
+  ConfigValues config_values;
+  ConfigValuesGenerator gen(&config_values, setup.scope(), SourceDir("//foo/"),
+                            &err);
+  gen.Run();
+  EXPECT_TRUE(err.has_error());
+  EXPECT_EQ(err.message(), "Newlines in defines values are not supported.");
+  EXPECT_EQ(err.help_text(), "The value `BAD=a\nb` contains a newline.");
+}
+
+TEST(ConfigValuesGenerator, CflagsWithNewlineError) {
+  TestWithScope setup;
+  Err err;
+
+  Value cflags_value(nullptr, Value::LIST);
+  cflags_value.list_value().push_back(Value(nullptr, "-Dfoo\nbar"));
+  setup.scope()->SetValue("cflags", cflags_value, nullptr);
+
+  ConfigValues config_values;
+  ConfigValuesGenerator gen(&config_values, setup.scope(), SourceDir("//foo/"),
+                            &err);
+  gen.Run();
+  EXPECT_TRUE(err.has_error());
+  EXPECT_EQ(err.message(), "Newlines in cflags values are not supported.");
+}
+
+TEST(ConfigValuesGenerator, AdditionalOutputs) {
+  TestWithScope setup;
+  Err err;
+
+  Value outputs_value(nullptr, Value::LIST);
+  outputs_value.list_value().push_back(
+      Value(nullptr, "{{target_out_dir}}/{{source_name_part}}.dwo"));
+  setup.scope()->SetValue("c_additional_outputs", outputs_value, nullptr);
+
+  ConfigValues config_values;
+  ConfigValuesGenerator gen(&config_values, setup.scope(), SourceDir("//foo/"),
+                            &err);
+  gen.Run();
+  EXPECT_SUCCESS(err);
+  ASSERT_EQ(config_values.c_additional_outputs().size(), 1u);
+  EXPECT_EQ(config_values.c_additional_outputs()[0].AsString(),
+            "{{target_out_dir}}/{{source_name_part}}.dwo");
 }

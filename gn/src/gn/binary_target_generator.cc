@@ -14,7 +14,9 @@
 #include "gn/rust_variables.h"
 #include "gn/scope.h"
 #include "gn/settings.h"
+#include "gn/source_file.h"
 #include "gn/swift_values_generator.h"
+#include "gn/target.h"
 #include "gn/value_extractors.h"
 #include "gn/variables.h"
 
@@ -68,6 +70,12 @@ void BinaryTargetGenerator::DoRun() {
     return;
 
   if (!ValidateSources())
+    return;
+
+  if (!FillModuleName())
+    return;
+
+  if (!FillModuleType())
     return;
 
   if (target_->source_types_used().RustSourceUsed()) {
@@ -269,5 +277,60 @@ bool BinaryTargetGenerator::ValidateSources() {
             "compilation-compatible (e.g. Objective C and C++).");
     return false;
   }
+  return true;
+}
+
+bool BinaryTargetGenerator::FillModuleName() {
+  const Value* value = scope_->GetValue(variables::kModuleName, true);
+  if (!value)
+    return true;
+  if (!value->VerifyTypeIs(Value::STRING, err_))
+    return false;
+  target_->set_module_name(value->string_value());
+  return true;
+}
+
+bool BinaryTargetGenerator::FillModuleType() {
+  // Put this first so it gets marked as used even if it's unnecessary.
+  const Value* generate_modulemap_val =
+      scope_->GetValue(variables::kGenerateModulemap, true);
+
+  Target::ModuleType type;
+  type.set(Target::HAS_MODULEMAP);
+  if (target_->source_types_used().Get(SourceFile::SOURCE_MODULEMAP)) {
+    target_->set_module_type(type);
+    return true;
+  }
+
+  if (!generate_modulemap_val) {
+    return true;
+  }
+
+  generate_modulemap_val->VerifyTypeIs(Value::STRING, err_);
+  if (err_->has_error()) {
+    return false;
+  }
+  auto value = generate_modulemap_val->string_value();
+  type.set(Target::MODULEMAP_IS_GENERATED);
+  if (value == "textual") {
+    type.set(Target::MODULEMAP_IS_TEXTUAL);
+  } else if (value == "none" || value == "") {
+    return true;
+  } else {
+    *err_ = Err(*generate_modulemap_val,
+                "Invalid value for generate_modulemap. Expected \"textual\" or "
+                "\"none\"");
+    return false;
+  }
+
+  // Even if generate_modulemap was explicitly set, if we're compiling non-c++
+  // code, we shouldn't mark it as a module.
+  if (target_->source_types_used().Get(SourceFile::SOURCE_CPP) ||
+      (target_->all_headers_public()
+           ? target_->source_types_used().Get(SourceFile::SOURCE_H)
+           : !target_->public_headers().empty())) {
+    target_->set_module_type(type);
+  }
+
   return true;
 }

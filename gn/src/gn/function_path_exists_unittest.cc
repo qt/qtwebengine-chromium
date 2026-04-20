@@ -17,7 +17,7 @@ bool RunPathExists(Scope* scope, const std::string& path) {
 
   FunctionCallNode function_call;
   Value result = functions::RunPathExists(scope, &function_call, args, &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
   return !err.has_error() && result.boolean_value();
 }
 }  // namespace

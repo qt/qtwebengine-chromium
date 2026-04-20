@@ -26,6 +26,7 @@ CTool::CTool(const char* n)
   CHECK(ValidateName(n));
   set_framework_switch("-framework ");
   set_weak_framework_switch("-weak_framework ");
+  set_weak_library_switch("-weak_library ");
   set_framework_dir_switch("-F");
   set_lib_dir_switch("-L");
   set_lib_switch("-l");

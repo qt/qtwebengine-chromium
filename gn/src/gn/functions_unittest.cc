@@ -22,7 +22,7 @@ TEST(Functions, Assert) {
   };
   for (const auto& assert_pass_example : assert_pass_examples) {
     TestParseInput input(assert_pass_example);
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
     ASSERT_FALSE(err.has_error()) << assert_pass_example;
@@ -31,7 +31,7 @@ TEST(Functions, Assert) {
   // Verify case where the assertion fails, with no message.
   {
     TestParseInput input("assert(false)");
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
     ASSERT_TRUE(err.has_error());
@@ -41,7 +41,7 @@ TEST(Functions, Assert) {
   // Verify case where the assertion fails, with a message.
   {
     TestParseInput input("assert(false, \"What failed\")");
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
     ASSERT_TRUE(err.has_error());
@@ -63,7 +63,7 @@ TEST(Functions, Assert) {
   };
   for (const auto& bad_usage_example : bad_usage_examples) {
     TestParseInput input(bad_usage_example);
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
     ASSERT_TRUE(err.has_error()) << bad_usage_example;
@@ -142,7 +142,7 @@ TEST(Functions, FunctionsWithBlock) {
   TestParseInput print_no_scope("print(6)");
   EXPECT_FALSE(print_no_scope.has_error());
   Value result = print_no_scope.parsed()->Execute(setup.scope(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   // Passing a scope should pass parsing (it doesn't know about what kind of
   // function it is) and then throw an error during execution.
@@ -156,7 +156,7 @@ TEST(Functions, FunctionsWithBlock) {
   TestParseInput defined_no_scope("defined(foo)");
   EXPECT_FALSE(defined_no_scope.has_error());
   result = defined_no_scope.parsed()->Execute(setup.scope(), &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   // A block to defined should fail.
   TestParseInput defined_with_scope("defined(foo) {}");
@@ -186,11 +186,11 @@ TEST(Functions, SplitList) {
       // Rounding.
       "out6 = split_list([1, 2, 3, 4, 5, 6], 4)\n"
       "print(\"rounding = $out6\")\n");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ(
       "empty = [[]] [[], [], []]\n"
@@ -198,6 +198,50 @@ TEST(Functions, SplitList) {
       "many = [[1, 2, 3, 4, 5], [6, 7, 8, 9]]\n"
       "rounding = [[1, 2], [3, 4], [5], [6]]\n",
       setup.print_output());
+}
+
+TEST(Functions, StringHash) {
+  TestWithScope setup;
+
+  // Verify output when string_hash() is called correctly.
+  {
+    TestParseInput input(R"gn(
+        print("<" + string_hash("abc") + ">")
+
+        # Empty string
+        print("<" + string_hash("") + ">")
+        )gn");
+    ASSERT_SUCCESS(input);
+
+    Err err;
+    input.parsed()->Execute(setup.scope(), &err);
+    ASSERT_SUCCESS(err);
+
+    EXPECT_EQ(
+        "<ba7816bf>\n"
+        "<e3b0c442>\n",
+        setup.print_output())
+        << setup.print_output();
+  }
+
+  // Verify usage errors are detected.
+  std::vector<std::string> bad_usage_examples = {
+      // Number of arguments.
+      R"gn(string_hash())gn",
+      R"gn(string_hash(1,2))gn",
+
+      // Argument type.
+      R"gn(string_hash(1))gn",
+      R"gn(string_hash(["oops"]))gn",
+  };
+  for (const auto& bad_usage_example : bad_usage_examples) {
+    TestParseInput input(bad_usage_example);
+    ASSERT_SUCCESS(input);
+
+    Err err;
+    input.parsed()->Execute(setup.scope(), &err);
+    ASSERT_TRUE(err.has_error()) << bad_usage_example;
+  }
 }
 
 TEST(Functions, StringJoin) {
@@ -230,11 +274,11 @@ TEST(Functions, StringJoin) {
         # Empty string list elements and separator
         print(string_join("", ["", "", ""]))
         )gn");
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
 
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
-    ASSERT_FALSE(err.has_error()) << err.message();
+    ASSERT_SUCCESS(err);
 
     EXPECT_EQ(
         "<>\n"
@@ -268,7 +312,7 @@ TEST(Functions, StringJoin) {
   };
   for (const auto& bad_usage_example : bad_usage_examples) {
     TestParseInput input(bad_usage_example);
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
 
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
@@ -295,11 +339,11 @@ TEST(Functions, StringReplace) {
       // Handle overlapping occurrences.
       "out4 = string_replace(\"aaa\", \"aa\", \"b\")\n"
       "print(out4)\n");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ(
       "addcc\n"
@@ -349,11 +393,11 @@ TEST(Functions, StringSplit) {
         print(string_split(".x.x.x.", ".x."))  # Self-overlapping separators 1
         print(string_split("x.x.x.", ".x."))   # Self-overlapping separators 2
         )gn");
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
 
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
-    ASSERT_FALSE(err.has_error()) << err.message();
+    ASSERT_SUCCESS(err);
 
     EXPECT_EQ(
         // Split on all whitespace: empty string.
@@ -411,7 +455,7 @@ TEST(Functions, StringSplit) {
   };
   for (const auto& bad_usage_example : bad_usage_examples) {
     TestParseInput input(bad_usage_example);
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
     Err err;
     input.parsed()->Execute(setup.scope(), &err);
     ASSERT_TRUE(err.has_error()) << bad_usage_example;
@@ -444,7 +488,7 @@ TEST(Functions, DeclareArgs) {
       )");
   err = Err();
   reading_from_outside_call.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
 
   TestParseInput reading_from_different_call(R"(
       declare_args() {
@@ -460,14 +504,14 @@ TEST(Functions, DeclareArgs) {
   err = Err();
   TestWithScope setup2;
   reading_from_different_call.parsed()->Execute(setup2.scope(), &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
 }
 
 TEST(Functions, NotNeeded) {
   TestWithScope setup;
 
   TestParseInput input("not_needed({ a = 1 }, \"*\")");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
@@ -486,11 +530,11 @@ TEST(Template, PrintStackTraceWithOneTemplate) {
       "foo(\"lala\") {\n"
       "  foo_value = 42\n"
       "}");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ(
       "lala\n"
@@ -505,7 +549,7 @@ TEST(Template, PrintStackTraceWithOneTemplate) {
 TEST(Template, PrintStackTraceWithNoTemplates) {
   TestWithScope setup;
   TestParseInput input("print_stack_trace()\n");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
@@ -534,7 +578,7 @@ TEST(Template, PrintStackTraceWithNestedTemplates) {
       "baz(\"lala\") {\n"
       "  bar = 42\n"
       "}");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
@@ -569,7 +613,7 @@ TEST(Template, PrintStackTraceWithNonTemplateScopes) {
       "baz(\"lala\") {\n"
       "  bar = 42\n"
       "}");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
@@ -606,7 +650,7 @@ TEST(Template, PrintStackTraceWithNonTemplateScopesBetweenTemplateInvocations) {
       "baz(\"lala\") {\n"
       "  bar = 42\n"
       "}");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
   ASSERT_FALSE(err.has_error()) << err.message() << "\n\n" << err.help_text();
@@ -648,7 +692,7 @@ TEST(Template, PrintStackTraceWithTemplateDefinedWithinATemplate) {
       "baz(\"lala\") {\n"
       "  bar = 42\n"
       "}");
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
   ASSERT_FALSE(err.has_error()) << err.message() << "\n\n" << err.help_text();

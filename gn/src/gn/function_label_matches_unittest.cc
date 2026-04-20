@@ -22,7 +22,7 @@ TEST(LabelMatchesTest, MatchesSubTarget) {
   Err err;
   Value result =
       functions::RunLabelMatches(setup.scope(), &function, args, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(result.type(), Value::BOOLEAN);
   ASSERT_EQ(result.boolean_value(), true);
 }
@@ -42,7 +42,7 @@ TEST(LabelMatchesTest, MatchesTargetInFile) {
   Err err;
   Value result =
       functions::RunLabelMatches(setup.scope(), &function, args, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(result.type(), Value::BOOLEAN);
   ASSERT_EQ(result.boolean_value(), true);
 }
@@ -62,7 +62,7 @@ TEST(LabelMatchesTest, NoMatch) {
   Err err;
   Value result =
       functions::RunLabelMatches(setup.scope(), &function, args, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(result.type(), Value::BOOLEAN);
   ASSERT_EQ(result.boolean_value(), false);
 }

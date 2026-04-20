@@ -754,4 +754,47 @@ TEST_F(AnalyzerTest, TargetAlternateToolchainRefersToSources) {
       "}");
 }
 
+// Tests that a target is marked as affected if its validations are modified.
+TEST_F(AnalyzerTest, TargetRefersToValidations) {
+  std::unique_ptr<Target> t = MakeTarget("//dir", "target_name");
+  Target* t_raw = t.get();
+  std::unique_ptr<Target> v = MakeTarget("//dir", "validation_name");
+  Target* v_raw = v.get();
+  v_raw->set_output_type(Target::ACTION);
+  v_raw->action_values().set_script(SourceFile("//dir/other.py"));
+
+  t_raw->validations().push_back(LabelTargetPair(v.get()));
+
+  builder_.ItemDefined(std::move(t));
+  builder_.ItemDefined(std::move(v));
+
+  // Initially no dependency.
+  RunAnalyzerTest(
+      R"({
+       "files": [ "//dir/script.py" ],
+       "additional_compile_targets": [ "//dir:target_name" ],
+       "test_targets": []
+       })",
+      "{"
+      R"("compile_targets":[],)"
+      R"/("status":"No dependency",)/"
+      R"("test_targets":[])"
+      "}");
+
+  // Now change validation target to use the script.
+  v_raw->action_values().set_script(SourceFile("//dir/script.py"));
+
+  RunAnalyzerTest(
+      R"({
+       "files": [ "//dir/script.py" ],
+       "additional_compile_targets": [ "//dir:target_name" ],
+       "test_targets": []
+       })",
+      "{"
+      R"("compile_targets":["//dir:target_name"],)"
+      R"/("status":"Found dependency",)/"
+      R"("test_targets":[])"
+      "}");
+}
+
 }  // namespace gn_analyzer_unittest

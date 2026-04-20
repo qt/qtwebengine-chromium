@@ -4,9 +4,9 @@
 
 #include "gn/runtime_deps.h"
 
-#include <map>
-#include <set>
+#include <optional>
 #include <sstream>
+#include <unordered_map>
 
 #include "base/command_line.h"
 #include "base/files/file_util.h"
@@ -28,41 +28,28 @@ namespace {
 
 using RuntimeDepsVector = std::vector<std::pair<OutputFile, const Target*>>;
 
-// Adds the given file to the deps list if it hasn't already been listed in
-// the found_files list. Updates the list.
-void AddIfNew(const OutputFile& output_file,
-              const Target* source,
-              RuntimeDepsVector* deps,
-              std::set<OutputFile>* found_file) {
-  if (found_file->find(output_file) != found_file->end())
-    return;  // Already there.
-  deps->push_back(std::make_pair(output_file, source));
+// Returns an OutputFile given a string that looks like a source.
+std::string SourceAsOutputFile(const std::string& str, const Target* source) {
+  return RebasePath(str, source->settings()->build_settings()->build_dir(),
+                    source->settings()->build_settings()->root_path_utf8());
 }
 
-// Automatically converts a string that looks like a source to an OutputFile.
-void AddIfNew(const std::string& str,
-              const Target* source,
-              RuntimeDepsVector* deps,
-              std::set<OutputFile>* found_file) {
-  OutputFile output_file(
-      RebasePath(str, source->settings()->build_settings()->build_dir(),
-                 source->settings()->build_settings()->root_path_utf8()));
-  AddIfNew(output_file, source, deps, found_file);
-}
-
-// To avoid duplicate traversals of targets, or duplicating output files that
-// might be listed by more than one target, the set of targets and output files
-// that have been found so far is passed. The "value" of the seen_targets map
-// is a boolean indicating if the seen dep was a data dep (true = data_dep).
-// data deps add more stuff, so we will want to revisit a target if it's a
-// data dependency and we've previously only seen it as a regular dep.
-void RecursiveCollectRuntimeDeps(const Target* target,
-                                 bool is_target_data_dep,
-                                 RuntimeDepsVector* deps,
-                                 std::map<const Target*, bool>* seen_targets,
-                                 std::set<OutputFile>* found_files) {
-  const auto& found_seen_target = seen_targets->find(target);
-  if (found_seen_target != seen_targets->end()) {
+// Runs `on_file` for each output file and target. To avoid duplicate traversals
+// of targets, the set of targets that have been found so far is passed. The
+// "value" of the seen_targets map is a boolean indicating if the seen dep was a
+// data dep (true = data_dep). data deps add more stuff, so we will want to
+// revisit a target if it's a data dependency and we've previously only seen it
+// as a regular dep. `on_file` may be called more than once for the same output
+// file.
+template <typename F>
+void RecursiveCollectRuntimeDeps(
+    const Target* target,
+    bool is_target_data_dep,
+    F&& on_file,
+    std::unordered_map<const Target*, bool>* seen_targets) {
+  auto [found_seen_target, inserted] =
+      seen_targets->try_emplace(target, is_target_data_dep);
+  if (!inserted) {
     // Already visited.
     if (found_seen_target->second || !is_target_data_dep) {
       // Already visited as a data dep, or the current dep is not a data
@@ -71,8 +58,8 @@ void RecursiveCollectRuntimeDeps(const Target* target,
     }
     // In the else case, the previously seen target was a regular dependency
     // and we'll now process it as a data dependency.
+    found_seen_target->second = is_target_data_dep;
   }
-  (*seen_targets)[target] = is_target_data_dep;
 
   // Add the main output file for executables, shared libraries, and
   // loadable modules.
@@ -80,12 +67,12 @@ void RecursiveCollectRuntimeDeps(const Target* target,
       target->output_type() == Target::LOADABLE_MODULE ||
       target->output_type() == Target::SHARED_LIBRARY) {
     for (const auto& runtime_output : target->runtime_outputs())
-      AddIfNew(runtime_output, target, deps, found_files);
+      on_file(runtime_output.value(), target);
   }
 
   // Add all data files.
   for (const auto& file : target->data())
-    AddIfNew(file, target, deps, found_files);
+    on_file(SourceAsOutputFile(file, target), target);
 
   // Actions/copy have all outputs considered when the're a data dep.
   if (is_target_data_dep && (target->output_type() == Target::ACTION ||
@@ -94,13 +81,12 @@ void RecursiveCollectRuntimeDeps(const Target* target,
     std::vector<SourceFile> outputs;
     target->action_values().GetOutputsAsSourceFiles(target, &outputs);
     for (const auto& output_file : outputs)
-      AddIfNew(output_file.value(), target, deps, found_files);
+      on_file(SourceAsOutputFile(output_file.value(), target), target);
   }
 
   // Data dependencies.
   for (const auto& dep_pair : target->data_deps()) {
-    RecursiveCollectRuntimeDeps(dep_pair.ptr, true, deps, seen_targets,
-                                found_files);
+    RecursiveCollectRuntimeDeps(dep_pair.ptr, true, on_file, seen_targets);
   }
 
   // Do not recurse into bundle targets. A bundle's dependencies should be
@@ -108,7 +94,7 @@ void RecursiveCollectRuntimeDeps(const Target* target,
   if (target->output_type() == Target::CREATE_BUNDLE) {
     SourceDir bundle_root_dir =
         target->bundle_data().GetBundleRootDirOutputAsDir(target->settings());
-    AddIfNew(bundle_root_dir.value(), target, deps, found_files);
+    on_file(SourceAsOutputFile(bundle_root_dir.value(), target), target);
     return;
   }
 
@@ -123,9 +109,22 @@ void RecursiveCollectRuntimeDeps(const Target* target,
       // unless it were listed in data deps.
       continue;
     }
-    RecursiveCollectRuntimeDeps(dep_pair.ptr, false, deps, seen_targets,
-                                found_files);
+    RecursiveCollectRuntimeDeps(dep_pair.ptr, false, on_file, seen_targets);
   }
+}
+
+// Streams the output file for all runtime deps of `target` to `out`.
+void StreamRuntimeDeps(const Target* target, std::ostream& out) {
+  std::unordered_map<const Target*, bool> seen_targets;
+
+  // The initial target is not considered a data dependency so that actions's
+  // outputs (if the current target is an action) are not automatically
+  // considered data deps.
+  auto on_file = [&out](const std::string& output_file,
+                        const Target* target) -> void {
+    out << output_file << std::endl;
+  };
+  RecursiveCollectRuntimeDeps(target, false, on_file, &seen_targets);
 }
 
 bool CollectRuntimeDepsFromFlag(const BuildSettings* build_settings,
@@ -184,11 +183,9 @@ bool CollectRuntimeDepsFromFlag(const BuildSettings* build_settings,
       // Force the first output for shared-library-type linker outputs since
       // the dependency output files might not be the main output.
       CHECK(!target->computed_outputs().empty());
-      output_file =
-          OutputFile(target->computed_outputs()[0].value() + extension);
+      output_file.emplace(target->computed_outputs()[0].value() + extension);
     } else if (target->has_dependency_output_file()) {
-      output_file =
-          OutputFile(target->dependency_output_file().value() + extension);
+      output_file.emplace(target->dependency_output_file().value() + extension);
     } else {
       // If there is no dependency_output_file, this target's dependency output
       // is either a phony alias or was elided entirely (due to lack of real
@@ -199,7 +196,7 @@ bool CollectRuntimeDepsFromFlag(const BuildSettings* build_settings,
       output_file->value().append(extension);
     }
     if (output_file)
-      files_to_write->push_back(std::make_pair(*output_file, target));
+      files_to_write->emplace_back(*output_file, target);
   }
   return true;
 }
@@ -214,8 +211,7 @@ bool WriteRuntimeDepsFile(const OutputFile& output_file,
 
   StringOutputBuffer storage;
   std::ostream contents(&storage);
-  for (const auto& pair : ComputeRuntimeDeps(target))
-    contents << pair.first.value() << std::endl;
+  StreamRuntimeDeps(target, contents);
 
   ScopedTrace trace(TraceItem::TRACE_FILE_WRITE, output_as_source.value());
   return storage.WriteToFileIfChanged(data_deps_file, err);
@@ -294,37 +290,48 @@ Multiple outputs
 
 RuntimeDepsVector ComputeRuntimeDeps(const Target* target) {
   RuntimeDepsVector result;
-  std::map<const Target*, bool> seen_targets;
-  std::set<OutputFile> found_files;
+  std::unordered_map<const Target*, bool> seen_targets;
 
+  auto on_file = [&result](const std::string& output_file,
+                           const Target* target) {
+    result.emplace_back(OutputFile(output_file), target);
+  };
   // The initial target is not considered a data dependency so that actions's
   // outputs (if the current target is an action) are not automatically
   // considered data deps.
-  RecursiveCollectRuntimeDeps(target, false, &result, &seen_targets,
-                              &found_files);
+  RecursiveCollectRuntimeDeps(target, false, on_file, &seen_targets);
   return result;
 }
 
 bool WriteRuntimeDepsFilesIfNecessary(const BuildSettings* build_settings,
-                                      const Builder& builder,
-                                      Err* err) {
+                                      const Builder& builder) {
   RuntimeDepsVector files_to_write;
+  Err err;
   if (!CollectRuntimeDepsFromFlag(build_settings, builder, &files_to_write,
-                                  err))
+                                  &err)) {
+    err.PrintToStdout();
     return false;
+  }
+  for (auto& entry : files_to_write) {
+    g_scheduler->ScheduleWork(
+        [output_file = std::move(entry.first), target = entry.second]() {
+          Err err;
+          if (!WriteRuntimeDepsFile(output_file, target, &err)) {
+            g_scheduler->FailWithError(err);
+          }
+        });
+  }
 
   // Files scheduled by write_runtime_deps.
   for (const Target* target : g_scheduler->GetWriteRuntimeDepsTargets()) {
-    files_to_write.push_back(
-        std::make_pair(target->write_runtime_deps_output(), target));
+    g_scheduler->ScheduleWork(
+        [output_file = target->write_runtime_deps_output(), target]() {
+          Err err;
+          if (!WriteRuntimeDepsFile(output_file, target, &err)) {
+            g_scheduler->FailWithError(err);
+          }
+        });
   }
 
-  for (const auto& entry : files_to_write) {
-    // Currently this writes all runtime deps files sequentially. We generally
-    // expect few of these. We can run this on the worker pool if it looks
-    // like it's talking a long time.
-    if (!WriteRuntimeDepsFile(entry.first, entry.second, err))
-      return false;
-  }
-  return true;
+  return g_scheduler->Run();
 }

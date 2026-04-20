@@ -34,15 +34,10 @@ class OutputFile {
   SourceFile AsSourceFile(const BuildSettings* build_settings) const;
   SourceDir AsSourceDir(const BuildSettings* build_settings) const;
 
-  bool operator==(const OutputFile& other) const {
-    return value_ == other.value_;
-  }
-  bool operator!=(const OutputFile& other) const {
-    return value_ != other.value_;
-  }
-  bool operator<(const OutputFile& other) const {
-    return value_ < other.value_;
-  }
+  bool operator==(const OutputFile& other) const = default;
+  bool operator!=(const OutputFile& other) const = default;
+  bool operator<(const OutputFile& other) const = default;
+  std::strong_ordering operator<=>(const OutputFile& other) const = default;
 
  private:
   std::string value_;

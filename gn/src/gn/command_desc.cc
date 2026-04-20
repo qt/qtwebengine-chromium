@@ -266,6 +266,7 @@ using DescHandlerFunc = void (*)(const std::string& name,
 std::map<std::string, DescHandlerFunc> GetHandlers() {
   return {{"type", LabelHandler},
           {"toolchain", LabelHandler},
+          {variables::kValidations, DefaultHandler},
           {variables::kVisibility, VisibilityHandler},
           {variables::kMetadata, MetadataHandler},
           {variables::kTestonly, DefaultHandler},
@@ -303,6 +304,7 @@ std::map<std::string, DescHandlerFunc> GetHandlers() {
           {variables::kRebase, DefaultHandler},
           {variables::kWalkKeys, DefaultHandler},
           {variables::kWeakFrameworks, DefaultHandler},
+          {variables::kWeakLibraries, DefaultHandler},
           {variables::kWriteOutputConversion, DefaultHandler},
           {variables::kRustCrateName, DefaultHandler},
           {variables::kRustCrateRoot, DefaultHandler},
@@ -396,6 +398,7 @@ bool PrintTarget(const Target* target,
   HandleProperty(variables::kPrecompiledHeader, handler_map, v, dict);
   HandleProperty(variables::kPrecompiledSource, handler_map, v, dict);
   HandleProperty(variables::kDeps, handler_map, v, dict);
+  HandleProperty(variables::kValidations, handler_map, v, dict);
   HandleProperty(variables::kLibs, handler_map, v, dict);
   HandleProperty(variables::kLibDirs, handler_map, v, dict);
   HandleProperty(variables::kDataKeys, handler_map, v, dict);
@@ -403,6 +406,7 @@ bool PrintTarget(const Target* target,
   HandleProperty(variables::kRustflags, handler_map, v, dict);
   HandleProperty(variables::kWalkKeys, handler_map, v, dict);
   HandleProperty(variables::kWeakFrameworks, handler_map, v, dict);
+  HandleProperty(variables::kWeakLibraries, handler_map, v, dict);
   HandleProperty(variables::kWriteOutputConversion, handler_map, v, dict);
 
 #undef HandleProperty
@@ -467,6 +471,7 @@ bool PrintConfig(const Config* config,
   HandleProperty(variables::kPrecompiledSource, handler_map, v, dict);
   HandleProperty(variables::kRustflags, handler_map, v, dict);
   HandleProperty(variables::kWeakFrameworks, handler_map, v, dict);
+  HandleProperty(variables::kWeakLibraries, handler_map, v, dict);
 
 #undef HandleProperty
 
@@ -526,9 +531,11 @@ Possibilities for <what to show>
   script
   sources
   testonly
+  validations
   visibility
   walk_keys
   weak_frameworks
+  weak_libraries
 
   runtime_deps
       Compute all runtime deps for the given target. This is a computed list

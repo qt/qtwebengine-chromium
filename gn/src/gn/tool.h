@@ -5,11 +5,14 @@
 #ifndef TOOLS_GN_TOOL_H_
 #define TOOLS_GN_TOOL_H_
 
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "base/logging.h"
 #include "gn/label.h"
 #include "gn/label_ptr.h"
+#include "gn/output_file.h"
 #include "gn/scope.h"
 #include "gn/source_file.h"
 #include "gn/substitution_list.h"
@@ -137,6 +140,14 @@ class Tool {
     weak_framework_switch_ = std::move(s);
   }
 
+  const std::string& weak_library_switch() const {
+    return weak_library_switch_;
+  }
+  void set_weak_library_switch(std::string s) {
+    DCHECK(!complete_);
+    weak_library_switch_ = std::move(s);
+  }
+
   const std::string& framework_dir_switch() const {
     return framework_dir_switch_;
   }
@@ -216,6 +227,16 @@ class Tool {
   const LabelPtrPair<Pool>& pool() const { return pool_; }
   void set_pool(LabelPtrPair<Pool> pool) { pool_ = std::move(pool); }
 
+  const std::vector<SourceFile>& inputs() const { return inputs_; }
+  void set_inputs(std::vector<SourceFile> inputs) {
+    DCHECK(!complete_);
+    inputs_ = std::move(inputs);
+  }
+
+  std::optional<OutputFile> inputs_phony_or_file(
+      std::string_view rule_prefix,
+      const BuildSettings& build_settings) const;
+
   // Other functions ----------------------------------------------------------
 
   // Function for the above override to call to complete the tool.
@@ -269,6 +290,7 @@ class Tool {
                  LabelPtrPair<Pool>* field,
                  Err* err);
   bool ReadOutputExtension(Scope* scope, Err* err);
+  bool ReadInputs(Scope* scope, Err* err);
 
   const ParseNode* defined_from_ = nullptr;
   const char* name_ = nullptr;
@@ -281,6 +303,7 @@ class Tool {
   SubstitutionPattern description_;
   std::string framework_switch_;
   std::string weak_framework_switch_;
+  std::string weak_library_switch_;
   std::string framework_dir_switch_;
   std::string lib_switch_;
   std::string lib_dir_switch_;
@@ -294,6 +317,7 @@ class Tool {
   SubstitutionPattern rspfile_;
   SubstitutionPattern rspfile_content_;
   LabelPtrPair<Pool> pool_;
+  std::vector<SourceFile> inputs_;
 
   bool complete_ = false;
 

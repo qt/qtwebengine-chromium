@@ -4,7 +4,9 @@
 
 #include "gn/ninja_binary_target_writer.h"
 
+#include <algorithm>
 #include <sstream>
+#include <unordered_set>
 
 #include "base/strings/string_util.h"
 #include "gn/builtin_tool.h"
@@ -18,6 +20,7 @@
 #include "gn/ninja_utils.h"
 #include "gn/pool.h"
 #include "gn/settings.h"
+#include "gn/string_output_buffer.h"
 #include "gn/string_utils.h"
 #include "gn/substitution_writer.h"
 #include "gn/target.h"
@@ -30,6 +33,61 @@ EscapeOptions GetFlagOptions() {
   EscapeOptions opts;
   opts.mode = ESCAPE_NINJA_COMMAND;
   return opts;
+}
+
+std::vector<const Target*> ExpandModules(const LabelTargetVector& targets) {
+  std::vector<const LabelTargetVector*> stack = {&targets};
+  std::unordered_set<const Target*> visited;
+
+  std::vector<const Target*> modules;
+
+  while (!stack.empty()) {
+    const LabelTargetVector* current = stack.back();
+    stack.pop_back();
+    for (const auto& pair : *current) {
+      const Target* target = pair.ptr;
+      if (visited.insert(target).second) {
+        if (target->module_type().none()) {
+          stack.push_back(&target->public_deps());
+          // If you declare `public_deps = ...` on a group, it shows up as a
+          // private dep. Probably because groups don't distinguish between
+          // public and private deps.
+          if (target->output_type() == Target::GROUP) {
+            stack.push_back(&target->private_deps());
+          }
+        } else {
+          modules.push_back(target);
+        }
+      }
+    }
+  }
+  return modules;
+}
+
+void WriteModuleMapHeaders(std::ostream& out,
+                           const SourceDir& out_dir,
+                           const Target::FileList& headers,
+                           const Settings* settings) {
+  for (const auto& header : headers) {
+    if (header.GetType() == SourceFile::SOURCE_H) {
+      out << "  textual header \"";
+      out << RebasePath(header.value(), out_dir,
+                        settings->build_settings()->root_path_utf8());
+      out << "\"\n";
+    }
+  }
+}
+
+void WriteModuleDeps(std::ostream& out,
+                     const std::vector<const Target*>& deps,
+                     const SourceDir& base) {
+  for (const auto& dep : deps) {
+    auto module_name = dep->module_name();
+    auto modulemap = RebasePath(dep->modulemap_file()->value(), base);
+    out << "  extern module \"" << module_name << "\" \"" << modulemap
+        << "\"\n";
+    out << "  use \"" << module_name << "\"\n";
+  }
 }
 
 }  // namespace
@@ -54,6 +112,50 @@ void NinjaBinaryTargetWriter::Run() {
   writer.SetResolvedTargetData(GetResolvedTargetData());
   writer.SetNinjaOutputs(ninja_outputs_);
   writer.Run();
+}
+
+void NinjaBinaryTargetWriter::WritePublicModuleMap(std::ostream& out,
+                                                   const SourceDir& out_dir) {
+  out << "module \"" << target_->module_name() << "\" {\n";
+  if (target_->all_headers_public()) {
+    WriteModuleMapHeaders(out, out_dir, target_->sources(), settings_);
+  } else {
+    WriteModuleMapHeaders(out, out_dir, target_->public_headers(), settings_);
+  }
+  auto base = target_->modulemap_file()->GetDir();
+  auto deps = ExpandModules(target_->public_deps());
+  std::ranges::sort(deps, [](const Target* lhs, const Target* rhs) {
+    return lhs->module_name() < rhs->module_name();
+  });
+  WriteModuleDeps(out, deps, base);
+  out << "  export *\n}\n";
+}
+
+void NinjaBinaryTargetWriter::WritePrivateModuleMap(std::ostream& out,
+                                                    const SourceDir& out_dir) {
+  auto base = target_->modulemap_file()->GetDir();
+  auto module_name = target_->module_name();
+  // Though it's not documented, clang special-cases modules suffixed with
+  // _Private. Private and public in the context of clang means basically the
+  // same thing as in the context of GN.
+  out << "module \"" << module_name << "_Private\" {\n";
+  if (!target_->all_headers_public()) {
+    WriteModuleMapHeaders(out, out_dir, target_->sources(), settings_);
+  }
+  out << "  extern module \"" << module_name << "\" \""
+      << target_->modulemap_file()->GetName() << "\"\n";
+  out << "  use \"" << module_name << "\"\n";
+
+  auto deps = ExpandModules(target_->private_deps());
+  auto pub_deps = ExpandModules(target_->public_deps());
+  deps.insert(deps.end(), pub_deps.begin(), pub_deps.end());
+  std::ranges::sort(deps, [](const Target* lhs, const Target* rhs) {
+    return lhs->module_name() < rhs->module_name();
+  });
+  auto dirty = std::ranges::unique(deps);
+  deps.erase(dirty.begin(), dirty.end());
+  WriteModuleDeps(out, deps, base);
+  out << "}\n";
 }
 
 std::vector<OutputFile>
@@ -276,25 +378,31 @@ void NinjaBinaryTargetWriter::WriteCompilerBuildLine(
     const std::vector<SourceFile>& sources,
     const std::vector<OutputFile>& extra_deps,
     const std::vector<OutputFile>& order_only_deps,
-    const char* tool_name,
+    const Tool* tool,
     const std::vector<OutputFile>& outputs,
     bool can_write_source_info,
     bool restat_output_allowed) {
   out_ << "build";
   WriteOutputs(outputs);
 
-  out_ << ": " << rule_prefix_ << tool_name;
+  out_ << ": " << rule_prefix_ << tool->name();
   path_output_.WriteFiles(out_, sources);
 
-  if (!extra_deps.empty()) {
+  if (!extra_deps.empty() || !tool->inputs().empty()) {
     out_ << " |";
     path_output_.WriteFiles(out_, extra_deps);
+    if (auto phony = tool->inputs_phony_or_file(rule_prefix_,
+                                                *settings_->build_settings())) {
+      out_ << " ";
+      path_output_.WriteFile(out_, *phony);
+    }
   }
 
   if (!order_only_deps.empty()) {
     out_ << " ||";
     path_output_.WriteFiles(out_, order_only_deps);
   }
+  WriteValidations();
   out_ << std::endl;
 
   if (!sources.empty() && can_write_source_info) {
@@ -405,6 +513,14 @@ void NinjaBinaryTargetWriter::WriteFrameworks(std::ostream& out,
   for (size_t i = 0; i < all_weak_frameworks.size(); i++) {
     weak_writer(all_weak_frameworks[i], out);
   }
+
+  if (!tool->weak_library_switch().empty()) {
+    WeakLibrariesWriter weak_library_writer(tool->weak_library_switch());
+    const auto& all_weak_libraries = resolved().GetLinkedWeakLibraries(target_);
+    for (const auto& weak_library : all_weak_libraries) {
+      weak_library_writer(weak_library, out);
+    }
+  }
 }
 
 void NinjaBinaryTargetWriter::WriteSwiftModules(
@@ -430,4 +546,61 @@ void NinjaBinaryTargetWriter::WritePool(std::ostream& out) {
         settings_->default_toolchain_label());
     out << std::endl;
   }
+}
+
+std::vector<OutputFile>
+NinjaBinaryTargetWriter::GetOrderOnlyDepsFromNonLinkableDeps(
+    const UniqueVector<const Target*>& non_linkable_deps) const {
+  std::vector<const Target*> group_stack;
+  std::vector<OutputFile> outputs_to_write;
+  std::set<std::string> seen_outputs;
+
+  auto add_output = [&](const OutputFile& output) {
+    if (seen_outputs.insert(output.value()).second) {
+      outputs_to_write.push_back(output);
+    }
+  };
+
+  auto process_dep = [&](const Target* dep) {
+    if (dep->output_type() == Target::GROUP) {
+      group_stack.push_back(dep);
+    } else if (dep->has_dependency_output()) {
+      OutputFile dep_output = dep->dependency_output();
+      if (dep->output_type() == Target::SOURCE_SET) {
+        dep_output.value().append(".linkdeps");
+      }
+      add_output(dep_output);
+    }
+  };
+
+  for (auto* dep : non_linkable_deps) {
+    process_dep(dep);
+  }
+
+  // Recursively expand dependencies of groups to avoid unnecessary
+  // dependencies. If a group depends on a source set, we depend on its
+  // .linkdeps instead of the group itself. This prevents including non-object
+  // files (like .dwo files) in order-only dependencies. This is crucial for
+  // remote linking to avoid uploading unnecessary files, which increases data
+  // transfer and could hit file count limits.
+  std::set<const Target*> visited_groups;
+  while (!group_stack.empty()) {
+    const Target* current = group_stack.back();
+    group_stack.pop_back();
+
+    if (!visited_groups.insert(current).second)
+      continue;
+
+    auto add_deps = [&](const LabelTargetVector& deps) {
+      for (const auto& pair : deps) {
+        process_dep(pair.ptr);
+      }
+    };
+
+    add_deps(current->public_deps());
+    add_deps(current->private_deps());
+    add_deps(current->data_deps());
+  }
+
+  return outputs_to_write;
 }

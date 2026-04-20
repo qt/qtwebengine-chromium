@@ -99,6 +99,9 @@ class NinjaTargetWriter {
       const std::vector<OutputFile>& deps,
       const std::vector<OutputFile>& order_only_deps);
 
+  // Writes the validation dependencies to the output stream.
+  void WriteValidations();
+
   const Settings* settings_;  // Non-owning.
   const Target* target_;      // Non-owning.
   std::ostream& out_;

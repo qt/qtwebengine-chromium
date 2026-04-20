@@ -21,6 +21,7 @@ const SubstitutionTypes CSubstitutions = {
     &CSubstitutionIncludeDirs,
     &CSubstitutionModuleDeps,
     &CSubstitutionModuleDepsNoSelf,
+    &CSubstitutionModuleName,
     &CSubstitutionSwiftModules,
 
     &CSubstitutionLinkerInputs,
@@ -55,6 +56,8 @@ const Substitution CSubstitutionIncludeDirs = {"{{include_dirs}}",
 const Substitution CSubstitutionModuleDeps = {"{{module_deps}}", "module_deps"};
 const Substitution CSubstitutionModuleDepsNoSelf = {"{{module_deps_no_self}}",
                                                     "module_deps_no_self"};
+const Substitution CSubstitutionModuleName = {"{{cc_module_name}}",
+                                              "cc_module_name"};
 
 // Valid for linker tools.
 const Substitution CSubstitutionLinkerInputs = {"{{inputs}}", "in"};
@@ -89,7 +92,8 @@ bool IsValidCompilerSubstitution(const Substitution* type) {
          type == &CSubstitutionFrameworkDirs ||
          type == &CSubstitutionIncludeDirs ||
          type == &CSubstitutionModuleDeps ||
-         type == &CSubstitutionModuleDepsNoSelf;
+         type == &CSubstitutionModuleDepsNoSelf ||
+         type == &CSubstitutionModuleName;
 }
 
 bool IsValidCompilerScriptArgsSubstitution(const Substitution* type) {

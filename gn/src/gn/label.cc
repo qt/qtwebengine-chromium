@@ -330,3 +330,7 @@ std::string Label::GetUserVisibleName(const Label& default_toolchain) const {
                            default_toolchain.name_atom() != toolchain_name_;
   return GetUserVisibleName(include_toolchain);
 }
+
+std::string Pretty(const Label& label) {
+  return label.GetUserVisibleName(true);
+}

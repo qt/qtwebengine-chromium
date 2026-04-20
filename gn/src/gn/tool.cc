@@ -4,12 +4,15 @@
 
 #include "gn/tool.h"
 
+#include "base/strings/stringprintf.h"
 #include "gn/builtin_tool.h"
 #include "gn/c_tool.h"
 #include "gn/general_tool.h"
+#include "gn/output_file.h"
 #include "gn/rust_tool.h"
 #include "gn/settings.h"
 #include "gn/target.h"
+#include "gn/value_extractors.h"
 
 const char* Tool::kToolNone = "";
 
@@ -199,6 +202,33 @@ bool Tool::ReadOutputExtension(Scope* scope, Err* err) {
   return true;
 }
 
+bool Tool::ReadInputs(Scope* scope, Err* err) {
+  DCHECK(!complete_);
+  const Value* value = scope->GetValue("inputs", true);
+  if (!value)
+    return true;  // Not present is fine.
+
+  std::vector<SourceFile> inputs;
+  if (!ExtractListOfRelativeFiles(scope->settings()->build_settings(), *value,
+                                  scope->GetSourceDir(), &inputs, err)) {
+    return false;
+  }
+  set_inputs(std::move(inputs));
+  return true;
+}
+
+std::optional<OutputFile> Tool::inputs_phony_or_file(
+    std::string_view rule_prefix,
+    const BuildSettings& build_settings) const {
+  if (inputs_.size() == 1) {
+    return OutputFile(&build_settings, inputs_[0]);
+  } else if (inputs_.size() > 1) {
+    return OutputFile(base::StringPrintf(
+        "phony/%s%s_inputs", std::string(rule_prefix).c_str(), name_));
+  }
+  return std::nullopt;
+}
+
 bool Tool::InitTool(Scope* scope, Toolchain* toolchain, Err* err) {
   if (!ReadPattern(scope, "command", &command_, err) ||
       !ReadString(scope, "command_launcher", &command_launcher_, err) ||
@@ -211,7 +241,8 @@ bool Tool::InitTool(Scope* scope, Toolchain* toolchain, Err* err) {
       !ReadBool(scope, "restat", &restat_, err) ||
       !ReadPattern(scope, "rspfile", &rspfile_, err) ||
       !ReadPattern(scope, "rspfile_content", &rspfile_content_, err) ||
-      !ReadLabel(scope, "pool", toolchain->label(), &pool_, err)) {
+      !ReadLabel(scope, "pool", toolchain->label(), &pool_, err) ||
+      !ReadInputs(scope, err)) {
     return false;
   }
   const bool command_is_required = name_ != GeneralTool::kGeneralToolAction;

@@ -15,11 +15,11 @@ TEST(FunctionForeach, CollisionOnLoopVar) {
       "  a = a + 1\n"  // Test for side effects inside loop.
       "}\n"
       "print(\"$a $i\")");  // Make sure that i goes back to original value.
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ("5 1\n6 2\n7 3\n8 6\n", setup.print_output());
 }
@@ -34,7 +34,7 @@ TEST(FunctionForeach, UniqueLoopVar) {
 
   Err err;
   input_good.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ("1\n2\n3\n", setup.print_output());
   setup.print_output().clear();
@@ -64,14 +64,14 @@ TEST(FunctionForeach, MarksIdentAsUsed) {
 
   Err err;
   input_good.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ("1\n2\n", setup.print_output());
   setup.print_output().clear();
 
   // Check for unused vars.
   EXPECT_TRUE(setup.scope()->CheckForUnusedVars(&err));
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 }
 
 // Checks that the list can be modified during iteration without crashing.
@@ -90,7 +90,7 @@ TEST(FunctionForeach, ListModification) {
 
   Err err;
   input_grow.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   // The result of the loop should have been unaffected by the mutations of
   // the list variable inside the loop, but the modifications made to it

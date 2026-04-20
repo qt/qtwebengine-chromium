@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "gn/config.h"
+#include "gn/ninja_group_target_writer.h"
 #include "gn/ninja_target_command_util.h"
 #include "gn/pool.h"
 #include "gn/scheduler.h"
@@ -19,6 +20,11 @@
 #include "util/test/test.h"
 
 using NinjaCBinaryTargetWriterTest = TestWithScheduler;
+
+constexpr Target::ModuleType kExplicitModulemap = 1 << Target::HAS_MODULEMAP;
+constexpr Target::ModuleType kGeneratedTextualModulemap =
+    1 << Target::HAS_MODULEMAP | 1 << Target::MODULEMAP_IS_GENERATED |
+    1 << Target::MODULEMAP_IS_TEXTUAL;
 
 TEST_F(NinjaCBinaryTargetWriterTest, SourceSet) {
   Err err;
@@ -61,10 +67,11 @@ TEST_F(NinjaCBinaryTargetWriterTest, SourceSet) {
         "  source_file_part = input2.cc\n"
         "  source_name_part = input2\n"
         "\n"
-        "build phony/foo/bar: phony obj/foo/bar.input1.o "
-        "obj/foo/bar.input2.o ../../foo/input3.o ../../foo/input4.obj\n";
+        "build phony/foo/bar.linkdeps: phony obj/foo/bar.input1.o "
+        "obj/foo/bar.input2.o ../../foo/input3.o ../../foo/input4.obj\n"
+        "build phony/foo/bar: phony phony/foo/bar.linkdeps\n";
     std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 
   // A shared library that depends on the source set.
@@ -93,7 +100,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, SourceSet) {
         // order.
         "build ./libshlib.so: solink obj/foo/bar.input1.o "
         "obj/foo/bar.input2.o ../../foo/input3.o ../../foo/input4.obj "
-        "|| phony/foo/bar\n"
+        "|| phony/foo/bar.linkdeps\n"
         "  ldflags =\n"
         "  libs =\n"
         "  frameworks =\n"
@@ -101,7 +108,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, SourceSet) {
         "  output_extension = .so\n"
         "  output_dir =\n";
     std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 
   // A static library that depends on the source set (should not link it).
@@ -127,12 +134,12 @@ TEST_F(NinjaCBinaryTargetWriterTest, SourceSet) {
         "\n"
         // There are no sources so there are no params to alink. (In practice
         // this will probably fail in the archive tool.)
-        "build obj/foo/libstlib.a: alink || phony/foo/bar\n"
+        "build obj/foo/libstlib.a: alink || phony/foo/bar.linkdeps\n"
         "  arflags =\n"
         "  output_extension =\n"
         "  output_dir =\n";
     std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 
   // Make the static library 'complete', which means it should be linked.
@@ -156,12 +163,312 @@ TEST_F(NinjaCBinaryTargetWriterTest, SourceSet) {
         // order.
         "build obj/foo/libstlib.a: alink obj/foo/bar.input1.o "
         "obj/foo/bar.input2.o ../../foo/input3.o ../../foo/input4.obj "
-        "|| phony/foo/bar\n"
+        "|| phony/foo/bar.linkdeps\n"
         "  arflags =\n"
         "  output_extension =\n"
         "  output_dir =\n";
     std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
+  }
+}
+
+TEST_F(NinjaCBinaryTargetWriterTest, AdditionalOutputs) {
+  Err err;
+  TestWithScope setup;
+
+  Value outputs_value(nullptr, Value::LIST);
+  outputs_value.list_value().push_back(
+      Value(nullptr, "{{target_out_dir}}/{{source_name_part}}.dwo"));
+
+  Config config(setup.settings(), Label(SourceDir("//foo/"), "split_dwarf"));
+  config.visibility().SetPublic();
+
+  std::vector<SubstitutionPattern> patterns;
+  for (const auto& v : outputs_value.list_value()) {
+    SubstitutionPattern pattern;
+    ASSERT_TRUE(pattern.Parse(v, &err));
+    patterns.push_back(std::move(pattern));
+  }
+  config.own_values().c_additional_outputs() = std::move(patterns);
+  ASSERT_TRUE(config.OnResolved(&err));
+
+  Target target(setup.settings(), Label(SourceDir("//foo/"), "bar"));
+  target.set_output_type(Target::SOURCE_SET);
+  target.visibility().SetPublic();
+  target.sources().push_back(SourceFile("//foo/input1.cc"));
+  target.source_types_used().Set(SourceFile::SOURCE_CPP);
+  target.configs().push_back(LabelConfigPair(&config));
+  target.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target.OnResolved(&err));
+
+  std::ostringstream out;
+  NinjaCBinaryTargetWriter writer(&target, out);
+  writer.Run();
+
+  const char expected[] =
+      "defines =\n"
+      "include_dirs =\n"
+      "cflags =\n"
+      "cflags_cc =\n"
+      "root_out_dir = .\n"
+      "target_gen_dir = gen/foo\n"
+      "target_out_dir = obj/foo\n"
+      "target_output_name = bar\n"
+      "\n"
+      "build obj/foo/bar.input1.o obj/foo/input1.dwo: cxx "
+      "../../foo/input1.cc\n"
+      "  source_file_part = input1.cc\n"
+      "  source_name_part = input1\n"
+      "\n"
+      "build phony/foo/bar.linkdeps: phony obj/foo/bar.input1.o\n"
+      "build phony/foo/bar: phony phony/foo/bar.linkdeps obj/foo/input1.dwo\n";
+
+  EXPECT_EQ(expected, out.str());
+}
+
+TEST_F(NinjaCBinaryTargetWriterTest, AdditionalOutputsSourceSet) {
+  Err err;
+  TestWithScope setup;
+
+  Value outputs_value(nullptr, Value::LIST);
+  outputs_value.list_value().push_back(
+      Value(nullptr, "{{target_out_dir}}/{{source_name_part}}.dwo"));
+
+  Config config(setup.settings(), Label(SourceDir("//foo/"), "split_dwarf"));
+  config.visibility().SetPublic();
+
+  std::vector<SubstitutionPattern> patterns;
+  for (const auto& v : outputs_value.list_value()) {
+    SubstitutionPattern pattern;
+    ASSERT_TRUE(pattern.Parse(v, &err));
+    patterns.push_back(std::move(pattern));
+  }
+  config.own_values().c_additional_outputs() = std::move(patterns);
+  ASSERT_TRUE(config.OnResolved(&err));
+
+  Target target(setup.settings(), Label(SourceDir("//foo/"), "bar"));
+  target.set_output_type(Target::SOURCE_SET);
+  target.visibility().SetPublic();
+  target.sources().push_back(SourceFile("//foo/input1.cc"));
+  target.source_types_used().Set(SourceFile::SOURCE_CPP);
+  target.configs().push_back(LabelConfigPair(&config));
+  target.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target.OnResolved(&err));
+
+  std::ostringstream out;
+  NinjaCBinaryTargetWriter writer(&target, out);
+  writer.Run();
+
+  const char expected[] =
+      "defines =\n"
+      "include_dirs =\n"
+      "cflags =\n"
+      "cflags_cc =\n"
+      "root_out_dir = .\n"
+      "target_gen_dir = gen/foo\n"
+      "target_out_dir = obj/foo\n"
+      "target_output_name = bar\n"
+      "\n"
+      "build obj/foo/bar.input1.o obj/foo/input1.dwo: cxx "
+      "../../foo/input1.cc\n"
+      "  source_file_part = input1.cc\n"
+      "  source_name_part = input1\n"
+      "\n"
+      "build phony/foo/bar.linkdeps: phony obj/foo/bar.input1.o\n"
+      "build phony/foo/bar: phony phony/foo/bar.linkdeps obj/foo/input1.dwo\n";
+
+  EXPECT_EQ(expected, out.str());
+}
+
+TEST_F(NinjaCBinaryTargetWriterTest,
+       SourceSetWithAdditionalOutputsToStaticLib) {
+  Err err;
+  TestWithScope setup;
+
+  Value outputs_value(nullptr, Value::LIST);
+  outputs_value.list_value().push_back(
+      Value(nullptr, "{{target_out_dir}}/{{source_name_part}}.dwo"));
+
+  Config config(setup.settings(), Label(SourceDir("//foo/"), "split_dwarf"));
+  config.visibility().SetPublic();
+
+  std::vector<SubstitutionPattern> patterns;
+  for (const auto& v : outputs_value.list_value()) {
+    SubstitutionPattern pattern;
+    ASSERT_TRUE(pattern.Parse(v, &err));
+    patterns.push_back(std::move(pattern));
+  }
+  config.own_values().c_additional_outputs() = std::move(patterns);
+  ASSERT_TRUE(config.OnResolved(&err));
+
+  // Source set B (dependee)
+  Target target_b(setup.settings(), Label(SourceDir("//foo/"), "b"));
+  target_b.set_output_type(Target::SOURCE_SET);
+  target_b.sources().push_back(SourceFile("//foo/b.cc"));
+  target_b.sources().push_back(SourceFile("//foo/b2.cc"));
+  target_b.source_types_used().Set(SourceFile::SOURCE_CPP);
+  target_b.visibility().SetPublic();
+  target_b.configs().push_back(LabelConfigPair(&config));
+  target_b.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target_b.OnResolved(&err)) << err.message();
+
+  // Static library A (depender)
+  Target target_a(setup.settings(), Label(SourceDir("//foo/"), "a"));
+  target_a.set_output_type(Target::STATIC_LIBRARY);
+  target_a.sources().push_back(SourceFile("//foo/a.cc"));
+  target_a.source_types_used().Set(SourceFile::SOURCE_CPP);
+  target_a.private_deps().push_back(LabelTargetPair(&target_b));
+  target_a.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target_a.OnResolved(&err)) << err.message();
+
+  // Verify B's output
+  {
+    std::ostringstream out;
+    NinjaCBinaryTargetWriter writer(&target_b, out);
+    writer.Run();
+
+    const char expected[] =
+        "defines =\n"
+        "include_dirs =\n"
+        "cflags =\n"
+        "cflags_cc =\n"
+        "root_out_dir = .\n"
+        "target_gen_dir = gen/foo\n"
+        "target_out_dir = obj/foo\n"
+        "target_output_name = b\n"
+        "\n"
+        "build obj/foo/b.b.o obj/foo/b.dwo: cxx ../../foo/b.cc\n"
+        "  source_file_part = b.cc\n"
+        "  source_name_part = b\n"
+        "build obj/foo/b.b2.o obj/foo/b2.dwo: cxx ../../foo/b2.cc\n"
+        "  source_file_part = b2.cc\n"
+        "  source_name_part = b2\n"
+        "\n"
+        "build phony/foo/b.linkdeps: phony obj/foo/b.b.o obj/foo/b.b2.o\n"
+        "build phony/foo/b: phony phony/foo/b.linkdeps obj/foo/b.dwo "
+        "obj/foo/b2.dwo\n";
+
+    EXPECT_EQ(expected, out.str());
+  }
+
+  // Verify A's output
+  {
+    std::ostringstream out;
+    NinjaCBinaryTargetWriter writer(&target_a, out);
+    writer.Run();
+
+    const char expected[] =
+        "defines =\n"
+        "include_dirs =\n"
+        "cflags =\n"
+        "cflags_cc =\n"
+        "root_out_dir = .\n"
+        "target_gen_dir = gen/foo\n"
+        "target_out_dir = obj/foo\n"
+        "target_output_name = liba\n"
+        "\n"
+        "build obj/foo/liba.a.o: cxx ../../foo/a.cc\n"
+        "  source_file_part = a.cc\n"
+        "  source_name_part = a\n"
+        "\n"
+        "build obj/foo/liba.a: alink obj/foo/liba.a.o || phony/foo/b.linkdeps\n"
+        "  arflags =\n"
+        "  output_extension =\n"
+        "  output_dir =\n";
+
+    EXPECT_EQ(expected, out.str());
+  }
+}
+
+// Tests that order-only dependencies bypass group targets and use .linkdeps
+// for transitive source set dependencies to avoid unnecessary dependencies
+// on non-object files (like .dwo files).
+TEST_F(NinjaCBinaryTargetWriterTest, GroupOrderOnlyDeps) {
+  Err err;
+  TestWithScope setup;
+
+  Value outputs_value(nullptr, Value::LIST);
+  outputs_value.list_value().push_back(
+      Value(nullptr, "{{target_out_dir}}/{{source_name_part}}.dwo"));
+
+  Config config(setup.settings(), Label(SourceDir("//foo/"), "split_dwarf"));
+  config.visibility().SetPublic();
+
+  std::vector<SubstitutionPattern> patterns;
+  for (const auto& v : outputs_value.list_value()) {
+    SubstitutionPattern pattern;
+    ASSERT_TRUE(pattern.Parse(v, &err));
+    patterns.push_back(std::move(pattern));
+  }
+  config.own_values().c_additional_outputs() = std::move(patterns);
+  ASSERT_TRUE(config.OnResolved(&err));
+
+  // Source set B (dependee)
+  Target target_b(setup.settings(), Label(SourceDir("//foo/"), "b"));
+  target_b.set_output_type(Target::SOURCE_SET);
+  target_b.sources().push_back(SourceFile("//foo/b.cc"));
+  target_b.sources().push_back(SourceFile("//foo/b2.cc"));
+  target_b.source_types_used().Set(SourceFile::SOURCE_CPP);
+  target_b.visibility().SetPublic();
+  target_b.configs().push_back(LabelConfigPair(&config));
+  target_b.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target_b.OnResolved(&err)) << err.message();
+
+  // Group E (depender)
+  Target target_e(setup.settings(), Label(SourceDir("//foo/"), "e"));
+  target_e.set_output_type(Target::GROUP);
+  target_e.visibility().SetPublic();
+  target_e.private_deps().push_back(LabelTargetPair(&target_b));
+  target_e.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target_e.OnResolved(&err)) << err.message();
+
+  // Verify E's output
+  {
+    std::ostringstream out;
+    NinjaGroupTargetWriter writer(&target_e, out);
+    writer.Run();
+
+    const char expected[] = "build phony/foo/e: phony phony/foo/b\n";
+
+    EXPECT_EQ(expected, out.str());
+  }
+
+  // Static library F (depender on group E)
+  Target target_f(setup.settings(), Label(SourceDir("//foo/"), "f"));
+  target_f.set_output_type(Target::STATIC_LIBRARY);
+  target_f.sources().push_back(SourceFile("//foo/f.cc"));
+  target_f.source_types_used().Set(SourceFile::SOURCE_CPP);
+  target_f.private_deps().push_back(LabelTargetPair(&target_e));
+  target_f.configs().push_back(LabelConfigPair(&config));
+  target_f.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target_f.OnResolved(&err)) << err.message();
+
+  // Verify F's output
+  {
+    std::ostringstream out;
+    NinjaCBinaryTargetWriter writer(&target_f, out);
+    writer.Run();
+
+    const char expected[] =
+        "defines =\n"
+        "include_dirs =\n"
+        "cflags =\n"
+        "cflags_cc =\n"
+        "root_out_dir = .\n"
+        "target_gen_dir = gen/foo\n"
+        "target_out_dir = obj/foo\n"
+        "target_output_name = libf\n"
+        "\n"
+        "build obj/foo/libf.f.o obj/foo/f.dwo: cxx ../../foo/f.cc\n"
+        "  source_file_part = f.cc\n"
+        "  source_name_part = f\n"
+        "\n"
+        "build obj/foo/libf.a: alink obj/foo/libf.f.o || phony/foo/b.linkdeps\n"
+        "  arflags =\n"
+        "  output_extension =\n"
+        "  output_dir =\n";
+
+    EXPECT_EQ(expected, out.str());
   }
 }
 
@@ -222,7 +529,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, StaticLibrary) {
       "  output_extension =\n"
       "  output_dir =\n";
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 TEST_F(NinjaCBinaryTargetWriterTest, CompleteStaticLibrary) {
@@ -272,7 +579,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, CompleteStaticLibrary) {
         "  output_extension =\n"
         "  output_dir =\n";
     std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 
   // Make the dependent static library complete.
@@ -304,7 +611,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, CompleteStaticLibrary) {
         "  output_extension =\n"
         "  output_dir =\n";
     std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 }
 
@@ -369,7 +676,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, OutputExtensionAndInputDeps) {
       "  output_dir = foo\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 TEST_F(NinjaCBinaryTargetWriterTest, NoHardDepsToNoPublicHeaderTarget) {
@@ -420,10 +727,12 @@ TEST_F(NinjaCBinaryTargetWriterTest, NoHardDepsToNoPublicHeaderTarget) {
       "  source_file_part = generated.cc\n"
       "  source_name_part = generated\n"
       "\n"
-      "build phony/foo/gen_obj: phony obj/BUILD_DIR/gen_obj.generated.o"
+      "build phony/foo/gen_obj.linkdeps: phony "
+      "obj/BUILD_DIR/gen_obj.generated.o"
       // The order-only dependency here is strictly unnecessary since the
       // sources list this as an order-only dep.
-      " || phony/foo/generate\n";
+      " || phony/foo/generate\n"
+      "build phony/foo/gen_obj: phony phony/foo/gen_obj.linkdeps\n";
 
   std::string obj_str = obj_out.str();
   EXPECT_EQ(std::string(obj_expected), obj_str);
@@ -457,7 +766,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, NoHardDepsToNoPublicHeaderTarget) {
       // The order-only dependency here is strictly unnecessary since
       // obj/out/Debug/gen_obj.generated.o has dependency to
       // obj/foo/gen_obj.stamp
-      " || phony/foo/gen_obj\n"
+      " || phony/foo/gen_obj.linkdeps\n"
       "  ldflags =\n"
       "  libs =\n"
       "  frameworks =\n"
@@ -555,7 +864,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, LibsAndLibDirs) {
       "  output_dir =\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 // Tests frameworks are applied.
@@ -621,7 +930,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, FrameworksAndFrameworkDirs) {
       "  output_dir =\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 TEST_F(NinjaCBinaryTargetWriterTest, EmptyOutputExtension) {
@@ -673,7 +982,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, EmptyOutputExtension) {
       "  output_dir =\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 TEST_F(NinjaCBinaryTargetWriterTest, SourceSetDataDeps) {
@@ -719,8 +1028,9 @@ TEST_F(NinjaCBinaryTargetWriterTest, SourceSetDataDeps) {
       "  source_file_part = inter.cc\n"
       "  source_name_part = inter\n"
       "\n"
-      "build phony/foo/inter: phony obj/foo/inter.inter.o || "
-      "./data_target\n";
+      "build phony/foo/inter.linkdeps: phony obj/foo/inter.inter.o || "
+      "./data_target\n"
+      "build phony/foo/inter: phony phony/foo/inter.linkdeps\n";
   EXPECT_EQ(inter_expected, inter_out.str());
 
   // Final target.
@@ -756,7 +1066,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, SourceSetDataDeps) {
       "  source_name_part = final\n"
       "\n"
       "build ./exe: link obj/foo/exe.final.o obj/foo/inter.inter.o || "
-      "phony/foo/inter\n"
+      "phony/foo/inter.linkdeps\n"
       "  ldflags =\n"
       "  libs =\n"
       "  frameworks =\n"
@@ -958,9 +1268,11 @@ TEST_F(NinjaCBinaryTargetWriterTest, WinPrecompiledHeaders) {
         "  source_file_part = input2.c\n"
         "  source_name_part = input2\n"
         "\n"
-        "build withpch/phony/foo/no_pch_target: "
+        "build withpch/phony/foo/no_pch_target.linkdeps: "
         "phony withpch/obj/foo/no_pch_target.input1.o "
-        "withpch/obj/foo/no_pch_target.input2.o\n";
+        "withpch/obj/foo/no_pch_target.input2.o\n"
+        "build withpch/phony/foo/no_pch_target: "
+        "phony withpch/phony/foo/no_pch_target.linkdeps\n";
     EXPECT_EQ(no_pch_expected, out.str());
   }
 
@@ -1020,12 +1332,14 @@ TEST_F(NinjaCBinaryTargetWriterTest, WinPrecompiledHeaders) {
         "  source_file_part = input2.c\n"
         "  source_name_part = input2\n"
         "\n"
-        "build withpch/phony/foo/pch_target: phony "
+        "build withpch/phony/foo/pch_target.linkdeps: phony "
         "withpch/obj/foo/pch_target.input1.o "
         "withpch/obj/foo/pch_target.input2.o "
         // The precompiled object files were added to the outputs.
         "withpch/obj/build/pch_target.precompile.c.o "
-        "withpch/obj/build/pch_target.precompile.cc.o\n";
+        "withpch/obj/build/pch_target.precompile.cc.o\n"
+        "build withpch/phony/foo/pch_target: phony "
+        "withpch/phony/foo/pch_target.linkdeps\n";
     EXPECT_EQ(pch_win_expected, out.str());
   }
 }
@@ -1104,9 +1418,11 @@ TEST_F(NinjaCBinaryTargetWriterTest, GCCPrecompiledHeaders) {
         "  source_file_part = input2.c\n"
         "  source_name_part = input2\n"
         "\n"
-        "build withpch/phony/foo/no_pch_target: "
+        "build withpch/phony/foo/no_pch_target.linkdeps: "
         "phony withpch/obj/foo/no_pch_target.input1.o "
-        "withpch/obj/foo/no_pch_target.input2.o\n";
+        "withpch/obj/foo/no_pch_target.input2.o\n"
+        "build withpch/phony/foo/no_pch_target: "
+        "phony withpch/phony/foo/no_pch_target.linkdeps\n";
     EXPECT_EQ(no_pch_expected, out.str());
   }
 
@@ -1164,11 +1480,12 @@ TEST_F(NinjaCBinaryTargetWriterTest, GCCPrecompiledHeaders) {
         "  source_file_part = input2.c\n"
         "  source_name_part = input2\n"
         "\n"
-        "build withpch/phony/foo/pch_target: "
+        "build withpch/phony/foo/pch_target.linkdeps: "
         "phony withpch/obj/foo/pch_target.input1.o "
-        "withpch/obj/foo/pch_target.input2.o\n";
-    EXPECT_EQ(pch_gcc_expected, out.str()) << pch_gcc_expected << "\n"
-                                           << out.str();
+        "withpch/obj/foo/pch_target.input2.o\n"
+        "build withpch/phony/foo/pch_target: "
+        "phony withpch/phony/foo/pch_target.linkdeps\n";
+    EXPECT_EQ(pch_gcc_expected, out.str());
   }
 }
 
@@ -1236,8 +1553,9 @@ TEST_F(NinjaCBinaryTargetWriterTest, InputFiles) {
         "  source_file_part = input2.cc\n"
         "  source_name_part = input2\n"
         "\n"
-        "build phony/foo/bar: phony obj/foo/bar.input1.o "
-        "obj/foo/bar.input2.o\n";
+        "build phony/foo/bar.linkdeps: phony obj/foo/bar.input1.o "
+        "obj/foo/bar.input2.o\n"
+        "build phony/foo/bar: phony phony/foo/bar.linkdeps\n";
 
     EXPECT_EQ(expected, out.str());
   }
@@ -1313,8 +1631,9 @@ TEST_F(NinjaCBinaryTargetWriterTest, InputFiles) {
         "  source_file_part = input2.cc\n"
         "  source_name_part = input2\n"
         "\n"
-        "build phony/foo/bar: phony obj/foo/bar.input1.o "
-        "obj/foo/bar.input2.o\n";
+        "build phony/foo/bar.linkdeps: phony obj/foo/bar.input1.o "
+        "obj/foo/bar.input2.o\n"
+        "build phony/foo/bar: phony phony/foo/bar.linkdeps\n";
 
     EXPECT_EQ(expected, out.str());
   }
@@ -1368,8 +1687,9 @@ TEST_F(NinjaCBinaryTargetWriterTest, InputFiles) {
         "  source_file_part = input2.cc\n"
         "  source_name_part = input2\n"
         "\n"
-        "build phony/foo/bar: phony obj/foo/bar.input1.o "
-        "obj/foo/bar.input2.o\n";
+        "build phony/foo/bar.linkdeps: phony obj/foo/bar.input1.o "
+        "obj/foo/bar.input2.o\n"
+        "build phony/foo/bar: phony phony/foo/bar.linkdeps\n";
 
     EXPECT_EQ(expected, out.str());
   }
@@ -1427,7 +1747,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, RustStaticLib) {
       "  output_dir =\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 // Test linking of Rust dependencies into C targets.
@@ -1602,8 +1922,8 @@ TEST_F(NinjaCBinaryTargetWriterTest, RlibInLibrary) {
       "obj/dylib/libdylib.so | "
       "obj/pub_in_staticlib/libpub_in_staticlib.rlib "
       "obj/priv_in_staticlib/libpriv_in_staticlib.rlib || "
-      "phony/pub_sset_in_staticlib/pub_sset_in_staticlib "
-      "phony/priv_sset_in_staticlib/priv_sset_in_staticlib\n"
+      "phony/pub_sset_in_staticlib/pub_sset_in_staticlib.linkdeps "
+      "phony/priv_sset_in_staticlib/priv_sset_in_staticlib.linkdeps\n"
       "  ldflags =\n"
       "  libs =\n"
       "  frameworks =\n"
@@ -1614,7 +1934,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, RlibInLibrary) {
       "obj/priv_in_staticlib/libpriv_in_staticlib.rlib\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 // Test linking of Rust dependencies into C targets. Proc-macro dependencies are
@@ -1781,7 +2101,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, RlibsWithProcMacros) {
       "obj/pub_in_procmacro_and_rlib/libpub_in_procmacro_and_rlib.rlib\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 // Test linking of Rust dependencies into C targets.
@@ -1849,7 +2169,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, ProcMacroInRustStaticLib) {
       "  output_dir =\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 TEST_F(NinjaCBinaryTargetWriterTest, RustDepsOverDynamicLinking) {
@@ -1954,7 +2274,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, RustDepsOverDynamicLinking) {
       "  rlibs = obj/near/libnear.rlib\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 TEST_F(NinjaCBinaryTargetWriterTest, LinkingWithRustLibraryDepsOnCdylib) {
@@ -2052,7 +2372,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, LinkingWithRustLibraryDepsOnCdylib) {
       "  rlibs = obj/rlib/librlib.rlib\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 TEST_F(NinjaCBinaryTargetWriterTest, LinkingWithRustLibraryDepsOnDylib) {
@@ -2150,7 +2470,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, LinkingWithRustLibraryDepsOnDylib) {
       "  rlibs = obj/rlib/librlib.rlib\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 // Verify dependencies of a shared library and a rust library are inherited
@@ -2259,7 +2579,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, RustLibAfterSharedLib) {
       "  rlibs = obj/rlib2/libmyrlib2.rlib\n";
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 TEST_F(NinjaCBinaryTargetWriterTest, ModuleMapInStaticLibrary) {
@@ -2271,6 +2591,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, ModuleMapInStaticLibrary) {
   target.sources().push_back(SourceFile("//foo/bar.modulemap"));
   target.source_types_used().Set(SourceFile::SOURCE_CPP);
   target.source_types_used().Set(SourceFile::SOURCE_MODULEMAP);
+  target.set_module_type(kExplicitModulemap);
   ASSERT_TRUE(target.OnResolved(&err));
 
   std::ostringstream out;
@@ -2300,7 +2621,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, ModuleMapInStaticLibrary) {
       "  output_extension =\n"
       "  output_dir =\n";
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 TEST_F(NinjaCBinaryTargetWriterTest, ModuleMapInSourceSet) {
@@ -2312,6 +2633,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, ModuleMapInSourceSet) {
   target.sources().push_back(SourceFile("//foo/bar.modulemap"));
   target.source_types_used().Set(SourceFile::SOURCE_CPP);
   target.source_types_used().Set(SourceFile::SOURCE_MODULEMAP);
+  target.set_module_type(kExplicitModulemap);
   ASSERT_TRUE(target.OnResolved(&err));
 
   std::ostringstream out;
@@ -2336,9 +2658,10 @@ TEST_F(NinjaCBinaryTargetWriterTest, ModuleMapInSourceSet) {
       "  source_file_part = bar.modulemap\n"
       "  source_name_part = bar\n"
       "\n"
-      "build phony/foo/bar: phony obj/foo/bar.bar.o\n";
+      "build phony/foo/bar.linkdeps: phony obj/foo/bar.bar.o\n"
+      "build phony/foo/bar: phony phony/foo/bar.linkdeps obj/foo/bar.bar.pcm\n";
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 // Test linking of targets containing Swift modules.
@@ -2376,12 +2699,12 @@ TEST_F(NinjaCBinaryTargetWriterTest, SwiftModule) {
         "obj/foo/file2.o: swift ../../foo/file1.swift ../../foo/file2.swift\n"
         "  restat = 1\n"
         "\n"
-        "build phony/foo/foo: phony"
-        " gen/foo/foo.h obj/foo/Foo.swiftmodule"
-        " obj/foo/file1.o obj/foo/file2.o\n";
+        "build phony/foo/foo.linkdeps: phony obj/foo/file1.o obj/foo/file2.o\n"
+        "build phony/foo/foo: phony phony/foo/foo.linkdeps gen/foo/foo.h "
+        "obj/foo/Foo.swiftmodule\n";
 
     const std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 
   // Swift module_dirs correctly set if dependency between Swift modules.
@@ -2414,12 +2737,13 @@ TEST_F(NinjaCBinaryTargetWriterTest, SwiftModule) {
         "../../bar/bar.swift || phony/foo/foo\n"
         "  restat = 1\n"
         "\n"
-        "build phony/bar/bar: phony"
-        " gen/bar/bar.h obj/bar/Bar.swiftmodule obj/bar/bar.o "
-        "|| phony/foo/foo\n";
+        "build phony/bar/bar.linkdeps: phony obj/bar/bar.o || "
+        "phony/foo/foo.linkdeps\n"
+        "build phony/bar/bar: phony phony/bar/bar.linkdeps gen/bar/bar.h "
+        "obj/bar/Bar.swiftmodule\n";
 
     const std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 
   // Swift module_dirs correctly set if dependency between Swift modules,
@@ -2460,12 +2784,13 @@ TEST_F(NinjaCBinaryTargetWriterTest, SwiftModule) {
         "../../bar/bar.swift || phony/bar/group phony/foo/foo\n"
         "  restat = 1\n"
         "\n"
-        "build phony/bar/bar: phony"
-        " gen/bar/bar.h obj/bar/Bar.swiftmodule obj/bar/bar.o "
-        "|| phony/bar/group phony/foo/foo\n";
+        "build phony/bar/bar.linkdeps: phony obj/bar/bar.o || phony/bar/group "
+        "phony/foo/foo.linkdeps\n"
+        "build phony/bar/bar: phony phony/bar/bar.linkdeps gen/bar/bar.h "
+        "obj/bar/Bar.swiftmodule\n";
 
     const std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 
   // C target links with module.
@@ -2492,7 +2817,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, SwiftModule) {
         "\n"
         "build ./bar: link obj/foo/file1.o obj/foo/file2.o "
         "| obj/foo/Foo.swiftmodule "
-        "|| phony/foo/foo\n"
+        "|| phony/foo/foo.linkdeps\n"
         "  ldflags =\n"
         "  libs =\n"
         "  frameworks =\n"
@@ -2501,7 +2826,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, SwiftModule) {
         "  output_dir =\n";
 
     const std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 }
 
@@ -2532,7 +2857,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, DependOnModule) {
       Tool::CreateTool(CTool::kCToolCxxModule);
   TestWithScope::SetCommandForTool(
       "c++ {{source}} {{cflags}} {{cflags_cc}} {{module_deps_no_self}} "
-      "{{defines}} {{include_dirs}} -fmodule-name={{label}} -c -x c++ "
+      "{{defines}} {{include_dirs}} -fmodule-name={{cc_module_name}} -c -x c++ "
       "-Xclang -emit-module -o {{output}}",
       cxx_module_tool.get());
   cxx_module_tool->set_outputs(SubstitutionList::MakeForTest(
@@ -2565,12 +2890,14 @@ TEST_F(NinjaCBinaryTargetWriterTest, DependOnModule) {
 
   Target target(&module_settings, Label(SourceDir("//blah/"), "a"));
   target.set_output_type(Target::STATIC_LIBRARY);
+  target.set_module_name("blah_a");
   target.visibility().SetPublic();
   target.sources().push_back(SourceFile("//blah/a.modulemap"));
   target.sources().push_back(SourceFile("//blah/a.cc"));
   target.sources().push_back(SourceFile("//blah/a.h"));
   target.source_types_used().Set(SourceFile::SOURCE_CPP);
   target.source_types_used().Set(SourceFile::SOURCE_MODULEMAP);
+  target.set_module_type(kExplicitModulemap);
   target.SetToolchain(&module_toolchain);
   ASSERT_TRUE(target.OnResolved(&err));
 
@@ -2584,9 +2911,9 @@ TEST_F(NinjaCBinaryTargetWriterTest, DependOnModule) {
 include_dirs =
 cflags =
 cflags_cc =
-module_deps = -fmodule-file=obj/blah/liba.a.pcm
-module_deps_no_self =
-label = //blah$:a
+cc_module_name = blah_a
+module_deps = -fmodule-map-file=../../blah/a.modulemap -fmodule-file=blah_a=obj/blah/liba.a.pcm
+module_deps_no_self = -fmodule-map-file=../../blah/a.modulemap
 root_out_dir = withmodules
 target_out_dir = obj/blah
 target_output_name = liba
@@ -2605,10 +2932,12 @@ build obj/blah/liba.a: alink obj/blah/liba.a.o
 )";
 
     std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 
-  Target target2(&module_settings, Label(SourceDir("//stuff/"), "b"));
+  Target target2(&module_settings, Label(SourceDir("//stuff/"), "b",
+                                         setup.toolchain()->label().dir(),
+                                         setup.toolchain()->label().name()));
   target2.set_output_type(Target::STATIC_LIBRARY);
   target2.visibility().SetPublic();
   target2.sources().push_back(SourceFile("//stuff/b.modulemap"));
@@ -2616,6 +2945,7 @@ build obj/blah/liba.a: alink obj/blah/liba.a.o
   target2.sources().push_back(SourceFile("//stuff/b.h"));
   target2.source_types_used().Set(SourceFile::SOURCE_CPP);
   target2.source_types_used().Set(SourceFile::SOURCE_MODULEMAP);
+  target2.set_module_type(kExplicitModulemap);
   target2.public_deps().push_back(LabelTargetPair(&target));
   target2.SetToolchain(&module_toolchain);
   ASSERT_TRUE(target2.OnResolved(&err));
@@ -2630,9 +2960,9 @@ build obj/blah/liba.a: alink obj/blah/liba.a.o
 include_dirs =
 cflags =
 cflags_cc =
-module_deps = -fmodule-file=obj/blah/liba.a.pcm -fmodule-file=obj/stuff/libb.b.pcm
-module_deps_no_self = -fmodule-file=obj/blah/liba.a.pcm
-label = //stuff$:b
+cc_module_name = //stuff$:b(//toolchain$:default)
+module_deps = -fmodule-map-file=../../stuff/b.modulemap -fmodule-file=//stuff:b(//toolchain:default)=obj/stuff/libb.b.pcm -fmodule-map-file=../../blah/a.modulemap -fmodule-file=blah_a=obj/blah/liba.a.pcm
+module_deps_no_self = -fmodule-map-file=../../stuff/b.modulemap -fmodule-map-file=../../blah/a.modulemap -fmodule-file=blah_a=obj/blah/liba.a.pcm
 root_out_dir = withmodules
 target_out_dir = obj/stuff
 target_output_name = libb
@@ -2640,7 +2970,7 @@ target_output_name = libb
 build obj/stuff/libb.b.pcm: cxx_module ../../stuff/b.modulemap | obj/blah/liba.a.pcm
   source_file_part = b.modulemap
   source_name_part = b
-build obj/stuff/libb.b.o: cxx ../../stuff/b.cc | obj/blah/liba.a.pcm obj/stuff/libb.b.pcm
+build obj/stuff/libb.b.o: cxx ../../stuff/b.cc | obj/stuff/libb.b.pcm obj/blah/liba.a.pcm
   source_file_part = b.cc
   source_name_part = b
 
@@ -2651,14 +2981,17 @@ build obj/stuff/libb.a: alink obj/stuff/libb.b.o || obj/blah/liba.a
 )";
 
     std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 
-  Target target3(&module_settings, Label(SourceDir("//things/"), "c"));
+  Target target3(&module_settings, Label(SourceDir("//things/"), "c",
+                                         module_toolchain.label().dir(),
+                                         module_toolchain.label().name()));
   target3.set_output_type(Target::STATIC_LIBRARY);
   target3.visibility().SetPublic();
   target3.sources().push_back(SourceFile("//stuff/c.modulemap"));
   target3.source_types_used().Set(SourceFile::SOURCE_MODULEMAP);
+  target3.set_module_type(kExplicitModulemap);
   target3.public_deps().push_back(LabelTargetPair(&target2));
   target3.SetToolchain(&module_toolchain);
   ASSERT_TRUE(target3.OnResolved(&err));
@@ -2674,14 +3007,14 @@ build obj/stuff/libb.a: alink obj/stuff/libb.b.o || obj/blah/liba.a
 include_dirs =
 cflags =
 cflags_cc =
-module_deps = -fmodule-file=obj/blah/liba.a.pcm -fmodule-file=obj/stuff/libb.b.pcm -fmodule-file=obj/stuff/libc.c.pcm
-module_deps_no_self = -fmodule-file=obj/blah/liba.a.pcm -fmodule-file=obj/stuff/libb.b.pcm
-label = //things$:c
+cc_module_name = //things$:c
+module_deps = -fmodule-map-file=../../stuff/b.modulemap -fmodule-file=//stuff:b(//toolchain:default)=obj/stuff/libb.b.pcm -fmodule-map-file=../../stuff/c.modulemap -fmodule-file=//things:c=obj/stuff/libc.c.pcm -fmodule-map-file=../../blah/a.modulemap -fmodule-file=blah_a=obj/blah/liba.a.pcm
+module_deps_no_self = -fmodule-map-file=../../stuff/b.modulemap -fmodule-file=//stuff:b(//toolchain:default)=obj/stuff/libb.b.pcm -fmodule-map-file=../../stuff/c.modulemap -fmodule-map-file=../../blah/a.modulemap -fmodule-file=blah_a=obj/blah/liba.a.pcm
 root_out_dir = withmodules
 target_out_dir = obj/things
 target_output_name = libc
 
-build obj/stuff/libc.c.pcm: cxx_module ../../stuff/c.modulemap | obj/blah/liba.a.pcm obj/stuff/libb.b.pcm
+build obj/stuff/libc.c.pcm: cxx_module ../../stuff/c.modulemap | obj/stuff/libb.b.pcm obj/blah/liba.a.pcm
   source_file_part = c.modulemap
   source_name_part = c
 
@@ -2692,10 +3025,12 @@ build obj/things/libc.a: alink || obj/stuff/libb.a obj/blah/liba.a
 )";
 
     std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 
-  Target depender(&module_settings, Label(SourceDir("//zap/"), "c"));
+  Target depender(&module_settings, Label(SourceDir("//zap/"), "c",
+                                          setup.toolchain()->label().dir(),
+                                          setup.toolchain()->label().name()));
   depender.set_output_type(Target::EXECUTABLE);
   depender.sources().push_back(SourceFile("//zap/x.cc"));
   depender.sources().push_back(SourceFile("//zap/y.cc"));
@@ -2714,17 +3049,17 @@ build obj/things/libc.a: alink || obj/stuff/libb.a obj/blah/liba.a
 include_dirs =
 cflags =
 cflags_cc =
-module_deps = -fmodule-file=obj/blah/liba.a.pcm -fmodule-file=obj/stuff/libb.b.pcm
-module_deps_no_self = -fmodule-file=obj/blah/liba.a.pcm -fmodule-file=obj/stuff/libb.b.pcm
-label = //zap$:c
+cc_module_name = //zap$:c(//toolchain$:default)
+module_deps = -fmodule-map-file=../../stuff/b.modulemap -fmodule-file=//stuff:b(//toolchain:default)=obj/stuff/libb.b.pcm -fmodule-map-file=../../blah/a.modulemap -fmodule-file=blah_a=obj/blah/liba.a.pcm
+module_deps_no_self = -fmodule-map-file=../../stuff/b.modulemap -fmodule-file=//stuff:b(//toolchain:default)=obj/stuff/libb.b.pcm -fmodule-map-file=../../blah/a.modulemap -fmodule-file=blah_a=obj/blah/liba.a.pcm
 root_out_dir = withmodules
 target_out_dir = obj/zap
 target_output_name = c
 
-build obj/zap/c.x.o: cxx ../../zap/x.cc | obj/blah/liba.a.pcm obj/stuff/libb.b.pcm
+build obj/zap/c.x.o: cxx ../../zap/x.cc | obj/stuff/libb.b.pcm obj/blah/liba.a.pcm
   source_file_part = x.cc
   source_name_part = x
-build obj/zap/c.y.o: cxx ../../zap/y.cc | obj/blah/liba.a.pcm obj/stuff/libb.b.pcm
+build obj/zap/c.y.o: cxx ../../zap/y.cc | obj/stuff/libb.b.pcm obj/blah/liba.a.pcm
   source_file_part = y.cc
   source_name_part = y
 
@@ -2738,7 +3073,7 @@ build withmodules/c: link obj/zap/c.x.o obj/zap/c.y.o obj/stuff/libb.a obj/blah/
 )";
 
     std::string out_str = out.str();
-    EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+    EXPECT_EQ(expected, out_str);
   }
 }
 
@@ -2798,7 +3133,7 @@ build ./main: link obj/launchpad/main.main.o | ./Space$ Cadet.so.TOC
 #endif
 
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
 TEST_F(NinjaCBinaryTargetWriterTest, Pool) {
@@ -2844,27 +3179,44 @@ TEST_F(NinjaCBinaryTargetWriterTest, Pool) {
       "  output_dir =\n"
       "  pool = foo_pool\n";
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
 }
 
-TEST_F(NinjaCBinaryTargetWriterTest, AsyncNonLinkableDeps) {
+TEST_F(NinjaCBinaryTargetWriterTest, ToolInputs) {
   Err err;
   TestWithScope setup;
-  BuildSettings* settings = setup.build_settings();
-  settings->set_async_non_linkable_deps(true);
 
-  Target datadep(setup.settings(), Label(SourceDir("//foo/"), "datadep"));
-  datadep.set_output_type(Target::ACTION);
-  datadep.visibility().SetPublic();
-  datadep.SetToolchain(setup.toolchain());
-  ASSERT_TRUE(datadep.OnResolved(&err));
+  Toolchain toolchain_with_inputs(
+      setup.settings(),
+      Label(SourceDir("//toolchain_with_inputs/"), "with_inputs"));
+
+  std::unique_ptr<Tool> cxx_tool = Tool::CreateTool(CTool::kCToolCxx);
+  TestWithScope::SetCommandForTool(
+      "c++ {{source}} {{cflags}} {{cflags_cc}} {{defines}} {{include_dirs}} "
+      "-o {{output}}",
+      cxx_tool.get());
+  cxx_tool->set_outputs(SubstitutionList::MakeForTest(
+      "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.o"));
+  cxx_tool->set_inputs({SourceFile("//bin/clang++")});
+  toolchain_with_inputs.SetTool(std::move(cxx_tool));
+
+  std::unique_ptr<Tool> link = Tool::CreateTool(CTool::kCToolLink);
+  TestWithScope::SetCommandForTool(
+      "ld -o {{target_output_name}} {{source}} {{ldflags}} {{libs}}",
+      link.get());
+  link->set_outputs(
+      SubstitutionList::MakeForTest("{{root_out_dir}}/{{target_output_name}}"));
+  link->set_inputs(
+      {SourceFile("//bin/lld"), SourceFile("//bin/link_wrapper.py")});
+  toolchain_with_inputs.SetTool(std::move(link));
+
+  toolchain_with_inputs.ToolchainSetupComplete();
 
   Target target(setup.settings(), Label(SourceDir("//foo/"), "bar"));
   target.sources().push_back(SourceFile("//foo/source.cc"));
   target.set_output_type(Target::EXECUTABLE);
   target.visibility().SetPublic();
-  target.SetToolchain(setup.toolchain());
-  target.data_deps().push_back(LabelTargetPair(&datadep));
+  target.SetToolchain(&toolchain_with_inputs);
   ASSERT_TRUE(target.OnResolved(&err));
 
   std::ostringstream out;
@@ -2875,22 +3227,252 @@ TEST_F(NinjaCBinaryTargetWriterTest, AsyncNonLinkableDeps) {
       "defines =\n"
       "include_dirs =\n"
       "root_out_dir = .\n"
-      "target_gen_dir = gen/foo\n"
-      "target_out_dir = obj/foo\n"
       "target_output_name = bar\n"
       "\n"
-      "build obj/foo/bar.source.o: cxx ../../foo/source.cc\n"
+      "build obj/foo/bar.source.o: cxx ../../foo/source.cc | "
+      "../../bin/clang++\n"
       "  source_file_part = source.cc\n"
       "  source_name_part = source\n"
       "\n"
-      "build ./bar: link obj/foo/bar.source.o |@ phony/foo/datadep\n"
+      "build ./bar: link obj/foo/bar.source.o | "
+      "phony/link_inputs\n"
       "  ldflags =\n"
       "  libs =\n"
       "  frameworks =\n"
       "  swiftmodules =\n"
       "  output_extension =\n"
       "  output_dir =\n";
-
   std::string out_str = out.str();
-  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
+  EXPECT_EQ(expected, out_str);
+}
+
+TEST_F(NinjaCBinaryTargetWriterTest, ModuleMapGeneration) {
+  Err err;
+  TestWithScope setup;
+  Settings module_settings(setup.build_settings(), "withmodules/");
+  Toolchain module_toolchain(&module_settings,
+                             Label(SourceDir("//toolchain/"), "withmodules"));
+  module_settings.set_toolchain_label(module_toolchain.label());
+  module_settings.set_default_toolchain_label(module_toolchain.label());
+
+  std::unique_ptr<Tool> cxx = std::make_unique<CTool>(CTool::kCToolCxx);
+  CTool* cxx_tool = cxx->AsC();
+  TestWithScope::SetCommandForTool(
+      "c++ {{source}} {{cflags}} {{cflags_cc}} {{module_deps}} "
+      "{{defines}} {{include_dirs}} -o {{output}}",
+      cxx_tool);
+  cxx_tool->set_outputs(SubstitutionList::MakeForTest(
+      "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.o"));
+  cxx_tool->set_precompiled_header_type(CTool::PCH_GCC);
+  module_toolchain.SetTool(std::move(cxx));
+
+  std::unique_ptr<Tool> alink = Tool::CreateTool(CTool::kCToolAlink);
+  CTool* alink_tool = alink->AsC();
+  TestWithScope::SetCommandForTool("ar {{output}} {{source}}", alink_tool);
+  alink_tool->set_lib_switch("-l");
+  alink_tool->set_lib_dir_switch("-L");
+  alink_tool->set_output_prefix("lib");
+  alink_tool->set_outputs(SubstitutionList::MakeForTest(
+      "{{target_out_dir}}/{{target_output_name}}.a"));
+  module_toolchain.SetTool(std::move(alink));
+
+  module_toolchain.ToolchainSetupComplete();
+
+  // Let's create a target and give it public headers.
+  Target target(setup.settings(), Label(SourceDir("//foo/"), "bar",
+                                        setup.toolchain()->label().dir(),
+                                        setup.toolchain()->label().name()));
+  target.set_output_type(Target::SOURCE_SET);
+  target.visibility().SetPublic();
+  target.sources().push_back(SourceFile("//foo/source1.cc"));
+  target.sources().push_back(SourceFile("//foo/private_header.h"));
+  target.public_headers().push_back(SourceFile("//foo/public_header.h"));
+  target.set_all_headers_public(false);
+  target.source_types_used().Set(SourceFile::SOURCE_CPP);
+  target.set_module_type(kGeneratedTextualModulemap);
+  target.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target.OnResolved(&err));
+
+  std::ostringstream ninja_out;
+  NinjaCBinaryTargetWriter writer(&target, ninja_out);
+
+  std::ostringstream modulemap_out;
+  SourceDir out_dir("//out/Debug/gen/");
+
+  writer.WritePublicModuleMap(modulemap_out, out_dir);
+
+  const char expected_modulemap[] =
+      "module \"//foo:bar\" {\n"
+      "  textual header \"../../../foo/public_header.h\"\n"
+      "  export *\n"
+      "}\n";
+
+  std::string modulemap_str = modulemap_out.str();
+  EXPECT_EQ(expected_modulemap, modulemap_str);
+
+  const char expected_ninja[] =
+      "defines =\n"
+      "include_dirs =\n"
+      "cflags =\n"
+      "cflags_cc =\n"
+      "root_out_dir = .\n"
+      "target_gen_dir = gen/foo\n"
+      "target_out_dir = obj/foo\n"
+      "target_output_name = bar\n"
+      "\n"
+      "build obj/foo/bar.source1.o: cxx ../../foo/source1.cc\n"
+      "  source_file_part = source1.cc\n"
+      "  source_name_part = source1\n"
+      "\n"
+      "build phony/foo/bar.linkdeps: phony obj/foo/bar.source1.o\n"
+      "build phony/foo/bar: phony phony/foo/bar.linkdeps\n";
+  writer.Run();
+  std::string ninja_str = ninja_out.str();
+  EXPECT_EQ(expected_ninja, ninja_str);
+
+  // Test generation without explicit public headers (uses sources instead)
+  Target target_no_public(
+      setup.settings(),
+      Label(SourceDir("//foo/"), "no_public", setup.toolchain()->label().dir(),
+            setup.toolchain()->label().name()));
+  target_no_public.set_output_type(Target::SOURCE_SET);
+  target_no_public.visibility().SetPublic();
+  target_no_public.sources().push_back(SourceFile("//foo/source1.cc"));
+  target_no_public.sources().push_back(SourceFile("//foo/header1.h"));
+  target_no_public.source_types_used().Set(SourceFile::SOURCE_CPP);
+  target_no_public.source_types_used().Set(SourceFile::SOURCE_H);
+  target_no_public.set_module_type(kGeneratedTextualModulemap);
+  target_no_public.SetToolchain(setup.toolchain());
+  ASSERT_TRUE(target_no_public.OnResolved(&err));
+
+  std::ostringstream ninja_out_no_public;
+  NinjaCBinaryTargetWriter writer_no_public(&target_no_public,
+                                            ninja_out_no_public);
+
+  std::ostringstream modulemap_out_no_public;
+
+  writer_no_public.WritePublicModuleMap(modulemap_out_no_public, out_dir);
+
+  const char expected_modulemap_no_public[] =
+      "module \"//foo:no_public\" {\n"
+      "  textual header \"../../../foo/header1.h\"\n"
+      "  export *\n"
+      "}\n";
+
+  std::string modulemap_str_no_public = modulemap_out_no_public.str();
+  EXPECT_EQ(expected_modulemap_no_public, modulemap_str_no_public);
+
+  Target transitive(&module_settings, Label(SourceDir("//foo/"), "transitive",
+                                            module_toolchain.label().dir(),
+                                            module_toolchain.label().name()));
+  transitive.visibility().SetPublic();
+  transitive.sources().push_back(SourceFile("//foo/invisible.h"));
+  transitive.source_types_used().Set(SourceFile::SOURCE_H);
+  transitive.set_output_type(Target::SOURCE_SET);
+  transitive.set_module_type(kGeneratedTextualModulemap);
+  transitive.SetToolchain(&module_toolchain);
+  ASSERT_TRUE(transitive.OnResolved(&err));
+
+  Target private_dep(
+      &module_settings,
+      Label(SourceDir("//private/"), "private_dep",
+            module_toolchain.label().dir(), module_toolchain.label().name()));
+  private_dep.visibility().SetPublic();
+  private_dep.set_output_type(Target::SOURCE_SET);
+  private_dep.sources().push_back(SourceFile("//foo/private_dep.h"));
+  private_dep.source_types_used().Set(SourceFile::SOURCE_H);
+  private_dep.public_deps().push_back(LabelTargetPair(&transitive));
+  private_dep.set_module_type(kGeneratedTextualModulemap);
+  private_dep.SetToolchain(&module_toolchain);
+  ASSERT_TRUE(private_dep.OnResolved(&err));
+
+  Target public_dep(&module_settings, Label(SourceDir("//foo/"), "public_dep",
+                                            module_toolchain.label().dir(),
+                                            module_toolchain.label().name()));
+  public_dep.visibility().SetPublic();
+  public_dep.set_output_type(Target::SOURCE_SET);
+  public_dep.sources().push_back(SourceFile("//foo/public_dep.h"));
+  public_dep.private_deps().push_back(LabelTargetPair(&transitive));
+  public_dep.public_deps().push_back(LabelTargetPair(&transitive));
+  public_dep.set_module_type(kGeneratedTextualModulemap);
+  public_dep.SetToolchain(&module_toolchain);
+  ASSERT_TRUE(public_dep.OnResolved(&err));
+
+  Target group_dep(&module_settings, Label(SourceDir("//foo/"), "group_dep",
+                                           module_toolchain.label().dir(),
+                                           module_toolchain.label().name()));
+  group_dep.set_output_type(Target::GROUP);
+  group_dep.visibility().SetPublic();
+  group_dep.private_deps().push_back(LabelTargetPair(&public_dep));
+  group_dep.SetToolchain(&module_toolchain);
+  ASSERT_TRUE(group_dep.OnResolved(&err));
+
+  Target root(&module_settings,
+              Label(SourceDir("//foo/"), "root", module_toolchain.label().dir(),
+                    module_toolchain.label().name()));
+  root.set_output_type(Target::SOURCE_SET);
+  root.visibility().SetPublic();
+  root.sources().push_back(SourceFile("//foo/root.cc"));
+  root.sources().push_back(SourceFile("//foo/private_header.h"));
+  root.public_headers().push_back(SourceFile("//foo/public_header.h"));
+  root.set_all_headers_public(false);
+  root.source_types_used().Set(SourceFile::SOURCE_H);
+  root.source_types_used().Set(SourceFile::SOURCE_CPP);
+  root.public_deps().push_back(LabelTargetPair(&group_dep));
+  root.private_deps().push_back(LabelTargetPair(&private_dep));
+  root.set_module_type(kGeneratedTextualModulemap);
+  root.SetToolchain(&module_toolchain);
+  ASSERT_TRUE(root.OnResolved(&err));
+
+  std::ostringstream public_modulemap;
+  NinjaCBinaryTargetWriter(&root, ninja_out)
+      .WritePublicModuleMap(public_modulemap, out_dir);
+
+  const char expected_public[] =
+      "module \"//foo:root\" {\n"
+      "  textual header \"../../../foo/public_header.h\"\n"
+      "  extern module \"//foo:public_dep\" \"public_dep.modulemap\"\n"
+      "  use \"//foo:public_dep\"\n"
+      "  export *\n"
+      "}\n";
+  EXPECT_EQ(expected_public, public_modulemap.str());
+
+  std::ostringstream private_modulemap;
+  NinjaCBinaryTargetWriter(&root, ninja_out)
+      .WritePrivateModuleMap(private_modulemap, out_dir);
+
+  const char expected_private[] =
+      "module \"//foo:root_Private\" {\n"
+      "  textual header \"../../../foo/private_header.h\"\n"
+      "  extern module \"//foo:root\" \"root.modulemap\"\n"
+      "  use \"//foo:root\"\n"
+      "  extern module \"//foo:public_dep\" \"public_dep.modulemap\"\n"
+      "  use \"//foo:public_dep\"\n"
+      "  extern module \"//private:private_dep\" "
+      "\"../private/private_dep.modulemap\"\n"
+      "  use \"//private:private_dep\"\n"
+      "}\n";
+
+  EXPECT_EQ(expected_private, private_modulemap.str());
+
+  std::ostringstream root_ninja_out;
+  NinjaCBinaryTargetWriter(&root, root_ninja_out).Run();
+  std::string root_ninja_str = root_ninja_out.str();
+  const char expected_root_ninja[] =
+      "defines =\n"
+      "include_dirs =\n"
+      "cflags =\n"
+      "cflags_cc =\n"
+      "module_deps = -fmodule-map-file=gen/foo/root.private.modulemap\n"
+      "target_out_dir = obj/foo\n"
+      "target_output_name = root\n"
+      "\n"
+      "build obj/foo/root.root.o: cxx ../../foo/root.cc\n"
+      "  source_file_part = root.cc\n"
+      "  source_name_part = root\n"
+      "\n"
+      "build phony/foo/root.linkdeps: phony obj/foo/root.root.o\n"
+      "build phony/foo/root: phony phony/foo/root.linkdeps\n";
+
+  EXPECT_EQ(expected_root_ninja, root_ninja_str);
 }

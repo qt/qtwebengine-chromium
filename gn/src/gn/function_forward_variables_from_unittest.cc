@@ -27,10 +27,10 @@ TEST_F(FunctionForwardVariablesFromTest, List) {
 
     // Defines a template and copy the two x and y, and z values out.
     TestParseInput input(program);
-    ASSERT_FALSE(input.has_error());
+    ASSERT_SUCCESS(input);
 
     input.parsed()->Execute(setup.scope(), &err);
-    ASSERT_FALSE(err.has_error()) << err.message();
+    ASSERT_SUCCESS(err);
 
     EXPECT_EQ("target, 1, 2\n", setup.print_output());
     setup.print_output().clear();
@@ -44,7 +44,7 @@ TEST_F(FunctionForwardVariablesFromTest, List) {
     // This uses the same known-good program as before, but adds another
     // variable in the scope before it.
     TestParseInput clobber("x = 1\n" + program);
-    ASSERT_FALSE(clobber.has_error());
+    ASSERT_SUCCESS(clobber);
 
     clobber.parsed()->Execute(setup.scope(), &err);
     ASSERT_TRUE(err.has_error());  // Should thow a clobber error.
@@ -63,11 +63,11 @@ TEST_F(FunctionForwardVariablesFromTest, LiteralList) {
       "}\n"
       "print(\"${a.x} ${a.y} ${a.z}\")\n");
 
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ("1 2 3\n", setup.print_output());
   setup.print_output().clear();
@@ -90,11 +90,11 @@ TEST_F(FunctionForwardVariablesFromTest, ListWithExclusion) {
       "  print(\"$z\")\n"
       "}\n");
 
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ("3\ntarget, 1, 2\n", setup.print_output());
   setup.print_output().clear();
@@ -154,7 +154,7 @@ TEST_F(FunctionForwardVariablesFromTest, ErrorCases) {
       "}\n"
       "d(\"target\") {\n"
       "}\n");
-  ASSERT_FALSE(prog.has_error());
+  ASSERT_SUCCESS(prog);
   err = Err();
   prog.parsed()->Execute(setup.scope(), &err);
   EXPECT_TRUE(err.has_error());
@@ -205,11 +205,11 @@ TEST_F(FunctionForwardVariablesFromTest, Star) {
       "  y = 2\n"
       "}\n");
 
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ("target, 1, 2\n", setup.print_output());
   setup.print_output().clear();
@@ -233,11 +233,11 @@ TEST_F(FunctionForwardVariablesFromTest, StarWithExclusion) {
       "  print(\"$z\")\n"
       "}\n");
 
-  ASSERT_FALSE(input.has_error());
+  ASSERT_SUCCESS(input);
 
   Err err;
   input.parsed()->Execute(setup.scope(), &err);
-  ASSERT_FALSE(err.has_error()) << err.message();
+  ASSERT_SUCCESS(err);
 
   EXPECT_EQ("3\ntarget, 1, 2\n", setup.print_output());
   setup.print_output().clear();

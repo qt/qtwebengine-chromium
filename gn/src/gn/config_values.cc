@@ -31,6 +31,7 @@ void ConfigValues::AppendValues(const ConfigValues& append) {
   VectorAppend(&defines_, append.defines_);
   VectorAppend(&frameworks_, append.frameworks_);
   VectorAppend(&weak_frameworks_, append.weak_frameworks_);
+  VectorAppend(&weak_libraries_, append.weak_libraries_);
   VectorAppend(&framework_dirs_, append.framework_dirs_);
   VectorAppend(&include_dirs_, append.include_dirs_);
   VectorAppend(&inputs_, append.inputs_);
@@ -40,6 +41,7 @@ void ConfigValues::AppendValues(const ConfigValues& append) {
   VectorAppend(&rustflags_, append.rustflags_);
   VectorAppend(&rustenv_, append.rustenv_);
   VectorAppend(&swiftflags_, append.swiftflags_);
+  VectorAppend(&c_additional_outputs_, append.c_additional_outputs_);
 
   // Only append precompiled header if there isn't one. It might be nice to
   // throw an error if there are conflicting precompiled headers, but that

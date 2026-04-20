@@ -277,7 +277,8 @@ bool CheckPublicHeaders(const BuildSettings* build_settings,
   for (size_t i = 0; i < header_errors.size(); i++) {
     if (i > 0)
       OutputString("___________________\n", DECORATION_YELLOW);
-    header_errors[i].PrintToStdout();
+    if (!header_errors[i].PrintToStdout())
+      break;
   }
   return header_errors.empty();
 }

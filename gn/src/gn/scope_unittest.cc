@@ -105,7 +105,7 @@ TEST(Scope, NonRecursiveMergeTo) {
     options.clobber_existing = true;
     EXPECT_TRUE(setup.scope()->NonRecursiveMergeTo(&new_scope, options,
                                                    &assignment, "error", &err));
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
 
     const Value* found_value = new_scope.GetValue("v");
     ASSERT_TRUE(found_value);
@@ -125,7 +125,7 @@ TEST(Scope, NonRecursiveMergeTo) {
     Err err;
     EXPECT_TRUE(setup.scope()->NonRecursiveMergeTo(&new_scope, options,
                                                    &assignment, "error", &err));
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
 
     const Template* found_value = new_scope.GetTemplate("templ");
     ASSERT_TRUE(found_value);
@@ -141,7 +141,7 @@ TEST(Scope, NonRecursiveMergeTo) {
     Err err;
     EXPECT_TRUE(setup.scope()->NonRecursiveMergeTo(
         &new_scope, Scope::MergeOptions(), &assignment, "error", &err));
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
   }
 
   // Templates that technically collide but are the same.
@@ -155,7 +155,7 @@ TEST(Scope, NonRecursiveMergeTo) {
     Err err;
     EXPECT_TRUE(setup.scope()->NonRecursiveMergeTo(
         &new_scope, Scope::MergeOptions(), &assignment, "error", &err));
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
   }
 
   // Copy private values and templates.
@@ -165,7 +165,7 @@ TEST(Scope, NonRecursiveMergeTo) {
     Err err;
     EXPECT_TRUE(setup.scope()->NonRecursiveMergeTo(
         &new_scope, Scope::MergeOptions(), &assignment, "error", &err));
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
     EXPECT_TRUE(new_scope.GetValue(private_var_name));
     EXPECT_TRUE(new_scope.GetTemplate("_templ"));
   }
@@ -179,7 +179,7 @@ TEST(Scope, NonRecursiveMergeTo) {
     options.skip_private_vars = true;
     EXPECT_TRUE(setup.scope()->NonRecursiveMergeTo(&new_scope, options,
                                                    &assignment, "error", &err));
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
     EXPECT_FALSE(new_scope.GetValue(private_var_name));
     EXPECT_FALSE(new_scope.GetTemplate("_templ"));
   }
@@ -192,7 +192,7 @@ TEST(Scope, NonRecursiveMergeTo) {
     Scope::MergeOptions options;
     EXPECT_TRUE(setup.scope()->NonRecursiveMergeTo(&new_scope, options,
                                                    &assignment, "error", &err));
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
     EXPECT_FALSE(new_scope.CheckForUnusedVars(&err));
     EXPECT_TRUE(err.has_error());
   }
@@ -206,9 +206,9 @@ TEST(Scope, NonRecursiveMergeTo) {
     options.mark_dest_used = true;
     EXPECT_TRUE(setup.scope()->NonRecursiveMergeTo(&new_scope, options,
                                                    &assignment, "error", &err));
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
     EXPECT_TRUE(new_scope.CheckForUnusedVars(&err));
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
   }
 
   // Build dependency files are merged.
@@ -224,7 +224,7 @@ TEST(Scope, NonRecursiveMergeTo) {
     Err err;
     EXPECT_TRUE(from_scope.NonRecursiveMergeTo(&to_scope, options, &assignment,
                                                "error", &err));
-    EXPECT_FALSE(err.has_error());
+    EXPECT_SUCCESS(err);
     EXPECT_EQ(1U, to_scope.CollectBuildDependencyFiles().size());
     EXPECT_TRUE(ContainsBuildDependencyFile(&to_scope, source_file));
   }

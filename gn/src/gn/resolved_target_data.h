@@ -5,7 +5,10 @@
 #ifndef TOOLS_GN_RESOLVED_TARGET_DATA_H_
 #define TOOLS_GN_RESOLVED_TARGET_DATA_H_
 
+#include <atomic>
 #include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <vector>
 
 #include "base/containers/span.h"
@@ -96,6 +99,13 @@ class ResolvedTargetData {
     return GetTargetFrameworkInfo(target)->weak_frameworks;
   }
 
+  // The list of weak library files to use at link time when generating macOS
+  // or iOS linkable binaries.
+  const std::vector<std::string>& GetLinkedWeakLibraries(
+      const Target* target) const {
+    return GetTargetFrameworkInfo(target)->weak_libraries;
+  }
+
   // Retrieves a set of hard dependencies for this target.
   // All hard deps from this target and all dependencies, but not the
   // target itself.
@@ -148,14 +158,15 @@ class ResolvedTargetData {
 
     const Target* target = nullptr;
     ResolvedTargetDeps deps;
+    mutable std::mutex mutex;
 
-    bool has_lib_info = false;
-    bool has_framework_info = false;
-    bool has_hard_deps = false;
-    bool has_inherited_libs = false;
-    bool has_module_deps_information = false;
-    bool has_rust_libs = false;
-    bool has_swift_values = false;
+    std::atomic<bool> has_lib_info = false;
+    std::atomic<bool> has_framework_info = false;
+    std::atomic<bool> has_hard_deps = false;
+    std::atomic<bool> has_inherited_libs = false;
+    std::atomic<bool> has_module_deps_information = false;
+    std::atomic<bool> has_rust_libs = false;
+    std::atomic<bool> has_swift_values = false;
 
     // Only valid if |has_lib_info| is true.
     std::vector<SourceDir> lib_dirs;
@@ -165,6 +176,7 @@ class ResolvedTargetData {
     std::vector<SourceDir> framework_dirs;
     std::vector<std::string> frameworks;
     std::vector<std::string> weak_frameworks;
+    std::vector<std::string> weak_libraries;
 
     // Only valid if |has_hard_deps| is true.
     TargetSet hard_deps;
@@ -201,63 +213,85 @@ class ResolvedTargetData {
 
   const TargetInfo* GetTargetLibInfo(const Target* target) const {
     TargetInfo* info = GetTargetInfo(target);
-    if (!info->has_lib_info) {
-      ComputeLibInfo(info);
-      DCHECK(info->has_lib_info);
+    if (!info->has_lib_info.load(std::memory_order_acquire)) {
+      std::lock_guard<std::mutex> lock(info->mutex);
+      if (!info->has_lib_info.load(std::memory_order_relaxed)) {
+        ComputeLibInfo(info);
+        info->has_lib_info.store(true, std::memory_order_release);
+      }
     }
     return info;
   }
 
   const TargetInfo* GetTargetFrameworkInfo(const Target* target) const {
     TargetInfo* info = GetTargetInfo(target);
-    if (!info->has_framework_info) {
-      ComputeFrameworkInfo(info);
-      DCHECK(info->has_framework_info);
+    if (!info->has_framework_info.load(std::memory_order_acquire)) {
+      std::lock_guard<std::mutex> lock(info->mutex);
+      if (!info->has_framework_info.load(std::memory_order_relaxed)) {
+        ComputeFrameworkInfo(info);
+        info->has_framework_info.store(true, std::memory_order_release);
+      }
     }
     return info;
   }
 
   const TargetInfo* GetTargetHardDeps(const Target* target) const {
     TargetInfo* info = GetTargetInfo(target);
-    if (!info->has_hard_deps) {
-      ComputeHardDeps(info);
-      DCHECK(info->has_hard_deps);
+    if (!info->has_hard_deps.load(std::memory_order_acquire)) {
+      std::lock_guard<std::mutex> lock(info->mutex);
+      if (!info->has_hard_deps.load(std::memory_order_relaxed)) {
+        ComputeHardDeps(info);
+        info->has_hard_deps.store(true, std::memory_order_release);
+      }
     }
     return info;
   }
 
   const TargetInfo* GetTargetInheritedLibs(const Target* target) const {
     TargetInfo* info = GetTargetInfo(target);
-    if (!info->has_inherited_libs) {
-      ComputeInheritedLibs(info);
-      DCHECK(info->has_inherited_libs);
+    if (!info->has_inherited_libs.load(std::memory_order_acquire)) {
+      std::lock_guard<std::mutex> lock(info->mutex);
+      if (!info->has_inherited_libs.load(std::memory_order_relaxed)) {
+        ComputeInheritedLibs(info);
+        info->has_inherited_libs.store(true, std::memory_order_release);
+      }
     }
     return info;
   }
 
   const TargetInfo* GetTargetModuleDepsInformation(const Target* target) const {
     TargetInfo* info = GetTargetInfo(target);
-    if (!info->has_module_deps_information) {
-      ComputeModuleDepsInformation(info);
-      DCHECK(info->has_module_deps_information);
+    if (!info->has_module_deps_information.load(std::memory_order_acquire)) {
+      std::lock_guard<std::mutex> lock(info->mutex);
+      if (!info->has_module_deps_information.load(std::memory_order_relaxed)) {
+        ComputeModuleDepsInformation(info);
+        info->has_module_deps_information.store(true,
+                                                std::memory_order_release);
+      }
     }
     return info;
   }
 
   const TargetInfo* GetTargetRustLibs(const Target* target) const {
     TargetInfo* info = GetTargetInfo(target);
-    if (!info->has_rust_libs) {
-      ComputeRustLibs(info);
-      DCHECK(info->has_rust_libs);
+    if (!info->has_rust_libs.load(std::memory_order_acquire)) {
+      std::lock_guard<std::mutex> lock(info->mutex);
+      if (!info->has_rust_libs.load(std::memory_order_relaxed)) {
+        ComputeRustLibs(info);
+        info->has_rust_libs.store(true, std::memory_order_release);
+      }
     }
     return info;
   }
 
   const TargetInfo* GetTargetSwiftValues(const Target* target) const {
     TargetInfo* info = GetTargetInfo(target);
-    if (!info->has_swift_values) {
-      ComputeSwiftValues(info);
-      DCHECK(info->has_swift_values);
+    if (!info->has_swift_values.load(std::memory_order_acquire)) {
+      std::lock_guard<std::mutex> lock(info->mutex);
+      if (!info->has_swift_values.load(std::memory_order_relaxed)) {
+        ComputeSwiftValues(info);
+        info->has_swift_values.store(true, std::memory_order_release);
+      }
     }
     return info;
   }
@@ -299,6 +333,7 @@ class ResolvedTargetData {
   // on demand (hence the mutable qualifier). Implemented with a
   // UniqueVector<> and a parallel vector of unique TargetInfo
   // instances for best performance.
+  mutable std::shared_mutex map_mutex_;
   mutable UniqueVector<const Target*> targets_;
   mutable std::vector<std::unique_ptr<TargetInfo>> infos_;
 };

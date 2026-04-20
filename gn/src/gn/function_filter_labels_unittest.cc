@@ -26,7 +26,7 @@ TEST(FilterLabelsTest, OneIncluded) {
   Err err;
   Value result =
       functions::RunFilterLabelsInclude(setup.scope(), &function, args, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(result.type(), Value::LIST);
   ASSERT_EQ(1u, result.list_value().size());
   ASSERT_TRUE(result.list_value()[0].type() == Value::STRING);
@@ -53,7 +53,7 @@ TEST(FilterLabelsTest, TwoIncluded) {
   Err err;
   Value result =
       functions::RunFilterLabelsInclude(setup.scope(), &function, args, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(result.type(), Value::LIST);
   ASSERT_EQ(2u, result.list_value().size());
   ASSERT_TRUE(result.list_value()[0].type() == Value::STRING);
@@ -81,7 +81,7 @@ TEST(FilterLabelsTest, NoneIncluded) {
   Err err;
   Value result =
       functions::RunFilterLabelsInclude(setup.scope(), &function, args, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(result.type(), Value::LIST);
   ASSERT_EQ(0u, result.list_value().size());
 }
@@ -105,7 +105,7 @@ TEST(FilterLabelsTest, OneExcluded) {
   Err err;
   Value result =
       functions::RunFilterLabelsExclude(setup.scope(), &function, args, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(result.type(), Value::LIST);
   ASSERT_EQ(1u, result.list_value().size());
   ASSERT_TRUE(result.list_value()[0].type() == Value::STRING);
@@ -132,7 +132,7 @@ TEST(FilterLabelsTest, TwoExcluded) {
   Err err;
   Value result =
       functions::RunFilterLabelsExclude(setup.scope(), &function, args, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(result.type(), Value::LIST);
   ASSERT_EQ(1u, result.list_value().size());
   ASSERT_TRUE(result.list_value()[0].type() == Value::STRING);
@@ -158,7 +158,7 @@ TEST(FilterLabelsTest, NoneExcluded) {
   Err err;
   Value result =
       functions::RunFilterLabelsExclude(setup.scope(), &function, args, &err);
-  ASSERT_FALSE(err.has_error());
+  ASSERT_SUCCESS(err);
   ASSERT_EQ(result.type(), Value::LIST);
   ASSERT_EQ(2u, result.list_value().size());
   ASSERT_TRUE(result.list_value()[0].type() == Value::STRING);

@@ -114,8 +114,10 @@ void SecureHashAlgorithm::Final() {
   Pad();
   Process();
 
+#if defined(ARCH_CPU_LITTLE_ENDIAN)
   for (int t = 0; t < 5; ++t)
     H[t] = ByteSwap(H[t]);
+#endif
 }
 
 void SecureHashAlgorithm::Update(const void* data, size_t nbytes) {
@@ -161,8 +163,10 @@ void SecureHashAlgorithm::Process() {
   //
   // W and M are in a union, so no need to memcpy.
   // memcpy(W, M, sizeof(M));
+#if defined(ARCH_CPU_LITTLE_ENDIAN)
   for (t = 0; t < 16; ++t)
     W[t] = ByteSwap(W[t]);
+#endif
 
   // b.
   for (t = 16; t < 80; ++t)

@@ -162,7 +162,7 @@ TEST(RebasePath, List) {
   Err err;
   FunctionCallNode function;
   Value ret = functions::RunRebasePath(setup.scope(), &function, args, &err);
-  EXPECT_FALSE(err.has_error());
+  EXPECT_SUCCESS(err);
 
   ASSERT_EQ(Value::LIST, ret.type());
   ASSERT_EQ(2u, ret.list_value().size());

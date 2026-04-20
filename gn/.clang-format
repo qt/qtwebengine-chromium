@@ -1,2 +1,2 @@
 BasedOnStyle: Chromium
-Standard: c++17
+Standard: c++20

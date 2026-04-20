@@ -166,6 +166,26 @@ std::string NinjaTargetWriter::RunAndWriteFile(
     NinjaBinaryTargetWriter writer(target, rules);
     writer.SetResolvedTargetData(resolved);
     writer.SetNinjaOutputs(ninja_outputs);
+    if (target->module_type().test(Target::MODULEMAP_IS_GENERATED)) {
+      const SourceFile* modulemap = target->modulemap_file();
+      CHECK(modulemap);
+
+      // Write public module map
+      StringOutputBuffer public_storage;
+      std::ostream public_os(&public_storage);
+      writer.WritePublicModuleMap(public_os, modulemap->GetDir());
+      base::FilePath public_path =
+          settings->build_settings()->GetFullPath(*modulemap);
+      public_storage.WriteToFileIfChanged(public_path, nullptr);
+
+      // Write private module map adjacent to the public one
+      StringOutputBuffer private_storage;
+      std::ostream private_os(&private_storage);
+      writer.WritePrivateModuleMap(private_os, modulemap->GetDir());
+      base::FilePath private_path = settings->build_settings()->GetFullPath(
+          *target->private_modulemap_file());
+      private_storage.WriteToFileIfChanged(private_path, nullptr);
+    }
     writer.Run();
   } else {
     CHECK(0) << "Output type of target not handled.";
@@ -571,10 +591,12 @@ std::vector<OutputFile> NinjaTargetWriter::WriteInputDepsStampOrPhonyAndGetDep(
            GeneralTool::kGeneralToolStamp;
   }
 
+  // These are not real outputs, so do not use WriteOutput() here.
+  // See https://gn.issues.chromium.org/448860851.
   out_ << "build ";
-  WriteOutput(input_stamp_or_phony);
+  path_output_.WriteFile(out_, input_stamp_or_phony);
   out_ << ": " << tool;
-  WriteOutputs(outs);
+  path_output_.WriteFiles(out_, outs);
   out_ << "\n";
   return std::vector<OutputFile>{input_stamp_or_phony};
 }
@@ -625,5 +647,26 @@ void NinjaTargetWriter::WriteStampOrPhonyForTarget(
     out_ << " ||";
     path_output_.WriteFiles(out_, order_only_deps);
   }
+  WriteValidations();
   out_ << std::endl;
+}
+
+void NinjaTargetWriter::WriteValidations() {
+  const LabelTargetVector& validations = target_->validations();
+  if (validations.empty())
+    return;
+
+  bool first = true;
+  for (const auto& pair : validations) {
+    // This check is needed because empty groups have no output.
+    if (!pair.ptr->has_dependency_output()) {
+      continue;
+    }
+    if (first) {
+      out_ << " |@";
+      first = false;
+    }
+    out_ << " ";
+    WriteOutput(pair.ptr->dependency_output());
+  }
 }

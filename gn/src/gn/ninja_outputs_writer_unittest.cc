@@ -151,5 +151,5 @@ group("zoo") {
   ]
 })##";
 
-  EXPECT_EQ(generated, expected) << generated << "\n" << expected;
+  EXPECT_EQ(generated, expected);
 }

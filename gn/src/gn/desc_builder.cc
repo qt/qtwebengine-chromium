@@ -575,6 +575,10 @@ class TargetDescBuilder : public BaseDescBuilder {
     if (what(variables::kGenDeps) && !target_->gen_deps().empty())
       res->SetWithoutPathExpansion(variables::kGenDeps, RenderGenDeps());
 
+    if (what(variables::kValidations) && !target_->validations().empty())
+      res->SetWithoutPathExpansion(variables::kValidations,
+                                   RenderValidations());
+
     // Runtime deps are special, print only when explicitly asked for and not in
     // overview mode.
     if (what_.find("runtime_deps") != what_.end())
@@ -626,6 +630,16 @@ class TargetDescBuilder : public BaseDescBuilder {
           frameworks->AppendString(weak_frameworks[i]);
         res->SetWithoutPathExpansion(variables::kWeakFrameworks,
                                      std::move(frameworks));
+      }
+    }
+    if (what(variables::kWeakLibraries)) {
+      const auto& weak_libraries = resolved.GetLinkedWeakLibraries(target_);
+      if (!weak_libraries.empty()) {
+        auto libraries = std::make_unique<base::ListValue>();
+        for (const auto& weak_library : weak_libraries)
+          libraries->AppendString(weak_library);
+        res->SetWithoutPathExpansion(variables::kWeakLibraries,
+                                     std::move(libraries));
       }
     }
 
@@ -722,11 +736,27 @@ class TargetDescBuilder : public BaseDescBuilder {
   ValuePtr RenderGenDeps() {
     auto res = std::make_unique<base::ListValue>();
     Label default_tc = target_->settings()->default_toolchain_label();
+    const auto& gen_deps_pairs = target_->gen_deps();
     std::vector<std::string> gen_deps;
-    for (const auto& pair : target_->gen_deps())
+    gen_deps.reserve(gen_deps_pairs.size());
+    for (const auto& pair : gen_deps_pairs)
       gen_deps.push_back(pair.label.GetUserVisibleName(default_tc));
     std::sort(gen_deps.begin(), gen_deps.end());
     for (const auto& dep : gen_deps)
+      res->AppendString(dep);
+    return res;
+  }
+
+  ValuePtr RenderValidations() {
+    auto res = std::make_unique<base::ListValue>();
+    Label default_tc = target_->settings()->default_toolchain_label();
+    const auto& validation_pairs = target_->validations();
+    std::vector<std::string> validations;
+    validations.reserve(validation_pairs.size());
+    for (const auto& pair : validation_pairs)
+      validations.push_back(pair.label.GetUserVisibleName(default_tc));
+    std::sort(validations.begin(), validations.end());
+    for (const auto& dep : validations)
       res->AppendString(dep);
     return res;
   }

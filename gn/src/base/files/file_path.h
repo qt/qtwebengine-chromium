@@ -330,6 +330,14 @@ class FilePath {
   // separator.
   [[nodiscard]] FilePath StripTrailingSeparators() const;
 
+  // Returns whether the current FilePath matches `pattern`. This works like
+  // shell globbing. For example, "*.txt" or "Foo???.doc". However, be careful
+  // in specifying patterns that aren't cross platform since the underlying
+  // code uses OS-specific matching routines.  In general, Windows matching
+  // is less featureful than others, so test there first. If unspecified,
+  // this will match all files.
+  bool IsMatchingPattern(const StringType& pattern) const;
+
   // Returns true if this FilePath contains an attempt to reference a parent
   // directory (e.g. has a path component that is "..").
   bool ReferencesParent() const;

@@ -103,6 +103,9 @@ class Builder {
                   Err* err);
   bool AddPoolDep(BuilderRecord* record, const Target* target, Err* err);
   bool AddToolchainDep(BuilderRecord* record, const Target* target, Err* err);
+  bool AddValidationDeps(BuilderRecord* record,
+                         const LabelTargetVector& targets,
+                         Err* err);
 
   // Given a target, sets the "should generate" bit and pushes it through the
   // dependency tree. Any time the bit it set, we ensure that the given item is
@@ -121,18 +124,26 @@ class Builder {
   // This takes a BuilderRecord with resolved dependencies, and fills in the
   // target's Label*Vectors with the resolved pointers.
   bool ResolveItem(BuilderRecord* record, Err* err);
-  void ScheduleTargetOnResolve(BuilderRecord* record);
-  void CompleteAsyncTargetResolution(BuilderRecord* record, const Err& err);
+  void ScheduleBackgroundTargetChecks(BuilderRecord* record);
   bool CompleteItemResolution(BuilderRecord* record, Err* err);
+
+  // Finalizes the given item, scheduling its write to the Ninja file if
+  // should_generate() is true, then notifying all dependents.
+  bool FinalizeItem(BuilderRecord* record, Err* err);
 
   // Fills in the pointers in the given vector based on the labels. We assume
   // that everything should be resolved by this point, so will return an error
   // if anything isn't found or if the type doesn't match.
   bool ResolveDeps(LabelTargetVector* deps, Err* err);
+  bool ResolveValidationDeps(LabelTargetVector* deps, Err* err);
   bool ResolveConfigs(UniqueVector<LabelConfigPair>* configs, Err* err);
   bool ResolvePool(Target* target, Err* err);
   bool ResolveToolchain(Target* target, Err* err);
   bool ResolvePools(Toolchain* toolchain, Err* err);
+
+  // Checks if the given record is ready to be written (resolved, generated,
+  // and writable) and calls the callback if so.
+  void CheckAndTriggerWrite(BuilderRecord* record);
 
   // Given a list of unresolved records, tries to find any circular
   // dependencies and returns the string describing the problem. If no circular

@@ -16,7 +16,7 @@ namespace commands {
 
 namespace {
 
-enum class DepType { NONE, PUBLIC, PRIVATE, DATA };
+enum class DepType { NONE, PUBLIC, PRIVATE, DATA, VALIDATION };
 
 // The dependency paths are stored in a vector. Assuming the chain:
 //    A --[public]--> B --[private]--> C
@@ -30,6 +30,7 @@ using PathVector = std::vector<TargetDep>;
 // How to search.
 enum class PrivateDeps { INCLUDE, EXCLUDE };
 enum class DataDeps { INCLUDE, EXCLUDE };
+enum class ValidationDeps { INCLUDE, EXCLUDE };
 enum class PrintWhat { ONE, ALL };
 
 struct Options {
@@ -74,6 +75,8 @@ DepType ClassifyPath(const PathVector& path, DepType implicit_last_dep) {
         result = DepType::PRIVATE;
     } else if (path[i].second == DepType::DATA) {
       result = DepType::DATA;
+    } else if (path[i].second == DepType::VALIDATION) {
+      result = DepType::VALIDATION;
     }
   }
   return result;
@@ -87,7 +90,8 @@ const char* StringForDepType(DepType type) {
       return "private";
     case DepType::DATA:
       return "data";
-      break;
+    case DepType::VALIDATION:
+      return "validation";
     case DepType::NONE:
     default:
       return "";
@@ -170,6 +174,7 @@ void BreadthFirstSearch(const Target* from,
                         const Target* to,
                         PrivateDeps private_deps,
                         DataDeps data_deps,
+                        ValidationDeps validation_deps,
                         PrintWhat print_what,
                         Stats* stats) {
   // Seed the initial stack with just the "from" target.
@@ -244,6 +249,14 @@ void BreadthFirstSearch(const Target* from,
         work_queue.back().push_back(TargetDep(pair.ptr, DepType::DATA));
       }
     }
+
+    if (validation_deps == ValidationDeps::INCLUDE) {
+      // Add validations.
+      for (const auto& pair : current_target->validations()) {
+        work_queue.push_back(current_path);
+        work_queue.back().push_back(TargetDep(pair.ptr, DepType::VALIDATION));
+      }
+    }
   }
 }
 
@@ -252,15 +265,15 @@ void DoSearch(const Target* from,
               const Options& options,
               Stats* stats) {
   BreadthFirstSearch(from, to, PrivateDeps::EXCLUDE, DataDeps::EXCLUDE,
-                     options.print_what, stats);
+                     ValidationDeps::EXCLUDE, options.print_what, stats);
   if (!options.public_only) {
-    // Check private deps.
+    // Check private deps and validations.
     BreadthFirstSearch(from, to, PrivateDeps::INCLUDE, DataDeps::EXCLUDE,
-                       options.print_what, stats);
+                       ValidationDeps::INCLUDE, options.print_what, stats);
     if (options.with_data) {
       // Check data deps.
       BreadthFirstSearch(from, to, PrivateDeps::INCLUDE, DataDeps::INCLUDE,
-                         options.print_what, stats);
+                         ValidationDeps::INCLUDE, options.print_what, stats);
     }
   }
 }

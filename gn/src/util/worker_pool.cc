@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "gn/switches.h"
+#include "util/build_config.h"
 #include "util/sys_info.h"
 
 namespace {
@@ -23,6 +24,21 @@ int GetThreadCount() {
     return result;
   }
 
+#if defined(OS_MACOSX) && defined(ARCH_CPU_ARM64)
+  // On Apple Silicon, we want to use only the high-performance cores.
+  // These cores are not hyperthreaded.
+  return NumberOfPerformanceProcessors();
+#endif
+
+  // Almost all CPUs now are hyperthreaded.
+  int num_cores = NumberOfProcessors() / 2;
+
+#if defined(OS_WIN)
+  // Experiments on Windows show that 8 threads is a good value for a 12-core
+  // machine, whereas anything over 12-14 threads on a 64-core machine gets
+  // progressively worse as the thread count increases.
+  return std::min(std::max(num_cores - 1, 8), 14);
+#else
   // Base the default number of worker threads on number of cores in the
   // system. When building large projects, the speed can be limited by how fast
   // the main thread can dispatch work and connect the dependency graph. If
@@ -36,9 +52,8 @@ int GetThreadCount() {
   //
   // The minimum thread count is based on measuring the optimal threads for the
   // Chrome build on a several-year-old 4-core MacBook.
-  // Almost all CPUs now are hyperthreaded.
-  int num_cores = NumberOfProcessors() / 2;
-  return std::max(num_cores - 1, 8);
+  return std::max(std::min(num_cores - 1, 32), 8);
+#endif
 }
 
 }  // namespace

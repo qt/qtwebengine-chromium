@@ -124,6 +124,7 @@ void NinjaCopyTargetWriter::WriteCopyRules(
       path_output_.WriteFiles(out_, input_deps);
       path_output_.WriteFiles(out_, data_outs);
     }
+    WriteValidations();
     out_ << std::endl;
   }
 }

@@ -378,6 +378,10 @@ std::unique_ptr<AccessorNode> AccessorNode::NewFromJSON(
   return ret;
 }
 
+void AccessorNode::set_member(std::unique_ptr<IdentifierNode> i) {
+  member_ = std::move(i);
+}
+
 Value AccessorNode::ExecuteSubscriptAccess(Scope* scope, Err* err) const {
   const Value* base_value = scope->GetValue(base_.value(), true);
   if (!base_value) {
@@ -685,6 +689,10 @@ std::unique_ptr<BlockNode> BlockNode::NewFromJSON(const base::Value& value) {
   return ret;
 }
 
+void BlockNode::set_end(std::unique_ptr<EndNode> e) {
+  end_ = std::move(e);
+}
+
 // ConditionNode --------------------------------------------------------------
 
 ConditionNode::ConditionNode() = default;
@@ -811,6 +819,10 @@ std::unique_ptr<FunctionCallNode> FunctionCallNode::NewFromJSON(
 
   GetCommentsFromJSON(ret.get(), value);
   return ret;
+}
+
+void FunctionCallNode::set_args(std::unique_ptr<ListNode> a) {
+  args_ = std::move(a);
 }
 
 void FunctionCallNode::SetNewLocation(int line_number) {
@@ -952,6 +964,10 @@ std::unique_ptr<ListNode> ListNode::NewFromJSON(const base::Value& value) {
 
   GetCommentsFromJSON(ret.get(), value);
   return ret;
+}
+
+void ListNode::set_end(std::unique_ptr<EndNode> e) {
+  end_ = std::move(e);
 }
 
 template <typename Comparator>

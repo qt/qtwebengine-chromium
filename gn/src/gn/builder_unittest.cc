@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <algorithm>
+#include <memory>
 
 #include "gn/builder.h"
 #include "gn/config.h"
@@ -126,13 +127,15 @@ TEST_F(BuilderTest, BasicDeps) {
   // A should be unresolved with an item
   BuilderRecord* a_record = builder_.GetRecord(a_label);
   EXPECT_TRUE(a_record->item());
-  EXPECT_FALSE(a_record->resolved());
+  EXPECT_TRUE(a_record->is_defined());
+  EXPECT_FALSE(a_record->is_resolved());
   EXPECT_FALSE(a_record->can_resolve());
 
   // B should be unresolved, have no item, and no deps.
   BuilderRecord* b_record = builder_.GetRecord(b_label);
   EXPECT_FALSE(b_record->item());
-  EXPECT_FALSE(b_record->resolved());
+  EXPECT_FALSE(b_record->is_defined());
+  EXPECT_FALSE(b_record->is_resolved());
   EXPECT_FALSE(b_record->can_resolve());
   EXPECT_TRUE(b_record->all_deps().empty());
 
@@ -174,9 +177,9 @@ TEST_F(BuilderTest, BasicDeps) {
 
   // All targets should now be resolved.
   BuilderRecord* c_record = builder_.GetRecord(c_label);
-  EXPECT_TRUE(a_record->resolved());
-  EXPECT_TRUE(b_record->resolved());
-  EXPECT_TRUE(c_record->resolved());
+  EXPECT_TRUE(a_record->is_resolved());
+  EXPECT_TRUE(b_record->is_resolved());
+  EXPECT_TRUE(c_record->is_resolved());
 
   EXPECT_TRUE(a_record->GetSortedUnresolvedDeps().empty());
   EXPECT_TRUE(b_record->GetSortedUnresolvedDeps().empty());
@@ -207,6 +210,11 @@ TEST_F(BuilderTest, SortedUnresolvedDeps) {
   BuilderRecord* b_record = builder_.GetOrCreateRecordForTesting(b_label);
   BuilderRecord* c_record = builder_.GetOrCreateRecordForTesting(c_label);
   BuilderRecord* d_record = builder_.GetOrCreateRecordForTesting(d_label);
+
+  // Set A's state to Defined as this is required by AddDep() to know
+  // which kind of update to perform internally. Don't provide an Item
+  // though, as this test doesn't need it.
+  a_record->SetDefined(nullptr);
 
   a_record->AddDep(b_record);
   a_record->AddDep(d_record);
@@ -373,6 +381,312 @@ TEST_F(BuilderTest, ConfigLoad) {
 
   // Should have requested that B is loaded.
   EXPECT_TRUE(loader_->HasLoadedOne(SourceFile("//b/BUILD.gn")));
+}
+
+// Tests that "validations" dependencies behave correctly:
+// 1. They trigger the loading of the validated target's build file (simulating
+// cross-directory deps).
+// 2. The validator waits for the validation target to be DEFINED, not RESOLVED.
+// 3. This allows cycles (A validates B, B depends on A) to resolve without
+// error.
+TEST_F(BuilderTest, Validations) {
+  DefineToolchain();
+  SourceDir toolchain_dir = settings_.toolchain_label().dir();
+  std::string toolchain_name = settings_.toolchain_label().name();
+
+  Label a_label(SourceDir("//a/"), "a", toolchain_dir, toolchain_name);
+  Label b_label(SourceDir("//b/"), "b", toolchain_dir, toolchain_name);
+
+  // Define A with validatation B.
+  auto a = std::make_unique<Target>(&settings_, a_label);
+  Target* a_ptr = a.get();
+  a_ptr->set_output_type(Target::ACTION);
+  a_ptr->visibility().SetPublic();
+  a_ptr->validations().push_back(LabelTargetPair(b_label));
+  builder_.ItemDefined(std::move(a));
+
+  // Should have requested that B is loaded.
+  EXPECT_TRUE(loader_->HasLoadedOne(SourceFile("//b/BUILD.gn")));
+
+  // A should NOT be resolved yet (waiting for B definition).
+  BuilderRecord* a_record = builder_.GetRecord(a_label);
+  EXPECT_TRUE(a_record);
+  EXPECT_FALSE(a_record->is_resolved());
+
+  // Define B. B depends on A.
+  auto b = std::make_unique<Target>(&settings_, b_label);
+  Target* b_ptr = b.get();
+  b_ptr->set_output_type(Target::ACTION);
+  b_ptr->visibility().SetPublic();
+  b_ptr->private_deps().push_back(LabelTargetPair(a_label));
+  builder_.ItemDefined(std::move(b));
+
+  scheduler().Run();
+
+  // Now both should be resolved.
+  EXPECT_TRUE(a_record->is_resolved());
+  BuilderRecord* b_record = builder_.GetRecord(b_label);
+  EXPECT_TRUE(b_record->is_resolved());
+
+  // There should be no cycle.
+  Err err;
+  EXPECT_TRUE(builder_.CheckForBadItems(&err));
+  EXPECT_FALSE(err.has_error()) << "CheckForBadItems error: " << err.message();
+
+  // A should have B in its validations.
+  ASSERT_EQ(1u, a_ptr->validations().size());
+  EXPECT_EQ(b_ptr, a_ptr->validations()[0].ptr);
+}
+
+// Tests that validation dependencies block finalization until resolved.
+TEST_F(BuilderTest, ValidationsBlockWriting) {
+  DefineToolchain();
+  SourceDir toolchain_dir = settings_.toolchain_label().dir();
+  std::string toolchain_name = settings_.toolchain_label().name();
+
+  Label a_label(SourceDir("//a/"), "a", toolchain_dir, toolchain_name);
+  Label b_label(SourceDir("//b/"), "b", toolchain_dir, toolchain_name);
+  Label c_label(SourceDir("//c/"), "c", toolchain_dir, toolchain_name);
+
+  // Define A. A lists B in validations.
+  auto a = std::make_unique<Target>(&settings_, a_label);
+  a->set_output_type(Target::ACTION);
+  a->validations().push_back(LabelTargetPair(b_label));
+  a->visibility().SetPublic();
+  builder_.ItemDefined(std::move(a));
+
+  // Define B. B depends on C.
+  auto b = std::make_unique<Target>(&settings_, b_label);
+  b->set_output_type(Target::ACTION);
+  b->private_deps().push_back(LabelTargetPair(c_label));
+  b->visibility().SetPublic();
+  builder_.ItemDefined(std::move(b));
+
+  // C is unresolved (waiting on definition).
+  // B is unresolved (waiting on C).
+  // A should be RESOLVED (because B is defined, and validations only wait on
+  // definition for resolution). BUT A should not be FINALIZED because B
+  // is not resolved.
+
+  BuilderRecord* a_record = builder_.GetRecord(a_label);
+  BuilderRecord* b_record = builder_.GetRecord(b_label);
+  BuilderRecord* c_record = builder_.GetRecord(c_label);
+
+  scheduler().Run();
+
+  EXPECT_FALSE(c_record->is_resolved());
+  EXPECT_FALSE(b_record->is_resolved());
+  EXPECT_TRUE(a_record->is_resolved());
+  EXPECT_FALSE(a_record->is_finalized());
+
+  // Check that B knows A is waiting on it for writing.
+  EXPECT_TRUE(b_record->waiting_on_validation_resolution().contains(a_record));
+}
+
+// Tests that a target can validate a target that depends on it.
+// A -> validations -> B
+// B -> deps -> A
+TEST_F(BuilderTest, ValidationsWithCycle) {
+  DefineToolchain();
+  SourceDir toolchain_dir = settings_.toolchain_label().dir();
+  std::string toolchain_name = settings_.toolchain_label().name();
+
+  Label a_label(SourceDir("//a/"), "a", toolchain_dir, toolchain_name);
+  Label b_label(SourceDir("//b/"), "b", toolchain_dir, toolchain_name);
+
+  // Define A. A lists B in validations.
+  auto a = std::make_unique<Target>(&settings_, a_label);
+  a->set_output_type(Target::ACTION);
+  a->validations().push_back(LabelTargetPair(b_label));
+  a->visibility().SetPublic();
+  builder_.ItemDefined(std::move(a));
+
+  // Define B. B depends on A.
+  auto b = std::make_unique<Target>(&settings_, b_label);
+  b->set_output_type(Target::ACTION);
+  b->private_deps().push_back(LabelTargetPair(a_label));
+  b->visibility().SetPublic();
+  builder_.ItemDefined(std::move(b));
+
+  BuilderRecord* a_record = builder_.GetRecord(a_label);
+  BuilderRecord* b_record = builder_.GetRecord(b_label);
+
+  scheduler().Run();
+
+  // Both should be resolved.
+  EXPECT_TRUE(a_record->is_resolved());
+  EXPECT_TRUE(b_record->is_resolved());
+
+  // There should be no errors (cycle detection passed).
+  Err err;
+  EXPECT_TRUE(builder_.CheckForBadItems(&err));
+  EXPECT_SUCCESS(err);
+}
+
+// Tests that if a validation resolves, the target does NOT write if it
+// is still waiting on other dependencies to resolve.
+// A -> deps -> B
+// A -> validations -> C
+// Sequence: C finalizes. A should NOT be finalized. B resolves. A is finalized.
+TEST_F(BuilderTest, ValidationsPrematureWrite) {
+  DefineToolchain();
+  SourceDir toolchain_dir = settings_.toolchain_label().dir();
+  std::string toolchain_name = settings_.toolchain_label().name();
+
+  Label a_label(SourceDir("//a/"), "a", toolchain_dir, toolchain_name);
+  Label b_label(SourceDir("//b/"), "b", toolchain_dir, toolchain_name);
+  Label c_label(SourceDir("//c/"), "c", toolchain_dir, toolchain_name);
+
+  // Track written targets.
+  std::vector<const BuilderRecord*> written;
+  builder_.set_resolved_and_generated_callback(
+      [&written](const BuilderRecord* record) { written.push_back(record); });
+
+  // Define A. A depends on B and has validation C.
+  auto a = std::make_unique<Target>(&settings_, a_label);
+  a->set_output_type(Target::ACTION);
+  a->private_deps().push_back(LabelTargetPair(b_label));
+  a->validations().push_back(LabelTargetPair(c_label));
+  a->visibility().SetPublic();
+  builder_.ItemDefined(std::move(a));
+
+  // Define C. C is standalone.
+  auto c = std::make_unique<Target>(&settings_, c_label);
+  c->set_output_type(Target::ACTION);
+  c->visibility().SetPublic();
+  builder_.ItemDefined(std::move(c));
+
+  // C should resolve then finalize. A is waiting on B.
+  scheduler().Run();
+
+  BuilderRecord* a_record = builder_.GetRecord(a_label);
+  BuilderRecord* c_record = builder_.GetRecord(c_label);
+
+  EXPECT_TRUE(c_record->is_resolved());
+  EXPECT_TRUE(c_record->is_finalized());
+  EXPECT_FALSE(a_record->is_resolved());
+
+  // Only C should be written.
+  ASSERT_EQ(1u, written.size());
+  EXPECT_EQ(c_record, written[0]);
+  EXPECT_TRUE(c_record->is_finalized());
+  EXPECT_FALSE(a_record->is_finalized());
+
+  // Define B.
+  auto b = std::make_unique<Target>(&settings_, b_label);
+  b->set_output_type(Target::ACTION);
+  b->visibility().SetPublic();
+  builder_.ItemDefined(std::move(b));
+  BuilderRecord* b_record = builder_.GetRecord(b_label);
+
+  scheduler().Run();
+
+  EXPECT_TRUE(a_record->is_resolved());
+  EXPECT_TRUE(a_record->is_finalized());
+
+  // Order should be C, B, A.
+  ASSERT_EQ(3u, written.size());
+  EXPECT_EQ(c_record, written[0]);
+  EXPECT_EQ(b_record, written[1]);
+  EXPECT_EQ(a_record, written[2]);
+}
+
+// Tests that RecursiveSetShouldGenerate does not trigger a write callback
+// if the target is waiting on validations (can_write() is false).
+TEST_F(BuilderTest, RecursiveShouldGenerateWithValidations) {
+  DefineToolchain();
+  SourceDir toolchain_dir = settings_.toolchain_label().dir();
+  std::string toolchain_name = settings_.toolchain_label().name();
+
+  // Set root patterns to something that doesn't match A, B, etc.
+  // This ensures they are not generated by default.
+  std::vector<LabelPattern> dummy_patterns;
+  dummy_patterns.push_back(
+      LabelPattern(LabelPattern::MATCH, SourceDir("//c/"), "c", Label()));
+  build_settings_.SetRootPatterns(std::move(dummy_patterns));
+
+  Label a_label(SourceDir("//a/"), "a", toolchain_dir, toolchain_name);
+  Label b_label(SourceDir("//b/"), "b", toolchain_dir, toolchain_name);
+  Label c_label(SourceDir("//c/"), "c", toolchain_dir, toolchain_name);
+  Label e_label(SourceDir("//e/"), "e", toolchain_dir, toolchain_name);
+
+  // Track written targets.
+  std::vector<const BuilderRecord*> written;
+  builder_.set_resolved_and_generated_callback(
+      [&written](const BuilderRecord* record) { written.push_back(record); });
+
+  // Define A with validation B.
+  auto a = std::make_unique<Target>(&settings_, a_label);
+  a->set_output_type(Target::GROUP);
+  a->validations().push_back(LabelTargetPair(b_label));
+  a->visibility().SetPublic();
+  builder_.ItemDefined(std::move(a));
+  BuilderRecord* a_record = builder_.GetRecord(a_label);
+
+  // Define B with dependency E delay resolution.
+  auto b = std::make_unique<Target>(&settings_, b_label);
+  b->set_output_type(Target::ACTION);
+  b->private_deps().push_back(LabelTargetPair(e_label));
+  b->visibility().SetPublic();
+  builder_.ItemDefined(std::move(b));
+  BuilderRecord* b_record = builder_.GetRecord(b_label);
+
+  // A resolves (validations don't block resolution) but does not finalize.
+  // B waits for E.
+  scheduler().Run();
+
+  EXPECT_TRUE(a_record->is_resolved());
+  EXPECT_FALSE(a_record->is_finalized());
+  EXPECT_FALSE(a_record->should_generate());
+  EXPECT_FALSE(b_record->is_resolved());
+  EXPECT_TRUE(written.empty());
+
+  // Define C depending on A.
+  // C will generate because root pattern matches.
+  auto c = std::make_unique<Target>(&settings_, c_label);
+  c->set_output_type(Target::GROUP);
+  c->public_deps().push_back(LabelTargetPair(a_label));
+  c->visibility().SetPublic();
+  builder_.ItemDefined(std::move(c));
+  BuilderRecord* c_record = builder_.GetRecord(c_label);
+
+  scheduler().Run();
+
+  EXPECT_TRUE(c_record->should_generate());
+  EXPECT_TRUE(a_record->should_generate());
+
+  // C cannot be written because A is not finalized.
+  EXPECT_TRUE(c_record->is_resolved());
+  EXPECT_FALSE(c_record->is_finalized());
+
+  // Nothing could be written for now.
+  EXPECT_EQ(written.size(), 0u);
+
+  // Define E to cause B to resolve and write A.
+  auto e = std::make_unique<Target>(&settings_, e_label);
+  e->set_output_type(Target::ACTION);
+  e->visibility().SetPublic();
+  builder_.ItemDefined(std::move(e));
+  BuilderRecord* e_record = builder_.GetRecord(e_label);
+
+  scheduler().Run();
+
+  // Due to the way the Builder is implemented, here's what happens:
+  //
+  // E is resolved, notifies B immediately.
+  // B is resolved, notifies A immediately.
+  // A is finalized, writes, notifies C
+  // C writes.
+  // A returns from finalization.
+  // B returns from resolution.
+  // E returns from resolution.
+  // E finalizes, notifies B
+  // B finalizes.
+  ASSERT_EQ(written.size(), 4u);
+  EXPECT_EQ(written[0], a_record);
+  EXPECT_EQ(written[1], c_record);
+  EXPECT_EQ(written[2], e_record);
+  EXPECT_EQ(written[3], b_record);
 }
 
 }  // namespace gn_builder_unittest
