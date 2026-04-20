@@ -4156,13 +4156,10 @@ const char *ValidateDrawStates(const Context *context, GLenum *outErrorCode)
     const Extensions &extensions = context->getExtensions();
     const State &state           = context->getState();
 
-    // WebGL buffers cannot be mapped/unmapped because the MapBufferRange, FlushMappedBufferRange,
-    // and UnmapBuffer entry points are removed from the WebGL 2.0 API.
-    // https://www.khronos.org/registry/webgl/specs/latest/2.0/#5.14
     VertexArray *vertexArray = state.getVertexArray();
     ASSERT(vertexArray);
 
-    if (!extensions.webglCompatibilityANGLE && vertexArray->hasInvalidMappedArrayBuffer())
+    if (vertexArray->hasInvalidMappedArrayBuffer())
     {
         return kBufferMapped;
     }
