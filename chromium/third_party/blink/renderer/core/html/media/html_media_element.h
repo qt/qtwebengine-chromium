@@ -781,6 +781,7 @@ class CORE_EXPORT HTMLMediaElement
   double playback_rate_;
   double default_playback_rate_;
   NetworkState network_state_;
+  NetworkState network_state_maximum_;
   ReadyState ready_state_;
   ReadyState ready_state_maximum_;
 

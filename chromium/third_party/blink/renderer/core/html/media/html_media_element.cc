@@ -456,6 +456,7 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
       playback_rate_(1.0f),
       default_playback_rate_(1.0f),
       network_state_(kNetworkEmpty),
+      network_state_maximum_(kNetworkEmpty),
       ready_state_(kHaveNothing),
       ready_state_maximum_(kHaveNothing),
       volume_(1.0f),
@@ -1115,6 +1116,7 @@ void HTMLMediaElement::InvokeLoadAlgorithm() {
     // state.
     ready_state_ = kHaveNothing;
     ready_state_maximum_ = kHaveNothing;
+    network_state_maximum_ = kNetworkEmpty;
 
     DCHECK(!paused_ || play_promise_resolvers_.empty());
 
@@ -1912,6 +1914,11 @@ bool HTMLMediaElement::IsSafeToLoadURL(const KURL& url,
 bool HTMLMediaElement::IsMediaDataCorsSameOrigin() const {
   if (!web_media_player_)
     return true;
+
+  // MSE content is always same origin since it must be provided by JS.
+  if (media_source_attachment_) {
+    return true;
+  }
 
   const auto network_state = web_media_player_->GetNetworkState();
   if (network_state == WebMediaPlayer::kNetworkStateNetworkError)
@@ -4603,6 +4610,9 @@ void HTMLMediaElement::SetNetworkState(NetworkState state,
     return;
 
   network_state_ = state;
+  if (network_state_ > network_state_maximum_) {
+    network_state_maximum_ = network_state_;
+  }
   if (update_media_controls && GetMediaControls())
     GetMediaControls()->NetworkStateChanged();
 }
@@ -5054,7 +5064,7 @@ void HTMLMediaElement::RecordAutoPictureInPictureInfo(
 
 bool HTMLMediaElement::MediaShouldBeOpaque() const {
   return !IsMediaDataCorsSameOrigin() && ready_state_ < kHaveMetadata &&
-         EffectivePreloadType() != WebMediaPlayer::kPreloadNone;
+         network_state_maximum_ >= NetworkState::kNetworkLoading;
 }
 
 void HTMLMediaElement::SetError(MediaError* error) {
