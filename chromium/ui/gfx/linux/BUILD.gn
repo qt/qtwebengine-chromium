@@ -21,19 +21,6 @@ source_set("drm") {
   ]
 }
 
-pkg_config("gbm_config") {
-  packages = [ "gbm" ]
-  gbm_atleast_version = exec_script(pkg_config_script,
-                                    common_pkg_config_args + pkg_config_args + [
-                                          "gbm",
-                                          "--atleast-version=21.1.0",
-                                        ],
-                                    "value")
-  if (gbm_atleast_version) {
-    defines = [ "HAVE_GBM_BO_GET_FD_FOR_PLANE" ]
-  }
-}
-
 source_set("gbm") {
   sources = [
     "gbm_buffer.h",
@@ -57,8 +44,6 @@ source_set("gbm") {
     "//ui/gfx:memory_buffer",
     "//ui/gfx/geometry",
   ]
-
-  configs += [ ":gbm_config" ]
 }
 
 if (ozone_platform_x11) {

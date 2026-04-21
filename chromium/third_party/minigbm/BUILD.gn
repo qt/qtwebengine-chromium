@@ -103,6 +103,15 @@ if (!use_system_minigbm) {
 if (use_system_minigbm) {
   pkg_config("libgbm") {
     packages = [ "gbm" ]
+    gbm_atleast_version = exec_script(pkg_config_script,
+                                      common_pkg_config_args + pkg_config_args + [
+                                            "gbm",
+                                            "--atleast-version=21.1.0",
+                                          ],
+                                      "value")
+    if (gbm_atleast_version) {
+      defines = [ "HAVE_GBM_BO_GET_FD_FOR_PLANE" ]
+    }
   }
 
   group("minigbm") {
