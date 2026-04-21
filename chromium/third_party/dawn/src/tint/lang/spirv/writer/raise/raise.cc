@@ -193,12 +193,11 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         .signed_negation = true, .signed_arithmetic = true, .signed_shiftleft = true};
     RUN_TRANSFORM(core::ir::transform::SignedIntegerPolyfill, module, signed_integer_cfg);
 
-    // AMD mesa front end optimizer bug for unary negation and abs.
+    // AMD Mesa front end optimizer bug for unary negation and abs.
     // Fixed in 25.3 - See crbug.com/448294721
     raise::UnaryPolyfillConfig unary_polyfill_cfg = {
-        .polyfill_f32_negation = options.polyfill_unary_f32_negation,
-        .polyfill_f32_abs = options.polyfill_f32_abs};
-
+        .polyfill_float_negation = options.polyfill_float_negation,
+        .polyfill_float_abs = options.polyfill_float_abs};
     RUN_TRANSFORM(raise::UnaryPolyfill, module, unary_polyfill_cfg);
 
     // kAllowAnyInputAttachmentIndexType required after ExpandImplicitSplats

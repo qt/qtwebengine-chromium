@@ -224,12 +224,11 @@ struct Options {
     /// Set to `true` if handles should be transformed by direct variable access.
     bool dva_transform_handle = false;
 
+    /// Set to `true` to generate polyfill for f32 and f16 negation.
+    bool polyfill_float_negation = false;
 
-    /// Set to 'true' to polyfill unary negation.
-    bool polyfill_unary_f32_negation = false;
-
-    /// Set to 'true' to polyfill unary abs.
-    bool polyfill_f32_abs = false;
+    /// Set to `true` to generate polyfill for f32 and f16 abs.
+    bool polyfill_float_abs = false;
 
     /// Offsets of the minDepth and maxDepth push constants.
     std::optional<RangeOffsets> depth_range_offsets = std::nullopt;
@@ -260,8 +259,8 @@ struct Options {
                  scalarize_max_min_clamp,
                  use_vulkan_memory_model,
                  dva_transform_handle,
-                 polyfill_unary_f32_negation,
-                 polyfill_f32_abs,
+                 polyfill_float_negation,
+                 polyfill_float_abs,
                  depth_range_offsets,
                  spirv_version);
 };
