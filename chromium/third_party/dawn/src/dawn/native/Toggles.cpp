@@ -371,13 +371,12 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "subresource are completely initialized, and StoreOp::Discard is always translated as a "
       "Store.",
       "https://crbug.com/dawn/838", ToggleStage::Device}},
-    {Toggle::VulkanPolyfillF32Negation,
-     {"spirv_polyfill_f32_negation",
-      "Polyfill f32 negation with bit manipulation in SPIR-V writer.",
-      "https://crbug.com/448294721", ToggleStage::Device}},
-    {Toggle::VulkanPolyfillF32Abs,
-     {"spirv_polyfill_f32_abs", "Polyfill f32 abs with bit manipulation in SPIR-V writer.",
-      "https://crbug.com/448294721", ToggleStage::Device}},
+    {Toggle::VulkanPolyfillFloatNegation,
+     {"spirv_polyfill_float_negation", "Polyfill f32 and f16 negation.",
+       "https://crbug.com/448294721", ToggleStage::Device}}
+    {Toggle::VulkanPolyfillFloatAbs,
+     {"spirv_polyfill_float_abs", "Polyfill f32 and f16 abs.", "https://crbug.com/448294721",
+      ToggleStage::Device}},
     {Toggle::MetalFillEmptyOcclusionQueriesWithZero,
      {"metal_fill_empty_occlusion_queries_with_zero",
       "Apple GPUs leave stale results in the visibility result buffer instead of writing zero if "
@@ -476,7 +475,7 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
     {Toggle::VulkanClearGen12TextureWithCCSAmbiguateOnCreation,
      {"vulkan_clear_gen12_texture_with_ccs_ambiguate_on_creation",
       "Clears some R8-like textures to full 0 bits as soon as they are created. This Toggle is "
-      "enabled on Intel Gen12 GPUs due to a mesa driver issue.",
+      "enabled on Intel Gen12 GPUs due to a Mesa driver issue.",
       "https://crbug.com/chromium/1361662", ToggleStage::Device}},
     {Toggle::D3D12UseRootSignatureVersion1_1,
      {"d3d12_use_root_signature_version_1_1",

@@ -1381,7 +1381,7 @@ MaybeError InternalTexture::Initialize(VkImageUsageFlags extraUsages) {
         "BindImageMemory"));
 
     // crbug.com/1361662
-    // This works around an Intel Gen12 mesa bug due to CCS ambiguates stomping on each other.
+    // This works around an Intel Gen12 Mesa bug due to CCS ambiguates stomping on each other.
     // https://gitlab.freedesktop.org/mesa/mesa/-/issues/7301#note_1826367
     if (device->IsToggleEnabled(Toggle::VulkanClearGen12TextureWithCCSAmbiguateOnCreation)) {
         auto format = GetFormat().format;

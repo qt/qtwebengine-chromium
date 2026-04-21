@@ -201,11 +201,11 @@ struct Options {
     /// Set to `true` if the Vulkan Memory Model should be used
     bool use_vulkan_memory_model = false;
 
-    /// Set to 'true' to polyfill unary negation.
-    bool polyfill_unary_f32_negation = false;
+    /// Set to `true` to generate polyfill for f32 and f16 negation.
+    bool polyfill_float_negation = false;
 
-    /// Set to 'true' to polyfill unary abs.
-    bool polyfill_f32_abs = false;
+    /// Set to `true` to generate polyfill for f32 and f16 abs.
+    bool polyfill_float_abs = false;
 
     /// Offsets of the minDepth and maxDepth push constants.
     std::optional<RangeOffsets> depth_range_offsets;
@@ -230,8 +230,8 @@ struct Options {
                  polyfill_pack_unpack_4x8_norm,
                  disable_polyfill_integer_div_mod,
                  use_vulkan_memory_model,
-                 polyfill_unary_f32_negation,
-                 polyfill_f32_abs,
+                 polyfill_float_negation,
+                 polyfill_float_abs,
                  depth_range_offsets);
 };
 
