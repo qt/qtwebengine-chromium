@@ -67,6 +67,7 @@ if (is_android) {
 # * the ability to generate a rust library that includes all .rs files found
 #   in sources and depends on that from the test target.
 # * the ability to recognize any declare fuzztests and build runners for them.
+if (!is_qtwebengine) {
 template("mixed_test") {
   assert(defined(invoker.target_type) && invoker.target_type != "")
 
@@ -1328,6 +1329,27 @@ set_defaults("test") {
 
     # LINT.ThenChange(/components/cronet/android/cronet_test_templates.gni)
   } else {
+    configs = default_executable_configs
+  }
+}
+} else {
+  template("mixed_test") {
+    not_needed(invoker, "*")
+    group(target_name) {}
+  }
+  template("test") {
+    not_needed(invoker, "*")
+    group(target_name) {}
+  }
+  template("script_test") {
+    not_needed(invoker, "*")
+    group(target_name) {}
+  }
+  template("isolated_script_test") {
+    not_needed(invoker, "*")
+    group(target_name) {}
+  }
+  set_defaults("test") {
     configs = default_executable_configs
   }
 }
