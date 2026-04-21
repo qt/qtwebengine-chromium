@@ -41,12 +41,13 @@ source_set("gbm") {
     "//build/config/linux/libdrm",
     "//components/viz/common/resources:shared_image_format",
     "//skia",
-    "//third_party/minigbm",
     "//ui/gfx:buffer_types",
     "//ui/gfx:memory_buffer",
     "//ui/gfx/geometry",
     "//ui/ozone:native_pixmap_usage",
   ]
+
+  public_deps = [ "//third_party/minigbm", ]
 }
 
 if (ozone_platform_x11) {
