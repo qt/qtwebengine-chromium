@@ -11,6 +11,7 @@
 #include "compiler/translator/glsl/ExtensionGLSL.h"
 #include "compiler/translator/glsl/OutputGLSL.h"
 #include "compiler/translator/glsl/VersionGLSL.h"
+#include "compiler/translator/tree_ops/AddDefaultReturnStatements.h"
 #include "compiler/translator/tree_ops/PreTransformTextureCubeGradDerivatives.h"
 #include "compiler/translator/tree_ops/RewriteTexelFetchOffset.h"
 #include "compiler/translator/tree_ops/glsl/apple/RewriteRowMajorMatrices.h"
@@ -96,6 +97,11 @@ bool TranslatorGLSL::translate(TIntermBlock *root,
                 return false;
             }
         }
+    }
+
+    if (!sh::AddDefaultReturnStatements(this, root))
+    {
+        return false;
     }
 
     if (compileOptions.rewriteTexelFetchOffsetToTexelFetch)
