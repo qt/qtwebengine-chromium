@@ -40,6 +40,9 @@ class COMPONENT_EXPORT(MOJO_CPP_PLATFORM) NamedPlatformChannel {
 #endif
 
   struct COMPONENT_EXPORT(MOJO_CPP_PLATFORM) Options {
+    Options();
+    ~Options();
+
     // Specifies the name to use for the server. If empty, a random name is
     // generated.
     ServerName server_name;
@@ -55,6 +58,12 @@ class COMPONENT_EXPORT(MOJO_CPP_PLATFORM) NamedPlatformChannel {
     // NamedPlatformChannel instances can be created with the same name and
     // a different client can connect to each one.
     bool enforce_uniqueness = true;
+
+    // If |true|, the client will verify that the server process is running
+    // at the same or higher integrity level as the client. This is useful
+    // to prevent named pipe squatting attacks, where a lower-privilege
+    // process attempts to impersonate a trusted server.
+    bool verify_server_privilege = false;
 #elif BUILDFLAG(IS_POSIX)
     // On POSIX, every new unnamed NamedPlatformChannel creates a server socket
     // with a random name. This controls the directory where that happens.
