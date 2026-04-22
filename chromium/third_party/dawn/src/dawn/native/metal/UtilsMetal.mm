@@ -42,6 +42,7 @@ struct SavedMetalAttachment {
     id<MTLTexture> texture = nil;
     NSUInteger level;
     NSUInteger slice;
+    NSUInteger depthPlane;
 
     NSPRef<id<MTLTexture>> temporary;
 
@@ -55,7 +56,7 @@ struct SavedMetalAttachment {
                     toTexture:texture
              destinationSlice:slice
              destinationLevel:level
-            destinationOrigin:MTLOriginMake(0, 0, 0)];
+            destinationOrigin:MTLOriginMake(0, 0, depthPlane)];
     }
 
     void CopyFromAttachmentToTemporary(CommandRecordingContext* commandContext) {
@@ -63,7 +64,7 @@ struct SavedMetalAttachment {
               copyFromTexture:texture
                   sourceSlice:slice
                   sourceLevel:level
-                 sourceOrigin:MTLOriginMake(0, 0, 0)
+                 sourceOrigin:MTLOriginMake(0, 0, depthPlane)
                    sourceSize:MTLSizeMake([temporary.Get() width], [temporary.Get() height], 1)
                     toTexture:temporary.Get()
              destinationSlice:0
@@ -76,12 +77,14 @@ struct SavedMetalAttachment {
 ResultOrError<SavedMetalAttachment> SaveAttachmentCreateTemporary(Device* device,
                                                                   id<MTLTexture> attachmentTexture,
                                                                   NSUInteger attachmentLevel,
-                                                                  NSUInteger attachmentSlice) {
+                                                                  NSUInteger attachmentSlice,
+                                                                  NSUInteger attachmentDepthPlane) {
     // Save the attachment.
     SavedMetalAttachment result;
     result.texture = attachmentTexture;
     result.level = attachmentLevel;
     result.slice = attachmentSlice;
+    result.depthPlane = attachmentDepthPlane;
 
     // Create the temporary texture.
     NSRef<MTLTextureDescriptor> mtlDescRef = AcquireNSRef([MTLTextureDescriptor new]);
@@ -113,13 +116,15 @@ ResultOrError<SavedMetalAttachment> PatchAttachmentWithTemporary(
     Device* device,
     MTLRenderPassAttachmentDescriptor* attachment) {
     SavedMetalAttachment result;
-    DAWN_TRY_ASSIGN(result, SaveAttachmentCreateTemporary(device, attachment.texture,
-                                                          attachment.level, attachment.slice));
+    DAWN_TRY_ASSIGN(result,
+                    SaveAttachmentCreateTemporary(device, attachment.texture, attachment.level,
+                                                  attachment.slice, attachment.depthPlane));
 
     // Replace the attachment with the temporary
     attachment.texture = result.temporary.Get();
     attachment.level = 0;
     attachment.slice = 0;
+    attachment.depthPlane = 0;
 
     return result;
 }
