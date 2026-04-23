@@ -15,6 +15,7 @@
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
+#include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/check_op.h"
@@ -39,6 +40,16 @@ CPDF_Page::CPDF_Page(CPDF_Document* document,
 }
 
 CPDF_Page::~CPDF_Page() = default;
+
+// static
+bool CPDF_Page::IsValidPageDict(const CPDF_Dictionary* page_dict) {
+  if (!page_dict || !page_dict->KeyExist(pdfium::page_object::kType)) {
+    return false;
+  }
+  RetainPtr<const CPDF_Name> name =
+      ToName(page_dict->GetObjectFor(pdfium::page_object::kType)->GetDirect());
+  return name && name->GetString() == "Page";
+}
 
 CPDF_Page* CPDF_Page::AsPDFPage() {
   return this;

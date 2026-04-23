@@ -27,7 +27,6 @@
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
-#include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_number.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/render/cpdf_docrenderdata.h"
@@ -67,19 +66,8 @@ static_assert(FPDF_PAGEOBJ_FORM ==
                   static_cast<int>(CPDF_PageObject::Type::kForm),
               "FPDF_PAGEOBJ_FORM/CPDF_PageObject::FORM mismatch");
 
-bool IsPageObject(CPDF_Page* pPage) {
-  if (!pPage) {
-    return false;
-  }
-
-  RetainPtr<const CPDF_Dictionary> pFormDict = pPage->GetDict();
-  if (!pFormDict->KeyExist(pdfium::page_object::kType)) {
-    return false;
-  }
-
-  RetainPtr<const CPDF_Name> pName =
-      ToName(pFormDict->GetObjectFor(pdfium::page_object::kType)->GetDirect());
-  return pName && pName->GetString() == "Page";
+bool IsPageObject(CPDF_Page* page) {
+  return page && CPDF_Page::IsValidPageDict(page->GetDict());
 }
 
 void CalcBoundingBox(CPDF_PageObject* pPageObj) {
