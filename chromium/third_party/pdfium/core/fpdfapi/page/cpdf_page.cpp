@@ -43,8 +43,17 @@ CPDF_Page::~CPDF_Page() = default;
 
 // static
 bool CPDF_Page::IsValidPageDict(const CPDF_Dictionary* page_dict) {
-  if (!page_dict || !page_dict->KeyExist(pdfium::page_object::kType)) {
+  return IsValidPageDictLoose(page_dict) &&
+         page_dict->KeyExist(pdfium::page_object::kType);
+}
+
+// static
+bool CPDF_Page::IsValidPageDictLoose(const CPDF_Dictionary* page_dict) {
+  if (!page_dict) {
     return false;
+  }
+  if (!page_dict->KeyExist(pdfium::page_object::kType)) {
+    return true;
   }
   RetainPtr<const CPDF_Name> name =
       ToName(page_dict->GetObjectFor(pdfium::page_object::kType)->GetDirect());
