@@ -420,7 +420,7 @@ void SkipCommand(CommandIterator* commands, Command type) {
     }
 }
 
-const char* AddNullTerminatedString(CommandAllocator* allocator, StringView s, uint32_t* length) {
+const char* AddNullTerminatedString(CommandAllocator* allocator, StringView s, size_t* length) {
     std::string_view view = s;
     *length = view.length();
 
