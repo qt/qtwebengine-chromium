@@ -269,6 +269,9 @@ RetainPtr<CPDF_Dictionary> CPDF_Document::TraversePDFPages(int iPage,
     if (*nPagesToGo != 1) {
       return nullptr;
     }
+    if (GetNodeType(pPages) == NodeType::kBranch) {
+      return nullptr;
+    }
     page_list_[iPage] = pPages->GetObjNum();
     return pPages;
   }
