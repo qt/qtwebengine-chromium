@@ -443,7 +443,7 @@ FPDF_EXPORT FPDF_PAGE FPDF_CALLCONV FPDF_LoadPage(FPDF_DOCUMENT document,
 #endif  // PDF_ENABLE_XFA
 
   RetainPtr<CPDF_Dictionary> pDict = pDoc->GetMutablePageDictionary(page_index);
-  if (!pDict)
+  if(!CPDF_Page::IsValidPageDictLoose(pDict))
     return nullptr;
 
   auto pPage = pdfium::MakeRetain<CPDF_Page>(pDoc, std::move(pDict));
@@ -1067,8 +1067,9 @@ FPDF_GetPageSizeByIndexF(FPDF_DOCUMENT document,
 #endif  // PDF_ENABLE_XFA
 
   RetainPtr<CPDF_Dictionary> pDict = pDoc->GetMutablePageDictionary(page_index);
-  if (!pDict)
+  if (!CPDF_Page::IsValidPageDictLoose(pDict)) {
     return false;
+  }
 
   auto page = pdfium::MakeRetain<CPDF_Page>(pDoc, std::move(pDict));
   page->AddPageImageCache();

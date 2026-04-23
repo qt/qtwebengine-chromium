@@ -43,7 +43,7 @@ class CPDFXFA_Page final : public IPDF_Page {
       const CFX_PointF& page_point) const override;
 
   bool LoadPage();
-  void LoadPDFPageFromDict(RetainPtr<CPDF_Dictionary> pPageDict);
+  bool LoadPDFPageFromDict(RetainPtr<CPDF_Dictionary> page_dict);
   int GetPageIndex() const { return m_iPageIndex; }
   void SetXFAPageViewIndex(int index) { m_iPageIndex = index; }
   CXFA_FFPageView* GetXFAPageView() const;

@@ -26,6 +26,14 @@ CPDF_Page::CPDF_Page(CPDF_Document* pDocument,
     : CPDF_PageObjectHolder(pDocument, std::move(pPageDict), nullptr, nullptr),
       m_PageSize(100, 100),
       m_pPDFDocument(pDocument) {
+  // Retrieves `pPageDict` and validates it.
+  RetainPtr<CPDF_Dictionary> mutable_page_dict = GetMutableDict();
+  CHECK(IsValidPageDictLoose(mutable_page_dict));
+  // Then fix it up if /Type is missing.
+  if (!mutable_page_dict->KeyExist(pdfium::page_object::kType)) {
+    mutable_page_dict->SetNewFor<CPDF_Name>(pdfium::page_object::kType, "Page");
+    CHECK(IsValidPageDict(mutable_page_dict));
+  }
   // Cannot initialize |m_pResources| and |m_pPageResources| via the
   // CPDF_PageObjectHolder ctor because GetPageAttr() requires
   // CPDF_PageObjectHolder to finish initializing first.
