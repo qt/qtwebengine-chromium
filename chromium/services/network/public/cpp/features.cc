@@ -685,4 +685,8 @@ BASE_FEATURE(kBrowserInitiatedFileUploadValidation,
              "BrowserInitiatedFileUploadValidation",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kRestrictForbiddenSecurityHeaders,
+             "RestrictForbiddenSecurityHeaders",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 }  // namespace network::features

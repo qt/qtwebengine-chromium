@@ -583,7 +583,7 @@ bool CorsURLLoaderFactory::IsCorsPreflighLoadOptionAllowed() const {
              net::handles::kInvalidNetworkHandle;
 }
 
-bool CorsURLLoaderFactory::IsValidRequest(const ResourceRequest& request,
+bool CorsURLLoaderFactory::IsValidRequest(ResourceRequest& request,
                                           uint32_t options) {
   if (request.url.SchemeIs(url::kDataScheme)) {
     LOG(WARNING) << "CorsURLLoaderFactory doesn't support `data` scheme.";
@@ -756,6 +756,13 @@ bool CorsURLLoaderFactory::IsValidRequest(const ResourceRequest& request,
   if (!GetAllowAnyCorsExemptHeaderForBrowser() &&
       !IsValidCorsExemptHeaders(*context_->cors_exempt_header_list(),
                                 request.cors_exempt_headers)) {
+    return false;
+  }
+
+  if (process_id_ != mojom::kBrowserProcessId &&
+      ContainsForbiddenSecurityHeader(request.headers)) {
+    mojo::ReportBadMessage(
+        "CorsURLLoaderFactory: Forbidden Sec- header from renderer");
     return false;
   }
 

@@ -466,8 +466,17 @@ void CorsURLLoader::FollowRedirect(
     return;
   }
 
+  net::HttpRequestHeaders mutable_modified_headers = modified_headers;
+  if (process_id_ != mojom::kBrowserProcessId &&
+      ContainsForbiddenSecurityHeader(mutable_modified_headers)) {
+    mojo::ReportBadMessage(
+        "CorsURLLoader: Forbidden Sec- header from renderer in FollowRedirect");
+    HandleComplete(URLLoaderCompletionStatus(net::ERR_INVALID_ARGUMENT));
+    return;
+  }
+
   // Does not allow modifying headers that are stored in `cors_exempt_headers`.
-  for (const auto& header : modified_headers.GetHeaderVector()) {
+  for (const auto& header : mutable_modified_headers.GetHeaderVector()) {
     if (request_.cors_exempt_headers.HasHeader(header.key)) {
       LOG(WARNING) << "A client is trying to modify header value for '"
                    << header.key << "', but it is not permitted.";
@@ -490,9 +499,10 @@ void CorsURLLoader::FollowRedirect(
     request_.headers.RemoveHeader(name);
     request_.cors_exempt_headers.RemoveHeader(name);
   }
-  request_.headers.MergeFrom(modified_headers);
 
-  if (GetSecSharedStorageWritableHeader(modified_headers)) {
+  request_.headers.MergeFrom(mutable_modified_headers);
+
+  if (GetSecSharedStorageWritableHeader(mutable_modified_headers)) {
     request_.shared_storage_writable_eligible = true;
   } else if (base::Contains(removed_headers, kSecSharedStorageWritableHeader)) {
     request_.shared_storage_writable_eligible = false;
