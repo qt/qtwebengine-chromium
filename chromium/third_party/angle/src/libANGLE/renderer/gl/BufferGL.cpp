@@ -91,10 +91,6 @@ angle::Result BufferGL::setData(const gl::Context *context,
     const FunctionsGL *functions = GetFunctionsGL(context);
     StateManagerGL *stateManager = GetStateManagerGL(context);
 
-    stateManager->bindBuffer(DestBufferOperationTarget, mBufferID);
-    ANGLE_GL_TRY(context, functions->bufferData(gl::ToGLenum(DestBufferOperationTarget), size, data,
-                                                ToGLenum(usage)));
-
     // Initialize the shadow buffer if needed. Don't delete existing shadow data. WebGL allows users
     // to bind as an element array buffer first and then copy source/dest later (but not the other
     // way around).
@@ -103,6 +99,10 @@ angle::Result BufferGL::setData(const gl::Context *context,
         mShadowCopy = angle::MemoryBuffer();
     }
 
+    stateManager->bindBuffer(DestBufferOperationTarget, mBufferID);
+
+    const void *uploadData = data;
+
     if (mShadowCopy.has_value())
     {
         ANGLE_CHECK_GL_ALLOC(contextGL, mShadowCopy->resize(size));
@@ -110,8 +110,12 @@ angle::Result BufferGL::setData(const gl::Context *context,
         if (size > 0 && data != nullptr)
         {
             memcpy(mShadowCopy->data(), data, size);
+            uploadData = mShadowCopy->data();
         }
     }
+
+    ANGLE_GL_TRY(context, functions->bufferData(gl::ToGLenum(DestBufferOperationTarget), size,
+                                                uploadData, ToGLenum(usage)));
 
     mBufferSize = size;
 
@@ -132,13 +136,20 @@ angle::Result BufferGL::setSubData(const gl::Context *context,
     StateManagerGL *stateManager = GetStateManagerGL(context);
 
     stateManager->bindBuffer(DestBufferOperationTarget, mBufferID);
-    ANGLE_GL_TRY(context, functions->bufferSubData(gl::ToGLenum(DestBufferOperationTarget), offset,
-                                                   size, data));
 
-    if (mShadowCopy.has_value() && size > 0)
+    const void *uploadData = data;
+
+    if (mShadowCopy.has_value())
     {
-        memcpy(mShadowCopy->data() + offset, data, size);
+        if (size > 0 && data != nullptr)
+        {
+            memcpy(mShadowCopy->data() + offset, data, size);
+            uploadData = mShadowCopy->data() + offset;
+        }
     }
+
+    ANGLE_GL_TRY(context, functions->bufferSubData(gl::ToGLenum(DestBufferOperationTarget), offset,
+                                                   size, uploadData));
 
     contextGL->markWorkSubmitted();
 
