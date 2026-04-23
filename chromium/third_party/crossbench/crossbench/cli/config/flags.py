@@ -8,8 +8,8 @@ import argparse
 import dataclasses
 import functools
 import logging
-from typing import (TYPE_CHECKING, Any, Final, Iterable, Optional, Self,
-                    Sequence, Set, Type)
+from typing import TYPE_CHECKING, Any, Final, Iterable, Optional, Self, \
+    Sequence, Set, Type
 
 from immutabledict import immutabledict
 from ordered_set import OrderedSet
@@ -24,7 +24,6 @@ from crossbench.parse import ObjectParser
 
 if TYPE_CHECKING:
   from crossbench.flags.base import Flags, FlagsData
-
 
 DEFAULT_LABEL: Final[str] = "default"
 
@@ -283,7 +282,6 @@ class FlagsGroupConfig(tuple[FlagsVariantConfig, ...]):
         merged_js_flags.append(js_flags)
       args_config["--js-flags"] = list(map(str, merged_js_flags))
     return args_config
-
 
   def product(self, *args: Self) -> Self:
     return functools.reduce(lambda a, b: a.inner_product(b), args, self)

@@ -62,7 +62,10 @@ struct Stream {
   // must be converted to a 16 digit byte array.
   std::array<uint8_t, 16> aes_key = {};
   std::array<uint8_t, 16> aes_iv_mask = {};
-  bool receiver_rtcp_event_log = false;
+
+  // The event logs are generally recommended for use in gathering statistics
+  // for the sender session.
+  bool receiver_rtcp_event_log = true;
   std::string receiver_rtcp_dscp;
   int rtp_timebase = 0;
 

@@ -26,8 +26,10 @@
 #include "absl/types/span.h"
 #include "ink/brush/brush.h"
 #include "ink/geometry/envelope.h"
+#include "ink/geometry/mesh_format.h"
 #include "ink/geometry/mutable_mesh.h"
 #include "ink/strokes/input/stroke_input_batch.h"
+#include "ink/strokes/internal/stroke_input_modeler.h"
 #include "ink/strokes/internal/stroke_shape_builder.h"
 #include "ink/strokes/stroke.h"
 #include "ink/types/duration.h"
@@ -159,6 +161,16 @@ class InProgressStroke {
   // call to `Start()`.
   bool NeedsUpdate() const;
 
+  // Returns true if the stroke's geometry changes with the passage of time
+  // (denoted by new values being passed to `UpdateShape()`), even if no new
+  // inputs are provided via `EnqueueInputs()`. This is the case if the brush
+  // has one or more timed animation behavior that are still active (which can
+  // be true even after inputs are finished).
+  //
+  // This is similar to `NeedsUpdate()`, except that it ignores whether inputs
+  // are finished or pending.
+  bool ChangesWithTime() const;
+
   // Returns a pointer to the current brush, or `nullptr` if `Start()` has not
   // been called.
   const Brush* absl_nullable GetBrush() const;
@@ -180,14 +192,18 @@ class InProgressStroke {
   // Returns the count of all current inputs processed in the stroke. This
   // includes all of the real inputs as well as the most-recently-processed
   // sequence of predicted inputs.
-  size_t InputCount() const { return processed_inputs_.Size(); }
+  int InputCount() const { return processed_inputs_.Size(); }
 
   // Returns the count of current inputs excluding predicted inputs.
-  size_t RealInputCount() const { return real_input_count_; }
+  int RealInputCount() const { return real_input_count_; }
 
   // Returns the count of the most-recently-processed sequence of predicted
   // inputs.
-  size_t PredictedInputCount() const { return InputCount() - RealInputCount(); }
+  int PredictedInputCount() const { return InputCount() - RealInputCount(); }
+
+  // Returns the mesh format used by any meshes generated for the specified coat
+  // of paint.
+  const MeshFormat& GetMeshFormat(uint32_t coat_index) const;
 
   // Returns the currently-generated mesh for the specified coat of paint, which
   // includes geometry generated from all of the real inputs and the current
@@ -260,6 +276,8 @@ class InProgressStroke {
   // The largest elapsed time passed to `UpdateShape()` since the last call to
   // `Start()`.
   Duration32 current_elapsed_time_ = Duration32::Zero();
+  // A single input modeler for the stroke, which is used for all brush coats.
+  strokes_internal::StrokeInputModeler input_modeler_;
   // A vector with at least one `StrokeShapeBuilder` for each `BrushCoat` in the
   // current brush (and potentially more; in order to cache allocations, we
   // never shrink this vector).
@@ -294,6 +312,12 @@ inline uint32_t InProgressStroke::BrushCoatCount() const {
 
 inline const StrokeInputBatch& InProgressStroke::GetInputs() const {
   return processed_inputs_;
+}
+
+inline const MeshFormat& InProgressStroke::GetMeshFormat(
+    uint32_t coat_index) const {
+  ABSL_CHECK_LT(coat_index, BrushCoatCount());
+  return shape_builders_[coat_index].GetMeshFormat();
 }
 
 inline const MutableMesh& InProgressStroke::GetMesh(uint32_t coat_index) const {

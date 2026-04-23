@@ -17,19 +17,22 @@
 #include <cmath>
 #include <string>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
+#include "absl/time/time.h"
+#include "ink/brush/color_function.h"
+#include "ink/geometry/mesh_format.h"
 
-namespace ink {
-namespace brush_internal {
+namespace ink::brush_internal {
 namespace {
 
 bool IsValidBrushPaintTextureMapping(BrushPaint::TextureMapping mapping) {
   switch (mapping) {
     case BrushPaint::TextureMapping::kTiling:
-    case BrushPaint::TextureMapping::kWinding:
+    case BrushPaint::TextureMapping::kStamping:
       return true;
   }
   return false;
@@ -79,6 +82,16 @@ bool IsValidBrushPaintBlendMode(BrushPaint::BlendMode blend_mode) {
     case BrushPaint::BlendMode::kSrcOut:
     case BrushPaint::BlendMode::kDstAtop:
     case BrushPaint::BlendMode::kXor:
+      return true;
+  }
+  return false;
+}
+
+bool IsValidBrushPaintSelfOverlap(BrushPaint::SelfOverlap self_overlap) {
+  switch (self_overlap) {
+    case BrushPaint::SelfOverlap::kAny:
+    case BrushPaint::SelfOverlap::kAccumulate:
+    case BrushPaint::SelfOverlap::kDiscard:
       return true;
   }
   return false;
@@ -230,6 +243,15 @@ absl::Status ValidateBrushPaintTextureLayer(
         "and `animation_columns`. Got %d > %d * %d",
         layer.animation_frames, layer.animation_rows, layer.animation_columns));
   }
+  if (layer.animation_duration < absl::Milliseconds(1) ||
+      layer.animation_duration > absl::Milliseconds(1 << 24) ||
+      layer.animation_duration % absl::Milliseconds(1) !=
+          absl::ZeroDuration()) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "`BrushPaint::TextureLayer::animation_duration` must be "
+        "a whole number of milliseconds in the interval [1, 2^24]. Got ",
+        layer.animation_duration));
+  }
   for (const BrushPaint::TextureKeyframe& keyframe : layer.keyframes) {
     if (auto status = ValidateBrushPaintTextureKeyframe(keyframe);
         !status.ok()) {
@@ -250,6 +272,8 @@ absl::Status ValidateBrushPaintTopLevel(const BrushPaint& paint) {
     int first_animation_frames = paint.texture_layers[0].animation_frames;
     int first_animation_rows = paint.texture_layers[0].animation_rows;
     int first_animation_columns = paint.texture_layers[0].animation_columns;
+    absl::Duration first_animation_duration =
+        paint.texture_layers[0].animation_duration;
     BrushPaint::TextureMapping first_mapping = paint.texture_layers[0].mapping;
     for (const BrushPaint::TextureLayer& layer : paint.texture_layers) {
       if (layer.animation_frames != first_animation_frames) {
@@ -270,8 +294,15 @@ absl::Status ValidateBrushPaintTopLevel(const BrushPaint& paint) {
             "for all texture layers. Got `",
             first_animation_columns, "` and `", layer.animation_columns, "`"));
       }
+      if (layer.animation_duration != first_animation_duration) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "`BrushPaint::TextureLayer::animation_duration` must be the same "
+            "for all texture layers. Got `",
+            first_animation_duration, "` and `", layer.animation_duration,
+            "`"));
+      }
       // TODO: b/375203215 - Remove the below check once we are able to mix
-      // rendering tiling and winding textures in a single `BrushPaint`.
+      // rendering different mapping modes in a single `BrushPaint`.
       if (layer.mapping != first_mapping) {
         return absl::InvalidArgumentError(
             absl::StrCat("`BrushPaint::TextureLayer::mapping` must be the same "
@@ -279,6 +310,12 @@ absl::Status ValidateBrushPaintTopLevel(const BrushPaint& paint) {
                          first_mapping, "` and `", layer.mapping, "`"));
       }
     }
+  }
+  if (!IsValidBrushPaintSelfOverlap(paint.self_overlap)) {
+    return absl::InvalidArgumentError(
+        absl::StrFormat("`BrushPaint::self_overlap` holds "
+                        "non-enumerator value %d",
+                        static_cast<int>(paint.self_overlap)));
   }
   return absl::OkStatus();
 }
@@ -290,18 +327,43 @@ absl::Status ValidateBrushPaint(const BrushPaint& paint) {
       return status;
     }
   }
+  for (const ColorFunction& color_function : paint.color_functions) {
+    if (absl::Status status = ValidateColorFunction(color_function);
+        !status.ok()) {
+      return status;
+    }
+  }
   if (absl::Status status = ValidateBrushPaintTopLevel(paint); !status.ok()) {
     return status;
   }
   return absl::OkStatus();
 }
 
+void AddAttributeIdsRequiredByPaint(
+    const BrushPaint& paint,
+    absl::flat_hash_set<MeshFormat::AttributeId>& attribute_ids) {
+  for (const BrushPaint::TextureLayer& layer : paint.texture_layers) {
+    if (layer.mapping == BrushPaint::TextureMapping::kStamping) {
+      attribute_ids.insert(MeshFormat::AttributeId::kSurfaceUv);
+      // This is the only attribute that the paint may end up using, so if we
+      // find it then there's no need to check the other layers.
+      break;
+    }
+  }
+}
+
+bool AllowsSelfOverlapMode(const BrushPaint& paint,
+                           BrushPaint::SelfOverlap self_overlap) {
+  return paint.self_overlap == BrushPaint::SelfOverlap::kAny ||
+         paint.self_overlap == self_overlap;
+}
+
 std::string ToFormattedString(BrushPaint::TextureMapping texture_mapping) {
   switch (texture_mapping) {
     case BrushPaint::TextureMapping::kTiling:
       return "kTiling";
-    case BrushPaint::TextureMapping::kWinding:
-      return "kWinding";
+    case BrushPaint::TextureMapping::kStamping:
+      return "kStamping";
   }
   return absl::StrCat("TextureMapping(", static_cast<int>(texture_mapping),
                       ")");
@@ -410,40 +472,43 @@ std::string ToFormattedString(const BrushPaint::TextureLayer& texture_layer) {
       ", opacity=", texture_layer.opacity,
       ", animation_frames=", texture_layer.animation_frames,
       ", animation_rows=", texture_layer.animation_rows,
-      ", animation_columns=", texture_layer.animation_columns, ", keyframes={",
-      absl::StrJoin(texture_layer.keyframes, ", "), "}",
+      ", animation_columns=", texture_layer.animation_columns,
+      ", animation_duration=", texture_layer.animation_duration,
+      ", keyframes={", absl::StrJoin(texture_layer.keyframes, ", "), "}",
       ", blend_mode=", ToFormattedString(texture_layer.blend_mode), "}");
 }
 
-std::string ToFormattedString(const BrushPaint& paint) {
-  std::string formatted =
-      absl::StrCat("BrushPaint{texture_layers={",
-                   absl::StrJoin(paint.texture_layers, ", "), "}}");
+std::string ToFormattedString(const BrushPaint::SelfOverlap self_overlap) {
+  switch (self_overlap) {
+    case BrushPaint::SelfOverlap::kAny:
+      return "kAny";
+    case BrushPaint::SelfOverlap::kDiscard:
+      return "kDiscard";
+    case BrushPaint::SelfOverlap::kAccumulate:
+      return "kAccumulate";
+  }
+  return absl::StrCat("SelfOverlap(", static_cast<int>(self_overlap), ")");
+}
 
+std::string ToFormattedString(const BrushPaint& paint) {
+  std::string formatted = "BrushPaint{";
+  if (!paint.texture_layers.empty()) {
+    absl::StrAppend(&formatted, "texture_layers={",
+                    absl::StrJoin(paint.texture_layers, ", "), "}");
+  }
+  if (!paint.color_functions.empty()) {
+    if (!paint.texture_layers.empty()) {
+      absl::StrAppend(&formatted, ", ");
+    }
+    absl::StrAppend(&formatted, "color_functions={",
+                    absl::StrJoin(paint.color_functions, ", "), "}");
+  }
+  if (!paint.texture_layers.empty() || !paint.color_functions.empty()) {
+    absl::StrAppend(&formatted, ", ");
+  }
+  absl::StrAppend(&formatted,
+                  "self_overlap=", ToFormattedString(paint.self_overlap), "}");
   return formatted;
 }
 
-}  // namespace brush_internal
-
-bool operator==(const BrushPaint::TextureKeyframe& lhs,
-                const BrushPaint::TextureKeyframe& rhs) {
-  return lhs.progress == rhs.progress && lhs.size == rhs.size &&
-         lhs.offset == rhs.offset && lhs.rotation == rhs.rotation &&
-         lhs.opacity == rhs.opacity;
-}
-
-bool operator==(const BrushPaint::TextureLayer& lhs,
-                const BrushPaint::TextureLayer& rhs) {
-  return lhs.client_texture_id == rhs.client_texture_id &&
-         lhs.mapping == rhs.mapping && lhs.origin == rhs.origin &&
-         lhs.size_unit == rhs.size_unit && lhs.wrap_x == rhs.wrap_x &&
-         lhs.wrap_y == rhs.wrap_y && lhs.size == rhs.size &&
-         lhs.offset == rhs.offset && lhs.rotation == rhs.rotation &&
-         lhs.size_jitter == rhs.size_jitter &&
-         lhs.offset_jitter == rhs.offset_jitter &&
-         lhs.rotation_jitter == rhs.rotation_jitter &&
-         lhs.opacity == rhs.opacity && lhs.keyframes == rhs.keyframes &&
-         lhs.blend_mode == rhs.blend_mode;
-}
-
-}  // namespace ink
+}  // namespace ink::brush_internal

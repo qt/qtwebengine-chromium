@@ -66,13 +66,10 @@ class CodedNumericRunIterator {
     return retval;
   }
 
+  // Not default because it ignores the cached value_.
   friend bool operator==(const CodedNumericRunIterator& lhs,
                          const CodedNumericRunIterator& rhs) {
     return lhs.index_ == rhs.index_ && lhs.run_ == rhs.run_;
-  }
-  friend bool operator!=(const CodedNumericRunIterator& lhs,
-                         const CodedNumericRunIterator& rhs) {
-    return !(lhs == rhs);
   }
 
   // Returns true iff this iterator can be dereferenced.

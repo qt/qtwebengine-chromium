@@ -6,7 +6,7 @@ import("//mojo/public/tools/bindings/mojom.gni")
 
 assert(!is_android)
 
-source_set("feature_flag") {
+source_set("headers") {
   sources = [ "webui_browser.h" ]
 }
 
@@ -14,6 +14,7 @@ source_set("webui_browser") {
   sources = [
     "browser_elements_webui_browser.h",
     "find_bar_owner_webui_browser.h",
+    "webui_browser_exclusive_access_context.h",
     "webui_browser_side_panel_ui.h",
     "webui_browser_ui.h",
     "webui_browser_window.h",
@@ -21,12 +22,14 @@ source_set("webui_browser") {
   ]
   public_deps = [
     ":browser_mojo_bindings",
-    ":feature_flag",
+    ":headers",
     "//base",
     "//chrome/browser/ui/exclusive_access",
     "//chrome/browser/ui/location_bar",
     "//chrome/browser/ui/views/interaction",
     "//chrome/browser/ui/views/side_panel",
+    "//chrome/browser/ui/webui/cr_components/searchbox",
+    "//chrome/browser/ui/webui/metrics_reporter",
     "//components/guest_contents/common:mojom",
     "//content/public/browser",
     "//ui/color",
@@ -45,6 +48,7 @@ source_set("impl") {
     "webui_browser.cc",
     "webui_browser_client_view.cc",
     "webui_browser_client_view.h",
+    "webui_browser_exclusive_access_context.cc",
     "webui_browser_extensions_container.cc",
     "webui_browser_extensions_container.h",
     "webui_browser_modal_dialog_host.cc",
@@ -69,10 +73,10 @@ source_set("impl") {
     "//base",
     "//chrome/browser:browser_public_dependencies",
     "//chrome/browser/app_mode",
+    "//chrome/browser/contextual_search",
     "//chrome/browser/devtools",
     "//chrome/browser/extensions",
     "//chrome/browser/profiles",
-    "//chrome/browser/resources/tab_strip_api:resources",
     "//chrome/browser/resources/webui_browser:resources",
     "//chrome/browser/themes",
     "//chrome/browser/ui/bookmarks",
@@ -88,6 +92,7 @@ source_set("impl") {
     "//chrome/browser/ui/webui/searchbox",
     "//chrome/browser/ui/webui/util",
     "//chrome/common:chrome_features",
+    "//components/browser_apis/tab_strip/resources",
     "//components/guest_contents/browser",
     "//components/input",
     "//components/omnibox/browser:vector_icons",
@@ -124,7 +129,7 @@ mojom("browser_mojo_bindings") {
     "extensions_bar.mojom",
   ]
   public_deps = [
-    "//chrome/browser/ui/tabs/tab_strip_api:mojom",
+    "//components/browser_apis/tab_strip:mojom",
     "//mojo/public/mojom/base",
     "//ui/base/mojom:ui_base_types",
     "//url/mojom:url_mojom_gurl",

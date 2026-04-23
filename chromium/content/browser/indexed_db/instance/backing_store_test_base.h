@@ -28,7 +28,7 @@ namespace content::indexed_db {
 
 class BackingStoreTestBase : public testing::Test {
  public:
-  BackingStoreTestBase();
+  explicit BackingStoreTestBase(bool use_sqlite);
   BackingStoreTestBase(const BackingStoreTestBase&) = delete;
   BackingStoreTestBase& operator=(const BackingStoreTestBase&) = delete;
   ~BackingStoreTestBase() override;
@@ -48,9 +48,8 @@ class BackingStoreTestBase : public testing::Test {
   // Commits both phase one and two of `transaction`. This also verifies commit
   // steps are successful.
   void CommitTransactionAndVerify(BackingStore::Transaction& transaction);
-  // Commits only phase one of `transaction`. This also verifies commit steps
-  // are successful.
-  void CommitTransactionPhaseOneAndVerify(
+  // Commits only phase one of `transaction` and returns true iff successful.
+  bool CommitTransactionPhaseOneAndVerify(
       BackingStore::Transaction& transaction);
 
   std::vector<PartitionedLock> CreateDummyLock();
@@ -59,12 +58,15 @@ class BackingStoreTestBase : public testing::Test {
 
   BackingStore* backing_store();
 
-  static IndexedDBExternalObject CreateBlobInfo(const std::u16string& file_name,
+  static IndexedDBExternalObject CreateFileInfo(const std::u16string& file_name,
                                                 const std::u16string& type,
                                                 base::Time last_modified,
-                                                int64_t size);
-  static IndexedDBExternalObject CreateBlobInfo(const std::u16string& type,
-                                                std::string_view blob_data);
+                                                std::string_view file_contents);
+  // If `blob_data` is nullopt, the FakeBlob will have no body, which means it
+  // will return an error when being read.
+  static IndexedDBExternalObject CreateBlobInfo(
+      const std::u16string& type,
+      std::optional<std::string_view> blob_data);
 
   static IndexedDBExternalObject CreateFileSystemAccessHandle();
 
@@ -89,11 +91,14 @@ class BackingStoreTestBase : public testing::Test {
   IndexedDBValue value2_;
 
   raw_ptr<BackingStore> backing_store_ = nullptr;
+
+ private:
+  base::AutoReset<std::optional<bool>> sqlite_override_;
 };
 
 class BackingStoreWithExternalObjectsTestBase : public BackingStoreTestBase {
  public:
-  BackingStoreWithExternalObjectsTestBase();
+  explicit BackingStoreWithExternalObjectsTestBase(bool use_sqlite);
 
   BackingStoreWithExternalObjectsTestBase(
       const BackingStoreWithExternalObjectsTestBase&) = delete;

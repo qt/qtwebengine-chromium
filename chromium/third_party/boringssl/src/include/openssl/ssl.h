@@ -1454,17 +1454,44 @@ OPENSSL_EXPORT int SSL_can_release_private_key(const SSL *ssl);
 
 DEFINE_CONST_STACK_OF(SSL_CIPHER)
 
+// The following constants are TLS cipher suite protocol IDs, as returned from
+// |SSL_CIPHER_get_protocol_id|.
+#define SSL_CIPHER_AES_128_GCM_SHA256 0x1301
+#define SSL_CIPHER_AES_256_GCM_SHA384 0x1302
+#define SSL_CIPHER_CHACHA20_POLY1305_SHA256 0x1303
+#define SSL_CIPHER_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 0xc02b
+#define SSL_CIPHER_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 0xc02c
+#define SSL_CIPHER_ECDHE_RSA_WITH_AES_128_GCM_SHA256 0xc02f
+#define SSL_CIPHER_ECDHE_RSA_WITH_AES_256_GCM_SHA384 0xc030
+#define SSL_CIPHER_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 0xcca8
+#define SSL_CIPHER_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 0xcca9
+#define SSL_CIPHER_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256 0xccac
+#define SSL_CIPHER_ECDHE_ECDSA_WITH_AES_128_CBC_SHA 0xc009
+#define SSL_CIPHER_ECDHE_ECDSA_WITH_AES_256_CBC_SHA 0xc00a
+#define SSL_CIPHER_ECDHE_RSA_WITH_AES_128_CBC_SHA 0xc013
+#define SSL_CIPHER_ECDHE_RSA_WITH_AES_256_CBC_SHA 0xc014
+#define SSL_CIPHER_ECDHE_PSK_WITH_AES_128_CBC_SHA 0xc035
+#define SSL_CIPHER_ECDHE_PSK_WITH_AES_256_CBC_SHA 0xc036
+#define SSL_CIPHER_ECDHE_RSA_WITH_AES_128_CBC_SHA256 0xc027
+#define SSL_CIPHER_RSA_WITH_AES_128_GCM_SHA256 0x009c
+#define SSL_CIPHER_RSA_WITH_AES_256_GCM_SHA384 0x009d
+#define SSL_CIPHER_RSA_WITH_AES_128_CBC_SHA 0x002f
+#define SSL_CIPHER_RSA_WITH_AES_256_CBC_SHA 0x0035
+#define SSL_CIPHER_PSK_WITH_AES_128_CBC_SHA 0x008c
+#define SSL_CIPHER_PSK_WITH_AES_256_CBC_SHA 0x008d
+#define SSL_CIPHER_RSA_WITH_3DES_EDE_CBC_SHA 0x000a
+
+// The following constants are not cipher suites, but are used in the protocol
+// as signalling values.
+#define SSL_CIPHER_EMPTY_RENEGOTIATION_INFO_SCSV 0x00ff
+#define SSL_CIPHER_FALLBACK_SCSV 0x5600
+
 // SSL_get_cipher_by_value returns the structure representing a TLS cipher
 // suite based on its assigned number, or NULL if unknown. See
 // https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-parameters-4.
 OPENSSL_EXPORT const SSL_CIPHER *SSL_get_cipher_by_value(uint16_t value);
 
-// SSL_CIPHER_get_id returns |cipher|'s non-IANA id. This is not its
-// IANA-assigned number, which is called the "value" here, although it may be
-// cast to a |uint16_t| to get it.
-OPENSSL_EXPORT uint32_t SSL_CIPHER_get_id(const SSL_CIPHER *cipher);
-
-// SSL_CIPHER_get_protocol_id returns |cipher|'s IANA-assigned number.
+// SSL_CIPHER_get_protocol_id returns |cipher|'s two-byte protocol ID.
 OPENSSL_EXPORT uint16_t SSL_CIPHER_get_protocol_id(const SSL_CIPHER *cipher);
 
 // SSL_CIPHER_is_aead returns one if |cipher| uses an AEAD cipher.
@@ -1520,11 +1547,6 @@ OPENSSL_EXPORT uint16_t SSL_CIPHER_get_max_version(const SSL_CIPHER *cipher);
 // SSL_CIPHER_standard_name returns the standard IETF name for |cipher|. For
 // example, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256".
 OPENSSL_EXPORT const char *SSL_CIPHER_standard_name(const SSL_CIPHER *cipher);
-
-// SSL_CIPHER_get_name returns the OpenSSL name of |cipher|. For example,
-// "ECDHE-RSA-AES128-GCM-SHA256". Callers are recommended to use
-// |SSL_CIPHER_standard_name| instead.
-OPENSSL_EXPORT const char *SSL_CIPHER_get_name(const SSL_CIPHER *cipher);
 
 // SSL_CIPHER_get_kx_name returns a string that describes the key-exchange
 // method used by |cipher|. For example, "ECDHE_ECDSA". TLS 1.3 AEAD-only
@@ -1746,9 +1768,8 @@ OPENSSL_EXPORT STACK_OF(X509) *SSL_get_peer_cert_chain(const SSL *ssl);
 //
 // This is the same as |SSL_get_peer_cert_chain| except that this function
 // always returns the full chain, i.e. the first element of the return value
-// (if any) will be the leaf certificate. In constrast,
-// |SSL_get_peer_cert_chain| returns only the intermediate certificates if the
-// |ssl| is a server.
+// (if any) will be the leaf certificate. In contrast, |SSL_get_peer_cert_chain|
+// returns only the intermediate certificates if the |ssl| is a server.
 OPENSSL_EXPORT STACK_OF(X509) *SSL_get_peer_full_cert_chain(const SSL *ssl);
 
 // SSL_get0_peer_certificates returns the peer's certificate chain, or NULL if
@@ -2243,6 +2264,10 @@ OPENSSL_EXPORT int SSL_CTX_remove_session(SSL_CTX *ctx, SSL_SESSION *session);
 // of time |time|. If |time| is zero, all sessions are removed.
 OPENSSL_EXPORT void SSL_CTX_flush_sessions(SSL_CTX *ctx, uint64_t time);
 
+// SSL_new_session_cb is the type of the callback that is called when a new
+// session is established and ready to be cached.
+typedef int (*SSL_new_session_cb)(SSL *ssl, SSL_SESSION *session);
+
 // SSL_CTX_sess_set_new_cb sets the callback to be called when a new session is
 // established and ready to be cached. If the session cache is disabled (the
 // appropriate one of |SSL_SESS_CACHE_CLIENT| or |SSL_SESS_CACHE_SERVER| is
@@ -2261,13 +2286,16 @@ OPENSSL_EXPORT void SSL_CTX_flush_sessions(SSL_CTX *ctx, uint64_t time);
 // |SSL_do_handshake| or |SSL_connect| completes if False Start is enabled. Thus
 // it's recommended to use this callback over calling |SSL_get_session| on
 // handshake completion.
-OPENSSL_EXPORT void SSL_CTX_sess_set_new_cb(
-    SSL_CTX *ctx, int (*new_session_cb)(SSL *ssl, SSL_SESSION *session));
+OPENSSL_EXPORT void SSL_CTX_sess_set_new_cb(SSL_CTX *ctx,
+                                            SSL_new_session_cb new_session_cb);
 
 // SSL_CTX_sess_get_new_cb returns the callback set by
 // |SSL_CTX_sess_set_new_cb|.
-OPENSSL_EXPORT int (*SSL_CTX_sess_get_new_cb(SSL_CTX *ctx))(
-    SSL *ssl, SSL_SESSION *session);
+OPENSSL_EXPORT SSL_new_session_cb SSL_CTX_sess_get_new_cb(SSL_CTX *ctx);
+
+// SSL_remove_session_cb is the type of the callback that is called when a
+// session is removed from the internal session cache.
+typedef void (*SSL_remove_session_cb)(SSL_CTX *ctx, SSL_SESSION *session);
 
 // SSL_CTX_sess_set_remove_cb sets a callback which is called when a session is
 // removed from the internal session cache.
@@ -2275,13 +2303,16 @@ OPENSSL_EXPORT int (*SSL_CTX_sess_get_new_cb(SSL_CTX *ctx))(
 // TODO(davidben): What is the point of this callback? It seems useless since it
 // only fires on sessions in the internal cache.
 OPENSSL_EXPORT void SSL_CTX_sess_set_remove_cb(
-    SSL_CTX *ctx,
-    void (*remove_session_cb)(SSL_CTX *ctx, SSL_SESSION *session));
+    SSL_CTX *ctx, SSL_remove_session_cb remove_session_cb);
 
 // SSL_CTX_sess_get_remove_cb returns the callback set by
 // |SSL_CTX_sess_set_remove_cb|.
-OPENSSL_EXPORT void (*SSL_CTX_sess_get_remove_cb(SSL_CTX *ctx))(
-    SSL_CTX *ctx, SSL_SESSION *session);
+OPENSSL_EXPORT SSL_remove_session_cb SSL_CTX_sess_get_remove_cb(SSL_CTX *ctx);
+
+// SSL_get_session_cb is the type of the callback that is called to look up a
+// session by ID for a server.
+typedef SSL_SESSION *(*SSL_get_session_cb)(SSL *ssl, const uint8_t *id,
+                                           int id_len, int *out_copy);
 
 // SSL_CTX_sess_set_get_cb sets a callback to look up a session by ID for a
 // server. The callback is passed the session ID and should return a matching
@@ -2302,14 +2333,12 @@ OPENSSL_EXPORT void (*SSL_CTX_sess_get_remove_cb(SSL_CTX *ctx))(
 //
 // If the internal session cache is enabled, the callback is only consulted if
 // the internal cache does not return a match.
-OPENSSL_EXPORT void SSL_CTX_sess_set_get_cb(
-    SSL_CTX *ctx, SSL_SESSION *(*get_session_cb)(SSL *ssl, const uint8_t *id,
-                                                 int id_len, int *out_copy));
+OPENSSL_EXPORT void SSL_CTX_sess_set_get_cb(SSL_CTX *ctx,
+                                            SSL_get_session_cb get_session_cb);
 
 // SSL_CTX_sess_get_get_cb returns the callback set by
 // |SSL_CTX_sess_set_get_cb|.
-OPENSSL_EXPORT SSL_SESSION *(*SSL_CTX_sess_get_get_cb(SSL_CTX *ctx))(
-    SSL *ssl, const uint8_t *id, int id_len, int *out_copy);
+OPENSSL_EXPORT SSL_get_session_cb SSL_CTX_sess_get_get_cb(SSL_CTX *ctx);
 
 // SSL_magic_pending_session_ptr returns a magic |SSL_SESSION|* which indicates
 // that the session isn't currently unavailable. |SSL_get_error| will then
@@ -2440,7 +2469,7 @@ enum ssl_ticket_aead_result_t BORINGSSL_ENUM_INT {
   // ssl_ticket_aead_ignore_ticket indicates that the ticket should be ignored
   // (i.e. is corrupt or otherwise undecryptable).
   ssl_ticket_aead_ignore_ticket,
-  // ssl_ticket_aead_error indicates that a fatal error occured and the
+  // ssl_ticket_aead_error indicates that a fatal error occurred and the
   // handshake should be terminated.
   ssl_ticket_aead_error,
 };
@@ -2644,6 +2673,27 @@ OPENSSL_EXPORT int SSL_get_negotiated_group(const SSL *ssl);
 OPENSSL_EXPORT int SSL_set1_client_key_shares(SSL *ssl,
                                               const uint16_t *group_ids,
                                               size_t num_group_ids);
+
+// SSL_set1_server_supported_groups_hint, when |ssl| is a client, indicates that
+// the server is likely to support groups listed in |server_groups|, in order of
+// decreasing server preference. This function returns one on success and zero
+// on error. This may be used when receiving a server hint, such as described in
+// draft-ietf-tls-key-share-prediction.
+//
+// If called, |ssl| will try to predict the server's selected named group based
+// on |ssl|'s local preferences and |server_groups|. If it predicts a group, it
+// will then send an initial ClientHello with key_share extension containing
+// only this prediction. In this case, the prediction will supersede any
+// configuration from |SSL_set1_client_key_shares|. This is a convenience
+// function so that callers do not need to process the server preference list
+// themselves.
+//
+// Groups listed in |server_groups| should be identified by their TLS group IDs,
+// such as the |SSL_GROUP_*| constants. A server may implement groups not known
+// to BoringSSL, so |server_groups| may contain unrecognized group IDs. If so,
+// this function will ignore them.
+OPENSSL_EXPORT int SSL_set1_server_supported_groups_hint(
+    SSL *ssl, const uint16_t *server_groups, size_t num_server_groups);
 
 
 // Certificate verification.
@@ -4975,7 +5025,7 @@ enum ssl_select_cert_result_t BORINGSSL_ENUM_INT {
   // ssl_select_cert_retry indicates that the operation could not be
   // immediately completed and must be reattempted at a later point.
   ssl_select_cert_retry = 0,
-  // ssl_select_cert_error indicates that a fatal error occured and the
+  // ssl_select_cert_error indicates that a fatal error occurred and the
   // handshake should be terminated.
   ssl_select_cert_error = -1,
   // ssl_select_cert_disable_ech indicates that, although an encrypted
@@ -5248,6 +5298,16 @@ OPENSSL_EXPORT const char *SSL_CIPHER_description(const SSL_CIPHER *cipher,
 
 // SSL_CIPHER_get_version returns the string "TLSv1/SSLv3".
 OPENSSL_EXPORT const char *SSL_CIPHER_get_version(const SSL_CIPHER *cipher);
+
+// SSL_CIPHER_get_id returns |cipher|'s IANA-assigned number, OR-d with
+// 0x03000000. This is part of OpenSSL's SSL 2.0 legacy. SSL 2.0 has long since
+// been removed from BoringSSL. Use |SSL_CIPHER_get_protocol_id| instead.
+OPENSSL_EXPORT uint32_t SSL_CIPHER_get_id(const SSL_CIPHER *cipher);
+
+// SSL_CIPHER_get_name returns the OpenSSL name of |cipher|. For example,
+// "ECDHE-RSA-AES128-GCM-SHA256". Callers are recommended to use
+// |SSL_CIPHER_standard_name| instead.
+OPENSSL_EXPORT const char *SSL_CIPHER_get_name(const SSL_CIPHER *cipher);
 
 typedef void COMP_METHOD;
 typedef struct ssl_comp_st SSL_COMP;
@@ -5994,7 +6054,7 @@ enum ssl_compliance_policy_t BORINGSSL_ENUM_INT {
   // dominate other considerations.
   ssl_compliance_policy_wpa3_192_202304,
 
-  // ssl_compliance_policy_cnsa_202407 confingures a TLS connection to use:
+  // ssl_compliance_policy_cnsa_202407 configures a TLS connection to use:
   //   * For TLS 1.3, AES-256-GCM over AES-128-GCM over ChaCha20-Poly1305.
   //
   // I.e. it ensures that AES-GCM will be used whenever the client supports it.

@@ -47,8 +47,8 @@ Server::Server(const DawnProcTable& procs,
                CommandSerializer* serializer,
                MemoryTransferService* memoryTransferService,
                bool useSpontaneousCallbacks)
-    : mSerializer(serializer),
-      mProcs(procs),
+    : ServerBase(procs),
+      mSerializer(serializer),
       mMemoryTransferService(memoryTransferService),
       mUseSpontaneousCallbacks(useSpontaneousCallbacks) {
     if (mMemoryTransferService == nullptr) {
@@ -61,10 +61,10 @@ Server::Server(const DawnProcTable& procs,
 Server::~Server() {
     // Un-set the error and lost callbacks since we cannot forward them
     // after the server has been destroyed.
-    for (WGPUDevice device : Objects<WGPUDevice>().GetAllHandles()) {
+    for (WGPUDevice device : GetAllDeviceHandles()) {
         ClearDeviceCallbacks(device);
     }
-    DestroyAllObjects(mProcs);
+    DestroyAllObjects();
 }
 
 WireResult Server::InjectBuffer(WGPUBuffer buffer,
@@ -72,13 +72,13 @@ WireResult Server::InjectBuffer(WGPUBuffer buffer,
                                 const Handle& deviceHandle) {
     DAWN_ASSERT(buffer != nullptr);
     Known<WGPUDevice> device;
-    WIRE_TRY(Objects<WGPUDevice>().Get(deviceHandle.id, &device));
+    WIRE_TRY(Get(deviceHandle.id, &device));
     if (device->generation != deviceHandle.generation) {
         return WireResult::FatalError;
     }
 
     Reserved<WGPUBuffer> data;
-    WIRE_TRY(Objects<WGPUBuffer>().Allocate(&data, handle));
+    WIRE_TRY(Allocate(&data, handle));
 
     data->handle = buffer;
     data->generation = handle.generation;
@@ -96,13 +96,13 @@ WireResult Server::InjectTexture(WGPUTexture texture,
                                  const Handle& deviceHandle) {
     DAWN_ASSERT(texture != nullptr);
     Known<WGPUDevice> device;
-    WIRE_TRY(Objects<WGPUDevice>().Get(deviceHandle.id, &device));
+    WIRE_TRY(Get(deviceHandle.id, &device));
     if (device->generation != deviceHandle.generation) {
         return WireResult::FatalError;
     }
 
     Reserved<WGPUTexture> data;
-    WIRE_TRY(Objects<WGPUTexture>().Allocate(&data, handle));
+    WIRE_TRY(Allocate(&data, handle));
 
     data->handle = texture;
     data->generation = handle.generation;
@@ -120,13 +120,13 @@ WireResult Server::InjectSurface(WGPUSurface surface,
                                  const Handle& instanceHandle) {
     DAWN_ASSERT(surface != nullptr);
     Known<WGPUInstance> instance;
-    WIRE_TRY(Objects<WGPUInstance>().Get(instanceHandle.id, &instance));
+    WIRE_TRY(Get(instanceHandle.id, &instance));
     if (instance->generation != instanceHandle.generation) {
         return WireResult::FatalError;
     }
 
     Reserved<WGPUSurface> data;
-    WIRE_TRY(Objects<WGPUSurface>().Allocate(&data, handle));
+    WIRE_TRY(Allocate(&data, handle));
 
     data->handle = surface;
     data->generation = handle.generation;
@@ -142,7 +142,7 @@ WireResult Server::InjectSurface(WGPUSurface surface,
 WireResult Server::InjectInstance(WGPUInstance instance, const Handle& handle) {
     DAWN_ASSERT(instance != nullptr);
     Reserved<WGPUInstance> data;
-    WIRE_TRY(Objects<WGPUInstance>().Allocate(&data, handle));
+    WIRE_TRY(Allocate(&data, handle));
 
     data->handle = instance;
     data->generation = handle.generation;
@@ -157,15 +157,10 @@ WireResult Server::InjectInstance(WGPUInstance instance, const Handle& handle) {
 
 WGPUDevice Server::GetDevice(uint32_t id, uint32_t generation) {
     Known<WGPUDevice> device;
-    if (Objects<WGPUDevice>().Get(id, &device) != WireResult::Success ||
-        device->generation != generation) {
+    if (Get(id, &device) != WireResult::Success || device->generation != generation) {
         return nullptr;
     }
     return device->handle;
-}
-
-bool Server::IsDeviceKnown(WGPUDevice device) const {
-    return Objects<WGPUDevice>().IsKnown(device);
 }
 
 void Server::Flush() {
@@ -194,6 +189,7 @@ void Server::SetForwardingDeviceCallbacks(Known<WGPUDevice> device) {
                          [](WGPULoggingType type, WGPUStringView message, void* userdata, void*) {
                              DeviceInfo* info = static_cast<DeviceInfo*>(userdata);
                              info->server->OnLogging(info->self, type, message);
+                             info->server->Flush();
                          },
                          device->info.get(), nullptr});
 }

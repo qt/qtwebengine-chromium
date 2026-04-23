@@ -5,12 +5,12 @@
 from __future__ import annotations
 
 import subprocess
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Mapping, Optional
 
 from typing_extensions import override
 
 if TYPE_CHECKING:
-  from crossbench.path import AnyPathLike, LocalPath
+  from crossbench.path import AnyPath, AnyPathLike, LocalPath
   from crossbench.plt.base import Platform
   from crossbench.plt.signals import Signals
   from crossbench.plt.types import CmdArg, ListCmdArgs, ProcessIo
@@ -33,7 +33,11 @@ class RemotePlatformMixin:
   def host_path(self, path: AnyPathLike) -> LocalPath:
     return self._host_platform.local_path(path)
 
-  def build_shell_cmd(self, *args: CmdArg, shell: bool = False) -> ListCmdArgs:
+  def build_shell_cmd(self,
+                      *args: CmdArg,
+                      shell: bool = False,
+                      env: Optional[Mapping[str, str]] = None,
+                      cwd: Optional[AnyPath] = None) -> ListCmdArgs:
     raise NotImplementedError
 
 
@@ -44,7 +48,6 @@ class RemotePopen(subprocess.Popen):
   Allows to send signals to the remote process and gracefully wait for its
   termination.
   """
-
 
   def __init__(self,
                platform: Platform,

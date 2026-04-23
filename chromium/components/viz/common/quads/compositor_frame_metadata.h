@@ -38,6 +38,10 @@
 #include "ui/gfx/selection_bound.h"
 #endif  // BUILDFLAG(IS_ANDROID)
 
+namespace base::trace_event {
+class TracedValue;
+}  // namespace base::trace_event
+
 namespace viz {
 
 // A frame token value of 0 indicates an invalid token.
@@ -87,6 +91,8 @@ class VIZ_COMMON_EXPORT CompositorFrameMetadata {
   CompositorFrameMetadata& operator=(CompositorFrameMetadata&& other);
 
   CompositorFrameMetadata Clone() const;
+
+  void AsValueInto(base::trace_event::TracedValue* value) const;
 
   // The device scale factor used to generate this compositor frame. Must be
   // greater than zero.

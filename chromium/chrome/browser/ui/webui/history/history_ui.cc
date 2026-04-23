@@ -36,8 +36,8 @@
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/history/browsing_history_handler.h"
 #include "chrome/browser/ui/webui/history/foreign_session_handler.h"
+#include "chrome/browser/ui/webui/history/history_identity_state_watcher.h"
 #include "chrome/browser/ui/webui/history/history_login_handler.h"
-#include "chrome/browser/ui/webui/history/history_sign_in_state_watcher.h"
 #include "chrome/browser/ui/webui/history/navigation_handler.h"
 #include "chrome/browser/ui/webui/history_clusters/history_clusters_handler.h"
 #include "chrome/browser/ui/webui/managed_ui_handler.h"
@@ -47,7 +47,6 @@
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/history_resources.h"
 #include "chrome/grit/history_resources_map.h"
-#include "chrome/grit/locale_settings.h"
 #include "components/grit/components_scaled_resources.h"
 #include "components/history/core/common/pref_names.h"
 #include "components/history_clusters/core/config.h"
@@ -82,6 +81,11 @@ content::WebUIDataSource* CreateAndAddHistoryUIHTMLSource(Profile* profile) {
   source->AddBoolean(
       "replaceSyncPromosWithSignInPromos",
       base::FeatureList::IsEnabled(syncer::kReplaceSyncPromosWithSignInPromos));
+
+#if !BUILDFLAG(IS_CHROMEOS)
+  source->AddBoolean("unoPhase2FollowUp",
+                     base::FeatureList::IsEnabled(syncer::kUnoPhase2FollowUp));
+#endif  // BUILDFLAG!(IS_CHROMEOS)
 
   HistoryUtil::PopulateCommonSourceForHistory(source, profile);
 
@@ -118,24 +122,19 @@ content::WebUIDataSource* CreateAndAddHistoryUIHTMLSource(Profile* profile) {
   // the user's settings.
   source->AddString(
       "sidebarFooterGMAOnly",
-      l10n_util::GetStringFUTF16(
-          IDS_HISTORY_OTHER_FORMS_OF_HISTORY_GMA_ONLY,
-          l10n_util::GetStringUTF16(
-              IDS_SETTINGS_CLEAR_DATA_MYACTIVITY_URL_IN_HISTORY)));
+      l10n_util::GetStringFUTF16(IDS_HISTORY_OTHER_FORMS_OF_HISTORY_GMA_ONLY,
+                                 chrome::kMyActivityUrlInHistory));
   source->AddString(
       "sidebarFooterGAAOnly",
       l10n_util::GetStringFUTF16(IDS_HISTORY_OTHER_FORMS_OF_HISTORY_GAA_ONLY,
                                  chrome::kMyActivityGeminiAppsUrl));
-  source->AddString("sidebarFooterGMAAndGAA",
-                    l10n_util::GetStringFUTF16(
-                        IDS_HISTORY_OTHER_FORMS_OF_HISTORY_GMA_AND_GAA,
-                        l10n_util::GetStringUTF16(
-                            IDS_SETTINGS_CLEAR_DATA_MYACTIVITY_URL_IN_HISTORY),
-                        chrome::kMyActivityGeminiAppsUrl));
+  source->AddString(
+      "sidebarFooterGMAAndGAA",
+      l10n_util::GetStringFUTF16(IDS_HISTORY_OTHER_FORMS_OF_HISTORY_GMA_AND_GAA,
+                                 chrome::kMyActivityUrlInHistory,
+                                 chrome::kMyActivityGeminiAppsUrl));
   // Links that are used in the messages above.
-  source->AddString("sidebarFooterGMALink",
-                    l10n_util::GetStringUTF16(
-                        IDS_SETTINGS_CLEAR_DATA_MYACTIVITY_URL_IN_HISTORY));
+  source->AddString("sidebarFooterGMALink", chrome::kMyActivityUrlInHistory);
   source->AddString("sidebarFooterGAALink", chrome::kMyActivityGeminiAppsUrl);
 
 #if BUILDFLAG(ENABLE_GLIC)
@@ -158,6 +157,10 @@ content::WebUIDataSource* CreateAndAddHistoryUIHTMLSource(Profile* profile) {
   AccountInfo account_info =
       signin_ui_util::GetSingleAccountForPromos(identity_manager);
   source->AddString(
+      "historySyncPromoBodySignedIn",
+      l10n_util::GetStringFUTF16(IDS_HISTORY_SYNC_PROMO_BODY_SIGNED_IN,
+                                 base::UTF8ToUTF16(account_info.email)));
+  source->AddString(
       "turnOnSignedInSyncHistoryPromoBodySignInSyncOff",
       l10n_util::GetStringFUTF16(
           IDS_RECENT_TABS_SYNC_HISTORY_PROMO_BODY_SIGNED_IN_SYNC_OFF,
@@ -175,6 +178,16 @@ content::WebUIDataSource* CreateAndAddHistoryUIHTMLSource(Profile* profile) {
     source->AddLocalizedString("turnOnSyncButton",
                                IDS_HISTORY_TURN_ON_SYNC_BUTTON);
   }
+
+  static constexpr webui::LocalizedString kHistorySyncStrings[] = {
+      {"historySyncPromoTitle", IDS_HISTORY_SYNC_PROMO_TITLE},
+      {"historySyncPromoBodySignedOut", IDS_HISTORY_SYNC_PROMO_BODY_SIGNED_OUT},
+      {"historySyncPromoBodySignInPending",
+       IDS_HISTORY_SYNC_PROMO_BODY_SIGN_IN_PENDING},
+      {"historySyncPromoBodySignInPendingSyncHistoryOn",
+       IDS_HISTORY_SYNC_PROMO_BODY_SIGN_IN_PENDING_SYNC_HISTORY_ON},
+  };
+  source->AddLocalizedStrings(kHistorySyncStrings);
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
   bool enable_history_embeddings =
@@ -307,14 +320,7 @@ void HistoryUI::UpdateDataSource() {
 
   Profile* profile = Profile::FromWebUI(web_ui());
 
-  signin::IdentityManager* identity_manager =
-      IdentityManagerFactory::GetForProfile(profile);
-  syncer::SyncService* sync_service =
-      SyncServiceFactory::GetForProfile(profile);
-
   base::Value::Dict update;
-  update.Set(kSignInStateKey, static_cast<int>(GetHistorySignInState(
-                                  identity_manager, sync_service)));
 
   const bool is_managed = profile->GetPrefs()->IsManagedPreference(
       history_clusters::prefs::kVisible);

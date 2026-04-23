@@ -11,10 +11,8 @@ from typing import TYPE_CHECKING, ClassVar, Type
 from typing_extensions import override
 
 from crossbench.action_runner.action.enums import ReadyState
-from crossbench.benchmarks.jetstream.jetstream import (JetStreamBenchmark,
-                                                       JetStreamProbe,
-                                                       JetStreamProbeContext,
-                                                       JetStreamStory)
+from crossbench.benchmarks.jetstream.jetstream import JetStreamBenchmark, \
+    JetStreamProbe, JetStreamProbeContext, JetStreamStory
 
 if TYPE_CHECKING:
   from crossbench.benchmarks.base import VersionParts

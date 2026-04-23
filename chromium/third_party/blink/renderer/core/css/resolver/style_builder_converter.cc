@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "base/containers/adapters.h"
@@ -88,7 +89,6 @@
 #include "third_party/blink/renderer/core/style/reference_offset_path_operation.h"
 #include "third_party/blink/renderer/core/style/scoped_css_name.h"
 #include "third_party/blink/renderer/core/style/scroll_marker_group.h"
-#include "third_party/blink/renderer/core/style/scroll_start_data.h"
 #include "third_party/blink/renderer/core/style/shape_clip_path_operation.h"
 #include "third_party/blink/renderer/core/style/shape_offset_path_operation.h"
 #include "third_party/blink/renderer/core/style/style_border_shape.h"
@@ -275,22 +275,61 @@ StyleSVGResource* StyleBuilderConverter::ConvertElementReference(
       url_value.ValueForSerialization());
 }
 
+namespace {
+
+struct BasicShapeAndCoordBox {
+  STACK_ALLOCATED();
+
+ public:
+  BasicShape* shape;
+  GeometryBox box;
+};
+
+template <GeometryBox default_box>
+BasicShapeAndCoordBox BasicShapeAndCoordBoxForValue(StyleResolverState& state,
+                                                    const CSSValue& value) {
+  BasicShape* shape = nullptr;
+  GeometryBox box = default_box;
+  if (const auto* pair = DynamicTo<CSSValuePair>(value)) {
+    shape = BasicShapeForValue(state, pair->First());
+    box = To<CSSIdentifierValue>(pair->Second()).ConvertTo<GeometryBox>();
+  } else {
+    shape = BasicShapeForValue(state, value);
+  }
+  return {shape, box};
+}
+
+}  // namespace
+
 StyleBorderShape* StyleBuilderConverter::ConvertBorderShape(
     StyleResolverState& state,
     const CSSValue& value) {
+  // Either:
+  // - none;
+  // - a single shape (meaning default box is half-border-box for stroking);
+  // - a pair of shape + box;
+  // - list of either: two pairs of shape + box or two shapes.
   if (value.IsIdentifierValue()) {
     CHECK_EQ(To<CSSIdentifierValue>(value).GetValueID(), CSSValueID::kNone);
     return nullptr;
   }
 
-  if (const auto* pair = DynamicTo<CSSValuePair>(value)) {
-    return MakeGarbageCollected<StyleBorderShape>(
-        *BasicShapeForValue(state, pair->First()),
-        BasicShapeForValue(state, pair->Second()));
+  if (const auto* list = DynamicTo<CSSValueList>(value)) {
+    DCHECK_EQ(list->length(), 2u);
+    auto [outer_shape, outer_box] =
+        BasicShapeAndCoordBoxForValue<GeometryBox::kBorderBox>(state,
+                                                               list->First());
+    auto [inner_shape, inner_box] =
+        BasicShapeAndCoordBoxForValue<GeometryBox::kPaddingBox>(state,
+                                                                list->Last());
+    return MakeGarbageCollected<StyleBorderShape>(*outer_shape, inner_shape,
+                                                  outer_box, inner_box);
   }
 
+  auto [outer_shape, outer_coord_box] =
+      BasicShapeAndCoordBoxForValue<GeometryBox::kHalfBorderBox>(state, value);
   return MakeGarbageCollected<StyleBorderShape>(
-      *BasicShapeForValue(state, value));
+      *outer_shape, outer_shape, outer_coord_box, outer_coord_box);
 }
 
 LengthBox StyleBuilderConverter::ConvertClip(StyleResolverState& state,
@@ -1987,19 +2026,14 @@ Length StyleBuilderConverter::ConvertLengthOrAuto(
       state.CssToLengthConversionData());
 }
 
-ScrollStartData StyleBuilderConverter::ConvertScrollStart(
+std::optional<Length> StyleBuilderConverter::ConvertLengthOrNone(
     const StyleResolverState& state,
     const CSSValue& value) {
-  ScrollStartData scroll_start_data;
-  if (value.IsPrimitiveValue()) {
-    scroll_start_data.value_type = ScrollStartValueType::kLengthOrPercentage;
-    scroll_start_data.value = To<CSSPrimitiveValue>(value).ConvertToLength(
-        state.CssToLengthConversionData());
-    return scroll_start_data;
+  if (const auto* identifier_value = DynamicTo<CSSIdentifierValue>(value)) {
+    DCHECK_EQ(identifier_value->GetValueID(), CSSValueID::kNone);
+    return std::nullopt;
   }
-  scroll_start_data.value_type =
-      To<CSSIdentifierValue>(value).ConvertTo<ScrollStartValueType>();
-  return scroll_start_data;
+  return ConvertLength(state, To<CSSPrimitiveValue>(value));
 }
 
 Length StyleBuilderConverter::ConvertLengthSizing(StyleResolverState& state,
@@ -2158,15 +2192,18 @@ ScopedCSSName* StyleBuilderConverter::ConvertCustomIdent(
       custom_ident.GetTreeScope());
 }
 
-ScopedCSSName* StyleBuilderConverter::ConvertPositionAnchor(
+StylePositionAnchor StyleBuilderConverter::ConvertPositionAnchor(
     StyleResolverState& state,
     const CSSValue& value) {
   DCHECK(value.IsScopedValue());
   if (const auto* identifier_value = DynamicTo<CSSIdentifierValue>(value)) {
+    if (identifier_value->GetValueID() == CSSValueID::kNone) {
+      return StylePositionAnchor(StylePositionAnchor::Type::kNone);
+    }
     DCHECK_EQ(identifier_value->GetValueID(), CSSValueID::kAuto);
-    return nullptr;
+    return StylePositionAnchor(StylePositionAnchor::Type::kAuto);
   }
-  return ConvertCustomIdent(state, value);
+  return StylePositionAnchor(ConvertCustomIdent(state, value));
 }
 
 PositionVisibility StyleBuilderConverter::ConvertPositionVisibility(
@@ -3644,55 +3681,28 @@ StyleIntrinsicLength StyleBuilderConverter::ConvertIntrinsicDimension(
     const StyleResolverState& state,
     const CSSValue& value) {
   // The valid grammar for this value is the following:
-  // none | <length> | auto && <length> | auto && none.
-
-  auto* identifier_value = DynamicTo<CSSIdentifierValue>(value);
-  if (identifier_value) {
-    if (identifier_value->GetValueID() == CSSValueID::kNone) {
-      return StyleIntrinsicLength(/*has_auto=*/false, /*matches_element=*/false,
-                                  std::nullopt);
-    } else {
-      DCHECK(RuntimeEnabledFeatures::ResponsiveIframesEnabled());
-      DCHECK(identifier_value->GetValueID() == CSSValueID::kFromElement);
-      return StyleIntrinsicLength(/*has_auto=*/false, /*matches_element=*/true,
-                                  std::nullopt);
+  // `[ auto | from-element ]? [ none | <length [0,∞]> ]`.
+  if (const CSSValueList* list = DynamicTo<CSSValueList>(value)) {
+    DCHECK_EQ(list->length(), 2u);
+    DCHECK(IsA<CSSIdentifierValue>(list->Item(0)));
+    if (RuntimeEnabledFeatures::ResponsiveIframesEnabled()) {
+      const auto& identifier = To<CSSIdentifierValue>(list->Item(0));
+      if (identifier.GetValueID() == CSSValueID::kFromElement) {
+        return StyleIntrinsicLength(
+            /*has_auto=*/false, /*matches_element=*/true,
+            ConvertLengthOrNone(state, list->Item(1)));
+      }
     }
-  }
-
-  // Handle "<length> | auto && <length> | auto && none, which will all come
-  // from a list.
-  const CSSValueList* list = DynamicTo<CSSValueList>(value);
-  DCHECK(list);
-  DCHECK_GT(list->length(), 0u);
-
-  // Handle "<length>".
-  if (auto* primitive_value = DynamicTo<CSSPrimitiveValue>(list->Item(0))) {
-    DCHECK_EQ(list->length(), 1u);
-    return StyleIntrinsicLength(
-        /*has_auto=*/false, /*matches_element=*/false,
-        ConvertLength(state, *primitive_value));
-  }
-
-  // The rest of the syntax will have "auto" as the first keyword.
-  DCHECK_EQ(list->length(), 2u);
-  DCHECK(IsA<CSSIdentifierValue>(list->Item(0)));
-  DCHECK(To<CSSIdentifierValue>(list->Item(0)).GetValueID() ==
-         CSSValueID::kAuto);
-
-  // Handle "auto && <length>"
-  if (auto* primitive_value = DynamicTo<CSSPrimitiveValue>(list->Item(1))) {
+    DCHECK(To<CSSIdentifierValue>(list->Item(0)).GetValueID() ==
+           CSSValueID::kAuto);
     return StyleIntrinsicLength(
         /*has_auto=*/true, /*matches_element=*/false,
-        ConvertLength(state, *primitive_value));
+        ConvertLengthOrNone(state, list->Item(1)));
   }
 
-  // The only grammar left is "auto && none".
-  DCHECK(IsA<CSSIdentifierValue>(list->Item(1)));
-  DCHECK(To<CSSIdentifierValue>(list->Item(1)).GetValueID() ==
-         CSSValueID::kNone);
-
-  return StyleIntrinsicLength(/*has_auto=*/true, /*matches_element=*/false,
-                              std::nullopt);
+  return StyleIntrinsicLength(
+      /*has_auto=*/false, /*matches_element=*/false,
+      ConvertLengthOrNone(state, value));
 }
 
 ColorSchemeFlags StyleBuilderConverter::ExtractColorSchemes(
@@ -3878,19 +3888,19 @@ PositionArea StyleBuilderConverter::ConvertPositionArea(
         start = PositionAreaRegion::kCenter;
         end = PositionAreaRegion::kXEnd;
         break;
-      case CSSValueID::kXSelfStart:
-        start = end = PositionAreaRegion::kXSelfStart;
+      case CSSValueID::kSelfXStart:
+        start = end = PositionAreaRegion::kSelfXStart;
         break;
-      case CSSValueID::kXSelfEnd:
-        start = end = PositionAreaRegion::kXSelfEnd;
+      case CSSValueID::kSelfXEnd:
+        start = end = PositionAreaRegion::kSelfXEnd;
         break;
-      case CSSValueID::kSpanXSelfStart:
-        start = PositionAreaRegion::kXSelfStart;
+      case CSSValueID::kSpanSelfXStart:
+        start = PositionAreaRegion::kSelfXStart;
         end = PositionAreaRegion::kCenter;
         break;
-      case CSSValueID::kSpanXSelfEnd:
+      case CSSValueID::kSpanSelfXEnd:
         start = PositionAreaRegion::kCenter;
-        end = PositionAreaRegion::kXSelfEnd;
+        end = PositionAreaRegion::kSelfXEnd;
         break;
       case CSSValueID::kTop:
         start = end = PositionAreaRegion::kTop;
@@ -3920,19 +3930,19 @@ PositionArea StyleBuilderConverter::ConvertPositionArea(
         start = PositionAreaRegion::kCenter;
         end = PositionAreaRegion::kYEnd;
         break;
-      case CSSValueID::kYSelfStart:
-        start = end = PositionAreaRegion::kYSelfStart;
+      case CSSValueID::kSelfYStart:
+        start = end = PositionAreaRegion::kSelfYStart;
         break;
-      case CSSValueID::kYSelfEnd:
-        start = end = PositionAreaRegion::kYSelfEnd;
+      case CSSValueID::kSelfYEnd:
+        start = end = PositionAreaRegion::kSelfYEnd;
         break;
-      case CSSValueID::kSpanYSelfStart:
-        start = PositionAreaRegion::kYSelfStart;
+      case CSSValueID::kSpanSelfYStart:
+        start = PositionAreaRegion::kSelfYStart;
         end = PositionAreaRegion::kCenter;
         break;
-      case CSSValueID::kSpanYSelfEnd:
+      case CSSValueID::kSpanSelfYEnd:
         start = PositionAreaRegion::kCenter;
-        end = PositionAreaRegion::kYSelfEnd;
+        end = PositionAreaRegion::kSelfYEnd;
         break;
       case CSSValueID::kBlockStart:
         start = end = PositionAreaRegion::kBlockStart;

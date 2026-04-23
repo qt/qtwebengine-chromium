@@ -48,7 +48,6 @@ class ChromiumBased(Browser):
   # display a "What's New" tab on startup.
   WHATS_NEW_UI_VERSION_RANGE: Final[range] = range(98, 100 + 1)
 
-
   @classmethod
   @abc.abstractmethod
   def version_cls(cls) -> Type[ChromiumVersion]:

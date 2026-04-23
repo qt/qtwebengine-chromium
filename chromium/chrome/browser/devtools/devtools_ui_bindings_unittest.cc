@@ -8,6 +8,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/test/bind.h"
+#include "base/test/test_future.h"
 #include "chrome/browser/devtools/devtools_dispatch_http_request_params.h"
 #include "chrome/browser/devtools/devtools_http_service_handler.h"
 #include "chrome/browser/devtools/devtools_http_service_registry.h"
@@ -120,6 +121,19 @@ TEST_F(DevToolsUIBindingsTest, SanitizeFrontendURL) {
        "?enabledExperiments=explosionsWhileTyping;newA11yTool"},
       {"devtools://devtools/?enabledExperiments=invalidExperiment$",
        "devtools://devtools/"},
+      {"devtools://devtools/?panel=elements",
+       "devtools://devtools/?panel=elements"},
+      {"devtools://devtools/?panel=network",
+       "devtools://devtools/?panel=network"},
+      {"devtools://devtools/?panel=console",
+       "devtools://devtools/?panel=console"},
+      {"devtools://devtools/?panel=sources",
+       "devtools://devtools/?panel=sources"},
+      {"devtools://devtools/?panel=resources",
+       "devtools://devtools/?panel=resources"},
+      {"devtools://devtools/?panel=performance",
+       "devtools://devtools/?panel=performance"},
+      {"devtools://devtools/?panel=unsupported", "devtools://devtools/"},
   };
 
   for (const auto& pair : tests) {
@@ -174,8 +188,8 @@ TEST_F(DevToolsUIBindingsSyncInfoTest, PreferencesNotSynced) {
 
 TEST_F(DevToolsUIBindingsSyncInfoTest, ImageAlwaysProvided) {
   AccountInfo account_info = identity_test_env_.MakePrimaryAccountAvailable(
-      "sync@devtools.dev", signin::ConsentLevel::kSync);
-  sync_service_->SetSignedIn(signin::ConsentLevel::kSync, account_info);
+      "sync@devtools.dev", signin::ConsentLevel::kSignin);
+  sync_service_->SetSignedIn(signin::ConsentLevel::kSignin, account_info);
 
   EXPECT_TRUE(account_info.account_image.IsEmpty());
 
@@ -184,6 +198,68 @@ TEST_F(DevToolsUIBindingsSyncInfoTest, ImageAlwaysProvided) {
 
   EXPECT_EQ(*info.FindString("accountEmail"), "sync@devtools.dev");
   EXPECT_NE(info.FindString("accountImage"), nullptr);
+}
+
+// This class uses the actual implementation of the CanMakeRequest
+class TestServiceHandler : public DevToolsHttpServiceHandler {
+ public:
+  TestServiceHandler() = default;
+  ~TestServiceHandler() override = default;
+
+  GURL BaseURL() const override { return GURL("http://localhost:8000"); }
+  signin::ScopeSet OAuthScopes() const override { return {}; }
+  net::NetworkTrafficAnnotationTag NetworkTrafficAnnotationTag()
+      const override {
+    return TRAFFIC_ANNOTATION_FOR_TESTS;
+  }
+};
+
+class DevToolsHttpServiceHandlerTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    TestingProfile::Builder builder;
+    profile_ = builder.Build();
+    mock_handler_ = base::WrapUnique(new TestServiceHandler());
+
+    params_.service = "unknownService";
+    params_.path = "/path";
+    params_.method = "GET";
+  }
+
+  DevToolsDispatchHttpRequestParams params_;
+  content::BrowserTaskEnvironment task_environment_;
+  std::unique_ptr<TestingProfile> profile_;
+  std::unique_ptr<TestServiceHandler> mock_handler_;
+};
+
+TEST_F(DevToolsHttpServiceHandlerTest, RequestWithNullProfileFails) {
+  base::test::TestFuture<std::unique_ptr<DevToolsHttpServiceHandler::Result>>
+      result_future;
+
+  mock_handler_->Request(nullptr, params_, result_future.GetCallback());
+
+  std::unique_ptr<DevToolsHttpServiceHandler::Result> result =
+      result_future.Take();
+
+  ASSERT_TRUE(result);
+  EXPECT_EQ(result->error,
+            DevToolsHttpServiceHandler::Result::Error::kValidationFailed);
+}
+
+TEST_F(DevToolsHttpServiceHandlerTest, RequestWithOTRProfileFails) {
+  base::test::TestFuture<std::unique_ptr<DevToolsHttpServiceHandler::Result>>
+      result_future;
+
+  auto* incognito_profile = profile_->GetPrimaryOTRProfile(true);
+  mock_handler_->Request(incognito_profile, params_,
+                         result_future.GetCallback());
+
+  std::unique_ptr<DevToolsHttpServiceHandler::Result> result =
+      result_future.Take();
+
+  ASSERT_TRUE(result);
+  EXPECT_EQ(result->error,
+            DevToolsHttpServiceHandler::Result::Error::kValidationFailed);
 }
 
 class MockServiceHandler : public DevToolsHttpServiceHandler {
@@ -386,12 +462,12 @@ TEST_F(DevToolsUIBindingsDispatchHttpRequestTest,
   identity_test_env_adaptor()
       ->identity_test_env()
       ->WaitForAccessTokenRequestIfNecessaryAndRespondWithError(
-          GoogleServiceAuthError(GoogleServiceAuthError::SERVICE_UNAVAILABLE));
+          GoogleServiceAuthError::FromServiceUnavailable("test_error"));
   run_loop.Run();
 
   EXPECT_EQ(*result.FindString("error"), "Token fetch error");
   EXPECT_EQ(*result.FindString("detail"),
-            "Service unavailable; try again later.");
+            "Service unavailable; try again later (test_error).");
 }
 
 TEST_F(DevToolsUIBindingsDispatchHttpRequestTest,

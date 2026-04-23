@@ -7,7 +7,6 @@
 #include "base/test/bind.h"
 #include "base/test/test_future.h"
 #include "build/build_config.h"
-#include "components/network_session_configurator/common/network_switches.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
@@ -47,17 +46,13 @@ class PageContentMetadataObserverBrowserTest
         net::EmbeddedTestServer::TYPE_HTTPS);
     https_server_->AddDefaultHandlers(GetTestDataDir());
     content::SetupCrossSiteRedirector(https_server_.get());
+    https_server_->SetCertHostnames({"a.com", "b.com", "c.com"});
 
     ASSERT_TRUE(https_server_->Start());
   }
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
     content::ContentBrowserTest::SetUpCommandLine(command_line);
-
-    // HTTPS server only serves a valid cert for localhost, so this is needed
-    // to load pages from other hosts without an error.
-    command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
-
     command_line->AppendSwitchASCII(switches::kForceDeviceScaleFactor, "1.0");
   }
 
@@ -78,9 +73,12 @@ class PageContentMetadataObserverBrowserTest
 
   void OnMetaTagsChanged(blink::mojom::PageMetadataPtr page_metadata) {
     page_metadata_ = std::move(page_metadata);
-    // This may be called multiple times in some tests, but TestFuture handles
-    // this gracefully.
-    callback_waiter_.SetValue(true);
+    // This may be called multiple times in some tests. Only signal the waiter
+    // if it is not already ready to avoid crashing the TestFuture. The test
+    // will check the latest value of `page_metadata_` when it wakes up.
+    if (!callback_waiter_.IsReady()) {
+      callback_waiter_.SetValue(true);
+    }
   }
 
   bool ProcessPendingIPC() {
@@ -95,6 +93,11 @@ class PageContentMetadataObserverBrowserTest
     // with cross-origin iframes.
     content::WaitForLoadStop(GetWebContents());
     ProcessPendingIPC();
+  }
+
+  void WaitForCallback() {
+    ASSERT_TRUE(callback_waiter_.Wait());
+    callback_waiter_.Clear();
   }
 
   net::EmbeddedTestServer* https_server() { return https_server_.get(); }
@@ -124,7 +127,15 @@ IN_PROC_BROWSER_TEST_F(PageContentMetadataObserverBrowserTest,
   observer_.reset();
 }
 
-IN_PROC_BROWSER_TEST_F(PageContentMetadataObserverBrowserTest, NoMetaTags) {
+// TODO(https://crbug.com/455915204): Test is flaky on android-arm64-tests.
+// TODO(https://crbug.com/455816130): Test is flaky on linux tests.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX)
+#define MAYBE_NoMetaTags DISABLED_NoMetaTags
+#else
+#define MAYBE_NoMetaTags NoMetaTags
+#endif
+IN_PROC_BROWSER_TEST_F(PageContentMetadataObserverBrowserTest,
+                       MAYBE_NoMetaTags) {
   ASSERT_TRUE(LoadPage(https_server()->GetURL("/simple.html")));
   CreateObserver();
 
@@ -276,8 +287,9 @@ IN_PROC_BROWSER_TEST_F(PageContentMetadataObserverBrowserTest,
   // The observer should be notified of the change.
   ASSERT_TRUE(callback_waiter_.Wait());
 
-  // The metadata should now be empty.
-  EXPECT_EQ(page_metadata()->frame_metadata.size(), 0u);
+  // The metadata should now contain one frame with no meta tags.
+  EXPECT_EQ(page_metadata()->frame_metadata.size(), 1u);
+  EXPECT_EQ(page_metadata()->frame_metadata[0]->meta_tags.size(), 0u);
 }
 
 IN_PROC_BROWSER_TEST_F(PageContentMetadataObserverBrowserTest,
@@ -313,6 +325,67 @@ IN_PROC_BROWSER_TEST_F(PageContentMetadataObserverBrowserTest,
   ASSERT_TRUE(LoadPage(https_server()->GetURL("/meta_tags.html")));
   WaitForPageLoadedAndIPCs();
   EXPECT_FALSE(callback_waiter_.IsReady());
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentMetadataObserverBrowserTest,
+                       MetaTagsAreObservedInNavigatedIframe) {
+  GURL main_url = https_server()->GetURL("/iframe.html");
+  GURL iframe_url = https_server()->GetURL("/meta_tags.html");
+
+  ASSERT_TRUE(LoadPage(main_url));
+  WaitForPageLoadedAndIPCs();
+
+  CreateObserver();
+  WaitForCallback();
+
+  // The first callback should have metadata for one or two frames (depending on
+  // platform), but no meta tags.
+  ASSERT_TRUE(page_metadata());
+  EXPECT_TRUE(page_metadata()->frame_metadata.size() == 1u ||
+              page_metadata()->frame_metadata.size() == 2u);
+  for (const auto& frame_metadata : page_metadata()->frame_metadata) {
+    EXPECT_TRUE(frame_metadata->meta_tags.empty());
+  }
+  // Any additional initial callbacks will be handled by the while-loop below.
+
+  // Now, navigate the iframe.
+  ASSERT_TRUE(content::ExecJs(
+      GetWebContents(),
+      content::JsReplace("document.querySelector('#test_iframe').src = $1",
+                         iframe_url)));
+
+  // The observer should be notified of the meta tags in the iframe. There may
+  // be multiple callbacks, so we loop until we see the metadata we expect.
+  while (true) {
+    ASSERT_TRUE(callback_waiter_.Wait());
+    bool found_iframe_metadata = false;
+    for (const auto& frame_metadata : page_metadata()->frame_metadata) {
+      if (frame_metadata->url == iframe_url &&
+          !frame_metadata->meta_tags.empty()) {
+        found_iframe_metadata = true;
+        break;
+      }
+    }
+    if (found_iframe_metadata) {
+      break;
+    }
+    callback_waiter_.Clear();
+  }
+
+  blink::mojom::PageMetadataPtr& metadata = page_metadata();
+  ASSERT_EQ(metadata->frame_metadata.size(), 2u);
+
+  bool found_iframe_metadata = false;
+  for (const auto& frame_metadata : metadata->frame_metadata) {
+    if (frame_metadata->url == iframe_url) {
+      found_iframe_metadata = true;
+      ASSERT_EQ(frame_metadata->meta_tags.size(), 1u);
+      EXPECT_EQ(frame_metadata->meta_tags[0]->name, "author");
+      EXPECT_EQ(frame_metadata->meta_tags[0]->content, "Gary");
+    }
+  }
+  EXPECT_TRUE(found_iframe_metadata);
+  observer_.reset();
 }
 
 }  // namespace

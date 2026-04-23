@@ -489,9 +489,14 @@ MaybeError ValidateResolveTarget(const DeviceBase* device,
         "(%s).",
         resolveTarget, resolveTargetFormat, attachment, attachment->GetFormat().format);
     DAWN_INVALID_IF(
-        !resolveTarget->GetFormat().supportsResolveTarget,
+        !resolveTarget->GetFormat().SupportsResolveTarget(),
         "The resolve target %s format (%s) does not support being used as resolve target.",
         resolveTarget, resolveTargetFormat);
+
+    // TODO(450506641): Precompute allowed usages of texture views (including swizzle identity
+    // check) instead of recomputing.
+    DAWN_INVALID_IF(!resolveTarget->IsSwizzleIdentity(),
+                    "The resolve target swizzle must be identity.");
 
     return {};
 }
@@ -541,7 +546,7 @@ MaybeError ValidateColorAttachmentRenderToSingleSampled(
                     colorAttachment.view, wgpu::TextureUsage::TextureBinding,
                     msaaRenderToSingleSampledDesc->implicitSampleCount);
 
-    DAWN_INVALID_IF(!colorAttachment.view->GetFormat().supportsResolveTarget,
+    DAWN_INVALID_IF(!colorAttachment.view->GetFormat().SupportsResolveTarget(),
                     "The color attachment %s format (%s) does not support being used with "
                     "implicit sample count (%u). The format does not support resolve.",
                     colorAttachment.view, colorAttachment.view->GetFormat().format,
@@ -572,7 +577,7 @@ MaybeError ValidateExpandResolveTextureLoadOp(const DeviceBase* device,
     // These should already be validated before entering this function.
     DAWN_ASSERT(colorAttachment.resolveTarget != nullptr &&
                 !colorAttachment.resolveTarget->IsError());
-    DAWN_ASSERT(colorAttachment.view->GetFormat().supportsResolveTarget);
+    DAWN_ASSERT(colorAttachment.view->GetFormat().SupportsResolveTarget());
 
     DAWN_INVALID_IF(
         (colorAttachment.resolveTarget->GetUsage() & wgpu::TextureUsage::TextureBinding) == 0,
@@ -621,7 +626,7 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
     // attachments.
     Aspect kRenderableAspects = Aspect::Color | Aspect::Plane0 | Aspect::Plane1 | Aspect::Plane2;
     DAWN_INVALID_IF(
-        !(attachment->GetAspects() & kRenderableAspects) || !attachment->GetFormat().isRenderable,
+        !(attachment->GetAspects() & kRenderableAspects) || !attachment->GetFormat().IsRenderable(),
         "The color attachment %s format (%s) is not color renderable.", attachment,
         attachment->GetFormat().format);
 
@@ -629,6 +634,12 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
     DAWN_TRY(ValidateStoreOp(colorAttachment.storeOp));
     DAWN_INVALID_IF(colorAttachment.loadOp == wgpu::LoadOp::Undefined, "loadOp must be set.");
     DAWN_INVALID_IF(colorAttachment.storeOp == wgpu::StoreOp::Undefined, "storeOp must be set.");
+
+    // TODO(450506641): Precompute allowed usages of texture views (including swizzle identity
+    // check) instead of recomputing.
+    DAWN_INVALID_IF(!attachment->IsSwizzleIdentity(),
+                    "The color attachment swizzle must be identity.");
+
     if (attachment->GetUsage() & wgpu::TextureUsage::TransientAttachment) {
         DAWN_INVALID_IF(colorAttachment.loadOp != wgpu::LoadOp::Clear &&
                             colorAttachment.loadOp != wgpu::LoadOp::ExpandResolveTexture,
@@ -700,12 +711,13 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
                     "The depth stencil attachment %s format (%s) is not a depth stencil format.",
                     attachment, format.format);
 
-    DAWN_INVALID_IF(!format.isRenderable,
+    DAWN_INVALID_IF(!format.IsRenderable(),
                     "The depth stencil attachment %s format (%s) is not renderable.", attachment,
                     format.format);
 
     // Read only, or depth doesn't exist.
-    if (unpacked->depthReadOnly || !IsSubset(Aspect::Depth, attachment->GetAspects())) {
+    bool hasDepthAspect = IsSubset(Aspect::Depth, attachment->GetAspects());
+    if (unpacked->depthReadOnly || !hasDepthAspect) {
         DAWN_INVALID_IF(unpacked->depthLoadOp != wgpu::LoadOp::Undefined ||
                             unpacked->depthStoreOp != wgpu::StoreOp::Undefined,
                         "Both depthLoadOp (%s) and depthStoreOp (%s) must not be set if the "
@@ -729,7 +741,8 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
                     wgpu::LoadOp::ExpandResolveTexture);
 
     // Read only, or stencil doesn't exist.
-    if (unpacked->stencilReadOnly || !IsSubset(Aspect::Stencil, attachment->GetAspects())) {
+    bool hasStencilAspect = IsSubset(Aspect::Stencil, attachment->GetAspects());
+    if (unpacked->stencilReadOnly || !hasStencilAspect) {
         DAWN_INVALID_IF(unpacked->stencilLoadOp != wgpu::LoadOp::Undefined ||
                             unpacked->stencilStoreOp != wgpu::StoreOp::Undefined,
                         "Both stencilLoadOp (%s) and stencilStoreOp (%s) must not be set if the "
@@ -746,6 +759,28 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
                         unpacked->stencilLoadOp, unpacked->stencilStoreOp, attachment,
                         unpacked->stencilReadOnly);
     }
+    if (attachment->GetUsage() & wgpu::TextureUsage::TransientAttachment) {
+        DAWN_INVALID_IF(hasDepthAspect && unpacked->depthLoadOp != wgpu::LoadOp::Clear,
+                        "depthLoadOp (%s) is not %s when the attachment (%s) has a depth aspect "
+                        "and its usage (%s) contains %s.",
+                        unpacked->depthLoadOp, wgpu::LoadOp::Clear, attachment,
+                        attachment->GetUsage(), wgpu::TextureUsage::TransientAttachment);
+        DAWN_INVALID_IF(hasStencilAspect && unpacked->stencilLoadOp != wgpu::LoadOp::Clear,
+                        "stencilLoadOp (%s) is not %s when the attachment (%s) has a stencil "
+                        "aspect and its usage (%s) contains %s.",
+                        unpacked->stencilLoadOp, wgpu::LoadOp::Clear, attachment,
+                        attachment->GetUsage(), wgpu::TextureUsage::TransientAttachment);
+        DAWN_INVALID_IF(hasDepthAspect && unpacked->depthStoreOp != wgpu::StoreOp::Discard,
+                        "depthStoreOp (%s) is not %s when the attachment (%s) has a depth aspect "
+                        "and its usage (%s) contains %s.",
+                        unpacked->depthStoreOp, wgpu::StoreOp::Discard, attachment,
+                        attachment->GetUsage(), wgpu::TextureUsage::TransientAttachment);
+        DAWN_INVALID_IF(hasStencilAspect && unpacked->stencilStoreOp != wgpu::StoreOp::Discard,
+                        "stencilStoreOp (%s) is not %s when the attachment (%s) has a stencil "
+                        "aspect and its usage (%s) contains %s.",
+                        unpacked->stencilStoreOp, wgpu::StoreOp::Discard, attachment,
+                        attachment->GetUsage(), wgpu::TextureUsage::TransientAttachment);
+    }
 
     if (unpacked->depthLoadOp == wgpu::LoadOp::Clear &&
         IsSubset(Aspect::Depth, attachment->GetAspects())) {
@@ -761,6 +796,11 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
     }
 
     DAWN_TRY(ValidateAttachmentArrayLayersAndLevelCount(attachment));
+
+    // TODO(450506641): Precompute allowed usages of texture views (including swizzle identity
+    // check) instead of recomputing.
+    DAWN_INVALID_IF(!attachment->IsSwizzleIdentity(),
+                    "The depth stencil attachment swizzle must be identity.");
 
     DAWN_TRY(validationState->AddAttachment(attachment, AttachmentType::DepthStencilAttachment));
 
@@ -1682,21 +1722,21 @@ void CommandEncoder::APICopyBufferToTexture(const TexelCopyBufferInfo* source,
                 // checked in validating texture copy range.
                 DAWN_TRY(ValidateTextureCopyRange(GetDevice(), destination, *copySize));
             }
-            const TexelBlockInfo& blockInfo =
-                destination.texture->GetFormat().GetAspectInfo(destination.aspect).block;
+            const TypedTexelBlockInfo& blockInfo = GetBlockInfo(destination);
             if (GetDevice()->IsValidationEnabled()) {
                 DAWN_TRY(ValidateLinearTextureCopyOffset(
-                    source->layout, blockInfo,
+                    source->layout, blockInfo.ToTexelBlockInfo(),
                     destination.texture->GetFormat().HasDepthOrStencil()));
                 DAWN_TRY(ValidateLinearTextureData(source->layout, source->buffer->GetSize(),
-                                                   blockInfo, *copySize));
+                                                   blockInfo.ToTexelBlockInfo(), *copySize));
             }
 
             mTopLevelBuffers.insert(source->buffer);
             mTopLevelTextures.insert(destination.texture);
 
             TexelCopyBufferLayout srcLayout = source->layout;
-            ApplyDefaultTexelCopyBufferLayoutOptions(&srcLayout, blockInfo, *copySize);
+            ApplyDefaultTexelCopyBufferLayoutOptions(&srcLayout, blockInfo.ToTexelBlockInfo(),
+                                                     *copySize);
 
             TextureCopy dst;
             dst.texture = destination.texture;
@@ -1746,8 +1786,8 @@ void CommandEncoder::APICopyBufferToTexture(const TexelCopyBufferInfo* source,
                 allocator->Allocate<CopyBufferToTextureCmd>(Command::CopyBufferToTexture);
             copy->source.buffer = source->buffer;
             copy->source.offset = srcLayout.offset;
-            copy->source.bytesPerRow = srcLayout.bytesPerRow;
-            copy->source.rowsPerImage = srcLayout.rowsPerImage;
+            copy->source.blocksPerRow = blockInfo.BytesToBlocks(srcLayout.bytesPerRow);
+            copy->source.rowsPerImage = BlockCount{srcLayout.rowsPerImage};
             copy->destination = dst;
             copy->copySize = *copySize;
 
@@ -1788,21 +1828,22 @@ void CommandEncoder::APICopyTextureToBuffer(const TexelCopyTextureInfo* sourceOr
                         source.texture));
                 }
             }
-            const TexelBlockInfo& blockInfo =
-                source.texture->GetFormat().GetAspectInfo(source.aspect).block;
+            const TypedTexelBlockInfo& blockInfo = GetBlockInfo(source);
             if (GetDevice()->IsValidationEnabled()) {
                 DAWN_TRY(ValidateLinearTextureCopyOffset(
-                    destination->layout, blockInfo,
+                    destination->layout, blockInfo.ToTexelBlockInfo(),
                     source.texture->GetFormat().HasDepthOrStencil()));
-                DAWN_TRY(ValidateLinearTextureData(
-                    destination->layout, destination->buffer->GetSize(), blockInfo, *copySize));
+                DAWN_TRY(ValidateLinearTextureData(destination->layout,
+                                                   destination->buffer->GetSize(),
+                                                   blockInfo.ToTexelBlockInfo(), *copySize));
             }
 
             mTopLevelTextures.insert(source.texture);
             mTopLevelBuffers.insert(destination->buffer);
 
             TexelCopyBufferLayout dstLayout = destination->layout;
-            ApplyDefaultTexelCopyBufferLayoutOptions(&dstLayout, blockInfo, *copySize);
+            ApplyDefaultTexelCopyBufferLayoutOptions(&dstLayout, blockInfo.ToTexelBlockInfo(),
+                                                     *copySize);
 
             auto format = source.texture->GetFormat();
             auto aspect = ConvertAspect(format, source.aspect);
@@ -1822,12 +1863,13 @@ void CommandEncoder::APICopyTextureToBuffer(const TexelCopyTextureInfo* sourceOr
 
                 BufferCopy dst;
                 dst.buffer = destination->buffer;
-                dst.bytesPerRow = destination->layout.bytesPerRow;
-                dst.rowsPerImage = destination->layout.rowsPerImage;
-                dst.offset = destination->layout.offset;
-                DAWN_TRY_CONTEXT(BlitTextureToBuffer(GetDevice(), this, src, dst, *copySize),
-                                 "copying texture %s to %s using blit workaround.",
-                                 src.texture.Get(), destination->buffer);
+                dst.blocksPerRow = blockInfo.BytesToBlocks(dstLayout.bytesPerRow);
+                dst.rowsPerImage = BlockCount{dstLayout.rowsPerImage};
+                dst.offset = dstLayout.offset;
+                DAWN_TRY_CONTEXT(
+                    BlitTextureToBuffer(GetDevice(), this, src, dst, blockInfo.ToBlock(*copySize)),
+                    "copying texture %s to %s using blit workaround.", src.texture.Get(),
+                    destination->buffer);
 
                 return {};
             }
@@ -1840,8 +1882,8 @@ void CommandEncoder::APICopyTextureToBuffer(const TexelCopyTextureInfo* sourceOr
             t2b->source.aspect = ConvertAspect(source.texture->GetFormat(), source.aspect);
             t2b->destination.buffer = destination->buffer;
             t2b->destination.offset = dstLayout.offset;
-            t2b->destination.bytesPerRow = dstLayout.bytesPerRow;
-            t2b->destination.rowsPerImage = dstLayout.rowsPerImage;
+            t2b->destination.blocksPerRow = blockInfo.BytesToBlocks(dstLayout.bytesPerRow);
+            t2b->destination.rowsPerImage = BlockCount{dstLayout.rowsPerImage};
             t2b->copySize = *copySize;
 
             return {};
@@ -1914,8 +1956,7 @@ void CommandEncoder::APICopyTextureToTexture(const TexelCopyTextureInfo* sourceO
             if (ShouldUseT2B2TForT2T(GetDevice(), src.texture->GetFormat(),
                                      dst.texture->GetFormat())) {
                 // Calculate needed buffer size to hold copied texel data.
-                const TexelBlockInfo& blockInfo =
-                    source.texture->GetFormat().GetAspectInfo(aspect).block;
+                const TexelBlockInfo& blockInfo = GetBlockInfo(source);
                 const uint32_t bytesPerRow =
                     Align(4 * copySize->width, kTextureBytesPerRowAlignment);
                 const uint32_t rowsPerImage = copySize->height;
@@ -1946,7 +1987,8 @@ void CommandEncoder::APICopyTextureToTexture(const TexelCopyTextureInfo* sourceO
                 (aspect & Aspect::Depth) &&
                 GetDevice()->IsToggleEnabled(
                     Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource) &&
-                (dst.mipLevel > 0 || dst.origin.z > 0 || copySize->depthOrArrayLayers > 1);
+                (dst.mipLevel > 0 || dst.origin.z > TexelCount{0} ||
+                 copySize->depthOrArrayLayers > 1);
 
             // If we're not using a blit, or there are aspects other than depth,
             // issue the copy. This is because if there's also stencil, we still need the copy

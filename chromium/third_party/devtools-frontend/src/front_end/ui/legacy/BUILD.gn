@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("../../../scripts/build/ninja/component_doc.gni")
 import("../../../scripts/build/ninja/devtools_entrypoint.gni")
 import("../../../scripts/build/ninja/devtools_module.gni")
 import("../../../scripts/build/ninja/generate_css.gni")
@@ -16,9 +17,9 @@ generate_css("css_files") {
     "dropTarget.css",
     "emptyWidget.css",
     "filter.css",
+    "floaty.css",
     "glassPane.css",
     "infobar.css",
-    "inlineButton.css",
     "inspectorCommon.css",
     "listWidget.css",
     "popover.css",
@@ -46,7 +47,7 @@ copy_to_gen("copy_stylesheets_for_server") {
   sources = [ "inspectorCommon.css" ]
 }
 
-devtools_module("ui") {
+devtools_ui_module("ui") {
   sources = [
     "ARIAUtils.ts",
     "ActionRegistration.ts",
@@ -54,12 +55,14 @@ devtools_module("ui") {
     "Context.ts",
     "ContextFlavorListener.ts",
     "ContextMenu.ts",
+    "DOMUtilities.ts",
     "Dialog.ts",
     "DockController.ts",
     "DropTarget.ts",
     "EmptyWidget.ts",
     "FilterBar.ts",
     "FilterSuggestionBuilder.ts",
+    "Floaty.ts",
     "ForwardedInputEventHandler.ts",
     "Fragment.ts",
     "GlassPane.ts",
@@ -78,7 +81,6 @@ devtools_module("ui") {
     "ResizerWidget.ts",
     "RootView.ts",
     "SearchableView.ts",
-    "SettingsUI.ts",
     "ShortcutRegistry.ts",
     "SoftContextMenu.ts",
     "SoftDropDown.ts",
@@ -87,7 +89,6 @@ devtools_module("ui") {
     "TabbedPane.ts",
     "TargetCrashedScreen.ts",
     "TextPrompt.ts",
-    "ThrottledWidget.ts",
     "Toolbar.ts",
     "Tooltip.ts",
     "Treeoutline.ts",
@@ -109,15 +110,18 @@ devtools_module("ui") {
     "../../core/platform:bundle",
     "../../core/root:bundle",
     "../../core/sdk:bundle",
+    "../../foundation:bundle",
     "../../models/geometry:bundle",
+    "../../models/logs:bundle",
     "../../models/text_utils:bundle",
+    "../../models/trace:bundle",
     "../../ui/legacy/theme_support:bundle",
-    "../components/adorners:bundle",
+    "../components/annotations:bundle",
     "../components/buttons:bundle",
     "../components/helpers:bundle",
     "../components/highlighting:bundle",
-    "../components/icon_button:bundle",
-    "../components/settings:bundle",
+    "../helpers:bundle",
+    "../kit:bundle",
     "../lit:bundle",
     "../visual_logging:bundle",
   ]
@@ -132,19 +136,16 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility = [
+    # IMPORTANT: Be careful when extending visibility of front_end/ui/legacy,
+    # as the UI module should only be used to actually build user interfaces,
+    # and the business logic should never depend on the UI module.
     "../../entrypoints/*",
     "../../legacy_test_runner/*",
-    "../../models/ai_assistance:*",
-    "../../models/autofill_manager:*",
-    "../../models/emulation:*",
-    "../../models/extensions:*",
-    "../../models/har:unittests",
-    "../../models/persistence:*",
     "../../panels/*",
-    "../../services/window_bounds/*",
     "../../testing/*",
-    "../components/copy_to_clipboard:*",
+    "../components/adorners:*",
     "../components/data_grid:*",
+    "../components/dialogs:*",
     "../components/docs/combo_box/*",
     "../components/docs/context_menu/*",
     "../components/docs/performance_panel/*",
@@ -153,7 +154,9 @@ devtools_entrypoint("bundle") {
     "../components/issue_counter:unittests",
     "../components/legacy_wrapper:*",
     "../components/linear_memory_inspector:*",
+    "../components/list:*",
     "../components/markdown_view:*",
+    "../components/menus:*",
     "../components/request_link_icon:unittests",
     "../components/snackbars:*",
     "../components/tooltips:*",
@@ -161,6 +164,7 @@ devtools_entrypoint("bundle") {
 
     # Required for x-link
     "../components/panel_feedback/*",
+    "../components/settings/*",
     "../components/text_editor/*",
 
     # Required for correct button styling in the Computed tab
@@ -171,7 +175,7 @@ devtools_entrypoint("bundle") {
   visibility += devtools_ui_legacy_visibility
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
@@ -179,6 +183,7 @@ ts_library("unittests") {
     "ActionRegistration.test.ts",
     "Context.test.ts",
     "ContextMenu.test.ts",
+    "DOMUtilities.test.ts",
     "Dialog.test.ts",
     "DockController.test.ts",
     "FilterBar.test.ts",
@@ -189,7 +194,6 @@ ts_library("unittests") {
     "ListModel.test.ts",
     "ListWidget.test.ts",
     "SearchableView.test.ts",
-    "SettingsUI.test.ts",
     "ShortcutRegistry.test.ts",
     "SplitWidget.test.ts",
     "SuggestBox.test.ts",
@@ -214,5 +218,19 @@ ts_library("unittests") {
     "../../testing",
     "../lit:bundle",
     "./components/quick_open:bundle",
+  ]
+}
+
+component_doc("docs") {
+  sources = [
+    "ContextMenu.docs.ts",
+    "RadioButton.docs.ts",
+    "SelectMenu.docs.ts",
+    "Slider.docs.ts",
+  ]
+  deps = [
+    ":bundle",
+    "../lit:bundle",
+    "../visual_logging:bundle",
   ]
 }

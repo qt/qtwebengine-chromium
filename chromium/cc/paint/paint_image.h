@@ -13,7 +13,6 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "cc/paint/deferred_paint_record.h"
-#include "cc/paint/frame_metadata.h"
 #include "cc/paint/image_animation_count.h"
 #include "cc/paint/paint_export.h"
 #include "cc/paint/paint_record.h"
@@ -38,6 +37,7 @@ class VideoFrame;
 
 namespace cc {
 
+struct FrameMetadata;
 class PaintImageGenerator;
 class PaintWorkletInput;
 class TextureBacking;
@@ -310,9 +310,6 @@ class CC_PAINT_EXPORT PaintImage {
   }
   bool NeedsLayer() const;
   bool IsTextureBacked() const;
-  // Skia internally buffers commands and flushes them as necessary but there
-  // are some cases where we need to force a flush.
-  void FlushPendingSkiaOps();
   int width() const { return GetSkImageInfo().width(); }
   int height() const { return GetSkImageInfo().height(); }
   SkColorSpace* color_space() const {

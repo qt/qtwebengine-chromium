@@ -9,7 +9,7 @@ import datetime as dt
 import itertools
 import logging
 import sys
-from typing import TYPE_CHECKING, Any, Optional, Sequence, Type
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence, Type
 
 from typing_extensions import override
 
@@ -21,15 +21,15 @@ from crossbench.browsers.splash_screen import SplashScreen
 from crossbench.browsers.viewport import Viewport, ViewportMode
 from crossbench.cli.config.browser import BrowserConfig
 from crossbench.cli.config.browser_variants import BrowserVariantsConfig
-from crossbench.cli.config.env import (ENV_CONFIG_PRESETS, EnvConfig,
-                                       ValidationMode)
+from crossbench.cli.config.env import ENV_CONFIG_PRESETS, EnvConfig, \
+    ValidationMode
 from crossbench.cli.config.network import NetworkConfig
 from crossbench.cli.config.probe import PROBE_LOOKUP, ProbeConfig
 from crossbench.cli.config.probe_list import ProbeListConfig
 from crossbench.cli.config.secrets import Secrets
 from crossbench.cli.subcommand.base import CrossbenchSubcommand
-from crossbench.parse import (DurationParser, LateArgumentError, ObjectParser,
-                              PathParser)
+from crossbench.parse import DurationParser, LateArgumentError, ObjectParser, \
+    PathParser
 from crossbench.probes.debugger import DebuggerProbe
 from crossbench.probes.internal.errors import ErrorsProbe
 from crossbench.probes.thermal_monitor import ThermalStatus
@@ -526,26 +526,8 @@ class BenchmarkSubcommand(CrossbenchSubcommand):
     env_config: EnvConfig = self._get_env_config(args)
     env_validation_mode: ValidationMode = self._get_env_validation_mode(args)
     timing: Timing = self._get_timing(args)
-    self._runner = self._get_runner(args, benchmark, env_config,
+    self._runner = self._get_runner(args, benchmark, probes, env_config,
                                     env_validation_mode, timing)
-
-    # We prevent running multiple stories in repetition OR if multiple
-    # browsers are open when 'power' probes are used since it might distort
-    # the data.
-    if len(args.browser) > 1 or args.repetitions > 1:
-      probe_names = [probe.name for probe in probes if probe.BATTERY_ONLY]
-      if probe_names:
-        names_str = ",".join(probe_names)
-        raise argparse.ArgumentTypeError(
-            f"Cannot use [{names_str}] probe(s) "
-            "with repeat > 1 and/or with multiple browsers. We need to "
-            "always start at the same battery level, and by running "
-            "stories on multiple browsers or multiples time will create "
-            "erroneous data.")
-
-    for probe in probes:
-      self.runner.attach_probe(probe, matching_browser_only=True)
-
     self._run_benchmark(args, self.runner)
 
   def _helper(self, args: argparse.Namespace) -> None:
@@ -668,9 +650,8 @@ class BenchmarkSubcommand(CrossbenchSubcommand):
     message: str = "SUBCOMMAND"
     if benchmark:
       message = f"{benchmark.NAME.upper()} BENCHMARK"
-    logging.error("%s FAILED WITH %s:", message, e.__class__.__name__)
-    logging.error("-" * 80)
-    self._log_benchmark_subcommand_exception(e)
+    error_message = f"{message} FAILED WITH {e.__class__.__name__}"
+    self._log_benchmark_subcommand_exception(error_message, e)
     logging.error("-" * 80)
     if runner and runner.runs:
       self._log_runner_debug_hints(runner)
@@ -681,7 +662,13 @@ class BenchmarkSubcommand(CrossbenchSubcommand):
     logging.error("#" * 80)
     sys.exit(3)
 
-  def _log_benchmark_subcommand_exception(self, e: Exception) -> None:
+  def _log_benchmark_subcommand_exception(self, error_message: str,
+                                          e: Exception) -> None:
+    if isinstance(e, exception.MultiException):
+      e.annotator.log(error_message)
+      return
+    logging.error(error_message)
+    logging.error("-" * 80)
     message = str(e)
     if message:
       logging.error(message)
@@ -690,6 +677,7 @@ class BenchmarkSubcommand(CrossbenchSubcommand):
       self.cli.log_assertion_error_statement(e)
 
   def _run_benchmark(self, args: argparse.Namespace, runner: Runner) -> None:
+    self._update_default_results_symlinks(args, runner)
     try:
       runner.run(is_dry_run=args.dry_run)
       logging.info("")
@@ -697,8 +685,6 @@ class BenchmarkSubcommand(CrossbenchSubcommand):
     except:  # noqa: BLE001
       self._log_results(args, runner, is_success=False)
       raise
-    finally:
-      self._update_symlinks(args, runner)
 
   def _log_results(self, args: argparse.Namespace, runner: Runner,
                    is_success: bool) -> None:
@@ -726,16 +712,11 @@ class BenchmarkSubcommand(CrossbenchSubcommand):
         itertools.chain.from_iterable(run.annotations for run in runner.runs))
     RunAnnotation.log_all(all_annotations)
 
-  def _update_symlinks(self, args: argparse.Namespace, runner: Runner) -> None:
-    if not args.create_symlinks:
-      return
-    runner.update_symlinks()
-    if not args.out_dir:
-      self._update_default_results_symlinks(args, runner)
 
   def _update_default_results_symlinks(self, args: argparse.Namespace,
                                        runner: Runner) -> None:
-    assert args.create_symlinks
+    if not args.create_symlinks or args.out_dir:
+      return
     results_root = runner.out_dir.parent
     latest_link = results_root / "latest"
     if latest_link.is_symlink():
@@ -785,11 +766,13 @@ class BenchmarkSubcommand(CrossbenchSubcommand):
                   args.run_timeout, args.start_delay, args.stop_delay)
 
   def _get_runner(self, args: argparse.Namespace, benchmark: Benchmark,
-                  env_config: EnvConfig, env_validation_mode: ValidationMode,
+                  probes: Iterable[Probe], env_config: EnvConfig,
+                  env_validation_mode: ValidationMode,
                   timing: Timing) -> Runner:
     runner_kwargs = self._runner_cls.kwargs_from_cli(args)
     return self._runner_cls(
         benchmark=benchmark,
+        probes=probes,
         env_config=env_config,
         env_validation_mode=env_validation_mode,
         timing=timing,

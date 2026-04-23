@@ -61,6 +61,7 @@ struct xnn_binary_elementwise_config {
 struct xnn_unary_elementwise_config {
   xnn_vunary_ukernel_fn ukernel;
   xnn_init_unary_uparams_fn init;
+  uint32_t element_tile;
 };
 
 struct xnn_reduce_config {
@@ -76,6 +77,7 @@ struct xnn_reduce_config {
     xnn_init_f16_default_params_fn f16;
   } init;
   xnn_update_reduce_params_fn update;
+  uint32_t rd_width;
 };
 
 struct xnn_xx_fill_config {
@@ -195,6 +197,10 @@ struct xnn_gemm_config {
   uint8_t planes;     // number of 4 bit planes (1 for legacy, 2 for unzip)
   uint8_t mr_packed;  // `mr` value used for packed left-hand operands.
   enum xnn_arch_flags arch;
+  uint8_t log2_input_element_size;
+  uint8_t log2_filter_element_size;
+  uint8_t log2_filter_element_bit_size;
+  uint8_t bias_element_size;
 };
 
 struct xnn_maxpool_config {

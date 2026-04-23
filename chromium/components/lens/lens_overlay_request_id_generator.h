@@ -5,11 +5,12 @@
 #ifndef COMPONENTS_LENS_LENS_OVERLAY_REQUEST_ID_GENERATOR_H_
 #define COMPONENTS_LENS_LENS_OVERLAY_REQUEST_ID_GENERATOR_H_
 
+#include <memory>
 #include <optional>
+#include <string>
 
+#include "third_party/lens_server_proto/lens_overlay_request_id.pb.h"
 #include "third_party/lens_server_proto/lens_overlay_routing_info.pb.h"
-#include "third_party/lens_server_proto/lens_overlay_server.pb.h"
-#include "third_party/lens_server_proto/lens_overlay_service_deps.pb.h"
 
 namespace lens {
 
@@ -49,7 +50,7 @@ enum class RequestIdUpdateMode {
   // image sequence id, long context id, and creating a new analytics id.
   kPageContentWithViewportRequest = 7,
   // Indicates that the request id should be modified for a new context upload
-  // in a multi-context upload flow, i.e. incrementing the sequence id, image
+  // in a multi-context upload flow, i.e. resetting the sequence id, image
   // sequence id, and creating a new uuid and analytics id, regardless of the
   // context upload mime type.
   kMultiContextUploadRequest = 8,
@@ -70,7 +71,16 @@ class LensOverlayRequestIdGenerator {
   // request id proto.
   std::unique_ptr<lens::LensOverlayRequestId> GetNextRequestId(
       RequestIdUpdateMode update_mode,
-      lens::LensOverlayRequestId::MediaType media_type);
+      lens::LensOverlayRequestId::MediaType media_type,
+      std::optional<int64_t> context_id = std::nullopt);
+
+  // Creates a new request id based on the previous request id and update mode.
+  // This does not modify the generator's internal state.
+  // TODO(crbug.com/472498582): Migrate all callers of GetNextRequestId to
+  // call this method and remove most internal state from this class.
+  std::unique_ptr<lens::LensOverlayRequestId> CreateNextRequestIdForUpdate(
+      std::unique_ptr<lens::LensOverlayRequestId> previous_request_id,
+      RequestIdUpdateMode update_mode);
 
   // Returns the current analytics id as a base32 encoded string.
   std::string GetBase32EncodedAnalyticsId();
@@ -110,6 +120,10 @@ class LensOverlayRequestIdGenerator {
 
   // The current long context id.
   int long_context_id_;
+
+  // The context ID to use for the request ID. This is generated once and
+  // reused for all requests.
+  int64_t context_id_;
 
   // The current routing info. Not guaranteed to exist if not returned from the
   // server.

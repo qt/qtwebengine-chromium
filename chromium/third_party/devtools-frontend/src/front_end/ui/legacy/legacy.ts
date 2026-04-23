@@ -10,10 +10,12 @@ import * as ContextFlavorListener from './ContextFlavorListener.js';
 import * as ContextMenu from './ContextMenu.js';
 import * as Dialog from './Dialog.js';
 import * as DockController from './DockController.js';
+import * as DOMUtilities from './DOMUtilities.js';
 import * as DropTarget from './DropTarget.js';
 import * as EmptyWidget from './EmptyWidget.js';
 import * as FilterBar from './FilterBar.js';
 import * as FilterSuggestionBuilder from './FilterSuggestionBuilder.js';
+import * as Floaty from './Floaty.js';
 import * as ForwardedInputEventHandler from './ForwardedInputEventHandler.js';
 import * as Fragment from './Fragment.js';
 import * as GlassPane from './GlassPane.js';
@@ -33,7 +35,6 @@ import * as ReportView from './ReportView.js';
 import * as ResizerWidget from './ResizerWidget.js';
 import * as RootView from './RootView.js';
 import * as SearchableView from './SearchableView.js';
-import * as SettingsUI from './SettingsUI.js';
 import * as ShortcutRegistry from './ShortcutRegistry.js';
 import * as SoftContextMenu from './SoftContextMenu.js';
 import * as SoftDropDown from './SoftDropDown.js';
@@ -42,7 +43,6 @@ import * as SuggestBox from './SuggestBox.js';
 import * as TabbedPane from './TabbedPane.js';
 import * as TargetCrashedScreen from './TargetCrashedScreen.js';
 import * as TextPrompt from './TextPrompt.js';
-import * as ThrottledWidget from './ThrottledWidget.js';
 import * as Toolbar from './Toolbar.js';
 import * as Tooltip from './Tooltip.js';
 import * as TreeOutline from './Treeoutline.js';
@@ -63,10 +63,12 @@ export {
   ContextMenu,
   Dialog,
   DockController,
+  DOMUtilities,
   DropTarget,
   EmptyWidget,
   FilterBar,
   FilterSuggestionBuilder,
+  Floaty,
   ForwardedInputEventHandler,
   Fragment,
   GlassPane,
@@ -86,7 +88,6 @@ export {
   ResizerWidget,
   RootView,
   SearchableView,
-  SettingsUI,
   ShortcutRegistry,
   SoftContextMenu,
   SoftDropDown,
@@ -95,7 +96,6 @@ export {
   TabbedPane,
   TargetCrashedScreen,
   TextPrompt,
-  ThrottledWidget,
   Toolbar,
   Tooltip,
   TreeOutline,

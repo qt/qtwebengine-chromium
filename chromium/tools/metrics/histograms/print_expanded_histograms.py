@@ -10,8 +10,8 @@ import sys
 import xml.dom.minidom
 
 import extract_histograms
-import histogram_paths
 import histogram_configuration_model
+import histogram_paths
 import merge_xml
 
 
@@ -31,40 +31,57 @@ def _ConstructHistogram(doc, name, histogram_dict):
     owner_node = doc.createElement('owner')
     owner_node.appendChild(doc.createTextNode(owner))
     histogram.appendChild(owner_node)
-  # Populate the description nodes.
+  # Populate the summary node - stored as description.
   if 'description' in histogram_dict:
-    description_node = doc.createElement('description')
-    description_node.appendChild(
-        doc.createTextNode(histogram_dict['description']))
-    histogram.appendChild(description_node)
+    summary_node = doc.createElement('summary')
+    summary_node.appendChild(doc.createTextNode(histogram_dict['description']))
+    histogram.appendChild(summary_node)
   return histogram
 
 
-def main():
+def main(argv=sys.argv[1:]):
   """Prints expanded histograms."""
   parser = argparse.ArgumentParser(description='Print expanded histograms.')
-  parser.add_argument('--pattern',
-                      type=str,
-                      default='.*',
-                      help='The histogram regex you want to print.')
+  parser.add_argument(
+      '--pattern',
+      type=str,
+      default='.*',
+      help='The histogram name regex for histograms to be printed.')
   parser.add_argument('--print-names-only',
                       action='store_true',
                       help='If set, only prints the histogram names.')
-  args = parser.parse_args()
+  parser.add_argument(
+      '--histograms-xml-file',
+      type=str,
+      default=None,
+      help=('Path to histograms.xml file. If omitted, all Chromium '
+            'histograms.xml files are processed.'))
+  args = parser.parse_args(argv)
 
   try:
     pattern = re.compile(args.pattern)
   except re.error:
-    print("Non valid regex pattern.")
+    print('Non valid regex pattern.')
     return 1
+
+  if args.histograms_xml_file:
+    files = [args.histograms_xml_file]
+    # If a file is provided, don't do expansion as the file may not
+    # be in Chromium.
+    expand_owners_and_extract_components = False
+  else:
+    files = histogram_paths.ALL_XMLS
+    # No owner expansion is needed if we're printing names only.
+    expand_owners_and_extract_components = not args.print_names_only
 
   # Extract all histograms into a dict. This is the expensive part that
   # handles expansion of suffixes and variants.
-  doc = merge_xml.MergeFiles(filenames=histogram_paths.ALL_XMLS,
-                             expand_owners_and_extract_components=True)
+  doc = merge_xml.MergeFiles(
+      filenames=files,
+      expand_owners_and_extract_components=expand_owners_and_extract_components)
   histograms, had_errors = extract_histograms.ExtractHistogramsFromDom(doc)
   if had_errors:
-    raise ValueError("Error parsing inputs.")
+    raise ValueError('Error parsing inputs.')
 
   # If only names are requested, print them and exit. This is much faster as
   # it skips the expensive XML construction and pretty-printing.

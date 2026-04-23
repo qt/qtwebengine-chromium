@@ -22,21 +22,29 @@ namespace {
 // this array may either refer to features defined in the header of this file or
 // in other locations in the code base (e.g. content_features.h).
 const base::Feature* const kFeaturesExposedToJava[] = {
+    &blink::features::kAndroidDesktopWebPrefsLargeDisplays,
     &blink::features::kDevicePosture,
     &blink::features::kSecurePaymentConfirmationBrowserBoundKeys,
     &blink::features::kSecurePaymentConfirmationUxRefresh,
     &blink::features::kViewportSegments,
     &input::features::kInputOnViz,
     &features::kAndroidCaptureKeyEvents,
+    &features::kAndroidCaretBrowsing,
     &features::kAndroidDevToolsFrontend,
     &features::kAccessibilityDeprecateJavaNodeCache,
     &features::kAccessibilityDeprecateTypeAnnounce,
-    &features::kAccessibilityIncludeLongClickAction,
+    &features::kAccessibilityImproveLiveRegionAnnounce,
+    &features::kAccessibilityMagnificationFollowsFocus,
+    &features::kAccessibilityRequestLayoutBasedActions,
     &features::kAccessibilityPageZoomV2,
     &features::kAccessibilityPopulateSupplementalDescriptionApi,
+    &features::kAccessibilitySequentialFocus,
+    &features::kAccessibilitySetSelectableOnAllNodesWithText,
     &features::kAccessibilityUnifiedSnapshots,
     &features::kAccessibilityManageBroadcastReceiverOnBackground,
+    &features::kAndroidDesktopZoomScaling,
     &features::kAndroidFallbackToNextSlot,
+    &features::kAndroidMediaInsertion,
     &features::kAndroidOpenPdfInline,
     &features::kStrictHighRankProcessLRU,
     &features::kFedCm,
@@ -46,6 +54,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &features::kSmartZoom,
     &features::kTouchDragAndContextMenu,
     &features::kWebBluetoothNewPermissionsBackend,
+    &features::kWebContentsDiscard,
     &features::kWebIdentityDigitalCredentials,
     &features::kBtmTtl,
     &features::kEnableJavalessRenderers,
@@ -66,3 +75,5 @@ static jlong JNI_ContentFeatureMap_GetNativeMap(JNIEnv* env) {
 }
 
 }  // namespace content::android
+
+DEFINE_JNI(ContentFeatureMap)

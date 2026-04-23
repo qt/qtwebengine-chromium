@@ -314,6 +314,14 @@
             "issue": "http://anglebug.com/42264577"
         },
         {
+            "name": "supports_multiview_multisample_render_to_texture",
+            "category": "Features",
+            "description": [
+                "VkDevice supports the VK_KHR_multiview and VK_EXT_multisampled_render_to_single_sampled extension"
+            ],
+            "issue": "http://anglebug.com/42261787"
+        },
+        {
             "name": "force_D16_tex_filter",
             "category": "Workarounds",
             "description": [
@@ -1494,6 +1502,15 @@
             ]
         },
         {
+            "name": "allow_host_image_copy_after_initial_upload",
+            "category": "Features",
+            "description": [
+                "When using VK_EXT_host_image_copy, do CPU copies also if data is uploaded to the texture after ",
+                "its initialization. This feature is best disabled for CPU-intensive workloads that do frequent ",
+                "uploads to the same texture."
+            ]
+        },
+        {
             "name": "enable_parallel_compile_and_link",
             "category": "Features",
             "description": [
@@ -1671,6 +1688,14 @@
                 "Uses VkEvent instead of VkCmdPipelineBarrier for buffer barriers"
             ],
             "issue": "https://issues.angleproject.org/360274928"
+        },
+        {
+            "name": "is_vertex_sync_deferred",
+            "category": "Features",
+            "description": [
+                "Prefer VkEvent instead of VkCmdPipelineBarrier if vertex synchronization is deferred"
+            ],
+            "issue": "https://issues.angleproject.org/issues/414630743"
         },
         {
             "name": "recycle_vkEvent",
@@ -2069,6 +2094,56 @@
                 "Externally synchronize all pipeline cache accesses"
             ],
             "issue": "https://anglebug.com/445240187"
+        },
+        {
+            "name": "support_shader_pixel_local_storage_angle",
+            "category": "Features",
+            "description": [
+                "Enable support for GL_ANGLE_shader_pixel_local_storage extension"
+            ],
+            "issue": "https://anglebug.com/40096838"
+        },
+        {
+            "name": "debug_cl_dump_command_stream",
+            "category": "Features",
+            "description": [
+                "Dump OpenCL-Vulkan CommandBuffer stream to stdout."
+            ]
+        },
+        {
+            "name": "supports_shader_atomic_int64",
+            "category": "Features",
+            "description": [
+                "VkDevice supports the VK_KHR_shader_atomic_int64 extension "
+            ]
+        },
+        {
+            "name": "force_size_pointer_for_bound_vertex_buffers",
+            "category": "Features",
+            "description": [
+                "Make sure the pSizes pointer to BindVertexBuffers2 is provided"
+            ],
+            "issue": "https://anglebug.com/448047351"
+        },
+        {
+            "name": "support_fragment_shading_rate_ext_extensions",
+            "category": "Features",
+            "description": [
+                "Advertize support for these fragment shading rate extensions:",
+                "- GL_EXT_fragment_shading_rate",
+                "- GL_EXT_fragment_shading_rate_primitive",
+                "- GL_EXT_fragment_shading_rate_attachment"
+            ],
+            "issue": "https://anglebug.com/397255625"
+        },
+        {
+            "name": "drop_depth_stencil_clear_on_invalidate",
+            "category": "Workarounds",
+            "description": [
+                "There are old Unity titles that expect depth/stencil to be cleared for later re-use, ",
+                "so this we have to disable our optimization that drops the clears on invalidate."
+            ],
+            "issue": "https://issuetracker.google.com/462484277"
         }
     ]
 }

@@ -997,6 +997,9 @@ BuiltinValue ParseBuiltinValue(std::string_view str) {
     if (str == "local_invocation_index") {
         return BuiltinValue::kLocalInvocationIndex;
     }
+    if (str == "num_subgroups") {
+        return BuiltinValue::kNumSubgroups;
+    }
     if (str == "num_workgroups") {
         return BuiltinValue::kNumWorkgroups;
     }
@@ -1053,6 +1056,8 @@ std::string_view ToString(BuiltinValue value) {
             return "local_invocation_id";
         case BuiltinValue::kLocalInvocationIndex:
             return "local_invocation_index";
+        case BuiltinValue::kNumSubgroups:
+            return "num_subgroups";
         case BuiltinValue::kNumWorkgroups:
             return "num_workgroups";
         case BuiltinValue::kPosition:
@@ -1073,6 +1078,35 @@ std::string_view ToString(BuiltinValue value) {
             return "vertex_index";
         case BuiltinValue::kWorkgroupId:
             return "workgroup_id";
+    }
+    return "<unknown>";
+}
+
+/// ParseBuiltinDepthMode parses a BuiltinDepthMode from a string.
+/// @param str the string to parse
+/// @returns the parsed enum, or BuiltinDepthMode::kUndefined if the string could not be parsed.
+BuiltinDepthMode ParseBuiltinDepthMode(std::string_view str) {
+    if (str == "any") {
+        return BuiltinDepthMode::kAny;
+    }
+    if (str == "greater") {
+        return BuiltinDepthMode::kGreater;
+    }
+    if (str == "less") {
+        return BuiltinDepthMode::kLess;
+    }
+    return BuiltinDepthMode::kUndefined;
+}
+std::string_view ToString(BuiltinDepthMode value) {
+    switch (value) {
+        case BuiltinDepthMode::kUndefined:
+            return "undefined";
+        case BuiltinDepthMode::kAny:
+            return "any";
+        case BuiltinDepthMode::kGreater:
+            return "greater";
+        case BuiltinDepthMode::kLess:
+            return "less";
     }
     return "<unknown>";
 }
@@ -1247,6 +1281,8 @@ std::string_view ToString(ParameterUsage usage) {
             return "location";
         case ParameterUsage::kLod:
             return "lod";
+        case ParameterUsage::kM:
+            return "m";
         case ParameterUsage::kMask:
             return "mask";
         case ParameterUsage::kNumLevels:
@@ -1259,6 +1295,8 @@ std::string_view ToString(ParameterUsage usage) {
             return "refz";
         case ParameterUsage::kResult:
             return "result";
+        case ParameterUsage::kS:
+            return "s";
         case ParameterUsage::kSample:
             return "sample";
         case ParameterUsage::kSampleIndex:
@@ -1749,6 +1787,15 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     if (name == "subgroupMatrixMultiplyAccumulate") {
         return BuiltinFn::kSubgroupMatrixMultiplyAccumulate;
     }
+    if (name == "subgroupMatrixScalarAdd") {
+        return BuiltinFn::kSubgroupMatrixScalarAdd;
+    }
+    if (name == "subgroupMatrixScalarSubtract") {
+        return BuiltinFn::kSubgroupMatrixScalarSubtract;
+    }
+    if (name == "subgroupMatrixScalarMultiply") {
+        return BuiltinFn::kSubgroupMatrixScalarMultiply;
+    }
     if (name == "print") {
         return BuiltinFn::kPrint;
     }
@@ -1757,6 +1804,12 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     }
     if (name == "getBinding") {
         return BuiltinFn::kGetBinding;
+    }
+    if (name == "hasResource") {
+        return BuiltinFn::kHasResource;
+    }
+    if (name == "getResource") {
+        return BuiltinFn::kGetResource;
     }
     return BuiltinFn::kNone;
 }
@@ -2063,12 +2116,22 @@ const char* str(BuiltinFn i) {
             return "subgroupMatrixMultiply";
         case BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
             return "subgroupMatrixMultiplyAccumulate";
+        case BuiltinFn::kSubgroupMatrixScalarAdd:
+            return "subgroupMatrixScalarAdd";
+        case BuiltinFn::kSubgroupMatrixScalarSubtract:
+            return "subgroupMatrixScalarSubtract";
+        case BuiltinFn::kSubgroupMatrixScalarMultiply:
+            return "subgroupMatrixScalarMultiply";
         case BuiltinFn::kPrint:
             return "print";
         case BuiltinFn::kHasBinding:
             return "hasBinding";
         case BuiltinFn::kGetBinding:
             return "getBinding";
+        case BuiltinFn::kHasResource:
+            return "hasResource";
+        case BuiltinFn::kGetResource:
+            return "getResource";
     }
     return "<unknown>";
 }

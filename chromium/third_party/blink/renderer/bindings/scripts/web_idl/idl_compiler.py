@@ -108,6 +108,7 @@ class IdlCompiler(object):
 
         # Merge partial definitions.
         self._record_defined_in_partial_and_mixin()
+        self._record_defined_across_component()
         self._propagate_extattrs_per_idl_fragment()
         self._determine_blink_headers()
         self._merge_partial_interface_likes()
@@ -311,6 +312,44 @@ class IdlCompiler(object):
             for member in new_ir.iter_all_members():
                 member.code_generator_info.set_defined_in_partial(is_partial)
 
+    def _record_defined_across_component(self):
+
+        def set_defined_across_component(ir, value):
+            ir.code_generator_info.set_defined_across_component(value)
+            for member in ir.iter_all_members():
+                member.code_generator_info.set_defined_across_component(value)
+
+        interfaces = self._ir_map.find_by_kind(IRMap.IR.Kind.INTERFACE)
+        mixins = self._ir_map.find_by_kind(IRMap.IR.Kind.INTERFACE_MIXIN)
+        includes = self._ir_map.find_by_kind(IRMap.IR.Kind.INCLUDES)
+        partials = self._ir_map.irs_of_kinds(
+            IRMap.IR.Kind.PARTIAL_INTERFACE,
+            IRMap.IR.Kind.PARTIAL_INTERFACE_MIXIN)
+        interfaces_or_mixins = interfaces | mixins
+
+        self._ir_map.move_to_new_phase()
+
+        across_component_mixins = {
+            mixins[include.mixin_identifier]
+            for include_list in includes.values()
+            for include in include_list if self._is_across_components(
+                interfaces[include.interafce_identifier], mixins[
+                    include.mixin_identifier])
+        }
+
+        for old_ir in mixins.values():
+            new_ir = make_copy(old_ir)
+            self._ir_map.add(new_ir)
+            is_across_component = old_ir in across_component_mixins
+            set_defined_across_component(new_ir, is_across_component)
+
+        for old_ir in partials:
+            new_ir = make_copy(old_ir)
+            self._ir_map.add(new_ir)
+            is_across_component = self._is_across_components(
+                interfaces_or_mixins[new_ir.identifier], old_ir)
+            set_defined_across_component(new_ir, is_across_component)
+
     def _propagate_extattrs_per_idl_fragment(self):
         def propagate_extattr(extattr_key_and_attr_name,
                               bag=None,
@@ -423,7 +462,9 @@ class IdlCompiler(object):
             new_ir = self._maybe_make_copy(old_ir)
             self._ir_map.add(new_ir)
 
-            if new_ir.is_mixin and not new_ir.is_partial:
+            if (new_ir.is_mixin
+                    and not new_ir.code_generator_info.defined_across_component
+                    and not new_ir.is_partial):
                 continue
 
             basepath, _ = posixpath.splitext(
@@ -527,7 +568,7 @@ class IdlCompiler(object):
             self._ir_map.add(new_ir)
             for ir in irs_to_be_merged:
                 to_be_merged = make_copy(ir)
-                if new_ir.is_mixin == to_be_merged.is_mixin:
+                if self._is_across_components(new_ir, to_be_merged):
                     new_ir.add_components(to_be_merged.components)
                 new_ir.debug_info.add_locations(
                     to_be_merged.debug_info.all_locations)
@@ -1221,3 +1262,7 @@ class IdlCompiler(object):
             # the root.
             if old_ir.inherited is None:
                 next_tag = assign_tags_for_tree(old_ir, next_tag)
+
+    def _is_across_components(self, original_ir, extended_ir):
+        return ("core" in original_ir.components
+                and "modules" in extended_ir.components)

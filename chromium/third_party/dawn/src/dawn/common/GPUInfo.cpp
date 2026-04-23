@@ -25,6 +25,11 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "dawn/common/GPUInfo.h"
 #include "dawn/common/GPUInfo_autogen.h"
 
@@ -77,6 +82,12 @@ std::string DriverVersion::ToString() const {
     return oss.str();
 }
 
+std::strong_ordering DriverVersion::operator<=>(const DriverVersion& other) const {
+    return std::lexicographical_compare_three_way(mDriverVersion.begin(), mDriverVersion.end(),
+                                                  other.mDriverVersion.begin(),
+                                                  other.mDriverVersion.end());
+}
+
 // According to Intel graphics driver version schema, build number is generated from the
 // last two fields.
 // See https://www.intel.com/content/www/us/en/support/articles/000005654/graphics.html for
@@ -89,16 +100,6 @@ IntelWindowsDriverVersion::IntelWindowsDriverVersion(const DriverVersion& driver
 
 IntelWindowsDriverVersion::IntelWindowsDriverVersion(const std::initializer_list<uint16_t>& version)
     : IntelWindowsDriverVersion(DriverVersion(version)) {}
-
-int CompareIntelMesaDriverVersion(const DriverVersion& version1, const DriverVersion& version2) {
-    for (uint32_t i = 0; i < 3; ++i) {
-        int diff = static_cast<int32_t>(version1[i]) - static_cast<int32_t>(version2[i]);
-        if (diff != 0) {
-            return diff;
-        }
-    }
-    return 0;
-}
 
 // Intel GPUs
 bool IsSkylake(PCIDeviceID deviceId) {

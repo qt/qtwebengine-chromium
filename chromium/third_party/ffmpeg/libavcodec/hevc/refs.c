@@ -235,6 +235,7 @@ int ff_hevc_set_new_ref(HEVCContext *s, HEVCLayerContext *l, int poc)
                             s->layers[0].cur_frame - s->layers[0].DPB : -1;
 
     no_output = !IS_IRAP(s) && (s->poc < s->recovery_poc) &&
+                HEVC_IS_RECOVERING(s) &&
                 !(s->avctx->flags & AV_CODEC_FLAG_OUTPUT_CORRUPT) &&
                 !(s->avctx->flags2 & AV_CODEC_FLAG2_SHOW_ALL);
     if (s->sh.pic_output_flag && !no_output)
@@ -625,10 +626,8 @@ int ff_hevc_frame_nb_refs(const SliceHeader *sh, const HEVCPPS *pps,
             ret += !!(rps->used & (1 << i));
     }
 
-    if (long_rps) {
-        for (i = 0; i < long_rps->nb_refs; i++)
-            ret += !!long_rps->used[i];
-    }
+    for (i = 0; i < long_rps->nb_refs; i++)
+        ret += !!long_rps->used[i];
 
     if (sh->inter_layer_pred) {
         av_assert0(pps->sps->vps->num_direct_ref_layers[layer_idx] < 2);

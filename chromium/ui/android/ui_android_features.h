@@ -44,12 +44,8 @@ UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kDeprecatedExternalPickerFunction);
 // Whether photo picker should be disabled for video capture.
 UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kDisablePhotoPickerForVideoCapture);
 
-// Whether devices should use max window metrics for form factor check.
-UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kFormFactorUseMaxWindowMetrics);
-
-// Flip the back/forward direction of navigation gestures when the UI language
-// is an RTL language.
-UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kMirrorBackForwardGesturesInRTL);
+// Whether to enable the refactor of the smallestScreenWidthDp override.
+UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kRefactorMinWidthContextOverride);
 
 // Reports bottom overscrolls on the web page.
 UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kReportBottomOverscrolls);
@@ -75,6 +71,10 @@ UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kUseNewEtc1Encoder);
 // event even though it is hidden, due to the ordering of the `children_` in
 // `ViewAndroid`. Refer to crbug.com/442832509 for more details.
 UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(kCheckHitEligibility);
+
+// Enables touchpad overscroll for history navigation.
+UI_ANDROID_EXPORT BASE_DECLARE_FEATURE(
+    kAndroidTouchpadOverscrollHistoryNavigation);
 
 }  // namespace ui
 

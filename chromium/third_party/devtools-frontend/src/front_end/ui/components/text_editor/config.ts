@@ -1,18 +1,17 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../../core/common/common.js';
 import type * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as TextUtils from '../../../models/text_utils/text_utils.js';
-import * as WindowBoundsService from '../../../services/window_bounds/window_bounds.js';
 import * as CM from '../../../third_party/codemirror.next/codemirror.next.js';
+import {Icon} from '../../kit/kit.js';
 import * as UI from '../../legacy/legacy.js';
 import * as VisualLogging from '../../visual_logging/visual_logging.js';
 import * as CodeHighlighter from '../code_highlighter/code_highlighter.js';
-import * as Icon from '../icon_button/icon_button.js';
 
 import {editorTheme} from './theme.js';
 
@@ -86,9 +85,11 @@ export const tabMovesFocus = DynamicSetting.bool('text-editor-tab-moves-focus', 
 
 const disableConservativeCompletion = CM.StateEffect.define();
 
-// When enabled, this suppresses the behavior of showCompletionHint
-// and accepting of completions with Enter until the user selects a
-// completion beyond the initially selected one. Used in the console.
+/**
+ * When enabled, this suppresses the behavior of showCompletionHint
+ * and accepting of completions with Enter until the user selects a
+ * completion beyond the initially selected one. Used in the console.
+ **/
 export const conservativeCompletion = CM.StateField.define<boolean>({
   create() {
     return true;
@@ -123,9 +124,11 @@ function acceptCompletionIfAtEndOfLine(view: CM.EditorView): boolean {
   return false;
 }
 
-// This is a wrapper around CodeMirror's own moveCompletionSelection command, which
-// selects the first selection if the state of the selection is conservative, and
-// otherwise behaves as normal.
+/**
+ * This is a wrapper around CodeMirror's own moveCompletionSelection command, which
+ * selects the first selection if the state of the selection is conservative, and
+ * otherwise behaves as normal.
+ **/
 function moveCompletionSelectionIfNotConservative(
     forward: boolean, by: 'option'|'page' = 'option'): ((view: CM.EditorView) => boolean) {
   return view => {
@@ -197,7 +200,7 @@ export const codeFolding = DynamicSetting.bool('text-editor-code-folding', [
   CM.foldGutter({
     markerDOM(open: boolean): HTMLElement {
       const iconName = open ? 'triangle-down' : 'triangle-right';
-      const icon = new Icon.Icon.Icon();
+      const icon = new Icon();
       icon.setAttribute('class', open ? 'cm-foldGutterElement' : 'cm-foldGutterElement cm-foldGutterElement-folded');
       icon.setAttribute('jslog', `${VisualLogging.expand().track({click: true})}`);
       icon.name = iconName;
@@ -339,8 +342,7 @@ let sideBarElement: HTMLElement|null = null;
 
 function getTooltipSpace(): DOMRect {
   if (!sideBarElement) {
-    sideBarElement =
-        WindowBoundsService.WindowBoundsService.WindowBoundsServiceImpl.instance().getDevToolsBoundingElement();
+    sideBarElement = UI.UIUtils.getDevToolsBoundingElement();
   }
   return sideBarElement.getBoundingClientRect();
 }
@@ -481,13 +483,13 @@ export function contentIncludingHint(view: CM.EditorView): string {
 
 export const setAiAutoCompleteSuggestion = CM.StateEffect.define<ActiveSuggestion|null>();
 
-interface ActiveSuggestion {
+export interface ActiveSuggestion {
   text: string;
   from: number;
-  sampleId: number;
+  sampleId?: number;
   rpcGlobalId?: Host.AidaClient.RpcGlobalId;
   startTime: number;
-  onImpression: (rpcGlobalId: Host.AidaClient.RpcGlobalId, sampleId: number, latency: number) => void;
+  onImpression: (rpcGlobalId: Host.AidaClient.RpcGlobalId, latency: number, sampleId?: number) => void;
   clearCachedRequest: () => void;
 }
 
@@ -675,7 +677,7 @@ export const aiAutoCompleteSuggestion: CM.Extension = [
           }
           const latency = performance.now() - activeSuggestion.startTime;
           // only register impression for the first time AI generated suggestion is shown to the user.
-          activeSuggestion.onImpression(activeSuggestion.rpcGlobalId, activeSuggestion.sampleId, latency);
+          activeSuggestion.onImpression(activeSuggestion.rpcGlobalId, latency, activeSuggestion.sampleId);
           this.#lastLoggedSuggestion = activeSuggestion;
         }
       },

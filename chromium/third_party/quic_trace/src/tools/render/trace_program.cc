@@ -14,6 +14,8 @@
 
 #include "tools/render/trace_program.h"
 
+#include <SDL.h>
+
 #include "absl/flags/flag.h"
 #include "absl/time/clock.h"
 #include "tools/render/layout_constants.h"
@@ -205,6 +207,11 @@ void TraceProgram::PollKeyboard() {
       state_.offset = new_viewport->origin;
       state_.viewport = new_viewport->size;
     }
+  }
+  if (state[SDL_SCANCODE_0]) {
+    state_.offset = vec2{0, 0};
+    state_.viewport.x = renderer_->max_x();
+    state_.viewport.y = renderer_->max_y();
   }
 }
 

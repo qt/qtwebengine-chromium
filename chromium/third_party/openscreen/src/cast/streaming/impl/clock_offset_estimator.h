@@ -8,7 +8,7 @@
 #include <memory>
 #include <optional>
 
-#include "cast/streaming/impl/statistics_defines.h"
+#include "cast/streaming/impl/statistics_common.h"
 #include "cast/streaming/public/statistics.h"
 #include "platform/base/trivial_clock_traits.h"
 
@@ -27,8 +27,43 @@ class ClockOffsetEstimator {
   virtual void OnFrameEvent(const FrameEvent& frame_event) = 0;
   virtual void OnPacketEvent(const PacketEvent& packet_event) = 0;
 
-  // Returns nullopt if not enough data is in yet to produce an estimate.
+  // Estimates the clock offset between the sender and the receiver.
+  //
+  // This is calculated by solving a system of two linear equations with two
+  // unknowns: the clock offset and the network latency. The two equations are
+  // derived from two round-trip time measurements.
+  //
+  // Let's define:
+  //   - latency: the one-way network latency.
+  //   - offset: the clock offset, where Clock_Receiver(t) = Clock_Sender(t) +
+  //   offset.
+  //
+  // The estimator measures two bounds:
+  //
+  // 1. packet_bound (sender -> receiver):
+  //    delta = TS_receiver - TS_sender
+  //          = (TS_sender + latency + offset) - TS_sender
+  //          = latency + offset
+  //
+  // 2. frame_bound (receiver -> sender):
+  //    delta = TS_sender - TS_receiver
+  //          = (TS_receiver + latency - offset) - TS_receiver
+  //          = latency - offset
+  //
+  // The offset is then isolated by the formula:
+  //    (packet_bound - frame_bound) / 2 =
+  //     ( (latency + offset) - (latency - offset) ) / 2 =
+  //     (2 * offset) / 2 = offset
   virtual std::optional<Clock::duration> GetEstimatedOffset() const = 0;
+
+  // Estimates the one-way network latency.
+  // This uses the same bounds as GetEstimatedOffset().
+  //
+  // The latency is isolated by the formula:
+  //   (packet_bound + frame_bound) / 2 =
+  //   ( (latency + offset) + (latency - offset) ) / 2 = (2 * latency) / 2 =
+  //   latency
+  virtual std::optional<Clock::duration> GetEstimatedLatency() const = 0;
 };
 
 }  // namespace openscreen::cast

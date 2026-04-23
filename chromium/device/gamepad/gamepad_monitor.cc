@@ -40,6 +40,13 @@ void GamepadMonitor::OnGamepadDisconnected(uint32_t index,
     gamepad_observer_remote_->GamepadDisconnected(index, gamepad);
 }
 
+void GamepadMonitor::OnGamepadRawInputChanged(uint32_t index,
+                                              const Gamepad& gamepad) {
+  if (gamepad_observer_remote_) {
+    gamepad_observer_remote_->GamepadRawInputChanged(index, gamepad);
+  }
+}
+
 void GamepadMonitor::GamepadStartPolling(GamepadStartPollingCallback callback) {
   DCHECK(!is_started_);
   is_started_ = true;

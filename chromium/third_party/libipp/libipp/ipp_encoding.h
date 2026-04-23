@@ -117,8 +117,9 @@ bool ParseUnsignedInteger(const uint8_t** ptr, OutInt* out_val) {
   typedef typename IntegerBySize<BytesCount>::type Integer;
   const Integer val = ReadInteger<Integer>(*ptr);
   *ptr += BytesCount;
-  if (val < 0)
+  if (val < 0) {
     return false;
+  }
   *out_val = val;
   return true;
 }

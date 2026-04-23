@@ -1,12 +1,14 @@
 {
   # Use this file with --browser-config=...
-  browsers: {
-    chrome-dev-future: {
-      path: "chrome-dev",
-      flags: [
-        "--js-flags=--future",
+  "browsers": {
+    "chrome-dev-future": {
+      "path": "chrome-dev"
+      "flags": [
+        "--js-flags=--future"
       ]
-    },
-    safari-tp: { path: "safari-tp" },
-  },
+    }
+    "safari-tp": {
+      "path": "safari-tp"
+    }
+  }
 }

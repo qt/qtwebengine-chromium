@@ -20,7 +20,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/mem.h"
 #include "network.h"
 #include "os_support.h"
@@ -35,127 +34,82 @@
 #include <openssl/x509v3.h>
 
 /**
- * Returns a heap‐allocated null‐terminated string containing
- * the PEM‐encoded public key.  Caller must free.
+ * Convert an EVP_PKEY to a PEM string.
  */
-static char *pkey_to_pem_string(EVP_PKEY *pkey) {
-    BIO        *mem = NULL;
-    BUF_MEM    *bptr = NULL;
-    char       *pem_str = NULL;
+static int pkey_to_pem_string(EVP_PKEY *pkey, char *out, size_t out_sz)
+{
+    BIO *mem = NULL;
+    size_t read_bytes = 0;
 
-    // Create a memory BIO
+    if (!pkey || !out || !out_sz)
+        goto done;
+
     if (!(mem = BIO_new(BIO_s_mem())))
-        goto err;
+        goto done;
 
-    // Write public key in PEM form
     if (!PEM_write_bio_PrivateKey(mem, pkey, NULL, NULL, 0, NULL, NULL))
-        goto err;
+        goto done;
 
-    // Extract pointer/length
-    BIO_get_mem_ptr(mem, &bptr);
-    if (!bptr || !bptr->length)
-        goto err;
+    if (!BIO_read_ex(mem, out, out_sz - 1, &read_bytes))
+        goto done;
 
-    // Allocate string (+1 for NUL)
-    pem_str = av_malloc(bptr->length + 1);
-    if (!pem_str)
-        goto err;
-
-    // Copy data & NUL‐terminate
-    memcpy(pem_str, bptr->data, bptr->length);
-    pem_str[bptr->length] = '\0';
-
-cleanup:
+done:
     BIO_free(mem);
-    return pem_str;
-
-err:
-    // error path: free and return NULL
-    free(pem_str);
-    pem_str = NULL;
-    goto cleanup;
+    if (out && out_sz)
+        out[read_bytes] = '\0';
+    return read_bytes;
 }
 
 /**
- * Serialize an X509 certificate to a av_malloc’d PEM string.
- * Caller must free the returned pointer.
+ * Convert an X509 certificate to a PEM string.
  */
-static char *cert_to_pem_string(X509 *cert)
+static int cert_to_pem_string(X509 *cert, char *out, size_t out_sz)
 {
-    BIO     *mem = BIO_new(BIO_s_mem());
-    BUF_MEM *bptr = NULL;
-    char    *out = NULL;
+    BIO *mem = NULL;
+    size_t read_bytes = 0;
 
-    if (!mem) goto err;
+    if (!cert || !out || !out_sz)
+        goto done;
 
-    /* Write the PEM certificate */
+    if (!(mem = BIO_new(BIO_s_mem())))
+        goto done;
+
     if (!PEM_write_bio_X509(mem, cert))
-        goto err;
+        goto done;
 
-    BIO_get_mem_ptr(mem, &bptr);
-    if (!bptr || !bptr->length) goto err;
+    if (!BIO_read_ex(mem, out, out_sz - 1, &read_bytes))
+        goto done;
 
-    out = av_malloc(bptr->length + 1);
-    if (!out) goto err;
-
-    memcpy(out, bptr->data, bptr->length);
-    out[bptr->length] = '\0';
-
-cleanup:
+done:
     BIO_free(mem);
-    return out;
-
-err:
-    free(out);
-    out = NULL;
-    goto cleanup;
+    if (out && out_sz)
+        out[read_bytes] = '\0';
+    return read_bytes;
 }
 
 
 /**
  * Generate a SHA-256 fingerprint of an X.509 certificate.
- *
- * @param ctx       AVFormatContext for logging (can be NULL)
- * @param cert      X509 certificate to fingerprint
- * @return          Newly allocated fingerprint string in "AA:BB:CC:…" format,
- *                  or NULL on error (logs via av_log if ctx is not NULL).
- *                  Caller must free() the returned string.
  */
-static char *generate_fingerprint(X509 *cert)
+static int x509_fingerprint(X509 *cert, char **fingerprint)
 {
     unsigned char md[EVP_MAX_MD_SIZE];
     int n = 0;
-    AVBPrint fingerprint;
-    char *result = NULL;
-    int i;
-
-    /* To prevent a crash during cleanup, always initialize it. */
-    av_bprint_init(&fingerprint, 0, AV_BPRINT_SIZE_UNLIMITED);
+    AVBPrint buf;
 
     if (X509_digest(cert, EVP_sha256(), md, &n) != 1) {
-        av_log(NULL, AV_LOG_ERROR, "TLS: Failed to generate fingerprint, %s\n", ERR_error_string(ERR_get_error(), NULL));
-        goto end;
+        av_log(NULL, AV_LOG_ERROR, "TLS: Failed to generate fingerprint, %s\n",
+               ERR_error_string(ERR_get_error(), NULL));
+        return AVERROR(ENOMEM);
     }
 
-    for (i = 0; i < n; i++) {
-        av_bprintf(&fingerprint, "%02X", md[i]);
-        if (i + 1 < n)
-            av_bprintf(&fingerprint, ":");
-    }
+    av_bprint_init(&buf, n*3, n*3);
 
-    if (!fingerprint.str || !strlen(fingerprint.str)) {
-        av_log(NULL, AV_LOG_ERROR, "TLS: Fingerprint is empty\n");
-        goto end;
-    }
+    for (int i = 0; i < n - 1; i++)
+        av_bprintf(&buf, "%02X:", md[i]);
+    av_bprintf(&buf, "%02X", md[n - 1]);
 
-    result = av_strdup(fingerprint.str);
-    if (!result) {
-        av_log(NULL, AV_LOG_ERROR, "TLS: Out of memory generating fingerprint\n");
-    }
-
-end:
-    av_bprint_finalize(&fingerprint, NULL);
-    return result;
+    return av_bprint_finalize(&buf, fingerprint);
 }
 
 int ff_ssl_read_key_cert(char *key_url, char *cert_url, char *key_buf, size_t key_sz, char *cert_buf, size_t cert_sz, char **fingerprint)
@@ -165,7 +119,6 @@ int ff_ssl_read_key_cert(char *key_url, char *cert_url, char *key_buf, size_t ke
     AVBPrint key_bp, cert_bp;
     EVP_PKEY *pkey = NULL;
     X509 *cert = NULL;
-    char *key_tem = NULL, *cert_tem = NULL;
 
     /* To prevent a crash during cleanup, always initialize it. */
     av_bprint_init(&key_bp, 1, MAX_CERTIFICATE_SIZE);
@@ -211,29 +164,18 @@ int ff_ssl_read_key_cert(char *key_url, char *cert_url, char *key_buf, size_t ke
         goto end;
     }
 
-    key_tem = pkey_to_pem_string(pkey);
-    cert_tem = cert_to_pem_string(cert);
+    pkey_to_pem_string(pkey, key_buf, key_sz);
+    cert_to_pem_string(cert, cert_buf, cert_sz);
 
-    snprintf(key_buf,  key_sz,  "%s", key_tem);
-    snprintf(cert_buf, cert_sz, "%s", cert_tem);
-
-    /* Generate fingerprint. */
-    if (fingerprint) {
-        *fingerprint = generate_fingerprint(cert);
-        if (!*fingerprint) {
-            av_log(NULL, AV_LOG_ERROR, "TLS: Failed to generate fingerprint from %s\n", cert_url);
-            ret = AVERROR(EIO);
-            goto end;
-        }
-    }
+    ret = x509_fingerprint(cert, fingerprint);
+    if (ret < 0)
+        av_log(NULL, AV_LOG_ERROR, "TLS: Failed to generate fingerprint from %s\n", cert_url);
 
 end:
     BIO_free(key_b);
     av_bprint_finalize(&key_bp, NULL);
     BIO_free(cert_b);
     av_bprint_finalize(&cert_bp, NULL);
-    av_free(key_tem);
-    av_free(cert_tem);
     EVP_PKEY_free(pkey);
     X509_free(cert);
     return ret;
@@ -376,12 +318,9 @@ static int openssl_gen_certificate(EVP_PKEY *pkey, X509 **cert, char **fingerpri
         goto einval_end;
     }
 
-    if (fingerprint) {
-        *fingerprint = generate_fingerprint(*cert);
-        if (!*fingerprint) {
-            goto enomem_end;
-        }
-    }
+    ret = x509_fingerprint(*cert, fingerprint);
+    if (ret < 0)
+        goto end;
 
     goto end;
 enomem_end:
@@ -403,7 +342,6 @@ int ff_ssl_gen_key_cert(char *key_buf, size_t key_sz, char *cert_buf, size_t cer
     int ret = 0;
     EVP_PKEY *pkey = NULL;
     X509 *cert = NULL;
-    char *key_tem = NULL, *cert_tem = NULL;
 
     ret = openssl_gen_private_key(&pkey);
     if (ret < 0) goto error;
@@ -411,14 +349,9 @@ int ff_ssl_gen_key_cert(char *key_buf, size_t key_sz, char *cert_buf, size_t cer
     ret = openssl_gen_certificate(pkey, &cert, fingerprint);
     if (ret < 0) goto error;
 
-    key_tem = pkey_to_pem_string(pkey);
-    cert_tem = cert_to_pem_string(cert);
+    pkey_to_pem_string(pkey, key_buf, key_sz);
+    cert_to_pem_string(cert, cert_buf, cert_sz);
 
-    snprintf(key_buf,  key_sz,  "%s", key_tem);
-    snprintf(cert_buf, cert_sz, "%s", cert_tem);
-
-    av_free(key_tem);
-    av_free(cert_tem);
 error:
     X509_free(cert);
     EVP_PKEY_free(pkey);
@@ -427,7 +360,7 @@ error:
 
 
 /**
- * Deserialize a PEM‐encoded private or public key from a NUL-terminated C string.
+ * Deserialize a PEM-encoded private or public key from a NUL-terminated C string.
  *
  * @param pem_str   The PEM text, e.g.
  *                  "-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----\n"
@@ -458,7 +391,7 @@ static EVP_PKEY *pkey_from_pem_string(const char *pem_str, int is_priv)
 }
 
 /**
- * Deserialize a PEM‐encoded certificate from a NUL-terminated C string.
+ * Deserialize a PEM-encoded certificate from a NUL-terminated C string.
  *
  * @param pem_str   The PEM text, e.g.
  *                  "-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----\n"
@@ -484,7 +417,6 @@ static X509 *cert_from_pem_string(const char *pem_str)
 
 
 typedef struct TLSContext {
-    const AVClass *class;
     TLSShared tls_shared;
     SSL_CTX *ctx;
     SSL *ssl;
@@ -540,12 +472,6 @@ int ff_dtls_export_materials(URLContext *h, char *dtls_srtp_materials, size_t ma
         return -1;
     }
     return 0;
-}
-
-int ff_dtls_state(URLContext *h)
-{
-    TLSContext *c = h->priv_data;
-    return c->tls_shared.state;
 }
 
 static int print_ssl_error(URLContext *h, int ret)
@@ -722,7 +648,6 @@ static int dtls_handshake(URLContext *h)
         goto end;
 
     ret = 0;
-    c->tls_shared.state = DTLS_STATE_FINISHED;
 end:
     return ret;
 }
@@ -820,8 +745,14 @@ static int dtls_start(URLContext *h, const char *url, int flags, AVDictionary **
     TLSContext *c = h->priv_data;
     TLSShared *s = &c->tls_shared;
     int ret = 0;
-    av_assert0(s);
     s->is_dtls = 1;
+
+    if (!c->tls_shared.external_sock) {
+        if ((ret = ff_tls_open_underlying(&c->tls_shared, h, url, options)) < 0) {
+            av_log(c, AV_LOG_ERROR, "Failed to connect %s\n", url);
+            return ret;
+        }
+    }
 
     c->ctx = SSL_CTX_new(s->listen ? DTLS_server_method() : DTLS_client_method());
     if (!c->ctx) {
@@ -875,13 +806,6 @@ static int dtls_start(URLContext *h, const char *url, int flags, AVDictionary **
     DTLS_set_link_mtu(c->ssl, s->mtu);
     init_bio_method(h);
 
-    if (!c->tls_shared.external_sock) {
-        if ((ret = ff_tls_open_underlying(&c->tls_shared, h, url, options)) < 0) {
-            av_log(c, AV_LOG_ERROR, "Failed to connect %s\n", url);
-            return ret;
-        }
-    }
-
     /* This seems to be necessary despite explicitly setting client/server method above. */
     if (s->listen)
         SSL_set_accept_state(c->ssl);
@@ -910,8 +834,9 @@ static int dtls_start(URLContext *h, const char *url, int flags, AVDictionary **
 
     av_log(c, AV_LOG_VERBOSE, "Setup ok, MTU=%d\n", c->tls_shared.mtu);
 
-    ret = 0;
+    return 0;
 fail:
+    tls_close(h);
     return ret;
 }
 
@@ -921,7 +846,6 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     TLSShared *s = &c->tls_shared;
     int ret;
 
-    av_assert0(s);
     if ((ret = ff_tls_open_underlying(s, h, uri, options)) < 0)
         goto fail;
 
@@ -1013,8 +937,10 @@ static int tls_write(URLContext *h, const uint8_t *buf, int size)
     uc->flags &= ~AVIO_FLAG_NONBLOCK;
     uc->flags |= h->flags & AVIO_FLAG_NONBLOCK;
 
-    if (s->is_dtls)
-        size = FFMIN(size, DTLS_get_data_mtu(c->ssl));
+    if (s->is_dtls) {
+        const size_t mtu_size = DTLS_get_data_mtu(c->ssl);
+        size = FFMIN(size, mtu_size);
+    }
 
     ret = SSL_write(c->ssl, buf, size);
     if (ret > 0)

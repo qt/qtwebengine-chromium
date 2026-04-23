@@ -7,10 +7,19 @@
 
 import type {TSESTree} from '@typescript-eslint/utils';
 
-import {isIdentifier, isIdentifierChain, isMemberExpression, type RuleCreator} from './ast.ts';
+import {
+  getEnclosingProperty,
+  isIdentifier,
+  isIdentifierChain,
+  isLiteral,
+  isMemberExpression,
+  type RuleCreator
+} from './ast.ts';
+import {ClassMember} from './class-member.ts';
 import {DomFragment} from './dom-fragment.ts';
 
 type Node = TSESTree.Node;
+type CallExpression = TSESTree.CallExpression;
 
 export const toolbar: RuleCreator = {
   create(context) {
@@ -28,8 +37,50 @@ export const toolbar: RuleCreator = {
             return null;
         }
       },
-      methodCall(property, firstArg, _secondArg, domFragment) {
+      methodCall(property, firstArg, secondArg, domFragment, call) {
         if (isIdentifier(property, 'appendToolbarItem')) {
+          domFragment.appendChild(firstArg, sourceCode);
+          return true;
+        }
+        if (isIdentifier(property, 'appendSeparator')) {
+          const separator = domFragment.appendChild(call, sourceCode);
+          separator.tagName = 'div';
+          separator.classList.push('toolbar-divider');
+          return true;
+        }
+        if (isIdentifier(property, 'appendSpacer')) {
+          const spacer = domFragment.appendChild(call, sourceCode);
+          spacer.tagName = 'div';
+          spacer.classList.push('toolbar-spacer');
+          return true;
+        }
+        if (isIdentifier(property, 'setEnabled')) {
+          domFragment.booleanAttributes.push({
+            key: 'disabled',
+            value: firstArg,
+          });
+          return true;
+        }
+        if (isIdentifier(property, 'createOption')) {
+          const optionFragment = domFragment.appendChild(call, sourceCode);
+          optionFragment.tagName = 'option';
+          optionFragment.textContent = firstArg;
+          if (secondArg && !isIdentifier(secondArg, 'undefined')) {
+            optionFragment.attributes.push({
+              key: 'value',
+              value: secondArg,
+            });
+          }
+          const jslogContext = call.arguments[2] ?? secondArg;
+          if (jslogContext) {
+            optionFragment.attributes.push({
+              key: 'jslog',
+              value: `\${VisualLogging.item(` + sourceCode.getText(jslogContext) + `).track({click: true})}`,
+            });
+          }
+          return true;
+        }
+        if (isIdentifier(property, 'addOption')) {
           domFragment.appendChild(firstArg, sourceCode);
           return true;
         }
@@ -185,6 +236,90 @@ export const toolbar: RuleCreator = {
                 value: jslogContext,
               });
             }
+          }
+        }
+        if (isIdentifier(toolbarItem, 'ToolbarComboBox')) {
+          const domFragment = DomFragment.getOrCreate(node, sourceCode);
+          domFragment.tagName = 'select';
+          const changeHandler = node.arguments[0];
+          if (changeHandler && !isIdentifier(changeHandler, 'null')) {
+            domFragment.eventListeners.push({
+              key: 'change',
+              value: changeHandler,
+            });
+          }
+          const title = node.arguments[1];
+          if (title) {
+            domFragment.attributes.push({
+              key: 'title',
+              value: title,
+            });
+            domFragment.attributes.push({
+              key: 'aria-label',
+              value: title,
+            });
+          }
+          const className = node.arguments[2];
+          if (className && !isIdentifier(className, 'undefined')) {
+            domFragment.classList.push(className);
+          }
+          const jslogContext = node.arguments[3];
+          if (jslogContext && !isIdentifier(jslogContext, 'undefined')) {
+            domFragment.attributes.push({
+              key: 'jslog',
+              value: `\${VisualLogging.dropDown(` + sourceCode.getText(jslogContext) + `).track({change: true})}`,
+            });
+          }
+        }
+        if (isIdentifier(toolbarItem, 'ToolbarSeparator')) {
+          const domFragment = DomFragment.getOrCreate(node, sourceCode);
+          domFragment.tagName = 'div';
+          const spacer = node.arguments[0];
+          if (spacer && isLiteral(spacer, true)) {
+            domFragment.classList.push('toolbar-spacer');
+          } else {
+            domFragment.classList.push('toolbar-divider');
+          }
+        }
+      },
+      propertyAssignment(property, propertyValue, domFragment) {
+        if (domFragment.tagName === 'devtools-toolbar' && isIdentifier(property, 'wrappable')) {
+          domFragment.booleanAttributes.push({
+            key: 'wrappable',
+            value: propertyValue,
+          });
+          return true;
+        }
+        return false;
+      },
+      CallExpression(node) {
+        const isGetAction = (node: CallExpression) => isMemberExpression(
+            node.callee,
+            n => n.type === 'CallExpression' &&
+                isIdentifierChain(n.callee, ['UI', 'ActionRegistry', 'ActionRegistry', 'instance']),
+            n => isIdentifier(n, 'getAction'));
+        if (isGetAction(node)) {
+          const actionProperty = getEnclosingProperty(node);
+          if (actionProperty) {
+            ClassMember.getOrCreate(actionProperty, sourceCode);
+          }
+        }
+        if (isIdentifierChain(node.callee, ['UI', 'Toolbar', 'Toolbar', 'createActionButton'])) {
+          let action = node.arguments[0];
+          const actionProperty = getEnclosingProperty(action);
+          if (actionProperty) {
+            const initializer = ClassMember.getOrCreate(actionProperty, sourceCode)?.initializer;
+            if (initializer?.type === 'CallExpression' && isGetAction(initializer)) {
+              action = initializer.arguments[0];
+            }
+          }
+          if (action.type === 'Literal') {
+            const domFragment = DomFragment.getOrCreate(node, sourceCode);
+            domFragment.tagName = 'devtools-button';
+            domFragment.directives.push({
+              name: 'bindToAction',
+              arguments: [action],
+            });
           }
         }
       }

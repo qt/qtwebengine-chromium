@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -16,7 +17,6 @@
 #include "base/memory_coordinator/traits.h"
 #include "content/common/content_export.h"
 #include "content/common/memory_coordinator/mojom/memory_coordinator.mojom.h"
-#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/remote.h"
 
@@ -113,7 +113,7 @@ class CONTENT_EXPORT ChildMemoryConsumerRegistry
         : consumer_group(std::forward<Args>(args)...) {}
 
     ConsumerGroup consumer_group;
-    mojo::ReceiverId receiver_id;
+    std::optional<mojo::ReceiverId> receiver_id;
   };
   std::map<std::string, ConsumerGroupAndReceiverId, std::less<>>
       consumer_groups_;

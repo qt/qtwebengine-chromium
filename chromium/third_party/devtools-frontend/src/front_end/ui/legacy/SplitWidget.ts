@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -648,11 +648,13 @@ export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typ
   }
 
   override wasShown(): void {
+    super.wasShown();
     this.#forceUpdateLayout();
     ZoomManager.instance().addEventListener(ZoomManagerEvents.ZOOM_CHANGED, this.onZoomChanged, this);
   }
 
   override willHide(): void {
+    super.willHide();
     ZoomManager.instance().removeEventListener(ZoomManagerEvents.ZOOM_CHANGED, this.onZoomChanged, this);
   }
 

@@ -58,8 +58,8 @@ class SetupCommandsConfig(ConfigObject):
     raise exception.UnreachableError
 
   @classmethod
-  def _parse_commands(
-      cls, data: dict[str, Any]) -> tuple[SetupCommandConfig, ...]:
+  def _parse_commands(cls, data: dict[str,
+                                      Any]) -> tuple[SetupCommandConfig, ...]:
     commands = []
     for name, command_config in data.items():
       with exception.annotate_argparsing(f"Parsing command ...['{name}']"):

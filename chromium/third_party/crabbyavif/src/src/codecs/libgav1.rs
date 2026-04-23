@@ -14,7 +14,6 @@
 
 use crate::codecs::Decoder;
 use crate::codecs::DecoderConfig;
-use crate::decoder::CodecChoice;
 use crate::decoder::GridImageHelper;
 use crate::image::Image;
 use crate::image::YuvRange;
@@ -23,6 +22,7 @@ use crate::*;
 
 use libgav1_sys::bindings::*;
 
+use std::ffi::CStr;
 use std::mem::MaybeUninit;
 
 #[derive(Debug, Default)]
@@ -199,6 +199,16 @@ impl Decoder for Libgav1 {
         _grid_image_helper: &mut GridImageHelper,
     ) -> AvifResult<()> {
         AvifError::not_implemented()
+    }
+}
+
+impl Libgav1 {
+    pub(crate) fn version() -> String {
+        let version = match unsafe { CStr::from_ptr(Libgav1GetVersionString()) }.to_str() {
+            Ok(s) => s.to_owned(),
+            Err(_) => String::new(),
+        };
+        format!("libgav1: {version}")
     }
 }
 

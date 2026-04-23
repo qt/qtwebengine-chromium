@@ -16,7 +16,6 @@ class StrEnumWithHelpData(NamedTuple):
   help: str
 
 
-
 class StrEnumWithHelp(StrEnumWithHelpData, enum.Enum):
 
   @classmethod

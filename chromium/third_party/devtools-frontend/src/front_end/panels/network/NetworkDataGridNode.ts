@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
@@ -48,7 +48,7 @@ import * as Logs from '../../models/logs/logs.js';
 import type * as NetworkTimeCalculator from '../../models/network_time_calculator/network_time_calculator.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import {createIcon} from '../../ui/kit/kit.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
@@ -217,6 +217,11 @@ const UIStrings = {
   servedFromNetwork: '{PH1} transferred over network, resource size: {PH2}',
   /**
    * @description Cell title in Network Data Grid Node of the Network panel
+   * @example {Fast 4G} PH1
+   */
+  wasThrottled: 'Request was throttled ({PH1})',
+  /**
+   * @description Cell title in Network Data Grid Node of the Network panel
    * @example {4 B} PH1
    * @example {10 B} PH2
    */
@@ -232,11 +237,6 @@ const UIStrings = {
    * @example {4 B} PH1
    */
   servedFromSignedHttpExchange: 'Served from Signed HTTP Exchange, resource size: {PH1}',
-  /**
-   * @description Cell title in Network Data Grid Node of the Network panel. Indicates that the response came from preloaded web bundle. See https://web.dev/web-bundles/
-   * @example {4 B} PH1
-   */
-  servedFromWebBundle: 'Served from Web Bundle, resource size: {PH1}',
   /**
    * @description Text of a DOM element in Network Data Grid Node of the Network panel
    */
@@ -278,19 +278,6 @@ const UIStrings = {
    * @description Text describing the depth of a top level node in the network datagrid
    */
   level: 'level 1',
-  /**
-   * @description Text in Network Data Grid Node of the Network panel
-   */
-  webBundleError: 'Web Bundle error',
-  /**
-   * @description Alternative text for the web bundle inner request icon in Network Data Grid Node of the Network panel
-   * Indicates that the response came from preloaded web bundle. See https://web.dev/web-bundles/
-   */
-  webBundleInnerRequest: 'Served from Web Bundle',
-  /**
-   * @description Text in Network Data Grid Node of the Network panel
-   */
-  webBundle: '(Web Bundle)',
   /**
    * @description Tooltip text for subtitles of Time cells in Network request rows. Latency is the time difference
    * between the time a response to a network request is received and the time the request is started.
@@ -338,7 +325,6 @@ const UIStrings = {
   /**
    * @description Tooltip to explain why the request has an IPP icon
    */
-  responseIsIpProtectedToolTip: 'This request was sent through IP Protection proxies.',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkDataGridNode.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -971,6 +957,10 @@ export class NetworkRequestNode extends NetworkNode {
     return this.requestInternal.resourceType() === Common.ResourceType.resourceTypes.Prefetch;
   }
 
+  throttlingConditions(): SDK.NetworkManager.AppliedNetworkConditions|undefined {
+    return SDK.NetworkManager.MultitargetNetworkManager.instance().appliedRequestConditions(this.requestInternal);
+  }
+
   override isWarning(): boolean {
     return this.isFailed() && this.isPrefetch();
   }
@@ -979,13 +969,14 @@ export class NetworkRequestNode extends NetworkNode {
     return this.isFailed() && !this.isPrefetch();
   }
 
-  override createCells(element: Element): void {
+  override createCells(trElement: HTMLElement): void {
     this.initiatorCell = null;
 
-    element.classList.toggle('network-warning-row', this.isWarning());
-    element.classList.toggle('network-error-row', this.isError());
-    element.classList.toggle('network-navigation-row', this.isNavigationRequestInternal);
-    super.createCells(element);
+    trElement.classList.toggle('network-throttled-row', Boolean(this.throttlingConditions()?.urlPattern));
+    trElement.classList.toggle('network-warning-row', this.isWarning());
+    trElement.classList.toggle('network-error-row', this.isError());
+    trElement.classList.toggle('network-navigation-row', this.isNavigationRequestInternal);
+    super.createCells(trElement);
     this.updateBackgroundColor();
   }
 
@@ -1152,6 +1143,14 @@ export class NetworkRequestNode extends NetworkNode {
   }
 
   override select(suppressSelectedEvent?: boolean): void {
+    const id = this.request()?.requestId();
+    if (id) {
+      const floatyHandled =
+          UI.Floaty.onFloatyClick({type: UI.Floaty.FloatyContextTypes.NETWORK_REQUEST, data: {requestId: id}});
+      if (floatyHandled) {
+        return;
+      }
+    }
     super.select(suppressSelectedEvent);
     this.parentView().dispatchEventToListeners(Events.RequestSelected, this.requestInternal);
   }
@@ -1183,15 +1182,9 @@ export class NetworkRequestNode extends NetworkNode {
       cell.addEventListener('focus', () => this.parentView().resetFocus());
 
       // render icons
-      if (this.requestInternal.isIpProtectionUsed()) {
-        const ippIcon = IconButton.Icon.create('shield', 'icon');
-        ippIcon.title = i18nString(UIStrings.responseIsIpProtectedToolTip);
-        ippIcon.style.color = 'var(--sys-color-on-surface-subtle);';
-        cell.appendChild(ippIcon);
-      }
 
       const iconElement = PanelUtils.getIconForNetworkRequest(this.requestInternal);
-      // eslint-disable-next-line rulesdir/no-lit-render-outside-of-view
+      // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
       render(iconElement, cell);
 
       // render Ask AI button
@@ -1202,22 +1195,6 @@ export class NetworkRequestNode extends NetworkNode {
     }
 
     if (columnId === 'name') {
-      const webBundleInnerRequestInfo = this.requestInternal.webBundleInnerRequestInfo();
-      if (webBundleInnerRequestInfo) {
-        const secondIconElement = IconButton.Icon.create('bundle', 'icon');
-        secondIconElement.style.color = 'var(--icon-info)';
-        secondIconElement.title = i18nString(UIStrings.webBundleInnerRequest);
-
-        const networkManager = SDK.NetworkManager.NetworkManager.forRequest(this.requestInternal);
-        if (webBundleInnerRequestInfo.bundleRequestId && networkManager) {
-          cell.appendChild(Components.Linkifier.Linkifier.linkifyRevealable(
-              new NetworkForward.NetworkRequestId.NetworkRequestId(
-                  webBundleInnerRequestInfo.bundleRequestId, networkManager),
-              secondIconElement, undefined, undefined, undefined, 'webbundle-request'));
-        } else {
-          cell.appendChild(secondIconElement);
-        }
-      }
       const name = Platform.StringUtilities.trimMiddle(this.requestInternal.name(), 100);
       const networkManager = SDK.NetworkManager.NetworkManager.forRequest(this.requestInternal);
       UI.UIUtils.createTextChild(cell, networkManager ? networkManager.target().decorateLabel(name) : name);
@@ -1236,12 +1213,8 @@ export class NetworkRequestNode extends NetworkNode {
         'network-dim-cell', !this.isFailed() && (this.requestInternal.cached() || !this.requestInternal.statusCode));
 
     const corsErrorStatus = this.requestInternal.corsErrorStatus();
-    const webBundleErrorMessage = this.requestInternal.webBundleInfo()?.errorMessage ||
-        this.requestInternal.webBundleInnerRequestInfo()?.errorMessage;
-    if (webBundleErrorMessage) {
-      this.setTextAndTitle(cell, i18nString(UIStrings.webBundleError), webBundleErrorMessage);
-    } else if (
-        this.requestInternal.failed && !this.requestInternal.canceled && !this.requestInternal.wasBlocked() &&
+
+    if (this.requestInternal.failed && !this.requestInternal.canceled && !this.requestInternal.wasBlocked() &&
         !corsErrorStatus) {
       const failText = i18nString(UIStrings.failed);
       if (this.requestInternal.localizedFailDescription) {
@@ -1463,7 +1436,7 @@ export class NetworkRequestNode extends NetworkNode {
       case SDK.NetworkRequest.InitiatorType.PREFLIGHT: {
         cell.appendChild(document.createTextNode(i18nString(UIStrings.preflight)));
         if (initiator.initiatorRequest) {
-          const icon = IconButton.Icon.create('arrow-up-down-circle');
+          const icon = createIcon('arrow-up-down-circle');
           const link = Components.Linkifier.Linkifier.linkifyRevealable(
               initiator.initiatorRequest, icon, undefined, i18nString(UIStrings.selectTheRequestThatTriggered),
               'trailing-link-icon', 'initator-request');
@@ -1526,10 +1499,6 @@ export class NetworkRequestNode extends NetworkNode {
       UI.UIUtils.createTextChild(cell, i18n.i18n.lockedString('(signed-exchange)'));
       UI.Tooltip.Tooltip.install(cell, i18nString(UIStrings.servedFromSignedHttpExchange, {PH1: resourceSize}));
       cell.classList.add('network-dim-cell');
-    } else if (this.requestInternal.webBundleInnerRequestInfo()) {
-      UI.UIUtils.createTextChild(cell, i18nString(UIStrings.webBundle));
-      UI.Tooltip.Tooltip.install(cell, i18nString(UIStrings.servedFromWebBundle, {PH1: resourceSize}));
-      cell.classList.add('network-dim-cell');
     } else if (this.requestInternal.fromPrefetchCache()) {
       UI.UIUtils.createTextChild(cell, i18nString(UIStrings.prefetchCache));
       UI.Tooltip.Tooltip.install(cell, i18nString(UIStrings.servedFromPrefetchCacheResource, {PH1: resourceSize}));
@@ -1547,6 +1516,16 @@ export class NetworkRequestNode extends NetworkNode {
   }
 
   private renderTimeCell(cell: HTMLElement): void {
+    const throttlingConditions = this.throttlingConditions();
+    if (throttlingConditions?.urlPattern) {
+      const throttlingConditionsTitle = typeof throttlingConditions.conditions.title === 'string' ?
+          throttlingConditions.conditions.title :
+          throttlingConditions.conditions.title();
+      const icon = createIcon('watch');
+      icon.title = i18nString(UIStrings.wasThrottled, {PH1: throttlingConditionsTitle});
+      icon.addEventListener('click', () => void Common.Revealer.reveal(throttlingConditions));
+      cell.append(icon);
+    }
     if (this.requestInternal.duration > 0) {
       this.setTextAndTitle(cell, i18n.TimeUtilities.secondsToString(this.requestInternal.duration));
       this.appendSubtitle(

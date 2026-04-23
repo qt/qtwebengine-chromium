@@ -78,6 +78,7 @@ class TensorView;
 struct DedicatedBinding;
 struct ShaderModule;
 struct ShaderObject;
+struct DrawDispatchVuid;
 class VideoSession;
 class VideoSessionParameters;
 class DataGraphPipelineSession;
@@ -545,13 +546,7 @@ class DeviceState : public vvl::base::Device {
     void DestroyObjectMaps();
 
   public:
-    DeviceState(vvl::dispatch::Device* dev, InstanceState* instance)
-        : BaseClass(dev, instance, LayerObjectTypeStateTracker),
-          instance_state(instance),
-          special_supported(dev->stateless_device_data.special_supported) {
-        physical_device_state = instance_state->Get<vvl::PhysicalDevice>(physical_device).get();
-        physical_device_state->has_maintenance9 = dev->stateless_device_data.special_supported.has_maintenance9;
-    }
+    DeviceState(vvl::dispatch::Device* dev, InstanceState* instance);
     ~DeviceState();
 
     void AddProxy(DeviceProxy& proxy);
@@ -852,13 +847,12 @@ class DeviceState : public vvl::base::Device {
                                            const VkAllocationCallbacks* pAllocator, VkTensorViewARM* pView,
                                            const RecordObject& record_obj) override;
     virtual std::shared_ptr<vvl::Buffer> CreateBufferState(VkBuffer handle, const VkBufferCreateInfo* create_info);
-    void PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
-                                   VkBuffer* pBuffer, const RecordObject& record_obj,
-                                   chassis::CreateBuffer& chassis_state) override;
     void PostCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
                                     VkBuffer* pBuffer, const RecordObject& record_obj) override;
     void PreCallRecordDestroyBuffer(VkDevice device, VkBuffer buffer, const VkAllocationCallbacks* pAllocator,
                                     const RecordObject& record_obj) override;
+    void RecordCreateDescriptorBuffer(const vvl::Buffer& buffer_state, const VkBufferCreateInfo& create_info);
+    void RecordDestoryDescriptorBuffer(const vvl::Buffer& buffer_state);
 
     virtual std::shared_ptr<vvl::BufferView> CreateBufferViewState(const std::shared_ptr<vvl::Buffer>& buffer, VkBufferView handle,
                                                                    const VkBufferViewCreateInfo* create_info,
@@ -1016,10 +1010,9 @@ class DeviceState : public vvl::base::Device {
     void PostCallRecordResetQueryPool(VkDevice device, VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount,
                                       const RecordObject& record_obj) override;
 
-    virtual std::shared_ptr<vvl::Pipeline> CreateRayTracingPipelineState(const VkRayTracingPipelineCreateInfoNV* create_info,
+    virtual std::shared_ptr<vvl::Pipeline> CreateRayTracingPipelineStateNV(const VkRayTracingPipelineCreateInfoNV* create_info,
                                                                          std::shared_ptr<const vvl::PipelineCache> pipeline_cache,
-                                                                         std::shared_ptr<const vvl::PipelineLayout>&& layout,
-                                                                         spirv::StatelessData* stateless_data) const;
+                                                                         std::shared_ptr<const vvl::PipelineLayout>&& layout) const;
     bool PreCallValidateCreateRayTracingPipelinesNV(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                     const VkRayTracingPipelineCreateInfoNV* pCreateInfos,
                                                     const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
@@ -1028,10 +1021,10 @@ class DeviceState : public vvl::base::Device {
                                                    const VkRayTracingPipelineCreateInfoNV* pCreateInfos,
                                                    const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
                                                    const RecordObject& record_obj, PipelineStates& pipeline_states) override;
-    virtual std::shared_ptr<vvl::Pipeline> CreateRayTracingPipelineState(const VkRayTracingPipelineCreateInfoKHR* create_info,
+    virtual std::shared_ptr<vvl::Pipeline> CreateRayTracingPipelineStateKHR(const VkRayTracingPipelineCreateInfoKHR* create_info,
                                                                          std::shared_ptr<const vvl::PipelineCache> pipeline_cache,
                                                                          std::shared_ptr<const vvl::PipelineLayout>&& layout,
-                                                                         spirv::StatelessData* stateless_data) const;
+                                                                         std::vector<spirv::StatelessData>& stateless_data) const;
     bool PreCallValidateCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperationKHR deferredOperation,
                                                      VkPipelineCache pipelineCache, uint32_t count,
                                                      const VkRayTracingPipelineCreateInfoKHR* pCreateInfos,
@@ -1256,10 +1249,15 @@ class DeviceState : public vvl::base::Device {
     void PostCallRecordCmdEndRendering(VkCommandBuffer commandBuffer, const RecordObject& record_obj) override;
     void PostCallRecordCmdEndRendering2EXT(VkCommandBuffer commandBuffer, const VkRenderingEndInfoEXT* pRenderingEndInfo,
                                            const RecordObject& record_obj) override;
+    void PostCallRecordCmdEndRendering2KHR(VkCommandBuffer commandBuffer, const VkRenderingEndInfoKHR* pRenderingEndInfo,
+                                           const RecordObject& record_obj) override;
     void PostCallRecordCmdBeginRenderPass2(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin,
                                            const VkSubpassBeginInfo* pSubpassBeginInfo, const RecordObject& record_obj) override;
     void PostCallRecordCmdBeginRenderPass2KHR(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin,
                                               const VkSubpassBeginInfo* pSubpassBeginInfo, const RecordObject& record_obj) override;
+    void PostCallRecordCmdBeginCustomResolveEXT(VkCommandBuffer commandBuffer,
+                                                const VkBeginCustomResolveInfoEXT* pBeginCustomResolveInfo,
+                                                const RecordObject& record_obj) override;
     void PostCallRecordCmdBeginVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoBeginCodingInfoKHR* pBeginInfo,
                                               const RecordObject& record_obj) override;
     void PostCallRecordCmdBeginTransformFeedbackEXT(VkCommandBuffer commandBuffer, uint32_t firstCounterBuffer,
@@ -2007,9 +2005,12 @@ class DeviceState : public vvl::base::Device {
     // < external format, colorAttachmentFormat > (VK_ANDROID_external_format_resolve)
     vvl::concurrent_unordered_map<uint64_t, VkFormat> ahb_ext_resolve_formats_map;
 
-    std::atomic<VkDeviceSize> descriptorBufferAddressSpaceSize = {0u};
-    std::atomic<VkDeviceSize> resourceDescriptorBufferAddressSpaceSize = {0u};
-    std::atomic<VkDeviceSize> samplerDescriptorBufferAddressSpaceSize = {0u};
+    // For VK_EXT_descriptor_buffer need to track global buffer size allocated
+    struct DescriptorBufferAddressSpace {
+        std::atomic<VkDeviceSize> all = {0u};
+        std::atomic<VkDeviceSize> resource = {0u};
+        std::atomic<VkDeviceSize> sampler = {0u};
+    } descriptor_buffer_address_space;
 
     // Keep track of identifier -> state
     vvl::unordered_map<VkShaderModuleIdentifierEXT, std::shared_ptr<vvl::ShaderModule>> shader_identifier_map_;
@@ -2200,7 +2201,7 @@ class DeviceProxy : public vvl::base::Device {
     virtual bool ValidateDescriptorImageLayout(const LogObjectList& objlist, const vvl::Image& image_state,
                                                VkImageAspectFlags aspect_mask, VkImageLayout explicit_layout,
                                                const CommandBufferImageLayoutMap& cb_layout_map,
-                                               subresource_adapter::RangeGenerator&& range_gen, const Location& image_loc,
+                                               subresource_adapter::RangeGenerator&& range_gen, const DrawDispatchVuid& vuids,
                                                std::function<std::string()> describe_descriptor_callback) const {
         return false;
     }

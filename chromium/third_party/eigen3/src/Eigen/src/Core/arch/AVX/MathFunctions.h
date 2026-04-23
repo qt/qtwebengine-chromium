@@ -25,8 +25,8 @@ EIGEN_INSTANTIATE_GENERIC_MATH_FUNCS_FLOAT(Packet8f)
 
 EIGEN_DOUBLE_PACKET_FUNCTION(atanh, Packet4d)
 EIGEN_DOUBLE_PACKET_FUNCTION(log, Packet4d)
-EIGEN_DOUBLE_PACKET_FUNCTION(log2, Packet4d)
 EIGEN_DOUBLE_PACKET_FUNCTION(exp, Packet4d)
+EIGEN_DOUBLE_PACKET_FUNCTION(log2, Packet4d)
 EIGEN_DOUBLE_PACKET_FUNCTION(tanh, Packet4d)
 EIGEN_DOUBLE_PACKET_FUNCTION(cbrt, Packet4d)
 #ifdef EIGEN_VECTORIZE_AVX2
@@ -35,6 +35,8 @@ EIGEN_DOUBLE_PACKET_FUNCTION(cos, Packet4d)
 #endif
 EIGEN_GENERIC_PACKET_FUNCTION(atan, Packet4d)
 EIGEN_GENERIC_PACKET_FUNCTION(exp2, Packet4d)
+EIGEN_GENERIC_PACKET_FUNCTION(expm1, Packet4d)
+EIGEN_GENERIC_PACKET_FUNCTION(log1p, Packet4d)
 
 // Notice that for newer processors, it is counterproductive to use Newton
 // iteration for square root. In particular, Skylake and Zen2 processors
@@ -104,6 +106,7 @@ BF16_PACKET_FUNCTION(Packet8f, Packet8bf, plog1p)
 BF16_PACKET_FUNCTION(Packet8f, Packet8bf, plog2)
 BF16_PACKET_FUNCTION(Packet8f, Packet8bf, preciprocal)
 BF16_PACKET_FUNCTION(Packet8f, Packet8bf, prsqrt)
+BF16_PACKET_FUNCTION(Packet8f, Packet8bf, pcbrt)
 BF16_PACKET_FUNCTION(Packet8f, Packet8bf, psin)
 BF16_PACKET_FUNCTION(Packet8f, Packet8bf, psqrt)
 BF16_PACKET_FUNCTION(Packet8f, Packet8bf, ptanh)
@@ -120,6 +123,7 @@ F16_PACKET_FUNCTION(Packet8f, Packet8h, preciprocal)
 F16_PACKET_FUNCTION(Packet8f, Packet8h, prsqrt)
 F16_PACKET_FUNCTION(Packet8f, Packet8h, psin)
 F16_PACKET_FUNCTION(Packet8f, Packet8h, psqrt)
+F16_PACKET_FUNCTION(Packet8f, Packet8h, pcbrt)
 F16_PACKET_FUNCTION(Packet8f, Packet8h, ptanh)
 #endif
 

@@ -15,6 +15,7 @@
 #include "quiche/quic/core/io/quic_event_loop.h"
 #include "quiche/quic/moqt/moqt_relay_publisher.h"
 #include "quiche/quic/moqt/moqt_session_callbacks.h"
+#include "quiche/quic/moqt/moqt_session_interface.h"
 #include "quiche/quic/moqt/tools/moqt_client.h"
 #include "quiche/quic/moqt/tools/moqt_server.h"
 #include "quiche/quic/tools/quic_url.h"
@@ -34,8 +35,11 @@ class MoqtRelay {
   // If |default_upstream| is empty, no default upstream session is created.
   MoqtRelay(std::unique_ptr<quic::ProofSource> proof_source,
             std::string bind_address, uint16_t bind_port,
-            absl::string_view default_upstream, bool ignore_certificate,
-            bool broadcast_mode);
+            absl::string_view default_upstream, bool ignore_certificate);
+  virtual ~MoqtRelay() {
+    is_closing_ = true;
+    publisher_.Close();
+  }
 
   void HandleEventsForever() { server_->quic_server().HandleEventsForever(); }
 
@@ -47,11 +51,13 @@ class MoqtRelay {
   MoqtRelay(std::unique_ptr<quic::ProofSource> proof_source,
             std::string bind_address, uint16_t bind_port,
             absl::string_view default_upstream, bool ignore_certificate,
-            bool broadcast_mode, quic::QuicEventLoop* client_event_loop);
+            quic::QuicEventLoop* client_event_loop);
   // Other functions for MoqtTestRelay.
   MoqtServer* server() { return server_.get(); }
   MoqtClient* client() { return default_upstream_client_.get(); }
   MoqtRelayPublisher* publisher() { return &publisher_; }
+
+  virtual void SetNamespaceCallbacks(MoqtSessionInterface* session);
 
  private:
   std::unique_ptr<moqt::MoqtClient> CreateClient(
@@ -63,13 +69,14 @@ class MoqtRelay {
   absl::StatusOr<MoqtConfigureSessionCallback> IncomingSessionHandler(
       absl::string_view path);
 
-  const bool ignore_certificate_;
+  bool is_closing_ = false;
   quic::QuicEventLoop* client_event_loop_;
+
+  MoqtRelayPublisher publisher_;
 
   // Pointer to a client that has received GOAWAY.
   std::unique_ptr<MoqtClient> default_upstream_client_;
   std::unique_ptr<MoqtServer> server_;
-  MoqtRelayPublisher publisher_;
 };
 
 }  // namespace moqt

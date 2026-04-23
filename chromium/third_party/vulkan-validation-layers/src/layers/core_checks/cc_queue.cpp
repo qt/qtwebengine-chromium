@@ -49,7 +49,6 @@ struct CommandBufferSubmitState {
     // This does not accumulate state from the previous submissions.
     QueryMap local_query_to_state_map;
     EventMap local_event_signal_info;
-    vvl::unordered_map<const vvl::Image *, ImageLayoutMap> local_image_layout_state;
     vvl::unordered_map<VkVideoSessionKHR, vvl::VideoSessionDeviceState> local_video_session_state{};
 
     CommandBufferSubmitState(const CoreChecks &c, const vvl::Queue &q) : core(c), queue_state(q) {
@@ -213,7 +212,14 @@ bool CoreChecks::PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCount,
                                                        : "no VkProtectedSubmitInfo in the pNext chain");
             }
 
-            // Validate flags for dynamic rendering
+            // Validate dynamic rendering suspended state
+            if (suspended_render_pass_instance &&
+                HasActionOrSyncCommandBeforeBeginRendering(cb_state->first_action_or_sync_command)) {
+                skip |= LogError("VUID-VkSubmitInfo-pCommandBuffers-06015", queue, submit_loc,
+                                 "has a suspended render pass instance, but pCommandBuffers[%" PRIu32
+                                 "] records %s before that instance is resumed.",
+                                 i, vvl::String(cb_state->first_action_or_sync_command));
+            }
             if (suspended_render_pass_instance && cb_state->has_render_pass_instance && !cb_state->resumes_render_pass_instance) {
                 skip |= LogError("VUID-VkSubmitInfo-pCommandBuffers-06016", queue, submit_loc,
                                  "has a suspended render pass instance, but pCommandBuffers[%" PRIu32
@@ -226,10 +232,12 @@ bool CoreChecks::PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCount,
                     skip |= LogError("VUID-VkSubmitInfo-pCommandBuffers-06193", objlist, cb_loc,
                                      "resumes a render pass instance, but there is no suspended render pass instance.");
                 }
-                suspended_render_pass_instance = false;
             }
-            if (cb_state->suspends_render_pass_instance) {
-                suspended_render_pass_instance = true;
+            // Update suspension state.
+            // NOTE: SuspendState::Empty means that command buffer does not change suspension state,
+            // for example, it does not contain render pass instances
+            if (cb_state->last_suspend_state != vvl::CommandBuffer::SuspendState::Empty) {
+                suspended_render_pass_instance = (cb_state->last_suspend_state == vvl::CommandBuffer::SuspendState::Suspended);
             }
         }
         // Renderpass should not be in suspended state after the final cmdbuf
@@ -379,21 +387,31 @@ bool CoreChecks::ValidateQueueSubmit2(VkQueue queue, uint32_t submitCount, const
                                  submit_loc.Fields().c_str(), string_VkSubmitFlags(submit.flags).c_str());
             }
 
+            // Validate dynamic rendering suspended state
+            if (suspended_render_pass_instance &&
+                HasActionOrSyncCommandBeforeBeginRendering(cb_state->first_action_or_sync_command)) {
+                skip |= LogError("VUID-VkSubmitInfo2-commandBuffer-06011", queue, submit_loc,
+                                 "has a suspended render pass instance, but pCommandBuffers[%" PRIu32
+                                 "] records %s before that instance is resumed.",
+                                 i, vvl::String(cb_state->first_action_or_sync_command));
+            }
             if (suspended_render_pass_instance && cb_state->has_render_pass_instance && !cb_state->resumes_render_pass_instance) {
                 skip |= LogError("VUID-VkSubmitInfo2-commandBuffer-06012", queue, submit_loc,
                                  "has a suspended render pass instance, but pCommandBuffers[%" PRIu32
                                  "] has its own render pass instance that does not resume it.",
                                  i);
             }
-            if (cb_state->suspends_render_pass_instance) {
-                suspended_render_pass_instance = true;
-            }
             if (cb_state->resumes_render_pass_instance) {
                 if (!suspended_render_pass_instance) {
                     skip |= LogError("VUID-VkSubmitInfo2-commandBuffer-06192", queue, cb_loc,
                                      "resumes a render pass instance, but there is no suspended render pass instance.");
                 }
-                suspended_render_pass_instance = false;
+            }
+            // Update suspension state.
+            // NOTE: SuspendState::Empty means that command buffer does not change suspension state,
+            // for example, it does not contain render pass instances
+            if (cb_state->last_suspend_state != vvl::CommandBuffer::SuspendState::Empty) {
+                suspended_render_pass_instance = (cb_state->last_suspend_state == vvl::CommandBuffer::SuspendState::Suspended);
             }
 
             skip |= ValidateRenderPassStripeSubmitInfo(queue, *cb_state, submit.pCommandBufferInfos[i].pNext, info_loc);

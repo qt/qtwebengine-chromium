@@ -1,7 +1,7 @@
 // Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Platform from '../../core/platform/platform.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
@@ -215,8 +215,7 @@ export class ConsoleViewport {
   private updateFocusedItem(focusLastChild?: boolean): void {
     const selectedElement = this.renderedElementAt(this.virtualSelectedIndex);
     const changed = this.lastSelectedElement !== selectedElement;
-    const containerHasFocus =
-        this.#contentElement === Platform.DOMUtilities.deepActiveElement(this.element.ownerDocument);
+    const containerHasFocus = this.#contentElement === UI.DOMUtilities.deepActiveElement(this.element.ownerDocument);
     if (this.lastSelectedElement && changed) {
       this.lastSelectedElement.classList.remove('console-selected');
     }
@@ -425,7 +424,7 @@ export class ConsoleViewport {
 
     for (let i = start; i <= end; i++) {
       const element = (this.providerElement(i) as ConsoleViewMessage);
-      if (element && element.consoleMessage().type === 'table') {
+      if (element?.consoleMessage().type === 'table') {
         return true;
       }
     }

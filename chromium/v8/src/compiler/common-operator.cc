@@ -626,6 +626,7 @@ const ExitMachineGraphParameters& ExitMachineGraphParametersOf(
   V(TrapRemByZero)                 \
   V(TrapFloatUnrepresentable)      \
   V(TrapTableOutOfBounds)          \
+  V(TrapNullFunc)                  \
   V(TrapFuncSigMismatch)
 
 #define CACHED_PARAMETER_LIST(V) \
@@ -1012,6 +1013,15 @@ const Operator* CommonOperatorBuilder::Return(int value_input_count) {
       IrOpcode::kReturn, Operator::kNoThrow,  // opcode
       "Return",                               // name
       value_input_count + 1, 1, 1, 0, 0, 1);  // counts
+}
+
+const Operator* CommonOperatorBuilder::MajorGCForCompilerTesting() {
+  // We put MajorGCForCompilerTesting on both the effect and the control chain
+  // so that it doesn't get hoisted out of (or pushed in) branches or move
+  // before/after various loads/stores.
+  return zone()->New<Operator>(IrOpcode::kMajorGCForCompilerTesting,
+                               Operator::kFoldable, "MajorGCForCompilerTesting",
+                               0, 1, 1, 0, 1, 1);
 }
 
 const Operator* CommonOperatorBuilder::StaticAssert(const char* source) {

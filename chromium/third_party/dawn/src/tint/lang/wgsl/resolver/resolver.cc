@@ -79,6 +79,7 @@
 #include "src/tint/lang/wgsl/resolver/uniformity.h"
 #include "src/tint/lang/wgsl/resolver/unresolved_identifier.h"
 #include "src/tint/lang/wgsl/sem/array.h"
+#include "src/tint/lang/wgsl/sem/behavior.h"
 #include "src/tint/lang/wgsl/sem/break_if_statement.h"
 #include "src/tint/lang/wgsl/sem/builtin_enum_expression.h"
 #include "src/tint/lang/wgsl/sem/builtin_fn.h"
@@ -162,9 +163,8 @@ bool Resolver::Resolve() {
 
     bool result = ResolveInternal();
 
-    if (DAWN_UNLIKELY(!result && !diagnostics_.ContainsErrors())) {
-        TINT_ICE() << "resolving failed, but no error was raised";
-    }
+    TINT_ASSERT(result || diagnostics_.ContainsErrors())
+        << "resolving failed, but no error was raised";
 
     if (!validator_.Enables(b.AST().Enables())) {
         return false;
@@ -1188,7 +1188,6 @@ sem::IfStatement* Resolver::IfStatement(const ast::IfStatement* stmt) {
             return false;
         }
         sem->SetCondition(cond);
-        sem->Behaviors() = cond->Behaviors();
         sem->Behaviors().Remove(sem::Behavior::kNext);
 
         Mark(stmt->body);
@@ -1237,6 +1236,11 @@ sem::LoopStatement* Resolver::LoopStatement(const ast::LoopStatement* stmt) {
             auto& behaviors = sem->Behaviors();
             behaviors = body->Behaviors();
 
+            // If the body only returns, then the entire loop only returns.
+            // Control never reaches the continuing block, and never reaches
+            // code that follows the loop.
+            const bool only_return = behaviors == sem::Behaviors(sem::Behavior::kReturn);
+
             if (stmt->continuing) {
                 Mark(stmt->continuing);
                 auto* continuing = StatementScope(
@@ -1247,9 +1251,12 @@ sem::LoopStatement* Resolver::LoopStatement(const ast::LoopStatement* stmt) {
                 if (!continuing) {
                     return false;
                 }
-                behaviors.Add(continuing->Behaviors());
+                if (!only_return) {
+                    behaviors.Add(continuing->Behaviors());
+                }
             }
 
+            // If the body behaviour is just Return, then this has no effect.
             if (behaviors.Contains(sem::Behavior::kBreak)) {  // Does the loop exit?
                 behaviors.Add(sem::Behavior::kNext);
             } else {
@@ -1282,7 +1289,6 @@ sem::ForLoopStatement* Resolver::ForLoopStatement(const ast::ForLoopStatement* s
                 return false;
             }
             sem->SetCondition(cond);
-            behaviors.Add(cond->Behaviors());
         }
 
         if (auto* continuing = stmt->continuing) {
@@ -1324,7 +1330,6 @@ sem::WhileStatement* Resolver::WhileStatement(const ast::WhileStatement* stmt) {
             return false;
         }
         sem->SetCondition(cond);
-        behaviors.Add(cond->Behaviors());
 
         Mark(stmt->body);
 
@@ -1335,11 +1340,11 @@ sem::WhileStatement* Resolver::WhileStatement(const ast::WhileStatement* stmt) {
         }
 
         behaviors.Add(body->Behaviors());
-        // Always consider the while as having a 'next' behaviour because it has
-        // a condition. We don't check if the condition will terminate but it isn't
-        // valid to have an infinite loop in a WGSL program, so a non-terminating
-        // condition is already an invalid program.
-        behaviors.Add(sem::Behavior::kNext);
+        if (stmt->condition || behaviors.Contains(sem::Behavior::kBreak)) {  // Does the loop exit?
+            behaviors.Add(sem::Behavior::kNext);
+        } else {
+            behaviors.Remove(sem::Behavior::kNext);
+        }
         behaviors.Remove(sem::Behavior::kBreak, sem::Behavior::kContinue);
 
         return validator_.WhileStatement(sem);
@@ -1698,7 +1703,6 @@ const sem::ValueExpression* Resolver::Load(const sem::ValueExpression* expr) {
     }
 
     auto* load = b.create<sem::Load>(expr, current_statement_, expr->Stage());
-    load->Behaviors() = expr->Behaviors();
     b.Sem().Replace(expr->Declaration(), load);
 
     // Register the load for the alias analysis.
@@ -1748,7 +1752,6 @@ const sem::ValueExpression* Resolver::Materialize(
     }
 
     auto* m = b.create<sem::Materialize>(expr, current_statement_, concrete_ty, materialized_val);
-    m->Behaviors() = expr->Behaviors();
     b.Sem().Replace(decl, m);
     return m;
 }
@@ -1898,7 +1901,6 @@ sem::ValueExpression* Resolver::IndexAccessor(const ast::IndexAccessorExpression
     }
     auto* sem = b.create<sem::IndexAccessorExpression>(
         expr, ty, stage, obj, idx, current_statement_, std::move(val), obj->RootIdentifier());
-    sem->Behaviors() = idx->Behaviors() + obj->Behaviors();
     return sem;
 }
 
@@ -1917,7 +1919,6 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
     Vector<const sem::ValueExpression*, 8> args;
     args.Reserve(expr->args.Length());
     auto args_stage = core::EvaluationStage::kConstant;
-    sem::Behaviors arg_behaviors;
     for (size_t i = 0; i < expr->args.Length(); i++) {
         auto* arg = sem_.GetVal(expr->args[i]);
         if (!arg) {
@@ -1925,9 +1926,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
         }
         args.Push(arg);
         args_stage = core::EarliestStage(args_stage, arg->Stage());
-        arg_behaviors.Add(arg->Behaviors());
     }
-    arg_behaviors.Remove(sem::Behavior::kNext);
 
     // ctor_or_conv is a helper for building either a sem::ValueConstructor or
     // sem::ValueConversion call for a CtorConvIntrinsic with an optional template argument type.
@@ -2098,10 +2097,17 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                 auto* call_target = subgroup_matrix_ctors_.GetOrAdd(
                     SubgroupMatrixConstructorSig{{m, args.Length()}},
                     [&]() -> sem::ValueConstructor* {
+                        // 8-bit integer matrices use 32-bit shader scalar types.
+                        auto* scalar_ty = m->Type();
+                        if (m->Type()->Is<core::type::I8>()) {
+                            scalar_ty = b.create<core::type::I32>();
+                        } else if (m->Type()->Is<core::type::U8>()) {
+                            scalar_ty = b.create<core::type::U32>();
+                        }
                         auto params = tint::Transform(args, [&](auto, size_t i) {
                             return b.create<sem::Parameter>(nullptr,  // declaration
                                                             static_cast<uint32_t>(i),  // index
-                                                            m->Type());
+                                                            scalar_ty);
                         });
                         return b.create<sem::ValueConstructor>(m, std::move(params),
                                                                core::EvaluationStage::kRuntime);
@@ -2111,7 +2117,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                     return nullptr;
                 }
 
-                if (DAWN_UNLIKELY(!validator_.SubgroupMatrixConstructor(expr, m))) {
+                if (DAWN_UNLIKELY(!validator_.SubgroupMatrixConstructor(expr, m, call_target))) {
                     return nullptr;
                 }
 
@@ -2193,7 +2199,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
         target,  //
         [&](const sem::FunctionExpression* fn_expr) {
             return FunctionCall(expr, const_cast<sem::Function*>(fn_expr->Function()),
-                                std::move(args), arg_behaviors);
+                                std::move(args));
         },
         [&](const sem::TypeExpression* ty_expr) {
             return Switch(
@@ -3123,8 +3129,7 @@ size_t Resolver::NestDepth(const core::type::Type* ty) const {
 
 sem::Call* Resolver::FunctionCall(const ast::CallExpression* expr,
                                   sem::Function* target,
-                                  VectorRef<const sem::ValueExpression*> args_in,
-                                  sem::Behaviors arg_behaviors) {
+                                  VectorRef<const sem::ValueExpression*> args_in) {
     Vector<const sem::ValueExpression*, 8> args = std::move(args_in);
     if (!MaybeMaterializeAndLoadArguments(args, target)) {
         return nullptr;
@@ -3137,8 +3142,6 @@ sem::Call* Resolver::FunctionCall(const ast::CallExpression* expr,
                                      /* constant_value */ nullptr);
 
     target->AddCallSite(call);
-
-    call->Behaviors() = arg_behaviors + target->Behaviors();
 
     if (!validator_.FunctionCall(call, current_statement_)) {
         return nullptr;
@@ -3523,7 +3526,6 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
                     // from the pointer expression.
                     auto* load =
                         b.create<sem::Load>(obj_expr, current_statement_, obj_expr->Stage());
-                    load->Behaviors() = obj_expr->Behaviors();
                     b.Sem().Replace(obj_expr->Declaration(), load);
 
                     // Register the load for the alias analysis.
@@ -3638,8 +3640,6 @@ sem::ValueExpression* Resolver::Binary(const ast::BinaryExpression* expr) {
     }
 
     auto* sem = b.create<sem::ValueExpression>(expr, res_ty, stage, current_statement_, value);
-    sem->Behaviors() = lhs->Behaviors() + rhs->Behaviors();
-
     return sem;
 }
 
@@ -3667,9 +3667,10 @@ sem::ValueExpression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
 
                 auto* array = unary->expr->As<ast::IndexAccessorExpression>();
                 auto* member = unary->expr->As<ast::MemberAccessorExpression>();
-                if ((array && sem_.TypeOf(array->object)->UnwrapRef()->Is<core::type::Vector>()) ||
+                if ((array &&
+                     sem_.TypeOf(array->object)->UnwrapPtrOrRef()->Is<core::type::Vector>()) ||
                     (member &&
-                     sem_.TypeOf(member->object)->UnwrapRef()->Is<core::type::Vector>())) {
+                     sem_.TypeOf(member->object)->UnwrapPtrOrRef()->Is<core::type::Vector>())) {
                     AddError(unary->expr->source)
                         << "cannot take the address of a vector component";
                     return nullptr;
@@ -3739,7 +3740,6 @@ sem::ValueExpression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
 
     auto* sem =
         b.create<sem::ValueExpression>(unary, ty, stage, current_statement_, value, root_ident);
-    sem->Behaviors() = expr->Behaviors();
     return sem;
 }
 
@@ -4346,6 +4346,7 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                 },
                 [&](const ast::BuiltinAttribute* attr) {
                     attributes.builtin = attr->builtin;
+                    attributes.depth_mode = attr->depth_mode;
                     return true;
                 },
                 [&](const ast::InterpolateAttribute* attr) {
@@ -4456,8 +4457,6 @@ sem::Statement* Resolver::ReturnStatement(const ast::ReturnStatement* stmt) {
                     return false;
                 }
             }
-            behaviors.Add(expr->Behaviors() - sem::Behavior::kNext);
-
             value_ty = expr->Type();
         } else {
             value_ty = b.create<core::type::Void>();
@@ -4480,7 +4479,10 @@ sem::SwitchStatement* Resolver::SwitchStatement(const ast::SwitchStatement* stmt
         if (!cond) {
             return false;
         }
-        behaviors = cond->Behaviors() - sem::Behavior::kNext;
+        // Each case clause will contribute behaviors. Switches must
+        // have at least a default clause, so we'll always end up with
+        // a non-empty behaviour set.
+        behaviors = behaviors - sem::Behavior::kNext;
 
         auto* cond_ty = cond->Type();
 
@@ -4566,10 +4568,6 @@ sem::Statement* Resolver::VariableDeclStatement(const ast::VariableDeclStatement
 
         current_compound_statement_->AddDecl(variable->As<sem::LocalVariable>());
 
-        if (auto* ctor = variable->Initializer()) {
-            sem->Behaviors() = ctor->Behaviors();
-        }
-
         return validator_.LocalVariable(variable);
     });
 }
@@ -4601,12 +4599,6 @@ sem::Statement* Resolver::AssignmentStatement(const ast::AssignmentStatement* st
             return false;
         }
 
-        auto& behaviors = sem->Behaviors();
-        behaviors = rhs->Behaviors();
-        if (!is_phony_assignment) {
-            behaviors.Add(lhs->Behaviors());
-        }
-
         if (!is_phony_assignment) {
             RegisterStore(lhs);
         }
@@ -4633,7 +4625,6 @@ sem::Statement* Resolver::BreakIfStatement(const ast::BreakIfStatement* stmt) {
             return false;
         }
         sem->SetCondition(cond);
-        sem->Behaviors() = cond->Behaviors();
         sem->Behaviors().Add(sem::Behavior::kBreak);
 
         return validator_.BreakIfStatement(sem, current_statement_);
@@ -4643,8 +4634,7 @@ sem::Statement* Resolver::BreakIfStatement(const ast::BreakIfStatement* stmt) {
 sem::Statement* Resolver::CallStatement(const ast::CallStatement* stmt) {
     auto* sem = b.create<sem::Statement>(stmt, current_compound_statement_, current_function_);
     return StatementScope(stmt, sem, [&] {
-        if (auto* expr = ValueExpression(stmt->expr)) {
-            sem->Behaviors() = expr->Behaviors();
+        if (ValueExpression(stmt->expr)) {
             return true;
         }
         return false;
@@ -4666,8 +4656,6 @@ sem::Statement* Resolver::CompoundAssignmentStatement(
         }
 
         RegisterStore(lhs);
-
-        sem->Behaviors() = rhs->Behaviors() + lhs->Behaviors();
 
         auto stage = core::EarliestStage(lhs->Stage(), rhs->Stage());
 
@@ -4721,8 +4709,6 @@ sem::Statement* Resolver::IncrementDecrementStatement(
         if (!lhs) {
             return false;
         }
-        sem->Behaviors() = lhs->Behaviors();
-
         RegisterStore(lhs);
 
         return validator_.IncrementDecrementStatement(stmt);
@@ -4770,6 +4756,15 @@ bool Resolver::ApplyAddressSpaceUsageToType(core::AddressSpace address_space,
                 return false;
             }
         }
+        if (address_space != core::AddressSpace::kWorkgroup) {
+            if (arr->Count()
+                    ->IsAnyOf<sem::NamedOverrideArrayCount, sem::UnnamedOverrideArrayCount>()) {
+                AddError(usage)
+                    << "override-sized arrays can only be used in the <workgroup> address space";
+                return false;
+            }
+        }
+
         return ApplyAddressSpaceUsageToType(address_space,
                                             const_cast<core::type::Type*>(arr->ElemType()), usage);
     }
@@ -4868,9 +4863,8 @@ SEM* Resolver::StatementScope(const ast::Statement* ast, SEM* sem, F&& callback)
 }
 
 bool Resolver::Mark(const ast::Node* node) {
-    if (DAWN_UNLIKELY(node == nullptr)) {
-        TINT_ICE() << "Resolver::Mark() called with nullptr";
-    }
+    TINT_ASSERT(node != nullptr) << "Resolver::Mark() called with nullptr";
+
     auto marked_bit_ref = marked_[node->node_id.value];
     if (DAWN_LIKELY(!marked_bit_ref)) {
         marked_bit_ref = true;

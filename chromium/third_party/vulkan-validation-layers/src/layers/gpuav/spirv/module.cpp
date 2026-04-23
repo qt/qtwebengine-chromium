@@ -29,7 +29,7 @@
 namespace gpuav {
 namespace spirv {
 
-static constexpr uint32_t kLinkedInstruction = std::numeric_limits<uint32_t>::max();
+static constexpr uint32_t kLinkedInstruction = vvl::kNoIndex32;
 
 Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const Settings& settings,
                const DeviceFeatures& enabled_features,
@@ -269,6 +269,16 @@ void Module::AddCapability(spv::Capability capability) {
     }
 }
 
+void Module::RemoveCapability(spv::Capability capability) {
+    for (auto it = capabilities_.begin(); it != capabilities_.end();) {
+        if (it->get()->Word(1) == capability) {
+            it = capabilities_.erase(it);
+            return;
+        } else {
+            ++it;
+        }
+    }
+}
 void Module::AddExtension(const char* extension) {
     std::vector<uint32_t> words;
     StringToSpirv(extension, words);
@@ -382,7 +392,8 @@ void Module::LinkFunctions(const LinkInfo& info) {
     // track the incoming SSA IDs with what they are in the module
     // < old_id, new_id >
     vvl::unordered_map<uint32_t, uint32_t> id_swap_map;
-    uint32_t function_type_id = 0;
+    // If we have 2 functions in our GLSL, we need to map the OpTypeFunction later
+    vvl::unordered_map<uint32_t, uint32_t> function_type_id_map;
 
     // Track all decorations and add after when have full id_swap_map
     InstructionList decorations;
@@ -501,12 +512,13 @@ void Module::LinkFunctions(const LinkInfo& info) {
                     new_inst->ReplaceLinkedId(id_swap_map);
                     // First swap out IDs so comparison will be the same
                     const Type* function_type = type_manager_.FindFunctionType(*new_inst.get());
+                    const uint32_t old_function_type_id = new_inst->ResultId();
                     if (function_type) {
                         // Just reuse non-unique OpTypeFunction
-                        function_type_id = function_type->Id();
+                        function_type_id_map[old_function_type_id] = function_type->Id();
                     } else {
-                        function_type_id = TakeNextId();
-                        type_id = function_type_id;
+                        type_id = TakeNextId();
+                        function_type_id_map[old_function_type_id] = type_id;
                         new_inst->ReplaceResultId(type_id);
                         type_manager_.AddType(std::move(new_inst), spv_type).Id();
                     }
@@ -668,7 +680,7 @@ void Module::LinkFunctions(const LinkInfo& info) {
                 // - There is zero way to truely check if it supported or not
                 // - We reworked our functions to be smaller because we have to assume it will be inlined
                 new_inst->UpdateWord(3, spv::FunctionControlMaskNone);
-                new_inst->UpdateWord(4, function_type_id);
+                new_inst->UpdateWord(4, function_type_id_map[new_inst->Word(4)]);
             } else if (opcode == spv::OpLabel) {
                 uint32_t new_result_id = id_swap_map[new_inst->ResultId()];
                 new_inst->ReplaceResultId(new_result_id);
@@ -771,6 +783,10 @@ void Module::PostProcess() {
     if (header_.version == spirv_version_1_0) {
         // SPV_KHR_storage_buffer_storage_class is needed, but glslang removes it from linking functions
         AddExtension("SPV_KHR_storage_buffer_storage_class");
+
+        // Subgroups where added in Vulkan 1.1, so SPIR-V 1.0 can't use them
+        // This is a bad hack around for someone using a SPIR-V 1.0
+        RemoveCapability(spv::CapabilityGroupNonUniform);
     }
 }
 

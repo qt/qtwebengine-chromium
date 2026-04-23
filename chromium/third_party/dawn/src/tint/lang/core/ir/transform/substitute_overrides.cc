@@ -29,6 +29,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <utility>
 
 #include "src/tint/lang/core/binary_op.h"
@@ -174,7 +175,7 @@ struct State {
             }
 
             auto wgs = func->WorkgroupSize();
-            TINT_ASSERT(wgs.has_value());
+            TINT_IR_ASSERT(ir, wgs.has_value());
 
             std::array<ir::Value*, 3> new_wg{};
             for (size_t i = 0; i < 3; ++i) {
@@ -191,11 +192,11 @@ struct State {
         // not proper usages.
         for (auto var : vars_with_value_array_count) {
             auto* old_ptr = var->Result()->Type()->As<core::type::Pointer>();
-            TINT_ASSERT(old_ptr);
+            TINT_IR_ASSERT(ir, old_ptr);
 
             auto* old_ty = old_ptr->UnwrapPtr()->As<core::type::Array>();
             auto* cnt = old_ty->Count()->As<core::ir::type::ValueArrayCount>();
-            TINT_ASSERT(cnt);
+            TINT_IR_ASSERT(ir, cnt);
 
             auto new_value = CalculateOverride(cnt->value);
             if (new_value != Success) {
@@ -214,9 +215,18 @@ struct State {
             }
 
             uint32_t num_elements = new_value.Get()->Value()->ValueAs<uint32_t>();
+            uint64_t new_ary_size = uint64_t{num_elements} * old_ty->ImplicitStride();
+            if (new_ary_size > std::numeric_limits<uint32_t>::max()) {
+                diag::Diagnostic error{};
+                error.severity = diag::Severity::Error;
+                error.source = ir.SourceOf(cnt->value);
+                error << "array size (" << new_ary_size << ") is too large";
+                return diag::Failure(error);
+            }
+
             auto* new_cnt = ty.Get<core::type::ConstantArrayCount>(num_elements);
             auto* new_ty = ty.Get<core::type::Array>(old_ty->ElemType(), new_cnt,
-                                                     num_elements * old_ty->ImplicitStride());
+                                                     static_cast<uint32_t>(new_ary_size));
 
             auto* new_ptr = ty.ptr(old_ptr->AddressSpace(), new_ty, old_ptr->Access());
             var->Result()->SetType(new_ptr);
@@ -296,10 +306,10 @@ struct State {
                 return res.Failure();
             }
 
-            TINT_ASSERT(res.Get());
+            TINT_IR_ASSERT(ir, res.Get());
             auto* inline_block =
                 res.Get()->Value()->ValueAs<bool>() ? constexpr_if->True() : constexpr_if->False();
-            TINT_ASSERT(inline_block->Terminator());
+            TINT_IR_ASSERT(ir, inline_block->Terminator());
             for (;;) {
                 auto block_inst = *inline_block->begin();
                 if (block_inst->Is<core::ir::Terminator>()) {
@@ -323,7 +333,7 @@ struct State {
             return r.Failure();
         }
         // Must be able to evaluate the constant.
-        TINT_ASSERT(r.Get());
+        TINT_IR_ASSERT(ir, r.Get());
 
         return r;
     }
@@ -391,8 +401,6 @@ struct State {
 };
 
 }  // namespace
-
-SubstituteOverridesConfig::SubstituteOverridesConfig() = default;
 
 Result<SuccessType> SubstituteOverrides(Module& ir, const SubstituteOverridesConfig& cfg) {
     {

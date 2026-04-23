@@ -31,10 +31,7 @@ class TextInputAction(InputSourceAction):
   @functools.lru_cache(maxsize=1)
   def config_parser(cls: Type[ActionT]) -> ConfigParser[ActionT]:
     parser = super().config_parser()
-    parser.add_argument(
-        "text",
-        type=ObjectParser.non_empty_str,
-        required=False)
+    parser.add_argument("text", type=ObjectParser.non_empty_str, required=False)
     parser.add_argument(
         "keyevent",
         type=ObjectParser.non_empty_str,

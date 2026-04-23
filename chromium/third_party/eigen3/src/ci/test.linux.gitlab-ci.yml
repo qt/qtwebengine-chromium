@@ -11,6 +11,8 @@
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_MERGE_REQUEST_LABELS =~ "/all-tests/"
   tags:
     - saas-linux-2xlarge-amd64
+  allow_failure:
+    exit_codes: 42
 
 ##### x86-64 ###################################################################
 .test:linux:x86-64:
@@ -195,6 +197,29 @@ test:linux:x86-64:clang-12:avx512dq:unsupported:
   variables:
     EIGEN_CI_CTEST_LABEL: Unsupported
 
+# Generic vector extension backend.
+.test:linux:x86-64:clang-19:generic:avx512dq:
+  image: ubuntu:24.04
+  extends: .test:linux:x86-64
+  needs: [ build:linux:cross:x86-64:clang-19:generic:avx512dq ]
+  variables:
+    EIGEN_CI_INSTALL: clang-19
+  tags:
+    - eigen-runner
+    - linux
+    - x86-64
+    - avx512
+
+test:linux:x86-64:clang-19:generic:avx512dq:official:
+  extends: .test:linux:x86-64:clang-19:generic:avx512dq
+  variables:
+    EIGEN_CI_CTEST_LABEL: Official
+
+test:linux:x86-64:clang-19:generic:avx512dq:unsupported:
+  extends: .test:linux:x86-64:clang-19:generic:avx512dq
+  variables:
+    EIGEN_CI_CTEST_LABEL: Unsupported
+
 ##### CUDA #####################################################################
 .test:linux:cuda:
   extends: .test:linux
@@ -202,65 +227,7 @@ test:linux:x86-64:clang-12:avx512dq:unsupported:
   variables:
     EIGEN_CI_CTEST_LABEL: gpu
   tags:
-    - eigen-runner
-    - linux
-    - x86-64
-    - cuda
-
-# NVidia no longer provides docker images < CUDA 11.0.3.
-# # GCC-7, CUDA-9.2
-# test:linux:cuda-9.2:gcc-7:
-#   extends: .test:linux:cuda
-#   image: nvidia/cuda:9.2-devel-ubuntu18.04
-#   needs: [ build:linux:cuda-9.2:gcc-7 ]
-#   variables:
-#     EIGEN_CI_CXX_COMPILER: g++-7
-#     EIGEN_CI_CC_COMPILER: gcc-7
-
-# # Clang-10, CUDA-9.2
-# test:linux:cuda-9.2:clang-10:
-#   extends: .test:linux:cuda
-#   image: nvidia/cuda:9.2-devel-ubuntu18.04
-#   needs: [ build:linux:cuda-9.2:clang-10 ]
-#   variables:
-#     EIGEN_CI_CXX_COMPILER: clang++-10
-#     EIGEN_CI_CC_COMPILER: clang-10
-
-# # GCC-8, CUDA-10.2
-# test:linux:cuda-10.2:gcc-8:
-#   extends: .test:linux:cuda
-#   image: nvidia/cuda:10.2-devel-ubuntu18.04
-#   needs: [ build:linux:cuda-10.2:gcc-8 ]
-#   variables:
-#     EIGEN_CI_CXX_COMPILER: g++-8
-#     EIGEN_CI_CC_COMPILER: gcc-8
-
-# # Clang-10, CUDA-10.2
-# test:linux:cuda-10.2:clang-10:
-#   extends: .test:linux:cuda
-#   image: nvidia/cuda:10.2-devel-ubuntu18.04
-#   needs: [ build:linux:cuda-10.2:clang-10 ]
-#   variables:
-#     EIGEN_CI_CXX_COMPILER: clang++-10
-#     EIGEN_CI_CC_COMPILER: clang-10
-
-# GCC-10, CUDA-11.4
-test:linux:cuda-11.4:gcc-10:
-  extends: .test:linux:cuda
-  image: nvidia/cuda:11.4.3-devel-ubuntu20.04
-  needs: [ build:linux:cuda-11.4:gcc-10 ]
-  variables:
-    EIGEN_CI_CXX_COMPILER: g++-10
-    EIGEN_CI_CC_COMPILER: gcc-10
-
-# Clang-12, CUDA-11.4
-test:linux:cuda-11.4:clang-12:
-  extends: .test:linux:cuda
-  image: nvidia/cuda:11.4.3-devel-ubuntu20.04
-  needs: [ build:linux:cuda-11.4:clang-12 ]
-  variables:
-    EIGEN_CI_CXX_COMPILER: clang++-12
-    EIGEN_CI_CC_COMPILER: clang-12
+    - saas-linux-medium-amd64-gpu-standard
 
 # GCC-10, CUDA-12.2
 test:linux:cuda-12.2:gcc-10:
@@ -441,6 +408,8 @@ test:linux:x86-64:gcc-10:default:smoketest:
     EIGEN_CI_CTEST_LABEL: smoketest
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  tags:
+    - saas-linux-medium-amd64
 
 test:linux:x86-64:clang-12:default:smoketest:
   extends: .test:linux:x86-64:clang-12:default
@@ -449,3 +418,5 @@ test:linux:x86-64:clang-12:default:smoketest:
     EIGEN_CI_CTEST_LABEL: smoketest
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  tags:
+    - saas-linux-medium-amd64

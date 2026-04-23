@@ -12,6 +12,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/web_contents_view_delegate.h"
+#include "content/public/common/buildflags.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom.h"
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom.h"
 #include "ui/display/display_util.h"
@@ -119,6 +120,19 @@ gfx::Rect WebContentsViewChildFrame::GetViewBounds() const {
   }
 
   return gfx::Rect();
+}
+
+void WebContentsViewChildFrame::Resize(const gfx::Rect& new_bounds) {
+  // This is intentionally empty. The size of WebContentsViewChildFrame is
+  // controlled by the embedder.
+}
+
+gfx::Size WebContentsViewChildFrame::GetSize() const {
+  if (RenderWidgetHostView* view = web_contents_->GetRenderWidgetHostView()) {
+    return view->GetViewBounds().size();
+  }
+
+  return gfx::Size();
 }
 
 void WebContentsViewChildFrame::CreateView(gfx::NativeView context) {

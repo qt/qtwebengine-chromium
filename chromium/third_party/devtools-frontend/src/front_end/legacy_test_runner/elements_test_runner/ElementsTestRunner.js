@@ -393,7 +393,8 @@ ElementsTestRunner.selectNodeAndWaitForStylesWithComputed = function(idValue, ca
   ElementsTestRunner.selectNodeAndWaitForStyles(idValue, onSidebarRendered);
 
   async function onSidebarRendered(node) {
-    await ElementsTestRunner.computedStyleWidget().doUpdate().then(callback.bind(null, node));
+    ElementsTestRunner.computedStyleWidget().requestUpdate();
+    await ElementsTestRunner.computedStyleWidget().updateComplete.then(callback.bind(null, node));
   }
 };
 
@@ -603,7 +604,8 @@ ElementsTestRunner.showEventListenersWidget = function() {
  */
 ElementsTestRunner.showComputedStyles = function() {
   Elements.ElementsPanel.ElementsPanel.instance().sidebarPaneView.tabbedPane().selectTab('computed', true);
-  return ElementsTestRunner.computedStyleWidget().doUpdate();
+  ElementsTestRunner.computedStyleWidget().requestUpdate();
+  return ElementsTestRunner.computedStyleWidget().updateComplete;
 };
 
 ElementsTestRunner.expandAndDumpSelectedElementEventListeners = function(callback, force) {
@@ -1185,7 +1187,7 @@ ElementsTestRunner.dumpInspectorHighlightJSON = function(idValue, attributes, ma
   ElementsTestRunner.nodeWithId(idValue, nodeResolved);
 
   async function nodeResolved(node) {
-    const result = await TestRunner.OverlayAgent.getHighlightObjectForTest(node.id);
+    const {highlight: result} = await TestRunner.OverlayAgent.invoke_getHighlightObjectForTest({nodeId: node.id});
     const view = attributeSet.size ? {} : result;
     for (const key of Object.keys(result).filter(key => attributeSet.has(key))) {
       view[key] = result[key];
@@ -1202,14 +1204,15 @@ ElementsTestRunner.dumpInspectorGridHighlightsJSON = async function(idValues, ca
     nodeIds.push(node.id);
   }
 
-  const result = await TestRunner.OverlayAgent.getGridHighlightObjectsForTest(nodeIds);
+  const {highlights: result} = await TestRunner.OverlayAgent.invoke_getGridHighlightObjectsForTest({nodeIds});
   TestRunner.addResult(JSON.stringify(result, null, 2));
   callback();
 };
 
 ElementsTestRunner.dumpInspectorHighlightStyleJSON = async function(idValue) {
   const node = await ElementsTestRunner.nodeWithIdPromise(idValue);
-  const result = await TestRunner.OverlayAgent.getHighlightObjectForTest(node.id, false, true /* includeStyle */);
+  const {highlight: result} =
+      await TestRunner.OverlayAgent.invoke_getHighlightObjectForTest({nodeId: node.id, includeStyle: true});
   const info = result['elementInfo'] ? result['elementInfo']['style'] : null;
   if (!info) {
     TestRunner.addResult(`${idValue}: No style info`);

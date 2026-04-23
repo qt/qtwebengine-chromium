@@ -27,12 +27,11 @@
 
 #include <iostream>
 
+#include "src/tint/api/helpers/generate_bindings.h"
 #include "src/tint/cmd/fuzz/ir/fuzz.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/var.h"
-#include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/hlsl/validate/validate.h"
-#include "src/tint/lang/hlsl/writer/helpers/generate_bindings.h"
 #include "src/tint/lang/hlsl/writer/printer/printer.h"
 #include "src/tint/lang/hlsl/writer/writer.h"
 #include "src/tint/utils/command/command.h"
@@ -68,7 +67,28 @@ struct FuzzedOptions {
 Result<SuccessType> IRFuzzer(core::ir::Module& module,
                              const fuzz::ir::Context& context,
                              FuzzedOptions fuzzed_options) {
+    // TODO(375388101): We cannot run the backend for every entry point in the module unless we
+    // clone the whole module each time, so for now we just generate the first entry point.
+
+    // Strip the module down to a single entry point.
+    core::ir::Function* entry_point = nullptr;
+    for (auto& func : module.functions) {
+        if (func->IsEntryPoint()) {
+            entry_point = func;
+            break;
+        }
+    }
+    std::string ep_name;
+    if (entry_point) {
+        ep_name = module.NameOf(entry_point).NameView();
+    }
+    if (ep_name.empty()) {
+        // No entry point, just return success
+        return Success;
+    }
+
     Options options;
+    options.entry_point_name = ep_name;
     options.strip_all_names = fuzzed_options.strip_all_names;
     options.disable_robustness = fuzzed_options.disable_robustness;
     options.enable_integer_range_analysis = fuzzed_options.enable_integer_range_analysis;
@@ -80,7 +100,7 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     options.compiler =
         fuzzed_options.compiler_is_dxc ? Options::Compiler::kDXC : Options::Compiler::kFXC;
 
-    options.bindings = GenerateBindings(module);
+    options.bindings = GenerateBindings(module, ep_name, false, false);
     options.array_length_from_uniform.ubo_binding = {30, 0};
     // Add array_length_from_uniform entries for all storage buffers with runtime sized arrays.
     std::unordered_set<tint::BindingPoint> storage_bindings;
@@ -102,10 +122,8 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     }
 
     auto output = Generate(module, options);
-    if (output != Success) {
-        TINT_ICE() << "Generate() failed after CanGenerate() succeeded: "
-                   << output.Failure().reason;
-    }
+    TINT_ASSERT(output == Success)
+        << "Generate() failed after CanGenerate() succeeded: " << output.Failure().reason;
 
     if (output == Success && context.options.dump) {
         std::cout << "Dumping generated HLSL:\n" << output->hlsl << "\n";

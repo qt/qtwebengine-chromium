@@ -52,9 +52,9 @@ GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kAdjustGpuProcessPriority);
 
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kClearGrShaderDiskCacheOnInvalidPrefix);
 
-GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kVaapiJpegImageDecodeAcceleration);
-
-GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kVaapiWebPImageDecodeAcceleration);
+GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kGpuShaderDiskCache);
+GPU_CONFIG_EXPORT bool IsShaderDiskCacheEnabled(
+    const base::CommandLine* command_line);
 
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kVulkan);
 
@@ -72,6 +72,8 @@ GPU_CONFIG_EXPORT extern const base::FeatureParam<int>
     kSkiaGraphiteMaxPendingRecordings;
 GPU_CONFIG_EXPORT extern const base::FeatureParam<bool>
     kSkiaGraphiteEnableDeferredSubmit;
+GPU_CONFIG_EXPORT extern const base::FeatureParam<bool>
+    kSkiaGraphiteEnableMSAAOnNewerIntel;
 
 #if BUILDFLAG(IS_WIN)
 GPU_CONFIG_EXPORT extern const base::FeatureParam<bool>
@@ -104,16 +106,21 @@ GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kEnableDrDcVulkan);
 
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUService);
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUBlobCache);
-GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUUseVulkanMemoryModel);
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUEnableRangeAnalysisForRobustness);
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUAndroidOpenGLES);
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUUseSpirv14);
+GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUDecomposeUniformBuffers);
+#if BUILDFLAG(IS_WIN)
+GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUQualcommWindows);
+#endif
 GPU_CONFIG_EXPORT extern const base::FeatureParam<std::string>
     kWebGPUDisabledToggles;
 GPU_CONFIG_EXPORT extern const base::FeatureParam<std::string>
     kWebGPUEnabledToggles;
 GPU_CONFIG_EXPORT extern const base::FeatureParam<std::string>
     kWebGPUUnsafeFeatures;
+GPU_CONFIG_EXPORT extern const base::FeatureParam<bool>
+    kWebGPUSpontaneousWireServer;
 GPU_CONFIG_EXPORT extern const base::FeatureParam<std::string>
     kWGSLUnsafeFeatures;
 
@@ -133,7 +140,6 @@ GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kGPUDriverBugListTestGroup);
 GPU_CONFIG_EXPORT extern const base::FeatureParam<int>
     kGPUDriverBugListTestGroupId;
 
-GPU_CONFIG_EXPORT bool UseGles2ForOopR();
 GPU_CONFIG_EXPORT bool IsUsingVulkan();
 GPU_CONFIG_EXPORT bool IsDrDcEnabled(
     const gpu::GpuFeatureInfo& gpu_feature_info);
@@ -162,6 +168,10 @@ GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kANGLEPerContextBlobCache);
 #if BUILDFLAG(IS_APPLE)
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kIOSurfaceMultiThreading);
 #endif
+
+GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kConfigurableGPUWatchdogTimeout);
+GPU_CONFIG_EXPORT extern const base::FeatureParam<int>
+    kConfigurableGPUWatchdogTimeoutSeconds;
 
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUCompatibilityMode);
 

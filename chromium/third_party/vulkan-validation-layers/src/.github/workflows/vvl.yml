@@ -38,7 +38,7 @@ jobs:
   code-format:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: '0'
       - uses: actions/setup-python@v6
@@ -52,6 +52,7 @@ jobs:
   linux:
     needs: check_vvl
     runs-on: ubuntu-24.04
+    if: "!contains(github.head_ref || github.ref, 'SKIP-CI')"
     name: "linux (address sanitizer, ${{matrix.config}}, custom_hash_map ${{matrix.custom_hash_map}} )"
     strategy:
       fail-fast: false
@@ -61,7 +62,7 @@ jobs:
         # Chromium build, and some package managers don't use it.
         custom_hash_map: [ "ON", "OFF" ]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.config }}-address-${{matrix.custom_hash_map}}
@@ -93,6 +94,7 @@ jobs:
   linux-tsan:
     needs: check_vvl
     runs-on: ubuntu-24.04
+    if: "!contains(github.head_ref || github.ref, 'SKIP-CI')"
     name: "linux (thread sanitizer, ${{matrix.config}}, custom_hash_map ${{matrix.custom_hash_map}} )"
     strategy:
       fail-fast: false
@@ -102,7 +104,7 @@ jobs:
         custom_hash_map: [ "ON" ]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.config }}-thread-${{matrix.custom_hash_map}}
@@ -129,11 +131,12 @@ jobs:
   linux-ubsan:
     needs: check_vvl
     runs-on: ubuntu-24.04
+    if: "!contains(github.head_ref || github.ref, 'SKIP-CI')"
     name: "linux (undefined behavior sanitizer, debug)"
     strategy:
       fail-fast: false
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: linux-ubsan
@@ -151,9 +154,10 @@ jobs:
   linux_back_compat:
     needs: check_vvl
     runs-on: ubuntu-22.04
+    if: "!contains(github.head_ref || github.ref, 'SKIP-CI')"
     name: "Ubuntu Backcompat"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Test Minimum CMake Version
         uses: lukka/get-cmake@latest
         with:
@@ -177,7 +181,7 @@ jobs:
     runs-on: ubuntu-24.04
     name: "linux Upload"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: linux-upload-ccache
@@ -188,7 +192,7 @@ jobs:
         env:
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: Validation_Layers_Linux_64
           path: /tmp/lib/libVkLayer_khronos_validation.so
@@ -197,8 +201,9 @@ jobs:
   androidOnLinux:
     needs: check_vvl
     runs-on: ubuntu-24.04
+    if: "!contains(github.head_ref || github.ref, 'SKIP-CI')"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
@@ -221,11 +226,12 @@ jobs:
   windows:
     needs: check_vvl
     runs-on: windows-2022
+    if: "!contains(github.head_ref || github.ref, 'SKIP-CI')"
     strategy:
       matrix:
         arch: [ amd64, amd64_x86 ]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
@@ -261,7 +267,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
@@ -290,7 +296,7 @@ jobs:
           -D UPDATE_DEPS_DIR=${{ github.workspace }}/external
       - run: cmake --build build
       - run: cmake --install build --prefix ${{ github.workspace }}/install
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: Validation_Layers_Windows_64
           path: ${{ github.workspace }}/install/bin/VkLayer_khronos_validation.dll
@@ -299,6 +305,7 @@ jobs:
   android:
       needs: check_vvl
       runs-on: ubuntu-24.04
+      if: "!contains(github.head_ref || github.ref, 'SKIP-CI')"
       strategy:
         matrix:
           abi: [ arm64-v8a ]
@@ -310,7 +317,7 @@ jobs:
             stl_type: c++_static
 
       steps:
-        - uses: actions/checkout@v5
+        - uses: actions/checkout@v6
         - name: Setup ccache
           uses: hendrikmuhs/ccache-action@v1.2
           with:
@@ -338,7 +345,7 @@ jobs:
       if: github.ref == 'refs/heads/main'
       runs-on: ubuntu-24.04
       steps:
-        - uses: actions/checkout@v5
+        - uses: actions/checkout@v6
         - name: Setup ccache
           uses: hendrikmuhs/ccache-action@v1.2
           with:
@@ -361,7 +368,7 @@ jobs:
         - run: cmake --install build/ --prefix /tmp
         - name: Strip
           run: $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip /tmp/lib/libVkLayer_khronos_validation.so
-        - uses: actions/upload-artifact@v4
+        - uses: actions/upload-artifact@v5
           with:
             name: Validation_Layers_Android_64
             path: /tmp/lib/libVkLayer_khronos_validation.so
@@ -372,8 +379,9 @@ jobs:
     # androidOnLinux does a basic build and only takes a 2 or 3 minutes to normally run
     needs: androidOnLinux
     runs-on: macos-latest
+    if: "!contains(github.head_ref || github.ref, 'SKIP-CI')"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
@@ -403,11 +411,12 @@ jobs:
   mingw:
     needs: check_vvl
     runs-on: windows-latest
+    if: "!contains(github.head_ref || github.ref, 'SKIP-CI')"
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -430,13 +439,14 @@ jobs:
   chromium:
     needs: check_vvl
     runs-on: ubuntu-latest
+    if: "!contains(github.head_ref || github.ref, 'SKIP-CI')"
     strategy:
       matrix:
         args:
           - 'target_os="linux" target_cpu="x64"'
           - 'target_os="android" target_cpu="arm64"'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - run: sudo apt-get -qq update && sudo apt-get install -y libwayland-dev xorg-dev
       - run: python scripts/gn/gn.py --args='${{ matrix.args }}'
 
@@ -444,7 +454,7 @@ jobs:
     needs: code-format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
@@ -452,3 +462,32 @@ jobs:
       - run: scripts/update_deps.py --dir ext --no-build
       - run: scripts/generate_source.py --verify ext/Vulkan-Headers/registry/ ext/SPIRV-Headers/include/spirv/unified1/
       - run: scripts/vk_validation_stats.py ext/Vulkan-Headers/registry/validusage.json -summary -c
+
+  # "Collector Job" to funnel the requirements to a single action
+  # This allows branches with SKIP-CI to skip down here, and still "pass"
+  all-tests-passed:
+    runs-on: ubuntu-latest
+    if: always()
+    # List of all jobs required
+    needs: [android, chromium, linux, windows]
+    steps:
+      - name: Check status of jobs
+        run: |
+          # If any dependency failed, we fail.
+          # If they were skipped or succeeded, we pass.
+
+          # JSON hack to check results of all 'needs'
+          RESULTS='${{ toJSON(needs) }}'
+
+          if echo "$RESULTS" | grep -q '"result": "failure"'; then
+            echo "One of the required jobs failed."
+            exit 1
+          fi
+
+          if echo "$RESULTS" | grep -q '"result": "cancelled"'; then
+            echo "Job was cancelled."
+            exit 1
+          fi
+
+          echo "MERGE AWAY!"
+          exit 0

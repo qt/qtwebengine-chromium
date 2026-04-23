@@ -1,7 +1,7 @@
 // Copyright 2025 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
 import * as UI from '../../legacy/legacy.js';
 import * as Lit from '../../lit/lit.js';
@@ -21,7 +21,7 @@ interface PositioningParams {
   currentPopoverRect: DOMRect;
 }
 
-enum PositionOption {
+export enum PositionOption {
   BOTTOM_SPAN_RIGHT = 'bottom-span-right',
   BOTTOM_SPAN_LEFT = 'bottom-span-left',
   TOP_SPAN_RIGHT = 'top-span-right',
@@ -66,29 +66,32 @@ const positioningUtils = {
     };
   },
   // Adjusts proposed rect so that the resulting popover is always inside the inspector view bounds.
-  insetAdjustedRect:
-      ({inspectorViewRect, anchorRect, currentPopoverRect, proposedRect}:
-           {inspectorViewRect: DOMRect, anchorRect: DOMRect, currentPopoverRect: DOMRect, proposedRect: ProposedRect}):
-          ProposedRect => {
-            if (inspectorViewRect.left > proposedRect.left) {
-              proposedRect.left = inspectorViewRect.left;
-            }
+  insetAdjustedRect: ({inspectorViewRect, currentPopoverRect, proposedRect}:
+                          {inspectorViewRect: DOMRect, currentPopoverRect: DOMRect, proposedRect: ProposedRect}):
+      ProposedRect => {
+        if (inspectorViewRect.left > proposedRect.left) {
+          proposedRect.left = inspectorViewRect.left;
+        }
 
-            if (inspectorViewRect.right < proposedRect.left + currentPopoverRect.width) {
-              proposedRect.left = inspectorViewRect.right - currentPopoverRect.width;
-            }
+        if (inspectorViewRect.right < proposedRect.left + currentPopoverRect.width) {
+          proposedRect.left = inspectorViewRect.right - currentPopoverRect.width;
+        }
 
-            if (proposedRect.top + currentPopoverRect.height > inspectorViewRect.bottom) {
-              proposedRect.top = anchorRect.top - currentPopoverRect.height;
-            }
-            return proposedRect;
-          },
+        if (proposedRect.top < inspectorViewRect.top) {
+          proposedRect.top = inspectorViewRect.top;
+        }
+
+        if (proposedRect.top + currentPopoverRect.height > inspectorViewRect.bottom) {
+          proposedRect.top = inspectorViewRect.bottom - currentPopoverRect.height;
+        }
+        return proposedRect;
+      },
   isInBounds: ({inspectorViewRect, currentPopoverRect, proposedRect}:
                    {inspectorViewRect: DOMRect, currentPopoverRect: DOMRect, proposedRect: ProposedRect}): boolean => {
-    return inspectorViewRect.left < proposedRect.left &&
-        proposedRect.left + currentPopoverRect.width < inspectorViewRect.right &&
-        inspectorViewRect.top < proposedRect.top &&
-        proposedRect.top + currentPopoverRect.height < inspectorViewRect.bottom;
+    return inspectorViewRect.left <= proposedRect.left &&
+        proposedRect.left + currentPopoverRect.width <= inspectorViewRect.right &&
+        inspectorViewRect.top <= proposedRect.top &&
+        proposedRect.top + currentPopoverRect.height <= inspectorViewRect.bottom;
   },
   isSameRect: (rect1: DOMRect|null, rect2: DOMRect|null): boolean => {
     if (!rect1 || !rect2) {
@@ -100,7 +103,7 @@ const positioningUtils = {
   }
 };
 
-const proposedRectForRichTooltip = ({inspectorViewRect, anchorRect, currentPopoverRect, preferredPositions}: {
+export const proposedRectForRichTooltip = ({inspectorViewRect, anchorRect, currentPopoverRect, preferredPositions}: {
   inspectorViewRect: DOMRect,
   anchorRect: DOMRect,
   currentPopoverRect: DOMRect,
@@ -116,36 +119,49 @@ const proposedRectForRichTooltip = ({inspectorViewRect, anchorRect, currentPopov
     ]),
   ];
 
-  // Tries the positioning options in the order given by `uniqueOrder`.
-  // If none of them work out, we default to showing the tooltip in the bottom right and adjust
-  // its insets so that the tooltip is inside the inspector view bounds.
-  for (const positionOption of uniqueOrder) {
-    let proposedRect;
+  const getProposedRectForPositionOption = (positionOption: PositionOption): ProposedRect => {
     switch (positionOption) {
       case PositionOption.BOTTOM_SPAN_RIGHT:
-        proposedRect = positioningUtils.bottomSpanRight({anchorRect, currentPopoverRect});
-        break;
+        return positioningUtils.bottomSpanRight({anchorRect, currentPopoverRect});
       case PositionOption.BOTTOM_SPAN_LEFT:
-        proposedRect = positioningUtils.bottomSpanLeft({anchorRect, currentPopoverRect});
-        break;
+        return positioningUtils.bottomSpanLeft({anchorRect, currentPopoverRect});
       case PositionOption.TOP_SPAN_RIGHT:
-        proposedRect = positioningUtils.topSpanRight({anchorRect, currentPopoverRect});
-        break;
+        return positioningUtils.topSpanRight({anchorRect, currentPopoverRect});
       case PositionOption.TOP_SPAN_LEFT:
-        proposedRect = positioningUtils.topSpanLeft({anchorRect, currentPopoverRect});
+        return positioningUtils.topSpanLeft({anchorRect, currentPopoverRect});
     }
+  };
+
+  // Tries the positioning options in the order given by `uniqueOrder`.
+  for (const positionOption of uniqueOrder) {
+    const proposedRect = getProposedRectForPositionOption(positionOption);
     if (positioningUtils.isInBounds({inspectorViewRect, currentPopoverRect, proposedRect})) {
       return proposedRect;
     }
   }
 
-  // If none of the options work above, we position to bottom right
-  // and adjust the insets so that it does not go out of bounds.
-  const proposedRect = positioningUtils.bottomSpanRight({anchorRect, currentPopoverRect});
-  return positioningUtils.insetAdjustedRect({anchorRect, currentPopoverRect, inspectorViewRect, proposedRect});
+  // If none of the options above work, we decide between top or bottom by which
+  // option is fewer vertical pixels out of the viewport. We pick left/right
+  // according to `uniqueOrder`. And finally we adjust the insets so that the
+  // tooltip is not out of bounds.
+  const bottomProposed = positioningUtils.bottomSpanRight({anchorRect, currentPopoverRect});
+  const bottomVerticalOutOfBounds =
+      Math.max(0, bottomProposed.top + currentPopoverRect.height - inspectorViewRect.bottom);
+  const topProposed = positioningUtils.topSpanRight({anchorRect, currentPopoverRect});
+  const topVerticalOutOfBounds = Math.max(0, inspectorViewRect.top - topProposed.top);
+  const prefersBottom = bottomVerticalOutOfBounds <= topVerticalOutOfBounds;
+  const fallbackOption = uniqueOrder.find(option => {
+    if (prefersBottom) {
+      return option === PositionOption.BOTTOM_SPAN_LEFT || option === PositionOption.BOTTOM_SPAN_RIGHT;
+    }
+    return option === PositionOption.TOP_SPAN_LEFT || option === PositionOption.TOP_SPAN_RIGHT;
+  }) ??
+      PositionOption.TOP_SPAN_RIGHT;
+  const fallbackRect = getProposedRectForPositionOption(fallbackOption);
+  return positioningUtils.insetAdjustedRect({currentPopoverRect, inspectorViewRect, proposedRect: fallbackRect});
 };
 
-const proposedRectForSimpleTooltip =
+export const proposedRectForSimpleTooltip =
     ({inspectorViewRect, anchorRect, currentPopoverRect}:
          {inspectorViewRect: DOMRect, anchorRect: DOMRect, currentPopoverRect: DOMRect}): ProposedRect => {
       // Default options are bottom centered & top centered.
@@ -153,20 +169,29 @@ const proposedRectForSimpleTooltip =
       if (positioningUtils.isInBounds({inspectorViewRect, currentPopoverRect, proposedRect})) {
         return proposedRect;
       }
+      const bottomVerticalOutOfBoundsAmount =
+          Math.max(0, proposedRect.top + currentPopoverRect.height - inspectorViewRect.bottom);
 
       proposedRect = positioningUtils.topCentered({anchorRect, currentPopoverRect});
       if (positioningUtils.isInBounds({inspectorViewRect, currentPopoverRect, proposedRect})) {
         return proposedRect;
       }
+      const topVerticalOutOfBoundsAmount = Math.max(0, inspectorViewRect.top - proposedRect.top);
 
-      // The default options did not work out, so position it to bottom center
-      // and adjust the insets to make sure that it does not go out of bounds.
-      proposedRect = positioningUtils.bottomCentered({anchorRect, currentPopoverRect});
-      return positioningUtils.insetAdjustedRect({anchorRect, currentPopoverRect, inspectorViewRect, proposedRect});
+      // The default options did not work out, so compare which option is fewer
+      // pixels out of the viewport vertically. Pick the better option and
+      // adjust the insets to make sure that the tooltip is not out of bounds.
+      if (bottomVerticalOutOfBoundsAmount <= topVerticalOutOfBoundsAmount) {
+        proposedRect = positioningUtils.bottomCentered({anchorRect, currentPopoverRect});
+      } else {
+        proposedRect = positioningUtils.topCentered({anchorRect, currentPopoverRect});
+      }
+      return positioningUtils.insetAdjustedRect({currentPopoverRect, inspectorViewRect, proposedRect});
     };
 
 export type TooltipVariant = 'simple'|'rich';
 export type PaddingMode = 'small'|'large';
+export type TooltipTrigger = 'hover'|'click'|'both';
 
 export interface TooltipProperties {
   id: string;
@@ -174,6 +199,7 @@ export interface TooltipProperties {
   padding?: PaddingMode;
   anchor?: HTMLElement;
   jslogContext?: string;
+  trigger?: TooltipTrigger;
 }
 
 /**
@@ -182,7 +208,7 @@ export interface TooltipProperties {
  * @property hoverDelay - reflects the `"hover-delay"` attribute.
  * @property variant - reflects the `"variant"` attribute.
  * @property padding - reflects the `"padding"` attribute.
- * @property useClick - reflects the `"click"` attribute.
+ * @property trigger - reflects the `"trigger"` attribute.
  * @property verticalDistanceIncrease - reflects the `"vertical-distance-increase"` attribute.
  * @property preferSpanLeft - reflects the `"prefer-span-left"` attribute.
  * @attribute id - Id of the tooltip. Used for searching an anchor element with aria-describedby.
@@ -190,17 +216,19 @@ export interface TooltipProperties {
  * @attribute variant - Variant of the tooltip, `"simple"` for strings only, inverted background,
  *                 `"rich"` for interactive content, background according to theme's surface.
  * @attribute padding - Which padding to use, defaults to `"small"`. Use `"large"` for richer content.
- * @attribute use-click - If present, the tooltip will be shown on click instead of on hover.
+ * @attribute trigger - Specifies which action triggers the tooltip. `"hover"` is the default. `"click"` means the
+ *                 tooltip will be shown on click instead of hover. `"both"` means both hover and click trigger the
+ *                 tooltip.
  * @attribute vertical-distance-increase - The tooltip is moved vertically this many pixels further away from its anchor.
  * @attribute prefer-span-left - If present, the tooltip's preferred position is `"span-left"` (The right
  *                 side of the tooltip and its anchor are aligned. The tooltip expands to the left from
  *                 there.). Applies to rich tooltips only.
  * @attribute use-hotkey - If present, the tooltip will be shown on hover but not when receiving focus.
- *                    Requires a hotkey to open when fosed (Alt-down). When `"use-click"` is present
- *                    as well, use-click takes precedence.
+ *                  Requires a hotkey to open when fosed (Alt-down). When `"trigger"` is present
+ *                  as well, `"trigger"` takes precedence.
  */
 export class Tooltip extends HTMLElement {
-  static readonly observedAttributes = ['id', 'variant', 'jslogcontext'];
+  static readonly observedAttributes = ['id', 'variant', 'jslogcontext', 'trigger'];
   static lastOpenedTooltipId: string|null = null;
 
   readonly #shadow = this.attachShadow({mode: 'open'});
@@ -231,15 +259,19 @@ export class Tooltip extends HTMLElement {
     }
   }
 
-  get useClick(): boolean {
-    return this.hasAttribute('use-click') ?? false;
-  }
-  set useClick(useClick: boolean) {
-    if (useClick) {
-      this.setAttribute('use-click', '');
-    } else {
-      this.removeAttribute('use-click');
+  get trigger(): TooltipTrigger {
+    switch (this.getAttribute('trigger')) {
+      case 'click':
+        return 'click';
+      case 'both':
+        return 'both';
+      case 'hover':
+      default:
+        return 'hover';
     }
+  }
+  set trigger(trigger: TooltipTrigger) {
+    this.setAttribute('trigger', trigger);
   }
 
   get hoverDelay(): number {
@@ -297,7 +329,7 @@ export class Tooltip extends HTMLElement {
 
   constructor(properties?: TooltipProperties) {
     super();
-    const {id, variant, padding, jslogContext, anchor} = properties ?? {};
+    const {id, variant, padding, jslogContext, anchor, trigger} = properties ?? {};
     if (id) {
       this.id = id;
     }
@@ -316,6 +348,9 @@ export class Tooltip extends HTMLElement {
         throw new Error('aria-details or aria-describedby must be set on the anchor');
       }
       this.#anchor = anchor;
+    }
+    if (trigger) {
+      this.trigger = trigger;
     }
   }
 
@@ -374,6 +409,10 @@ export class Tooltip extends HTMLElement {
     }, this.hoverDelay);
   };
 
+  #containsNode(target: EventTarget|null): boolean {
+    return target instanceof Node && this.contains(target);
+  }
+
   hideTooltip = (event?: MouseEvent|FocusEvent): void => {
     if (this.#timeout) {
       window.clearTimeout(this.#timeout);
@@ -382,10 +421,11 @@ export class Tooltip extends HTMLElement {
     // 1. event.currentTarget = the element that got blurred
     // 2. event.relatedTarget = the element that gained focus
     // https://developer.mozilla.org/en-US/docs/Web/API/FocusEvent/relatedTarget
-    // If the blurred element (1) was our anchor, and the newly focused element
-    // (2) is within the tooltip, we do not want to hide the tooltip.
-    if (event && this.variant === 'rich' && event.target === this.#anchor && event.relatedTarget instanceof Node &&
-        this.contains(event.relatedTarget)) {
+    // If the blurred element (1) was our anchor or within the tooltip,
+    // and the newly focused element (2) is within the tooltip,
+    // we do not want to hide the tooltip.
+    if (event && this.variant === 'rich' && (event.target === this.#anchor || this.#containsNode(event.target)) &&
+        this.#containsNode(event.relatedTarget)) {
       return;
     }
 
@@ -427,7 +467,7 @@ export class Tooltip extends HTMLElement {
     this.#previousAnchorRect = anchorRect;
     this.#previousPopoverRect = currentPopoverRect;
 
-    const inspectorViewRect = UI.InspectorView.InspectorView.instance().element.getBoundingClientRect();
+    const inspectorViewRect = UI.UIUtils.getDevToolsBoundingElement().getBoundingClientRect();
     const preferredPositions =
         this.preferSpanLeft ? [PositionOption.BOTTOM_SPAN_LEFT, PositionOption.TOP_SPAN_LEFT] : [];
     const proposedPopoverRect = this.variant === 'rich' ?
@@ -458,7 +498,7 @@ export class Tooltip extends HTMLElement {
     if (!this.hasAttribute('role')) {
       this.setAttribute('role', 'tooltip');
     }
-    this.setAttribute('popover', this.useClick ? 'auto' : 'manual');
+    this.setAttribute('popover', this.trigger === 'hover' ? 'manual' : 'auto');
     this.#updateJslog();
   }
 
@@ -469,6 +509,9 @@ export class Tooltip extends HTMLElement {
   #setClosing = (event: Event): void => {
     if ((event as ToggleEvent).newState === 'closed') {
       this.#closing = true;
+      if (this.#timeout) {
+        window.clearTimeout(this.#timeout);
+      }
     }
   };
 
@@ -479,8 +522,30 @@ export class Tooltip extends HTMLElement {
     }
   };
 
+  #globalKeyDown = (event: KeyboardEvent): void => {
+    if (!this.open || event.key !== 'Escape') {
+      return;
+    }
+
+    const childTooltip = this.querySelector('devtools-tooltip') as Tooltip | null;
+    if (childTooltip?.open) {
+      return;
+    }
+
+    this.#openedViaHotkey = false;
+    this.toggle();
+    event.consume(true);
+  };
+
   #keyDown = (event: KeyboardEvent): void => {
-    if ((event.altKey && event.key === 'ArrowDown') || (event.key === 'Escape' && this.open)) {
+    // This supports the scenario where the user uses Alt+ArrowDown in hotkey
+    // mode to toggle the visibility.
+    // Note that the "Escape to close" scenario is handled in the global
+    // keydown function so we capture Escape presses even if the tooltip does
+    // not have focus.
+    const shouldToggleVisibility = (this.useHotkey && event.altKey && event.key === 'ArrowDown');
+
+    if (shouldToggleVisibility) {
       this.#openedViaHotkey = !this.open;
       this.toggle();
       event.consume(true);
@@ -488,16 +553,21 @@ export class Tooltip extends HTMLElement {
   };
 
   #registerEventListeners(): void {
+    document.body.addEventListener('keydown', this.#globalKeyDown);
     if (this.#anchor) {
-      if (this.useClick) {
+      // We bind the keydown listener regardless of if use-hotkey is enabled
+      // as we always want to support ESC to close.
+      this.#anchor.addEventListener('keydown', this.#keyDown);
+
+      if (this.trigger === 'click' || this.trigger === 'both') {
         this.#anchor.addEventListener('click', this.toggle);
-      } else {
+      }
+      if (this.trigger === 'hover' || this.trigger === 'both') {
         this.#anchor.addEventListener('mouseenter', this.showTooltip);
-        if (this.useHotkey) {
-          this.#anchor.addEventListener('keydown', this.#keyDown);
-        } else {
+        if (!this.useHotkey) {
           this.#anchor.addEventListener('focus', this.showTooltip);
         }
+
         this.#anchor.addEventListener('blur', this.hideTooltip);
         this.#anchor.addEventListener('mouseleave', this.hideTooltip);
         this.addEventListener('mouseleave', this.hideTooltip);
@@ -516,6 +586,11 @@ export class Tooltip extends HTMLElement {
     if (this.#timeout) {
       window.clearTimeout(this.#timeout);
     }
+
+    // Should always exist when this component is used, but in test
+    // environments on Chromium this isn't always the case, hence the body? check.
+    document.body?.removeEventListener('keydown', this.#globalKeyDown);
+
     if (this.#anchor) {
       this.#anchor.removeEventListener('click', this.toggle);
       this.#anchor.removeEventListener('mouseenter', this.showTooltip);

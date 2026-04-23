@@ -13,6 +13,7 @@
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/sequence_checker.h"
 #include "base/synchronization/lock.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
@@ -170,12 +171,11 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
   void AddBindingWaylandBufferManagerGpu(
       mojo::PendingReceiver<ozone::mojom::WaylandBufferManagerGpu> receiver);
 
-  // Returns supported modifiers for the supplied |buffer_format|.
-  const std::vector<uint64_t> GetModifiersForBufferFormat(
-      gfx::BufferFormat buffer_format) const;
+  // Returns supported modifiers for the supplied |format|.
+  const std::vector<uint64_t> GetModifiersForFormat(
+      viz::SharedImageFormat format) const;
   // Returns whether implicit modifier is allowed.
-  bool AllowsImplicitModifierForBufferFormat(
-      gfx::BufferFormat buffer_format) const;
+  bool AllowsImplicitModifierForFormat(viz::SharedImageFormat format) const;
 
   // Allocates a unique buffer ID.
   uint32_t AllocateBufferID();

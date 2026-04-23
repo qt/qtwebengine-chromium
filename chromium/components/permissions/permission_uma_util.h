@@ -20,6 +20,7 @@
 #include "components/permissions/permission_request_enums.h"
 #include "components/permissions/prediction_service/permission_ui_selector.h"
 #include "components/permissions/request_type.h"
+#include "components/permissions/resolvers/permission_prompt_options.h"
 #include "content/public/browser/permission_result.h"
 #include "url/gurl.h"
 
@@ -204,9 +205,8 @@ enum class PermissionHeaderPolicyForUMA {
 
 // The kind of permission prompt UX used to surface a permission request.
 // Enum used in UKMs and UMAs, do not re-order or change values. Deprecated
-// items should only be commented out. New items should be added at the end,
-// and the "PermissionPromptDisposition" histogram suffix needs to be updated to
-// match (tools/metrics/histograms/metadata/histogram_suffixes_list.xml).
+// items should only be commented out. New items should be added at the end.
+// LINT.IfChange(PermissionPromptDisposition)
 enum class PermissionPromptDisposition {
   // Not all permission actions will have an associated permission prompt (e.g.
   // changing permission via the settings page).
@@ -263,7 +263,12 @@ enum class PermissionPromptDisposition {
 
   // Only used on macOS, a native OS provided permission prompt.
   MAC_OS_PROMPT = 14,
+
+  // Only used on Android, a message bubble near top of the screen and below the
+  // location bar. This is a flavor of MESSAGE_UI that is used for loud prompts.
+  MESSAGE_UI_LOUD = 15,
 };
+// LINT.ThenChange(//tools/metrics/histograms/metadata/permissions/histograms.xml:PromptDisposition)
 
 // The reason why the permission prompt disposition was used. Enum used in UKMs,
 // do not re-order or change values. Deprecated items should only be commented
@@ -683,6 +688,8 @@ class PermissionUmaUtil {
       std::optional<PermissionUiSelector::PredictionGrantLikelihood>
           predicted_grant_likelihood,
       std::optional<PermissionRequestRelevance> permission_request_relevance,
+      std::optional<permissions::PermissionAiRelevanceModel>
+          permission_ai_relevance_model,
       std::optional<bool> prediction_decision_held_back,
       std::optional<permissions::PermissionIgnoredReason> ignored_reason,
       bool did_show_prompt,
@@ -935,6 +942,18 @@ class PermissionUmaUtil {
   static void RecordPermissionAutoRejectForActor(ContentSettingsType permission,
                                                  bool is_actor_operating);
 
+  // Records the duration of the browsing session before a permission prompt
+  // was displayed.
+  static void RecordPrePromptSessionDuration(
+      ContentSettingsType permission,
+      base::TimeTicks request_first_display_time);
+
+  // Records the duration of the browsing session after a permission prompt has
+  // been displayed.
+  static void RecordPostPromptSessionDuration(
+      ContentSettingsType permission,
+      base::TimeTicks request_first_display_time);
+
   // A scoped class that will check the current resolved content setting on
   // construction and report a revocation metric accordingly if the revocation
   // condition is met (from ALLOW to something else).
@@ -990,7 +1009,10 @@ class PermissionUmaUtil {
       std::optional<PermissionUiSelector::PredictionGrantLikelihood>
           predicted_grant_likelihood,
       std::optional<PermissionRequestRelevance> permission_request_relevance,
-      std::optional<bool> prediction_decision_held_back);
+      std::optional<permissions::PermissionAiRelevanceModel>
+          permission_ai_relevance_model,
+      std::optional<bool> prediction_decision_held_back,
+      const PromptOptions& prompt_options);
 
   // Records |count| total prior actions for a prompt of type |permission|
   // for a single origin using |prefix| for the metric.

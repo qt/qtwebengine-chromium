@@ -247,9 +247,7 @@
   },
   "desktopCapture": {
     "channel": "stable",
-    "extension_types": ["extension", "platform_app"],
-    // "desktop_android" is not supported.
-    "platforms": ["chromeos", "linux", "mac", "win"]
+    "extension_types": ["extension", "platform_app"]
   },
   "documentScan": {
     "channel": "stable",
@@ -258,9 +256,7 @@
   },
   "downloads": {
     "channel": "stable",
-    "extension_types": ["extension"],
-    // "desktop_android" is not supported.
-    "platforms": ["chromeos", "linux", "mac", "win"]
+    "extension_types": ["extension"]
   },
   "downloads.open": {
     "channel": "stable",
@@ -739,10 +735,6 @@
     "channel": "stable",
     "extension_types": ["platform_app"],
     "platforms": ["chromeos", "linux", "mac", "win"]
-  },
-  {
-    "channel": "dev",
-    "extension_types": ["extension"]
   }],
   "notifications": [{
     // The chrome.notifications functionality listed in notifications.idl is
@@ -1029,9 +1021,7 @@
   ],
   "tabCapture": {
     "channel": "stable",
-    "extension_types": ["extension", "legacy_packaged_app"],
-    // "desktop_android" is not supported.
-    "platforms": ["chromeos", "linux", "mac", "win"]
+    "extension_types": ["extension", "legacy_packaged_app"]
   },
   "terminalPrivate": {
     "channel": "stable",

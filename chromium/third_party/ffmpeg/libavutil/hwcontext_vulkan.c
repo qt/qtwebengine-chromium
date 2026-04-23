@@ -82,6 +82,10 @@ typedef struct VulkanDeviceFeatures {
     VkPhysicalDeviceShaderSubgroupRotateFeaturesKHR subgroup_rotate;
     VkPhysicalDeviceHostImageCopyFeaturesEXT host_image_copy;
 
+#ifdef VK_EXT_zero_initialize_device_memory
+    VkPhysicalDeviceZeroInitializeDeviceMemoryFeaturesEXT zero_initialize;
+#endif
+
 #ifdef VK_KHR_shader_expect_assume
     VkPhysicalDeviceShaderExpectAssumeFeaturesKHR expect_assume;
 #endif
@@ -153,11 +157,11 @@ typedef struct VulkanDevicePriv {
     /* Disable host image transfer */
     int disable_host_transfer;
 
+    /* Prefer memcpy over dynamic host pointer imports */
+    int avoid_host_import;
+
     /* Maximum queues */
     int limit_queues;
-
-    /* Nvidia */
-    int dev_is_nvidia;
 } VulkanDevicePriv;
 
 typedef struct VulkanFramesPriv {
@@ -224,6 +228,11 @@ static void device_features_init(AVHWDeviceContext *ctx, VulkanDeviceFeatures *f
                      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_ROTATE_FEATURES_KHR);
     FF_VK_STRUCT_EXT(s, &feats->device, &feats->host_image_copy, FF_VK_EXT_HOST_IMAGE_COPY,
                      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES_EXT);
+
+#ifdef VK_EXT_zero_initialize_device_memory
+    FF_VK_STRUCT_EXT(s, &feats->device, &feats->zero_initialize, FF_VK_EXT_ZERO_INITIALIZE,
+                     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_DEVICE_MEMORY_FEATURES_EXT);
+#endif
 
 #ifdef VK_KHR_shader_expect_assume
     FF_VK_STRUCT_EXT(s, &feats->device, &feats->expect_assume, FF_VK_EXT_EXPECT_ASSUME,
@@ -310,6 +319,10 @@ static void device_features_copy_needed(VulkanDeviceFeatures *dst, VulkanDeviceF
     COPY_VAL(timeline_semaphore.timelineSemaphore);
     COPY_VAL(subgroup_rotate.shaderSubgroupRotate);
     COPY_VAL(host_image_copy.hostImageCopy);
+
+#ifdef VK_EXT_zero_initialize_device_memory
+    COPY_VAL(zero_initialize.zeroInitializeDeviceMemory);
+#endif
 
     COPY_VAL(video_maintenance_1.videoMaintenance1);
 #ifdef VK_KHR_video_maintenance2
@@ -642,6 +655,9 @@ static const VulkanOptExtension optional_device_exts[] = {
     { VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,               FF_VK_EXT_COOP_MATRIX            },
     { VK_EXT_SHADER_OBJECT_EXTENSION_NAME,                    FF_VK_EXT_SHADER_OBJECT          },
     { VK_KHR_SHADER_SUBGROUP_ROTATE_EXTENSION_NAME,           FF_VK_EXT_SUBGROUP_ROTATE        },
+#ifdef VK_EXT_zero_initialize_device_memory
+    { VK_EXT_ZERO_INITIALIZE_DEVICE_MEMORY_EXTENSION_NAME,    FF_VK_EXT_ZERO_INITIALIZE        },
+#endif
 #ifdef VK_KHR_shader_expect_assume
     { VK_KHR_SHADER_EXPECT_ASSUME_EXTENSION_NAME,             FF_VK_EXT_EXPECT_ASSUME          },
 #endif
@@ -714,7 +730,7 @@ static VkBool32 VKAPI_CALL vk_dbg_callback(VkDebugUtilsMessageSeverityFlagBitsEX
 
 #define ADD_VAL_TO_LIST(list, count, val)                                      \
     do {                                                                       \
-        list = av_realloc_array(list, sizeof(*list), ++count);                 \
+        list = av_realloc_array(list, ++count, sizeof(*list));                 \
         if (!list) {                                                           \
             err = AVERROR(ENOMEM);                                             \
             goto fail;                                                         \
@@ -1430,14 +1446,14 @@ static inline int pick_queue_family(VkQueueFamilyProperties2 *qf, uint32_t num_q
 
 static inline int pick_video_queue_family(VkQueueFamilyProperties2 *qf,
                                           VkQueueFamilyVideoPropertiesKHR *qf_vid, uint32_t num_qf,
-                                          VkVideoCodecOperationFlagBitsKHR flags)
+                                          VkVideoCodecOperationFlagsKHR flags)
 {
     int index = -1;
     uint32_t min_score = UINT32_MAX;
 
     for (int i = 0; i < num_qf; i++) {
-        const VkQueueFlagBits qflags = qf[i].queueFamilyProperties.queueFlags;
-        const VkQueueFlagBits vflags = qf_vid[i].videoCodecOperations;
+        const VkQueueFlags qflags = qf[i].queueFamilyProperties.queueFlags;
+        const VkVideoCodecOperationFlagsKHR vflags = qf_vid[i].videoCodecOperations;
 
         if (!(qflags & (VK_QUEUE_VIDEO_ENCODE_BIT_KHR | VK_QUEUE_VIDEO_DECODE_BIT_KHR)))
             continue;
@@ -1463,13 +1479,6 @@ static int setup_queue_families(AVHWDeviceContext *ctx, VkDeviceCreateInfo *cd)
     VulkanDevicePriv *p = ctx->hwctx;
     AVVulkanDeviceContext *hwctx = &p->p;
     FFVulkanFunctions *vk = &p->vkctx.vkfn;
-    VkPhysicalDeviceDriverProperties dprops = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
-    };
-    VkPhysicalDeviceProperties2 props2 = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-        .pNext = &dprops,
-    };
 
     VkQueueFamilyProperties2 *qf = NULL;
     VkQueueFamilyVideoPropertiesKHR *qf_vid = NULL;
@@ -1523,13 +1532,6 @@ static int setup_queue_families(AVHWDeviceContext *ctx, VkDeviceCreateInfo *cd)
 
     hwctx->nb_qf = 0;
 
-    /* NVIDIA's proprietary drivers have stupid limits, where each queue
-     * you allocate takes tens of milliseconds, and the more queues you
-     * allocate, the less you'll have left before initializing a device
-     * simply fails (112 seems to be the max). GLOBALLY.
-     * Detect this, and minimize using queues as much as possible. */
-    vk->GetPhysicalDeviceProperties2(hwctx->phys_dev, &props2);
-
     /* Pick each queue family to use. */
 #define PICK_QF(type, vid_op)                                            \
     do {                                                                 \
@@ -1555,7 +1557,7 @@ static int setup_queue_families(AVHWDeviceContext *ctx, VkDeviceCreateInfo *cd)
             hwctx->qf[i].idx = idx;                                      \
             hwctx->qf[i].num = qf[idx].queueFamilyProperties.queueCount; \
             if (p->limit_queues ||                                       \
-                dprops.driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY) {    \
+                p->dprops.driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY) { \
                 int max = p->limit_queues;                               \
                 if (type == VK_QUEUE_GRAPHICS_BIT)                       \
                     hwctx->qf[i].num = FFMIN(hwctx->qf[i].num,           \
@@ -1810,6 +1812,12 @@ static int vulkan_device_create_internal(AVHWDeviceContext *ctx,
             p->disable_multiplane = strtol(opt_d->value, NULL, 10);
     }
 
+    /* Disable host pointer imports (by default on nvidia) */
+    p->avoid_host_import = p->dprops.driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY;
+    opt_d = av_dict_get(opts, "avoid_host_import", NULL, 0);
+    if (opt_d)
+        p->avoid_host_import = strtol(opt_d->value, NULL, 10);
+
     /* Set the public device feature struct and its pNext chain */
     hwctx->device_features = p->feats.device;
 
@@ -1868,6 +1876,8 @@ static int vulkan_device_init(AVHWDeviceContext *ctx)
     p->props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
     p->props.pNext = &p->hprops;
     p->hprops.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT;
+    p->hprops.pNext = &p->dprops;
+    p->dprops.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
 
     vk->GetPhysicalDeviceProperties2(hwctx->phys_dev, &p->props);
     av_log(ctx, AV_LOG_VERBOSE, "Using device: %s\n",
@@ -1882,8 +1892,6 @@ static int vulkan_device_init(AVHWDeviceContext *ctx)
     if (p->vkctx.extensions & FF_VK_EXT_EXTERNAL_HOST_MEMORY)
         av_log(ctx, AV_LOG_VERBOSE, "    minImportedHostPointerAlignment:    %"PRIu64"\n",
                p->hprops.minImportedHostPointerAlignment);
-
-    p->dev_is_nvidia = (p->props.properties.vendorID == 0x10de);
 
     vk->GetPhysicalDeviceQueueFamilyProperties(hwctx->phys_dev, &qf_num, NULL);
     if (!qf_num) {
@@ -2464,7 +2472,7 @@ static int prepare_frame(AVHWFramesContext *hwfc, FFVkExecPool *ectx,
     VkImageMemoryBarrier2 img_bar[AV_NUM_DATA_POINTERS];
     int nb_img_bar = 0;
 
-    uint32_t dst_qf = VK_QUEUE_FAMILY_IGNORED;
+    uint32_t dst_qf = p->nb_img_qfs > 1 ? VK_QUEUE_FAMILY_IGNORED : p->img_qfs[0];
     VkImageLayout new_layout;
     VkAccessFlags2 new_access;
     VkPipelineStageFlagBits2 src_stage = VK_PIPELINE_STAGE_2_NONE;
@@ -2674,7 +2682,7 @@ fail:
 /* Checks if an export flag is enabled, and if it is ORs it with *iexp */
 static void try_export_flags(AVHWFramesContext *hwfc,
                              VkExternalMemoryHandleTypeFlags *comp_handle_types,
-                             VkExternalMemoryHandleTypeFlagBits *iexp,
+                             VkExternalMemoryHandleTypeFlags *iexp,
                              VkExternalMemoryHandleTypeFlagBits exp)
 {
     VkResult ret;
@@ -2845,7 +2853,7 @@ static int vulkan_frames_init(AVHWFramesContext *hwfc)
     AVVulkanFramesContext *hwctx = &fp->p;
     VulkanDevicePriv *p = hwfc->device_ctx->hwctx;
     AVVulkanDeviceContext *dev_hwctx = &p->p;
-    VkImageUsageFlagBits supported_usage;
+    VkImageUsageFlags supported_usage;
     FFVulkanFunctions *vk = &p->vkctx.vkfn;
     const struct FFVkFormatEntry *fmt;
     int disable_multiplane = p->disable_multiplane ||
@@ -2903,27 +2911,25 @@ static int vulkan_frames_init(AVHWFramesContext *hwfc)
     }
 
     /* Nvidia is violating the spec because they thought no one would use this. */
-    if (p->dev_is_nvidia &&
+    if (p->dprops.driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY &&
         (((fmt->nb_images == 1) && (fmt->vk_planes > 1)) ||
          (av_pix_fmt_desc_get(hwfc->sw_format)->nb_components == 1)))
         supported_usage &= ~VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT;
 
     /* Image usage flags */
-    if (!hwctx->usage) {
-        hwctx->usage = supported_usage & (VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                          VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                          VK_IMAGE_USAGE_STORAGE_BIT      |
-                                          VK_IMAGE_USAGE_SAMPLED_BIT);
+    hwctx->usage |= supported_usage & (VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                       VK_IMAGE_USAGE_STORAGE_BIT      |
+                                       VK_IMAGE_USAGE_SAMPLED_BIT);
 
-        if ((p->vkctx.extensions & FF_VK_EXT_HOST_IMAGE_COPY) && !p->disable_host_transfer)
-            hwctx->usage |= supported_usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT;
+    if ((p->vkctx.extensions & FF_VK_EXT_HOST_IMAGE_COPY) && !p->disable_host_transfer)
+        hwctx->usage |= supported_usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT;
 
-        /* Enables encoding of images, if supported by format and extensions */
-        if ((supported_usage & VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR) &&
-            (p->vkctx.extensions & (FF_VK_EXT_VIDEO_ENCODE_QUEUE |
-                                   FF_VK_EXT_VIDEO_MAINTENANCE_1)))
-            hwctx->usage |= VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR;
-    }
+    /* Enables encoding of images, if supported by format and extensions */
+    if ((supported_usage & VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR) &&
+        (p->vkctx.extensions & (FF_VK_EXT_VIDEO_ENCODE_QUEUE |
+                                FF_VK_EXT_VIDEO_MAINTENANCE_1)))
+        hwctx->usage |= VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR;
 
     /* Image creation flags.
      * Only fill them in automatically if the image is not going to be used as
@@ -4489,7 +4495,7 @@ static int vulkan_transfer_frame(AVHWFramesContext *hwfc,
     }
 
     /* Setup buffers first */
-    if (p->vkctx.extensions & FF_VK_EXT_EXTERNAL_HOST_MEMORY) {
+    if (p->vkctx.extensions & FF_VK_EXT_EXTERNAL_HOST_MEMORY && !p->avoid_host_import) {
         err = host_map_frame(hwfc, bufs, &nb_bufs, swf, region, upload);
         if (err >= 0)
             host_mapped = 1;
@@ -4546,7 +4552,7 @@ static int vulkan_transfer_frame(AVHWFramesContext *hwfc,
                                  VK_ACCESS_TRANSFER_READ_BIT,
                         upload ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL :
                                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                        VK_QUEUE_FAMILY_IGNORED);
+                        p->nb_img_qfs > 1 ? VK_QUEUE_FAMILY_IGNORED : p->img_qfs[0]);
 
     vk->CmdPipelineBarrier2(cmd_buf, &(VkDependencyInfo) {
             .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,

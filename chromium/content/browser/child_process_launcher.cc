@@ -11,7 +11,6 @@
 #include "base/clang_profiling_buildflags.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
-#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/i18n/icu_util.h"
 #include "base/memory/unsafe_shared_memory_region.h"
@@ -113,8 +112,7 @@ ChildProcessLauncher::ChildProcessLauncher(
     scoped_refptr<base::RefCountedData<base::ReadOnlySharedMemoryRegion>>
         tracing_config_memory_region,
     scoped_refptr<base::RefCountedData<base::UnsafeSharedMemoryRegion>>
-        tracing_output_memory_region,
-    bool terminate_on_shutdown)
+        tracing_output_memory_region)
     : client_(client),
       starting_(true),
 #if defined(ADDRESS_SANITIZER) || defined(LEAK_SANITIZER) ||  \
@@ -122,7 +120,7 @@ ChildProcessLauncher::ChildProcessLauncher(
     defined(UNDEFINED_SANITIZER) || BUILDFLAG(CLANG_PROFILING)
       terminate_child_on_shutdown_(false)
 #else
-      terminate_child_on_shutdown_(terminate_on_shutdown)
+      terminate_child_on_shutdown_(true)
 #endif
 {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -135,7 +133,7 @@ ChildProcessLauncher::ChildProcessLauncher(
 
   helper_ = base::MakeRefCounted<ChildProcessLauncherHelper>(
       child_process_id, std::move(command_line), std::move(delegate),
-      weak_factory_.GetWeakPtr(), terminate_on_shutdown,
+      weak_factory_.GetWeakPtr(), terminate_child_on_shutdown_,
 #if BUILDFLAG(IS_ANDROID)
       client_->CanUseWarmUpConnection(), client_->HasSpareRendererPriority(),
 #endif
@@ -164,7 +162,7 @@ void ChildProcessLauncher::SetRenderProcessPriority(
       FROM_HERE,
       base::BindOnce(
           &ChildProcessLauncherHelper::SetRenderProcessPriorityOnLauncherThread,
-          helper_, std::move(to_pass), priority));
+          helper_, std::move(to_pass), priority, base::TimeTicks::Now()));
 }
 #else   // !BUILDFLAG(IS_ANDROID)
 void ChildProcessLauncher::SetProcessPriority(
@@ -333,6 +331,10 @@ void ChildProcessLauncher::DumpProcessStack() {
       FROM_HERE, base::BindOnce(&ChildProcessLauncherHelper::DumpProcessStack,
                                 helper_, std::move(to_pass)));
 }
+
+void ChildProcessLauncher::OnSpareRendererPriorityGraduated(bool is_alive) {
+  client_->OnSpareRendererPriorityGraduated(is_alive);
+}
 #endif
 
 ChildProcessLauncher::Client* ChildProcessLauncher::ReplaceClientForTest(
@@ -342,26 +344,24 @@ ChildProcessLauncher::Client* ChildProcessLauncher::ReplaceClientForTest(
   return ret;
 }
 
-RenderProcessPriority::RenderProcessPriority(
-    bool visible,
-    bool has_media_stream,
-    bool has_immersive_xr_session,
-    bool has_foreground_service_worker,
-    unsigned int frame_depth,
-    bool intersects_viewport,
-    bool boost_for_pending_views,
-    bool boost_for_loading,
-    bool boost_for_discard,
-    bool is_spare_renderer
+RenderProcessPriority::RenderProcessPriority(bool visible,
+                                             bool has_media_stream,
+                                             bool has_immersive_xr_session,
+                                             bool has_foreground_service_worker,
+                                             unsigned int frame_depth,
+                                             bool intersects_viewport,
+                                             bool boost_for_pending_views,
+                                             bool boost_for_loading,
+                                             bool boost_for_discard,
 #if BUILDFLAG(IS_ANDROID)
-    ,
-    ChildProcessImportance importance
+                                             bool is_spare_renderer,
+                                             ChildProcessImportance importance
+#else
+                                             std::optional<
+                                                 base::Process::Priority>
+                                                 priority_override
 #endif
-#if !BUILDFLAG(IS_ANDROID)
-    ,
-    std::optional<base::Process::Priority> priority_override
-#endif
-    )
+                                             )
     : visible(visible),
       has_media_stream(has_media_stream),
       has_immersive_xr_session(has_immersive_xr_session),
@@ -371,14 +371,12 @@ RenderProcessPriority::RenderProcessPriority(
       boost_for_pending_views(boost_for_pending_views),
       boost_for_loading(boost_for_loading),
       boost_for_discard(boost_for_discard),
-      is_spare_renderer(is_spare_renderer)
 #if BUILDFLAG(IS_ANDROID)
-      ,
+      is_spare_renderer(is_spare_renderer),
       importance(importance)
 #endif
 #if !BUILDFLAG(IS_ANDROID)
-      ,
-      priority_override(priority_override)
+          priority_override(priority_override)
 #endif
 {
 }

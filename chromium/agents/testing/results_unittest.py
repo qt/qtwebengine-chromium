@@ -1,97 +1,202 @@
+#!/usr/bin/env vpython3
 # Copyright 2025 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Unittests for the results module."""
 
 import pathlib
-import sys
 import threading
 import time
 import unittest
-import unittest.mock
+from unittest import mock
 
+import eval_config
 import results
-
-CHROMIUM_SRC = pathlib.Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(CHROMIUM_SRC / 'build' / 'util'))
-from lib.results import result_sink
-from lib.results import result_types
 
 # Polling interval for threads in nanoseconds.
 _POLLING_INTERVAL = 100
 
 
+# pylint: disable=protected-access
+
+
 class TestResultTest(unittest.TestCase):
 
     def test_lt_less_than(self):
-        result1 = results.TestResult(test_file=pathlib.Path('a'),
-                                     success=True,
-                                     duration=1,
-                                     test_log='')
-        result2 = results.TestResult(test_file=pathlib.Path('b'),
-                                     success=True,
-                                     duration=1,
-                                     test_log='')
+        result1 = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('a')),
+            success=True,
+            iteration_results=[])
+        result2 = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('b')),
+            success=True,
+            iteration_results=[])
         self.assertLess(result1, result2)
 
     def test_lt_greater_than(self):
-        result1 = results.TestResult(test_file=pathlib.Path('b'),
-                                     success=True,
-                                     duration=1,
-                                     test_log='')
-        result2 = results.TestResult(test_file=pathlib.Path('a'),
-                                     success=True,
-                                     duration=1,
-                                     test_log='')
+        result1 = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('b')),
+            success=True,
+            iteration_results=[])
+        result2 = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('a')),
+            success=True,
+            iteration_results=[])
         self.assertGreater(result1, result2)
 
     def test_lt_equal(self):
-        result1 = results.TestResult(test_file=pathlib.Path('a'),
-                                     success=True,
-                                     duration=1,
-                                     test_log='')
-        result2 = results.TestResult(test_file=pathlib.Path('a'),
-                                     success=False,
-                                     duration=2,
-                                     test_log='log')
+        result1 = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('a')),
+            success=True,
+            iteration_results=[
+                results.IterationResult(
+                    success=True,
+                    duration=1,
+                    test_log='log',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
+        result2 = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('a')),
+            success=False,
+            iteration_results=[
+                results.IterationResult(
+                    success=False,
+                    duration=2,
+                    test_log='log2',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
         self.assertFalse(result1 < result2)
         self.assertFalse(result2 < result1)
 
     def test_sort(self):
-        result_b = results.TestResult(test_file=pathlib.Path('b'),
-                                      success=True,
-                                      duration=1,
-                                      test_log='')
-        result_a = results.TestResult(test_file=pathlib.Path('a'),
-                                      success=True,
-                                      duration=1,
-                                      test_log='')
-        result_c = results.TestResult(test_file=pathlib.Path('c'),
-                                      success=True,
-                                      duration=1,
-                                      test_log='')
+        result_b = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('b')),
+            success=True,
+            iteration_results=[])
+        result_a = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('a')),
+            success=True,
+            iteration_results=[])
+        result_c = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('c')),
+            success=True,
+            iteration_results=[])
         result_list = [result_b, result_c, result_a]
         self.assertEqual(sorted(result_list), [result_a, result_b, result_c])
 
-
-class ReportResultTest(unittest.TestCase):
-
-    def test_report_result(self):
-        mock_client = unittest.mock.Mock(spec=result_sink.ResultSinkClient)
-        test_result = results.TestResult(
-            test_file=CHROMIUM_SRC / 'some_test.yaml',
+    def test_combined_logs(self):
+        result = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('a')),
             success=True,
-            duration=1.23,
-            test_log='log',
-        )
-        results.report_result(mock_client, test_result)
-        mock_client.Post.assert_called_once_with(
-            test_id='some_test.yaml',
-            status=result_types.PASS,
-            duration=1230,
-            test_log='log',
-            test_file='//some_test.yaml',
-        )
+            iteration_results=[
+                results.IterationResult(
+                    success=True,
+                    duration=1,
+                    test_log='log1',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                ),
+                results.IterationResult(
+                    success=True,
+                    duration=1,
+                    test_log='log2',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
+        self.assertEqual(result.combined_logs,
+                         'Iteration #0:\nlog1\nIteration #1:\nlog2')
+
+    def test_total_duration(self):
+        result = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('a')),
+            success=True,
+            iteration_results=[
+                results.IterationResult(
+                    success=True,
+                    duration=1.2,
+                    test_log='',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                ),
+                results.IterationResult(
+                    success=True,
+                    duration=3.4,
+                    test_log='',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
+        self.assertAlmostEqual(result.total_duration, 4.6)
+
+    def test_average_duration(self):
+        result = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('a')),
+            success=True,
+            iteration_results=[
+                results.IterationResult(
+                    success=True,
+                    duration=1.0,
+                    test_log='',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                ),
+                results.IterationResult(
+                    success=True,
+                    duration=3.0,
+                    test_log='',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
+        self.assertAlmostEqual(result.average_duration, 2.0)
+
+    def test_successful_runs(self):
+        result = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('a')),
+            success=True,
+            iteration_results=[
+                results.IterationResult(
+                    success=True,
+                    duration=1,
+                    test_log='',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                ),
+                results.IterationResult(
+                    success=False,
+                    duration=1,
+                    test_log='',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                ),
+                results.IterationResult(
+                    success=True,
+                    duration=1,
+                    test_log='',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
+        self.assertEqual(result.successful_runs, 2)
+
+
+
 
 
 class AtomicCounterTest(unittest.TestCase):
@@ -133,32 +238,26 @@ class ResultThreadTest(unittest.TestCase):
     def setUp(self):
         self._setUpPatches()
 
-        self.print_output_on_success = False
+        self.result_options = results.ResultOptions(
+            print_output_on_success=False,
+            result_handlers=[],
+        )
 
     def _setUpPatches(self):
         """Set up patches for tests."""
-        self.polling_mock = unittest.mock.patch(
+        self.polling_mock = mock.patch(
             'results._RESULT_THREAD_POLLING_SLEEP_DURATION', 0.001)
         self.polling_mock.start()
         self.addCleanup(self.polling_mock.stop)
 
-        stdout_patcher = unittest.mock.patch('sys.stdout')
+        stdout_patcher = mock.patch('sys.stdout')
         self.mock_stdout = stdout_patcher.start()
         self.addCleanup(stdout_patcher.stop)
 
-        try_init_client_patcher = unittest.mock.patch(
-            'results.result_sink.TryInitClient')
-        self.mock_try_init_client = try_init_client_patcher.start()
-        self.addCleanup(try_init_client_patcher.stop)
 
-        report_result_patcher = unittest.mock.patch('results.report_result')
-        self.mock_report_result = report_result_patcher.start()
-        self.addCleanup(report_result_patcher.stop)
 
     def _create_result_thread(self):
-        return results.ResultThread(
-            print_output_on_success=self.print_output_on_success,
-        )
+        return results.ResultThread(result_options=self.result_options)
 
     def _run_test_with_results(self, results_to_send):
         """Helper to run a test with a list of results."""
@@ -177,21 +276,61 @@ class ResultThreadTest(unittest.TestCase):
         thread.join(1)
         return thread
 
-    def test_successful_result(self):
-        test_result = results.TestResult(test_file='test.yaml',
-                                         success=True,
-                                         duration=1.0,
-                                         test_log='log')
+    def test_result_handlers_called(self):
+        handler_mock = mock.Mock()
+        self.result_options.result_handlers = [handler_mock]
+
+        test_result = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('test.yaml')),
+            success=True,
+            iteration_results=[
+                results.IterationResult(
+                    success=True,
+                    duration=1.0,
+                    test_log='log',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
+        _ = self._run_test_with_results([test_result])
+
+        handler_mock.assert_called_once_with(test_result)
+
+
+    def test_passed_result(self):
+        test_result = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('test.yaml')),
+            success=True,
+            iteration_results=[
+                results.IterationResult(
+                    success=True,
+                    duration=1.0,
+                    test_log='log',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
         thread = self._run_test_with_results([test_result])
 
         self.assertEqual(thread.total_results_reported.get(), 1)
         self.assertTrue(thread.failed_result_output_queue.empty())
 
     def test_failed_result(self):
-        test_result = results.TestResult(test_file='test.yaml',
-                                         success=False,
-                                         duration=1.0,
-                                         test_log='log')
+        test_result = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('test.yaml')),
+            success=False,
+            iteration_results=[
+                results.IterationResult(
+                    success=False,
+                    duration=1.0,
+                    test_log='log',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
         thread = self._run_test_with_results([test_result])
 
         self.assertEqual(thread.total_results_reported.get(), 1)
@@ -200,18 +339,45 @@ class ResultThreadTest(unittest.TestCase):
 
     def test_multiple_results(self):
         results_to_send = [
-            results.TestResult(test_file='test1.yaml',
+            results.TestResult(config=eval_config.TestConfig(
+                test_file=pathlib.Path('test1.yaml')),
                                success=True,
-                               duration=1.0,
-                               test_log='log1'),
-            results.TestResult(test_file='test2.yaml',
+                               iteration_results=[
+                                   results.IterationResult(
+                                       success=True,
+                                       duration=1.0,
+                                       test_log='log1',
+                                       metrics={},
+                                       prompt=None,
+                                       response=None,
+                                   )
+                               ]),
+            results.TestResult(config=eval_config.TestConfig(
+                test_file=pathlib.Path('test2.yaml')),
                                success=False,
-                               duration=2.0,
-                               test_log='log2'),
-            results.TestResult(test_file='test3.yaml',
+                               iteration_results=[
+                                   results.IterationResult(
+                                       success=False,
+                                       duration=2.0,
+                                       test_log='log2',
+                                       metrics={},
+                                       prompt=None,
+                                       response=None,
+                                   )
+                               ]),
+            results.TestResult(config=eval_config.TestConfig(
+                test_file=pathlib.Path('test3.yaml')),
                                success=True,
-                               duration=3.0,
-                               test_log='log3'),
+                               iteration_results=[
+                                   results.IterationResult(
+                                       success=True,
+                                       duration=3.0,
+                                       test_log='log3',
+                                       metrics={},
+                                       prompt=None,
+                                       response=None,
+                                   )
+                               ]),
         ]
         thread = self._run_test_with_results(results_to_send)
 
@@ -230,67 +396,81 @@ class ResultThreadTest(unittest.TestCase):
 
     def test_fatal_exception(self):
         thread = self._create_result_thread()
-        with unittest.mock.patch.object(
-                thread,
-                '_process_incoming_results_until_shutdown',
-                side_effect=ValueError('Test Error')):
+        with mock.patch.object(thread,
+                               '_process_incoming_results_until_shutdown',
+                               side_effect=ValueError('Test Error')):
             thread.start()
             thread.join(1)
 
         with self.assertRaisesRegex(ValueError, 'Test Error'):
             thread.maybe_reraise_fatal_exception()
 
+    def test_no_fatal_exception(self):
+        thread = self._create_result_thread()
+        thread.start()
+        # Should be a no-op.
+        thread.maybe_reraise_fatal_exception()
+        thread.shutdown()
+        thread.join(1)
+
     def test_print_output_on_success_true(self):
-        self.print_output_on_success = True
-        test_result = results.TestResult(test_file='test.yaml',
-                                         success=True,
-                                         duration=1.0,
-                                         test_log='log')
+        self.result_options.print_output_on_success = True
+        test_result = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('test.yaml')),
+            success=True,
+            iteration_results=[
+                results.IterationResult(
+                    success=True,
+                    duration=1.0,
+                    test_log='log',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
         self._run_test_with_results([test_result])
 
         self.mock_stdout.write.assert_called_once_with('log')
 
     def test_print_output_on_success_false(self):
-        self.print_output_on_success = False
-        test_result = results.TestResult(test_file='test.yaml',
-                                         success=True,
-                                         duration=1.0,
-                                         test_log='log')
+        self.result_options.print_output_on_success = False
+        test_result = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('test.yaml')),
+            success=True,
+            iteration_results=[
+                results.IterationResult(
+                    success=True,
+                    duration=1.0,
+                    test_log='log',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
         self._run_test_with_results([test_result])
 
         self.mock_stdout.write.assert_not_called()
 
     def test_always_print_output_on_failure(self):
-        self.print_output_on_success = False
-        test_result = results.TestResult(test_file='test.yaml',
-                                         success=False,
-                                         duration=1.0,
-                                         test_log='log')
+        self.result_options.print_output_on_success = False
+        test_result = results.TestResult(
+            config=eval_config.TestConfig(test_file=pathlib.Path('test.yaml')),
+            success=False,
+            iteration_results=[
+                results.IterationResult(
+                    success=False,
+                    duration=1.0,
+                    test_log='log',
+                    metrics={},
+                    prompt=None,
+                    response=None,
+                )
+            ])
         self._run_test_with_results([test_result])
 
         self.mock_stdout.write.assert_called_once_with('log')
 
-    def test_result_sink_client_none(self):
-        self.mock_try_init_client.return_value = None
-        test_result = results.TestResult(test_file='test.yaml',
-                                         success=True,
-                                         duration=1.0,
-                                         test_log='log')
-        self._run_test_with_results([test_result])
 
-        self.mock_report_result.assert_not_called()
-
-    def test_result_sink_client_valid(self):
-        mock_client = unittest.mock.Mock()
-        self.mock_try_init_client.return_value = mock_client
-        test_result = results.TestResult(test_file='test.yaml',
-                                         success=True,
-                                         duration=1.0,
-                                         test_log='log')
-        self._run_test_with_results([test_result])
-
-        self.mock_report_result.assert_called_once_with(
-            mock_client, test_result)
 
 
 if __name__ == '__main__':

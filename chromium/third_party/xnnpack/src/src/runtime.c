@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2020-2025 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
@@ -28,6 +28,7 @@
 #include "src/xnnpack/common.h"
 #include "src/xnnpack/internal.h"
 #include "src/xnnpack/log.h"
+#include "src/xnnpack/math.h"
 #include "src/xnnpack/memory-planner.h"
 #include "src/xnnpack/memory.h"
 #include "src/xnnpack/microkernel-type.h"
@@ -54,10 +55,18 @@ enum xnn_status xnn_reshape_external_value(
                   external_id, value->allocation_type);
     return xnn_status_invalid_parameter;
   }
-  struct xnn_shape* shape = &value->shape;
-  shape->num_dims = num_dims;
-  for (size_t i = 0; i < num_dims; ++i) {
-    shape->dim[i] = dims[i];
+  struct xnn_shape new_shape = {.num_dims = num_dims};
+  for (int k = 0; k < num_dims; k++) {
+    new_shape.dim[k] = dims[k];
+  }
+  if (!xnn_shape_match(&value->shape, &new_shape)) {
+    if (value->flags & XNN_VALUE_FLAG_SHAPE_IS_STATIC) {
+      xnn_log_error("failed to reshape runtime: Value %" PRIu32
+                    " is flagged as having a static shape",
+                    external_id);
+      return xnn_status_invalid_parameter;
+    }
+    value->shape = new_shape;
   }
   value->size = xnn_runtime_tensor_get_size(value);
   return xnn_status_success;
@@ -264,7 +273,9 @@ static enum xnn_status initialize_workspace_values(
         value->quantization.dynamic_params =
           (void*) ((uintptr_t) runtime->workspace->data + mem_alloc_tracker->usage[i].alloc_offset
                    + xnn_tensor_get_rounded_size(value));
-
+        value->quantization.row_sum =
+          (void*) ((uintptr_t) value->quantization.dynamic_params +
+                   xnn_tensor_get_rounded_dynamic_quant_param_size(value));
       }
     }
   }
@@ -303,6 +314,8 @@ static enum xnn_status initialize_workspace_values(
                 value->datatype == xnn_datatype_qduint8) {
               value->quantization.dynamic_params = (void*) ((uintptr_t) value->quantization.dynamic_params
                                                             + workspace_data_delta);
+              value->quantization.row_sum = (void*) ((uintptr_t) value->quantization.row_sum
+                                                      + workspace_data_delta);
             }
           }
         }
@@ -458,13 +471,21 @@ void propagate_rank(
       case xnn_node_type_static_sum_squared:
         if (flags & XNN_FLAG_KEEP_DIMS) {
           output_value->shape.num_dims = input_value->shape.num_dims;
+        } else if (input_value->shape.num_dims >=
+                   node->params.reduce.num_reduction_axes) {
+          output_value->shape.num_dims = input_value->shape.num_dims -
+                                         node->params.reduce.num_reduction_axes;
         } else {
-          output_value->shape.num_dims = input_value->shape.num_dims - node->params.reduce.num_reduction_axes;
+          xnn_log_warning("Unable to determine output rank of Node #%" PRIu32
+                          " %s, assuming %zu.",
+                          node->id, xnn_node_type_to_string(node->type),
+                          output_value->shape.num_dims);
         }
         break;
       case xnn_node_type_batch_matrix_multiply:
       case xnn_node_type_binary_elementwise:
-        output_value->shape.num_dims = max(input_value->shape.num_dims, input_value_b->shape.num_dims);
+        output_value->shape.num_dims =
+            max(input_value->shape.num_dims, input_value_b->shape.num_dims);
         break;
       case xnn_node_type_concatenate:
       case xnn_node_type_copy:
@@ -479,7 +500,9 @@ void propagate_rank(
         output_value->shape.num_dims = input_value->shape.num_dims;
         break;
       case xnn_node_type_static_expand_dims:
-        output_value->shape.num_dims = input_value->shape.num_dims + node->params.static_reshape.new_shape.num_dims;
+        output_value->shape.num_dims =
+            input_value->shape.num_dims +
+            node->params.static_reshape.new_shape.num_dims;
         break;
       case xnn_node_type_fully_connected:
       case xnn_node_type_fully_connected_sparse:
@@ -487,21 +510,41 @@ void propagate_rank(
         break;
       case xnn_node_type_static_reshape:
       case xnn_node_type_static_broadcast:
-        output_value->shape.num_dims = node->params.static_reshape.new_shape.num_dims;
+        output_value->shape.num_dims =
+            node->params.static_reshape.new_shape.num_dims;
         break;
       case xnn_node_type_fuse_dims:
-        output_value->shape.num_dims =
-            input_value->shape.num_dims -
-            node->params.static_reshape.new_shape.num_dims + 1;
+        if (input_value->shape.num_dims >=
+            node->params.static_reshape.new_shape.num_dims + 1) {
+          output_value->shape.num_dims =
+              input_value->shape.num_dims -
+              (node->params.static_reshape.new_shape.num_dims + 1);
+        } else {
+          xnn_log_warning("Unable to determine output rank of Node #%" PRIu32
+                          " %s, assuming %zu.",
+                          node->id, xnn_node_type_to_string(node->type),
+                          output_value->shape.num_dims);
+        }
         break;
       case xnn_node_type_split_dims:
-        output_value->shape.num_dims =
-            input_value->shape.num_dims +
-            node->params.static_reshape.new_shape.num_dims - 1;
+        if (input_value->shape.num_dims +
+                node->params.static_reshape.new_shape.num_dims >=
+            1) {
+          output_value->shape.num_dims =
+              (input_value->shape.num_dims +
+               node->params.static_reshape.new_shape.num_dims) -
+              1;
+        } else {
+          xnn_log_warning("Unable to determine output rank of Node #%" PRIu32
+                          " %s, assuming %zu.",
+                          node->id, xnn_node_type_to_string(node->type),
+                          output_value->shape.num_dims);
+        }
         break;
       default:
         XNN_UNREACHABLE;
     }
+    assert(output_value->shape.num_dims <= XNN_MAX_TENSOR_DIMS);
   }
 }
 
@@ -525,11 +568,20 @@ static enum xnn_status create_runtime_impl(
 
   xnn_subgraph_rewrite_ssa(subgraph);
 
+  status = xnn_subgraph_rewrite_for_row_sum(subgraph);
+  if (status != xnn_status_success) {
+    xnn_log_error("failed to rewrite subgraph for row_sum");
+    goto error;
+  }
+
   const uint32_t optimization_flags =
+#ifdef XNN_SLINKY_ENABLED
+      XNN_FLAG_SLINKY_ENABLED | XNN_FLAG_SLINKY_STATIC_BOUNDS |
+#endif
       XNN_FLAG_HINT_SPARSE_INFERENCE | XNN_FLAG_HINT_FP16_INFERENCE |
       XNN_FLAG_FORCE_FP16_INFERENCE | XNN_FLAG_NO_OPERATOR_FUSION |
-      XNN_FLAG_NO_INLINED_LHS_PACKING | XNN_FLAG_SLINKY_ENABLED |
-      XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC;
+      XNN_FLAG_NO_INLINED_LHS_PACKING | XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC;
+
   status = xnn_subgraph_optimize(subgraph, flags & optimization_flags);
   if (status != xnn_status_success) {
     xnn_log_error("failed to optimize subgraph");
@@ -558,7 +610,7 @@ static enum xnn_status create_runtime_impl(
 
   runtime->num_ops = subgraph->num_nodes;
 
-  if (flags & XNN_FLAG_YIELD_WORKERS) {
+  if (flags & XNN_FLAG_DONT_SPIN_WORKERS) {
     struct xnn_node* last_valid_node = NULL;
     for (size_t i = 0; i < subgraph->num_nodes; i++) {
       struct xnn_node* node = subgraph->nodes + i;
@@ -567,14 +619,15 @@ static enum xnn_status create_runtime_impl(
       }
     }
     if (last_valid_node != NULL) {
-      last_valid_node->flags |= XNN_FLAG_YIELD_WORKERS;
+      last_valid_node->flags |= XNN_FLAG_DONT_SPIN_WORKERS;
     }
   }
 
   if (flags & XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC) {
     xnn_log_warning(
         "XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC is enabled: performance will be "
-        "degraded! %d", flags);
+        "degraded! %d",
+        flags);
     for (size_t i = 0; i < subgraph->num_nodes; i++) {
       struct xnn_node* node = subgraph->nodes + i;
       node->flags |= XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC;
@@ -651,9 +704,9 @@ static enum xnn_status create_runtime_impl(
   }
 
   runtime->threadpool = threadpool;
-#ifdef XNN_SLINKY_AVAILABLE
+#ifdef XNN_SLINKY_ENABLED
   runtime->xnn_threadpool = xnn_threadpool;
-#endif  // XNN_SLINKY_AVAILABLE
+#endif  // XNN_SLINKY_ENABLED
 
   for (uint32_t i = 0; i < runtime->num_values; i++) {
     struct xnn_runtime_value* value = &runtime->values[i];
@@ -701,44 +754,96 @@ enum xnn_status xnn_create_runtime_v4(
   uint32_t flags,
   xnn_runtime_t* runtime_out)
 {
-  return create_runtime_impl(subgraph, weights_cache, workspace, threadpool, /*xnn_threadpool=*/NULL, flags, runtime_out);
+  return create_runtime_impl(subgraph, weights_cache, workspace, threadpool,
+                             /*xnn_threadpool=*/NULL, flags, runtime_out);
 }
 
-#ifndef XNN_SLINKY_AVAILABLE
-enum xnn_status xnn_create_threadpool_v2(
-  struct xnn_scheduler_v2 scheduler,
-  void* scheduler_context,
-  uint32_t flags,
-  xnn_threadpool_t* threadpool_out)
-{
-  // Return non-null value, will never be used.
-  *threadpool_out = (void*)1;
+#ifdef XNN_SLINKY_ENABLED
+static bool use_slinky(uint32_t flags) {
+#ifdef XNN_USE_SLINKY
+  // If compiling with XNN_USE_SLINKY defined, assume we always
+  // want Slinky enabled, regardless of the runtime flag.
+  return true;
+#else
+  return (flags & XNN_FLAG_SLINKY_ENABLED) != 0;
+#endif  // XNN_USE_SLINKY
+}
+#endif  // XNN_SLINKY_ENABLED
+
+#ifndef XNN_SLINKY_ENABLED
+// The xnn_threadpool consists of an `xnn_scheduler_v2` and its context.
+struct xnn_threadpool {
+  struct xnn_scheduler_v2 scheduler;
+  void* scheduler_context;
+};
+
+enum xnn_status xnn_create_threadpool_v2(struct xnn_scheduler_v2 scheduler,
+                                         void* scheduler_context,
+                                         uint32_t flags,
+                                         xnn_threadpool_t* threadpool_out) {
+  *threadpool_out = xnn_allocate_memory(sizeof(struct xnn_threadpool));
+  (*threadpool_out)->scheduler = scheduler;
+  (*threadpool_out)->scheduler_context = scheduler_context;
   return xnn_status_success;
 }
 
-enum xnn_status xnn_delete_threadpool(xnn_threadpool_t threadpool)
-{
+enum xnn_status xnn_delete_threadpool(xnn_threadpool_t threadpool) {
+  xnn_release_memory(threadpool);
   return xnn_status_success;
 }
-#endif
+
+int xnn_threadpool_num_threads(xnn_threadpool_t threadpool) {
+  return threadpool->scheduler.num_threads(threadpool->scheduler_context);
+}
+
+enum xnn_status xnn_threadpool_schedule(xnn_threadpool_t threadpool,
+                                        void* context,
+                                        void (*task)(void* context)) {
+  threadpool->scheduler.schedule(threadpool->scheduler_context, context, task);
+  return xnn_status_success;
+}
+
+enum xnn_status xnn_update_runtime_with_threadpool(
+    xnn_runtime_t runtime, xnn_threadpool_t xnn_threadpool) {
+  if (xnn_threadpool) {
+    struct pthreadpool_executor executor;
+    executor.num_threads = xnn_threadpool->scheduler.num_threads;
+    executor.schedule = xnn_threadpool->scheduler.schedule;
+    pthreadpool_update_executor(runtime->threadpool, &executor,
+                                xnn_threadpool->scheduler_context);
+  }
+  return xnn_status_success;
+}
+#endif  // XNN_SLINKY_ENABLED
 
 enum xnn_status xnn_create_runtime_with_threadpool(
-  xnn_subgraph_t subgraph,
-  xnn_weights_cache_t weights_cache,
-  xnn_threadpool_t threadpool,
-  uint32_t flags,
-  xnn_runtime_t* runtime_out) {
-  return create_runtime_impl(subgraph, weights_cache, /*workspace=*/NULL, /*threadpool*/NULL, threadpool, flags, runtime_out);
-}
+    xnn_subgraph_t subgraph, xnn_weights_cache_t weights_cache,
+    xnn_threadpool_t xnn_threadpool, uint32_t flags,
+    xnn_runtime_t* runtime_out) {
+  pthreadpool_t threadpool = NULL;
+  if (xnn_threadpool) {
+#ifdef XNN_SLINKY_ENABLED
+    if (!use_slinky(flags)) {
+      struct pthreadpool_executor executor;
+      executor.num_threads = (int (*)(void*))xnn_threadpool_num_threads;
+      executor.schedule =
+          (void (*)(void*, void*, void (*)(void*)))xnn_threadpool_schedule;
+      threadpool = pthreadpool_create_v2(&executor, xnn_threadpool, 0);
+      flags |= XNN_FLAG_RUNTIME_OWNS_THREADPOOL;
+    }
+#else
+    struct pthreadpool_executor executor;
+    executor.num_threads = xnn_threadpool->scheduler.num_threads;
+    executor.schedule = xnn_threadpool->scheduler.schedule;
+    threadpool =
+        pthreadpool_create_v2(&executor, xnn_threadpool->scheduler_context, 0);
+    flags |= XNN_FLAG_RUNTIME_OWNS_THREADPOOL;
+#endif  // XNN_SLINKY_ENABLED
+  }
 
-#ifndef XNN_SLINKY_AVAILABLE
-enum xnn_status xnn_update_runtime_with_threadpool(
-  xnn_runtime_t runtime,
-  xnn_threadpool_t threadpool) {
-  // This operation is not supported.
-  return xnn_status_deprecated;
+  return create_runtime_impl(subgraph, weights_cache, /*workspace=*/NULL,
+                             threadpool, xnn_threadpool, flags, runtime_out);
 }
-#endif
 
 enum xnn_status xnn_plan_memory(
     xnn_runtime_t runtime) {
@@ -757,6 +862,7 @@ enum xnn_status xnn_plan_memory(
       size_t tensor_size = xnn_tensor_get_rounded_size(value);
       if (value->datatype == xnn_datatype_qdint8 || value->datatype == xnn_datatype_qduint8) {
         tensor_size += xnn_tensor_get_rounded_dynamic_quant_param_size(value);
+        tensor_size += xnn_tensor_get_rounded_row_sum_size(value);
       }
       xnn_add_value_allocation_tracker(&mem_alloc_tracker, i, tensor_size);
     }
@@ -787,18 +893,9 @@ error:
   return status;
 }
 
-enum xnn_status xnn_reshape_runtime(
-  xnn_runtime_t runtime)
-{
+enum xnn_status xnn_reshape_runtime(xnn_runtime_t runtime) {
 #ifdef XNN_SLINKY_ENABLED
-  // If compiling with XNN_SLINKY_ENABLED defined, assume we always
-  // want Slinky enabled, regardless of the runtime flag
-  const bool use_slinky = true;
-#else
-  const bool use_slinky = (runtime->flags & XNN_FLAG_SLINKY_ENABLED) != 0;
-#endif
-  if (use_slinky) {
-#ifdef XNN_SLINKY_AVAILABLE
+  if (use_slinky(runtime->flags)) {
     if (!runtime->slinky_pipeline || (runtime->flags & XNN_FLAG_SLINKY_STATIC_BOUNDS) != 0) {
       enum xnn_status status = slinky_init_pipeline(runtime);
       if (status != xnn_status_success) {
@@ -807,8 +904,8 @@ enum xnn_status xnn_reshape_runtime(
     }
     slinky_setup_pipeline(runtime);
     return slinky_reshape_pipeline(runtime);
-#endif
   }
+#endif  // XNN_SLINKY_ENABLED
 
   bool reallocation_required = false;
 
@@ -910,12 +1007,12 @@ enum xnn_status xnn_setup_runtime(
     return status;
   }
 
-  #ifdef XNN_SLINKY_AVAILABLE
+#ifdef XNN_SLINKY_ENABLED
   if (runtime->slinky_pipeline) {
     // Slinky reshape also performs setup.
     return xnn_status_success;
   }
-  #endif
+#endif  // XNN_SLINKY_ENABLED
 
   return setup_runtime(runtime);
 }
@@ -930,12 +1027,12 @@ enum xnn_status xnn_setup_runtime_v2(
     return status;
   }
 
-  #ifdef XNN_SLINKY_AVAILABLE
+#ifdef XNN_SLINKY_ENABLED
   if (runtime->slinky_pipeline) {
     slinky_setup_pipeline(runtime);
     return xnn_status_success;
   }
-  #endif
+#endif  // XNN_SLINKY_ENABLED
 
   return setup_runtime(runtime);
 }
@@ -1091,11 +1188,11 @@ enum xnn_status xnn_get_runtime_profiling_info(xnn_runtime_t runtime,
 enum xnn_status xnn_invoke_runtime(
   xnn_runtime_t runtime)
 {
-  #ifdef XNN_SLINKY_AVAILABLE
+#ifdef XNN_SLINKY_ENABLED
   if (runtime->slinky_pipeline) {
     return slinky_invoke_pipeline(runtime);
   }
-  #endif
+#endif  // XNN_SLINKY_ENABLED
 
   if (runtime->profiling) {
     runtime->start_ts = xnn_read_timer();
@@ -1116,6 +1213,13 @@ enum xnn_status xnn_invoke_runtime(
       }
     }
   }
+
+  // If the `pthreadpool` is using an external `pthreadpool_executor`, release
+  // the executor threads.
+  if (runtime->flags & XNN_FLAG_DONT_SPIN_WORKERS) {
+    pthreadpool_release_executor_threads(runtime->threadpool);
+  }
+
   return xnn_status_success;
 }
 
@@ -1123,9 +1227,9 @@ enum xnn_status xnn_delete_runtime(
   xnn_runtime_t runtime)
 {
   if (runtime != NULL) {
-    #ifdef XNN_SLINKY_AVAILABLE
+#ifdef XNN_SLINKY_ENABLED
     slinky_destroy_pipeline(runtime);
-    #endif
+#endif  // XNN_SLINKY_ENABLED
 
     if (runtime->opdata != NULL) {
       for (size_t i = 0; i < runtime->num_ops; i++) {
@@ -1167,11 +1271,12 @@ enum xnn_status xnn_delete_runtime(
       }
     }
 
-#ifdef XNN_SLINKY_AVAILABLE
-    if (runtime->owned_xnn_threadpool != NULL) {
-      xnn_delete_threadpool(runtime->owned_xnn_threadpool);
+    if (runtime->threadpool &&
+        runtime->flags & XNN_FLAG_RUNTIME_OWNS_THREADPOOL) {
+      if (runtime->threadpool) {
+        pthreadpool_destroy(runtime->threadpool);
+      }
     }
-#endif  // XNN_SLINKY_AVAILABLE
 
     xnn_release_memory(runtime);
   }

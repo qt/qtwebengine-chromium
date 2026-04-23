@@ -66,7 +66,7 @@ bitfield struct ScopeFlags extends uint32 {
   // private brand initialization.
   class_scope_has_private_brand: bool: 1 bit;
   has_saved_class_variable: bool: 1 bit;
-  has_new_target: bool: 1 bit;
+  allocates_arguments: bool: 1 bit;
   // TODO(cbruni): Combine with function variable field when only storing the
   // function name.
   function_variable: VariableAllocationInfo: 2 bit;
@@ -182,6 +182,11 @@ extern class ScopeInfo extends HeapObject {
 
   // EmptyContextExtension-dependent code objects.
   dependent_code?[flags.sloppy_eval_can_extend_vars]: DependentCode;
+
+  // For the first 31 formal parameters, these bits will be set if they are
+  // explicitly unused within the body of the function.
+  const unused_parameter_bits?
+      [flags.scope_type == ScopeType::FUNCTION_SCOPE]: Smi;
 }
 
 extern macro NameToIndexHashTableLookup(

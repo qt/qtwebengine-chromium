@@ -96,21 +96,11 @@ std::optional<FeatureConfig> GetStandardPromoConfig(
         feature_engagement::kDefaultBrowserEligibilitySlidingWindowParam.Get(),
         feature_engagement::kMaxStoragePeriod));
 
-    if (base::FeatureList::IsEnabled(
-            kDefaultBrowserTriggerCriteriaExperiment)) {
-      // Skip the regular conditions check for trigger criteria experiment and
-      // check experiment specific condition(it has been enabled for at least 21
-      // days).
-      config.event_configs.insert(
-          EventConfig("default_browser_promo_trigger_criteria_conditions_met",
-                      Comparator(GREATER_THAN, 0), 365, 365));
-    } else {
       // Show the promo if promo specific conditions are met during last 21
       // days.
       config.event_configs.insert(
           EventConfig("generic_default_browser_promo_conditions_met",
                       Comparator(GREATER_THAN, 0), 21, 365));
-    }
 
     return config;
   }
@@ -562,6 +552,8 @@ std::optional<FeatureConfig> GetCustomConfig(const base::Feature* feature) {
                     feature_engagement::kMaxStoragePeriod);
     config.event_configs.insert(EventConfig(
         "default_browser_promos_group_trigger", Comparator(EQUAL, 0), 14, 360));
+    config.event_configs.insert(
+        EventConfig("default_browser_fre_shown", Comparator(EQUAL, 0), 7, 365));
     return config;
   }
 

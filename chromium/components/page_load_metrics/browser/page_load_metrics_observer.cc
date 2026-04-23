@@ -11,10 +11,6 @@
 
 namespace page_load_metrics {
 
-MemoryUpdate::MemoryUpdate(content::GlobalRenderFrameHostId id,
-                           base::ByteCount delta)
-    : routing_id(id), delta_bytes(delta) {}
-
 ExtraRequestCompleteInfo::ExtraRequestCompleteInfo(
     const url::SchemeHostPort& final_url,
     const net::IPEndPoint& remote_endpoint,
@@ -131,8 +127,8 @@ PageLoadMetricsObserver::ShouldObserveMimeType(
 
 PageLoadMetricsObserver::ObservePolicy
 PageLoadMetricsObserver::ShouldObserveScheme(const GURL& url) const {
-  bool should_observe_scheme =
-      url.SchemeIsHTTPOrHTTPS() || delegate_->ShouldObserveScheme(url.scheme());
+  bool should_observe_scheme = url.SchemeIsHTTPOrHTTPS() ||
+                               delegate_->ShouldObserveScheme(url.GetScheme());
   return should_observe_scheme ? CONTINUE_OBSERVING : STOP_OBSERVING;
 }
 

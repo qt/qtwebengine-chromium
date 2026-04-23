@@ -229,3 +229,56 @@ def CheckRegexTranspilerGoldenFiles(input_api, output_api):
       "Regex transpiler golden files don't match. "
       "Regenerate the outputs at {}.".format(relative_test_dir))]
   return []
+
+def CheckAutofillAiSchema(input_api, output_api):
+  """Reminds to run update_autofill_enums.py when the schema changes."""
+  if (IsComponentsAutofillFileAffected(input_api, "entity_schema.json")):
+    return [
+        output_api.PresubmitPromptWarning(
+            'You modified the Autofill AI schema. If you added an entity,'
+            ' re-run `tools/metrics/histograms/update_autofill_enums.py`.'
+        )
+    ]
+
+  return []
+
+def CheckFeatureFilesOrdering(input_api, output_api):
+  """Checks that the base::Features are declared and defined in alphabetical
+  order."""
+  FEATURE_FILES = [
+      "autofill_features.h",
+      "autofill_features.cc",
+      "autofill_debug_features.h",
+      "autofill_debug_features.cc",
+      "autofill_payments_features.h",
+      "autofill_payments_features.cc",
+  ]
+
+  def validate_ordering(file):
+    text = input_api.ReadFile(file)
+    pattern = re.compile(
+        r'(?:BASE_FEATURE|BASE_DECLARE_FEATURE)\s*\(\s*(\S+)\s*(?:,|\))',
+        re.DOTALL,
+    )
+    features = pattern.findall(text)
+
+    # Check for violations by comparing adjacent elements.
+    return [x for x in zip(features[:-1], features[1:]) if x[0] > x[1]]
+
+  errors = []
+  for file in input_api.AffectedSourceFiles(input_api.FilterSourceFile):
+    if file.LocalPath().startswith('components/autofill/') and any(
+        file.LocalPath().endswith(file_name) for file_name in FEATURE_FILES
+    ):
+      violations = validate_ordering(file)
+      if violations:
+        readable_violations = [
+            f"\n`{rhs}` should come before `{lhs}`" for lhs, rhs in violations
+        ]
+        errors.append(
+            output_api.PresubmitError(
+                f'Keep the base::Features in {file} sorted.'
+                f" Violations:{''.join(readable_violations)}"
+            )
+        )
+  return errors

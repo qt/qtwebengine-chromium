@@ -50,8 +50,6 @@ class BrowserVersionChannel(_BrowserVersionChannelMixin, enum.Enum):
     return self == other
 
 
-
-
 class PartialBrowserVersionError(ValueError):
 
   def __init__(self, version: BrowserVersion):

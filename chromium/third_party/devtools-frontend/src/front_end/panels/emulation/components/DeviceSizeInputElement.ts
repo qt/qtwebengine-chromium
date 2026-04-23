@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import type * as Platform from '../../../core/platform/platform.js';
 import * as EmulationModel from '../../../models/emulation/emulation.js';
@@ -121,6 +121,7 @@ export class SizeInputElement extends HTMLElement {
   }
 }
 
+// eslint-disable-next-line @devtools/enforce-custom-element-prefix
 customElements.define('device-mode-emulation-size-input', SizeInputElement);
 
 declare global {

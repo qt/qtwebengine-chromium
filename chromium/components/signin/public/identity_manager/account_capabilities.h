@@ -13,6 +13,7 @@
 #include "base/containers/span.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "components/signin/internal/identity_manager/account_info_util.h"
 #include "components/signin/public/identity_manager/tribool.h"
 
 #if BUILDFLAG(IS_ANDROID)
@@ -47,8 +48,9 @@ class AccountCapabilities {
       JNIEnv* env) const;
 #endif
 
+  explicit AccountCapabilities(base::flat_map<std::string, bool> capabilities);
+
 #if BUILDFLAG(IS_IOS)
-  AccountCapabilities(base::flat_map<std::string, bool> capabilities);
   const base::flat_map<std::string, bool>& ConvertToAccountCapabilitiesIOS();
 #endif
 
@@ -98,6 +100,11 @@ class AccountCapabilities {
 
   // The user account is able to use edu features.
   signin::Tribool can_use_edu_features() const;
+
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  // The user account is able to use Gemini in Chrome.
+  signin::Tribool can_use_gemini_in_chrome() const;
+#endif
 
   // The user account is able to use generative AI in recorder app.
   signin::Tribool can_use_generative_ai_in_recorder_app() const;
@@ -157,8 +164,20 @@ class AccountCapabilities {
   bool operator==(const AccountCapabilities& other) const;
 
  private:
-  friend std::optional<AccountCapabilities> AccountCapabilitiesFromValue(
+  // Returns the list of account capability service names supported in Chrome.
+  static base::span<const std::string_view>
+  GetSupportedAccountCapabilityNames();
+
+  // Returns the capability state using the service name.
+  signin::Tribool GetCapabilityByName(std::string_view name) const;
+
+  friend std::optional<AccountCapabilities>
+  signin::AccountCapabilitiesFromServerResponse(
       const base::Value::Dict& account_capabilities);
+  friend base::Value::Dict signin::SerializeAccountCapabilities(
+      const AccountCapabilities& account_capabilities);
+  friend AccountCapabilities signin::DeserializeAccountCapabilities(
+      const base::Value::Dict& dict);
   friend class AccountCapabilitiesFetcherGaia;
 #if BUILDFLAG(IS_IOS)
   friend base::span<const std::string_view>
@@ -166,15 +185,7 @@ class AccountCapabilities {
   friend class ios::AccountCapabilitiesFetcherIOS;
 #endif
   friend class AccountCapabilitiesTestMutator;
-  friend class AccountTrackerService;
   friend class supervised_user::FamilyLinkUserCapabilitiesObserver;
-
-  // Returns the capability state using the service name.
-  signin::Tribool GetCapabilityByName(std::string_view name) const;
-
-  // Returns the list of account capability service names supported in Chrome.
-  static base::span<const std::string_view>
-  GetSupportedAccountCapabilityNames();
 
   base::flat_map<std::string, bool> capabilities_map_;
 };

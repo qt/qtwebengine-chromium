@@ -37,7 +37,6 @@
 #include "src/tint/lang/core/ir/function_param.h"
 #include "src/tint/lang/core/ir/value.h"
 #include "src/tint/lang/core/type/type.h"
-#include "src/tint/utils/containers/const_propagating_ptr.h"
 #include "src/tint/utils/ice/ice.h"
 
 // Forward declarations
@@ -76,9 +75,6 @@ class Function : public Castable<Function, Value> {
              PipelineStage stage = PipelineStage::kUndefined,
              std::optional<std::array<Value*, 3>> wg_size = {});
     ~Function() override;
-
-    /// @copydoc Value::Type()
-    const core::type::Type* Type() const override { return type_; }
 
     /// @copydoc Instruction::Clone()
     Function* Clone(CloneContext& ctx) override;
@@ -138,9 +134,6 @@ class Function : public Castable<Function, Value> {
         }};
     }
 
-    /// @param type the type to return via ->Type()
-    void SetType(const core::type::Type* type) { type_ = type; }
-
     /// @param type the return type for the function
     void SetReturnType(const core::type::Type* type) { return_.type = type; }
 
@@ -153,7 +146,7 @@ class Function : public Castable<Function, Value> {
     /// @returns the return IO attributes
     const IOAttributes& ReturnAttributes() const { return return_.attributes; }
 
-    /// Sets the return attributes
+    /// Sets the return builtin attribute
     /// @param builtin the builtin to set
     void SetReturnBuiltin(BuiltinValue builtin) {
         TINT_ASSERT(!return_.attributes.builtin.has_value());
@@ -161,6 +154,13 @@ class Function : public Castable<Function, Value> {
     }
     /// @returns the return builtin attribute
     std::optional<BuiltinValue> ReturnBuiltin() const { return return_.attributes.builtin; }
+
+    /// Sets the return depth mode attribute
+    /// @param depth_mode the depth mode to set
+    void SetReturnDepthMode(BuiltinDepthMode depth_mode) {
+        TINT_ASSERT(!return_.attributes.depth_mode.has_value());
+        return_.attributes.depth_mode = depth_mode;
+    }
 
     /// Sets the return location.
     /// @param loc the optional location to set
@@ -225,15 +225,13 @@ class Function : public Castable<Function, Value> {
     PipelineStage pipeline_stage_ = PipelineStage::kUndefined;
     std::optional<std::array<Value*, 3>> workgroup_size_;
 
-    const core::type::Type* type_ = nullptr;
-
     struct {
         const core::type::Type* type = nullptr;
         IOAttributes attributes = {};
     } return_;
 
     Vector<FunctionParam*, 1> params_;
-    ConstPropagatingPtr<ir::Block> block_;
+    ir::Block* block_ = nullptr;
 };
 
 /// @param value the enum value

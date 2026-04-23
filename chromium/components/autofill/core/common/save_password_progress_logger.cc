@@ -524,8 +524,6 @@ std::string SavePasswordProgressLogger::GetStringFromID(
       return "Automated password change: cross-origin navigation detected";
     case STRING_AUTOMATED_PASSWORD_CHANGE_PAGE_CONTENT_RECEIVED:
       return "Automated password change: page content received";
-    case STRING_AUTOMATED_PASSWORD_CHANGE_ON_BUTTON_CLICKED:
-      return "Automated password change: on button clicked";
     case STRING_AUTOMATED_PASSWORD_CHANGE_BUTTON_CLICK_ACTION_RESULT:
       return "Automated password change: button click action result";
     case STRING_AUTOMATED_PASSWORD_CHANGE_DOM_NODE_ID_TO_CLICK:
@@ -534,6 +532,8 @@ std::string SavePasswordProgressLogger::GetStringFromID(
       return "Automated password change: form not found";
     case STRING_AUTOMATED_PASSWORD_CHANGE_SUBMISSION_DETECTED_OR_TIMEOUT:
       return "Automated password change: submission detected or timeout";
+    case STRING_AUTOMATED_PASSWORD_CHANGE_FILLING_ACTION_RESULT:
+      return "Automated password change: filling action result";
     case STRING_PASSWORD_CHANGE_OVERRIDDEN_BY_SWITCH:
       return "Automated password change: Overridden by switch";
     case STRING_PASSWORD_CHANGE_GENERATION_UNAVAILABLE:
@@ -570,6 +570,8 @@ std::string SavePasswordProgressLogger::GetStringFromID(
       return "Login state check: model execution server error, code: ";
     case STRING_LOGIN_STATE_CHECK_FAILURE:
       return "Login state check: failure";
+    case STRING_ACTOR_LOGIN_ATTEMPT_LOGIN_ON_AFFILIATED_ORIGIN:
+      return "Actor login: Attempt login was requested on affiliated origin";
     case STRING_ACTOR_LOGIN_FILLING_ATTEMPT_STARTED:
       return "Actor login: starting filling attempt";
     case STRING_ACTOR_LOGIN_FILLING_NOT_ALLOWED:
@@ -602,6 +604,9 @@ std::string SavePasswordProgressLogger::GetStringFromID(
       return "Actor login: get credentials signin form exists";
     case STRING_ACTOR_LOGIN_GET_CREDENTIALS_NUM_CREDENTIALS:
       return "Actor login: get credentials number of credentials";
+    case STRING_ACTOR_LOGIN_PRIMARY_MAIN_FRAME_ORIGIN_CHANGED:
+      return "Actor login: origin is not equal to or affiliated with the "
+             "credential's request origin";
     case SavePasswordProgressLogger::STRING_INVALID:
       return "INVALID";
       // Intentionally no default: clause here -- all IDs need to get covered.

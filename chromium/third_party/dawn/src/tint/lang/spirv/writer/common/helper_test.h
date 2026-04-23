@@ -102,6 +102,9 @@ class SpirvWriterTestHelperBase : public BASE {
     /// Workgroup info
     Output::WorkgroupInfo workgroup_info;
 
+    /// Subgroup Matrix Info
+    SubgroupMatrixInfo subgroup_matrix_info;
+
     /// @returns the error string from the validation
     std::string Error() const { return err_; }
 
@@ -110,6 +113,10 @@ class SpirvWriterTestHelperBase : public BASE {
     /// storage class with OpConstantNull
     /// @returns true if generation and validation succeeded
     bool Generate(Options options = {}) {
+        if (options.entry_point_name.empty()) {
+            options.entry_point_name = "main";
+        }
+
         auto result = writer::Generate(mod, options);
         if (result != Success) {
             err_ = result.Failure().reason;
@@ -124,6 +131,7 @@ class SpirvWriterTestHelperBase : public BASE {
             return false;
         }
         workgroup_info = result->workgroup_info;
+        subgroup_matrix_info = result->subgroup_matrix_info;
 
         return true;
     }
@@ -219,7 +227,7 @@ class SpirvWriterTestHelperBase : public BASE {
             case kI32:
                 return b.Composite(MakeVectorType(type), 42_i, -10_i);
             case kU32:
-                return b.Composite(MakeVectorType(type), 42_u, 10_u);
+                return b.Composite(MakeVectorType(type), 31_u, 10_u);
             case kF32:
                 return b.Composite(MakeVectorType(type), 42_f, -0.5_f);
             case kF16:

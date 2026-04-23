@@ -35,6 +35,7 @@
 // Forward declarations
 namespace tint::core::ir {
 class Module;
+class Function;
 }  // namespace tint::core::ir
 
 namespace tint::core::ir {
@@ -45,8 +46,8 @@ enum class Capability : uint8_t {
     kAllow8BitIntegers,
     /// Allows 64-bit integer types.
     kAllow64BitIntegers,
-    /// Allows ClipDistances on f32 parameters
-    kAllowClipDistancesOnF32,
+    /// Allows ClipDistances on f32 and vecN<f32> parameters
+    kAllowClipDistancesOnF32ScalarAndVector,
     /// Allows handle vars to not have binding points
     kAllowHandleVarsWithoutBindings,
     /// Allows module scoped lets
@@ -84,11 +85,16 @@ enum class Capability : uint8_t {
     kAllowStructMatrixDecorations,
     /// Allows @location on structs, matrices, and arrays that have numeric elements
     kAllowLocationForNumericElements,
-    // Allows resource_binding to be used. Should not be present after
-    // core::core::ir::transform::ResourceBinding runs
+    /// Allows resource_binding to be used. Should not be present after
+    /// core::core::ir::transform::ResourceBinding runs
     kAllowResourceBinding,
     /// Allows a pointer to a handle type
     kAllowPointerToHandle,
+    /// Allows ShaderIO specific features, like blend_src on non-struct members.
+    /// These are not separate capabilities, because they are enabled/disabled in lockstep with each
+    /// other.
+    /// TODO(448417342): Validate in/out address space usage based on this capability
+    kLoosenValidationForShaderIO,
 };
 
 /// Capabilities is a set of Capability
@@ -111,12 +117,12 @@ Result<SuccessType> ValidateAndDumpIfNeeded(const Module& ir,
                                             Capabilities capabilities = {},
                                             std::string_view timing = "before");
 
-// Scans the module root block for user-declared immediate data (module-scope
+// Scans the given entry point referenced variables for user-declared immediate data (module-scope
 // `var<immediate>` declarations). Returns Success if there is at most one.
 // On success, the returned uint32_t is the 4-byte rounded-up size of the
 // user-declared immediate data (or 0 if none present). Fails if multiple
 // immediates are declared.
-Result<uint32_t> ValidateSingleUserImmediate(const Module& ir);
+Result<uint32_t> ValidateSingleUserImmediate(const Module& ir, core::ir::Function* ep);
 
 // Immediate data validation helpers
 struct ImmediateInfo {

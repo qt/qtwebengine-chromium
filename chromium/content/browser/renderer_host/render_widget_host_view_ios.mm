@@ -15,6 +15,7 @@
 #include "components/input/render_widget_host_input_event_router.h"
 #include "components/input/switches.h"
 #include "components/viz/common/features.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/surfaces/frame_sink_id_allocator.h"
 #include "content/browser/renderer_host/browser_compositor_ios.h"
 #include "content/browser/renderer_host/input/motion_event_web.h"
@@ -104,7 +105,7 @@ RenderWidgetHostViewIOS::RenderWidgetHostViewIOS(RenderWidgetHost* widget)
       screen->GetScreenInfosNearestDisplay(screen->GetPrimaryDisplay().id());
 
   browser_compositor_ = std::make_unique<BrowserCompositorIOS>(
-      [ui_view_->view_ viewHandle], this, host()->is_hidden(),
+      [ui_view_->view_ viewHandle], this, host()->IsHidden(),
       host()->GetFrameSinkId());
 
   if (IsTesting()) {
@@ -157,7 +158,8 @@ bool RenderWidgetHostViewIOS::IsSurfaceAvailableForCopy() {
 void RenderWidgetHostViewIOS::CopyFromSurface(
     const gfx::Rect& src_rect,
     const gfx::Size& dst_size,
-    base::OnceCallback<void(const SkBitmap&)> callback) {
+    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+        callback) {
   base::WeakPtr<RenderWidgetHostImpl> popup_host;
   base::WeakPtr<DelegatedFrameHost> popup_frame_host;
   RenderWidgetHostViewBase::CopyMainAndPopupFromSurface(
@@ -165,6 +167,11 @@ void RenderWidgetHostViewIOS::CopyFromSurface(
       browser_compositor_->GetDelegatedFrameHost()->GetWeakPtr(), popup_host,
       popup_frame_host, src_rect, dst_size, GetDeviceScaleFactor(),
       std::move(callback));
+}
+
+ui::FilteredGestureProvider*
+RenderWidgetHostViewIOS::GetFilteredGestureProviderForTesting() {
+  return &gesture_provider_;
 }
 
 void RenderWidgetHostViewIOS::InitAsChild(gfx::NativeView parent_view) {}
@@ -309,7 +316,7 @@ void RenderWidgetHostViewIOS::Hide() {
   is_visible_ = false;
   browser_compositor_->SetViewVisible(is_visible_);
   browser_compositor_->SetRenderWidgetHostIsHidden(true);
-  if (!host() || host()->is_hidden()) {
+  if (!host() || host()->IsHidden()) {
     return;
   }
 
@@ -880,6 +887,10 @@ void RenderWidgetHostViewIOS::ChildDidAckGestureEvent(
   // GestureEventAck, the invocation of ApplyRootScrollOffsetChanged here has
   // also been eliminated for now. We should address the GestureScrollUpdate
   // event after examining how the bug implements GestureEventAck.
+}
+
+void RenderWidgetHostViewIOS::OnUnconfirmedTapConvertedToTap() {
+  gesture_provider_.OnUnconfirmedTapConvertedToTap();
 }
 
 void RenderWidgetHostViewIOS::UpdateFrameBounds() {

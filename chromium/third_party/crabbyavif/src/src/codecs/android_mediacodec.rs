@@ -14,12 +14,14 @@
 
 use crate::codecs::Decoder;
 use crate::codecs::DecoderConfig;
-use crate::decoder::CodecChoice;
+use crate::decoder::CompressionFormat;
 use crate::decoder::GridImageHelper;
 use crate::image::Image;
 use crate::image::YuvRange;
 use crate::internal_utils::stream::IStream;
 use crate::internal_utils::*;
+#[cfg(android_soong)]
+use crate::parser::mp4box::CodecConfiguration;
 use crate::utils::pixels::*;
 use crate::*;
 
@@ -289,32 +291,35 @@ enum CodecInitializer {
 
 #[cfg(android_soong)]
 fn prefer_hardware_decoder(config: &DecoderConfig) -> bool {
-    let prefer_hw = rustutils::system_properties::read_bool(
+    let prefer_hw = rustutils::android::system_properties::read_bool(
         "media.stagefright.thumbnail.prefer_hw_codecs",
         false,
     )
     .unwrap_or(false);
-    if config.codec_config.is_avif() {
-        // We will return true when all of the below conditions are true:
-        // 1) prefer_hw is true.
-        // 2) category is not Alpha and category is not Gainmap. We do not prefer hardware for
-        //    decoding these categories since they generally tend to be monochrome images and using
-        //    hardware for that is unreliable.
-        // 3) profile is 0. As of Sep 2024, there are no AV1 hardware decoders that support
-        //    anything other than profile 0.
-        // 4) depth is 8. Since we query for decoder simply by mime type, there is no way to know
-        //    if an AV1 hardware decoder supports 10-bit or not.
-        prefer_hw
-            && config.category != Category::Alpha
-            && config.category != Category::Gainmap
-            && config.codec_config.profile() == 0
-            && config.codec_config.depth() == 8
-    } else {
-        // We will return true when one of the following conditions are true:
-        // 1) prefer_hw is true.
-        // 2) depth is greater than 8. As of Nov 2024, the default HEVC software decoder on Android
-        //    only supports 8-bit images.
-        prefer_hw || config.depth > 8
+    match &config.codec_config {
+        CodecConfiguration::Av1(av1_codec_configuration) => {
+            // We will return true when all of the below conditions are true:
+            // 1) prefer_hw is true.
+            // 2) category is not Alpha and category is not Gainmap. We do not prefer hardware for
+            //    decoding these categories since they generally tend to be monochrome images and using
+            //    hardware for that is unreliable.
+            // 3) profile is 0. As of Sep 2024, there are no AV1 hardware decoders that support
+            //    anything other than profile 0.
+            // 4) depth is 8. Since we query for decoder simply by mime type, there is no way to know
+            //    if an AV1 hardware decoder supports 10-bit or not.
+            prefer_hw
+                && config.category != Category::Alpha
+                && config.category != Category::Gainmap
+                && config.codec_config.profile() == 0
+                && av1_codec_configuration.depth() == 8
+        }
+        CodecConfiguration::Hevc(_) => {
+            // We will return true when one of the following conditions are true:
+            // 1) prefer_hw is true.
+            // 2) depth is greater than 8. As of Nov 2024, the default HEVC software decoder on Android
+            //    only supports 8-bit images.
+            prefer_hw || config.depth > 8
+        }
     }
 }
 
@@ -323,7 +328,7 @@ fn get_codec_initializers(config: &DecoderConfig) -> Vec<CodecInitializer> {
     {
         // Use a specific decoder if it is requested.
         if let Ok(Some(decoder)) =
-            rustutils::system_properties::read("media.crabbyavif.debug.decoder")
+            rustutils::android::system_properties::read("media.crabbyavif.debug.decoder")
         {
             if !decoder.is_empty() {
                 return vec![CodecInitializer::ByName(decoder)];
@@ -336,36 +341,42 @@ fn get_codec_initializers(config: &DecoderConfig) -> Vec<CodecInitializer> {
     // As of Sep 2024, c2.android.av1.decoder is the only known decoder to support 12-bit AV1. So
     // prefer that for 12 bit images.
     let prefer_gav1 = config.depth == 12;
-    let is_avif = config.codec_config.is_avif();
-    let mime_type = if is_avif { MediaCodec::AV1_MIME } else { MediaCodec::HEVC_MIME };
+    let mime_type = match config.codec_config.compression_format() {
+        CompressionFormat::Avif => MediaCodec::AV1_MIME,
+        CompressionFormat::Heic => MediaCodec::HEVC_MIME,
+    };
     let prefer_hw = false;
     #[cfg(android_soong)]
     let prefer_hw = prefer_hardware_decoder(config);
-    match (prefer_hw, is_avif, prefer_gav1) {
-        (true, false, _) => vec![
+    match (
+        prefer_hw,
+        config.codec_config.compression_format(),
+        prefer_gav1,
+    ) {
+        (true, CompressionFormat::Heic, _) => vec![
             CodecInitializer::ByMimeType(mime_type.to_string()),
             CodecInitializer::ByName(hevc),
         ],
-        (false, false, _) => vec![
+        (false, CompressionFormat::Heic, _) => vec![
             CodecInitializer::ByName(hevc),
             CodecInitializer::ByMimeType(mime_type.to_string()),
         ],
-        (true, true, true) => vec![
+        (true, CompressionFormat::Avif, true) => vec![
             CodecInitializer::ByName(gav1),
             CodecInitializer::ByMimeType(mime_type.to_string()),
             CodecInitializer::ByName(dav1d),
         ],
-        (true, true, false) => vec![
+        (true, CompressionFormat::Avif, false) => vec![
             CodecInitializer::ByMimeType(mime_type.to_string()),
             CodecInitializer::ByName(dav1d),
             CodecInitializer::ByName(gav1),
         ],
-        (false, true, true) => vec![
+        (false, CompressionFormat::Avif, true) => vec![
             CodecInitializer::ByName(gav1),
             CodecInitializer::ByName(dav1d),
             CodecInitializer::ByMimeType(mime_type.to_string()),
         ],
-        (false, true, false) => vec![
+        (false, CompressionFormat::Avif, false) => vec![
             CodecInitializer::ByName(dav1d),
             CodecInitializer::ByName(gav1),
             CodecInitializer::ByMimeType(mime_type.to_string()),
@@ -401,7 +412,10 @@ impl MediaCodec {
         c_str!(
             mime_type,
             mime_type_tmp,
-            if config.codec_config.is_avif() { Self::AV1_MIME } else { Self::HEVC_MIME }
+            match config.codec_config.compression_format() {
+                CompressionFormat::Avif => Self::AV1_MIME,
+                CompressionFormat::Heic => Self::HEVC_MIME,
+            }
         );
         unsafe {
             AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, mime_type);
@@ -634,6 +648,7 @@ impl MediaCodec {
         _spatial_id: u8,
         image: &mut Image,
         category: Category,
+        signal_eos: bool,
     ) -> AvifResult<()> {
         if self.codec.is_none() {
             self.initialize_impl(/*low_latency=*/ true)?;
@@ -651,7 +666,11 @@ impl MediaCodec {
                 retry_count += 1;
                 let input_index = AMediaCodec_dequeueInputBuffer(codec, Self::TIMEOUT as _);
                 if input_index >= 0 {
-                    self.enqueue_payload(input_index, payload, 0)?;
+                    self.enqueue_payload(
+                        input_index,
+                        payload,
+                        if signal_eos { AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM as _ } else { 0 },
+                    )?;
                     break;
                 } else if input_index == AMEDIACODEC_INFO_TRY_AGAIN_LATER as isize {
                     continue;
@@ -838,9 +857,10 @@ impl Decoder for MediaCodec {
         spatial_id: u8,
         image: &mut Image,
         category: Category,
+        signal_eos: bool,
     ) -> AvifResult<()> {
         while self.codec_index < self.codec_initializers.len() {
-            let res = self.get_next_image_impl(payload, spatial_id, image, category);
+            let res = self.get_next_image_impl(payload, spatial_id, image, category, signal_eos);
             if res.is_ok() {
                 return Ok(());
             }
@@ -877,7 +897,7 @@ impl Decoder for MediaCodec {
 
 impl MediaCodec {
     fn hevc_whole_nal_units(&self, payload: &[u8]) -> AvifResult<Option<Vec<u8>>> {
-        if !self.config.unwrap_ref().codec_config.is_heic() {
+        if self.config.unwrap_ref().codec_config.compression_format() != CompressionFormat::Heic {
             return Ok(None);
         }
         // For HEVC, MediaCodec expects whole NAL units with each unit prefixed with a start code

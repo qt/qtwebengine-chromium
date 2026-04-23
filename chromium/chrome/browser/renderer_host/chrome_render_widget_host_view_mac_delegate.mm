@@ -69,6 +69,9 @@
     _widgetProcessId = renderWidgetHost->GetProcess()->GetDeprecatedID();
     _widgetRoutingId = renderWidgetHost->GetRoutingID();
     _historySwiper = [[HistorySwiper alloc] initWithDelegate:self];
+    // Clip bounds so history swiper navigation layer doesn't overflow the
+    // bounds when in Split View or with a Side Panel open.
+    [self viewThatWantsHistoryOverlay].clipsToBounds = YES;
   }
   return self;
 }
@@ -460,6 +463,22 @@
   }
 
   return AcceptMouseEvents::kWhenInActiveWindow;
+}
+
+- (AcceptTooltipEvents)acceptsTooltipEvents {
+  content::WebContents* webContents = self.webContents;
+  if (!webContents) {
+    return AcceptTooltipEvents::kWhenInKeyWindow;
+  }
+
+  // For Top Chrome WebUIs, allows non-key windows to accept
+  // tooltip events.
+  if (IsTopChromeWebUIURL(webContents->GetVisibleURL()) ||
+      IsTopChromeUntrustedWebUIURL(webContents->GetVisibleURL())) {
+    return AcceptTooltipEvents::kWhenInActiveApp;
+  }
+
+  return AcceptTooltipEvents::kWhenInKeyWindow;
 }
 
 @end

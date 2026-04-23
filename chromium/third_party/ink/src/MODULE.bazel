@@ -19,8 +19,6 @@ module(
 
 git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
-http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
 #################################################################################
 ## Toolchain setup
 #################################################################################
@@ -61,13 +59,13 @@ bazel_dep(
 
 git_repository(
     name = "ink_stroke_modeler",
-    commit = "8ce40dc2a847c73a72fb92ff30ca93b2e8ada8b0",
+    commit = "748f84a30335b773e073fd1cf31c591be0a6b77e",  # Head as of 2025-06-17
     remote = "https://github.com/google/ink-stroke-modeler.git",
 )
 
 git_repository(
     name = "libtess2",
-    commit = "446bae6dfb4c3efb43cb2764379574dcb4f0ee6c",
+    commit = "446bae6dfb4c3efb43cb2764379574dcb4f0ee6c",  # Head as of 2025-04-25
     remote = "https://github.com/memononen/libtess2.git",
 )
 
@@ -75,13 +73,10 @@ bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_android", version = "0.6.0")
 bazel_dep(name = "rules_jni", version = "0.10.1")
 
-SKIA_COMMIT = "515a23f3cbe1e2f54ffa6821e6da6f4891763f47"
-
-http_archive(
+git_repository(
     name = "skia",
-    integrity = "sha256-xOKsNeZapFKLRPuo8N+s3mWSUqRfWxIzWZnxnNB4kMM=",
-    strip_prefix = "skia-" + SKIA_COMMIT,
-    url = "https://github.com/google/skia/archive/" + SKIA_COMMIT + ".zip",
+    commit = "fb92a016ef1dd54b027d022e72689497eb5b6c0e",  # Head as of 2025-09-08
+    remote = "https://github.com/google/skia.git",
 )
 
 # Skia configuration

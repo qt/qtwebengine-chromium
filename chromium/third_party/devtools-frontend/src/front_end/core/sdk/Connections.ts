@@ -9,7 +9,7 @@ import type * as Platform from '../platform/platform.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';
 import * as Root from '../root/root.js';
 
-import {RehydratingConnection} from './RehydratingConnection.js';
+import {RehydratingConnectionTransport} from './RehydratingConnection.js';
 
 const UIStrings = {
   /**
@@ -19,7 +19,7 @@ const UIStrings = {
 } as const;
 const str_ = i18n.i18n.registerUIStrings('core/sdk/Connections.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-export class MainConnection implements ProtocolClient.InspectorBackend.Connection {
+export class MainConnection implements ProtocolClient.ConnectionTransport.ConnectionTransport {
   onMessage: ((arg0: Object|string) => void)|null = null;
   #onDisconnect: ((arg0: string) => void)|null = null;
   #messageBuffer = '';
@@ -81,7 +81,7 @@ export class MainConnection implements ProtocolClient.InspectorBackend.Connectio
   }
 }
 
-export class WebSocketConnection implements ProtocolClient.InspectorBackend.Connection {
+export class WebSocketTransport implements ProtocolClient.ConnectionTransport.ConnectionTransport {
   #socket: WebSocket|null;
   onMessage: ((arg0: Object|string) => void)|null = null;
   #onDisconnect: ((arg0: string) => void)|null = null;
@@ -176,7 +176,7 @@ export class WebSocketConnection implements ProtocolClient.InspectorBackend.Conn
   }
 }
 
-export class StubConnection implements ProtocolClient.InspectorBackend.Connection {
+export class StubTransport implements ProtocolClient.ConnectionTransport.ConnectionTransport {
   onMessage: ((arg0: Object|string) => void)|null = null;
   #onDisconnect: ((arg0: string) => void)|null = null;
 
@@ -196,7 +196,7 @@ export class StubConnection implements ProtocolClient.InspectorBackend.Connectio
     const messageObject = JSON.parse(message);
     const error = {
       message: 'This is a stub connection, can\'t dispatch message.',
-      code: ProtocolClient.InspectorBackend.DevToolsStubErrorCode,
+      code: ProtocolClient.CDPConnection.CDPErrorStatus.DEVTOOLS_STUB_ERROR,
       data: messageObject,
     };
     if (this.onMessage) {
@@ -213,79 +213,31 @@ export class StubConnection implements ProtocolClient.InspectorBackend.Connectio
   }
 }
 
-export interface ParallelConnectionInterface extends ProtocolClient.InspectorBackend.Connection {
-  getSessionId: () => string;
-  getOnDisconnect: () => ((arg0: string) => void) | null;
-}
-
-export class ParallelConnection implements ParallelConnectionInterface {
-  readonly #connection: ProtocolClient.InspectorBackend.Connection;
-  #sessionId: string;
-  onMessage: ((arg0: Object) => void)|null = null;
-  #onDisconnect: ((arg0: string) => void)|null = null;
-  constructor(connection: ProtocolClient.InspectorBackend.Connection, sessionId: string) {
-    this.#connection = connection;
-    this.#sessionId = sessionId;
-  }
-
-  setOnMessage(onMessage: (arg0: Object) => void): void {
-    this.onMessage = onMessage;
-  }
-
-  setOnDisconnect(onDisconnect: (arg0: string) => void): void {
-    this.#onDisconnect = onDisconnect;
-  }
-
-  getOnDisconnect(): ((arg0: string) => void)|null {
-    return this.#onDisconnect;
-  }
-
-  sendRawMessage(message: string): void {
-    const messageObject = JSON.parse(message);
-    // If the message isn't for a specific session, it must be for the root session.
-    if (!messageObject.sessionId) {
-      messageObject.sessionId = this.#sessionId;
-    }
-    this.#connection.sendRawMessage(JSON.stringify(messageObject));
-  }
-
-  getSessionId(): string {
-    return this.#sessionId;
-  }
-
-  async disconnect(): Promise<void> {
-    if (this.#onDisconnect) {
-      this.#onDisconnect.call(null, 'force disconnect');
-    }
-    this.#onDisconnect = null;
-    this.onMessage = null;
-  }
-}
-
 export async function initMainConnection(
     createRootTarget: () => Promise<void>,
     onConnectionLost: (message: Platform.UIString.LocalizedString) => void): Promise<void> {
-  ProtocolClient.InspectorBackend.Connection.setFactory(createMainConnection.bind(null, onConnectionLost));
+  ProtocolClient.ConnectionTransport.ConnectionTransport.setFactory(createMainTransport.bind(null, onConnectionLost));
   await createRootTarget();
   Host.InspectorFrontendHost.InspectorFrontendHostInstance.connectionReady();
 }
 
-function createMainConnection(onConnectionLost: (message: Platform.UIString.LocalizedString) => void):
-    ProtocolClient.InspectorBackend.Connection {
-  if (Root.Runtime.getPathName().includes('rehydrated_devtools_app')) {
-    return new RehydratingConnection(onConnectionLost);
+function createMainTransport(onConnectionLost: (message: Platform.UIString.LocalizedString) => void):
+    ProtocolClient.ConnectionTransport.ConnectionTransport {
+  if (Root.Runtime.Runtime.isTraceApp()) {
+    return new RehydratingConnectionTransport(onConnectionLost);
   }
+
   const wsParam = Root.Runtime.Runtime.queryParam('ws');
   const wssParam = Root.Runtime.Runtime.queryParam('wss');
   if (wsParam || wssParam) {
     const ws = (wsParam ? `ws://${wsParam}` : `wss://${wssParam}`) as Platform.DevToolsPath.UrlString;
-    return new WebSocketConnection(ws, onConnectionLost);
+    return new WebSocketTransport(ws, onConnectionLost);
   }
 
   const notEmbeddedOrWs = Host.InspectorFrontendHost.InspectorFrontendHostInstance.isHostedMode();
   if (notEmbeddedOrWs) {
     // eg., hosted mode (e.g. `http://localhost:9222/devtools/inspector.html`) without a WebSocket URL,
-    return new StubConnection();
+    return new StubTransport();
   }
 
   return new MainConnection();

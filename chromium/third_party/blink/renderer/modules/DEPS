@@ -1,6 +1,7 @@
 include_rules = [
     "+base/atomic_sequence_num.h",
     "+base/memory/scoped_refptr.h",
+    "+base/memory/values_equivalent.h",
     "+base/containers/heap_array.h",
     "+base/containers/span.h",
     "+mojo/public/cpp/base",
@@ -83,5 +84,8 @@ specific_include_rules = {
     ],
     "multicast_controller.*": [
         "+net/base/ip_address.h",
+    ],
+    "ai_page_content_agent.cc": [
+        "+third_party/blink/renderer/core/exported/web_view_impl.h",
     ],
 }

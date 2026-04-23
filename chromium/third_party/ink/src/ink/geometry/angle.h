@@ -32,7 +32,7 @@ class Angle {
  public:
   // Constructs an angle with a value of zero radians (which is also
   // zero degrees).
-  Angle() = default;
+  constexpr Angle() = default;
 
   // Constructs an angle with the given value in radians.
   static constexpr Angle Radians(float radians) { return Angle(radians); }
@@ -45,9 +45,9 @@ class Angle {
   constexpr Angle& operator=(const Angle&) = default;
 
   // Returns the value of the angle in radians.
-  float ValueInRadians() const { return radians_; }
+  constexpr float ValueInRadians() const { return radians_; }
   // Returns the value of the angle in degrees.
-  float ValueInDegrees() const {
+  constexpr float ValueInDegrees() const {
     return radians_ * static_cast<float>(180.0 / numbers::kPi);
   }
 
@@ -65,6 +65,9 @@ class Angle {
   friend H AbslHashValue(H h, Angle angle) {
     return H::combine(std::move(h), angle.radians_);
   }
+
+  friend constexpr bool operator==(const Angle&, const Angle&) = default;
+  friend constexpr auto operator<=>(const Angle&, const Angle&) = default;
 
  private:
   // Constructs an angle, in radians. The value is not normalized.
@@ -93,13 +96,6 @@ Angle Abs(Angle angle);
 Angle Mod(Angle value, Angle divisor);
 Angle Min(Angle a, Angle b);
 Angle Max(Angle a, Angle b);
-
-bool operator==(Angle lhs, Angle rhs);
-bool operator!=(Angle lhs, Angle rhs);
-bool operator<(Angle lhs, Angle rhs);
-bool operator>(Angle lhs, Angle rhs);
-bool operator<=(Angle lhs, Angle rhs);
-bool operator>=(Angle lhs, Angle rhs);
 
 Angle operator-(Angle angle);
 Angle operator+(Angle lhs, Angle rhs);
@@ -138,25 +134,6 @@ inline Angle Min(Angle a, Angle b) {
 }
 inline Angle Max(Angle a, Angle b) {
   return (a.ValueInRadians() > b.ValueInRadians()) ? a : b;
-}
-
-inline bool operator==(Angle lhs, Angle rhs) {
-  return lhs.ValueInRadians() == rhs.ValueInRadians();
-}
-inline bool operator!=(Angle lhs, Angle rhs) {
-  return lhs.ValueInRadians() != rhs.ValueInRadians();
-}
-inline bool operator<(Angle lhs, Angle rhs) {
-  return lhs.ValueInRadians() < rhs.ValueInRadians();
-}
-inline bool operator>(Angle lhs, Angle rhs) {
-  return lhs.ValueInRadians() > rhs.ValueInRadians();
-}
-inline bool operator<=(Angle lhs, Angle rhs) {
-  return lhs.ValueInRadians() <= rhs.ValueInRadians();
-}
-inline bool operator>=(Angle lhs, Angle rhs) {
-  return lhs.ValueInRadians() >= rhs.ValueInRadians();
 }
 
 inline Angle operator-(Angle angle) {

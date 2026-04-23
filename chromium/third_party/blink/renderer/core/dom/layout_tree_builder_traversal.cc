@@ -176,6 +176,16 @@ Node* LayoutTreeBuilderTraversal::NextSibling(const Node& node) {
       }
       [[fallthrough]];
     case kPseudoIdScrollButtonBlockEnd:
+      if (const ScopedCSSNameList* overscroll_areas =
+              parent_element->GetComputedStyle()->OverscrollArea()) {
+        if (!overscroll_areas->GetNames().empty()) {
+          Node* next = parent_element->GetPseudoElement(
+              kPseudoIdOverscrollAreaParent,
+              overscroll_areas->GetNames().front()->GetName());
+          CHECK(next);
+          return next;
+        }
+      }
       if (Node* next = parent_element->GetPseudoElement(kPseudoIdCheckMark)) {
         return next;
       }
@@ -226,10 +236,14 @@ Node* LayoutTreeBuilderTraversal::NextSibling(const Node& node) {
         return next;
       }
       [[fallthrough]];
+
+    // All of these pseudo-elements have no next sibling.
     case kPseudoIdScrollMarkerGroupAfter:
-      return nullptr;
+    case kPseudoIdOverscrollAreaParent:
+    case kPseudoIdOverscrollClientArea:
     case kPseudoIdViewTransition:
       return nullptr;
+
     case kPseudoIdViewTransitionGroup: {
       auto* parent_pseudo =
           DynamicTo<ViewTransitionPseudoElementBase>(parent_element);
@@ -241,16 +255,17 @@ Node* LayoutTreeBuilderTraversal::NextSibling(const Node& node) {
       // Iterate the list of IDs until we hit the entry for |node's| ID. The
       // sibling is the next ID in the list which generates a pseudo-element.
       bool found = false;
-      for (const auto& view_transition_name :
+      for (const auto& pseudo_argument :
            parent_pseudo->GetContainedViewTransitionNames()) {
         if (!found) {
-          if (view_transition_name == pseudo_element->view_transition_name())
+          if (pseudo_argument == pseudo_element->view_transition_name()) {
             found = true;
+          }
           continue;
         }
 
         if (auto* sibling = parent_element->GetPseudoElement(
-                kPseudoIdViewTransitionGroup, view_transition_name)) {
+                kPseudoIdViewTransitionGroup, pseudo_argument)) {
           return sibling;
         }
       }
@@ -286,8 +301,11 @@ Node* LayoutTreeBuilderTraversal::NextSibling(const Node& node) {
 
 Node* LayoutTreeBuilderTraversal::PreviousSibling(const Node& node) {
   PseudoId pseudo_id = node.GetPseudoId();
+  AtomicString pseudo_argument;
   Element* parent_element;
   if (pseudo_id != kPseudoIdNone) {
+    const PseudoElement& pseudo_element = To<PseudoElement>(node);
+    pseudo_argument = pseudo_element.GetPseudoArgument();
     parent_element = DynamicTo<Element>(*node.parentNode());
     DCHECK(parent_element);
   }
@@ -334,6 +352,18 @@ Node* LayoutTreeBuilderTraversal::PreviousSibling(const Node& node) {
       if (Node* previous =
               parent_element->GetPseudoElement(kPseudoIdScrollButtonBlockEnd)) {
         return previous;
+      }
+      [[fallthrough]];
+    case kPseudoIdOverscrollAreaParent:
+      if (pseudo_id == kPseudoIdOverscrollAreaParent) {
+        const ScopedCSSNameList* overscroll_areas =
+            parent_element->GetComputedStyle()->OverscrollArea();
+        CHECK(overscroll_areas);
+        CHECK(!overscroll_areas->GetNames().empty());
+        if (pseudo_argument !=
+            overscroll_areas->GetNames().front()->GetName()) {
+          return nullptr;
+        }
       }
       [[fallthrough]];
     case kPseudoIdScrollButtonBlockEnd:
@@ -385,6 +415,9 @@ Node* LayoutTreeBuilderTraversal::PreviousSibling(const Node& node) {
         return previous;
       }
       [[fallthrough]];
+
+    // These pseudo-elements have no previous sibling.
+    case kPseudoIdOverscrollClientArea:
     case kPseudoIdScrollMarkerGroupBefore:
       return nullptr;
     default:
@@ -490,6 +523,43 @@ Node* LayoutTreeBuilderTraversal::FirstChild(const Node& node) {
   if (Node* first =
           current_element->GetPseudoElement(kPseudoIdScrollButtonBlockEnd)) {
     return first;
+  }
+  const Element& originating_element =
+      current_element->IsPseudoElement()
+          ? To<PseudoElement>(current_element)->UltimateOriginatingElement()
+          : *current_element;
+  if (!current_element->IsPseudoElement() ||
+      current_element->GetPseudoId() == kPseudoIdOverscrollAreaParent) {
+    if (const ScopedCSSNameList* overscroll_areas =
+            originating_element.GetComputedStyle()
+                ? originating_element.GetComputedStyle()->OverscrollArea()
+                : nullptr;
+        overscroll_areas && !overscroll_areas->GetNames().empty()) {
+      bool return_next = !current_element->IsPseudoElement();
+      for (const auto& name : overscroll_areas->GetNames()) {
+        if (return_next) {
+          Node* next = originating_element.GetPseudoElement(
+              kPseudoIdOverscrollAreaParent, name->GetName());
+          CHECK(next);
+          return next;
+        }
+        if (name->GetName() ==
+            To<PseudoElement>(current_element)->GetPseudoArgument()) {
+          return_next = true;
+        }
+      }
+      CHECK(return_next);
+      return originating_element.GetPseudoElement(
+          kPseudoIdOverscrollClientArea);
+    }
+  }
+
+  // All of these pseudo-elements are part of the contents and NextChild
+  // will never return one of the pseudos that comes before the overscroll
+  // area.
+  if (current_element->GetPseudoId() == kPseudoIdOverscrollClientArea) {
+    // Find the first child of the originating element's content.
+    current_element = &originating_element;
   }
   if (const ColumnPseudoElementsVector* columns =
           current_element->GetColumnPseudoElements();

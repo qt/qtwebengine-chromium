@@ -397,14 +397,14 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // Sets effective Context Priority. Changed by ShareGroupVk.
     void setPriority(egl::ContextPriority newPriority)
     {
-        mContextPriority  = newPriority;
-        mDeviceQueueIndex = mRenderer->getDeviceQueueIndex(mContextPriority);
+        mCommandState.setPriority(newPriority);
+        mDeviceQueueIndex = mRenderer->getDeviceQueueIndex(newPriority);
     }
 
     VkDevice getDevice() const;
     // Effective Context Priority
-    egl::ContextPriority getPriority() const { return mContextPriority; }
-    vk::ProtectionType getProtectionType() const { return mProtectionType; }
+    egl::ContextPriority getPriority() const { return mCommandState.getPriority(); }
+    vk::ProtectionType getProtectionType() const { return mCommandState.getProtectionType(); }
 
     ANGLE_INLINE const angle::FeaturesVk &getFeatures() const { return mRenderer->getFeatures(); }
 
@@ -479,7 +479,10 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     angle::Result finishImpl(RenderPassClosureReason renderPassClosureReason);
 
-    void addWaitSemaphore(VkSemaphore semaphore, VkPipelineStageFlags stageMask);
+    void addWaitSemaphore(VkSemaphore semaphore, VkPipelineStageFlags stageMask)
+    {
+        mCommandState.addWaitSemaphore(semaphore, stageMask);
+    }
 
     template <typename T>
     void addGarbage(T *object)
@@ -623,7 +626,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     angle::Result submitStagedTextureUpdates()
     {
         // Staged updates are recorded in outside RP command buffer, submit them.
-        return flushOutsideRenderPassCommands();
+        return flushAndSubmitOutsideRenderPassCommands();
     }
 
     angle::Result beginNewRenderPass(vk::RenderPassFramebuffer &&framebuffer,
@@ -636,6 +639,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                                      vk::RenderPassCommandBuffer **commandBufferOut);
 
     void disableRenderPassReactivation() { mAllowRenderPassToReactivate = false; }
+
+    bool hasStartedRenderPass() const { return mRenderPassCommands->started(); }
 
     // Only returns true if we have a started RP and we've run setupDraw.
     bool hasActiveRenderPass() const
@@ -791,6 +796,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
         return mIsInColorFramebufferFetchMode;
     }
 
+    const angle::PerfMonitorCounterGroupsInfo &getPerfMonitorCountersInfo() const override;
     const angle::PerfMonitorCounterGroups &getPerfMonitorCounters() override;
 
     void resetPerFramePerfCounters();
@@ -885,7 +891,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     bool hasExcessPendingGarbage() const;
 
-    angle::Result onFramebufferBoundary(const gl::Context *contextGL);
+    angle::Result onFrameBoundary(const gl::Context *contextGL);
 
     uint32_t getCurrentFrameCount() const { return mShareGroupVk->getCurrentFrameCount(); }
 
@@ -959,8 +965,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
         DIRTY_BIT_DYNAMIC_LOGIC_OP,
         DIRTY_BIT_DYNAMIC_PRIMITIVE_RESTART_ENABLE,
         // - In VK_KHR_fragment_shading_rate
-        DIRTY_BIT_DYNAMIC_FRAGMENT_SHADING_RATE_QCOM,
-        DIRTY_BIT_DYNAMIC_FRAGMENT_SHADING_RATE_EXT,
+        DIRTY_BIT_DYNAMIC_FRAGMENT_SHADING_RATE,
 
         DIRTY_BIT_MAX,
     };
@@ -1053,9 +1058,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                   "Render pass using dirty bit must be handled after the render pass dirty bit");
     static_assert(DIRTY_BIT_DYNAMIC_PRIMITIVE_RESTART_ENABLE > DIRTY_BIT_RENDER_PASS,
                   "Render pass using dirty bit must be handled after the render pass dirty bit");
-    static_assert(DIRTY_BIT_DYNAMIC_FRAGMENT_SHADING_RATE_QCOM > DIRTY_BIT_RENDER_PASS,
-                  "Render pass using dirty bit must be handled after the render pass dirty bit");
-    static_assert(DIRTY_BIT_DYNAMIC_FRAGMENT_SHADING_RATE_EXT > DIRTY_BIT_RENDER_PASS,
+    static_assert(DIRTY_BIT_DYNAMIC_FRAGMENT_SHADING_RATE > DIRTY_BIT_RENDER_PASS,
                   "Render pass using dirty bit must be handled after the render pass dirty bit");
 
     using DirtyBits = angle::BitSet<DIRTY_BIT_MAX>;
@@ -1292,11 +1295,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     angle::Result handleDirtyGraphicsDynamicPrimitiveRestartEnable(
         DirtyBits::Iterator *dirtyBitsIterator,
         DirtyBits dirtyBitMask);
-    angle::Result handleDirtyGraphicsDynamicFragmentShadingRateQCOM(
-        DirtyBits::Iterator *dirtyBitsIterator,
-        DirtyBits dirtyBitMask);
-    // EXT_fragment_shading_rate
-    angle::Result handleDirtyGraphicsDynamicFragmentShadingRateEXT(
+    angle::Result handleDirtyGraphicsDynamicFragmentShadingRate(
         DirtyBits::Iterator *dirtyBitsIterator,
         DirtyBits dirtyBitMask);
 
@@ -1595,6 +1594,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // Current active transform feedback buffer queue serial. Invalid if TF not active.
     QueueSerial mCurrentTransformFeedbackQueueSerial;
 
+    egl::ContextPriority mInitialContextPriority;
+
     // The garbage list for single context use objects. The list will be GPU tracked by next
     // submission queueSerial. Note: Resource based shared object should always be added to
     // renderer's mSharedGarbageList.
@@ -1603,6 +1604,9 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     RenderPassCache mRenderPassCache;
     // Used with dynamic rendering as it doesn't use render passes.
     vk::RenderPass mNullRenderPass;
+
+    // vulkan primary command buffer
+    vk::CommandsState mCommandState;
 
     vk::OutsideRenderPassCommandBufferHelper *mOutsideRenderPassCommands;
     vk::RenderPassCommandBufferHelper *mRenderPassCommands;
@@ -1666,6 +1670,9 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // True if current started render pass is allowed to reactivate.
     bool mAllowRenderPassToReactivate;
 
+    // This flag indicates whether size pointer should be used as arg for binding vertex buffers.
+    bool mUseSizePointerForBindingVertexBuffers;
+
     // The size of copy commands issued between buffers and images. Used to submit the command
     // buffer for the outside render pass.
     VkDeviceSize mTotalBufferToImageCopySize;
@@ -1673,13 +1680,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     // The number of render passes since the last submission of all commands.
     VkDeviceSize mRenderPassCountSinceSubmit;
-
-    // Semaphores that must be flushed before the current commands. Flushed semaphores will be
-    // waited on in the next submission.
-    std::vector<VkSemaphore> mWaitSemaphores;
-    std::vector<VkPipelineStageFlags> mWaitSemaphoreStageMasks;
-    // Whether this context has wait semaphores (flushed and unflushed) that must be submitted.
-    bool mHasWaitSemaphoresPendingSubmission;
 
     // Hold information from the last gpu clock sync for future gpu-to-cpu timestamp conversions.
     GpuClockSyncInfo mGpuClockSync;
@@ -1690,13 +1690,10 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     uint64_t mGpuEventTimestampOrigin;
 
     // A mix of per-frame and per-run counters.
+    angle::PerfMonitorCounterGroupsInfo mPerfMonitorCountersInfo;
     angle::PerfMonitorCounterGroups mPerfMonitorCounters;
 
     gl::state::DirtyBits mPipelineDirtyBitsMask;
-
-    egl::ContextPriority mInitialContextPriority;
-    egl::ContextPriority mContextPriority;
-    vk::ProtectionType mProtectionType;
 
     ShareGroupVk *mShareGroupVk;
 

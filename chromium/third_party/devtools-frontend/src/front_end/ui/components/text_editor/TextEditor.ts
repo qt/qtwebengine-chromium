@@ -1,16 +1,16 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable @devtools/enforce-custom-element-definitions-location */
 
 import * as Common from '../../../core/common/common.js';
-import * as WindowBoundsService from '../../../services/window_bounds/window_bounds.js';
 import * as CodeMirror from '../../../third_party/codemirror.next/codemirror.next.js';
+import * as UI from '../../legacy/legacy.js';
 import * as ThemeSupport from '../../legacy/theme_support/theme_support.js';
 import * as CodeHighlighter from '../code_highlighter/code_highlighter.js';
 
 import {baseConfiguration, dummyDarkTheme, dynamicSetting, DynamicSetting, themeSelection} from './config.js';
 import {toLineColumn, toOffset} from './position.js';
-import textEditorStyles from './textEditor.css.js';
 
 declare global {
   interface HTMLElementTagNameMap {
@@ -42,7 +42,6 @@ export class TextEditor extends HTMLElement {
     super();
     this.#pendingState = pendingState;
     this.#shadow.createChild('style').textContent = CodeHighlighter.codeHighlighterStyles;
-    this.#shadow.createChild('style').textContent = textEditorStyles;
   }
 
   #createEditor(): CodeMirror.EditorView {
@@ -168,8 +167,7 @@ export class TextEditor extends HTMLElement {
   }
 
   #startObservingResize(): void {
-    const devtoolsElement =
-        WindowBoundsService.WindowBoundsService.WindowBoundsServiceImpl.instance().getDevToolsBoundingElement();
+    const devtoolsElement = UI.UIUtils.getDevToolsBoundingElement();
     if (devtoolsElement) {
       this.#devtoolsResizeObserver.observe(devtoolsElement);
     }

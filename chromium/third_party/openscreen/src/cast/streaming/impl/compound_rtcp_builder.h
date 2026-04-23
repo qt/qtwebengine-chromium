@@ -41,7 +41,7 @@ class RtcpSession;
 class CompoundRtcpBuilder {
  public:
   explicit CompoundRtcpBuilder(RtcpSession& session);
-  ~CompoundRtcpBuilder();
+  virtual ~CompoundRtcpBuilder();
 
   // Gets/Sets the checkpoint `frame_id` that will be included in built RTCP
   // packets. This value indicates to the sender that all of the packets for all
@@ -87,6 +87,9 @@ class CompoundRtcpBuilder {
   void IncludeFeedbackInNextPacket(std::vector<PacketNack> packet_nacks,
                                    std::vector<FrameId> frame_acks);
 
+  virtual void IncludeReceiverLogsInNextPacket(
+      std::vector<RtcpReceiverFrameLogMessage> logs);
+
   // Builds a compound RTCP packet and returns the portion of the `buffer` that
   // was used. The buffer's size must be at least kRequiredBufferSize, but
   // should generally be the maximum packet size (see discussion in
@@ -111,9 +114,12 @@ class CompoundRtcpBuilder {
   void AppendReceiverReferenceTimeReportPacket(Clock::time_point send_time,
                                                ByteBuffer& buffer);
   void AppendPictureLossIndicatorPacket(ByteBuffer& buffer);
+  void AppendReceiverLogPacket(ByteBuffer& buffer);
   void AppendCastFeedbackPacket(ByteBuffer& buffer);
   int AppendCastFeedbackLossFields(ByteBuffer& buffer);
   void AppendCastFeedbackAckFields(ByteBuffer& buffer);
+  void FinalizeReceiverLogPacket(ByteBuffer& space_for_header,
+                                 size_t payload_size);
 
   RtcpSession& session_;
 
@@ -123,6 +129,7 @@ class CompoundRtcpBuilder {
   std::optional<RtcpReportBlock> receiver_report_for_next_packet_;
   std::vector<PacketNack> nacks_for_next_packet_;
   std::vector<FrameId> acks_for_next_packet_;
+  std::vector<RtcpReceiverFrameLogMessage> logs_for_next_packet_;
   bool picture_loss_indicator_ = false;
 
   // An 8-bit wrap-around counter that tracks how many times Cast Feedback has

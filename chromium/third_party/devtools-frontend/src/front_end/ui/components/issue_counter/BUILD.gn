@@ -15,7 +15,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("issue_counter") {
+devtools_ui_module("issue_counter") {
   sources = [
     "IssueCounter.ts",
     "IssueLinkIcon.ts",
@@ -27,6 +27,7 @@ devtools_module("issue_counter") {
     "../../../models/issues_manager:bundle",
     "../../../ui/lit:bundle",
     "../../../ui/visual_logging:bundle",
+    "../../kit:bundle",
     "../helpers:bundle",
     "../icon_button:bundle",
   ]
@@ -43,7 +44,7 @@ devtools_entrypoint("bundle") {
   visibility = default_components_visibility
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

@@ -11,6 +11,7 @@ import("../visibility.gni")
 generate_css("css_files") {
   sources = [
     "consoleContextSelector.css",
+    "consoleInsightTeaser.css",
     "consolePinPane.css",
     "consolePrompt.css",
     "consoleSidebar.css",
@@ -18,11 +19,12 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("console") {
+devtools_ui_module("console") {
   sources = [
     "ConsoleContextSelector.ts",
     "ConsoleFilter.ts",
     "ConsoleFormat.ts",
+    "ConsoleInsightTeaser.ts",
     "ConsolePanel.ts",
     "ConsolePinPane.ts",
     "ConsolePrompt.ts",
@@ -31,6 +33,7 @@ devtools_module("console") {
     "ConsoleViewMessage.ts",
     "ConsoleViewport.ts",
     "ErrorStackParser.ts",
+    "PromptBuilder.ts",
   ]
 
   deps = [
@@ -41,6 +44,7 @@ devtools_module("console") {
     "../../core/platform:bundle",
     "../../core/root:bundle",
     "../../core/sdk:bundle",
+    "../../models/ai_assistance:bundle",
     "../../models/ai_code_completion:bundle",
     "../../models/bindings:bundle",
     "../../models/issues_manager:bundle",
@@ -49,12 +53,14 @@ devtools_module("console") {
     "../../models/text_utils:bundle",
     "../../third_party/codemirror.next:bundle",
     "../../ui/components/code_highlighter:bundle",
-    "../../ui/components/icon_button:bundle",
+    "../../ui/components/highlighting:bundle",
     "../../ui/components/request_link_icon:bundle",
     "../../ui/components/text_editor:bundle",
+    "../../ui/kit:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/data_grid:bundle",
     "../../ui/legacy/components/object_ui:bundle",
+    "../../ui/legacy/components/settings_ui:bundle",
     "../../ui/legacy/components/utils:bundle",
     "../../ui/legacy/theme_support:bundle",
     "../common:bundle",
@@ -75,7 +81,6 @@ devtools_entrypoint("bundle") {
   visibility = [
     ":*",
     "../../../test/e2e/console/*",
-    "../../../test/e2e_non_hosted/console/*",
     "../../entrypoints/*",
     "../../panels/explain/*",
   ]
@@ -96,18 +101,20 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
     "ConsoleContextSelector.test.ts",
     "ConsoleFormat.test.ts",
+    "ConsoleInsightTeaser.test.ts",
     "ConsolePrompt.test.ts",
     "ConsoleSidebar.test.ts",
     "ConsoleView.test.ts",
     "ConsoleViewMessage.test.ts",
     "ConsoleViewport.test.ts",
     "ErrorStackParser.test.ts",
+    "PromptBuilder.test.ts",
   ]
 
   deps = [

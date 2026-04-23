@@ -8,7 +8,6 @@
 
 #include "base/check_op.h"
 #include "base/functional/bind.h"
-#include "base/functional/callback_forward.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "base/notreached.h"
@@ -43,6 +42,12 @@ constexpr char kDiceSyncHeaderTimeoutHistogramNameHistogramName[] =
     "Signin.SigninManager.SyncHeaderTimeout";
 constexpr char kDiceSyncHeaderArrivalTimeWindowHistogramName[] =
     "Signin.SigninManager.SyncHeaderArrivalTimeWindowAfterLst";
+
+void RecordDiceSyncHeaderTimeout(bool timeout) {
+  base::UmaHistogramBoolean(kDiceSyncHeaderTimeoutHistogramNameHistogramName,
+                            timeout);
+}
+
 }  // namespace
 
 // static
@@ -67,7 +72,8 @@ DiceTabHelper::GetEnableSyncCallbackForBrowser() {
     bool is_sync_promo =
         access_point ==
             signin_metrics::AccessPoint::kAvatarBubbleSignInWithSyncPromo ||
-        access_point == signin_metrics::AccessPoint::kSettings;
+        access_point == signin_metrics::AccessPoint::kSettings ||
+        access_point == signin_metrics::AccessPoint::kSettingsYourSavedInfo;
     TurnSyncOnHelper::SigninAbortedMode abort_mode =
         is_sync_promo ? TurnSyncOnHelper::SigninAbortedMode::KEEP_ACCOUNT
                       : TurnSyncOnHelper::SigninAbortedMode::REMOVE_ACCOUNT;
@@ -280,17 +286,9 @@ DiceTabHelper::SetScopedInterceptionBubbleTimerForTesting(
 // stopped and recorded in the histogram `SyncHeaderArrivalTimeWindow`.
 void DiceTabHelper::StartInterceptionBubbleTimer(
     base::OnceClosure retry_interception_bubble_callback) {
-  base::OnceClosure record_timeout_callback = base::BindOnce([] {
-    base::UmaHistogramBoolean(kDiceSyncHeaderTimeoutHistogramNameHistogramName,
-                              true);
-  });
   base::OnceClosure timer_callback =
-      base::FeatureList::IsEnabled(
-          switches::kBrowserSigninInSyncHeaderOnGaiaIntegration)
-          ? std::move(record_timeout_callback)
-                .Then(std::move(retry_interception_bubble_callback))
-          : std::move(record_timeout_callback);
-
+      std::move(base::BindOnce(&RecordDiceSyncHeaderTimeout, true))
+          .Then(std::move(retry_interception_bubble_callback));
   state_->elapsed_time_since_lst_arrival_timer =
       std::make_unique<base::ElapsedTimer>();
   state_->retry_interception_bubble_timer.Start(
@@ -303,8 +301,7 @@ void DiceTabHelper::StopInterceptionBubbleTimer() {
       // Unexpected, edge case where a token exchange hasn't been requested yet
       // by the time Chrome processes the Sync header.
       || !IsTokenExchangeDone()) {
-    base::UmaHistogramBoolean(kDiceSyncHeaderTimeoutHistogramNameHistogramName,
-                              false);
+    RecordDiceSyncHeaderTimeout(false);
   }
   state_->retry_interception_bubble_timer.Stop();
 

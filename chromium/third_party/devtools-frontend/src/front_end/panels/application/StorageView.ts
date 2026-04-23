@@ -1,7 +1,7 @@
 // Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -9,8 +9,10 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import type * as Buttons from '../../ui/components/buttons/buttons.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import * as uiI18n from '../../ui/i18n/i18n.js';
+import {Icon} from '../../ui/kit/kit.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
+import * as SettingsUI from '../../ui/legacy/components/settings_ui/settings_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
@@ -146,7 +148,7 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 /**
  * @implements {SDK.TargetManager.Observer}
  */
-export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
+export class StorageView extends UI.Widget.VBox {
   private pieColors: Map<Protocol.Storage.StorageType, string>;
   private reportView: UI.ReportView.ReportView;
   private target: SDK.Target.Target|null;
@@ -163,9 +165,10 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
   private quotaOverrideEditor: HTMLInputElement;
   private quotaOverrideErrorMessage: HTMLElement;
   private clearButton: Buttons.Button.Button;
+  private readonly throttler = new Common.Throttler.Throttler(1000);
 
   constructor() {
-    super(true, 1000);
+    super({useShadowDom: true});
     this.registerRequiredCSS(storageViewStyles);
 
     this.contentElement.classList.add('clear-storage-container');
@@ -178,7 +181,6 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
       [Protocol.Storage.StorageType.Service_workers, 'rgb(255, 167, 36)'],  // orange
     ]);
 
-    // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
     this.reportView = new UI.ReportView.ReportView(i18nString(UIStrings.storageTitle));
     this.reportView.registerRequiredCSS(storageViewStyles);
 
@@ -205,7 +207,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
     this.clearButton.id = 'storage-view-clear-button';
     clearButtonSection.appendChild(this.clearButton);
 
-    const includeThirdPartyCookiesCheckbox = UI.SettingsUI.createSettingCheckbox(
+    const includeThirdPartyCookiesCheckbox = SettingsUI.SettingsUI.createSettingCheckbox(
         i18nString(UIStrings.includingThirdPartyCookies), this.includeThirdPartyCookiesSetting);
     includeThirdPartyCookiesCheckbox.classList.add('include-third-party-cookies');
     clearButtonSection.appendChild(includeThirdPartyCookiesCheckbox);
@@ -236,6 +238,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
     this.quotaOverrideCheckbox.addEventListener('click', this.onClickCheckbox.bind(this), false);
     this.quotaOverrideControlRow = quota.appendRow();
     this.quotaOverrideEditor = this.quotaOverrideControlRow.createChild('input', 'quota-override-notification-editor');
+    this.quotaOverrideEditor.setAttribute('placeholder', i18nString(UIStrings.pleaseEnterANumber));
     this.quotaOverrideEditor.setAttribute(
         'jslog', `${VisualLogging.textField('quota-override').track({change: true})}`);
     this.quotaOverrideControlRow.appendChild(UI.UIUtils.createLabel(i18nString(UIStrings.mb)));
@@ -277,7 +280,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
     const row = section.appendRow();
     const setting = this.settings.get(settingName);
     if (setting) {
-      row.appendChild(UI.SettingsUI.createSettingCheckbox(title, setting));
+      row.appendChild(SettingsUI.SettingsUI.createSettingCheckbox(title, setting));
     }
   }
 
@@ -340,7 +343,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
       this.quotaOverrideCheckbox.checked = false;
       this.quotaOverrideErrorMessage.textContent = '';
     }
-    void this.doUpdate();
+    void this.performUpdate();
   }
 
   private updateStorageKey(mainStorageKey: string): void {
@@ -354,7 +357,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
       this.quotaOverrideCheckbox.checked = false;
       this.quotaOverrideErrorMessage.textContent = '';
     }
-    void this.doUpdate();
+    void this.performUpdate();
   }
 
   private async applyQuotaOverrideFromInputField(): Promise<void> {
@@ -402,7 +405,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
       this.quotaOverrideControlRow.classList.remove('hidden');
       this.quotaOverrideCheckbox.checked = true;
       this.quotaOverrideEditor.value = this.previousOverrideFieldValue;
-      this.quotaOverrideEditor.focus();
+      window.setTimeout(() => this.quotaOverrideEditor.focus(), 500);
     } else if (this.target && this.securityOrigin) {
       this.quotaOverrideControlRow.classList.add('hidden');
       this.quotaOverrideCheckbox.checked = false;
@@ -488,7 +491,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
     }
   }
 
-  override async doUpdate(): Promise<void> {
+  override async performUpdate(): Promise<void> {
     if (!this.securityOrigin || !this.target) {
       this.quotaRow.textContent = '';
       this.populatePieChart(0, []);
@@ -508,8 +511,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
     const formattedQuotaAsString = i18nString(UIStrings.storageWithCustomMarker, {PH1: quotaAsString});
     const quota =
         quotaOverridden ? UI.Fragment.Fragment.build`<b>${formattedQuotaAsString}</b>`.element() : quotaAsString;
-    const element =
-        i18n.i18n.getFormatLocalizedString(str_, UIStrings.storageQuotaUsed, {PH1: usageAsString, PH2: quota});
+    const element = uiI18n.getFormatLocalizedString(str_, UIStrings.storageQuotaUsed, {PH1: usageAsString, PH2: quota});
     this.quotaRow.appendChild(element);
     UI.Tooltip.Tooltip.install(
         this.quotaRow,
@@ -518,7 +520,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
             {PH1: response.usage.toLocaleString(), PH2: response.quota.toLocaleString()}));
 
     if (!response.overrideActive && response.quota < 125829120) {  // 120 MB
-      const icon = new IconButton.Icon.Icon();
+      const icon = new Icon();
       icon.name = 'info';
       icon.style.color = 'var(--icon-info)';
       icon.classList.add('small');
@@ -541,7 +543,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
       this.populatePieChart(response.usage, slices);
     }
 
-    this.update();
+    void this.throttler.schedule(this.requestUpdate.bind(this));
   }
 
   private populatePieChart(total: number, slices: PerfUI.PieChart.Slice[]): void {

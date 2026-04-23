@@ -120,6 +120,9 @@ if (EMSCRIPTEN)
     return()
 endif()
 
+# Force ENABLE_RTTI in spirv-tools and glslang.
+set(ENABLE_RTTI ${DAWN_ENABLE_RTTI} CACHE BOOL "" FORCE)
+
 if (NOT TARGET SPIRV-Headers)
     set(SPIRV_HEADERS_SKIP_EXAMPLES ON CACHE BOOL "" FORCE)
     set(SPIRV_HEADERS_SKIP_INSTALL ON CACHE BOOL "" FORCE)
@@ -138,7 +141,6 @@ if (NOT TARGET SPIRV-Tools AND
     set(SPIRV_SKIP_EXECUTABLES ON CACHE BOOL "" FORCE)
     set(SKIP_SPIRV_TOOLS_INSTALL ON CACHE BOOL "" FORCE)
     set(SPIRV_WERROR OFF CACHE BOOL OFF FORCE)
-
     message(STATUS "Dawn: using SPIRV-Tools at ${DAWN_SPIRV_TOOLS_DIR}")
     add_subdirectory(${DAWN_SPIRV_TOOLS_DIR} "${CMAKE_CURRENT_BINARY_DIR}/spirv-tools" EXCLUDE_FROM_ALL)
 endif()
@@ -172,11 +174,17 @@ if (DAWN_BUILD_PROTOBUF AND NOT TARGET libprotobuf-mutator)
     include("libprotobuf-mutator/BUILD.cmake")
 endif()
 
+if (NOT TARGET renderdoc-api)
+    add_library(RenderDocApi INTERFACE)
+    target_include_directories(RenderDocApi INTERFACE "renderdoc")
+    target_compile_definitions(RenderDocApi INTERFACE "DAWN_ENABLE_RENDERDOC")
+endif()
+
 if (DAWN_ENABLE_DESKTOP_GL OR DAWN_ENABLE_OPENGLES)
     # Header-only library for khrplatform.h
     add_library(dawn_khronos_platform INTERFACE)
-    target_sources(dawn_khronos_platform INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/khronos/EGL-Registry/api/KHR/khrplatform.h")
-    target_include_directories(dawn_khronos_platform INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/khronos/EGL-Registry/api")
+    target_sources(dawn_khronos_platform INTERFACE "${DAWN_EGL_REGISTRY_DIR}/api/KHR/khrplatform.h")
+    target_include_directories(dawn_khronos_platform INTERFACE "${DAWN_EGL_REGISTRY_DIR}/api")
 endif()
 
 if (NOT TARGET Vulkan::Headers AND DAWN_ENABLE_VULKAN)

@@ -423,7 +423,7 @@ void SandboxGetFieldOffset(const v8::FunctionCallbackInfo<v8::Value>& info) {
   info.GetReturnValue().Set(offset);
 }
 
-// Returns an array of all builtin names, index of the name is the bulitin id.
+// Returns an array of all builtin names, index of the name is the builtin id.
 //
 // This can be used to determine the id of a specific builtin for use with
 // Sandbox.setFunctionCodeToBuiltin().
@@ -786,8 +786,8 @@ void CrashFilter(int signal, siginfo_t* info, void* context) {
       ctx->uc_mcontext.gregs[REG_ERR] & (1 << kWriteAccessBit);
   if (!write_access) {
     PrintToStderr(
-        "Access type was read though which is technically not a sandbox "
-        "violation. This requires manual investigation.\n");
+        "The sandbox violation was a *read* access which is technically not a "
+        "sandbox violation. This requires manual investigation.\n");
   }
 #endif  // V8_HOST_ARCH_X64
 }
@@ -878,6 +878,17 @@ void SandboxTesting::Enable(Mode mode) {
 #endif  // V8_OS_LINUX
 }
 
+void SandboxTesting::Disable() {
+  if (mode_ == Mode::kDisabled) return;
+  mode_ = Mode::kDisabled;
+
+#ifdef V8_OS_LINUX
+  UninstallCrashFilter();
+#else
+  FATAL("The sandbox crash filter is currently only available on Linux");
+#endif  // V8_OS_LINUX
+}
+
 SandboxTesting::InstanceTypeMap& SandboxTesting::GetInstanceTypeMap() {
   // This mechanism is currently very crude and needs to be manually maintained
   // and extended (e.g. when adding a js test for the sandbox). In the future,
@@ -924,10 +935,8 @@ SandboxTesting::FieldOffsetMap& SandboxTesting::GetFieldOffsetMap() {
   auto& fields = *g_known_fields.get();
   bool is_initialized = fields.size() != 0;
   if (!is_initialized) {
-#ifdef V8_ENABLE_LEAPTIERING
     fields[JS_FUNCTION_TYPE]["dispatch_handle"] =
         JSFunction::kDispatchHandleOffset;
-#endif  // V8_ENABLE_LEAPTIERING
     fields[JS_FUNCTION_TYPE]["shared_function_info"] =
         JSFunction::kSharedFunctionInfoOffset;
     fields[JS_ARRAY_TYPE]["elements"] = JSArray::kElementsOffset;
@@ -968,7 +977,7 @@ SandboxTesting::FieldOffsetMap& SandboxTesting::GetFieldOffsetMap() {
     fields[JS_PROMISE_TYPE]["reactions_or_result"] =
         JSPromise::kReactionsOrResultOffset;
     fields[PROMISE_REACTION_TYPE]["fulfill_handler"] =
-        PromiseReaction::kFulfillHandlerOffset;
+        offsetof(PromiseReaction, fulfill_handler_);
     fields[JS_FUNCTION_TYPE]["shared_function_info"] =
         JSFunction::kSharedFunctionInfoOffset;
 #ifdef V8_ENABLE_WEBASSEMBLY

@@ -746,37 +746,32 @@ bool CoreChecks::ValidateImageAcquireWait(const vvl::SwapchainImage &swapchain_i
 
     const auto &semaphore = swapchain_image.acquire_semaphore;
     const auto &fence = swapchain_image.acquire_fence;
+
     // The specification requires that either a semaphore or fence is specified (or both).
     // If neither is specified the error is reported by the stateless validation.
     if (!semaphore && !fence) {
         return skip;
     }
 
-    const bool is_external_semaphore = semaphore && semaphore->Scope() != vvl::Semaphore::kInternal;
-    const bool is_external_fence = fence && fence->Scope() != vvl::Fence::kInternal;
-    // Skip validation if external sync object is used.
-    // Validation error according to regular vulkan rules could be a false-positive,
-    // because synchronization could be established via external means.
-    if (is_external_semaphore || is_external_fence) {
-        return skip;
-    }
+    // NOTE: for external semaphores and fences we use AcquireSyncStatus::WasWaitedOn
 
-    bool semaphore_was_waited = false;
+    // The acquire semaphore has been waited on iff:
+    // - the acquire semaphore has been waited on previously
+    // - pWaitSemaphores list contains the acquire semaphore
+    bool semaphore_was_waited_on = false;
     if (semaphore) {
+        const bool was_waited_on = (swapchain_image.acquire_semaphore_status == vvl::AcquireSyncStatus::WasWaitedOn);
+
         const auto wait_list = vvl::make_span(present_info.pWaitSemaphores, present_info.waitSemaphoreCount);
         const bool in_wait_list = IsValueIn(semaphore->VkHandle(), wait_list);
-        // The acquire semaphore has been waited on if either of the following is true:
-        // - pWaitSemaphores list contains the acquire semaphore
-        // - the acquire semaphore has been waited on previously, in which case CanBinaryBeWaited() reports false
-        semaphore_was_waited = in_wait_list || !semaphore->CanBinaryBeWaited();
-    }
-    bool fence_was_waited = false;
-    if (fence) {
-        fence_was_waited = fence->State() != vvl::Fence::kInflight;
+
+        semaphore_was_waited_on = was_waited_on || in_wait_list;
     }
 
+    const bool fence_was_waited_on = (swapchain_image.acquire_fence_status == vvl::AcquireSyncStatus::WasWaitedOn);
+
     // Either semaphore or fence should be waited on (or both)
-    if (!semaphore_was_waited && !fence_was_waited) {
+    if (!semaphore_was_waited_on && !fence_was_waited_on) {
         // TODO: Replace UNASSIGNED with official VUID when ready: https://gitlab.khronos.org/vulkan/vulkan/-/issues/3616
         static const char *missing_acquire_wait_vuid = "UNASSIGNED-VkPresentInfoKHR-pImageIndices-MissingAcquireWait";
 
@@ -1094,6 +1089,32 @@ bool CoreChecks::PreCallValidateQueuePresentKHR(VkQueue queue, const VkPresentIn
                 }
             }
         }
+        const auto *present_timings_info = vku::FindStructInPNextChain<VkPresentTimingsInfoEXT>(pPresentInfo->pNext);
+        if (present_timings_info) {
+            for (uint32_t i = 0; i < present_timings_info->swapchainCount; i++) {
+                const auto swapchain_state = Get<vvl::Swapchain>(pPresentInfo->pSwapchains[i]);
+                ASSERT_AND_CONTINUE(swapchain_state);
+                if ((swapchain_state->create_info.flags & VK_SWAPCHAIN_CREATE_PRESENT_TIMING_BIT_EXT) == 0) {
+                    skip |= LogError("VUID-VkPresentTimingsInfoEXT-pSwapchains-12234", pPresentInfo->pSwapchains[i],
+                                     present_info_loc.dot(Field::pSwapchain, i),
+                                     "was created with %s, but VkPresentTimingsInfoEXT is included in the pNext chain.\n%s",
+                                     string_VkSwapchainCreateFlagsKHR(swapchain_state->create_info.flags).c_str(),
+                                     PrintPNextChain(Struct::VkPresentInfoKHR, pPresentInfo->pNext).c_str());
+                }
+
+                if (present_timings_info->pTimingInfos[i].targetTime != 0 &&
+                    !IsValueIn(
+                        swapchain_state->create_info.presentMode,
+                        {VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_FIFO_RELAXED_KHR, VK_PRESENT_MODE_FIFO_LATEST_READY_EXT})) {
+                    skip |= LogError(
+                        "VUID-VkPresentTimingsInfoEXT-pSwapchains-12235", pPresentInfo->pSwapchains[i],
+                        present_info_loc.pNext(Struct::VkPresentTimingsInfoEXT, Field::pTimingInfos, i).dot(Field::targetTime),
+                        "is %" PRIu64 ", but the swapchain was created with present mode %s.",
+                        present_timings_info->pTimingInfos[i].targetTime,
+                        string_VkPresentModeKHR(swapchain_state->create_info.presentMode));
+                }
+            }
+        }
     }
 
     return skip;
@@ -1152,6 +1173,19 @@ bool CoreChecks::PreCallValidateCreateSharedSwapchainsKHR(VkDevice device, uint3
                                             error_obj.location.dot(Field::pCreateInfos, i));
         }
     }
+    return skip;
+}
+
+bool CoreChecks::PreCallValidateSetSwapchainPresentTimingQueueSizeEXT(VkDevice device, VkSwapchainKHR swapchain, uint32_t size,
+                                                                      const ErrorObject &error_obj) const {
+    bool skip = false;
+
+    auto swapchain_state = Get<vvl::Swapchain>(swapchain);
+    if ((swapchain_state->create_info.flags & VK_SWAPCHAIN_CREATE_PRESENT_TIMING_BIT_EXT) == 0) {
+        skip |= LogError("VUID-vkSetSwapchainPresentTimingQueueSizeEXT-swapchain-12229", swapchain, error_obj.location,
+                         "was created with %s.", string_VkSwapchainCreateFlagsKHR(swapchain_state->create_info.flags).c_str());
+    }
+
     return skip;
 }
 

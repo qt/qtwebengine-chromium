@@ -55,7 +55,8 @@ std::optional<FeatureConfig> CreateNewUserGestureInProductHelpConfig(
     const char* action_event,
     const char* trigger_event,
     const char* used_event,
-    const char* dismiss_button_tap_event) {
+    const char* dismiss_button_tap_event,
+    std::optional<uint32_t> first_run_recency_in_days = std::nullopt) {
   // Maximum storage days for iOS gesture IPHs in days. Note that they only
   // triggered for users who installed Chrome on iOS in the last specific number
   // of days, so this could be used as the maximum storage period of respective
@@ -89,6 +90,13 @@ std::optional<FeatureConfig> CreateNewUserGestureInProductHelpConfig(
   config.event_configs.insert(EventConfig(dismiss_button_tap_event,
                                           Comparator(EQUAL, 0), kMaxStorageDays,
                                           kMaxStorageDays));
+  if (first_run_recency_in_days.has_value()) {
+    config.event_configs.insert(
+        EventConfig(feature_engagement::events::kIOSFirstRunComplete,
+                    Comparator(GREATER_THAN_OR_EQUAL, 1),
+                    first_run_recency_in_days.value(), 360));
+  }
+
   return config;
 }
 #endif
@@ -185,19 +193,6 @@ std::optional<FeatureConfig> GetClientSideFeatureConfig(
                                  Comparator(EQUAL, 0), 360, 360);
     config.used = EventConfig(feature_engagement::events::kSidePanelPinned,
                               Comparator(EQUAL, 0), 360, 360);
-    return config;
-  }
-
-  if (kIPHSignoutWebInterceptFeature.name == feature->name) {
-    FeatureConfig config;
-    config.valid = true;
-    config.availability = Comparator(ANY, 0);
-    config.session_rate = Comparator(ANY, 0);
-    config.session_rate_impact.type = SessionRateImpact::Type::NONE;
-    config.trigger = EventConfig("iph_signout_web_intercept_triggered",
-                                 Comparator(ANY, 0), 0, 0);
-    config.used =
-        EventConfig("iph_signout_web_intercept_used", Comparator(ANY, 0), 0, 0);
     return config;
   }
 
@@ -1717,18 +1712,6 @@ std::optional<FeatureConfig> GetClientSideFeatureConfig(
     return config;
   }
 
-  if (kIPHRtlGestureNavigationFeature.name == feature->name) {
-    FeatureConfig config;
-    config.valid = true;
-    config.availability = Comparator(ANY, 0);
-    config.session_rate = Comparator(LESS_THAN, 1);
-    config.used =
-        EventConfig("rtl_gesture_iph_show", Comparator(EQUAL, 0), 365, 365);
-    config.trigger =
-        EventConfig("rtl_gesture_iph_trigger", Comparator(EQUAL, 0), 30, 365);
-    return config;
-  }
-
   if (kIPHPageZoomFeature.name == feature->name) {
     FeatureConfig config;
     config.valid = true;
@@ -2418,17 +2401,6 @@ std::optional<FeatureConfig> GetClientSideFeatureConfig(
         EventConfig(feature_engagement::events::kChromeOpened,
                     Comparator(GREATER_THAN_OR_EQUAL, 7), 360, 360));
 
-    // Continue checking deprecated settings badge conditions to not show blue
-    // dot at all if user would not have qualified for settings badge.
-    // TODO(crbug.com/362504599): Remove in July 2025.
-    config.event_configs.insert(
-        EventConfig("blue_dot_promo_settings_shown_new_session",
-                    Comparator(LESS_THAN_OR_EQUAL, 2), 360, 360));
-    // TODO(crbug.com/362504058): Remove in Sept 2025.
-    config.event_configs.insert(
-        EventConfig("blue_dot_promo_overflow_menu_dismissed",
-                    Comparator(LESS_THAN, 3), 360, 360));
-
     config.blocked_by.type = BlockedBy::Type::NONE;
     config.blocking.type = Blocking::Type::NONE;
     return config;
@@ -2710,7 +2682,8 @@ std::optional<FeatureConfig> GetClientSideFeatureConfig(
         /*trigger_event=*/"swipe_back_forward_trigger", /*used_event=*/
         feature_engagement::events::kIOSSwipeBackForwardUsed,
         /*dismiss_button_tap_event=*/
-        feature_engagement::events::kIOSSwipeBackForwardIPHDismissButtonTapped);
+        feature_engagement::events::kIOSSwipeBackForwardIPHDismissButtonTapped,
+        /*first_run_recency_in_days=*/60);
   }
 
   if (kIPHiOSSwipeToolbarToChangeTabFeature.name == feature->name) {
@@ -2722,7 +2695,8 @@ std::optional<FeatureConfig> GetClientSideFeatureConfig(
         feature_engagement::events::kIOSSwipeToolbarToChangeTabUsed,
         /*dismiss_button_tap_event=*/
         feature_engagement::events::
-            kIOSSwipeToolbarToChangeTabIPHDismissButtonTapped);
+            kIOSSwipeToolbarToChangeTabIPHDismissButtonTapped,
+        /*first_run_recency_in_days=*/60);
   }
 
   if (kIPHiOSOverflowMenuCustomizationFeature.name == feature->name) {
@@ -2936,6 +2910,63 @@ std::optional<FeatureConfig> GetClientSideFeatureConfig(
     // considered eligible for the AI Hub.
     config.event_configs.insert(
         EventConfig(events::kIOSGeminiEligiblity, Comparator(EQUAL, 1), 14,
+                    feature_engagement::kMaxStoragePeriod));
+    return config;
+  }
+
+  if (kIPHiOSGeminiContextualCueChip.name == feature->name) {
+    FeatureConfig config;
+    config.valid = true;
+    config.availability = Comparator(ANY, 0);
+    config.session_rate = Comparator(ANY, 0);
+
+    // This badge showing does not affect the session count for other IPHs.
+    config.session_rate_impact.type = SessionRateImpact::Type::NONE;
+    config.blocked_by.type = BlockedBy::Type::NONE;
+    config.blocking.type = Blocking::Type::NONE;
+
+    // Feature should show no matter how many times the chip was used.
+    config.used =
+        EventConfig(events::kIOSGeminiContextualCueChipUsed, Comparator(ANY, 0),
+                    feature_engagement::kMaxStoragePeriod,
+                    feature_engagement::kMaxStoragePeriod);
+
+    // Should trigger a maximum of 3 times in one day.
+    config.trigger =
+        EventConfig(events::kIOSGeminiContextualCueChipTriggered,
+                    Comparator(LESS_THAN_OR_EQUAL, 3), /*window=*/1,
+                    feature_engagement::kMaxStoragePeriod);
+
+    return config;
+  }
+
+  if (kIPHiOSGeminiFullscreenPromoFeature.name == feature->name) {
+    FeatureConfig config;
+    config.valid = true;
+    // This feature is part of the standard iOS fullscreen promo group.
+    config.groups.push_back(kiOSFullscreenPromosGroup.name);
+    // Show promo only to users that are not recent.
+    config.event_configs.insert(EventConfig(
+        events::kIOSFirstRunComplete, Comparator(GREATER_THAN_OR_EQUAL, 1),
+        feature_engagement::kMaxStoragePeriod,
+        feature_engagement::kMaxStoragePeriod));
+    config.event_configs.insert(
+        EventConfig(events::kIOSFirstRunComplete, Comparator(EQUAL, 0), 1,
+                    feature_engagement::kMaxStoragePeriod));
+    // Show promo only if user has never started the Gemini flow before.
+    config.used =
+        EventConfig(events::kIOSGeminiFlowStartedNonPromo, Comparator(EQUAL, 0),
+                    feature_engagement::kMaxStoragePeriod,
+                    feature_engagement::kMaxStoragePeriod);
+    // The promo should only be shown once.
+    config.trigger =
+        EventConfig(events::kIOSGeminiFullscreenPromoTriggered,
+                    Comparator(EQUAL, 0), feature_engagement::kMaxStoragePeriod,
+                    feature_engagement::kMaxStoragePeriod);
+    // Show promo only if user never give consent.
+    config.event_configs.insert(
+        EventConfig(events::kIOSGeminiConsentGiven, Comparator(EQUAL, 0),
+                    feature_engagement::kMaxStoragePeriod,
                     feature_engagement::kMaxStoragePeriod));
     return config;
   }

@@ -1,7 +1,7 @@
 // Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
@@ -601,6 +601,7 @@ export class TimelineTreeView extends
   }
 
   override wasShown(): void {
+    super.wasShown();
     this.dataGrid.addEventListener(DataGrid.DataGrid.Events.SELECTED_NODE, this.#onDataGridSelectionChange, this);
     this.dataGrid.addEventListener(DataGrid.DataGrid.Events.DESELECTED_NODE, this.#onDataGridDeselection, this);
   }
@@ -798,9 +799,9 @@ export class GridNode extends DataGrid.SortableDataGrid.SortableDataGridNode<Gri
       const parsedTrace = this.treeView.parsedTrace();
       const target = parsedTrace ? targetForEvent(parsedTrace, event) : null;
       const linkifier = this.treeView.linkifier;
-      const isFreshRecording =
-          Boolean(parsedTrace && Tracing.FreshRecording.Tracker.instance().recordingIsFresh(parsedTrace));
-      this.linkElement = TimelineUIUtils.linkifyTopCallFrame(event, target, linkifier, isFreshRecording);
+      const isFreshOrEnhanced =
+          Boolean(parsedTrace && Tracing.FreshRecording.Tracker.instance().recordingIsFreshOrEnhanced(parsedTrace));
+      this.linkElement = TimelineUIUtils.linkifyTopCallFrame(event, target, linkifier, isFreshOrEnhanced);
       if (this.linkElement) {
         container.createChild('div', 'activity-link').appendChild(this.linkElement);
       }

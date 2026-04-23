@@ -19,11 +19,12 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/process/process.h"
+#include "base/rand_util.h"
 #include "base/sequence_checker.h"
 #include "base/strings/pattern.h"
 #include "base/strings/strcat.h"
@@ -36,6 +37,7 @@
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "components/language/core/browser/locale_util.h"
+#include "components/metrics/field_trials_provider.h"
 #include "components/metrics/metrics_state_manager.h"
 #include "components/prefs/pref_service.h"
 #include "components/variations/active_field_trials.h"
@@ -49,6 +51,7 @@
 #include "components/variations/service/safe_seed_manager.h"
 #include "components/variations/service/variations_service_client.h"
 #include "components/variations/service/variations_service_utils.h"
+#include "components/variations/variations_features.h"
 #include "components/variations/variations_ids_provider.h"
 #include "components/variations/variations_layers.h"
 #include "components/variations/variations_seed_processor.h"
@@ -71,8 +74,9 @@ void RecordSeedExpiry(bool is_safe_seed, VariationsSeedExpiry seed_expiry) {
 
 // Records the loaded seed's age.
 void RecordSeedFreshness(base::TimeDelta seed_age) {
-  UMA_HISTOGRAM_CUSTOM_COUNTS("Variations.SeedFreshness", seed_age.InMinutes(),
-                              1, base::Days(30).InMinutes(), 50);
+  base::UmaHistogramCustomCounts("Variations.SeedFreshness",
+                                 seed_age.InMinutes(), 1,
+                                 base::Days(30).InMinutes(), 50);
 }
 
 // Records details about Chrome's attempt to apply a variations seed.
@@ -191,6 +195,39 @@ Study::Channel ConvertProductChannelToStudyChannel(
   NOTREACHED();
 }
 
+void MaybeActivateMetricsNoopTrial() {
+  if (base::FieldTrial* trial =
+          base::FieldTrialList::Find("MetricsNoopRegressionAutoAdvance")) {
+    // The original plan was to randomly activate the field trial half the time,
+    // but the rand() function was not seeded resulting in none of the Enabled
+    // group was activated. Nevertheles, this is an interesting edge case for
+    // us to test so keep this around for now. The replacement is
+    // MetricsNoopRegressionAutoAdvance2 below.
+    if (trial->GetGroupNameWithoutActivation() == "Enabled") {
+      if (rand() % 2 == 0) {
+        trial->Activate();
+      }
+    } else {
+      trial->Activate();
+    }
+  }
+}
+
+void MaybeActivateMetricsNoopTrial2() {
+  if (base::FieldTrial* trial =
+          base::FieldTrialList::Find("MetricsNoopRegressionAutoAdvance2")) {
+    // If the user is in the Enabled group, we want to randomly activate the
+    // field trial half the time.
+    if (trial->GetGroupNameWithoutActivation() == "Enabled") {
+      if (base::RandBool()) {
+        trial->Activate();
+      }
+    } else {
+      trial->Activate();
+    }
+  }
+}
+
 }  // namespace
 
 BASE_FEATURE(kForceFieldTrialSetupCrashForTesting,
@@ -253,6 +290,7 @@ bool VariationsFieldTrialCreator::SetUpFieldTrials(
   // Force the variation ids selected in chrome://flags and/or specified using
   // the command-line flag.
   auto result = http_header_provider->ForceVariationIds(
+      base::PassKey<VariationsFieldTrialCreator>(),
       variation_ids, command_line_variation_ids);
 
   switch (result) {
@@ -318,11 +356,14 @@ bool VariationsFieldTrialCreator::SetUpFieldTrials(
 
   CreateTrialsResult create_trials_result = {.applied_seed = false};
   if (!used_testing_config && client_filterable_state) {
-    // TODO(crbug.com/410008879): Make use of the result's
-    // seed_has_active_limited_layer field.
     create_trials_result = CreateTrialsFromSeed(
         entropy_providers, feature_list.get(), safe_seed_manager,
         std::move(client_filterable_state));
+  }
+
+  if (create_trials_result.applied_seed) {
+    FieldTrialsProvider::UpdateAppliedSeedHasActiveLimitedLayer(
+        create_trials_result.seed_has_active_limited_layer.value_or(false));
   }
 
   if (add_entropy_source_to_variations_ids &&
@@ -340,12 +381,20 @@ bool VariationsFieldTrialCreator::SetUpFieldTrials(
 
   base::FeatureList::SetInstance(std::move(feature_list));
 
+  if (base::FeatureList::IsEnabled(internal::kPurgeVariationsSeedFromMemory)) {
+    GetSeedStore()->AllowToPurgeSeedsDataFromMemory();
+  }
+
   // For testing Variations Safe Mode, maybe crash here.
   if (base::FeatureList::IsEnabled(kForceFieldTrialSetupCrashForTesting)) {
     // Terminate with a custom exit test code. See
     // VariationsSafeModeEndToEndBrowserTest.ExtendedSafeSeedEndToEnd.
     base::Process::TerminateCurrentProcessImmediately(0x7E57C0D3);
   }
+
+  // TODO(crbug.com/458408055): Remove these once the experiments are over.
+  MaybeActivateMetricsNoopTrial();
+  MaybeActivateMetricsNoopTrial2();
 
   // This must be called after |local_state_| is initialized.
   platform_field_trials->OnVariationsSetupComplete();
@@ -417,7 +466,7 @@ std::string VariationsFieldTrialCreator::LoadPermanentConsistencyCountry(
   if (!permanent_overridden_country.empty()) {
     base::UmaHistogramEnumeration(
         "Variations.LoadPermanentConsistencyCountryResult",
-        LOAD_COUNTRY_HAS_PERMANENT_OVERRIDDEN_COUNTRY, LOAD_COUNTRY_MAX);
+        LoadPermanentConsistencyCountryResult::kHasPermanentOverriddenCountry);
     return permanent_overridden_country;
   }
 
@@ -446,23 +495,33 @@ std::string VariationsFieldTrialCreator::LoadPermanentConsistencyCountry(
   // version and the country code in the variations seed.
   LoadPermanentConsistencyCountryResult result;
   if (is_stored_info_emtpy) {
-    result = !latest_country.empty() ? LOAD_COUNTRY_NO_PREF_HAS_SEED
-                                     : LOAD_COUNTRY_NO_PREF_NO_SEED;
+    result = !latest_country.empty()
+                 ? LoadPermanentConsistencyCountryResult::kNoPrefHasSeed
+                 : LoadPermanentConsistencyCountryResult::kNoPrefNoSeed;
   } else if (!is_stored_info_valid) {
-    result = !latest_country.empty() ? LOAD_COUNTRY_INVALID_PREF_HAS_SEED
-                                     : LOAD_COUNTRY_INVALID_PREF_NO_SEED;
+    result = !latest_country.empty()
+                 ? LoadPermanentConsistencyCountryResult::kInvalidPrefHasSeed
+                 : LoadPermanentConsistencyCountryResult::kInvalidPrefNoSeed;
   } else if (latest_country.empty()) {
-    result = does_version_match ? LOAD_COUNTRY_HAS_PREF_NO_SEED_VERSION_EQ
-                                : LOAD_COUNTRY_HAS_PREF_NO_SEED_VERSION_NEQ;
+    result =
+        does_version_match
+            ? LoadPermanentConsistencyCountryResult::kHasPrefNoSeedVersionEq
+            : LoadPermanentConsistencyCountryResult::kHasPrefNoSeedVersionNeq;
   } else if (does_version_match) {
-    result = does_country_match ? LOAD_COUNTRY_HAS_BOTH_VERSION_EQ_COUNTRY_EQ
-                                : LOAD_COUNTRY_HAS_BOTH_VERSION_EQ_COUNTRY_NEQ;
+    result =
+        does_country_match
+            ? LoadPermanentConsistencyCountryResult::kHasBothVersionEqCountryEq
+            : LoadPermanentConsistencyCountryResult::
+                  kHasBothVersionEqCountryNeq;
   } else {
-    result = does_country_match ? LOAD_COUNTRY_HAS_BOTH_VERSION_NEQ_COUNTRY_EQ
-                                : LOAD_COUNTRY_HAS_BOTH_VERSION_NEQ_COUNTRY_NEQ;
+    result =
+        does_country_match
+            ? LoadPermanentConsistencyCountryResult::kHasBothVersionNeqCountryEq
+            : LoadPermanentConsistencyCountryResult::
+                  kHasBothVersionNeqCountryNeq;
   }
-  UMA_HISTOGRAM_ENUMERATION("Variations.LoadPermanentConsistencyCountryResult",
-                            result, LOAD_COUNTRY_MAX);
+  base::UmaHistogramEnumeration(
+      "Variations.LoadPermanentConsistencyCountryResult", result);
 
   // Use the stored country if one is available and was fetched since the last
   // time Chrome was updated.
@@ -691,10 +750,13 @@ CreateTrialsResult VariationsFieldTrialCreator::CreateTrialsFromSeed(
   std::string seed_data;              // Only set if not in safe mode.
   std::string base64_seed_signature;  // Only set if not in safe mode.
   const bool run_in_safe_mode = seed_type_ == SeedType::kSafeSeed;
+  // TODO: crbug.com/445600380 - Check if we can avoid copying the seed data
+  // when loading the seed.
   const bool seed_loaded =
       run_in_safe_mode
-          ? GetSeedStore()->LoadSafeSeed(&seed, client_state.get())
-          : GetSeedStore()->LoadSeed(&seed, &seed_data, &base64_seed_signature);
+          ? GetSeedStore()->LoadSafeSeedSync(&seed, client_state.get())
+          : GetSeedStore()->LoadSeedSync(&seed, &seed_data,
+                                         &base64_seed_signature);
   if (!seed_loaded) {
     // If Chrome should run in safe mode but the safe seed was not successfully
     // loaded, then do not apply a seed. Fall back to client-side defaults.
@@ -718,6 +780,11 @@ CreateTrialsResult VariationsFieldTrialCreator::CreateTrialsFromSeed(
 
   VariationsLayers layers(seed, entropy_providers);
 
+  // Use the VariationsIdsProvider's clock to get the current time. This is
+  // the timestamp used for entropy evaluation.
+  base::Time current_time =
+      VariationsIdsProvider::GetInstance()->GetCurrentTime();
+
   // The server is not expected to send a seed with misconfigured entropy. Just
   // in case there is an unexpected server-side bug and the entropy is
   // misconfigured, return early to skip assigning any trials from the seed.
@@ -730,7 +797,9 @@ CreateTrialsResult VariationsFieldTrialCreator::CreateTrialsFromSeed(
   // support limited entropy randomization. For such clients,
   // `SeedHasMisconfiguredEntropy()`is always false.
   const MisconfiguredEntropyResult result =
-      SeedHasMisconfiguredEntropy(*client_state, seed);
+      SeedHasMisconfiguredEntropy(*client_state, seed,
+                                  GetGoogleWebEntropyLimitInBits(),
+                                  current_time);
   if (result.is_misconfigured) {
     RecordVariationsSeedUsage(
         run_in_safe_mode ? SeedUsage::kMisconfiguredSafeSeedNotUsed

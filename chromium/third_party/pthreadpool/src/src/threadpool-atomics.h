@@ -45,6 +45,99 @@
 /* Configuration header */
 #include "threadpool-common.h"
 
+/* POSIX headers */
+#if PTHREADPOOL_USE_PTHREADS
+#include <pthread.h>
+#else
+#include <threads.h>
+#endif
+
+#if PTHREADPOOL_USE_PTHREADS
+typedef pthread_t pthreadpool_thread_t;
+typedef pthread_mutex_t pthreadpool_mutex_t;
+typedef pthread_cond_t pthreadpool_cond_t;
+typedef void* pthreadpool_thread_return_t;
+static inline void pthreadpool_mutex_init(pthreadpool_mutex_t* mutex) {
+  pthread_mutex_init(mutex, NULL);
+}
+static inline void pthreadpool_mutex_destroy(pthreadpool_mutex_t* mutex) {
+  pthread_mutex_destroy(mutex);
+}
+static inline void pthreadpool_mutex_lock(pthreadpool_mutex_t* mutex) {
+  pthread_mutex_lock(mutex);
+}
+static inline void pthreadpool_mutex_unlock(pthreadpool_mutex_t* mutex) {
+  pthread_mutex_unlock(mutex);
+}
+static inline void pthreadpool_cond_init(pthreadpool_cond_t* cond) {
+  pthread_cond_init(cond, NULL);
+}
+static inline void pthreadpool_cond_destroy(pthreadpool_cond_t* cond) {
+  pthread_cond_destroy(cond);
+}
+static inline void pthreadpool_cond_wait(pthreadpool_cond_t* cond,
+                                         pthreadpool_mutex_t* mutex) {
+  pthread_cond_wait(cond, mutex);
+}
+static inline void pthreadpool_cond_signal(pthreadpool_cond_t* cond) {
+  pthread_cond_signal(cond);
+}
+static inline void pthreadpool_cond_broadcast(pthreadpool_cond_t* cond) {
+  pthread_cond_broadcast(cond);
+}
+static inline void pthreadpool_thread_create(
+    pthreadpool_thread_t* thread, pthreadpool_thread_return_t(fun)(void*),
+    void* arg) {
+  pthread_create(thread, NULL, fun, arg);
+}
+static inline void pthreadpool_thread_join(
+    pthreadpool_thread_t thread, pthreadpool_thread_return_t* return_value) {
+  pthread_join(thread, return_value);
+}
+#else
+typedef thrd_t pthreadpool_thread_t;
+typedef mtx_t pthreadpool_mutex_t;
+typedef cnd_t pthreadpool_cond_t;
+typedef int pthreadpool_thread_return_t;
+static inline void pthreadpool_mutex_init(pthreadpool_mutex_t* mutex) {
+  mtx_init(mutex, mtx_plain);
+}
+static inline void pthreadpool_mutex_destroy(pthreadpool_mutex_t* mutex) {
+  mtx_destroy(mutex);
+}
+static inline void pthreadpool_mutex_lock(pthreadpool_mutex_t* mutex) {
+  mtx_lock(mutex);
+}
+static inline void pthreadpool_mutex_unlock(pthreadpool_mutex_t* mutex) {
+  mtx_unlock(mutex);
+}
+static inline void pthreadpool_cond_init(pthreadpool_cond_t* cond) {
+  cnd_init(cond);
+}
+static inline void pthreadpool_cond_destroy(pthreadpool_cond_t* cond) {
+  cnd_destroy(cond);
+}
+static inline void pthreadpool_cond_wait(pthreadpool_cond_t* cond,
+                                         pthreadpool_mutex_t* mutex) {
+  cnd_wait(cond, mutex);
+}
+static inline void pthreadpool_cond_signal(pthreadpool_cond_t* cond) {
+  cnd_signal(cond);
+}
+static inline void pthreadpool_cond_broadcast(pthreadpool_cond_t* cond) {
+  cnd_broadcast(cond);
+}
+static inline void pthreadpool_thread_create(
+    pthreadpool_thread_t* thread, pthreadpool_thread_return_t(fun)(void*),
+    void* arg) {
+  thrd_create(thread, (thrd_start_t)fun, arg);
+}
+static inline void pthreadpool_thread_join(
+    pthreadpool_thread_t thread, pthreadpool_thread_return_t* return_value) {
+  thrd_join(thread, return_value);
+}
+#endif  // PTHREADPOOL_USE_PTHREADS
+
 /* Align the atomic values on the size of a cache line to avoid false sharing,
  * i.e. two or more atomic variables sharing the same cache line will block
  * each other during atomic operations.
@@ -251,11 +344,11 @@ static inline bool pthreadpool_compare_exchange_sequentially_consistent_int32_t(
                                                memory_order_seq_cst);
 }
 
-static inline void pthreadpool_fence_acquire() {
+static inline void pthreadpool_fence_acquire(void) {
   atomic_thread_fence(memory_order_acquire);
 }
 
-static inline void pthreadpool_fence_release() {
+static inline void pthreadpool_fence_release(void) {
   atomic_thread_fence(memory_order_release);
 }
 

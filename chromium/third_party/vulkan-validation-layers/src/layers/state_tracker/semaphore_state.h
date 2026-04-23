@@ -55,7 +55,7 @@ class Semaphore : public RefcountedStateObject {
     // Swapchain information associated with QueuePresent wait semaphore
     struct SwapchainWaitInfo {
         std::shared_ptr<vvl::Swapchain> swapchain;
-        uint32_t image_index = vvl::kU32Max;  // image being presented
+        uint32_t image_index = vvl::kNoIndex32;  // image being presented
         uint32_t acquire_counter_value = 0;   // value of vvl::Swapchain::acquire_count when the image was acquired
     };
 
@@ -111,8 +111,16 @@ class Semaphore : public RefcountedStateObject {
     // Process signal by retiring timeline timepoints up to the specified payload
     void RetireSignal(uint64_t payload);
 
-    // Look for most recent / highest payload operation that matches
-    std::optional<SemOp> LastOp(const std::function<bool(OpType op_type, uint64_t payload, bool is_pending)> &filter) const;
+    // Return the payload (current or pending) for which the given value exceeds the max diff threshold.
+    // Return an empty result if the threshould is not exceeded.
+    std::optional<uint64_t> CheckMaxDiffThreshold(uint64_t value, const char *&payload_type) const;
+
+    // Return true if there is a pending timeline signal with a given value
+    bool HasPendingTimelineSignal(uint64_t signal_value) const;
+
+    std::optional<uint64_t> GetSmallestPendingTimelineSignal() const;
+
+    std::optional<SubmissionReference> GetPendingBinarySignalSubmission() const;
 
     // Returns pending queue submission that waits on this binary semaphore.
     std::optional<SubmissionReference> GetPendingBinaryWaitSubmission() const;
@@ -123,8 +131,8 @@ class Semaphore : public RefcountedStateObject {
     // "and any semaphore signal operations on which it depends must have also been submitted for execution"
     std::optional<SemaphoreInfo> GetPendingBinarySignalTimelineDependency() const;
 
-    // Current payload value.
-    // If a queue submission command is pending execution, then the returned value may immediately be out of date
+    // Return semaphore's current payload.
+    // If a queue submission command is pending execution, then the returned value may immediately be out of date.
     uint64_t CurrentPayload() const;
 
     bool CanBinaryBeSignaled() const;
@@ -132,6 +140,9 @@ class Semaphore : public RefcountedStateObject {
 
     void GetLastBinarySignalSource(VkQueue &queue, vvl::Func &acquire_command) const;
     bool HasResolvingTimelineSignal(uint64_t wait_payload) const;
+
+    // Called on AcquireNextImage semaphore
+    void SetAcquiredImage(const std::shared_ptr<vvl::Swapchain> &swapchain, uint32_t image_index);
 
     void SetSwapchainWaitInfo(const SwapchainWaitInfo &info);
     void ClearSwapchainWaitInfo();
@@ -171,8 +182,15 @@ class Semaphore : public RefcountedStateObject {
     void WaitTimePoint(std::shared_future<void> &&waiter, uint64_t payload, bool unblock_validation_object, const Location &loc);
 
   private:
+    DeviceState &device_;
+
     enum Scope scope_ { kInternal };
     std::optional<VkExternalSemaphoreHandleTypeFlagBits> imported_handle_type_;  // has value when scope is not kInternal
+
+    uint64_t current_payload_ = 0;
+
+    // Empty if there are no pending signals. Used only for timeline semaphores
+    std::optional<uint64_t> smallest_pending_signal_value_;
 
     // the most recently completed operation
     SemOp completed_;
@@ -184,8 +202,13 @@ class Semaphore : public RefcountedStateObject {
     // Timeline operations can be added in any order and multiple wait operations
     // can use the same payload value.
     std::map<uint64_t, TimePoint> timeline_;
+
     mutable std::shared_mutex lock_;
-    DeviceState &dev_data_;
+
+    // Reference to the swapchain image if the semaphore was used by the acquire operation.
+    // The semaphore wait operation uses this to mark the image as acquired and safe to use.
+    std::shared_ptr<vvl::Swapchain> acquired_image_swapchain_;
+    uint32_t acquired_image_index_ = vvl::kNoIndex32;
 
     // Not empty when semaphore was used in QueuePresent but has not been re-acquired yet
     // and the presentation fence (if provided) has not been waited on.

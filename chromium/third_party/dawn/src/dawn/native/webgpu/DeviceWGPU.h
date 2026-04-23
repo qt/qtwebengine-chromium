@@ -29,12 +29,16 @@
 #define SRC_DAWN_NATIVE_WEBGPU_DEVICEWGPU_H_
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "dawn/native/Device.h"
 #include "dawn/native/ToBackend.h"
+#include "dawn/native/WebGPUBackend.h"
+#include "dawn/native/webgpu/CaptureContext.h"
 #include "dawn/native/webgpu/Forward.h"
 #include "dawn/native/webgpu/ObjectWGPU.h"
+#include "dawn/native/webgpu/QueueWGPU.h"
 #include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native::webgpu {
@@ -53,9 +57,24 @@ class Device final : public DeviceBase, public ObjectWGPU<WGPUDevice> {
     uint32_t GetOptimalBytesPerRowAlignment() const override;
     uint64_t GetOptimalBufferToTextureCopyOffsetAlignment() const override;
 
+    bool CanResolveSubRect() const override;
+
     float GetTimestampPeriodInNS() const override;
 
+    bool NeedsIndirectDrawGPUValidation() const override;
+
     WGPUInstance GetInnerInstance() const;
+
+    void StartCapture(CaptureStream& commandStream, CaptureStream& contentStream);
+    void EndCapture();
+
+    template <typename T>
+    void CaptureSetLabel(T* object, const std::string& label) {
+        Queue* q = ToBackend(GetQueue());
+        if (q->IsCapturing()) {
+            q->GetCaptureContext()->CaptureSetLabel(object, label);
+        }
+    }
 
     const DawnProcTable& wgpu;
 
@@ -75,6 +94,9 @@ class Device final : public DeviceBase, public ObjectWGPU<WGPUDevice> {
     ResultOrError<Ref<CommandBufferBase>> CreateCommandBuffer(
         CommandEncoder* encoder,
         const CommandBufferDescriptor* descriptor) override;
+    ResultOrError<Ref<RenderBundleBase>> CreateRenderBundle(
+        RenderBundleEncoderBase* encoder,
+        const RenderBundleDescriptor* descriptor) override;
     Ref<ComputePipelineBase> CreateUninitializedComputePipelineImpl(
         const UnpackedPtr<ComputePipelineDescriptor>& descriptor) override;
     ResultOrError<Ref<PipelineLayoutBase>> CreatePipelineLayoutImpl(
@@ -86,8 +108,7 @@ class Device final : public DeviceBase, public ObjectWGPU<WGPUDevice> {
     ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-        const std::vector<tint::wgsl::Extension>& internalExtensions,
-        ShaderModuleParseResult* parseResult) override;
+        const std::vector<tint::wgsl::Extension>& internalExtensions) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
         SwapChainBase* previousSwapChain,
@@ -105,12 +126,13 @@ class Device final : public DeviceBase, public ObjectWGPU<WGPUDevice> {
                                        BufferBase* destination,
                                        uint64_t destinationOffset,
                                        uint64_t size) override;
-    MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
+    MaybeError CopyFromStagingToTextureImpl(BufferBase* source,
                                             const TexelCopyBufferLayout& src,
                                             const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
 
     void DestroyImpl() override;
+    void SetLabelImpl() override;
 };
 
 }  // namespace dawn::native::webgpu

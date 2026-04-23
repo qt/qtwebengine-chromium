@@ -409,7 +409,7 @@ function getSubmittedFormTopLevelData(form: HTMLElement):
   // Include the submission timestamp information.
   const getSubmissionTimestamp = (): string => {
     // Find the substring "timestamp: 123456789";
-    const timestampSection = form.textContent!.match(/timestamp: ([0-9]+)/);
+    const timestampSection = form.textContent.match(/timestamp: ([0-9]+)/);
     return timestampSection ? timestampSection[1]! : 'Not found';
   };
 
@@ -598,6 +598,7 @@ function setUpScopeCheckboxes() {
     {id: 'FastCheckout', uncheckedByDefault: true},
     {id: 'TouchToFill'},
     {id: 'AutofillAi'},
+    {id: 'AutofillActor'},
   ];
   for (const scope of SCOPES) {
     const input = createCheckbox(scope);

@@ -19,7 +19,7 @@ import {
 } from '../../testing/MockConnection.js';
 import {MockProtocolBackend} from '../../testing/MockScopeChain.js';
 import {createFileSystemFileForPersistenceTests} from '../../testing/PersistenceHelpers.js';
-import {getInitializedResourceTreeModel} from '../../testing/ResourceTreeHelpers.js';
+import {getInitializedResourceTreeModel, setMockResourceTree} from '../../testing/ResourceTreeHelpers.js';
 import {encodeSourceMap} from '../../testing/SourceMapEncoder.js';
 import {setupPageResourceLoaderForSourceMap} from '../../testing/SourceMapHelpers.js';
 import {
@@ -97,6 +97,7 @@ describeWithMockConnection('BreakpointManager', () => {
       resourceMapping,
       targetManager,
       ignoreListManager,
+      workspace,
     });
     backend = new MockProtocolBackend();
     target = createTarget();
@@ -104,6 +105,7 @@ describeWithMockConnection('BreakpointManager', () => {
 
     // Wait for the resource tree model to load; otherwise, our uiSourceCodes could be asynchronously
     // invalidated during the test.
+    setMockResourceTree(false);
     await getInitializedResourceTreeModel(target);
 
     breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance(
@@ -303,7 +305,7 @@ describeWithMockConnection('BreakpointManager', () => {
         clearMockConnectionResponseHandler('Debugger.setBreakpointByUrl');
         setMockConnectionResponseHandler('Debugger.setBreakpointByUrl', request => {
           res(request);
-          return {};
+          return {} as Protocol.Debugger.SetBreakpointByUrlResponse;
         });
       });
 
@@ -359,11 +361,11 @@ describeWithMockConnection('BreakpointManager', () => {
       clearMockConnectionResponseHandler('Debugger.setBreakpointByUrl');
       const requests = new Map<string, Protocol.Debugger.SetBreakpointByUrlRequest>();
       setMockConnectionResponseHandler('Debugger.setBreakpointByUrl', request => {
-        requests.set(request.url, request);
+        requests.set(request.url ?? '', request);
         if (requests.size === 2) {
           res(requests);
         }
-        return {};
+        return {} as Protocol.Debugger.SetBreakpointByUrlResponse;
       });
     });
 
@@ -418,7 +420,7 @@ describeWithMockConnection('BreakpointManager', () => {
     assert.exists(modelBreakpoint);
 
     // Make sure that we do not have a linked script yet.
-    // eslint-disable-next-line rulesdir/no-assert-equal-boolean-null-undefined
+    // eslint-disable-next-line @devtools/no-assert-equal-boolean-null-undefined
     assert.strictEqual(modelBreakpoint.currentState, null);
 
     // Now await restoring the breakpoint.
@@ -1130,8 +1132,8 @@ describeWithMockConnection('BreakpointManager', () => {
       function dispatchDocumentOpened() {
         dispatchEvent(target, 'Page.documentOpened', {
           frame: {
-            id: 'main',
-            loaderId: 'foo',
+            id: 'main' as Protocol.Page.FrameId,
+            loaderId: 'foo' as Protocol.Network.LoaderId,
             url: URL_HTML,
             domainAndRegistry: 'example.com',
             securityOrigin: 'https://example.com/',

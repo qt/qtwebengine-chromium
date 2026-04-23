@@ -663,8 +663,8 @@ static void sdp_parse_line(AVFormatContext *s, SDPParseState *s1,
             rtsp_parse_range_npt(p, &start, &end);
             s->start_time = start;
             /* AV_NOPTS_VALUE means live broadcast (and can't seek) */
-            s->duration   = (end == AV_NOPTS_VALUE) ?
-                            AV_NOPTS_VALUE : end - start;
+            if (end != AV_NOPTS_VALUE)
+                s->duration = end - start;
         } else if (av_strstart(p, "lang:", &p)) {
             if (s->nb_streams > 0) {
                 get_word(buf1, sizeof(buf1), &p);
@@ -754,6 +754,8 @@ int ff_sdp_parse(AVFormatContext *s, const char *content)
     char buf[SDP_MAX_SIZE], *q;
     SDPParseState sdp_parse_state = { { 0 } }, *s1 = &sdp_parse_state;
 
+    s->duration = AV_NOPTS_VALUE;
+
     p = content;
     for (;;) {
         p += strspn(p, SPACE_CHARS);
@@ -786,6 +788,9 @@ int ff_sdp_parse(AVFormatContext *s, const char *content)
     for (i = 0; i < s1->nb_default_exclude_source_addrs; i++)
         av_freep(&s1->default_exclude_source_addrs[i]);
     av_freep(&s1->default_exclude_source_addrs);
+
+    if (s->duration == AV_NOPTS_VALUE)
+        s->ctx_flags |= AVFMTCTX_UNSEEKABLE;
 
     return 0;
 }
@@ -1239,9 +1244,12 @@ start:
         q = buf;
         for (;;) {
             ret = ffurl_read_complete(rt->rtsp_hd, &ch, 1);
+            if (ret != 1) {
+                ret = (ret < 0) ? ret : AVERROR(EIO);
+                av_log(s, AV_LOG_WARNING, "Failed reading RTSP data: %s\n", av_err2str(ret));
+                return ret;
+            }
             av_log(s, AV_LOG_TRACE, "ret=%d c=%02x [%c]\n", ret, ch, ch);
-            if (ret != 1)
-                return ret < 0 ? ret : AVERROR(EIO);
             if (ch == '\n')
                 break;
             if (ch == '$' && q == buf) {
@@ -1271,6 +1279,7 @@ start:
             if (!strncmp(buf1, "RTSP/", 5)) {
                 get_word(buf1, sizeof(buf1), &p);
                 reply->status_code = atoi(buf1);
+                p += strspn(p, SPACE_CHARS);
                 av_strlcpy(reply->reason, p, sizeof(reply->reason));
             } else {
                 av_strlcpy(reply->reason, buf1, sizeof(reply->reason)); // method

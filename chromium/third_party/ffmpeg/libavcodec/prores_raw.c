@@ -334,13 +334,31 @@ static int decode_frame(AVCodecContext *avctx,
     DECLARE_ALIGNED(32, uint8_t, qmat)[64];
     memset(qmat, 1, 64);
 
+    if (avctx->skip_frame >= AVDISCARD_ALL)
+        return avpkt->size;
+
+    switch (avctx->codec_tag) {
+    case 0:
+        break;
+    case MKTAG('a','p','r','n'):
+        avctx->profile = AV_PROFILE_PRORES_RAW;
+        break;
+    case MKTAG('a','p','r','h'):
+        avctx->profile = AV_PROFILE_PRORES_RAW_HQ;
+        break;
+    default:
+        avpriv_request_sample(avctx, "Profile %d", avctx->codec_tag);
+        return AVERROR_PATCHWELCOME;
+        break;
+    }
+
     GetByteContext gb;
     bytestream2_init(&gb, avpkt->data, avpkt->size);
     if (bytestream2_get_be32(&gb) != avpkt->size)
         return AVERROR_INVALIDDATA;
 
     /* ProRes RAW frame */
-    if (bytestream2_get_le32(&gb) != MKTAG('p','r','r','f'))
+    if (bytestream2_get_be32(&gb) != MKBETAG('p','r','r','f'))
         return AVERROR_INVALIDDATA;
 
     int header_len = bytestream2_get_be16(&gb);
@@ -367,15 +385,15 @@ static int decode_frame(AVCodecContext *avctx,
     if ((w & 1) || (h & 1))
         return AVERROR_INVALIDDATA;
 
-    avctx->coded_width  = FFALIGN(w, 16);
-    avctx->coded_height = FFALIGN(h, 16);
-
     if (w != avctx->width || h != avctx->height) {
         av_log(avctx, AV_LOG_WARNING, "picture resolution change: %ix%i -> %ix%i\n",
                avctx->width, avctx->height, w, h);
         if ((ret = ff_set_dimensions(avctx, w, h)) < 0)
             return ret;
     }
+
+    avctx->coded_width  = FFALIGN(w, 16);
+    avctx->coded_height = FFALIGN(h, 16);
 
     enum AVPixelFormat pix_fmt = AV_PIX_FMT_BAYER_RGGB16;
     if (pix_fmt != s->pix_fmt) {

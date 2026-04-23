@@ -15,6 +15,7 @@
 #include "base/i18n/rtl.h"
 #include "base/scoped_observation_traits.h"
 #include "build/build_config.h"
+#include "components/input/input_event_source.h"
 #include "components/input/native_web_keyboard_event.h"
 #include "content/common/content_export.h"
 #include "content/public/common/drop_data.h"
@@ -109,6 +110,13 @@ class CONTENT_EXPORT RenderWidgetHost {
 
   virtual ~RenderWidgetHost() {}
 
+  // This is a method to manually notify `InputEventObserver`s that an input
+  // event is about to be sent to the renderer. This is useful for mechanisms
+  // that do not use the normal input stack and thus would not normally send
+  // notifications to observers (e.g. tools in `actor::`).
+  virtual void WillSendInputEventToRenderer(
+      const blink::WebInputEvent& event) = 0;
+
   // Returns the viz::FrameSinkId that this object uses to put things on screen.
   // This value is constant throughout the lifetime of this object. Note that
   // until a RenderWidgetHostView is created, initialized, and assigned to this
@@ -198,9 +206,6 @@ class CONTENT_EXPORT RenderWidgetHost {
   // true if visual properties have changed since last call.
   virtual bool SynchronizeVisualProperties() = 0;
 
-  // Access to the implementation's IPC::Listener::OnMessageReceived. Intended
-  // only for test code.
-
   // Add/remove a callback that can handle key presses without requiring focus.
   using KeyPressEventCallback =
       base::RepeatingCallback<bool(const input::NativeWebKeyboardEvent&)>;
@@ -229,10 +234,14 @@ class CONTENT_EXPORT RenderWidgetHost {
   // Observer for WebInputEvents.
   class InputEventObserver {
    public:
-    virtual ~InputEventObserver() {}
+    using InputEventSource = input::InputEventSource;
+    virtual ~InputEventObserver() = default;
 
-    virtual void OnInputEvent(const RenderWidgetHost&,
-                              const blink::WebInputEvent&) {}
+    // Called when an input event is received. `source` indicates whether the
+    // event was received from the browser or Viz process.
+    virtual void OnInputEvent(const RenderWidgetHost& host,
+                              const blink::WebInputEvent& event,
+                              InputEventSource source) {}
     virtual void OnInputEventAck(const RenderWidgetHost&,
                                  blink::mojom::InputEventResultSource source,
                                  blink::mojom::InputEventResultState state,

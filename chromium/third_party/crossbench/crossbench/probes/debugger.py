@@ -11,8 +11,8 @@ from typing_extensions import override
 
 from crossbench import plt
 from crossbench.browsers.attributes import BrowserAttributes
-from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
-                                     ProbeKeyT)
+from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext, \
+    ProbeKeyT
 from crossbench.probes.probe_error import ProbeValidationError
 from crossbench.probes.result_location import ResultLocation
 

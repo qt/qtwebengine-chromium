@@ -590,12 +590,17 @@ void Navigator::DidNavigate(
   const bool allow_paint_holding = frame_tree_node->IsMainFrame()
                                        ? allow_main_frame_paint_holding
                                        : allow_subframe_paint_holding;
+  const RenderFrameHostManager::ViewTransitionCommitInfo
+      view_transition_commit_info{
+          .has_view_transition_resources =
+              navigation_request->HasViewTransitionResources()};
   frame_tree_node->render_manager()->DidNavigateFrame(
       render_frame_host, navigation_request->common_params().has_user_gesture,
       was_within_same_document,
       navigation_request->browsing_context_group_swap()
           .ShouldClearProxiesOnCommit(),
-      navigation_request->commit_params().frame_policy, allow_paint_holding);
+      navigation_request->commit_params().frame_policy, allow_paint_holding,
+      view_transition_commit_info);
 
   // Reset the old frame host's weak pointer to auction initiator page when it
   // is a cross-document navigation and the frame does not go into bfcache.
@@ -645,14 +650,18 @@ void Navigator::DidNavigate(
   // should never get here with a SiteInstance that doesn't have a site
   // assigned in that case.
   SiteInstanceImpl* site_instance = render_frame_host->GetSiteInstance();
-  const UrlInfo& url_info = navigation_request->GetUrlInfo();
-  if (!site_instance->HasSite() &&
-      SiteInstanceImpl::ShouldAssignSiteForUrlInfo(url_info)) {
-    // TODO(alexmos): convert this to a CHECK and remove the fallback call to
-    // ConvertToDefaultOrSetSite() after verifying that this doesn't happen in
-    // practice.
-    NOTREACHED() << "SiteInstance should have already set a site: "
-                 << params.url;
+  {
+    // We don't want the url_info to live to the end of this function because
+    // that could let it outlive the `navigation_request`.
+    const UrlInfo& url_info = navigation_request->GetUrlInfo();
+    if (!site_instance->HasSite() &&
+        SiteInstanceImpl::ShouldAssignSiteForUrlInfo(url_info)) {
+      // TODO(alexmos): convert this to a CHECK and remove the fallback call to
+      // ConvertToDefaultOrSetSite() after verifying that this doesn't happen in
+      // practice.
+      NOTREACHED() << "SiteInstance should have already set a site: "
+                   << params.url;
+    }
   }
 
   // Need to update MIME type here because it's referred to in
@@ -819,6 +828,16 @@ void Navigator::DidNavigate(
   delegate_->DidNavigateAnyFramePostCommit(render_frame_host, details);
 }
 
+// LINT.IfChange(InputStartPresence)
+enum class InputStartPresence {
+  kNone = 0,
+  kOnlyOld = 1,
+  kOnlyNew = 2,
+  kBoth = 3,
+  kMaxValue = kBoth,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/navigation/enums.xml:InputStartPresence)
+
 void Navigator::Navigate(std::unique_ptr<NavigationRequest> request,
                          ReloadType reload_type) {
   TRACE_EVENT0("browser,navigation", "Navigator::Navigate");
@@ -848,6 +867,9 @@ void Navigator::Navigate(std::unique_ptr<NavigationRequest> request,
   bool is_duplicate_navigation = false;
   base::TimeDelta nav_start_diff;
   if (ongoing_navigation_request &&
+      ongoing_navigation_request->HasCookieChangeListener() &&
+      !ongoing_navigation_request->DidCookiesChangeAfterStart(
+          /*exclude_http_only=*/false) &&
       ongoing_navigation_request->IsRendererInitiated() ==
           request->IsRendererInitiated() &&
       request->GetURL() == ongoing_navigation_request->GetURL() &&
@@ -891,8 +913,35 @@ void Navigator::Navigate(std::unique_ptr<NavigationRequest> request,
     base::UmaHistogramTimes(
         "Navigation.BrowserInitiated.DuplicateNavStartTimeDiff2",
         nav_start_diff);
+    const auto& new_input_start = request->common_params().input_start;
+    const auto& old_input_start =
+        ongoing_navigation_request->common_params().input_start;
+    const std::string histogram_prefix = base::StrCat(
+        {"Navigation.", request->IsRendererInitiated() ? "Renderer" : "Browser",
+         "Initiated."});
+    InputStartPresence presence;
+    if (new_input_start.is_null() && old_input_start.is_null()) {
+      presence = InputStartPresence::kNone;
+    } else if (new_input_start.is_null()) {
+      presence = InputStartPresence::kOnlyOld;
+    } else if (old_input_start.is_null()) {
+      presence = InputStartPresence::kOnlyNew;
+    } else {
+      presence = InputStartPresence::kBoth;
+    }
+    base::UmaHistogramEnumeration(
+        base::StrCat(
+            {histogram_prefix, "DuplicateNavigationInputStartPresence"}),
+        presence);
+    if (presence == InputStartPresence::kBoth) {
+      const base::TimeDelta input_diff = new_input_start - old_input_start;
+      base::UmaHistogramTimes(
+          base::StrCat({histogram_prefix, "DuplicateNavInputTimeDiff"}),
+          input_diff);
+    }
     if (start_diff_under_threshold &&
-        base::FeatureList::IsEnabled(features::kIgnoreDuplicateNavs)) {
+        GetContentClient()->ShouldIgnoreDuplicateNavs(
+            request->GetURL(), request->IsRendererInitiated())) {
       request->set_navigation_discard_reason(
           NavigationDiscardReason::kNeverStarted);
       DVLOG(0) << "Ignoring duplicate navigation to "

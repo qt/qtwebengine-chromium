@@ -9,15 +9,17 @@
 #include <limits>
 
 #include "src/base/bits.h"
+#include "src/base/float16.h"
 #include "src/base/ieee754.h"
 #include "src/base/numerics/safe_conversions.h"
 #include "src/common/assert-scope.h"
+#include "src/execution/frames-inl.h"
+#include "src/execution/frames.h"
 #include "src/execution/pointer-authentication.h"
 #include "src/numbers/conversions.h"
 #include "src/numbers/ieee754.h"
 #include "src/roots/roots-inl.h"
 #include "src/utils/memcopy.h"
-#include "src/wasm/float16.h"
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-objects-inl.h"
 
@@ -705,6 +707,8 @@ void f16x8_qfms_wrapper(Address data) {
 namespace {
 inline uint8_t* EffectiveAddress(Tagged<WasmTrustedInstanceData> trusted_data,
                                  uint32_t mem_index, uintptr_t index) {
+  // `index` was bounds-checked in the caller.
+  DCHECK_LE(index, trusted_data->memory_size(mem_index));
   return trusted_data->memory_base(mem_index) + index;
 }
 
@@ -719,6 +723,16 @@ constexpr int32_t kSuccess = 1;
 constexpr int32_t kOutOfBounds = 0;
 }  // namespace
 
+void data_drop_wrapper(Address trusted_data_addr, uint32_t segment_index) {
+  DisallowGarbageCollection no_gc;
+  Tagged<WasmTrustedInstanceData> trusted_data =
+      TrustedCast<WasmTrustedInstanceData>(Tagged<Object>{trusted_data_addr});
+
+  // The segment index was statically validated so we do not need a bounds check
+  // here.
+  trusted_data->data_segments()->set(segment_index, WireBytesRef{});
+}
+
 int32_t memory_init_wrapper(Address trusted_data_addr, uint32_t mem_index,
                             uintptr_t dst, uint32_t src, uint32_t seg_index,
                             uint32_t size) {
@@ -729,13 +743,15 @@ int32_t memory_init_wrapper(Address trusted_data_addr, uint32_t mem_index,
   uint64_t mem_size = trusted_data->memory_size(mem_index);
   if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds;
 
-  uint32_t seg_size = trusted_data->data_segment_sizes()->get(seg_index);
-  if (!base::IsInBounds<uint32_t>(src, size, seg_size)) return kOutOfBounds;
+  WireBytesRef segment_source = trusted_data->data_segments()->get(seg_index);
+  if (!base::IsInBounds<uint32_t>(src, size, segment_source.length())) {
+    return kOutOfBounds;
+  }
 
-  uint8_t* seg_start = reinterpret_cast<uint8_t*>(
-      trusted_data->data_segment_starts()->get(seg_index));
-  std::memcpy(EffectiveAddress(trusted_data, mem_index, dst), seg_start + src,
-              size);
+  base::Vector<const uint8_t> wire_bytes =
+      trusted_data->native_module()->wire_bytes();
+  const uint8_t* start = wire_bytes.data() + segment_source.offset() + src;
+  std::memcpy(EffectiveAddress(trusted_data, mem_index, dst), start, size);
   return kSuccess;
 }
 
@@ -1001,11 +1017,71 @@ void resume_jspi_stack(Isolate* isolate, wasm::StackMemory* to, Address sp,
 void resume_wasmfx_stack(Isolate* isolate, wasm::StackMemory* to, Address sp,
                          Address fp, Address pc) {
   wasm::StackMemory* from = isolate->isolate_data()->active_stack();
+  to->set_current_continuation({});
   if (v8_flags.trace_wasm_stack_switching) {
     PrintF("Switch from stack %d to %d (resume)\n", from->id(), to->id());
   }
   isolate->SwitchStacks<JumpBuffer::Inactive, JumpBuffer::Suspended>(
       from, to, sp, fp, pc);
+}
+
+Address suspend_wasmfx_stack(Isolate* isolate, Address sp, Address fp,
+                             Address pc, Address wanted_tag_raw,
+                             Address cont_raw) {
+  Tagged<Object> tag_obj(wanted_tag_raw);
+  auto wanted_tag = TrustedCast<WasmExceptionTag>(tag_obj);
+  Tagged<Object> cont_obj(cont_raw);
+  auto cont = TrustedCast<WasmContinuationObject>(cont_obj);
+  wasm::StackMemory* from = isolate->isolate_data()->active_stack();
+  cont->set_stack(isolate, from);
+  from->set_current_continuation(cont);
+  wasm::StackMemory* to = from->jmpbuf()->parent;
+  bool found = false;
+  // Search the innermost effect handler with a matching tag.
+  // Unlike exception handling, we don't need to look at each frame. Only the
+  // top frame of each stack can have an effect handler.
+  while (true) {
+    StackFrameIterator it(isolate, to);
+    CHECK_EQ(it.frame()->type(), StackFrame::WASM_STACK_EXIT);
+    it.Advance();
+    CHECK(it.frame()->is_wasm());
+    WasmCode* wasm_code =
+        wasm::GetWasmCodeManager()->LookupCode(isolate, it.frame()->pc());
+    base::Vector<const WasmCode::EffectHandler> effect_handlers =
+        wasm_code->effect_handlers();
+    Tagged<Object> trusted_instance_data_obj(base::Memory<Address>(
+        it.frame()->fp() + WasmFrameConstants::kWasmInstanceDataOffset));
+    auto trusted_instance_data =
+        TrustedCast<WasmTrustedInstanceData>(trusted_instance_data_obj);
+    for (const auto& handler : effect_handlers) {
+      auto tag = trusted_instance_data->tags_table()->get(handler.tag_index);
+      if (wasm_code->instruction_start() + handler.call_offset ==
+              it.frame()->pc() &&
+          tag == wanted_tag) {
+        found = true;
+        to->jmpbuf()->pc =
+            wasm_code->instruction_start() + handler.handler_offset;
+        to->jmpbuf()->sp = it.frame()->sp();
+        to->jmpbuf()->fp = it.frame()->fp();
+        break;
+      }
+    }
+    if (found) break;
+    if (to->jmpbuf()->is_on_central_stack) {
+      // We are about to skip JS/C++ frames.
+      return kNullAddress;
+    }
+    to = to->jmpbuf()->parent;
+  }
+  if (!found) {
+    return kNullAddress;
+  }
+  if (v8_flags.trace_wasm_stack_switching) {
+    PrintF("Switch from stack %d to %d (suspend)\n", from->id(), to->id());
+  }
+  isolate->SwitchStacks<JumpBuffer::Suspended, JumpBuffer::Inactive>(
+      from, to, sp, fp, pc);
+  return reinterpret_cast<Address>(to);
 }
 
 void return_stack(Isolate* isolate, wasm::StackMemory* to) {

@@ -4,11 +4,11 @@
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import enum
 import logging
-from typing import (TYPE_CHECKING, Any, Final, Iterable, Optional, Sequence,
-                    Set, Type)
+from typing import TYPE_CHECKING, Any, Final, Iterable, Optional, Set, Type
 
 from crossbench import exception
 from crossbench import path as pth
@@ -22,8 +22,6 @@ from crossbench.helper.wait import WaitRange
 from crossbench.parse import NumberParser, ObjectParser
 from crossbench.probes import all as all_probes
 from crossbench.probes.internal.summary import ResultsSummaryProbe
-from crossbench.probes.perfetto.trace_processor.trace_processor import \
-    TraceProcessorProbe
 from crossbench.probes.probe import Probe, ProbeIncompatibleBrowser
 from crossbench.results_db.db import ResultsDB
 from crossbench.runner.groups.browsers import BrowsersRunGroup
@@ -38,16 +36,15 @@ from crossbench.runner.timing import Timing
 from crossbench.str_enum_with_help import StrEnumWithHelp
 
 if TYPE_CHECKING:
-  import argparse
 
   from crossbench.action_runner.base import ActionRunner
   from crossbench.benchmarks.base import Benchmark
   from crossbench.browsers.browser import Browser
+  from crossbench.plt.base import Platform
   from crossbench.probes.thermal_monitor import ThermalStatus
   from crossbench.runner.groups.base import RunGroup
   from crossbench.runner.timing import AnyTimeUnit
   from crossbench.stories.story import Story
-
 
 
 class RunnerException(exception.MultiException):
@@ -100,6 +97,7 @@ class RunnerState(BaseState):
 
 
 _DEFAULT_TIMING: Final[Timing] = Timing()
+
 
 class Runner:
 
@@ -235,9 +233,9 @@ class Runner:
 
   def __init__(self,
                out_dir: pth.LocalPath,
-               browsers: Sequence[Browser],
+               browsers: Iterable[Browser],
                benchmark: Benchmark,
-               additional_probes: Iterable[Probe] = (),
+               probes: Iterable[Probe] = (),
                platform: Optional[plt.Platform] = None,
                env_config: Optional[EnvConfig] = None,
                env_validation_mode: ValidationMode = ValidationMode.THROW,
@@ -277,8 +275,9 @@ class Runner:
     self._env = RunnerEnv(self.platform, self.out_dir, self.browsers,
                           self.probes, self.repetitions, env_config,
                           env_validation_mode)
-    self._attach_default_probes(additional_probes)
+    self._prepare_probes(probes)
     self._prepare_benchmark()
+    self._sort_probes()
     if in_memory_result_db:
       self._results_db = ResultsDB()
     else:
@@ -305,16 +304,16 @@ class Runner:
     browser_unique_names = [browser.unique_name for browser in self.browsers]
     ObjectParser.unique_sequence(browser_unique_names, "browser names")
 
-  def _attach_default_probes(self, probe_list: Iterable[Probe]) -> None:
+  def _prepare_probes(self, probe_list: Iterable[Probe]) -> None:
     assert len(self._probes) == 0
     assert len(self._default_probes) == 0
     self._attach_internal_probes()
 
-    for index, probe in enumerate(probe_list):
-      assert (not isinstance(probe, TraceProcessorProbe) or index == 0), (
-          f"TraceProcessorProbe must be first in the list to be able "
-          f"to process other probes data. Found it at index: {index}")
+    for probe in probe_list:
       self.attach_probe(probe)
+
+  def _sort_probes(self) -> None:
+    self._probes.sort(key=lambda probe: probe.PRIORITY)
     # Results probe must be first in the list, and thus last to be processed
     # so all other probes have data by the time we write the results summary.
     assert isinstance(self._probes[0], ResultsSummaryProbe)
@@ -360,6 +359,7 @@ class Runner:
         raise
     if probe_was_used:
       self._probes.append(probe)
+    self._env.add_probes([probe])
     return probe
 
   @property
@@ -435,6 +435,14 @@ class Runner:
     return tuple(self._all_runs)
 
   @property
+  def first_run(self) -> Run:
+    return self._all_runs[0]
+
+  @property
+  def last_run(self) -> Run:
+    return self._all_runs[-1]
+
+  @property
   def runs(self) -> tuple[Run, ...]:
     return tuple(self._measured_runs)
 
@@ -507,13 +515,10 @@ class Runner:
     assert self.browsers, "No browsers provided: self.browsers is empty"
     assert self.stories, "No stories provided: self.stories is empty"
     self._setup_validate_browsers()
+    with self._exceptions.annotate("Preparing Runs"):
+      self._setup_runs()
     with self._exceptions.annotate("Preparing Probes"):
       self._setup_probes()
-    with self._exceptions.annotate("Preparing Runs"):
-      self._all_runs = list(self.get_runs())
-      assert self._all_runs, f"{type(self)}.get_runs() produced no runs"
-      logging.info("🏃 SETUP %d RUN(S)", len(self._all_runs))
-      self._measured_runs = [run for run in self._all_runs if not run.is_warmup]
     with self._exceptions.annotate("Preparing Environment"):
       self._env.setup()
     with self._exceptions.annotate(
@@ -537,18 +542,53 @@ class Runner:
           f"Browser {browser} probe {probe} not in Runner.probes. "
           "Use Runner.attach_probe()")
 
+  def _setup_runs(self) -> None:
+    self._all_runs = list(self._get_runs())
+    assert self._all_runs, f"{type(self)}.get_runs() produced no runs"
+    logging.info("🏃 SETUP %d RUN(S)", len(self._all_runs))
+    self._measured_runs = [run for run in self._all_runs if not run.is_warmup]
+    self._setup_runs_dirs()
+
   def _setup_probes(self) -> None:
+    self._validate_probes()
     for probe in self.probes:
       with self._exceptions.annotate(f"Preparing Probe: {probe.name}"):
         probe.setup(self)
 
+  def _validate_probes(self) -> None:
+    if not self.has_only_single_run_platforms():
+      self._validate_battery_probes()
+
+  def _validate_battery_probes(self) -> None:
+    # We prevent running multiple stories in repetition OR if multiple
+    # browsers are open when 'power' probes are used since it might distort
+    # the data.
+    probe_names = [probe.name for probe in self.probes if probe.BATTERY_ONLY]
+    if probe_names:
+      names_str = ",".join(probe_names)
+      raise argparse.ArgumentTypeError(
+          f"Cannot use [{names_str}] probe(s) "
+          "with repeat > 1 and/or with multiple browsers on the same platform. "
+          "We need to always start at the same battery level, and by running "
+          "stories on multiple browsers or multiples time will create "
+          "erroneous data.")
+
   def has_any_live_network(self) -> bool:
+    assert self.browsers, "No browsers provided"
     return any(browser.network.is_live for browser in self.browsers)
 
   def has_all_live_network(self) -> bool:
+    assert self.browsers, "No browsers provided"
     return all(browser.network.is_live for browser in self.browsers)
 
-  def get_runs(self) -> Iterable[Run]:
+  def has_only_single_run_platforms(self) -> bool:
+    if not self.runs:
+      raise RuntimeError(f"{type(self)} has no runs")
+    platform_runs: dict[Platform, list[Run]] = collection_helper.group_by(
+        self.runs, key=lambda run: run.browser_platform)
+    return all(len(runs) <= 1 for runs in platform_runs.values())
+
+  def _get_runs(self) -> Iterable[Run]:
     index = 0
     session_index = 0
     throw = self._exceptions.throw
@@ -618,9 +658,8 @@ class Runner:
       logging.error("❗ %s", message.upper())
       logging.error("=" * 80)
     # Raise a RunnerException to be handled in the CLI.
-    if (not self.ignore_partial_failures
-        or all_runs == failed_runs
-        or self._exceptions.throw):
+    if (not self.ignore_partial_failures or all_runs == failed_runs or
+        self._exceptions.throw):
       self._exceptions.assert_success(message, RunnerException)
 
   def _get_thread_groups(self) -> list[RunThreadGroup]:
@@ -698,55 +737,69 @@ class Runner:
             f"❗ MERGED {group_name.upper()} PROBE DATA WITH ERRORS",
             separator="-")
 
-  def update_symlinks(self) -> None:
+  @property
+  def runs_dir(self) -> pth.LocalPath:
+    return self.out_dir / "runs"
+
+  @property
+  def sessions_dir(self) -> pth.LocalPath:
+    return self.out_dir / "sessions"
+
+  def _setup_runs_dirs(self) -> None:
     if not self.create_symlinks:
       logging.debug("Symlink disabled by command line option")
       return
-    if self.out_dir.exists():
-      self._create_runs_results_symlinks()
-
-  def _create_runs_results_symlinks(self) -> None:
-    assert self.create_symlinks
+    if not self.out_dir.exists():
+      return
     results_root = self.out_dir.parent
     runs: tuple[Run, ...] = self.all_runs
     if not runs:
       logging.debug("Skip creating result symlinks in '%s': no runs produced.",
                     results_root)
       return
-    self._create_first_last_run_symlinks(runs)
-    self._create_runs_symlinks(runs)
-    self._create_sessions_symlinks(runs)
+    self.runs_dir.mkdir()
+    self.sessions_dir.mkdir()
 
-  def _create_first_last_run_symlinks(self, runs: tuple[Run, ...]) -> None:
+  def create_run_symlinks(self, run: Run) -> None:
+    if not self.create_symlinks or not run.out_dir.exists():
+      return
+    if run is self.first_run:
+      self._create_first_run_symlink(run)
+    if run is self.last_run:
+      self._create_last_run_symlink(run)
+    self._create_runs_symlink(run)
+    self._create_sessions_symlink(run)
+
+  def _create_first_run_symlink(self, first_run: Run) -> None:
     out_dir = self.out_dir
     first_run_dir = out_dir / "first_run"
     if first_run_dir.exists():
       logging.error("Cannot create first_run symlink: %s", first_run_dir)
     else:
-      first_run_dir.symlink_to(runs[0].out_dir.relative_to(out_dir))
+      first_run_dir.symlink_to(
+          first_run.out_dir.relative_to(out_dir), target_is_directory=True)
+
+  def _create_last_run_symlink(self, last_run: Run) -> None:
+    out_dir = self.out_dir
     last_run_dir = out_dir / "last_run"
     if last_run_dir.exists():
       logging.error("Cannot create last_run symlink: %s", last_run_dir)
     else:
-      last_run_dir.symlink_to(runs[-1].out_dir.relative_to(out_dir))
+      last_run_dir.symlink_to(
+          last_run.out_dir.relative_to(out_dir), target_is_directory=True)
 
-  def _create_runs_symlinks(self, runs: tuple[Run, ...]) -> None:
+  def _create_runs_symlink(self, run: Run) -> None:
     out_dir = self.out_dir
-    runs_dir = out_dir / "runs"
-    runs_dir.mkdir()
-    for run in runs:
-      if not run.out_dir.exists():
-        continue
-      relative = pth.LocalPath("..") / run.out_dir.relative_to(out_dir)
-      (runs_dir / str(run.index)).symlink_to(relative)
+    relative = pth.LocalPath("..") / run.out_dir.relative_to(out_dir)
+    (self.runs_dir / str(run.index)).symlink_to(relative)
 
-  def _create_sessions_symlinks(self, runs: tuple[Run, ...]) -> None:
+  def _create_sessions_symlink(self, run: Run) -> None:
     out_dir = self.out_dir
-    sessions_dir = out_dir / "sessions"
-    sessions_dir.mkdir()
-    for session in {run.browser_session for run in runs}:
-      relative = pth.LocalPath("..") / session.path.relative_to(out_dir)
-      (sessions_dir / str(session.index)).symlink_to(relative)
+    session = run.browser_session
+    relative_dir = pth.LocalPath("..") / session.path.relative_to(out_dir)
+    absolute_dir = self.sessions_dir / str(session.index)
+    if not absolute_dir.exists():
+      absolute_dir.symlink_to(relative_dir, target_is_directory=True)
 
 
 TEMPERATURE_ICONS = {

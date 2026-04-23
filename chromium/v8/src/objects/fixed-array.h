@@ -55,6 +55,11 @@ class ArrayHeaderBase<Super, false> : public Super {
 V8_OBJECT template <class Super>
 class ArrayHeaderBase<Super, true> : public Super {
  public:
+  // Length and capacity are never supposed to be negative.
+  // See https://crbug.com/441221573.
+  inline uint32_t ulength() const;
+  inline uint32_t ucapacity() const;
+
   inline int length() const;
   inline int length(AcquireLoadTag tag) const;
   inline void set_length(int value);
@@ -121,10 +126,13 @@ class TaggedArrayBase : public detail::TaggedArrayHeader<ShapeT, Super> {
  public:
   using Shape = ShapeT;
 
-  inline Tagged<ElementT> get(int index) const;
-  inline Tagged<ElementT> get(int index, RelaxedLoadTag) const;
-  inline Tagged<ElementT> get(int index, AcquireLoadTag) const;
-  inline Tagged<ElementT> get(int index, SeqCstAccessTag) const;
+  // Index is never supposed to be negative.
+  // See https://crbug.com/441221573.
+
+  inline Tagged<ElementT> get(uint32_t index) const;
+  inline Tagged<ElementT> get(uint32_t index, RelaxedLoadTag) const;
+  inline Tagged<ElementT> get(uint32_t index, AcquireLoadTag) const;
+  inline Tagged<ElementT> get(uint32_t index, SeqCstAccessTag) const;
 
   inline void set(int index, Tagged<ElementT> value,
                   WriteBarrierMode mode = kDefaultMode);
@@ -224,7 +232,12 @@ V8_OBJECT class FixedArray
  public:
   template <class IsolateT>
   static inline Handle<FixedArray> New(
-      IsolateT* isolate, int capacity,
+      IsolateT* isolate, int length,
+      AllocationType allocation = AllocationType::kYoung,
+      AllocationHint hint = AllocationHint());
+  template <class IsolateT, typename ElementsCallback>
+  static inline Handle<FixedArray> New(
+      IsolateT* isolate, int length, ElementsCallback elements_callback,
       AllocationType allocation = AllocationType::kYoung,
       AllocationHint hint = AllocationHint());
 
@@ -463,7 +476,11 @@ V8_OBJECT class FixedDoubleArray
   // empty_fixed_array.
   template <class IsolateT>
   static inline Handle<FixedArrayBase> New(
-      IsolateT* isolate, int capacity,
+      IsolateT* isolate, int length,
+      AllocationType allocation = AllocationType::kYoung);
+  template <class IsolateT, typename ElementsCallback>
+  static inline Handle<FixedArrayBase> New(
+      IsolateT* isolate, int length, ElementsCallback elements_callback,
       AllocationType allocation = AllocationType::kYoung);
 
   // Setter and getter for elements.
@@ -946,9 +963,12 @@ V8_OBJECT
 template <class T>
 class TrustedPodArray : public PodArrayBase<T, TrustedByteArray> {
  public:
-  static DirectHandle<TrustedPodArray<T>> New(Isolate* isolate, int length);
-  static DirectHandle<TrustedPodArray<T>> New(LocalIsolate* isolate,
-                                              int length);
+  static DirectHandle<TrustedPodArray<T>> New(
+      Isolate* isolate, int length,
+      AllocationType allocation = AllocationType::kTrusted);
+  static DirectHandle<TrustedPodArray<T>> New(
+      LocalIsolate* isolate, int length,
+      AllocationType allocation = AllocationType::kTrusted);
 } V8_OBJECT_END;
 
 }  // namespace v8::internal

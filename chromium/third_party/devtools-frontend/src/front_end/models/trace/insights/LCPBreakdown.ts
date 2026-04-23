@@ -28,7 +28,7 @@ export const UIStrings = {
    * This is displayed after a user expands the section to see more. No character length limits.
    */
   description:
-      'Each [subpart has specific improvement strategies](https://web.dev/articles/optimize-lcp#lcp-breakdown). Ideally, most of the LCP time should be spent on loading the resources, not within delays.',
+      'Each [subpart has specific improvement strategies](https://developer.chrome.com/docs/performance/insights/lcp-breakdown). Ideally, most of the LCP time should be spent on loading the resources, not within delays.',
   /**
    * @description Time to first byte title for the Largest Contentful Paint's subparts timespan breakdown.
    */
@@ -65,7 +65,7 @@ export const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('models/trace/insights/LCPBreakdown.ts', UIStrings);
 export const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
-// A TraceWindow plus its UIString.
+/** A TraceWindow plus its UIString. **/
 export type Subpart = Types.Timing.TraceWindowMicro&{label: Common.UIString.LocalizedString};
 interface LCPSubparts {
   /**
@@ -180,13 +180,26 @@ function finalize(partialModel: PartialInsightModel<LCPBreakdownInsightModel>): 
   if (partialModel.lcpRequest) {
     relatedEvents.push(partialModel.lcpRequest);
   }
+
+  let state: LCPBreakdownInsightModel['state'] = 'pass';
+  if (partialModel.lcpMs !== undefined) {
+    const classification = Handlers.ModelHandlers.PageLoadMetrics.scoreClassificationForLargestContentfulPaint(
+        Helpers.Timing.milliToMicro(partialModel.lcpMs));
+    if (classification === Handlers.ModelHandlers.PageLoadMetrics.ScoreClassification.GOOD) {
+      state = 'informative';
+    } else {
+      state = 'fail';
+    }
+  }
+
   return {
     insightKey: InsightKeys.LCP_BREAKDOWN,
     strings: UIStrings,
     title: i18nString(UIStrings.title),
     description: i18nString(UIStrings.description),
+    docs: 'https://developer.chrome.com/docs/performance/insights/lcp-breakdown',
     category: InsightCategory.LCP,
-    state: partialModel.lcpEvent || partialModel.lcpRequest ? 'informative' : 'pass',
+    state,
     ...partialModel,
     relatedEvents,
   };

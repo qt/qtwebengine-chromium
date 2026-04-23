@@ -460,6 +460,10 @@ void Image::SetSwapchain(std::shared_ptr<vvl::Swapchain> &swapchain, uint32_t sw
     bind_swapchain = swapchain;
     swapchain_image_index = swapchain_index;
     bind_swapchain->AddParent(this);
+
+    for (auto &item : sub_states_) {
+        item.second->SetSwapchain(*swapchain);
+    }
 }
 
 bool Image::CompareCreateInfo(const Image &other) const {
@@ -538,7 +542,7 @@ ImageView::ImageView(const DeviceState &device_state, const std::shared_ptr<vvl:
       normalized_subresource_range(ImageView::NormalizeImageViewSubresourceRange(*image_state, create_info)),
       range_generator(image_state->subresource_encoder, GetRangeGeneratorRange(device_state.extensions)),
       samples(image_state->create_info.samples),
-      samplerConversion(GetSamplerConversion(ci)),
+      sampler_conversion(GetSamplerConversion(ci)),
       filter_cubic_props(cubic_props),
       min_lod(GetImageViewMinLod(ci)),
       format_features(ff),

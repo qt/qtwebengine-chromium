@@ -7,7 +7,6 @@ load("@chromium-luci//args.star", "args")
 load("@chromium-luci//branches.star", "branches")
 load("@chromium-luci//builder_config.star", "builder_config")
 load("@chromium-luci//builder_health_indicators.star", "health_spec")
-load("@chromium-luci//builders.star", "cpu")
 load("@chromium-luci//ci.star", "ci")
 load("@chromium-luci//consoles.star", "consoles")
 load("@chromium-luci//gn_args.star", "gn_args")
@@ -26,6 +25,9 @@ ci.defaults.set(
     tree_closing_notifiers = gpu.ci.TREE_CLOSING_NOTIFIERS,
     contact_team_email = "chrome-gpu-infra@google.com",
     execution_timeout = ci_constants.DEFAULT_EXECUTION_TIMEOUT,
+    experiments = {
+        "chromium_tests.resultdb_module": 100,
+    },
     health_spec = health_spec.default(),
     service_account = ci_constants.DEFAULT_SERVICE_ACCOUNT,
     shadow_service_account = ci_constants.DEFAULT_SHADOW_SERVICE_ACCOUNT,
@@ -232,8 +234,6 @@ gpu.ci.mac_builder(
         ],
     ),
     targets = targets.bundle(),
-    cores = None,
-    cpu = cpu.ARM64,
     console_view_entry = consoles.console_view_entry(
         category = "Mac",
     ),
@@ -267,8 +267,6 @@ gpu.ci.mac_builder(
         ],
     ),
     targets = targets.bundle(),
-    cores = None,
-    cpu = cpu.ARM64,
     tree_closing = False,
     console_view_entry = consoles.console_view_entry(
         category = "Mac",
@@ -476,6 +474,11 @@ ci.thin_tester(
             "puppet_production",
         ],
         per_test_modifications = {
+            "pixel_skia_gold_metal_passthrough_graphite_test": targets.mixin(
+                swarming = targets.swarming(
+                    shards = 2,
+                ),
+            ),
             "tab_capture_end2end_tests": targets.remove(
                 reason = "Run these only on Release bots.",
             ),
@@ -667,6 +670,12 @@ ci.thin_tester(
                     },
                 ),
             ),
+            "trace_test": targets.mixin(
+                # TODO(crbug.com/453961754): fix slowdown in trace_test and remove this sharding
+                swarming = targets.swarming(
+                    shards = 2,
+                ),
+            ),
         },
     ),
     targets_settings = targets.settings(
@@ -710,6 +719,7 @@ ci.thin_tester(
         mixins = [
             "win10_nvidia_gtx_1660_stable",
             "puppet_production",
+            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "pixel_skia_gold_passthrough_test": targets.per_test_modification(

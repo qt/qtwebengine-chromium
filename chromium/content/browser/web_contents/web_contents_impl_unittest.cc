@@ -2394,6 +2394,13 @@ class WebContentsImplTestWithSiteIsolation : public WebContentsImplTest {
 // The subframe navigations cause the loading_frames_in_progress_ to drop down
 // to 0, while the loading_progresses_ map is not reset.
 TEST_F(WebContentsImplTestWithSiteIsolation, StartStopEventsBalance) {
+  // For now, disable AvoidUnnecessaryBeforeUnloadCheckSync until its
+  // expectations are updated.
+  // TODO(crbug.com/396998476): Update expectations and remove this.
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitFromCommandLine(
+      {}, {"AvoidUnnecessaryBeforeUnloadCheckSync"});
+
   // The bug manifests itself in regular mode as well, but browser-initiated
   // navigation of subframes is only possible in --site-per-process mode within
   // unit tests.
@@ -3481,6 +3488,38 @@ TEST_F(WebContentsImplTest, IgnoreInputEvents) {
   EXPECT_FALSE(contents()->ShouldIgnoreInputEvents());
 }
 
+TEST_F(WebContentsImplTest, IgnoreInputEvents_IgnoreA11yInputEvents) {
+  // By default, input and a11y input events should not be ignored.
+  EXPECT_FALSE(contents()->ShouldIgnoreInputEvents());
+  EXPECT_FALSE(contents()->ShouldIgnoreA11yInputEvents());
+
+  // Create two requests with different a11y input settings.
+  std::optional<WebContents::ScopedIgnoreInputEvents> ignore_input_only =
+      contents()->IgnoreInputEvents(std::nullopt);
+  std::optional<WebContents::ScopedIgnoreInputEvents>
+      ignore_input_and_a11y_input = contents()->IgnoreInputEvents(
+          std::nullopt, /*should_ignore_a11y_input=*/true);
+
+  // With both requests active, both input and a11y input should be ignored.
+  EXPECT_TRUE(contents()->ShouldIgnoreInputEvents());
+  EXPECT_TRUE(contents()->ShouldIgnoreA11yInputEvents());
+
+  // Manually release the request that was ignoring a11y input events.
+  ignore_input_and_a11y_input.reset();
+
+  // Verify the state reverted: general input is still ignored by the first
+  // request, but a11y input events are now allowed.
+  EXPECT_TRUE(contents()->ShouldIgnoreInputEvents());
+  EXPECT_FALSE(contents()->ShouldIgnoreA11yInputEvents());
+
+  // Manually release the ignore input only request.
+  ignore_input_only.reset();
+
+  // Verify everything is back to the default state.
+  EXPECT_FALSE(contents()->ShouldIgnoreInputEvents());
+  EXPECT_FALSE(contents()->ShouldIgnoreA11yInputEvents());
+}
+
 TEST_F(WebContentsImplTest, OnColorProviderChangedTriggersPageBroadcast) {
   TestColorProviderSource color_provider_source;
   mojo::AssociatedRemote<blink::mojom::PageBroadcast> broadcast_remote;
@@ -3678,6 +3717,62 @@ TEST_F(WebContentsImplTest, ProcessSelectAudioOutputNoDelegate) {
           }));
 
   ASSERT_TRUE(callback_run);
+}
+
+TEST_F(WebContentsImplTest, IsLoadingExcludingAdFrames) {
+  const GURL main_url("https://a.com");
+  const GURL child_url("https://b.com");
+  const GURL ad_url("https://c.com");
+
+  contents()->NavigateAndCommit(main_url);
+
+  // Start a browser-initiated main frame navigation.
+  auto main_frame_navigation =
+      NavigationSimulator::CreateBrowserInitiated(main_url, contents());
+  main_frame_navigation->ReadyToCommit();
+  EXPECT_TRUE(contents()->IsLoading());
+  EXPECT_TRUE(contents()->IsLoadingExcludingAdSubframes());
+
+  main_frame_navigation->Commit();
+  EXPECT_FALSE(contents()->IsLoading());
+  EXPECT_FALSE(contents()->IsLoadingExcludingAdSubframes());
+
+  RenderFrameHostImpl* main_rfh = contents()->GetPrimaryMainFrame();
+  // Create a child frame.
+  RenderFrameHost* child_rfh =
+      RenderFrameHostTester::For(main_rfh)->AppendChild("iframe");
+
+  // Start a renderer-initiated child frame navigation.
+  auto child_navigation =
+      NavigationSimulator::CreateRendererInitiated(child_url, child_rfh);
+  child_navigation->ReadyToCommit();
+  EXPECT_TRUE(contents()->IsLoading());
+  EXPECT_TRUE(contents()->IsLoadingExcludingAdSubframes());
+
+  child_navigation->Commit();
+  EXPECT_FALSE(contents()->IsLoading());
+  EXPECT_FALSE(contents()->IsLoadingExcludingAdSubframes());
+
+  // Now set the child frame to be an ad frame.
+  child_rfh = contents()
+                  ->GetPrimaryFrameTree()
+                  .root()
+                  ->child_at(0)
+                  ->current_frame_host();
+  child_rfh->UpdateIsAdFrame(/*is_ad_frame=*/true);
+
+  // Start the navigation again for the ad frame.
+  auto ad_frame_navigation =
+      NavigationSimulator::CreateRendererInitiated(ad_url, child_rfh);
+  ad_frame_navigation->ReadyToCommit();
+  // Note the loading state is different depending on whether ad subframes are
+  // excluded when checking loading state.
+  EXPECT_TRUE(contents()->IsLoading());
+  EXPECT_FALSE(contents()->IsLoadingExcludingAdSubframes());
+
+  ad_frame_navigation->Commit();
+  EXPECT_FALSE(contents()->IsLoading());
+  EXPECT_FALSE(contents()->IsLoadingExcludingAdSubframes());
 }
 
 }  // namespace content

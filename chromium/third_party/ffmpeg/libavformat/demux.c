@@ -214,6 +214,10 @@ static int update_stream_avctx(AVFormatContext *s)
     return 0;
 }
 
+static av_always_inline int is_id3v2_format(const AVInputFormat *fmt) {
+    return ffifmt(fmt)->flags_internal & FF_INFMT_FLAG_ID3V2_AUTO;
+}
+
 int avformat_open_input(AVFormatContext **ps, const char *filename,
                         const AVInputFormat *fmt, AVDictionary **options)
 {
@@ -302,7 +306,7 @@ int avformat_open_input(AVFormatContext **ps, const char *filename,
     }
 
     /* e.g. AVFMT_NOFILE formats will not have an AVIOContext */
-    if (s->pb)
+    if (s->pb && is_id3v2_format(s->iformat))
         ff_id3v2_read_dict(s->pb, &si->id3v2_meta, ID3v2_DEFAULT_MAGIC, &id3v2_extra_meta);
 
     if (ffifmt(s->iformat)->read_header)
@@ -321,16 +325,12 @@ int avformat_open_input(AVFormatContext **ps, const char *filename,
     }
 
     if (id3v2_extra_meta) {
-        if (!strcmp(s->iformat->name, "mp3") || !strcmp(s->iformat->name, "aac") ||
-            !strcmp(s->iformat->name, "tta") || !strcmp(s->iformat->name, "wav")) {
-            if ((ret = ff_id3v2_parse_apic(s, id3v2_extra_meta)) < 0)
-                goto close;
-            if ((ret = ff_id3v2_parse_chapters(s, id3v2_extra_meta)) < 0)
-                goto close;
-            if ((ret = ff_id3v2_parse_priv(s, id3v2_extra_meta)) < 0)
-                goto close;
-        } else
-            av_log(s, AV_LOG_DEBUG, "demuxer does not support additional id3 data, skipping\n");
+        if ((ret = ff_id3v2_parse_apic(s, id3v2_extra_meta)) < 0)
+            goto close;
+        if ((ret = ff_id3v2_parse_chapters(s, id3v2_extra_meta)) < 0)
+            goto close;
+        if ((ret = ff_id3v2_parse_priv(s, id3v2_extra_meta)) < 0)
+            goto close;
         ff_id3v2_free_extra_meta(&id3v2_extra_meta);
     }
 
@@ -1167,7 +1167,10 @@ static int parse_packet(AVFormatContext *s, AVPacket *pkt,
     AVPacket *out_pkt = si->parse_pkt;
     AVStream *st = s->streams[stream_index];
     FFStream *const sti = ffstream(st);
+    const AVPacketSideData *sd = NULL;
     const uint8_t *data = pkt->data;
+    uint8_t *extradata = sti->avctx->extradata;
+    int extradata_size = sti->avctx->extradata_size;
     int size = pkt->size;
     int ret = 0, got_output = flush;
 
@@ -1182,6 +1185,16 @@ static int parse_packet(AVFormatContext *s, AVPacket *pkt,
             if (ret < 0)
                 goto fail;
         }
+    }
+
+    if (pkt->side_data_elems)
+        sd = av_packet_side_data_get(pkt->side_data, pkt->side_data_elems,
+                                     AV_PKT_DATA_NEW_EXTRADATA);
+    if (sd) {
+        av_assert1(size && !flush);
+
+        sti->avctx->extradata      = sd->data;
+        sti->avctx->extradata_size = sd->size;
     }
 
     while (size > 0 || (flush && got_output)) {
@@ -1277,6 +1290,11 @@ static int parse_packet(AVFormatContext *s, AVPacket *pkt,
     }
 
 fail:
+    if (sd) {
+        sti->avctx->extradata      = extradata;
+        sti->avctx->extradata_size = extradata_size;
+    }
+
     if (ret < 0)
         av_packet_unref(out_pkt);
     av_packet_unref(pkt);
@@ -1374,6 +1392,11 @@ static int read_frame_internal(AVFormatContext *s, AVPacket *pkt)
 
         st->event_flags |= AVSTREAM_EVENT_FLAG_NEW_PACKETS;
 
+        int new_extradata = !!av_packet_side_data_get(pkt->side_data, pkt->side_data_elems,
+                                                      AV_PKT_DATA_NEW_EXTRADATA);
+        if (new_extradata)
+            sti->need_context_update = 1;
+
         /* update context if required */
         if (sti->need_context_update) {
             if (avcodec_is_open(sti->avctx)) {
@@ -1384,8 +1407,9 @@ static int read_frame_internal(AVFormatContext *s, AVPacket *pkt)
                     return ret;
             }
 
-            /* close parser, because it depends on the codec */
-            if (sti->parser && sti->avctx->codec_id != st->codecpar->codec_id) {
+            /* close parser, because it depends on the codec and extradata */
+            if (sti->parser &&
+                (sti->avctx->codec_id != st->codecpar->codec_id || new_extradata)) {
                 av_parser_close(sti->parser);
                 sti->parser = NULL;
             }
@@ -2516,6 +2540,47 @@ static int extract_extradata(FFFormatContext *si, AVStream *st, const AVPacket *
     return 0;
 }
 
+static int parameters_from_context(AVFormatContext *ic, AVCodecParameters *par,
+                                   const AVCodecContext *avctx)
+{
+    AVCodecParameters *par_tmp;
+    int ret;
+
+    par_tmp = avcodec_parameters_alloc();
+    if (!par_tmp)
+        return AVERROR(ENOMEM);
+
+    ret = avcodec_parameters_copy(par_tmp, par);
+    if (ret < 0)
+        goto fail;
+
+    ret = avcodec_parameters_from_context(par, avctx);
+    if (ret < 0)
+        goto fail;
+
+    /* Restore some values if they are signaled at the container level
+     * given they may have been replaced by codec level values as read
+     * internally by avformat_find_stream_info().
+     */
+    if (par_tmp->color_range != AVCOL_RANGE_UNSPECIFIED)
+        par->color_range = par_tmp->color_range;
+    if (par_tmp->color_primaries != AVCOL_PRI_UNSPECIFIED ||
+        par_tmp->color_trc != AVCOL_TRC_UNSPECIFIED ||
+        par_tmp->color_space != AVCOL_SPC_UNSPECIFIED) {
+        par->color_primaries = par_tmp->color_primaries;
+        par->color_trc = par_tmp->color_trc;
+        par->color_space = par_tmp->color_space;
+    }
+    if (par_tmp->chroma_location != AVCHROMA_LOC_UNSPECIFIED)
+        par->chroma_location = par_tmp->chroma_location;
+
+    ret = 0;
+fail:
+    avcodec_parameters_free(&par_tmp);
+
+    return ret;
+}
+
 int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
 {
     FFFormatContext *const si = ffformatcontext(ic);
@@ -3046,7 +3111,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
         FFStream *const sti = ffstream(st);
 
         if (sti->avctx_inited) {
-            ret = avcodec_parameters_from_context(st->codecpar, sti->avctx);
+            ret = parameters_from_context(ic, st->codecpar, sti->avctx);
             if (ret < 0)
                 goto find_stream_info_err;
 

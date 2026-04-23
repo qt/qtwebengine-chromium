@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/core/layout/svg/svg_resources.h"
 #include "third_party/blink/renderer/core/layout/svg/transformed_hit_test_location.h"
 #include "third_party/blink/renderer/core/paint/contoured_border_geometry.h"
+#include "third_party/blink/renderer/core/paint/geometry_box_utils.h"
 #include "third_party/blink/renderer/core/paint/paint_auto_dark_mode.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
@@ -106,31 +107,6 @@ PhysicalRect BorderBoxRect(const LayoutBoxModelObject& object) {
   return PhysicalRect();
 }
 
-// TODO(crbug.com/1473440): Convert this to take a PhysicalBoxFragment
-// instead of a LayoutBoxModelObject.
-PhysicalBoxStrut ReferenceBoxBorderBoxOutsets(
-    GeometryBox geometry_box,
-    const LayoutBoxModelObject& object) {
-  // It is complex to map from an SVG border box to a reference box (for
-  // example, `GeometryBox::kViewBox` is independent of the border box) so we
-  // use `SVGResources::ReferenceBoxForEffects` for SVG reference boxes.
-  CHECK(!object.IsSVGChild());
-
-  switch (geometry_box) {
-    case GeometryBox::kPaddingBox:
-      return -object.BorderOutsets();
-    case GeometryBox::kContentBox:
-    case GeometryBox::kFillBox:
-      return -(object.BorderOutsets() + object.PaddingOutsets());
-    case GeometryBox::kMarginBox:
-      return object.MarginOutsets();
-    case GeometryBox::kBorderBox:
-    case GeometryBox::kStrokeBox:
-    case GeometryBox::kViewBox:
-      return PhysicalBoxStrut();
-  }
-}
-
 // Should the paint offset be applied to clip-path geometry for
 // `clip_path_owner`?
 bool UsesPaintOffset(const LayoutObject& clip_path_owner) {
@@ -193,8 +169,8 @@ bool AdjustClipPathStatusForCompositingFailureReasons(
 
 void PaintWorkletBasedClip(GraphicsContext& context,
                            const LayoutObject& clip_path_owner,
-                           const gfx::RectF& reference_box,
-                           const LayoutObject& reference_box_object) {
+                           const gfx::RectF& dst_rect,
+                           const gfx::RectF& reference_box) {
   DCHECK(ClipPathClipper::HasCompositeClipPathAnimation(
       clip_path_owner,
       ClipPathClipper::CompositedStateResolutionType::kReadCache));
@@ -202,28 +178,16 @@ void PaintWorkletBasedClip(GraphicsContext& context,
   ClipPathPaintImageGenerator* generator =
       clip_path_owner.GetFrame()->GetClipPathPaintImageGenerator();
 
-  // Bounding rect large enough to contain the entire animation, including
-  // clip-path: none frames.
-  gfx::RectF dst_rect = ClipPathPaintImageGenerator::GetAnimationBoundingRect();
-
   // The mask image should be the same size as the destination rect, but will
   // have an origin of 0,0 as it has its own coordinate space.
   gfx::RectF src_rect = gfx::RectF(dst_rect.size());
 
-  float zoom = UsesZoomedReferenceBox(reference_box_object)
-                   ? reference_box_object.StyleRef().EffectiveZoom()
+  float zoom = UsesZoomedReferenceBox(clip_path_owner)
+                   ? clip_path_owner.StyleRef().EffectiveZoom()
                    : 1;
 
   scoped_refptr<Image> paint_worklet_image = generator->Paint(
-      zoom,
-      /* Translate the reference box such that it is relative to the origin of
-         the mask image, and not the origin of the layout object. This ensures
-         the clip path remains within the bounds of the mask image and has the
-         correct translation. */
-      gfx::RectF(reference_box.origin() - dst_rect.origin().OffsetFromOrigin(),
-                 reference_box.size()),
-
-      dst_rect.size(), *clip_path_owner.GetNode());
+      zoom, reference_box, dst_rect, *clip_path_owner.GetNode());
   // Dark mode should always be disabled for clip mask.
   context.DrawImage(*paint_worklet_image, Image::kSyncDecode,
                     ImageAutoDarkMode::Disabled(), ImagePaintTimingInfo(),
@@ -251,7 +215,8 @@ gfx::RectF CalcLocalReferenceBox(
 
   const auto& box = To<LayoutBoxModelObject>(object);
   PhysicalRect reference_box = BorderBoxRect(box);
-  reference_box.Expand(ReferenceBoxBorderBoxOutsets(geometry_box, box));
+  reference_box.Expand(
+      GeometryBoxUtils::ReferenceBoxBorderBoxOutsets(geometry_box, box));
   return gfx::RectF(reference_box);
 }
 
@@ -283,6 +248,12 @@ bool ClipPathAnimationShouldFallback(const LayoutObject& layout_object,
     return true;
   }
 
+  // TODO(crbug.com/449152897): Backdrop-filter and clip path paint worklet
+  // images are not rasterized correctly.
+  if (!layout_object.StyleRef().BackdropFilter().IsEmpty()) {
+    return true;
+  }
+
   return false;
 }
 
@@ -300,11 +271,11 @@ ContouredRect ClipPathClipper::RoundedReferenceBox(GeometryBox geometry_box,
   ContouredRect contoured_border_box_rect =
       ContouredBorderGeometry::ContouredBorder(box.StyleRef(), border_box_rect);
   if (geometry_box == GeometryBox::kMarginBox) {
-    contoured_border_box_rect.OutsetForMarginOrShadow(
-        gfx::OutsetsF(ReferenceBoxBorderBoxOutsets(geometry_box, box)));
+    contoured_border_box_rect.OutsetWithCornerCorrection(gfx::OutsetsF(
+        GeometryBoxUtils::ReferenceBoxBorderBoxOutsets(geometry_box, box)));
   } else {
-    contoured_border_box_rect.Outset(
-        gfx::OutsetsF(ReferenceBoxBorderBoxOutsets(geometry_box, box)));
+    contoured_border_box_rect.Outset(gfx::OutsetsF(
+        GeometryBoxUtils::ReferenceBoxBorderBoxOutsets(geometry_box, box)));
   }
   return contoured_border_box_rect;
 }
@@ -670,17 +641,22 @@ void ClipPathClipper::PaintClipPathAsMaskImage(
                                                   DisplayItem::kSVGClip))
     return;
 
-  DrawingRecorder recorder(
-      context, display_item_client, DisplayItem::kSVGClip,
-      gfx::ToEnclosingRect(properties->MaskClip()->PaintClipRect().Rect()));
+  bool has_cc_clip_path_anim = ClipPathClipper::HasCompositeClipPathAnimation(
+      layout_object, CompositedStateResolutionType::kReadCache);
+  gfx::Rect clip_area_size =
+      gfx::ToEnclosingRect(properties->MaskClip()->PaintClipRect().Rect());
+
+  DrawingRecorder recorder(context, display_item_client, DisplayItem::kSVGClip,
+                           clip_area_size);
   context.Save();
-  if (UsesPaintOffset(layout_object)) {
+
+  // cc-side clip path animations deal with their own translations
+  if (UsesPaintOffset(layout_object) && !has_cc_clip_path_anim) {
     PhysicalOffset paint_offset = layout_object.FirstFragment().PaintOffset();
     context.Translate(paint_offset.left, paint_offset.top);
   }
 
-  if (ClipPathClipper::HasCompositeClipPathAnimation(
-          layout_object, CompositedStateResolutionType::kReadCache)) {
+  if (has_cc_clip_path_anim) {
     if (!layout_object.GetFrame()) {
       return;
     }
@@ -700,7 +676,8 @@ void ClipPathClipper::PaintClipPathAsMaskImage(
           GeometryBox::kBorderBox);
     }
 
-    PaintWorkletBasedClip(context, layout_object, reference_box, layout_object);
+    PaintWorkletBasedClip(context, layout_object, gfx::RectF(clip_area_size),
+                          reference_box);
 
     // TODO(crbug.com/393260698): Use cached animation value rather than
     // re-running checks

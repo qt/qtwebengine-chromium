@@ -28,6 +28,7 @@
 #include "src/dawn/node/binding/Converter.h"
 
 #include <cassert>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -1465,7 +1466,13 @@ bool Converter::Convert(wgpu::BindGroupEntry& out, const interop::GPUBindGroupEn
 
 bool Converter::Convert(wgpu::BindGroupLayoutEntry& out,
                         const interop::GPUBindGroupLayoutEntry& in) {
-    // TODO(crbug.com/dawn/1129): External textures
+    // Chain the external texture binding layout if present in the dictionary.
+    if (in.externalTexture) {
+        auto etLayout = Allocate<wgpu::ExternalTextureBindingLayout>();
+        etLayout->nextInChain = out.nextInChain;
+        out.nextInChain = etLayout;
+    }
+
     return Convert(out.binding, in.binding) && Convert(out.visibility, in.visibility) &&
            Convert(out.bindingArraySize, in.bindingArraySize) && Convert(out.buffer, in.buffer) &&
            Convert(out.sampler, in.sampler) && Convert(out.texture, in.texture) &&
@@ -1750,6 +1757,10 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::DawnTexelCopyBufferRowAlignment:
         case wgpu::FeatureName::FlexibleTextureViews:
         case wgpu::FeatureName::ChromiumExperimentalBindless:
+        case wgpu::FeatureName::AdapterPropertiesWGPU:
+        case wgpu::FeatureName::SharedBufferMemoryD3D12SharedMemoryFileMappingHandle:
+        case wgpu::FeatureName::SharedTextureMemoryD3D12Resource:
+        case wgpu::FeatureName::ChromiumExperimentalSamplingResourceTable:
             return false;
     }
     return false;
@@ -1775,8 +1786,20 @@ bool Converter::Convert(wgpu::WGSLLanguageFeatureName& out, interop::WGSLLanguag
         case interop::WGSLLanguageFeatureName::kTexelBuffers:
             out = wgpu::WGSLLanguageFeatureName::TexelBuffers;
             return true;
+        case interop::WGSLLanguageFeatureName::kFragmentDepth:
+            out = wgpu::WGSLLanguageFeatureName::FragmentDepth;
+            return true;
+        case interop::WGSLLanguageFeatureName::kImmediateAddressSpace:
+            out = wgpu::WGSLLanguageFeatureName::ImmediateAddressSpace;
+            return true;
         case interop::WGSLLanguageFeatureName::kChromiumPrint:
             out = wgpu::WGSLLanguageFeatureName::ChromiumPrint;
+            return true;
+        case interop::WGSLLanguageFeatureName::kUniformBufferStandardLayout:
+            out = wgpu::WGSLLanguageFeatureName::UniformBufferStandardLayout;
+            return true;
+        case interop::WGSLLanguageFeatureName::kSubgroupId:
+            out = wgpu::WGSLLanguageFeatureName::SubgroupId;
             return true;
     }
     return false;
@@ -1802,8 +1825,20 @@ bool Converter::Convert(interop::WGSLLanguageFeatureName& out, wgpu::WGSLLanguag
         case wgpu::WGSLLanguageFeatureName::TexelBuffers:
             out = interop::WGSLLanguageFeatureName::kTexelBuffers;
             return true;
+        case wgpu::WGSLLanguageFeatureName::FragmentDepth:
+            out = interop::WGSLLanguageFeatureName::kFragmentDepth;
+            return true;
+        case wgpu::WGSLLanguageFeatureName::ImmediateAddressSpace:
+            out = interop::WGSLLanguageFeatureName::kImmediateAddressSpace;
+            return true;
         case wgpu::WGSLLanguageFeatureName::ChromiumPrint:
             out = interop::WGSLLanguageFeatureName::kChromiumPrint;
+            return true;
+        case wgpu::WGSLLanguageFeatureName::UniformBufferStandardLayout:
+            out = interop::WGSLLanguageFeatureName::kUniformBufferStandardLayout;
+            return true;
+        case wgpu::WGSLLanguageFeatureName::SubgroupId:
+            out = interop::WGSLLanguageFeatureName::kSubgroupId;
             return true;
 
         case wgpu::WGSLLanguageFeatureName::ChromiumTestingUnimplemented:
@@ -1947,6 +1982,50 @@ std::string CopyLabel(StringView label) {
     }
     size_t length = label.length == WGPU_STRLEN ? std::strlen(label.data) : label.length;
     return {label.data, length};
+}
+
+bool ConvertDataElementsToSpan(Napi::Env env,
+                               std::span<const uint8_t>* out,
+                               interop::AllowSharedBufferSource data,
+                               interop::GPUSize64 data_offset_elements,
+                               std::optional<interop::GPUSize64> size_elements) {
+    Converter::BufferSource src{};
+    Converter conv(env);
+    if (!conv(src, data)) {
+        return false;
+    }
+
+    // The offset is in elements.
+    if (data_offset_elements > uint64_t(src.size / src.bytesPerElement)) {
+        binding::Errors::OperationError(env, "dataOffset is larger than data's size.")
+            .ThrowAsJavaScriptException();
+        return false;
+    }
+    uint64_t data_offset = data_offset_elements * src.bytesPerElement;
+    src.data = reinterpret_cast<uint8_t*>(src.data) + data_offset;
+    src.size -= data_offset;
+
+    // Size defaults to dataSize - dataOffset. Instead of computing in elements, we directly
+    // use it in bytes, and convert the provided value, if any, in bytes.
+    uint64_t size64 = uint64_t(src.size);
+    if (size_elements.has_value()) {
+        if (size_elements.value() > std::numeric_limits<uint64_t>::max() / src.bytesPerElement) {
+            binding::Errors::OperationError(env, "size overflows.").ThrowAsJavaScriptException();
+            return false;
+        }
+        size64 = size_elements.value() * src.bytesPerElement;
+    }
+
+    if (size64 > uint64_t(src.size)) {
+        binding::Errors::OperationError(env, "size + dataOffset is larger than data's size.")
+            .ThrowAsJavaScriptException();
+        return false;
+    }
+
+    assert(size64 <= std::numeric_limits<size_t>::max());
+    *out = {reinterpret_cast<const uint8_t*>(src.data), static_cast<size_t>(size64)};
+
+    return true;
 }
 
 }  // namespace wgpu::binding

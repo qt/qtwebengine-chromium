@@ -180,9 +180,7 @@ let BidiPage = (() => {
         /**
          * @internal
          */
-        _userAgentHeaders = {};
-        #userAgentInterception;
-        #userAgentPreloadScript;
+        #overrideNavigatorPropertiesPreloadScript;
         async setUserAgent(userAgentOrOptions, userAgentMetadata) {
             let userAgent;
             let metadata;
@@ -212,17 +210,8 @@ let BidiPage = (() => {
             }
             const enable = userAgent !== '';
             userAgent = userAgent ?? (await this.#browserContext.browser().userAgent());
-            this._userAgentHeaders = enable
-                ? {
-                    'User-Agent': userAgent,
-                }
-                : {};
-            this.#userAgentInterception = await this.#toggleInterception(["beforeRequestSent" /* Bidi.Network.InterceptPhase.BeforeRequestSent */], this.#userAgentInterception, enable);
-            const overrideNavigatorProperties = (userAgent, platform) => {
-                Object.defineProperty(navigator, 'userAgent', {
-                    value: userAgent,
-                    configurable: true,
-                });
+            await this.#frame.browsingContext.setUserAgent(enable ? userAgent : null);
+            const overrideNavigatorProperties = (platform) => {
                 if (platform) {
                     Object.defineProperty(navigator, 'platform', {
                         value: platform,
@@ -234,23 +223,23 @@ let BidiPage = (() => {
             for (const frame of frames) {
                 frames.push(...frame.childFrames());
             }
-            if (this.#userAgentPreloadScript) {
-                await this.removeScriptToEvaluateOnNewDocument(this.#userAgentPreloadScript);
+            if (this.#overrideNavigatorPropertiesPreloadScript) {
+                await this.removeScriptToEvaluateOnNewDocument(this.#overrideNavigatorPropertiesPreloadScript);
             }
             const [evaluateToken] = await Promise.all([
                 enable
-                    ? this.evaluateOnNewDocument(overrideNavigatorProperties, userAgent, platform || undefined)
+                    ? this.evaluateOnNewDocument(overrideNavigatorProperties, platform || undefined)
                     : undefined,
                 // When we disable the UserAgent we want to
                 // evaluate the original value in all Browsing Contexts
                 ...frames.map(frame => {
-                    return frame.evaluate(overrideNavigatorProperties, userAgent, platform || undefined);
+                    return frame.evaluate(overrideNavigatorProperties, platform || undefined);
                 }),
             ]);
-            this.#userAgentPreloadScript = evaluateToken?.identifier;
+            this.#overrideNavigatorPropertiesPreloadScript = evaluateToken?.identifier;
         }
         async setBypassCSP(enabled) {
-            // TODO: handle CDP-specific cases such as mprach.
+            // TODO: handle CDP-specific cases such as MPArch.
             await this._client().send('Page.setBypassCSP', { enabled });
         }
         async queryObjects(prototypeHandle) {
@@ -274,6 +263,9 @@ let BidiPage = (() => {
             return this.#frame;
         }
         resize(_params) {
+            throw new Error('Method not implemented for WebDriver BiDi yet.');
+        }
+        openDevTools() {
             throw new Error('Method not implemented for WebDriver BiDi yet.');
         }
         async focusedFrame() {
@@ -340,7 +332,9 @@ let BidiPage = (() => {
         async reload(options = {}) {
             const [response] = await Promise.all([
                 this.#frame.waitForNavigation(options),
-                this.#frame.browsingContext.reload(),
+                this.#frame.browsingContext.reload({
+                    ignoreCache: options.ignoreCache ? true : undefined,
+                }),
             ]).catch((0, util_js_2.rewriteNavigationError)(this.url(), options.timeout ?? this._timeoutSettings.navigationTimeout()));
             return response;
         }
@@ -401,17 +395,34 @@ let BidiPage = (() => {
         }
         async setViewport(viewport) {
             if (!this.browser().cdpSupported) {
-                await this.#frame.browsingContext.setViewport({
-                    viewport: viewport?.width && viewport?.height
+                const viewportSize = viewport?.width && viewport?.height
+                    ? {
+                        width: viewport.width,
+                        height: viewport.height,
+                    }
+                    : null;
+                const devicePixelRatio = viewport?.deviceScaleFactor
+                    ? viewport.deviceScaleFactor
+                    : null;
+                // If `viewport` is not set, remove screen orientation override.
+                const screenOrientation = viewport
+                    ? viewport.isLandscape
                         ? {
-                            width: viewport.width,
-                            height: viewport.height,
+                            natural: "landscape" /* Bidi.Emulation.ScreenOrientationNatural.Landscape */,
+                            type: 'landscape-primary',
                         }
-                        : null,
-                    devicePixelRatio: viewport?.deviceScaleFactor
-                        ? viewport.deviceScaleFactor
-                        : null,
-                });
+                        : {
+                            natural: "portrait" /* Bidi.Emulation.ScreenOrientationNatural.Portrait */,
+                            type: 'portrait-primary',
+                        }
+                    : null;
+                await Promise.all([
+                    this.#frame.browsingContext.setViewport({
+                        viewport: viewportSize,
+                        devicePixelRatio,
+                    }),
+                    this.#frame.browsingContext.setScreenOrientationOverride(screenOrientation),
+                ]);
                 this.#viewport = viewport;
                 return;
             }
@@ -532,7 +543,7 @@ let BidiPage = (() => {
                 await this.#frame.browsingContext.setCacheBehavior(enabled ? 'default' : 'bypass');
                 return;
             }
-            // TODO: handle CDP-specific cases such as mprach.
+            // TODO: handle CDP-specific cases such as MPArch.
             await this._client().send('Network.setCacheDisabled', {
                 cacheDisabled: !enabled,
             });
@@ -595,9 +606,14 @@ let BidiPage = (() => {
         workers() {
             return [...this.#workers];
         }
-        #userInterception;
+        get isNetworkInterceptionEnabled() {
+            return (Boolean(this.#requestInterception) ||
+                Boolean(this.#extraHeadersInterception) ||
+                Boolean(this.#authInterception));
+        }
+        #requestInterception;
         async setRequestInterception(enable) {
-            this.#userInterception = await this.#toggleInterception(["beforeRequestSent" /* Bidi.Network.InterceptPhase.BeforeRequestSent */], this.#userInterception, enable);
+            this.#requestInterception = await this.#toggleInterception(["beforeRequestSent" /* Bidi.Network.InterceptPhase.BeforeRequestSent */], this.#requestInterception, enable);
         }
         /**
          * @internal
@@ -642,7 +658,7 @@ let BidiPage = (() => {
         }
         async setOfflineMode(enabled) {
             if (!this.#browserContext.browser().cdpSupported) {
-                throw new Errors_js_1.UnsupportedOperation();
+                return await this.#frame.browsingContext.setOfflineMode(enabled);
             }
             if (!this.#emulatedNetworkConditions) {
                 this.#emulatedNetworkConditions = {
@@ -657,7 +673,14 @@ let BidiPage = (() => {
         }
         async emulateNetworkConditions(networkConditions) {
             if (!this.#browserContext.browser().cdpSupported) {
-                throw new Errors_js_1.UnsupportedOperation();
+                if (!networkConditions?.offline &&
+                    ((networkConditions?.upload ?? -1) >= 0 ||
+                        (networkConditions?.download ?? -1) >= 0 ||
+                        (networkConditions?.latency ?? 0) > 0)) {
+                    // WebDriver BiDi supports only offline mode.
+                    throw new Errors_js_1.UnsupportedOperation();
+                }
+                return await this.#frame.browsingContext.setOfflineMode(networkConditions?.offline ?? false);
             }
             if (!this.#emulatedNetworkConditions) {
                 this.#emulatedNetworkConditions = {
@@ -844,7 +867,7 @@ function testUrlMatchCookie(cookie, url) {
 }
 function bidiToPuppeteerCookie(bidiCookie, returnCompositePartitionKey = false) {
     const partitionKey = bidiCookie[CDP_SPECIFIC_PREFIX + 'partitionKey'];
-    function getParitionKey() {
+    function getPartitionKey() {
         if (typeof partitionKey === 'string') {
             return { partitionKey };
         }
@@ -879,7 +902,7 @@ function bidiToPuppeteerCookie(bidiCookie, returnCompositePartitionKey = false) 
         session: bidiCookie.expiry === undefined || bidiCookie.expiry <= 0,
         // Extending with CDP-specific properties with `goog:` prefix.
         ...cdpSpecificCookiePropertiesFromBidiToPuppeteer(bidiCookie, 'sameParty', 'sourceScheme', 'partitionKeyOpaque', 'priority'),
-        ...getParitionKey(),
+        ...getPartitionKey(),
     };
 }
 const CDP_SPECIFIC_PREFIX = 'goog:';

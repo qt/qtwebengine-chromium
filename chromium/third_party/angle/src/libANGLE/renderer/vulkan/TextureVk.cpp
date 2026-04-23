@@ -1105,17 +1105,24 @@ angle::Result TextureVk::ensureImageInitializedIfUpdatesNeedStageOrFlush(
         updateMustBeFlushed(level, vkFormat.getActualImageFormatID(getRequiredFormatSupport()));
     bool mustStage = applyUpdate == vk::ApplyImageUpdate::Defer;
 
+    const bool canFlushStagedUpdates =
+        !mustStage && mImage->valid() && mImage->hasBufferSourcedStagedUpdatesInAllLevels();
+
     // If texture has all levels being specified, then do the flush immediately. This tries to avoid
     // issue flush as each level is being provided which may end up flushing out the staged clear
     // that otherwise might able to be removed. It also helps tracking all updates with just one
     // VkEvent instead of one for each level.
-    if (mustFlush ||
-        (!mustStage && mImage->valid() && mImage->hasBufferSourcedStagedUpdatesInAllLevels()))
+    if (mustFlush || canFlushStagedUpdates)
     {
         ANGLE_TRY(ensureImageInitialized(contextVk, ImageMipLevels::EnabledLevels));
 
-        // If forceSubmitImmutableTextureUpdates is enabled, submit the staged updates as well.
-        if (contextVk->getFeatures().forceSubmitImmutableTextureUpdates.enabled)
+        // To handle use cases where shared resources are not properly synchronized between multiple
+        // contexts, forceSubmitImmutableTextureUpdates submits the staged updates to force
+        // synchronization. This is limited to cases where the resource is an immutable texture and
+        // there are multiple active shared contexts.
+        if (canFlushStagedUpdates && contextVk->getShareGroup()->getContexts().size() > 1 &&
+            mState.getImmutableFormat() &&
+            contextVk->getFeatures().forceSubmitImmutableTextureUpdates.enabled)
         {
             ANGLE_TRY(contextVk->submitStagedTextureUpdates());
         }
@@ -2209,7 +2216,7 @@ GLint TextureVk::getImageCompressionRate(const gl::Context *context)
 
     if (!mOwnsImage)
     {
-        return 0;
+        return GL_SURFACE_COMPRESSION_FIXED_RATE_NONE_EXT;
     }
 
     VkImageSubresource2EXT imageSubresource2      = {};
@@ -3069,8 +3076,17 @@ angle::Result TextureVk::reinitImageAsRenderable(ContextVk *contextVk, const vk:
         // invalidate must be called after wait for finish.
         ANGLE_TRY(srcBuffer->invalidate(renderer));
 
-        size_t dstBufferSize = sourceBox.width * sourceBox.height * sourceBox.depth *
-                               dstFormat.pixelBytes * layerCount;
+        // Use size_t calculations to avoid 32-bit overflows.  Note that the dimensions are bound by
+        // the maximums specified in Constants.h, and that gl::Box members are signed 32-bit
+        // integers.
+        static_assert(gl::IMPLEMENTATION_MAX_2D_TEXTURE_SIZE *
+                          gl::IMPLEMENTATION_MAX_2D_TEXTURE_SIZE <
+                      std::numeric_limits<int32_t>::max());
+        size_t dstBufferSize = sourceBox.width * sourceBox.height;
+        static_assert(gl::IMPLEMENTATION_MAX_3D_TEXTURE_SIZE *
+                          gl::IMPLEMENTATION_MAX_2D_ARRAY_TEXTURE_LAYERS * 16 <
+                      std::numeric_limits<int32_t>::max());
+        dstBufferSize *= sourceBox.depth * dstFormat.pixelBytes * layerCount;
 
         // Allocate memory in the destination texture for the copy/conversion.
         uint8_t *dstData = nullptr;

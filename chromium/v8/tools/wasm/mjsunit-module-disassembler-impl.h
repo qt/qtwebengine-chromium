@@ -83,13 +83,16 @@ class MjsunitNamesProvider {
       }
     }
     for (const WasmImport& imp : module_->import_table) {
-      if (imp.kind != kExternalFunction) continue;
+      if (imp.kind != kExternalFunction && imp.kind != kExternalExactFunction) {
+        continue;
+      }
       if (function_variable_names_[imp.index].is_set()) continue;
       if (IsSuitableFunctionVariableName(imp.field_name)) {
         function_variable_names_[imp.index] = imp.field_name;
       }
     }
     for (const WasmExport& ex : module_->export_table) {
+      DCHECK_NE(ex.kind, kExternalExactFunction);
       if (ex.kind != kExternalFunction) continue;
       if (function_variable_names_[ex.index].is_set()) continue;
       if (IsSuitableFunctionVariableName(ex.name)) {
@@ -111,7 +114,7 @@ class MjsunitNamesProvider {
     if (name_ref.offset() == ref.offset()) return true;
     WasmName name = wire_bytes_.GetNameOrNull(name_ref);
     WasmName question = wire_bytes_.GetNameOrNull(ref);
-    return memcmp(name.begin(), question.begin(), name.length()) == 0;
+    return memcmp(name.begin(), question.begin(), name.size()) == 0;
   }
 
   void PrintTypeVariableName(StringBuilder& out, ModuleTypeIndex index) {
@@ -297,87 +300,97 @@ class MjsunitNamesProvider {
   V(kStringViewIter, kWasmStringViewIter, kStringViewIterCode)
 
   void PrintHeapType(StringBuilder& out, HeapType type, OutputContext mode) {
-    switch (type.representation()) {
-#define CASE(kCpp, JS, JSCode)                                             \
-  case HeapType::kCpp:                                                     \
-    out << (mode == kEmitWireBytes ? #JSCode : #JS);                       \
-    return;                                                                \
-  case HeapType::kCpp##Shared:                                             \
-    out << (mode == kEmitWireBytes ? "kWasmSharedTypeForm, " #JSCode       \
-                                   : "wasmRefNullType(" #JS ").shared()"); \
-    return;
+    if (type.has_index()) {
+      PrintTypeIndex(out, type.ref_index(), mode);
+      return;
+    }
+    if (type.is_shared()) {
+      out << (mode == kEmitWireBytes ? "kWasmSharedTypeForm, "
+                                     : "wasmRefNullType(");
+    }
+    switch (type.generic_kind()) {
+#define CASE(kCpp, JS, JSCode)                       \
+  case GenericKind::kCpp:                            \
+    out << (mode == kEmitWireBytes ? #JSCode : #JS); \
+    break;
+
       ABSTRACT_TYPE_LIST(CASE)
       ABSTRACT_NN_TYPE_LIST(CASE)
 #undef CASE
-      case HeapType::kBottom:
-      case HeapType::kTop:
+      case GenericKind::kBottom:
+      case GenericKind::kTop:
+      case GenericKind::kVoid:
+      case GenericKind::kExternString:
         UNREACHABLE();
-      default:
-        PrintTypeIndex(out, type.ref_index(), mode);
+    }
+    if (type.is_shared() && mode == kEmitObjects) {
+      out << ").shared()";
+    }
+  }
+
+  bool CanUseShorthand(ValueType type) {
+    DCHECK(type.is_ref());
+    if (type.has_index()) return false;
+    if (type.is_shared()) return false;
+    if (type.is_exact()) return false;
+
+    switch (type.generic_kind()) {
+      // Nullable shorthands can be used when the type is nullable.
+#define NULLABLE_SHORTHAND(kCpp, JS, JSCode) case GenericKind::kCpp:
+      ABSTRACT_TYPE_LIST(NULLABLE_SHORTHAND)
+      return type.is_nullable();
+#undef NULLABLE_SHORTHAND
+
+      // Non-nullable shorthands can be used when the type is non-nullable.
+#define NON_NULLABLE_SHORTHAND(kCpp, JS, JSCode) case GenericKind::kCpp:
+      ABSTRACT_NN_TYPE_LIST(NON_NULLABLE_SHORTHAND)
+      return !type.is_nullable();
+#undef NON_NULLABLE_SHORTHAND
+
+      case GenericKind::kVoid:
+      case GenericKind::kTop:
+      case GenericKind::kBottom:
+      case GenericKind::kExternString:
+        UNREACHABLE();
     }
   }
 
   void PrintValueType(StringBuilder& out, ValueType type, OutputContext mode) {
-    switch (type.kind()) {
-        // clang-format off
-      case kI8:   out << "kWasmI8";   return;
-      case kI16:  out << "kWasmI16";  return;
-      case kI32:  out << "kWasmI32";  return;
-      case kI64:  out << "kWasmI64";  return;
-      case kF16:  out << "kWasmF16";  return;
-      case kF32:  out << "kWasmF32";  return;
-      case kF64:  out << "kWasmF64";  return;
-      case kS128: out << "kWasmS128"; return;
-      // clang-format on
-      case kRefNull:
-        switch (type.heap_representation()) {
-          case HeapType::kBottom:
-          case HeapType::kTop:
-            UNREACHABLE();
-#define CASE(kCpp, _, _2) case HeapType::kCpp:
-            ABSTRACT_TYPE_LIST(CASE)
-#undef CASE
-            if (!type.is_exact()) {
-              return PrintHeapType(out, type.heap_type(), mode);
-            }
-            [[fallthrough]];
-          default:
-            if (mode == kEmitObjects) {
-              out << "wasmRefNullType(";
-            } else {
-              out << "kWasmRefNull, ";
-              if (type.is_exact()) out << "kWasmExact, ";
-            }
-            break;
-        }
-        break;
-      case kRef:
-        switch (type.heap_representation()) {
-          case HeapType::kBottom:
-            UNREACHABLE();
-#define CASE(kCpp, _, _2) case HeapType::kCpp:
-          ABSTRACT_NN_TYPE_LIST(CASE)
-#undef CASE
-          if (!type.is_exact()) {
-            return PrintHeapType(out, type.heap_type(), mode);
-          }
-          [[fallthrough]];
-          default:
-            if (mode == kEmitObjects) {
-              out << "wasmRefType(";
-            } else {
-              out << "kWasmRef, ";
-              if (type.is_exact()) out << "kWasmExact, ";
-            }
-            break;
-        }
-        break;
-      case kBottom:
-        out << "/*<bot>*/";
-        return;
-      case kTop:
-      case kVoid:
-        UNREACHABLE();
+    if (type.is_numeric()) {
+      switch (type.numeric_kind()) {
+          // clang-format off
+        case NumericKind::kI8:   out << "kWasmI8";   return;
+        case NumericKind::kI16:  out << "kWasmI16";  return;
+        case NumericKind::kI32:  out << "kWasmI32";  return;
+        case NumericKind::kI64:  out << "kWasmI64";  return;
+        case NumericKind::kF16:  out << "kWasmF16";  return;
+        case NumericKind::kF32:  out << "kWasmF32";  return;
+        case NumericKind::kF64:  out << "kWasmF64";  return;
+        case NumericKind::kS128: out << "kWasmS128"; return;
+          // clang-format on
+      }
+    }
+    if (type == kWasmBottom) {
+      out << "/*<bot>*/";
+      return;
+    }
+    if (CanUseShorthand(type)) {
+      return PrintHeapType(out, type.heap_type(), mode);
+    }
+    if (type.is_nullable()) {
+      if (mode == kEmitObjects) {
+        out << "wasmRefNullType(";
+      } else {
+        out << "kWasmRefNull, ";
+        if (type.is_exact()) out << "kWasmExact, ";
+      }
+    } else {
+      if (mode == kEmitObjects) {
+        out << "wasmRefType(";
+      } else {
+        out << "kWasmRef, ";
+        if (type.is_exact()) out << "kWasmExact, ";
+      }
     }
     PrintHeapType(out, type.heap_type(), mode);
     if (mode == kEmitObjects) {
@@ -457,18 +470,18 @@ class MjsunitNamesProvider {
     // This isn't perfect: any collision with a function (e.g. "makeSig")
     // or constant (e.g. "kFooRefCode") would also break the generated test,
     // but it doesn't seem feasible to accurately guard against all of those.
-    if (name.length() >= 8) {
+    if (name.size() >= 8) {
       if (memcmp(name.begin(), "$segment", 8) == 0) return false;
     }
-    if (name.length() >= 7) {
+    if (name.size() >= 7) {
       if (memcmp(name.begin(), "$global", 7) == 0) return false;
       if (memcmp(name.begin(), "$struct", 7) == 0) return false;
     }
-    if (name.length() >= 6) {
+    if (name.size() >= 6) {
       if (memcmp(name.begin(), "$array", 6) == 0) return false;
       if (memcmp(name.begin(), "$table", 6) == 0) return false;
     }
-    if (name.length() >= 5) {
+    if (name.size() >= 5) {
       if (memcmp(name.begin(), "$data", 5) == 0) return false;
       if (memcmp(name.begin(), "$func", 5) == 0) return false;
       if (memcmp(name.begin(), "kExpr", 5) == 0) return false;
@@ -476,7 +489,7 @@ class MjsunitNamesProvider {
       if (memcmp(name.begin(), "kWasm", 5) == 0) return false;
       if (memcmp(name.begin(), "throw", 5) == 0) return false;
     }
-    if (name.length() >= 4) {
+    if (name.size() >= 4) {
       if (memcmp(name.begin(), "$mem", 4) == 0) return false;
       if (memcmp(name.begin(), "$sig", 4) == 0) return false;
       if (memcmp(name.begin(), "$tag", 4) == 0) return false;
@@ -1386,11 +1399,15 @@ class MjsunitModuleDis {
       out_ << "let ";
       switch (imported.kind) {
         case kExternalFunction:
+        case kExternalExactFunction:
           names()->PrintFunctionVariableName(out_, imported.index);
           out_ << " = builder.addImport('" << V(imported.module_name);
           out_ << "', '" << V(imported.field_name) << "', ";
           names()->PrintTypeIndex(
               out_, module_->functions[imported.index].sig_index, kEmitObjects);
+          if (imported.kind == kExternalExactFunction) {
+            out_ << ", kExternalExactFunction";
+          }
           break;
 
         case kExternalTable: {
@@ -1771,6 +1788,10 @@ class MjsunitModuleDis {
           names()->PrintTagName(out_, ex.index);
           out_ << ");";
           break;
+        case kExternalExactFunction:
+          // We could support this if we needed to, using {addExportOfKind()}.
+          out_ << "ERROR: 'exact function' is illegal as an export kind";
+          UNREACHABLE();
       }
       out_.NextLine(0);
       added_any_export = true;

@@ -1,9 +1,6 @@
 # Powershell script to set up MSVC environment.
 
 param ($EIGEN_CI_MSVC_ARCH, $EIGEN_CI_MSVC_VER)
-
-Set-PSDebug -Trace 1
-
 function Get-ScriptDirectory { Split-Path $MyInvocation.ScriptName }
        
 # Set defaults if not already set.

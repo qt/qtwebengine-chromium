@@ -626,7 +626,7 @@ static int64_t cfl_compute_rd(const AV1_COMP *const cpi, MACROBLOCK *x,
   } else {
     av1_init_rd_stats(rd_stats);
     av1_txfm_rd_in_plane(x, cpi, rd_stats, INT64_MAX, 0, plane, plane_bsize,
-                         tx_size, FTXS_NONE, 0);
+                         tx_size, FTXS_NONE);
     av1_rd_cost_update(x->rdmult, rd_stats);
     cfl_cost = rd_stats->rdcost;
   }
@@ -1325,15 +1325,7 @@ int av1_handle_intra_y_mode(IntraModeSearchState *intra_search_state,
   const int mode_cost =
       mode_costs->mbmode_cost[size_group_lookup[bsize]][mode] + ref_frame_cost;
   const int skip_ctx = av1_get_skip_txfm_context(xd);
-
-  int known_rate = mode_cost;
-  const int intra_cost_penalty = av1_get_intra_cost_penalty(
-      cm->quant_params.base_qindex, cm->quant_params.y_dc_delta_q,
-      cm->seq_params->bit_depth);
-
-  if (mode != DC_PRED && mode != PAETH_PRED) known_rate += intra_cost_penalty;
-  known_rate += AOMMIN(mode_costs->skip_txfm_cost[skip_ctx][0],
-                       mode_costs->skip_txfm_cost[skip_ctx][1]);
+  int known_rate = mode_cost + mode_costs->skip_mode_cost[skip_ctx][0];
   const int64_t known_rd = RDCOST(x->rdmult, known_rate, 0);
   if (known_rd > best_rd) {
     intra_search_state->skip_intra_modes = 1;
@@ -1424,28 +1416,25 @@ int av1_search_intra_uv_modes_in_interframe(
   const int try_palette =
       cpi->oxcf.tool_cfg.enable_palette &&
       av1_allow_palette(cm->features.allow_screen_content_tools, mbmi->bsize);
-
   assert(intra_search_state->rate_uv_intra == INT_MAX);
-  if (intra_search_state->rate_uv_intra == INT_MAX) {
-    // If no good uv-predictor had been found, search for it.
-    const TX_SIZE uv_tx = av1_get_tx_size(AOM_PLANE_U, xd);
-    av1_rd_pick_intra_sbuv_mode(cpi, x, &intra_search_state->rate_uv_intra,
-                                &intra_search_state->rate_uv_tokenonly,
-                                &intra_search_state->dist_uvs,
-                                &intra_search_state->skip_uvs, bsize, uv_tx);
-    intra_search_state->mode_uv = mbmi->uv_mode;
-    if (try_palette) intra_search_state->pmi_uv = *pmi;
-    intra_search_state->uv_angle_delta = mbmi->angle_delta[PLANE_TYPE_UV];
+  // If no good uv-predictor had been found, search for it.
+  const TX_SIZE uv_tx = av1_get_tx_size(AOM_PLANE_U, xd);
+  av1_rd_pick_intra_sbuv_mode(cpi, x, &intra_search_state->rate_uv_intra,
+                              &intra_search_state->rate_uv_tokenonly,
+                              &intra_search_state->dist_uvs,
+                              &intra_search_state->skip_uvs, bsize, uv_tx);
+  intra_search_state->mode_uv = mbmi->uv_mode;
+  if (try_palette) intra_search_state->pmi_uv = *pmi;
+  intra_search_state->uv_angle_delta = mbmi->angle_delta[PLANE_TYPE_UV];
 
-    const int uv_rate = intra_search_state->rate_uv_tokenonly;
-    const int64_t uv_dist = intra_search_state->dist_uvs;
-    const int64_t uv_rd = RDCOST(x->rdmult, uv_rate, uv_dist);
-    if (uv_rd > best_rd) {
-      // If there is no good intra uv-mode available, we can skip all intra
-      // modes.
-      intra_search_state->skip_intra_modes = 1;
-      return 0;
-    }
+  const int uv_rate = intra_search_state->rate_uv_tokenonly;
+  const int64_t uv_dist = intra_search_state->dist_uvs;
+  const int64_t uv_rd = RDCOST(x->rdmult, uv_rate, uv_dist);
+  if (uv_rd > best_rd) {
+    // If there is no good intra uv-mode available, we can skip all intra
+    // modes.
+    intra_search_state->skip_intra_modes = 1;
+    return 0;
   }
 
   // If we are here, then the encoder has found at least one good intra uv

@@ -1,9 +1,9 @@
 // Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
-import '../../../../ui/components/icon_button/icon_button.js';
+import '../../../../ui/kit/kit.js';
 import '../../../../ui/components/report_view/report_view.js';
 import './PreloadingMismatchedHeadersGrid.js';
 import './MismatchedPreloadingGrid.js';
@@ -16,7 +16,7 @@ import * as SDK from '../../../../core/sdk/sdk.js';
 import * as Protocol from '../../../../generated/protocol.js';
 import * as LegacyWrapper from '../../../../ui/components/legacy_wrapper/legacy_wrapper.js';
 import * as RenderCoordinator from '../../../../ui/components/render_coordinator/render_coordinator.js';
-import * as UI from '../../../../ui/legacy/legacy.js';
+import type * as UI from '../../../../ui/legacy/legacy.js';
 import * as Lit from '../../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../../ui/visual_logging/visual_logging.js';
 import * as PreloadingHelper from '../helper/helper.js';
@@ -138,8 +138,10 @@ export const enum UsedKind {
   NO_PRELOADS = 'NoPreloads',
 }
 
-// TODO(kenoss): Rename this class and file once https://crrev.com/c/4933567 landed.
-// This also shows summary of speculations initiated by this page.
+/**
+ * TODO(kenoss): Rename this class and file once https://crrev.com/c/4933567 landed.
+ * This also shows summary of speculations initiated by this page.
+ **/
 export class UsedPreloadingView extends LegacyWrapper.LegacyWrapper.WrappableComponent<UI.Widget.VBox> {
   readonly #shadow = this.attachShadow({mode: 'open'});
   #data: UsedPreloadingViewData = {
@@ -174,11 +176,28 @@ export class UsedPreloadingView extends LegacyWrapper.LegacyWrapper.WrappableCom
         <devtools-report-divider></devtools-report-divider>
 
         <devtools-report-section>
-          ${UI.XLink.XLink.create('https://developer.chrome.com/blog/prerender-pages/', i18nString(UIStrings.learnMore), 'link', undefined, 'learn-more')}
+          <x-link
+            class="link devtools-link"
+            href=${'https://developer.chrome.com/blog/prerender-pages/'}
+            jslog=${VisualLogging.link()
+                    .track({ click: true, keydown: 'Enter|Space' })
+                    .context('learn-more')}
+          >${i18nString(UIStrings.learnMore)}</x-link>
         </devtools-report-section>
       </devtools-report>
     `;
     // clang-format on
+  }
+
+  #isPrerenderLike(speculationAction: Protocol.Preload.SpeculationAction): boolean {
+    return [
+      Protocol.Preload.SpeculationAction.Prerender, Protocol.Preload.SpeculationAction.PrerenderUntilScript
+    ].includes(speculationAction);
+  }
+
+  #isPrerenderAttempt(attempt: SDK.PreloadingModel.PreloadingAttempt):
+      attempt is SDK.PreloadingModel.PrerenderAttempt|SDK.PreloadingModel.PrerenderUntilScriptAttempt {
+    return this.#isPrerenderLike(attempt.action);
   }
 
   #speculativeLoadingStatusForThisPageSections(): Lit.LitTemplate {
@@ -187,24 +206,23 @@ export class UsedPreloadingView extends LegacyWrapper.LegacyWrapper.WrappableCom
         attempt => Common.ParsedURL.ParsedURL.urlWithoutHash(attempt.key.url) === pageURL);
     const prefetch =
         forThisPage.filter(attempt => attempt.key.action === Protocol.Preload.SpeculationAction.Prefetch)[0];
-    const prerender =
-        forThisPage.filter(attempt => attempt.key.action === Protocol.Preload.SpeculationAction.Prerender)[0];
+    const prerenderLike = forThisPage.filter(attempt => this.#isPrerenderLike(attempt.action))[0];
 
     let kind = UsedKind.NO_PRELOADS;
     // Prerender -> prefetch downgrade case
     //
     // This code does not handle the case SpecRules designate these preloads rather than prerenderer automatically downgrade prerendering.
     // TODO(https://crbug.com/1410709): Improve this logic once automatic downgrade implemented.
-    if (prerender?.status === SDK.PreloadingModel.PreloadingStatus.FAILURE &&
+    if (prerenderLike?.status === SDK.PreloadingModel.PreloadingStatus.FAILURE &&
         prefetch?.status === SDK.PreloadingModel.PreloadingStatus.SUCCESS) {
       kind = UsedKind.DOWNGRADED_PRERENDER_TO_PREFETCH_AND_USED;
     } else if (prefetch?.status === SDK.PreloadingModel.PreloadingStatus.SUCCESS) {
       kind = UsedKind.PREFETCH_USED;
-    } else if (prerender?.status === SDK.PreloadingModel.PreloadingStatus.SUCCESS) {
+    } else if (prerenderLike?.status === SDK.PreloadingModel.PreloadingStatus.SUCCESS) {
       kind = UsedKind.PRERENDER_USED;
     } else if (prefetch?.status === SDK.PreloadingModel.PreloadingStatus.FAILURE) {
       kind = UsedKind.PREFETCH_FAILED;
-    } else if (prerender?.status === SDK.PreloadingModel.PreloadingStatus.FAILURE) {
+    } else if (prerenderLike?.status === SDK.PreloadingModel.PreloadingStatus.FAILURE) {
       kind = UsedKind.PRERENDER_FAILED;
     } else {
       kind = UsedKind.NO_PRELOADS;
@@ -244,8 +262,9 @@ export class UsedPreloadingView extends LegacyWrapper.LegacyWrapper.WrappableCom
       assertNotNullOrUndefined(prefetch);
       maybeFailureReasonMessage = prefetchFailureReason(prefetch as SDK.PreloadingModel.PrefetchAttempt);
     } else if (kind === UsedKind.PRERENDER_FAILED || kind === UsedKind.DOWNGRADED_PRERENDER_TO_PREFETCH_AND_USED) {
-      assertNotNullOrUndefined(prerender);
-      maybeFailureReasonMessage = prerenderFailureReason(prerender as SDK.PreloadingModel.PrerenderAttempt);
+      assertNotNullOrUndefined(prerenderLike);
+      maybeFailureReasonMessage = prerenderFailureReason(
+          prerenderLike as SDK.PreloadingModel.PrerenderAttempt | SDK.PreloadingModel.PrerenderUntilScriptAttempt);
     }
 
     let maybeFailureReason: Lit.LitTemplate = Lit.nothing;
@@ -306,7 +325,13 @@ export class UsedPreloadingView extends LegacyWrapper.LegacyWrapper.WrappableCom
     return html`
       <devtools-report-section-header>${i18nString(UIStrings.currentURL)}</devtools-report-section-header>
       <devtools-report-section>
-        ${UI.XLink.XLink.create(this.#data.pageURL, undefined, 'link', undefined, 'current-url')}
+        <x-link
+          class="link devtools-link"
+          href=${this.#data.pageURL}
+          jslog=${VisualLogging.link()
+                  .track({ click: true, keydown: 'Enter|Space' })
+                  .context('current-url')}
+        >${this.#data.pageURL}</x-link>
       </devtools-report-section>
 
       <devtools-report-section-header>${i18nString(UIStrings.preloadedURLs)}</devtools-report-section-header>
@@ -321,8 +346,7 @@ export class UsedPreloadingView extends LegacyWrapper.LegacyWrapper.WrappableCom
 
   #maybeMismatchedHTTPHeadersSections(): Lit.LitTemplate {
     const attempt = this.#data.previousAttempts.find(
-        attempt =>
-            attempt.action === Protocol.Preload.SpeculationAction.Prerender && attempt.mismatchedHeaders !== null);
+        attempt => this.#isPrerenderAttempt(attempt) && attempt.mismatchedHeaders !== null);
     if (attempt === undefined) {
       return Lit.nothing;
     }
@@ -340,7 +364,9 @@ export class UsedPreloadingView extends LegacyWrapper.LegacyWrapper.WrappableCom
       <devtools-report-section-header>${i18nString(UIStrings.mismatchedHeadersDetail)}</devtools-report-section-header>
       <devtools-report-section>
         <devtools-resources-preloading-mismatched-headers-grid
-          .data=${attempt as SDK.PreloadingModel.PrerenderAttempt}></devtools-resources-preloading-mismatched-headers-grid>
+          .data=${
+              attempt as SDK.PreloadingModel.PrerenderAttempt |
+              SDK.PreloadingModel.PrerenderUntilScriptAttempt}></devtools-resources-preloading-mismatched-headers-grid>
       </devtools-report-section>
     `;
     // clang-format on

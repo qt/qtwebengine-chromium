@@ -124,7 +124,7 @@ void HTMLVideoElement::Trace(Visitor* visitor) const {
   visitor->Trace(remoting_interstitial_);
   visitor->Trace(picture_in_picture_interstitial_);
   visitor->Trace(cache_deleting_timer_);
-  Supplementable<HTMLVideoElement>::Trace(visitor);
+  visitor->Trace(video_frame_callback_requester_);
   HTMLMediaElement::Trace(visitor);
 }
 
@@ -467,8 +467,6 @@ void HTMLVideoElement::OnFirstFrame(base::TimeTicks frame_time,
     video_timing->SetIsSufficientContentLoadedForPaint();
     video_timing->SetUrl(currentSrc());
     video_timing->SetContentSizeForEntropy(bytes_to_first_frame);
-    video_timing->SetTimingAllowPassed(
-        GetWebMediaPlayer()->PassedTimingAllowOriginCheck());
 
     PaintTimingDetector::NotifyFirstVideoFrame(
         *layout_object, videoVisibleSize(), *video_timing,
@@ -614,9 +612,7 @@ scoped_refptr<StaticBitmapImage> HTMLVideoElement::CreateStaticBitmapImage(
                                      FROM_HERE);
 
   auto image = CreateImageFromVideoFrame(
-      std::move(media_video_frame),
-      /*allow_zero_copy_images=*/true, resource_provider_.get(), video_renderer,
-      gfx::Rect(dest_size),
+      std::move(media_video_frame), resource_provider_.get(), video_renderer,
       /*prefer_tagged_orientation=*/true, reinterpret_as_srgb);
   if (image)
     image->SetOriginClean(!WouldTaintOrigin());
@@ -624,7 +620,6 @@ scoped_refptr<StaticBitmapImage> HTMLVideoElement::CreateStaticBitmapImage(
 }
 
 scoped_refptr<Image> HTMLVideoElement::GetSourceImageForCanvas(
-    FlushReason,
     SourceImageStatus* status,
     const gfx::SizeF&) {
   scoped_refptr<Image> snapshot = CreateStaticBitmapImage();
@@ -837,13 +832,15 @@ void HTMLVideoElement::OnIntersectionChangedForLazyLoad(
 }
 
 void HTMLVideoElement::OnWebMediaPlayerCreated() {
-  if (auto* vfc_requester = VideoFrameCallbackRequester::From(*this))
-    vfc_requester->OnWebMediaPlayerCreated();
+  if (video_frame_callback_requester_) {
+    video_frame_callback_requester_->OnWebMediaPlayerCreated();
+  }
 }
 
 void HTMLVideoElement::OnWebMediaPlayerCleared() {
-  if (auto* vfc_requester = VideoFrameCallbackRequester::From(*this))
-    vfc_requester->OnWebMediaPlayerCleared();
+  if (video_frame_callback_requester_) {
+    video_frame_callback_requester_->OnWebMediaPlayerCleared();
+  }
 
   UpdateVideoVisibilityTracker();
 }
@@ -865,8 +862,8 @@ void HTMLVideoElement::AttributeChanged(
 }
 
 void HTMLVideoElement::OnRequestVideoFrameCallback() {
-  if (auto* vfc_requester = VideoFrameCallbackRequester::From(*this)) {
-    vfc_requester->OnRequestVideoFrameCallback();
+  if (video_frame_callback_requester_) {
+    video_frame_callback_requester_->OnRequestVideoFrameCallback();
   }
 }
 

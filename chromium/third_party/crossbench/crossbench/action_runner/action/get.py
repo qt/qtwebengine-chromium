@@ -24,6 +24,7 @@ if TYPE_CHECKING:
   from crossbench.runner.run import Run
   from crossbench.types import JsonDict
 
+
 class GetAction(BaseDurationAction):
   TYPE: ClassVar[ActionType] = ActionType.GET
 

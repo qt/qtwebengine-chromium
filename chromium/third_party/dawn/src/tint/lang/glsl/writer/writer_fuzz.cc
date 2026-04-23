@@ -40,13 +40,17 @@
 namespace tint::glsl::writer {
 namespace {
 
-Options GenerateOptions(core::ir::Module& module) {
+Options GenerateOptions(core::ir::Module& module, const std::string& ep_name) {
     Options options;
     options.version = Version(Version::Standard::kES, 3, 1);
+    options.entry_point_name = ep_name;
     options.disable_robustness = false;
     options.disable_workgroup_init = false;
     options.disable_polyfill_integer_div_mod = false;
-    options.bindings = GenerateBindings(module);
+
+    auto data = GenerateBindings(module, ep_name);
+    options.bindings = std::move(data.bindings);
+    options.texture_builtins_from_uniform = std::move(data.texture_builtins_from_uniform);
 
     // Leave some room for user-declared immediate data.
     uint32_t next_immediate_offset = 0x800;
@@ -116,13 +120,17 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module, const fuzz::ir::Context& 
             break;
         }
     }
+    std::string ep_name;
     if (entry_point) {
-        auto name = module.NameOf(entry_point).NameView();
-        TINT_ASSERT(core::ir::transform::SingleEntryPoint(module, name) == Success);
+        ep_name = module.NameOf(entry_point).NameView();
+    }
+    if (ep_name.empty()) {
+        // No entry point, just return success
+        return Success;
     }
 
     // TODO(377391551): Enable fuzzing of options.
-    auto options = GenerateOptions(module);
+    auto options = GenerateOptions(module, ep_name);
 
     auto check = CanGenerate(module, options);
     if (check != Success) {
@@ -130,10 +138,8 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module, const fuzz::ir::Context& 
     }
 
     auto output = Generate(module, options);
-    if (output != Success) {
-        TINT_ICE() << "Generate() failed after CanGenerate() succeeded: "
-                   << output.Failure().reason;
-    }
+    TINT_ASSERT(output == Success)
+        << "Generate() failed after CanGenerate() succeeded: " << output.Failure().reason;
 
     if (output == Success && context.options.dump) {
         std::cout << "Dumping generated GLSL:\n" << output->glsl << "\n";

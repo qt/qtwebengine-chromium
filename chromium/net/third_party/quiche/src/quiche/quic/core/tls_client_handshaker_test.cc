@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -10,18 +12,25 @@
 #include <vector>
 
 #include "absl/base/macros.h"
+#include "absl/strings/string_view.h"
+#include "openssl/aead.h"
 #include "openssl/hpke.h"
 #include "openssl/ssl.h"
-#include "quiche/quic/core/crypto/quic_decrypter.h"
-#include "quiche/quic/core/crypto/quic_encrypter.h"
+#include "openssl/tls1.h"
+#include "quiche/quic/core/crypto/crypto_handshake_message.h"
+#include "quiche/quic/core/crypto/crypto_protocol.h"
+#include "quiche/quic/core/crypto/proof_verifier.h"
+#include "quiche/quic/core/crypto/quic_compressed_certs_cache.h"
+#include "quiche/quic/core/crypto/quic_crypto_client_config.h"
+#include "quiche/quic/core/crypto/transport_parameters.h"
+#include "quiche/quic/core/quic_connection.h"
+#include "quiche/quic/core/quic_constants.h"
 #include "quiche/quic/core/quic_error_codes.h"
-#include "quiche/quic/core/quic_packets.h"
 #include "quiche/quic/core/quic_server_id.h"
+#include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_types.h"
-#include "quiche/quic/core/quic_utils.h"
 #include "quiche/quic/core/quic_versions.h"
 #include "quiche/quic/platform/api/quic_expect_bug.h"
-#include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/test_tools/crypto_test_utils.h"
 #include "quiche/quic/test_tools/quic_connection_peer.h"
@@ -30,10 +39,11 @@
 #include "quiche/quic/test_tools/quic_test_utils.h"
 #include "quiche/quic/test_tools/simple_session_cache.h"
 #include "quiche/quic/tools/fake_proof_verifier.h"
-#include "quiche/common/test_tools/quiche_test_utils.h"
 
 using testing::_;
+using testing::Eq;
 using testing::HasSubstr;
+using testing::Optional;
 
 namespace quic {
 namespace test {
@@ -367,7 +377,6 @@ TEST_P(TlsClientHandshakerTest, HandshakeWithAsyncProofVerifier) {
 }
 
 TEST_P(TlsClientHandshakerTest, HandshakeWithTrustAnchorIds) {
-  SetQuicReloadableFlag(enable_tls_trust_anchor_ids, true);
   const std::string kTestTrustAnchorId = {0x03, 0x01, 0x02, 0x03};
   const std::string kTestServerTrustAnchorId = {0x01, 0x02, 0x03};
   InitializeFakeServer(kTestServerTrustAnchorId);
@@ -383,7 +392,6 @@ TEST_P(TlsClientHandshakerTest, HandshakeWithTrustAnchorIds) {
 // Trust Anchor IDs, one which matches the server's credential and one which
 // doesn't.
 TEST_P(TlsClientHandshakerTest, HandshakeWithMultipleTrustAnchorIds) {
-  SetQuicReloadableFlag(enable_tls_trust_anchor_ids, true);
   // The client sends two trust anchor IDs, the first of which doesn't match the
   // server's credential and the second does.
   const std::string kTestTrustAnchorIds = {0x04, 0x00, 0x01, 0x02, 0x03,
@@ -401,7 +409,6 @@ TEST_P(TlsClientHandshakerTest, HandshakeWithMultipleTrustAnchorIds) {
 // Tests that the client can complete a handshake in which it sends no Trust
 // Anchor IDs.
 TEST_P(TlsClientHandshakerTest, HandshakeWithEmptyTrustAnchorIdList) {
-  SetQuicReloadableFlag(enable_tls_trust_anchor_ids, true);
   InitializeFakeServer("");
   ssl_config_.emplace();
   ssl_config_->trust_anchor_ids.emplace();
@@ -939,6 +946,163 @@ TEST_P(TlsClientHandshakerTest, ECHGrease) {
   EXPECT_FALSE(stream()->crypto_negotiated_params().encrypted_client_hello);
 }
 
+// Observes and stores the client's `TransportParameters::debugging_sni` field.
+class DebuggingSniExtractor : public QuicConnectionDebugVisitor {
+ public:
+  void OnTransportParametersSent(const TransportParameters& params) override {
+    debugging_sni_ = params.debugging_sni;
+  }
+
+  std::optional<std::string> debugging_sni() const { return debugging_sni_; }
+
+ private:
+  std::optional<std::string> debugging_sni_;
+};
+
+TEST_P(TlsClientHandshakerTest, DebuggingSniDisabledByECH) {
+  ssl_config_.emplace();
+  bssl::UniquePtr<SSL_ECH_KEYS> ech_keys =
+      MakeTestEchKeys("public-name.example", /*max_name_len=*/64,
+                      &ssl_config_->ech_config_list);
+  ASSERT_TRUE(ech_keys);
+
+  // Configure the server to use the test ECH keys.
+  ASSERT_TRUE(
+      SSL_CTX_set1_ech_keys(server_crypto_config_->ssl_ctx(), ech_keys.get()));
+
+  // Recreate the client to pick up the new `ssl_config_`.
+  CreateConnection();
+  session_->config()->SetDebuggingSniToSend("secret.example");
+
+  DebuggingSniExtractor debug_visitor;
+  connection_->set_debug_visitor(&debug_visitor);
+
+  // The handshake should complete and negotiate ECH.
+  CompleteCryptoHandshake();
+  EXPECT_EQ(PROTOCOL_TLS1_3, stream()->handshake_protocol());
+  EXPECT_TRUE(stream()->encryption_established());
+  EXPECT_TRUE(stream()->one_rtt_keys_available());
+  EXPECT_TRUE(stream()->crypto_negotiated_params().encrypted_client_hello);
+
+  EXPECT_EQ(debug_visitor.debugging_sni(), std::nullopt);
+}
+
+TEST_P(TlsClientHandshakerTest, DebuggingSniDisabledByECHAndNotSavedByDSNI) {
+  ssl_config_.emplace();
+  bssl::UniquePtr<SSL_ECH_KEYS> ech_keys =
+      MakeTestEchKeys("public-name.example", /*max_name_len=*/64,
+                      &ssl_config_->ech_config_list);
+  ASSERT_TRUE(ech_keys);
+
+  // Configure the server to use the test ECH keys.
+  ASSERT_TRUE(
+      SSL_CTX_set1_ech_keys(server_crypto_config_->ssl_ctx(), ech_keys.get()));
+
+  // Recreate the client to pick up the new `ssl_config_`.
+  CreateConnection();
+  session_->config()->SetDebuggingSniToSend("secret.example");
+  session_->config()->AddConnectionOptionsToSend({kDSNI});
+
+  DebuggingSniExtractor debug_visitor;
+  connection_->set_debug_visitor(&debug_visitor);
+
+  // The handshake should complete and negotiate ECH.
+  CompleteCryptoHandshake();
+  EXPECT_EQ(PROTOCOL_TLS1_3, stream()->handshake_protocol());
+  EXPECT_TRUE(stream()->encryption_established());
+  EXPECT_TRUE(stream()->one_rtt_keys_available());
+  EXPECT_TRUE(stream()->crypto_negotiated_params().encrypted_client_hello);
+
+  EXPECT_EQ(debug_visitor.debugging_sni(), std::nullopt);
+}
+
+TEST_P(TlsClientHandshakerTest, DebuggingSniDisabledByECHGrease) {
+  ssl_config_.emplace();
+  ssl_config_->ech_grease_enabled = true;
+  CreateConnection();
+  session_->config()->SetDebuggingSniToSend("secret.example");
+
+  DebuggingSniExtractor debug_visitor;
+  connection_->set_debug_visitor(&debug_visitor);
+
+  stream()->CryptoConnect();
+
+  // Add a DoS callback on the server, to test that the client sent a GREASE
+  // message. This is a bit of a hack. TlsServerHandshaker already configures
+  // the certificate selection callback, but does not usefully expose any way
+  // for tests to inspect the ClientHello. So, instead, we register a different
+  // callback that also gets the ClientHello.
+  static bool callback_ran;
+  callback_ran = false;
+  SSL_CTX_set_dos_protection_cb(
+      server_crypto_config_->ssl_ctx(),
+      [](const SSL_CLIENT_HELLO* client_hello) -> int {
+        const uint8_t* data;
+        size_t len;
+        EXPECT_TRUE(SSL_early_callback_ctx_extension_get(
+            client_hello, TLSEXT_TYPE_encrypted_client_hello, &data, &len));
+        callback_ran = true;
+        return 1;
+      });
+
+  CompleteCryptoHandshake();
+  EXPECT_TRUE(callback_ran);
+
+  EXPECT_EQ(debug_visitor.debugging_sni(), std::nullopt);
+}
+
+TEST_P(TlsClientHandshakerTest, DebuggingSniDisabledByECHGreaseButSavedByDSNI) {
+  ssl_config_.emplace();
+  ssl_config_->ech_grease_enabled = true;
+  CreateConnection();
+  session_->config()->SetDebuggingSniToSend("secret.example");
+  session_->config()->AddConnectionOptionsToSend({kDSNI});
+
+  DebuggingSniExtractor debug_visitor;
+  connection_->set_debug_visitor(&debug_visitor);
+
+  stream()->CryptoConnect();
+
+  // Add a DoS callback on the server, to test that the client sent a GREASE
+  // message. This is a bit of a hack. TlsServerHandshaker already configures
+  // the certificate selection callback, but does not usefully expose any way
+  // for tests to inspect the ClientHello. So, instead, we register a different
+  // callback that also gets the ClientHello.
+  static bool callback_ran;
+  callback_ran = false;
+  SSL_CTX_set_dos_protection_cb(
+      server_crypto_config_->ssl_ctx(),
+      [](const SSL_CLIENT_HELLO* client_hello) -> int {
+        const uint8_t* data;
+        size_t len;
+        EXPECT_TRUE(SSL_early_callback_ctx_extension_get(
+            client_hello, TLSEXT_TYPE_encrypted_client_hello, &data, &len));
+        callback_ran = true;
+        return 1;
+      });
+
+  CompleteCryptoHandshake();
+  EXPECT_TRUE(callback_ran);
+
+  EXPECT_EQ(debug_visitor.debugging_sni(), "secret.example");
+}
+
+TEST_P(TlsClientHandshakerTest, DebuggingSniSentWithoutECH) {
+  CreateConnection();
+  session_->config()->SetDebuggingSniToSend("secret.example");
+
+  DebuggingSniExtractor debug_visitor;
+  connection_->set_debug_visitor(&debug_visitor);
+
+  CompleteCryptoHandshake();
+  EXPECT_EQ(PROTOCOL_TLS1_3, stream()->handshake_protocol());
+  EXPECT_TRUE(stream()->encryption_established());
+  EXPECT_TRUE(stream()->one_rtt_keys_available());
+  EXPECT_FALSE(stream()->crypto_negotiated_params().encrypted_client_hello);
+
+  EXPECT_THAT(debug_visitor.debugging_sni(), Optional(Eq("secret.example")));
+}
+
 TEST_P(TlsClientHandshakerTest, EnableMLKEM) {
   crypto_config_->set_preferred_groups({SSL_GROUP_X25519_MLKEM768});
   server_crypto_config_->set_preferred_groups(
@@ -977,6 +1141,57 @@ TEST_P(TlsClientHandshakerTest, EnableClientAlpsUseNewCodepoint) {
   CompleteCryptoHandshake();
   EXPECT_EQ(PROTOCOL_TLS1_3, stream()->handshake_protocol());
   EXPECT_TRUE(callback_ran);
+}
+
+#if BORINGSSL_API_VERSION >= 37
+TEST_P(TlsClientHandshakerTest, SpecifyClientKeyShares) {
+  crypto_config_->set_preferred_groups(
+      {SSL_GROUP_X25519_MLKEM768, SSL_GROUP_X25519, SSL_GROUP_SECP256R1});
+  crypto_config_->set_client_key_shares({SSL_GROUP_SECP256R1});
+  server_crypto_config_->set_preferred_groups({SSL_GROUP_SECP256R1});
+  CreateConnection();
+
+  // Only one ClientHello is needed because the client specified a key_share
+  // that the server prefers.
+  EXPECT_CALL(*connection_,
+              OnPacketSent(ENCRYPTION_INITIAL, NOT_RETRANSMISSION))
+      .Times(1);
+  EXPECT_CALL(*connection_,
+              OnPacketSent(ENCRYPTION_HANDSHAKE, NOT_RETRANSMISSION))
+      .Times(1);
+  EXPECT_CALL(*connection_,
+              OnPacketSent(ENCRYPTION_FORWARD_SECURE, NOT_RETRANSMISSION))
+      .Times(1);
+  CompleteCryptoHandshake();
+  EXPECT_TRUE(stream()->encryption_established());
+  EXPECT_TRUE(stream()->one_rtt_keys_available());
+  EXPECT_EQ(stream()->crypto_negotiated_params().key_exchange_group,
+            SSL_GROUP_SECP256R1);
+}
+#endif  // BORINGSSL_API_VERSION >= 37
+
+TEST_P(TlsClientHandshakerTest, SetCompliancePolicyCnsa202407) {
+  crypto_config_->set_ssl_compliance_policy(ssl_compliance_policy_cnsa_202407);
+  CreateConnection();
+  CompleteCryptoHandshake();
+  EXPECT_EQ(PROTOCOL_TLS1_3, stream()->handshake_protocol());
+  EXPECT_TRUE(stream()->encryption_established());
+  EXPECT_TRUE(stream()->one_rtt_keys_available());
+  ASSERT_TRUE(stream()->SslCompliancePolicyForTesting().has_value());
+  EXPECT_EQ(stream()->SslCompliancePolicyForTesting().value(),
+            ssl_compliance_policy_cnsa_202407);
+  // This EXPECT_EQ checks that having set the client-side compliance policy
+  // results in a negotiated cipher that reflects the policy-specified
+  // preference order. If ChaCha is preferred over AES on the server due to not
+  // having AES hardware support (such as in MSan builds, where assembly code is
+  // disabled), then the client-side preference for AES-256 over AES-128 won't
+  // influence the negotiated cipher.  Skip this expectation in that case.
+  if (EVP_has_aes_hardware() == 1) {
+    // AES-256 is only preferred over the default AES-128 under the CNSA 202407
+    // policy.
+    EXPECT_EQ(stream()->crypto_negotiated_params().cipher_suite,
+              TLS1_3_CK_AES_256_GCM_SHA384 & 0xffff);
+  }
 }
 
 }  // namespace

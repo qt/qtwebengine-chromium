@@ -37,6 +37,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "media/audio/audio_system.h"
+#include "media/base/audio_bus.h"
 #include "media/base/audio_capturer_source.h"
 #include "media/base/audio_glitch_info.h"
 #include "media/base/audio_sample_types.h"
@@ -216,7 +217,7 @@ class SpeechRecognitionBrowserTest : public ContentBrowserTest {
   }
 
   std::string GetPageFragment() {
-    return shell()->web_contents()->GetLastCommittedURL().ref();
+    return shell()->web_contents()->GetLastCommittedURL().GetRef();
   }
 
   const StreamingServerState &streaming_server_state() {
@@ -572,7 +573,7 @@ IN_PROC_BROWSER_TEST_F(SpeechRecognitionBrowserTest,
 
   ASSERT_TRUE(
       ExecJs(shell->web_contents()->GetPrimaryMainFrame(), js_to_execute));
-  EXPECT_THAT(shell->web_contents()->GetLastCommittedURL().ref(),
+  EXPECT_THAT(shell->web_contents()->GetLastCommittedURL().GetRef(),
               testing::HasSubstr("error_service-not-allowed"));
 }
 #endif  // !BUILDFLAG(IS_FUCHSIA)

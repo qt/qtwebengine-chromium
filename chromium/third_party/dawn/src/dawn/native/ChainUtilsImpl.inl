@@ -43,10 +43,13 @@ struct SharedTextureMemoryD3D11Texture2DDescriptor;
 
 namespace d3d12 {
 struct SharedBufferMemoryD3D12ResourceDescriptor;
+struct SharedBufferMemoryD3D12SharedMemoryFileHandleDescriptor;
+struct SharedTextureMemoryD3D12ResourceDescriptor;
 }
 
 namespace opengl {
 struct RequestAdapterOptionsGetGLProc;
+struct RequestAdapterOptionsAngleVirtualizationGroup;
 }
 
 namespace vulkan {
@@ -77,10 +80,15 @@ constexpr inline wgpu::SType STypeForImpl<opengl::RequestAdapterOptionsGetGLProc
     wgpu::SType(WGPUSType_RequestAdapterOptionsGetGLProc);
 
 template <>
+constexpr inline wgpu::SType STypeForImpl<opengl::RequestAdapterOptionsAngleVirtualizationGroup> =
+    wgpu::SType(WGPUSType_RequestAdapterOptionsAngleVirtualizationGroup);
+
+template <>
 struct AdditionalExtensions<RequestAdapterOptions> {
     using List = AdditionalExtensionsList<const d3d::RequestAdapterOptionsLUID*,
                                           const d3d11::RequestAdapterOptionsD3D11Device*,
-                                          const opengl::RequestAdapterOptionsGetGLProc*>;
+                                          const opengl::RequestAdapterOptionsGetGLProc*,
+                                          const opengl::RequestAdapterOptionsAngleVirtualizationGroup*>;
 };
 
 template <>
@@ -88,9 +96,14 @@ constexpr inline wgpu::SType STypeForImpl<d3d11::SharedTextureMemoryD3D11Texture
     wgpu::SType(WGPUSType_SharedTextureMemoryD3D11Texture2DDescriptor);
 
 template <>
+constexpr inline wgpu::SType STypeForImpl<d3d12::SharedTextureMemoryD3D12ResourceDescriptor> =
+    wgpu::SType(WGPUSType_SharedTextureMemoryD3D12ResourceDescriptor);
+
+template <>
 struct AdditionalExtensions<SharedTextureMemoryDescriptor> {
     using List =
-        AdditionalExtensionsList<const d3d11::SharedTextureMemoryD3D11Texture2DDescriptor*>;
+        AdditionalExtensionsList<const d3d11::SharedTextureMemoryD3D11Texture2DDescriptor*,
+                                  const d3d12::SharedTextureMemoryD3D12ResourceDescriptor*>;
 };
 
 template <>
@@ -98,9 +111,14 @@ constexpr inline wgpu::SType STypeForImpl<d3d12::SharedBufferMemoryD3D12Resource
     wgpu::SType(WGPUSType_SharedBufferMemoryD3D12ResourceDescriptor);
 
 template <>
+constexpr inline wgpu::SType STypeForImpl<d3d12::SharedBufferMemoryD3D12SharedMemoryFileHandleDescriptor> =
+    wgpu::SType(WGPUSType_SharedBufferMemoryD3D12SharedMemoryFileMappingHandleDescriptor);
+
+template <>
 struct AdditionalExtensions<SharedBufferMemoryDescriptor> {
     using List =
-        AdditionalExtensionsList<const d3d12::SharedBufferMemoryD3D12ResourceDescriptor*>;
+        AdditionalExtensionsList<const d3d12::SharedBufferMemoryD3D12ResourceDescriptor*,
+                                 const d3d12::SharedBufferMemoryD3D12SharedMemoryFileHandleDescriptor*>;
 };
 
 }  // namespace detail

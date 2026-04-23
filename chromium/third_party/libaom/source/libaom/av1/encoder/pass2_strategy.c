@@ -2985,6 +2985,7 @@ static int define_kf_interval(AV1_COMP *cpi,
                           : cpi->common.mi_params.MBs;
   const int future_stats_count =
       av1_firstpass_info_future_count(firstpass_info, 0);
+
   while (frames_to_key < future_stats_count &&
          frames_to_key < num_frames_to_detect_scenecut) {
     // Provided that we are not at the end of the file...
@@ -2999,7 +3000,21 @@ static int define_kf_interval(AV1_COMP *cpi,
             oxcf->rc_cfg.mode, cpi->ppi->p_rc.enable_scenecut_detection,
             num_mbs);
         if (scenecut_detected) {
-          break;
+          int test_next_gop = 0;
+
+          for (int idx = 0; idx < 32; ++idx) {
+            const FIRSTPASS_STATS *next_stats =
+                av1_firstpass_info_peek(firstpass_info, frames_to_key + idx);
+
+            if (next_stats == NULL) continue;
+
+            if (cpi->common.current_frame.frame_number + frames_to_key + idx >
+                    2 &&
+                next_stats->lt_coded_error * 2.5 < next_stats->coded_error)
+              test_next_gop = 1;
+          }
+
+          if (!test_next_gop) break;
         }
       }
 
@@ -3269,15 +3284,30 @@ static void find_next_key_frame(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   kf_raw_err = this_frame->intra_error;
   kf_mod_err = calculate_modified_err(frame_info, twopass, oxcf, this_frame);
 
-  // We assume the current frame is a key frame and we are looking for the next
-  // key frame. Therefore search_start_idx = 1
-  frames_to_key = define_kf_interval(cpi, firstpass_info, kf_cfg->key_freq_max,
-                                     /*search_start_idx=*/1);
-
-  if (frames_to_key != -1) {
-    rc->frames_to_key = AOMMIN(kf_cfg->key_freq_max, frames_to_key);
+  if (cpi->ext_ratectrl.ready &&
+      (cpi->ext_ratectrl.funcs.rc_type & AOM_RC_GOP) != 0 &&
+      cpi->ext_ratectrl.funcs.get_key_frame_decision != NULL) {
+    aom_rc_key_frame_decision_t key_frame_decision;
+    aom_codec_err_t codec_status = av1_extrc_get_key_frame_decision(
+        &cpi->ext_ratectrl, &key_frame_decision);
+    if (codec_status == AOM_CODEC_OK) {
+      rc->frames_to_key = key_frame_decision.key_frame_group_size;
+    } else {
+      aom_internal_error(cpi->common.error, codec_status,
+                         "av1_extrc_get_key_frame_decision() failed");
+    }
   } else {
-    rc->frames_to_key = kf_cfg->key_freq_max;
+    // We assume the current frame is a key frame and we are looking for the
+    // next key frame. Therefore search_start_idx = 1
+    frames_to_key =
+        define_kf_interval(cpi, firstpass_info, kf_cfg->key_freq_max,
+                           /*search_start_idx=*/1);
+
+    if (frames_to_key != -1) {
+      rc->frames_to_key = AOMMIN(kf_cfg->key_freq_max, frames_to_key);
+    } else {
+      rc->frames_to_key = kf_cfg->key_freq_max;
+    }
   }
 
   if (cpi->ppi->lap_enabled) correct_frames_to_key(cpi);
@@ -3744,6 +3774,16 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
     return;
   }
 
+  if (cpi->common.current_frame.frame_number == 0 &&
+      cpi->ext_ratectrl.funcs.send_firstpass_stats != NULL) {
+    const aom_codec_err_t codec_status = av1_extrc_send_firstpass_stats(
+        &cpi->ext_ratectrl, &cpi->ppi->twopass.firstpass_info);
+    if (codec_status != AOM_CODEC_OK) {
+      aom_internal_error(cpi->common.error, codec_status,
+                         "av1_extrc_send_firstpass_stats() failed");
+    }
+  }
+
   const FIRSTPASS_STATS *const start_pos = cpi->twopass_frame.stats_in;
   int update_total_stats = 0;
 
@@ -3814,6 +3854,8 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
     frame_params->frame_type = KEY_FRAME;
     find_next_key_frame(cpi, &this_frame);
     this_frame = this_frame_copy;
+    // Mark prev gop arf source as unusable
+    cpi->ppi->tpl_data.prev_gop_arf_disp_order = -1;
   }
 
   if (rc->frames_to_fwd_kf <= 0)

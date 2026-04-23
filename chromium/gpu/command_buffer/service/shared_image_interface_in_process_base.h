@@ -5,6 +5,7 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_INTERFACE_IN_PROCESS_BASE_H_
 #define GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_INTERFACE_IN_PROCESS_BASE_H_
 
+#include "base/sequence_checker.h"
 #include "base/synchronization/waitable_event.h"
 #include "gpu/command_buffer/client/client_shared_image.h"
 #include "gpu/command_buffer/client/shared_image_interface.h"
@@ -72,15 +73,6 @@ class GPU_GLES2_EXPORT SharedImageInterfaceInProcessBase
       scoped_refptr<ClientSharedImage> client_shared_image) final;
   scoped_refptr<ClientSharedImage> ImportSharedImage(
       ExportedSharedImage exported_shared_image) override;
-  SwapChainSharedImages CreateSwapChain(viz::SharedImageFormat format,
-                                        const gfx::Size& size,
-                                        const gfx::ColorSpace& color_space,
-                                        GrSurfaceOrigin surface_origin,
-                                        SkAlphaType alpha_type,
-                                        SharedImageUsageSet usage,
-                                        std::string_view debug_label) override;
-  void PresentSwapChain(const SyncToken& sync_token,
-                        const Mailbox& mailbox) override;
 #if BUILDFLAG(IS_FUCHSIA)
   void RegisterSysmemBufferCollection(zx::eventpair service_handle,
                                       zx::channel sysmem_token,
@@ -91,6 +83,8 @@ class GPU_GLES2_EXPORT SharedImageInterfaceInProcessBase
   SyncToken GenUnverifiedSyncToken() final;
   SyncToken GenVerifiedSyncToken() final;
   void VerifySyncToken(SyncToken& sync_token) final;
+  bool CanVerifySyncToken(const gpu::SyncToken& sync_token) final;
+  void VerifyFlush() final;
   void WaitSyncToken(const SyncToken& sync_token) final;
   const SharedImageCapabilities& GetCapabilities() final;
 

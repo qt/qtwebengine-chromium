@@ -611,7 +611,7 @@ if(aom_config("CONFIG_AV1_HIGHBITDEPTH") eq "yes") {
   specialize qw/av1_dist_wtd_convolve_2d ssse3 avx2 neon neon_dotprod neon_i8mm/;
   specialize qw/av1_dist_wtd_convolve_2d_copy sse2 avx2 neon/;
   specialize qw/av1_dist_wtd_convolve_x sse2 avx2 neon neon_dotprod neon_i8mm/;
-  specialize qw/av1_dist_wtd_convolve_y sse2 avx2 neon/;
+  specialize qw/av1_dist_wtd_convolve_y sse2 avx2 neon neon_dotprod neon_i8mm/;
   if(aom_config("CONFIG_AV1_HIGHBITDEPTH") eq "yes") {
     specialize qw/av1_highbd_dist_wtd_convolve_2d sse4_1 avx2 neon sve2/;
     specialize qw/av1_highbd_dist_wtd_convolve_x sse4_1 avx2 neon sve2/;

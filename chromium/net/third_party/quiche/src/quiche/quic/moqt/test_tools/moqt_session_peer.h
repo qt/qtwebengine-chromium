@@ -15,14 +15,13 @@
 #include "quiche/quic/core/quic_alarm.h"
 #include "quiche/quic/core/quic_alarm_factory.h"
 #include "quiche/quic/core/quic_time.h"
+#include "quiche/quic/moqt/moqt_fetch_task.h"
 #include "quiche/quic/moqt/moqt_messages.h"
 #include "quiche/quic/moqt/moqt_parser.h"
 #include "quiche/quic/moqt/moqt_priority.h"
 #include "quiche/quic/moqt/moqt_publisher.h"
 #include "quiche/quic/moqt/moqt_session.h"
-#include "quiche/quic/moqt/moqt_subscribe_windows.h"
 #include "quiche/quic/moqt/moqt_track.h"
-#include "quiche/quic/moqt/tools/moqt_mock_visitor.h"
 #include "quiche/web_transport/test_tools/mock_web_transport.h"
 #include "quiche/web_transport/web_transport.h"
 
@@ -112,10 +111,8 @@ class MoqtSessionPeer {
     subscribe.subscriber_priority = 0x80;
     session->published_subscriptions_.emplace(
         subscribe_id, std::make_unique<MoqtSession::PublishedSubscription>(
-                          session, std::move(publisher), subscribe,
+                          session, std::move(publisher), subscribe, track_alias,
                           /*monitoring_interface=*/nullptr));
-    session->published_subscriptions_[subscribe_id]->track_alias_.emplace(
-        track_alias);
     return session->published_subscriptions_[subscribe_id].get();
   }
 
@@ -232,7 +229,7 @@ class MoqtSessionPeer {
 
   static quic::QuicAlarm* GetPublishDoneAlarm(
       SubscribeRemoteTrack* subscription) {
-    return subscription->subscribe_done_alarm_.get();
+    return subscription->publish_done_alarm_.get();
   }
 
   static quic::QuicAlarm* GetGoAwayTimeoutAlarm(MoqtSession* session) {

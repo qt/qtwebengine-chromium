@@ -8,7 +8,6 @@
 
 #include "base/barrier_closure.h"
 #include "base/files/file_path.h"
-#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
@@ -57,9 +56,9 @@ void CreateCookies(
     GURL url(url_name.first);
     std::unique_ptr<net::CanonicalCookie> cookie =
         net::CanonicalCookie::CreateSanitizedCookie(
-            url, url_name.second, "A=" + url_name.second, url.host(),
-            url.path(), base::Time::Now(), base::Time::Max(), base::Time::Now(),
-            url.SchemeIsCryptographic(), false,
+            url, url_name.second, "A=" + url_name.second, url.GetHost(),
+            url.GetPath(), base::Time::Now(), base::Time::Max(),
+            base::Time::Now(), url.SchemeIsCryptographic(), false,
             net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT,
             std::nullopt, /*status=*/nullptr);
     cookie_manager->SetCanonicalCookie(
@@ -261,7 +260,7 @@ class DiceSignedInProfileCreatorTest
     EXPECT_EQ(3u, cookies_new_profile.size());
 
     for (const auto& cookie : cookies_new_profile) {
-      EXPECT_TRUE(cookie.IsDomainMatch(url.host()));
+      EXPECT_TRUE(cookie.IsDomainMatch(url.GetHost()));
       EXPECT_TRUE(cookie.Name() == "oldgoogle0" ||
                   cookie.Name() == "validgoogle1" ||
                   cookie.Name() == "newgoogle1");

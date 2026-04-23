@@ -54,14 +54,13 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("timeline") {
+devtools_ui_module("timeline") {
   sources = [
     "ActiveFilters.ts",
     "AnimationsTrackAppender.ts",
     "AnnotationHelpers.ts",
     "AppenderUtils.ts",
     "BenchmarkEvents.ts",
-    "CLSLinkifier.ts",
     "CompatibilityTracksAppender.ts",
     "CountersGraph.ts",
     "EntriesFilter.ts",
@@ -118,6 +117,7 @@ devtools_module("timeline") {
     "../../models/trace:bundle",
     "../../models/trace_source_maps_resolver:bundle",
     "../../models/workspace:bundle",
+    "../../panels/common:bundle",
     "../../panels/coverage:bundle",
     "../../panels/layer_viewer:bundle",
     "../../panels/mobile_throttling:bundle",
@@ -126,16 +126,18 @@ devtools_module("timeline") {
     "../../services/tracing:bundle",
     "../../ui/components/buttons:bundle",
     "../../ui/components/code_highlighter:bundle",  # trace event highlighting
-    "../../ui/components/copy_to_clipboard:bundle",
-    "../../ui/components/icon_button:bundle",
     "../../ui/components/linkifier:bundle",
     "../../ui/components/menus:bundle",
     "../../ui/components/snackbars:bundle",
+    "../../ui/i18n:bundle",
+    "../../ui/kit:bundle",
     "../../ui/legacy/components/data_grid:bundle",
     "../../ui/legacy/components/perf_ui:bundle",
+    "../../ui/legacy/components/settings_ui:bundle",
     "../../ui/legacy/components/utils:bundle",
     "../../ui/legacy/theme_support:bundle",
     "../../ui/lit:bundle",
+    "../common:bundle",
     "./components:bundle",
     "./extensions:bundle",
     "./overlays:bundle",
@@ -182,6 +184,7 @@ devtools_entrypoint("meta") {
     "../../core/common:bundle",
     "../../core/i18n:bundle",
     "../../core/root:bundle",
+    "../../core/sdk:bundle",
     "../../panels/profiler:bundle",
     "../../ui/legacy:bundle",
     "./components:bundle",
@@ -190,7 +193,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

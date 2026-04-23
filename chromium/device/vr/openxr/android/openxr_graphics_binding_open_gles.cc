@@ -9,7 +9,6 @@
 #include "components/viz/common/resources/shared_image_format.h"
 #include "device/vr/android/xr_image_transport_base.h"
 #include "device/vr/openxr/openxr_api_wrapper.h"
-#include "device/vr/openxr/openxr_composition_layer.h"
 #include "device/vr/openxr/openxr_platform.h"
 #include "device/vr/openxr/openxr_util.h"
 #include "gpu/command_buffer/client/client_shared_image.h"
@@ -240,6 +239,14 @@ void OpenXrGraphicsBindingOpenGLES::ResizeSharedBuffer(
   CHECK(sii);
   const OpenGLESLayerData& open_gles_layer_data = GetOpenGLESLayerData(layer);
   auto transfer_size = layer.GetTransferSize();
+
+  // TODO(crbug.com/459811463): We don't use GL_TEXTURE_CUBE_MAP because
+  // AHARDWAREBUFFER_USAGE_GPU_CUBE_MAP is not always supported. So we put
+  // 6 faces inside a 2D texture aligned from bottom to top.
+  if (layer.type() == OpenXrCompositionLayer::Type::kCube) {
+    transfer_size.set_height(transfer_size.height() * 6);
+  }
+
   if (!open_gles_layer_data.using_shared_images ||
       swap_chain_info.shared_buffer_size == transfer_size) {
     return;
@@ -349,9 +356,6 @@ bool OpenXrGraphicsBindingOpenGLES::RenderLayer(
   }
   glBindFramebufferEXT(GL_FRAMEBUFFER, open_gles_layer_data.back_buffer_fbo);
 
-  glFramebufferTexture2DEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                            swap_chain_info->openxr_texture, 0);
-
   glDisable(GL_CULL_FACE);
   glDisable(GL_SCISSOR_TEST);
   glDisable(GL_POLYGON_OFFSET_FILL);
@@ -366,13 +370,25 @@ bool OpenXrGraphicsBindingOpenGLES::RenderLayer(
   float transform_floats[16];
   transform.GetColMajorF(transform_floats);
 
-  if (webxr_visible_) {
-    renderer_->Draw(swap_chain_info->shared_buffer_texture, transform_floats);
+  if (layer.type() == OpenXrCompositionLayer::Type::kCube) {
+    if (webxr_visible_) {
+      // We call glFramebufferTexture2DEXT inside DrawCubemap for 6 faces.
+      renderer_->DrawCubemap(swap_chain_info->shared_buffer_texture,
+                             swap_chain_info->openxr_texture, transform_floats,
+                             layer.mutable_data().opacity);
+    }
+  } else {
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                              GL_TEXTURE_2D, swap_chain_info->openxr_texture,
+                              0);
+    if (webxr_visible_) {
+      renderer_->Draw(swap_chain_info->shared_buffer_texture, transform_floats,
+                      layer.mutable_data().opacity);
+    }
   }
 
-  // We currently assume there is a unique projection layer, so the overlay
-  // is rendered to this projection layer.
-  if (overlay_visible_) {
+  // The overlay is rendred to the base layer, which has an invalid layer id.
+  if (overlay_visible_ && layer.GetLayerId() == kInvalidLayerId) {
     glEnable(GL_FRAMEBUFFER_SRGB_EXT);
     if (webxr_visible_) {
       glEnable(GL_BLEND);
@@ -435,13 +451,6 @@ void OpenXrGraphicsBindingOpenGLES::OnSwapchainImageActivated(
   ResizeSharedBuffer(layer, *swap_chain_info, sii);
 }
 
-void OpenXrGraphicsBindingOpenGLES::SetOverlayAndWebXrVisibility(
-    bool overlay_visible,
-    bool webxr_visible) {
-  overlay_visible_ = overlay_visible;
-  webxr_visible_ = webxr_visible;
-}
-
 bool OpenXrGraphicsBindingOpenGLES::SetOverlayTexture(
     gfx::GpuMemoryBufferHandle texture,
     const gpu::SyncToken& sync_token,
@@ -464,10 +473,13 @@ gfx::Size OpenXrGraphicsBindingOpenGLES::GetMaxTextureSize() {
   return {max_texture_size, max_texture_size};
 }
 
-std::unique_ptr<OpenXrCompositionLayer>
-OpenXrGraphicsBindingOpenGLES::CreateProjectionLayer(XrSpace local_space) {
-  return std::make_unique<OpenXrCompositionLayer>(
-      local_space, this, std::make_unique<OpenGLESLayerData>());
+bool OpenXrGraphicsBindingOpenGLES::SupportsLayers() const {
+  return true;
+}
+
+std::unique_ptr<OpenXrCompositionLayer::GraphicsBindingData>
+OpenXrGraphicsBindingOpenGLES::CreateLayerGraphicsBindingData() const {
+  return std::make_unique<OpenGLESLayerData>();
 }
 
 }  // namespace device

@@ -45,7 +45,8 @@
 
 namespace tint::msl::writer {
 
-std::string BuiltinToAttribute(core::BuiltinValue builtin) {
+std::string BuiltinToAttribute(core::BuiltinValue builtin,
+                               std::optional<core::BuiltinDepthMode> depth_mode) {
     switch (builtin) {
         case core::BuiltinValue::kPosition:
             return "position";
@@ -56,6 +57,12 @@ std::string BuiltinToAttribute(core::BuiltinValue builtin) {
         case core::BuiltinValue::kFrontFacing:
             return "front_facing";
         case core::BuiltinValue::kFragDepth:
+            if (depth_mode == core::BuiltinDepthMode::kGreater) {
+                return "depth(greater)";
+            }
+            if (depth_mode == core::BuiltinDepthMode::kLess) {
+                return "depth(less)";
+            }
             return "depth(any)";
         case core::BuiltinValue::kLocalInvocationId:
             return "thread_position_in_threadgroup";
@@ -79,6 +86,8 @@ std::string BuiltinToAttribute(core::BuiltinValue builtin) {
             return "thread_index_in_simdgroup";
         case core::BuiltinValue::kSubgroupSize:
             return "threads_per_simdgroup";
+        case core::BuiltinValue::kNumSubgroups:
+            return "simdgroups_per_threadgroup";
         case core::BuiltinValue::kClipDistances:
             return "clip_distance";
         case core::BuiltinValue::kPrimitiveIndex:

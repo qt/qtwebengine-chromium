@@ -1,0 +1,39 @@
+# Copyright 2025 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("../../../scripts/build/typescript/typescript.gni")
+
+ts_e2e_library("issues") {
+  sources = [
+    "bounce-tracking-issues.test.ts",
+    "client-hint-issues.test.ts",
+    "cookie-attribute-exceeds-max-size-issues.test.ts",
+    "cookie-deprecation-metadata-issues.test.ts",
+    "cookie-domain-attribute-non-ascii.test.ts",
+    "cors-issues.test.ts",
+    "cors-private-network-issues.test.ts",
+    "deprecation-issues.test.ts",
+    "expect-ct-issues.test.ts",
+    "group-by-categories.test.ts",
+    "group-by-kind.test.ts",
+    "heavy-ad-issues.test.ts",
+    "hidden-issues-row.test.ts",
+    "hide-issues-menu.test.ts",
+    "issue-links.test.ts",
+    "issue-view-caching.test.ts",
+    "issue-view-reparent.test.ts",
+    "low-text-contrast-issues.test.ts",
+    "partitioning-blob-url-issues.test.ts",
+    "privacy-sandbox-extensions-api.test.ts",
+    "quirks-mode-issues.test.ts",
+    "quota-issues.test.ts",
+    "report-only.test.ts",
+    "sab-issues.test.ts",
+    "select-element-accessibility-issues.test.ts",
+  ]
+  deps = [
+    "../helpers",
+    "../shared",
+  ]
+}

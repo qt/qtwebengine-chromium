@@ -10,6 +10,7 @@
 #include "base/debug/stack_trace.h"
 #include "base/files/file_path.h"
 #include "base/task/sequence_manager/sequence_manager_impl.h"
+#include "base/task/thread_pool/job_task_source.h"
 #include "base/threading/platform_thread.h"
 #include "build/blink_buildflags.h"
 #include "build/buildflag.h"
@@ -87,6 +88,11 @@ BASE_FEATURE_PARAM(int,
 
 BASE_FEATURE(kReducePPMs, FEATURE_DISABLED_BY_DEFAULT);
 
+// Apply base::ScopedBestEffortExecutionFence to registered task queues as well
+// as the thread pool.
+BASE_FEATURE(kScopedBestEffortExecutionFenceForTaskQueue,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Whether to restrict the max gap between the frame pointer and the stack end
 // for stack scanning. If the gap is beyond the given gap threshold, the stack
 // end is treated as unreliable. Stack scanning stops when that happens.
@@ -133,7 +139,7 @@ BASE_FEATURE(kPartialLowEndModeOnMidRangeDevices,
 
 #if BUILDFLAG(IS_ANDROID)
 // Enable not perceptible binding without cpu priority boosting.
-BASE_FEATURE(kBackgroundNotPerceptibleBinding, FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kBackgroundNotPerceptibleBinding, FEATURE_ENABLED_BY_DEFAULT);
 
 // Whether to use effective binding state to manage child process bindings.
 // ChildProcessConnection will binds at most 2 service connections only,
@@ -152,8 +158,8 @@ BASE_FEATURE(kPostGetMyMemoryStateToBackground, FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kRebindingChildServiceConnectionController,
              FEATURE_DISABLED_BY_DEFAULT);
 
-// Update child process binding state before unbinding.
-BASE_FEATURE(kUpdateStateBeforeUnbinding, FEATURE_DISABLED_BY_DEFAULT);
+// Use a batch API to rebind service connections.
+BASE_FEATURE(kRebindServiceBatchApi, FEATURE_DISABLED_BY_DEFAULT);
 
 // Use ChildServiceConnectionController.isUnbound() instead of isConnected() to
 // check the connection state in ChildProcessConnection.
@@ -184,18 +190,23 @@ BASE_FEATURE_PARAM(bool,
                    true);
 #endif  // BUILDFLAG(IS_ANDROID)
 
+// When enabled, GetTerminationStatus() returns
+// TERMINATION_STATUS_EVICTED_FOR_MEMORY for processes terminated due to commit
+// failures. Otherwise, it returns TERMINATION_STATUS_OOM.
+BASE_FEATURE(kUseTerminationStatusMemoryExhaustion,
+             FEATURE_DISABLED_BY_DEFAULT);
+
 bool IsReducePPMsEnabled() {
   return g_is_reduce_ppms_enabled.load(std::memory_order_relaxed);
 }
 
-void Init(EmitThreadControllerProfilerMetadata
-              emit_thread_controller_profiler_metadata) {
+void Init() {
   g_is_reduce_ppms_enabled.store(FeatureList::IsEnabled(kReducePPMs),
                                  std::memory_order_relaxed);
 
   sequence_manager::internal::SequenceManagerImpl::InitializeFeatures();
-  sequence_manager::internal::ThreadController::InitializeFeatures(
-      emit_thread_controller_profiler_metadata);
+  sequence_manager::internal::ThreadController::InitializeFeatures();
+  base::internal::JobTaskSource::InitializeFeatures();
 
   debug::StackTrace::InitializeFeatures();
   FilePath::InitializeFeatures();
@@ -210,7 +221,6 @@ void Init(EmitThreadControllerProfilerMetadata
 #endif
 
 #if BUILDFLAG(IS_APPLE)
-  File::InitializeFeatures();
   MessagePumpCFRunLoopBase::InitializeFeatures();
 
 // Kqueue is not used for ios blink.

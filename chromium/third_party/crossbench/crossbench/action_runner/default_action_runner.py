@@ -18,6 +18,8 @@ from crossbench.action_runner.default_bond_action_runner import \
     DefaultBondActionRunner
 from crossbench.action_runner.element_not_found_error import \
     ElementNotFoundError
+from crossbench.browsers.chromium.devtools import \
+    DevToolsInBrowserClient as DevToolsClient
 from crossbench.probes.screenshot import (ScreenshotProbe,
                                           ScreenshotProbeContext)
 from crossbench.runner.probe_context_lookup_error import \
@@ -238,6 +240,7 @@ class DefaultActionRunner(ActionRunner):
         scroll_into_view=scroll_into_view,
         check_element_rect=check_element_rect,
         return_on_success=True)
+
     # TODO: if check_element_rect, we should wait for the position to be the
     # same
 
@@ -293,6 +296,11 @@ class DefaultActionRunner(ActionRunner):
   def inject_new_document_script(
       self, run: Run, action: i_action.InjectNewDocumentScriptAction) -> None:
     run.browser.run_script_on_new_document(action.script)
+
+  def open_devtools(self, _run: Run,
+                    action: i_action.OpenDevToolsAction) -> None:
+    logging.info("Opening DevTools panel '%s'...", action.panel_name)
+    DevToolsClient().open_frontend(_run.browser, action.panel_name)
 
   @override
   def switch_tab(self, run: Run, action: i_action.SwitchTabAction) -> None:

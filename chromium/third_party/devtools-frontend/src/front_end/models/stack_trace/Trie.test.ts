@@ -5,7 +5,7 @@
 import {protocolCallFrame} from '../../testing/StackTraceHelpers.js';
 
 // TODO(crbug.com/444191656): Expose a `testing` bundle.
-// eslint-disable-next-line rulesdir/es-modules-import
+// eslint-disable-next-line @devtools/es-modules-import
 import * as StackTraceImpl from './stack_trace_impl.js';
 
 describe('Trie', () => {
@@ -127,5 +127,24 @@ describe('Trie', () => {
 
       assert.deepEqual(visited, [nodeA, nodeB, nodeD]);
     });
+  });
+});
+
+describe('isBuiltinFrame', () => {
+  it('returns "true" for builtin frames', () => {
+    assert.isTrue(StackTraceImpl.Trie.isBuiltinFrame({
+      lineNumber: -1,
+      columnNumber: -1,
+      functionName: 'Array.map',
+    }));
+  });
+
+  it('returns "false" for non-builtin frames', () => {
+    assert.isFalse(StackTraceImpl.Trie.isBuiltinFrame({
+      lineNumber: 0,
+      columnNumber: 42,
+      functionName: 'fn',
+      url: 'http://example.com/index.js',
+    }));
   });
 });

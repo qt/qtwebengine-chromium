@@ -18,14 +18,16 @@
 #include <map>
 #include <optional>
 #include <string>
-#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
+#include "absl/container/inlined_vector.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush.h"
 #include "ink/brush/brush_behavior.h"
@@ -33,6 +35,7 @@
 #include "ink/brush/brush_family.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/brush/brush_tip.h"
+#include "ink/brush/color_function.h"
 #include "ink/brush/easing_function.h"
 #include "ink/geometry/angle.h"
 #include "ink/geometry/point.h"
@@ -565,6 +568,42 @@ DecodeBrushBehaviorOptionalInputProperty(
   }
 }
 
+void EncodeColorFunctionParameters(
+    const ColorFunction::OpacityMultiplier& opacity,
+    proto::ColorFunction& proto_out) {
+  proto_out.set_opacity_multiplier(opacity.multiplier);
+}
+
+void EncodeColorFunctionParameters(const ColorFunction::ReplaceColor& replace,
+                                   proto::ColorFunction& proto_out) {
+  EncodeColor(replace.color, *proto_out.mutable_replace_color());
+}
+
+void EncodeColorFunction(const ColorFunction& color_function,
+                         proto::ColorFunction& proto_out) {
+  std::visit(
+      [&proto_out](const auto& params) {
+        EncodeColorFunctionParameters(params, proto_out);
+      },
+      color_function.parameters);
+}
+
+absl::StatusOr<ColorFunction> DecodeColorFunction(
+    const proto::ColorFunction& proto) {
+  switch (proto.function_case()) {
+    case proto::ColorFunction::kOpacityMultiplier:
+      return ColorFunction{ColorFunction::OpacityMultiplier{
+          .multiplier = proto.opacity_multiplier()}};
+    case proto::ColorFunction::kReplaceColor:
+      return ColorFunction{ColorFunction::ReplaceColor{
+          .color = DecodeColor(proto.replace_color())}};
+    case proto::ColorFunction::FUNCTION_NOT_SET:
+      break;
+  }
+  return absl::InvalidArgumentError(
+      "ink.proto.ColorFunction must specify a function");
+}
+
 proto::PredefinedEasingFunction EncodeEasingFunctionPredefined(
     EasingFunction::Predefined predefined) {
   switch (predefined) {
@@ -988,8 +1027,8 @@ absl::StatusOr<BrushBehavior> DecodeBrushBehavior(
 proto::BrushPaint::TextureLayer::Mapping EncodeBrushPaintTextureMapping(
     BrushPaint::TextureMapping mapping) {
   switch (mapping) {
-    case BrushPaint::TextureMapping::kWinding:
-      return proto::BrushPaint::TextureLayer::MAPPING_WINDING;
+    case BrushPaint::TextureMapping::kStamping:
+      return proto::BrushPaint::TextureLayer::MAPPING_STAMPING;
     case BrushPaint::TextureMapping::kTiling:
       return proto::BrushPaint::TextureLayer::MAPPING_TILING;
   }
@@ -999,8 +1038,8 @@ proto::BrushPaint::TextureLayer::Mapping EncodeBrushPaintTextureMapping(
 absl::StatusOr<BrushPaint::TextureMapping> DecodeBrushPaintTextureMapping(
     proto::BrushPaint::TextureLayer::Mapping mapping_proto) {
   switch (mapping_proto) {
-    case proto::BrushPaint::TextureLayer::MAPPING_WINDING:
-      return BrushPaint::TextureMapping::kWinding;
+    case proto::BrushPaint::TextureLayer::MAPPING_STAMPING:
+      return BrushPaint::TextureMapping::kStamping;
     case proto::BrushPaint::TextureLayer::MAPPING_TILING:
       return BrushPaint::TextureMapping::kTiling;
     default:
@@ -1234,6 +1273,35 @@ absl::StatusOr<BrushPaint::TextureLayer> DecodeBrushPaintTextureLayer(
   return std::move(texture_layer);
 }
 
+proto::BrushPaint::SelfOverlap EncodeBrushPaintSelfOverlap(
+    BrushPaint::SelfOverlap self_overlap) {
+  switch (self_overlap) {
+    case BrushPaint::SelfOverlap::kAny:
+      return proto::BrushPaint::SELF_OVERLAP_ANY;
+    case BrushPaint::SelfOverlap::kAccumulate:
+      return proto::BrushPaint::SELF_OVERLAP_ACCUMULATE;
+    case BrushPaint::SelfOverlap::kDiscard:
+      return proto::BrushPaint::SELF_OVERLAP_DISCARD;
+  }
+  return proto::BrushPaint::SELF_OVERLAP_UNSPECIFIED;
+}
+
+absl::StatusOr<BrushPaint::SelfOverlap> DecodeBrushPaintSelfOverlap(
+    proto::BrushPaint::SelfOverlap self_overlap_proto) {
+  switch (self_overlap_proto) {
+    case proto::BrushPaint::SELF_OVERLAP_ANY:
+      return BrushPaint::SelfOverlap::kAny;
+    case proto::BrushPaint::SELF_OVERLAP_ACCUMULATE:
+      return BrushPaint::SelfOverlap::kAccumulate;
+    case proto::BrushPaint::SELF_OVERLAP_DISCARD:
+      return BrushPaint::SelfOverlap::kDiscard;
+    default:
+      return absl::InvalidArgumentError(
+          absl::StrCat("invalid ink.proto.BrushPaint.SelfOverlap value, ",
+                       self_overlap_proto));
+  }
+}
+
 void EncodeBrushFamilyInputModel(
     const BrushFamily::SpringModel& model,
     proto::BrushFamily::InputModel& model_proto_out) {
@@ -1245,6 +1313,22 @@ void EncodeBrushFamilyInputModel(
     proto::BrushFamily::InputModel& model_proto_out) {
   model_proto_out
       .mutable_experimental_raw_position_model();  // no fields to set
+}
+
+void EncodeBrushFamilyInputModel(
+    const BrushFamily::ExperimentalNaiveModel& model,
+    proto::BrushFamily::InputModel& model_proto_out) {
+  model_proto_out.mutable_experimental_naive_model();  // no fields to set
+}
+
+void EncodeBrushFamilyInputModel(
+    const BrushFamily::SlidingWindowModel& model,
+    proto::BrushFamily::InputModel& model_proto_out) {
+  proto::BrushFamily::SlidingWindowModel* sliding_window_model =
+      model_proto_out.mutable_sliding_window_model();
+  sliding_window_model->set_window_size_seconds(model.window_size.ToSeconds());
+  sliding_window_model->set_experimental_upsampling_period_seconds(
+      model.upsampling_period.ToSeconds());
 }
 
 void EncodeBrushFamilyInputModel(
@@ -1264,6 +1348,16 @@ absl::StatusOr<BrushFamily::InputModel> DecodeBrushFamilyInputModel(
       return BrushFamily::SpringModel{};
     case proto::BrushFamily::InputModel::kExperimentalRawPositionModel:
       return BrushFamily::ExperimentalRawPositionModel{};
+    case proto::BrushFamily::InputModel::kExperimentalNaiveModel:
+      return BrushFamily::ExperimentalNaiveModel{};
+    case proto::BrushFamily::InputModel::kSlidingWindowModel:
+      return BrushFamily::SlidingWindowModel{
+          .window_size = Duration32::Seconds(
+              model_proto.sliding_window_model().window_size_seconds()),
+          .upsampling_period = Duration32::Seconds(
+              model_proto.sliding_window_model()
+                  .experimental_upsampling_period_seconds()),
+      };
     case proto::BrushFamily::InputModel::INPUT_MODEL_NOT_SET:
       break;
   }
@@ -1339,6 +1433,11 @@ void EncodeBrushPaint(const BrushPaint& paint,
   for (const BrushPaint::TextureLayer& layer : paint.texture_layers) {
     EncodeBrushPaintTextureLayer(layer, *paint_proto_out.add_texture_layers());
   }
+  for (const ColorFunction& color_function : paint.color_functions) {
+    EncodeColorFunction(color_function, *paint_proto_out.add_color_functions());
+  }
+  paint_proto_out.set_self_overlap(
+      EncodeBrushPaintSelfOverlap(paint.self_overlap));
 }
 
 absl::StatusOr<BrushPaint> DecodeBrushPaint(
@@ -1355,7 +1454,27 @@ absl::StatusOr<BrushPaint> DecodeBrushPaint(
     }
     layers.push_back(*std::move(layer));
   }
-  BrushPaint paint{.texture_layers = std::move(layers)};
+
+  std::vector<ColorFunction> color_functions;
+  color_functions.reserve(paint_proto.color_functions_size());
+  for (const proto::ColorFunction& color_function_proto :
+       paint_proto.color_functions()) {
+    absl::StatusOr<ColorFunction> color_function =
+        DecodeColorFunction(color_function_proto);
+    if (!color_function.ok()) {
+      return color_function.status();
+    }
+    color_functions.push_back(*std::move(color_function));
+  }
+
+  absl::StatusOr<BrushPaint::SelfOverlap> self_overlap =
+      DecodeBrushPaintSelfOverlap(paint_proto.self_overlap());
+  if (!self_overlap.ok()) {
+    return self_overlap.status();
+  }
+  BrushPaint paint{.texture_layers = std::move(layers),
+                   .color_functions = std::move(color_functions),
+                   .self_overlap = *self_overlap};
   if (absl::Status status = brush_internal::ValidateBrushPaintTopLevel(paint);
       !status.ok()) {
     return status;
@@ -1370,7 +1489,6 @@ void EncodeBrushTip(const BrushTip& tip, proto::BrushTip& tip_proto_out) {
   tip_proto_out.set_slant_radians(tip.slant.ValueInRadians());
   tip_proto_out.set_pinch(tip.pinch);
   tip_proto_out.set_rotation_radians(tip.rotation.ValueInRadians());
-  tip_proto_out.set_opacity_multiplier(tip.opacity_multiplier);
   tip_proto_out.set_particle_gap_distance_scale(
       tip.particle_gap_distance_scale);
   tip_proto_out.set_particle_gap_duration_seconds(
@@ -1413,9 +1531,6 @@ absl::StatusOr<BrushTip> DecodeBrushTip(const proto::BrushTip& tip_proto) {
   if (tip_proto.has_rotation_radians()) {
     tip.rotation = Angle::Radians(tip_proto.rotation_radians());
   }
-  if (tip_proto.has_opacity_multiplier()) {
-    tip.opacity_multiplier = tip_proto.opacity_multiplier();
-  }
   if (tip_proto.has_particle_gap_distance_scale()) {
     tip.particle_gap_distance_scale = tip_proto.particle_gap_distance_scale();
   }
@@ -1432,7 +1547,23 @@ absl::StatusOr<BrushTip> DecodeBrushTip(const proto::BrushTip& tip_proto) {
 
 void EncodeBrushCoat(const BrushCoat& coat, proto::BrushCoat& coat_proto_out) {
   EncodeBrushTip(coat.tip, *coat_proto_out.mutable_tip());
-  EncodeBrushPaint(coat.paint, *coat_proto_out.mutable_paint());
+  coat_proto_out.mutable_paint_preferences()->Clear();
+  coat_proto_out.mutable_paint_preferences()->Reserve(
+      coat.paint_preferences.size());
+  for (const BrushPaint& paint : coat.paint_preferences) {
+    EncodeBrushPaint(paint, *coat_proto_out.add_paint_preferences());
+  }
+  // Write the first paint preference to the deprecated paint field, so that
+  // older clients can still read the value. The older clients may render
+  // strokes in a strange way if the first paint preference is not compatible
+  // with the device or renderer, but that's pretty much equivalent to the
+  // library behavior before paint preferences were introduced.
+  // TODO: b/346530293 - Remove this once the paint field is deleted/reserved
+  //   rather than just deprecated.
+  if (!coat.paint_preferences.empty()) {
+    EncodeBrushPaint(coat.paint_preferences[0],
+                     *coat_proto_out.mutable_paint());
+  }
 }
 
 absl::StatusOr<BrushCoat> DecodeBrushCoat(
@@ -1442,14 +1573,31 @@ absl::StatusOr<BrushCoat> DecodeBrushCoat(
   if (!tip.ok()) {
     return tip.status();
   }
-  absl::StatusOr<BrushPaint> paint =
-      DecodeBrushPaint(coat_proto.paint(), get_client_texture_id);
-  if (!paint.ok()) {
-    return paint.status();
+  absl::InlinedVector<BrushPaint, 1> paint_preferences;
+  paint_preferences.reserve(coat_proto.paint_preferences_size());
+  // Treat the deprecated paint field as the only paint preference if the
+  // paint_preferences field is empty.
+  const proto::BrushPaint* deprecated_paint = &coat_proto.paint();
+  for (const proto::BrushPaint* paint_proto :
+       coat_proto.paint_preferences_size() != 0
+           ? absl::MakeConstSpan(coat_proto.paint_preferences().data(),
+                                 coat_proto.paint_preferences_size())
+           : absl::MakeConstSpan(&deprecated_paint, 1)) {
+    absl::StatusOr<BrushPaint> paint =
+        DecodeBrushPaint(*paint_proto, get_client_texture_id);
+    if (!paint.ok()) {
+      return paint.status();
+    }
+
+    paint_preferences.push_back(*std::move(paint));
   }
-  // There's no further validation to be done here if the paint and tip are
-  // valid.
-  return BrushCoat{.tip = *std::move(tip), .paint = *std::move(paint)};
+  auto coat = BrushCoat{.tip = *std::move(tip),
+                        .paint_preferences = std::move(paint_preferences)};
+  if (absl::Status status = brush_internal::ValidateBrushCoat(coat);
+      !status.ok()) {
+    return status;
+  }
+  return coat;
 }
 
 void EncodeBrushFamilyTextureMap(
@@ -1458,20 +1606,22 @@ void EncodeBrushFamilyTextureMap(
     TextureBitmapProvider get_bitmap) {
   texture_id_to_bitmap_out.clear();
   // The set of texture ids for which we have already called get_bitmap().
-  std::unordered_set<std::string> seen_ids = {};
+  absl::flat_hash_set<std::string> seen_ids;
   for (const BrushCoat& coat : family.GetCoats()) {
-    for (const BrushPaint::TextureLayer& layer : coat.paint.texture_layers) {
-      if (seen_ids.find(layer.client_texture_id) != seen_ids.end()) {
-        continue;
-      }
+    for (const BrushPaint& paint : coat.paint_preferences) {
+      for (const BrushPaint::TextureLayer& layer : paint.texture_layers) {
+        if (seen_ids.find(layer.client_texture_id) != seen_ids.end()) {
+          continue;
+        }
 
-      std::optional<std::string> bitmap = get_bitmap(layer.client_texture_id);
-      seen_ids.insert(layer.client_texture_id);
-      if (!bitmap.has_value()) {
-        continue;
-      }
+        std::optional<std::string> bitmap = get_bitmap(layer.client_texture_id);
+        seen_ids.insert(layer.client_texture_id);
+        if (!bitmap.has_value()) {
+          continue;
+        }
 
-      texture_id_to_bitmap_out.insert({layer.client_texture_id, *bitmap});
+        texture_id_to_bitmap_out.insert({layer.client_texture_id, *bitmap});
+      }
     }
   }
 }

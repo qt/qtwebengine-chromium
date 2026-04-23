@@ -15,10 +15,12 @@
  */
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -116,6 +118,48 @@ TEST(BasicTest, QualityCategories) {
                                         /*ignore_alpha=*/true));
   // Alpha plane should be lossless.
   ASSERT_TRUE(testutil::ArePlanesEqual(*image, *decoder->image, AVIF_CHAN_A));
+}
+
+TEST(BasicTest, EncodeContainerByteExactAnimatedImages) {
+  ImagePtr image = testutil::CreateImage(/*width=*/12, /*height=*/34,
+                                         /*depth=*/8, AVIF_PIXEL_FORMAT_YUV420,
+                                         AVIF_PLANES_ALL, AVIF_RANGE_FULL);
+  ASSERT_NE(image, nullptr);
+  testutil::FillImageGradient(image.get(), /*offset=*/0);
+
+  for (auto containerByteExact : {AVIF_FALSE, AVIF_TRUE}) {
+    AvifRwData encoded[2];
+    for (int i = 0; i < 2; ++i) {
+      EncoderPtr encoder(avifEncoderCreate());
+      ASSERT_NE(encoder, nullptr);
+      encoder->quality = 70;
+      encoder->speed = 10;
+      if (containerByteExact) {
+        encoder->creationTime = 100;
+        encoder->modificationTime = 200;
+      }
+      ASSERT_EQ(avifEncoderAddImage(encoder.get(), image.get(),
+                                    /*duration=*/100, AVIF_ADD_IMAGE_FLAG_NONE),
+                AVIF_RESULT_OK);
+      ASSERT_EQ(avifEncoderAddImage(encoder.get(), image.get(),
+                                    /*duration=*/100, AVIF_ADD_IMAGE_FLAG_NONE),
+                AVIF_RESULT_OK);
+      ASSERT_EQ(avifEncoderFinish(encoder.get(), &encoded[i]), AVIF_RESULT_OK);
+      if (i == 0) {
+        // Sleep for 2 seconds between the iterations to ensure that the
+        // timestamps will be different on either files when now() is being
+        // used.
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+      }
+    }
+
+    ASSERT_EQ(encoded[0].size, encoded[1].size);
+    if (containerByteExact) {
+      EXPECT_EQ(memcmp(encoded[0].data, encoded[1].data, encoded[0].size), 0);
+    } else {
+      EXPECT_NE(memcmp(encoded[0].data, encoded[1].data, encoded[0].size), 0);
+    }
+  }
 }
 
 TEST(TransformTest, ClapIrotImir) {

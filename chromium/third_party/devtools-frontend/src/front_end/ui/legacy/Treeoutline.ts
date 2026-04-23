@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -40,11 +40,12 @@ import * as SDK from '../../core/sdk/sdk.js';
 import type * as TextUtils from '../../models/text_utils/text_utils.js';
 import type * as Buttons from '../components/buttons/buttons.js';
 import * as Highlighting from '../components/highlighting/highlighting.js';
-import type * as IconButton from '../components/icon_button/icon_button.js';
+import type {Icon} from '../kit/kit.js';
 import * as Lit from '../lit/lit.js';
 import * as VisualLogging from '../visual_logging/visual_logging.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
+import {appendStyle} from './DOMUtilities.js';
 import {type Config, InplaceEditor} from './InplaceEditor.js';
 import {Keys} from './KeyboardShortcut.js';
 import type {SearchableView} from './SearchableView.js';
@@ -428,7 +429,7 @@ export class TreeOutlineInShadow extends TreeOutline {
 
   registerRequiredCSS(...cssFiles: Array<string&{_tag: 'CSS-in-JS'}>): void {
     for (const cssFile of cssFiles) {
-      Platform.DOMUtilities.appendStyle(this.shadowRoot, cssFile);
+      appendStyle(this.shadowRoot, cssFile);
     }
   }
 
@@ -809,7 +810,7 @@ export class TreeElement {
     }
   }
 
-  setLeadingIcons(icons: IconButton.Icon.Icon[]|Lit.TemplateResult[]): void {
+  setLeadingIcons(icons: Icon[]|Lit.TemplateResult[]): void {
     if (!this.leadingIconsElement && !icons.length) {
       return;
     }
@@ -820,7 +821,7 @@ export class TreeElement {
       this.listItemNode.insertBefore(this.leadingIconsElement, this.titleElement);
       this.ensureSelection();
     }
-    // eslint-disable-next-line rulesdir/no-lit-render-outside-of-view
+    // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
     render(icons, this.leadingIconsElement);
   }
 
@@ -1253,7 +1254,7 @@ export class TreeElement {
     ARIAUtils.clearSelected(this.listItemNode);
     this.setFocusable(false);
 
-    if (this.treeOutline && this.treeOutline.selectedTreeElement === this) {
+    if (this.treeOutline?.selectedTreeElement === this) {
       this.treeOutline.selectedTreeElement = null;
       this.treeOutline.updateFocusable();
       if (hadFocus) {
@@ -1458,8 +1459,17 @@ export class TreeSearch < NodeT extends TreeNode<NodeT>,
   static highlight(ranges: TextUtils.TextRange.SourceRange[], selectedRange: TextUtils.TextRange.SourceRange|undefined):
       ReturnType<typeof Lit.Directives.ref> {
     return Lit.Directives.ref(element => {
-      if (element instanceof HTMLLIElement) {
-        TreeViewTreeElement.get(element)?.highlight(ranges, selectedRange);
+      if (!(element instanceof HTMLElement)) {
+        return;
+      }
+      const configListItem = element.closest<HTMLLIElement>('li[role="treeitem"]');
+      const titleElement = configListItem ? TreeViewTreeElement.get(configListItem)?.titleElement : undefined;
+      if (configListItem && titleElement) {
+        const targetElement = HTMLElementWithLightDOMTemplate.findCorrespondingElement(
+            element, configListItem, titleElement as HTMLElement);
+        if (targetElement) {
+          Highlighting.HighlightManager.HighlightManager.instance().set(targetElement, ranges, selectedRange);
+        }
       }
     });
   }
@@ -1524,31 +1534,7 @@ export class TreeSearch < NodeT extends TreeNode<NodeT>,
   }
 }
 
-class ActiveHighlights {
-  #activeRanges: Range[] = [];
-  #highlights: TextUtils.TextRange.SourceRange[] = [];
-  #selectedSearchResult: TextUtils.TextRange.SourceRange|undefined = undefined;
-
-  apply(node: Node): void {
-    Highlighting.HighlightManager.HighlightManager.instance().removeHighlights(this.#activeRanges);
-    this.#activeRanges =
-        Highlighting.HighlightManager.HighlightManager.instance().highlightOrderedTextRanges(node, this.#highlights);
-    if (this.#selectedSearchResult) {
-      this.#activeRanges.push(...Highlighting.HighlightManager.HighlightManager.instance().highlightOrderedTextRanges(
-          node, [this.#selectedSearchResult], /* isSelected=*/ true));
-    }
-  }
-
-  set(element: Node, highlights: TextUtils.TextRange.SourceRange[],
-      selectedSearchResult: TextUtils.TextRange.SourceRange|undefined): void {
-    this.#highlights = highlights;
-    this.#selectedSearchResult = selectedSearchResult;
-    this.apply(element);
-  }
-}
-
 class TreeViewTreeElement extends TreeElement {
-  #activeHighlights = new ActiveHighlights();
   #clonedAttributes = new Set<string>();
   #clonedClasses = new Set<string>();
 
@@ -1560,12 +1546,6 @@ class TreeViewTreeElement extends TreeElement {
     this.configElement = configElement;
     TreeViewTreeElement.#elementToTreeElement.set(configElement, this);
     this.refresh();
-  }
-
-  highlight(
-      highlights: TextUtils.TextRange.SourceRange[],
-      selectedSearchResult: TextUtils.TextRange.SourceRange|undefined): void {
-    this.#activeHighlights.set(this.titleElement, highlights, selectedSearchResult);
   }
 
   refresh(): void {
@@ -1594,7 +1574,7 @@ class TreeViewTreeElement extends TreeElement {
       this.titleElement.appendChild(HTMLElementWithLightDOMTemplate.cloneNode(child));
     }
 
-    this.#activeHighlights.apply(this.titleElement);
+    Highlighting.HighlightManager.HighlightManager.instance().apply(this.titleElement);
   }
 
   static get(configElement: Node|undefined): TreeViewTreeElement|undefined {
@@ -1623,6 +1603,18 @@ function getTreeNodes(nodeList: NodeList|Node[]): HTMLLIElement[] {
         return [];
       })
       .toArray();
+}
+
+function getStyleElements(nodes: NodeList|Node[]): HTMLElement[] {
+  return [...nodes].flatMap(node => {
+    if (node instanceof HTMLStyleElement) {
+      return [node];
+    }
+    if (node instanceof HTMLElement) {
+      return [...node.querySelectorAll<HTMLStyleElement>('style')];
+    }
+    return [] as HTMLElement[];
+  });
 }
 
 /**
@@ -1783,6 +1775,9 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
       if (parent.expanded) {
         parent.treeElement.expand();
       }
+    }
+    for (const element of getStyleElements(nodes)) {
+      this.#treeOutline.shadowRoot.appendChild(element.cloneNode(true));
     }
   }
 

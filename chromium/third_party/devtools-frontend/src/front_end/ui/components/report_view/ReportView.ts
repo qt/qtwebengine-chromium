@@ -1,7 +1,7 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
 import {html, nothing, render} from '../../lit/lit.js';
 
@@ -29,11 +29,14 @@ import reportValueStyles from './reportValue.css.js';
  *     <devtools-report-divider></devtools-report-divider>
  *   </devtools-report>
  * ```
- * The component is intended to replace UI.ReportView in an idiomatic way.
  */
 export interface ReportData {
   reportTitle: string;
 }
+
+/**
+ * @deprecated Use UI.ReportView.ReportView instead.
+ */
 export class Report extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
   #reportTitle = '';

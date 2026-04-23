@@ -1,10 +1,11 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-imperative-dom-api */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
-import '../../../ui/components/icon_button/icon_button.js';
+import '../../../ui/components/settings/settings.js';
+import '../../../ui/kit/kit.js';
 import './FieldSettingsDialog.js';
 import './NetworkThrottlingSelector.js';
 import '../../../ui/components/menus/menus.js';
@@ -13,6 +14,7 @@ import './MetricCard.js';
 import * as Common from '../../../core/common/common.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import type * as Platform from '../../../core/platform/platform.js';
+import * as Root from '../../../core/root/root.js';
 import * as SDK from '../../../core/sdk/sdk.js';
 import * as CrUXManager from '../../../models/crux-manager/crux-manager.js';
 import * as EmulationModel from '../../../models/emulation/emulation.js';
@@ -24,9 +26,11 @@ import * as LegacyWrapper from '../../../ui/components/legacy_wrapper/legacy_wra
 import type * as Menus from '../../../ui/components/menus/menus.js';
 import * as RenderCoordinator from '../../../ui/components/render_coordinator/render_coordinator.js';
 import type * as Settings from '../../../ui/components/settings/settings.js';
+import * as uiI18n from '../../../ui/i18n/i18n.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
+import * as PanelsCommon from '../../common/common.js';
 import {getThrottlingRecommendations} from '../utils/Helpers.js';
 
 import {CPUThrottlingSelector} from './CPUThrottlingSelector.js';
@@ -37,6 +41,7 @@ import metricValueStyles from './metricValueStyles.css.js';
 import {CLS_THRESHOLDS, INP_THRESHOLDS, renderMetricValue} from './Utils.js';
 
 const {html, nothing} = Lit;
+const {widgetConfig} = UI.Widget;
 
 type DeviceOption = CrUXManager.DeviceScope|'AUTO';
 
@@ -53,6 +58,14 @@ const UIStrings = {
    * @description Title of a view that shows performance metrics from the local environment.
    */
   localMetrics: 'Local metrics',
+  /**
+   *@description Text for the link to the historical field data for the specific URL or origin that is shown. This link text appears in parenthesis after the collection period information in the field data dialog. The link opens the CrUX Vis viewer (https://cruxvis.withgoogle.com).
+   */
+  fieldDataHistoryLink: 'View history',
+  /**
+   *@description Tooltip for the CrUX Vis viewer link which shows the history of the field data for the specific URL or origin.
+   */
+  fieldDataHistoryTooltip: 'View field data history in CrUX Vis',
   /**
    * @description Accessible label for a section that logs user interactions and layout shifts. A layout shift is an event that shifts content in the layout of the page causing a jarring experience for the user.
    */
@@ -296,7 +309,7 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableComponent {
   readonly #shadow = this.attachShadow({mode: 'open'});
 
-  #isNode = false;
+  isNode = Root.Runtime.Runtime.isNode();
 
   #lcpValue?: LiveMetrics.LcpValue;
   #clsValue?: LiveMetrics.ClsValue;
@@ -321,11 +334,6 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
 
     this.#toggleRecordAction = UI.ActionRegistry.ActionRegistry.instance().getAction('timeline.toggle-recording');
     this.#recordReloadAction = UI.ActionRegistry.ActionRegistry.instance().getAction('timeline.record-reload');
-  }
-
-  set isNode(isNode: boolean) {
-    this.#isNode = isNode;
-    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#render);
   }
 
   #onMetricStatus(event: {data: LiveMetrics.StatusEvent}): void {
@@ -385,7 +393,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
   }
 
   async #refreshFieldDataForCurrentPage(): Promise<void> {
-    if (!this.#isNode) {
+    if (!this.isNode) {
       await this.#cruxManager.refresh();
     }
     void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#render);
@@ -451,7 +459,8 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
 
   #renderLcpCard(): Lit.LitTemplate {
     const fieldData = this.#cruxManager.getSelectedFieldMetricData('largest_contentful_paint');
-    const nodeLink = this.#lcpValue?.nodeRef?.link;
+    const nodeLink =
+        this.#lcpValue?.nodeRef && PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(this.#lcpValue?.nodeRef);
     const phases = this.#lcpValue?.phases;
 
     const fieldPhases = this.#getLcpFieldPhases();
@@ -475,7 +484,10 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
         ${nodeLink ? html`
             <div class="related-info" slot="extra-info">
               <span class="related-info-label">${i18nString(UIStrings.lcpElement)}</span>
-              <span class="related-info-link">${nodeLink}</span>
+              <span class="related-info-link">
+               <devtools-widget .widgetConfig=${widgetConfig(PanelsCommon.DOMLinkifier.DOMNodeLink, {node: this.#lcpValue?.nodeRef})}>
+               </devtools-widget>
+              </span>
             </div>
           `
           : nothing}
@@ -633,12 +645,12 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
       <div class="device-toolbar-description">${md(i18nString(UIStrings.useDeviceToolbar))}</div>
       ${fieldEnabled ? html`
         <ul class="environment-recs-list">
-          <li>${i18n.i18n.getFormatLocalizedString(str_, UIStrings.device, {PH1: deviceRecEl})}</li>
-          <li>${i18n.i18n.getFormatLocalizedString(str_, UIStrings.network, {PH1: networkRecEl})}</li>
+          <li>${uiI18n.getFormatLocalizedString(str_, UIStrings.device, {PH1: deviceRecEl})}</li>
+          <li>${uiI18n.getFormatLocalizedString(str_, UIStrings.network, {PH1: networkRecEl})}</li>
         </ul>
       ` : nothing}
       <div class="environment-option">
-        <devtools-widget .widgetConfig=${UI.Widget.widgetConfig(CPUThrottlingSelector, {recommendedOption: recs.cpuOption})}></devtools-widget>
+        <devtools-widget .widgetConfig=${widgetConfig(CPUThrottlingSelector, {recommendedOption: recs.cpuOption})}></devtools-widget>
       </div>
       <div class="environment-option">
         <devtools-network-throttling-selector .recommendedConditions=${recs.networkConditions}></devtools-network-throttling-selector>
@@ -690,7 +702,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
     // If there is no data at all we should force users to switch pages or reconfigure CrUX.
     const shouldDisable = !this.#cruxManager.pageResult?.['url-ALL'] && !this.#cruxManager.pageResult?.['origin-ALL'];
 
-    /* eslint-disable rulesdir/no-deprecated-component-usages */
+    /* eslint-disable @devtools/no-deprecated-component-usages */
     return html`
       <devtools-select-menu
         id="page-scope-select"
@@ -718,7 +730,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
         </devtools-menu-item>
       </devtools-select-menu>
     `;
-    /* eslint-enable rulesdir/no-deprecated-component-usages */
+    /* eslint-enable @devtools/no-deprecated-component-usages */
   }
 
   #getDeviceScopeDisplayName(deviceScope: CrUXManager.DeviceScope): string {
@@ -773,7 +785,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
     const currentDeviceLabel = this.#getLabelForDeviceOption(this.#cruxManager.fieldDeviceOption);
 
     // clang-format off
-    /* eslint-disable rulesdir/no-deprecated-component-usages */
+    /* eslint-disable @devtools/no-deprecated-component-usages */
     return html`
       <devtools-select-menu
         id="device-scope-select"
@@ -799,7 +811,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
         })}
       </devtools-select-menu>
     `;
-    /* eslint-enable rulesdir/no-deprecated-component-usages */
+    /* eslint-enable @devtools/no-deprecated-component-usages */
     // clang-format on
   }
 
@@ -836,6 +848,32 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
     });
   }
 
+  #renderFieldDataHistoryLink(): Lit.LitTemplate {
+    if (!this.#cruxManager.getConfigSetting().get().enabled) {
+      return Lit.nothing;
+    }
+    const normalizedUrl = this.#cruxManager.pageResult?.normalizedUrl;
+    if (!normalizedUrl) {
+      return Lit.nothing;
+    }
+    const tmp = new URL('https://cruxvis.withgoogle.com/');
+    tmp.searchParams.set('view', 'cwvsummary');
+    tmp.searchParams.set('url', normalizedUrl);
+    // identifier must be 'origin' or 'url'.
+    const identifier = this.#cruxManager.fieldPageScope;
+    tmp.searchParams.set('identifier', identifier);
+    // device must be one 'PHONE', 'DESKTOP', 'TABLET', or 'ALL'.
+    const device = this.#cruxManager.getSelectedDeviceScope();
+    tmp.searchParams.set('device', device);
+    const cruxVis = `${tmp.origin}/#/${tmp.search}`;
+    return html`
+        (<x-link href=${cruxVis}
+                 class="local-field-link"
+                 title=${i18nString(UIStrings.fieldDataHistoryTooltip)}
+        >${i18nString(UIStrings.fieldDataHistoryLink)}</x-link>)
+      `;
+  }
+
   #renderCollectionPeriod(): Lit.LitTemplate {
     const range = this.#getCollectionPeriodRange();
 
@@ -843,15 +881,17 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
     dateEl.classList.add('collection-period-range');
     dateEl.textContent = range || i18nString(UIStrings.notEnoughData);
 
-    const message = i18n.i18n.getFormatLocalizedString(str_, UIStrings.collectionPeriod, {
+    const message = uiI18n.getFormatLocalizedString(str_, UIStrings.collectionPeriod, {
       PH1: dateEl,
     });
+
+    const fieldDataHistoryLink = range ? this.#renderFieldDataHistoryLink() : Lit.nothing;
 
     const warnings = this.#cruxManager.pageResult?.warnings || [];
 
     return html`
       <div class="field-data-message">
-        <div>${message}</div>
+        <div>${message} ${fieldDataHistoryLink}</div>
         ${warnings.map(warning => html`
           <div class="field-data-warning">${warning}</div>
         `)}
@@ -866,7 +906,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
 
     const linkEl =
         UI.XLink.XLink.create('https://developer.chrome.com/docs/crux', i18n.i18n.lockedString('Chrome UX Report'));
-    const messageEl = i18n.i18n.getFormatLocalizedString(str_, UIStrings.seeHowYourLocalMetricsCompare, {PH1: linkEl});
+    const messageEl = uiI18n.getFormatLocalizedString(str_, UIStrings.seeHowYourLocalMetricsCompare, {PH1: linkEl});
 
     return html`
       <div class="field-data-message">${messageEl}</div>
@@ -876,10 +916,15 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
   #renderLogSection(): Lit.LitTemplate {
     // clang-format off
     return html`
-      <section class="logs-section" aria-label=${i18nString(UIStrings.eventLogs)}>
+      <section
+        class="logs-section"
+        aria-label=${i18nString(UIStrings.eventLogs)}
+      >
         <devtools-live-metrics-logs
-          on-render=${ComponentHelpers.Directives.nodeRenderedCallback(node => {
-            this.#logsEl = node as LiveMetricsLogs;
+          ${Lit.Directives.ref(el => {
+            if (el instanceof HTMLElement) {
+              this.#logsEl = el as LiveMetricsLogs;
+            }
           })}
         >
           ${this.#renderInteractionsLog()}
@@ -926,8 +971,10 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
     return html`
       <ol class="log"
         slot="interactions-log-content"
-        on-render=${ComponentHelpers.Directives.nodeRenderedCallback(node => {
-          this.#interactionsListEl = node as HTMLElement;
+        ${Lit.Directives.ref(el => {
+          if (el instanceof HTMLElement) {
+            this.#interactionsListEl = el as HTMLElement;
+          }
         })}
       >
         ${this.#interactions.values().map(interaction => {
@@ -951,7 +998,10 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
                       html`<span class="interaction-inp-chip" title=${i18nString(UIStrings.inpInteraction)}>INP</span>`
                     : nothing}
                   </span>
-                  <span class="interaction-node">${interaction.nodeRef?.link}</span>
+                  <span class="interaction-node">
+                    <devtools-widget .widgetConfig=${widgetConfig(PanelsCommon.DOMLinkifier.DOMNodeLink, {node: interaction.nodeRef})}>
+                    </devtools-widget>
+                  </span>
                   ${isP98Excluded ? html`<devtools-icon
                     class="interaction-info"
                     name="info"
@@ -1036,8 +1086,10 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
     return html`
       <ol class="log"
         slot="layout-shifts-log-content"
-        on-render=${ComponentHelpers.Directives.nodeRenderedCallback(node => {
-          this.#layoutShiftsListEl = node as HTMLElement;
+        ${Lit.Directives.ref(el => {
+          if (el instanceof HTMLElement) {
+            this.#layoutShiftsListEl = el as HTMLElement;
+          }
         })}
       >
         ${this.#layoutShifts.map(layoutShift => {
@@ -1055,8 +1107,11 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
             <li id=${layoutShift.uniqueLayoutShiftId} class="log-item layout-shift" tabindex="-1">
               <div class="layout-shift-score">Layout shift score: ${metricValue}</div>
               <div class="layout-shift-nodes">
-                ${layoutShift.affectedNodeRefs.map(({link}) => html`
-                  <div class="layout-shift-node">${link}</div>
+                ${layoutShift.affectedNodeRefs.map(node => html`
+                  <div class="layout-shift-node">
+                    <devtools-widget .widgetConfig=${widgetConfig(PanelsCommon.DOMLinkifier.DOMNodeLink, {node})}>
+                    </devtools-widget>
+                  </div>
                 `)}
               </div>
             </li>
@@ -1082,7 +1137,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
   }
 
   #render = (): void => {
-    if (this.#isNode) {
+    if (this.isNode) {
       Lit.render(this.#renderNodeView(), this.#shadow, {host: this});
       return;
     }
@@ -1103,8 +1158,10 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
           <main class="live-metrics">
             <h2 class="section-title">${liveMetricsTitle}</h2>
             <div class="metric-cards"
-              on-render=${ComponentHelpers.Directives.nodeRenderedCallback(node => {
-                this.#tooltipContainerEl = node;
+              ${Lit.Directives.ref(el => {
+                if (el instanceof HTMLElement) {
+                  this.#tooltipContainerEl = el;
+                }
               })}
             >
               <div id="lcp">

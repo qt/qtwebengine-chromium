@@ -415,11 +415,12 @@ Register LiftoffAssembler::LoadOldFramePointer() {
   if (!v8_flags.experimental_wasm_growable_stacks) {
     return ebp;
   }
+  LiftoffRegister old_fp = GetUnusedRegister(RegClass::kGpReg, {});
+  FreezeCacheState frozen(*this);
   Label done, call_runtime;
   cmp(MemOperand(ebp, TypedFrameConstants::kFrameTypeOffset),
       Immediate(StackFrame::TypeToMarker(StackFrame::WASM_SEGMENT_START)));
   j(equal, &call_runtime);
-  LiftoffRegister old_fp = GetUnusedRegister(RegClass::kGpReg, {});
   mov(old_fp.gp(), ebp);
   jmp(&done);
 
@@ -5259,42 +5260,6 @@ void LiftoffAssembler::DeallocateStackSlot(uint32_t size) {
 }
 
 void LiftoffAssembler::MaybeOSR() {}
-
-void LiftoffAssembler::emit_store_nonzero_if_nan(Register dst,
-                                                 DoubleRegister src,
-                                                 ValueKind kind) {
-  if (kind == kF32) {
-    ucomiss(src, src);
-  } else {
-    DCHECK_EQ(kind, kF64);
-    ucomisd(src, src);
-  }
-  Label ret;
-  j(parity_odd, &ret);
-  mov(Operand(dst, 0), Immediate(1));
-  bind(&ret);
-}
-
-void LiftoffAssembler::emit_s128_store_nonzero_if_nan(Register dst,
-                                                      LiftoffRegister src,
-                                                      Register tmp_gp,
-                                                      LiftoffRegister tmp_s128,
-                                                      ValueKind lane_kind) {
-  if (lane_kind == kF32) {
-    movaps(tmp_s128.fp(), src.fp());
-    cmpunordps(tmp_s128.fp(), tmp_s128.fp());
-  } else {
-    DCHECK_EQ(lane_kind, kF64);
-    movapd(tmp_s128.fp(), src.fp());
-    cmpunordpd(tmp_s128.fp(), tmp_s128.fp());
-  }
-  pmovmskb(tmp_gp, tmp_s128.fp());
-  or_(Operand(dst, 0), tmp_gp);
-}
-
-void LiftoffAssembler::emit_store_nonzero(Register dst) {
-  mov(Operand(dst, 0), Immediate(1));
-}
 
 void LiftoffStackSlots::Construct(int param_slots) {
   DCHECK_LT(0, slots_.size());

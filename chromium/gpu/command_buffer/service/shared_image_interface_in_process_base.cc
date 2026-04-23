@@ -386,24 +386,6 @@ void SharedImageInterfaceInProcessBase::CreateSharedImageWithBufferOnGpuThread(
   }
 }
 
-SharedImageInterface::SwapChainSharedImages
-SharedImageInterfaceInProcessBase::CreateSwapChain(
-    viz::SharedImageFormat format,
-    const gfx::Size& size,
-    const gfx::ColorSpace& color_space,
-    GrSurfaceOrigin surface_origin,
-    SkAlphaType alpha_type,
-    SharedImageUsageSet usage,
-    std::string_view debug_label) {
-  NOTREACHED();
-}
-
-void SharedImageInterfaceInProcessBase::PresentSwapChain(
-    const SyncToken& sync_token,
-    const Mailbox& mailbox) {
-  NOTREACHED();
-}
-
 #if BUILDFLAG(IS_FUCHSIA)
 void SharedImageInterfaceInProcessBase::RegisterSysmemBufferCollection(
     zx::eventpair service_handle,
@@ -508,6 +490,15 @@ SyncToken SharedImageInterfaceInProcessBase::GenVerifiedSyncToken() {
 
 void SharedImageInterfaceInProcessBase::VerifySyncToken(SyncToken& sync_token) {
   sync_token.SetVerifyFlush();
+}
+
+bool SharedImageInterfaceInProcessBase::CanVerifySyncToken(
+    const gpu::SyncToken& sync_token) {
+  return sync_token.namespace_id() == namespace_id_;
+}
+
+void SharedImageInterfaceInProcessBase::VerifyFlush() {
+  // No flush required as we are only within a single process
 }
 
 void SharedImageInterfaceInProcessBase::WaitSyncToken(

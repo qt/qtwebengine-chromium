@@ -20,6 +20,7 @@
 
 #include <openssl/asn1.h>
 #include <openssl/asn1t.h>
+#include <openssl/bytestring.h>
 #include <openssl/buf.h>
 #include <openssl/err.h>
 #include <openssl/mem.h>
@@ -228,14 +229,14 @@ const X509_NAME_CACHE *x509_name_get_cache(const X509_NAME *name) {
       !x509_marshal_name_entries(&seq, name, /*canonicalize=*/0) ||
       !CBB_finish(cbb.get(), &new_cache->der, &new_cache->der_len)) {
     x509_name_cache_free(new_cache);
-    return 0;
+    return nullptr;
   }
   // Cache the canonicalized form, without the outer TLV.
   if (!CBB_init(cbb.get(), 16) ||
       !x509_marshal_name_entries(cbb.get(), name, /*canonicalize=*/1) ||
       !CBB_finish(cbb.get(), &new_cache->canon, &new_cache->canon_len)) {
     x509_name_cache_free(new_cache);
-    return 0;
+    return nullptr;
   }
 
   X509_NAME_CACHE *expected = nullptr;

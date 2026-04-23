@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "base/files/file_path.h"
-#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -35,12 +34,10 @@
 #include "base/test/test_future.h"
 #include "base/threading/sequence_bound.h"
 #include "base/time/time.h"
-#include "components/fingerprinting_protection_filter/interventions/common/interventions_features.h"
 #include "content/browser/btm/btm_service_impl.h"
 #include "content/browser/btm/btm_storage.h"
 #include "content/browser/btm/btm_test_utils.h"
 #include "content/browser/btm/btm_utils.h"
-#include "content/browser/fingerprinting_protection/canvas_noise_token_data.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -576,8 +573,8 @@ TEST_F(BrowsingDataRemoverImplTest, RemoveCookiesDomainPreserveList) {
           BrowsingDataFilterBuilder::Mode::kPreserve));
   const GURL kTestUrl1("http://host1.com");
   const GURL kTestUrl3("http://host3.com");
-  filter->AddRegisterableDomain(kTestUrl1.host());
-  filter->AddRegisterableDomain(kTestUrl3.host());
+  filter->AddRegisterableDomain(kTestUrl1.GetHost());
+  filter->AddRegisterableDomain(kTestUrl3.GetHost());
   BlockUntilOriginDataRemoved(AnHourAgo(), base::Time::Max(),
                               BrowsingDataRemover::DATA_TYPE_COOKIES,
                               std::move(filter));
@@ -948,7 +945,7 @@ TEST_F(BrowsingDataRemoverImplTest,
       BrowsingDataFilterBuilder::Create(
           BrowsingDataFilterBuilder::Mode::kDelete));
   const GURL kTestUrl("http://host1.com");
-  builder->AddRegisterableDomain(kTestUrl.host());
+  builder->AddRegisterableDomain(kTestUrl.GetHost());
   // Remove the test origin.
   BlockUntilOriginDataRemoved(base::Time(), base::Time::Max(),
                               BrowsingDataRemover::DATA_TYPE_SERVICE_WORKERS |
@@ -1108,7 +1105,7 @@ TEST_F(BrowsingDataRemoverImplTest, RemoveQuotaManagedProtectedSpecificOrigin) {
   std::unique_ptr<BrowsingDataFilterBuilder> builder(
       BrowsingDataFilterBuilder::Create(
           BrowsingDataFilterBuilder::Mode::kDelete));
-  builder->AddRegisterableDomain(kTestUrl.host());
+  builder->AddRegisterableDomain(kTestUrl.GetHost());
 
   // Try to remove the test origin. Expect failure.
   BlockUntilOriginDataRemoved(base::Time(), base::Time::Max(),
@@ -1884,7 +1881,7 @@ TEST_F(BrowsingDataRemoverImplTest, NonDefaultStoragePartitionInFilter) {
       BrowsingDataFilterBuilder::Create(
           BrowsingDataFilterBuilder::Mode::kDelete));
   const GURL kTestUrl("http://host1.com");
-  builder->AddRegisterableDomain(kTestUrl.host());
+  builder->AddRegisterableDomain(kTestUrl.GetHost());
   builder->SetStoragePartitionConfig(non_default_storage_partition_config);
 
   // Remove the test origin.
@@ -2259,28 +2256,6 @@ TEST_F(BrowsingDataRemoverImplBtmTest, RemoveBtmEventsByType) {
     EXPECT_FALSE(state_val3->bounce_times.has_value());
     EXPECT_TRUE(state_val3->user_activation_times.has_value());
   }
-}
-
-TEST_F(BrowsingDataRemoverImplTest,
-       RemoveBrowsingHistoryRegeneratesNoiseToken) {
-  base::test::ScopedFeatureList features(
-      fingerprinting_protection_interventions::features::kCanvasNoise);
-
-  url::Origin origin = url::Origin::Create(GURL("https://example.test"));
-  blink::NoiseToken original_token =
-      content::CanvasNoiseTokenData::GetToken(GetBrowserContext(), origin);
-
-  BlockUntilBrowsingDataRemoved(base::Time(), base::Time::Max(),
-                                content::BrowsingDataRemover::DATA_TYPE_COOKIES,
-                                false);
-
-  EXPECT_EQ(content::BrowsingDataRemover::DATA_TYPE_COOKIES, GetRemovalMask());
-  EXPECT_EQ(content::BrowsingDataRemover::ORIGIN_TYPE_UNPROTECTED_WEB,
-            GetOriginTypeMask());
-
-  blink::NoiseToken updated_token =
-      content::CanvasNoiseTokenData::GetToken(GetBrowserContext(), origin);
-  EXPECT_NE(original_token, updated_token);
 }
 
 }  // namespace content

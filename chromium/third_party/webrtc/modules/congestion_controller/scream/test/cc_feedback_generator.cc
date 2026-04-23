@@ -133,6 +133,8 @@ CcFeedbackGenerator::MaybeSendFeedback(Timestamp time) {
     PacketResult packet_result;
     packet_result.sent_packet.send_time =
         packets_in_flight_.front().send_time();
+    packet_result.sent_packet.sequence_number =
+        packets_in_flight_.front().packet_id;
     packet_result.sent_packet.size = packets_in_flight_.front().packet_size();
 
     packet_result.receive_time =
@@ -155,12 +157,6 @@ CcFeedbackGenerator::MaybeSendFeedback(Timestamp time) {
   for (const PacketInFlightInfo& in_flight : packets_in_flight_) {
     feedback.data_in_flight += in_flight.packet_size();
   }
-  RTC_LOG(LS_VERBOSE) << "Delivering feedback at time: " << time
-                      << " #packets:" << feedback.packet_feedbacks.size()
-                      << " #ce:" << CountCeMarks(feedback)
-                      << " #lost: " << feedback.LostWithSendInfo().size()
-                      << " data_in_flight: " << feedback.data_in_flight;
-
   feedback.feedback_time = time;
   last_feedback_time_ = time;
   return feedback;

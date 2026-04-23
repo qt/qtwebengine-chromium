@@ -1,8 +1,8 @@
 // Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-imperative-dom-api */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import '../../../ui/legacy/legacy.js';
 
@@ -13,7 +13,7 @@ import {assertNotNullOrUndefined} from '../../../core/platform/platform.js';
 import * as SDK from '../../../core/sdk/sdk.js';
 import * as Protocol from '../../../generated/protocol.js';
 import * as Buttons from '../../../ui/components/buttons/buttons.js';
-// eslint-disable-next-line rulesdir/es-modules-import
+// eslint-disable-next-line @devtools/es-modules-import
 import emptyWidgetStyles from '../../../ui/legacy/emptyWidget.css.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 import {html, render} from '../../../ui/lit/lit.js';
@@ -245,7 +245,11 @@ export class PreloadingRuleSetView extends UI.Widget.VBox {
           <span class="empty-state-header">${i18nString(UIStrings.noRulesDetected)}</span>
           <div class="empty-state-description">
             <span>${i18nString(UIStrings.rulesDescription)}</span>
-            ${UI.XLink.XLink.create(SPECULATION_EXPLANATION_URL, i18nString(UIStrings.learnMore), 'x-link', undefined, 'learn-more')}
+            <x-link
+              class="x-link devtools-link"
+              href=${SPECULATION_EXPLANATION_URL}
+              jslog=${VisualLogging.link().track({click: true, keydown:'Enter|Space'}).context('learn-more')}
+            >${i18nString(UIStrings.learnMore)}</x-link>
           </div>
         </div>
         <devtools-split-view sidebar-position="second">
@@ -402,9 +406,11 @@ export class PreloadingAttemptView extends UI.Widget.VBox {
           <span class="empty-state-header">${i18nString(UIStrings.noPrefetchAttempts)}</span>
           <div class="empty-state-description">
             <span>${i18nString(UIStrings.prefetchDescription)}</span>
-            ${
-            UI.XLink.XLink.create(
-                SPECULATION_EXPLANATION_URL, i18nString(UIStrings.learnMore), 'x-link', undefined, 'learn-more')}
+            <x-link
+              class="x-link devtools-link"
+              href=${SPECULATION_EXPLANATION_URL}
+              jslog=${VisualLogging.link().track({click: true, keydown: 'Enter|Space'}).context('learn-more')}
+            >${i18nString(UIStrings.learnMore)}</x-link>
           </div>
         </div>
         <devtools-split-view sidebar-position="second">

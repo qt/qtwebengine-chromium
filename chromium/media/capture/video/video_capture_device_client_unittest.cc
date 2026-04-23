@@ -66,8 +66,8 @@ std::unique_ptr<VideoCaptureJpegDecoder> ReturnNullPtrAsJpecDecoder() {
 class FakeVideoCaptureBufferHandle : public VideoCaptureBufferHandle {
  public:
   size_t mapped_size() const override { return 1024; }
-  uint8_t* data() const override { return nullptr; }
-  const uint8_t* const_data() const override { return nullptr; }
+  base::span<uint8_t> data() final { return {}; }
+  base::span<const uint8_t> const_data() const override { return {}; }
 };
 
 class FakeVideoCaptureBufferTracker : public VideoCaptureBufferTracker {
@@ -160,7 +160,6 @@ class VideoCaptureDeviceClientTest : public ::testing::Test {
     auto controller = std::make_unique<NiceMock<MockVideoFrameReceiver>>();
     receiver_ = controller.get();
     test_sii_ = base::MakeRefCounted<gpu::TestSharedImageInterface>();
-    test_sii_->UseTestGMBInSharedImageCreationWithBufferUsage();
 #if BUILDFLAG(IS_CHROMEOS)
     device_client_ = std::make_unique<VideoCaptureDeviceClient>(
         std::move(controller), buffer_pool,

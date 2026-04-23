@@ -16,7 +16,10 @@
 
 #include <stddef.h>
 
+#include "src/utils/bounds_safety.h"
 #include "src/webp/types.h"
+
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,9 +32,10 @@ typedef struct VP8BitWriter VP8BitWriter;
 struct VP8BitWriter {
   int32_t range;  // range-1
   int32_t value;
-  int run;       // number of outstanding bits
-  int nb_bits;   // number of pending bits
-  uint8_t* buf;  // internal buffer. Re-allocated regularly. Not owned.
+  int run;      // number of outstanding bits
+  int nb_bits;  // number of pending bits
+  // internal buffer. Re-allocated regularly. Not owned.
+  uint8_t* WEBP_SIZED_BY_OR_NULL(max_pos) buf;
   size_t pos;
   size_t max_pos;
   int error;  // true in case of error
@@ -89,11 +93,11 @@ typedef uint16_t vp8l_wtype_t;
 #endif
 
 typedef struct {
-  vp8l_atype_t bits;  // bit accumulator
-  int used;           // number of bits used in accumulator
-  uint8_t* buf;       // start of buffer
-  uint8_t* cur;       // current write position
-  uint8_t* end;       // end of buffer
+  vp8l_atype_t bits;                   // bit accumulator
+  int used;                            // number of bits used in accumulator
+  uint8_t* WEBP_ENDED_BY(end) buf;     // start of buffer
+  uint8_t* WEBP_UNSAFE_INDEXABLE cur;  // current write position
+  uint8_t* end;                        // end of buffer
 
   // After all bits are written (VP8LBitWriterFinish()), the caller must observe
   // the state of 'error'. A value of 1 indicates that a memory allocation

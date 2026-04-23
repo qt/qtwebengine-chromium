@@ -87,17 +87,13 @@ MaybeError ComputePipeline::InitializeImpl() {
     ShaderModule::ModuleAndSpirv moduleAndSpirv;
     DAWN_TRY_ASSIGN(moduleAndSpirv,
                     module->GetHandleAndSpirv(SingleShaderStage::Compute, computeStage, layout,
-                                              /*emitPointSize*/ false, GetImmediateMask()));
+                                              /*emitPointSize*/ false, /*isSampled*/ false,
+                                              GetImmediateMask()));
 
     createInfo.stage.module = moduleAndSpirv.module;
     // string_view returned by GetIsolatedEntryPointName() points to a null-terminated string.
     createInfo.stage.pName = device->GetIsolatedEntryPointName().data();
     createInfo.stage.pSpecializationInfo = nullptr;
-
-    // This is required to ensure SubgroupSize is reported as the actual size of the subgroups
-    // (even if some invocations may be disabled), and that the subgroup size will be uniform
-    // across the entire dispatch. This becomes unnecessary with SPIR-V 1.6.
-    createInfo.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
 
     // If the shader stage uses subgroup matrix types, we need to enable full subgroups to guarantee
     // that all shader invocations are active. This becomes unnecessary with SPIR-V 1.6.
@@ -115,6 +111,15 @@ MaybeError ComputePipeline::InitializeImpl() {
         stageExtChain.Add(
             &subgroupSizeInfo,
             VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT);
+    } else {
+        // This is required to ensure SubgroupSize is reported as the actual size of the subgroups
+        // (even if some invocations may be disabled), and that the subgroup size will be uniform
+        // across the entire dispatch. This becomes unnecessary with SPIR-V 1.6. Note that according
+        // to Vulkan SPEC (VUID-VkPipelineShaderStageCreateInfo-pNext-02754) flags must not have the
+        // `VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT flag` set if a
+        // `VkPipelineShaderStageRequiredSubgroupSizeCreateInfo` structure is included in the pNext
+        // chain,
+        createInfo.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
     }
 
     if (buildCacheKey) {

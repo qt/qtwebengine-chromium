@@ -22,21 +22,6 @@ skia_filegroup(
     srcs = ["FFI.rs"],
 )
 
-# Note: the `hdrs` of the `utils` target are included in *two* `.gni` lists
-# (`skia_codec_rust_png` and `skia_encode_rust_png_srcs`) - this works only
-# because this is a header-only library.  If `utils` needs `srcs` in the
-# future, then a separate `.gni` list may be required.
-skia_cc_library(
-    name = "utils",
-    hdrs = ["UtilsForFFI.h"],
-    features = ["layering_check"],
-    visibility = [
-        "//src/codec:__pkg__",
-        "//src/encode:__pkg__",
-    ],
-    deps = ["//:core"],
-)
-
 skia_cc_library(
     name = "ffi_cpp",
     hdrs = ["FFI.h"],
@@ -44,6 +29,9 @@ skia_cc_library(
     visibility = [
         "//src/codec:__pkg__",
         "//src/encode:__pkg__",
+    ],
+    deps = [
+        "//rust/common:ffi_utils",
     ],
 )
 
@@ -54,19 +42,24 @@ rust_cxx_bridge(
         "//src/codec:__pkg__",
         "//src/encode:__pkg__",
     ],
-    deps = [":ffi_cpp"],
+    deps = [
+        ":ffi_cpp",
+    ],
 )
 
 rust_static_library(
     name = "ffi_rs",
     srcs = [":rs_srcs"],
+    crate_root = "FFI.rs",
     rustc_flags = ["-Dwarnings"],
     visibility = [
         "//src/codec:__pkg__",
         "//src/encode:__pkg__",
     ],
     deps = [
-        ":ffi_cpp",
+        ":cxx_bridge",
+        "//rust/common:cxx_bridge",
+        "//rust/common:skia_rust_common",
         "@crates//:cxx",
         "@crates//:png",
     ],

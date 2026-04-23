@@ -103,12 +103,23 @@ class PasskeyModel : public KeyedService {
   virtual std::vector<sync_pb::WebauthnCredentialSpecifics> GetAllPasskeys()
       const = 0;
 
+  // Returns the list of all unshadowed passkeys.
+  virtual std::vector<sync_pb::WebauthnCredentialSpecifics>
+  GetUnShadowedPasskeys() const = 0;
+
   // Returns the passkey matching the given Relying Party and credential ID, if
   // any. Shadowed entities, which aren't suitable for generating assertions,
   // are ignored.
   virtual std::optional<sync_pb::WebauthnCredentialSpecifics>
   GetPasskeyByCredentialId(const std::string& rp_id,
                            const std::string& credential_id) const = 0;
+
+  // Returns the passkey for the given Relying Party and user IDs, if any.
+  // Shadowed entities, which aren't suitable for generating assertions, are
+  // ignored.
+  virtual std::optional<sync_pb::WebauthnCredentialSpecifics>
+  GetPasskeyByUserId(const std::string& rp_id,
+                     const std::string& user_id) const = 0;
 
   // Returns all passkeys for the given Relying Party ID. Shadowed entities,
   // which aren't suitable for generating assertions, are ignored.
@@ -123,10 +134,16 @@ class PasskeyModel : public KeyedService {
   virtual bool DeletePasskey(const std::string& credential_id,
                              const base::Location& location) = 0;
 
-  // Sets the `hidden` property for the passkey with the given `credential_id`.
-  // Returns true if a passkey was found and updated, false otherwise.
-  virtual bool SetPasskeyHidden(const std::string& credential_id,
-                                bool hidden) = 0;
+  // Sets `hidden = true` and `hidden_time` for the passkey with the given
+  // `credential_id`. Returns true if a passkey was found and updated, false
+  // otherwise.
+  virtual bool HidePasskey(const std::string& credential_id,
+                           base::Time hidden_time) = 0;
+
+  // Sets `hidden = false` for the passkey with the given `credential_id`
+  // and clears its `hidden_time` property. Returns true if a
+  // passkey was found and updated, false otherwise.
+  virtual bool UnhidePasskey(const std::string& credential_id) = 0;
 
   // Deletes all passkeys.
   virtual void DeleteAllPasskeys() = 0;

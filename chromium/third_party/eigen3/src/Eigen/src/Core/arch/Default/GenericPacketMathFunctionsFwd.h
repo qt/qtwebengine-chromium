@@ -150,6 +150,10 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet psqrt_complex(const P
 template <typename Packet>
 EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pdiv_complex(const Packet& x, const Packet& y);
 
+/** \internal \returns x * y for complex types */
+template <typename Packet>
+EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pmul_complex(const Packet& x, const Packet& y);
+
 template <typename Packet, int N>
 struct ppolevl;
 
@@ -210,16 +214,18 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet generic_round(const Packet& a);
   EIGEN_GENERIC_PACKET_FUNCTION(atan, PACKET)
 
 #define EIGEN_INSTANTIATE_GENERIC_MATH_FUNCS_DOUBLE(PACKET) \
-  EIGEN_DOUBLE_PACKET_FUNCTION(atanh, PACKET)               \
-  EIGEN_DOUBLE_PACKET_FUNCTION(log, PACKET)                 \
   EIGEN_DOUBLE_PACKET_FUNCTION(sin, PACKET)                 \
   EIGEN_DOUBLE_PACKET_FUNCTION(cos, PACKET)                 \
+  EIGEN_DOUBLE_PACKET_FUNCTION(log, PACKET)                 \
   EIGEN_DOUBLE_PACKET_FUNCTION(log2, PACKET)                \
   EIGEN_DOUBLE_PACKET_FUNCTION(exp, PACKET)                 \
   EIGEN_DOUBLE_PACKET_FUNCTION(tanh, PACKET)                \
+  EIGEN_DOUBLE_PACKET_FUNCTION(atanh, PACKET)               \
   EIGEN_DOUBLE_PACKET_FUNCTION(cbrt, PACKET)                \
-  EIGEN_GENERIC_PACKET_FUNCTION(atan, PACKET)               \
-  EIGEN_GENERIC_PACKET_FUNCTION(exp2, PACKET)
+  EIGEN_GENERIC_PACKET_FUNCTION(expm1, PACKET)              \
+  EIGEN_GENERIC_PACKET_FUNCTION(exp2, PACKET)               \
+  EIGEN_GENERIC_PACKET_FUNCTION(log1p, PACKET)              \
+  EIGEN_GENERIC_PACKET_FUNCTION(atan, PACKET)
 
 }  // end namespace internal
 }  // end namespace Eigen

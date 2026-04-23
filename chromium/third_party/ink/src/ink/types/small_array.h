@@ -19,9 +19,12 @@
 #include <array>
 #include <cstdint>
 #include <initializer_list>
+#include <string>
 
 #include "absl/algorithm/container.h"
 #include "absl/log/absl_check.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 #include "absl/types/span.h"
 
 namespace ink {
@@ -38,6 +41,10 @@ namespace ink {
 // This differs from `std::array` in that `std::array` is always considered to
 // have `N` elements; this may be used when the maximum number of elements is
 // known at compile-time, but the actual number of elements is not.
+//
+// This differs from `absl::InlinedVector` in that this is trivially
+// destructible, and thus can be used in global variables. On the other hand,
+// unlike `absl::InlinedVector`, this cannot grow beyond its fixed maximum size.
 template <typename T, uint8_t N>
 class SmallArray {
  public:
@@ -111,7 +118,19 @@ class SmallArray {
   // equal to `N`.
   uint8_t MaxSize() const { return N; }
 
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, SmallArray array) {
+    sink.Append(array.ToFormattedString());
+  }
+
  private:
+  // Implementation helper for AbslStringify.
+  std::string ToFormattedString() const {
+    absl::Span<const T> values = Values();
+    return absl::StrCat("[", absl::StrJoin(values.begin(), values.end(), ", "),
+                        "]");
+  }
+
   uint8_t size_ = 0;
   // We use a `std::array` for the underlying storage instead of an aligned
   // array of `char`. This keeps the implementation simpler and also this type
@@ -120,7 +139,7 @@ class SmallArray {
 };
 
 template <typename T, uint8_t N>
-bool operator==(SmallArray<T, N> lhs, SmallArray<T, N> rhs) {
+bool operator==(const SmallArray<T, N>& lhs, const SmallArray<T, N>& rhs) {
   return absl::c_equal(lhs.Values(), rhs.Values());
 }
 

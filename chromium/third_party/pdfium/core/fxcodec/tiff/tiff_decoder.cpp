@@ -12,6 +12,7 @@
 #include "core/fxcodec/cfx_codec_memory.h"
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcodec/fx_codec_def.h"
+#include "core/fxcodec/progressive_decoder_context.h"
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/fx_memcpy_wrappers.h"
@@ -50,7 +51,7 @@ struct TIFFOpenOptionsDeleter {
 
 }  // namespace
 
-class CTiffContext final : public ProgressiveDecoderIface::Context {
+class CTiffContext final : public ProgressiveDecoderContext {
  public:
   CTiffContext() = default;
   ~CTiffContext() override = default;
@@ -300,7 +301,7 @@ bool CTiffContext::Decode(RetainPtr<CFX_DIBitmap> bitmap) {
 namespace fxcodec {
 
 // static
-std::unique_ptr<ProgressiveDecoderIface::Context> TiffDecoder::CreateDecoder(
+std::unique_ptr<ProgressiveDecoderContext> TiffDecoder::CreateDecoder(
     const RetainPtr<IFX_SeekableReadStream>& file_ptr) {
   auto pDecoder = std::make_unique<CTiffContext>();
   if (!pDecoder->InitDecoder(file_ptr)) {
@@ -311,7 +312,7 @@ std::unique_ptr<ProgressiveDecoderIface::Context> TiffDecoder::CreateDecoder(
 }
 
 // static
-bool TiffDecoder::LoadFrameInfo(ProgressiveDecoderIface::Context* pContext,
+bool TiffDecoder::LoadFrameInfo(ProgressiveDecoderContext* context,
                                 int32_t frame,
                                 int32_t* width,
                                 int32_t* height,
@@ -320,14 +321,14 @@ bool TiffDecoder::LoadFrameInfo(ProgressiveDecoderIface::Context* pContext,
                                 CFX_DIBAttribute* pAttribute) {
   DCHECK(pAttribute);
 
-  auto* ctx = static_cast<CTiffContext*>(pContext);
+  auto* ctx = static_cast<CTiffContext*>(context);
   return ctx->LoadFrameInfo(frame, width, height, comps, bpc, pAttribute);
 }
 
 // static
-bool TiffDecoder::Decode(ProgressiveDecoderIface::Context* pContext,
+bool TiffDecoder::Decode(ProgressiveDecoderContext* context,
                          RetainPtr<CFX_DIBitmap> bitmap) {
-  auto* ctx = static_cast<CTiffContext*>(pContext);
+  auto* ctx = static_cast<CTiffContext*>(context);
   return ctx->Decode(std::move(bitmap));
 }
 

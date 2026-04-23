@@ -69,11 +69,23 @@ class CORE_EXPORT PaintTimingRecord
     soft_navigation_context_ = context;
   }
 
+  // Returns whether or not the corresponding image or text was removed from the
+  // DOM after the record was created and before getting paint timing. Used to
+  // ensure we get paint timing for such records without reporting them as LCP
+  // candidates.
+  bool WasImageOrTextRemovedWhilePending() const {
+    return was_image_or_text_removed_while_pending_;
+  }
+  void OnImageOrTextRemovedWhilePending() {
+    was_image_or_text_removed_while_pending_ = true;
+  }
+
  private:
   const WeakMember<Node> node_;
   const uint64_t recorded_size_;
   const gfx::RectF root_visual_rect_;
   uint32_t frame_index_ = 0;
+  bool was_image_or_text_removed_while_pending_ = false;
   base::TimeTicks paint_time_;
   DOMPaintTimingInfo paint_timing_info_;
   Member<SoftNavigationContext> soft_navigation_context_;
@@ -88,7 +100,6 @@ class CORE_EXPORT TextRecord final : public PaintTimingRecord {
              const gfx::RectF& element_timing_rect,
              const gfx::Rect& frame_visual_rect,
              const gfx::RectF& root_visual_rect,
-             uint32_t frame_index,
              bool is_needed_for_element_timing,
              SoftNavigationContext* soft_navigation_context);
 
@@ -152,9 +163,6 @@ class CORE_EXPORT ImageRecord final : public PaintTimingRecord {
     is_first_animated_frame_paint_timing_queued_ = value;
   }
 
-  bool IsOriginClean() const { return is_origin_clean_; }
-  void SetIsOriginClean(bool value) { is_origin_clean_ = value; }
-
   MediaRecordIdHash Hash() const { return hash_; }
   const MediaTiming* GetMediaTiming() const { return media_timing_; }
 
@@ -165,10 +173,6 @@ class CORE_EXPORT ImageRecord final : public PaintTimingRecord {
   base::TimeTicks first_animated_frame_time_;
   bool is_first_animated_frame_paint_timing_queued_ = false;
   bool is_loaded_ = false;
-  // A non-style image, or a style image that comes from an origin-clean style.
-  // Images that come from origin-dirty styles should have some limitations on
-  // what they report.
-  bool is_origin_clean_ = true;
   const double entropy_for_lcp_;
 };
 

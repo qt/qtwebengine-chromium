@@ -14,12 +14,29 @@ from typing import TYPE_CHECKING, Final, Iterator, Mapping, Optional, Sequence
 from typing_extensions import override
 
 from crossbench import path as pth
+from crossbench import plt
 
 if TYPE_CHECKING:
   from crossbench.plt.base import Platform
 
 
 class BasePathFinder(abc.ABC):
+
+  @classmethod
+  def find_binary(cls,
+                  platform: Platform,
+                  override: Optional[pth.AnyPath] = None) -> pth.AnyPath | None:
+    if override:
+      return platform.parse_binary_path(override)
+    return cls(platform).path
+
+  @classmethod
+  def local_binary(cls,
+                   override: Optional[pth.AnyPath] = None
+                  ) -> pth.LocalPath | None:
+    if override:
+      return plt.PLATFORM.parse_local_binary_path(override)
+    return cls(plt.PLATFORM).local_path
 
   def __init__(self, platform: Platform) -> None:
     self._platform: Final[Platform] = platform
@@ -287,7 +304,10 @@ class BaseChromiumPathFinder(BasePathFinder, metaclass=abc.ABCMeta):
   def candidates(self) -> tuple[pth.AnyPath, ...]:
     relative_path = chromium_src_relative_local_path() / self.chrome_path()
     if maybe_chrome := ChromiumCheckoutFinder(self._platform).path:
-      return (relative_path, maybe_chrome / self.chrome_path(),)
+      return (
+          relative_path,
+          maybe_chrome / self.chrome_path(),
+      )
     return (relative_path,)
 
 
@@ -383,7 +403,6 @@ class WprGoFinder(BaseCrossbenchPathFinder):
   def crossbench_path(cls) -> pth.AnyPath:
     return pth.AnyPath("third_party/webpagereplay/src/wpr.go")
 
-
   # Info of a prebuilt WPR binary for `browser_platform`, stored in the cloud.
   def cloud_binary(self, browser_platform: Platform) -> WprCloudBinary:
     wpr_go_file = self.local_path
@@ -398,7 +417,7 @@ class WprGoFinder(BaseCrossbenchPathFinder):
         hashes_json["wpr_go"][platform_key]["cloud_storage_hash"])
 
 
-class BuildtoolFinder(BaseChromiumPathFinder):
+class BundletoolFinder(BaseChromiumPathFinder):
 
   @classmethod
   @override
@@ -422,6 +441,15 @@ class BuildtoolFinder(BaseChromiumPathFinder):
 
     return super_candidates + (self.platform.local_path(
         brew_path / "bin/bundletool"),)
+
+
+class LlvmSymbolizerFinder(BaseChromiumPathFinder):
+
+  @classmethod
+  @override
+  def chrome_path(cls) -> pth.AnyPath:
+    return pth.AnyPath(
+        "third_party/llvm-build/Release+Asserts/bin/llvm-symbolizer")
 
 
 class TsProxyFinder(BaseCrossbenchPathFinder):

@@ -1850,7 +1850,7 @@ bool WriteSourcePrologue(int fd, const std::string& header_filename) {
       R"(#include "%s"
 
 #include "third_party/tinycbor/src/src/utf8_p.h"
-#include "util/osp_logging.h"
+#include "%s"
 
 namespace openscreen::msgs {
 namespace {
@@ -1973,7 +1973,9 @@ bool IsError(int64_t x) {
   return x < 0;
 }
 )";
-  WRITE_TO_FILE(fd, prologue, header_filename.c_str());
+  // Construct the util/osp_logging.h #include dynamically to avoid a false
+  // positive from checkdeps, which disallows including util/ in this file.
+  WRITE_TO_FILE(fd, prologue, header_filename.c_str(), "util/osp_logging.h");
   return true;
 }
 

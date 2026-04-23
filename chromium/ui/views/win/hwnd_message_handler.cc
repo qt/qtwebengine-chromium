@@ -70,10 +70,10 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/resize_utils.h"
-#include "ui/gfx/icon_util.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/path_win.h"
 #include "ui/gfx/win/hwnd_util.h"
+#include "ui/gfx/win/icon_util.h"
 #include "ui/gfx/win/rendering_window_manager.h"
 #include "ui/latency/latency_info.h"
 #include "ui/native_theme/native_theme_win.h"
@@ -811,6 +811,9 @@ void HWNDMessageHandler::Hide() {
 }
 
 void HWNDMessageHandler::Maximize() {
+  if (IsFullscreen()) {
+    SetFullscreen(false, display::kInvalidDisplayId);
+  }
   ExecuteSystemMenuCommand(SC_MAXIMIZE);
 }
 
@@ -820,7 +823,11 @@ void HWNDMessageHandler::Minimize() {
 }
 
 void HWNDMessageHandler::Restore() {
-  ExecuteSystemMenuCommand(SC_RESTORE);
+  if (IsFullscreen()) {
+    SetFullscreen(false, display::kInvalidDisplayId);
+  } else {
+    ExecuteSystemMenuCommand(SC_RESTORE);
+  }
 }
 
 void HWNDMessageHandler::Activate() {
@@ -2682,7 +2689,10 @@ void HWNDMessageHandler::OnPaint(HDC dc) {
 
   if (!IsRectEmpty(&ps.rcPaint)) {
     HBRUSH brush = delegate_->GetBackgroundPaintBrush();
-    if (!brush) {
+    // Translucent windows on Win10 + ANGLE D3D11 have a blending issue with
+    // non-black brush. Fallback to black brush to work around the issue. See
+    // crbug.com/445485657.
+    if (!brush || is_translucent_) {
       brush = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
     }
 
@@ -3666,22 +3676,6 @@ void HWNDMessageHandler::UpdateDwmFrame() {
                        insets.bottom()};
     DwmExtendFrameIntoClientArea(hwnd(), &margins);
   }
-}
-
-void HWNDMessageHandler::GenerateTouchEvent(ui::EventType event_type,
-                                            const gfx::Point& point,
-                                            ui::PointerId id,
-                                            base::TimeTicks time_stamp,
-                                            TouchEvents* touch_events) {
-  ui::TouchEvent event(event_type, point, time_stamp,
-                       ui::PointerDetails(ui::EventPointerType::kTouch, id));
-
-  event.SetFlags(ui::GetModifiersFromKeyState());
-
-  event.latency()->AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, time_stamp);
-
-  touch_events->push_back(event);
 }
 
 bool HWNDMessageHandler::HandleMouseInputForCaption(unsigned int message,

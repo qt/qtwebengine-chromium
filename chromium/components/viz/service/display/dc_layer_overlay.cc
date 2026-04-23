@@ -540,7 +540,7 @@ void FromDrawQuad(const DisplayResourceProvider* resource_provider,
   dc_layer.resource_size_in_pixels =
       resource_provider->GetResourceBackedSize(quad->resource_id);
   dc_layer.uv_rect =
-      gfx::BoundingRect(quad->uv_top_left, quad->uv_bottom_right);
+      quad->GetNormalizedTexCoords(dc_layer.resource_size_in_pixels);
   dc_layer.display_rect = gfx::RectF(quad->rect);
   dc_layer.format = resource_provider->GetSharedImageFormat(quad->resource_id);
   dc_layer.color = quad->background_color;
@@ -1144,6 +1144,18 @@ void DCLayerOverlayProcessor::Process(
   }
 }
 
+void DCLayerOverlayProcessor::Process(
+    const DisplayResourceProvider* resource_provider,
+    const SurfaceDamageRectList& surface_damage_rect_list_in_root_space,
+    bool is_page_fullscreen_mode,
+    RenderPassOverlayDataMap& render_pass_overlay_data_map) {
+  // By default, call the other overload with empty filter maps.
+  Process(resource_provider, /*render_pass_filters=*/{},
+          /*render_pass_backdrop_filters=*/{},
+          surface_damage_rect_list_in_root_space, is_page_fullscreen_mode,
+          render_pass_overlay_data_map);
+}
+
 bool DCLayerOverlayProcessor::ShouldSkipOverlay(
     AggregatedRenderPass* render_pass) const {
   QuadList* quad_list = &render_pass->quad_list;
@@ -1245,6 +1257,12 @@ void DCLayerOverlayProcessor::UpdateDCLayerOverlays(
     // underlays in its render pass, not relative to the total number of
     // underlays across all render passes.
     dc_layer.plane_z_order = -1 - overlay_data.promoted_overlays.size();
+    // Give this underlay video an explicitly opaque background. This avoids
+    // letting users see through the video hole punch if a video swap chain
+    // contains transparent pixels. This can happen with MF surfaces where we
+    // have a valid MF surface handle, but the surface is not yet ready.
+    dc_layer.color =
+        dc_layer.color ? dc_layer.color->makeOpaque() : SkColors::kBlack;
     ProcessForUnderlay(render_pass, it, quad_rect_in_target_space,
                        previous_frame_state, global_overlay_state, overlay_data,
                        current_frame_state);

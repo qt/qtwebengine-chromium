@@ -16,6 +16,10 @@
 
 import Foundation
 
+#if canImport(Common)
+  import Common
+#endif
+
 /// Verifiable is a protocol all swift flatbuffers object should conform to,
 /// since swift is similar to `cpp` and `rust` where the data is read directly
 /// from `unsafeMemory` thus the need to verify if the buffer received is a valid one
@@ -47,8 +51,8 @@ extension Verifiable {
   @discardableResult
   public static func verifyRange<T>(
     _ verifier: inout Verifier,
-    at position: Int, of type: T.Type) throws -> (start: Int, count: Int)
-  {
+    at position: Int, of type: T.Type
+  ) throws -> (start: Int, count: Int) {
     let len: UOffset = try verifier.getValue(at: position)
     let intLen = Int(len)
     let start = Int(clamping: (position &+ MemoryLayout<Int32>.size).magnitude)
@@ -70,8 +74,8 @@ extension Verifiable where Self: Scalar {
   public static func verify<T>(
     _ verifier: inout Verifier,
     at position: Int,
-    of type: T.Type) throws where T: Verifiable
-  {
+    of type: T.Type
+  ) throws where T: Verifiable {
     try verifier.inBuffer(position: position, of: type.self)
   }
 }
@@ -92,8 +96,8 @@ public enum ForwardOffset<U>: Verifiable where U: Verifiable {
   public static func verify<T>(
     _ verifier: inout Verifier,
     at position: Int,
-    of type: T.Type) throws where T: Verifiable
-  {
+    of type: T.Type
+  ) throws where T: Verifiable {
     let offset: UOffset = try verifier.getValue(at: position)
     let nextOffset = Int(clamping: (Int(offset) &+ position).magnitude)
     try U.verify(&verifier, at: nextOffset, of: U.self)
@@ -116,8 +120,8 @@ public enum Vector<U, S>: Verifiable where U: Verifiable, S: Verifiable {
   public static func verify<T>(
     _ verifier: inout Verifier,
     at position: Int,
-    of type: T.Type) throws where T: Verifiable
-  {
+    of type: T.Type
+  ) throws where T: Verifiable {
     /// checks if the next verification type S is equal to U of type forwardOffset
     /// This had to be done since I couldnt find a solution for duplicate call functions
     /// A fix will be appreciated
@@ -166,8 +170,8 @@ public enum UnionVector<S> where S: UnionEnum {
     fieldPosition: Int,
     unionKeyName: String,
     fieldName: String,
-    completion: @escaping Completion) throws
-  {
+    completion: @escaping Completion
+  ) throws {
     /// Get offset for union key vectors and offset vectors
     let keyOffset: UOffset = try verifier.getValue(at: keyPosition)
     let fieldOffset: UOffset = try verifier.getValue(at: fieldPosition)
@@ -197,17 +201,19 @@ public enum UnionVector<S> where S: UnionEnum {
     while count < keysRange.count {
 
       /// index of readable enum value in array
-      let keysIndex = MemoryLayout<S.T>.size * count
-      guard let _enum = try S.init(value: verifier._buffer.read(
-        def: S.T.self,
-        position: keysRange.start + keysIndex)) else
-      {
+      let keysIndex = MemoryLayout<S.T>.size &* count
+      guard
+        let _enum = try S.init(
+          value: verifier._buffer.read(
+            def: S.T.self,
+            position: keysRange.start &+ keysIndex))
+      else {
         throw FlatbuffersErrors.unknownUnionCase
       }
       /// index of readable offset value in array
-      let fieldIndex = MemoryLayout<UOffset>.size * count
-      try completion(&verifier, _enum, offsetsRange.start + fieldIndex)
-      count += 1
+      let fieldIndex = MemoryLayout<UOffset>.size &* count
+      try completion(&verifier, _enum, offsetsRange.start &+ fieldIndex)
+      count &+= 1
     }
   }
 }

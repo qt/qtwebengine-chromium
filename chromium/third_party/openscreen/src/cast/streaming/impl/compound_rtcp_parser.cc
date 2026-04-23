@@ -9,6 +9,7 @@
 
 #include "cast/streaming/impl/packet_util.h"
 #include "cast/streaming/impl/rtcp_session.h"
+#include "cast/streaming/impl/statistics_common.h"
 #include "util/chrono_helpers.h"
 #include "util/osp_logging.h"
 #include "util/std_util.h"
@@ -20,8 +21,6 @@ namespace {
 // Use the Clock's minimum time value (an impossible value, waaaaay before epoch
 // time) to represent unset time_point values.
 constexpr auto kNullTimePoint = Clock::time_point::min();
-
-constexpr uint32_t kCastName = ('C' << 24) + ('A' << 16) + ('S' << 8) + 'T';
 
 // Some receivers send time sync requests (that we ignore).
 constexpr uint32_t kTimeSyncRequestName =
@@ -77,40 +76,6 @@ void CanonicalizePacketNackVector(std::vector<PacketNack>* packets) {
       }
     }
     packets->erase(++kept_it, packets->end());
-  }
-}
-
-// TODO(issuetracker.google.com/298085631): implement the serialization of
-// StatisticsEventType to wire type as part of implementing receiver side event
-// generation.
-// NOTE: the legacy mappings, like AudioAckSent below, may still be in use
-// on some legacy receivers.
-StatisticsEventType ToEventTypeFromWire(uint8_t wire_event) {
-  switch (wire_event) {
-    case 1:   // AudioAckSent
-    case 5:   // VideoAckSent
-    case 11:  // Unified
-      return StatisticsEventType::kFrameAckSent;
-
-    case 2:   // AudioPlayoutDelay
-    case 7:   // VideoRenderDelay
-    case 12:  // Unified
-      return StatisticsEventType::kFramePlayedOut;
-
-    case 3:   // AudioFrameDecoded
-    case 6:   // VideoFrameDecoded
-    case 13:  // Unified
-      return StatisticsEventType::kFrameDecoded;
-
-    case 4:   // AudioPacketReceived
-    case 8:   // VideoPacketReceived
-    case 14:  // Unified
-      return StatisticsEventType::kPacketReceived;
-
-    default:
-      OSP_VLOG << "Unexpected RTCP log message received: "
-               << static_cast<int>(wire_event);
-      return StatisticsEventType::kUnknown;
   }
 }
 
@@ -317,9 +282,10 @@ bool CompoundRtcpParser::ParseFrameLogMessages(
           ConsumeField<uint16_t>(in);
 
       // Skip unknown event types, they are not useful.
-      const StatisticsEventType event_type = ToEventTypeFromWire(
-          static_cast<uint8_t>(event_type_and_timestamp_delta >> 12));
-      if (event_type == StatisticsEventType::kUnknown) {
+      const auto event_type =
+          StatisticsEvent::FromWireType(static_cast<StatisticsEvent::WireType>(
+              event_type_and_timestamp_delta >> 12));
+      if (event_type == StatisticsEvent::Type::kUnknown) {
         continue;
       }
 
@@ -327,7 +293,7 @@ bool CompoundRtcpParser::ParseFrameLogMessages(
           .type = event_type,
           .timestamp = event_timestamp_base +
                        milliseconds(event_type_and_timestamp_delta & 0xFFF)};
-      if (event_type == StatisticsEventType::kPacketReceived) {
+      if (event_type == StatisticsEvent::Type::kPacketReceived) {
         event_log.packet_id = delay_delta_or_packet_id;
       } else {
         event_log.delay =

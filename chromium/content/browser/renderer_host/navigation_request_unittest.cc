@@ -17,11 +17,14 @@
 #include "content/browser/renderer_host/navigation_throttle_runner.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/origin_trials_controller_delegate.h"
+#include "content/public/browser/process_selection_user_data.h"
 #include "content/public/browser/ssl_status.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/test/mock_web_contents_observer.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_navigation_throttle.h"
 #include "content/test/fenced_frame_test_utils.h"
@@ -42,6 +45,25 @@
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom.h"
 
 namespace content {
+
+namespace {
+
+// A simple ProcessSelectionUserData::Data implementation for testing.
+class ProcessSelectionTestData
+    : public ProcessSelectionUserData::Data<ProcessSelectionTestData> {
+ public:
+  explicit ProcessSelectionTestData(int value) : value_(value) {}
+  int value() const { return value_; }
+
+ private:
+  friend ProcessSelectionUserData::Data<ProcessSelectionTestData>;
+  PROCESS_SELECTION_USER_DATA_KEY_DECL();
+  int value_;
+};
+
+PROCESS_SELECTION_USER_DATA_KEY_IMPL(ProcessSelectionTestData);
+
+}  // namespace
 
 class NavigationRequestTest : public RenderViewHostImplTestHarness {
  public:
@@ -732,6 +754,27 @@ TEST_F(NavigationRequestTest, NoDnsAliases) {
   EXPECT_TRUE(navigation->GetNavigationHandle()->GetDnsAliases().empty());
 }
 
+TEST_F(NavigationRequestTest, ProcessSelectionUserDataIsAvailableFromUrlInfo) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      features::kProcessSelectionDeferringConditions);
+
+  NavigationRequest* request =
+      main_test_rfh()->frame_tree_node()->navigation_request();
+  ProcessSelectionUserData& user_data = request->GetProcessSelectionUserData();
+  user_data.SetUserData(ProcessSelectionTestData::UserDataKey(),
+                        std::make_unique<ProcessSelectionTestData>(42));
+
+  UrlInfo url_info = request->GetUrlInfo();
+  ASSERT_TRUE(url_info.process_selection_user_data);
+
+  const ProcessSelectionTestData* retrieved_data_from_url_info =
+      ProcessSelectionTestData::FromProcessSelectionUserData(
+          url_info.process_selection_user_data);
+  ASSERT_TRUE(retrieved_data_from_url_info);
+  EXPECT_EQ(42, retrieved_data_from_url_info->value());
+}
+
 TEST_F(NavigationRequestTest, StorageKeyToCommit) {
   TestRenderFrameHost* child_document = static_cast<TestRenderFrameHost*>(
       content::RenderFrameHostTester::For(main_rfh())->AppendChild(""));
@@ -963,6 +1006,39 @@ TEST_F(NavigationRequestTest, SanitizeRedirectsForCommit) {
   EXPECT_EQ(GURL("https://a.com"), commit_params->redirects[0]);
   EXPECT_EQ(GURL("https://b.com"), commit_params->redirects[1]);
   EXPECT_EQ(GURL("https://c.com"), commit_params->redirects[2]);
+}
+
+TEST_F(NavigationRequestTest, AbortsDeletedNavigationInProgress) {
+  const GURL kUrl1 = GURL("http://a.com");
+  std::unique_ptr<NavigationSimulator> navigation =
+      NavigationSimulatorImpl::CreateRendererInitiated(kUrl1, main_rfh());
+  navigation->Start();
+
+  testing::NiceMock<MockWebContentsObserver> failed_observer(web_contents());
+  EXPECT_CALL(failed_observer, DidFinishNavigation(testing::_))
+      .WillOnce([](NavigationHandle* navigation_handle) {
+        EXPECT_EQ(navigation_handle->GetNetErrorCode(),
+                  net::Error::ERR_ABORTED);
+      });
+  DeleteContents();
+}
+
+TEST_F(NavigationRequestTest, AbortsDeletedNavigationInProgressWithRedirect) {
+  const GURL kUrl1 = GURL("http://a.com");
+  const GURL kUrl2 = GURL("http://b.com");
+
+  std::unique_ptr<NavigationSimulator> navigation =
+      NavigationSimulatorImpl::CreateRendererInitiated(kUrl1, main_rfh());
+  navigation->Start();
+  navigation->Redirect(kUrl2);
+
+  testing::NiceMock<MockWebContentsObserver> failed_observer(web_contents());
+  EXPECT_CALL(failed_observer, DidFinishNavigation(testing::_))
+      .WillOnce([](NavigationHandle* navigation_handle) {
+        EXPECT_EQ(navigation_handle->GetNetErrorCode(),
+                  net::Error::ERR_ABORTED);
+      });
+  DeleteContents();
 }
 
 // Test that the required CSP of every frame is computed/inherited correctly and

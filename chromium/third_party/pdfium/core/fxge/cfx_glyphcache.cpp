@@ -19,6 +19,7 @@
 #include "core/fxge/cfx_glyphbitmap.h"
 #include "core/fxge/cfx_path.h"
 #include "core/fxge/cfx_substfont.h"
+#include "core/fxge/fx_font.h"
 
 #if defined(PDF_USE_SKIA)
 #include "third_party/skia/include/core/SkFontMgr.h"         // nogncheck
@@ -47,7 +48,7 @@ class UniqueKeyGen {
   UniqueKeyGen(const CFX_Font* font,
                const CFX_Matrix& matrix,
                int dest_width,
-               int anti_alias,
+               FontAntiAliasingMode anti_alias,
                bool bNative);
 
   pdfium::span<const uint8_t> span() const;
@@ -75,7 +76,7 @@ pdfium::span<const uint8_t> UniqueKeyGen::span() const {
 UniqueKeyGen::UniqueKeyGen(const CFX_Font* font,
                            const CFX_Matrix& matrix,
                            int dest_width,
-                           int anti_alias,
+                           FontAntiAliasingMode anti_alias,
                            bool bNative) {
   int nMatrixA = static_cast<int>(matrix.a * 10000);
   int nMatrixB = static_cast<int>(matrix.b * 10000);
@@ -86,11 +87,11 @@ UniqueKeyGen::UniqueKeyGen(const CFX_Font* font,
   if (bNative) {
     if (font->GetSubstFont()) {
       Initialize({nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width,
-                  anti_alias, font->GetSubstFont()->weight_,
+                  static_cast<int>(anti_alias), font->GetSubstFont()->weight_,
                   font->GetSubstFont()->italic_angle_, font->IsVertical(), 3});
     } else {
-      Initialize(
-          {nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width, anti_alias, 3});
+      Initialize({nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width,
+                  static_cast<int>(anti_alias), 3});
     }
     return;
   }
@@ -98,12 +99,12 @@ UniqueKeyGen::UniqueKeyGen(const CFX_Font* font,
 
   CHECK(!bNative);
   if (font->GetSubstFont()) {
-    Initialize({nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width, anti_alias,
-                font->GetSubstFont()->weight_,
+    Initialize({nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width,
+                static_cast<int>(anti_alias), font->GetSubstFont()->weight_,
                 font->GetSubstFont()->italic_angle_, font->IsVertical()});
   } else {
-    Initialize(
-        {nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width, anti_alias});
+    Initialize({nMatrixA, nMatrixB, nMatrixC, nMatrixD, dest_width,
+                static_cast<int>(anti_alias)});
   }
 }
 
@@ -120,7 +121,7 @@ std::unique_ptr<CFX_GlyphBitmap> CFX_GlyphCache::RenderGlyph(
     bool bFontStyle,
     const CFX_Matrix& matrix,
     int dest_width,
-    int anti_alias) {
+    FontAntiAliasingMode anti_alias) {
   if (!face_) {
     return nullptr;
   }
@@ -157,7 +158,7 @@ const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(
     bool bFontStyle,
     const CFX_Matrix& matrix,
     int dest_width,
-    int anti_alias,
+    FontAntiAliasingMode anti_alias,
     CFX_TextRenderOptions* text_options) {
   if (glyph_index == kInvalidGlyphIndex) {
     return nullptr;
@@ -306,7 +307,7 @@ CFX_GlyphBitmap* CFX_GlyphCache::LookUpGlyphBitmap(
     uint32_t glyph_index,
     bool bFontStyle,
     int dest_width,
-    int anti_alias) {
+    FontAntiAliasingMode anti_alias) {
   SizeGlyphCache* pSizeCache;
   auto it = size_map_.find(FaceGlyphsKey);
   if (it == size_map_.end()) {

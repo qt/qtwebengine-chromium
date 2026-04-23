@@ -6,6 +6,7 @@ ash/webui/camera_app_ui/resources/js/lib
 base
 base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base
 base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/containers
+base/allocator/partition_allocator/src/partition_alloc/shim
 base/android
 base/android/java/src/org/chromium/base
 base/containers
@@ -48,7 +49,6 @@ chrome/browser/ash/system_web_apps
 chrome/browser/autofill/android/junit/src/org/chromium/chrome/browser/autofill/editors
 chrome/browser/chromeos/extensions/telemetry
 chrome/browser/download
-chrome/browser/extensions
 chrome/browser/extensions/commands
 chrome/browser/feed/android
 chrome/browser/first_run
@@ -66,6 +66,8 @@ chrome/browser/speech/extension_api
 chrome/browser/support_tool/ash
 chrome/browser/sync/test/integration
 chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox
+chrome/browser/ui/views/search_engines
+chrome/browser/ui/views/side_panel
 chrome/browser/ui/webui/settings
 chrome/browser/win
 chromecast
@@ -105,7 +107,6 @@ chrome/test/data/extensions/manifest_tests
 chrome/test/data/mac_installer
 chrome/test/data/safe_browsing
 chrome/test/data/safe_browsing/download_protection
-chrome/test/data/third_party/kraken/tests/kraken-1.1
 chrome/test/data/third_party/spaceport
 chrome/test/data/updater
 chrome/test/data/webui
@@ -120,7 +121,6 @@ components/autofill/core/browser/form_parsing
 components/cast/named_message_port_connector
 components/cbor
 components/certificate_transparency
-components/component_updater/installer_policies
 components/domain_reliability
 components/enterprise/obfuscation/core
 components/gcm_driver
@@ -177,6 +177,7 @@ content/public/browser
 content/public/common
 content/renderer
 content/test/gpu
+content/web_test/browser
 content/web_test/renderer
 device/gamepad
 device/vr/public/mojom
@@ -286,8 +287,6 @@ third_party/afl/src/docs
 third_party/afl/src/llvm_mode
 third_party/afl/src/qemu_mode
 third_party/android_build_tools/json
-third_party/android_deps/autorolled/committed/libs/com_google_errorprone_error_prone_annotations
-third_party/android_deps/autorolled/committed/libs/com_google_protobuf_protobuf_javalite
 third_party/android_deps/buildSrc/src/main/groovy
 third_party/android_deps/libs
 third_party/android_toolchain
@@ -443,7 +442,6 @@ third_party/blink/web_tests/wpt_internal/html/semantics/parser-blocking-styleshe
 third_party/blink/web_tests/wpt_internal/webgpu/canvas_webgpu_transfer
 third_party/brotli
 third_party/brotli/enc
-third_party/bspatch
 third_party/byte_buddy
 third_party/chevron
 third_party/closure_compiler/compiler
@@ -514,6 +512,11 @@ third_party/hyphenation-patterns/src/am
 third_party/inspector_protocol
 third_party/jsoncpp
 third_party/libdisplay-info
+third_party/libdmg-hfsplus/src/dmg
+third_party/libdmg-hfsplus/src/docs
+third_party/libdmg-hfsplus/src/test/attribution_reference
+third_party/libdmg-hfsplus/src/test/hfs_xattrs_reference
+third_party/libdmg-hfsplus/src/test/run_spanning_reference
 third_party/libpfm4
 third_party/libpng/contrib/oss-fuzz
 third_party/liburlpattern
@@ -630,8 +633,8 @@ third_party/rust/chromium_crates_io/vendor/clap_builder-v4/src/builder
 third_party/rust/chromium_crates_io/vendor/clap_builder-v4/src/parser
 third_party/rust/chromium_crates_io/vendor/clap-v4
 third_party/rust/chromium_crates_io/vendor/clap-v4/src
-third_party/rust/chromium_crates_io/vendor/codespan-reporting-v0_12
-third_party/rust/chromium_crates_io/vendor/codespan-reporting-v0_12/examples
+third_party/rust/chromium_crates_io/vendor/codespan-reporting-v0_13
+third_party/rust/chromium_crates_io/vendor/codespan-reporting-v0_13/examples
 third_party/rust/chromium_crates_io/vendor/crc32fast-v1/.github/workflows
 third_party/rust/chromium_crates_io/vendor/cxx-v1
 third_party/rust/chromium_crates_io/vendor/cxx-v1/book
@@ -647,6 +650,8 @@ third_party/rust/chromium_crates_io/vendor/equivalent-v1/.github/workflows
 third_party/rust/chromium_crates_io/vendor/flate2-v1
 third_party/rust/chromium_crates_io/vendor/hashbrown-v0_15
 third_party/rust/chromium_crates_io/vendor/hashbrown-v0_15/src
+third_party/rust/chromium_crates_io/vendor/hashbrown-v0_16
+third_party/rust/chromium_crates_io/vendor/hashbrown-v0_16/src
 third_party/rust/chromium_crates_io/vendor/hex-v0_4
 third_party/rust/chromium_crates_io/vendor/icu_locale-v2/src/fallback
 third_party/rust/chromium_crates_io/vendor/icu_normalizer-v2/benches/data
@@ -670,8 +675,8 @@ third_party/rust/chromium_crates_io/vendor/prost-v0_14
 third_party/rust/chromium_crates_io/vendor/qr_code-v2
 third_party/rust/chromium_crates_io/vendor/quote-v1
 third_party/rust/chromium_crates_io/vendor/quote-v1/.github/workflows
-third_party/rust/chromium_crates_io/vendor/read-fonts-v0_35/src/tables
-third_party/rust/chromium_crates_io/vendor/read-fonts-v0_35/src/tables/postscript
+third_party/rust/chromium_crates_io/vendor/read-fonts-v0_36/src/tables
+third_party/rust/chromium_crates_io/vendor/read-fonts-v0_36/src/tables/postscript
 third_party/rust/chromium_crates_io/vendor/regex-automata-v0_4
 third_party/rust/chromium_crates_io/vendor/regex-automata-v0_4/src/util
 third_party/rust/chromium_crates_io/vendor/regex-automata-v0_4/tests/dfa
@@ -679,9 +684,6 @@ third_party/rust/chromium_crates_io/vendor/regex-automata-v0_4/tests/hybrid
 third_party/rust/chromium_crates_io/vendor/regex-automata-v0_4/tests/meta
 third_party/rust/chromium_crates_io/vendor/regex-automata-v0_4/tests/nfa/thompson/backtrack
 third_party/rust/chromium_crates_io/vendor/regex-syntax-v0_8
-third_party/rust/chromium_crates_io/vendor/rustversion-v1
-third_party/rust/chromium_crates_io/vendor/rustversion-v1/.github/workflows
-third_party/rust/chromium_crates_io/vendor/rustversion-v1/src
 third_party/rust/chromium_crates_io/vendor/ryu-v1
 third_party/rust/chromium_crates_io/vendor/ryu-v1/.github/workflows
 third_party/rust/chromium_crates_io/vendor/ryu-v1/src
@@ -712,8 +714,8 @@ third_party/rust/chromium_crates_io/vendor/winapi-util-v0_1/.github/workflows
 third_party/rust/chromium_crates_io/vendor/windows-sys-v0_52
 third_party/rust/chromium_crates_io/vendor/windows-sys-v0_52/src/Windows/Wdk/System/SystemServices
 third_party/rust/chromium_crates_io/vendor/windows-sys-v0_52/src/Windows/Win32/Networking/Clustering
-third_party/rust/chromium_crates_io/vendor/zip-v5
-third_party/rust/chromium_crates_io/vendor/zip-v5/src
+third_party/rust/chromium_crates_io/vendor/zip-v6
+third_party/rust/chromium_crates_io/vendor/zip-v6/src
 third_party/rust/miniz_oxide/v0_8
 third_party/screen-ai
 third_party/sentencepiece/src
@@ -832,4 +834,5 @@ ui/ozone/platform/drm/common
 ui/ozone/platform/drm/gpu
 ui/ozone/platform/drm/host
 ui/views/controls/tabbed_pane
+ui/webui/resources/cr_components/search
 url/third_party/mozilla

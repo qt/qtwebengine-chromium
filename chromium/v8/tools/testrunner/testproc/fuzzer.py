@@ -66,6 +66,8 @@ EXTRA_FLAGS = [
     (0.1, '--turbo-instruction-scheduling'),
     (0.1, '--turbo-stress-instruction-scheduling'),
     (0.2, '--turboshaft-verify-load-elimination'),
+    (0.2, '--turboshaft-verify-load-store-taggedness'),
+    (0.1, '--turboshaft-verify-reductions'),
     (0.1, '--stress-wasm-memory-moving'),
     (0.1, '--stress-scavenger-conservative-object-pinning-random'),
     (0.1, '--conservative-stack-scanning'),
@@ -74,7 +76,9 @@ EXTRA_FLAGS = [
     (0.1, '--ephemeron-fixpoint-iterations=0'),
     (0.25, '--experimental-wasm-revectorize'),
     (0.1, '--no-memory-pool'),
-    (0.1, '--handle-weak-ref-weakly-in-minor-gc'),
+    (0.1, '--wasm-assert-types'),
+    (0.5, '--proto-assign-seq-opt'),
+    (0.1, '--proto-assign-seq-opt --proto-assign-seq-opt-count=1'),
 ]
 
 MIN_DEOPT = 1
@@ -311,6 +315,13 @@ class ScavengeFuzzer(Fuzzer):
       yield ['--stress-scavenge=%d' % (analysis_value or 100)]
 
 
+class ScavengerChaosFuzzer(Fuzzer):
+  def create_flags_generator(self, rng, test, analysis_value):
+    while True:
+      threshold = f'--scavenger-chaos-mode-threshold={rng.randint(0, 100)}'
+      yield ['--scavenger-chaos-mode', threshold]
+
+
 class MarkingAnalyzer(Analyzer):
   def get_analysis_flags(self):
     return ['--fuzzer-gc-analysis']
@@ -467,6 +478,7 @@ FUZZERS = {
     'interrupt': (None, InterruptBudgetFuzzer),
     'marking': (MarkingAnalyzer, MarkingFuzzer),
     'scavenge': (ScavengeAnalyzer, ScavengeFuzzer),
+    'scavenge_chaos': (None, ScavengerChaosFuzzer),
     'stack': (None, StackSizeFuzzer),
     'threads': (None, ThreadPoolSizeFuzzer),
 }

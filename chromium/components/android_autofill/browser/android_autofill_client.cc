@@ -95,6 +95,10 @@ autofill::VotesUploader& AndroidAutofillClient::GetVotesUploader() {
   return votes_uploader_;
 }
 
+bool AndroidAutofillClient::HasPersonalDataManager() const {
+  return false;
+}
+
 autofill::PersonalDataManager& AndroidAutofillClient::GetPersonalDataManager() {
   NOTREACHED();
 }
@@ -227,8 +231,8 @@ bool AndroidAutofillClient::IsAutofillProfileEnabled() const {
   NOTREACHED();
 }
 
-bool AndroidAutofillClient::IsAutofillPaymentMethodsEnabled() const {
-  NOTREACHED();
+bool AndroidAutofillClient::IsWalletStorageEnabled() const {
+  return false;
 }
 
 bool AndroidAutofillClient::IsAutocompleteEnabled() const {

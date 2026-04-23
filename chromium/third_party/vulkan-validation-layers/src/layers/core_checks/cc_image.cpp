@@ -482,7 +482,8 @@ bool CoreChecks::ValidateImageExternalMemory(const VkImageCreateInfo &create_inf
         if (create_info.initialLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
             skip |= LogError("VUID-VkImageCreateInfo-pNext-01443", device,
                              create_info_loc.pNext(Struct::VkExternalMemoryImageCreateInfo, Field::handleTypes),
-                             "is %" PRIu32 " but the initialLayout is %s.", external_memory_create_info->handleTypes,
+                             "is %s (non-zero) but the initialLayout is %s.",
+                             string_VkExternalMemoryHandleTypeFlags(external_memory_create_info->handleTypes).c_str(),
                              string_VkImageLayout(create_info.initialLayout));
         }
         // Check external memory handle types compatibility
@@ -547,7 +548,8 @@ bool CoreChecks::ValidateImageExternalMemory(const VkImageCreateInfo &create_inf
         if (create_info.initialLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
             skip |= LogError("VUID-VkImageCreateInfo-pNext-01443", device,
                              create_info_loc.pNext(Struct::VkExternalMemoryImageCreateInfoNV, Field::handleTypes),
-                             "is %" PRIu32 " but pCreateInfo->initialLayout is %s.", external_memory_create_info_nv->handleTypes,
+                             "is %s (non-zero) but pCreateInfo->initialLayout is %s.",
+                             string_VkExternalMemoryHandleTypeFlagsNV(external_memory_create_info_nv->handleTypes).c_str(),
                              string_VkImageLayout(create_info.initialLayout));
         }
         // Check external memory handle types compatibility
@@ -971,7 +973,8 @@ bool CoreChecks::ValidateClearDepthStencilValue(VkCommandBuffer commandBuffer, V
     bool skip = false;
 
     if (!IsExtEnabled(extensions.vk_ext_depth_range_unrestricted)) {
-        if (!(clearValue.depth >= 0.0) || !(clearValue.depth <= 1.0)) {
+        const bool depth_in_unit_range = (clearValue.depth >= 0.0 && clearValue.depth <= 1.0);
+        if (!depth_in_unit_range) {
             skip |=
                 LogError("VUID-VkClearDepthStencilValue-depth-00022", commandBuffer, loc.dot(Field::depth),
                          "is %f (not within the [0.0, 1.0] range) but VK_EXT_depth_range_unrestricted extension is not enabled.",
@@ -1249,7 +1252,11 @@ bool CoreChecks::PreCallValidateCmdClearAttachments(VkCommandBuffer commandBuffe
                 const LogObjectList objlist(commandBuffer, rp_state->Handle());
                 skip |= LogError("VUID-vkCmdClearAttachments-aspectMask-07271", objlist, attachment_loc.dot(Field::colorAttachment),
                                  "is VK_ATTACHMENT_UNUSED, but aspectMask is VK_IMAGE_ASPECT_COLOR_BIT.");
-            } else if (clear_desc->colorAttachment >= color_attachment_count && color_attachment_count > 0) {
+            } else if (color_attachment_count == 0) {
+                const LogObjectList objlist(commandBuffer, rp_state->Handle());
+                skip |= LogError("VUID-vkCmdClearAttachments-aspectMask-07271", objlist, attachment_loc.dot(Field::aspectMask),
+                                 "VK_IMAGE_ASPECT_COLOR_BIT but there are no color attachments in the renderpass.");
+            } else if (clear_desc->colorAttachment >= color_attachment_count) {
                 auto describe_color_count = [is_dynamic_rendering, &cb_state]() {
                     std::stringstream ss;
                     if (is_dynamic_rendering) {
@@ -2333,11 +2340,11 @@ bool CoreChecks::ValidateImageViewCreateInfo(const VkImageViewCreateInfo &create
     const auto ycbcr_conversion = vku::FindStructInPNextChain<VkSamplerYcbcrConversionInfo>(create_info.pNext);
     if (ycbcr_conversion && ycbcr_conversion->conversion != VK_NULL_HANDLE) {
         auto ycbcr_state = Get<vvl::SamplerYcbcrConversion>(ycbcr_conversion->conversion);
-        if (ycbcr_state && (create_info.format != ycbcr_state->format)) {
+        if (ycbcr_state && (create_info.format != ycbcr_state->create_info.format)) {
             skip |= LogError("VUID-VkImageViewCreateInfo-pNext-06658", create_info.image,
                              create_info_loc.pNext(Struct::VkSamplerYcbcrConversionInfo, Field::conversion),
                              "was created with format %s which is different than create_info.format %s.",
-                             string_VkFormat(ycbcr_state->format), string_VkFormat(view_format));
+                             string_VkFormat(ycbcr_state->create_info.format), string_VkFormat(view_format));
         }
     } else if ((image_usage & VK_IMAGE_USAGE_SAMPLED_BIT) && FormatRequiresYcbcrConversionExplicitly(view_format)) {
         skip |= LogError("VUID-VkImageViewCreateInfo-format-06415", create_info.image, create_info_loc.dot(Field::image),
@@ -2732,7 +2739,7 @@ bool CoreChecks::PreCallValidateTransitionImageLayout(VkDevice device, uint32_t 
                                  "VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL or VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL"
                                  " (oldLayout = %s and newLayout = %s).",
                                  string_VkImageAspectFlags(aspect_mask).c_str(), string_VkImageLayout(transition.oldLayout),
-                                 string_VkImageLayout(transition.oldLayout));
+                                 string_VkImageLayout(transition.newLayout));
             }
         }
         if (aspect_mask & VK_IMAGE_ASPECT_STENCIL_BIT) {
@@ -2747,7 +2754,7 @@ bool CoreChecks::PreCallValidateTransitionImageLayout(VkDevice device, uint32_t 
                                  "VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL or VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL"
                                  " (oldLayout = %s and newLayout = %s).",
                                  string_VkImageAspectFlags(aspect_mask).c_str(), string_VkImageLayout(transition.oldLayout),
-                                 string_VkImageLayout(transition.oldLayout));
+                                 string_VkImageLayout(transition.newLayout));
             }
         }
         if (!IsValueIn(transition.oldLayout,

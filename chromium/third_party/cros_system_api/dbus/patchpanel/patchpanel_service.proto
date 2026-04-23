@@ -70,15 +70,20 @@ message IPAddrCIDR {
 }
 
 // Represents a virtual network device created and managed by patchpanel and
-// used for one of the hosted guest platforms.
+// used for one of the hosted network elements.
 message NetworkDevice {
-  // Identifies the guest for which the virtual device is used.
+  // Identifies the hosted network element for which the virtual device is used.
+  // Connected namespace is added as guest type to allow dns-proxy running on
+  // the root namespace to listen on the changes (b/363147822). The naming
+  // "guest" is used here because the field was originally only contained ARC
+  // and the VMs.
   enum GuestType {
     UNKNOWN = 0;
     ARC = 1;
     ARCVM = 2;
     TERMINA_VM = 3;
     PARALLELS_VM = 4;
+    CONNECTED_NS = 5;
   };
 
   // Identifies the technology of the underlying physical device of the virtual

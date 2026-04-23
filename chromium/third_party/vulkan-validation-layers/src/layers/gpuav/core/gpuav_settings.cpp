@@ -32,7 +32,7 @@
 bool GpuAVSettings::IsShaderInstrumentationEnabled() const {
     return shader_instrumentation.descriptor_checks || shader_instrumentation.buffer_device_address ||
            shader_instrumentation.ray_query || shader_instrumentation.post_process_descriptor_indexing ||
-           shader_instrumentation.vertex_attribute_fetch_oob;
+           shader_instrumentation.vertex_attribute_fetch_oob || shader_instrumentation.sanitizer;
 }
 bool GpuAVSettings::IsSpirvModified() const { return IsShaderInstrumentationEnabled() || debug_printf_enabled; }
 
@@ -43,19 +43,22 @@ void GpuAVSettings::DisableShaderInstrumentationAndOptions() {
     shader_instrumentation.ray_query = false;
     shader_instrumentation.post_process_descriptor_indexing = false;
     shader_instrumentation.vertex_attribute_fetch_oob = false;
+    shader_instrumentation.sanitizer = false;
     // Because of this setting, cannot really have an "enabled" parameter to pass to this method
     select_instrumented_shaders = false;
 }
 bool GpuAVSettings::IsBufferValidationEnabled() const {
     return validate_indirect_draws_buffers || validate_indirect_dispatches_buffers || validate_indirect_trace_rays_buffers ||
-           validate_buffer_copies || validate_index_buffers;
+           validate_buffer_copies || validate_copy_memory_indirect || validate_index_buffers;
 }
 void GpuAVSettings::SetBufferValidationEnabled(bool enabled) {
     validate_indirect_draws_buffers = enabled;
     validate_indirect_dispatches_buffers = enabled;
     validate_indirect_trace_rays_buffers = enabled;
     validate_buffer_copies = enabled;
+    validate_copy_memory_indirect = enabled;
     validate_index_buffers = enabled;
+    validate_acceleration_structures_builds = enabled;
 }
 
 void GpuAVSettings::SetShaderSelectionRegexes(std::vector<std::string> &&shader_selection_regexes) {
@@ -102,7 +105,9 @@ void GpuAVSettings::TracyLogSettings() const {
     VVL_TracyMessageStream("  validate_indirect_dispatches_buffers: " << validate_indirect_dispatches_buffers);
     VVL_TracyMessageStream("  validate_indirect_trace_rays_buffers: " << validate_indirect_trace_rays_buffers);
     VVL_TracyMessageStream("  validate_buffer_copies: " << validate_buffer_copies);
+    VVL_TracyMessageStream("  validate_copy_memory_indirect: " << validate_copy_memory_indirect);
     VVL_TracyMessageStream("  validate_index_buffers: " << validate_index_buffers);
+    VVL_TracyMessageStream("  validate_build_acceleration_structures: " << validate_acceleration_structures_builds);
     VVL_TracyMessageStream("  validate_image_layout: " << validate_image_layout);
     VVL_TracyMessageStream("  vma_linear_output: " << vma_linear_output);
     VVL_TracyMessageStream("  debug_validate_instrumented_shaders: " << debug_validate_instrumented_shaders);
@@ -115,6 +120,7 @@ void GpuAVSettings::TracyLogSettings() const {
     VVL_TracyMessageStream("    ray_query: " << shader_instrumentation.ray_query);
     VVL_TracyMessageStream("    post_process_descriptor_indexing: " << shader_instrumentation.post_process_descriptor_indexing);
     VVL_TracyMessageStream("    vertex_attribute_fetch_oob: " << shader_instrumentation.vertex_attribute_fetch_oob);
+    VVL_TracyMessageStream("    sanitizer: " << shader_instrumentation.sanitizer);
     VVL_TracyMessageStream("  debug_printf_only: " << debug_printf_only);
     VVL_TracyMessageStream("  debug_printf_enabled: " << debug_printf_enabled);
     VVL_TracyMessageStream("  debug_printf_to_stdout: " << debug_printf_to_stdout);

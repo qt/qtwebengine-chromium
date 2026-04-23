@@ -45,6 +45,7 @@ void PopulateUIWindow(UIWindow* window) {
   UILabel* label = [[UILabel alloc] initWithFrame:bounds];
   label.text = NSProcessInfo.processInfo.processName;
   label.textAlignment = NSTextAlignmentCenter;
+  label.textColor = UIColor.blackColor;
   [window addSubview:label];
 
   // An NSInternalInconsistencyException is thrown if the app doesn't have a
@@ -262,7 +263,7 @@ namespace {
 
 std::unique_ptr<base::MessagePump> CreateMessagePumpForUIForTests() {
   // A basic MessagePump will do quite nicely in tests.
-  return std::unique_ptr<base::MessagePump>(new base::MessagePumpCFRunLoop());
+  return std::make_unique<base::MessagePumpCFRunLoop>();
 }
 
 }  // namespace

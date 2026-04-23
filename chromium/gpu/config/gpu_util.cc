@@ -201,6 +201,26 @@ GpuFeatureStatus GetWebGPUFeatureStatus(
   return kGpuFeatureStatusEnabled;
 }
 
+GpuFeatureStatus GetWebGPUOnVulkanViaGLInterop(
+    const std::set<int>& blocklisted_features,
+    const GpuPreferences& gpu_preferences,
+    bool use_swift_shader) {
+  if (use_swift_shader ||
+      gpu_preferences.gr_context_type != GrContextType::kGL) {
+    return kGpuFeatureStatusDisabled;
+  }
+
+  if (blocklisted_features.count(
+          GPU_FEATURE_TYPE_WEBGPU_ON_VK_VIA_GL_INTEROP)) {
+    return kGpuFeatureStatusDisabled;
+  }
+#if BUILDFLAG(USE_WEBGPU_ON_VULKAN_VIA_GL_INTEROP)
+  return kGpuFeatureStatusEnabled;
+#else
+  return kGpuFeatureStatusDisabled;
+#endif
+}
+
 GpuFeatureStatus Get2DCanvasFeatureStatus(
     const std::set<int>& blocklisted_features,
     bool use_swift_shader) {
@@ -312,7 +332,6 @@ void SetProcessGlWorkaroundsFromGpuFeatures(
   gl::GlWorkarounds workarounds = {
       .disable_d3d11 = is_enabled(DISABLE_D3D11),
       .disable_metal = is_enabled(DISABLE_METAL),
-      .disable_es3gl_context = is_enabled(DISABLE_ES3_GL_CONTEXT),
 #if BUILDFLAG(IS_WIN)
       .disable_direct_composition_video_overlays =
           is_enabled(DISABLE_DIRECT_COMPOSITION_VIDEO_OVERLAYS),
@@ -326,8 +345,7 @@ void SetProcessGlWorkaroundsFromGpuFeatures(
 // Adjust gpu feature status based on enabled gpu driver bug workarounds.
 void AdjustGpuFeatureStatusToWorkarounds(GpuFeatureInfo* gpu_feature_info,
                                          const GPUInfo& gpu_info) {
-  if (gpu_feature_info->IsWorkaroundEnabled(DISABLE_D3D11) ||
-      gpu_feature_info->IsWorkaroundEnabled(DISABLE_ES3_GL_CONTEXT)) {
+  if (gpu_feature_info->IsWorkaroundEnabled(DISABLE_D3D11)) {
     gpu_feature_info->status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGL2] =
         kGpuFeatureStatusBlocklisted;
   }
@@ -363,9 +381,10 @@ uint32_t EstimateAmountOfTotalDiskSpaceMB() {
     base::FilePath path;
     if (base::PathService::Get(path_key, &path)) {
       uint32_t total_space = static_cast<uint32_t>(
-          base::SysInfo::AmountOfTotalDiskSpace(path) / 1024 / 1024);
+          base::SysInfo::AmountOfTotalDiskSpace(path).value_or(0) / 1024 /
+          1024);
       uint32_t free_space = static_cast<uint32_t>(
-          base::SysInfo::AmountOfFreeDiskSpace(path) / 1024 / 1024);
+          base::SysInfo::AmountOfFreeDiskSpace(path).value_or(0) / 1024 / 1024);
       bool duplicated = false;
       for (size_t ii = 0; ii < total_space_vector.size(); ++ii) {
         if (total_space == total_space_vector[ii] &&
@@ -450,6 +469,8 @@ GpuFeatureInfo ComputeGpuFeatureInfoWithNoGpu() {
   gpu_feature_info
       .status_values[GPU_FEATURE_TYPE_DIRECT_RENDERING_DISPLAY_COMPOSITOR] =
       kGpuFeatureStatusDisabled;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_WEBGPU_ON_VK_VIA_GL_INTEROP] =
+      kGpuFeatureStatusDisabled;
 #if DCHECK_IS_ON()
   for (int ii = 0; ii < NUMBER_OF_GPU_FEATURE_TYPES; ++ii) {
     DCHECK_NE(kGpuFeatureStatusUndefined, gpu_feature_info.status_values[ii]);
@@ -484,6 +505,8 @@ GpuFeatureInfo ComputeGpuFeatureInfoForSoftwareGL() {
       kGpuFeatureStatusSoftware;
   gpu_feature_info
       .status_values[GPU_FEATURE_TYPE_DIRECT_RENDERING_DISPLAY_COMPOSITOR] =
+      kGpuFeatureStatusDisabled;
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_WEBGPU_ON_VK_VIA_GL_INTEROP] =
       kGpuFeatureStatusDisabled;
 #if DCHECK_IS_ON()
   for (int ii = 0; ii < NUMBER_OF_GPU_FEATURE_TYPES; ++ii) {
@@ -568,6 +591,11 @@ GpuFeatureInfo ComputeGpuFeatureInfo(const GPUInfo& gpu_info,
       GetWebGL2FeatureStatus(blocklisted_features, use_software_gl);
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGPU] =
       GetWebGPUFeatureStatus(blocklisted_features, use_software_gl);
+
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_WEBGPU_ON_VK_VIA_GL_INTEROP] =
+      GetWebGPUOnVulkanViaGLInterop(blocklisted_features, gpu_preferences,
+                                    use_software_gl);
+
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS] =
       Get2DCanvasFeatureStatus(blocklisted_features, use_software_gl);
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE] =
@@ -1062,6 +1090,14 @@ std::string D3DFeatureLevelToString(uint32_t d3d_feature_level) {
     return base::StringPrintf("D3D %d.%d", (d3d_feature_level >> 12) & 0xF,
                               (d3d_feature_level >> 8) & 0xF);
   }
+}
+
+std::string D3DFeatureLevelToNumberString(uint32_t d3d_feature_level) {
+  if (d3d_feature_level == 0) {
+    return "0.0";
+  }
+  return base::StringPrintf("%d.%d", (d3d_feature_level >> 12) & 0xF,
+                            (d3d_feature_level >> 8) & 0xF);
 }
 
 std::string VulkanVersionToString(uint32_t vulkan_version) {

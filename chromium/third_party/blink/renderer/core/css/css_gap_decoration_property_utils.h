@@ -23,6 +23,10 @@ enum class CSSGapDecorationPropertyType : int {
   kColor,
   kWidth,
   kStyle,
+  kEdgeEndInset,
+  kEdgeStartInset,
+  kInteriorStartInset,
+  kInteriorEndInset,
 };
 
 enum class CSSGapDecorationPropertyDirection : int {
@@ -40,8 +44,6 @@ class CORE_EXPORT CSSGapDecorationUtils {
   static CSSPropertyID GetLonghandProperty(
       CSSGapDecorationPropertyDirection direction,
       CSSGapDecorationPropertyType type);
-  static CSSPropertyID GetShorthandProperty(
-      CSSGapDecorationPropertyDirection direction);
   static void AddProperties(CSSGapDecorationPropertyDirection direction,
                             const CSSValueList& rule_widths,
                             const CSSValueList& rule_styles,
@@ -54,9 +56,11 @@ class CORE_EXPORT CSSGapDecorationUtils {
 
   // Creates and returns a vector with the expanded gap data values of repeaters
   // present. Auto repeaters are not expanded.
-  static GapDataList<int>::GapDataVector GetExpandedGapDataWidthList(
-      const GapDataList<int>& gap_data_list);
-  static CSSValueList* GetExpandedGapDataWidthList(
+  template <typename T>
+  static typename GapDataList<T>::GapDataVector GetExpandedGapDataList(
+      const GapDataList<T>& gap_data_list);
+
+  static CSSValueList* GetExpandedCSSValueListForGapData(
       const CSSValueList& list,
       const StyleResolverState& state);
 };

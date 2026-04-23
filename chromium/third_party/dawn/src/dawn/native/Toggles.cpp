@@ -381,8 +381,19 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "https://crbug.com/dawn/838", ToggleStage::Device}},
     {Toggle::MetalPolyfillUnpack2x16snorm,
      {"metal_polyfill_unpack_2x16_snorm",
-      "Polyfill unpack2x16snorm for MSL due to CTS failures on Mac AMD devices.",
+      "Polyfill unpack2x16snorm for MSL due to CTS failures on Mac AMD and M3+ devices.",
       "https://crbug.com/407109055", ToggleStage::Device}},
+    {Toggle::MetalPolyfillUnpack2x16unorm,
+     {"metal_polyfill_unpack_2x16_unorm",
+      "Polyfill unpack2x16unorm for MSL due to CTS failures on Mac M3+ devices.",
+      "https://crbug.com/449576833", ToggleStage::Device}},
+    {Toggle::VulkanPolyfillF32Negation,
+     {"spirv_polyfill_f32_negation",
+      "Polyfill f32 negation with bit manipulation in SPIR-V writer.",
+      "https://crbug.com/448294721", ToggleStage::Device}},
+    {Toggle::VulkanPolyfillF32Abs,
+     {"spirv_polyfill_f32_abs", "Polyfill f32 abs with bit manipulation in SPIR-V writer.",
+      "https://crbug.com/448294721", ToggleStage::Device}},
     {Toggle::MetalFillEmptyOcclusionQueriesWithZero,
      {"metal_fill_empty_occlusion_queries_with_zero",
       "Apple GPUs leave stale results in the visibility result buffer instead of writing zero if "
@@ -647,6 +658,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Use a monolithic VkPipelineCache per device. The embedder is responsible for calling "
       "PerformIdleTasks() on the device to serialize VkPipelineCache to BlobCache if needed.",
       "crbug.com/370343334", ToggleStage::Device}},
+    {Toggle::VulkanIncompletePipelineCacheWorkaround,
+     {"vulkan_incomplete_pipeline_cache_workaround",
+      "Some drivers encounter corruption when serializing VkPipelineCache data. If VK_INCOMPLETE"
+      "is returned ignore it and skip serializing the pipeline cache again.",
+      "crbug.com/446113735", ToggleStage::Device}},
     {Toggle::MetalSerializeTimestampGenerationAndResolution,
      {"metal_serialize_timestamp_generation_and_resolution",
       "Newer Apple GPUs can race on query set resolution with timestamp writing from earlier "
@@ -694,6 +710,18 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
      {"blob_cache_hash_validation",
       "Enable hash validation when loading/storing from/to the blob cache",
       "https://crbug.com/429938352", ToggleStage::Device}},
+    {Toggle::DecomposeUniformBuffers,
+     {"decompose_uniform_buffers",
+      "Decompose uniform buffers into arrays of vec4<u32> on backends for Vulkan and OpenGL.",
+      "https://crbug.com/448452698", ToggleStage::Adapter}},
+    {Toggle::VulkanEnableF16OnNvidia,
+     {"vulkan_enable_f16_on_nvidia", "Enables F16 on Nvidia GPUs with Vulkan",
+      "https://crbug.com/42251215", ToggleStage::Adapter}},
+    {Toggle::EnableRenderDocProcessInjection,
+     {"enable_renderdoc_process_injection",
+      "Enables RenderDoc process injection. If RenderDoc is used to inject into the GPU process, "
+      "send RenderDoc frame capture info.",
+      "https://crbug.com/449708316", ToggleStage::Device}},
     {Toggle::WaitIsThreadSafe,
      {"wait_is_thread_safe",
       "WaitFor* functions are thread-safe and can be called without the device-lock if implicit "
@@ -744,6 +772,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Don't validate the required VkImage size against the size of the AHardwareBuffer on import. "
       "Some drivers report the wrong size.",
       "https://crbug.com/333424893", ToggleStage::Device}},
+    {Toggle::GLAllowContextOnMultiThreads,
+     {"gl_allow_context_on_multi_threads",
+      "Allows GL backend to use GL context on multiple threads. This will add certain "
+      "synchronizations' overheads.",
+      "https://crbug.com/dawn/451928481", ToggleStage::Device}},
     // Comment to separate the }} so it is clearer what to copy-paste to add a toggle.
 }};
 

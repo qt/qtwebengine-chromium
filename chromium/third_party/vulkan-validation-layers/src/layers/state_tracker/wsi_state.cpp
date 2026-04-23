@@ -68,6 +68,14 @@ static vku::safe_VkImageCreateInfo GetImageCreateInfo(const VkSwapchainCreateInf
 
 namespace vvl {
 
+void SwapchainImage::ResetAcquireState() {
+    acquired = false;
+    acquire_semaphore.reset();
+    acquire_fence.reset();
+    acquire_semaphore_status = AcquireSyncStatus::NotSpecified;
+    acquire_fence_status = AcquireSyncStatus::NotSpecified;
+}
+
 void SwapchainImage::ResetPresentWaitSemaphores() {
     const bool swapchain_has_completed_presentation = !present_wait_semaphores.empty();
     for (auto &semaphore : present_wait_semaphores) {
@@ -99,7 +107,7 @@ Swapchain::Swapchain(vvl::DeviceState &dev_data_, const VkSwapchainCreateInfoKHR
       dev_data(dev_data_) {
     // Initialize with visible values for debugging purposes.
     // This helps to show used slots during the first few frames.
-    acquire_history.fill(vvl::kU32Max);
+    acquire_history.fill(vvl::kNoIndex32);
 }
 
 void Swapchain::PresentImage(uint32_t image_index, uint64_t present_id, const SubmissionReference &present_submission_ref,
@@ -111,9 +119,7 @@ void Swapchain::PresentImage(uint32_t image_index, uint64_t present_id, const Su
         images[image_index].image_state->layout_locked = true;
     } else if (acquired_images > 0) {
         acquired_images--;
-        images[image_index].acquired = false;
-        images[image_index].acquire_semaphore.reset();
-        images[image_index].acquire_fence.reset();
+        images[image_index].ResetAcquireState();
     }
 
     images[image_index].present_submission_ref = present_submission_ref;
@@ -142,9 +148,7 @@ void Swapchain::ReleaseImage(uint32_t image_index) {
     }
     if (acquired_images > 0) {
         acquired_images--;
-        images[image_index].acquired = false;
-        images[image_index].acquire_semaphore.reset();
-        images[image_index].acquire_fence.reset();
+        images[image_index].ResetAcquireState();
         images[image_index].ResetPresentWaitSemaphores();
     }
 }
@@ -155,9 +159,30 @@ void Swapchain::AcquireImage(uint32_t image_index, const std::shared_ptr<vvl::Se
     images[image_index].acquired = true;
     images[image_index].acquire_semaphore = semaphore_state;
     images[image_index].acquire_fence = fence_state;
-    if (fence_state && images[image_index].present_submission_ref.has_value()) {
-        fence_state->SetPresentSubmissionRef(*images[image_index].present_submission_ref);
-        images[image_index].present_submission_ref.reset();
+
+    if (semaphore_state) {
+        if (semaphore_state->Scope() == vvl::Semaphore::kInternal) {
+            images[image_index].acquire_semaphore_status = AcquireSyncStatus::Signaled;
+        } else {
+            // For external semaphores (where waits can't be tracked), assume an optimistic scenario
+            // in which the semaphore has been waited on.
+            images[image_index].acquire_semaphore_status = AcquireSyncStatus::WasWaitedOn;
+        }
+        semaphore_state->SetAcquiredImage(shared_from_this(), image_index);
+    }
+    if (fence_state) {
+        if (fence_state->Scope() == vvl::Fence::kInternal) {
+            images[image_index].acquire_fence_status = AcquireSyncStatus::Signaled;
+        } else {
+            // For external fences (where waits can't be tracked), assume an optimistic scenario
+            // in which the fence has been waited on.
+            images[image_index].acquire_fence_status = AcquireSyncStatus::WasWaitedOn;
+        }
+        fence_state->SetAcquiredImage(shared_from_this(), image_index);
+        if (images[image_index].present_submission_ref.has_value()) {
+            fence_state->SetPresentSubmissionRef(*images[image_index].present_submission_ref);
+            images[image_index].present_submission_ref.reset();
+        }
     }
     if (shared_presentable) {
         images[image_index].image_state->shared_presentable = shared_presentable;
@@ -233,7 +258,7 @@ uint32_t Swapchain::GetAcquiredImageIndexFromHistory(uint32_t acquire_history_in
     const uint32_t ring_buffer_index = global_index % acquire_history_max_length;
 
     const uint32_t acquire_image_index = acquire_history[ring_buffer_index];
-    assert(acquire_image_index != vvl::kU32Max);
+    assert(acquire_image_index != vvl::kNoIndex32);
     return acquire_image_index;
 }
 
@@ -327,7 +352,7 @@ vvl::span<const vku::safe_VkSurfaceFormat2KHR> Surface::GetFormats(bool get_surf
         } else {
             result.resize(count);
             for (uint32_t surface_format_index = 0; surface_format_index < count; ++surface_format_index) {
-                result.emplace_back(&formats2[surface_format_index]);
+                result[surface_format_index] = &formats2[surface_format_index];
             }
         }
     } else {

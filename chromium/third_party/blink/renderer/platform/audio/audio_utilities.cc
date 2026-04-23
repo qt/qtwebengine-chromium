@@ -135,6 +135,31 @@ float MaxAudioBufferSampleRate() {
   return 768000;
 }
 
+uint32_t GetClampedRenderQuantumFrames(uint32_t render_quantum_frames) {
+  constexpr uint32_t kMinRenderQuantumFrames = 1;
+  // We cap the render quantum size to prevent extremely large buffer
+  // allocations.  The value was chosen based on the following factors:
+  //
+  //  - ScriptProcessorNode Compatibility: 16384 is the maximum bufferSize
+  //    supported by ScriptProcessorNode.
+  //
+  //  - Hardware Buffer Sizes: All observed desktop devices and ~98% of observed
+  //    Android devices use WebAudio with a hardware buffer size of 8192 or
+  //    less, although some Android devices use much larger buffers.
+  //
+  //  - High Sample Rates: At the maximum supported sample rate (768000 Hz),
+  //    16384 frames corresponds to ~21ms of latency.  While applications might
+  //    prefer a longer duration to reduce CPU load, this is a reasonable
+  //    compromise.
+  //
+  // This value should be increased if hardware capabilities change and larger
+  // hardware buffer sizes become common.  It should not be decreased, for
+  // backwards compatibility.
+  constexpr uint32_t kMaxRenderQuantumFrames = 16384;
+  return ClampTo(render_quantum_frames, kMinRenderQuantumFrames,
+                 kMaxRenderQuantumFrames);
+}
+
 const std::string GetSinkIdForTracing(
     blink::WebAudioSinkDescriptor sink_descriptor) {
   std::string sink_id;

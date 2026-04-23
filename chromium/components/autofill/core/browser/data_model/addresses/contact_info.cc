@@ -615,12 +615,40 @@ AddressComponent* NameInfo::GetRootForType(FieldType field_type) {
       const_cast<const NameInfo*>(this)->GetRootForType(field_type));
 }
 
+void NameInfo::OnCountryChange(const AddressCountryCode& new_country_code) {
+  if (new_country_code == AddressCountryCode("JP")) {
+    CreateAlternativeNameTree();
+  } else {
+    DeleteAlternativeNameTree();
+  }
+}
+
 const AddressComponent* NameInfo::GetRootForType(FieldType field_type) const {
   CHECK_EQ(FieldTypeGroup::kName, GroupTypeOfFieldType(field_type));
   if (IsAlternativeNameType(field_type)) {
     return IsAlternativeNameSupported() ? alternative_name_.get() : nullptr;
   }
   return name_.get();
+}
+
+void NameInfo::CreateAlternativeNameTree() {
+  if (alternative_name_) {
+    return;
+  }
+  if (!base::FeatureList::IsEnabled(
+          features::kAutofillSupportPhoneticNameForJP)) {
+    return;
+  }
+
+  alternative_name_ = std::make_unique<AlternativeFullName>();
+}
+
+void NameInfo::DeleteAlternativeNameTree() {
+  if (!base::FeatureList::IsEnabled(
+          features::kAutofillSupportPhoneticNameForJP)) {
+    return;
+  }
+  alternative_name_.reset();
 }
 
 bool NameInfo::IsAlternativeNameSupported() const {
@@ -664,7 +692,8 @@ std::u16string EmailInfo::GetRawInfo(FieldType type) const {
 void EmailInfo::SetRawInfoWithVerificationStatus(FieldType type,
                                                  std::u16string_view value,
                                                  VerificationStatus status) {
-  DCHECK_EQ(EMAIL_ADDRESS, type);
+  CHECK(type == EMAIL_ADDRESS || type == EMAIL_OR_LOYALTY_MEMBERSHIP_ID,
+        base::NotFatalUntil::M145);
   email_ = value;
 }
 

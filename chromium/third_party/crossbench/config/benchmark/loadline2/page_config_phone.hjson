@@ -1,156 +1,236 @@
 {
-  pages: {
-    amazon_product: [
+  "pages": {
+    "amazon_product": [
       // This will create a spare renderer process before the navigation
       {
-        action: get
-        url: about:blank
-        target: _new_tab
+        "action": "get"
+        "url": "about:blank"
+        "target": "_new_tab"
       }
       {
-        action: js
-        script:
+        "action": "wait"
+        "duration": "1s"
+      }
+      {
+        "action": "click"
+        "source": "touch"
+        "position": {
+          "x": 0
+          "y": 0
+        }
+      }
+      {
+        "action": "js"
+        "script":
           '''
           performance.mark('LoadLine2/amazon_product/start');
           window.location.href = 'https://www.amazon.co.uk/NIVEA-Suncream-Spray-Protect-Moisture/dp/B001B0OJXM';
           '''
       }
       {
-        action: wait_for_condition
-        condition:
+        "action": "wait_for_condition"
+        "condition":
           '''
           return performance.getEntriesByName('LoadLine2/amazon_product/interactive').length > 0
               && performance.getEntriesByName('LoadLine2/amazon_product/visual').length > 0
           '''
-        timeout: 10s
+        "timeout": "10s"
       }
       {
-        action: wait
-        duration: 100ms
+        "action": "wait"
+        "duration": "100ms"
       }
       {
-        action: js
-        script: performance.mark('LoadLine2/amazon_product/finish')
+        "action": "js"
+        "script": "performance.mark('LoadLine2/amazon_product/finish')"
+      }
+      {
+        "action": "get"
+        "url": "about:blank"
       }
     ]
-    cnn_article: [
+    "cnn_article": [
       // This will create a spare renderer process before the navigation
       {
-        action: get
-        url: about:blank
-        target: _new_tab
+        "action": "get"
+        "url": "about:blank"
+        "target": "_new_tab"
       }
       {
-        action: js
-        script:
+        "action": "wait"
+        "duration": "1s"
+      }
+      {
+        "action": "click"
+        "source": "touch"
+        "position": {
+          "x": 0
+          "y": 0
+        }
+      }
+      {
+        "action": "js"
+        "script":
           '''
           performance.mark('LoadLine2/cnn_article/start');
           window.location.href = 'https://edition.cnn.com/2024/04/21/china/china-spy-agency-public-profile-intl-hnk/index.html';
           '''
       }
       {
-        action: wait_for_condition
-        condition:
+        "action": "wait_for_condition"
+        "condition":
           '''
           return performance.getEntriesByName('LoadLine2/cnn_article/interactive').length > 0
               && performance.getEntriesByName('LoadLine2/cnn_article/visual').length > 0
           '''
-        timeout: 10s
+        "timeout": "10s"
       }
       {
-        action: wait
-        duration: 100ms
+        "action": "wait"
+        "duration": "100ms"
       }
       {
-        action: js
-        script: performance.mark('LoadLine2/cnn_article/finish')
+        "action": "js"
+        "script": "performance.mark('LoadLine2/cnn_article/finish')"
+      }
+      {
+        "action": "get"
+        "url": "about:blank"
       }
     ]
-    wikipedia_article: [
+    "wikipedia_article": [
       // This will create a spare renderer process before the navigation
       {
-        action: get
-        url: about:blank
-        target: _new_tab
+        "action": "get"
+        "url": "about:blank"
+        "target": "_new_tab"
       }
       {
-        action: js
-        script:
+        "action": "wait"
+        "duration": "1s"
+      }
+      {
+        "action": "click"
+        "source": "touch"
+        "position": {
+          "x": 0
+          "y": 0
+        }
+      }
+      {
+        "action": "js"
+        "script":
           '''
           performance.mark('LoadLine2/wikipedia_article/start');
           window.location.href = 'https://en.m.wikipedia.org/wiki/Taylor_Swift';
           '''
       }
       {
-        action: wait_for_condition
-        condition:
+        "action": "wait_for_condition"
+        "condition":
           '''
           return performance.getEntriesByName('LoadLine2/wikipedia_article/interactive').length > 0
               && performance.getEntriesByName('LoadLine2/wikipedia_article/visual').length > 0
           '''
-        timeout: 10s
+        "timeout": "10s"
       }
       {
-        action: wait
-        duration: 100ms
+        "action": "wait"
+        "duration": "100ms"
       }
       {
-        action: js
-        script: performance.mark('LoadLine2/wikipedia_article/finish')
+        "action": "js"
+        "script": "performance.mark('LoadLine2/wikipedia_article/finish')"
+      }
+      {
+        "action": "get"
+        "url": "about:blank"
       }
     ]
-    globo_homepage: [
+    "globo_homepage": [
       {
-        action: js
-        script:
+        "action": "wait"
+        "duration": "1s"
+      }
+      {
+        "action": "click"
+        "source": "touch"
+        "position": {
+          "x": 0
+          "y": 0
+        }
+      }
+      {
+        "action": "js"
+        "script":
           '''
           performance.mark('LoadLine2/globo_homepage/start');
           window.location.href = 'https://www.globo.com/';
           '''
       }
       {
-        action: wait_for_condition
-        condition:
+        "action": "wait_for_condition"
+        "condition":
           '''
           return performance.getEntriesByName('LoadLine2/globo_homepage/interactive').length > 0
               && performance.getEntriesByName('LoadLine2/globo_homepage/visual').length > 0
           '''
-        timeout: 10s
+        "timeout": "10s"
       }
       {
-        action: wait
-        duration: 100ms
+        "action": "wait"
+        "duration": "100ms"
       }
       {
-        action: js
-        script: performance.mark('LoadLine2/globo_homepage/finish')
+        "action": "js"
+        "script": "performance.mark('LoadLine2/globo_homepage/finish')"
+      }
+      {
+        "action": "get"
+        "url": "about:blank"
       }
     ]
-    google_search_result: [
+    "google_search_result": [
       {
-        action: js
-        script:
+        "action": "wait"
+        "duration": "1s"
+      }
+      {
+        "action": "click"
+        "source": "touch"
+        "position": {
+          "x": 0
+          "y": 0
+        }
+      }
+      {
+        "action": "js"
+        "script":
           '''
           performance.mark('LoadLine2/google_search_result/start');
           window.location.href = 'https://www.google.com/search?q=cats';
           '''
       }
       {
-        action: wait_for_condition
-        condition:
+        "action": "wait_for_condition"
+        "condition":
           '''
           return performance.getEntriesByName('LoadLine2/google_search_result/interactive').length > 0
               && performance.getEntriesByName('LoadLine2/google_search_result/visual').length > 0
           '''
-        timeout: 10s
+        "timeout": "10s"
       }
       {
-        action: wait
-        duration: 100ms
+        "action": "wait"
+        "duration": "100ms"
       }
       {
-        action: js
-        script: performance.mark('LoadLine2/google_search_result/finish')
+        "action": "js"
+        "script": "performance.mark('LoadLine2/google_search_result/finish')"
+      }
+      {
+        "action": "get"
+        "url": "about:blank"
       }
     ]
   }

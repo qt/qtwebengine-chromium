@@ -269,6 +269,30 @@ inspector::Override MkOverride(const sem::GlobalVariable* global, OverrideId id)
     return override;
 }
 
+bool IsFineDerivativeBuiltin(const sem::BuiltinFn* builtin) {
+    auto fn = builtin->Fn();
+    return fn == wgsl::BuiltinFn::kDpdxFine || fn == wgsl::BuiltinFn::kDpdyFine ||
+           fn == wgsl::BuiltinFn::kFwidthFine;
+}
+
+bool UsesFineDerivatives(const sem::Function* func) {
+    for (auto& b : func->DirectlyCalledBuiltins()) {
+        if (IsFineDerivativeBuiltin(b)) {
+            return true;
+        }
+    }
+
+    for (auto& call : func->TransitivelyCalledFunctions()) {
+        for (auto& b : call->DirectlyCalledBuiltins()) {
+            if (IsFineDerivativeBuiltin(b)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 }  // namespace
 
 Inspector::Inspector(const Program& program) : program_(program) {}
@@ -334,6 +358,11 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
             core::BuiltinValue::kVertexIndex, param->Type(), param->Declaration()->attributes);
         entry_point.instance_index_used |= ContainsBuiltin(
             core::BuiltinValue::kInstanceIndex, param->Type(), param->Declaration()->attributes);
+
+        if (entry_point.stage == PipelineStage::kFragment) {
+            entry_point.frag_position_used = ContainsBuiltin(
+                core::BuiltinValue::kPosition, param->Type(), param->Declaration()->attributes);
+        }
     }
 
     if (!sem->ReturnType()->Is<core::type::Void>()) {
@@ -360,6 +389,8 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
         texture_metadata.has_texture_load_with_depth_texture;
     entry_point.has_depth_texture_with_non_comparison_sampler =
         texture_metadata.has_depth_texture_with_non_comparison_sampler;
+
+    entry_point.fine_derivative_builtin_used = UsesFineDerivatives(sem);
 
     return entry_point;
 }
@@ -793,9 +824,7 @@ std::optional<uint32_t> Inspector::GetClipDistancesBuiltinSize(const core::type:
             if (ContainsBuiltin(core::BuiltinValue::kClipDistances, member->Type(),
                                 member->Declaration()->attributes)) {
                 auto* array_type = member->Type()->As<core::type::Array>();
-                if (DAWN_UNLIKELY(array_type == nullptr)) {
-                    TINT_ICE() << "clip_distances is not an array";
-                }
+                TINT_ASSERT(array_type != nullptr) << "clip_distances is not an array";
                 return array_type->ConstantCount();
             }
         }
@@ -1025,6 +1054,50 @@ std::vector<ResourceBindingInfo> Inspector::GetResourceBindingInfo(const std::st
     }
 
     return result;
+}
+
+std::unordered_set<ResourceType> Inspector::GetResourceTableInfo(const std::string& entry_point) {
+    auto* func = FindEntryPointByName(entry_point);
+    if (!func) {
+        return {};
+    }
+
+    auto& sem = program_.Sem();
+    Symbol entry_point_symbol = program_.Symbols().Get(entry_point);
+
+    std::unordered_set<ResourceType> types;
+
+    auto declarations = sem.Module()->DependencyOrderedDeclarations();
+    for (auto rit = declarations.rbegin(); rit != declarations.rend(); rit++) {
+        auto* fn = sem.Get<sem::Function>(*rit);
+        if ((fn == nullptr) || !fn->HasCallGraphEntryPoint(entry_point_symbol)) {
+            continue;
+        }
+
+        for (auto* call : fn->DirectCalls()) {
+            tint::Switch(
+                call->Target(),  //
+                [&](const sem::BuiltinFn* builtin) {
+                    if (builtin->Fn() != wgsl::BuiltinFn::kHasResource &&
+                        builtin->Fn() != wgsl::BuiltinFn::kGetResource) {
+                        return;
+                    }
+
+                    auto* decl = call->Declaration();
+                    const auto* ident = decl->target->identifier->As<ast::TemplatedIdentifier>();
+
+                    TINT_ASSERT(ident);
+                    TINT_ASSERT(ident->arguments.Length() == 1);
+
+                    auto* type_expr = sem.Get(ident->arguments[0])->As<sem::TypeExpression>();
+                    TINT_ASSERT(type_expr);
+
+                    types.insert(core::type::TypeToResourceType(type_expr->Type()));
+                });
+        }
+    }
+
+    return types;
 }
 
 }  // namespace tint::inspector

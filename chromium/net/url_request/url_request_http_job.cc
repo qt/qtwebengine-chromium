@@ -91,6 +91,7 @@
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/ssl/ssl_connection_status_flags.h"
+#include "net/ssl/ssl_info.h"
 #include "net/storage_access_api/status.h"
 #include "net/url_request/clear_site_data.h"
 #include "net/url_request/redirect_util.h"
@@ -117,20 +118,6 @@
 namespace net {
 
 namespace {
-
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-enum class TpcdHeaderStatus {
-  kSet = 0,
-  kNoLabel = 1,
-  kNoCookie = 2,
-  kMaxValue = kNoCookie,
-};
-
-void RecordTpcdHeaderStatus(TpcdHeaderStatus status) {
-  base::UmaHistogramEnumeration("Privacy.3PCD.SecCookieDeprecationHeaderStatus",
-                                status);
-}
 
 base::Value::Dict FirstPartySetMetadataNetLogParams(
     const FirstPartySetMetadata& first_party_set_metadata,
@@ -383,7 +370,7 @@ std::unique_ptr<URLRequestJob> URLRequestHttpJob::Create(URLRequest* request) {
   if (TransportSecurityState* hsts =
           request->context()->transport_security_state()) {
     upgrade_decision = hsts->GetSSLUpgradeDecision(
-        url.host(),
+        url.GetHost(),
         /*is_top_level_nav=*/
         request->isolation_info().IsOutermostMainFrameRequest(),
         request->net_log());
@@ -417,7 +404,7 @@ std::unique_ptr<URLRequestJob> URLRequestHttpJob::Create(URLRequest* request) {
     // Check whether the app allows cleartext traffic to this host, and return
     // ERR_CLEARTEXT_NOT_PERMITTED if not.
     if (request->context()->check_cleartext_permitted() &&
-        !android::IsCleartextPermitted(url.host_piece())) {
+        !android::IsCleartextPermitted(url.host())) {
       RecordSTSHistograms(SSLUpgradeDecision::kNoUpgrade,
                           /*is_secure=*/false, request->load_flags());
       return std::make_unique<URLRequestErrorJob>(request,
@@ -840,7 +827,8 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
       cookie_util::ComputeSameSiteContextForRequest(
           request_->method(), request_->url_chain(),
           request_->site_for_cookies(), request_->initiator(),
-          is_main_frame_navigation, force_ignore_site_for_cookies);
+          is_main_frame_navigation, force_ignore_site_for_cookies,
+          request_->ignore_unsafe_method_for_same_site_lax());
 
   CookieOptions options = CreateCookieOptions(same_site_context);
 
@@ -879,14 +867,6 @@ void URLRequestHttpJob::SetCookieHeaderAndStart(
     // reason.
     AnnotateAndMoveUserBlockedCookies(maybe_included_cookies, excluded_cookies);
   }
-
-  const bool cookie_deprecation_testing_enabled =
-      request_->context()->cookie_deprecation_label().has_value();
-  const bool cookie_deprecation_testing_has_label =
-      cookie_deprecation_testing_enabled &&
-      !request_->context()->cookie_deprecation_label().value().empty();
-  bool may_set_sec_cookie_deprecation_header =
-      cookie_deprecation_testing_has_label;
 
   if (!maybe_included_cookies.empty()) {
     std::string cookie_line =
@@ -927,30 +907,12 @@ void URLRequestHttpJob::SetCookieHeaderAndStart(
                                 cookie_request_schemes);
       if (c.cookie.IsPartitioned()) {
         ++n_partitioned_cookies;
-
-        if (may_set_sec_cookie_deprecation_header &&
-            c.cookie.Name() == "receive-cookie-deprecation" &&
-            c.cookie.IsHttpOnly() && c.cookie.SecureAttribute()) {
-          request_info_.extra_headers.SetHeader(
-              "Sec-Cookie-Deprecation",
-              *request_->context()->cookie_deprecation_label());
-          may_set_sec_cookie_deprecation_header = false;
-        }
       }
     }
 
     if (ShouldRecordPartitionedCookieUsage()) {
       base::UmaHistogramCounts100("Cookie.PartitionedCookiesInRequest",
                                   n_partitioned_cookies);
-    }
-  }
-  if (cookie_deprecation_testing_enabled) {
-    if (!cookie_deprecation_testing_has_label) {
-      RecordTpcdHeaderStatus(TpcdHeaderStatus::kNoLabel);
-    } else if (may_set_sec_cookie_deprecation_header) {
-      RecordTpcdHeaderStatus(TpcdHeaderStatus::kNoCookie);
-    } else {
-      RecordTpcdHeaderStatus(TpcdHeaderStatus::kSet);
     }
   }
 
@@ -1259,7 +1221,7 @@ void URLRequestHttpJob::ProcessStrictTransportSecurityHeader() {
   }
 
   // Don't accept HSTS headers for localhost. (crbug.com/41251622)
-  if (IsLocalHostname(request_info_.url.host()) &&
+  if (IsLocalHostname(request_info_.url.GetHost()) &&
       base::FeatureList::IsEnabled(features::kIgnoreHSTSForLocalhost)) {
     return;
   }
@@ -1273,7 +1235,7 @@ void URLRequestHttpJob::ProcessStrictTransportSecurityHeader() {
   std::optional<std::string_view> value;
   if ((value =
            headers->EnumerateHeader(nullptr, "Strict-Transport-Security"))) {
-    security_state->AddHSTSHeader(request_info_.url.host(), *value);
+    security_state->AddHSTSHeader(request_info_.url.GetHost(), *value);
   }
 }
 
@@ -1316,6 +1278,13 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
       if (transaction_) {
         transaction_->GetRemoteEndpoint(&endpoint);
       }
+
+      // ssl_info is not a reference because there's no way of avoiding copy
+      // when constructing optional without move.
+      std::optional<net::SSLInfo> ssl_info;
+      if (transaction_ && transaction_->GetResponseInfo()) {
+        ssl_info = transaction_->GetResponseInfo()->ssl_info;
+      }
       // The NetworkDelegate must watch for OnRequestDestroyed and not modify
       // any of the arguments after it's called.
       // TODO(mattm): change the API to remove the out-params and take the
@@ -1325,7 +1294,7 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
           base::BindOnce(&URLRequestHttpJob::OnHeadersReceivedCallback,
                          weak_factory_.GetWeakPtr()),
           headers.get(), &override_response_headers_, endpoint,
-          &preserve_fragment_on_redirect_url_);
+          &preserve_fragment_on_redirect_url_, ssl_info);
       if (error != OK) {
         if (error == ERR_IO_PENDING) {
           awaiting_callback_ = true;
@@ -1346,7 +1315,7 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
     TransportSecurityState* state = context->transport_security_state();
     NotifySSLCertificateError(
         result, transaction_->GetResponseInfo()->ssl_info,
-        state->ShouldSSLErrorsBeFatal(request_info_.url.host()) &&
+        state->ShouldSSLErrorsBeFatal(request_info_.url.GetHost()) &&
             result != ERR_CERT_KNOWN_INTERCEPTION_BLOCKED);
   } else if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED) {
     NotifyCertificateRequested(
@@ -1622,7 +1591,7 @@ bool URLRequestHttpJob::IsSafeRedirect(const GURL& location) {
   // HTTP is always safe.
   // TODO(pauljensen): Remove once crbug.com/146591 is fixed.
   if (location.is_valid() &&
-      (location.scheme() == "http" || location.scheme() == "https")) {
+      (location.GetScheme() == "http" || location.GetScheme() == "https")) {
     return true;
   }
   // Query URLRequestJobFactory as to whether |location| would be safe to

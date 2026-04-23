@@ -37,7 +37,9 @@ const int kErrorGroupGpuPreTraceRays = 6;
 const int kErrorGroupGpuCopyBufferToImage = 7;
 const int kErrorGroupInstDescriptorClass = 8;
 const int kErrorGroupInstIndexedDraw = 9;
-const int kErrorGroupInst_Reserved_6452 = 10;  // Saved for future extension MR 6452
+const int kErrorGroupGpuCopyMemoryIndirect = 10;
+const int kErrorGroupInstSanitizer = 11;
+const int kErrorGroupGpuPreBuildAccelerationStructures = 12;
 
 // We just take ExecutionModel and normalize it so we only use 5 bits to store it
 const int kExecutionModelVertex = 0;
@@ -72,6 +74,8 @@ const int kErrorSubCodeDescriptorIndexingDestroyed = 3;
 const int kErrorSubCodeDescriptorClassGeneralBufferBounds = 1;
 // Texel Buffers
 const int kErrorSubCodeDescriptorClassTexelBufferBounds = 2;
+// Buffers, but with Cooperative Matrix
+const int kErrorSubCodeDescriptorClassGeneralBufferCoopMatBounds = 3;
 
 // Buffer Device Address
 //
@@ -98,6 +102,13 @@ const int kErrorSubCodeRayQueryDirectionFinite = 12;
 const int kErrorSubCode_IndexedDraw_OOBVertexIndex = 1;
 const int kErrorSubCode_IndexedDraw_OOBInstanceIndex = 2;
 
+// Sanitizer
+//
+const int kErrorSubCodeSanitizerEmpty = 0;  // reserved to mean no error was set
+const int kErrorSubCodeSanitizerDivideZero = 1;
+const int kErrorSubCodeSanitizerImageGather = 2;
+const int kErrorSubCodeSanitizerCount = 3;  // update when adding new item
+
 // Pre Draw
 //
 // The draw count exceeded the draw buffer size
@@ -122,7 +133,7 @@ const int kErrorSubCodePreDispatchCountLimitX = 1;
 const int kErrorSubCodePreDispatchCountLimitY = 2;
 const int kErrorSubCodePreDispatchCountLimitZ = 3;
 
-// Pre Tracy Rays
+// Pre Trace Rays
 //
 const int kErrorSubCodePreTraceRaysLimitWidth = 1;
 const int kErrorSubCodePreTraceRaysLimitHeight = 2;
@@ -131,6 +142,23 @@ const int kErrorSubCodePreTraceRaysLimitVolume = 4;
 // Pre Copy Buffer To Image
 //
 const int kErrorSubCodePreCopyBufferToImageBufferTexel = 1;
+
+// Pre Copy Memory Indirect
+//
+const int kErrorSubCodePreCopyMemoryIndirectSrcAddressAligned = 1;
+const int kErrorSubCodePreCopyMemoryIndirectDstAddressAligned = 2;
+const int kErrorSubCodePreCopyMemoryIndirectSizeAligned = 3;
+const int kErrorSubCodePreCopyMemoryToImageIndirectSrcAddressAligned = 4;
+const int kErrorSubCodePreCopyMemoryToImageIndirectBufferRowLength = 5;
+const int kErrorSubCodePreCopyMemoryToImageIndirectBufferImageHeight = 6;
+const int kErrorSubCodePreCopyMemoryIndirectSrcAddressInvalid = 7;
+const int kErrorSubCodePreCopyMemoryIndirectDstAddressInvalid = 8;
+const int kErrorSubCodePreCopyMemoryToImageIndirectSrcAddressInvalid = 9;
+
+// Pre Build Acceleration Structures
+//
+const int kErrorSubCode_PreBuildAccelerationStructures_InvalidAS = 1;
+const int kErrorSubCode_PreBuildAccelerationStructures_DestroyedASBuffer = 2;
 
 #ifdef __cplusplus
 }  // namespace glsl

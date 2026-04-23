@@ -2021,8 +2021,8 @@ static void search_tx_type(const AV1_COMP *cpi, MACROBLOCK *x, int plane,
                            int block, int blk_row, int blk_col,
                            BLOCK_SIZE plane_bsize, TX_SIZE tx_size,
                            const TXB_CTX *const txb_ctx,
-                           FAST_TX_SEARCH_MODE ftxs_mode, int skip_trellis,
-                           int64_t ref_best_rd, RD_STATS *best_rd_stats) {
+                           FAST_TX_SEARCH_MODE ftxs_mode, int64_t ref_best_rd,
+                           RD_STATS *best_rd_stats) {
   const AV1_COMMON *cm = &cpi->common;
   MACROBLOCKD *xd = &x->e_mbd;
   MB_MODE_INFO *mbmi = xd->mi[0];
@@ -2038,8 +2038,8 @@ static void search_tx_type(const AV1_COMP *cpi, MACROBLOCK *x, int plane,
       plane ? 0 : blk_row * xd->tx_type_map_stride + blk_col;
   av1_invalid_rd_stats(best_rd_stats);
 
-  skip_trellis |= !is_trellis_used(cpi->optimize_seg_arr[xd->mi[0]->segment_id],
-                                   DRY_RUN_NORMAL);
+  int skip_trellis = !is_trellis_used(
+      cpi->optimize_seg_arr[xd->mi[0]->segment_id], DRY_RUN_NORMAL);
 
   uint8_t best_txb_ctx = 0;
   // txk_allowed = TX_TYPES: >1 tx types are allowed
@@ -2338,9 +2338,8 @@ static inline void tx_type_rd(const AV1_COMP *cpi, MACROBLOCK *x,
                               int64_t ref_rdcost) {
   assert(is_inter_block(x->e_mbd.mi[0]));
   RD_STATS this_rd_stats;
-  const int skip_trellis = 0;
   search_tx_type(cpi, x, 0, block, blk_row, blk_col, plane_bsize, tx_size,
-                 txb_ctx, ftxs_mode, skip_trellis, ref_rdcost, &this_rd_stats);
+                 txb_ctx, ftxs_mode, ref_rdcost, &this_rd_stats);
 
   av1_merge_rd_stats(rd_stats, &this_rd_stats);
 }
@@ -2740,10 +2739,9 @@ static inline void choose_largest_tx_size(const AV1_COMP *const cpi,
   const int64_t skip_txfm_rd =
       is_inter_block(mbmi) ? RDCOST(x->rdmult, skip_txfm_rate, 0) : INT64_MAX;
   const int64_t no_skip_txfm_rd = RDCOST(x->rdmult, no_skip_txfm_rate, 0);
-  const int skip_trellis = 0;
   av1_txfm_rd_in_plane(x, cpi, rd_stats, ref_best_rd,
                        AOMMIN(no_skip_txfm_rd, skip_txfm_rd), AOM_PLANE_Y, bs,
-                       mbmi->tx_size, FTXS_NONE, skip_trellis);
+                       mbmi->tx_size, FTXS_NONE);
 }
 
 static inline void choose_smallest_tx_size(const AV1_COMP *const cpi,
@@ -2754,9 +2752,8 @@ static inline void choose_smallest_tx_size(const AV1_COMP *const cpi,
 
   mbmi->tx_size = TX_4X4;
   // TODO(any) : Pass this_rd based on skip/non-skip cost
-  const int skip_trellis = 0;
   av1_txfm_rd_in_plane(x, cpi, rd_stats, ref_best_rd, 0, 0, bs, mbmi->tx_size,
-                       FTXS_NONE, skip_trellis);
+                       FTXS_NONE);
 }
 
 #if !CONFIG_REALTIME_ONLY
@@ -2840,15 +2837,12 @@ static void ml_predict_intra_tx_depth_prune(MACROBLOCK *x, int blk_row,
  * \param[in]    tx_size        The given transform size
  * \param[in]    ftxs_mode      Transform search mode specifying desired speed
                                 and quality tradeoff
- * \param[in]    skip_trellis   Binary flag indicating if trellis optimization
-                                should be skipped
  * \return       An int64_t value that is the best RD cost found.
  */
 static int64_t uniform_txfm_yrd(const AV1_COMP *const cpi, MACROBLOCK *x,
                                 RD_STATS *rd_stats, int64_t ref_best_rd,
                                 BLOCK_SIZE bs, TX_SIZE tx_size,
-                                FAST_TX_SEARCH_MODE ftxs_mode,
-                                int skip_trellis) {
+                                FAST_TX_SEARCH_MODE ftxs_mode) {
   assert(IMPLIES(is_rect_tx(tx_size), is_rect_tx_allowed_bsize(bs)));
   MACROBLOCKD *const xd = &x->e_mbd;
   MB_MODE_INFO *const mbmi = xd->mi[0];
@@ -2875,7 +2869,7 @@ static int64_t uniform_txfm_yrd(const AV1_COMP *const cpi, MACROBLOCK *x,
   mbmi->tx_size = tx_size;
   av1_txfm_rd_in_plane(x, cpi, rd_stats, ref_best_rd,
                        AOMMIN(no_this_rd, skip_txfm_rd), AOM_PLANE_Y, bs,
-                       tx_size, ftxs_mode, skip_trellis);
+                       tx_size, ftxs_mode);
   if (rd_stats->rate == INT_MAX) return INT64_MAX;
 
   int64_t rd;
@@ -2940,7 +2934,6 @@ static inline void choose_tx_size_type_from_rd(const AV1_COMP *const cpi,
     init_depth = MAX_TX_DEPTH;
   }
 
-  const int skip_trellis = 0;
   uint8_t best_txk_type_map[MAX_MIB_SIZE * MAX_MIB_SIZE];
   uint8_t best_blk_skip[MAX_MIB_SIZE * MAX_MIB_SIZE];
   TX_SIZE best_tx_size = max_rect_tx_size;
@@ -2977,7 +2970,7 @@ static inline void choose_tx_size_type_from_rd(const AV1_COMP *const cpi,
             ? AOMMIN(ref_best_rd, best_rd)
             : ref_best_rd;
     rd[depth] = uniform_txfm_yrd(cpi, x, &this_rd_stats, rd_thresh, bs, tx_size,
-                                 FTXS_NONE, skip_trellis);
+                                 FTXS_NONE);
     if (rd[depth] < best_rd) {
       av1_copy_array(best_blk_skip, txfm_info->blk_skip, num_blks);
       av1_copy_array(best_txk_type_map, xd->tx_type_map, num_blks);
@@ -3049,8 +3042,8 @@ static inline void block_rd_txfm(int plane, int block, int blk_row, int blk_col,
   TXB_CTX txb_ctx;
   get_txb_ctx(plane_bsize, tx_size, plane, a, l, &txb_ctx);
   search_tx_type(cpi, x, plane, block, blk_row, blk_col, plane_bsize, tx_size,
-                 &txb_ctx, args->ftxs_mode, args->skip_trellis,
-                 args->best_rd - args->current_rd, &this_rd_stats);
+                 &txb_ctx, args->ftxs_mode, args->best_rd - args->current_rd,
+                 &this_rd_stats);
 
 #if !CONFIG_REALTIME_ONLY
   if (plane == AOM_PLANE_Y && xd->cfl.store_y) {
@@ -3672,7 +3665,6 @@ int av1_txfm_uvrd(const AV1_COMP *const cpi, MACROBLOCK *x, RD_STATS *rd_stats,
       av1_subtract_plane(x, plane_bsize, plane);
   }
 
-  const int skip_trellis = 0;
   const TX_SIZE uv_tx_size = av1_get_tx_size(AOM_PLANE_U, xd);
   int is_cost_valid = 1;
   for (int plane = 1; plane < MAX_MB_PLANE; ++plane) {
@@ -3687,7 +3679,7 @@ int av1_txfm_uvrd(const AV1_COMP *const cpi, MACROBLOCK *x, RD_STATS *rd_stats,
         chroma_ref_best_rd != INT64_MAX)
       chroma_ref_best_rd = ref_best_rd - AOMMIN(this_rd, skip_txfm_rd);
     av1_txfm_rd_in_plane(x, cpi, &this_rd_stats, chroma_ref_best_rd, 0, plane,
-                         plane_bsize, uv_tx_size, FTXS_NONE, skip_trellis);
+                         plane_bsize, uv_tx_size, FTXS_NONE);
     if (this_rd_stats.rate == INT_MAX) {
       is_cost_valid = 0;
       break;
@@ -3712,8 +3704,7 @@ int av1_txfm_uvrd(const AV1_COMP *const cpi, MACROBLOCK *x, RD_STATS *rd_stats,
 void av1_txfm_rd_in_plane(MACROBLOCK *x, const AV1_COMP *cpi,
                           RD_STATS *rd_stats, int64_t ref_best_rd,
                           int64_t current_rd, int plane, BLOCK_SIZE plane_bsize,
-                          TX_SIZE tx_size, FAST_TX_SEARCH_MODE ftxs_mode,
-                          int skip_trellis) {
+                          TX_SIZE tx_size, FAST_TX_SEARCH_MODE ftxs_mode) {
   assert(IMPLIES(plane == 0, x->e_mbd.mi[0]->tx_size == tx_size));
 
   if (!cpi->oxcf.txfm_cfg.enable_tx64 &&
@@ -3736,7 +3727,7 @@ void av1_txfm_rd_in_plane(MACROBLOCK *x, const AV1_COMP *cpi,
   args.best_rd = ref_best_rd;
   args.current_rd = current_rd;
   args.ftxs_mode = ftxs_mode;
-  args.skip_trellis = skip_trellis;
+  args.skip_trellis = 0;
   av1_init_rd_stats(&args.rd_stats);
 
   av1_get_entropy_contexts(plane_bsize, pd, args.t_above, args.t_left);

@@ -42,6 +42,8 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
     kRequestAnimationFrameAfterBackForwardCacheRestore = 1 << 11,
     kFirstScrollDelay = 1 << 12,
     kSoftNavigationCountUpdated = 1 << 13,
+    kMonotonicFirstPaint = 1 << 14,
+    kMonotonicFirstContentfulPaint = 1 << 15,
   };
 
   // Identify which frame the layout shift happens.
@@ -53,8 +55,8 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
   };
 
   explicit PageLoadMetricsTestWaiter(content::WebContents* web_contents);
-  explicit PageLoadMetricsTestWaiter(content::WebContents* web_contents,
-                                     const char* observer_name_);
+  PageLoadMetricsTestWaiter(content::WebContents* web_contents,
+                            const char* observer_name);
 
   ~PageLoadMetricsTestWaiter() override;
 
@@ -109,10 +111,6 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
 
   // Add aggregate time spent in cpu for page expectation.
   void AddMinimumAggregateCpuTimeExpectation(base::TimeDelta minimum);
-
-  // Inserts `routing_id` into `expected_.memory_update_frame_ids_`, the set of
-  // frame routing IDs expected to receive a memory measurement update.
-  void AddMemoryUpdateExpectation(content::GlobalRenderFrameHostId routing_id);
 
   // Adds all |blink::LoadingBehaviorFlag|s set in |behavior_flags| to the
   // set of expected behaviors.
@@ -310,9 +308,6 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
 
   void OnComplete(const mojom::PageLoadTiming& timing);
 
-  // Called when V8 per-frame memory usage updates are available.
-  void OnV8MemoryChanged(const std::vector<MemoryUpdate>& memory_updates);
-
   void OnTrackerCreated(page_load_metrics::PageLoadTracker* tracker) override;
 
   void OnCommit(page_load_metrics::PageLoadTracker* tracker) override;
@@ -330,7 +325,6 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
   bool MainFrameIntersectionExpectationsSatisfied() const;
   bool MainFrameViewportRectExpectationsSatisfied() const;
   bool MainFrameAdRectsExpectationsSatisfied() const;
-  bool MemoryUpdateExpectationsSatisfied() const;
   bool LayoutShiftExpectationsSatisfied() const;
   bool NumInteractionsExpectationsSatisfied() const;
   bool NumLargestContentfulPaintImageSatisfied() const;
@@ -361,9 +355,6 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
     bool did_observed_main_frame_ad_rects_ = false;
     std::vector<gfx::Rect> main_frame_intersections_;
     std::optional<gfx::Rect> main_frame_viewport_rect_;
-    std::unordered_set<content::GlobalRenderFrameHostId,
-                       content::GlobalRenderFrameHostIdHasher>
-        memory_update_frame_ids_;
     uint64_t num_layout_shifts_ = 0;
     bool on_complete_ = false;
   };

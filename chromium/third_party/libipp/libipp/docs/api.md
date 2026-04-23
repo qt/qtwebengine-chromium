@@ -332,7 +332,7 @@ class Frame {
   // the same field, they just cast the same value to different enums. The field
   // is interpreted as operation id in IPP request and as status code in IPP
   // responses.
-  uint16_t& OperationIdOrStatusCode();
+  int16_t& OperationIdOrStatusCode();
   Operation OperationId() const;
   Status StatusCode() const;
 
@@ -352,15 +352,15 @@ Each **attribute-group** is labeled by a one-byte tag that is represented in
 
 ```c++
 enum class GroupTag : uint8_t {
-  operation_attributes = 0x0001,
-  job_attributes = 0x0002,
-  printer_attributes = 0x0004,
-  unsupported_attributes = 0x0005,
-  subscription_attributes = 0x0006,
-  event_notification_attributes = 0x0007,
-  resource_attributes = 0x0008,
-  document_attributes = 0x0009,
-  system_attributes = 0x000a,
+  operation_attributes = 0x01,
+  job_attributes = 0x02,
+  printer_attributes = 0x04,
+  unsupported_attributes = 0x05,
+  subscription_attributes = 0x06,
+  event_notification_attributes = 0x07,
+  resource_attributes = 0x08,
+  document_attributes = 0x09,
+  system_attributes = 0x0a,
 };
 
 // The correct values of GroupTag are 0x01, 0x02, 0x04-0x0f. This function
@@ -372,8 +372,8 @@ constexpr bool IsValid(GroupTag tag);
 constexpr std::array<GroupTag, 14> kGroupTags{ /* ... */ };
 ```
 
-In the majority of cases a frame contains at most one **attribute-group** with
-given `GroupTag` value.
+In the majority of cases a frame contains at most one **attribute-group** for
+each `GroupTag` value.
 However, the format of IPP frame allows for more than one group with the same
 tag.
 Some of the IPP operations use this feature and requires responses containing
@@ -400,16 +400,16 @@ class Frame {
   //     ...
   //   }
   // The groups are in the same order as they occur in the frame.
-  CollectionsView Groups(GroupTag tag);
-  ConstCollectionsView Groups(GroupTag tag) const;
+  CollsView Groups(GroupTag tag);
+  ConstCollsView Groups(GroupTag tag) const;
 
   /* ... */
 };
 
-class CollectionsView {
+class CollsView {
   /* ... */
 
-  CollectionsView(const CollectionsView& cv);
+  CollsView(const CollsView& cv);
   iterator begin();
   iterator end();
   const_iterator cbegin() const;
@@ -424,11 +424,11 @@ class CollectionsView {
   /* ... */
 };
 
-class ConstCollectionsView {
+class ConstCollsView {
   /* ... */
 
-  ConstCollectionsView(const ConstCollectionsView& cv);
-  explicit ConstCollectionsView(const CollectionsView& cv);
+  ConstCollsView(const ConstCollsView& cv);
+  explicit ConstCollsView(const CollsView& cv);
   const_iterator cbegin() const;
   const_iterator cend() const;
   const_iterator begin() const;
@@ -449,20 +449,21 @@ the next section.
 
 ### Adding new **attribute-group**
 
-A new **attribute-group** can be added to the frame with the following methods:
+A new **attribute-group** can be added to the frame with the following method:
 
 ```c++
 class Frame {
   /* ... */
 
-  // Add a new group of attributes to the frame. The pointer to the new group
-  // (Collection*) is saved in `new_group` if `new_group` != nullptr.
+  // Add a new group of attributes to the frame. The iterator to the new group
+  // is saved in `new_group`. The returned iterator is valid in the range
+  // returned by Groups(tag).
   // The returned value is one of the following:
   //  * Code::kOK
   //  * Code::kInvalidGroupTag
   //  * Code::kTooManyGroups
   // If the returned value != Code::kOK then `new_group` is not modified.
-  Code AddGroup(GroupTag tag, Collection** new_group = nullptr);
+  Code AddGroup(GroupTag tag, CollsView::iterator& new_group);
 
   /* ... */
 };
@@ -492,13 +493,15 @@ class Collection {
   class iterator
   /* ... */
 
-  // Standard methods returning iterators.
+  // Standard container methods.
   iterator begin();
   iterator end();
   const_iterator cbegin() const;
   const_iterator cend() const;
   const_iterator begin() const;
   const_iterator end() const;
+  size_t size() const;
+  bool empty() const;
 
   // Methods return attribute by name. Methods return an iterator end() <=> the
   // collection has no attributes with this name.
@@ -590,16 +593,17 @@ class Collection {
   Code AddAttr(const std::string& name,
                const std::vector<RangeOfInteger>& values);
 
-  // Add a new attribute with one or more collections. Pointers to created
-  // collections are returned in the last parameter. The size of the vector
-  // `values` determines the number of collections in the attribute.
+  // Add a new attribute with one or more collections. The first method creates
+  // an attribute with a single collection and returns an iterator to it in the
+  // last parameter. The second method creates an attribute with `size`
+  // collections and returns a view of them in the last parameter.
   // Possible errors:
   //  * kInvalidName
   //  * kNameConflict
-  //  * kValueOutOfRange   (the vector is empty)
+  //  * kValueOutOfRange   (`size` is out of range)
   //  * kTooManyAttributes.
-  Code AddAttr(const std::string& name, Collection*& value);
-  Code AddAttr(const std::string& name, std::vector<Collection*>& values);
+  Code AddAttr(const std::string& name, CollsView::iterator& coll);
+  Code AddAttr(const std::string& name, size_t size, CollsView& colls);
 
   /* ... */
 };
@@ -762,4 +766,83 @@ class Attribute {
 
   /* ... */
 };
+```
+Values of standard attributes (`!IsOutOfBand(Tag()) && Tag() != collection`) can
+be retrieved and set with the following methods:
+
+```c++
+  // Retrieves a single value from the attribute and saves it in `value`.
+  // Possible errors:
+  //  * kIncompatibleType
+  //  * kIndexOutOfRange
+  // The second parameter must match the type of the attribute, otherwise the
+  // code kIncompatibleType is returned. However, there are a couple of
+  // exceptions when the underlying value is silently converted to the type of
+  // the given parameter. See the table below for a list of silent conversions:
+  //
+  //      ValueTag       |  target C++ type
+  //  -------------------+--------------------
+  //       boolean       |      int32_t  (0 or 1)
+  //        enum         |      int32_t
+  //       integer       |  RangeOfIntegers  (as range [int,int])
+  // nameWithoutLanguage | StringWithLanguage  (language is empty)
+  // textWithoutLanguage | StringWithLanguage  (language is empty)
+  //
+  Code GetValue(size_t index, bool& value) const;
+  Code GetValue(size_t index, int32_t& value) const;
+  Code GetValue(size_t index, std::string& value) const;
+  Code GetValue(size_t index, StringWithLanguage& value) const;
+  Code GetValue(size_t index, DateTime& value) const;
+  Code GetValue(size_t index, Resolution& value) const;
+  Code GetValue(size_t index, RangeOfInteger& value) const;
+
+  // Retrieves values from the attribute. They are copied to the given vector.
+  // Possible errors:
+  //  * kIncompatibleType
+  // These methods follow the same rules for types' conversions as GetValue().
+  Code GetValues(std::vector<bool>& values) const;
+  Code GetValues(std::vector<int32_t>& values) const;
+  Code GetValues(std::vector<std::string>& values) const;
+  Code GetValues(std::vector<StringWithLanguage>& values) const;
+  Code GetValues(std::vector<DateTime>& values) const;
+  Code GetValues(std::vector<Resolution>& values) const;
+  Code GetValues(std::vector<RangeOfInteger>& values) const;
+
+  // Set new values for the attribute. Previous values are discarded.
+  // Possible errors:
+  //  * kIncompatibleType
+  //  * kValueOutOfRange
+  Code SetValues(bool value);
+  Code SetValues(int32_t value);
+  Code SetValues(const std::string& value);
+  Code SetValues(const StringWithLanguage& value);
+  Code SetValues(DateTime value);
+  Code SetValues(Resolution value);
+  Code SetValues(RangeOfInteger value);
+  Code SetValues(const std::vector<bool>& values);
+  Code SetValues(const std::vector<int32_t>& values);
+  Code SetValues(const std::vector<std::string>& values);
+  Code SetValues(const std::vector<StringWithLanguage>& values);
+  Code SetValues(const std::vector<DateTime>& values);
+  Code SetValues(const std::vector<Resolution>& values);
+  Code SetValues(const std::vector<RangeOfInteger>& values);
+```
+
+Attributes with collections can be browsed by using the method `Colls()`
+returning a view of a vector of `Collection`s.
+
+```c++
+  // Provides access to Collection objects. You can iterate over them in the
+  // following ways:
+  //   for (Collection& coll: attr.Colls()) {
+  //     ...
+  //   }
+  // or
+  //   for (size_t i = 0; i < attr.Colls().size(); ) {
+  //     Collection& coll = attr.Colls()[i++];
+  //     ...
+  //   }
+  // (Tag() != collection) <=> attr.Colls().empty()
+  CollsView Colls();
+  ConstCollsView Colls() const;
 ```

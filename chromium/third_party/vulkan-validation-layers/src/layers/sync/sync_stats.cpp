@@ -37,7 +37,7 @@ inline T atomic_fetch_max(std::atomic<T> &current_max, const T &value) noexcept 
 }
 }  // namespace vvl
 
-namespace syncval_stats {
+namespace syncval {
 
 // NOTE: fetch_add/fetch_sub return value before increment/decrement.
 // Our Add/Sub functions return new counter values, so they need to
@@ -99,17 +99,19 @@ void AccessContextStats::UpdateMax(const AccessContextStats& cur_stats) {
     UPDATE_MAX(access_states);
     UPDATE_MAX(read_states);
     UPDATE_MAX(write_states);
+    UPDATE_MAX(first_accesses);
     UPDATE_MAX(access_states_with_multiple_reads);
+    UPDATE_MAX(access_states_with_multiple_firsts);
     UPDATE_MAX(access_states_with_dynamic_allocations);
     UPDATE_MAX(access_states_dynamic_allocation_size);
 #undef UPDATE_MAX
 }
 
-void UpdateAccessMapStats(const ResourceAccessRangeMap& access_map, AccessContextStats& stats) {
+void UpdateAccessMapStats(const AccessMap& access_map, AccessContextStats& stats) {
     stats.access_contexts += 1;
     stats.access_states += (uint32_t)access_map.size();
     for (const auto& entry : access_map) {
-        const ResourceAccessState& access_state = entry.second;
+        const AccessState& access_state = entry.second;
         access_state.UpdateStats(stats);
     }
 }
@@ -121,12 +123,12 @@ void AccessStats::Update(SyncValidator& validator) {
     subpass_access_stats = {};
 
     validator.device_state->ForEachShared<vvl::CommandBuffer>([this](std::shared_ptr<vvl::CommandBuffer> cb) {
-        const CommandBufferAccessContext* cb_access_context = syncval_state::AccessContext(*cb);
+        const CommandBufferAccessContext* cb_access_context = AccessContext(*cb);
         cb_access_context->UpdateStats(*this);
     });
     for (const auto& batch : validator.GetAllQueueBatchContexts()) {
         const AccessContext& access_context = batch->GetAccessContext();
-        UpdateAccessMapStats(access_context.GetAccessStateMap(), queue_access_stats);
+        UpdateAccessMapStats(access_context.GetAccessMap(), queue_access_stats);
     }
 
     max_cb_access_stats.UpdateMax(cb_access_stats);
@@ -163,17 +165,24 @@ std::string Stats::CreateReport() {
         ss << "\n";
     };
     auto print_access_state_stats = [&ss](const char* context_type, const AccessContextStats& stats) {
-        ss << std::setw(15) << std::string(context_type) + "(" + std::to_string(stats.access_contexts) + ")";
+        ss << std::setw(13) << std::string(context_type) + "(" + std::to_string(stats.access_contexts) + ")";
+        ss << std::setw(11) << stats.access_states;
+
+        const uint64_t access_state_objects_size = sizeof(AccessState) * stats.access_states;
+        const double size_mb = ((double)access_state_objects_size / 1024.0 / 1024.0);
+        ss << std::fixed << std::setprecision(2) << std::setw(11) << size_mb;
+        ss.unsetf(std::ios::floatfield);
+
+        ss << std::setw(2) << "| ";
         ss << std::setw(10) << stats.read_states;
         ss << std::setw(10) << stats.write_states;
-        ss << std::setw(16) << stats.access_states;
-        ss << std::setw(18) << stats.access_states_with_multiple_reads;
-        ss << std::setw(14) << stats.access_states_with_dynamic_allocations;
+        ss << std::setw(9) << stats.first_accesses;
 
-        uint64_t access_state_objects_size = sizeof(ResourceAccessState) * stats.access_states;
-        ss << std::setw(16) << access_state_objects_size;
-
-        ss << std::setw(14) << stats.access_states_dynamic_allocation_size;
+        ss << std::setw(2) << "| ";
+        ss << std::setw(12) << stats.access_states_with_multiple_reads;
+        ss << std::setw(13) << stats.access_states_with_multiple_firsts;
+        ss << std::setw(13) << stats.access_states_with_dynamic_allocations;
+        ss << std::setw(15) << stats.access_states_dynamic_allocation_size;
         ss << "\n";
     };
 
@@ -191,7 +200,7 @@ std::string Stats::CreateReport() {
     print_common_stats64("HandleRecord bytes", handle_record_memory, handle_record_max_memory);
 
     const char* access_stats_header =
-        "context        reads     writes    access_states   with_multi_read   with_allocs   size (bytes)    alloc_size (bytes)\n";
+        "context      accesses   size (MB)  | reads     writes    firsts   | many_reads  many_firsts  have_allocs  allocated (B)\n";
 
     ss << "\n";
     ss << "-----------------------\n";
@@ -212,7 +221,14 @@ std::string Stats::CreateReport() {
     print_access_state_stats("Subpass", access_stats.max_subpass_access_stats);
 
     ss << "\n";
-    ss << "Max first accesses";
+    ss << "Layout ordering barrier registry size: " << GetLayoutOrderingBarrierLookup().ObjectCount();
+    ss << "\n";
+    ss << "Max last reads array size";
+    ss << ": CB: " << access_stats.cb_access_stats.max_last_reads_count;
+    ss << ", Queue: " << access_stats.queue_access_stats.max_last_reads_count;
+    ss << ", Subpass: " << access_stats.subpass_access_stats.max_last_reads_count;
+    ss << "\n";
+    ss << "Max first accesses array size";
     ss << ": CB: " << access_stats.cb_access_stats.max_first_accesses_size;
     ss << ", Queue: " << access_stats.queue_access_stats.max_first_accesses_size;
     ss << ", Subpass: " << access_stats.subpass_access_stats.max_first_accesses_size;
@@ -231,5 +247,5 @@ std::string Stats::CreateReport() {
     return ss.str();
 }
 
-}  // namespace syncval_stats
+}  // namespace syncval
 #endif  // VVL_ENABLE_SYNCVAL_STATS != 0

@@ -12,7 +12,6 @@
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "gpu/ipc/common/command_buffer_id.h"
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
-#include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/gpu_fence.h"
 
@@ -282,7 +281,9 @@ void SharedImageInterfaceProxy::UpdateSharedImage(
                   d3d_shared_fence->GetFenceValue()))),
       std::move(dependencies), /*release_count=*/0);
 }
+#endif  // BUILDFLAG(IS_WIN)
 
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
 void SharedImageInterfaceProxy::CopyNativeGmbToSharedMemoryAsync(
     gfx::GpuMemoryBufferHandle buffer_handle,
     base::UnsafeSharedMemoryRegion memory_region,
@@ -290,7 +291,7 @@ void SharedImageInterfaceProxy::CopyNativeGmbToSharedMemoryAsync(
   host_->CopyNativeGmbToSharedMemoryAsync(
       std::move(buffer_handle), std::move(memory_region), std::move(callback));
 }
-#endif  // BUILDFLAG(IS_WIN)
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
 
 void SharedImageInterfaceProxy::UpdateSharedImage(const SyncToken& sync_token,
                                                   const Mailbox& mailbox) {
@@ -390,6 +391,22 @@ void SharedImageInterfaceProxy::VerifySyncToken(SyncToken& sync_token) {
   sync_token.SetVerifyFlush();
 }
 
+bool SharedImageInterfaceProxy::CanVerifySyncToken(
+    const gpu::SyncToken& sync_token) {
+  // Can only wait on an unverified sync token if it is from the same channel.
+  int sync_token_channel_id =
+      ChannelIdFromCommandBufferId(sync_token.command_buffer_id());
+  if (sync_token.namespace_id() != gpu::CommandBufferNamespace::GPU_IO ||
+      sync_token_channel_id != host_->channel_id()) {
+    return false;
+  }
+  return true;
+}
+
+void SharedImageInterfaceProxy::VerifyFlush() {
+  host_->VerifyFlush(UINT32_MAX);
+}
+
 void SharedImageInterfaceProxy::WaitSyncToken(const SyncToken& sync_token) {
   if (!sync_token.HasData())
     return;
@@ -469,62 +486,6 @@ bool SharedImageInterfaceProxy::GetSHMForPixelData(
   }
 
   return true;
-}
-
-SharedImageInterfaceProxy::SwapChainMailboxes
-SharedImageInterfaceProxy::CreateSwapChain(viz::SharedImageFormat format,
-                                           const gfx::Size& size,
-                                           const gfx::ColorSpace& color_space,
-                                           GrSurfaceOrigin surface_origin,
-                                           SkAlphaType alpha_type,
-                                           gpu::SharedImageUsageSet usage) {
-#if BUILDFLAG(IS_WIN)
-  const SwapChainMailboxes mailboxes = {Mailbox::Generate(),
-                                        Mailbox::Generate()};
-  auto params = mojom::CreateSwapChainParams::New();
-  params->front_buffer_mailbox = mailboxes.front_buffer;
-  params->back_buffer_mailbox = mailboxes.back_buffer;
-  params->format = format;
-  params->size = size;
-  params->color_space = color_space;
-  params->usage = uint32_t(usage);
-  params->surface_origin = surface_origin;
-  params->alpha_type = alpha_type;
-  {
-    base::AutoLock lock(lock_);
-
-    AddMailbox(mailboxes.front_buffer);
-    AddMailbox(mailboxes.back_buffer);
-
-    last_flush_id_ = host_->EnqueueDeferredMessage(
-        mojom::DeferredRequestParams::NewSharedImageRequest(
-            mojom::DeferredSharedImageRequest::NewCreateSwapChain(
-                std::move(params))),
-        /*sync_token_fences=*/{}, ++next_release_id_);
-  }
-  return mailboxes;
-#else
-  NOTREACHED();
-#endif  // BUILDFLAG(IS_WIN)
-}
-
-void SharedImageInterfaceProxy::PresentSwapChain(const SyncToken& sync_token,
-                                                 const Mailbox& mailbox) {
-#if BUILDFLAG(IS_WIN)
-  std::vector<SyncToken> dependencies =
-      GenerateDependenciesFromSyncToken(std::move(sync_token), host_);
-  {
-    base::AutoLock lock(lock_);
-    last_flush_id_ = host_->EnqueueDeferredMessage(
-        mojom::DeferredRequestParams::NewSharedImageRequest(
-            mojom::DeferredSharedImageRequest::NewPresentSwapChain(
-                mojom::PresentSwapChainParams::New(mailbox))),
-        std::move(dependencies), ++next_release_id_);
-    host_->EnsureFlush(last_flush_id_);
-  }
-#else
-  NOTREACHED();
-#endif  // BUILDFLAG(IS_WIN)
 }
 
 #if BUILDFLAG(IS_FUCHSIA)

@@ -7,16 +7,16 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import logging
-from typing import (TYPE_CHECKING, Any, ClassVar, Iterator, Optional, Self,
-                    Sequence, cast)
+from typing import TYPE_CHECKING, Any, ClassVar, Iterator, Optional, Self, \
+    Sequence, cast
 
 from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.action_runner.action.action_type import ActionType
 from crossbench.action_runner.action.get import GetAction
-from crossbench.benchmarks.loading.config.blocks import (ActionBlock,
-                                                         ActionBlockListConfig)
+from crossbench.benchmarks.loading.config.blocks import ActionBlock, \
+    ActionBlockListConfig
 from crossbench.benchmarks.loading.config.login.custom import LoginBlock
 from crossbench.benchmarks.loading.page.live import PAGES
 from crossbench.benchmarks.loading.playback_controller import \

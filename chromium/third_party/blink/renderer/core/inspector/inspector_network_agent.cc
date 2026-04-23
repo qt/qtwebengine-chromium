@@ -40,7 +40,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
-#include "net/base/features.h"
+#include "components/url_pattern/simple_url_pattern_matcher.h"
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/cert/ct_sct_to_string.h"
@@ -547,14 +547,6 @@ String BuildCorsError(network::mojom::CorsError cors_error) {
     case network::mojom::CorsError::kPreflightInvalidAllowCredentials:
       return protocol::Network::CorsErrorEnum::PreflightInvalidAllowCredentials;
 
-    case network::mojom::CorsError::kPreflightMissingAllowPrivateNetwork:
-      return protocol::Network::CorsErrorEnum::
-          PreflightMissingAllowPrivateNetwork;
-
-    case network::mojom::CorsError::kPreflightInvalidAllowPrivateNetwork:
-      return protocol::Network::CorsErrorEnum::
-          PreflightInvalidAllowPrivateNetwork;
-
     case network::mojom::CorsError::kInvalidAllowMethodsPreflightResponse:
       return protocol::Network::CorsErrorEnum::
           InvalidAllowMethodsPreflightResponse;
@@ -579,25 +571,6 @@ String BuildCorsError(network::mojom::CorsError cors_error) {
 
     case network::mojom::CorsError::kInvalidPrivateNetworkAccess:
       return protocol::Network::CorsErrorEnum::InvalidPrivateNetworkAccess;
-
-    case network::mojom::CorsError::kUnexpectedPrivateNetworkAccess:
-      return protocol::Network::CorsErrorEnum::UnexpectedPrivateNetworkAccess;
-
-    case network::mojom::CorsError::kPreflightMissingPrivateNetworkAccessId:
-      return protocol::Network::CorsErrorEnum::
-          PreflightMissingPrivateNetworkAccessId;
-
-    case network::mojom::CorsError::kPreflightMissingPrivateNetworkAccessName:
-      return protocol::Network::CorsErrorEnum::
-          PreflightMissingPrivateNetworkAccessName;
-
-    case network::mojom::CorsError::kPrivateNetworkAccessPermissionUnavailable:
-      return protocol::Network::CorsErrorEnum::
-          PrivateNetworkAccessPermissionUnavailable;
-
-    case network::mojom::CorsError::kPrivateNetworkAccessPermissionDenied:
-      return protocol::Network::CorsErrorEnum::
-          PrivateNetworkAccessPermissionDenied;
 
     case network::mojom::CorsError::kLocalNetworkAccessPermissionDenied:
       return protocol::Network::CorsErrorEnum::
@@ -758,10 +731,18 @@ void SetNetworkStateOverride(bool offline,
                              WebConnectionType type) {
   // TODO(dgozman): networkStateNotifier is per-process. It would be nice to
   // have per-frame override instead.
-  if (offline || latency || download_throughput || upload_throughput) {
+
+  // According to the Chrome DevTools Protocol, negative throughput values
+  // disable throttling. Any non-negative value (>= 0) is considered an active
+  // override, with 0 representing full throttling.
+  if (offline || latency >= 0 || download_throughput >= 0 ||
+      upload_throughput >= 0) {
+    std::optional<double> download_mbps;
+    if (download_throughput >= 0) {
+      download_mbps = download_throughput / (1024 * 1024 / 8);
+    }
     GetNetworkStateNotifier().SetNetworkConnectionInfoOverride(
-        !offline, type, std::nullopt, latency,
-        download_throughput / (1024 * 1024 / 8));
+        !offline, type, std::nullopt, std::max(latency, 0.0), download_mbps);
   } else {
     GetNetworkStateNotifier().ClearOverride();
   }
@@ -806,9 +787,38 @@ SourceTypeEnum SourceTypeFromString(const String& type) {
 
 }  // namespace
 
+// static
+InspectorNetworkAgent::URLPatternMatcher
+InspectorNetworkAgent::URLPatternMatcher::Create(const String& pattern,
+                                                 bool block) {
+  return {
+      .matcher =
+          ::url_pattern::SimpleUrlPatternMatcher::Create(pattern.Utf8(),
+                                                         /*base_url=*/nullptr)
+              .value_or(
+                  std::unique_ptr<::url_pattern::SimpleUrlPatternMatcher>()),
+      .block = block,
+  };
+}
+
 void InspectorNetworkAgent::Restore() {
   if (enabled_.Get())
     Enable();
+  if (!blocked_patterns_cbor_.Get().empty()) {
+    protocol::Array<protocol::Network::BlockPattern> blocked_patterns;
+    crdtp::DeserializerState state(blocked_patterns_cbor_.Get());
+    bool result = crdtp::ProtocolTypeTraits<protocol::Array<
+        protocol::Network::BlockPattern>>::Deserialize(&state,
+                                                       &blocked_patterns);
+    CHECK(result);
+    for (auto& pattern : blocked_patterns) {
+      if (auto matcher = URLPatternMatcher::Create(pattern->getUrlPattern(),
+                                                   pattern->getBlock());
+          matcher.matcher) {
+        blocked_pattern_matchers_.emplace_back(std::move(matcher));
+      }
+    }
+  }
 }
 
 static std::unique_ptr<protocol::Network::ResourceTiming> BuildObjectForTiming(
@@ -1119,12 +1129,6 @@ BuildObjectForResourceResponse(const ResourceResponse& response,
           .setSecurityState(security_state)
           .build();
 
-  // TODO(crbug.com/432716000): Remove this guard once IPP is fully launched.
-  if (net::features::kIpPrivacyEnableIppInDevTools.Get()) {
-    response_object->setIsIpProtectionUsed(response.IsIpProtectionUsed() &&
-                                           !response.WasCached());
-  }
-
   response_object->setFromDiskCache(response.WasCached());
   response_object->setFromServiceWorker(response.WasFetchedViaServiceWorker());
   if (response.WasFetchedViaServiceWorker()) {
@@ -1220,8 +1224,18 @@ void InspectorNetworkAgent::Trace(Visitor* visitor) const {
 }
 
 void InspectorNetworkAgent::ShouldBlockRequest(const KURL& url, bool* result) {
-  if (blocked_urls_.IsEmpty())
+  if (blocked_pattern_matchers_.empty() && blocked_urls_.IsEmpty())
     return;
+
+  GURL gurl(url);
+  for (const auto& matcher : blocked_pattern_matchers_) {
+    if (matcher.matcher->Match(gurl)) {
+      if (matcher.block) {
+        *result = true;
+      }
+      return;
+    }
+  }
 
   String url_string = url.GetString();
   for (const String& blocked : blocked_urls_.Keys()) {
@@ -2291,6 +2305,20 @@ void InspectorNetworkAgent::DirectUDPSocketChunkReceived(
       base::TimeTicks::Now().since_origin().InSecondsF());
 }
 
+void InspectorNetworkAgent::DirectUDPSocketJoinedMulticastGroup(
+    uint64_t identifier,
+    const String& ipAddress) {
+  GetFrontend()->directUDPSocketJoinedMulticastGroup(
+      IdentifiersFactory::SubresourceRequestId(identifier), ipAddress);
+}
+
+void InspectorNetworkAgent::DirectUDPSocketLeftMulticastGroup(
+    uint64_t identifier,
+    const String& ipAddress) {
+  GetFrontend()->directUDPSocketLeftMulticastGroup(
+      IdentifiersFactory::SubresourceRequestId(identifier), ipAddress);
+}
+
 protocol::Response InspectorNetworkAgent::enable(
     std::optional<int> total_buffer_size,
     std::optional<int> resource_buffer_size,
@@ -2402,10 +2430,43 @@ void InspectorNetworkAgent::getResponseBody(
 }
 
 protocol::Response InspectorNetworkAgent::setBlockedURLs(
+    std::unique_ptr<protocol::Array<protocol::Network::BlockPattern>>
+        url_patterns,
     std::unique_ptr<protocol::Array<String>> urls) {
+  Vector<URLPatternMatcher> blocked_pattern_matchers;
+
+  if (url_patterns) {
+    for (auto& pattern : *url_patterns) {
+      if (auto matcher = URLPatternMatcher::Create(pattern->getUrlPattern(),
+                                                   pattern->getBlock());
+          matcher.matcher) {
+        blocked_pattern_matchers.emplace_back(std::move(matcher));
+      } else {
+        return protocol::Response::InvalidParams(
+            "Pattern \"" + pattern->getUrlPattern().Utf8() +
+            "\" failed to parse as a URLPattern.");
+      }
+    }
+  }
+
   blocked_urls_.Clear();
-  for (const String& url : *urls)
-    blocked_urls_.Set(url, true);
+  blocked_patterns_cbor_.Clear();
+  std::swap(blocked_pattern_matchers_, blocked_pattern_matchers);
+
+  if (url_patterns) {
+    std::vector<uint8_t> serialized;
+    crdtp::ProtocolTypeTraits<protocol::Array<
+        protocol::Network::BlockPattern>>::Serialize(*url_patterns,
+                                                     &serialized);
+    blocked_patterns_cbor_.Set(serialized);
+  }
+
+  if (urls) {
+    for (const String& url : *urls) {
+      blocked_urls_.Set(url, true);
+    }
+  }
+
   return protocol::Response::Success();
 }
 
@@ -2502,6 +2563,7 @@ protocol::Response InspectorNetworkAgent::emulateNetworkConditionsByRule(
     std::unique_ptr<protocol::Array<protocol::Network::NetworkConditions>>
         matched_network_conditions,
     std::unique_ptr<protocol::Array<String>>* rule_ids_result) {
+  *rule_ids_result = std::make_unique<protocol::Array<String>>();
   return protocol::Response::Success();
 }
 
@@ -2737,6 +2799,7 @@ InspectorNetworkAgent::InspectorNetworkAgent(
       cache_disabled_(&agent_state_, /*default_value=*/false),
       bypass_service_worker_(&agent_state_, /*default_value=*/false),
       blocked_urls_(&agent_state_, /*default_value=*/false),
+      blocked_patterns_cbor_(&agent_state_, /*default_value=*/{}),
       extra_request_headers_(&agent_state_, /*default_value=*/String()),
       attach_debug_stack_enabled_(&agent_state_, /*default_value=*/false),
       total_buffer_size_(&agent_state_,

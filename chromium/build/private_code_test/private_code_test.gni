@@ -10,6 +10,7 @@ _default_allowed_violations = [
 
   # Defines public counterpart with same entries.
   "../../components/metrics/internal/server_urls.grd",
+  "../../components/autofill/core/browser/geo/chrome_alternative_state_name_maps/alternative_state_name_map_resources.grd",
 
   # TODO(b/452971335): Audit entries below.
   "../../chrome/browser/internal/resources/additional_modules_list.input",
@@ -29,6 +30,7 @@ if (!is_android) {
     "../../chrome/browser/nearby_sharing/internal/nearby_share_internal_icons.grd",
     "../../chrome/browser/nearby_sharing/internal/nearby_share_internal_strings.grd",
     "../../chrome/browser/resources/downloads/internal/icons.html",
+    "../../chrome/browser/resources/history/internal/icons.html",
     "../../chrome/browser/resources/settings/internal/icons.html",
     "../../third_party/search_engines_data/resources_internal/search_engine_descriptions_strings.grd",
     "../../third_party/widevine/cdm/linux/x64/manifest.json",
@@ -108,13 +110,15 @@ template("private_code_test") {
       rebase_path(get_label_info(_linker_inputs_dep, "root_out_dir"),
                   root_build_dir),
     ]
+    _globs = _default_allowed_violations
     if (defined(invoker.allowed_violations)) {
-      foreach(_glob, invoker.allowed_violations) {
-        args += [
-          "--allow-violation",
-          _glob,
-        ]
-      }
+      _globs += invoker.allowed_violations
+    }
+    foreach(_glob, _globs) {
+      args += [
+        "--allow-violation",
+        _glob,
+      ]
     }
     if (defined(invoker.expect_failure) && invoker.expect_failure) {
       args += [ "--expect-failure" ]

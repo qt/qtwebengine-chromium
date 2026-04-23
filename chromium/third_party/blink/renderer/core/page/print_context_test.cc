@@ -67,7 +67,7 @@ class MockPageContextCanvas : public SkCanvas {
     }
 
     if (rect.width() == 0 && rect.height() == 0) {
-      SkPoint point = getTotalMatrix().mapXY(rect.x(), rect.y());
+      SkPoint point = getTotalMatrix().mapPoint(rect.TL());
       Operation operation = {kDrawPoint,
                              SkRect::MakeXYWH(point.x(), point.y(), 0, 0)};
       recorded_operations_.push_back(operation);
@@ -1090,8 +1090,6 @@ class PrintContextOOPRCanvasTest : public PrintContextTest {
         std::make_unique<ScopedAccelerated2dCanvasForTest>(true);
 
     test_context_provider_ = viz::TestContextProvider::CreateRaster();
-    test_context_provider_->UnboundTestRasterInterface()->set_gpu_rasterization(
-        true);
     InitializeSharedGpuContextRaster(test_context_provider_.get());
 
     PrintContextTest::SetUp();
@@ -1102,8 +1100,6 @@ class PrintContextOOPRCanvasTest : public PrintContextTest {
   }
 
   void TearDown() override {
-    // Call base class TeardDown first to ensure Canvas2DLayerBridge is
-    // destroyed before the TestContextProvider.
     accelerated_compositing_scope_ = nullptr;
     test_context_provider_ = nullptr;
     SharedGpuContext::Reset();

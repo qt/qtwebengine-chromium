@@ -111,6 +111,8 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/viewport_data.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
+#include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
+#include "third_party/blink/renderer/core/highlight/highlight_registry.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_registry.h"
 #include "third_party/blink/renderer/core/html/fenced_frame/fence.h"
 #include "third_party/blink/renderer/core/html/forms/form_controller.h"
@@ -123,6 +125,7 @@
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/inspector/main_thread_debugger.h"
 #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
+#include "third_party/blink/renderer/core/layout/custom/layout_worklet.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
@@ -134,7 +137,11 @@
 #include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator.h"
 #include "third_party/blink/renderer/core/page/scrolling/sync_scroll_attempt_heuristic.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
+#include "third_party/blink/renderer/core/paint/timing/container_timing.h"
+#include "third_party/blink/renderer/core/paint/timing/image_element_timing.h"
+#include "third_party/blink/renderer/core/paint/timing/text_element_timing.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/core/resize_observer/resize_observer_controller.h"
 #include "third_party/blink/renderer/core/scheduler/scripted_idle_task_controller.h"
 #include "third_party/blink/renderer/core/scheduler/task_attribution_util.h"
 #include "third_party/blink/renderer/core/script/modulator.h"
@@ -146,6 +153,7 @@
 #include "third_party/blink/renderer/core/trustedtypes/trusted_type_policy_factory.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_types_util.h"
 #include "third_party/blink/renderer/core/view_transition/view_transition_supplement.h"
+#include "third_party/blink/renderer/core/workers/shared_worker_client_holder.h"
 #include "third_party/blink/renderer/platform/back_forward_cache_buffer_limit_tracker.h"
 #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
@@ -361,11 +369,6 @@ TrustedTypePolicyFactory* LocalDOMWindow::GetTrustedTypesForWorld(
       .insert(&world, MakeGarbageCollected<TrustedTypePolicyFactory>(
                           GetExecutionContext()))
       .stored_value->value;
-}
-
-TrustedTypePolicyFactory* LocalDOMWindow::trustedTypes(
-    ScriptState* script_state) const {
-  return GetTrustedTypesForWorld(script_state->World());
 }
 
 bool LocalDOMWindow::IsCrossSiteSubframe() const {
@@ -724,7 +727,8 @@ void LocalDOMWindow::ReportPotentialPermissionsPolicyViolation(
     ReportingContext::From(this)->QueueReport(report);
   }
 
-  if (disposition == mojom::blink::PolicyDisposition::kEnforce) {
+  if (disposition == mojom::blink::PolicyDisposition::kEnforce &&
+      !reporting_endpoint.empty()) {
     GetFrame()->Console().AddMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kViolation,
         mojom::blink::ConsoleMessageLevel::kError, body->message()));
@@ -1265,7 +1269,7 @@ void LocalDOMWindow::SchedulePostMessage(PostedMessage* posted_message) {
   // local dispatch.
   MessageEvent* event = MessageEvent::Create(
       std::move(posted_message->channels), std::move(posted_message->data),
-      posted_message->source_origin->ToString(), message_origin_kind, String(),
+      std::move(posted_message->source_origin), message_origin_kind, String(),
       posted_message->source, posted_message->user_activation,
       posted_message->delegated_capability);
 
@@ -1357,19 +1361,11 @@ void LocalDOMWindow::DispatchMessageEventWithOriginCheck(
     }
   }
 
-  KURL sender(event->origin());
-  if (!GetContentSecurityPolicy()->AllowConnectToSource(
-          sender, sender, RedirectStatus::kNoRedirect,
-          ReportingDisposition::kSuppressReporting)) {
-    UseCounter::Count(
-        this, WebFeature::kPostMessageIncomingWouldBeBlockedByConnectSrc);
-  }
-
+  scoped_refptr<const SecurityOrigin> sender_origin =
+      event->GetSecurityOrigin();
   if (event->IsOriginCheckRequiredToAccessData()) {
-    scoped_refptr<SecurityOrigin> sender_security_origin =
-        SecurityOrigin::Create(sender);
-    if (!sender_security_origin->IsSameOriginWith(GetSecurityOrigin())) {
-      event = MessageEvent::CreateError(event->origin(), event->source());
+    if (!sender_origin->IsSameOriginWith(GetSecurityOrigin())) {
+      event = MessageEvent::CreateError(event);
     }
   }
   if (event->IsLockedToAgentCluster()) {
@@ -1377,10 +1373,8 @@ void LocalDOMWindow::DispatchMessageEventWithOriginCheck(
       UseCounter::Count(
           this,
           WebFeature::kMessageEventSharedArrayBufferDifferentAgentCluster);
-      event = MessageEvent::CreateError(event->origin(), event->source());
+      event = MessageEvent::CreateError(event);
     } else {
-      scoped_refptr<SecurityOrigin> sender_origin =
-          SecurityOrigin::Create(sender);
       if (!sender_origin->IsSameOriginWith(GetSecurityOrigin())) {
         UseCounter::Count(
             this, WebFeature::kMessageEventSharedArrayBufferSameAgentCluster);
@@ -1392,7 +1386,7 @@ void LocalDOMWindow::DispatchMessageEventWithOriginCheck(
   }
 
   if (!event->CanDeserializeIn(this)) {
-    event = MessageEvent::CreateError(event->origin(), event->source());
+    event = MessageEvent::CreateError(event);
   }
 
   if (event->delegatedCapability() ==
@@ -1715,10 +1709,6 @@ int LocalDOMWindow::screenX() const {
   if (!page)
     return 0;
 
-  if (RuntimeEnabledFeatures::ReduceScreenSizeEnabled()) {
-    return 0;
-  }
-
   ChromeClient& chrome_client = page->GetChromeClient();
   if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
     return static_cast<int>(
@@ -1736,10 +1726,6 @@ int LocalDOMWindow::screenY() const {
   Page* page = frame->GetPage();
   if (!page)
     return 0;
-
-  if (RuntimeEnabledFeatures::ReduceScreenSizeEnabled()) {
-    return 0;
-  }
 
   ChromeClient& chrome_client = page->GetChromeClient();
   if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
@@ -2231,7 +2217,6 @@ void LocalDOMWindow::DispatchLoadEvent() {
       DEVTOOLS_TIMELINE_TRACE_EVENT_INSTANT(
           "MarkLoad", inspector_mark_load_event::Data, frame);
       probe::LoadEventFired(frame);
-      frame->GetFrameScheduler()->OnDispatchLoadEvent();
     }
   }
 }
@@ -2362,38 +2347,6 @@ DOMWindow* LocalDOMWindow::open(v8::Isolate* isolate,
 
   WebWindowFeatures window_features =
       GetWindowFeaturesFromString(features, entered_window);
-
-  if (window_features.is_partitioned_popin) {
-    UseCounter::Count(*entered_window,
-                      WebFeature::kPartitionedPopin_OpenAttempt);
-    if (!IsFeatureEnabled(
-            network::mojom::PermissionsPolicyFeature::kPartitionedPopins,
-            ReportOptions::kReportOnFailure)) {
-      exception_state.ThrowSecurityError(
-          "Permissions-Policy: `popin` access denied.",
-          "Permissions-Policy: `popin` access denied.");
-      return nullptr;
-    }
-    if (entered_window->GetFrame()->GetPage()->IsPartitionedPopin()) {
-      exception_state.ThrowSecurityError(
-          "Partitioned popins cannot open their own popin.",
-          "Partitioned popins cannot open their own popin.");
-      return nullptr;
-    }
-    if (entered_window->Url().Protocol() != g_https_atom) {
-      exception_state.ThrowSecurityError(
-          "Partitioned popins must be opened from https URLs.",
-          "Partitioned popins must be opened from https URLs.");
-      return nullptr;
-    }
-    // We prevent redirections via PartitionedPopinsNavigationThrottle.
-    if (completed_url.Protocol() != g_https_atom) {
-      exception_state.ThrowSecurityError(
-          "Partitioned popins can only open https URLs.",
-          "Partitioned popins can only open https URLs.");
-      return nullptr;
-    }
-  }
 
   // In fenced frames, we should always use `noopener`.
   if (GetFrame()->IsInFencedFrameTree()) {
@@ -2593,10 +2546,53 @@ void LocalDOMWindow::Trace(Visitor* visitor) const {
   visitor->Trace(crash_report_storage_);
   visitor->Trace(closewatcher_stack_);
   visitor->Trace(soft_navigation_heuristics_);
-  UniversalGlobalScope::Trace(visitor);
+  visitor->Trace(global_fetch_impl_);
+  visitor->Trace(global_cache_storage_impl_);
+  visitor->Trace(global_cookie_store_impl_);
+  visitor->Trace(global_performance_impl_);
+  visitor->Trace(container_timing_);
+  visitor->Trace(fullscreen_);
+  visitor->Trace(highlight_registry_);
+  visitor->Trace(image_element_timing_);
+  visitor->Trace(layout_worklet_);
+  visitor->Trace(resize_observer_controller_);
+  visitor->Trace(shared_worker_client_holder_);
+  visitor->Trace(text_element_timing_);
+  visitor->Trace(app_banner_controller_);
+  visitor->Trace(audio_renderer_sink_cache_window_observer_);
+  visitor->Trace(css_animation_worklet_);
+  visitor->Trace(credential_manager_proxy_);
+  visitor->Trace(dom_window_digital_goods_);
+  visitor->Trace(dom_window_launch_queue_);
+  visitor->Trace(dom_window_storage_);
+  visitor->Trace(dom_window_storage_controller_);
+  visitor->Trace(device_motion_controller_);
+  visitor->Trace(device_orientation_absolute_controller_);
+  visitor->Trace(device_orientation_controller_);
+  visitor->Trace(document_picture_in_picture_);
+  visitor->Trace(font_access_);
+  visitor->Trace(global_storage_access_handle_);
+  visitor->Trace(installation_service_impl_);
+  visitor->Trace(installed_app_controller_);
+  visitor->Trace(manifest_manager_);
+  visitor->Trace(nfcproxy_);
+  visitor->Trace(paint_worklet_);
+  visitor->Trace(peer_connection_tracker_);
+  visitor->Trace(presentation_controller_);
+  visitor->Trace(push_messaging_client_);
+  visitor->Trace(screen_orientation_controller_);
+  visitor->Trace(sensor_provider_proxy_);
+  visitor->Trace(shared_storage_window_supplement_);
+  visitor->Trace(speech_recognition_controller_);
+  visitor->Trace(speech_synthesis_);
+  visitor->Trace(third_party_script_detector_);
+  visitor->Trace(user_media_client_);
+  visitor->Trace(web_launch_service_impl_);
+  visitor->Trace(window_screen_details_);
+  visitor->Trace(window_shared_storage_impl_);
   DOMWindow::Trace(visitor);
   ExecutionContext::Trace(visitor);
-  Supplementable<LocalDOMWindow>::Trace(visitor);
+  WindowOrWorkerGlobalScope::Trace(visitor);
 }
 
 bool LocalDOMWindow::CrossOriginIsolatedCapability() const {
@@ -2759,7 +2755,7 @@ void LocalDOMWindow::SetHasBeenRevealed(bool revealed) {
     return;
   has_been_revealed_ = revealed;
   CHECK(document_);
-  ViewTransitionSupplement::From(*document_)->DidChangeRevealState();
+  document_->GetViewTransitions().DidChangeRevealState();
 }
 
 void LocalDOMWindow::UpdateEventListenerCountsToDocumentForReuseIfNeeded() {
@@ -2775,4 +2771,12 @@ void LocalDOMWindow::UpdateEventListenerCountsToDocumentForReuseIfNeeded() {
   }
   is_dom_window_reused_ = false;
 }
+
+void LocalDOMWindow::requestResize(ExceptionState& state) {
+  DCHECK(RuntimeEnabledFeatures::ResponsiveIframesEnabled());
+  if (document_) {
+    document_->RequestResizeResponsiveIframe(&state);
+  }
+}
+
 }  // namespace blink

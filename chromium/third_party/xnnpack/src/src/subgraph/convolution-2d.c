@@ -5,6 +5,7 @@
 
 #include <assert.h>
 #include <inttypes.h>
+#include <pthreadpool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -18,7 +19,6 @@
 #include "src/xnnpack/requantization.h"
 #include "src/xnnpack/subgraph-validation.h"
 #include "src/xnnpack/subgraph.h"
-#include <pthreadpool.h>
 
 enum xnn_status create_nchw_convolution(
     uint32_t input_padding_top, uint32_t input_padding_right,
@@ -254,10 +254,10 @@ static enum xnn_status create_convolution_operator(
                     node->params.convolution_2d.group_input_channels,
                     node->params.convolution_2d.group_output_channels,
                     /*input_channel_stride=*/
-                        node->params.convolution_2d.group_input_channels *
+                    node->params.convolution_2d.group_input_channels *
                         node->params.convolution_2d.groups,
                     /*output_channel_stride=*/
-                        node->params.convolution_2d.group_output_channels *
+                    node->params.convolution_2d.group_output_channels *
                         node->params.convolution_2d.groups,
                     values[filter_id].quantization.channelwise_scale,
                     filter_data, bias_data, node->activation.output_min,
@@ -280,10 +280,10 @@ static enum xnn_status create_convolution_operator(
                     node->params.convolution_2d.group_input_channels,
                     node->params.convolution_2d.group_output_channels,
                     /*input_channel_stride=*/
-                        node->params.convolution_2d.group_input_channels *
+                    node->params.convolution_2d.group_input_channels *
                         node->params.convolution_2d.groups,
                     /*output_channel_stride=*/
-                        node->params.convolution_2d.group_output_channels *
+                    node->params.convolution_2d.group_output_channels *
                         node->params.convolution_2d.groups,
                     values[filter_id].quantization.channelwise_scale,
                     filter_data, bias_data, node->activation.output_min,
@@ -309,28 +309,55 @@ static enum xnn_status create_convolution_operator(
         switch (filter_datatype) {
           case xnn_datatype_fp16:
           case xnn_datatype_fp32:
-            status = xnn_create_convolution2d_nhwc_f16(
-                node->params.convolution_2d.input_padding_top,
-                node->params.convolution_2d.input_padding_right,
-                node->params.convolution_2d.input_padding_bottom,
-                node->params.convolution_2d.input_padding_left,
-                node->params.convolution_2d.kernel_height,
-                node->params.convolution_2d.kernel_width,
-                node->params.convolution_2d.subsampling_height,
-                node->params.convolution_2d.subsampling_width,
-                node->params.convolution_2d.dilation_height,
-                node->params.convolution_2d.dilation_width,
-                node->params.convolution_2d.groups,
-                node->params.convolution_2d.group_input_channels,
-                node->params.convolution_2d.group_output_channels,
-                node->params.convolution_2d.group_input_channels *
-                    node->params.convolution_2d.groups /* input_pixel_stride */,
-                node->params.convolution_2d.group_output_channels *
-                    node->params.convolution_2d
-                        .groups /* output_pixel_stride */,
-                filter_data, bias_data, node->activation.output_min,
-                node->activation.output_max, flags, weights_cache,
-                &opdata->operator_objects[0]);
+            if (input_datatype == xnn_datatype_pfp16) {
+              status = xnn_create_convolution2d_nhwc_pf16(
+                  node->params.convolution_2d.input_padding_top,
+                  node->params.convolution_2d.input_padding_right,
+                  node->params.convolution_2d.input_padding_bottom,
+                  node->params.convolution_2d.input_padding_left,
+                  node->params.convolution_2d.kernel_height,
+                  node->params.convolution_2d.kernel_width,
+                  node->params.convolution_2d.subsampling_height,
+                  node->params.convolution_2d.subsampling_width,
+                  node->params.convolution_2d.dilation_height,
+                  node->params.convolution_2d.dilation_width,
+                  node->params.convolution_2d.groups,
+                  node->params.convolution_2d.group_input_channels,
+                  node->params.convolution_2d.group_output_channels,
+                  node->params.convolution_2d.group_input_channels *
+                      node->params.convolution_2d
+                          .groups /* input_pixel_stride */,
+                  node->params.convolution_2d.group_output_channels *
+                      node->params.convolution_2d
+                          .groups /* output_pixel_stride */,
+                  filter_data, bias_data, node->activation.output_min,
+                  node->activation.output_max, flags, weights_cache,
+                  &opdata->operator_objects[0]);
+            } else {
+              status = xnn_create_convolution2d_nhwc_f16(
+                  node->params.convolution_2d.input_padding_top,
+                  node->params.convolution_2d.input_padding_right,
+                  node->params.convolution_2d.input_padding_bottom,
+                  node->params.convolution_2d.input_padding_left,
+                  node->params.convolution_2d.kernel_height,
+                  node->params.convolution_2d.kernel_width,
+                  node->params.convolution_2d.subsampling_height,
+                  node->params.convolution_2d.subsampling_width,
+                  node->params.convolution_2d.dilation_height,
+                  node->params.convolution_2d.dilation_width,
+                  node->params.convolution_2d.groups,
+                  node->params.convolution_2d.group_input_channels,
+                  node->params.convolution_2d.group_output_channels,
+                  node->params.convolution_2d.group_input_channels *
+                      node->params.convolution_2d
+                          .groups /* input_pixel_stride */,
+                  node->params.convolution_2d.group_output_channels *
+                      node->params.convolution_2d
+                          .groups /* output_pixel_stride */,
+                  filter_data, bias_data, node->activation.output_min,
+                  node->activation.output_max, flags, weights_cache,
+                  &opdata->operator_objects[0]);
+            }
             break;
           case xnn_datatype_qcint8:
             switch (input_datatype) {
@@ -350,10 +377,10 @@ static enum xnn_status create_convolution_operator(
                     node->params.convolution_2d.group_input_channels,
                     node->params.convolution_2d.group_output_channels,
                     /*input_channel_stride=*/
-                        node->params.convolution_2d.group_input_channels *
+                    node->params.convolution_2d.group_input_channels *
                         node->params.convolution_2d.groups,
                     /*output_channel_stride=*/
-                        node->params.convolution_2d.group_output_channels *
+                    node->params.convolution_2d.group_output_channels *
                         node->params.convolution_2d.groups,
                     values[filter_id].quantization.channelwise_scale,
                     filter_data, bias_data, node->activation.output_min,
@@ -376,10 +403,10 @@ static enum xnn_status create_convolution_operator(
                     node->params.convolution_2d.group_input_channels,
                     node->params.convolution_2d.group_output_channels,
                     /*input_channel_stride=*/
-                        node->params.convolution_2d.group_input_channels *
+                    node->params.convolution_2d.group_input_channels *
                         node->params.convolution_2d.groups,
                     /*output_channel_stride=*/
-                        node->params.convolution_2d.group_output_channels *
+                    node->params.convolution_2d.group_output_channels *
                         node->params.convolution_2d.groups,
                     values[filter_id].quantization.channelwise_scale,
                     filter_data, bias_data, node->activation.output_min,
@@ -659,6 +686,11 @@ enum xnn_status reshape_convolution_operator(struct xnn_operator_data* opdata,
           opdata->operator_objects[0], batch_size, input_height, input_width,
           &opdata->workspace_size, &output_height, &output_width, threadpool);
       break;
+    case xnn_operator_type_convolution_nhwc_pf16:
+      status = xnn_reshape_convolution2d_nhwc_pf16(
+          opdata->operator_objects[0], batch_size, input_height, input_width,
+          &opdata->workspace_size, &output_height, &output_width, threadpool);
+      break;
     default:
       XNN_UNREACHABLE;
   }
@@ -781,6 +813,11 @@ enum xnn_status setup_convolution_operator(
       return xnn_setup_convolution2d_nhwc_pqs8_qs8_qc8w(
           opdata->operator_objects[0], opdata->workspace, input_data,
           output_data);
+      break;
+    case xnn_operator_type_convolution_nhwc_pf16:
+      return xnn_setup_convolution2d_nhwc_pf16(opdata->operator_objects[0],
+                                               opdata->workspace, input_data,
+                                               output_data);
       break;
     default:
       XNN_UNREACHABLE;
@@ -994,9 +1031,8 @@ enum xnn_status xnn_define_convolution_2d(
   if ((flags & XNN_FLAG_TENSORFLOW_SAME_PADDING) != 0 && any_padding) {
     xnn_log_error("failed to define %s operator with %" PRIu32 "+%" PRIu32
                   "x%" PRIu32 "+%" PRIu32
-                  " padding: "
-                  "TensorFlow SAME padding can't be combined with explicit "
-                  "padding specification",
+                  " padding: TensorFlow SAME padding can't be combined with "
+                  "explicit padding specification",
                   xnn_node_type_to_string(xnn_node_type_convolution_2d),
                   input_padding_top, input_padding_left, input_padding_bottom,
                   input_padding_right);
@@ -1039,8 +1075,7 @@ enum xnn_status xnn_define_convolution_2d(
       if (input_value->quantization.num_nonbatch_dims >=
           input_value->shape.num_dims) {
         xnn_log_error("failed to define %s operator with input ID #%" PRIu32
-                      ": num_nonbatch_dims (%zu) must be "
-                      "< num_dims (%zu)",
+                      ": num_nonbatch_dims (%zu) must be < num_dims (%zu)",
                       xnn_node_type_to_string(xnn_node_type_convolution_2d),
                       input_id, input_value->quantization.num_nonbatch_dims,
                       input_value->shape.num_dims);
@@ -1169,9 +1204,8 @@ enum xnn_status xnn_define_convolution_2d(
     xnn_log_error(
         "failed to define %s operator with filter output channels %zu, groups "
         "#%" PRIu32
-        " and group_output_channels %zu:"
-        "mismatching shapes, filter output channels must be equal to groups * "
-        "group_output_channels.",
+        " and group_output_channels %zu:mismatching shapes, filter output "
+        "channels must be equal to groups * group_output_channels.",
         xnn_node_type_to_string(xnn_node_type_convolution_2d),
         filter_value->shape.dim[0], groups, group_output_channels);
     return xnn_status_invalid_parameter;

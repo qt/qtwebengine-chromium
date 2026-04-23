@@ -4,6 +4,8 @@
 
 #include "base/functional/callback.h"
 #include "base/json/json_writer.h"
+#include "base/strings/escape.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
 #include "chrome/browser/ui/browser.h"
@@ -13,6 +15,7 @@
 #include "chrome/test/base/web_feature_histogram_tester.h"
 #include "components/metrics/content/subprocess_metrics_provider.h"
 #include "components/unexportable_keys/features.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -52,17 +55,14 @@ class DeviceBoundSessionAccessObserver : public content::WebContentsObserver {
   base::RepeatingCallback<void(const SessionAccess&)> on_access_callback_;
 };
 
-class DeviceBoundSessionBrowserTest : public InProcessBrowserTest,
-                                      public testing::WithParamInterface<bool> {
+class DeviceBoundSessionBrowserTest : public InProcessBrowserTest {
  public:
   DeviceBoundSessionBrowserTest() {
-    std::vector<base::test::FeatureRefAndParams> enabled_features = {
+    scoped_feature_list_.InitWithFeatures(
         {net::features::kDeviceBoundSessions,
-         {{"OriginTrialFeedback", GetParam() ? "true" : "false"}}},
-        {unexportable_keys::
-             kEnableBoundSessionCredentialsSoftwareKeysForManualTesting,
-         {}}};
-    scoped_feature_list_.InitWithFeaturesAndParameters(enabled_features, {});
+         unexportable_keys::
+             kEnableBoundSessionCredentialsSoftwareKeysForManualTesting},
+        {});
   }
 
   void SetUpOnMainThread() override {
@@ -88,13 +88,23 @@ class DeviceBoundSessionBrowserTest : public InProcessBrowserTest,
         net::device_bound_sessions::kTestOriginTrialPublicKey);
   }
 
+  bool NavigateToUrl(GURL url) {
+    EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
+    return WasLatestNavigationValid();
+  }
+
  private:
+  bool WasLatestNavigationValid() {
+    content::WebContents* tab =
+        browser()->tab_strip_model()->GetActiveWebContents();
+    return tab->GetController().GetLastCommittedEntry()->GetPageType() ==
+           content::PAGE_TYPE_NORMAL;
+  }
+
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
-INSTANTIATE_TEST_SUITE_P(All, DeviceBoundSessionBrowserTest, testing::Bool());
-
-IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest,
                        AccessCalledOnRegistrationFromNavigation) {
   base::test::TestFuture<SessionAccess> future;
   DeviceBoundSessionAccessObserver observer(
@@ -102,8 +112,7 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
       future.GetRepeatingCallback<const SessionAccess&>());
   content::WebContents* web_contents =
       chrome_test_utils::GetActiveWebContents(this);
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GetURL("/dbsc_login_page")));
+  ASSERT_TRUE(NavigateToUrl(GetURL("/dbsc_login_page")));
   ASSERT_TRUE(
       content::ExecJs(web_contents, "document.location = \"/dbsc_required\""));
 
@@ -112,14 +121,13 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
   EXPECT_EQ(access.session_key.id, SessionKey::Id("session_id"));
 }
 
-IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest,
                        AccessCalledOnRegistrationFromResource) {
   base::test::TestFuture<SessionAccess> future;
   DeviceBoundSessionAccessObserver observer(
       browser()->tab_strip_model()->GetActiveWebContents(),
       future.GetRepeatingCallback<const SessionAccess&>());
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(
-      browser(), GetURL("/resource_triggered_dbsc_registration")));
+  ASSERT_TRUE(NavigateToUrl(GetURL("/resource_triggered_dbsc_registration")));
 
   SessionAccess access = future.Take();
   EXPECT_EQ(access.session_key.site, net::SchemefulSite(GetURL("/")));
@@ -133,47 +141,43 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
               testing::Contains(net::MatchesCookieWithName("auth_cookie")));
 }
 
-IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest, UseCounterOnNavigation) {
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest, UseCounterOnNavigation) {
   WebFeatureHistogramTester histograms;
 
   content::WebContents* web_contents =
       chrome_test_utils::GetActiveWebContents(this);
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GetURL("/dbsc_login_page")));
+  ASSERT_TRUE(NavigateToUrl(GetURL("/dbsc_login_page")));
   ASSERT_TRUE(
       content::ExecJs(web_contents, "document.location = \"/dbsc_required\""));
 
   // Navigate away in order to flush use counters.
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL)));
+  ASSERT_TRUE(NavigateToUrl(GURL(url::kAboutBlankURL)));
 
   EXPECT_EQ(histograms.GetCount(
                 blink::mojom::WebFeature::kDeviceBoundSessionRegistered),
             1);
 }
 
-IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest, UseCounterOnResource) {
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest, UseCounterOnResource) {
   WebFeatureHistogramTester histograms;
 
   base::test::TestFuture<SessionAccess> future;
   DeviceBoundSessionAccessObserver observer(
       browser()->tab_strip_model()->GetActiveWebContents(),
       future.GetRepeatingCallback<const SessionAccess&>());
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(
-      browser(), GetURL("/resource_triggered_dbsc_registration")));
+  ASSERT_TRUE(NavigateToUrl(GetURL("/resource_triggered_dbsc_registration")));
 
   ASSERT_TRUE(future.Wait());
 
   // Navigate away in order to flush use counters.
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL)));
+  ASSERT_TRUE(NavigateToUrl(GURL(url::kAboutBlankURL)));
 
   EXPECT_EQ(histograms.GetCount(
                 blink::mojom::WebFeature::kDeviceBoundSessionRegistered),
             1);
 }
 
-IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest,
                        UseCounterForNotDeferred) {
   WebFeatureHistogramTester histograms;
 
@@ -181,17 +185,14 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
   DeviceBoundSessionAccessObserver observer(
       browser()->tab_strip_model()->GetActiveWebContents(),
       future.GetRepeatingCallback<const SessionAccess&>());
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(
-      browser(), GetURL("/resource_triggered_dbsc_registration")));
+  ASSERT_TRUE(NavigateToUrl(GetURL("/resource_triggered_dbsc_registration")));
 
   ASSERT_TRUE(future.Wait());
 
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GetURL("/ensure_authenticated")));
+  ASSERT_TRUE(NavigateToUrl(GetURL("/ensure_authenticated")));
 
   // Navigate away in order to flush use counters.
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL)));
+  ASSERT_TRUE(NavigateToUrl(GURL(url::kAboutBlankURL)));
 
   EXPECT_EQ(histograms.GetCount(
                 blink::mojom::WebFeature::kDeviceBoundSessionRequestInScope),
@@ -201,7 +202,7 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
             0);
 }
 
-IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest, UseCounterForDeferred) {
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest, UseCounterForDeferred) {
   WebFeatureHistogramTester histograms;
 
   content::WebContents* web_contents =
@@ -210,20 +211,17 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest, UseCounterForDeferred) {
     base::test::TestFuture<SessionAccess> future;
     DeviceBoundSessionAccessObserver observer(
         web_contents, future.GetRepeatingCallback<const SessionAccess&>());
-    ASSERT_TRUE(ui_test_utils::NavigateToURL(
-        browser(), GetURL("/resource_triggered_dbsc_registration")));
+    ASSERT_TRUE(NavigateToUrl(GetURL("/resource_triggered_dbsc_registration")));
     ASSERT_TRUE(future.Wait());
   }
 
   // Force a refresh
   ASSERT_TRUE(
       content::ExecJs(web_contents, "cookieStore.delete('auth_cookie')"));
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GetURL("/ensure_authenticated")));
+  ASSERT_TRUE(NavigateToUrl(GetURL("/ensure_authenticated")));
 
   // Navigate away in order to flush use counters.
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL)));
+  ASSERT_TRUE(NavigateToUrl(GURL(url::kAboutBlankURL)));
 
   EXPECT_EQ(histograms.GetCount(
                 blink::mojom::WebFeature::kDeviceBoundSessionRequestInScope),
@@ -233,7 +231,7 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest, UseCounterForDeferred) {
             1);
 }
 
-IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest,
                        UseCounterForMultipleRequestsOnePage) {
   WebFeatureHistogramTester histograms;
 
@@ -243,8 +241,7 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
     base::test::TestFuture<SessionAccess> future;
     DeviceBoundSessionAccessObserver observer(
         web_contents, future.GetRepeatingCallback<const SessionAccess&>());
-    ASSERT_TRUE(ui_test_utils::NavigateToURL(
-        browser(), GetURL("/resource_triggered_dbsc_registration")));
+    ASSERT_TRUE(NavigateToUrl(GetURL("/resource_triggered_dbsc_registration")));
     ASSERT_TRUE(future.Wait());
   }
 
@@ -254,8 +251,7 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
   ASSERT_TRUE(content::ExecJs(web_contents, "fetch('/ensure_authenticated')"));
 
   // Navigate away in order to flush use counters.
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL)));
+  ASSERT_TRUE(NavigateToUrl(GURL(url::kAboutBlankURL)));
 
   // Expect only one use counter
   EXPECT_EQ(histograms.GetCount(
@@ -263,7 +259,7 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
             1);
 }
 
-IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest,
                        UseCounterForMultipleRequestsTwoPages) {
   WebFeatureHistogramTester histograms;
 
@@ -273,8 +269,7 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
     base::test::TestFuture<SessionAccess> future;
     DeviceBoundSessionAccessObserver observer(
         web_contents, future.GetRepeatingCallback<const SessionAccess&>());
-    ASSERT_TRUE(ui_test_utils::NavigateToURL(
-        browser(), GetURL("/resource_triggered_dbsc_registration")));
+    ASSERT_TRUE(NavigateToUrl(GetURL("/resource_triggered_dbsc_registration")));
     ASSERT_TRUE(future.Wait());
   }
 
@@ -284,8 +279,7 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
   ASSERT_TRUE(content::ExecJs(web_contents, "fetch('/ensure_authenticated')"));
 
   // Navigate again
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GetURL("/ensure_authenticated")));
+  ASSERT_TRUE(NavigateToUrl(GetURL("/ensure_authenticated")));
 
   // Make several more in-scope requests
   ASSERT_TRUE(content::ExecJs(web_contents, "fetch('/ensure_authenticated')"));
@@ -293,8 +287,7 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
   ASSERT_TRUE(content::ExecJs(web_contents, "fetch('/ensure_authenticated')"));
 
   // Navigate away in order to flush use counters.
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL)));
+  ASSERT_TRUE(NavigateToUrl(GURL(url::kAboutBlankURL)));
 
   // Expect two use counters, one for each page load
   EXPECT_EQ(histograms.GetCount(
@@ -302,20 +295,18 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest,
             2);
 }
 
-IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest, NotDeferredLogs) {
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest, NotDeferredLogs) {
   base::HistogramTester histogram_tester;
 
   base::test::TestFuture<SessionAccess> future;
   DeviceBoundSessionAccessObserver observer(
       browser()->tab_strip_model()->GetActiveWebContents(),
       future.GetRepeatingCallback<const SessionAccess&>());
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(
-      browser(), GetURL("/resource_triggered_dbsc_registration")));
+  ASSERT_TRUE(NavigateToUrl(GetURL("/resource_triggered_dbsc_registration")));
 
   ASSERT_TRUE(future.Wait());
 
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GetURL("/ensure_authenticated")));
+  ASSERT_TRUE(NavigateToUrl(GetURL("/ensure_authenticated")));
 
   metrics::SubprocessMetricsProvider::MergeHistogramDeltasForTesting();
   histogram_tester.ExpectBucketCount(
@@ -324,7 +315,7 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest, NotDeferredLogs) {
       /*expected_count=*/1);
 }
 
-IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest, DeferredLogs) {
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest, DeferredLogs) {
   base::HistogramTester histogram_tester;
 
   content::WebContents* web_contents =
@@ -333,22 +324,87 @@ IN_PROC_BROWSER_TEST_P(DeviceBoundSessionBrowserTest, DeferredLogs) {
     base::test::TestFuture<SessionAccess> future;
     DeviceBoundSessionAccessObserver observer(
         web_contents, future.GetRepeatingCallback<const SessionAccess&>());
-    ASSERT_TRUE(ui_test_utils::NavigateToURL(
-        browser(), GetURL("/resource_triggered_dbsc_registration")));
+    ASSERT_TRUE(NavigateToUrl(GetURL("/resource_triggered_dbsc_registration")));
     ASSERT_TRUE(future.Wait());
   }
 
   // Force a refresh.
   ASSERT_TRUE(
       content::ExecJs(web_contents, "cookieStore.delete('auth_cookie')"));
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GetURL("/ensure_authenticated")));
+  ASSERT_TRUE(NavigateToUrl(GetURL("/ensure_authenticated")));
 
   metrics::SubprocessMetricsProvider::MergeHistogramDeltasForTesting();
   histogram_tester.ExpectBucketCount(
       "Net.DeviceBoundSessions.RequestDeferralDecision2",
       /*sample=*/net::device_bound_sessions::SessionUsage::kDeferred,
       /*expected_count=*/1);
+}
+
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest,
+                       RefreshWithoutResigningMultipleTimes) {
+  content::WebContents* web_contents =
+      chrome_test_utils::GetActiveWebContents(this);
+  // Register a session. When "OriginTrialFeedback" is enabled, this triggers
+  // one signing occurrence.
+  {
+    base::test::TestFuture<SessionAccess> future;
+    DeviceBoundSessionAccessObserver observer(
+        web_contents, future.GetRepeatingCallback<const SessionAccess&>());
+    ASSERT_TRUE(NavigateToUrl(GetURL("/resource_triggered_dbsc_registration")));
+    ASSERT_TRUE(future.Wait());
+  }
+  // Set an early challenge.
+  ASSERT_TRUE(
+      NavigateToUrl(GetURL("/set_early_challenge?consistent_challenge")));
+
+  // Force a refresh 6 times with the same challenge.
+  for (size_t i = 0; i < 6; i++) {
+    ASSERT_TRUE(
+        content::ExecJs(web_contents, "cookieStore.delete('auth_cookie')"));
+    ASSERT_TRUE(NavigateToUrl(GetURL("/ensure_authenticated")));
+  }
+
+  // Force one more refresh.
+  ASSERT_TRUE(
+      content::ExecJs(web_contents, "cookieStore.delete('auth_cookie')"));
+  // The signing quota is not exceeded because the consistent challenge
+  // has allowed reusing the stored signed challenge.
+  ASSERT_TRUE(NavigateToUrl(GetURL("/ensure_authenticated")));
+}
+
+IN_PROC_BROWSER_TEST_F(DeviceBoundSessionBrowserTest,
+                       RefreshWithResigningMultipleTimes) {
+  content::WebContents* web_contents =
+      chrome_test_utils::GetActiveWebContents(this);
+  // Register a session. This causes the first signing, only when
+  // "OriginTrialFeedback" is enabled.
+  {
+    base::test::TestFuture<SessionAccess> future;
+    DeviceBoundSessionAccessObserver observer(
+        web_contents, future.GetRepeatingCallback<const SessionAccess&>());
+    ASSERT_TRUE(NavigateToUrl(GetURL("/resource_triggered_dbsc_registration")));
+    ASSERT_TRUE(future.Wait());
+  }
+
+  // Force a refresh 5 times with different early challenges for each.
+  for (size_t i = 0; i < 5; i++) {
+    ASSERT_TRUE(NavigateToUrl(
+        GetURL("/set_early_challenge?challenge" + base::NumberToString(i))));
+    ASSERT_TRUE(
+        content::ExecJs(web_contents, "cookieStore.delete('auth_cookie')"));
+    ASSERT_TRUE(NavigateToUrl(GetURL("/ensure_authenticated")));
+  }
+
+  // The initial registration signing counts towards the quota, so the next
+  // refresh hits the quota.
+  ASSERT_TRUE(NavigateToUrl(GetURL("/set_early_challenge?challenge5")));
+  ASSERT_TRUE(
+      content::ExecJs(web_contents, "cookieStore.delete('auth_cookie')"));
+  // This hits the signing quota.
+  std::string signing_quota_query_param = base::EscapeQueryParamValue(
+      "quota_exceeded;session_identifier=\"session_id\"", /*use_plus=*/false);
+  ASSERT_FALSE(NavigateToUrl(GetURL("/ensure_authenticated?debug_header=" +
+                                    signing_quota_query_param)));
 }
 
 }  // namespace

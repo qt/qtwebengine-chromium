@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
@@ -39,9 +39,9 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
-// eslint-disable-next-line rulesdir/es-modules-import
+// eslint-disable-next-line @devtools/es-modules-import
 import objectPropertiesSectionStyles from '../../ui/legacy/components/object_ui/objectPropertiesSection.css.js';
-// eslint-disable-next-line rulesdir/es-modules-import
+// eslint-disable-next-line @devtools/es-modules-import
 import objectValueStyles from '../../ui/legacy/components/object_ui/objectValue.css.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -145,6 +145,7 @@ export class RequestPayloadView extends UI.Widget.VBox {
   }
 
   override willHide(): void {
+    super.willHide();
     this.request.removeEventListener(SDK.NetworkRequest.Events.REQUEST_HEADERS_CHANGED, this.refreshFormData, this);
   }
 
@@ -434,7 +435,8 @@ export class RequestPayloadView extends UI.Widget.VBox {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private appendJSONPayloadParsed(rootListItem: Category, parsedObject: any, sourceText: string): void {
     const object = (SDK.RemoteObject.RemoteObject.fromLocalObject(parsedObject) as SDK.RemoteObject.LocalJSONObject);
-    const section = new ObjectUI.ObjectPropertiesSection.RootElement(object);
+    const section =
+        new ObjectUI.ObjectPropertiesSection.RootElement(new ObjectUI.ObjectPropertiesSection.ObjectTree(object));
     section.title = (object.description);
     section.expand();
     // `editable` is not a valid property for `ObjectUI.ObjectPropertiesSection.RootElement`. Only for
@@ -483,7 +485,6 @@ export class RequestPayloadView extends UI.Widget.VBox {
     void this.refreshFormData();
     event.consume();
   }
-
 }
 
 const viewSourceForItems = new WeakSet<Category|UI.TreeOutline.TreeElement>();

@@ -52,8 +52,6 @@ if (build_with_chromium) {
       "src/absl/hash/internal/city.h",
       "src/absl/hash/internal/hash.cc",
       "src/absl/hash/internal/hash.h",
-      "src/absl/hash/internal/low_level_hash.cc",
-      "src/absl/hash/internal/low_level_hash.h",
       "src/absl/hash/internal/spy_hash_state.h",
       "src/absl/strings/internal/charconv_bigint.cc",
       "src/absl/strings/internal/charconv_bigint.h",
@@ -75,6 +73,7 @@ if (build_with_chromium) {
   # to binary size concerns.
   source_set("abseil") {
     sources = [
+      "src/absl/base/config.h",
       "src/absl/base/log_severity.h",
       "src/absl/base/macros.h",
       "src/absl/base/optimization.h",
@@ -90,6 +89,8 @@ if (build_with_chromium) {
       "src/absl/strings/ascii.h",
       "src/absl/strings/charconv.cc",
       "src/absl/strings/charconv.h",
+      "src/absl/strings/cord_analysis.cc",
+      "src/absl/strings/cord_analysis.h",
       "src/absl/strings/escaping.cc",
       "src/absl/strings/escaping.h",
       "src/absl/strings/match.cc",
@@ -105,10 +106,6 @@ if (build_with_chromium) {
       "src/absl/strings/str_split.h",
       "src/absl/strings/substitute.cc",
       "src/absl/strings/substitute.h",
-      "src/absl/types/bad_optional_access.cc",
-      "src/absl/types/bad_optional_access.h",
-      "src/absl/types/bad_variant_access.cc",
-      "src/absl/types/bad_variant_access.h",
       "src/absl/types/variant.h",
     ]
 
@@ -117,7 +114,7 @@ if (build_with_chromium) {
     public_deps = [ ":internal" ]
   }
 
-  config("private_abseil_quiche_config") {
+  config("private_abseil_quiche_and_protobuf_config") {
     cflags = [
       "-Wno-implicit-int-float-conversion",
       "-Wno-unreachable-code-break",
@@ -126,7 +123,7 @@ if (build_with_chromium) {
     cflags_cc = [ "-Wno-exit-time-destructors" ]
   }
 
-  source_set("abseil_quiche_internal") {
+  source_set("abseil_quiche_and_protobuf_internal") {
     sources = [
       "src/absl/base/internal/cycleclock.cc",
       "src/absl/base/internal/cycleclock.h",
@@ -144,12 +141,14 @@ if (build_with_chromium) {
       "src/absl/base/internal/thread_identity.h",
       "src/absl/base/internal/unscaledcycleclock.cc",
       "src/absl/base/internal/unscaledcycleclock.h",
+      "src/absl/container/internal/hashtablez_sampler.cc",
+      "src/absl/container/internal/hashtablez_sampler.h",
+      "src/absl/container/internal/hashtablez_sampler_force_weak_definition.cc",
       "src/absl/container/internal/raw_hash_set.cc",
       "src/absl/container/internal/raw_hash_set.h",
       "src/absl/crc/internal/cpu_detect.cc",
       "src/absl/crc/internal/cpu_detect.h",
       "src/absl/crc/internal/crc.cc",
-      "src/absl/crc/internal/crc.h",
       "src/absl/crc/internal/crc.h",
       "src/absl/crc/internal/crc_cord_state.cc",
       "src/absl/crc/internal/crc_cord_state.h",
@@ -176,6 +175,8 @@ if (build_with_chromium) {
       "src/absl/debugging/internal/utf8_for_code_point.h",
       "src/absl/debugging/internal/vdso_support.cc",
       "src/absl/debugging/internal/vdso_support.h",
+      "src/absl/debugging/leak_check.cc",
+      "src/absl/debugging/leak_check.h",
       "src/absl/flags/internal/commandlineflag.cc",
       "src/absl/flags/internal/commandlineflag.h",
       "src/absl/flags/internal/flag.cc",
@@ -206,6 +207,8 @@ if (build_with_chromium) {
       "src/absl/log/internal/nullguard.h",
       "src/absl/log/internal/proto.cc",
       "src/absl/log/internal/proto.h",
+      "src/absl/log/internal/structured_proto.cc",
+      "src/absl/log/internal/structured_proto.h",
       "src/absl/log/internal/vlog_config.cc",
       "src/absl/log/internal/vlog_config.h",
       "src/absl/profiling/internal/exponential_biased.cc",
@@ -266,7 +269,7 @@ if (build_with_chromium) {
 
     deps = [ ":abseil" ]
     public_configs = [ ":abseil_config" ]
-    configs += [ ":private_abseil_quiche_config" ]
+    configs += [ ":private_abseil_quiche_and_protobuf_config" ]
   }
 
   config("private_abseil_tz_config") {
@@ -279,7 +282,7 @@ if (build_with_chromium) {
   }
 
   source_set("abseil_tz") {
-    visibility = [ ":abseil_quiche" ]
+    visibility = [ ":abseil_quiche_and_protobuf" ]
 
     sources = [
       "src/absl/time/internal/cctz/include/cctz/civil_time.h",
@@ -305,13 +308,16 @@ if (build_with_chromium) {
     deps = [ ":abseil" ]
     public_configs = [ ":abseil_config" ]
     configs += [
-      ":private_abseil_quiche_config",
+      ":private_abseil_quiche_and_protobuf_config",
       ":private_abseil_tz_config",
     ]
   }
 
-  source_set("abseil_quiche") {
-    visibility = [ "//third_party/quiche" ]
+  source_set("abseil_quiche_and_protobuf") {
+    visibility = [
+      "//third_party/protobuf:*",
+      "//third_party/quiche",
+    ]
 
     sources = [
       "src/absl/crc/crc32c.cc",
@@ -333,6 +339,8 @@ if (build_with_chromium) {
       "src/absl/flags/usage_config.cc",
       "src/absl/flags/usage_config.h",
       "src/absl/log/absl_log.h",
+      "src/absl/log/die_if_null.cc",
+      "src/absl/log/die_if_null.h",
       "src/absl/log/flags.cc",
       "src/absl/log/flags.h",
       "src/absl/log/globals.cc",
@@ -367,9 +375,9 @@ if (build_with_chromium) {
 
     deps = [
       ":abseil",
-      ":abseil_quiche_internal",
+      ":abseil_quiche_and_protobuf_internal",
       ":abseil_tz",
     ]
-    configs += [ ":private_abseil_quiche_config" ]
+    configs += [ ":private_abseil_quiche_and_protobuf_config" ]
   }
 }

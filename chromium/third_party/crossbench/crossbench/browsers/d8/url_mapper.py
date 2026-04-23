@@ -48,6 +48,7 @@ class D8URLMapper:
 
 
 class DummyURLMapper(D8URLMapper):
+
   def lookup(self, url: str) -> pth.LocalPath | None:
     del url
     return None
@@ -59,7 +60,7 @@ class JetStreamURLMapper(D8URLMapper):
     super().__init__(d8)
     self._driver_js: pth.LocalPath = self.path / "JetStreamDriver.js"
     if not self._driver_js.is_file():
-      self._driver_js  = self.path / "driver.js"
+      self._driver_js = self.path / "driver.js"
     if not self._driver_js.is_file():
       raise ValueError(f"{self._driver_js} does not exist.")
 

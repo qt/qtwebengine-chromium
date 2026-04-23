@@ -55,6 +55,7 @@
 #include "content/renderer/media/inspector_media_event_handler.h"
 #include "content/renderer/media/render_media_event_handler.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
+#include "content/renderer/memory_coordinator/renderer_memory_coordinator_policy.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_navigation_metrics_manager.h"
@@ -91,6 +92,7 @@
 #include "third_party/blink/public/common/origin_trials/trial_token_validator.h"
 #include "third_party/blink/public/common/security/protocol_handler_security_level.h"
 #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
+#include "third_party/blink/public/mojom/cpu_performance.mojom.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom.h"
 #include "third_party/blink/public/mojom/peerconnection/webrtc_ip_handling_policy.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_provider.mojom.h"
@@ -117,7 +119,10 @@
 
 #if BUILDFLAG(IS_WIN)
 #include "content/child/child_process_sandbox_support_impl_win.h"
-#include "content/renderer/font_data/font_data_manager.h"
+#endif
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+#include "content/child/font_data/font_data_manager.h"
 #include "skia/ext/font_utils.h"
 #include "third_party/blink/public/web/win/web_font_rendering.h"
 #endif
@@ -214,13 +219,11 @@ RendererBlinkPlatformImpl::RendererBlinkPlatformImpl(
     SkFontConfigInterface::SetGlobal(font_loader);
 #endif
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
     // Create a FontDataManager if it's enabled, and if we're not in a
     // single-process environment. In single process, the SkFontMgr is already
     // installed by browser process code at this point.
-    if (base::FeatureList::IsEnabled(
-            features::kFontDataServiceAllWebContents) &&
-        sandboxEnabled()) {
+    if (features::IsFontDataServiceEnabled() && sandboxEnabled()) {
       sk_sp<font_data_service::FontDataManager> font_data_manager =
           sk_make_sp<font_data_service::FontDataManager>();
 
@@ -1072,6 +1075,16 @@ SkBitmap* RendererBlinkPlatformImpl::GetSadPageBitmap() {
 
 //------------------------------------------------------------------------------
 
+blink::mojom::PerformanceTier
+RendererBlinkPlatformImpl::GetCpuPerformanceTier() {
+  if (auto* render_thread = RenderThreadImpl::current()) {
+    return render_thread->GetCpuPerformanceTier();
+  }
+  return blink::mojom::PerformanceTier::kUnknown;
+}
+
+//------------------------------------------------------------------------------
+
 std::unique_ptr<blink::WebV8ValueConverter>
 RendererBlinkPlatformImpl::CreateWebV8ValueConverter() {
   return std::make_unique<V8ValueConverterImpl>();
@@ -1166,5 +1179,14 @@ std::pair<base::TimeDelta, base::TimeDelta> RendererBlinkPlatformImpl::
 }
 
 #endif  // BUILDFLAG(IS_ANDROID)
+
+void RendererBlinkPlatformImpl::OnV8HeapLastResortGC() {
+  // In --single-process mode, the RendererMemoryCoordinatorPolicy does not run.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess)) {
+    return;
+  }
+  RendererMemoryCoordinatorPolicy::Get().OnV8HeapLastResortGC();
+}
 
 }  // namespace content

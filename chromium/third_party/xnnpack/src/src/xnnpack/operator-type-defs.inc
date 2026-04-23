@@ -47,6 +47,8 @@ XNN_ENUM_ITEM(xnn_operator_type_convolution_nchw_f16, "Convolution (NCHW, F16)")
 XNN_ENUM_ITEM(xnn_operator_type_convolution_nchw_f32, "Convolution (NCHW, F32)")
 XNN_ENUM_ITEM(xnn_operator_type_convolution_nhwc_f16, "Convolution (NHWC, F16)")
 XNN_ENUM_ITEM(xnn_operator_type_convolution_nhwc_f32, "Convolution (NHWC, F32)")
+XNN_ENUM_ITEM(xnn_operator_type_convolution_nhwc_pf16,
+              "Convolution (NHWC, PF16)")
 XNN_ENUM_ITEM(xnn_operator_type_convolution_nhwc_qdu8_f16_qc8w,
               "Convolution (NHWC, QD8, F16, QC8W)")
 XNN_ENUM_ITEM(xnn_operator_type_convolution_nhwc_qd8_f16_qc8w,
@@ -115,6 +117,8 @@ XNN_ENUM_ITEM(xnn_operator_type_fully_connected_nc_qd8_f16_qb4w,
               "Fully Connected (NC, QD8, F16, QB4W)")
 XNN_ENUM_ITEM(xnn_operator_type_fully_connected_nc_qd8_f16_qc4w,
               "Fully Connected (NC, QD8, F16, QC4W)")
+XNN_ENUM_ITEM(xnn_operator_type_fully_connected_nc_qd8_f32_qc2w,
+              "Fully Connected (NC, QD8, F32, QC2W)")
 XNN_ENUM_ITEM(xnn_operator_type_fully_connected_nc_qdu8_f16_qc4w,
               "Fully Connected (NC, QDU8, F16, QC4W)")
 XNN_ENUM_ITEM(xnn_operator_type_fully_connected_nc_qd8_f16_qc8w,

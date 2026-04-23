@@ -1,7 +1,7 @@
 // Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import './RequestHeaderSection.js';
 
@@ -14,7 +14,6 @@ import * as Persistence from '../../../models/persistence/persistence.js';
 import * as Workspace from '../../../models/workspace/workspace.js';
 import * as NetworkForward from '../../../panels/network/forward/forward.js';
 import * as Buttons from '../../../ui/components/buttons/buttons.js';
-import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import * as Input from '../../../ui/components/input/input.js';
 import * as LegacyWrapper from '../../../ui/components/legacy_wrapper/legacy_wrapper.js';
 import * as RenderCoordinator from '../../../ui/components/render_coordinator/render_coordinator.js';
@@ -58,10 +57,6 @@ const UIStrings = {
    * @description Text in Request Headers View of the Network panel
    */
   fromSignedexchange: '(from signed-exchange)',
-  /**
-   * @description Text in Request Headers View of the Network panel
-   */
-  fromWebBundle: '(from Web Bundle)',
   /**
    * @description Section header for a list of the main aspects of a http request
    */
@@ -131,6 +126,7 @@ export class RequestHeadersView extends LegacyWrapper.LegacyWrapper.WrappableCom
   }
 
   override wasShown(): void {
+    super.wasShown();
     this.#request.addEventListener(SDK.NetworkRequest.Events.REMOTE_ADDRESS_CHANGED, this.#refreshHeadersView, this);
     this.#request.addEventListener(SDK.NetworkRequest.Events.FINISHED_LOADING, this.#refreshHeadersView, this);
     this.#request.addEventListener(SDK.NetworkRequest.Events.REQUEST_HEADERS_CHANGED, this.#refreshHeadersView, this);
@@ -141,6 +137,7 @@ export class RequestHeadersView extends LegacyWrapper.LegacyWrapper.WrappableCom
   }
 
   override willHide(): void {
+    super.willHide();
     this.#request.removeEventListener(SDK.NetworkRequest.Events.REMOTE_ADDRESS_CHANGED, this.#refreshHeadersView, this);
     this.#request.removeEventListener(SDK.NetworkRequest.Events.FINISHED_LOADING, this.#refreshHeadersView, this);
     this.#request.removeEventListener(
@@ -403,25 +400,33 @@ export class RequestHeadersView extends LegacyWrapper.LegacyWrapper.WrappableCom
       }
     };
 
-    const addContextMenuListener = (el: Element): void => {
-      if (isShortened) {
-        el.addEventListener('contextmenu', onContextMenuOpen);
-      }
-    };
-
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
     return html`
-      <div class="row raw-headers-row" on-render=${ComponentHelpers.Directives.nodeRenderedCallback(addContextMenuListener)}>
-        <div class="raw-headers">${isShortened ? trimmed.substring(0, RAW_HEADER_CUTOFF) : trimmed}</div>
-        ${isShortened ? html`
-          <devtools-button
-            .size=${Buttons.Button.Size.SMALL}
-            .variant=${Buttons.Button.Variant.OUTLINED}
-            @click=${showMore}
-            jslog=${VisualLogging.action('raw-headers-show-more').track({click: true})}
-          >${i18nString(UIStrings.showMore)}</devtools-button>
-        ` : Lit.nothing}
+      <div
+        class="row raw-headers-row"
+        @contextmenu=${(event: Event) => {
+          if (isShortened) {
+            onContextMenuOpen(event);
+          }
+        }}
+      >
+        <div class="raw-headers">
+          ${isShortened ? trimmed.substring(0, RAW_HEADER_CUTOFF) : trimmed}
+        </div>
+        ${isShortened
+          ? html`
+              <devtools-button
+                .size=${Buttons.Button.Size.SMALL}
+                .variant=${Buttons.Button.Variant.OUTLINED}
+                @click=${showMore}
+                jslog=${VisualLogging.action('raw-headers-show-more').track({
+                  click: true,
+                })}
+                >${i18nString(UIStrings.showMore)}</devtools-button
+              >
+            `
+          : Lit.nothing}
       </div>
     `;
     // clang-format on
@@ -450,8 +455,6 @@ export class RequestHeadersView extends LegacyWrapper.LegacyWrapper.WrappableCom
       comment = i18nString(UIStrings.fromServiceWorker);
     } else if (this.#request.redirectSourceSignedExchangeInfoHasNoErrors()) {
       comment = i18nString(UIStrings.fromSignedexchange);
-    } else if (this.#request.webBundleInnerRequestInfo()) {
-      comment = i18nString(UIStrings.fromWebBundle);
     } else if (this.#request.fromPrefetchCache()) {
       comment = i18nString(UIStrings.fromPrefetchCache);
     } else if (this.#request.cached()) {
@@ -477,29 +480,46 @@ export class RequestHeadersView extends LegacyWrapper.LegacyWrapper.WrappableCom
         aria-label=${i18nString(UIStrings.general)}
       >
       <div jslog=${VisualLogging.section('general')}>
-        ${this.#renderGeneralRow(i18nString(UIStrings.requestUrl), this.#request.url())}
-        ${this.#request.statusCode? this.#renderGeneralRow(i18nString(UIStrings.requestMethod), this.#request.requestMethod) : Lit.nothing}
-        ${this.#request.statusCode? this.#renderGeneralRow(i18nString(UIStrings.statusCode), statusText, statusClasses) : Lit.nothing}
-        ${this.#request.remoteAddress()? this.#renderGeneralRow(i18nString(UIStrings.remoteAddress), this.#request.remoteAddress()) : Lit.nothing}
-        ${this.#request.referrerPolicy()? this.#renderGeneralRow(i18nString(UIStrings.referrerPolicy), String(this.#request.referrerPolicy())) : Lit.nothing}
+        ${this.#renderGeneralRow(i18nString(UIStrings.requestUrl), this.#request.url(), 'request-url')}
+        ${this.#request.statusCode? this.#renderGeneralRow(i18nString(UIStrings.requestMethod),
+            this.#request.requestMethod, 'request-method') : Lit.nothing}
+        ${this.#request.statusCode? this.#renderGeneralRow(i18nString(UIStrings.statusCode),
+            statusText, 'status-code', statusClasses) : Lit.nothing}
+        ${this.#request.remoteAddress()? this.#renderGeneralRow(i18nString(UIStrings.remoteAddress),
+            this.#request.remoteAddress(), 'remote-address') : Lit.nothing}
+        ${this.#request.referrerPolicy()? this.#renderGeneralRow(i18nString(UIStrings.referrerPolicy),
+            String(this.#request.referrerPolicy()), 'referrer-policy') : Lit.nothing}
       </div>
       </devtools-request-headers-category>
     `;
     // clang-format on
   }
 
-  #renderGeneralRow(name: Common.UIString.LocalizedString, value: string, classNames?: string[]): Lit.LitTemplate {
+  #renderGeneralRow(name: Common.UIString.LocalizedString, value: string, id: string, classNames?: string[]):
+      Lit.LitTemplate {
     const isHighlighted = this.#toReveal?.section === NetworkForward.UIRequestLocation.UIHeaderSection.GENERAL &&
         name.toLowerCase() === this.#toReveal?.header?.toLowerCase();
     return html`
       <div class="row ${isHighlighted ? 'header-highlight' : ''}">
         <div class="header-name">${name}</div>
         <div
+          id=${id}
           class="header-value ${classNames?.join(' ')}"
           @copy=${() => Host.userMetrics.actionTaken(Host.UserMetrics.Action.NetworkPanelCopyValue)}
         >${value}</div>
       </div>
     `;
+  }
+
+  getHeaderElementById(id: string): Element|null {
+    const categories = this.#shadow.querySelectorAll('devtools-request-headers-category');
+    for (const category of categories) {
+      const element = category.querySelector(`#${id}`);
+      if (element) {
+        return element;
+      }
+    }
+    return null;
   }
 }
 

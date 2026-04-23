@@ -5,7 +5,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_PEERCONNECTION_PEER_CONNECTION_DEPENDENCY_FACTORY_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_PEERCONNECTION_PEER_CONNECTION_DEPENDENCY_FACTORY_H_
 
-#include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/task/sequenced_task_runner.h"
@@ -21,7 +20,6 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
 #include "third_party/blink/renderer/platform/mojo/mojo_binding_context.h"
-#include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/webrtc/api/async_dns_resolver.h"
@@ -35,7 +33,7 @@ class WaitableEvent;
 namespace media {
 class GpuVideoAcceleratorFactories;
 class MojoVideoEncoderMetricsProviderFactory;
-}
+}  // namespace media
 
 namespace gfx {
 class ColorSpace;
@@ -56,17 +54,33 @@ class RTCPeerConnectionHandler;
 class WebLocalFrame;
 class WebRtcAudioDeviceImpl;
 
+// The enum is used for logging. Entries should not be renumbered or reused.
+// Keep in sync with the corresponding enum in
+// tools/metrics/histograms/metadata/web_rtc/enums.xml.
+// LINT.IfChange(LocalNetworkAccessRequestType)
+enum class LocalNetworkAccessRequestType {
+  kUnknown = 0,
+  kLoopbackToLoopback = 1,
+  kLoopbackToLocal = 2,
+  kLoopbackToPublic = 3,
+  kLocalToLoopback = 4,
+  kLocalToLocal = 5,
+  kLocalToPublic = 6,
+  kPublicToLoopback = 7,
+  kPublicToLocal = 8,
+  kPublicToPublic = 9,
+  kMaxValue = kPublicToPublic,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/web_rtc/enums.xml:LocalNetworkAccessRequestType)
+
 // Object factory for RTC PeerConnections.
 class MODULES_EXPORT PeerConnectionDependencyFactory
     : public GarbageCollected<PeerConnectionDependencyFactory>,
-      public Supplement<ExecutionContext>,
       public ExecutionContextLifecycleObserver {
   USING_PRE_FINALIZER(PeerConnectionDependencyFactory,
                       CleanupPeerConnectionFactory);
 
  public:
-  static const char kSupplementName[];
-
   static PeerConnectionDependencyFactory& From(ExecutionContext& context);
   PeerConnectionDependencyFactory(
       ExecutionContext& context,
@@ -154,6 +168,7 @@ class MODULES_EXPORT PeerConnectionDependencyFactory
   void BindPermissionService(
       mojo::PendingReceiver<mojom::blink::PermissionService>
           permission_service);
+  void CountLocalNetworkAccess(LocalNetworkAccessRequestType);
 
   std::unique_ptr<webrtc::LocalNetworkAccessPermissionFactoryInterface>
   CreateLocalNetworkAccessPermissionFactoryForTesting();
@@ -197,6 +212,8 @@ class MODULES_EXPORT PeerConnectionDependencyFactory
       std::unique_ptr<IpcNetworkManager> network_manager,
       base::WaitableEvent* event);
   void CleanupPeerConnectionFactory();
+
+  Member<ExecutionContext> execution_context_;
 
   void DoGetDevtoolsToken(
       base::OnceCallback<void(std::optional<base::UnguessableToken>)> then);

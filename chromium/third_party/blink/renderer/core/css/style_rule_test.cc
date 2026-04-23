@@ -4,11 +4,13 @@
 
 #include "third_party/blink/renderer/core/css/style_rule.h"
 
+#include "base/functional/function_ref.h"
 #include "third_party/blink/renderer/core/css/css_rule_list.h"
 #include "third_party/blink/renderer/core/css/css_scope_rule.h"
 #include "third_party/blink/renderer/core/css/css_style_rule.h"
 #include "third_party/blink/renderer/core/css/css_style_sheet.h"
 #include "third_party/blink/renderer/core/css/css_test_helpers.h"
+#include "third_party/blink/renderer/core/css/route_query.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
@@ -93,6 +95,27 @@ TEST_F(StyleRuleTest, StyleRulePropertyCopy) {
   EXPECT_EQ(rule->GetInitialValue(), copy->GetInitialValue());
 }
 
+TEST_F(StyleRuleTest, StyleRuleMarginCopy) {
+  auto* page_rule = css_test_helpers::ParseRule(GetDocument(), R"CSS(
+    @page {
+      @bottom-right {
+        content: "Page " counter(pageNumber);
+      }
+    }
+    )CSS");
+
+  auto base_rule = DynamicTo<StyleRulePage>(page_rule)->ChildRules()[0];
+
+  ASSERT_TRUE(base_rule);
+  auto* rule = DynamicTo<StyleRulePageMargin>(&*base_rule);
+  ASSERT_TRUE(rule);
+
+  auto* base_copy = base_rule->Clone(nullptr, nullptr);
+  EXPECT_NE(base_rule, base_copy);
+  auto* copy = DynamicTo<StyleRulePageMargin>(base_copy);
+  EXPECT_EQ(rule->ID(), copy->ID());
+}
+
 TEST_F(StyleRuleTest, StyleRuleFunctionCopy) {
   auto* base_rule = css_test_helpers::ParseRule(GetDocument(), R"CSS(
       @function --f(--p1, --p2) returns <length> {
@@ -156,32 +179,22 @@ TEST_F(StyleRuleTest, SetPreludeTextReparentsStyleRules) {
 
   const StyleScope& scope_before =
       scope_rule->GetStyleRuleScope().GetStyleScope();
-  StyleRule* rule_before = scope_before.RuleForNesting();
-  ASSERT_TRUE(rule_before);
-  EXPECT_EQ(".a", rule_before->SelectorsText());
 
-  EXPECT_EQ(rule_before, FindParentSelector(scope_before.To())->ParentRule());
-  EXPECT_EQ(
-      rule_before,
+  EXPECT_FALSE(FindParentSelector(scope_before.To())->ParentRule());
+  EXPECT_FALSE(
       FindParentSelector(child_rule_before.FirstSelector())->ParentRule());
 
   scope_rule->SetPreludeText(GetDocument().GetExecutionContext(),
                              "(.x) to (.b &)");
-
-  DLOG(INFO) << "A";
   const StyleScope& scope_after =
       scope_rule->GetStyleRuleScope().GetStyleScope();
-  StyleRule* rule_after = scope_after.RuleForNesting();
-  ASSERT_TRUE(rule_after);
-  EXPECT_EQ(".x", rule_after->SelectorsText());
   StyleRule& child_rule_afer =
       To<StyleRule>(*scope_rule->GetStyleRuleScope().ChildRules()[0]);
 
-  // Verify that '&' (in '.b &') now points to `rule_after`.
-  EXPECT_EQ(rule_after, FindParentSelector(scope_after.To())->ParentRule());
-  // Verify that '&' (in '.c &') now points to `rule_after`.
-  EXPECT_EQ(rule_after,
-            FindParentSelector(child_rule_afer.FirstSelector())->ParentRule());
+  // Any parent selectors ('&') should still point to nullptr.
+  EXPECT_FALSE(FindParentSelector(scope_after.To())->ParentRule());
+  EXPECT_FALSE(
+      FindParentSelector(child_rule_afer.FirstSelector())->ParentRule());
 }
 
 TEST_F(StyleRuleTest, SetPreludeTextWithEscape) {
@@ -258,7 +271,6 @@ TEST_F(StyleRuleTest, SetPreludeTextPreservesNestingContext) {
     const auto& [nesting_type_before, parent_rule_before] = FindNestingContext(
         inner_scope_rule->GetStyleRuleScope().GetStyleScope().From());
     EXPECT_EQ(CSSNestingType::kScope, nesting_type_before);
-    EXPECT_TRUE(parent_rule_before);
     inner_scope_rule->SetPreludeText(GetDocument().GetExecutionContext(),
                                      "(:is(.x, &, !:scope))");
     const auto& [nesting_type_after, parent_rule_after] = FindNestingContext(
@@ -454,6 +466,72 @@ TEST_F(StyleRuleTest, RouteRuleDisabled) {
   EXPECT_FALSE(rule);
   rule = css_test_helpers::ParseRule(GetDocument(), "@route (sixtysix) {}");
   EXPECT_FALSE(rule);
+}
+
+TEST_F(StyleRuleTest, RouteRule) {
+  ScopedRouteMatchingForTest enabled(true);
+
+  // Parse the specified CSS into a rule, and extract its RouteTest.
+  auto GetRouteTest = [this](const char* css) -> const RouteTest* {
+    using Callback = base::FunctionRef<void(const RouteTest&)>;
+    class TestExtractor : public ConditionalExpNodeVisitor {
+     public:
+      explicit TestExtractor(Callback callback) : callback_(callback) {}
+
+     private:
+      KleeneValue EvaluateRouteQueryExpNode(
+          const RouteQueryExpNode& node) override {
+        callback_(node.GetRouteTest());
+        return KleeneValue::kFalse;
+      }
+
+      Callback callback_;
+    };
+
+    StyleRuleBase* rule = css_test_helpers::ParseRule(GetDocument(), css);
+    auto* route_rule = DynamicTo<StyleRuleRoute>(rule);
+    if (!route_rule) {
+      return nullptr;
+    }
+    const ConditionalExpNode* root_exp =
+        route_rule->GetRouteQuery().GetRootExp();
+    if (!root_exp) {
+      return nullptr;
+    }
+    const RouteTest* route_test = nullptr;
+    auto set_test = [&route_test](const RouteTest& test) {
+      route_test = &test;
+    };
+    TestExtractor extractor(set_test);
+    root_exp->Evaluate(extractor);
+    return route_test;
+  };
+
+  const RouteTest* route_test = GetRouteTest("@route (sixtysix) {}");
+  ASSERT_TRUE(route_test);
+  EXPECT_EQ(route_test->GetLocation().GetRouteName(), "sixtysix");
+  EXPECT_EQ(route_test->GetPreposition(), RoutePreposition::kAt);
+
+  route_test = GetRouteTest("@route (from: sixtysix) {}");
+  ASSERT_TRUE(route_test);
+  EXPECT_EQ(route_test->GetLocation().GetRouteName(), "sixtysix");
+  EXPECT_EQ(route_test->GetPreposition(), RoutePreposition::kFrom);
+
+  route_test = GetRouteTest("@route (to: sixtysix) {}");
+  ASSERT_TRUE(route_test);
+  EXPECT_EQ(route_test->GetLocation().GetRouteName(), "sixtysix");
+  EXPECT_EQ(route_test->GetPreposition(), RoutePreposition::kTo);
+
+  route_test = GetRouteTest("@route (at: sixtysix) {}");
+  ASSERT_TRUE(route_test);
+  EXPECT_EQ(route_test->GetLocation().GetRouteName(), "sixtysix");
+  EXPECT_EQ(route_test->GetPreposition(), RoutePreposition::kAt);
+
+  route_test = GetRouteTest("@route (below: sixtysix) {}");
+  EXPECT_FALSE(route_test);
+
+  route_test = GetRouteTest("@route (at: ) {}");
+  EXPECT_FALSE(route_test);
 }
 
 }  // namespace blink

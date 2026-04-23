@@ -11,7 +11,6 @@
 #include "src/xnnpack/common.h"
 #include "src/xnnpack/hardware-config.h"
 #include "src/xnnpack/microfnptr.h"
-#include "src/xnnpack/microparams.h"
 #include "src/xnnpack/raddexpminusmax.h"
 #include "src/xnnpack/raddextexp.h"
 #include "src/xnnpack/raddstoreexpminusmax.h"
@@ -19,6 +18,7 @@
 #include "src/xnnpack/vbinary.h"
 #include "src/xnnpack/vscaleexpminusmax.h"
 #include "src/xnnpack/vscaleextexp.h"
+#include "test/replicable_random_device.h"
 #include <benchmark/benchmark.h>
 
 #ifdef BENCHMARK_INTEL_DNNL
@@ -44,8 +44,7 @@ static void DNNLSoftArgMax(benchmark::State& state) {
   const size_t packed_elements =
       benchmark::utils::RoundUp(elements, cache_line_size_max / sizeof(float));
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(
       std::uniform_real_distribution<float>(-1000.0f, 1000.0f), std::ref(rng));
 
@@ -220,8 +219,7 @@ static void ThreePassSoftMaxWithRecomputing(
   const size_t packed_elements =
       benchmark::utils::RoundUp(elements, cache_line_size_max / sizeof(float));
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(
       std::uniform_real_distribution<float>(-1000.0f, 1000.0f), std::ref(rng));
 
@@ -294,8 +292,7 @@ static void ThreePassSoftMaxWithReloading(
   const size_t packed_elements =
       benchmark::utils::RoundUp(elements, cache_line_size_max / sizeof(float));
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(
       std::uniform_real_distribution<float>(-1000.0f, 1000.0f), std::ref(rng));
 
@@ -371,8 +368,7 @@ static void TwoPassSoftMax(
   const size_t packed_elements =
       benchmark::utils::RoundUp(elements, cache_line_size_max / sizeof(float));
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(
       std::uniform_real_distribution<float>(-1000.0f, 1000.0f), std::ref(rng));
 
@@ -463,7 +459,7 @@ BENCHMARK_CAPTURE(
     ->UseManualTime();
 #endif  // XNN_ENABLE_AVX512F && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 
-#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+#if XNN_ENABLE_AVX2 && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 BENCHMARK_CAPTURE(TwoPassSoftMax, avx2_p5,
                   xnn_f32_raddextexp_ukernel__avx2_p5_u96,
                   xnn_f32_vscaleextexp_ukernel__avx2_p5_u32,
@@ -486,7 +482,7 @@ BENCHMARK_CAPTURE(ThreePassSoftMaxWithReloading, avx2_p5,
                   xnn_arch_x86_avx2)
     ->Apply(CharacteristicArguments)
     ->UseManualTime();
-#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+#endif  // XNN_ENABLE_AVX2 && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 
 #if XNN_ARCH_RISCV && XNN_ENABLE_RISCV_VECTOR
 BENCHMARK_CAPTURE(ThreePassSoftMaxWithReloading, rvv_p6_rmax_m8_exp_m4_vmulc_m8,

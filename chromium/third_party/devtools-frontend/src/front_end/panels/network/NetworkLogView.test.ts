@@ -15,7 +15,7 @@ import {
   getMenu,
   getMenuItemLabels,
 } from '../../testing/ContextMenuHelpers.js';
-import {dispatchClickEvent, raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {assertScreenshot, dispatchClickEvent, raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {
   createTarget,
   describeWithEnvironment,
@@ -26,7 +26,11 @@ import {
 } from '../../testing/EnvironmentHelpers.js';
 import {expectCalled} from '../../testing/ExpectStubCall.js';
 import {stubFileManager} from '../../testing/FileManagerHelpers.js';
-import {describeWithMockConnection, dispatchEvent} from '../../testing/MockConnection.js';
+import {
+  describeWithMockConnection,
+  dispatchEvent,
+  setMockConnectionResponseHandler
+} from '../../testing/MockConnection.js';
 import {activate} from '../../testing/ResourceTreeHelpers.js';
 import * as RenderCoordinator from '../../ui/components/render_coordinator/render_coordinator.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -41,6 +45,8 @@ describeWithMockConnection('NetworkLogView', () => {
   let networkLog: Logs.NetworkLog.NetworkLog;
 
   beforeEach(() => {
+    setMockConnectionResponseHandler('Debugger.enable', () => ({} as Protocol.Debugger.EnableResponse));
+    setMockConnectionResponseHandler('Storage.getStorageKey', () => ({} as Protocol.Storage.GetStorageKeyResponse));
     const dummyStorage = new Common.Settings.SettingsStorage({});
 
     for (const settingName of ['network-color-code-resource-types', 'network.group-by-frame']) {
@@ -55,6 +61,7 @@ describeWithMockConnection('NetworkLogView', () => {
       syncedStorage: dummyStorage,
       globalStorage: dummyStorage,
       localStorage: dummyStorage,
+      settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
     });
     registerNoopActions(['network.toggle-recording', 'inspector-main.reload']);
 
@@ -75,10 +82,11 @@ describeWithMockConnection('NetworkLogView', () => {
   });
 
   let nextId = 0;
-  function createNetworkRequest(
-      url: string,
-      options: {requestHeaders?: SDK.NetworkRequest.NameValue[], finished?: boolean, target?: SDK.Target.Target}):
-      SDK.NetworkRequest.NetworkRequest {
+  function createNetworkRequest(url: string, options: {
+    requestHeaders?: SDK.NetworkRequest.NameValue[],
+    finished?: boolean,
+    target?: SDK.Target.Target,
+  }): SDK.NetworkRequest.NetworkRequest {
     const effectiveTarget = options.target || target;
     const networkManager = effectiveTarget.model(SDK.NetworkManager.NetworkManager);
     assert.exists(networkManager);
@@ -278,7 +286,7 @@ describeWithMockConnection('NetworkLogView', () => {
     );
     assert.strictEqual(
         await Network.NetworkLogView.NetworkLogView.generateCurlCommand(request, 'win'),
-        'curl ^"http://localhost^" ^\n  -H ^"Content-Type: application/binary^" ^\n  --data-raw ^"1234^\n\n00^\u0002^\u0003^\u0004^\u0005\'^\\^"^!^"');
+        'curl ^"http://localhost^" ^\n  -H ^"Content-Type: application/binary^" ^\n  --data-raw ^"1234^\n\n00^ ^ ^ ^ \'^\\^"^!^"');
   });
 
   it('generates a valid curl command for a POST request with binary data containing %', async () => {
@@ -1072,6 +1080,196 @@ Invoke-WebRequest -UseBasicParsing -Uri "url-header-und-content-overridden"`]);
     const customResponseHeaderItem = responseHeadersSubMenu.defaultSection().items.find(
         (item: UI.ContextMenu.Item) => item.buildDescriptor().label === customResponseTitle);
     assert.exists(customResponseHeaderItem, 'Custom response header item should be in the "Response Headers" submenu');
+  });
+
+  describe('Request blocking and throttling', () => {
+    beforeEach(() => {
+      updateHostConfig({devToolsIndividualRequestThrottling: {enabled: true}});
+      SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
+    });
+    async function invokeMenuItem(menu: string, action: string): Promise<void> {
+      const {networkLogView} = createEnvironment();
+      createNetworkRequest('http://foo.com/bar', {target});
+      await RenderCoordinator.done();
+      networkLogView.columns().dataGrid().rootNode().children[0].select();
+      const contextMenu = getContextMenuForElement(networkLogView.columns().dataGrid().element);
+      const subMenu = findMenuItemWithLabel(contextMenu.debugSection(), menu);
+      assert.instanceOf(subMenu, UI.ContextMenu.SubMenu);
+      const item = findMenuItemWithLabel(subMenu.debugSection(), action);
+      assert.exists(item);
+      contextMenu.invokeHandler(item.id());
+    }
+
+    it('can block a request URL', async () => {
+      const showView = sinon.stub(UI.ViewManager.ViewManager.instance(), 'showView');
+      await invokeMenuItem('Block requests', 'Block request URL');
+      assert.isTrue(SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditionsEnabled);
+      const conditions = SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditions.toArray();
+      assert.lengthOf(conditions, 1);
+      assert.strictEqual(conditions[0].constructorString, '*://foo.com/bar');
+      assert.strictEqual(conditions[0].conditions, SDK.NetworkManager.BlockingConditions);
+      sinon.assert.calledOnceWithExactly(showView, 'network.blocked-urls');
+    });
+
+    it('can unblock a request URL', async () => {
+      const showView = sinon.stub(UI.ViewManager.ViewManager.instance(), 'showView');
+      const conditions = SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions;
+      conditions.add(SDK.NetworkManager.RequestCondition.createFromSetting({url: '*://foo.com/bar', enabled: true}));
+      await invokeMenuItem('Block requests', 'Unblock *://foo.com/bar');
+      assert.strictEqual(conditions.count, 0);
+      sinon.assert.calledOnceWithExactly(showView, 'network.blocked-urls');
+    });
+
+    it('can block a request domain', async () => {
+      const showView = sinon.stub(UI.ViewManager.ViewManager.instance(), 'showView');
+      await invokeMenuItem('Block requests', 'Block request domain');
+      assert.isTrue(SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditionsEnabled);
+      const conditions = SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditions.toArray();
+      assert.lengthOf(conditions, 1);
+      assert.strictEqual(conditions[0].constructorString, '*://foo.com');
+      assert.strictEqual(conditions[0].conditions, SDK.NetworkManager.BlockingConditions);
+      sinon.assert.calledOnceWithExactly(showView, 'network.blocked-urls');
+    });
+
+    it('can unblock a request domain', async () => {
+      const showView = sinon.stub(UI.ViewManager.ViewManager.instance(), 'showView');
+      const conditions = SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions;
+      conditions.add(SDK.NetworkManager.RequestCondition.createFromSetting({url: '*://foo.com', enabled: true}));
+      await invokeMenuItem('Block requests', 'Unblock *://foo.com');
+      assert.strictEqual(conditions.count, 0);
+      sinon.assert.calledOnceWithExactly(showView, 'network.blocked-urls');
+    });
+
+    it('can throttle a request URL', async () => {
+      const showView = sinon.stub(UI.ViewManager.ViewManager.instance(), 'showView');
+      await invokeMenuItem('Throttle requests', 'Throttle request URL');
+      assert.isTrue(SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditionsEnabled);
+      const conditions = SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditions.toArray();
+      assert.lengthOf(conditions, 1);
+      assert.strictEqual(conditions[0].constructorString, '*://foo.com/bar');
+      assert.strictEqual(conditions[0].conditions, SDK.NetworkManager.Slow3GConditions);
+      sinon.assert.calledOnceWithExactly(showView, 'network.blocked-urls');
+    });
+
+    it('can unthrottle a request URL', async () => {
+      const showView = sinon.stub(UI.ViewManager.ViewManager.instance(), 'showView');
+      const conditions = SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions;
+      conditions.add(SDK.NetworkManager.RequestCondition.create(
+          SDK.NetworkManager.RequestURLPattern.create(
+              '*://foo.com/bar' as SDK.NetworkManager.URLPatternConstructorString) as
+              SDK.NetworkManager.RequestURLPattern,
+          SDK.NetworkManager.Slow3GConditions));
+      await invokeMenuItem('Throttle requests', 'Stop throttling *://foo.com/bar');
+      assert.strictEqual(conditions.count, 0);
+      sinon.assert.calledOnceWithExactly(showView, 'network.blocked-urls');
+    });
+
+    it('can change from blocking to throttling', async () => {
+      const showView = sinon.stub(UI.ViewManager.ViewManager.instance(), 'showView');
+      SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.add(
+          SDK.NetworkManager.RequestCondition.createFromSetting({url: '*://foo.com/bar', enabled: true}));
+      await invokeMenuItem('Throttle requests', 'Throttle request URL');
+      assert.isTrue(SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditionsEnabled);
+      const conditions = SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditions.toArray();
+      assert.lengthOf(conditions, 1);
+      assert.strictEqual(conditions[0].constructorString, '*://foo.com/bar');
+      assert.strictEqual(conditions[0].conditions, SDK.NetworkManager.Slow3GConditions);
+      sinon.assert.calledOnceWithExactly(showView, 'network.blocked-urls');
+    });
+
+    it('can change from throttling to blocking', async () => {
+      const showView = sinon.stub(UI.ViewManager.ViewManager.instance(), 'showView');
+      SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.add(
+          SDK.NetworkManager.RequestCondition.create(
+              SDK.NetworkManager.RequestURLPattern.create(
+                  '*://foo.com/bar' as SDK.NetworkManager.URLPatternConstructorString) as
+                  SDK.NetworkManager.RequestURLPattern,
+              SDK.NetworkManager.Slow3GConditions));
+      await invokeMenuItem('Block requests', 'Block request URL');
+      assert.isTrue(SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditionsEnabled);
+      const conditions = SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditions.toArray();
+      assert.lengthOf(conditions, 1);
+      assert.strictEqual(conditions[0].constructorString, '*://foo.com/bar');
+      assert.strictEqual(conditions[0].conditions, SDK.NetworkManager.BlockingConditions);
+      sinon.assert.calledOnceWithExactly(showView, 'network.blocked-urls');
+    });
+  });
+
+  it('displays throttled requests correctly', async () => {
+    setMockConnectionResponseHandler('Network.setBlockedURLs', () => ({}));
+    setMockConnectionResponseHandler('Network.overrideNetworkState', () => ({}));
+    setMockConnectionResponseHandler(
+        'Network.emulateNetworkConditionsByRule',
+        params => params.matchedNetworkConditions.length > 0 ? {ruleIds: [ruleId]} : {ruleIds: []});
+
+    updateHostConfig({devToolsIndividualRequestThrottling: {enabled: true}});
+    SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
+    networkLogView = createNetworkLogView();
+    const container = renderElementIntoDOM(document.createElement('div'), {includeCommonStyles: true});
+    networkLogView.markAsRoot();
+    networkLogView.show(container);
+    networkLogView.columns().switchViewMode(true);
+    networkLogView.setRecording(true);
+    const ruleId = 'rule-id';
+
+    SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditionsEnabled = true;
+    SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.add(
+        SDK.NetworkManager.RequestCondition.create(
+            SDK.NetworkManager.RequestURLPattern.create(
+                'http://localhost:*' as SDK.NetworkManager.URLPatternConstructorString) as
+                SDK.NetworkManager.RequestURLPattern,
+            SDK.NetworkManager.Slow3GConditions));
+    await SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditionsAppliedForTest();
+
+    const request = createNetworkRequest(urlString`http://localhost`, {finished: true});
+    request.timing = {
+      requestTime: 0,
+      proxyStart: 0,
+      proxyEnd: 0,
+      dnsStart: 0,
+      dnsEnd: 0,
+      connectStart: 0,
+      connectEnd: 0,
+      sslStart: 0,
+      sslEnd: 0,
+      workerStart: 0,
+      workerReady: 0,
+      workerFetchStart: 0,
+      workerRespondWithSettled: 0,
+      sendStart: 0,
+      sendEnd: 10,
+      pushStart: 0,
+      pushEnd: 0,
+      receiveHeadersStart: 0,
+      receiveHeadersEnd: 0
+    };
+    request.endTime = 100;
+    request.addExtraRequestInfo({
+      blockedRequestCookies: [],
+      includedRequestCookies: [],
+      requestHeaders: [],
+      connectTiming: {requestTime: 0},
+      appliedNetworkConditionsId: ruleId,
+    });
+    const networkManager = SDK.NetworkManager.NetworkManager.forRequest(request);
+    assert.exists(networkManager);
+    networkLog.modelAdded(networkManager);
+    networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.LoadingFinished, request);
+    networkLogView.element.style.height = '100px';
+    networkLogView.element.style.width = '400px';
+    networkLogView.columns().dataGrid().updateInstantly();
+
+    await assertScreenshot('network-log/throttled-request.png');
+
+    await RenderCoordinator.done();
+    const icons = Array.from(container.querySelectorAll('devtools-icon'));
+    assert.deepEqual(icons.map(e => e.title), ['Other (throttled to 3G)', 'Request was throttled (3G)']);
+
+    const appliedConditions = SDK.NetworkManager.MultitargetNetworkManager.instance().appliedRequestConditions(request);
+    assert.exists(appliedConditions);
+    const revealStub = sinon.stub(Common.Revealer.RevealerRegistry.instance(), 'reveal');
+    icons[1].click();
+    sinon.assert.calledOnceWithExactly(revealStub, appliedConditions, false);
   });
 });
 

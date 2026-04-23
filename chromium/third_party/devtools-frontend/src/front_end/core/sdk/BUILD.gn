@@ -71,6 +71,7 @@ devtools_module("sdk") {
     "ResourceTreeModel.ts",
     "RuntimeModel.ts",
     "SDKModel.ts",
+    "ScopeTreeCache.ts",
     "ScreenCaptureModel.ts",
     "Script.ts",
     "SecurityOriginManager.ts",
@@ -103,6 +104,7 @@ devtools_module("sdk") {
     "../../generated",
     "../../generated:protocol",
     "../../models/cpu_profile:bundle",
+    "../../models/formatter:bundle",
     "../../models/text_utils:bundle",
     "../../third_party/source-map-scopes-codec:bundle",
   ]
@@ -128,7 +130,10 @@ devtools_entrypoint("meta") {
     "../../core/i18n:bundle",
   ]
 
-  visibility = [ "../../entrypoints/*" ]
+  visibility = [
+    "../../../mcp/*",
+    "../../entrypoints/*",
+  ]
 }
 
 ts_library("unittests") {
@@ -153,7 +158,6 @@ ts_library("unittests") {
     "CookieModel.test.ts",
     "CookieParser.test.ts",
     "DOMModel.test.ts",
-    "DebuggerModel.test.ts",
     "EmulationModel.test.ts",
     "EnhancedTracesParser.test.ts",
     "FrameManager.test.ts",
@@ -162,12 +166,11 @@ ts_library("unittests") {
     "OverlayColorGenerator.test.ts",
     "OverlayModel.test.ts",
     "OverlayPersistentHighlighter.test.ts",
-    "PageResourceLoader.test.ts",
     "PreloadingModel.test.ts",
     "RehydratingConnection.test.ts",
     "RemoteObject.test.ts",
     "ResourceTreeModel.test.ts",
-    "RuntimeModel.test.ts",
+    "ScopeTreeCache.test.ts",
     "ScreenCaptureModel.test.ts",
     "Script.test.ts",
     "ServerSentEventsProtocol.test.ts",
@@ -182,8 +185,6 @@ ts_library("unittests") {
     "SourceMapScopesInfo.test.ts",
     "StorageBucketsModel.test.ts",
     "StorageKeyManager.test.ts",
-    "Target.test.ts",
-    "TargetManager.test.ts",
     "TraceObject.test.ts",
   ]
 
@@ -191,6 +192,7 @@ ts_library("unittests") {
     ":bundle",
     "../../generated:protocol",
     "../../models/bindings:bundle",
+    "../../models/formatter:bundle",
     "../../models/persistence:bundle",
     "../../models/text_utils:bundle",
     "../../models/trace:bundle",
@@ -198,6 +200,29 @@ ts_library("unittests") {
     "../../testing",
     "../common:bundle",
     "../protocol_client:bundle",
+    "../root:bundle",
+  ]
+}
+
+devtools_foundation_module("foundation_unittests") {
+  testonly = true
+
+  sources = [
+    "DebuggerModel.test.ts",
+    "PageResourceLoader.test.ts",
+    "RuntimeModel.test.ts",
+    "Target.test.ts",
+    "TargetManager.test.ts",
+  ]
+
+  deps = [
+    ":bundle",
+    "../../generated",
+    "../../models/bindings:bundle",
+    "../../models/workspace:bundle",
+    "../../testing",
+    "../host:bundle",
+    "../platform:bundle",
     "../root:bundle",
   ]
 }

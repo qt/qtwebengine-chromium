@@ -1,0 +1,52 @@
+{
+  # Probe config for measuring JetStream v2 and split profiles based on
+  # measurement markers.
+  "probes": {
+    "perfetto": {
+      "textproto":
+        '''
+        buffers {
+          size_kb: 500000
+          fill_policy: DISCARD
+        }
+        data_sources {
+          config {
+            name: "dev.v8.code"
+          }
+        }
+        data_sources: {
+            config {
+                name: "org.chromium.trace_event"
+            }
+        }
+        data_sources: {
+            config {
+                name: "track_event"
+                track_event_config {
+                    disabled_categories: "*"
+                    enabled_categories: "blink.user_timing"
+                    enabled_categories: "__metadata"
+                    timestamp_unit_multiplier: 1000
+                    filter_debug_annotations: false
+                    enable_thread_time_sampling: true
+                    filter_dynamic_event_names: false
+                }
+            }
+        }
+        data_sources: {
+            config {
+                name: "org.chromium.trace_metadata"
+            }
+        }
+        '''
+    }
+    "profiling": {
+      "target": "RENDERER_PROCESS_ONLY"
+    }
+    "trace_processor": {
+      "queries": [
+        "jetstream_2/perf_sample_span.sql"
+      ]
+    }
+  }
+}

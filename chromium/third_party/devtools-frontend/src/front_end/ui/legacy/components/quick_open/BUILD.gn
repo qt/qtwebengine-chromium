@@ -12,7 +12,7 @@ generate_css("css_files") {
   sources = [ "filteredListWidget.css" ]
 }
 
-devtools_module("quick_open") {
+devtools_ui_module("quick_open") {
   sources = [
     "CommandMenu.ts",
     "FilteredListWidget.ts",
@@ -41,9 +41,11 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility = [
+    # IMPORTANT: Be careful when extending visibility of front_end/ui/legacy/*,
+    # as the UI modules should only be used to actually build user interfaces,
+    # and the business logic should never depend on the UI modules.
     ":*",
     "../..:unittests",
-    "../../../../core/common:unittests",
     "../../../../panels/snippets/*",
     "../../../../panels/sources/*",
   ]
@@ -63,7 +65,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

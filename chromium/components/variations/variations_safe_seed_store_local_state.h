@@ -63,6 +63,9 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsSafeSeedStoreLocalState
                               std::string* base64_seed_signature) override;
   void ReadSeedData(
       SeedReaderWriter::ReadSeedDataCallback done_callback) override;
+  void AllowToPurgeSeedDataFromMemory() override;
+  void GetStoredSeedInfoForDebugging(
+      base::OnceCallback<void(StoredSeedInfo)> done_callback) override;
 
   static void RegisterPrefs(PrefRegistrySimple* registry);
 

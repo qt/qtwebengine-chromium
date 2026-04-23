@@ -41,6 +41,7 @@ class InspectorDOMAgent;
 class InspectorDOMDebuggerAgent;
 class InspectorDOMSnapshotAgent;
 class InspectorEmulationAgent;
+class InspectorInspectorAgent;
 class InspectorIOAgent;
 class InspectorLogAgent;
 class InspectorNetworkAgent;
@@ -49,10 +50,10 @@ class InspectorPageAgent;
 class InspectorPerformanceAgent;
 class InspectorWebAudioAgent;
 
-class CORE_EXPORT DevToolsSession : public GarbageCollected<DevToolsSession>,
-                                    public mojom::blink::DevToolsSession,
-                                    public protocol::FrontendChannel,
-                                    public v8_inspector::V8Inspector::Channel {
+class CORE_EXPORT DevToolsSession
+    : public v8_inspector::V8Inspector::ManagedChannel,
+      public mojom::blink::DevToolsSession,
+      public protocol::FrontendChannel {
  public:
   DevToolsSession(
       DevToolsAgent*,
@@ -86,7 +87,7 @@ class CORE_EXPORT DevToolsSession : public GarbageCollected<DevToolsSession>,
   }
   void Detach();
   void DetachFromV8();
-  void Trace(Visitor*) const;
+  void Trace(Visitor*) const override;
 
   // protocol::FrontendChannel implementation.
   void FlushProtocolNotifications() override;
@@ -151,6 +152,7 @@ class CORE_EXPORT DevToolsSession : public GarbageCollected<DevToolsSession>,
                               std::is_same<T, InspectorDOMDebuggerAgent>,
                               std::is_same<T, InspectorDOMSnapshotAgent>,
                               std::is_same<T, InspectorEmulationAgent>,
+                              std::is_same<T, InspectorInspectorAgent>,
                               std::is_same<T, InspectorIOAgent>,
                               std::is_same<T, InspectorLogAgent>,
                               std::is_same<T, InspectorNetworkAgent>,

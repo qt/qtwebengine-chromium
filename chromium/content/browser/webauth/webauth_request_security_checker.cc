@@ -4,6 +4,8 @@
 
 #include "content/browser/webauth/webauth_request_security_checker.h"
 
+#include <optional>
+#include <string>
 #include <string_view>
 
 #include "base/json/json_reader.h"
@@ -99,7 +101,7 @@ WebAuthRequestSecurityChecker::RemoteValidation::Create(
   std::string canonicalized_domain_storage;
   url::StdStringCanonOutput canon_output(&canonicalized_domain_storage);
   url::CanonHostInfo host_info;
-  url::CanonicalizeHostVerbose(relying_party_id.data(),
+  url::CanonicalizeHostVerbose(relying_party_id,
                                url::Component(0, relying_party_id.size()),
                                &canon_output, &host_info);
   const std::string_view canonicalized_domain(canon_output.data(),
@@ -221,7 +223,7 @@ WebAuthRequestSecurityChecker::RemoteValidation::RemoteValidation(
 // OnFetchComplete is called when the `.well-known/webauthn` for an
 // RP ID has finished downloading.
 void WebAuthRequestSecurityChecker::RemoteValidation::OnFetchComplete(
-    std::unique_ptr<std::string> body) {
+    std::optional<std::string> body) {
   if (!body) {
     std::move(callback_).Run(blink::mojom::AuthenticatorStatus::
                                  BAD_RELYING_PARTY_ID_ATTEMPTED_FETCH);
@@ -234,9 +236,7 @@ void WebAuthRequestSecurityChecker::RemoteValidation::OnFetchComplete(
     return;
   }
 
-  json_ = std::move(body);
-
-  std::move(callback_).Run(ValidateWellKnownJSON(caller_origin_, *json_));
+  std::move(callback_).Run(ValidateWellKnownJSON(caller_origin_, *body));
 }
 
 WebAuthRequestSecurityChecker::WebAuthRequestSecurityChecker(
@@ -433,14 +433,14 @@ WebAuthRequestSecurityChecker::ValidateAppIdExtension(
   // https://fido.example.com/myAppId), no additional processing is necessary
   // and the operation may proceed."
   GURL appid_url = GURL(appid);
-  if (!appid_url.is_valid() || appid_url.scheme() != url::kHttpsScheme ||
-      appid_url.scheme_piece() != caller_origin.scheme()) {
+  if (!appid_url.is_valid() || appid_url.GetScheme() != url::kHttpsScheme ||
+      appid_url.scheme() != caller_origin.scheme()) {
     return blink::mojom::AuthenticatorStatus::INVALID_DOMAIN;
   }
 
   // This check is repeated inside |SameDomainOrHost|, just after this. However
   // it's cheap and mirrors the structure of the spec.
-  if (appid_url.host_piece() == caller_origin.host()) {
+  if (appid_url.host() == caller_origin.host()) {
     *out_appid = appid;
     return blink::mojom::AuthenticatorStatus::SUCCESS;
   }

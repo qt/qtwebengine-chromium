@@ -184,6 +184,7 @@ struct DidOverscrollParams {
   gfx.mojom.Vector2dF current_fling_velocity;
   gfx.mojom.PointF causal_event_viewport_point;
   cc.mojom.OverscrollBehavior overscroll_behavior;
+  blink.mojom.GestureDevice source_device;
 };
 
 // A struct wrapper for the TouchAction enumeration because
@@ -531,6 +532,11 @@ interface WidgetInputHandler {
   // CompositorFrame (containing all changes caused by prior input) has been
   // displayed.
   WaitForInputProcessed() => ();
+
+  // Pings the main thread by queuing a task directly onto the
+  // MainThreadEventQueue and waiting for its execution. Used for hang
+  // detection.
+  PingMainThread() => ();
 
   // Attach the synchronous compositor interface. This method only
   // should be called for Android WebView.

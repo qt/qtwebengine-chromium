@@ -70,7 +70,7 @@ class OverlayCandidateFactoryTestBase : public testing::Test {
 
   ResourceId CreateResource(bool is_overlay_candidate, GrSurfaceOrigin origin) {
     scoped_refptr<RasterContextProvider> child_context_provider =
-        TestContextProvider::Create();
+        TestContextProvider::CreateGLES();
 
     child_context_provider->BindToCurrentSequence();
 
@@ -95,8 +95,11 @@ class OverlayCandidateFactoryTestBase : public testing::Test {
     std::vector<ResourceId> resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(resource_id);
     std::vector<TransferableResource> list;
+
+    CHECK(child_context_provider);
     child_resource_provider_.PrepareSendToParent(
-        resource_ids_to_transfer, &list, child_context_provider.get());
+        resource_ids_to_transfer, &list,
+        child_context_provider->SharedImageInterface());
     resource_provider_.ReceiveFromChild(child_id, list);
 
     // Delete it in the child so it won't be leaked, and will be released once

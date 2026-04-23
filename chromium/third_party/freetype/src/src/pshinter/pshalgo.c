@@ -4,7 +4,7 @@
  *
  *   PostScript hinting algorithm (body).
  *
- * Copyright (C) 2001-2024 by
+ * Copyright (C) 2001-2025 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used
@@ -1299,7 +1299,8 @@
       PSH_Point  point, before, after;
 
 
-      if ( glyph->contours[n].count == 0 )
+      /* we need at least 3 points to create an extremum */
+      if ( glyph->contours[n].count < 3 )
         continue;
 
       point  = first;
@@ -1309,7 +1310,7 @@
       {
         before = before->prev;
         if ( before == first )
-          goto Skip;
+          goto Next;
 
       } while ( before->org_u == point->org_u );
 

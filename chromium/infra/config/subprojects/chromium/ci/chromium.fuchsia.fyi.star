@@ -23,6 +23,9 @@ ci.defaults.set(
     os = os.LINUX_DEFAULT,
     gardener_rotations = gardener_rotations.FUCHSIA,
     execution_timeout = 10 * time.hour,
+    experiments = {
+        "chromium_tests.resultdb_module": 100,
+    },
     health_spec = health_spec.default(),
     notifies = ["cr-fuchsia"],
     service_account = ci_constants.DEFAULT_SERVICE_ACCOUNT,
@@ -256,6 +259,7 @@ ci.builder(
         ),
     ],
     contact_team_email = "chrome-fuchsia-engprod@google.com",
+    execution_timeout = 24 * time.hour,
 )
 
 ci.builder(

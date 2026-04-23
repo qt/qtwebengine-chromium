@@ -32,7 +32,7 @@
 #include "gpu/ipc/common/mailbox_holder_mojom_traits.h"
 #include "gpu/ipc/common/mailbox_mojom_traits.h"
 #include "gpu/ipc/common/sync_token_mojom_traits.h"
-#include "ipc/ipc_message_utils.h"
+#include "ipc/param_traits_utils.h"
 #include "mojo/public/cpp/base/time_mojom_traits.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/test_support/test_utils.h"
@@ -359,8 +359,7 @@ TEST_F(StructTraitsTest, CopyOutputRequest_TextureRequest) {
 
   base::RunLoop run_loop_for_release;
 
-  CopyOutputResult::ReleaseCallbacks release_callbacks;
-  release_callbacks.push_back(base::BindOnce(
+  ReleaseCallback release_callback = base::BindOnce(
       [](base::OnceClosure quit_closure,
          const gpu::SyncToken& expected_sync_token,
          const gpu::SyncToken& sync_token, bool is_lost) {
@@ -368,11 +367,11 @@ TEST_F(StructTraitsTest, CopyOutputRequest_TextureRequest) {
         EXPECT_FALSE(is_lost);
         std::move(quit_closure).Run();
       },
-      run_loop_for_release.QuitClosure(), sync_token));
+      run_loop_for_release.QuitClosure(), sync_token);
 
   output->SendResult(std::make_unique<CopyOutputSharedImageResult>(
       result_format, result_rect, mailbox, gfx::ColorSpace::CreateSRGB(),
-      "CopyOutputRequest_TextureRequest", std::move(release_callbacks)));
+      "CopyOutputRequest_TextureRequest", std::move(release_callback)));
 
   // Wait for the result to be delivered to the other side: The
   // CopyOutputRequest callback will be called, at which point
@@ -514,14 +513,20 @@ TEST_F(StructTraitsTest, CompositorFrame) {
   const SharedImageFormat single_plane_format = SinglePlaneFormat::kALPHA_8;
   const SharedImageFormat multi_plane_format = MultiPlaneFormat::kNV12;
   const gfx::Size tr_size(1234, 5678);
-  TransferableResource single_plane_resource;
+  TransferableResource single_plane_resource = TransferableResource::Make(
+      gpu::ClientSharedImage::CreateForTesting(
+          gpu::SharedImageMetadata{.format = single_plane_format,
+                                   .size = tr_size,
+                                   .alpha_type = kPremul_SkAlphaType}),
+      TransferableResource::ResourceSource::kTest, gpu::SyncToken());
   single_plane_resource.id = single_plane_id;
-  single_plane_resource.format = single_plane_format;
-  single_plane_resource.size = tr_size;
-  TransferableResource multi_plane_resource;
+  TransferableResource multi_plane_resource = TransferableResource::Make(
+      gpu::ClientSharedImage::CreateForTesting(
+          gpu::SharedImageMetadata{.format = multi_plane_format,
+                                   .size = tr_size,
+                                   .alpha_type = kPremul_SkAlphaType}),
+      TransferableResource::ResourceSource::kTest, gpu::SyncToken());
   multi_plane_resource.id = multi_plane_id;
-  multi_plane_resource.format = multi_plane_format;
-  multi_plane_resource.size = tr_size;
 
   // CompositorFrameMetadata constants.
   const float device_scale_factor = 2.6f;
@@ -553,12 +558,12 @@ TEST_F(StructTraitsTest, CompositorFrame) {
   ASSERT_EQ(2u, output.resource_list.size());
   TransferableResource out_resource1 = output.resource_list[0];
   EXPECT_EQ(single_plane_id, out_resource1.id);
-  EXPECT_EQ(single_plane_format, out_resource1.format);
-  EXPECT_EQ(tr_size, out_resource1.size);
+  EXPECT_EQ(single_plane_format, out_resource1.GetFormat());
+  EXPECT_EQ(tr_size, out_resource1.GetSize());
   TransferableResource out_resource2 = output.resource_list[1];
   EXPECT_EQ(multi_plane_id, out_resource2.id);
-  EXPECT_EQ(multi_plane_format, out_resource2.format);
-  EXPECT_EQ(tr_size, out_resource2.size);
+  EXPECT_EQ(multi_plane_format, out_resource2.GetFormat());
+  EXPECT_EQ(tr_size, out_resource2.GetSize());
 
   EXPECT_EQ(1u, output.render_pass_list.size());
   const CompositorRenderPass* out_render_pass =
@@ -1213,8 +1218,8 @@ TEST_F(StructTraitsTest, QuadListBasic) {
   EXPECT_EQ(rect5, out_texture_draw_quad->visible_rect);
   EXPECT_EQ(needs_blending, out_texture_draw_quad->needs_blending);
   EXPECT_EQ(resource_id5, out_texture_draw_quad->resource_id);
-  EXPECT_EQ(uv_top_left, out_texture_draw_quad->uv_top_left);
-  EXPECT_EQ(uv_bottom_right, out_texture_draw_quad->uv_bottom_right);
+  EXPECT_EQ(gfx::BoundingRect(uv_top_left, uv_bottom_right),
+            out_texture_draw_quad->GetNormalizedTexCoords(gfx::Size(1, 1)));
   EXPECT_EQ(background_color, out_texture_draw_quad->background_color);
   EXPECT_EQ(nearest_neighbor, out_texture_draw_quad->nearest_neighbor);
   EXPECT_EQ(secure_output_only, out_texture_draw_quad->secure_output_only);
@@ -1225,8 +1230,9 @@ TEST_F(StructTraitsTest, QuadListBasic) {
   EXPECT_EQ(rect7, out_rounded_display_mask_quad->visible_rect);
   EXPECT_EQ(needs_blending7, out_rounded_display_mask_quad->needs_blending);
   EXPECT_EQ(resource_id7, out_rounded_display_mask_quad->resource_id);
-  EXPECT_EQ(uv_top_left, out_rounded_display_mask_quad->uv_top_left);
-  EXPECT_EQ(uv_bottom_right, out_rounded_display_mask_quad->uv_bottom_right);
+  EXPECT_EQ(
+      gfx::BoundingRect(uv_top_left, uv_bottom_right),
+      out_rounded_display_mask_quad->GetNormalizedTexCoords(gfx::Size(1, 1)));
   EXPECT_EQ(origin_rounded_display_mask_radius,
             out_rounded_display_mask_quad->rounded_display_masks_info
                 .radii[TextureDrawQuad::RoundedDisplayMasksInfo::
@@ -1305,38 +1311,47 @@ TEST_F(StructTraitsTest, TransferableResource) {
   const bool is_software = false;
   const bool is_overlay_candidate = true;
 
-  gpu::MailboxHolder mailbox_holder;
-  mailbox_holder.mailbox.SetName(mailbox_name);
-  mailbox_holder.sync_token = gpu::SyncToken(command_buffer_namespace,
+  gpu::Mailbox mailbox;
+  mailbox.SetName(mailbox_name);
+
+  gpu::SharedImageUsageSet usage;
+  if (is_overlay_candidate) {
+    usage |= gpu::SHARED_IMAGE_USAGE_SCANOUT;
+  }
+
+  gpu::SharedImageMetadata metadata{
+      .format = format,
+      .size = size,
+      .surface_origin = kBottomLeft_GrSurfaceOrigin,
+      .alpha_type = kPremul_SkAlphaType,
+      .usage = usage};
+  gpu::SyncToken sync_token = gpu::SyncToken(command_buffer_namespace,
                                              command_buffer_id, release_count);
-  mailbox_holder.sync_token.SetVerifyFlush();
-  mailbox_holder.texture_target = texture_target;
-  TransferableResource input;
+  sync_token.SetVerifyFlush();
+
+  scoped_refptr<gpu::ClientSharedImage> shared_image =
+      gpu::ClientSharedImage::CreateForTesting(
+          mailbox, metadata, gpu::SyncToken(), texture_target, is_software);
+
+  TransferableResource input = TransferableResource::Make(
+      shared_image, TransferableResource::ResourceSource::kTest, sync_token);
   input.id = id;
-  input.format = format;
-  input.size = size;
-  input.set_mailbox(mailbox_holder.mailbox);
-  input.set_sync_token(mailbox_holder.sync_token);
-  input.set_texture_target(mailbox_holder.texture_target);
   input.synchronization_type = sync_type;
-  input.is_software = is_software;
-  input.is_overlay_candidate = is_overlay_candidate;
-  input.origin = kBottomLeft_GrSurfaceOrigin;
 
   TransferableResource output;
   mojo::test::SerializeAndDeserialize<mojom::TransferableResource>(input,
                                                                    output);
 
   EXPECT_EQ(id, output.id);
-  EXPECT_EQ(format, output.format);
-  EXPECT_EQ(size, output.size);
-  EXPECT_EQ(mailbox_holder.mailbox, output.mailbox());
-  EXPECT_EQ(mailbox_holder.sync_token, output.sync_token());
-  EXPECT_EQ(mailbox_holder.texture_target, output.texture_target());
+  EXPECT_EQ(format, output.GetFormat());
+  EXPECT_EQ(size, output.GetSize());
+  EXPECT_EQ(mailbox, output.mailbox());
+  EXPECT_EQ(sync_token, output.sync_token());
+  EXPECT_EQ(texture_target, output.texture_target());
   EXPECT_EQ(sync_type, output.synchronization_type);
-  EXPECT_EQ(is_software, output.is_software);
-  EXPECT_EQ(is_overlay_candidate, output.is_overlay_candidate);
-  EXPECT_EQ(kBottomLeft_GrSurfaceOrigin, output.origin);
+  EXPECT_EQ(is_software, output.GetIsSoftware());
+  EXPECT_EQ(is_overlay_candidate, output.GetIsOverlayCandidate());
+  EXPECT_EQ(kBottomLeft_GrSurfaceOrigin, output.GetOrigin());
 }
 
 TEST_F(StructTraitsTest, SharedImageFormatWithSinglePlane) {
@@ -1450,8 +1465,7 @@ TEST_F(StructTraitsTest, CopyOutputResult_Texture) {
                             71234838);
   sync_token.SetVerifyFlush();
   base::RunLoop run_loop;
-  CopyOutputResult::ReleaseCallbacks release_callbacks;
-  release_callbacks.push_back(base::BindOnce(
+  ReleaseCallback release_callback = base::BindOnce(
       [](base::OnceClosure quit_closure,
          const gpu::SyncToken& expected_sync_token,
          const gpu::SyncToken& sync_token, bool is_lost) {
@@ -1459,14 +1473,14 @@ TEST_F(StructTraitsTest, CopyOutputResult_Texture) {
         EXPECT_TRUE(is_lost);
         std::move(quit_closure).Run();
       },
-      run_loop.QuitClosure(), sync_token));
+      run_loop.QuitClosure(), sync_token);
   gpu::Mailbox mailbox;
   mailbox.SetName(mailbox_name);
   std::unique_ptr<CopyOutputResult> input =
       std::make_unique<CopyOutputSharedImageResult>(
           CopyOutputResult::Format::RGBA, result_rect, mailbox,
           result_color_space, "CopyOutputResult_Texture",
-          std::move(release_callbacks));
+          std::move(release_callback));
 
   std::unique_ptr<CopyOutputResult> output;
   mojo::test::SerializeAndDeserialize<mojom::CopyOutputResult>(input, output);
@@ -1479,13 +1493,10 @@ TEST_F(StructTraitsTest, CopyOutputResult_Texture) {
   EXPECT_EQ(output->GetSharedImage()->mailbox(), mailbox);
   EXPECT_EQ(output->GetSharedImage()->color_space(), result_color_space);
 
-  CopyOutputResult::ReleaseCallbacks out_callbacks =
-      output->TakeSharedImageOwnership();
+  ReleaseCallback out_callback = output->TakeSharedImageOwnership();
 
-  EXPECT_EQ(1u, out_callbacks.size());
-  for (auto& cb : out_callbacks) {
-    std::move(cb).Run(sync_token, true /* is_lost */);
-  }
+  ASSERT_TRUE(out_callback);
+  std::move(out_callback).Run(sync_token, true /* is_lost */);
 
   // If the CopyOutputResult callback is called (which is the intended
   // behaviour), this will exit. Otherwise, this test will time out and fail.

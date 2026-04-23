@@ -64,6 +64,8 @@
 #include "third_party/skia/include/private/chromium/SkPMColor.h"
 #include "ui/gfx/color_transform.h"
 #include "ui/gfx/geometry/mask_filter_info.h"
+#include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/geometry/transform_util.h"
 #include "ui/gfx/video_types.h"
@@ -317,9 +319,9 @@ void CreateTestTwoColoredTextureDrawQuad(
 
   // Return the mapped resource id.
   std::unordered_map<ResourceId, ResourceId, ResourceIdHasher> resource_map =
-      cc::SendResourceAndGetChildToParentMap({resource}, resource_provider,
-                                             child_resource_provider,
-                                             child_context_provider.get());
+      cc::SendResourceAndGetChildToParentMap(
+          {resource}, resource_provider, child_resource_provider,
+          child_context_provider->SharedImageInterface());
   ResourceId mapped_resource = resource_map[resource];
 
   bool needs_blending = true;
@@ -389,9 +391,9 @@ void CreateTestTextureDrawQuad(
 
   // Return the mapped resource id.
   std::unordered_map<ResourceId, ResourceId, ResourceIdHasher> resource_map =
-      cc::SendResourceAndGetChildToParentMap({resource}, resource_provider,
-                                             child_resource_provider,
-                                             child_context_provider.get());
+      cc::SendResourceAndGetChildToParentMap(
+          {resource}, resource_provider, child_resource_provider,
+          child_context_provider->SharedImageInterface());
   ResourceId mapped_resource = resource_map[resource];
 
   bool needs_blending = true;
@@ -975,8 +977,9 @@ TEST_P(RendererPixelTest,
   quad->rect.Offset(10, 10);
   quad->visible_rect.Offset(10, 10);
   quad->visible_rect.Inset(gfx::Insets::TLBR(50, 30, 12, 12));
-  quad->uv_top_left.SetPoint(.2, .3);
-  quad->uv_bottom_right.SetPoint(.4, .7);
+  quad->SetNormalizedTexCoordsForTesting(
+      gfx::BoundingRect(gfx::PointF(0.2f, 0.3f), gfx::PointF(0.4f, 0.7f)),
+      this->device_viewport_size_);
   quad->nearest_neighbor = true;  // To avoid bilinear filter differences.
   SharedQuadState* color_quad_state = CreateTestSharedQuadState(
       gfx::Transform(), rect, pass.get(), gfx::MaskFilterInfo());
@@ -3499,7 +3502,7 @@ TEST_P(RendererPixelTest, RenderPassAndMaskWithPartialQuad) {
       cc::SendResourceAndGetChildToParentMap(
           {mask_resource_id}, this->resource_provider_.get(),
           this->child_resource_provider_.get(),
-          this->child_context_provider_.get());
+          this->child_context_provider_->SharedImageInterface());
   ResourceId mapped_mask_resource_id = resource_map[mask_resource_id];
 
   // This AggregatedRenderPassDrawQuad does not include the full |viewport_rect|
@@ -3597,7 +3600,7 @@ TEST_P(RendererPixelTest, RenderPassAndMaskWithPartialQuad2) {
       cc::SendResourceAndGetChildToParentMap(
           {mask_resource_id}, this->resource_provider_.get(),
           this->child_resource_provider_.get(),
-          this->child_context_provider_.get());
+          this->child_context_provider_->SharedImageInterface());
   ResourceId mapped_mask_resource_id = resource_map[mask_resource_id];
 
   // This AggregatedRenderPassDrawQuad does not include the full |viewport_rect|
@@ -3690,7 +3693,7 @@ TEST_P(RendererPixelTest, RenderPassAndMaskForRoundedCorner) {
       cc::SendResourceAndGetChildToParentMap(
           {mask_resource_id}, this->resource_provider_.get(),
           this->child_resource_provider_.get(),
-          this->child_context_provider_.get());
+          this->child_context_provider_->SharedImageInterface());
   ResourceId mapped_mask_resource_id = resource_map[mask_resource_id];
 
   // Set up a mask on the AggregatedRenderPassDrawQuad.
@@ -3796,7 +3799,7 @@ TEST_P(RendererPixelTest, RenderPassAndMaskForRoundedCornerMultiRadii) {
       cc::SendResourceAndGetChildToParentMap(
           {mask_resource_id}, this->resource_provider_.get(),
           this->child_resource_provider_.get(),
-          this->child_context_provider_.get());
+          this->child_context_provider_->SharedImageInterface());
   ResourceId mapped_mask_resource_id = resource_map[mask_resource_id];
 
   // Set up a mask on the AggregatedRenderPassDrawQuad.
@@ -3913,7 +3916,7 @@ class RendererPixelTestWithBackdropFilter : public VizPixelTestWithParam {
           resource_map = cc::SendResourceAndGetChildToParentMap(
               {mask_resource_id}, this->resource_provider_.get(),
               this->child_resource_provider_.get(),
-              this->child_context_provider_.get());
+              this->child_context_provider_->SharedImageInterface());
       mapped_mask_resource_id = resource_map[mask_resource_id];
 
       mask_uv_rect =
@@ -4004,10 +4007,6 @@ INSTANTIATE_TEST_SUITE_P(,
                          testing::PrintToStringParamName());
 
 TEST_P(RendererPixelTestWithBackdropFilter, ZoomFilter) {
-  if (is_software_renderer()) {
-    GTEST_SKIP() << "SoftwareRenderer doesn't support zoom filter";
-  }
-
   backdrop_filters_.Append(cc::FilterOperation::CreateZoomFilter(2.0f, 20));
   SetUpRenderPassList();
   EXPECT_TRUE(RunPixelTest(
@@ -4021,14 +4020,7 @@ TEST_P(RendererPixelTestWithBackdropFilter, OffsetFilter) {
       cc::FilterOperation::CreateOffsetFilter(gfx::Point(5, 5)));
   SetUpRenderPassList();
 
-  // TODO(crbug.com/41473761): See comment in
-  // LayerTreeHostFiltersPixelTest/BackdropFilterOffsetTest. The software
-  // compositor does not correctly apply clamping when accessing content outside
-  // of the layer.
-  base::FilePath expected_path(
-      is_software_renderer()
-          ? FILE_PATH_LITERAL("backdrop_filter_offset_sw.png")
-          : FILE_PATH_LITERAL("backdrop_filter_offset.png"));
+  base::FilePath expected_path(FILE_PATH_LITERAL("backdrop_filter_offset.png"));
 
   EXPECT_TRUE(
       RunPixelTest(&pass_list_, expected_path, cc::ExactPixelComparator()));
@@ -4306,7 +4298,7 @@ TEST_P(GPURendererPixelTest, TileDrawQuadForceAntiAliasingOff) {
       cc::SendResourceAndGetChildToParentMap(
           {resource}, this->resource_provider_.get(),
           this->child_resource_provider_.get(),
-          this->child_context_provider_.get());
+          this->child_context_provider_->SharedImageInterface());
   ResourceId mapped_resource = resource_map[resource];
 
   AggregatedRenderPassId id{1};
@@ -4841,7 +4833,7 @@ TEST_P(RendererPixelTest, TileDrawQuadNearestNeighbor) {
       cc::SendResourceAndGetChildToParentMap(
           {resource}, this->resource_provider_.get(),
           this->child_resource_provider_.get(),
-          this->child_context_provider_.get());
+          this->child_context_provider_->SharedImageInterface());
   ResourceId mapped_resource = resource_map[resource];
 
   AggregatedRenderPassId id{1};
@@ -4891,7 +4883,7 @@ TEST_F(SoftwareRendererPixelTest, TextureDrawQuadNearestNeighbor) {
       cc::SendResourceAndGetChildToParentMap(
           {resource}, this->resource_provider_.get(),
           this->child_resource_provider_.get(),
-          this->child_context_provider_.get());
+          this->child_context_provider_->SharedImageInterface());
   ResourceId mapped_resource = resource_map[resource];
 
   AggregatedRenderPassId id{1};
@@ -4944,7 +4936,7 @@ TEST_F(SoftwareRendererPixelTest, TextureDrawQuadLinear) {
       cc::SendResourceAndGetChildToParentMap(
           {resource}, this->resource_provider_.get(),
           this->child_resource_provider_.get(),
-          this->child_context_provider_.get());
+          this->child_context_provider_->SharedImageInterface());
   ResourceId mapped_resource = resource_map[resource];
 
   AggregatedRenderPassId id{1};
@@ -5306,7 +5298,7 @@ TEST_P(GPURendererPixelTest, TextureQuadBatching) {
       cc::SendResourceAndGetChildToParentMap(
           {resource}, this->resource_provider_.get(),
           this->child_resource_provider_.get(),
-          this->child_context_provider_.get());
+          this->child_context_provider_->SharedImageInterface());
   ResourceId mapped_resource = resource_map[resource];
 
   // Arbitrary dividing lengths to divide up the resource into 16 quads.
@@ -5391,7 +5383,7 @@ TEST_P(GPURendererPixelTest, TileQuadClamping) {
       cc::SendResourceAndGetChildToParentMap(
           {resource}, this->resource_provider_.get(),
           this->child_resource_provider_.get(),
-          this->child_context_provider_.get());
+          this->child_context_provider_->SharedImageInterface());
   ResourceId mapped_resource = resource_map[resource];
 
   AggregatedRenderPassId id{1};
@@ -5496,7 +5488,7 @@ TEST_P(GPURendererPixelTest, RoundedCornerSimpleTextureDrawQuad) {
       cc::SendResourceAndGetChildToParentMap(
           {resource}, this->resource_provider_.get(),
           this->child_resource_provider_.get(),
-          this->child_context_provider_.get());
+          this->child_context_provider_->SharedImageInterface());
   ResourceId mapped_resource = resource_map[resource];
   bool needs_blending = true;
   const gfx::PointF uv_top_left(0.0f, 0.0f);
@@ -5975,8 +5967,8 @@ class RendererPixelTestColorConversion : public VizPixelTestWithParam {
     this->display_color_spaces_ =
         gfx::DisplayColorSpaces(gfx::ColorSpace::CreateSCRGBLinear80Nits());
     this->display_color_spaces_.SetSDRMaxLuminanceNits(80.f);
-    this->display_color_spaces_.SetOutputBufferFormats(
-        gfx::BufferFormat::RGBA_F16, gfx::BufferFormat::RGBA_F16);
+    this->display_color_spaces_.SetOutputFormats(SinglePlaneFormat::kRGBA_F16,
+                                                 SinglePlaneFormat::kRGBA_F16);
   }
 };
 
@@ -6037,8 +6029,8 @@ class VideoPixelRendererPixelTestColorConversion
     this->display_color_spaces_ =
         gfx::DisplayColorSpaces(gfx::ColorSpace::CreateSCRGBLinear80Nits());
     this->display_color_spaces_.SetSDRMaxLuminanceNits(80.f);
-    this->display_color_spaces_.SetOutputBufferFormats(
-        gfx::BufferFormat::RGBA_F16, gfx::BufferFormat::RGBA_F16);
+    this->display_color_spaces_.SetOutputFormats(SinglePlaneFormat::kRGBA_F16,
+                                                 SinglePlaneFormat::kRGBA_F16);
 
     // Allow non-root render passes to have the above non-suitable-for-blending
     // color space by being scanout.
@@ -6247,8 +6239,8 @@ class ColorTransformPixelTest
     this->display_color_spaces_ =
         gfx::DisplayColorSpaces(this->dst_color_space_);
     if (this->dst_color_space_.IsWide()) {
-      this->display_color_spaces_.SetOutputBufferFormats(
-          gfx::BufferFormat::RGBA_F16, gfx::BufferFormat::RGBA_F16);
+      this->display_color_spaces_.SetOutputFormats(
+          SinglePlaneFormat::kRGBA_F16, SinglePlaneFormat::kRGBA_F16);
     }
     this->premultiplied_alpha_ = std::get<3>(GetParam());
   }
@@ -6348,7 +6340,7 @@ class ColorTransformPixelTest
           resource_map = cc::SendResourceAndGetChildToParentMap(
               {resource}, this->resource_provider_.get(),
               this->child_resource_provider_.get(),
-              this->child_context_provider_.get());
+              this->child_context_provider_->SharedImageInterface());
       ResourceId mapped_resource = resource_map[resource];
 
       bool needs_blending = true;

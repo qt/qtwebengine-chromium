@@ -6,6 +6,7 @@
 
 #include "google_apis/gaia/gaia_constants.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -45,12 +46,6 @@ constexpr net::NetworkTrafficAnnotationTag kGdpTrafficAnnotation =
 
 GdpServiceHandler::GdpServiceHandler() = default;
 GdpServiceHandler::~GdpServiceHandler() = default;
-
-void GdpServiceHandler::CanMakeRequest(
-    Profile* profile,
-    base::OnceCallback<void(bool success)> callback) {
-  std::move(callback).Run(true);
-}
 
 GURL GdpServiceHandler::BaseURL() const {
   return GURL("https://developers.googleapis.com");

@@ -30,7 +30,8 @@ export class DomFragment {
   textContent?: Node|string;
   children: DomFragment[] = [];
   parent?: DomFragment;
-  expression?: string;
+  nextSiblings: DomFragment[] = [];
+  expression?: string|((indent: number) => string);
   widgetClass?: Node;
   replacer?: (fixer: TSESLint.RuleFixer, template: string) => TSESLint.RuleFix;
   initializer?: Node;
@@ -106,12 +107,13 @@ export class DomFragment {
     components.push(`\n${' '.repeat(indent)}`);
     let lineLength = indent;
     if (this.expression && !this.tagName) {
-      if (this.expression.startsWith('`') && this.expression.endsWith('`')) {
-        components.push(this.expression.slice(1, -1).trim());
+      let expression = this.expression instanceof Function ? this.expression(indent) : this.expression;
+      if (expression.startsWith('`') && expression.endsWith('`')) {
+        components.push(expression.slice(1, -1).trim());
       } else {
-        const expression = (this.references.every(r => r.processed) && this.initializer) ?
-            sourceCode.getText(this.initializer) :
-            this.expression;
+        if (this.references.every(r => r.processed) && this.initializer) {
+          expression = sourceCode.getText(this.initializer);
+        }
         components.push('${', expression, '}');
       }
 
@@ -240,6 +242,9 @@ export class DomFragment {
     if (this.tagName && this.tagName !== 'input') {
       components.push('</', this.tagName, '>');
     }
+    for (const nextSibling of this.nextSiblings) {
+      components.push(...nextSibling.toTemplateLiteral(sourceCode, indent));
+    }
     return components;
   }
 
@@ -251,6 +256,9 @@ export class DomFragment {
     const child = DomFragment.getOrCreate(node, sourceCode);
     this.children.splice(index, 0, child);
     child.parent = this;
+    for (const nextSibling of child.nextSiblings) {
+      nextSibling.parent = this;
+    }
     if (processed) {
       for (const reference of child.references) {
         if (reference.node === node) {
@@ -259,6 +267,13 @@ export class DomFragment {
       }
     }
     return child;
+  }
+
+  appendSibling(node: Node, sourceCode: SourceCode): DomFragment {
+    const sibling = DomFragment.getOrCreate(node, sourceCode);
+    this.nextSiblings.push(sibling);
+    sibling.parent = this.parent;
+    return sibling;
   }
 }
 

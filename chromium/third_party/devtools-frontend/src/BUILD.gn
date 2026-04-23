@@ -30,7 +30,7 @@ group("devtools_all_files") {
                 "test",
               ]
   deps = [ ":frontend_indexer_tsconfig" ]
-  public_deps = [ "front_end/ui/components/docs" ]
+  public_deps = [ "scripts/component_docs" ]
 }
 
 group("devtools_frontend_resources") {
@@ -206,4 +206,8 @@ ts_library("frontend_indexer_tsconfig") {
 
 copy_to_gen("favicon") {
   sources = [ "favicon.ico" ]
+}
+
+group("mcp") {
+  deps = [ "./mcp" ]
 }

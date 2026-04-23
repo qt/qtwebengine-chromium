@@ -1,7 +1,8 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+
+import '../../../ui/components/settings/settings.js';
 
 import * as Common from '../../../core/common/common.js';
 import * as i18n from '../../../core/i18n/i18n.js';
@@ -448,5 +449,5 @@ export const DEFAULT_VIEW: (input: SidebarAnnotationsTabViewInput, output: objec
             </setting-checkbox>`
     }
     </span>`,
-  target, {host: target});
+  target);
 };

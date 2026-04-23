@@ -24,7 +24,7 @@
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../../../core/common/common.js';
 import * as Host from '../../../../core/host/host.js';
@@ -368,7 +368,7 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
 
   announceSelectedGridNode(): void {
     // Only alert if the datagrid has focus
-    if (this.element === Platform.DOMUtilities.deepActiveElement(this.element.ownerDocument) &&
+    if (this.element === UI.DOMUtilities.deepActiveElement(this.element.ownerDocument) &&
         this.selectedNode?.existingElement()) {
       // Update the expand/collapse state for the current selected node
       let expandText;
@@ -466,7 +466,8 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       cell.createChild('div', 'sort-order-icon-container').appendChild(icon);
 
       if (column.title) {
-        UI.ARIAUtils.setLabel(cell, i18nString(UIStrings.sortableColumn));
+        const columnLabel = `${column.title} - ${i18nString(UIStrings.sortableColumn)}`;
+        UI.ARIAUtils.setLabel(cell, columnLabel);
       }
     }
   }
@@ -1237,7 +1238,7 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       nextSelectedNode.select();
     }
 
-    const activeElement = (Platform.DOMUtilities.deepActiveElement(this.element.ownerDocument) as HTMLElement | null);
+    const activeElement = (UI.DOMUtilities.deepActiveElement(this.element.ownerDocument) as HTMLElement | null);
     if (handled && this.element !== activeElement && !this.element.contains(activeElement)) {
       // crbug.com/1005449, crbug.com/1329956
       // navigational or delete keys pressed but current DataGrid panel has lost focus;
@@ -1669,7 +1670,7 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   }
 }
 
-// Keep in sync with .data-grid col.corner style rule.
+/** Keep in sync with .data-grid col.corner style rule. **/
 export const CornerWidth = 14;
 
 export const enum Events {
@@ -2341,7 +2342,7 @@ export class DataGridNode<T> {
   }
 
   deselect(supressDeselectedEvent?: boolean): void {
-    if (!this.dataGrid || this.dataGrid.selectedNode !== this || !this.selected) {
+    if (this.dataGrid?.selectedNode !== this || !this.selected) {
       return;
     }
 

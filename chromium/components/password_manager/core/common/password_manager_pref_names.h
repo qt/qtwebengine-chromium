@@ -280,6 +280,19 @@ inline constexpr char kAccountStoreBackupPasswordCleaningLastTimestamp[] =
 inline constexpr char kProfileStoreBackupPasswordCleaningLastTimestamp[] =
     "password_manager.profile_store_backup_password_cleaning_last_timestamp";
 
+// Timestamps of last time password change has failed, was canceled or dismissed
+// by the user. It's used to throttle password change offering.
+inline constexpr char kLastNegativePasswordChangeTimestamp[] =
+    "password_manager.last_negative_password_change_timestamp";
+
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN) || \
+    BUILDFLAG(IS_MAC)
+// List of urls for which password manager is disabled/blocked.
+inline constexpr char kPasswordManagerBlocklist[] =
+    "password_manager.password_manager_blocklist";
+#endif  // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN) ||
+        // BUILDFLAG(IS_MAC)
+
 }  // namespace password_manager::prefs
 
 #endif  // COMPONENTS_PASSWORD_MANAGER_CORE_COMMON_PASSWORD_MANAGER_PREF_NAMES_H_

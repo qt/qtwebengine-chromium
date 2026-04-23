@@ -98,14 +98,15 @@ InstanceBase* AdapterBase::APIGetInstance() const {
 void AdapterBase::UpdateLimits() {
     mLimits = mPhysicalDevice->GetLimits();
 
-    // Disable unsafe limits if needed.
-    if (!mTogglesState.IsEnabled(Toggle::AllowUnsafeAPIs)) {
-        mLimits.v1.maxImmediateSize = 0;
-    }
-
     // Apply the tiered limits if needed.
     if (mUseTieredLimits) {
         ApplyLimitTiers(&mLimits);
+    }
+
+    // If immediates are not enabled, report a maxImmediateSize of 0
+    // TODO(crbug.com/366291600): Remove when immediates are implemented on all backends
+    if (!GetInstance()->HasFeature(wgpu::WGSLLanguageFeatureName::ImmediateAddressSpace)) {
+        mLimits.v1.maxImmediateSize = 0;
     }
 }
 
@@ -157,7 +158,7 @@ wgpu::Status AdapterBase::APIGetInfo(AdapterInfo* info) const {
         powerPreferenceDesc->powerPreference = mPowerPreference;
     }
 
-    mPhysicalDevice->PopulateBackendProperties(unpacked);
+    mPhysicalDevice->PopulateBackendProperties(unpacked, mTogglesState);
 
     // Allocate space for all strings.
     size_t allocSize = mPhysicalDevice->GetVendorName().length() +
@@ -345,6 +346,10 @@ AdapterBase::CreateDevice(const DeviceDescriptor* descriptor) {
         // external ref to clean up resources, and drop it, so we acquire it in this scope.
         APIRef<DeviceBase> device;
         device.Acquire(ReturnToAPI(std::move(lostEvent->mDevice)));
+        // Reset the device's lost event to avoid double SetLost during destruction.
+        if (device) {
+            device->ResetLostEvent();
+        }
         return {lostEvent, std::move(error)};
     }
 

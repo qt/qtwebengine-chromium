@@ -16,7 +16,6 @@
 #include "services/webnn/public/cpp/webnn_trace.h"
 #include "services/webnn/public/mojom/webnn_error.mojom-forward.h"
 #include "services/webnn/public/mojom/webnn_graph.mojom-forward.h"
-#include "services/webnn/queueable_resource_state.h"
 #include "services/webnn/webnn_context_impl.h"
 #include "services/webnn/webnn_graph_impl.h"
 
@@ -67,7 +66,6 @@ class GraphImplOrt final : public WebNNGraphImpl {
       ContextProperties context_properties,
       base::flat_map<OperandId, std::unique_ptr<WebNNConstantOperand>>
           constant_operands,
-      bool is_external_data_supported,
       ScopedTrace scoped_trace);
 
   static void DidCreateAndBuild(
@@ -85,8 +83,7 @@ class GraphImplOrt final : public WebNNGraphImpl {
                     base::flat_map<std::string, scoped_refptr<WebNNTensorImpl>>
                         named_output_tensors) override;
 
-  scoped_refptr<QueueableResourceState<ComputeResources>>
-      compute_resources_state_;
+  std::unique_ptr<ComputeResources> compute_resources_;
   base::WeakPtrFactory<GraphImplOrt> weak_factory_{this};
 };
 

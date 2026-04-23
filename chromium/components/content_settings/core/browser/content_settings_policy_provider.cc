@@ -79,6 +79,10 @@ constexpr PrefsForManagedContentSettingsMapEntry
          ContentSettingsType::CLIPBOARD_READ_WRITE, CONTENT_SETTING_ALLOW},
         {prefs::kManagedClipboardBlockedForUrls,
          ContentSettingsType::CLIPBOARD_READ_WRITE, CONTENT_SETTING_BLOCK},
+        {prefs::kManagedPreciseGeolocationAllowedForUrls,
+         ContentSettingsType::GEOLOCATION, CONTENT_SETTING_ALLOW},
+        {prefs::kManagedGeolocationBlockedForUrls,
+         ContentSettingsType::GEOLOCATION, CONTENT_SETTING_BLOCK},
         {prefs::kManagedNotificationsAllowedForUrls,
          ContentSettingsType::NOTIFICATIONS, CONTENT_SETTING_ALLOW},
         {prefs::kManagedNotificationsBlockedForUrls,
@@ -169,6 +173,10 @@ constexpr PrefsForManagedContentSettingsMapEntry
          ContentSettingsType::LOCAL_NETWORK_ACCESS, CONTENT_SETTING_ALLOW},
         {prefs::kManagedLocalNetworkAccessBlockedForUrls,
          ContentSettingsType::LOCAL_NETWORK_ACCESS, CONTENT_SETTING_BLOCK},
+        {prefs::kManagedIdleDetectionAllowedForUrls,
+         ContentSettingsType::IDLE_DETECTION, CONTENT_SETTING_ALLOW},
+        {prefs::kManagedIdleDetectionBlockedForUrls,
+         ContentSettingsType::IDLE_DETECTION, CONTENT_SETTING_BLOCK},
 };
 
 constexpr const char* kManagedPrefs[] = {
@@ -184,11 +192,15 @@ constexpr const char* kManagedPrefs[] = {
     prefs::kManagedFileSystemReadBlockedForUrls,
     prefs::kManagedFileSystemWriteAskForUrls,
     prefs::kManagedFileSystemWriteBlockedForUrls,
+    prefs::kManagedPreciseGeolocationAllowedForUrls,
+    prefs::kManagedGeolocationBlockedForUrls,
     prefs::kManagedAccessToGetAllScreensMediaInSessionAllowedForUrls,
     prefs::kManagedImagesAllowedForUrls,
     prefs::kManagedImagesBlockedForUrls,
     prefs::kManagedInsecureContentAllowedForUrls,
     prefs::kManagedInsecureContentBlockedForUrls,
+    prefs::kManagedIdleDetectionAllowedForUrls,
+    prefs::kManagedIdleDetectionBlockedForUrls,
     prefs::kManagedJavaScriptAllowedForUrls,
     prefs::kManagedJavaScriptBlockedForUrls,
     prefs::kManagedJavaScriptJitAllowedForSites,
@@ -246,6 +258,7 @@ constexpr const char* kManagedDefaultPrefs[] = {
     prefs::kManagedDefaultFileSystemReadGuardSetting,
     prefs::kManagedDefaultFileSystemWriteGuardSetting,
     prefs::kManagedDefaultGeolocationSetting,
+    prefs::kManagedDefaultIdleDetectionSetting,
     prefs::kManagedDefaultImagesSetting,
     prefs::kManagedDefaultInsecureContentSetting,
     prefs::kManagedDefaultJavaScriptSetting,
@@ -342,6 +355,8 @@ const PolicyProvider::PrefsForManagedDefaultMapEntry
         {ContentSettingsType::IMAGES, prefs::kManagedDefaultImagesSetting},
         {ContentSettingsType::GEOLOCATION,
          prefs::kManagedDefaultGeolocationSetting},
+        {ContentSettingsType::IDLE_DETECTION,
+         prefs::kManagedDefaultIdleDetectionSetting},
         {ContentSettingsType::LEGACY_COOKIE_SCOPE,
          prefs::kManagedDefaultLegacyCookieScope},
         {ContentSettingsType::JAVASCRIPT,
@@ -430,8 +445,7 @@ PolicyProvider::~PolicyProvider() {
 
 std::unique_ptr<RuleIterator> PolicyProvider::GetRuleIterator(
     ContentSettingsType content_type,
-    bool incognito,
-    const PartitionKey& partition_key) const {
+    bool incognito) const {
   return value_map_.GetRuleIterator(content_type);
 }
 
@@ -439,8 +453,7 @@ std::unique_ptr<content_settings::Rule> PolicyProvider::GetRule(
     const GURL& primary_url,
     const GURL& secondary_url,
     ContentSettingsType content_type,
-    bool off_the_record,
-    const content_settings::PartitionKey& partition_key) const {
+    bool off_the_record) const {
   base::AutoLock auto_lock(value_map_.GetLock());
   return value_map_.GetRule(primary_url, secondary_url, content_type);
 }
@@ -520,6 +533,19 @@ void PolicyProvider::GetContentSettingsFromPreferences() {
       // Don't set a timestamp for policy settings.
       value_map_.SetValue(pattern_pair.first, secondary_pattern,
                           entry.content_type, base::Value(entry.setting), {});
+
+      if (entry.content_type == ContentSettingsType::GEOLOCATION &&
+          base::FeatureList::IsEnabled(
+              features::kApproximateGeolocationPermission)) {
+        auto* info = PermissionSettingsRegistry::GetInstance()->Get(
+            ContentSettingsType::GEOLOCATION_WITH_OPTIONS);
+        value_map_.SetValue(pattern_pair.first, secondary_pattern,
+                            ContentSettingsType::GEOLOCATION_WITH_OPTIONS,
+                            info->delegate().ToValue(GeolocationSetting{
+                                ToPermissionOption(entry.setting),
+                                ToPermissionOption(entry.setting)}),
+                            {});
+      }
     }
   }
 }
@@ -683,14 +709,12 @@ bool PolicyProvider::SetWebsiteSetting(
     const ContentSettingsPattern& secondary_pattern,
     ContentSettingsType content_type,
     base::Value&& value,
-    const ContentSettingConstraints& constraints,
-    const PartitionKey& partition_key) {
+    const ContentSettingConstraints& constraints) {
   return false;
 }
 
 void PolicyProvider::ClearAllContentSettingsRules(
-    ContentSettingsType content_type,
-    const PartitionKey& partition_key) {}
+    ContentSettingsType content_type) {}
 
 void PolicyProvider::ShutdownOnUIThread() {
   DCHECK(CalledOnValidThread());
@@ -717,7 +741,7 @@ void PolicyProvider::OnPreferenceChanged(const std::string& name) {
 
   NotifyObservers(ContentSettingsPattern::Wildcard(),
                   ContentSettingsPattern::Wildcard(),
-                  ContentSettingsType::DEFAULT, /*partition_key=*/nullptr);
+                  ContentSettingsType::DEFAULT);
 }
 
 }  // namespace content_settings

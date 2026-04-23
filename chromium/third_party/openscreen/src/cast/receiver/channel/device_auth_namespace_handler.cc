@@ -66,7 +66,7 @@ void DeviceAuthNamespaceHandler::OnMessage(VirtualConnectionRouter* router,
   }
   const std::string& payload = message.payload_binary();
   DeviceAuthMessage device_auth_message;
-  if (!device_auth_message.ParseFromArray(payload.data(), payload.length())) {
+  if (!device_auth_message.ParseFromString(payload)) {
     // TODO(btolsch): Consider all of these cases for future error reporting
     // mechanism.
     return;

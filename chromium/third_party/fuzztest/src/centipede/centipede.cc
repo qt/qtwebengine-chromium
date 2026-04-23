@@ -363,8 +363,15 @@ bool Centipede::ExecuteAndReportCrash(std::string_view binary,
                                       const std::vector<ByteArray> &input_vec,
                                       BatchResult &batch_result) {
   bool success = user_callbacks_.Execute(binary, input_vec, batch_result);
-  if (!success) ReportCrash(binary, input_vec, batch_result);
-  return success || batch_result.IsIgnoredFailure();
+  if (success) return true;
+  if (ShouldStop()) {
+    FUZZTEST_LOG_FIRST_N(WARNING, 1)
+        << "Crash found but the stop condition is met - not reporting further "
+           "possibly related crashes.";
+    return true;
+  }
+  ReportCrash(binary, input_vec, batch_result);
+  return batch_result.IsIgnoredFailure();
 }
 
 // *** Highly experimental and risky. May not scale well for large targets. ***
@@ -452,8 +459,8 @@ bool Centipede::RunBatch(
       batch_gained_new_coverage = true;
       FUZZTEST_CHECK_GT(fv.size(), 0UL);
       if (function_filter_passed) {
-        corpus_.Add(input_vec[i], fv, batch_result.results()[i].metadata(), fs_,
-                    coverage_frontier_);
+        corpus_.Add(input_vec[i], fv, batch_result.results()[i].metadata(),
+                    batch_result.results()[i].stats(), fs_, coverage_frontier_);
       }
       if (corpus_file != nullptr) {
         FUZZTEST_CHECK_OK(corpus_file->Write(input_vec[i]));
@@ -467,6 +474,7 @@ bool Centipede::RunBatch(
       }
     }
   }
+  corpus_.UpdateWeights(fs_, coverage_frontier_, env_.exec_time_weight_scaling);
   return batch_gained_new_coverage;
 }
 
@@ -493,8 +501,9 @@ void Centipede::LoadShard(const Environment &load_env, size_t shard_index,
         FUZZTEST_VLOG(10) << "Adding input " << Hash(input)
                           << "; new features: " << num_new_features;
         fs_.MergeFeatures(input_features);
-        // TODO(kcc): cmp_args are currently not saved to disk and not reloaded.
-        corpus_.Add(input, input_features, {}, fs_, coverage_frontier_);
+        // TODO(xinhaoyuan): metadata and stats are currently not saved to disk
+        // and not reloaded.
+        corpus_.Add(input, input_features, {}, {}, fs_, coverage_frontier_);
         ++num_added_inputs;
       } else {
         FUZZTEST_VLOG(10) << "Skipping input: " << Hash(input);
@@ -759,7 +768,8 @@ void Centipede::LoadSeedInputs(BlobFileWriter *absl_nonnull corpus_file,
   // coverage and passed the filters.
   if (corpus_.NumTotal() == 0) {
     for (const auto &seed_input : seed_inputs)
-      corpus_.Add(seed_input, {}, {}, fs_, coverage_frontier_);
+      corpus_.Add(seed_input, /*fv=*/{}, /*metadata=*/{}, /*stats=*/{}, fs_,
+                  coverage_frontier_);
   }
 }
 
@@ -769,7 +779,11 @@ void Centipede::FuzzingLoop() {
                      << " "
                      << "seed: " << env_.seed << "\n\n\n";
 
-  UpdateAndMaybeLogStats("begin-fuzz", 0);
+  if (env_.load_shards_only) {
+    UpdateAndMaybeLogStats("begin-load-shard", 0);
+  } else {
+    UpdateAndMaybeLogStats("begin-fuzz", 0);
+  }
 
   if (env_.full_sync) {
     LoadAllShardsInRandomOrder(env_, /*rerun_my_shard=*/true);
@@ -782,7 +796,13 @@ void Centipede::FuzzingLoop() {
     MergeFromOtherCorpus(env_.merge_from, env_.my_shard_index);
   }
 
-  if (env_.load_shards_only) return;
+  if (env_.load_shards_only) {
+    if (env_.persistent_mode) {
+      user_callbacks_.CleanUpPersistentMode();
+    }
+    UpdateAndMaybeLogStats("end-load-shard", 0);
+    return;
+  }
 
   auto corpus_path = wd_.CorpusFilePaths().Shard(env_.my_shard_index);
   auto corpus_file = DefaultBlobFileWriterFactory(env_.riegeli);
@@ -821,9 +841,9 @@ void Centipede::FuzzingLoop() {
     std::vector<MutationInputRef> mutation_inputs;
     mutation_inputs.reserve(env_.mutate_batch_size);
     for (size_t i = 0; i < env_.mutate_batch_size; i++) {
-      const auto &corpus_record = env_.use_corpus_weights
-                                      ? corpus_.WeightedRandom(rng_())
-                                      : corpus_.UniformRandom(rng_());
+      const auto& corpus_record = env_.use_corpus_weights
+                                      ? corpus_.WeightedRandom(rng_)
+                                      : corpus_.UniformRandom(rng_);
       mutation_inputs.push_back(
           MutationInputRef{corpus_record.data, &corpus_record.metadata});
     }
@@ -973,10 +993,14 @@ void Centipede::ReportCrash(std::string_view binary,
       << log_prefix
       << "Executing inputs one-by-one, trying to find the reproducer";
   for (auto input_idx : input_idxs_to_try) {
-    if (ShouldStop()) return;
+    if (ShouldStop()) break;
     const auto &one_input = input_vec[input_idx];
     BatchResult one_input_batch_result;
-    if (!user_callbacks_.Execute(binary, {one_input}, one_input_batch_result)) {
+    if (!user_callbacks_.Execute(binary, {one_input}, one_input_batch_result) &&
+        one_input_batch_result.IsInputFailure() &&
+        one_input_batch_result.failure_signature() ==
+            batch_result.failure_signature() &&
+        !ShouldStop()) {
       auto hash = Hash(one_input);
       auto crash_dir = wd_.CrashReproducerDirPaths().MyShard();
       FUZZTEST_CHECK_OK(RemoteMkdir(crash_dir));
@@ -1007,6 +1031,13 @@ void Centipede::ReportCrash(std::string_view binary,
           one_input_batch_result.failure_signature()));
       return;
     }
+  }
+
+  if (ShouldStop()) {
+    FUZZTEST_LOG(INFO)
+        << log_prefix
+        << "Stop condition is on - skipping triaging the reproducer";
+    return;
   }
 
   FUZZTEST_LOG(INFO) << log_prefix

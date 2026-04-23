@@ -12,6 +12,7 @@
 #include <string>
 
 #include "base/containers/flat_set.h"
+#include "base/debug/alias.h"
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/field_trial_params.h"
@@ -28,6 +29,7 @@
 #include "net/base/proxy_chain.h"
 #include "net/base/request_priority.h"
 #include "net/base/session_usage.h"
+#include "net/base/task/task_runner.h"
 #include "net/http/alternative_service.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_stream_key.h"
@@ -74,6 +76,10 @@ constexpr base::FeatureParam<base::TimeDelta>
         &features::kHappyEyeballsV3,
         HttpStreamPool::kConnectionAttemptDelayParamName.data(),
         HttpStreamPool::kDefaultConnectionAttemptDelay};
+
+constexpr base::FeatureParam<bool> kEnablePriorityTaskRunner{
+    &features::kHappyEyeballsV3,
+    HttpStreamPool::kEnablePriorityTaskRunnerParamName.data(), true};
 
 constexpr base::FeatureParam<HttpStreamPool::TcpBasedAttemptDelayBehavior>
     kTcpBasedAttemptDelayBehavior{
@@ -122,6 +128,15 @@ std::ostream& operator<<(std::ostream& os, const StreamCounts& counts) {
 }
 
 }  // namespace
+
+// static
+const scoped_refptr<base::SequencedTaskRunner> HttpStreamPool::TaskRunner(
+    RequestPriority priority) {
+  if (kEnablePriorityTaskRunner.Get()) {
+    return GetTaskRunner(priority);
+  }
+  return base::SequencedTaskRunner::GetCurrentDefault();
+}
 
 // static
 base::TimeDelta HttpStreamPool::GetConnectionAttemptDelay() {
@@ -260,7 +275,17 @@ void HttpStreamPool::DecrementTotalHandedOutStreamCount() {
 }
 
 void HttpStreamPool::IncrementTotalConnectingStreamCount() {
-  CHECK(EnsureTotalActiveStreamCountBelowLimit());
+  // TODO(crbug.com/383606724): Change this `if` to CHECK() once we stabilize
+  // the implementation.
+  if (!EnsureTotalActiveStreamCountBelowLimit()) {
+    base::debug::Alias(&total_handed_out_stream_count_);
+    base::debug::Alias(&total_idle_stream_count_);
+    base::debug::Alias(&total_connecting_stream_count_);
+    NOTREACHED() << "handed_out=" << total_handed_out_stream_count_
+                 << ", idle=" << total_idle_stream_count_
+                 << ", connecting=" << total_connecting_stream_count_
+                 << ", limit=" << max_stream_sockets_per_pool_;
+  }
   ++total_connecting_stream_count_;
   TRACE_COUNTER("net.stream", "HttpStreamPoolTotalConnectingStreams",
                 total_connecting_stream_count_);
@@ -284,30 +309,30 @@ void HttpStreamPool::OnIPAddressChanged(
     return;
   }
 
-  for (const auto& group : groups_) {
-    group.second->FlushWithError(ERR_NETWORK_CHANGED,
-                                 StreamSocketCloseReason::kIpAddressChanged,
-                                 kIpAddressChanged);
+  for (auto& group : groups_) {
+    group.second.FlushWithError(ERR_NETWORK_CHANGED,
+                                StreamSocketCloseReason::kIpAddressChanged,
+                                kIpAddressChanged);
   }
 }
 
 void HttpStreamPool::OnSSLConfigChanged(
     SSLClientContext::SSLConfigChangeType change_type) {
-  for (const auto& group : groups_) {
-    group.second->Refresh(kSslConfigChanged,
-                          StreamSocketCloseReason::kSslConfigChanged);
+  for (auto& group : groups_) {
+    group.second.Refresh(kSslConfigChanged,
+                         StreamSocketCloseReason::kSslConfigChanged);
   }
   ProcessPendingRequestsInGroups();
 }
 
 void HttpStreamPool::OnSSLConfigForServersChanged(
     const base::flat_set<HostPortPair>& servers) {
-  for (const auto& group : groups_) {
+  for (auto& group : groups_) {
     if (GURL::SchemeIsCryptographic(group.first.destination().scheme()) &&
         servers.contains(
             HostPortPair::FromSchemeHostPort(group.first.destination()))) {
-      group.second->Refresh(kSslConfigChanged,
-                            StreamSocketCloseReason::kSslConfigChanged);
+      group.second.Refresh(kSslConfigChanged,
+                           StreamSocketCloseReason::kSslConfigChanged);
     }
   }
   ProcessPendingRequestsInGroups();
@@ -335,15 +360,15 @@ void HttpStreamPool::FlushWithError(
     StreamSocketCloseReason attempt_cancel_reason,
     std::string_view net_log_close_reason_utf8) {
   for (auto& group : groups_) {
-    group.second->FlushWithError(error, attempt_cancel_reason,
-                                 net_log_close_reason_utf8);
+    group.second.FlushWithError(error, attempt_cancel_reason,
+                                net_log_close_reason_utf8);
   }
 }
 
 void HttpStreamPool::CloseIdleStreams(
     std::string_view net_log_close_reason_utf8) {
   for (auto& group : groups_) {
-    group.second->CloseIdleStreams(net_log_close_reason_utf8);
+    group.second.CloseIdleStreams(net_log_close_reason_utf8);
   }
 }
 
@@ -385,7 +410,7 @@ bool HttpStreamPool::RequiresHTTP11(
 
 bool HttpStreamPool::IsQuicBroken(
     const url::SchemeHostPort& destination,
-    const NetworkAnonymizationKey& network_anonymization_key) {
+    const NetworkAnonymizationKey& network_anonymization_key) const {
   return http_network_session()
       ->http_server_properties()
       ->IsAlternativeServiceBroken(
@@ -397,7 +422,7 @@ bool HttpStreamPool::IsQuicBroken(
 bool HttpStreamPool::CanUseQuic(
     const url::SchemeHostPort& destination,
     const NetworkAnonymizationKey& network_anonymization_key,
-    bool enable_alternative_services) {
+    bool enable_alternative_services) const {
   if (http_network_session()->ShouldForceQuic(destination, ProxyInfo::Direct(),
                                               /*is_websocket=*/false)) {
     return true;
@@ -460,7 +485,7 @@ base::Value::Dict HttpStreamPool::GetInfoAsValue() const {
 
   base::Value::Dict group_dicts;
   for (const auto& [key, group] : groups_) {
-    group_dicts.Set(key.ToString(), group->GetInfoAsValue());
+    group_dicts.Set(key.ToString(), group.GetInfoAsValue());
   }
   if (!group_dicts.empty()) {
     dict.Set("groups", std::move(group_dicts));
@@ -489,35 +514,31 @@ HttpStreamPool::Group* HttpStreamPool::GetGroupForTesting(
 
 HttpStreamPool::Group& HttpStreamPool::GetOrCreateGroup(
     const HttpStreamKey& stream_key,
-    std::optional<QuicSessionAliasKey> quic_session_alias_key) {
-  auto it = groups_.find(stream_key);
-  if (it == groups_.end()) {
-    it = groups_.try_emplace(
-        it, stream_key,
-        std::make_unique<Group>(this, stream_key, quic_session_alias_key));
-  }
-  return *it->second;
+    const std::optional<QuicSessionAliasKey>& quic_session_alias_key) {
+  auto [result, inserted] =
+      groups_.try_emplace(stream_key, this, stream_key, quic_session_alias_key);
+  return result->second;
 }
 
 HttpStreamPool::Group* HttpStreamPool::GetGroup(
     const HttpStreamKey& stream_key) {
   auto it = groups_.find(stream_key);
-  return it == groups_.end() ? nullptr : it->second.get();
+  return it == groups_.end() ? nullptr : &it->second;
 }
 
 HttpStreamPool::Group* HttpStreamPool::FindHighestStalledGroup() {
   Group* highest_stalled_group = nullptr;
   std::optional<RequestPriority> highest_priority;
 
-  for (const auto& group : groups_) {
+  for (auto& group : groups_) {
     std::optional<RequestPriority> priority =
-        group.second->GetPriorityIfStalledByPoolLimit();
+        group.second.GetPriorityIfStalledByPoolLimit();
     if (!priority) {
       continue;
     }
     if (!highest_priority || *priority > *highest_priority) {
       highest_priority = priority;
-      highest_stalled_group = group.second.get();
+      highest_stalled_group = &group.second;
     }
   }
 
@@ -530,7 +551,7 @@ bool HttpStreamPool::CloseOneIdleStreamSocket() {
   }
 
   for (auto& group : groups_) {
-    if (group.second->CloseOneIdleStreamSocket()) {
+    if (group.second.CloseOneIdleStreamSocket()) {
       return true;
     }
   }
@@ -562,7 +583,9 @@ void HttpStreamPool::OnPreconnectComplete(JobController* job_controller,
                                           CompletionOnceCallback callback,
                                           int rv) {
   OnJobControllerComplete(job_controller);
-  std::move(callback).Run(rv);
+  if (callback) {
+    std::move(callback).Run(rv);
+  }
 }
 
 void HttpStreamPool::CheckConsistency() {
@@ -582,13 +605,13 @@ void HttpStreamPool::CheckConsistency() {
     StreamCounts groups_total_counts;
     base::Value::Dict groups;
     for (const auto& [key, group] : groups_) {
-      groups_total_counts.handed_out += group->HandedOutStreamSocketCount();
-      groups_total_counts.idle += group->IdleStreamSocketCount();
-      groups_total_counts.connecting += group->ConnectingStreamSocketCount();
-      groups.Set(key.ToString(), group->GetInfoAsValue());
+      groups_total_counts.handed_out += group.HandedOutStreamSocketCount();
+      groups_total_counts.idle += group.IdleStreamSocketCount();
+      groups_total_counts.connecting += group.ConnectingStreamSocketCount();
+      groups.Set(key.ToString(), group.GetInfoAsValue());
 
       if (is_strict) {
-        CHECK(!group->CanComplete()) << key.ToString();
+        CHECK(!group.CanComplete()) << key.ToString();
       }
     }
 
@@ -613,7 +636,7 @@ void HttpStreamPool::CheckConsistency() {
     }
   }
 
-  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+  TaskRunner(IDLE)->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&HttpStreamPool::CheckConsistency,
                      weak_ptr_factory_.GetWeakPtr()),

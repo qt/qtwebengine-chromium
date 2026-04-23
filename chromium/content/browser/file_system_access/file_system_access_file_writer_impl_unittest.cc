@@ -25,6 +25,7 @@
 #include "base/types/expected.h"
 #include "components/services/storage/public/cpp/buckets/bucket_info.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
+#include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/file_system_access/file_system_access_lock_manager.h"
 #include "content/browser/file_system_access/fixed_file_system_access_permission_grant.h"
 #include "content/browser/file_system_access/mock_file_system_access_permission_context.h"
@@ -649,6 +650,7 @@ TEST_F(FileSystemAccessFileWriterAfterWriteChecksTest, Allow) {
           kFrameId, _))
       .WillOnce(base::test::RunOnceCallback<2>(
           FileSystemAccessPermissionContext::AfterWriteCheckResult::kAllow));
+  EXPECT_CALL(permission_context_, NotifyEntryModified(_, _)).Times(1);
 
   result = CloseSync();
   EXPECT_EQ(result, FileSystemAccessStatus::kOk);
@@ -699,6 +701,7 @@ TEST_F(FileSystemAccessFileWriterAfterWriteChecksTest,
         sb_callback = std::move(callback);
         loop.Quit();
       });
+  EXPECT_CALL(permission_context_, NotifyEntryModified(_, _)).Times(1);
 
   handle_->Close(base::DoNothing());
   loop.Run();
@@ -849,11 +852,14 @@ class FileSystemAccessFileWriterImplPermissionTest
  public:
   FileSystemAccessFileWriterImplPermissionTest() {
     if (GetParam().is_feature_enabled) {
-      scoped_feature_list_.InitAndEnableFeature(
-          blink::features::kFileSystemAccessWriteMode);
+      scoped_feature_list_.InitWithFeatures(
+          {blink::features::kFileSystemAccessWriteMode,
+           blink::features::kFileSystemAccessRevokeReadOnRemove},
+          {});
     } else {
-      scoped_feature_list_.InitAndDisableFeature(
-          blink::features::kFileSystemAccessWriteMode);
+      scoped_feature_list_.InitWithFeatures(
+          {}, {blink::features::kFileSystemAccessWriteMode,
+               blink::features::kFileSystemAccessRevokeReadOnRemove});
     }
   }
 

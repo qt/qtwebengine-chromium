@@ -43,75 +43,6 @@ class QuicConnectionMigrationManagerPeer {
   }
 };
 
-class TestQuicForceBlockablePacketWriter
-    : public QuicForceBlockablePacketWriter {
- public:
-  TestQuicForceBlockablePacketWriter() : QuicForceBlockablePacketWriter() {
-    ON_CALL(writer_, WritePacket(_, _, _, _, _, _))
-        .WillByDefault(Return(WriteResult(WRITE_STATUS_OK, 0)));
-    ON_CALL(writer_, GetMaxPacketSize(_))
-        .WillByDefault(Return(kMaxOutgoingPacketSize));
-    ON_CALL(writer_, IsBatchMode()).WillByDefault(Return(false));
-    ON_CALL(writer_, GetNextWriteLocation(_, _))
-        .WillByDefault(Return(QuicPacketBuffer()));
-    ON_CALL(writer_, Flush())
-        .WillByDefault(Return(WriteResult(WRITE_STATUS_OK, 0)));
-    ON_CALL(writer_, SupportsReleaseTime()).WillByDefault(Return(false));
-  }
-
-  // QuicPacketWriter.
-  WriteResult WritePacket(const char* buffer, size_t buf_len,
-                          const QuicIpAddress& self_address,
-                          const QuicSocketAddress& peer_address,
-                          PerPacketOptions* options,
-                          const QuicPacketWriterParams& params) override {
-    return writer_.WritePacket(buffer, buf_len, self_address, peer_address,
-                               options, params);
-  }
-
-  void SetWritable() override { writer_.SetWritable(); }
-
-  std::optional<int> MessageTooBigErrorCode() const override {
-    return kSocketErrorMsgSize;
-  }
-
-  QuicByteCount GetMaxPacketSize(
-      const QuicSocketAddress& peer_address) const override {
-    return writer_.GetMaxPacketSize(peer_address);
-  }
-
-  bool SupportsReleaseTime() const override {
-    return writer_.SupportsReleaseTime();
-  }
-
-  bool IsBatchMode() const override { return writer_.IsBatchMode(); }
-
-  bool SupportsEcn() const override { return writer_.SupportsEcn(); }
-
-  QuicPacketBuffer GetNextWriteLocation(
-      const QuicIpAddress& self_address,
-      const QuicSocketAddress& peer_address) override {
-    return writer_.GetNextWriteLocation(self_address, peer_address);
-  }
-
-  WriteResult Flush() override { return writer_.Flush(); }
-
-  bool IsWriteBlocked() const override {
-    return force_write_blocked_ || writer_.IsWriteBlocked();
-  }
-
-  // QuicForceBlockablePacketWriter
-  void ForceWriteBlocked(bool enforce_write_block) override {
-    force_write_blocked_ = enforce_write_block;
-  }
-
-  MockPacketWriter& GetMockWriter() { return writer_; }
-
- private:
-  NiceMock<MockPacketWriter> writer_;
-  bool force_write_blocked_ = false;
-};
-
 class TestQuicClientPathValidationContext
     : public QuicClientPathValidationContext {
  public:
@@ -119,7 +50,23 @@ class TestQuicClientPathValidationContext
       const quic::QuicSocketAddress& self_address,
       const quic::QuicSocketAddress& peer_address, QuicNetworkHandle network)
       : QuicClientPathValidationContext(self_address, peer_address, network),
-        writer_(std::make_unique<TestQuicForceBlockablePacketWriter>()) {}
+        writer_(std::make_unique<QuicForceBlockablePacketWriter>()) {
+    auto* writer = new NiceMock<MockPacketWriter>();
+    // Owns writer.
+    writer_->set_writer(writer);
+    ON_CALL(*writer, WritePacket(_, _, _, _, _, _))
+        .WillByDefault(Return(WriteResult(WRITE_STATUS_OK, 0)));
+    ON_CALL(*writer, GetMaxPacketSize(_))
+        .WillByDefault(Return(kMaxOutgoingPacketSize));
+    ON_CALL(*writer, IsBatchMode()).WillByDefault(Return(false));
+    ON_CALL(*writer, GetNextWriteLocation(_, _))
+        .WillByDefault(Return(QuicPacketBuffer()));
+    ON_CALL(*writer, Flush())
+        .WillByDefault(Return(WriteResult(WRITE_STATUS_OK, 0)));
+    ON_CALL(*writer, SupportsReleaseTime()).WillByDefault(Return(false));
+    ON_CALL(*writer, MessageTooBigErrorCode())
+        .WillByDefault(Return(kSocketErrorMsgSize));
+  }
 
   QuicForceBlockablePacketWriter* ForceBlockableWriterToUse() override {
     return writer_.get();
@@ -130,12 +77,13 @@ class TestQuicClientPathValidationContext
   void ReleasePacketWriter() { writer_.release(); }
 
  private:
-  std::unique_ptr<TestQuicForceBlockablePacketWriter> writer_;
+  std::unique_ptr<QuicForceBlockablePacketWriter> writer_;
 };
 
 class TestQuicPathContextFactory : public QuicPathContextFactory {
  public:
-  TestQuicPathContextFactory() = default;
+  TestQuicPathContextFactory(bool async_creation, bool has_error)
+      : async_creation_(async_creation), has_error_(has_error) {}
 
   void CreatePathValidationContext(
       QuicNetworkHandle network, QuicSocketAddress peer_address,
@@ -371,7 +319,7 @@ class TestQuicSpdyClientSessionWithMigration
       : QuicSpdyClientSessionWithMigration(
             connection, writer, visitor, config, supported_versions,
             default_network, current_network, std::move(path_context_factory),
-            migration_config),
+            migration_config, QuicPriorityType::kHttp),
         crypto_stream_(this) {
     ON_CALL(*this, IsSessionProxied()).WillByDefault(Return(false));
     ON_CALL(*this, OnMigrationToPathDone(_, _))
@@ -390,7 +338,6 @@ class TestQuicSpdyClientSessionWithMigration
   MOCK_METHOD(void, PrepareForProbingOnPath,
               (QuicPathValidationContext & context), (override));
   MOCK_METHOD(bool, IsSessionProxied, (), (const));
-  MOCK_METHOD(QuicTimeDelta, TimeSinceLastStreamClose, (), (override));
   MOCK_METHOD(bool, PrepareForMigrationToPath,
               (QuicClientPathValidationContext&));
   MOCK_METHOD(void, OnMigrationToPathDone,
@@ -484,11 +431,25 @@ class QuicConnectionMigrationManagerTest
   QuicConnectionMigrationManagerTest()
       : versions_(ParsedQuicVersionVector{GetParam()}),
         config_(test::DefaultQuicConfig()),
-        path_context_factory_(new TestQuicPathContextFactory()),
         connection_(new StrictMock<test::MockQuicConnection>(
             &connection_helper_, &alarm_factory_, Perspective::IS_CLIENT,
             versions_)),
-        default_writer_(new NiceMock<TestQuicForceBlockablePacketWriter>()) {
+        default_writer_(new QuicForceBlockablePacketWriter()) {
+    auto* writer = new NiceMock<MockPacketWriter>();
+    // Owns writer.
+    default_writer_->set_writer(writer);
+    ON_CALL(*writer, WritePacket(_, _, _, _, _, _))
+        .WillByDefault(Return(WriteResult(WRITE_STATUS_OK, 0)));
+    ON_CALL(*writer, GetMaxPacketSize(_))
+        .WillByDefault(Return(kMaxOutgoingPacketSize));
+    ON_CALL(*writer, IsBatchMode()).WillByDefault(Return(false));
+    ON_CALL(*writer, GetNextWriteLocation(_, _))
+        .WillByDefault(Return(QuicPacketBuffer()));
+    ON_CALL(*writer, Flush())
+        .WillByDefault(Return(WriteResult(WRITE_STATUS_OK, 0)));
+    ON_CALL(*writer, SupportsReleaseTime()).WillByDefault(Return(false));
+    ON_CALL(*writer, MessageTooBigErrorCode())
+        .WillByDefault(Return(kSocketErrorMsgSize));
     connection_->SetQuicPacketWriter(default_writer_, true);
   }
 
@@ -501,6 +462,8 @@ class QuicConnectionMigrationManagerTest
     migration_config_.allow_port_migration = port_migration_;
     migration_config_.migrate_idle_session = migrate_idle_session_;
 
+    path_context_factory_ = new TestQuicPathContextFactory(
+        async_path_context_creation_, /*has_error*/ false);
     session_ = std::make_unique<TestQuicSpdyClientSessionWithMigration>(
         connection_, default_writer_, &session_visitor_, config_, versions_,
         default_network_, initial_network_,
@@ -571,10 +534,10 @@ class QuicConnectionMigrationManagerTest
   QuicConfig config_;
   QuicConnectionMigrationConfig migration_config_;
   // Owned by |session_|
-  TestQuicPathContextFactory* path_context_factory_;
+  TestQuicPathContextFactory* path_context_factory_ = nullptr;
   // Owned by |session_|
   StrictMock<test::MockQuicConnection>* connection_;
-  NiceMock<TestQuicForceBlockablePacketWriter>* default_writer_;
+  QuicForceBlockablePacketWriter* default_writer_;
   std::unique_ptr<TestQuicSpdyClientSessionWithMigration> session_;
   QuicConnectionMigrationManager* migration_manager_ = nullptr;
   bool connection_migration_on_path_degrading_ = true;
@@ -582,6 +545,7 @@ class QuicConnectionMigrationManagerTest
   bool connection_migration_on_network_change_ = true;
   bool migrate_idle_session_ = false;
   bool complete_handshake_ = true;
+  bool async_path_context_creation_ = false;
 };
 
 // Used by ::testing::PrintToStringParamName().
@@ -658,8 +622,8 @@ TEST_P(QuicConnectionMigrationManagerTest,
   path_context_factory_->SetSelfAddressForNetwork(alternate_network,
                                                   alternate_self_address);
 
-  EXPECT_CALL(*session_, TimeSinceLastStreamClose())
-      .WillOnce(Return(QuicTimeDelta::Zero()));
+  EXPECT_EQ(session_->TimeSinceLastStreamClose(),
+            QuicTimeDelta::FromSeconds(1));
   EXPECT_CALL(*session_, ResetNonMigratableStreams());
   EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(true));
   EXPECT_CALL(*session_, OnMigrationToPathDone(_, true));
@@ -688,8 +652,8 @@ TEST_P(QuicConnectionMigrationManagerTest,
                                                   alternate_self_address);
   QuicSocketAddress self_address = connection_->self_address();
 
-  EXPECT_CALL(*session_, TimeSinceLastStreamClose())
-      .WillOnce(Return(QuicTimeDelta::Zero()));
+  EXPECT_EQ(session_->TimeSinceLastStreamClose(),
+            QuicTimeDelta::FromSeconds(1));
   EXPECT_CALL(*session_, ResetNonMigratableStreams());
   EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(true));
   EXPECT_CALL(*session_, OnMigrationToPathDone(_, true));
@@ -743,8 +707,8 @@ TEST_P(QuicConnectionMigrationManagerTest,
   EXPECT_EQ(migrate_back_alarm->deadline(),
             connection_helper_.GetClock()->Now());
   // Fire the alarm to migrate back to default network, starting with probing.
-  EXPECT_CALL(*session_, TimeSinceLastStreamClose())
-      .WillOnce(Return(QuicTimeDelta::Zero()));
+  EXPECT_EQ(session_->TimeSinceLastStreamClose(),
+            QuicTimeDelta::FromSeconds(2));
   QuicPathFrameBuffer path_frame_payload;
   EXPECT_CALL(*session_, PrepareForProbingOnPath(_));
   EXPECT_CALL(*connection_, SendPathChallenge(_, _, _, _, _))
@@ -770,14 +734,74 @@ TEST_P(QuicConnectionMigrationManagerTest,
                                                       self_address2);
   const QuicPathResponseFrame path_response(0, path_frame_payload);
   EXPECT_CALL(*session_, ResetNonMigratableStreams());
-  EXPECT_CALL(*session_, TimeSinceLastStreamClose())
-      .WillOnce(Return(QuicTimeDelta::Zero()));
+  EXPECT_EQ(session_->TimeSinceLastStreamClose(),
+            QuicTimeDelta::FromSeconds(2));
   EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(true));
   EXPECT_CALL(*session_, OnMigrationToPathDone(_, true));
   connection_->ReallyOnPathResponseFrame(path_response);
   EXPECT_EQ(migration_manager_->current_network(), initial_network_);
   EXPECT_EQ(connection_->self_address(), self_address2);
   EXPECT_FALSE(migrate_back_alarm->IsSet());
+}
+
+// This test verifies that when the current network is disconnected, migration
+// should be attempted immediately. Any write error during and after the path
+// context creation should be ignored.
+TEST_P(QuicConnectionMigrationManagerTest,
+       NetworkDisconnectedFollowedByWriteErrorsAsyncPathContextCreation) {
+  migrate_idle_session_ = true;
+  async_path_context_creation_ = true;
+  Initialize();
+
+  const QuicNetworkHandle alternate_network = 2;
+  session_->set_alternate_network(alternate_network);
+  EXPECT_NE(alternate_network, migration_manager_->current_network());
+  QuicSocketAddress alternate_self_address =
+      QuicSocketAddress(QuicIpAddress::Loopback6(), /*port=*/kTestPort);
+  EXPECT_NE(alternate_self_address.host(), connection_->self_address().host());
+  path_context_factory_->SetSelfAddressForNetwork(alternate_network,
+                                                  alternate_self_address);
+
+  // Receive a network disconnected signal, migration should be attempted
+  // immediately.
+  EXPECT_EQ(session_->TimeSinceLastStreamClose(),
+            QuicTimeDelta::FromSeconds(1));
+  EXPECT_CALL(*session_, ResetNonMigratableStreams());
+  migration_manager_->OnNetworkDisconnected(initial_network_);
+  EXPECT_EQ(path_context_factory_->num_creation_attempts(), 1u);
+
+  // While waiting for the path context to be created asynchronously, any write
+  // error shouldn't trigger another migration.
+  migration_manager_->MaybeStartMigrateSessionOnWriteError(/*error_code=*/111);
+  // An alarm should have been scheduled to run pending callbacks.
+  QuicAlarm* pending_callbacks_alarm =
+      QuicConnectionMigrationManagerPeer::GetRunPendingCallbacksAlarm(
+          migration_manager_);
+  EXPECT_TRUE(pending_callbacks_alarm->IsSet());
+  // Fire the alarm should not trigger another migration.
+  alarm_factory_.FireAlarm(pending_callbacks_alarm);
+  EXPECT_EQ(path_context_factory_->num_creation_attempts(), 1u);
+
+  // Another write error which will be handle asynchronously after the path
+  // context creation is finished should also be ignored.
+  migration_manager_->MaybeStartMigrateSessionOnWriteError(/*error_code=*/111);
+  // An alarm should have been scheduled to run pending callbacks.
+  pending_callbacks_alarm =
+      QuicConnectionMigrationManagerPeer::GetRunPendingCallbacksAlarm(
+          migration_manager_);
+  EXPECT_TRUE(pending_callbacks_alarm->IsSet());
+
+  // Finish creating the path context and continue the migration.
+  EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(true));
+  EXPECT_CALL(*session_, OnMigrationToPathDone(_, true));
+  path_context_factory_->FinishPendingCreation();
+  EXPECT_EQ(migration_manager_->current_network(), alternate_network);
+  EXPECT_EQ(connection_->self_address(), alternate_self_address);
+
+  // Fire the alarm to actually handle the 2nd write error, it should not
+  // trigger another migration.
+  alarm_factory_.FireAlarm(pending_callbacks_alarm);
+  EXPECT_EQ(path_context_factory_->num_creation_attempts(), 1u);
 }
 
 // This test verifies that sessions idle for longer than the configured
@@ -789,8 +813,8 @@ TEST_P(QuicConnectionMigrationManagerTest, DoNotMigrateLongIdleSession) {
   session_->set_alternate_network(alternate_network);
   EXPECT_NE(alternate_network, migration_manager_->current_network());
 
-  EXPECT_CALL(*session_, TimeSinceLastStreamClose())
-      .WillOnce(Return(migration_config_.idle_migration_period));
+  connection_helper_.GetClock()->AdvanceTime(
+      migration_config_.idle_migration_period);
   EXPECT_CALL(
       *connection_,
       CloseConnection(QUIC_NETWORK_IDLE_TIMEOUT,
@@ -816,7 +840,7 @@ TEST_P(QuicConnectionMigrationManagerTest,
 }
 
 TEST_P(QuicConnectionMigrationManagerTest,
-       ConnectionMigrationDisabledDuringHandshake) {
+       ConnectionMigrationDisabledDuringHandshakeAndNetworkDisconnected) {
   QuicConfigPeer::SetReceivedDisableConnectionMigration(&config_);
   migrate_idle_session_ = true;
   Initialize();
@@ -826,13 +850,38 @@ TEST_P(QuicConnectionMigrationManagerTest,
   EXPECT_NE(alternate_network, migration_manager_->current_network());
   EXPECT_TRUE(session_->config()->DisableConnectionMigration());
 
-  EXPECT_CALL(*session_, TimeSinceLastStreamClose())
-      .WillOnce(Return(QuicTimeDelta::Zero()));
+  EXPECT_EQ(session_->TimeSinceLastStreamClose(),
+            QuicTimeDelta::FromSeconds(1));
   EXPECT_CALL(*connection_,
               CloseConnection(QUIC_CONNECTION_MIGRATION_DISABLED_BY_CONFIG,
                               "Migration disabled by config",
                               ConnectionCloseBehavior::SILENT_CLOSE));
   migration_manager_->OnNetworkDisconnected(initial_network_);
+}
+
+TEST_P(QuicConnectionMigrationManagerTest,
+       ConnectionMigrationDisabledDuringHandshakeAndWriteError) {
+  QuicConfigPeer::SetReceivedDisableConnectionMigration(&config_);
+  migrate_idle_session_ = true;
+  Initialize();
+  EXPECT_TRUE(session_->config()->DisableConnectionMigration());
+
+  EXPECT_EQ(session_->TimeSinceLastStreamClose(),
+            QuicTimeDelta::FromSeconds(1));
+  migration_manager_->MaybeStartMigrateSessionOnWriteError(/*error_code=*/111);
+  // An alarm should have been scheduled to run pending callbacks.
+  QuicAlarm* pending_callbacks_alarm =
+      QuicConnectionMigrationManagerPeer::GetRunPendingCallbacksAlarm(
+          migration_manager_);
+  EXPECT_TRUE(pending_callbacks_alarm->IsSet());
+
+  // Run pending callbacks should actually attempt migration and close the
+  // connection since migration is disabled.
+  EXPECT_CALL(*connection_,
+              CloseConnection(QUIC_CONNECTION_MIGRATION_DISABLED_BY_CONFIG,
+                              "Unrecoverable write error",
+                              ConnectionCloseBehavior::SILENT_CLOSE));
+  alarm_factory_.FireAlarm(pending_callbacks_alarm);
 }
 
 // This test verifies after session migrates off the default network, it keeps
@@ -852,8 +901,8 @@ TEST_P(QuicConnectionMigrationManagerTest,
   path_context_factory_->SetSelfAddressForNetwork(alternate_network,
                                                   alternate_self_address);
 
-  EXPECT_CALL(*session_, TimeSinceLastStreamClose())
-      .WillOnce(Return(QuicTimeDelta::Zero()));
+  EXPECT_EQ(session_->TimeSinceLastStreamClose(),
+            QuicTimeDelta::FromSeconds(1));
   EXPECT_CALL(*session_, ResetNonMigratableStreams());
   EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(true));
   EXPECT_CALL(*session_, OnMigrationToPathDone(_, true));
@@ -875,7 +924,6 @@ TEST_P(QuicConnectionMigrationManagerTest,
   // The migrate back timer will fire. Due to default network being
   // disconnected, no attempt will be exercised to migrate back.
   connection_helper_.GetClock()->AdvanceTime(QuicTimeDelta::FromSeconds(1));
-  QuicTimeDelta time_since_last_stream_close = QuicTimeDelta::FromSeconds(1);
   EXPECT_CALL(*session_, PrepareForProbingOnPath(_)).Times(0);
   alarm_factory_.FireAlarm(migrate_back_alarm);
   EXPECT_EQ(path_context_factory_->num_creation_attempts(), 1u);
@@ -890,8 +938,6 @@ TEST_P(QuicConnectionMigrationManagerTest,
     path_context_factory_->SetSelfAddressForNetwork(
         initial_network_,
         QuicSocketAddress(QuicIpAddress::Loopback4(), kTestPort + i));
-    EXPECT_CALL(*session_, TimeSinceLastStreamClose())
-        .WillOnce(Return(time_since_last_stream_close));
     // Update CIDs.
     QuicConnectionPeer::RetirePeerIssuedConnectionIdsNoLongerOnPath(
         connection_);
@@ -932,15 +978,12 @@ TEST_P(QuicConnectionMigrationManagerTest,
     EXPECT_EQ(migrate_back_alarm->deadline(),
               connection_helper_.GetClock()->Now() + next_delay);
     connection_helper_.GetClock()->AdvanceTime(next_delay);
-    time_since_last_stream_close = time_since_last_stream_close + next_delay;
   }
 
   // The connection should have been idle for longer than the idle migration
   // period. Next attempt to migrate back will close the connection.
-  EXPECT_GT(time_since_last_stream_close,
+  EXPECT_GT(session_->TimeSinceLastStreamClose(),
             migration_config_.idle_migration_period);
-  EXPECT_CALL(*session_, TimeSinceLastStreamClose())
-      .WillOnce(Return(time_since_last_stream_close));
   //  The connection should be closed instead of attempting to migrate back.
   EXPECT_CALL(
       *connection_,
@@ -1539,6 +1582,307 @@ TEST_P(QuicConnectionMigrationManagerTest,
   EXPECT_FALSE(migrate_back_alarm->IsSet());
 }
 
+// This test verifies that when a write error occurs and there is no new
+// network, the migration manager will wait for a new network to become
+// available and then migrate to it.
+TEST_P(QuicConnectionMigrationManagerTest,
+       AsyncMigrationAttemptOnWriteErrorButNoNewNetwork) {
+  Initialize();
+
+  session_->CreateOutgoingBidirectionalStream();
+  // Migration attempt should be made asynchronously.
+  migration_manager_->MaybeStartMigrateSessionOnWriteError(123);
+  QuicAlarm* pending_callbacks_alarm =
+      QuicConnectionMigrationManagerPeer::GetRunPendingCallbacksAlarm(
+          migration_manager_);
+  EXPECT_EQ(pending_callbacks_alarm->deadline(),
+            connection_helper_.GetClock()->Now());
+
+  // No alternative network available, an alarm should have been scheduled to
+  // wait for any new network.
+  EXPECT_CALL(*session_, OnNoNewNetworkForMigration());
+  alarm_factory_.FireAlarm(pending_callbacks_alarm);
+  QuicAlarm* migration_alarm =
+      QuicConnectionMigrationManagerPeer::GetWaitForMigrationAlarm(
+          migration_manager_);
+  EXPECT_TRUE(migration_alarm->IsSet());
+
+  // Simulate a new network becomes available and migrate to it.
+  const QuicNetworkHandle alternate_network = 2;
+  session_->set_alternate_network(alternate_network);
+  EXPECT_NE(alternate_network, migration_manager_->current_network());
+  QuicSocketAddress alternate_self_address =
+      QuicSocketAddress(QuicIpAddress::Loopback6(), /*port=*/kTestPort);
+  EXPECT_NE(alternate_self_address.host(), connection_->self_address().host());
+  path_context_factory_->SetSelfAddressForNetwork(alternate_network,
+                                                  alternate_self_address);
+  EXPECT_CALL(*session_, ResetNonMigratableStreams());
+  EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(true));
+  EXPECT_CALL(*session_, OnMigrationToPathDone(_, true));
+  migration_manager_->OnNetworkConnected(alternate_network);
+  EXPECT_EQ(migration_manager_->current_network(), alternate_network);
+  EXPECT_EQ(connection_->self_address(), alternate_self_address);
+  EXPECT_EQ(path_context_factory_->num_creation_attempts(), 1u);
+  EXPECT_FALSE(migration_alarm->IsSet());
+}
+
+// This test verifies that session is not marked as going away after connection
+// migration on write error and migrate back to default network logic is applied
+// to bring the migrated session back to the default network. Migration signals
+// delivered in the following order (alternate network is always available):
+// - session on the default network encountered a write error;
+// - session successfully migrated to the non-default network;
+// - session attempts to migrate back to default network post migration;
+// - migration back to the default network is successful.
+TEST_P(QuicConnectionMigrationManagerTest,
+       AsyncMigrationOnWriteErrorAndMigrateBack) {
+  Initialize();
+  const QuicNetworkHandle alternate_network = 2;
+  session_->set_alternate_network(alternate_network);
+  EXPECT_NE(alternate_network, migration_manager_->current_network());
+  QuicSocketAddress alternate_self_address =
+      QuicSocketAddress(QuicIpAddress::Loopback6(), /*port=*/kTestPort);
+  path_context_factory_->SetSelfAddressForNetwork(alternate_network,
+                                                  alternate_self_address);
+
+  // Create a stream to make the session non-idle.
+  session_->CreateOutgoingBidirectionalStream();
+  // Migration attempt should be made asynchronously via an alarm scheduled for
+  // next event loop.
+  EXPECT_TRUE(migration_manager_->MaybeStartMigrateSessionOnWriteError(123));
+  QuicAlarm* pending_callbacks_alarm =
+      QuicConnectionMigrationManagerPeer::GetRunPendingCallbacksAlarm(
+          migration_manager_);
+  EXPECT_TRUE(pending_callbacks_alarm->IsSet());
+  QuicSocketAddress self_address = connection_->self_address();
+
+  // Migrate to alternate network immediately.
+  EXPECT_CALL(*session_, ResetNonMigratableStreams());
+  EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(true));
+  EXPECT_CALL(*session_, OnMigrationToPathDone(_, true));
+  alarm_factory_.FireAlarm(pending_callbacks_alarm);
+  EXPECT_EQ(migration_manager_->current_network(), alternate_network);
+  EXPECT_EQ(connection_->self_address(), alternate_self_address);
+  EXPECT_EQ(path_context_factory_->num_creation_attempts(), 1u);
+
+  // Update CIDs.
+  QuicConnectionPeer::RetirePeerIssuedConnectionIdsNoLongerOnPath(connection_);
+  QuicAlarm* retire_cid_alarm =
+      QuicConnectionPeer::GetRetirePeerIssuedConnectionIdAlarm(connection_);
+  EXPECT_TRUE(retire_cid_alarm->IsSet());
+  EXPECT_CALL(*connection_,
+              SendControlFrame(IsFrame(RETIRE_CONNECTION_ID_FRAME)));
+  alarm_factory_.FireAlarm(retire_cid_alarm);
+  // Receive a new CID from peer.
+  QuicNewConnectionIdFrame frame;
+  frame.connection_id = test::TestConnectionId(5678);
+  ASSERT_NE(frame.connection_id, connection_->connection_id());
+  frame.stateless_reset_token =
+      QuicUtils::GenerateStatelessResetToken(frame.connection_id);
+  frame.retire_prior_to = 1u;
+  frame.sequence_number = 2u;
+  connection_->OnNewConnectionIdFrame(frame);
+
+  // An alarm should have been scheduled to try to migrate back to the default
+  // network in 1s.
+  QuicAlarm* migrate_back_alarm =
+      QuicConnectionMigrationManagerPeer::GetMigrateBackToDefaultTimer(
+          migration_manager_);
+  EXPECT_TRUE(migrate_back_alarm->IsSet());
+  EXPECT_EQ(
+      migrate_back_alarm->deadline() - connection_helper_.GetClock()->Now(),
+      QuicTimeDelta::FromSeconds(1));
+  EXPECT_EQ(migration_manager_->default_network(), initial_network_);
+
+  QuicSocketAddress self_address2(self_address.host(), kTestPort + 1);
+  path_context_factory_->SetSelfAddressForNetwork(initial_network_,
+                                                  self_address2);
+  // Fire the alarm to migrate back to default network, starting with probing.
+  QuicPathFrameBuffer path_frame_payload;
+  EXPECT_CALL(*session_, PrepareForProbingOnPath(_));
+  EXPECT_CALL(*connection_, SendPathChallenge(_, _, _, _, _))
+      .WillOnce([&, this](const QuicPathFrameBuffer& data_buffer,
+                          const QuicSocketAddress& new_self_address,
+                          const QuicSocketAddress& new_peer_address,
+                          const QuicSocketAddress& /*effective_peer_address*/,
+                          QuicPacketWriter* writer) {
+        path_frame_payload = data_buffer;
+        EXPECT_EQ(new_peer_address, connection_->peer_address());
+        // self address and writer used for probing should be for the
+        // alternate network.
+        EXPECT_EQ(new_self_address.host(), self_address2.host());
+        EXPECT_NE(writer, connection_->writer());
+        return true;
+      });
+  connection_helper_.GetClock()->AdvanceTime(QuicTimeDelta::FromSeconds(1));
+  alarm_factory_.FireAlarm(migrate_back_alarm);
+  EXPECT_EQ(path_context_factory_->num_creation_attempts(), 2u);
+
+  // Make path validation succeeds and the connection should be migrated to the
+  // default network.
+  QuicConnectionPeer::SetLastPacketDestinationAddress(connection_,
+                                                      self_address2);
+  const QuicPathResponseFrame path_response(0, path_frame_payload);
+  EXPECT_CALL(*session_, ResetNonMigratableStreams());
+  EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(true));
+  EXPECT_CALL(*session_, OnMigrationToPathDone(_, true));
+  connection_->ReallyOnPathResponseFrame(path_response);
+  EXPECT_EQ(migration_manager_->current_network(), initial_network_);
+  EXPECT_EQ(connection_->self_address(), self_address2);
+  EXPECT_FALSE(migrate_back_alarm->IsSet());
+}
+
+TEST_P(QuicConnectionMigrationManagerTest, MigrationToServerPreferredAddress) {
+  if (!version().HasIetfQuicFrames()) {
+    return;
+  }
+  complete_handshake_ = false;
+  Initialize();
+
+  // A new port will be used to probing to the server preferred address.
+  QuicSocketAddress self_address2(QuicIpAddress::Loopback4(), kTestPort + 10);
+  path_context_factory_->SetSelfAddressForNetwork(initial_network_,
+                                                  self_address2);
+  // Upon handshake completion, probing to the server preferred address should
+  // be started.
+  EXPECT_CALL(*session_, PrepareForProbingOnPath(_));
+  QuicPathFrameBuffer path_frame_payload;
+  EXPECT_CALL(*connection_, SendPathChallenge(_, _, _, _, _))
+      .WillOnce([&, this](const QuicPathFrameBuffer& data_buffer,
+                          const QuicSocketAddress& self_address,
+                          const QuicSocketAddress& peer_address,
+                          const QuicSocketAddress& /*effective_peer_address*/,
+                          QuicPacketWriter* writer) {
+        path_frame_payload = data_buffer;
+        EXPECT_NE(peer_address, connection_->peer_address());
+        // self address and writer used for probing should be for the
+        // default network.
+        EXPECT_EQ(self_address, QuicSocketAddress(QuicIpAddress::Loopback4(),
+                                                  kTestPort + 10));
+        EXPECT_NE(writer, connection_->writer());
+        return true;
+      });
+
+  CompleteHandshake(/*received_server_preferred_address=*/true);
+
+  // Make path validation succeeds and the connection should start using the
+  // server preferred address.
+  QuicConnectionPeer::SetLastPacketDestinationAddress(connection_,
+                                                      self_address2);
+  const QuicPathResponseFrame path_response(0, path_frame_payload);
+  EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(true));
+  EXPECT_CALL(*session_, OnMigrationToPathDone(_, true));
+  connection_->ReallyOnPathResponseFrame(path_response);
+  EXPECT_EQ(migration_manager_->current_network(), initial_network_);
+  EXPECT_EQ(connection_->self_address(), self_address2);
+  EXPECT_EQ(connection_->peer_address().ToString(), "127.0.0.2:12345");
+}
+
+// This test verifies that if the max number of migrations is reached
+// on write error, the session will be closed.
+TEST_P(QuicConnectionMigrationManagerTest,
+       AsyncMigrationOnWriteErrorMaxAttemptsReached) {
+  migration_config_.max_migrations_to_non_default_network_on_write_error = 1;
+  Initialize();
+  session_->CreateOutgoingBidirectionalStream();
+
+  // Set up an alternate network and migrate to it on write error.
+  const QuicNetworkHandle alternate_network = 2;
+  session_->set_alternate_network(alternate_network);
+  EXPECT_NE(alternate_network, migration_manager_->current_network());
+  QuicSocketAddress alternate_self_address =
+      QuicSocketAddress(QuicIpAddress::Loopback6(), /*port=*/kTestPort);
+  path_context_factory_->SetSelfAddressForNetwork(alternate_network,
+                                                  alternate_self_address);
+
+  EXPECT_TRUE(migration_manager_->MaybeStartMigrateSessionOnWriteError(123));
+  QuicAlarm* pending_callbacks_alarm =
+      QuicConnectionMigrationManagerPeer::GetRunPendingCallbacksAlarm(
+          migration_manager_);
+  EXPECT_TRUE(pending_callbacks_alarm->IsSet());
+
+  EXPECT_CALL(*session_, ResetNonMigratableStreams());
+  EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(true));
+  EXPECT_CALL(*session_, OnMigrationToPathDone(_, true));
+  alarm_factory_.FireAlarm(pending_callbacks_alarm);
+  EXPECT_EQ(migration_manager_->current_network(), alternate_network);
+  EXPECT_EQ(connection_->self_address(), alternate_self_address);
+  EXPECT_EQ(path_context_factory_->num_creation_attempts(), 1u);
+
+  // An alarm should have been scheduled to try to migrate back to the default
+  // network in 1s.
+  QuicAlarm* migrate_back_alarm =
+      QuicConnectionMigrationManagerPeer::GetMigrateBackToDefaultTimer(
+          migration_manager_);
+  EXPECT_TRUE(migrate_back_alarm->IsSet());
+
+  // Update CIDs.
+  QuicConnectionPeer::RetirePeerIssuedConnectionIdsNoLongerOnPath(connection_);
+  QuicAlarm* retire_cid_alarm =
+      QuicConnectionPeer::GetRetirePeerIssuedConnectionIdAlarm(connection_);
+  EXPECT_TRUE(retire_cid_alarm->IsSet());
+  EXPECT_CALL(*connection_,
+              SendControlFrame(IsFrame(RETIRE_CONNECTION_ID_FRAME)));
+  alarm_factory_.FireAlarm(retire_cid_alarm);
+  // Receive a new CID from peer.
+  QuicNewConnectionIdFrame frame;
+  frame.connection_id = test::TestConnectionId(5678);
+  ASSERT_NE(frame.connection_id, connection_->connection_id());
+  frame.stateless_reset_token =
+      QuicUtils::GenerateStatelessResetToken(frame.connection_id);
+  frame.retire_prior_to = 1u;
+  frame.sequence_number = 2u;
+  connection_->OnNewConnectionIdFrame(frame);
+
+  // Migrate back to the default network.
+  QuicSocketAddress self_address2(QuicIpAddress::Loopback4(), kTestPort + 1);
+  path_context_factory_->SetSelfAddressForNetwork(initial_network_,
+                                                  self_address2);
+  QuicPathFrameBuffer path_frame_payload;
+  EXPECT_CALL(*session_, PrepareForProbingOnPath(_));
+  EXPECT_CALL(*connection_, SendPathChallenge(_, _, _, _, _))
+      .WillOnce([&, this](const QuicPathFrameBuffer& data_buffer,
+                          const QuicSocketAddress& new_self_address,
+                          const QuicSocketAddress& new_peer_address,
+                          const QuicSocketAddress& /*effective_peer_address*/,
+                          QuicPacketWriter* writer) {
+        path_frame_payload = data_buffer;
+        EXPECT_EQ(new_peer_address, connection_->peer_address());
+        EXPECT_EQ(new_self_address.host(), self_address2.host());
+        EXPECT_NE(writer, connection_->writer());
+        return true;
+      });
+  connection_helper_.GetClock()->AdvanceTime(QuicTimeDelta::FromSeconds(1));
+  alarm_factory_.FireAlarm(migrate_back_alarm);
+  EXPECT_EQ(path_context_factory_->num_creation_attempts(), 2u);
+
+  QuicConnectionPeer::SetLastPacketDestinationAddress(connection_,
+                                                      self_address2);
+  const QuicPathResponseFrame path_response(0, path_frame_payload);
+  EXPECT_CALL(*session_, ResetNonMigratableStreams());
+  EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(true));
+  EXPECT_CALL(*session_, OnMigrationToPathDone(_, true));
+  connection_->ReallyOnPathResponseFrame(path_response);
+  EXPECT_EQ(migration_manager_->current_network(), initial_network_);
+  EXPECT_EQ(connection_->self_address(), self_address2);
+  EXPECT_FALSE(migrate_back_alarm->IsSet());
+
+  // Max migrations on write error is reached.
+  // The migration manager should not start migration but close the connection.
+  EXPECT_TRUE(migration_manager_->MaybeStartMigrateSessionOnWriteError(456));
+  pending_callbacks_alarm =
+      QuicConnectionMigrationManagerPeer::GetRunPendingCallbacksAlarm(
+          migration_manager_);
+  EXPECT_TRUE(pending_callbacks_alarm->IsSet());
+
+  EXPECT_CALL(*connection_,
+              CloseConnection(
+                  QUIC_PACKET_WRITE_ERROR,
+                  "Too many migrations for write error for the same network",
+                  ConnectionCloseBehavior::SILENT_CLOSE));
+  alarm_factory_.FireAlarm(pending_callbacks_alarm);
+}
+
 class QuicConnectionMigrationManagerGoogleQuicTest
     : public QuicConnectionMigrationManagerTest {};
 
@@ -1551,6 +1895,7 @@ INSTANTIATE_TEST_SUITE_P(QuicConnectionMigrationManagerGoogleQuicTests,
 TEST_P(QuicConnectionMigrationManagerGoogleQuicTest, NoMigrationForGoogleQuic) {
   Initialize();
   session_->set_alternate_network(-1);
+  EXPECT_FALSE(migration_manager_->MaybeStartMigrateSessionOnWriteError(111));
   // If the session has attempted to migrate, it would have found no alternate
   // network and called OnNoNewNetworkForMigration().
   EXPECT_CALL(*session_, OnNoNewNetworkForMigration()).Times(0);
@@ -1580,8 +1925,8 @@ TEST_P(QuicSpdyClientSessionWithMigrationTest,
   path_context_factory_->SetSelfAddressForNetwork(alternate_network,
                                                   alternate_self_address);
 
-  EXPECT_CALL(*session_, TimeSinceLastStreamClose())
-      .WillOnce(Return(QuicTimeDelta::Zero()));
+  EXPECT_EQ(session_->TimeSinceLastStreamClose(),
+            QuicTimeDelta::FromSeconds(1));
   EXPECT_CALL(*session_, ResetNonMigratableStreams());
   // Session failed to prepare for migration. Migration should not be attempted.
   EXPECT_CALL(*session_, PrepareForMigrationToPath(_)).WillOnce(Return(false));
@@ -1592,6 +1937,38 @@ TEST_P(QuicSpdyClientSessionWithMigrationTest,
   migration_manager_->OnNetworkDisconnected(initial_network_);
   EXPECT_EQ(migration_manager_->current_network(), default_network_);
   EXPECT_EQ(path_context_factory_->num_creation_attempts(), 1u);
+}
+
+TEST_P(QuicSpdyClientSessionWithMigrationTest,
+       MaybeMitigateWriteErrorWithDifferentWriteStatus) {
+  migrate_idle_session_ = true;
+  Initialize();
+  // These write status and error code combination won't trigger migration.
+  EXPECT_FALSE(session_->MaybeMitigateWriteError(
+      WriteResult(WRITE_STATUS_MSG_TOO_BIG, 123)));
+  EXPECT_FALSE(session_->MaybeMitigateWriteError(
+      WriteResult(WRITE_STATUS_FAILED_TO_COALESCE_PACKET, 123)));
+  EXPECT_FALSE(session_->MaybeMitigateWriteError(
+      WriteResult(WRITE_STATUS_ERROR, kSocketErrorMsgSize)));
+
+  // `WRITE_STATUS_ERROR` with non-message-too-big error code should trigger
+  // migration.
+  EXPECT_TRUE(
+      session_->MaybeMitigateWriteError(WriteResult(WRITE_STATUS_ERROR, 123)));
+
+  QuicAlarm* pending_callbacks_alarm =
+      QuicConnectionMigrationManagerPeer::GetRunPendingCallbacksAlarm(
+          migration_manager_);
+  EXPECT_EQ(pending_callbacks_alarm->deadline(),
+            connection_helper_.GetClock()->Now());
+  // No alternative network available, an alarm should have been scheduled to
+  // wait for any new network.
+  EXPECT_CALL(*session_, OnNoNewNetworkForMigration());
+  alarm_factory_.FireAlarm(pending_callbacks_alarm);
+  QuicAlarm* migration_alarm =
+      QuicConnectionMigrationManagerPeer::GetWaitForMigrationAlarm(
+          migration_manager_);
+  EXPECT_TRUE(migration_alarm->IsSet());
 }
 
 }  // namespace quic::test

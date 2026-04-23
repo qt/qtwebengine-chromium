@@ -45,6 +45,7 @@
 #include "codec_internal.h"
 #include "decode.h"
 #include "golomb.h"
+#include "h274.h"
 #include "hevc.h"
 #include "parse.h"
 #include "hevcdec.h"
@@ -916,6 +917,7 @@ static int hls_slice_header(SliceHeader *sh, const HEVCContext *s, GetBitContext
             sh->short_term_ref_pic_set_size     = 0;
             sh->short_term_rps                  = NULL;
             sh->long_term_ref_pic_set_size      = 0;
+            sh->long_term_rps.nb_refs           = 0;
             sh->slice_temporal_mvp_enabled_flag = 0;
         }
 
@@ -2096,7 +2098,7 @@ static void hls_prediction_unit(HEVCLocalContext *lc,
                                 int log2_cb_size, int partIdx, int idx)
 {
 #define POS(c_idx, x, y)                                                          \
-    &s->cur_frame->f->data[c_idx] ?                                               \
+    s->cur_frame->f->data[c_idx] ?                                                \
     &s->cur_frame->f->data[c_idx][((y) >> sps->vshift[c_idx]) * linesize[c_idx] + \
                            (((x) >> sps->hshift[c_idx]) << sps->pixel_shift)] : NULL
     const HEVCContext *const s = lc->parent;
@@ -3498,8 +3500,7 @@ static int hevc_frame_end(HEVCContext *s, HEVCLayerContext *l)
             av_assert0(0);
             return AVERROR_BUG;
         case AV_FILM_GRAIN_PARAMS_H274:
-            ret = ff_h274_apply_film_grain(out->frame_grain, out->f,
-                                           &s->h274db, fgp);
+            ret = ff_h274_apply_film_grain(out->frame_grain, out->f, fgp);
             break;
         case AV_FILM_GRAIN_PARAMS_AV1:
             ret = ff_aom_apply_film_grain(out->frame_grain, out->f, fgp);
@@ -4108,7 +4109,7 @@ static int hevc_sei_to_context(AVCodecContext *avctx, HEVCSEI *sei)
 {
     int ret;
 
-    if (sei->tdrdi.num_ref_displays) {
+    if (sei->tdrdi.present) {
         AVBufferRef *buf;
         size_t size;
         AV3DReferenceDisplaysInfo *tdrdi = av_tdrdi_alloc(sei->tdrdi.num_ref_displays, &size);
@@ -4189,7 +4190,7 @@ static av_cold int hevc_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static void hevc_decode_flush(AVCodecContext *avctx)
+static av_cold void hevc_decode_flush(AVCodecContext *avctx)
 {
     HEVCContext *s = avctx->priv_data;
     ff_hevc_flush_dpb(s);

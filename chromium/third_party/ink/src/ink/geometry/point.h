@@ -26,14 +26,16 @@ struct Point {
   float x = 0;
   float y = 0;
 
+  // Constructs a point located at the given offset from the origin.
+  static Point FromOffset(Vec offset) { return Point{offset.x, offset.y}; }
+
   // Returns the offset vector from the origin to this point.
   Vec Offset() const { return Vec{x, y}; }
+
+  friend bool operator==(const Point&, const Point&) = default;
 };
 
 inline constexpr Point kOrigin{0, 0};
-
-bool operator==(Point lhs, Point rhs);
-bool operator!=(Point lhs, Point rhs);
 
 Vec operator-(Point lhs, Point rhs);
 
@@ -41,15 +43,15 @@ Point operator+(Point p, Vec v);
 Point operator+(Vec v, Point p);
 Point operator-(Point p, Vec v);
 
-Point &operator+=(Point &p, Vec v);
-Point &operator-=(Point &p, Vec v);
+Point& operator+=(Point& p, Vec v);
+Point& operator-=(Point& p, Vec v);
 
 namespace point_internal {
 std::string ToFormattedString(Point p);
 }  // namespace point_internal
 
 template <typename Sink>
-void AbslStringify(Sink &sink, Point p) {
+void AbslStringify(Sink& sink, Point p) {
   sink.Append(point_internal::ToFormattedString(p));
 }
 
@@ -61,11 +63,6 @@ H AbslHashValue(H h, Point p) {
 ////////////////////////////////////////////////////////////////////////////////
 // Inline function definitions
 ////////////////////////////////////////////////////////////////////////////////
-
-inline bool operator==(Point lhs, Point rhs) {
-  return lhs.x == rhs.x && lhs.y == rhs.y;
-}
-inline bool operator!=(Point lhs, Point rhs) { return !(lhs == rhs); }
 
 inline Vec operator-(Point lhs, Point rhs) {
   return Vec{.x = lhs.x - rhs.x, .y = lhs.y - rhs.y};
@@ -81,12 +78,12 @@ inline Point operator-(Point p, Vec v) {
   return {.x = p.x - v.x, .y = p.y - v.y};
 }
 
-inline Point &operator+=(Point &p, Vec v) {
+inline Point& operator+=(Point& p, Vec v) {
   p.x += v.x;
   p.y += v.y;
   return p;
 }
-inline Point &operator-=(Point &p, Vec v) {
+inline Point& operator-=(Point& p, Vec v) {
   p.x -= v.x;
   p.y -= v.y;
   return p;

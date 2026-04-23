@@ -11,7 +11,7 @@ generate_css("css_files") {
   sources = [ "syncSection.css" ]
 }
 
-devtools_module("components") {
+devtools_ui_module("components") {
   sources = [ "SyncSection.ts" ]
 
   deps = [
@@ -25,6 +25,8 @@ devtools_module("components") {
     "../../../ui/components/helpers:bundle",
     "../../../ui/components/settings:bundle",
     "../../../ui/components/tooltips:bundle",
+    "../../../ui/i18n:bundle",
+    "../../../ui/legacy:bundle",
     "../../../ui/lit:bundle",
     "../../../ui/visual_logging:bundle",
   ]
@@ -44,7 +46,7 @@ devtools_entrypoint("bundle") {
   ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [ "SyncSection.test.ts" ]

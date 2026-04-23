@@ -21,14 +21,18 @@
 #include "src/dsp/cpu.h"
 #include "src/utils/bit_reader_inl_utils.h"
 #include "src/utils/bit_reader_utils.h"
+#include "src/utils/bounds_safety.h"
 #include "src/utils/endian_inl_utils.h"
 #include "src/utils/utils.h"
 #include "src/webp/types.h"
 
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
+
 //------------------------------------------------------------------------------
 // VP8BitReader
 
-void VP8BitReaderSetBuffer(VP8BitReader* const br, const uint8_t* const start,
+void VP8BitReaderSetBuffer(VP8BitReader* const br,
+                           const uint8_t* const WEBP_COUNTED_BY(size) start,
                            size_t size) {
   assert(start != NULL);
   br->buf = start;
@@ -37,7 +41,8 @@ void VP8BitReaderSetBuffer(VP8BitReader* const br, const uint8_t* const start,
       (size >= sizeof(lbit_t)) ? start + size - sizeof(lbit_t) + 1 : start;
 }
 
-void VP8InitBitReader(VP8BitReader* const br, const uint8_t* const start,
+void VP8InitBitReader(VP8BitReader* const br,
+                      const uint8_t* const WEBP_COUNTED_BY(size) start,
                       size_t size) {
   assert(br != NULL);
   assert(start != NULL);
@@ -84,6 +89,7 @@ void VP8LoadFinalBytes(VP8BitReader* const br) {
   if (br->buf < br->buf_end) {
     br->bits += 8;
     br->value = (bit_t)(*br->buf++) | (br->value << 8);
+    WEBP_SELF_ASSIGN(br->buf_end);
   } else if (!br->eof) {
     br->value <<= 8;
     br->bits += 8;
@@ -127,7 +133,8 @@ static const uint32_t kBitMask[VP8L_MAX_NUM_BIT_READ + 1] = {
     0x003fff, 0x007fff, 0x00ffff, 0x01ffff, 0x03ffff, 0x07ffff, 0x0fffff,
     0x1fffff, 0x3fffff, 0x7fffff, 0xffffff};
 
-void VP8LInitBitReader(VP8LBitReader* const br, const uint8_t* const start,
+void VP8LInitBitReader(VP8LBitReader* const br,
+                       const uint8_t* const WEBP_COUNTED_BY(length) start,
                        size_t length) {
   size_t i;
   vp8l_val_t value = 0;
@@ -135,8 +142,8 @@ void VP8LInitBitReader(VP8LBitReader* const br, const uint8_t* const start,
   assert(start != NULL);
   assert(length < 0xfffffff8u);  // can't happen with a RIFF chunk.
 
+  br->buf = start;
   br->len = length;
-  br->val = 0;
   br->bit_pos = 0;
   br->eos = 0;
 
@@ -148,10 +155,10 @@ void VP8LInitBitReader(VP8LBitReader* const br, const uint8_t* const start,
   }
   br->val = value;
   br->pos = length;
-  br->buf = start;
 }
 
-void VP8LBitReaderSetBuffer(VP8LBitReader* const br, const uint8_t* const buf,
+void VP8LBitReaderSetBuffer(VP8LBitReader* const br,
+                            const uint8_t* const WEBP_COUNTED_BY(len) buf,
                             size_t len) {
   assert(br != NULL);
   assert(buf != NULL);
@@ -258,7 +265,7 @@ static void PrintBitTraces(void) {
 void BitTrace(const struct VP8BitReader* const br, const char label[]) {
   int i, pos;
   if (!init_done) {
-    memset(kLabels, 0, sizeof(kLabels));
+    WEBP_UNSAFE_MEMSET(kLabels, 0, sizeof(kLabels));
     atexit(PrintBitTraces);
     buf_start = br->buf;
     init_done = 1;

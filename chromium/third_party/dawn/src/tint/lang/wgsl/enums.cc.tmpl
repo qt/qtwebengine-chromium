@@ -157,6 +157,9 @@ bool IsSubgroupMatrix(BuiltinFn f) {
         case BuiltinFn::kSubgroupMatrixStore:
         case BuiltinFn::kSubgroupMatrixMultiply:
         case BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
+        case BuiltinFn::kSubgroupMatrixScalarAdd:
+        case BuiltinFn::kSubgroupMatrixScalarSubtract:
+        case BuiltinFn::kSubgroupMatrixScalarMultiply:
             return true;
         default:
             return false;

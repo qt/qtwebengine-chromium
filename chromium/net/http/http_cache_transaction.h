@@ -354,7 +354,11 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
     // The cache entry was not rejected because the request was loaded only from
     // cache.
     kNoRejectionLoadOnlyFromCache = 5,
-    kMaxValue = kNoRejectionLoadOnlyFromCache,
+    // The cache entry should be rejected, but handled as not rejected because
+    // kHttpCacheSkipUnusableEntry feature is disabled. This is intended to
+    // measure the performance impact of the in-memory unusable flag.
+    kNoRejectionHintDisabled = 6,
+    kMaxValue = kNoRejectionHintDisabled,
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/net/enums.xml:HttpCacheEntryRejectionStatus)
 
@@ -705,7 +709,6 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   std::string method_;
   RequestPriority priority_;
   NetLogWithSource net_log_;
-  HttpRequestHeaders request_headers_copy_;
   // If extra_headers specified a "if-modified-since" or "if-none-match",
   // `external_validation_` contains the value of those headers.
   std::optional<http_cache_util::ValidationHeaders> external_validation_;

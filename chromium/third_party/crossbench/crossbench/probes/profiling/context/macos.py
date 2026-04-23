@@ -21,7 +21,6 @@ if TYPE_CHECKING:
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
-
 _MAC_TRACE_TEMPLATE_PATH: Final[pth.LocalPath] = pth.LocalPath(
     __file__).parents[1] / "time-profile.tracetemplate"
 
@@ -71,7 +70,8 @@ class MacOSProfilingContext(PosixProfilingContext):
     if self.probe.target == TargetMode.SYSTEM_WIDE:
       self._start_xctrace()
     elif self.probe.target == TargetMode.RENDERER_PROCESS_ONLY:
-      self._start_xctrace(self.renderer_pid_tid[0])
+      renderer_pid, _ = self.renderer_pid_tid
+      self._start_xctrace(renderer_pid)
 
   def stop(self) -> None:
     # Needs to be SIGINT for xctrace, terminate won't work.
@@ -82,10 +82,8 @@ class MacOSProfilingContext(PosixProfilingContext):
   def teardown(self) -> ProbeResult:
     self.stop_process()
     trace_xml_path = self._export_trace_xml()
-    return self.browser_result(traces=(
-        self.result_path,
-        trace_xml_path,
-    ))
+    return self.browser_result(
+        trace=(self.result_path,), perfetto=(trace_xml_path,))
 
   def _export_trace_xml(self) -> pth.AnyPath:
     trace_xml_path = self.result_path.with_name("profile.trace.xml")

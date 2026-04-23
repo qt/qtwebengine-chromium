@@ -12,8 +12,8 @@ import logging
 import pathlib
 import re
 import shlex
-from typing import (TYPE_CHECKING, Any, Final, Generator, Iterator, Mapping,
-                    Optional, Set, Type)
+from typing import TYPE_CHECKING, Any, Final, Generator, Iterator, Mapping, \
+    Optional, Set, Type
 
 from typing_extensions import override
 
@@ -138,7 +138,6 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       return len(logical_cores)
     return 0
 
-
   @functools.lru_cache(maxsize=1)
   @override
   def cpu_details(self) -> dict[str, Any]:
@@ -211,14 +210,12 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     except ValueError:
       return dt.timedelta()
 
-
   @override
   def app_version(self, app_or_bin: pth.AnyPathLike) -> str:
     app_or_bin = self.path(app_or_bin)
     if not self.exists(app_or_bin):
       raise ValueError(f"Binary {app_or_bin} does not exist.")
     return self.sh_stdout(app_or_bin, "--version")
-
 
   @override
   def path(self, path: pth.AnyPathLike) -> pth.AnyPath:
@@ -555,6 +552,7 @@ class RemotePosixPlatform(RemotePlatformMixin, PosixPlatform):
             stderr: ProcessIo = None,
             stdin: ProcessIo = None,
             env: Optional[Mapping[str, str]] = None,
+            cwd: Optional[pth.AnyPath] = None,
             quiet: bool = False) -> subprocess.Popen:
     del shell
     assert not (self.is_android and env), "ADB does not support env vars"
@@ -569,11 +567,15 @@ class RemotePosixPlatform(RemotePlatformMixin, PosixPlatform):
         logging.debug("REMOTE SHELL: %s", shell_cmd)
       # Run with shell=True since we use '>' and use shlex.join.
       host_platform_cmd = self.build_shell_cmd(  # noqa: S604
-          shell_cmd, shell=True)
+          shell_cmd, shell=True, env=env, cwd=cwd)
 
       remote_popen = RemotePopen(
-          self, host_platform_cmd, bufsize=bufsize, stdout=stdout,
-          stderr=stderr, stdin=stdin)
+          self,
+          host_platform_cmd,
+          bufsize=bufsize,
+          stdout=stdout,
+          stderr=stderr,
+          stdin=stdin)
       # tmp_pid_file might not have been immediately flushed:
       for _ in WaitRange(0.01, timeout=2).wait_with_backoff():
         if pid_str := self.cat(temp_pid_file):

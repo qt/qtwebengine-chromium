@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     default_visibility = ["//visibility:private"],
@@ -30,6 +31,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":jni.lds",
+        ":jni_onload",
         "//ink/color/internal/jni:native",
         "//ink/geometry/internal/jni:native",
         "//ink/jni/internal:jni_defines",
@@ -43,7 +45,6 @@ cc_binary(
 cc_library(
     name = "jni_onload",
     srcs = ["jni_onload.cc"],
-    visibility = ["//ink:__subpackages__"],
     deps = [
         "//ink/jni/internal:jni_jvm_interface",
         "@com_google_absl//absl/log:absl_check",

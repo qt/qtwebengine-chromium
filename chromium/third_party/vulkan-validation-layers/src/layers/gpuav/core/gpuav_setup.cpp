@@ -28,6 +28,7 @@
 #include "gpuav/shaders/gpuav_error_header.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "utils/dispatch_utils.h"
+#include "utils/math_utils.h"
 
 namespace gpuav {
 
@@ -45,39 +46,39 @@ void Validator::Created(vvl::CommandBuffer &cb_state) {
 void Validator::Created(vvl::Queue &queue) { queue.SetSubState(container_type, std::make_unique<QueueSubState>(*this, queue)); }
 
 void Validator::Created(vvl::Image &obj) {
-    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    DescriptorHeap &desc_heap = shared_resources_cache.Get<DescriptorHeap>();
     obj.SetSubState(container_type, std::make_unique<ImageSubState>(obj, desc_heap));
 }
 void Validator::Created(vvl::ImageView &obj) {
-    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    DescriptorHeap &desc_heap = shared_resources_cache.Get<DescriptorHeap>();
     obj.SetSubState(container_type, std::make_unique<ImageViewSubState>(obj, desc_heap));
 }
 void Validator::Created(vvl::Buffer &obj) {
-    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    DescriptorHeap &desc_heap = shared_resources_cache.Get<DescriptorHeap>();
     obj.SetSubState(container_type, std::make_unique<BufferSubState>(obj, desc_heap));
 }
 void Validator::Created(vvl::BufferView &obj) {
-    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    DescriptorHeap &desc_heap = shared_resources_cache.Get<DescriptorHeap>();
     obj.SetSubState(container_type, std::make_unique<BufferViewSubState>(obj, desc_heap));
 }
 void Validator::Created(vvl::Sampler &obj) {
-    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    DescriptorHeap &desc_heap = shared_resources_cache.Get<DescriptorHeap>();
     obj.SetSubState(container_type, std::make_unique<SamplerSubState>(obj, desc_heap));
 }
 void Validator::Created(vvl::AccelerationStructureNV &obj) {
-    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    DescriptorHeap &desc_heap = shared_resources_cache.Get<DescriptorHeap>();
     obj.SetSubState(container_type, std::make_unique<AccelerationStructureNVSubState>(obj, desc_heap));
 }
 void Validator::Created(vvl::AccelerationStructureKHR &obj) {
-    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    DescriptorHeap &desc_heap = shared_resources_cache.Get<DescriptorHeap>();
     obj.SetSubState(container_type, std::make_unique<AccelerationStructureKHRSubState>(obj, desc_heap));
 }
 void Validator::Created(vvl::Tensor &obj) {
-    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    DescriptorHeap &desc_heap = shared_resources_cache.Get<DescriptorHeap>();
     obj.SetSubState(container_type, std::make_unique<TensorSubState>(obj, desc_heap));
 }
 void Validator::Created(vvl::TensorView &obj) {
-    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    DescriptorHeap &desc_heap = shared_resources_cache.Get<DescriptorHeap>();
     obj.SetSubState(container_type, std::make_unique<TensorViewSubState>(obj, desc_heap));
 }
 void Validator::Created(vvl::ShaderObject &obj) { obj.SetSubState(container_type, std::make_unique<ShaderObjectSubState>(obj)); }
@@ -221,7 +222,7 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
         {glsl::kBindingInstDescriptorIndexingOOB, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
         // Buffer holding buffer device addresses
         {glsl::kBindingInstBufferDeviceAddress, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
-        // Buffer holding action command index in command buffer
+        // Buffer holding action command index in command buffer (a global buffer is used)
         {glsl::kBindingInstActionIndex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_ALL, nullptr},
         // Buffer holding a resource index from the per command buffer command resources list
         {glsl::kBindingInstCmdResourceIndex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_ALL, nullptr},
@@ -230,6 +231,7 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
         // Vertex attribute fetch limits
         {glsl::kBindingInstVertexAttributeFetchLimits, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
     };
+    assert(instrumentation_bindings_.size() == glsl::kTotalBindings);
 
     // TODO - Now that GPU-AV and DebugPrintf are merged, we should just have a single FinishDeviceSetup if possible (or at least
     // better divide what belongs where as it is easy to mess)
@@ -278,22 +280,40 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
 
     // Create command indices buffer
     {
-        indices_buffer_alignment_ = sizeof(uint32_t) * static_cast<uint32_t>(phys_dev_props.limits.minStorageBufferOffsetAlignment);
+        const uint32_t index_size = sizeof(uint32_t);
+        indices_buffer_alignment_ = Align(index_size, (uint32_t)phys_dev_props.limits.minStorageBufferOffsetAlignment);
+
         VkBufferCreateInfo buffer_info = vku::InitStructHelper();
         buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
         buffer_info.size = cst::indices_count * indices_buffer_alignment_;
         VmaAllocationCreateInfo alloc_info = {};
         alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         alloc_info.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        const bool success = indices_buffer_.Create(&buffer_info, &alloc_info);
+        const bool success = global_indices_buffer_.Create(&buffer_info, &alloc_info);
         if (!success) {
             return;
         }
 
-        auto indices_ptr = (uint32_t *)indices_buffer_.GetMappedPtr();
+        uint32_t stride = indices_buffer_alignment_ / sizeof(uint32_t);
+        uint32_t *indices_ptr = (uint32_t *)global_indices_buffer_.GetMappedPtr();
+        for (uint32_t i = 0; i < cst::indices_count; ++i) {
+            const uint32_t offset = i * stride;
+            indices_ptr[offset] = i;
+        }
+    }
 
-        for (uint32_t i = 0; i < buffer_info.size / sizeof(uint32_t); ++i) {
-            indices_ptr[i] = i / (indices_buffer_alignment_ / sizeof(uint32_t));
+    // Create our own Descriptor Buffer we will bind if the user decides to use it
+    if (IsExtEnabled(extensions.vk_ext_descriptor_buffer)) {
+        VkBufferCreateInfo buffer_info = vku::InitStructHelper();
+        buffer_info.size = phys_dev_ext_props.descriptor_buffer_props.storageBufferDescriptorSize * cst::total_internal_descriptors;
+        buffer_info.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        VmaAllocationCreateInfo alloc_info = {};
+        alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        alloc_info.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        const bool success = global_resource_descriptor_buffer_.Create(&buffer_info, &alloc_info);
+        if (!success) {
+            InternalVmaError(device, result, "Failed to create an internal resource Descriptor Buffer.");
+            return;
         }
     }
 }
@@ -313,7 +333,7 @@ struct BufferDeviceAddress : public Setting {
     bool HasRequiredFeatures(const DeviceFeatures &features) { return features.shaderInt64; }
     void Disable(GpuAVSettings &settings) { settings.shader_instrumentation.buffer_device_address = false; }
     std::string DisableMessage() {
-        return "Buffer Device Address validation option was enabled, but the shaderInt64 feature was not supported [Disabling "
+        return "Buffer Device Address validation option was enabled, but the shaderInt64 feature are not supported. [Disabling "
                "gpuav_buffer_address_oob]";
     }
 };
@@ -323,7 +343,7 @@ struct RayQuery : public Setting {
     bool HasRequiredFeatures(const DeviceFeatures &features) { return features.rayQuery; }
     void Disable(GpuAVSettings &settings) { settings.shader_instrumentation.ray_query = false; }
     std::string DisableMessage() {
-        return "Ray Query validation option was enabled, but the rayQuery feature was not supported [Disabling "
+        return "Ray Query validation option was enabled, but the rayQuery feature are not supported. [Disabling "
                "gpuav_validate_ray_query]";
     }
 };
@@ -333,7 +353,7 @@ struct BufferCopies : public Setting {
     bool HasRequiredFeatures(const DeviceFeatures &features) { return features.storageBuffer8BitAccess; }
     void Disable(GpuAVSettings &settings) { settings.validate_buffer_copies = false; }
     std::string DisableMessage() {
-        return "Buffer copies option was enabled, but the storageBuffer8BitAccess feature was not supported [Disabling "
+        return "Buffer copies option was enabled, but the storageBuffer8BitAccess feature are not supported. [Disabling "
                "gpuav_buffer_copies]";
     }
 };
@@ -342,8 +362,20 @@ struct BufferContent : public Setting {
     bool HasRequiredFeatures(const DeviceFeatures &features) { return features.shaderInt64; }
     void Disable(GpuAVSettings &settings) { settings.SetBufferValidationEnabled(false); }
     std::string DisableMessage() {
-        return "Buffer content validation option was enabled, but the shaderInt64 feature was not supported [Disabling "
+        return "Buffer content validation option was enabled, but the shaderInt64 feature are not supported. [Disabling "
                "gpuav_buffers_validation]";
+    }
+};
+
+struct AccelerationStructuresBuild : public Setting {
+    bool IsEnabled(const GpuAVSettings &settings) { return settings.validate_acceleration_structures_builds; }
+    // Validation shader branches on a push constant value to fetch different descriptors
+    bool HasRequiredFeatures(const DeviceFeatures &features) { return features.shaderInt64 && features.runtimeDescriptorArray; }
+    void Disable(GpuAVSettings &settings) { settings.validate_acceleration_structures_builds = false; }
+    std::string DisableMessage() {
+        return "Acceleration structure builds validation option was enabled, but the shaderInt64 or runtimeDescriptorArray features are not "
+               "supported. [Disabling "
+               "gpuav_acceleration_structures_builds]";
     }
 };
 }  // namespace setting
@@ -355,33 +387,37 @@ void Validator::InitSettings(const Location &loc) {
     setting::RayQuery ray_query;
     setting::BufferCopies buffer_copies;
     setting::BufferContent buffer_content;
-    std::array<setting::Setting *, 4> all_settings = {&buffer_device_address, &ray_query, &buffer_copies, &buffer_content};
+    setting::AccelerationStructuresBuild as_builds;
+    std::array<setting::Setting *, 5> all_settings = {&buffer_device_address, &ray_query, &buffer_copies, &buffer_content,
+                                                      &as_builds};
 
     for (auto &setting_object : all_settings) {
         if (setting_object->IsEnabled(gpuav_settings) && !setting_object->HasRequiredFeatures(modified_features)) {
             setting_object->Disable(gpuav_settings);
-            InternalWarning(device, loc, setting_object->DisableMessage().c_str());
+            AdjustmentWarning(device, loc, setting_object->DisableMessage().c_str());
         }
     }
 
     if (IsExtEnabled(extensions.vk_ext_descriptor_buffer) && !gpuav_settings.descriptor_buffer_override) {
-        InternalWarning(
+        // "can" work, just need more testing now
+        AdjustmentWarning(
             device, loc,
             "VK_EXT_descriptor_buffer is enabled, but GPU-AV does not currently support validation of descriptor buffers. "
-            "[Disabling all shader instrumentation checks]"
+            "[Disabling all shader instrumentation checks] (this does NOT include debug print)"
             "\nThere is a VK_LAYER_GPUAV_DESCRIPTOR_BUFFER_OVERRIDE that can be set to bypass this if you know you are not going "
             "to use descriptor buffers.");
-        // Because of VUs like VUID-VkPipelineLayoutCreateInfo-pSetLayouts-08008 we currently would need to rework the entire shader
-        // instrumentation logic
         gpuav_settings.DisableShaderInstrumentationAndOptions();
 
-        if (gpuav_settings.debug_printf_enabled) {
-            InternalWarning(device, loc,
-                            "VK_EXT_descriptor_buffer is enabled, but DebugPrintf uses a normal descriptor and currently can't "
-                            "exist with descriptor buffers. [Disabling debug_printf]"
-                            "\nThere is a VK_LAYER_GPUAV_DESCRIPTOR_BUFFER_OVERRIDE that can be set to bypass this if you know you "
-                            "are not going to use descriptor buffers.");
-            gpuav_settings.debug_printf_enabled = false;
+        if (phys_dev_ext_props.descriptor_buffer_props.maxResourceDescriptorBufferBindings == 1) {
+            if (gpuav_settings.debug_printf_enabled) {
+                AdjustmentWarning(
+                    device, loc,
+                    "VK_EXT_descriptor_buffer is enabled with a device that only supports maxResourceDescriptorBufferBindings of "
+                    "1\nNeed to disable DebugPrintf as we currently don't have a fallback path. [Disabling debug_printf]"
+                    "\nThere is a VK_LAYER_GPUAV_DESCRIPTOR_BUFFER_OVERRIDE that can be set to bypass this if you know you "
+                    "are not going to use descriptor buffers.");
+                gpuav_settings.debug_printf_enabled = false;
+            }
         }
     }
 
@@ -413,6 +449,24 @@ void Validator::InternalVmaError(LogObjectList objlist, VkResult result, const c
     // This prevents need to check "if (aborted)" (which is awful when we easily forget to check somewhere and the user gets spammed
     // with errors making it hard to see the first error with the real source of the problem).
     dispatch_device_->ReleaseValidationObject(LayerObjectTypeGpuAssisted);
+}
+
+// On machines where all memory types have both DEVICE_LOCAL and HOST_VISIBLE we need to let VMA know there will be host access,
+// otherwise it will assert https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/issues/515
+bool Validator::IsAllDeviceLocalMappable() const {
+    VkPhysicalDeviceMemoryProperties mem_props;
+    DispatchGetPhysicalDeviceMemoryProperties(physical_device, &mem_props);
+
+    for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+        const VkMemoryPropertyFlags property_flags = mem_props.memoryTypes[i].propertyFlags;
+        const bool has_device_local = (property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0;
+        const bool has_host_visible = (property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
+        if (has_device_local && !has_host_visible) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 // Things like DescriptorHeap are singleton class that lives in GPU-AV, but are used when state tracking adds/destroy new resources

@@ -13,12 +13,14 @@ from crossbench.plt.remote import RemotePlatformMixin
 if TYPE_CHECKING:
   import subprocess
 
+  from crossbench import path as pth
   from crossbench.plt.base import Platform
   from crossbench.plt.types import CmdArg, ListCmdArgs, ProcessIo
 
 
 class SshPortManager(PortManager):
   pass
+
 
 class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
 
@@ -55,7 +57,11 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
     return True
 
   @abc.abstractmethod
-  def build_ssh_cmd(self, *args: CmdArg, shell: bool = False) -> ListCmdArgs:
+  def build_ssh_cmd(self,
+                    *args: CmdArg,
+                    shell: bool = False,
+                    env: Optional[Mapping[str, str]] = None,
+                    cwd: Optional[pth.AnyPath] = None) -> ListCmdArgs:
     pass
 
   def sh_stdout_bytes(self,
@@ -64,10 +70,12 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
                       quiet: bool = False,
                       stdin: ProcessIo = None,
                       env: Optional[Mapping[str, str]] = None,
+                      cwd: Optional[pth.AnyPath] = None,
                       check: bool = True) -> bytes:
-    ssh_cmd: ListCmdArgs = self.build_ssh_cmd(*args, shell=shell)
+    ssh_cmd: ListCmdArgs = self.build_ssh_cmd(
+        *args, shell=shell, env=env, cwd=cwd)
     return self._host_platform.sh_stdout_bytes(
-        *ssh_cmd, shell=False, quiet=quiet, stdin=stdin, env=env, check=check)
+        *ssh_cmd, shell=False, quiet=quiet, stdin=stdin, check=check)
 
   def sh(self,
          *args: CmdArg,
@@ -77,9 +85,11 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
          stderr: ProcessIo = None,
          stdin: ProcessIo = None,
          env: Optional[Mapping[str, str]] = None,
+         cwd: Optional[pth.AnyPath] = None,
          quiet: bool = False,
          check: bool = True) -> subprocess.CompletedProcess:
-    ssh_cmd: ListCmdArgs = self.build_ssh_cmd(*args, shell=shell)
+    ssh_cmd: ListCmdArgs = self.build_ssh_cmd(
+        *args, shell=shell, env=env, cwd=cwd)
     return self._host_platform.sh(
         *ssh_cmd,
         shell=shell,
@@ -87,7 +97,6 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
         stdout=stdout,
         stderr=stderr,
         stdin=stdin,
-        env=env,
         quiet=quiet,
         check=check)
 
@@ -99,8 +108,10 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
             stderr: ProcessIo = None,
             stdin: ProcessIo = None,
             env: Optional[Mapping[str, str]] = None,
+            cwd: Optional[pth.AnyPath] = None,
             quiet: bool = False) -> subprocess.Popen:
-    ssh_cmd: ListCmdArgs = self.build_ssh_cmd(*args, shell=shell)
+    ssh_cmd: ListCmdArgs = self.build_ssh_cmd(
+        *args, shell=shell, env=env, cwd=cwd)
     return self._host_platform.popen(
         *ssh_cmd,
         shell=False,
@@ -108,5 +119,4 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
         stdout=stdout,
         stderr=stderr,
         stdin=stdin,
-        env=env,
         quiet=quiet)

@@ -16,7 +16,10 @@
 #include <assert.h>
 #include <string.h>  // for memset()
 
+#include "src/utils/bounds_safety.h"
 #include "src/utils/utils.h"
+
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
 
 #ifdef WEBP_USE_THREAD
 
@@ -24,18 +27,12 @@
 
 #include <windows.h>
 typedef HANDLE pthread_t;
-typedef CRITICAL_SECTION pthread_mutex_t;
 
-#if _WIN32_WINNT >= 0x0600  // Windows Vista / Server 2008 or greater
-#define USE_WINDOWS_CONDITION_VARIABLE
+#if _WIN32_WINNT < 0x0600
+#error _WIN32_WINNT must target Windows Vista / Server 2008 or newer.
+#endif
+typedef SRWLOCK pthread_mutex_t;
 typedef CONDITION_VARIABLE pthread_cond_t;
-#else
-typedef struct {
-  HANDLE waiting_sem;
-  HANDLE received_sem;
-  HANDLE signal_event;
-} pthread_cond_t;
-#endif  // _WIN32_WINNT >= 0x600
 
 #ifndef WINAPI_FAMILY_PARTITION
 #define WINAPI_PARTITION_DESKTOP 1
@@ -69,11 +66,6 @@ typedef struct {
 #define THREADFN unsigned int __stdcall
 #define THREAD_RETURN(val) (unsigned int)((DWORD_PTR)val)
 
-#if _WIN32_WINNT >= 0x0501  // Windows XP or greater
-#define WaitForSingleObject(obj, timeout) \
-  WaitForSingleObjectEx(obj, timeout, /*bAlertable=*/FALSE)
-#endif
-
 static int pthread_create(pthread_t* const thread, const void* attr,
                           unsigned int(__stdcall* start)(void*), void* arg) {
   (void)attr;
@@ -101,92 +93,45 @@ static int pthread_join(pthread_t thread, void** value_ptr) {
 // Mutex
 static int pthread_mutex_init(pthread_mutex_t* const mutex, void* mutexattr) {
   (void)mutexattr;
-#if _WIN32_WINNT >= 0x0600  // Windows Vista / Server 2008 or greater
-  InitializeCriticalSectionEx(mutex, /*dwSpinCount=*/0, /*Flags=*/0);
-#else
-  InitializeCriticalSection(mutex);
-#endif
+  InitializeSRWLock(mutex);
   return 0;
 }
 
 static int pthread_mutex_lock(pthread_mutex_t* const mutex) {
-  EnterCriticalSection(mutex);
+  AcquireSRWLockExclusive(mutex);
   return 0;
 }
 
 static int pthread_mutex_unlock(pthread_mutex_t* const mutex) {
-  LeaveCriticalSection(mutex);
+  ReleaseSRWLockExclusive(mutex);
   return 0;
 }
 
 static int pthread_mutex_destroy(pthread_mutex_t* const mutex) {
-  DeleteCriticalSection(mutex);
+  (void)mutex;
   return 0;
 }
 
 // Condition
 static int pthread_cond_destroy(pthread_cond_t* const condition) {
-  int ok = 1;
-#ifdef USE_WINDOWS_CONDITION_VARIABLE
   (void)condition;
-#else
-  ok &= (CloseHandle(condition->waiting_sem) != 0);
-  ok &= (CloseHandle(condition->received_sem) != 0);
-  ok &= (CloseHandle(condition->signal_event) != 0);
-#endif
-  return !ok;
+  return 0;
 }
 
 static int pthread_cond_init(pthread_cond_t* const condition, void* cond_attr) {
   (void)cond_attr;
-#ifdef USE_WINDOWS_CONDITION_VARIABLE
   InitializeConditionVariable(condition);
-#else
-  condition->waiting_sem = CreateSemaphore(NULL, 0, 1, NULL);
-  condition->received_sem = CreateSemaphore(NULL, 0, 1, NULL);
-  condition->signal_event = CreateEvent(NULL, FALSE, FALSE, NULL);
-  if (condition->waiting_sem == NULL || condition->received_sem == NULL ||
-      condition->signal_event == NULL) {
-    pthread_cond_destroy(condition);
-    return 1;
-  }
-#endif
   return 0;
 }
 
 static int pthread_cond_signal(pthread_cond_t* const condition) {
-  int ok = 1;
-#ifdef USE_WINDOWS_CONDITION_VARIABLE
   WakeConditionVariable(condition);
-#else
-  if (WaitForSingleObject(condition->waiting_sem, 0) == WAIT_OBJECT_0) {
-    // a thread is waiting in pthread_cond_wait: allow it to be notified
-    ok = SetEvent(condition->signal_event);
-    // wait until the event is consumed so the signaler cannot consume
-    // the event via its own pthread_cond_wait.
-    ok &= (WaitForSingleObject(condition->received_sem, INFINITE) !=
-           WAIT_OBJECT_0);
-  }
-#endif
-  return !ok;
+  return 0;
 }
 
 static int pthread_cond_wait(pthread_cond_t* const condition,
                              pthread_mutex_t* const mutex) {
-  int ok;
-#ifdef USE_WINDOWS_CONDITION_VARIABLE
-  ok = SleepConditionVariableCS(condition, mutex, INFINITE);
-#else
-  // note that there is a consumer available so the signal isn't dropped in
-  // pthread_cond_signal
-  if (!ReleaseSemaphore(condition->waiting_sem, 1, NULL)) return 1;
-  // now unlock the mutex so pthread_cond_signal may be issued
-  pthread_mutex_unlock(mutex);
-  ok =
-      (WaitForSingleObject(condition->signal_event, INFINITE) == WAIT_OBJECT_0);
-  ok &= ReleaseSemaphore(condition->received_sem, 1, NULL);
-  pthread_mutex_lock(mutex);
-#endif
+  const int ok = SleepConditionVariableSRW(condition, mutex, INFINITE, 0);
   return !ok;
 }
 
@@ -257,7 +202,7 @@ static void ChangeState(WebPWorker* const worker, WebPWorkerStatus new_status) {
 //------------------------------------------------------------------------------
 
 static void Init(WebPWorker* const worker) {
-  memset(worker, 0, sizeof(*worker));
+  WEBP_UNSAFE_MEMSET(worker, 0, sizeof(*worker));
   worker->status = NOT_OK;
 }
 

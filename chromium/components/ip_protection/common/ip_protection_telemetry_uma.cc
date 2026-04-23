@@ -14,6 +14,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "components/ip_protection/common/ip_protection_data_types.h"
 #include "components/ip_protection/common/ip_protection_telemetry.h"
@@ -242,42 +243,6 @@ void IpProtectionTelemetryUma::MdlMatchesTime(base::TimeDelta duration) {
       "NetworkService.MaskedDomainList.MatchesTime", duration);
 }
 
-void IpProtectionTelemetryUma::GetProbabilisticRevealTokensComplete(
-    TryGetProbabilisticRevealTokensStatus status,
-    base::TimeDelta duration) {
-  base::UmaHistogramEnumeration(
-      "NetworkService.IpProtection.GetProbabilisticRevealTokensResult", status);
-
-  if (status == TryGetProbabilisticRevealTokensStatus::kSuccess) {
-    base::UmaHistogramTimes(
-        "NetworkService.IpProtection.ProbabilisticRevealTokensRequestTime",
-        duration);
-  }
-}
-
-void IpProtectionTelemetryUma::IsProbabilisticRevealTokenAvailable(
-    bool is_initial_request,
-    bool is_token_available) {
-  if (is_initial_request) {
-    base::UmaHistogramBoolean(
-        "NetworkService.IpProtection."
-        "IsProbabilisticRevealTokenAvailableOnInitialRequest",
-        is_token_available);
-  } else {
-    base::UmaHistogramBoolean(
-        "NetworkService.IpProtection."
-        "IsProbabilisticRevealTokenAvailableOnSubsequentRequest",
-        is_token_available);
-  }
-}
-
-void IpProtectionTelemetryUma::ProbabilisticRevealTokenRandomizationTime(
-    base::TimeDelta duration) {
-  base::UmaHistogramTimes(
-      "NetworkService.IpProtection.ProbabilisticRevealTokenRandomizationTime",
-      duration);
-}
-
 void IpProtectionTelemetryUma::QuicProxiesFailed(int after_requests) {
   base::UmaHistogramCounts1000("NetworkService.IpProtection.QuicProxiesFailed",
                                after_requests);
@@ -305,6 +270,26 @@ void IpProtectionTelemetryUma::RecordTokenCountEvent(
 void IpProtectionTelemetryUma::TokenDemandDuringBatchGeneration(int count) {
   base::UmaHistogramCounts100(
       "NetworkService.IpProtection.TokenDemandDuringBatchGeneration", count);
+}
+
+void IpProtectionTelemetryUma::RecordStreamCreationAttemptedMetrics(
+    const net::ProxyChain& proxy_chain,
+    base::TimeDelta duration,
+    base::optional_ref<int> net_error) {
+  CHECK(proxy_chain.is_for_ip_protection());
+  const std::string suffix = proxy_chain.GetHistogramSuffix();
+
+  base::UmaHistogramTimes(
+      base::StrCat({"Net.IpProtection.StreamCreation",
+                    net_error.has_value() ? "ErrorTime." : "SuccessTime.",
+                    suffix}),
+      duration);
+
+  if (net_error.has_value()) {
+    base::UmaHistogramSparse(
+        base::StrCat({"Net.IpProtection.StreamCreationError.", suffix}),
+        net_error.value());
+  }
 }
 
 }  // namespace ip_protection

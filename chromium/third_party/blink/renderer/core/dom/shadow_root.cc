@@ -27,6 +27,8 @@
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/renderer/bindings/core/v8/module_request.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_css_style_sheet.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_observable_array_css_style_sheet.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_shadow_root_mode.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_slot_assignment_mode.h"
@@ -42,14 +44,21 @@
 #include "third_party/blink/renderer/core/dom/id_target_observer_registry.h"
 #include "third_party/blink/renderer/core/dom/slot_assignment.h"
 #include "third_party/blink/renderer/core/dom/slot_assignment_engine.h"
+#include "third_party/blink/renderer/core/dom/space_split_string.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/dom/whitespace_attacher.h"
 #include "third_party/blink/renderer/core/editing/serializers/serialization.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_registry.h"
 #include "third_party/blink/renderer/core/html/html_slot_element.h"
+#include "third_party/blink/renderer/core/loader/modulescript/module_script_creation_params.h"
+#include "third_party/blink/renderer/core/loader/modulescript/module_script_fetch_request.h"
 #include "third_party/blink/renderer/core/sanitizer/sanitizer_api.h"
+#include "third_party/blink/renderer/core/script/modulator.h"
+#include "third_party/blink/renderer/core/script/module_script.h"
+#include "third_party/blink/renderer/core/script/value_wrapper_synthetic_module_script.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_types_util.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -302,6 +311,70 @@ V8SlotAssignmentMode ShadowRoot::slotAssignment() const {
   return V8SlotAssignmentMode(IsManualSlotting()
                                   ? V8SlotAssignmentMode::Enum::kManual
                                   : V8SlotAssignmentMode::Enum::kNamed);
+}
+
+HeapVector<Member<CSSStyleSheet>>
+ShadowRoot::GetFetchedStyleSheetsFromModuleMap(
+    const AtomicString& shadowrootadoptedstylesheets_attribute_value) {
+  CHECK(RuntimeEnabledFeatures::DeclarativeCSSModulesEnabled());
+
+  LocalDOMWindow* window = GetDocument().domWindow();
+  Modulator* modulator =
+      Modulator::From(ToScriptStateForMainWorld(window->GetFrame()));
+  v8::Isolate* isolate = modulator->GetScriptState()->GetIsolate();
+  CHECK(isolate);
+
+  // Several operations below require a HandleScope.
+  v8::HandleScope handle_scope(isolate);
+
+  HeapVector<Member<CSSStyleSheet>> sheets;
+  SpaceSplitString specifiers(shadowrootadoptedstylesheets_attribute_value);
+  sheets.ReserveInitialCapacity(specifiers.size());
+
+  for (const auto& specifier : specifiers) {
+    // Resolve the specifier to ensure import maps are accounted for.
+    const KURL resolved_url = modulator->ResolveModuleSpecifier(
+        specifier, window->BaseURL(), /*failure_reason=*/nullptr);
+    if (resolved_url.IsValid()) {
+      // Synchronously fetch dataURI's. These will be processed immediately and
+      // available synchronously per https://fetch.spec.whatwg.org/#data-urls.
+      // We don't need to do this for Blob URL's generated from a <style
+      // type="module"> because they have already been added to the module map.
+      // TODO(crbug.com/448174611) - should RequestContextType and
+      // RequestDestination be script or style?
+      if (resolved_url.ProtocolIsData()) {
+        ScriptFetchOptions options;
+        ModuleScriptFetchRequest module_request(
+            resolved_url, ModuleType::kCSS,
+            mojom::blink::RequestContextType::SCRIPT,
+            network::mojom::RequestDestination::kScript, options,
+            Referrer::ClientReferrerString(), TextPosition::MinimumPosition(),
+            ModuleImportPhase::kEvaluation);
+        modulator->FetchSingle(module_request, window->Fetcher(),
+                               ModuleGraphLevel::kTopLevelModuleFetch,
+                               ModuleScriptCustomFetchType::kNone, nullptr);
+      }
+
+      const ModuleScript* module_script =
+          modulator->GetFetchedModuleScript(resolved_url, ModuleType::kCSS);
+      if (module_script) {
+        CSSStyleSheet* sheet = V8CSSStyleSheet::ToWrappable(
+            isolate,
+            static_cast<const ValueWrapperSyntheticModuleScript*>(module_script)
+                ->GetExport(isolate));
+        sheets.push_back(*sheet);
+      }
+    }
+  }
+  return sheets;
+}
+
+void ShadowRoot::ProcessAdoptedStylesheetAttribute(
+    AtomicString value) {
+  CHECK(RuntimeEnabledFeatures::DeclarativeCSSModulesEnabled());
+  if (!value.empty()) {
+    AppendAdoptedStyleSheets(GetFetchedStyleSheetsFromModuleMap(value));
+  }
 }
 
 void ShadowRoot::SetNeedsAssignmentRecalc() {

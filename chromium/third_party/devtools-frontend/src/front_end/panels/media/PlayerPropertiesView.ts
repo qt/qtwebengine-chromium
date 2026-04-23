@@ -1,7 +1,7 @@
 // Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -143,7 +143,7 @@ const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined
 
 type TabData = Record<string, string|object>;
 
-// Keep this enum in sync with panels/media/base/media_log_properties.h
+/** Keep this enum in sync with panels/media/base/media_log_properties.h **/
 export const enum PlayerPropertyKeys {
   RESOLUTION = 'kResolution',
   TOTAL_BYTES = 'kTotalBytes',

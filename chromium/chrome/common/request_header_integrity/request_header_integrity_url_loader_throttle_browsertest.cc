@@ -15,7 +15,6 @@
 #include "build/branding_buildflags.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/network_session_configurator/common/network_switches.h"
 #include "content/public/test/browser_test.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -53,26 +52,17 @@ class RequestHeaderIntegrityURLLoaderThrottleBrowserTest
 
   ~RequestHeaderIntegrityURLLoaderThrottleBrowserTest() override = default;
 
-  void SetUp() override {
-    ASSERT_TRUE(server().InitializeAndListen());
-    InProcessBrowserTest::SetUp();
-  }
-
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
-
     host_resolver()->AddRule("*", "127.0.0.1");
 
     server().RegisterRequestHandler(base::BindRepeating(
         &RequestHeaderIntegrityURLLoaderThrottleBrowserTest::RequestHandler,
         base::Unretained(this)));
 
+    server().SetCertHostnames({"www.google.com", "www.chromium.org"});
+    ASSERT_TRUE(server().InitializeAndListen());
     server().StartAcceptingConnections();
-  }
-
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    // Required since the test server has no real certs to present.
-    command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
   }
 
  protected:
@@ -171,7 +161,7 @@ class RequestHeaderIntegrityURLLoaderThrottleBrowserTest
 
     auto http_response =
         std::make_unique<net::test_server::BasicHttpResponse>();
-    if (request.relative_url == GetGoogleBeaconPageUrl().path()) {
+    if (request.relative_url == GetGoogleBeaconPageUrl().GetPath()) {
       http_response->set_code(net::HTTP_OK);
       http_response->set_content(R"(
         <script type="text/javascript">
@@ -179,13 +169,14 @@ class RequestHeaderIntegrityURLLoaderThrottleBrowserTest
         </script>
         )");
       http_response->set_content_type("text/html");
-    } else if (request.relative_url == GetGoogleScriptPageUrl().path()) {
+    } else if (request.relative_url == GetGoogleScriptPageUrl().GetPath()) {
       http_response->set_code(net::HTTP_OK);
       http_response->set_content(R"(
         <script src='/bootstrap.js' async defer></script>
         )");
       http_response->set_content_type("text/html");
-    } else if (request.relative_url == GetGoogleScriptBootstrapUrl().path()) {
+    } else if (request.relative_url ==
+               GetGoogleScriptBootstrapUrl().GetPath()) {
       http_response->set_code(net::HTTP_OK);
       http_response->set_content(R"(
         (function() {
@@ -201,25 +192,26 @@ class RequestHeaderIntegrityURLLoaderThrottleBrowserTest
         )");
       http_response->set_content_type("text/javascript");
     } else if (request.relative_url ==
-               GetGoogleScriptDynamicScriptUrl().path()) {
+               GetGoogleScriptDynamicScriptUrl().GetPath()) {
       http_response->set_code(net::HTTP_OK);
       http_response->set_content(R"(
         // Placeholder Script
         )");
       http_response->set_content_type("text/javascript");
     } else if (request.relative_url ==
-               GetChromiumToChromiumRedirectUrl().path()) {
+               GetChromiumToChromiumRedirectUrl().GetPath()) {
       http_response->set_code(net::HTTP_FOUND);
       http_response->AddCustomHeader("Location", GetChromiumUrl().spec());
     } else if (request.relative_url ==
-               GetChromiumToGoogleRedirectUrl().path()) {
+               GetChromiumToGoogleRedirectUrl().GetPath()) {
       http_response->set_code(net::HTTP_FOUND);
       http_response->AddCustomHeader("Location", GetGoogleUrl().spec());
     } else if (request.relative_url ==
-               GetGoogleToChromiumRedirectUrl().path()) {
+               GetGoogleToChromiumRedirectUrl().GetPath()) {
       http_response->set_code(net::HTTP_FOUND);
       http_response->AddCustomHeader("Location", GetChromiumUrl().spec());
-    } else if (request.relative_url == GetGoogleToGoogleRedirectUrl().path()) {
+    } else if (request.relative_url ==
+               GetGoogleToGoogleRedirectUrl().GetPath()) {
       http_response->set_code(net::HTTP_FOUND);
       http_response->AddCustomHeader("Location", GetGoogleUrl().spec());
     } else {

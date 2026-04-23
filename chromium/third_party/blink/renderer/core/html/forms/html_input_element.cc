@@ -2492,11 +2492,14 @@ void HTMLInputElement::SetFocused(bool is_focused,
     SetUserHasEditedTheFieldAndBlurred();
   }
 
-  if (RuntimeEnabledFeatures::RadioKeyboardFocusableOptimizeEnabled()) {
-    if (RadioButtonGroupScope* scope = GetRadioButtonGroupScope()) {
-      scope->UpdateLastFocusedState(this);
-    }
+  if (RadioButtonGroupScope* scope = GetRadioButtonGroupScope()) {
+    scope->UpdateLastFocusedState(this);
   }
+}
+
+bool HTMLInputElement::SupportsBaseAppearanceInternal(
+    BaseAppearanceValue value) const {
+  return input_type_->SupportsBaseAppearance(value);
 }
 
 }  // namespace blink

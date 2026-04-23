@@ -23,6 +23,9 @@ try_.defaults.set(
     os = os.LINUX_DEFAULT,
     compilator_cores = 32,
     execution_timeout = try_constants.DEFAULT_EXECUTION_TIMEOUT,
+    experiments = {
+        "chromium_tests.resultdb_module": 100,
+    },
     orchestrator_cores = 4,
     service_account = try_constants.DEFAULT_SERVICE_ACCOUNT,
     # crbug.com/372192123 - downloading with "minimum" strategy doesn't work
@@ -610,6 +613,21 @@ try_.builder(
 )
 
 try_.builder(
+    name = "android-canary-x64-fyi-rel",
+    mirrors = [
+        "ci/android-canary-x64-fyi-rel",
+    ],
+    gn_args = gn_args.config(
+        configs = [
+            "ci/android-canary-x64-fyi-rel",
+            "release_try_builder",
+        ],
+    ),
+    contact_team_email = "clank-engprod@google.com",
+    siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
+)
+
+try_.builder(
     name = "android-clobber-rel",
     mirrors = [
         "ci/android-archive-rel",
@@ -634,10 +652,10 @@ try_.builder(
         configs = [
             "android_builder_without_codecs",
             "android_with_static_analysis",
+            "arm",
             "cronet_android",
             "debug_static_builder",
             "remoteexec",
-            "arm_no_neon",
             "release_java",
         ],
     ),
@@ -669,10 +687,10 @@ try_.builder(
         configs = [
             "android_builder_without_codecs",
             "android_with_static_analysis",
+            "arm",
             "cronet_android",
             "release_try_builder",
             "remoteexec",
-            "arm_no_neon",
         ],
     ),
     builderless = not settings.is_main,

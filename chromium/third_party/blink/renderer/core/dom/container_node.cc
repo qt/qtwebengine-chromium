@@ -66,6 +66,7 @@
 #include "third_party/blink/renderer/core/html/html_dialog_element.h"
 #include "third_party/blink/renderer/core/html/html_document.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
+#include "third_party/blink/renderer/core/html/html_stream.h"
 #include "third_party/blink/renderer/core/html/html_tag_collection.h"
 #include "third_party/blink/renderer/core/html/html_template_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
@@ -184,6 +185,23 @@ void ContainerNode::ParserTakeAllChildrenFrom(ContainerNode& old_parent) {
     // infinite.
     old_parent.ParserRemoveChild(*child);
     ParserAppendChild(child);
+  }
+}
+
+void ContainerNode::ParserRemoveAllChildren() {
+  while (Node* child = firstChild()) {
+    ParserRemoveChild(*child);
+  }
+}
+
+void ContainerNode::ParserReplaceChild(Node& new_child, Node& old_child) {
+  CHECK_EQ(old_child.parentNode(), this);
+  Node* next = old_child.nextSibling();
+  ParserRemoveChild(old_child);
+  if (next) {
+    ParserInsertBefore(&new_child, *next);
+  } else {
+    ParserAppendChild(&new_child);
   }
 }
 
@@ -1908,6 +1926,13 @@ WritableStream* ContainerNode::patchAfter(ScriptState* script_state,
                                           ExceptionState& exception_state) {
   return patchBetween(script_state, a, nullptr, exception_state);
 }
+
+WritableStream* ContainerNode::streamAppendHTMLUnsafe(
+    ScriptState* script_state,
+    ExceptionState& exception_state) {
+  return HTMLStream::Create(script_state, this, exception_state);
+}
+
 WritableStream* ContainerNode::patchBefore(ScriptState* script_state,
                                            Node* b,
                                            ExceptionState& exception_state) {

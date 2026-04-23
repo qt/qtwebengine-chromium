@@ -25,6 +25,8 @@
 #include "api/crypto/crypto_options.h"
 #include "api/dtls_transport_interface.h"
 #include "api/environment/environment.h"
+#include "api/ice_transport_interface.h"
+#include "api/make_ref_counted.h"
 #include "api/rtc_error.h"
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "api/scoped_refptr.h"
@@ -57,6 +59,16 @@
 #include "rtc_base/thread.h"
 
 namespace webrtc {
+namespace {
+// Workaround for external dependency.
+class SimpleIceTransport : public IceTransportInterface {
+ public:
+  explicit SimpleIceTransport(IceTransportInternal* internal)
+      : internal_(internal) {}
+  IceTransportInternal* internal() override { return internal_; }
+  IceTransportInternal* const internal_;
+};
+}  // namespace
 
 template <typename Sink>
 void AbslStringify(Sink& sink, DtlsTransportState state) {
@@ -134,6 +146,17 @@ StreamResult StreamInterfaceChannel::Read(ArrayView<uint8_t> buffer,
   return SR_SUCCESS;
 }
 
+void StreamInterfaceChannel::SetNextPacketOptions(
+    const AsyncSocketPacketOptions& options) {
+  RTC_DCHECK_RUN_ON(&callback_sequence_);
+  next_packet_options_ = options;
+}
+
+void StreamInterfaceChannel::ClearNextPacketOptions() {
+  RTC_DCHECK_RUN_ON(&callback_sequence_);
+  next_packet_options_.reset();
+}
+
 StreamResult StreamInterfaceChannel::Write(ArrayView<const uint8_t> data,
                                            size_t& written,
                                            int& /* error */) {
@@ -146,6 +169,10 @@ StreamResult StreamInterfaceChannel::Write(ArrayView<const uint8_t> data,
   }
 
   AsyncSocketPacketOptions packet_options;
+  if (next_packet_options_) {
+    packet_options = std::move(*next_packet_options_);
+    next_packet_options_.reset();
+  }
   ice_transport_->SendPacket(reinterpret_cast<const char*>(data.data()),
                              data.size(), packet_options);
   written = data.size();
@@ -161,18 +188,25 @@ bool StreamInterfaceChannel::Flush() {
   return false;
 }
 
-bool StreamInterfaceChannel::OnPacketReceived(const char* data, size_t size) {
+bool StreamInterfaceChannel::OnPacketReceived(ArrayView<const uint8_t> data) {
   RTC_DCHECK_RUN_ON(&callback_sequence_);
   if (packets_.size() > 0) {
     RTC_LOG(LS_WARNING) << "Packet already in queue.";
   }
-  bool ret = packets_.WriteBack(data, size, nullptr);
+  bool ret = packets_.WriteBack(reinterpret_cast<const char*>(data.data()),
+                                data.size(), nullptr);
   if (!ret) {
     // Somehow we received another packet before the SSLStreamAdapter read the
     // previous one out of our temporary buffer. In this case, we'll log an
     // error and still signal the read event, hoping that it will read the
     // packet currently in packets_.
     RTC_LOG(LS_ERROR) << "Failed to write packet to queue.";
+  }
+  // If we use DTLS-in-STUN, the controller should be informed about incoming
+  // packets so it can acknowledge them.  Note that this packet may have been
+  // emitted by the controller.
+  if (dtls_stun_piggyback_controller_) {
+    dtls_stun_piggyback_controller_->ReportDtlsPacket(data);
   }
   FireEvent(SE_READ, 0);
   return ret;
@@ -191,12 +225,14 @@ void StreamInterfaceChannel::Close() {
 
 DtlsTransportInternalImpl::DtlsTransportInternalImpl(
     const Environment& env,
-    IceTransportInternal* ice_transport,
+    scoped_refptr<IceTransportInterface> ice_transport,
     const CryptoOptions& crypto_options,
-    SSLProtocolVersion max_version)
-    : env_(env),
-      component_(ice_transport->component()),
-      ice_transport_(ice_transport),
+    SSLProtocolVersion max_version,
+    SslStreamFactory ssl_stream_factory)
+    : ssl_stream_factory_(ssl_stream_factory),
+      env_(env),
+      component_(ice_transport->internal()->component()),
+      ice_transport_(std::move(ice_transport)),
       downward_(nullptr),
       srtp_ciphers_(crypto_options.GetSupportedDtlsSrtpCryptoSuites()),
       ephemeral_key_exchange_cipher_groups_(
@@ -216,11 +252,22 @@ DtlsTransportInternalImpl::DtlsTransportInternalImpl(
   dtls_in_stun_ = env_.field_trials().IsEnabled("WebRTC-IceHandshakeDtls");
 }
 
+DtlsTransportInternalImpl::DtlsTransportInternalImpl(
+    const Environment& env,
+    IceTransportInternal* ice_transport,
+    const CryptoOptions& crypto_options,
+    SSLProtocolVersion max_version,
+    SslStreamFactory ssl_stream_factory)
+    : DtlsTransportInternalImpl(
+          env,
+          make_ref_counted<SimpleIceTransport>(ice_transport),
+          crypto_options,
+          max_version,
+          ssl_stream_factory) {}
+
 DtlsTransportInternalImpl::~DtlsTransportInternalImpl() {
-  if (ice_transport_) {
-    ice_transport_->ResetDtlsStunPiggybackCallbacks();
-    ice_transport_->DeregisterReceivedPacketCallback(this);
-  }
+  ice_transport()->ResetDtlsStunPiggybackCallbacks();
+  ice_transport()->DeregisterReceivedPacketCallback(this);
 }
 
 DtlsTransportState DtlsTransportInternalImpl::dtls_state() const {
@@ -228,7 +275,7 @@ DtlsTransportState DtlsTransportInternalImpl::dtls_state() const {
 }
 
 const std::string& DtlsTransportInternalImpl::transport_name() const {
-  return ice_transport_->transport_name();
+  return ice_transport_->internal()->transport_name();
 }
 
 int DtlsTransportInternalImpl::component() const {
@@ -264,8 +311,8 @@ bool DtlsTransportInternalImpl::SetLocalCertificate(
   return true;
 }
 
-scoped_refptr<RTCCertificate> DtlsTransportInternalImpl::GetLocalCertificate()
-    const {
+scoped_refptr<RTCCertificate>
+DtlsTransportInternalImpl::GetLocalCertificateForTesting() const {
   return local_certificate_;
 }
 
@@ -429,19 +476,26 @@ bool DtlsTransportInternalImpl::ExportSrtpKeyingMaterial(
 bool DtlsTransportInternalImpl::SetupDtls() {
   RTC_DCHECK(dtls_role_);
 
-  dtls_in_stun_ = ice_transport_->config().dtls_handshake_in_stun;
+  dtls_in_stun_ = ice_transport()->config().dtls_handshake_in_stun;
   {
-    auto downward = std::make_unique<StreamInterfaceChannel>(ice_transport_);
+    auto downward = std::make_unique<StreamInterfaceChannel>(ice_transport());
     StreamInterfaceChannel* downward_ptr = downward.get();
 
     if (dtls_in_stun_) {
       downward_ptr->SetDtlsStunPiggybackController(
           &dtls_stun_piggyback_controller_);
     }
-    dtls_ = SSLStreamAdapter::Create(
-        std::move(downward),
-        [this](SSLHandshakeError error) { OnDtlsHandshakeError(error); },
-        &env_.field_trials());
+    if (ssl_stream_factory_) {
+      dtls_ = ssl_stream_factory_(
+          std::move(downward),
+          [this](SSLHandshakeError error) { OnDtlsHandshakeError(error); },
+          &env_.field_trials());
+    } else {
+      dtls_ = SSLStreamAdapter::Create(
+          std::move(downward),
+          [this](SSLHandshakeError error) { OnDtlsHandshakeError(error); },
+          &env_.field_trials());
+    }
     if (!dtls_) {
       RTC_LOG(LS_ERROR) << ToString() << ": Failed to create DTLS adapter.";
       return false;
@@ -532,7 +586,7 @@ int DtlsTransportInternalImpl::SendPacket(
     int flags) {
   if (!dtls_active_) {
     // Not doing DTLS.
-    return ice_transport_->SendPacket(data, size, options);
+    return ice_transport()->SendPacket(data, size, options);
   }
 
   switch (dtls_state()) {
@@ -551,15 +605,29 @@ int DtlsTransportInternalImpl::SendPacket(
           return -1;
         }
 
-        return ice_transport_->SendPacket(data, size, options);
+        return ice_transport()->SendPacket(data, size, options);
       } else {
+        downward_->SetNextPacketOptions(options);
         size_t written;
         int error;
-        return (dtls_->WriteAll(
-                    MakeArrayView(reinterpret_cast<const uint8_t*>(data), size),
-                    written, error) == SR_SUCCESS)
-                   ? static_cast<int>(size)
-                   : -1;
+        // TODO(jonaso): Change the dtls_ interface so that it instead returns
+        // an encrypted packet, rather than calling the
+        // StreamInterfaceChannel::Write function. Such change would remove the
+        // need of the next_packet_options_.
+        StreamResult result = dtls_->Write(
+            MakeArrayView(reinterpret_cast<const uint8_t*>(data), size),
+            written, error);
+        if (result != SR_SUCCESS) {
+          // Explicitly clear the next packet options, in case no packet was
+          // sent.
+          downward_->ClearNextPacketOptions();
+          return -1;
+        }
+        // For DTLS, a SSL_Write operation will either send the entire data in a
+        // single record, or fail the entire send. See for example the
+        // documentation on SSL_write in boringssl/src/include/openssl/ssl.h
+        RTC_CHECK(written == size);
+        return static_cast<int>(size);
       }
     case DtlsTransportState::kFailed:
       // Can't send anything when we're failed.
@@ -580,7 +648,7 @@ int DtlsTransportInternalImpl::SendPacket(
 }
 
 IceTransportInternal* DtlsTransportInternalImpl::ice_transport() {
-  return ice_transport_;
+  return ice_transport_->internal();
 }
 
 bool DtlsTransportInternalImpl::IsDtlsConnected() {
@@ -596,47 +664,52 @@ bool DtlsTransportInternalImpl::writable() const {
 }
 
 int DtlsTransportInternalImpl::GetError() {
-  return ice_transport_->GetError();
+  return ice_transport()->GetError();
 }
 
 std::optional<NetworkRoute> DtlsTransportInternalImpl::network_route() const {
-  return ice_transport_->network_route();
+  return ice_transport_->internal()->network_route();
 }
 
 bool DtlsTransportInternalImpl::GetOption(Socket::Option opt, int* value) {
-  return ice_transport_->GetOption(opt, value);
+  return ice_transport()->GetOption(opt, value);
 }
 
 int DtlsTransportInternalImpl::SetOption(Socket::Option opt, int value) {
-  return ice_transport_->SetOption(opt, value);
+  return ice_transport()->SetOption(opt, value);
 }
 
 void DtlsTransportInternalImpl::ConnectToIceTransport() {
-  RTC_DCHECK(ice_transport_);
-  ice_transport_->SubscribeWritableState(
+  ice_transport()->SubscribeWritableState(
       this, [this](PacketTransportInternal* transport) {
         OnWritableState(transport);
       });
-  ice_transport_->RegisterReceivedPacketCallback(
+  ice_transport()->RegisterReceivedPacketCallback(
       this,
       [&](PacketTransportInternal* transport, const ReceivedIpPacket& packet) {
         OnReadPacket(transport, packet, /* piggybacked= */ false);
       });
 
-  ice_transport_->SignalSentPacket.connect(
-      this, &DtlsTransportInternalImpl::OnSentPacket);
-  ice_transport_->SubscribeReadyToSend(
+  ice_transport()->SubscribeSentPacket(
+      this,
+      [this, flag = safety_flag_.flag()](PacketTransportInternal* transport,
+                                         const SentPacketInfo& info) {
+        if (flag->alive()) {
+          OnSentPacket(transport, info);
+        }
+      });
+  ice_transport()->SubscribeReadyToSend(
       this,
       [this](PacketTransportInternal* transport) { OnReadyToSend(transport); });
-  ice_transport_->SubscribeReceivingState(
+  ice_transport()->SubscribeReceivingState(
       [this](PacketTransportInternal* transport) {
         OnReceivingState(transport);
       });
-  ice_transport_->SubscribeNetworkRouteChanged(
+  ice_transport()->SubscribeNetworkRouteChanged(
       this, [this](std::optional<NetworkRoute> network_route) {
         OnNetworkRouteChanged(network_route);
       });
-  ice_transport_->SetDtlsStunPiggybackCallbacks(DtlsStunPiggybackCallbacks(
+  ice_transport()->SetDtlsStunPiggybackCallbacks(DtlsStunPiggybackCallbacks(
       [&](auto stun_message_type) {
         std::optional<absl::string_view> data;
         std::optional<std::vector<uint32_t>> ack;
@@ -666,7 +739,7 @@ void DtlsTransportInternalImpl::ConnectToIceTransport() {
     if (!IsDtlsPacket(packet.payload())) {
       return;
     }
-    OnReadPacket(ice_transport_, packet, /* piggybacked= */ true);
+    OnReadPacket(ice_transport(), packet, /* piggybacked= */ true);
   });
 }
 
@@ -683,15 +756,15 @@ void DtlsTransportInternalImpl::ConnectToIceTransport() {
 void DtlsTransportInternalImpl::OnWritableState(
     PacketTransportInternal* transport) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  RTC_DCHECK(transport == ice_transport_);
+  RTC_DCHECK(transport == ice_transport());
   RTC_LOG(LS_INFO) << ToString() << ": ice_transport writable state changed to "
-                   << ice_transport_->writable()
+                   << ice_transport()->writable()
                    << " dtls_state: " << dtls_state();
 
   if (!ice_has_been_writable_) {
     // Ice starts as not writable. The first time this method is called, it
     // should be when ice change to writable = true.
-    RTC_DCHECK(ice_transport_->writable());
+    RTC_DCHECK(ice_transport()->writable());
   }
   bool first_ice_writable = !ice_has_been_writable_;
   ice_has_been_writable_ = true;
@@ -699,7 +772,7 @@ void DtlsTransportInternalImpl::OnWritableState(
   if (!dtls_active_) {
     // Not doing DTLS.
     // Note: SignalWritableState fired by set_writable.
-    set_writable(ice_transport_->writable());
+    set_writable(ice_transport()->writable());
     return;
   }
 
@@ -715,7 +788,7 @@ void DtlsTransportInternalImpl::OnWritableState(
         ConfigureHandshakeTimeout();
         PeriodicRetransmitDtlsPacketUntilDtlsConnected();
       }
-      set_writable(ice_transport_->writable());
+      set_writable(ice_transport()->writable());
       break;
     case DtlsTransportState::kConnecting:
       if (dtls_in_stun_ && dtls_) {
@@ -747,14 +820,14 @@ void DtlsTransportInternalImpl::OnWritableState(
 void DtlsTransportInternalImpl::OnReceivingState(
     PacketTransportInternal* transport) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  RTC_DCHECK(transport == ice_transport_);
+  RTC_DCHECK(transport == ice_transport());
   RTC_LOG(LS_VERBOSE) << ToString()
                       << ": ice_transport "
                          "receiving state changed to "
-                      << ice_transport_->receiving();
+                      << ice_transport()->receiving();
   if (!dtls_active_ || dtls_state() == DtlsTransportState::kConnected) {
     // Note: SignalReceivingState fired by set_receiving.
-    set_receiving(ice_transport_->receiving());
+    set_receiving(ice_transport()->receiving());
   }
 }
 
@@ -762,7 +835,7 @@ void DtlsTransportInternalImpl::OnReadPacket(PacketTransportInternal* transport,
                                              const ReceivedIpPacket& packet,
                                              bool piggybacked) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  RTC_DCHECK(transport == ice_transport_);
+  RTC_DCHECK(transport == ice_transport());
 
   if (!dtls_active_) {
     // Not doing DTLS.
@@ -846,7 +919,7 @@ void DtlsTransportInternalImpl::OnSentPacket(
     PacketTransportInternal* /* transport */,
     const SentPacketInfo& sent_packet) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  SignalSentPacket(this, sent_packet);
+  NotifySentPacket(this, sent_packet);
 }
 
 void DtlsTransportInternalImpl::OnReadyToSend(
@@ -932,10 +1005,9 @@ void DtlsTransportInternalImpl::OnNetworkRouteChanged(
 }
 
 void DtlsTransportInternalImpl::MaybeStartDtls() {
-  RTC_DCHECK(ice_transport_);
   //  When adding the DTLS handshake in STUN we want to call StartSSL even
   //  before the ICE transport is ready.
-  if (dtls_ && (ice_transport_->writable() || dtls_in_stun_)) {
+  if (dtls_ && (ice_transport()->writable() || dtls_in_stun_)) {
     ConfigureHandshakeTimeout();
 
     if (dtls_->StartSSL()) {
@@ -985,8 +1057,7 @@ bool DtlsTransportInternalImpl::HandleDtlsPacket(
     ArrayView<const uint8_t> payload) {
   // Pass to the StreamInterfaceChannel which ends up being passed to the DTLS
   // stack.
-  return downward_->OnPacketReceived(
-      reinterpret_cast<const char*>(payload.data()), payload.size());
+  return downward_->OnPacketReceived(payload);
 }
 
 void DtlsTransportInternalImpl::set_receiving(bool receiving) {
@@ -1046,7 +1117,7 @@ int ComputeRetransmissionTimeout(int rtt_ms) {
 
 void DtlsTransportInternalImpl::ConfigureHandshakeTimeout() {
   RTC_DCHECK(dtls_);
-  std::optional<int> rtt_ms = ice_transport_->GetRttEstimate();
+  std::optional<int> rtt_ms = ice_transport()->GetRttEstimate();
   if (rtt_ms) {
     // Limit the timeout to a reasonable range in case the ICE RTT takes
     // extreme values.
@@ -1077,14 +1148,12 @@ void DtlsTransportInternalImpl::SetPiggybackDtlsDataCallback(
 
 bool DtlsTransportInternalImpl::IsDtlsPiggybackSupportedByPeer() {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  RTC_DCHECK(ice_transport_);
   return dtls_in_stun_ && (dtls_stun_piggyback_controller_.state() !=
                            DtlsStunPiggybackController::State::OFF);
 }
 
 bool DtlsTransportInternalImpl::WasDtlsCompletedByPiggybacking() {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  RTC_DCHECK(ice_transport_);
   return dtls_in_stun_ && (dtls_stun_piggyback_controller_.state() ==
                                DtlsStunPiggybackController::State::COMPLETE ||
                            dtls_stun_piggyback_controller_.state() ==
@@ -1105,7 +1174,7 @@ void DtlsTransportInternalImpl::
     // pending_periodic_retransmit_dtls_packet_.
     return;
   }
-  if (ice_transport_->writable() && dtls_in_stun_) {
+  if (ice_transport()->writable() && dtls_in_stun_) {
     auto data_to_send = dtls_stun_piggyback_controller_.GetDataToPiggyback(
         STUN_BINDING_INDICATION);
     if (!data_to_send) {
@@ -1113,11 +1182,12 @@ void DtlsTransportInternalImpl::
       return;
     }
     AsyncSocketPacketOptions packet_options;
-    ice_transport_->SendPacket(data_to_send->data(), data_to_send->size(),
-                               packet_options, /* flags= */ 0);
+    ice_transport()->SendPacket(data_to_send->data(), data_to_send->size(),
+                                packet_options,
+                                /* flags= */ 0);
   }
 
-  const auto rtt_ms = ice_transport_->GetRttEstimate().value_or(100);
+  const auto rtt_ms = ice_transport()->GetRttEstimate().value_or(100);
   const int delay_ms = ComputeRetransmissionTimeout(rtt_ms);
 
   // Set pending before we post task.

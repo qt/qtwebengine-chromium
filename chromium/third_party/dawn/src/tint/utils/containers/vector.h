@@ -34,6 +34,7 @@
 #include <atomic>
 #include <iterator>
 #include <new>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -827,6 +828,12 @@ class Vector {
     /// @returns the internal slice of the vector
     tint::Slice<const T> Slice() const { return impl_.slice; }
 
+    /// @returns the internal data of the vector as a std::span
+    std::span<T> AsSpan() { return {impl_.slice.data, impl_.slice.len}; }
+
+    /// @returns the internal data of the vector as a std::span
+    std::span<const T> AsSpan() const { return {impl_.slice.data, impl_.slice.len}; }
+
   private:
     /// Friend class (differing specializations of this class)
     template <typename, size_t>
@@ -1175,6 +1182,13 @@ class VectorRef {
     template <typename PREDICATE>
     bool Any(PREDICATE&& pred) const {
         return std::any_of(begin(), end(), std::forward<PREDICATE>(pred));
+    }
+
+    /// @returns true if the predicate function returns true for all the elements of the vector
+    /// @param pred a function-like with the signature `bool(T)`
+    template <typename PREDICATE>
+    bool All(PREDICATE&& pred) const {
+        return std::all_of(begin(), end(), std::forward<PREDICATE>(pred));
     }
 
   private:

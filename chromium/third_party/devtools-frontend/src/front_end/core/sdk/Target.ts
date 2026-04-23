@@ -7,7 +7,7 @@ import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';
 
-import {SDKModel} from './SDKModel.js';
+import {SDKModel, type SDKModelConstructor} from './SDKModel.js';
 import type {TargetManager} from './TargetManager.js';
 
 export class Target extends ProtocolClient.InspectorBackend.TargetBase {
@@ -39,9 +39,8 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
   constructor(
       targetManager: TargetManager, id: Protocol.Target.TargetID|'main', name: string, type: Type,
       parentTarget: Target|null, sessionId: string, suspended: boolean,
-      connection: ProtocolClient.InspectorBackend.Connection|null, targetInfo?: Protocol.Target.TargetInfo) {
-    const needsNodeJSPatching = type === Type.NODE;
-    super(needsNodeJSPatching, parentTarget, sessionId, connection);
+      connection: ProtocolClient.CDPConnection.CDPConnection|null, targetInfo?: Protocol.Target.TargetInfo) {
+    super(parentTarget, sessionId, connection);
     this.#targetManager = targetManager;
     this.#name = name;
     this.#capabilitiesMask = 0;
@@ -67,12 +66,17 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
         this.#capabilitiesMask = Capability.JS | Capability.LOG | Capability.NETWORK | Capability.TARGET |
             Capability.INSPECTOR | Capability.IO | Capability.EVENT_BREAKPOINTS;
         if (parentTarget?.type() !== Type.FRAME) {
+          // TODO(crbug.com/406991275): This should also grant the `STORAGE` capability, but first the
+          // crashers in https://crbug.com/466134219 have to be resolved.
           this.#capabilitiesMask |= Capability.BROWSER;
         }
         break;
       case Type.SHARED_WORKER:
         this.#capabilitiesMask = Capability.JS | Capability.LOG | Capability.NETWORK | Capability.TARGET |
             Capability.IO | Capability.MEDIA | Capability.INSPECTOR | Capability.EVENT_BREAKPOINTS;
+        if (parentTarget?.type() !== Type.FRAME) {
+          this.#capabilitiesMask |= Capability.STORAGE;
+        }
         break;
       case Type.SHARED_STORAGE_WORKLET:
         this.#capabilitiesMask = Capability.JS | Capability.LOG | Capability.INSPECTOR | Capability.EVENT_BREAKPOINTS;
@@ -80,6 +84,9 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
       case Type.Worker:
         this.#capabilitiesMask = Capability.JS | Capability.LOG | Capability.NETWORK | Capability.TARGET |
             Capability.IO | Capability.MEDIA | Capability.EMULATION | Capability.EVENT_BREAKPOINTS;
+        if (parentTarget?.type() !== Type.FRAME) {
+          this.#capabilitiesMask |= Capability.STORAGE;
+        }
         break;
       case Type.WORKLET:
         this.#capabilitiesMask = Capability.JS | Capability.LOG | Capability.EVENT_BREAKPOINTS | Capability.NETWORK;
@@ -106,20 +113,11 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
     this.#targetInfo = targetInfo;
   }
 
-  createModels(required: Set<new(arg1: Target) => SDKModel>): void {
+  /** Creates the models in the order in which they are provided */
+  createModels(models: SDKModelConstructor[]): void {
     this.#creatingModels = true;
-    const registeredModels = Array.from(SDKModel.registeredModels.entries());
-    // Create early models.
-    for (const [modelClass, info] of registeredModels) {
-      if (info.early) {
-        this.model(modelClass);
-      }
-    }
-    // Create autostart and required models.
-    for (const [modelClass, info] of registeredModels) {
-      if (info.autostart || required.has(modelClass)) {
-        this.model(modelClass);
-      }
+    for (const model of models) {
+      this.model(model);
     }
     this.#creatingModels = false;
   }
@@ -144,8 +142,7 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
     return this.#type;
   }
 
-  override markAsNodeJSForTest(): void {
-    super.markAsNodeJSForTest();
+  markAsNodeJSForTest(): void {
     this.#type = Type.NODE;
   }
 

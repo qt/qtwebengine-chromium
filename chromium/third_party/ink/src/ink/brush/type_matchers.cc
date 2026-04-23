@@ -26,6 +26,7 @@
 #include "ink/brush/brush_family.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/brush/brush_tip.h"
+#include "ink/brush/color_function.h"
 #include "ink/brush/easing_function.h"
 #include "ink/geometry/type_matchers.h"
 #include "ink/types/type_matchers.h"
@@ -43,6 +44,46 @@ using ::testing::Matcher;
 using ::testing::Pointwise;
 using ::testing::Property;
 using ::testing::VariantWith;
+
+MATCHER_P(OpacityMultiplierParametersEqMatcher, expected, "") {
+  return ExplainMatchResult(
+      AllOf(Field("multiplier", &ColorFunction::OpacityMultiplier::multiplier,
+                  FloatEq(expected.multiplier))),
+      arg, result_listener);
+}
+
+MATCHER_P(ReplaceColorParametersEqMatcher, expected, "") {
+  return ExplainMatchResult(
+      AllOf(Field("color", &ColorFunction::ReplaceColor::color,
+                  Eq(expected.color))),
+      arg, result_listener);
+}
+
+[[maybe_unused]] Matcher<ColorFunction::Parameters> ColorFunctionParametersEq(
+    ColorFunction::OpacityMultiplier opacity) {
+  return VariantWith<ColorFunction::OpacityMultiplier>(
+      OpacityMultiplierParametersEqMatcher(opacity));
+}
+
+[[maybe_unused]] Matcher<ColorFunction::Parameters> ColorFunctionParametersEq(
+    ColorFunction::ReplaceColor replace) {
+  return VariantWith<ColorFunction::ReplaceColor>(
+      ReplaceColorParametersEqMatcher(replace));
+}
+
+MATCHER_P(ColorFunctionEqMatcher, expected, "") {
+  return ExplainMatchResult(
+      Field("parameters", &ColorFunction::parameters,
+            std::visit(
+                [](auto&& params) { return ColorFunctionParametersEq(params); },
+                expected.parameters)),
+      arg, result_listener);
+}
+
+MATCHER(ColorFunctionPointwiseEqMatcher, "") {
+  return ExplainMatchResult(ColorFunctionEq(std::get<1>(arg)), std::get<0>(arg),
+                            result_listener);
+}
 
 MATCHER_P(CubicBezierParametersEqMatcher, expected,
           absl::StrCat(negation ? "doesn't equal" : "equals",
@@ -244,8 +285,6 @@ MATCHER_P(BrushTipEqMatcher, expected,
             Field("slant", &BrushTip::slant, AngleEq(expected.slant)),
             Field("pinch", &BrushTip::pinch, FloatEq(expected.pinch)),
             Field("rotation", &BrushTip::rotation, AngleEq(expected.rotation)),
-            Field("opacity_multiplier", &BrushTip::opacity_multiplier,
-                  FloatEq(expected.opacity_multiplier)),
             Field("particle_gap_distance_scale",
                   &BrushTip::particle_gap_distance_scale,
                   FloatEq(expected.particle_gap_distance_scale)),
@@ -315,10 +354,19 @@ MATCHER_P(BrushPaintEqMatcher, expected,
                        " BrushPaint (expected: ",
                        ::testing::PrintToString(expected), ")")) {
   return ExplainMatchResult(
-      AllOf(Field(
-          "texture_layers", &BrushPaint::texture_layers,
-          Pointwise(BrushPaintTextureLayerEq(), expected.texture_layers))),
+      AllOf(
+          Field("texture_layers", &BrushPaint::texture_layers,
+                Pointwise(BrushPaintTextureLayerEq(), expected.texture_layers)),
+          Field("color_functions", &BrushPaint::color_functions,
+                Pointwise(ColorFunctionEq(), expected.color_functions)),
+          Field("self_overlap", &BrushPaint::self_overlap,
+                Eq(expected.self_overlap))),
       arg, result_listener);
+}
+
+MATCHER(BrushPaintPointwiseEqMatcher, "") {
+  return ExplainMatchResult(BrushPaintEq(std::get<1>(arg)), std::get<0>(arg),
+                            result_listener);
 }
 
 MATCHER_P(BrushCoatEqMatcher, expected,
@@ -327,7 +375,8 @@ MATCHER_P(BrushCoatEqMatcher, expected,
                        ::testing::PrintToString(expected), ")")) {
   return ExplainMatchResult(
       AllOf(Field("tip", &BrushCoat::tip, BrushTipEq(expected.tip)),
-            Field("paint", &BrushCoat::paint, BrushPaintEq(expected.paint))),
+            Field("paint_preferences", &BrushCoat::paint_preferences,
+                  Pointwise(BrushPaintEq(), expected.paint_preferences))),
       arg, result_listener);
 }
 
@@ -345,6 +394,19 @@ Matcher<BrushFamily::InputModel> BrushFamilyInputModelEqMatcher(
     const BrushFamily::ExperimentalRawPositionModel& input_model) {
   return VariantWith<BrushFamily::ExperimentalRawPositionModel>(
       _);  // no fields to match
+}
+
+Matcher<BrushFamily::InputModel> BrushFamilyInputModelEqMatcher(
+    const BrushFamily::ExperimentalNaiveModel& input_model) {
+  return VariantWith<BrushFamily::ExperimentalNaiveModel>(
+      _);  // no fields to match
+}
+
+Matcher<BrushFamily::InputModel> BrushFamilyInputModelEqMatcher(
+    const BrushFamily::SlidingWindowModel& input_model) {
+  return VariantWith<BrushFamily::SlidingWindowModel>(
+      Field("window_size", &BrushFamily::SlidingWindowModel::window_size,
+            Duration32Eq(input_model.window_size)));
 }
 
 [[maybe_unused]] Matcher<BrushFamily::InputModel> BrushFamilyInputModelEq(
@@ -416,6 +478,10 @@ Matcher<BrushPaint> BrushPaintEq(const BrushPaint& expected) {
   return BrushPaintEqMatcher(expected);
 }
 
+Matcher<std::tuple<BrushPaint, BrushPaint>> BrushPaintEq() {
+  return BrushPaintPointwiseEqMatcher();
+}
+
 Matcher<BrushPaint::TextureLayer> BrushPaintTextureLayerEq(
     const BrushPaint::TextureLayer& expected) {
   return BrushPaintTextureLayerEqMatcher(expected);
@@ -440,6 +506,14 @@ Matcher<BrushFamily> BrushFamilyEq(const BrushFamily& expected) {
 
 Matcher<Brush> BrushEq(const Brush& expected) {
   return BrushEqMatcher(expected);
+}
+
+Matcher<ColorFunction> ColorFunctionEq(const ColorFunction& expected) {
+  return ColorFunctionEqMatcher(expected);
+}
+
+Matcher<std::tuple<ColorFunction, ColorFunction>> ColorFunctionEq() {
+  return ColorFunctionPointwiseEqMatcher();
 }
 
 }  // namespace ink

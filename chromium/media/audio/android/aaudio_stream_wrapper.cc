@@ -10,7 +10,7 @@
 #include <optional>
 #include <string_view>
 
-#include "base/feature_list.h"
+#include "base/android/device_info.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
@@ -25,10 +25,6 @@
 
 // AAudioStreamBuilder_setChannelMask was not introduced until API version 32.
 #define AAUDIO_CHANNEL_MASK_MIN_API 32
-#define AAUDIO_LOW_LATENCY_INPUT_MIN_API 30
-
-BASE_FEATURE(kAAudioInputLowLatencyModeByDefault,
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 namespace media {
 
@@ -150,7 +146,8 @@ static constexpr REQUIRES_ANDROID_API(
 
 REQUIRES_ANDROID_API(AAUDIO_CHANNEL_MASK_MIN_API)
 std::optional<aaudio_channel_mask_t> ChannelMaskFromChannelLayout(
-    ChannelLayout layout) {
+    ChannelLayout layout,
+    int channels) {
   // Note: ChannelLayout comments define mono as Front Center, but AAudio's
   // AAUDIO_CHANNEL_MONO constant define it as Front Left. Returning Front
   // Center here breaks mono playback, so prefer AAudio's definition.
@@ -161,6 +158,44 @@ std::optional<aaudio_channel_mask_t> ChannelMaskFromChannelLayout(
   // Fast path for common case.
   if (layout == CHANNEL_LAYOUT_STEREO) {
     return AAUDIO_CHANNEL_STEREO;
+  }
+
+  // Map to canonical AAUDIO_CHANNEL_QUAD channel mask for 4-channel
+  // PCM MediaCodec decoded audio. This ensures compatibility with
+  // Android devices for signaling 4-channel output.
+  if (layout == CHANNEL_LAYOUT_QUAD) {
+    return AAUDIO_CHANNEL_QUAD;
+  }
+
+  // Map to canonical AAUDIO_CHANNEL_PENTA channel mask for 5-channel
+  // PCM MediaCodec decoded audio. This ensures compatibility with
+  // Android devices for signaling 5-channel output.
+  if (layout == CHANNEL_LAYOUT_5_0) {
+    return AAUDIO_CHANNEL_PENTA;
+  }
+
+  // Map to canonical AAUDIO_CHANNEL_5POINT1 channel mask for 6-channel
+  // PCM MediaCodec decoded audio. This ensures compatibility with
+  // Android devices for signaling 6-channel output.
+  if (layout == CHANNEL_LAYOUT_5_1) {
+    return AAUDIO_CHANNEL_5POINT1;
+  }
+
+  if (layout == CHANNEL_LAYOUT_DISCRETE) {
+    switch (channels) {
+      case 10:
+        // Map to canonical AAUDIO_CHANNEL_5POINT1POINT4 channel mask for
+        // 10-channel PCM MediaCodec decoded audio. This ensures
+        // compatibility with Android devices for signaling 10-channel output.
+        return AAUDIO_CHANNEL_5POINT1POINT4;
+      case 12:
+        // Map to canonical AAUDIO_CHANNEL_7POINT1POINT4 channel mask for
+        // 12-channel PCM MediaCodec decoded audio. This ensures
+        // compatibility with Android devices for signaling 12-channel output.
+        return AAUDIO_CHANNEL_7POINT1POINT4;
+      default:
+        return std::nullopt;
+    }
   }
 
   aaudio_channel_mask_t mask = 0;
@@ -184,7 +219,7 @@ REQUIRES_ANDROID_API(AAUDIO_CHANNEL_MASK_MIN_API)
 void SetChannelMask(AAudioStreamBuilder* builder,
                     const AudioParameters& params) {
   std::optional<aaudio_channel_mask_t> channel_mask =
-      ChannelMaskFromChannelLayout(params.channel_layout());
+      ChannelMaskFromChannelLayout(params.channel_layout(), params.channels());
 
   if (channel_mask.has_value()) {
     AAudioStreamBuilder_setChannelMask(builder, channel_mask.value());
@@ -209,18 +244,6 @@ AAudioStreamWrapper::AAudioStreamWrapper(DataCallback* callback,
   CHECK(params.IsValid());
   CHECK(callback_);
 
-  performance_mode_ = AAUDIO_PERFORMANCE_MODE_NONE;
-
-  // There is a bug on Android 10 and below preventing us from using both low
-  // latency mode and a data callback at the same time.
-  if (__builtin_available(android AAUDIO_LOW_LATENCY_INPUT_MIN_API, *)) {
-    if (stream_type_ == StreamType::kInput &&
-        base::FeatureList::IsEnabled(kAAudioInputLowLatencyModeByDefault)) {
-      // Default to low latency for input streams.
-      performance_mode_ = AAUDIO_PERFORMANCE_MODE_LOW_LATENCY;
-    }
-  }
-
   switch (params.latency_tag()) {
     case AudioLatency::Type::kExactMS:
     case AudioLatency::Type::kInteractive:
@@ -228,11 +251,18 @@ AAudioStreamWrapper::AAudioStreamWrapper(DataCallback* callback,
       performance_mode_ = AAUDIO_PERFORMANCE_MODE_LOW_LATENCY;
       break;
     case AudioLatency::Type::kPlayback:
-      performance_mode_ = AAUDIO_PERFORMANCE_MODE_POWER_SAVING;
+      // For multichannel PCM playback, do not use power saving
+      // mode to allow direct multichannel PCM outputs to be opened
+      // where available. Limit this to automotive devices only.
+      if (params_.channels() > 2 &&
+          base::android::device_info::is_automotive()) {
+        performance_mode_ = AAUDIO_PERFORMANCE_MODE_NONE;
+      } else {
+        performance_mode_ = AAUDIO_PERFORMANCE_MODE_POWER_SAVING;
+      }
       break;
     case AudioLatency::Type::kUnknown:
-      // The default value should be set above.
-      break;
+      performance_mode_ = AAUDIO_PERFORMANCE_MODE_NONE;
   }
 
   TRACE_EVENT2("audio", "AAudioStreamWrapper::AAudioStreamWrapper",

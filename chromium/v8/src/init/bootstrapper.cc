@@ -1327,26 +1327,6 @@ void Genesis::AddRestrictedFunctionProperties(DirectHandle<JSFunction> empty) {
                    accessors);
 }
 
-static void AddToWeakNativeContextList(Isolate* isolate,
-                                       Tagged<Context> context) {
-  DCHECK(IsNativeContext(context));
-  Heap* heap = isolate->heap();
-#ifdef DEBUG
-  {
-    DCHECK(IsUndefined(context->next_context_link(), isolate));
-    // Check that context is not in the list yet.
-    for (Tagged<Object> current = heap->native_contexts_list();
-         !IsUndefined(current, isolate);
-         current = Cast<Context>(current)->next_context_link()) {
-      DCHECK(current != context);
-    }
-  }
-#endif
-  context->SetNoCell(Context::NEXT_CONTEXT_LINK, heap->native_contexts_list(),
-                     UPDATE_WRITE_BARRIER);
-  heap->set_native_contexts_list(context);
-}
-
 void Genesis::CreateRoots() {
   // Allocate the native context FixedArray first and then patch the
   // closure and extension object later (we need the empty function
@@ -1354,7 +1334,7 @@ void Genesis::CreateRoots() {
   // native context).
   native_context_ = factory()->NewNativeContext();
 
-  AddToWeakNativeContextList(isolate(), *native_context());
+  isolate()->heap()->AddToWeakNativeContextList(*native_context());
   isolate()->set_context(*native_context());
 }
 
@@ -1465,6 +1445,7 @@ DirectHandle<JSGlobalObject> Genesis::CreateNewGlobals(
 
   // Set up the pointer back from the global object to the global proxy.
   global_object->set_global_proxy(*global_proxy);
+  global_object->set_global_proxy_for_api(*global_proxy);
   // Set the native context of the global proxy.
   global_proxy->map()->set_map(isolate(), native_context()->meta_map());
   // Set the global proxy of the native context. If the native context has been
@@ -3153,7 +3134,7 @@ void Genesis::InitializeGlobal(DirectHandle<JSGlobalObject> global_object,
 
     DirectHandle<JSFunction> perform_promise_then =
         SimpleCreateFunction(isolate_, factory->empty_string(),
-                             Builtin::kPerformPromiseThenFunction, 2, kAdapt);
+                             Builtin::kPerformPromiseThenFunction, 3, kAdapt);
     native_context()->set_perform_promise_then(*perform_promise_then);
 
     InstallFunctionWithBuiltinId(isolate_, prototype, "catch",
@@ -4441,6 +4422,10 @@ void Genesis::InitializeGlobal(DirectHandle<JSGlobalObject> global_object,
     SimpleInstallFunction(isolate_, prototype, "values",
                           Builtin::kMapPrototypeValues, 0, kAdapt);
 
+    // TODO(olivf, 434977728): Remove initial_map_prototype once --js-upsert
+    // flag is removed.
+    USE(v8_flags.js_upsert);
+    native_context()->set_initial_map_prototype(*prototype);
     native_context()->set_initial_map_prototype_map(prototype->map());
 
     InstallSpeciesGetter(isolate_, js_map_fun);
@@ -4702,7 +4687,7 @@ void Genesis::InitializeGlobal(DirectHandle<JSGlobalObject> global_object,
     native_context()->set_weakmap_delete(*weakmap_delete);
 
     DirectHandle<JSFunction> weakmap_get = SimpleInstallFunction(
-        isolate_, prototype, "get", Builtin::kWeakMapGet, 1, kAdapt);
+        isolate_, prototype, "get", Builtin::kWeakMapPrototypeGet, 1, kAdapt);
     native_context()->set_weakmap_get(*weakmap_get);
 
     DirectHandle<JSFunction> weakmap_set = SimpleInstallFunction(
@@ -4710,13 +4695,17 @@ void Genesis::InitializeGlobal(DirectHandle<JSGlobalObject> global_object,
     // Check that index of "set" function in JSWeakCollection is correct.
     DCHECK_EQ(JSWeakCollection::kAddFunctionDescriptorIndex,
               prototype->map()->LastAdded().as_int());
-
     native_context()->set_weakmap_set(*weakmap_set);
+
     SimpleInstallFunction(isolate_, prototype, "has",
                           Builtin::kWeakMapPrototypeHas, 1, kAdapt);
 
     InstallToStringTag(isolate_, prototype, "WeakMap");
 
+    // TODO(olivf, 434977728): Remove initial_weakmap_prototype once --js-upsert
+    // flag is removed.
+    USE(v8_flags.js_upsert);
+    native_context()->set_initial_weakmap_prototype(*prototype);
     native_context()->set_initial_weakmap_prototype_map(prototype->map());
   }
 
@@ -5523,6 +5512,28 @@ void Genesis::InitializeGlobal_js_error_iserror() {
                                Builtin::kErrorIsError, 1, kAdapt);
 }
 
+void Genesis::InitializeGlobal_js_upsert() {
+  if (!v8_flags.js_upsert) return;
+
+  {
+    auto prototype =
+        handle(native_context()->initial_map_prototype(), isolate_);
+    SimpleInstallFunction(isolate_, prototype, "getOrInsert",
+                          Builtin::kMapPrototypeGetOrInsert, 2, kAdapt);
+    SimpleInstallFunction(isolate_, prototype, "getOrInsertComputed",
+                          Builtin::kMapPrototypeGetOrInsertComputed, 2, kAdapt);
+  }
+  {
+    auto prototype =
+        handle(native_context()->initial_weakmap_prototype(), isolate_);
+    SimpleInstallFunction(isolate_, prototype, "getOrInsert",
+                          Builtin::kWeakMapPrototypeGetOrInsert, 2, kAdapt);
+    SimpleInstallFunction(isolate_, prototype, "getOrInsertComputed",
+                          Builtin::kWeakMapPrototypeGetOrInsertComputed, 2,
+                          kAdapt);
+  }
+}
+
 void Genesis::InitializeGlobal_harmony_shadow_realm() {
   if (!v8_flags.harmony_shadow_realm) return;
   Factory* factory = isolate()->factory();
@@ -5661,8 +5672,6 @@ void Genesis::InitializeGlobal_harmony_struct() {
                           Builtin::kAtomicsMutexTryLock, 2, kAdapt);
     SimpleInstallFunction(isolate(), mutex_fun, "isMutex",
                           Builtin::kAtomicsMutexIsMutex, 1, kAdapt);
-    SimpleInstallFunction(isolate(), mutex_fun, "lockAsync",
-                          Builtin::kAtomicsMutexLockAsync, 2, kAdapt);
   }
 
   {  // Atomics.Condition
@@ -5681,8 +5690,6 @@ void Genesis::InitializeGlobal_harmony_struct() {
                           Builtin::kAtomicsConditionNotify, 2, kDontAdapt);
     SimpleInstallFunction(isolate(), condition_fun, "isCondition",
                           Builtin::kAtomicsConditionIsCondition, 1, kAdapt);
-    SimpleInstallFunction(isolate(), condition_fun, "waitAsync",
-                          Builtin::kAtomicsConditionWaitAsync, 2, kDontAdapt);
   }
 }
 
@@ -5836,6 +5843,8 @@ void Genesis::InitializeGlobal_js_regexp_escape() {
                         1, kAdapt);
 }
 
+void Genesis::InitializeGlobal_js_defer_import_eval() {}
+
 void Genesis::InitializeGlobal_js_source_phase_imports() {
   if (!v8_flags.js_source_phase_imports) return;
   Factory* factory = isolate()->factory();
@@ -5910,6 +5919,17 @@ void Genesis::InitializeGlobal_regexp_linear_flag() {
   // Store regexp prototype map again after change.
   native_context()->set_regexp_prototype_map(regexp_prototype->map());
 }
+
+#ifdef V8_INTL_SUPPORT
+void Genesis::InitializeGlobal_js_intl_locale_variants() {
+  if (!v8_flags.js_intl_locale_variants) return;
+  DirectHandle<JSObject> prototype(
+      Cast<JSObject>(isolate()->intl_locale_function()->prototype()),
+      isolate());
+  SimpleInstallGetter(isolate(), prototype, factory()->variants_string(),
+                      Builtin::kLocalePrototypeVariants, kAdapt);
+}
+#endif  // V8_INTL_SUPPORT
 
 void Genesis::InitializeGlobal_harmony_temporal() {
 #ifdef V8_TEMPORAL_SUPPORT
@@ -6955,7 +6975,6 @@ Genesis::Genesis(Isolate* isolate,
   }
 
   if (!native_context().is_null()) {
-    AddToWeakNativeContextList(isolate, *native_context());
     isolate->set_context(*native_context());
 
     // If no global proxy template was passed in, simply use the global in the
@@ -6972,8 +6991,7 @@ Genesis::Genesis(Isolate* isolate,
       HookUpGlobalProxy(global_proxy);
     }
     DCHECK_EQ(global_proxy->GetCreationContext(), *native_context());
-    DCHECK(!global_proxy->IsDetachedFrom(isolate,
-                                         native_context()->global_object()));
+    DCHECK(!global_proxy->IsDetachedFrom(native_context()->global_object()));
   } else {
     DCHECK(native_context().is_null());
 

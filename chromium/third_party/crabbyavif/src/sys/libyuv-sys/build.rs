@@ -164,6 +164,7 @@ fn main() -> Result<(), String> {
         "NV12ToARGBMatrix",
         "NV12ToRGB565Matrix",
         "NV21ToARGBMatrix",
+        "NV21ToNV12",
         "P010ToAR30Matrix",
         "P010ToARGBMatrix",
         "P010ToI010",

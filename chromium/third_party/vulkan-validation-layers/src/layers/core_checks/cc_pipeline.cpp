@@ -89,6 +89,19 @@ bool CoreChecks::ValidatePipelineProtectedAccessFlags(VkPipelineCreateFlags2 fla
     return skip;
 }
 
+bool CoreChecks::ValidatePipeline64BitIndexingFlags(VkPipelineCreateFlags2 flags, const Location &flags_loc,
+                                                    const char *vuid) const {
+    bool skip = false;
+    if (enabled_features.shader64BitIndexing == VK_FALSE) {
+        const VkPipelineCreateFlags2 invalid_flags = VK_PIPELINE_CREATE_2_64_BIT_INDEXING_BIT_EXT;
+        if ((flags & invalid_flags) != 0) {
+            skip |= LogError(vuid, device, flags_loc, "is %s but shader64BitIndexing feature was not enabled.",
+                             string_VkPipelineCreateFlags2(flags).c_str());
+        }
+    }
+    return skip;
+}
+
 // This can be chained in the vkCreate*Pipelines() function or the VkPipelineShaderStageCreateInfo
 bool CoreChecks::ValidatePipelineRobustnessCreateInfo(const vvl::Pipeline &pipeline,
                                                       const VkPipelineRobustnessCreateInfo &pipeline_robustness_info,
@@ -551,52 +564,12 @@ bool CoreChecks::ValidatePipelineBindPoint(const vvl::CommandBuffer &cb_state, V
     return skip;
 }
 
-bool CoreChecks::ValidateShaderSubgroupSizeControl(VkShaderStageFlagBits stage, const ShaderStageState &stage_state,
-                                                   const Location &loc) const {
-    bool skip = false;
-
-    if (stage_state.HasPipeline()) {
-        const auto flags = stage_state.pipeline_create_info->flags;
-
-        if ((flags & VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT) != 0 &&
-            !enabled_features.subgroupSizeControl) {
-            skip |= LogError("VUID-VkPipelineShaderStageCreateInfo-flags-02784", device, loc.dot(Field::flags),
-                             "includes "
-                             "VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT, "
-                             "but the subgroupSizeControl feature was not enabled.");
-        }
-
-        if ((flags & VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT) != 0) {
-            if (!enabled_features.computeFullSubgroups) {
-                skip |= LogError("VUID-VkPipelineShaderStageCreateInfo-flags-02785", device, loc.dot(Field::flags),
-                                 "includes "
-                                 "VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT, but the computeFullSubgroups feature "
-                                 "was not enabled");
-            } else if ((stage & (VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_COMPUTE_BIT)) == 0) {
-                skip |= LogError("VUID-VkPipelineShaderStageCreateInfo-flags-08988", device, loc.dot(Field::flags),
-                                 "includes "
-                                 "VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT, but the stage is %s.",
-                                 string_VkShaderStageFlagBits(stage));
-            }
-        }
-    } else {
-        const auto flags = stage_state.shader_object_create_info->flags;
-        if ((flags & VK_SHADER_CREATE_REQUIRE_FULL_SUBGROUPS_BIT_EXT) != 0) {
-            if ((stage & (VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_COMPUTE_BIT)) == 0) {
-                skip |= LogError("VUID-VkShaderCreateInfoEXT-flags-08992", device, loc.dot(Field::flags),
-                                 "includes VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT, but the stage is %s.",
-                                 string_VkShaderStageFlagBits(stage));
-            }
-        }
-    }
-
-    return skip;
-}
-
 // Validate that data for each specialization entry is fully contained within the buffer.
 bool CoreChecks::ValidateSpecializations(const vku::safe_VkSpecializationInfo *spec, const Location &loc) const {
     bool skip = false;
-    if (!spec) return skip;
+    if (!spec) {
+        return skip;
+    }
 
     for (auto i = 0u; i < spec->mapEntryCount; i++) {
         const Location map_loc = loc.dot(Field::pMapEntries, i);
@@ -645,7 +618,7 @@ bool CoreChecks::ValidateShaderStageMaxResources(VkShaderStageFlagBits stage, co
     // input from CreatePipeline and CreatePipelineLayout level
     const auto &layout_state = pipeline.PipelineLayoutState();
     if (layout_state) {
-        for (const auto &set_layout : layout_state->set_layouts) {
+        for (const auto &set_layout : layout_state->set_layouts.list) {
             if (!set_layout) {
                 continue;
             }
@@ -767,6 +740,33 @@ bool CoreChecks::ValidatePipelineShaderStage(const vvl::Pipeline &pipeline,
                              PrintPNextChain(Struct::VkPipelineShaderStageCreateInfo, stage_ci.pNext).c_str());
         } else {
             skip |= ValidateShaderModuleCreateInfo(*module_create_info, loc.pNext(Struct::VkShaderModuleCreateInfo));
+        }
+    }
+
+    // VK_EXT_subgroup_size_control
+    {
+        const VkPipelineShaderStageCreateFlags flags = stage_ci.flags;
+        if ((flags & VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT) != 0 &&
+            !enabled_features.subgroupSizeControl) {
+            skip |= LogError("VUID-VkPipelineShaderStageCreateInfo-flags-02784", device, loc.dot(Field::flags),
+                             "includes "
+                             "VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT, "
+                             "but the subgroupSizeControl feature was not enabled.");
+        }
+
+        if ((flags & VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT) != 0) {
+            if (!enabled_features.computeFullSubgroups) {
+                skip |= LogError("VUID-VkPipelineShaderStageCreateInfo-flags-02785", device, loc.dot(Field::flags),
+                                 "includes "
+                                 "VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT, but the computeFullSubgroups feature "
+                                 "was not enabled");
+            } else if ((stage_ci.stage &
+                        (VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_COMPUTE_BIT)) == 0) {
+                skip |= LogError("VUID-VkPipelineShaderStageCreateInfo-flags-08988", device, loc.dot(Field::flags),
+                                 "includes "
+                                 "VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT, but the stage is %s.",
+                                 string_VkShaderStageFlagBits(stage_ci.stage));
+            }
         }
     }
     return skip;

@@ -194,6 +194,8 @@ struct EntryPoint {
     bool num_workgroups_used = false;
     /// Does the entry point use the frag_depth builtin
     bool frag_depth_used = false;
+    /// Does the frag shader use the position builtin
+    bool frag_position_used = false;
     /// Does the entry point use the vertex_index builtin
     bool vertex_index_used = false;
     /// Does the entry point use the instance_index builtin
@@ -204,6 +206,8 @@ struct EntryPoint {
     bool has_depth_texture_with_non_comparison_sampler = false;
     /// Does the entry point use a subgroup matrix type?
     bool uses_subgroup_matrix = false;
+    /// Does the entry point use dpdxFine, dpdyFine, or fwidthFine
+    bool fine_derivative_builtin_used = false;
     /// The array length of the clip_distances builtin. Holding no value means the clip_distances
     /// is not used.
     std::optional<uint32_t> clip_distances_size;

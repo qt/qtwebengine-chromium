@@ -17,10 +17,12 @@
 
 #include "aom/aom_codec.h"
 #include "aom/aom_encoder.h"
+#include "aom/aom_ext_ratectrl.h"
 
 #include "av1/common/av1_common_int.h"
 
 #include "av1/encoder/encoder.h"
+#include "av1/encoder/av1_ext_ratectrl.h"
 #include "av1/encoder/firstpass.h"
 #include "av1/encoder/gop_structure.h"
 #include "av1/encoder/pass2_strategy.h"
@@ -839,6 +841,38 @@ static void set_ld_layer_depth(GF_GROUP *gf_group, int gop_length) {
   gf_group->max_layer_depth = AOMMIN(log_gop_length, MAX_ARF_LAYERS);
 }
 
+static void construct_gop_structure_from_rc(
+    GF_GROUP *gf_group, aom_rc_gop_decision_t *rc_gop_decision) {
+  gf_group->size = rc_gop_decision->gop_frame_count;
+  for (int frame_index = 0; frame_index < gf_group->size; ++frame_index) {
+    aom_rc_gop_frame_t *gop_frame_rc =
+        &rc_gop_decision->gop_frame_list[frame_index];
+    gf_group->update_type[frame_index] = gop_frame_rc->update_type;
+    gf_group->layer_depth[frame_index] = gop_frame_rc->layer_depth;
+    gf_group->display_idx[frame_index] =
+        gop_frame_rc->display_idx + rc_gop_decision->global_order_idx_offset;
+    gf_group->update_ref_idx[frame_index] = gop_frame_rc->update_ref_idx;
+    gf_group->cur_frame_idx[frame_index] = gop_frame_rc->display_idx;
+    switch (gf_group->update_type[frame_index]) {
+      case LF_UPDATE:
+      case INTNL_OVERLAY_UPDATE:
+        gf_group->arf_src_offset[frame_index] = 0;
+        break;
+      case ARF_UPDATE:
+      case INTNL_ARF_UPDATE:
+        gf_group->arf_src_offset[frame_index] =
+            gop_frame_rc->display_idx - frame_index;
+        break;
+      default: gf_group->arf_src_offset[frame_index] = 0;
+    }
+    gf_group->cur_frame_idx[frame_index] = frame_index;
+    gf_group->frame_type[frame_index] =
+        gop_frame_rc->is_key_frame ? KEY_FRAME : INTER_FRAME;
+    gf_group->refbuf_state[frame_index] =
+        gop_frame_rc->is_key_frame ? REFBUF_RESET : REFBUF_UPDATE;
+  }
+}
+
 void av1_gop_setup_structure(AV1_COMP *cpi) {
   RATE_CONTROL *const rc = &cpi->rc;
   PRIMARY_RATE_CONTROL *const p_rc = &cpi->ppi->p_rc;
@@ -848,26 +882,39 @@ void av1_gop_setup_structure(AV1_COMP *cpi) {
   const int key_frame = rc->frames_since_key == 0;
   FRAME_UPDATE_TYPE first_frame_update_type = ARF_UPDATE;
 
-  if (key_frame) {
-    first_frame_update_type = KF_UPDATE;
-    if (cpi->oxcf.kf_max_pyr_height != -1) {
-      gf_group->max_layer_depth_allowed = AOMMIN(
-          cpi->oxcf.kf_max_pyr_height, gf_group->max_layer_depth_allowed);
+  if (cpi->ext_ratectrl.ready &&
+      (cpi->ext_ratectrl.funcs.rc_type & AOM_RC_GOP) != 0 &&
+      cpi->ext_ratectrl.funcs.get_gop_decision != NULL) {
+    aom_rc_gop_decision_t gop_decision;
+    aom_codec_err_t codec_status =
+        av1_extrc_get_gop_decision(&cpi->ext_ratectrl, &gop_decision);
+    if (codec_status != AOM_CODEC_OK) {
+      aom_internal_error(cpi->common.error, codec_status,
+                         "av1_extrc_get_gop_decision() failed");
     }
-  } else if (!cpi->ppi->gf_state.arf_gf_boost_lst) {
-    first_frame_update_type = GF_UPDATE;
+    construct_gop_structure_from_rc(gf_group, &gop_decision);
+  } else {
+    if (key_frame) {
+      first_frame_update_type = KF_UPDATE;
+      if (cpi->oxcf.kf_max_pyr_height != -1) {
+        gf_group->max_layer_depth_allowed = AOMMIN(
+            cpi->oxcf.kf_max_pyr_height, gf_group->max_layer_depth_allowed);
+      }
+    } else if (!cpi->ppi->gf_state.arf_gf_boost_lst) {
+      first_frame_update_type = GF_UPDATE;
+    }
+
+    if (cpi->oxcf.algo_cfg.sharpness == 3)
+      gf_group->max_layer_depth_allowed =
+          AOMMIN(gf_group->max_layer_depth_allowed, 2);
+
+    gf_group->size = construct_multi_layer_gf_structure(
+        cpi, twopass, gf_group, rc, frame_info, p_rc->baseline_gf_interval,
+        first_frame_update_type);
+
+    if (gf_group->max_layer_depth_allowed == 0)
+      set_ld_layer_depth(gf_group, p_rc->baseline_gf_interval);
   }
-
-  if (cpi->oxcf.algo_cfg.sharpness == 3)
-    gf_group->max_layer_depth_allowed =
-        AOMMIN(gf_group->max_layer_depth_allowed, 2);
-
-  gf_group->size = construct_multi_layer_gf_structure(
-      cpi, twopass, gf_group, rc, frame_info, p_rc->baseline_gf_interval,
-      first_frame_update_type);
-
-  if (gf_group->max_layer_depth_allowed == 0)
-    set_ld_layer_depth(gf_group, p_rc->baseline_gf_interval);
 }
 
 int av1_gop_check_forward_keyframe(const GF_GROUP *gf_group,

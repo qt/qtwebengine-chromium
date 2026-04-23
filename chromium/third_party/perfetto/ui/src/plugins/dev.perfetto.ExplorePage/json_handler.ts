@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import {ExplorePageState} from './explore_page';
-import {QueryNode, NodeType} from './query_node';
+import {QueryNode, NodeType, singleNodeOperation} from './query_node';
+import {getAllNodes as getAllNodesUtil} from './query_builder/graph_utils';
 import {
   TableSourceNode,
   TableSourceSerializedState,
@@ -27,6 +28,10 @@ import {
   SqlSourceSerializedState,
 } from './query_builder/nodes/sources/sql_source';
 import {
+  TimeRangeSourceNode,
+  TimeRangeSourceSerializedState,
+} from './query_builder/nodes/sources/timerange_source';
+import {
   AggregationNode,
   AggregationSerializedState,
 } from './query_builder/nodes/aggregation_node';
@@ -39,17 +44,41 @@ import {
   IntervalIntersectNodeState,
   IntervalIntersectSerializedState,
 } from './query_builder/nodes/interval_intersect_node';
-import {NodeBoxLayout} from './query_builder/node_box';
 import {Trace} from '../../public/trace';
 import {SqlModules} from '../../plugins/dev.perfetto.SqlModules/sql_modules';
+import {
+  AddColumnsNode,
+  AddColumnsNodeState,
+} from './query_builder/nodes/add_columns_node';
+import {
+  LimitAndOffsetNode,
+  LimitAndOffsetNodeState,
+} from './query_builder/nodes/limit_and_offset_node';
+import {SortNode, SortNodeState} from './query_builder/nodes/sort_node';
+import {FilterNode, FilterNodeState} from './query_builder/nodes/filter_node';
+import {
+  MergeNode,
+  MergeSerializedState,
+} from './query_builder/nodes/merge_node';
+import {
+  UnionNode,
+  UnionSerializedState,
+} from './query_builder/nodes/union_node';
 
 type SerializedNodeState =
   | TableSourceSerializedState
   | SlicesSourceSerializedState
   | SqlSourceSerializedState
+  | TimeRangeSourceSerializedState
   | AggregationSerializedState
   | ModifyColumnsSerializedState
-  | IntervalIntersectSerializedState;
+  | IntervalIntersectSerializedState
+  | AddColumnsNodeState
+  | LimitAndOffsetNodeState
+  | SortNodeState
+  | FilterNodeState
+  | MergeSerializedState
+  | UnionSerializedState;
 
 // Interfaces for the serialized JSON structure
 export interface SerializedNode {
@@ -57,14 +86,15 @@ export interface SerializedNode {
   type: NodeType;
   state: SerializedNodeState; // This will hold the serializable state of the node
   nextNodes: string[];
-  prevNodes: string[];
+  // Input node IDs (for multi-source nodes like Union, Merge, IntervalIntersect)
+  inputNodeIds?: string[];
 }
 
 export interface SerializedGraph {
   nodes: SerializedNode[];
   rootNodeIds: string[];
   selectedNodeId?: string;
-  nodeLayouts: {[key: string]: NodeBoxLayout};
+  nodeLayouts?: {[key: string]: {x: number; y: number}};
 }
 
 function serializeNode(node: QueryNode): SerializedNode {
@@ -74,26 +104,25 @@ function serializeNode(node: QueryNode): SerializedNode {
 
   const state = node.serializeState() as SerializedNodeState;
 
-  return {
+  const serialized: SerializedNode = {
     nodeId: node.nodeId,
     type: node.type,
     state: state,
     nextNodes: node.nextNodes.map((n: QueryNode) => n.nodeId),
-    prevNodes: node.prevNodes
-      ? node.prevNodes.map((n: QueryNode) => n.nodeId)
-      : [],
   };
+
+  // Connection information is stored in nextNodes and node-specific serializedState
+  // Each node's serializeState() method handles its own input connections
+
+  return serialized;
 }
 
 export function serializeState(state: ExplorePageState): string {
+  // Use utility function to get all nodes (bidirectional traversal)
+  const allNodesArray = getAllNodesUtil(state.rootNodes);
   const allNodes = new Map<string, QueryNode>();
-  const queue = [...state.rootNodes];
-  while (queue.length > 0) {
-    const node = queue.shift()!;
-    if (!allNodes.has(node.nodeId)) {
-      allNodes.set(node.nodeId, node);
-      queue.push(...node.nextNodes);
-    }
+  for (const node of allNodesArray) {
+    allNodes.set(node.nodeId, node);
   }
 
   const serializedNodes = Array.from(allNodes.values()).map(serializeNode);
@@ -105,8 +134,15 @@ export function serializeState(state: ExplorePageState): string {
     nodeLayouts: Object.fromEntries(state.nodeLayouts),
   };
 
-  const replacer = (_key: string, value: unknown) =>
-    typeof value === 'bigint' ? value.toString() : value;
+  const replacer = (key: string, value: unknown) => {
+    // Only strip _trace to avoid including large trace objects
+    if (key === '_trace') {
+      return undefined;
+    }
+    // Connection info is stored in node-specific state (primaryInputId, inputNodeIds, etc.)
+    // so we don't need to filter them here
+    return typeof value === 'bigint' ? value.toString() : value;
+  };
 
   return JSON.stringify(serializedGraph, replacer, 2);
 }
@@ -145,29 +181,66 @@ function createNodeInstance(
         ),
       );
     case NodeType.kSimpleSlices:
-      return new SlicesSourceNode(state as SlicesSourceSerializedState);
+      return new SlicesSourceNode({});
     case NodeType.kSqlSource:
       return new SqlSourceNode({
         ...(state as SqlSourceSerializedState),
         trace,
       });
+    case NodeType.kTimeRangeSource:
+      return new TimeRangeSourceNode(
+        TimeRangeSourceNode.deserializeState(
+          trace,
+          state as TimeRangeSourceSerializedState,
+        ),
+      );
     case NodeType.kAggregation:
       return new AggregationNode(
         AggregationNode.deserializeState(state as AggregationSerializedState),
       );
     case NodeType.kModifyColumns:
-      return new ModifyColumnsNode({
-        ...(state as ModifyColumnsSerializedState),
-        prevNodes: [],
-      });
+      return new ModifyColumnsNode(
+        ModifyColumnsNode.deserializeState(
+          state as ModifyColumnsSerializedState,
+        ),
+      );
+    case NodeType.kAddColumns:
+      return new AddColumnsNode(
+        AddColumnsNode.deserializeState(state as AddColumnsNodeState),
+      );
+    case NodeType.kLimitAndOffset:
+      return new LimitAndOffsetNode(
+        LimitAndOffsetNode.deserializeState(state as LimitAndOffsetNodeState),
+      );
+    case NodeType.kSort:
+      return new SortNode(SortNode.deserializeState(state as SortNodeState));
+    case NodeType.kFilter:
+      return new FilterNode(
+        FilterNode.deserializeState(state as FilterNodeState),
+      );
     case NodeType.kIntervalIntersect:
       const nodeState: IntervalIntersectNodeState = {
         ...(state as IntervalIntersectSerializedState),
-        intervalNodes: [],
-        prevNodes: [],
-        allNodes: [],
+        inputNodes: [],
       };
       return new IntervalIntersectNode(nodeState);
+    case NodeType.kMerge:
+      const mergeState = state as MergeSerializedState;
+      return new MergeNode({
+        leftQueryAlias: mergeState.leftQueryAlias,
+        rightQueryAlias: mergeState.rightQueryAlias,
+        conditionType: mergeState.conditionType,
+        leftColumn: mergeState.leftColumn ?? '',
+        rightColumn: mergeState.rightColumn ?? '',
+        sqlExpression: mergeState.sqlExpression ?? '',
+      });
+    case NodeType.kUnion:
+      const unionState = state as UnionSerializedState;
+      const unionNode = new UnionNode({
+        inputNodes: [],
+        selectedColumns: unionState.selectedColumns,
+      });
+      return unionNode;
     default:
       throw new Error(`Unknown node type: ${serializedNode.type}`);
   }
@@ -185,12 +258,20 @@ export function deserializeState(
     serializedGraph == null ||
     typeof serializedGraph !== 'object' ||
     !Array.isArray(serializedGraph.nodes) ||
-    !Array.isArray(serializedGraph.rootNodeIds) ||
-    serializedGraph.nodeLayouts == null ||
-    typeof serializedGraph.nodeLayouts !== 'object'
+    !Array.isArray(serializedGraph.rootNodeIds)
   ) {
     throw new Error(
       'Invalid file format. The selected file is not a valid Perfetto graph.',
+    );
+  }
+
+  // Validate nodeLayouts if present
+  if (
+    serializedGraph.nodeLayouts != null &&
+    typeof serializedGraph.nodeLayouts !== 'object'
+  ) {
+    throw new Error(
+      'Invalid file format. nodeLayouts must be an object if provided.',
     );
   }
 
@@ -204,7 +285,7 @@ export function deserializeState(
     nodes.set(serializedNode.nodeId, node);
   }
 
-  // Second pass: connect nodes
+  // Second pass: set forward links (nextNodes)
   for (const serializedNode of serializedGraph.nodes) {
     const node = nodes.get(serializedNode.nodeId);
     if (!node) {
@@ -212,6 +293,8 @@ export function deserializeState(
         `Graph is corrupted. Node with ID "${serializedNode.nodeId}" was serialized but not instantiated.`,
       );
     }
+
+    // Set forward links (nextNodes)
     node.nextNodes = serializedNode.nextNodes.map((id) => {
       const nextNode = nodes.get(id);
       if (nextNode == null) {
@@ -219,33 +302,90 @@ export function deserializeState(
       }
       return nextNode;
     });
+  }
 
-    // Backwards compatibility: if prevNodes is not in the JSON, infer it.
-    if (
-      serializedNode.prevNodes !== undefined &&
-      serializedNode.prevNodes.length > 0
-    ) {
-      node.prevNodes = serializedNode.prevNodes.map((id) => {
-        const prevNode = nodes.get(id);
-        if (prevNode == null) {
-          throw new Error(`Graph is corrupted. Node "${id}" not found.`);
+  // Third pass: set backward connections using serialized state
+  // For single-input operations, we use primaryInputId from state rather than inferring
+  // from nextNodes. This is important for nodes like AddColumnsNode that have both
+  // primaryInput AND secondaryInputs.
+  for (const serializedNode of serializedGraph.nodes) {
+    const node = nodes.get(serializedNode.nodeId)!;
+    const serializedState = serializedNode.state as {primaryInputId?: string};
+
+    // Set primaryInput for single-input operations using the serialized primaryInputId
+    if (singleNodeOperation(node.type)) {
+      if (serializedState.primaryInputId) {
+        const inputNode = nodes.get(serializedState.primaryInputId);
+        if (inputNode) {
+          node.primaryInput = inputNode;
         }
-        return prevNode;
-      });
-    } else {
-      for (const nextNode of node.nextNodes) {
-        if (nextNode.prevNodes == null) {
-          nextNode.prevNodes = [];
-        }
-        nextNode.prevNodes.push(node);
       }
     }
+
+    // Node-specific connection deserialization for multi-input operations
     if (serializedNode.type === NodeType.kIntervalIntersect) {
-      (node as IntervalIntersectNode).state.intervalNodes =
-        IntervalIntersectNode.deserializeState(
-          nodes,
-          serializedNode.state as IntervalIntersectSerializedState,
-        ).intervalNodes;
+      const intervalNode = node as IntervalIntersectNode;
+      const serializedState =
+        serializedNode.state as IntervalIntersectSerializedState;
+      const deserializedState = IntervalIntersectNode.deserializeState(
+        nodes,
+        serializedState,
+      );
+      intervalNode.secondaryInputs.connections.clear();
+      for (let i = 0; i < deserializedState.inputNodes.length; i++) {
+        intervalNode.secondaryInputs.connections.set(
+          i,
+          deserializedState.inputNodes[i],
+        );
+      }
+    }
+    if (serializedNode.type === NodeType.kMerge) {
+      const mergeNode = node as MergeNode;
+      const deserializedState = MergeNode.deserializeState(
+        nodes,
+        serializedNode.state as MergeSerializedState,
+      );
+      if (deserializedState.leftNode) {
+        mergeNode.secondaryInputs.connections.set(
+          0,
+          deserializedState.leftNode,
+        );
+      }
+      if (deserializedState.rightNode) {
+        mergeNode.secondaryInputs.connections.set(
+          1,
+          deserializedState.rightNode,
+        );
+      }
+    }
+    if (serializedNode.type === NodeType.kUnion) {
+      const unionNode = node as UnionNode;
+      const serializedState = serializedNode.state as UnionSerializedState;
+      const deserializedState = UnionNode.deserializeState(
+        nodes,
+        serializedState,
+      );
+      unionNode.secondaryInputs.connections.clear();
+      for (let i = 0; i < deserializedState.inputNodes.length; i++) {
+        unionNode.secondaryInputs.connections.set(
+          i,
+          deserializedState.inputNodes[i],
+        );
+      }
+    }
+    if (serializedNode.type === NodeType.kAddColumns) {
+      const addColumnsNode = node as AddColumnsNode;
+      const serializedState = serializedNode.state as {
+        secondaryInputNodeId?: string;
+      };
+      if (serializedState.secondaryInputNodeId) {
+        const secondaryInputNode = nodes.get(
+          serializedState.secondaryInputNodeId,
+        );
+        if (secondaryInputNode) {
+          addColumnsNode.secondaryInputs.connections.set(0, secondaryInputNode);
+        }
+      }
     }
   }
 
@@ -253,6 +393,9 @@ export function deserializeState(
   for (const node of nodes.values()) {
     if (node.type === NodeType.kAggregation) {
       (node as AggregationNode).resolveColumns();
+    }
+    if (node.type === NodeType.kModifyColumns) {
+      (node as ModifyColumnsNode).resolveColumns();
     }
   }
 
@@ -267,10 +410,16 @@ export function deserializeState(
     ? nodes.get(serializedGraph.selectedNodeId)
     : undefined;
 
+  // Use provided nodeLayouts if present, otherwise use empty map (will trigger auto-layout)
+  const nodeLayouts =
+    serializedGraph.nodeLayouts != null
+      ? new Map(Object.entries(serializedGraph.nodeLayouts))
+      : new Map<string, {x: number; y: number}>();
+
   return {
     rootNodes,
     selectedNode,
-    nodeLayouts: new Map(Object.entries(serializedGraph.nodeLayouts)),
+    nodeLayouts,
   };
 }
 

@@ -1150,6 +1150,8 @@ INSTANTIATE_TEST_SUITE_P(
                     TestParams{core::AddressSpace::kHandle, Expectation::kInvalid},
                     TestParams{core::AddressSpace::kStorage,
                                Expectation::kPassWithUnrestrictedPointerParameters},
+                    TestParams{core::AddressSpace::kImmediate,
+                               Expectation::kPassWithUnrestrictedPointerParameters},
                     TestParams{core::AddressSpace::kPixelLocal, Expectation::kAlwaysFail},
                     TestParams{core::AddressSpace::kPrivate, Expectation::kAlwaysPass},
                     TestParams{core::AddressSpace::kFunction, Expectation::kAlwaysPass}));

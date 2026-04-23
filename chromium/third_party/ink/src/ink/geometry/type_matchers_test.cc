@@ -27,6 +27,7 @@
 #include "ink/geometry/angle.h"
 #include "ink/geometry/mesh.h"
 #include "ink/geometry/mesh_format.h"
+#include "ink/geometry/mesh_index_types.h"
 #include "ink/geometry/mesh_packing_types.h"
 #include "ink/geometry/mesh_test_helpers.h"
 #include "ink/geometry/partitioned_mesh.h"
@@ -82,13 +83,13 @@ TEST(TriangleEqTest, Unequal) {
   EXPECT_THAT(b, Not(TriangleEq(a)));
 }
 TEST(QuadEqTest, Equal) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndShear(
+  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
       {4.0f, 7.0f}, 8.0f, 6.0f, kQuarterTurn, 0.8f);
   EXPECT_THAT(quad, QuadEq(quad));
 }
 
 TEST(QuadEqTest, Unequal) {
-  Quad base_quad = Quad::FromCenterDimensionsRotationAndShear(
+  Quad base_quad = Quad::FromCenterDimensionsRotationAndSkew(
       {4.0f, 7.0f}, 8.0f, 6.0f, kQuarterTurn, 0.8f);
 
   Quad changed_center = base_quad;
@@ -111,10 +112,10 @@ TEST(QuadEqTest, Unequal) {
   EXPECT_THAT(base_quad, Not(QuadEq(changed_rotation)));
   EXPECT_THAT(changed_rotation, Not(QuadEq(base_quad)));
 
-  Quad changed_shear = base_quad;
-  changed_shear.SetShearFactor(0.23f);
-  EXPECT_THAT(base_quad, Not(QuadEq(changed_shear)));
-  EXPECT_THAT(changed_shear, Not(QuadEq(base_quad)));
+  Quad changed_skew = base_quad;
+  changed_skew.SetSkew(0.23f);
+  EXPECT_THAT(base_quad, Not(QuadEq(changed_skew)));
+  EXPECT_THAT(changed_skew, Not(QuadEq(base_quad)));
 }
 
 TEST(TriangleNearTest, Equal) {
@@ -415,13 +416,13 @@ TEST(MeshEqTest, Describe) {
 }
 
 TEST(PartitionedMeshEqTest, OutlineIndexPairEquality) {
-  PartitionedMesh::VertexIndexPair pair{.mesh_index = 3, .vertex_index = 5};
+  VertexIndexPair pair{.mesh_index = 3, .vertex_index = 5};
 
-  EXPECT_THAT(pair, VertexIndexPairEq(PartitionedMesh::VertexIndexPair{
-                        .mesh_index = 3, .vertex_index = 5}));
-  EXPECT_THAT(pair, Not(VertexIndexPairEq(PartitionedMesh::VertexIndexPair{
-                        .mesh_index = 999, .vertex_index = 5})));
-  EXPECT_THAT(pair, Not(VertexIndexPairEq(PartitionedMesh::VertexIndexPair{
+  EXPECT_THAT(pair, VertexIndexPairEq(
+                        VertexIndexPair{.mesh_index = 3, .vertex_index = 5}));
+  EXPECT_THAT(pair, Not(VertexIndexPairEq(VertexIndexPair{.mesh_index = 999,
+                                                          .vertex_index = 5})));
+  EXPECT_THAT(pair, Not(VertexIndexPairEq(VertexIndexPair{
                         .mesh_index = 3, .vertex_index = 999})));
 }
 
@@ -453,13 +454,11 @@ TEST(PartitionedMeshEqTest, DifferentMeshes) {
 
   // Equivalent outlines, different number of meshes.
 
-  std::vector<absl::Span<const PartitionedMesh::VertexIndexPair>> outlines;
-  PartitionedMesh::VertexIndexPair index_pair = {.mesh_index = 0,
-                                                 .vertex_index = 7};
+  std::vector<absl::Span<const VertexIndexPair>> outlines;
+  VertexIndexPair index_pair = {.mesh_index = 0, .vertex_index = 7};
   ASSERT_EQ(shape->RenderGroupCount(), 1u);
   for (size_t i = 0; i < shape->OutlineCount(0); ++i) {
-    absl::Span<PartitionedMesh::VertexIndexPair> outline =
-        absl::MakeSpan(&index_pair, 1);
+    absl::Span<VertexIndexPair> outline = absl::MakeSpan(&index_pair, 1);
     outlines.push_back(outline);
   }
   std::vector<Mesh> meshes_twice;  // Add all the meshes twice.
@@ -525,13 +524,11 @@ TEST(PartitionedMeshEqTest, DifferentOutlines) {
               Not(PartitionedMeshDeepEq(*shape)));
 
   // Equivalent meshes, same number of outlines, but different outline contents.
-  PartitionedMesh::VertexIndexPair index_pair = {.mesh_index = 0,
-                                                 .vertex_index = 7};
-  std::vector<absl::Span<const PartitionedMesh::VertexIndexPair>> outlines;
+  VertexIndexPair index_pair = {.mesh_index = 0, .vertex_index = 7};
+  std::vector<absl::Span<const VertexIndexPair>> outlines;
   ASSERT_EQ(shape->RenderGroupCount(), 1u);
   for (size_t i = 0; i < shape->OutlineCount(0); ++i) {
-    absl::Span<PartitionedMesh::VertexIndexPair> outline =
-        absl::MakeSpan(&index_pair, 1);
+    absl::Span<VertexIndexPair> outline = absl::MakeSpan(&index_pair, 1);
     outlines.push_back(outline);
   }
   absl::StatusOr<PartitionedMesh>

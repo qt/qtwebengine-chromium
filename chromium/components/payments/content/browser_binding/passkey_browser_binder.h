@@ -81,7 +81,7 @@ class PasskeyBrowserBinder {
       scoped_refptr<WebPaymentsWebDataService> web_data_service);
   PasskeyBrowserBinder(const PasskeyBrowserBinder&) = delete;
   PasskeyBrowserBinder& operator=(const PasskeyBrowserBinder&) = delete;
-  ~PasskeyBrowserBinder();
+  virtual ~PasskeyBrowserBinder();
 
   // Represents a browser bound key that has not yet been associated. If
   // BindKey() is not called when this class goes out of scope, the wrapped
@@ -105,6 +105,11 @@ class PasskeyBrowserBinder {
     // way by which the browser bound key can be accessed before having been
     // associated.
     BrowserBoundKey& Get();
+
+    // Returns the browser bound key identifier for tests.
+    const std::vector<uint8_t>& GetBrowserBoundKeyIdForTesting() const {
+      return browser_bound_key_id_;
+    }
 
    private:
     friend PasskeyBrowserBinder;
@@ -132,8 +137,9 @@ class PasskeyBrowserBinder {
   // Creates a browser bound key that is not yet associated to a passkey. The
   // UnboundKey should be bound using BindKey() after the credential id has
   // been created.
-  std::optional<UnboundKey> CreateUnboundKey(
-      const BrowserBoundKeyStore::CredentialInfoList& allowed_algorithms);
+  void CreateUnboundKey(
+      const BrowserBoundKeyStore::CredentialInfoList& allowed_algorithms,
+      base::OnceCallback<void(std::optional<UnboundKey>)> callback);
 
   // Gets a browser bound key for the given `credential_id` and `relying_party`
   // only if a browser bound key already exists for the credential.
@@ -171,21 +177,16 @@ class PasskeyBrowserBinder {
   void UpdateKeyLastUsedToNow(const std::vector<uint8_t>& credential_id,
                               const std::string& relying_party);
 
-  // Deletes all unknown browser bound keys, querying using the provided
-  // `get_matching_credential_ids_callback` to find credentials matching each
-  // relying party in the BBK storage. The
-  // `get_matching_credential_ids_callback` must be valid until `callback` is
-  // invoked. `callback` may hold and release the reference to this
-  // PasskeyBrowserBinder object (DeleteAllUnknownBrowserBoundKeys will run
-  // `callback` as its last action).
-  void DeleteAllUnknownBrowserBoundKeys(
-      base::RepeatingCallback<
-          void(const std::string& relying_party_id,
-               const std::vector<std::vector<uint8_t>>& credential_ids,
-               bool require_third_party_payment_bit_set,
-               base::OnceCallback<void(std::vector<std::vector<uint8_t>>)>)>
-          get_matching_credential_ids_callback,
-      base::OnceClosure callback);
+  // Retrieves all browser bound keys from the web data service and runs
+  // `callback` with the result.
+  virtual void GetAllBrowserBoundKeys(
+      base::OnceCallback<void(std::vector<BrowserBoundKeyMetadata>)> callback);
+
+  // Deletes the provided browser bound keys from the web data service.
+  // `callback` is run once the database operation completes.
+  virtual void DeleteBrowserBoundKeys(
+      base::OnceClosure callback,
+      std::vector<BrowserBoundKeyMetadata> bbk_metas);
 
   // Injects the random bytes function for testing.
   void SetRandomBytesAsVectorCallbackForTesting(
@@ -196,16 +197,20 @@ class PasskeyBrowserBinder {
 
  private:
   // Called after retrieving the possibly empty `existing_browser_bound_key_id`
-  // to retrieve the matching browser bound key. Runs `callback` with nullptr if
-  // there is no matching browser bound key.
+  // to retrieve the matching browser bound key.
   void GetBrowserBoundKey(
       base::OnceCallback<void(std::unique_ptr<BrowserBoundKey>)> callback,
       std::vector<uint8_t> existing_browser_bound_key_id);
 
+  // Called after getting the browser bound key from the store. Runs `callback`
+  // with nullptr if there is no matching browser bound key.
+  void OnGetBrowserBoundKey(
+      base::OnceCallback<void(std::unique_ptr<BrowserBoundKey>)> callback,
+      std::unique_ptr<BrowserBoundKey> browser_bound_key);
+
   // Called after retrieving the possibly empty `existing_browser_bound_key_id`
   // to retrieve the matching browser bound key. Otherwise creates a new browser
-  // bound key and saves its id. The browser bound key is returned by running
-  // `callback` with a boolean indicating whether the browser bound key is new.
+  // bound key and saves its id.
   void GetOrCreateBrowserBoundKey(
       std::vector<uint8_t> credential_id,
       std::string relying_party,
@@ -215,11 +220,23 @@ class PasskeyBrowserBinder {
           callback,
       std::vector<uint8_t> existing_browser_bound_key_id);
 
-  // Called after internal authenticator was called to find stale BBKs.
-  // `callback` is Run once the database operation completes.
-  void DeleteBrowserBoundKeys(
-      base::OnceClosure callback,
-      std::vector<BrowserBoundKeyMetadata> stale_bbk_metas);
+  // Called after getting or creating the browser bound key from the store. The
+  // browser bound key is returned by running `callback` with a boolean
+  // indicating whether the browser bound key is new.
+  void OnGetOrCreateBrowserBoundKey(
+      bool needs_to_be_created,
+      std::vector<uint8_t> credential_id,
+      std::string relying_party,
+      std::optional<base::Time> last_used,
+      base::OnceCallback<void(bool is_new, std::unique_ptr<BrowserBoundKey>)>
+          callback,
+      std::unique_ptr<BrowserBoundKey> browser_bound_key);
+
+  // Called after creating an unbound browser bound key from the store. The
+  // browser bound key is returned by running `callback`.
+  void OnCreateUnboundKey(
+      base::OnceCallback<void(std::optional<UnboundKey>)> callback,
+      std::unique_ptr<BrowserBoundKey> browser_bound_key);
 
   // Records a creation or retrieval metric.
   void RecordCreationOrRetrieval(bool is_creation, bool did_succeed);

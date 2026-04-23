@@ -32,7 +32,6 @@
 #include "base/notreached.h"
 #include "cc/paint/paint_flags.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
-#include "third_party/blink/public/common/privacy_budget/identifiable_token.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_context_creation_attributes_core.h"
@@ -69,8 +68,6 @@ class VideoFrame;
 
 namespace blink {
 
-class CanvasResourceProvider;
-class CanvasElementHitTestRegion;
 class ComputedStyle;
 class Document;
 class Element;
@@ -100,21 +97,6 @@ class CORE_EXPORT CanvasRenderingContext
 
    private:
     CanvasRenderingContext& this_;
-  };
-
-  class CORE_EXPORT ElementHitTestRegion
-      : public GarbageCollected<ElementHitTestRegion> {
-   public:
-    ElementHitTestRegion(Element* element, const gfx::RectF& rect);
-
-    void Trace(Visitor*) const;
-
-    Element* element() const { return element_.Get(); }
-    gfx::RectF rect() const { return rect_; }
-
-   private:
-    WeakMember<Element> element_;
-    gfx::RectF rect_;
   };
 
   CanvasRenderingContext(const CanvasRenderingContext&) = delete;
@@ -170,6 +152,11 @@ class CORE_EXPORT CanvasRenderingContext
   // This is only used in WebGL
   void RecordUKMCanvasDrawnToRenderingAPI();
 
+  static CanvasRenderingContext* GetEnclosingContextForDrawElement(
+      Element* element,
+      const String& func_name,
+      ExceptionState& exception_state);
+
   static CanvasRenderingAPI RenderingAPIFromId(const String& id);
 
   CanvasRenderingContextHost* Host() const { return host_.Get(); }
@@ -178,7 +165,7 @@ class CORE_EXPORT CanvasRenderingContext
   virtual viz::SharedImageFormat GetSharedImageFormat() const = 0;
   virtual gfx::ColorSpace GetColorSpace() const = 0;
 
-  virtual scoped_refptr<StaticBitmapImage> GetImage(FlushReason) = 0;
+  virtual scoped_refptr<StaticBitmapImage> GetImage() = 0;
   virtual bool IsComposited() const = 0;
 
   // Called when the entire tab is backgrounded or unbackgrounded.
@@ -209,8 +196,7 @@ class CORE_EXPORT CanvasRenderingContext
   // Returns a StaticBitmapImage containing the current content, or nullptr if
   // it was not possible to obtain that content.
   virtual scoped_refptr<StaticBitmapImage> PaintRenderingResultsToSnapshot(
-      SourceDrawingBuffer source_buffer,
-      FlushReason reason) = 0;
+      SourceDrawingBuffer source_buffer) = 0;
 
   // WebGL-specific methods
   virtual void ClearMarkedCanvasDirty() {}
@@ -263,6 +249,7 @@ class CORE_EXPORT CanvasRenderingContext
   // of a presentable frame.
   virtual void PreFinalizeFrame() {}
   virtual void FinalizeFrame(FlushReason) {}
+  void FinalizeFrame() { return FinalizeFrame(FlushReason::kOther); }
 
   // Thread::TaskObserver implementation
   void DidProcessTask(const base::PendingTask&) override;
@@ -280,21 +267,21 @@ class CORE_EXPORT CanvasRenderingContext
   virtual void LangAttributeChanged() {}
   virtual String GetIdFromControl(const Element* element) { return String(); }
   virtual int LayerCount() const { return 0; }
-  virtual bool IsCanvas2DResourceProviderValid() { NOTREACHED(); }
-  virtual CanvasResourceProvider* GetOrCreateCanvas2DResourceProvider() {
-    NOTREACHED();
-  }
-  // If the ResourceProvider currently exists, replaces it with a newly-created
-  // CanvasResourceProvider.
-  virtual void DropAndRecreateExistingCanvas2DResourceProvider() {
-    NOTREACHED();
-  }
+  virtual void DisableAccelerationForCanvas2D() { NOTREACHED(); }
+
   virtual const std::optional<cc::PaintRecord>& GetLastRecordingForCanvas2D() {
     return empty_recording_;
   }
   virtual bool Is2DCanvasAccelerated() const { NOTREACHED(); }
 
   virtual void setFontForTesting(const String&) { NOTREACHED(); }
+
+  scoped_refptr<StaticBitmapImage> GetElementImage(
+      Element* element,
+      std::optional<uint32_t> width,
+      std::optional<uint32_t> height,
+      const String& func_name,
+      ExceptionState& exception_state);
 
   // WebGL-specific interface
   virtual void MarkLayerComposited() { NOTREACHED(); }
@@ -307,7 +294,7 @@ class CORE_EXPORT CanvasRenderingContext
   virtual void SetHdrMetadata(const gfx::HDRMetadata& hdr_metadata) {}
   virtual void Reshape(int width, int height) {}
 
-  intptr_t AllocatedBufferSize() const;
+  virtual base::ByteCount AllocatedBufferSize() const;
   virtual int AllocatedBufferCountPerPixel() const { return 1; }
   virtual gfx::Size DrawingBufferSize() const {
     const CanvasRenderingContextHost* host = Host();
@@ -338,20 +325,7 @@ class CORE_EXPORT CanvasRenderingContext
   void Trace(Visitor*) const override;
   virtual void Stop() = 0;
 
-  virtual IdentifiableToken IdentifiableTextToken() const {
-    // Token representing no bytes.
-    return IdentifiableToken(base::span<const uint8_t>());
-  }
-
-  virtual bool IdentifiabilityEncounteredSkippedOps() const { return false; }
-
-  virtual bool IdentifiabilityEncounteredSensitiveOps() const { return false; }
-
   static CanvasPerformanceMonitor& GetCanvasPerformanceMonitor();
-
-  virtual bool IdentifiabilityEncounteredPartiallyDigestedImage() const {
-    return false;
-  }
 
   bool did_print_in_current_task() const { return did_print_in_current_task_; }
 
@@ -366,11 +340,9 @@ class CORE_EXPORT CanvasRenderingContext
                                   const String& func_name,
                                   ExceptionState& exception_state);
 
-  bool ConvertHitTestRegionsToHTMLCanvasRegions(
-      const HeapVector<Member<CanvasElementHitTestRegion>>& hit_test_regions,
-      VectorOf<ElementHitTestRegion>& result,
-      const String& func_name,
-      ExceptionState& exception_state);
+  std::optional<cc::PaintRecord> GetElementPaintRecord(Element*,
+                                                       const String& func_name,
+                                                       ExceptionState&);
 
   std::optional<cc::PaintRecord> empty_recording_;
 

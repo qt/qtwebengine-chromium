@@ -63,6 +63,7 @@ type CommonConfig struct {
 	certConfig                               CertConfig
 	injectScripts                            string
 	paramToIgnoreInURLPath                   string
+	noArchiveCertificates                    bool
 
 	// Computed state.
 	root_certs   []tls.Certificate
@@ -156,6 +157,18 @@ func (common *CommonConfig) Flags() []cli.Flag {
 				"of other parameteres are preserved. Only one parameter in one URL path " +
 				"is supported.",
 			Destination: &common.paramToIgnoreInURLPath,
+		},
+		&cli.BoolFlag{
+			Name: "no_archive_certificates",
+			Usage: "By default, WPR stores certificates in the archive during " +
+				"recording (minted from the root ones) and reads them during replay " +
+				"Such certificates will expire eventually, so this setup is only " +
+				"suitable when the client ignores TLS errors (e.g. due to " +
+				"--ignore-certificate-errors-spki-list in a Chromium browser), or " +
+				"for short-lived experiments. Otherwise, use this flag to prevent " +
+				"WPR from reading/writing archive certificates. New certificates " +
+				"will be generated on replay time, with caching by host.",
+			Destination: &common.noArchiveCertificates,
 		},
 	)
 }
@@ -446,7 +459,7 @@ func (r *RecordCommand) Run(c *cli.Context) error {
 	}
 	httpHandler := webpagereplay.NewRecordingProxy(archive, "http", r.common.transformers, r.common.paramToIgnoreInURLPath)
 	httpsHandler := webpagereplay.NewRecordingProxy(archive, "https", r.common.transformers, r.common.paramToIgnoreInURLPath)
-	tlsconfig, err := webpagereplay.RecordTLSConfig(r.common.root_certs, archive)
+	tlsconfig, err := webpagereplay.RecordTLSConfig(r.common.root_certs, archive, !r.common.noArchiveCertificates)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating TLSConfig: %v", err)
 		os.Exit(1)
@@ -520,7 +533,7 @@ func (r *ReplayCommand) Run(c *cli.Context) error {
 
 	httpHandler := webpagereplay.NewReplayingProxy(archive, "http", r.quietMode, r.common.paramToIgnoreInURLPath)
 	httpsHandler := webpagereplay.NewReplayingProxy(archive, "https", r.quietMode, r.common.paramToIgnoreInURLPath)
-	tlsconfig, err := webpagereplay.ReplayTLSConfig(r.common.root_certs, archive)
+	tlsconfig, err := webpagereplay.ReplayTLSConfig(r.common.root_certs, archive, !r.common.noArchiveCertificates)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating TLSConfig: %v", err)
 		os.Exit(1)

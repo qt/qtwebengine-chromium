@@ -1170,13 +1170,13 @@ TEST(DnsResponseTest, ParserLimitedToNumClaimedRecords) {
 
   // Response header only claims 4 records, so expect parser to only allow
   // parsing that many, ignoring extra records in the data.
-  DnsResourceRecord record;
-  EXPECT_TRUE(parser1.ReadRecord(&record));
-  EXPECT_TRUE(parser1.ReadRecord(&record));
-  EXPECT_TRUE(parser1.ReadRecord(&record));
-  EXPECT_TRUE(parser1.ReadRecord(&record));
-  EXPECT_FALSE(parser1.ReadRecord(&record));
-  EXPECT_FALSE(parser1.ReadRecord(&record));
+  DnsResourceRecord record1;
+  EXPECT_TRUE(parser1.ReadRecord(&record1));
+  EXPECT_TRUE(parser1.ReadRecord(&record1));
+  EXPECT_TRUE(parser1.ReadRecord(&record1));
+  EXPECT_TRUE(parser1.ReadRecord(&record1));
+  EXPECT_FALSE(parser1.ReadRecord(&record1));
+  EXPECT_FALSE(parser1.ReadRecord(&record1));
 
   // Repeat using InitParse()
   DnsResponse resp2;
@@ -1193,12 +1193,13 @@ TEST(DnsResponseTest, ParserLimitedToNumClaimedRecords) {
 
   // Response header only claims 4 records, so expect parser to only allow
   // parsing that many, ignoring extra records in the data.
-  EXPECT_TRUE(parser2.ReadRecord(&record));
-  EXPECT_TRUE(parser2.ReadRecord(&record));
-  EXPECT_TRUE(parser2.ReadRecord(&record));
-  EXPECT_TRUE(parser2.ReadRecord(&record));
-  EXPECT_FALSE(parser2.ReadRecord(&record));
-  EXPECT_FALSE(parser2.ReadRecord(&record));
+  DnsResourceRecord record2;
+  EXPECT_TRUE(parser2.ReadRecord(&record2));
+  EXPECT_TRUE(parser2.ReadRecord(&record2));
+  EXPECT_TRUE(parser2.ReadRecord(&record2));
+  EXPECT_TRUE(parser2.ReadRecord(&record2));
+  EXPECT_FALSE(parser2.ReadRecord(&record2));
+  EXPECT_FALSE(parser2.ReadRecord(&record2));
 }
 
 // Test that a parsed DnsResponse does not allow parsing past the end of the
@@ -1240,11 +1241,11 @@ TEST(DnsResponseTest, ParserLimitedToBufferSize) {
   ASSERT_TRUE(parser1.IsValid());
 
   // Response header claims 4 records, but only 2 present in input.
-  DnsResourceRecord record;
-  EXPECT_TRUE(parser1.ReadRecord(&record));
-  EXPECT_TRUE(parser1.ReadRecord(&record));
-  EXPECT_FALSE(parser1.ReadRecord(&record));
-  EXPECT_FALSE(parser1.ReadRecord(&record));
+  DnsResourceRecord record1;
+  EXPECT_TRUE(parser1.ReadRecord(&record1));
+  EXPECT_TRUE(parser1.ReadRecord(&record1));
+  EXPECT_FALSE(parser1.ReadRecord(&record1));
+  EXPECT_FALSE(parser1.ReadRecord(&record1));
 
   // Repeat using InitParse()
   DnsResponse resp2;
@@ -1256,10 +1257,11 @@ TEST(DnsResponseTest, ParserLimitedToBufferSize) {
   ASSERT_TRUE(parser2.IsValid());
 
   // Response header claims 4 records, but only 2 present in input.
-  EXPECT_TRUE(parser2.ReadRecord(&record));
-  EXPECT_TRUE(parser2.ReadRecord(&record));
-  EXPECT_FALSE(parser2.ReadRecord(&record));
-  EXPECT_FALSE(parser2.ReadRecord(&record));
+  DnsResourceRecord record2;
+  EXPECT_TRUE(parser2.ReadRecord(&record2));
+  EXPECT_TRUE(parser2.ReadRecord(&record2));
+  EXPECT_FALSE(parser2.ReadRecord(&record2));
+  EXPECT_FALSE(parser2.ReadRecord(&record2));
 }
 
 TEST(DnsResponseWriteTest, SingleARecordAnswer) {
@@ -1762,6 +1764,66 @@ TEST(DnsResponseWriteTest, CreateEmptyNoDataResponse) {
   EXPECT_EQ(response.answer_count(), 0u);
   EXPECT_EQ(response.authority_count(), 0u);
   EXPECT_EQ(response.additional_answer_count(), 0u);
+
+  EXPECT_THAT(response.qtypes(), testing::ElementsAre(dns_protocol::kTypeA));
+  EXPECT_THAT(response.dotted_qnames(), testing::ElementsAre("name.test"));
+}
+
+template <size_t N>
+void LoadResponse(IOBuffer* buffer, const uint8_t (&packet)[N]) {
+  ASSERT_LE(N, static_cast<size_t>(buffer->size()));
+  base::span<uint8_t> dst = buffer->first(N);
+  std::copy_n(packet, N, dst.begin());
+}
+
+TEST(DnsResponseTest, MalformedThenValid_NoTailAccumulated) {
+  constexpr uint8_t kMalformedResponse[] = {
+      0x00, 0x00,  // ID
+      0x81, 0x80,  // flags: standard response, RA, no error
+      0x00, 0x02,  // QDCOUNT = 2
+      0x00, 0x00,  // ANCOUNT
+      0x00, 0x00,  // NSCOUNT
+      0x00, 0x00,  // ARCOUNT
+      // Q1: name.test A IN
+      0x04, 'n', 'a', 'm', 'e', 0x04, 't', 'e', 's', 't', 0x00, 0x00,
+      0x01,        // QTYPE=A
+      0x00, 0x01,  // QCLASS=IN
+      // Q2: Malformed
+      0x03, 'b', 'a', 'd',  // Missing null terminator and type/class
+  };
+
+  constexpr uint8_t kValidResponse[] = {
+      0x00, 0x01,  // ID
+      0x81, 0x80,  // flags: standard response, RA, no error
+      0x00, 0x01,  // QDCOUNT = 1
+      0x00, 0x00,  // ANCOUNT
+      0x00, 0x00,  // NSCOUNT
+      0x00, 0x00,  // ARCOUNT
+      // Q1: name.test A IN
+      0x04, 'n', 'a', 'm', 'e', 0x04, 't', 'e', 's', 't', 0x00, 0x00,
+      0x01,        // QTYPE=A
+      0x00, 0x01,  // QCLASS=IN
+  };
+
+  size_t buffer_capacity =
+      std::max(sizeof(kMalformedResponse), sizeof(kValidResponse));
+  scoped_refptr<IOBuffer> buffer =
+      base::MakeRefCounted<IOBufferWithSize>(buffer_capacity);
+
+  // First attempt with malformed data
+  LoadResponse(buffer.get(), kMalformedResponse);
+  DnsResponse response(buffer, sizeof(kMalformedResponse));
+  EXPECT_FALSE(response.IsValid())
+      << "Response should be invalid after failed parse.";
+
+  // Second attempt with valid data on the same DnsResponse object
+  LoadResponse(buffer.get(), kValidResponse);
+  ASSERT_TRUE(response.InitParseWithoutQuery(sizeof(kValidResponse)));
+  ASSERT_TRUE(response.IsValid());
+
+  // Check that the state reflects only the valid packet's contents
+  EXPECT_EQ(response.qtypes().size(), 1u);
+  EXPECT_EQ(response.dotted_qnames().size(), 1u);
 
   EXPECT_THAT(response.qtypes(), testing::ElementsAre(dns_protocol::kTypeA));
   EXPECT_THAT(response.dotted_qnames(), testing::ElementsAre("name.test"));

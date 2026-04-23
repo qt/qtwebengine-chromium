@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008, 2010 Apple Inc.  All rights reserved.
@@ -40,8 +40,8 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as LegacyWrapper from '../../ui/components/legacy_wrapper/legacy_wrapper.js';
+import {createIcon} from '../../ui/kit/kit.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -51,13 +51,13 @@ import {BackForwardCacheTreeElement} from './BackForwardCacheTreeElement.js';
 import {BackgroundServiceModel} from './BackgroundServiceModel.js';
 import {BackgroundServiceView} from './BackgroundServiceView.js';
 import {BounceTrackingMitigationsTreeElement} from './BounceTrackingMitigationsTreeElement.js';
-import * as ApplicationComponents from './components/components.js';
 import {type DOMStorage, DOMStorageModel, Events as DOMStorageModelEvents} from './DOMStorageModel.js';
 import {
   Events as ExtensionStorageModelEvents,
   type ExtensionStorage,
   ExtensionStorageModel,
 } from './ExtensionStorageModel.js';
+import {FrameDetailsReportView} from './FrameDetailsView.js';
 import {
   type Database as IndexedDBModelDatabase,
   type DatabaseId,
@@ -406,7 +406,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
         i18nString(UIStrings.localStorageDescription), 'local-storage');
     this.localStorageListTreeElement.setLink(
         'https://developer.chrome.com/docs/devtools/storage/localstorage/' as Platform.DevToolsPath.UrlString);
-    const localStorageIcon = IconButton.Icon.create('table');
+    const localStorageIcon = createIcon('table');
     this.localStorageListTreeElement.setLeadingIcons([localStorageIcon]);
 
     storageTreeElement.appendChild(this.localStorageListTreeElement);
@@ -415,7 +415,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
         i18nString(UIStrings.sessionStorageDescription), 'session-storage');
     this.sessionStorageListTreeElement.setLink(
         'https://developer.chrome.com/docs/devtools/storage/sessionstorage/' as Platform.DevToolsPath.UrlString);
-    const sessionStorageIcon = IconButton.Icon.create('table');
+    const sessionStorageIcon = createIcon('table');
     this.sessionStorageListTreeElement.setLeadingIcons([sessionStorageIcon]);
 
     storageTreeElement.appendChild(this.sessionStorageListTreeElement);
@@ -425,7 +425,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
         i18nString(UIStrings.extensionStorageDescription), 'extension-storage');
     this.extensionStorageListTreeElement.setLink(
         'https://developer.chrome.com/docs/extensions/reference/api/storage/' as Platform.DevToolsPath.UrlString);
-    const extensionStorageIcon = IconButton.Icon.create('table');
+    const extensionStorageIcon = createIcon('table');
     this.extensionStorageListTreeElement.setLeadingIcons([extensionStorageIcon]);
 
     storageTreeElement.appendChild(this.extensionStorageListTreeElement);
@@ -440,7 +440,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
         'cookies');
     this.cookieListTreeElement.setLink(
         'https://developer.chrome.com/docs/devtools/storage/cookies/' as Platform.DevToolsPath.UrlString);
-    const cookieIcon = IconButton.Icon.create('cookie');
+    const cookieIcon = createIcon('cookie');
     this.cookieListTreeElement.setLeadingIcons([cookieIcon]);
     storageTreeElement.appendChild(this.cookieListTreeElement);
 
@@ -1064,7 +1064,7 @@ export class BackgroundServiceTreeElement extends ApplicationPanelTreeElement {
 
     this.model = null;
 
-    const backgroundServiceIcon = IconButton.Icon.create(this.getIconType());
+    const backgroundServiceIcon = createIcon(this.getIconType());
     this.setLeadingIcons([backgroundServiceIcon]);
   }
 
@@ -1130,7 +1130,7 @@ export class ServiceWorkersTreeElement extends ApplicationPanelTreeElement {
 
   constructor(storagePanel: ResourcesPanel) {
     super(storagePanel, i18n.i18n.lockedString('Service workers'), false, 'service-workers');
-    const icon = IconButton.Icon.create('gears');
+    const icon = createIcon('gears');
     this.setLeadingIcons([icon]);
   }
 
@@ -1153,12 +1153,11 @@ export class AppManifestTreeElement extends ApplicationPanelTreeElement {
   private view: AppManifestView;
   constructor(storagePanel: ResourcesPanel) {
     super(storagePanel, i18nString(UIStrings.manifest), true, 'manifest');
-    const icon = IconButton.Icon.create('document');
+    const icon = createIcon('document');
     this.setLeadingIcons([icon]);
     self.onInvokeElement(this.listItemElement, this.onInvoke.bind(this));
     const emptyView = new UI.EmptyWidget.EmptyWidget(
         i18nString(UIStrings.noManifestDetected), i18nString(UIStrings.manifestDescription));
-    // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
     const reportView = new UI.ReportView.ReportView(i18nString(UIStrings.appManifest));
     this.view = new AppManifestView(emptyView, reportView, new Common.Throttler.Throttler(1000));
     UI.ARIAUtils.setLabel(this.listItemElement, i18nString(UIStrings.onInvokeManifestAlert));
@@ -1208,7 +1207,7 @@ export class ManifestChildTreeElement extends ApplicationPanelTreeElement {
       storagePanel: ResourcesPanel, element: Element, childTitle: string, fieldElement: HTMLElement,
       jslogContext: string) {
     super(storagePanel, childTitle, false, jslogContext);
-    const icon = IconButton.Icon.create('document');
+    const icon = createIcon('document');
     this.setLeadingIcons([icon]);
     this.#sectionElement = element;
     this.#sectionFieldElement = fieldElement;
@@ -1253,7 +1252,7 @@ export class ClearStorageTreeElement extends ApplicationPanelTreeElement {
   private view?: StorageView;
   constructor(storagePanel: ResourcesPanel) {
     super(storagePanel, i18nString(UIStrings.storage), false, 'storage');
-    const icon = IconButton.Icon.create('database');
+    const icon = createIcon('database');
     this.setLeadingIcons([icon]);
   }
 
@@ -1279,7 +1278,7 @@ export class IndexedDBTreeElement extends ExpandableApplicationPanelTreeElement 
     super(
         storagePanel, i18nString(UIStrings.indexeddb), i18nString(UIStrings.noIndexeddb),
         i18nString(UIStrings.indexeddbDescription), 'indexed-db');
-    const icon = IconButton.Icon.create('database');
+    const icon = createIcon('database');
     this.setLeadingIcons([icon]);
     this.idbDatabaseTreeElements = [];
     this.storageBucket = storageBucket;
@@ -1422,7 +1421,7 @@ export class IDBDatabaseTreeElement extends ApplicationPanelTreeElement {
     this.model = model;
     this.databaseId = databaseId;
     this.idbObjectStoreTreeElements = new Map();
-    const icon = IconButton.Icon.create('database');
+    const icon = createIcon('database');
     this.setLeadingIcons([icon]);
     this.model.addEventListener(IndexedDBModelEvents.DatabaseNamesRefreshed, this.refreshIndexedDB, this);
   }
@@ -1547,7 +1546,7 @@ export class IDBObjectStoreTreeElement extends ApplicationPanelTreeElement {
     this.idbIndexTreeElements = new Map();
     this.objectStore = objectStore;
     this.view = null;
-    const icon = IconButton.Icon.create('table');
+    const icon = createIcon('table');
     this.setLeadingIcons([icon]);
   }
 
@@ -1759,7 +1758,7 @@ export class DOMStorageTreeElement extends ApplicationPanelTreeElement {
                                 i18nString(UIStrings.localFiles),
         false, domStorage.isLocalStorage ? 'local-storage-for-domain' : 'session-storage-for-domain');
     this.domStorage = domStorage;
-    const icon = IconButton.Icon.create('table');
+    const icon = createIcon('table');
     this.setLeadingIcons([icon]);
   }
 
@@ -1794,7 +1793,7 @@ export class ExtensionStorageTreeElement extends ApplicationPanelTreeElement {
     super(
         storagePanel, nameForExtensionStorageArea(extensionStorage.storageArea), false, 'extension-storage-for-domain');
     this.extensionStorage = extensionStorage;
-    const icon = IconButton.Icon.create('table');
+    const icon = createIcon('table');
     this.setLeadingIcons([icon]);
   }
 
@@ -1832,7 +1831,7 @@ export class ExtensionStorageTreeParentElement extends ApplicationPanelTreeEleme
   constructor(storagePanel: ResourcesPanel, extensionId: string, extensionName: string) {
     super(storagePanel, extensionName || extensionId, true, 'extension-storage-for-domain');
     this.extensionId = extensionId;
-    const icon = IconButton.Icon.create('table');
+    const icon = createIcon('table');
     this.setLeadingIcons([icon]);
   }
 
@@ -1852,7 +1851,7 @@ export class CookieTreeElement extends ApplicationPanelTreeElement {
     this.target = frame.resourceTreeModel().target();
     this.#cookieDomain = cookieUrl.securityOrigin();
     this.tooltip = i18nString(UIStrings.cookiesUsedByFramesFromS, {PH1: this.#cookieDomain});
-    const icon = IconButton.Icon.create('cookie');
+    const icon = createIcon('cookie');
     // Note that we cannot use `cookieDomainInternal` here since it contains scheme.
     if (IssuesManager.RelatedIssue.hasThirdPartyPhaseoutCookieIssueForDomain(cookieUrl.domain())) {
       icon.name = 'warning-filled';
@@ -2150,8 +2149,7 @@ export class FrameTreeElement extends ApplicationPanelTreeElement {
   private readonly treeElementForResource: Map<string, FrameResourceTreeElement>;
   private treeElementForWindow: Map<Protocol.Target.TargetID, FrameWindowTreeElement>;
   private treeElementForWorker: Map<Protocol.Target.TargetID, WorkerTreeElement>;
-  private view: LegacyWrapper.LegacyWrapper
-      .LegacyWrapper<UI.Widget.Widget, ApplicationComponents.FrameDetailsView.FrameDetailsReportView>|null;
+  private view: FrameDetailsReportView|null;
 
   constructor(section: ResourcesSection, frame: SDK.ResourceTreeModel.ResourceTreeFrame) {
     super(section.panel, '', false, 'frame');
@@ -2174,7 +2172,7 @@ export class FrameTreeElement extends ApplicationPanelTreeElement {
   }
 
   async frameNavigated(frame: SDK.ResourceTreeModel.ResourceTreeFrame): Promise<void> {
-    const icon = IconButton.Icon.create(this.getIconTypeForFrame(frame));
+    const icon = createIcon(this.getIconTypeForFrame(frame));
     if (frame.unreachableUrl()) {
       icon.classList.add('red-icon');
     }
@@ -2196,8 +2194,8 @@ export class FrameTreeElement extends ApplicationPanelTreeElement {
     this.treeElementForWorker.clear();
 
     if (this.selected) {
-      this.view = LegacyWrapper.LegacyWrapper.legacyWrapper(
-          UI.Widget.Widget, new ApplicationComponents.FrameDetailsView.FrameDetailsReportView(this.frame));
+      this.view = new FrameDetailsReportView();
+      this.view.frame = this.frame;
       this.showView(this.view);
     } else {
       this.view = null;
@@ -2234,8 +2232,8 @@ export class FrameTreeElement extends ApplicationPanelTreeElement {
   override onselect(selectedByUser?: boolean): boolean {
     super.onselect(selectedByUser);
     if (!this.view) {
-      this.view = LegacyWrapper.LegacyWrapper.legacyWrapper(
-          UI.Widget.Widget, new ApplicationComponents.FrameDetailsView.FrameDetailsReportView(this.frame));
+      this.view = new FrameDetailsReportView();
+      this.view.frame = this.frame;
     }
     Host.userMetrics.panelShown('frame-details');
     this.showView(this.view);
@@ -2376,7 +2374,7 @@ export class FrameResourceTreeElement extends ApplicationPanelTreeElement {
     this.tooltip = resource.url;
     resourceToFrameResourceTreeElement.set(this.resource, this);
 
-    const icon = IconButton.Icon.create('document', 'navigator-file-tree-item');
+    const icon = createIcon('document', 'navigator-file-tree-item');
     icon.classList.add('navigator-' + resource.resourceType().name() + '-tree-item');
     this.setLeadingIcons([icon]);
   }
@@ -2467,7 +2465,7 @@ class FrameWindowTreeElement extends ApplicationPanelTreeElement {
 
   updateIcon(canAccessOpener: boolean): void {
     const iconType = canAccessOpener ? 'popup' : 'frame';
-    const icon = IconButton.Icon.create(iconType);
+    const icon = createIcon(iconType);
     this.setLeadingIcons([icon]);
   }
 
@@ -2478,7 +2476,7 @@ class FrameWindowTreeElement extends ApplicationPanelTreeElement {
     this.targetInfo = targetInfo;
     if (this.view) {
       this.view.setTargetInfo(targetInfo);
-      this.view.update();
+      this.view.requestUpdate();
     }
   }
 
@@ -2487,7 +2485,7 @@ class FrameWindowTreeElement extends ApplicationPanelTreeElement {
     this.isWindowClosed = true;
     if (this.view) {
       this.view.setIsWindowClosed(true);
-      this.view.update();
+      this.view.requestUpdate();
     }
   }
 
@@ -2496,7 +2494,7 @@ class FrameWindowTreeElement extends ApplicationPanelTreeElement {
     if (!this.view) {
       this.view = new OpenedWindowDetailsView(this.targetInfo, this.isWindowClosed);
     } else {
-      this.view.update();
+      this.view.requestUpdate();
     }
     this.showView(this.view);
     Host.userMetrics.panelShown('frame-window');
@@ -2516,7 +2514,7 @@ class WorkerTreeElement extends ApplicationPanelTreeElement {
     super(storagePanel, targetInfo.title || targetInfo.url || i18nString(UIStrings.worker), false, 'worker');
     this.targetInfo = targetInfo;
     this.view = null;
-    const icon = IconButton.Icon.create('gears', 'navigator-file-tree-item');
+    const icon = createIcon('gears', 'navigator-file-tree-item');
     this.setLeadingIcons([icon]);
   }
 
@@ -2525,7 +2523,7 @@ class WorkerTreeElement extends ApplicationPanelTreeElement {
     if (!this.view) {
       this.view = new WorkerDetailsView(this.targetInfo);
     } else {
-      this.view.update();
+      this.view.requestUpdate();
     }
     this.showView(this.view);
     Host.userMetrics.panelShown('frame-worker');

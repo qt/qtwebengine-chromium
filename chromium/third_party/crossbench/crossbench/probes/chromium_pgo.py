@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, ClassVar, Final, Type, cast
 from typing_extensions import override
 
 from crossbench import path as pth
-from crossbench.browsers.chromium.devtools import DevToolsClient
+from crossbench.browsers.chromium.devtools import \
+    DevToolsRemoteClient as DevToolsClient
 from crossbench.browsers.chromium.webdriver import ChromiumWebDriverAndroid
 from crossbench.parse import PathParser
 from crossbench.probes.chromium_probe import ChromiumProbe

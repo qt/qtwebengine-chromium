@@ -17,6 +17,7 @@
 #include <assert.h>
 #include <string.h>
 
+#include <iterator>
 #include <utility>
 
 #include <openssl/bn.h>
@@ -442,7 +443,7 @@ constexpr NamedGroup kNamedGroups[] = {
     {NID_X25519Kyber768Draft00, SSL_GROUP_X25519_KYBER768_DRAFT00,
      "X25519Kyber768Draft00", ""},
     {NID_X25519MLKEM768, SSL_GROUP_X25519_MLKEM768, "X25519MLKEM768", ""},
-    {NID_MLKEM1024, SSL_GROUP_MLKEM1024, "MLKEM1024", ""},
+    {NID_ML_KEM_1024, SSL_GROUP_MLKEM1024, "MLKEM1024", ""},
 };
 
 static_assert(std::size(kNamedGroups) == kNumNamedGroups,
@@ -532,6 +533,6 @@ const char *SSL_get_group_name(uint16_t group_id) {
 }
 
 size_t SSL_get_all_group_names(const char **out, size_t max_out) {
-  return GetAllNames(out, max_out, Span<const char *>(), &NamedGroup::name,
+  return GetAllNames(out, max_out, Span<const char *const>(), &NamedGroup::name,
                      Span(kNamedGroups));
 }

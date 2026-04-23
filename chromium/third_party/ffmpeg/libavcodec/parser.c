@@ -24,15 +24,22 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/mem.h"
 
 #include "parser.h"
+#include "parser_internal.h"
 
-AVCodecParserContext *av_parser_init(int codec_id)
+#if FF_API_PARSER_CODECID
+av_cold AVCodecParserContext *av_parser_init(int codec_id)
+#else
+av_cold AVCodecParserContext *av_parser_init(enum AVCodecID codec_id)
+#endif
 {
     AVCodecParserContext *s = NULL;
     const AVCodecParser *parser;
+    const FFCodecParser *ffparser;
     void *i = 0;
     int ret;
 
@@ -52,17 +59,18 @@ AVCodecParserContext *av_parser_init(int codec_id)
     return NULL;
 
 found:
+    ffparser = ffcodecparser(parser);
     s = av_mallocz(sizeof(AVCodecParserContext));
     if (!s)
         goto err_out;
     s->parser = parser;
-    s->priv_data = av_mallocz(parser->priv_data_size);
+    s->priv_data = av_mallocz(ffparser->priv_data_size);
     if (!s->priv_data)
         goto err_out;
     s->fetch_timestamp=1;
     s->pict_type = AV_PICTURE_TYPE_I;
-    if (parser->parser_init) {
-        ret = parser->parser_init(s);
+    if (ffparser->init) {
+        ret = ffparser->init(s);
         if (ret != 0)
             goto err_out;
     }
@@ -160,8 +168,8 @@ int av_parser_parse2(AVCodecParserContext *s, AVCodecContext *avctx,
         ff_fetch_timestamp(s, 0, 0, 0);
     }
     /* WARNING: the returned index can be negative */
-    index = s->parser->parser_parse(s, avctx, (const uint8_t **) poutbuf,
-                                    poutbuf_size, buf, buf_size);
+    index = ffcodecparser(s->parser)->parse(s, avctx, (const uint8_t **) poutbuf,
+                                            poutbuf_size, buf, buf_size);
     av_assert0(index > -0x20000000); // The API does not allow returning AVERROR codes
 #define FILL(name) if(s->name > 0 && avctx->name <= 0) avctx->name = s->name
     if (avctx->codec_type == AVMEDIA_TYPE_VIDEO) {
@@ -190,11 +198,11 @@ int av_parser_parse2(AVCodecParserContext *s, AVCodecContext *avctx,
     return index;
 }
 
-void av_parser_close(AVCodecParserContext *s)
+av_cold void av_parser_close(AVCodecParserContext *s)
 {
     if (s) {
-        if (s->parser->parser_close)
-            s->parser->parser_close(s);
+        if (ffcodecparser(s->parser)->close)
+            ffcodecparser(s->parser)->close(s);
         av_freep(&s->priv_data);
         av_free(s);
     }
@@ -287,7 +295,7 @@ int ff_combine_frame(ParseContext *pc, int next,
     return 0;
 }
 
-void ff_parse_close(AVCodecParserContext *s)
+av_cold void ff_parse_close(AVCodecParserContext *s)
 {
     ParseContext *pc = s->priv_data;
 

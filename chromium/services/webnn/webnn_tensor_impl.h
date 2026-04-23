@@ -13,6 +13,7 @@
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
 #include "services/webnn/public/cpp/operand_descriptor.h"
 #include "services/webnn/public/mojom/webnn_tensor.mojom.h"
+#include "services/webnn/sequence_deleter.h"
 #include "services/webnn/webnn_object_impl.h"
 
 namespace webnn {
@@ -21,18 +22,21 @@ class WebNNContextImpl;
 
 // GPU process implementation of the MLTensor interface exposed to script.
 class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNTensorImpl
-    : public WebNNObjectImpl<mojom::WebNNTensor, blink::WebNNTensorToken> {
+    : public WebNNObjectImpl<mojom::WebNNTensor,
+                             blink::WebNNTensorToken,
+                             mojo::AssociatedReceiver<mojom::WebNNTensor>> {
  public:
-  explicit WebNNTensorImpl(
-      mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
-      base::WeakPtr<WebNNContextImpl> context,
-      mojom::TensorInfoPtr tensor_info);
+  using RepresentationPtr =
+      std::unique_ptr<gpu::WebNNTensorRepresentation, OnTaskRunnerDeleter>;
 
-  WebNNTensorImpl(
-      mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
-      base::WeakPtr<WebNNContextImpl> context,
-      mojom::TensorInfoPtr tensor_info,
-      std::unique_ptr<gpu::WebNNTensorRepresentation> representation);
+  WebNNTensorImpl(mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
+                  base::WeakPtr<WebNNContextImpl> context,
+                  mojom::TensorInfoPtr tensor_info);
+
+  WebNNTensorImpl(mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
+                  base::WeakPtr<WebNNContextImpl> context,
+                  mojom::TensorInfoPtr tensor_info,
+                  RepresentationPtr representation);
 
   WebNNTensorImpl(const WebNNTensorImpl&) = delete;
   WebNNTensorImpl& operator=(const WebNNTensorImpl&) = delete;
@@ -67,9 +71,8 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNTensorImpl
   // Backend subclasses implement this to perform any necessary
   // device synchronization and store the access. Returns true on success.
   // On success, the subclass should assign `representation_access_` to
-  // `access`.
-  virtual bool ImportTensorImpl(
-      std::unique_ptr<gpu::WebNNTensorRepresentation::ScopedAccess> access) = 0;
+  // gpu::WebNNTensorRepresentation::BeginScopedAccess().
+  virtual bool ImportTensorImpl() = 0;
 
  protected:
   ~WebNNTensorImpl() override;
@@ -80,22 +83,25 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNTensorImpl
   virtual void ReadTensorImpl(
       mojom::WebNNTensor::ReadTensorCallback callback) = 0;
 
+  using ScopedAccessPtr =
+      std::unique_ptr<gpu::WebNNTensorRepresentation::ScopedAccess,
+                      OnTaskRunnerDeleter>;
+
   // Called by `ExportTensor()` after WebNN finishes access of the
   // platform-specific tensor as a shared image.
   // Backend subclasses implement this to perform any necessary
   // device synchronization.
-  virtual void ExportTensorImpl(
-      std::unique_ptr<gpu::WebNNTensorRepresentation::ScopedAccess> access) = 0;
+  virtual void ExportTensorImpl(ScopedAccessPtr access,
+                                ExportTensorCallback callback) = 0;
 
   base::WeakPtr<WebNNContextImpl> context_;
 
   // The shared image representation used to access the contents from shared
   // image. Only valid when usage has WebGPUInterop.
-  std::unique_ptr<gpu::WebNNTensorRepresentation> representation_;
+  RepresentationPtr representation_{nullptr, OnTaskRunnerDeleter(nullptr)};
 
   // Non-null only while WebNN holds exclusive access. Null if exported.
-  std::unique_ptr<gpu::WebNNTensorRepresentation::ScopedAccess>
-      representation_access_;
+  ScopedAccessPtr representation_access_{nullptr, OnTaskRunnerDeleter(nullptr)};
 
  private:
   // mojom::WebNNTensor

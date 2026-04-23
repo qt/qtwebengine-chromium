@@ -18,7 +18,6 @@ if TYPE_CHECKING:
   from crossbench import plt
   from crossbench.browsers.settings import Settings
 
-
 SAFARIDRIVER_PATH: Final = pth.AnyPosixPath("/usr/bin/safaridriver")
 
 

@@ -86,8 +86,7 @@ protected:
             SkYUVAInfo::YUVALocations yuvaLocations = fPixmaps.toYUVALocations();
             SkASSERT(SkYUVAInfo::YUVALocation::AreValidLocations(yuvaLocations));
 
-            SkMatrix om = fPixmaps.yuvaInfo().originMatrix();
-            SkAssertResult(om.invert(&om));
+            SkMatrix om = fPixmaps.yuvaInfo().inverseOriginMatrix();
             float normX = 1.f/info.width();
             float normY = 1.f/info.height();
             if (SkEncodedOriginSwapsWidthHeight(fPixmaps.yuvaInfo().origin())) {
@@ -234,6 +233,16 @@ sk_sp<SkImage> LazyYUVImage::refImage(GrRecordingContext* rContext, Type type) {
         return nullptr;
     }
 }
+
+sk_sp<SkImage> LazyYUVImage::refImage(GrDirectContext* dContext, Type type) {
+#if defined(SK_GANESH)
+    return this->refImage(static_cast<GrRecordingContext *>(dContext), type);
+#else
+    SkASSERT(!dContext);
+    return this->refImage(static_cast<GrRecordingContext *>(nullptr), type);
+#endif
+}
+
 
 #if defined(SK_GRAPHITE)
 sk_sp<SkImage> LazyYUVImage::refImage(skgpu::graphite::Recorder* recorder, Type type) {

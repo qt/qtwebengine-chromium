@@ -17,12 +17,14 @@ import * as FederatedAuthUserInfoRequestIssue from './FederatedAuthUserInfoReque
 import * as GenericIssue from './GenericIssue.js';
 import * as HeavyAdIssue from './HeavyAdIssue.js';
 import * as Issue from './Issue.js';
+import * as IssueAggregator from './IssueAggregator.js';
 import * as IssueResolver from './IssueResolver.js';
 import * as IssuesManager from './IssuesManager.js';
 import * as LowTextContrastIssue from './LowTextContrastIssue.js';
 import * as MarkdownIssueDescription from './MarkdownIssueDescription.js';
 import * as MixedContentIssue from './MixedContentIssue.js';
 import * as PartitioningBlobURLIssue from './PartitioningBlobURLIssue.js';
+import * as PermissionElementIssue from './PermissionElementIssue.js';
 import * as PropertyRuleIssue from './PropertyRuleIssue.js';
 import * as QuirksModeIssue from './QuirksModeIssue.js';
 import * as RelatedIssue from './RelatedIssue.js';
@@ -49,12 +51,14 @@ export {
   GenericIssue,
   HeavyAdIssue,
   Issue,
+  IssueAggregator,
   IssueResolver,
   IssuesManager,
   LowTextContrastIssue,
   MarkdownIssueDescription,
   MixedContentIssue,
   PartitioningBlobURLIssue,
+  PermissionElementIssue,
   PropertyRuleIssue,
   QuirksModeIssue,
   RelatedIssue,

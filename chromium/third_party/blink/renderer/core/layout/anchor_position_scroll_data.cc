@@ -21,9 +21,16 @@ namespace {
 
 // Finds the LayoutObject of the anchor element given by position-anchor.
 const LayoutObject* PositionAnchorObject(const LayoutBox& box) {
-  const ComputedStyle& style = box.StyleRef();
-  return style.PositionAnchor() ? box.FindTargetAnchor(*style.PositionAnchor())
-                                : box.AcceptableImplicitAnchor();
+  const StylePositionAnchor& position_anchor = box.StyleRef().PositionAnchor();
+  using Type = StylePositionAnchor::Type;
+  switch (position_anchor.GetType()) {
+    case Type::kNone:
+      return nullptr;
+    case Type::kAuto:
+      return box.AcceptableImplicitAnchor();
+    case Type::kName:
+      return box.FindTargetAnchor(position_anchor.GetName());
+  }
 }
 
 const HeapVector<NonOverflowingScrollRange>* GetNonOverflowingScrollRanges(
@@ -333,6 +340,10 @@ void AnchorPositionScrollData::InvalidateLayoutAndPaint() {
     return;
   }
   DCHECK(anchored_element_->GetLayoutObject());
+
+  if (OutOfFlowData* out_of_flow_data = anchored_element_->GetOutOfFlowData()) {
+    out_of_flow_data->ClearRememberedScrollOffsets();
+  }
   anchored_element_->GetLayoutObject()->SetNeedsLayoutAndFullPaintInvalidation(
       layout_invalidation_reason::kAnchorPositioning);
   anchored_element_->GetLayoutObject()->SetNeedsPaintPropertyUpdate();

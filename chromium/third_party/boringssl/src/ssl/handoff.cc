@@ -50,7 +50,7 @@ static bool serialize_features(CBB *out) {
   }
   Span<const SSL_CIPHER> all_ciphers = AllCiphers();
   for (const SSL_CIPHER &cipher : all_ciphers) {
-    if (!CBB_add_u16(&ciphers, static_cast<uint16_t>(cipher.id))) {
+    if (!CBB_add_u16(&ciphers, cipher.protocol_id)) {
       return false;
     }
   }
@@ -117,7 +117,7 @@ bool SSL_decline_handoff(SSL *ssl) {
 }
 
 // apply_remote_features reads a list of supported features from |in| and
-// (possibly) reconfigures |ssl| to disallow the negotation of features whose
+// (possibly) reconfigures |ssl| to disallow the negotiation of features whose
 // support has not been indicated.  (This prevents the the handshake from
 // committing to features that are not supported on the handoff/handback side.)
 static bool apply_remote_features(SSL *ssl, CBS *in) {

@@ -12,7 +12,6 @@
 
 /* Standard C headers */
 #include <limits.h>
-#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -21,21 +20,10 @@
 #include "threadpool-common.h"
 
 /* POSIX headers */
-#if PTHREADPOOL_USE_CONDVAR || PTHREADPOOL_USE_FUTEX
+#if PTHREADPOOL_USE_PTHREADS
 #include <pthread.h>
-#endif
-
-/* Mach headers */
-#if PTHREADPOOL_USE_GCD
-#include <dispatch/dispatch.h>
-#endif
-
-/* Windows headers */
-#if PTHREADPOOL_USE_EVENT
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
+#else
+#include <threads.h>
 #endif
 
 /* Dependencies */
@@ -43,14 +31,6 @@
 
 /* Library header */
 #include <pthreadpool.h>
-
-#define THREADPOOL_COMMAND_MASK UINT32_C(0x7FFFFFFF)
-
-enum threadpool_command {
-  threadpool_command_init,
-  threadpool_command_parallelize,
-  threadpool_command_shutdown,
-};
 
 struct PTHREADPOOL_CACHELINE_ALIGNED thread_info {
   /**
@@ -81,22 +61,14 @@ struct PTHREADPOOL_CACHELINE_ALIGNED thread_info {
    * Thread pool which owns the thread.
    */
   struct pthreadpool* threadpool;
-#if PTHREADPOOL_USE_CONDVAR || PTHREADPOOL_USE_FUTEX
   /**
    * The pthread object corresponding to the thread.
    */
-  pthread_t thread_object;
+  pthreadpool_thread_t thread_object;
   /**
    * Whether this thread is active or not.
    */
   pthreadpool_atomic_uint32_t is_active;
-#endif
-#if PTHREADPOOL_USE_EVENT
-  /**
-   * The Windows thread handle corresponding to the thread.
-   */
-  HANDLE thread_handle;
-#endif
 };
 
 PTHREADPOOL_STATIC_ASSERT(sizeof(struct thread_info) %
@@ -1140,12 +1112,11 @@ union pthreadpool_params {
 #define PTHREADPOOL_NUM_ACTIVE_THREADS_DONE INT_MAX
 
 struct PTHREADPOOL_CACHELINE_ALIGNED pthreadpool {
-#if !PTHREADPOOL_USE_GCD
   /**
    * The number of threads that are processing an operation.
    */
   pthreadpool_atomic_size_t active_threads;
-#endif
+
 #if PTHREADPOOL_USE_FUTEX
   /**
    * Indicates if there are active threads.
@@ -1182,72 +1153,33 @@ struct PTHREADPOOL_CACHELINE_ALIGNED pthreadpool {
    */
   pthreadpool_atomic_uint32_t flags;
 
-#if PTHREADPOOL_USE_CONDVAR || PTHREADPOOL_USE_FUTEX
   /**
    * Serializes concurrent calls to @a pthreadpool_parallelize_* from different
    * threads.
    */
-  pthread_mutex_t execution_mutex;
-#endif
-
-#if PTHREADPOOL_USE_GCD
-  /**
-   * Serializes concurrent calls to @a pthreadpool_parallelize_* from different
-   * threads.
-   */
-  dispatch_semaphore_t execution_semaphore;
-#endif
-
-#if PTHREADPOOL_USE_EVENT
-  /**
-   * The last command submitted to the thread pool.
-   */
-  pthreadpool_atomic_uint32_t command;
-
-  /**
-   * Serializes concurrent calls to @a pthreadpool_parallelize_* from different
-   * threads.
-   */
-  HANDLE execution_mutex;
-
-  /**
-   * Events to wait on until all threads complete an operation (until @a
-   * active_threads is zero). To avoid race conditions due to spin-lock
-   * synchronization, we use two events and switch event in use after every
-   * submitted command according to the high bit of the command word.
-   */
-  HANDLE completion_event[2];
-
-  /**
-   * Events to wait on for change of the @a command variable.
-   * To avoid race conditions due to spin-lock synchronization, we use two
-   * events and switch event in use after every submitted command according to
-   * the high bit of the command word.
-   */
-  HANDLE command_event[2];
-#endif
+  pthreadpool_mutex_t execution_mutex;
 
 #if PTHREADPOOL_USE_CONDVAR
   /**
    * Guards access to the @a active_threads variable.
    */
-  pthread_mutex_t completion_mutex;
+  pthreadpool_mutex_t completion_mutex;
 
   /**
    * Condition variable to wait until all threads complete an operation (until
    * @a active_threads is zero).
    */
-  pthread_cond_t completion_condvar;
+  pthreadpool_cond_t completion_condvar;
 
   /**
    * Guards access to the @a num_active_threads_condvar variable.
    */
-  pthread_mutex_t num_active_threads_mutex;
+  pthreadpool_mutex_t num_active_threads_mutex;
 
   /**
    * Condition variable to wait on a change of @a num_active_threads.
    */
-  pthread_cond_t num_active_threads_condvar;
+  pthreadpool_cond_t num_active_threads_condvar;
 #endif
 
 #if PTHREADPOOL_USE_FUTEX
@@ -1257,7 +1189,6 @@ struct PTHREADPOOL_CACHELINE_ALIGNED pthreadpool {
   pthreadpool_atomic_uint32_t num_waiting_threads;
 #endif  // PTHREADPOOL_USE_FUTEX
 
-#if PTHREADPOOL_USE_CONDVAR || PTHREADPOOL_USE_FUTEX
   /**
    * The ID of the job currently being run.
    */
@@ -1295,7 +1226,6 @@ struct PTHREADPOOL_CACHELINE_ALIGNED pthreadpool {
    * thing they do before releasing it.
    */
   pthreadpool_atomic_uint32_t num_recruited_threads;
-#endif  //` PTHREADPOOL_USE_CONDVAR || PTHREADPOOL_USE_FUTEX
 
   /**
    * The maximum number of threads, i.e. the thread_info structs that were
@@ -1304,9 +1234,9 @@ struct PTHREADPOOL_CACHELINE_ALIGNED pthreadpool {
   size_t max_num_threads;
 
   /**
-   * FXdiv divisor for the current number of active threads in the thread pool.
+   * The current number of active threads in the thread pool.
    */
-  struct fxdiv_divisor_size_t threads_count;
+  pthreadpool_atomic_size_t threads_count;
 
   /**
    * Thread information structures that immediately follow this structure.

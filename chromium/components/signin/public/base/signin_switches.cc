@@ -35,13 +35,15 @@ const char kForceFreDefaultBrowserStep[] = "force-fre-default-browser-step";
 // clang-format on
 
 #if BUILDFLAG(IS_IOS)
-BASE_FEATURE(kAllowlistScopesForMdmErrors, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kAccountRetrievalWaitsForRestoration,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kAllowlistScopesForMdmErrors, base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
 #if BUILDFLAG(IS_WIN)
 // Enables expanding the Avatar Pill to show a sync promo. Expected to be used
 // by Windows users only.
-BASE_FEATURE(kAvatarButtonSyncPromo, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kAvatarButtonSyncPromo, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE_PARAM(base::TimeDelta,
                    kAvatarButtonSyncPromoMinimumCookieAgeParam,
                    &kAvatarButtonSyncPromo,
@@ -84,16 +86,26 @@ BASE_FEATURE(kBoundSessionCredentialsKillSwitch,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-// Move the step of browser Signin into the Sync header processing logic.
-// This flag is meant to be used as a kill switch, as the feature starts enabled
-// by default.
-BASE_FEATURE(kBrowserSigninInSyncHeaderOnGaiaIntegration,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(IS_IOS)
+BASE_FEATURE(kCacheIdentityListInChrome, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kEnableACPrefetch, base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kCctSignInPrompt, base::FEATURE_ENABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_ANDROID)
+
+#if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kChromeAndroidIdentitySurveyFirstRun,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kChromeAndroidIdentitySurveyWeb,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kChromeAndroidIdentitySurveyNtpAvatar,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kChromeAndroidIdentitySurveyNtpPromo,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kChromeAndroidIdentitySurveyBookmarkPromo,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
@@ -108,7 +120,7 @@ BASE_FEATURE(kChromeIdentitySurveyFirstRunSignin,
 BASE_FEATURE(kChromeIdentitySurveyPasswordBubbleSignin,
              base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kChromeIdentitySurveyProfileMenuDismissed,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kChromeIdentitySurveyProfileMenuSignin,
              base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kChromeIdentitySurveyProfilePickerAddProfileSignin,
@@ -118,7 +130,7 @@ BASE_FEATURE(kChromeIdentitySurveySigninInterceptProfileSeparation,
 BASE_FEATURE(kChromeIdentitySurveySigninPromoBubbleDismissed,
              base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kChromeIdentitySurveySwitchProfileFromProfileMenu,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kChromeIdentitySurveySwitchProfileFromProfilePicker,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
@@ -186,11 +198,14 @@ BASE_FEATURE(kEnableErrorBadgeOnIdentityDisc,
 #endif
 
 #if BUILDFLAG(IS_IOS)
-BASE_FEATURE(kEnableIdentityInAuthError, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kEnableIdentityInAuthError, base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-// Enables binding the OAuthMultilogin cookies to a device.
+// Enables binding the OAuthMultilogin cookies to a device with DBSC prototype.
+//
+// If `kEnableOAuthMultiloginStandardCookiesBinding` is enabled, DBSC standard
+// takes precedence over DBSC prototype.
 BASE_FEATURE(kEnableOAuthMultiloginCookiesBinding,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -204,6 +219,26 @@ BASE_FEATURE(kEnableOAuthMultiloginCookiesBinding,
 // `kEnableOAuthMultiloginCookiesBinding` flag.
 BASE_FEATURE(kEnableOAuthMultiloginCookiesBindingServerExperiment,
              base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE_PARAM(bool,
+                   kOAuthMultiloginCookieBindingEnforced,
+                   &kEnableOAuthMultiloginCookiesBindingServerExperiment,
+                   "enforced",
+                   true);
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+// Enables binding the OAuthMultilogin cookies to a device with DBSC standard.
+//
+// It takes precedence over the `kEnableOAuthMultiloginCookiesBinding` flag.
+BASE_FEATURE(kEnableOAuthMultiloginStandardCookiesBinding,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
+// Kill switch for enabling binding the OAuthMultilogin cookies to a device with
+// DBSC standard for the Glic partition.
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+BASE_FEATURE(kEnableOAuthMultiloginStandardCookiesBindingForGlicPartition,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
 BASE_FEATURE(kEnablePreferencesAccountStorage,
@@ -226,6 +261,17 @@ constexpr base::FeatureParam<SeamlessSigninPromoType>::Option
 constexpr base::FeatureParam<SeamlessSigninPromoType> kSeamlessSigninPromoType{
     &kEnableSeamlessSignin, "seamless-signin-promo-type",
     SeamlessSigninPromoType::kCompact, &kSeamlessSigninPromoTypes};
+// Determines the sign-in promo strings that are shown when
+// kEnableSeamlessSignin is enabled.
+constexpr base::FeatureParam<SeamlessSigninStringType>::Option
+    kSeamlessSigninStringTypes[] = {
+        {SeamlessSigninStringType::kContinueButton, "continueButton"},
+        {SeamlessSigninStringType::kSigninButton, "signinButton"},
+};
+constexpr base::FeatureParam<SeamlessSigninStringType>
+    kSeamlessSigninStringType{
+        &kEnableSeamlessSignin, "seamless-signin-string-type",
+        SeamlessSigninStringType::kContinueButton, &kSeamlessSigninStringTypes};
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -255,9 +301,17 @@ BASE_FEATURE(kForceHistoryOptInScreen, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kForceStartupSigninPromo, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+#if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kFRESignInAlternativeSecondaryButtonText,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_ANDROID)
+
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kFullscreenSignInPromoUseDate, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
+
+BASE_FEATURE(kHandleMdmErrorsForDasherAccounts,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_ANDROID)
 // Enables a history sync educational tip in the magic stack on NTP.
@@ -271,16 +325,8 @@ const base::FeatureParam<int> kHistoryOptInEducationalTipVariation(
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_ANDROID)
-BASE_FEATURE(kIgnoreMirrorHeadersInBackgoundTabs,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#endif
-
-BASE_FEATURE(kInterceptBubblesDismissibleByAvatarButton,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kMakeAccountsAvailableInIdentityManager,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_ANDROID)
@@ -292,7 +338,7 @@ BASE_FEATURE(kMigrateAccountManagerDelegate, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kNonDefaultGaiaOriginCheck, base::FEATURE_ENABLED_BY_DEFAULT);
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-BASE_FEATURE(kOfferMigrationToDiceUsers, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kOfferMigrationToDiceUsers, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE_PARAM(base::TimeDelta,
                    kOfferMigrationToDiceUsersMinDelay,
                    &kOfferMigrationToDiceUsers,
@@ -310,20 +356,67 @@ BASE_FEATURE_PARAM(base::TimeDelta,
                    base::Days(7));
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
-BASE_FEATURE(kProfilesReordering, base::FEATURE_DISABLED_BY_DEFAULT);
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+BASE_FEATURE(kOpenAllProfilesFromProfilePickerExperiment,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+const base::FeatureParam<int>
+    kMaxProfilesCountToShowOpenAllButtonInProfilePicker{
+        &kOpenAllProfilesFromProfilePickerExperiment,
+        "max_profiles_count_to_show_open_all_button_in_profile_picker", 5};
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-// Whether we re-try showing the signing in interception bubble if the Dice
-// sync header does not arrive within a time window from the LST token.
-// This flag is meant to be used as a kill switch, as the feature starts enabled
-// by default.
-BASE_FEATURE(kRetryInterceptionBubbleOnDiceSyncHeaderTimeout,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+BASE_FEATURE(kProfileCreationDeclineSigninCTAExperiment,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kProfileCreationFrictionReductionExperimentPrefillNameRequirement,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kProfileCreationFrictionReductionExperimentRemoveSigninStep,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kProfileCreationFrictionReductionExperimentSkipCustomizeProfile,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kProfilePickerTextVariations, base::FEATURE_DISABLED_BY_DEFAULT);
+constexpr base::FeatureParam<ProfilePickerVariation>::Option
+    kProfilePickerVariations[] = {
+        {ProfilePickerVariation::kKeepWorkAndLifeSeparate,
+         "keep-work-and-life-separate"},
+        {ProfilePickerVariation::kGotAnotherGoogleAccount,
+         "got-another-google-account"},
+        {ProfilePickerVariation::kKeepTasksSeparate, "keep-tasks-separate"},
+        {ProfilePickerVariation::kSharingAComputer, "sharing-a-computer"},
+        {ProfilePickerVariation::kKeepEverythingInChrome,
+         "keep-everything-in-chrome"},
+};
+constexpr base::FeatureParam<ProfilePickerVariation>
+    kProfilePickerTextVariation{
+        &kProfilePickerTextVariations, "profile-picker-variation",
+        ProfilePickerVariation::kKeepWorkAndLifeSeparate,
+        &kProfilePickerVariations};
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+
+BASE_FEATURE(kProfilesReordering, base::FEATURE_DISABLED_BY_DEFAULT);
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 BASE_FEATURE(kRollbackDiceMigration, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+BASE_FEATURE(kShowProfilePickerToAllUsersExperiment,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+
+BASE_FEATURE(kSigninPromoLimitsExperiment, base::FEATURE_DISABLED_BY_DEFAULT);
+const base::FeatureParam<int> kContextualSigninPromoShownThreshold(
+    &kSigninPromoLimitsExperiment,
+    "contextual_signin_promo_shown_threshold",
+    6);
+const base::FeatureParam<int> kContextualSigninPromoDismissedThreshold(
+    &kSigninPromoLimitsExperiment,
+    "contextual_signin_promo_dismissed_threshold",
+    2);
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 BASE_FEATURE(kSignInPromoMaterialNextUI, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -393,15 +486,6 @@ BASE_FEATURE(kSyncEnableBookmarksInTransportMode,
              base::FEATURE_ENABLED_BY_DEFAULT
 #endif
 );
-
-#if BUILDFLAG(IS_ANDROID)
-BASE_FEATURE(kUnoForAuto, base::FEATURE_ENABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_ANDROID)
-
-#if BUILDFLAG(IS_ANDROID)
-BASE_FEATURE(kUseHostedDomainForManagementCheckOnSignin,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 // When enabled, Chrome will always use the /IssueToken endpoint to fetch access

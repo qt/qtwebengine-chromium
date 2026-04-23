@@ -165,6 +165,9 @@ class CONTENT_EXPORT WebContentsAndroid {
 
   base::android::ScopedJavaLocalRef<jstring> GetEncoding(JNIEnv* env) const;
 
+  void Discard(JNIEnv* env,
+               const base::android::JavaParamRef<jobject>& on_discarded);
+
   void SetOverscrollRefreshHandler(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& overscroll_refresh_handler);
@@ -263,11 +266,17 @@ class CONTENT_EXPORT WebContentsAndroid {
                                    jint right,
                                    jint bottom);
 
+  void SetSupportsDraggableRegions(JNIEnv* env,
+                                   bool supports_draggable_regions);
+
   // Adds a crash report, like DumpWithoutCrashing(), including the Java stack
   // trace from which `web_contents` was created. This is meant to help debug
   // cases where BrowserContext is destroyed before its WebContents.
   static void ReportDanglingPtrToBrowserContext(JNIEnv* env,
                                                 WebContents* web_contents);
+
+  base::android::ScopedJavaLocalRef<jobject> GetDocumentPictureInPictureOpener(
+      JNIEnv* env);
 
  private:
   void OnFinishDownloadImage(const base::android::JavaRef<jobject>& obj,

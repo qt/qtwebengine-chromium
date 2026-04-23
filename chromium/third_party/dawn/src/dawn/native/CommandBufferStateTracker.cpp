@@ -281,10 +281,7 @@ bool TextureViewsMatch(const TextureViewBase* a, const TextureViewBase* b) {
            a->GetDimension() == b->GetDimension() && a->GetBaseMipLevel() == b->GetBaseMipLevel() &&
            a->GetLevelCount() == b->GetLevelCount() &&
            a->GetBaseArrayLayer() == b->GetBaseArrayLayer() &&
-           a->GetLayerCount() == b->GetLayerCount() && a->GetSwizzleRed() == b->GetSwizzleRed() &&
-           a->GetSwizzleGreen() == b->GetSwizzleGreen() &&
-           a->GetSwizzleBlue() == b->GetSwizzleBlue() &&
-           a->GetSwizzleAlpha() == b->GetSwizzleAlpha();
+           a->GetLayerCount() == b->GetLayerCount() && a->GetSwizzle() == b->GetSwizzle();
 }
 
 using VectorOfTextureViews = absl::InlinedVector<const TextureViewBase*, 8>;

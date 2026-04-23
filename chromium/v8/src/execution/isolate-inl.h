@@ -85,7 +85,7 @@ DirectHandle<NativeContext> Isolate::GetIncumbentContext() {
 }
 
 void Isolate::set_pending_message(Tagged<Object> message_obj) {
-  DCHECK(IsAnyHole(message_obj) || IsJSMessageObject(message_obj));
+  DCHECK(IsTheHole(message_obj, this) || IsJSMessageObject(message_obj));
   thread_local_top()->pending_message_ = message_obj;
 }
 
@@ -189,10 +189,6 @@ ObjectPair Isolate::VerifyBuiltinsResult(ObjectPair pair) {
 
 bool Isolate::is_catchable_by_javascript(Tagged<Object> exception) {
   return exception != ReadOnlyRoots(heap()).termination_exception();
-}
-
-bool Isolate::InFastCCall() const {
-  return isolate_data()->fast_c_call_caller_fp() != kNullAddress;
 }
 
 bool Isolate::is_catchable_by_wasm(Tagged<Object> exception) {

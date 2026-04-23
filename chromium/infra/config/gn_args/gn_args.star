@@ -91,6 +91,8 @@ gn_args.config(
     name = "android_fastbuild",
     args = {
         "android_static_analysis": "off",
+        # Still want TraceReferences checks, which impact targets that enable R8.
+        "enable_r8_tracerefs": True,
     },
 )
 
@@ -488,6 +490,13 @@ gn_args.config(
 )
 
 gn_args.config(
+    name = "dawn_use_swiftshader",
+    args = {
+        "dawn_use_swiftshader": True,
+    },
+)
+
+gn_args.config(
     name = "dcheck_always_on",
     args = {
         "dcheck_always_on": True,
@@ -560,20 +569,6 @@ gn_args.config(
     name = "disable_seed_corpus",
     args = {
         "archive_seed_corpus": False,
-    },
-)
-
-gn_args.config(
-    name = "enable_rust_mojo",
-    args = {
-        "enable_rust_mojo": True,
-    },
-)
-
-gn_args.config(
-    name = "enable_rust_mojom_bindings",
-    args = {
-        "enable_rust_mojom_bindings": True,
     },
 )
 
@@ -1506,14 +1501,6 @@ gn_args.config(
     name = "webview_google",
     args = {
         "system_webview_package_name": "com.google.android.webview",
-    },
-)
-
-# For Android N-P, only userdebug/eng
-gn_args.config(
-    name = "webview_monochrome",
-    args = {
-        "system_webview_package_name": "com.google.android.apps.chrome",
     },
 )
 

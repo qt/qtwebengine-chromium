@@ -7,9 +7,11 @@
 
 #include <map>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
+#include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -38,24 +40,25 @@ class HelpBubbleHandlerBase
     : public help_bubble::mojom::HelpBubbleHandler,
       public tracked_element::mojom::TrackedElementHandler {
  public:
+  // Returns the WebContents associated with the HelpBubbleHandle. The return
+  // value must never be null.
+  using GetWebContentsCallback =
+      base::RepeatingCallback<content::WebContents*()>;
+
   HelpBubbleHandlerBase(const HelpBubbleHandlerBase&) = delete;
   HelpBubbleHandlerBase(const std::vector<ui::ElementIdentifier>& identifiers,
                         ui::ElementContext context);
+  HelpBubbleHandlerBase& operator=(const HelpBubbleHandlerBase&) = delete;
   ~HelpBubbleHandlerBase() override;
-  void operator=(const HelpBubbleHandlerBase&) = delete;
 
-  // Returns the context. Currently this is tied to the WebUIController and not
-  // the browser that holds it, as (at least for tab contents) the owning
-  // browser can change during the handler's lifespan.
+  // Returns the context. In the common case, currently this is tied to the
+  // WebUIController and not the browser that holds it, as (at least for tab
+  // contents) the owning browser can change during the handler's lifespan.
+  // For special cases without a WebUIController, the HelpBubbleHandle creator
+  // must provide a unique context of their own choosing.
   ui::ElementContext context() const { return context_; }
 
-  // Returns the associated `WebUIController`. This should not change over the
-  // lifetime of the handler.
-  virtual content::WebUIController* GetController() = 0;
-
-  // Returns the WebContents associated with the controller. This is a
-  // convenience method. A contents should be associated with the controller but
-  // it is probably good to check for null.
+  // See `GetWebContentsCallback` above.
   content::WebContents* GetWebContents();
 
   // Returns whether a help bubble is showing for a given element.
@@ -70,9 +73,9 @@ class HelpBubbleHandlerBase
   class ClientProvider {
    public:
     ClientProvider() = default;
-    ClientProvider(const ClientProvider& other) = delete;
+    ClientProvider(const ClientProvider&) = delete;
+    ClientProvider& operator=(const ClientProvider&) = delete;
     virtual ~ClientProvider() = default;
-    void operator=(const ClientProvider& other) = delete;
 
     // Returns the client. Should always return a valid value.
     virtual help_bubble::mojom::HelpBubbleClient* GetClient() = 0;
@@ -84,17 +87,15 @@ class HelpBubbleHandlerBase
    public:
     VisibilityProvider() = default;
     VisibilityProvider(const VisibilityProvider& other) = delete;
+    VisibilityProvider& operator=(const VisibilityProvider&) = delete;
     virtual ~VisibilityProvider() = default;
-    void operator=(const VisibilityProvider& other) = delete;
 
     void set_handler(HelpBubbleHandlerBase* handler) { handler_ = handler; }
 
-    // Does the check if visibility is currently unknown. Returns
-    // `std::nullopt` if the visibility cannot be determined (this should be
-    // treated as "not visible" for most purposes).
+    // Does the check if visibility is currently unknown.
     //
     // This method may lazily instantiate some visibility-tracking logic.
-    virtual std::optional<bool> CheckIsVisible() = 0;
+    virtual bool CheckIsVisible() = 0;
 
    protected:
     HelpBubbleHandlerBase* handler() const { return handler_; }
@@ -104,11 +105,12 @@ class HelpBubbleHandlerBase
     void SetLastKnownVisibility(std::optional<bool> visible);
 
    private:
-    raw_ptr<HelpBubbleHandlerBase> handler_;
+    raw_ptr<HelpBubbleHandlerBase> handler_ = nullptr;
   };
 
   HelpBubbleHandlerBase(std::unique_ptr<ClientProvider> client_provider,
                         std::unique_ptr<VisibilityProvider> visibility_provider,
+                        GetWebContentsCallback get_web_contents_callback,
                         const std::vector<ui::ElementIdentifier>& identifiers,
                         ui::ElementContext context);
 
@@ -173,8 +175,9 @@ class HelpBubbleHandlerBase
   //    to query for visibility
   std::optional<bool> web_contents_visibility_;
 
-  std::unique_ptr<ClientProvider> client_provider_;
-  std::unique_ptr<VisibilityProvider> visibility_provider_;
+  const std::unique_ptr<ClientProvider> client_provider_;
+  const std::unique_ptr<VisibilityProvider> visibility_provider_;
+  const GetWebContentsCallback get_web_contents_callback_;
   const ui::ElementContext context_;
   std::map<ui::ElementIdentifier, ElementData> element_data_;
 
@@ -219,10 +222,19 @@ class HelpBubbleHandler : public HelpBubbleHandlerBase {
       mojo::PendingRemote<help_bubble::mojom::HelpBubbleClient> pending_client,
       content::WebUIController* controller,
       const std::vector<ui::ElementIdentifier>& identifiers);
-  ~HelpBubbleHandler() override;
 
-  // HelpBubbleHandlerBase:
-  content::WebUIController* GetController() override;
+  // Alternative constructor for when the factory wants to use something other
+  // than content::WebUIController. In which case, the factory specifies a
+  // custom GetWebContentsCallback and a `context` for use with
+  // ui::ElementContext.
+  HelpBubbleHandler(
+      mojo::PendingReceiver<help_bubble::mojom::HelpBubbleHandler>
+          pending_handler,
+      mojo::PendingRemote<help_bubble::mojom::HelpBubbleClient> pending_client,
+      GetWebContentsCallback get_web_contents_callback,
+      void* context,
+      const std::vector<ui::ElementIdentifier>& identifiers);
+  ~HelpBubbleHandler() override;
 
  private:
   class ClientProvider;
@@ -231,7 +243,6 @@ class HelpBubbleHandler : public HelpBubbleHandlerBase {
   void ReportBadMessage(std::string_view error) override;
 
   mojo::Receiver<help_bubble::mojom::HelpBubbleHandler> receiver_;
-  const raw_ptr<content::WebUIController> controller_;
 };
 
 }  // namespace user_education

@@ -388,7 +388,7 @@ class LIBIPP_EXPORT Collection {
   // Add a new attribute with one or more collections. The first method creates
   // an attribute with a single collection and returns an iterator to it in the
   // last parameter. The second method creates an attribute with `size`
-  // collections and returns a view of them in the last parameters.
+  // collections and returns a view of them in the last parameter.
   // Possible errors:
   //  * kInvalidName
   //  * kNameConflict

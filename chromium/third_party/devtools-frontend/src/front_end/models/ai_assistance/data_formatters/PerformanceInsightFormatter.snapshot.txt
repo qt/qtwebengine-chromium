@@ -55,6 +55,7 @@ We can break this time down into the 4 phases that combine to make the LCP time:
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/lcp-breakdown
 - https://web.dev/articles/lcp
 - https://web.dev/articles/optimize-lcp
 === end content
@@ -100,6 +101,7 @@ We can break this time down into the 4 phases that combine to make the LCP time:
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/lcp-breakdown
 - https://web.dev/articles/lcp
 - https://web.dev/articles/optimize-lcp
 === end content
@@ -123,6 +125,7 @@ We can break this time down into the 2 phases that combine to make the LCP time:
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/lcp-breakdown
 - https://web.dev/articles/lcp
 - https://web.dev/articles/optimize-lcp
 === end content
@@ -140,6 +143,7 @@ There are no network requests that are render blocking.
 ## Estimated savings: FCP 0 ms, LCP 0 ms
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/render-blocking
 - https://web.dev/articles/lcp
 - https://web.dev/articles/optimize-lcp
 === end content
@@ -168,6 +172,7 @@ allUrls = [0: https://code.jquery.com/jquery-3.7.1.js, 1: http://localhost:8000/
 ## Estimated savings: FCP 2015 ms, LCP 0 ms
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/render-blocking
 - https://web.dev/articles/lcp
 - https://web.dev/articles/optimize-lcp
 === end content
@@ -227,6 +232,7 @@ The result of the checks for this insight are:
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/lcp-discovery
 - https://web.dev/articles/lcp
 - https://web.dev/articles/optimize-lcp
 === end content
@@ -288,6 +294,7 @@ The result of the checks for this insight are:
 ## Estimated savings: FCP 3428 ms, LCP 3428 ms
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/document-latency
 - https://web.dev/articles/optimize-ttfb
 === end content
 
@@ -334,6 +341,52 @@ Layout shifts in this cluster:
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/cls-culprit
+- https://web.dev/articles/cls
+- https://web.dev/articles/optimize-cls
+=== end content
+
+Title: PerformanceInsightFormatter CLS includes iframe root causes
+Content:
+## Insight Title: Layout shift culprits
+
+## Insight Summary:
+Cumulative Layout Shifts (CLS) is a measure of the largest burst of layout shifts for every unexpected layout shift that occurs during the lifecycle of a page. This is a Core Web Vital and the thresholds for categorizing a score are:
+- Good: 0.1 or less
+- Needs improvement: more than 0.1 and less than or equal to 0.25
+- Bad: over 0.25
+
+## Detailed analysis:
+The worst layout shift cluster was the cluster that started at 2,712 ms and ended at 3,913 ms, with a duration of 1,200 ms.
+The score for this cluster is 0.0832.
+
+Layout shifts in this cluster:
+### Layout shift 1:
+- Impacted elements:
+  - DIV class='max-w-6xl mx-auto bg-white shadow-lg min-h-screen relative z-[99999]'
+  - BUTTON class='text-gray-700 hover:text-red-600 w-6 h-6 flex items-center justify-center'
+  - #text
+
+- Start time: 2,712 ms
+- Score: 0.0832
+- Potential root causes:
+  - An iframe (id: D12A05FC36C4D90C7826DDD3E9D7035B, url: https://astro-news-1026410574114.us-central1.run.app/ads/fireplace-ad-top.html was injected into the page)
+- An iframe (id: 8CDF5BC2F8AD1DCF04A38398E95671FC, url: https://astro-news-1026410574114.us-central1.run.app/ads/fireplace-ad-right.html was injected into the page)
+- An iframe (id: 022F4D6C4B361B315A1A7C18B98AA9C4, url: https://astro-news-1026410574114.us-central1.run.app/ads/fireplace-ad-left.html was injected into the page)
+### Layout shift 2:
+- Impacted elements:
+  - #text
+  - A class='button'
+
+- Start time: 2,913 ms
+- Score: 0.0000
+- Potential root causes:
+  - A font that was loaded over the network: https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2 (eventKey: s-11464, ts: 153867214727).
+
+## Estimated savings: none
+
+## External resources:
+- https://developer.chrome.com/docs/performance/insights/cls-culprit
 - https://web.dev/articles/cls
 - https://web.dev/articles/optimize-cls
 === end content
@@ -354,6 +407,7 @@ No layout shifts were found.
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/cls-culprit
 - https://web.dev/articles/cls
 - https://web.dev/articles/optimize-cls
 === end content
@@ -374,50 +428,110 @@ The score for this cluster is 0.0140.
 
 Layout shifts in this cluster:
 ### Layout shift 1:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 60 ms
 - Score: 0.0012
 - No potential root causes identified
 ### Layout shift 2:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 76 ms
 - Score: 0.0012
 - No potential root causes identified
 ### Layout shift 3:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 93 ms
 - Score: 0.0012
 - No potential root causes identified
 ### Layout shift 4:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 110 ms
 - Score: 0.0012
 - No potential root causes identified
 ### Layout shift 5:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 126 ms
 - Score: 0.0012
 - No potential root causes identified
 ### Layout shift 6:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 143 ms
 - Score: 0.0012
 - No potential root causes identified
 ### Layout shift 7:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 160 ms
 - Score: 0.0012
 - No potential root causes identified
 ### Layout shift 8:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 176 ms
 - Score: 0.0012
 - No potential root causes identified
 ### Layout shift 9:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 193 ms
 - Score: 0.0012
 - No potential root causes identified
 ### Layout shift 10:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 210 ms
 - Score: 0.0012
 - No potential root causes identified
 ### Layout shift 11:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 226 ms
 - Score: 0.0012
 - No potential root causes identified
 ### Layout shift 12:
+- Impacted elements:
+  - P
+  - P
+  - P
+
 - Start time: 243 ms
 - Score: 0.0012
 - Potential root causes:
@@ -432,6 +546,7 @@ Layout shifts in this cluster:
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/cls-culprit
 - https://web.dev/articles/cls
 - https://web.dev/articles/optimize-cls
 === end content
@@ -463,6 +578,7 @@ The longest interaction on the page was a `click` which had a total duration of 
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/inp-breakdown
 - https://web.dev/articles/inp
 - https://web.dev/explore/how-to-optimize-inp
 - https://web.dev/articles/optimize-long-tasks
@@ -489,6 +605,7 @@ There are no requests that were served over a legacy HTTP protocol.
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/modern-http
 - https://developer.chrome.com/docs/lighthouse/best-practices/uses-http2
 === end content
 
@@ -526,6 +643,7 @@ allUrls = [0: https://ads.jetpackdigital.com/sites/_uploads/1742278386bg_opt_640
 ## Estimated savings: FCP 0 ms, LCP 0 ms
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/modern-http
 - https://developer.chrome.com/docs/lighthouse/best-practices/uses-http2
 === end content
 
@@ -546,6 +664,7 @@ No DOM size issues were detected.
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/dom-size
 - https://developer.chrome.com/docs/lighthouse/performance/dom-size/
 === end content
 
@@ -561,7 +680,7 @@ This insight evaluates some key metrics about the Document Object Model (DOM) an
 - The largest layout and style recalculation events.
 
 ## Detailed analysis:
-A large DOM can increase the duration of style calculations and layout reflows, impacting page responsiveness. A large DOM will also increase memory usage. [Learn how to avoid an excessive DOM size](https://developer.chrome.com/docs/lighthouse/performance/dom-size/).
+A large DOM can increase the duration of style calculations and layout reflows, impacting page responsiveness. A large DOM will also increase memory usage. [Learn how to avoid an excessive DOM size](https://developer.chrome.com/docs/performance/insights/dom-size).
 
 Statistic:
 
@@ -577,6 +696,7 @@ Large layout updates/style calculations:
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/dom-size
 - https://developer.chrome.com/docs/lighthouse/performance/dom-size/
 === end content
 
@@ -636,6 +756,7 @@ Duplication grouped by Node modules: - Source: node_modules/filestack-js - Dupli
 ## Estimated savings: FCP 100 ms, LCP 100 ms
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/duplicated-javascript
 === end content
 
 Title: PerformanceInsightFormatter Duplicated javascript serializes no details if there is no duplicate javascript
@@ -652,6 +773,7 @@ There is no duplicated JavaScript in the page modules
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/duplicated-javascript
 === end content
 
 Title: PerformanceInsightFormatter Legacy JavaScript serializes the correct details when there is no legacy javascript in modules
@@ -669,6 +791,7 @@ There is no significant amount of legacy JavaScript on the page.
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/legacy-javascript
 - https://web.dev/articles/baseline-and-polyfills
 - https://philipwalton.com/articles/the-state-of-es5-on-the-web/
 === end content
@@ -735,6 +858,7 @@ Line: 0, Column: 390688, Name: Object.values
 ## Estimated savings: FCP 0 ms, LCP 0 ms
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/legacy-javascript
 - https://web.dev/articles/baseline-and-polyfills
 - https://philipwalton.com/articles/the-state-of-es5-on-the-web/
 === end content
@@ -752,6 +876,7 @@ No font display issues were detected.
 ## Estimated savings: FCP -Infinity ms
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/font-display
 - https://web.dev/articles/preload-optional-fonts
 - https://fonts.google.com/knowledge/glossary/foit
 - https://developer.chrome.com/blog/font-fallbacks
@@ -774,11 +899,12 @@ The following font display issues were found:
  - Font name: EJRVQgYoZZY2vCFuvAFWzr-_dSb_.woff2, URL: https://fonts.gstatic.com/s/ptserif/v18/EJRVQgYoZZY2vCFuvAFWzr-_dSb_.woff2 (eventKey: s-5325, ts: 409057959655), Property 'font-display' set to: 'auto', Wasted time: 15 ms.
  - Font name: S6u9w4BMUTPHh6UVSwiPGQ3q5d0.woff2, URL: https://fonts.gstatic.com/s/lato/v24/S6u9w4BMUTPHh6UVSwiPGQ3q5d0.woff2 (eventKey: s-5238, ts: 409057956530), Property 'font-display' set to: 'auto', Wasted time: 10 ms.
 
-Consider setting [`font-display`](https://developer.chrome.com/blog/font-display) to `swap` or `optional` to ensure text is consistently visible. `swap` can be further optimized to mitigate layout shifts with [font metric overrides](https://developer.chrome.com/blog/font-fallbacks).
+Consider setting [`font-display`](https://developer.chrome.com/docs/performance/insights/font-display) to `swap` or `optional` to ensure text is consistently visible. `swap` can be further optimized to mitigate layout shifts with [font metric overrides](https://developer.chrome.com/blog/font-fallbacks).
 
 ## Estimated savings: FCP 20 ms
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/font-display
 - https://web.dev/articles/preload-optional-fonts
 - https://fonts.google.com/knowledge/glossary/foit
 - https://developer.chrome.com/blog/font-fallbacks
@@ -797,6 +923,7 @@ There are no unoptimized images on this page.
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/image-delivery
 - https://developer.chrome.com/docs/lighthouse/performance/uses-optimized-images/
 === end content
 
@@ -841,6 +968,7 @@ This image file is larger than it needs to be (2048x1356) for its displayed dime
 ## Estimated savings: FCP 0 ms, LCP 100 ms
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/image-delivery
 - https://developer.chrome.com/docs/lighthouse/performance/uses-optimized-images/
 === end content
 
@@ -852,13 +980,14 @@ Content:
 This insight identifies forced synchronous layouts (also known as forced reflows) and layout thrashing caused by JavaScript accessing layout properties at suboptimal points in time.
 
 ## Detailed analysis:
-A forced reflow occurs when JavaScript queries geometric properties (such as `offsetWidth`) after styles have been invalidated by a change to the DOM state. This can result in poor performance. Learn more about [forced reflows](https://developers.google.com/web/fundamentals/performance/rendering/avoid-large-complex-layouts-and-layout-thrashing#avoid-forced-synchronous-layouts) and possible mitigations.
+A forced reflow occurs when JavaScript queries geometric properties (such as `offsetWidth`) after styles have been invalidated by a change to the DOM state. This can result in poor performance. Learn more about [forced reflows](https://developer.chrome.com/docs/performance/insights/forced-reflow) and possible mitigations.
 
 The forced reflow checks revealed no problems.
 
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/forced-reflow
 - https://developers.google.com/web/fundamentals/performance/rendering/avoid-large-complex-layouts-and-layout-thrashing#avoid-forced-synchronous-layouts
 === end content
 
@@ -870,7 +999,7 @@ Content:
 This insight identifies forced synchronous layouts (also known as forced reflows) and layout thrashing caused by JavaScript accessing layout properties at suboptimal points in time.
 
 ## Detailed analysis:
-A forced reflow occurs when JavaScript queries geometric properties (such as `offsetWidth`) after styles have been invalidated by a change to the DOM state. This can result in poor performance. Learn more about [forced reflows](https://developers.google.com/web/fundamentals/performance/rendering/avoid-large-complex-layouts-and-layout-thrashing#avoid-forced-synchronous-layouts) and possible mitigations.
+A forced reflow occurs when JavaScript queries geometric properties (such as `offsetWidth`) after styles have been invalidated by a change to the DOM state. This can result in poor performance. Learn more about [forced reflows](https://developer.chrome.com/docs/performance/insights/forced-reflow) and possible mitigations.
 
 The forced reflow checks revealed one or more problems.
 
@@ -880,7 +1009,7 @@ The following is the top function call that caused forced reflow(s):
 
 Total reflow time: 26 ms
 
-Stack trace (including total time):
+Call frames that trigger reflow (including total time):
 
  - 56 ms in sidemenuitemintoview @ https://www.w3schools.com/lib/w3schools_footer.js?update=20240910:383:11
  - 5 ms in ko @ https://securepubads.g.doubleclick.net/pagead/managed/js/gpt/m202411070102/pubads_impl.js?cb=31088843:32:197203
@@ -901,6 +1030,7 @@ Stack trace (including total time):
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/forced-reflow
 - https://developers.google.com/web/fundamentals/performance/rendering/avoid-large-complex-layouts-and-layout-thrashing#avoid-forced-synchronous-layouts
 === end content
 
@@ -927,6 +1057,7 @@ no origins were preconnected.
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/network-dependency-tree
 - https://web.dev/learn/performance/understanding-the-critical-path
 - https://developer.chrome.com/docs/lighthouse/performance/uses-rel-preconnect/
 === end content
@@ -959,6 +1090,7 @@ no origins were preconnected.
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/network-dependency-tree
 - https://web.dev/learn/performance/understanding-the-critical-path
 - https://developer.chrome.com/docs/lighthouse/performance/uses-rel-preconnect/
 === end content
@@ -976,6 +1108,7 @@ No CSS selector data was found. CSS selector stats need to be enabled in the per
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/slow-css-selector
 - https://developer.chrome.com/docs/devtools/performance/selector-stats
 === end content
 
@@ -997,11 +1130,12 @@ Elapsed time: 0 ms
 Match attempts: 2444
 Match count: 465
 
-If Recalculate Style costs remain high, selector optimization can reduce them. [Optimize the selectors](https://developer.chrome.com/docs/devtools/performance/selector-stats) with both high elapsed time and high slow-path %. Simpler selectors, fewer selectors, a smaller DOM, and a shallower DOM will all reduce matching costs.
+If Recalculate Style costs remain high, selector optimization can reduce them. [Optimize the selectors](https://developer.chrome.com/docs/performance/insights/slow-css-selector) with both high elapsed time and high slow-path %. Simpler selectors, fewer selectors, a smaller DOM, and a shallower DOM will all reduce matching costs.
 
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/slow-css-selector
 - https://developer.chrome.com/docs/devtools/performance/selector-stats
 === end content
 
@@ -1018,6 +1152,7 @@ No 3rd party scripts were found on this page.
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/third-parties
 - https://web.dev/articles/optimizing-content-efficiency-loading-third-party-javascript/
 === end content
 
@@ -1043,11 +1178,12 @@ The following list contains the largest amount spent by a 3rd party script on th
 - noondiphcddnnabmjcihcjfbhfklnnep: 2 ms
 - web.app: 0.2 ms
 
-3rd party code can significantly impact load performance. [Reduce and defer loading of 3rd party code](https://web.dev/articles/optimizing-content-efficiency-loading-third-party-javascript/) to prioritize your page's content.
+3rd party code can significantly impact load performance. [Reduce and defer loading of 3rd party code](https://developer.chrome.com/docs/performance/insights/third-parties) to prioritize your page's content.
 
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/third-parties
 - https://web.dev/articles/optimizing-content-efficiency-loading-third-party-javascript/
 === end content
 
@@ -1064,6 +1200,7 @@ No requests with inefficient cache policies.
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/cache
 - https://web.dev/uses-long-cache-ttl/
 === end content
 
@@ -1081,11 +1218,12 @@ The following resources were associated with ineffficient cache policies:
   - Cache Time to Live (TTL): 600 seconds
   - Wasted bytes: 0 B
 
-A long cache lifetime can speed up repeat visits to your page. [Learn more](https://web.dev/uses-long-cache-ttl/).
+A long cache lifetime can speed up repeat visits to your page. [Learn more about caching](https://developer.chrome.com/docs/performance/insights/cache).
 
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/cache
 - https://web.dev/uses-long-cache-ttl/
 === end content
 
@@ -1104,6 +1242,7 @@ The viewport meta tag was found: `width=device-width, initial-scale=0.25`.
 ## Estimated savings: INP 0 ms
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/viewport
 - https://developer.chrome.com/blog/300ms-tap-delay-gone-away/
 === end content
 
@@ -1119,10 +1258,11 @@ The webpage is not optimized for mobile viewing.
 
 The viewport meta tag is missing.
 
-Tap interactions may be [delayed by up to 300 ms](https://developer.chrome.com/blog/300ms-tap-delay-gone-away/) if the viewport is not optimized for mobile.
+Tap interactions may be [delayed by up to 300 ms](https://developer.chrome.com/docs/performance/insights/viewport) if the viewport is not optimized for mobile.
 
 ## Estimated savings: none
 
 ## External resources:
+- https://developer.chrome.com/docs/performance/insights/viewport
 - https://developer.chrome.com/blog/300ms-tap-delay-gone-away/
 === end content

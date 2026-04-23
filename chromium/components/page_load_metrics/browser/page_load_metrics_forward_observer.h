@@ -101,6 +101,10 @@ class PageLoadMetricsForwardObserver final
   void OnFirstImagePaintInPage(const mojom::PageLoadTiming& timing) override;
   void OnFirstContentfulPaintInPage(
       const mojom::PageLoadTiming& timing) override;
+  void OnMonotonicFirstPaintInPage(
+      const mojom::PageLoadTiming& timing) override;
+  void OnMonotonicFirstContentfulPaintInPage(
+      const mojom::PageLoadTiming& timing) override;
   void OnFirstPaintAfterBackForwardCacheRestoreInPage(
       const mojom::BackForwardCacheTiming& timing,
       size_t index) override;
@@ -181,8 +185,6 @@ class PageLoadMetricsForwardObserver final
   void DidActivatePrerenderedPage(
       content::NavigationHandle* navigation_handle) override;
   void DidActivatePreviewedPage(base::TimeTicks activation_time) override;
-  void OnV8MemoryChanged(
-      const std::vector<MemoryUpdate>& memory_updates) override;
   void OnSharedStorageWorkletHostCreated() override;
   void OnSharedStorageSelectURLCalled() override;
   void OnCustomUserTimingMarkObserved(

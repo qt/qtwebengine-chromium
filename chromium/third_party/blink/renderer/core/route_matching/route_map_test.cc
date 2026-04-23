@@ -6,10 +6,13 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/route_matching/route.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 
 namespace blink {
+
+namespace {
 
 class RouteMapTest : public PageTestBase {
  public:
@@ -38,16 +41,21 @@ TEST_F(RouteMapTest, ParseAndMatch) {
     ]
   })");
 
-  EXPECT_TRUE(route_map.MatchesRoute("route1"));
-  EXPECT_FALSE(route_map.MatchesRoute("route2"));
+  const Route* route1 = route_map.FindRoute("route1");
+  ASSERT_TRUE(route1);
+  const Route* route2 = route_map.FindRoute("route2");
+  ASSERT_TRUE(route2);
+
+  EXPECT_TRUE(route1->Matches(RoutePreposition::kAt));
+  EXPECT_FALSE(route2->Matches(RoutePreposition::kAt));
 
   SetURL("https://example.com/bar");
-  EXPECT_FALSE(route_map.MatchesRoute("route1"));
-  EXPECT_TRUE(route_map.MatchesRoute("route2"));
+  EXPECT_FALSE(route1->Matches(RoutePreposition::kAt));
+  EXPECT_TRUE(route2->Matches(RoutePreposition::kAt));
 
   SetURL("https://example.com/baz");
-  EXPECT_FALSE(route_map.MatchesRoute("route1"));
-  EXPECT_TRUE(route_map.MatchesRoute("route2"));
+  EXPECT_FALSE(route1->Matches(RoutePreposition::kAt));
+  EXPECT_TRUE(route2->Matches(RoutePreposition::kAt));
 }
 
 TEST_F(RouteMapTest, GetActiveRoutes) {
@@ -71,15 +79,15 @@ TEST_F(RouteMapTest, GetActiveRoutes) {
     ]
   })");
 
-  HashSet<String> active_routes = route_map.GetActiveRoutes();
-  EXPECT_EQ(2u, active_routes.size());
-  EXPECT_TRUE(active_routes.Contains("route1"));
-  EXPECT_TRUE(active_routes.Contains("route3"));
+  RouteMatchState::MatchCollection collection;
+  route_map.GetActiveRoutes(RoutePreposition::kAt, &collection);
+  EXPECT_EQ(2u, collection.size());
 
   SetURL("https://example.com/bar");
-  active_routes = route_map.GetActiveRoutes();
-  EXPECT_EQ(1u, active_routes.size());
-  EXPECT_TRUE(active_routes.Contains("route2"));
+  route_map.GetActiveRoutes(RoutePreposition::kAt, &collection);
+  EXPECT_EQ(1u, collection.size());
 }
+
+}  // anonymous namespace
 
 }  // namespace blink

@@ -6,7 +6,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Workspace from '../../models/workspace/workspace.js';
-import {dispatchClickEvent, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createTarget, registerNoopActions} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
 import {activate, getMainFrame, navigate} from '../../testing/ResourceTreeHelpers.js';
@@ -20,7 +20,7 @@ const isShowingLandingPage = (view: Coverage.CoverageView.CoverageView) => {
 };
 
 const isShowingResults = (view: Coverage.CoverageView.CoverageView) => {
-  return Boolean(view.contentElement.querySelector('.coverage-results .vbox.flex-auto'));
+  return Boolean(view.contentElement.querySelector('.coverage-results .results'));
 };
 
 const isShowingPrerenderPage = (view: Coverage.CoverageView.CoverageView) => {
@@ -43,6 +43,7 @@ const setupTargetAndModels = () => {
     resourceMapping,
     targetManager,
     ignoreListManager,
+    workspace,
   });
   Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.instance({forceNew: true, resourceMapping, targetManager});
 
@@ -94,8 +95,10 @@ describeWithMockConnection('CoverageView', () => {
     ]);
   });
 
-  it('dispatches a record/reload action when the button is clicked', () => {
+  it('dispatches a record/reload action when the button is clicked', async () => {
     const view = Coverage.CoverageView.CoverageView.instance();
+    renderElementIntoDOM(view);
+    await view.updateComplete;
     assert.isTrue(isShowingLandingPage(view));
 
     const button = view.contentElement.querySelector('.empty-state devtools-button');
@@ -106,7 +109,7 @@ describeWithMockConnection('CoverageView', () => {
     const reloadSpy =
         sinon.spy(UI.ActionRegistry.ActionRegistry.instance().getAction('coverage.start-with-reload'), 'execute');
 
-    dispatchClickEvent(button);
+    (button as HTMLElement).onclick?.(new PointerEvent('click'));
     assert.isTrue(toggleSpy.calledOnce || reloadSpy.calledOnce);
   });
 
@@ -129,6 +132,7 @@ describeWithMockConnection('CoverageView', () => {
     sinon.assert.calledOnce(startSpy);
 
     navigate(getMainFrame(target), {}, Protocol.Page.NavigationType.BackForwardCacheRestore);
+    await view.updateComplete;
 
     assert.isFalse(isShowingLandingPage(view));
     assert.isFalse(isShowingResults(view));
@@ -138,6 +142,7 @@ describeWithMockConnection('CoverageView', () => {
     sinon.assert.notCalled(stopSpy);
 
     navigate(getMainFrame(target));
+    await view.updateComplete;
     assert.isFalse(isShowingLandingPage(view));
     assert.isTrue(isShowingResults(view));
     assert.isFalse(isShowingPrerenderPage(view));
@@ -155,6 +160,7 @@ describeWithMockConnection('CoverageView', () => {
   it('can handle prerender activations', async () => {
     const {startSpy, stopSpy} = setupTargetAndModels();
     const view = Coverage.CoverageView.CoverageView.instance();
+    await view.updateComplete;
     renderElementIntoDOM(view);
     assert.isTrue(isShowingLandingPage(view));
     assert.isFalse(isShowingResults(view));
@@ -184,6 +190,7 @@ describeWithMockConnection('CoverageView', () => {
     sinon.assert.notCalled(stopSpy2);
 
     navigate(getMainFrame(target2), {url: 'http://www.example.com/page'});
+    await view.updateComplete;
     assert.isFalse(isShowingLandingPage(view));
     assert.isTrue(isShowingResults(view));
     assert.isFalse(isShowingPrerenderPage(view));

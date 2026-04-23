@@ -45,12 +45,18 @@ struct SemaphoreSubmitState {
     bool CanWaitBinary(const vvl::Semaphore &semaphore_state) const;
     bool CanSignalBinary(const vvl::Semaphore &semaphore_state, VkQueue &other_queue, vvl::Func &other_acquire_command) const;
 
-    bool CheckSemaphoreValue(const vvl::Semaphore &semaphore_state, std::string &where, uint64_t &bad_value,
-                             std::function<bool(const vvl::Semaphore::OpType, uint64_t, bool is_pending)> compare_func);
+    std::optional<uint64_t> CheckTimelineMaxDiff(const vvl::Semaphore &semaphore_state, uint64_t value, const char *&payload_type);
+    std::optional<uint64_t> CheckTimelineSignalTooSmall(const vvl::Semaphore &semaphore_state, uint64_t value,
+                                                        const char *&payload_type);
 
     VkQueue AnotherQueueWaits(const vvl::Semaphore &semaphore_state) const;
 
-    bool ValidateBinaryWait(const Location &loc, VkQueue queue, const vvl::Semaphore &semaphore_state);
-    bool ValidateWaitSemaphore(const Location &wait_semaphore_loc, const vvl::Semaphore &semaphore_state, uint64_t value);
-    bool ValidateSignalSemaphore(const Location &signal_semaphore_loc, const vvl::Semaphore &semaphore_state, uint64_t value);
+    bool ValidateBinaryWait(const Location &semaphore_loc, const vvl::Semaphore &semaphore_state);
+    bool ValidateTimelineWait(const Location &semaphore_loc, const vvl::Semaphore &semaphore_state, uint64_t value);
+    bool ValidateWaitSemaphore(const Location &semaphore_loc, const vvl::Semaphore &semaphore_state, uint64_t value);
+
+
+    bool ValidateBinarySignal(const Location &semaphore_loc, const vvl::Semaphore &semaphore_state);
+    bool ValidateTimelineSignal(const Location &semaphore_loc, const vvl::Semaphore &semaphore_state, uint64_t value);
+    bool ValidateSignalSemaphore(const Location &semaphore_loc, const vvl::Semaphore &semaphore_state, uint64_t value);
 };

@@ -21,6 +21,7 @@
 #include "build/build_config.h"
 #include "components/viz/common/buildflags.h"
 #include "components/viz/common/features.h"
+#include "components/viz/host/persistent_cache_sandboxed_file_factory.h"
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/config/gpu_feature_info.h"
 #include "gpu/config/gpu_finch_features.h"
@@ -38,6 +39,7 @@
 #endif
 
 #if BUILDFLAG(IS_WIN)
+#include "services/webnn/host/execution_provider_initializer.h"
 #include "ui/gfx/win/rendering_window_manager.h"
 #elif BUILDFLAG(IS_MAC)
 #include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
@@ -183,7 +185,11 @@ GpuHostImpl::GpuHostImpl(Delegate* delegate,
       use_shader_cache_shm_count_.CloneRegion(), std::move(gpu_service_params));
   MaybeSendFontRenderParams();
 
-  InitPersistentCache();
+  // The persistent cache is not used by the GPU process for info collection.
+  // Avoid loading the cache files multiple times.
+  if (!params_.info_collection_gpu_process) {
+    InitPersistentCache();
+  }
 
 #if BUILDFLAG(IS_OZONE)
   InitOzone();
@@ -193,6 +199,12 @@ GpuHostImpl::GpuHostImpl(Delegate* delegate,
 GpuHostImpl::~GpuHostImpl() {
   GetFontRenderParams().SetGpuHostImpl(nullptr);
   SendOutstandingReplies();
+}
+
+void GpuHostImpl::NotifyWorkloadIncrease() {
+#if BUILDFLAG(IS_ANDROID)
+  viz_main_->NotifyWorkloadIncrease();
+#endif
 }
 
 // static
@@ -277,11 +289,13 @@ void GpuHostImpl::ConnectFrameSinkManager(
 void GpuHostImpl::EstablishGpuChannel(int client_id,
                                       uint64_t client_tracing_id,
                                       bool is_gpu_host,
+                                      bool enable_extra_handles_validation,
                                       bool sync,
                                       EstablishChannelCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   TRACE_EVENT2("gpu", "GpuHostImpl::EstablishGpuChannel", "client_id",
                client_id, "is_gpu_host", is_gpu_host);
+  DCHECK(!(is_gpu_host && enable_extra_handles_validation));
 
   shutdown_timeout_.Stop();
 
@@ -304,7 +318,8 @@ void GpuHostImpl::EstablishGpuChannel(int client_id,
     {
       mojo::SyncCallRestrictions::ScopedAllowSyncCall scoped_allow;
       gpu_service_remote_->EstablishGpuChannel(
-          client_id, client_tracing_id, is_gpu_host, &channel_handle, &gpu_info,
+          client_id, client_tracing_id, is_gpu_host,
+          enable_extra_handles_validation, &channel_handle, &gpu_info,
           &gpu_feature_info, &shared_image_capabilities);
     }
     OnChannelEstablished(client_id, true, std::move(channel_handle), gpu_info,
@@ -312,6 +327,7 @@ void GpuHostImpl::EstablishGpuChannel(int client_id,
   } else {
     gpu_service_remote_->EstablishGpuChannel(
         client_id, client_tracing_id, is_gpu_host,
+        enable_extra_handles_validation,
         base::BindOnce(&GpuHostImpl::OnChannelEstablished,
                        weak_ptr_factory_.GetWeakPtr(), client_id, false));
   }
@@ -456,19 +472,24 @@ void GpuHostImpl::InitPersistentCache() {
     // TODO(crbug.com/399642827): Enable persistent cache for other cache types.
     auto* persistent_cache_file_factory =
         PersistentCacheSandboxedFileFactory::GetInstance();
+    if (!persistent_cache_file_factory) {
+      // This can happen in tests when the cache directory is not defined.
+      return;
+    }
     persistent_cache_file_factory->CreateFilesAsync(
         /*cache_id=*/GetGpuDiskCacheSubdir(
             gpu::GpuDiskCacheType::kDawnGraphite),
         GraphiteDawnCacheVersion(),
         base::BindOnce(
             [](base::WeakPtr<GpuHostImpl> gpu_host,
-               std::optional<PersistentCacheSandboxedFiles> files) {
+               std::optional<persistent_cache::PendingBackend>
+                   pending_backend) {
               TRACE_EVENT0("gpu", "GpuHostImpl::InitPersistentCacheCallback");
               if (!gpu_host) {
                 return;
               }
               gpu_host->graphite_dawn_persistent_cache_files_ =
-                  std::move(files);
+                  std::move(pending_backend);
               if (gpu_host
                       ->pending_graphite_dawn_persistent_cache_files_request_) {
                 // If channel is already initialized, we send the files to the
@@ -476,7 +497,7 @@ void GpuHostImpl::InitPersistentCache() {
                 gpu_host
                     ->pending_graphite_dawn_persistent_cache_files_request_ =
                     false;
-                gpu_host->SetChannelPersistentCacheFile(
+                gpu_host->SetChannelPersistentCachePendingBackend(
                     gpu::kGraphiteDawnClientId,
                     gpu::kGraphiteDawnGpuDiskCacheHandle,
                     std::move(gpu_host->graphite_dawn_persistent_cache_files_));
@@ -488,18 +509,17 @@ void GpuHostImpl::InitPersistentCache() {
 #endif  // BUILDFLAG(SKIA_USE_DAWN)
 }
 
-void GpuHostImpl::SetChannelPersistentCacheFile(
+void GpuHostImpl::SetChannelPersistentCachePendingBackend(
     int client_id,
     const gpu::GpuDiskCacheHandle& handle,
-    std::optional<PersistentCacheSandboxedFiles> files) {
-  if (!files) {
+    std::optional<persistent_cache::PendingBackend> pending_backend) {
+  if (!pending_backend) {
     return;
   }
-  TRACE_EVENT2("gpu", "GpuHostImpl::SetChannelPersistentCacheFile", "client_id",
-               client_id, "handle_type", GetHandleType(handle));
-  gpu_service()->SetChannelPersistentCacheFile(
-      client_id, handle, std::move(files->db_file),
-      std::move(files->journal_file), std::move(files->shared_lock));
+  TRACE_EVENT2("gpu", "GpuHostImpl::SetChannelPersistentCachePendingBackend",
+               "client_id", client_id, "handle_type", GetHandleType(handle));
+  gpu_service()->SetChannelPersistentCachePendingBackend(
+      client_id, handle, *std::move(pending_backend));
 }
 
 std::string GpuHostImpl::GetShaderPrefixKey() {
@@ -614,7 +634,7 @@ void GpuHostImpl::DidInitialize(
         // available.
         pending_graphite_dawn_persistent_cache_files_request_ = true;
       } else {
-        SetChannelPersistentCacheFile(
+        SetChannelPersistentCachePendingBackend(
             gpu::kGraphiteDawnClientId, gpu::kGraphiteDawnGpuDiskCacheHandle,
             std::move(graphite_dawn_persistent_cache_files_));
       }
@@ -745,6 +765,10 @@ void GpuHostImpl::MaybeSendFontRenderParams() {
   }
 }
 
+gpu::GpuProcessHostShmCount* GpuHostImpl::GetShaderCacheShmCountForTesting() {
+  return &use_shader_cache_shm_count_;
+}
+
 void GpuHostImpl::StoreBlobToDisk(const gpu::GpuDiskCacheHandle& handle,
                                   const std::string& key,
                                   const std::string& blob) {
@@ -774,6 +798,13 @@ void GpuHostImpl::ClearGrShaderDiskCache() {
     }
   }
 }
+
+#if BUILDFLAG(IS_WIN)
+void GpuHostImpl::EnsureWebNNExecutionProvidersReady(
+    EnsureWebNNExecutionProvidersReadyCallback cb) {
+  webnn::EnsureExecutionProvidersReady(std::move(cb));
+}
+#endif
 
 void GpuHostImpl::RecordLogMessage(int32_t severity,
                                    const std::string& header,

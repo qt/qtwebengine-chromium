@@ -17,6 +17,7 @@
 #include "src/objects/instance-type-inl.h"
 #include "src/objects/instruction-stream-inl.h"
 #include "src/objects/trusted-object-inl.h"
+#include "src/objects/trusted-pointer-inl.h"
 #include "src/snapshot/embedded/embedded-data-inl.h"
 
 // Has to be the last include (doesn't have include guards):
@@ -113,7 +114,7 @@ inline Tagged<DeoptimizationData> Code::deoptimization_data() const {
 
 inline void Code::set_deoptimization_data(Tagged<DeoptimizationData> value,
                                           WriteBarrierMode mode) {
-  DCHECK(uses_deoptimization_data());
+  SBXCHECK(uses_deoptimization_data());
   DCHECK(!HeapLayout::InYoungGeneration(value));
 
   WriteProtectedPointerField(kDeoptimizationDataOrInterpreterDataOffset, value);
@@ -144,7 +145,7 @@ Tagged<TrustedObject> Code::bytecode_or_interpreter_data() const {
 }
 void Code::set_bytecode_or_interpreter_data(Tagged<TrustedObject> value,
                                             WriteBarrierMode mode) {
-  DCHECK(kind() == CodeKind::BASELINE);
+  SBXCHECK_EQ(kind(), CodeKind::BASELINE);
   DCHECK(IsBytecodeArray(value) || IsInterpreterData(value));
 
   WriteProtectedPointerField(kDeoptimizationDataOrInterpreterDataOffset, value);
@@ -436,6 +437,17 @@ inline bool Code::has_tagged_outgoing_params() const {
 #else
   return CodeKindHasTaggedOutgoingParams(kind());
 #endif
+}
+
+inline bool Code::is_disabled_builtin() const {
+  return IsDisabledBuiltinField::decode(flags(kRelaxedLoad));
+}
+
+inline void Code::set_is_disabled_builtin(bool value) {
+  DCHECK(is_builtin());
+  int32_t previous = flags(kRelaxedLoad);
+  int32_t updated = IsDisabledBuiltinField::update(previous, value);
+  set_flags(updated, kRelaxedStore);
 }
 
 inline bool Code::is_context_specialized() const {
@@ -789,11 +801,16 @@ void Code::set_instruction_start(IsolateForSandbox isolate, Address value) {
 }
 
 CodeEntrypointTag Code::entrypoint_tag() const {
+  // TODO(40948502, sandbox): cache the unshifted entrypoint_tag value
+  // in the Code object to simplify things and avoid the need to execute
+  // multiple switches for builtin case.
   switch (kind()) {
     case CodeKind::BYTECODE_HANDLER:
       return kBytecodeHandlerEntrypointTag;
-    case CodeKind::BUILTIN:
+    case CodeKind::BUILTIN: {
+      if (is_disabled_builtin()) return kDisabledBuiltinEntrypointTag;
       return Builtins::EntrypointTagFor(builtin_id());
+    }
     case CodeKind::REGEXP:
       return kRegExpEntrypointTag;
     case CodeKind::WASM_FUNCTION:
@@ -917,7 +934,6 @@ inline bool Code::is_baseline_leave_frame_builtin() const {
   return builtin_id() == Builtin::kBaselineLeaveFrame;
 }
 
-#ifdef V8_ENABLE_LEAPTIERING
 inline JSDispatchHandle Code::js_dispatch_handle() const {
   return JSDispatchHandle(
       ReadField<JSDispatchHandle::underlying_type>(kDispatchHandleOffset));
@@ -927,7 +943,6 @@ inline void Code::set_js_dispatch_handle(JSDispatchHandle handle) {
   Relaxed_WriteField<JSDispatchHandle::underlying_type>(kDispatchHandleOffset,
                                                         handle.value());
 }
-#endif  // V8_ENABLE_LEAPTIERING
 
 OBJECT_CONSTRUCTORS_IMPL(CodeWrapper, Struct)
 CODE_POINTER_ACCESSORS(CodeWrapper, code, kCodeOffset)

@@ -118,6 +118,7 @@ struct CreateRayTracingPipelinesKHR {
     bool is_modified = false;
     std::vector<vku::safe_VkRayTracingPipelineCreateInfoKHR> modified_create_infos;
     const VkRayTracingPipelineCreateInfoKHR* pCreateInfos = nullptr;
+    std::vector<spirv::StatelessData> stateless_data;
     // 2D array for [pipelineCount][stageCount]
     std::vector<std::vector<ShaderInstrumentationMetadata>> shader_instrumentations_metadata;
 
@@ -139,12 +140,26 @@ struct CreatePipelineLayout {
     VkPipelineLayoutCreateInfo modified_create_info;
 };
 
+// Goal is to reduce cost on CoreChecks as GPU-AV should only pay the cost to resize this
+struct CmdBindDescriptorBuffers {
+    std::vector<vku::safe_VkDescriptorBufferBindingInfoEXT> modified_binding_infos;
+    const VkDescriptorBufferBindingInfoEXT* pBindInfos = nullptr;
+
+    CmdBindDescriptorBuffers(uint32_t binding_count, const VkDescriptorBufferBindingInfoEXT* binding_info) {
+        pBindInfos = binding_info;
+        modified_binding_infos.resize(binding_count);
+    }
+};
+
 struct ShaderBinaryData {
     VkShaderEXT modified_shader_handle;
 };
 
 struct CreateBuffer {
-    VkBufferCreateInfo modified_create_info;
+    // To not waste time for CoreChecks we just copy the pointer, but if GPU-AV want to modifiy it, it will update pointer to be a
+    // pointer of the Safe Struct
+    const VkBufferCreateInfo* create_info_copy;
+    vku::safe_VkBufferCreateInfo modified_create_info;
 };
 
 }  // namespace chassis

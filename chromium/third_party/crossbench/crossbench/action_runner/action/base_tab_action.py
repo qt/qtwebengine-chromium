@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Optional, Type
 
 from typing_extensions import override
 
-from crossbench.action_runner.action.action import (ACTION_TIMEOUT, Action,
-                                                    ActionT)
+from crossbench.action_runner.action.action import ACTION_TIMEOUT, Action, \
+    ActionT
 from crossbench.parse import NumberParser, ObjectParser
 
 if TYPE_CHECKING:

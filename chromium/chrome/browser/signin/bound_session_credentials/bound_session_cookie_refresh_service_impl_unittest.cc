@@ -11,7 +11,6 @@
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
-#include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/strcat.h"
@@ -78,6 +77,16 @@ constexpr char kDefaultRegistrationPath[] = "/RegisterSession";
 constexpr ResumeBlockedRequestsTrigger kRefreshCompletedTrigger =
     ResumeBlockedRequestsTrigger::kObservedFreshCookies;
 
+constexpr std::string_view kSessionTerminationTriggerHistogramName =
+    "Signin.BoundSessionCredentials.SessionTerminationTrigger";
+constexpr std::string_view
+    kSessionFromRegistrationTerminationTriggerHistogramName =
+        "Signin.BoundSessionCredentials.SessionTerminationTrigger."
+        "FromRegistration";
+constexpr std::string_view kSessionFromOAMLTerminationTriggerHistogramName =
+    "Signin.BoundSessionCredentials.SessionTerminationTrigger."
+    "FromOAuthMultiLogin";
+
 // Matches a cookie name against a `bound_session_credentials::Credential` for
 // use inside testing::Pointwise().
 // `arg` type is std::tuple<std::string, bound_session_credentials::Credential>
@@ -99,8 +108,8 @@ MATCHER(IsThrottlerParams, "") {
 
   GURL scope_url =
       bound_session_credentials::GetBoundSessionScope(bound_session_params);
-  return throttler_params->domain == scope_url.host_piece() &&
-         throttler_params->path == scope_url.path_piece();
+  return throttler_params->domain == scope_url.host() &&
+         throttler_params->path == scope_url.path();
 }
 
 class FakeBoundSessionCookieController : public BoundSessionCookieController {
@@ -264,7 +273,10 @@ MATCHER_P(IsBoundSessionCookieController, bound_session_params, "") {
           Property("bound_cookie_names()",
                    &FakeBoundSessionCookieController::bound_cookie_names,
                    UnorderedPointwise(IsCookieCredential(),
-                                      bound_session_params.credentials()))),
+                                      bound_session_params.credentials())),
+          Property("session_origin()",
+                   &FakeBoundSessionCookieController::session_origin,
+                   bound_session_params.session_origin())),
       arg, result_listener);
 }
 
@@ -295,7 +307,7 @@ MATCHER_P2(IsBoundSessionRegistrationFetcher,
            has_started,
            "") {
   auto get_registration_path = [](const auto& fetcher) {
-    return fetcher->params().registration_endpoint().path_piece();
+    return fetcher->params().registration_endpoint().path();
   };
   auto fetcher_has_started = [](const auto& fetcher) {
     return fetcher->HasStarted();
@@ -345,7 +357,7 @@ bound_session_credentials::Credential CreateCookieCredential(
   bound_session_credentials::CookieCredential* cookie_credential =
       credential.mutable_cookie_credential();
   cookie_credential->set_name(cookie_name);
-  cookie_credential->set_domain(base::StrCat({".", domain.host_piece()}));
+  cookie_credential->set_domain(base::StrCat({".", domain.host()}));
   cookie_credential->set_path("/");
   return credential;
 }
@@ -354,7 +366,8 @@ bound_session_credentials::BoundSessionParams CreateBoundSessionParams(
     const GURL& site,
     const std::string& session_id,
     const std::vector<std::string>& cookie_names,
-    bool is_wsbeta = false) {
+    bound_session_credentials::SessionOrigin session_origin =
+        bound_session_credentials::SessionOrigin::SESSION_ORIGIN_UNSPECIFIED) {
   bound_session_credentials::BoundSessionParams params;
   params.set_site(site.spec());
   params.set_session_id(session_id);
@@ -365,16 +378,17 @@ bound_session_credentials::BoundSessionParams CreateBoundSessionParams(
   for (const auto& cookie_name : cookie_names) {
     *params.add_credentials() = CreateCookieCredential(cookie_name, site);
   }
-  params.set_is_wsbeta(is_wsbeta);
+  params.set_session_origin(session_origin);
   return params;
 }
 
 bound_session_credentials::BoundSessionParams CreateBoundSessionParams(
     const BoundSessionKey& key,
     const std::vector<std::string>& cookie_names,
-    bool is_wsbeta = false) {
+    bound_session_credentials::SessionOrigin session_origin =
+        bound_session_credentials::SessionOrigin::SESSION_ORIGIN_UNSPECIFIED) {
   return CreateBoundSessionParams(key.site, key.session_id, cookie_names,
-                                  is_wsbeta);
+                                  session_origin);
 }
 
 }  // namespace
@@ -463,10 +477,15 @@ class BoundSessionCookieRefreshServiceImplTestBase : public testing::Test {
                                               refresh_error);
   }
 
-  void VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger trigger) {
-    histogram_tester_.ExpectUniqueSample(
-        "Signin.BoundSessionCredentials.SessionTerminationTrigger", trigger, 1);
+  void VerifyNoSessionTerminationTriggerRecorded() {
+    histogram_tester_.ExpectTotalCount(kSessionTerminationTriggerHistogramName,
+                                       /*expected_count=*/0);
+    histogram_tester_.ExpectTotalCount(
+        kSessionFromRegistrationTerminationTriggerHistogramName,
+        /*expected_count=*/0);
+    histogram_tester_.ExpectTotalCount(
+        kSessionFromOAMLTerminationTriggerHistogramName,
+        /*expected_count=*/0);
   }
 
   void ResetCookieRefreshService() { cookie_refresh_service_.reset(); }
@@ -482,12 +501,11 @@ class BoundSessionCookieRefreshServiceImplTestBase : public testing::Test {
   void RunUntilIdle() { task_environment_.RunUntilIdle(); }
 
   BoundSessionRegistrationFetcherParam CreateTestRegistrationFetcherParams(
-      std::string_view registration_path,
-      bool is_wsbeta = false) {
+      std::string_view registration_path) {
     return BoundSessionRegistrationFetcherParam::CreateInstanceForTesting(
         kTestGoogleURL.Resolve(registration_path),
         {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
-        "test_challenge", is_wsbeta);
+        "test_challenge");
   }
 
   base::HistogramTester& histogram_tester() { return histogram_tester_; }
@@ -641,9 +659,9 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
       bound_session_throttler_params =
           service->GetBoundSessionThrottlerParams();
   ASSERT_EQ(bound_session_throttler_params.size(), 1U);
-  EXPECT_EQ(bound_session_throttler_params[0]->domain, kTestGoogleURL.host());
-  EXPECT_EQ(bound_session_throttler_params[0]->path,
-            kTestGoogleURL.path_piece());
+  EXPECT_EQ(bound_session_throttler_params[0]->domain,
+            kTestGoogleURL.GetHost());
+  EXPECT_EQ(bound_session_throttler_params[0]->path, kTestGoogleURL.path());
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -817,8 +835,16 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest, TerminateSession) {
   SimulateTerminateSession(
       SessionTerminationTrigger::kSessionTerminationHeader);
   VerifyNoBoundSession();
-  VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger::kSessionTerminationHeader);
+  histogram_tester().ExpectUniqueSample(
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kSessionTerminationHeader,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      /*expected_count=*/0);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      /*expected_count=*/0);
 
   // Verify prefs were cleared.
   // Ensure on next startup, there won't be a bound session.
@@ -846,8 +872,16 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
   cookie_controller()->SimulateOnPersistentErrorEncountered();
 
   VerifyNoBoundSession();
-  VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger::kCookieRotationPersistentError);
+  histogram_tester().ExpectUniqueSample(
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kCookieRotationPersistentError,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      /*expected_count=*/0);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      /*expected_count=*/0);
 
   // Verify prefs were cleared.
   // Ensure on next startup, there won't be a bound session.
@@ -876,8 +910,16 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
   service->MaybeTerminateSession(GURL("https://google.com/SignOut"),
                                  headers.get());
   VerifyNoBoundSession();
-  VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger::kSessionTerminationHeader);
+  histogram_tester().ExpectUniqueSample(
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kSessionTerminationHeader,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      /*expected_count=*/0);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      /*expected_count=*/0);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -901,8 +943,16 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
   service->MaybeTerminateSession(GURL("https://google.com/SignOut"),
                                  headers.get());
   VerifyNoBoundSession();
-  VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger::kSessionTerminationHeader);
+  histogram_tester().ExpectUniqueSample(
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kSessionTerminationHeader,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      /*expected_count=*/0);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      /*expected_count=*/0);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -923,8 +973,16 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
   service->MaybeTerminateSession(
       GURL("https://accounts.google.com/accounts/SignOut"), headers.get());
   VerifyNoBoundSession();
-  VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger::kSessionTerminationHeader);
+  histogram_tester().ExpectUniqueSample(
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kSessionTerminationHeader,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      /*expected_count=*/0);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      /*expected_count=*/0);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -939,8 +997,7 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
       GetOrCreateCookieRefreshServiceImpl();
   service->MaybeTerminateSession(kTestGoogleURL, headers.get());
   VerifyBoundSession(CreateTestBoundSessionParams());
-  histogram_tester().ExpectTotalCount(
-      "Signin.BoundSessionCredentials.SessionTerminationTrigger", 0);
+  VerifyNoSessionTerminationTriggerRecorded();
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -956,8 +1013,7 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
   // `kTestOtherURL` and the bound session URL are from different sites.
   service->MaybeTerminateSession(kTestOtherURL, headers.get());
   VerifyBoundSession(CreateTestBoundSessionParams());
-  histogram_tester().ExpectTotalCount(
-      "Signin.BoundSessionCredentials.SessionTerminationTrigger", 0);
+  VerifyNoSessionTerminationTriggerRecorded();
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -970,8 +1026,7 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
       GetOrCreateCookieRefreshServiceImpl();
   service->MaybeTerminateSession(kTestGoogleURL, headers.get());
   VerifyBoundSession(CreateTestBoundSessionParams());
-  histogram_tester().ExpectTotalCount(
-      "Signin.BoundSessionCredentials.SessionTerminationTrigger", 0);
+  VerifyNoSessionTerminationTriggerRecorded();
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -987,8 +1042,7 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
   service->MaybeTerminateSession(kTestGoogleURL, headers.get());
 
   VerifyBoundSession(CreateTestBoundSessionParams());
-  histogram_tester().ExpectTotalCount(
-      "Signin.BoundSessionCredentials.SessionTerminationTrigger", 0);
+  VerifyNoSessionTerminationTriggerRecorded();
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -1003,8 +1057,7 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
       GetOrCreateCookieRefreshServiceImpl();
   service->MaybeTerminateSession(kTestGoogleURL, headers.get());
   VerifyBoundSession(CreateTestBoundSessionParams());
-  histogram_tester().ExpectTotalCount(
-      "Signin.BoundSessionCredentials.SessionTerminationTrigger", 0);
+  VerifyNoSessionTerminationTriggerRecorded();
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -1064,8 +1117,16 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
   service->RegisterNewBoundSession(new_params);
 
   VerifyBoundSession(new_params);
-  VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger::kSessionOverride);
+  histogram_tester().ExpectUniqueSample(
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kSessionOverride,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      /*expected_count=*/0);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      /*expected_count=*/0);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -1081,14 +1142,15 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
 
   // Original session should not be modified.
   VerifyBoundSession(original_params);
-  histogram_tester().ExpectTotalCount(
-      "Signin.BoundSessionCredentials.SessionTerminationTrigger", 0);
+  VerifyNoSessionTerminationTriggerRecorded();
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest, ClearMatchingData) {
   BoundSessionCookieRefreshServiceImpl* service =
       GetOrCreateCookieRefreshServiceImpl();
-  service->RegisterNewBoundSession(CreateTestBoundSessionParams());
+  service->RegisterNewBoundSession(CreateBoundSessionParams(
+      kTestGoogleURL, kTestSessionId, {k1PSIDTSCookieName, k3PSIDTSCookieName},
+      bound_session_credentials::SessionOrigin::SESSION_ORIGIN_REGISTRATION));
 
   EXPECT_CALL(
       *mock_observer(),
@@ -1100,8 +1162,17 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest, ClearMatchingData) {
       content::StoragePartition::REMOVE_DATA_MASK_DEVICE_BOUND_SESSIONS,
       url::Origin::Create(kTestGoogleURL));
   VerifyNoBoundSession();
-  VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger::kCookiesCleared);
+  histogram_tester().ExpectUniqueSample(
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kCookiesCleared,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectUniqueSample(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kCookiesCleared,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      /*expected_count=*/0);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -1114,8 +1185,7 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
   ClearOriginData(content::StoragePartition::REMOVE_DATA_MASK_COOKIES,
                   url::Origin::Create(kTestGoogleURL));
   VerifyBoundSession(params);
-  histogram_tester().ExpectTotalCount(
-      "Signin.BoundSessionCredentials.SessionTerminationTrigger", 0);
+  VerifyNoSessionTerminationTriggerRecorded();
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -1129,8 +1199,7 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
       content::StoragePartition::REMOVE_DATA_MASK_DEVICE_BOUND_SESSIONS,
       url::Origin::Create(GURL("https://example.org")));
   VerifyBoundSession(params);
-  histogram_tester().ExpectTotalCount(
-      "Signin.BoundSessionCredentials.SessionTerminationTrigger", 0);
+  VerifyNoSessionTerminationTriggerRecorded();
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -1144,8 +1213,7 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
       content::StoragePartition::REMOVE_DATA_MASK_DEVICE_BOUND_SESSIONS,
       url::Origin::Create(GURL("https://accounts.google.com")));
   VerifyBoundSession(params);
-  histogram_tester().ExpectTotalCount(
-      "Signin.BoundSessionCredentials.SessionTerminationTrigger", 0);
+  VerifyNoSessionTerminationTriggerRecorded();
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -1160,8 +1228,7 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
       url::Origin::Create(kTestGoogleURL), base::Time::Now() - base::Seconds(5),
       base::Time::Now() - base::Seconds(3));
   VerifyBoundSession(params);
-  histogram_tester().ExpectTotalCount(
-      "Signin.BoundSessionCredentials.SessionTerminationTrigger", 0);
+  VerifyNoSessionTerminationTriggerRecorded();
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest, CreateRegistrationRequest) {
@@ -1282,8 +1349,16 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest,
   cookie_controller()->SimulateOnCookieRotationStoppedTimeout();
 
   VerifyNoBoundSession();
-  VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger::kRotationStoppedTimeout);
+  histogram_tester().ExpectUniqueSample(
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kRotationStoppedTimeout,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      /*expected_count=*/0);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      /*expected_count=*/0);
 }
 
 // Test suite for tests involving multiple sessions.
@@ -1683,16 +1758,26 @@ TEST_F(BoundSessionCookieRefreshServiceImplMultiSessionTest,
   auto other_params =
       CreateBoundSessionParams(kGoogleSessionKeyTwo, {"cookieX"});
   service->RegisterNewBoundSession(other_params);
-  auto params_to_be_overridden =
-      CreateBoundSessionParams(kGoogleSessionKeyOne, {"cookieA", "cookieB"});
+  auto params_to_be_overridden = CreateBoundSessionParams(
+      kGoogleSessionKeyOne, {"cookieA", "cookieB"},
+      bound_session_credentials::SessionOrigin::SESSION_ORIGIN_OAML);
   service->RegisterNewBoundSession(params_to_be_overridden);
 
   auto new_params =
       CreateBoundSessionParams(kGoogleSessionKeyOne, {"cookieA", "cookieD"});
   service->RegisterNewBoundSession(new_params);
   VerifyBoundSessions({new_params, other_params});
-  VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger::kSessionOverride);
+  histogram_tester().ExpectUniqueSample(
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kSessionOverride,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      /*expected_count=*/0);
+  histogram_tester().ExpectUniqueSample(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kSessionOverride,
+      /*expected_bucket_count=*/1);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplMultiSessionTest,
@@ -1715,14 +1800,24 @@ TEST_F(BoundSessionCookieRefreshServiceImplMultiSessionTest,
       ->SimulateOnPersistentErrorEncountered();
   // all_params[0] should have been terminated.
   VerifyBoundSessions({all_params[1], all_params[2]});
-  VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger::kCookieRotationPersistentError);
+  histogram_tester().ExpectUniqueSample(
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kCookieRotationPersistentError,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      /*expected_count=*/0);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      /*expected_count=*/0);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplMultiSessionTest,
        TerminateSessionOnSessionTerminationHeader) {
   std::vector<bound_session_credentials::BoundSessionParams> all_params = {
-      CreateBoundSessionParams(kGoogleSessionKeyOne, {"cookieA", "cookieB"}),
+      CreateBoundSessionParams(kGoogleSessionKeyOne, {"cookieA", "cookieB"},
+                               bound_session_credentials::SessionOrigin::
+                                   SESSION_ORIGIN_REGISTRATION),
       CreateBoundSessionParams(kGoogleSessionKeyTwo, {"cookieC"}),
       CreateBoundSessionParams(kYoutubeSessionKeyOne, {"cookieA"})};
   for (const auto& params : all_params) {
@@ -1745,15 +1840,28 @@ TEST_F(BoundSessionCookieRefreshServiceImplMultiSessionTest,
                                  headers.get());
   // all_params[0] should have been terminated.
   VerifyBoundSessions({all_params[1], all_params[2]});
-  VerifySessionTerminationTriggerRecorded(
-      SessionTerminationTrigger::kSessionTerminationHeader);
+  histogram_tester().ExpectUniqueSample(
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kSessionTerminationHeader,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectUniqueSample(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kSessionTerminationHeader,
+      /*expected_bucket_count=*/1);
+  histogram_tester().ExpectTotalCount(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      /*expected_count=*/0);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplMultiSessionTest,
        TerminateSessionOnClearBrowsingData) {
   std::vector<bound_session_credentials::BoundSessionParams> all_params = {
-      CreateBoundSessionParams(kGoogleSessionKeyOne, {"cookieA", "cookieB"}),
-      CreateBoundSessionParams(kGoogleSessionKeyTwo, {"cookieC"}),
+      CreateBoundSessionParams(kGoogleSessionKeyOne, {"cookieA", "cookieB"},
+                               bound_session_credentials::SessionOrigin::
+                                   SESSION_ORIGIN_REGISTRATION),
+      CreateBoundSessionParams(
+          kGoogleSessionKeyTwo, {"cookieC"},
+          bound_session_credentials::SessionOrigin::SESSION_ORIGIN_OAML),
       CreateBoundSessionParams(kYoutubeSessionKeyOne, {"cookieA"})};
   for (const auto& params : all_params) {
     ASSERT_TRUE(storage()->SaveParams(params));
@@ -1775,8 +1883,14 @@ TEST_F(BoundSessionCookieRefreshServiceImplMultiSessionTest,
   // all_params[0] and all_params[1] should have been terminated.
   VerifyBoundSessions({all_params[2]});
   histogram_tester().ExpectUniqueSample(
-      "Signin.BoundSessionCredentials.SessionTerminationTrigger",
-      SessionTerminationTrigger::kCookiesCleared, 2);
+      kSessionTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kCookiesCleared, /*expected_bucket_count=*/2);
+  histogram_tester().ExpectUniqueSample(
+      kSessionFromRegistrationTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kCookiesCleared, /*expected_bucket_count=*/1);
+  histogram_tester().ExpectUniqueSample(
+      kSessionFromOAMLTerminationTriggerHistogramName,
+      SessionTerminationTrigger::kCookiesCleared, /*expected_bucket_count=*/1);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplMultiSessionTest, ReportsCountUma) {
@@ -1794,20 +1908,15 @@ TEST_F(BoundSessionCookieRefreshServiceImplMultiSessionTest, ReportsCountUma) {
       /*expected_bucket_count=*/1);
 }
 
-// Testing params:
-// - bool controlling `kEnableBoundSessionCredentialsWsbetaBypass` feature state
+// Testing param:
 // - bool controlling `kEnableBoundSessionCredentialsContinuity` feature state
 class BoundSessionCookieRefreshServiceImplFeatureDisabledTest
-    : public testing::WithParamInterface<std::tuple<bool, bool>>,
+    : public testing::WithParamInterface<bool>,
       public BoundSessionCookieRefreshServiceImplMultiSessionTest {
  public:
   BoundSessionCookieRefreshServiceImplFeatureDisabledTest() {
     std::vector<base::test::FeatureRef> enabled_features;
     std::vector<base::test::FeatureRef> disabled_features;
-
-    auto& wsbeta_container =
-        IsWsbetaEnabled() ? enabled_features : disabled_features;
-    wsbeta_container.push_back(kEnableBoundSessionCredentialsWsbetaBypass);
 
     auto& continuity_container =
         IsContinuityEnabled() ? enabled_features : disabled_features;
@@ -1818,9 +1927,7 @@ class BoundSessionCookieRefreshServiceImplFeatureDisabledTest
     scoped_feature_list_.InitWithFeatures(enabled_features, disabled_features);
   }
 
-  bool IsWsbetaEnabled() { return std::get<0>(GetParam()); }
-
-  bool IsContinuityEnabled() { return std::get<1>(GetParam()); }
+  bool IsContinuityEnabled() { return GetParam(); }
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
@@ -1830,8 +1937,6 @@ TEST_P(BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
        InitializeSession) {
   std::vector<bound_session_credentials::BoundSessionParams> all_params = {
       CreateBoundSessionParams(kGoogleSessionKeyOne, {"cookieA", "cookieB"}),
-      CreateBoundSessionParams(kGoogleSessionKeyTwo, {"cookieC"},
-                               /*is_wsbeta=*/true),
       CreateBoundSessionParams(kYoutubeSessionKeyOne, {"cookieA"})};
   for (const auto& params : all_params) {
     ASSERT_TRUE(storage()->SaveParams(params));
@@ -1841,9 +1946,6 @@ TEST_P(BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
   if (IsContinuityEnabled()) {
     // All sessions are expected to run.
     expected_sessions = all_params;
-  } else if (IsWsbetaEnabled()) {
-    // Only a session with `is_wsbeta` will run.
-    expected_sessions = {all_params[1]};
   }
   VerifyBoundSessions(expected_sessions, /*verify_storage=*/false);
 }
@@ -1859,43 +1961,23 @@ TEST_P(BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
 }
 
 TEST_P(BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
-       CreateRegistrationRequestWithWsbeta) {
-  BoundSessionCookieRefreshServiceImpl* service =
-      GetOrCreateCookieRefreshServiceImpl();
-  service->CreateRegistrationRequest(CreateTestRegistrationFetcherParams(
-      "/RegisterSession", /*is_wsbeta=*/true));
-  if (IsWsbetaEnabled()) {
-    EXPECT_THAT(registration_fetchers(),
-                ElementsAre(IsBoundSessionRegistrationFetcher(
-                    "/RegisterSession", true)));
-  } else {
-    EXPECT_THAT(registration_fetchers(), IsEmpty());
-  }
-}
-
-TEST_P(BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
        RegisterNewBoundSession) {
   BoundSessionCookieRefreshServiceImpl* service =
       GetOrCreateCookieRefreshServiceImpl();
 
   ASSERT_NE(service, nullptr);
-  service->RegisterNewBoundSession(CreateBoundSessionParams(
-      kTestGoogleURL, kTestSessionId, {k1PSIDTSCookieName, k3PSIDTSCookieName},
-      /*is_wsbeta=*/false));
+  service->RegisterNewBoundSession(
+      CreateBoundSessionParams(kTestGoogleURL, kTestSessionId,
+                               {k1PSIDTSCookieName, k3PSIDTSCookieName}));
 
-  // New sessions shouldn't be registered if `is_wsbeta` is `false`, no matter
-  // the extra feature state.
+  // New sessions shouldn't be registered no matter the extra feature state.
   VerifyBoundSessions({});
 }
 
 INSTANTIATE_TEST_SUITE_P(
     ,
     BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
-    testing::Combine(testing::Bool(), testing::Bool()),
+    testing::Bool(),
     [](const auto& info) {
-      bool wsbeta_enabled = std::get<0>(info.param);
-      bool continuity_enabled = std::get<1>(info.param);
-      return base::StrCat({wsbeta_enabled ? "With" : "Without", "Wsbeta",
-                           continuity_enabled ? "With" : "Without",
-                           "Continuity"});
+      return base::StrCat({info.param ? "With" : "Without", "Continuity"});
     });

@@ -1,0 +1,121 @@
+/* Copyright 2025 The Chromium Authors
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+/* #css_wrapper_metadata_start
+ * #type=style-lit
+ * #import=chrome://resources/cr_elements/cr_icons_lit.css.js
+ * #import=chrome://resources/cr_elements/cr_shared_vars.css.js
+ * #import=chrome://resources/cr_elements/mwb_shared_vars.css.js
+ * #scheme=relative
+ * #include=cr-icons-lit
+ * #css_wrapper_metadata_end */
+
+:host {
+  --mwb-primary-text-font-size: 12px;
+  --mwb-secondary-text-font-size: 11px;
+
+  align-items: center;
+  background-color: var(--toolbar-background-color);
+  color: var(--toolbar-text-color);
+  display: flex;
+  height: 20px;
+  padding: 7px 12px;
+  margin: 6px 4px 0px 4px;
+}
+
+.top-toolbar-title {
+  overflow: hidden;
+  align-items: center;
+  font-size: 16px;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-toolbar-logo {
+  flex:0;
+  box-sizing: border-box;
+  display: inline-block;
+  margin-right: 8px;
+  --cr-icon-size: 20px;
+  width: 20px;
+  height: 20px;
+}
+
+.chrome-logo-dark {
+  display: none;
+}
+
+:host([dark-mode]) .chrome-logo-light {
+  display: none;
+}
+
+:host([dark-mode]) .chrome-logo-dark {
+  display: inline-block;
+}
+
+.top-toolbar-action-buttons {
+  flex: 0;
+  display: flex;
+  flex-direction: row;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+}
+
+cr-action-menu {
+  --cr-menu-border-radius: 16px;
+}
+
+cr-action-menu > button {
+  padding: 4px 16px;
+  min-width: 230px;
+}
+
+button > cr-icon {
+  width: 20px;
+  height: 20px;
+}
+
+cr-icon-button {
+  --cr-icon-button-margin-start: 12px;
+  --cr-icon-button-icon-size: 20px;
+  --cr-icon-button-fill-color: var(--toolbar-button-icon-color);
+}
+
+cr-icon-button[hidden] {
+  display: none;
+}
+
+cr-action-menu {
+  --cr-menu-background-color: var(--toolbar-menu-background-color);
+}
+
+.dropdown-item {
+  color: var(--toolbar-text-color);
+}
+
+.dropdown-item cr-icon {
+  margin-inline-end: 10px;
+}
+
+.dropdown-divider {
+  background-color: var(--toolbar-divider-color);
+  height: 1px;
+  width: 100%;
+}
+
+<if expr="_google_chrome">
+.google-g-icon {
+  --cr-icon-image: url(chrome://resources/cr_components/searchbox/icons/google_g_cr23.svg);
+  --cr-icon-color: var(--toolbar-text-color);
+
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  margin-inline-end: 10px;
+}
+</if>

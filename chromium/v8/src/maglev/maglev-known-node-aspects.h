@@ -5,12 +5,16 @@
 #ifndef V8_MAGLEV_MAGLEV_KNOWN_NODE_ASPECTS_H_
 #define V8_MAGLEV_MAGLEV_KNOWN_NODE_ASPECTS_H_
 
+#include <utility>
+
+#include "src/base/logging.h"
 #include "src/maglev/maglev-ir.h"
 
 namespace v8 {
 namespace internal {
 namespace maglev {
 
+class Graph;
 struct LoopEffects;
 
 using PossibleMaps = compiler::ZoneRefSet<Map>;
@@ -47,36 +51,66 @@ class NodeInfo {
    public:
     AlternativeNodes() { store_.fill(nullptr); }
 
-#define ALTERNATIVES(V)                                \
-  V(tagged, Tagged)                                    \
-  V(int32, Int32)                                      \
-  V(truncated_int32_to_number, TruncatedInt32ToNumber) \
-  V(float64, Float64)                                  \
-  V(checked_value, CheckedValue)
+#define ALTERNATIVES(V)                                       \
+  V(tagged, Tagged, Tagged)                                   \
+  V(int32, Int32, Int32)                                      \
+  V(truncated_int32_to_number, TruncatedInt32ToNumber, Int32) \
+  V(float64, Float64, Float64)                                \
+  V(holey_float64, HoleyFloat64, HoleyFloat64)                \
+  V(checked_value, CheckedValue, Tagged)
 
     enum Kind {
-#define KIND(name, Name) k##Name,
+#define KIND(name, Name, repr) k##Name,
       ALTERNATIVES(KIND)
 #undef KIND
           kNumberOfAlternatives
     };
 
-#define API(name, Name)                                      \
-  ValueNode* name() const {                                  \
-    if (!store_[Kind::k##Name]) return nullptr;              \
-    return store_[Kind::k##Name]->UnwrapIdentities();        \
-  }                                                          \
-  ValueNode* set_##name(ValueNode* val) {                    \
-    return store_[Kind::k##Name] = val;                      \
-  }                                                          \
-  template <typename Function>                               \
-  ValueNode* get_or_set_##name(Function create) {            \
-    if (store_[Kind::k##Name]) return store_[Kind::k##Name]; \
-    return store_[Kind::k##Name] = create();                 \
+#define API(name, Name, repr)                                               \
+  ValueNode* name() const {                                                 \
+    if (!store_[Kind::k##Name]) return nullptr;                             \
+    return store_[Kind::k##Name]->UnwrapIdentities();                       \
+  }                                                                         \
+  ValueNode* set_##name(ValueNode* val) {                                   \
+    DCHECK_EQ(val->value_representation(), ValueRepresentation::k##repr);   \
+    /* In most cases, we shouldn't overwrite existing alternatives. When we \
+     * do, it should be with a "stronger" one. So far, the only case where  \
+     * this happens is when overwriting a CheckedInternalizedString by an   \
+     * actual string Constant, so we check that if we are overwriting, then \
+     * the old one shouldn't be a constant and the new one should be.       \
+     */                                                                     \
+    DCHECK(name() == nullptr || (!IsConstantNode(name()->opcode()) &&       \
+                                 IsConstantNode(val->opcode())));           \
+    return store_[Kind::k##Name] = val;                                     \
+  }                                                                         \
+  template <typename Function>                                              \
+  ValueNode* get_or_set_##name(Function create) {                           \
+    ValueNode* existing_alt = name();                                       \
+    if (existing_alt != nullptr) return existing_alt;                       \
+    return set_##name(create());                                            \
   }
     ALTERNATIVES(API)
 #undef API
 #undef ALTERNATIVES
+
+    ValueNode* get(UseRepresentation repr) {
+      switch (repr) {
+        case UseRepresentation::kTagged:
+        case UseRepresentation::kTaggedForNumberToString:
+          return tagged();
+        case UseRepresentation::kInt32:
+          return int32();
+        case UseRepresentation::kTruncatedInt32:
+          return truncated_int32_to_number();
+        case UseRepresentation::kFloat64:
+          return float64();
+        case UseRepresentation::kHoleyFloat64:
+          return holey_float64();
+        case UseRepresentation::kShiftedInt53:
+        case UseRepresentation::kUint32:
+          UNREACHABLE();
+      }
+    }
 
     bool has_none() const { return store_ == AlternativeNodes().store_; }
 
@@ -237,6 +271,8 @@ class KnownNodeAspects {
                                        LoopEffects* loop_effects,
                                        Zone* zone) const;
 
+  void ClearUnstableNodeAspectsForStoreMap(StoreMap* node,
+                                           bool is_tracing_enabled);
   void ClearUnstableNodeAspects(bool is_tracing_enabled);
 
   void ClearUnstableMaps() {
@@ -275,22 +311,13 @@ class KnownNodeAspects {
     virtual_objects_ = {};
   }
 
-  NodeInfos::iterator FindInfo(ValueNode* node) {
-    return node_infos_.find(node);
-  }
-  NodeInfos::const_iterator FindInfo(ValueNode* node) const {
-    return node_infos_.find(node);
-  }
-  bool IsValid(NodeInfos::iterator& it) { return it != node_infos_.end(); }
-  bool IsValid(NodeInfos::const_iterator& it) const {
-    return it != node_infos_.end();
-  }
-
   const NodeInfo* TryGetInfoFor(ValueNode* node) const {
+    node = node->Unwrap();
     return const_cast<KnownNodeAspects*>(this)->TryGetInfoFor(node);
   }
 
   NodeInfo* TryGetInfoFor(ValueNode* node) {
+    node = node->Unwrap();
     auto info_it = FindInfo(node);
     if (!IsValid(info_it)) return nullptr;
     return &info_it->second;
@@ -298,11 +325,19 @@ class KnownNodeAspects {
 
   NodeInfo* GetOrCreateInfoFor(compiler::JSHeapBroker* broker,
                                ValueNode* node) {
+    node = node->Unwrap();
     auto info_it = FindInfo(node);
     if (IsValid(info_it)) return &info_it->second;
     auto res = &node_infos_.emplace(node, NodeInfo()).first->second;
     res->IntersectType(node->GetStaticType(broker));
     return res;
+  }
+
+  ValueNode* TryGetAlternativeFor(ValueNode* node, UseRepresentation repr) {
+    node = node->Unwrap();
+    auto info_it = FindInfo(node);
+    if (!IsValid(info_it)) return nullptr;
+    return info_it->second.alternative().get(repr);
   }
 
   std::optional<PossibleMaps> TryGetPossibleMaps(ValueNode* node) {
@@ -325,10 +360,8 @@ class KnownNodeAspects {
       // fall back to its static type.
       return node->GetStaticType(broker);
     }
-    NodeType actual_type = info->type();
-    if (auto phi = node->TryCast<Phi>()) {
-      actual_type = IntersectType(actual_type, phi->type());
-    }
+    NodeType actual_type =
+        IntersectType(info->type(), node->GetStaticType(broker));
     if (node->Is<ReturnedValue>()) {
       // The returned value might be more precise than the one stored in the
       // node info.
@@ -337,7 +370,8 @@ class KnownNodeAspects {
     }
 #ifdef DEBUG
     NodeType static_type = node->GetStaticType(broker);
-    if (!NodeTypeIs(actual_type, static_type)) {
+    // TODO(428667907): Ideally we should bail out early for the kNone type.
+    if (!NodeTypeIs(actual_type, static_type, NodeTypeIsVariant::kAllowNone)) {
       // In case we needed a numerical alternative of a smi value, the type
       // must generalize. In all other cases the node info type should reflect
       // the actual type.
@@ -355,20 +389,19 @@ class KnownNodeAspects {
     if (current_type) *current_type = static_type;
     if (NodeTypeIs(static_type, type)) return true;
     if (IsEmptyNodeType(IntersectType(static_type, type))) return false;
-    auto it = FindInfo(node);
-    if (!IsValid(it)) return false;
-    if (current_type) *current_type = it->second.type();
-    return NodeTypeIs(it->second.type(), type);
+    const NodeInfo* node_info = TryGetInfoFor(node);
+    if (!node_info) return false;
+    if (current_type) *current_type = node_info->type();
+    return NodeTypeIs(node_info->type(), type);
   }
 
   NodeType CheckTypes(compiler::JSHeapBroker* broker, ValueNode* node,
                       std::initializer_list<NodeType> types) {
-    auto it = FindInfo(node);
-    bool has_kna = IsValid(it);
+    const NodeInfo* node_info = TryGetInfoFor(node);
     for (NodeType type : types) {
       if (node->StaticTypeIs(broker, type)) return type;
-      if (has_kna) {
-        if (NodeTypeIs(it->second.type(), type)) return type;
+      if (node_info) {
+        if (NodeTypeIs(node_info->type(), type)) return type;
       }
     }
     return NodeType::kUnknown;
@@ -377,19 +410,25 @@ class KnownNodeAspects {
   bool MayBeNullOrUndefined(compiler::JSHeapBroker* broker, ValueNode* node) {
     NodeType static_type = node->GetStaticType(broker);
     if (!NodeTypeMayBeNullOrUndefined(static_type)) return false;
-    auto it = FindInfo(node);
-    if (!IsValid(it)) return true;
-    return NodeTypeMayBeNullOrUndefined(it->second.type());
+    const NodeInfo* node_info = TryGetInfoFor(node);
+    if (!node_info) return true;
+    return NodeTypeMayBeNullOrUndefined(node_info->type());
   }
 
   bool EnsureType(compiler::JSHeapBroker* broker, ValueNode* node,
                   NodeType type, NodeType* old_type = nullptr) {
     NodeType static_type = node->GetStaticType(broker);
     if (old_type) *old_type = static_type;
-    if (NodeTypeIs(static_type, type)) return true;
+    // TODO(428667907): Ideally we should bail out early for the kNone type.
+    if (NodeTypeIs(static_type, type, NodeTypeIsVariant::kAllowNone)) {
+      return true;
+    }
     NodeInfo* known_info = GetOrCreateInfoFor(broker, node);
     if (old_type) *old_type = known_info->type();
-    if (NodeTypeIs(known_info->type(), type)) return true;
+    // TODO(428667907): Ideally we should bail out early for the kNone type.
+    if (NodeTypeIs(known_info->type(), type, NodeTypeIsVariant::kAllowNone)) {
+      return true;
+    }
     known_info->IntersectType(type);
     if (auto phi = node->TryCast<Phi>()) {
       known_info->IntersectType(phi->type());
@@ -447,87 +486,34 @@ class KnownNodeAspects {
 
   // Cached property loads.
 
-  // Represents a key into the cache. This is either a NameRef, or an enum
-  // value.
-  class LoadedPropertyMapKey {
-   public:
-    enum Type {
-      // kName must be zero so that pointers are unaffected.
-      kName = 0,
-      kElements,
-      kTypedArrayLength,
-      // TODO(leszeks): We could probably share kStringLength with
-      // kTypedArrayLength if needed.
-      kStringLength
-    };
-    static constexpr int kTypeMask = 0x3;
-    static_assert((kName & ~kTypeMask) == 0);
-    static_assert((kElements & ~kTypeMask) == 0);
-    static_assert((kTypedArrayLength & ~kTypeMask) == 0);
-    static_assert((kStringLength & ~kTypeMask) == 0);
-
-    static LoadedPropertyMapKey Elements() {
-      return LoadedPropertyMapKey(kElements);
-    }
-
-    static LoadedPropertyMapKey TypedArrayLength() {
-      return LoadedPropertyMapKey(kTypedArrayLength);
-    }
-
-    static LoadedPropertyMapKey StringLength() {
-      return LoadedPropertyMapKey(kStringLength);
-    }
-
-    // Allow implicit conversion from NameRef to key, so that callers in the
-    // common path can use a NameRef directly.
-    // NOLINTNEXTLINE
-    LoadedPropertyMapKey(compiler::NameRef ref)
-        : data_(reinterpret_cast<Address>(ref.data())) {
-      DCHECK_EQ(data_ & kTypeMask, kName);
-    }
-
-    bool operator==(const LoadedPropertyMapKey& other) const {
-      return data_ == other.data_;
-    }
-    bool operator<(const LoadedPropertyMapKey& other) const {
-      return data_ < other.data_;
-    }
-
-    compiler::NameRef name() {
-      DCHECK_EQ(type(), kName);
-      return compiler::NameRef(reinterpret_cast<compiler::ObjectData*>(data_),
-                               false);
-    }
-
-    Type type() { return static_cast<Type>(data_ & kTypeMask); }
-
-   private:
-    explicit LoadedPropertyMapKey(Type type) : data_(type) {
-      DCHECK_NE(type, kName);
-    }
-
-    Address data_;
-  };
   // Maps key->object->value, so that stores to a key can invalidate all loads
   // of that key (in case the objects are aliasing).
   using LoadedPropertyMap =
-      ZoneMap<LoadedPropertyMapKey, ZoneMap<ValueNode*, ValueNode*>>;
+      ZoneMap<PropertyKey, ZoneMap<ValueNode*, ValueNode*>>;
 
   using LoadedContextSlotsKey = std::tuple<ValueNode*, int>;
   using LoadedContextSlots = ZoneMap<LoadedContextSlotsKey, ValueNode*>;
 
   ValueNode* TryFindLoadedProperty(ValueNode* lookup_start_object,
-                                   LoadedPropertyMapKey name) {
+                                   PropertyKey name) {
     return TryFindLoadedProperty(loaded_properties_, lookup_start_object, name);
   }
   ValueNode* TryFindLoadedConstantProperty(ValueNode* lookup_start_object,
-                                           LoadedPropertyMapKey name) {
+                                           PropertyKey name) {
     return TryFindLoadedProperty(loaded_constant_properties_,
                                  lookup_start_object, name);
   }
+  ValueNode* TryFindLoadedProperty(ValueNode* lookup_start_object,
+                                   PropertyKey name, bool is_const) {
+    if (is_const) {
+      return TryFindLoadedConstantProperty(lookup_start_object, name);
+    }
+    return TryFindLoadedProperty(lookup_start_object, name);
+  }
 
-  ZoneMap<ValueNode*, ValueNode*>& GetLoadedPropertiesForKey(
-      Zone* zone, bool is_const, KnownNodeAspects::LoadedPropertyMapKey key) {
+  ZoneMap<ValueNode*, ValueNode*>& GetLoadedPropertiesForKey(Zone* zone,
+                                                             bool is_const,
+                                                             PropertyKey key) {
     LoadedPropertyMap& properties =
         is_const ? loaded_constant_properties_ : loaded_properties_;
     // Try to get loaded_properties[key] if it already exists, otherwise
@@ -535,9 +521,8 @@ class KnownNodeAspects {
     return properties.try_emplace(key, zone).first->second;
   }
 
-  bool ClearLoadedPropertiesForKey(KnownNodeAspects::LoadedPropertyMapKey key) {
-    auto it = loaded_properties_.find(
-        KnownNodeAspects::LoadedPropertyMapKey::Elements());
+  bool ClearLoadedPropertiesForKey(PropertyKey key) {
+    auto it = loaded_properties_.find(key);
     if (it != loaded_properties_.end()) {
       it->second.clear();
       return true;
@@ -623,9 +608,22 @@ class KnownNodeAspects {
   void UpdateMayHaveAliasingContexts(compiler::JSHeapBroker* broker,
                                      LocalIsolate* local_isolate,
                                      ValueNode* context);
+  SmallZoneVector<LoadedContextSlotsKey, 8> ClearAliasedContextSlotsFor(
+      Graph* graph, ValueNode* context, int offset, ValueNode* value);
 
-  LoadedContextSlots& loaded_context_slots() { return loaded_context_slots_; }
-
+  // Returns the value in the cache if exists without adding a new cache entry.
+  ValueNode* TryGetContextCachedValue(ValueNode* context, int offset,
+                                      ContextSlotMutability slot_mutability) {
+    auto map = slot_mutability == kMutable ? loaded_context_slots_
+                                           : loaded_context_constants_;
+    auto it = map.find({context, offset});
+    if (it == map.end()) return nullptr;
+    if (it->second) {
+      it->second = it->second->UnwrapIdentities();
+    }
+    return it->second;
+  }
+  // Returns the value in the cache and add a new entry.
   ValueNode*& GetContextCachedValue(ValueNode* context, int offset,
                                     ContextSlotMutability slot_mutability) {
     ValueNode*& cached_value =
@@ -637,6 +635,17 @@ class KnownNodeAspects {
     }
     return cached_value;
   }
+  // Returns true if value was added to the cache, or false if the value updated
+  // the cache.
+  bool SetContextCachedValue(ValueNode* context, int offset, ValueNode* value) {
+    auto it = loaded_context_slots_.find({context, offset});
+    if (it == loaded_context_slots_.end()) {
+      loaded_context_slots_.insert({{context, offset}, value});
+      return true;
+    }
+    it->second = value;
+    return false;
+  }
   bool HasContextCacheValue(ValueNode* context, int offset,
                             ContextSlotMutability slot_mutability) {
     return slot_mutability == kMutable
@@ -646,6 +655,46 @@ class KnownNodeAspects {
   bool IsContextCacheEmpty(ContextSlotMutability slot_mutability) {
     return slot_mutability == kMutable ? loaded_context_slots_.empty()
                                        : loaded_context_constants_.empty();
+  }
+
+  template <typename NodeT>
+  void MarkPossibleSideEffect(NodeT* node, compiler::JSHeapBroker* broker,
+                              bool is_tracing_enabled) {
+    // Don't do anything for nodes without side effects.
+    if constexpr (!NodeT::kProperties.can_write()) return;
+
+    increment_effect_epoch();
+
+    if constexpr (Node::opcode_of<NodeT> == Opcode::kMaybeGrowFastElements) {
+      if (ClearLoadedPropertiesForKey(broker->length_string())) {
+        if (V8_UNLIKELY(v8_flags.trace_maglev_graph_building &&
+                        is_tracing_enabled)) {
+          std::cout << "  * Removing non-constant cached \"length\" property";
+        }
+      }
+    }
+
+    if constexpr (IsElementsArrayWrite(Node::opcode_of<NodeT>)) {
+      if (ClearLoadedPropertiesForKey(PropertyKey::Elements())) {
+        if (V8_UNLIKELY(v8_flags.trace_maglev_graph_building &&
+                        is_tracing_enabled)) {
+          std::cout << "  * Removing non-constant cached [Elements]";
+        }
+      }
+    } else if constexpr (std::is_same_v<NodeT, CheckMapsWithMigration> ||
+                         std::is_same_v<NodeT, MigrateMapIfNeeded>) {
+      // These instructions only migrate representations of values, not the
+      // values themselves, so cached values are still valid.
+    } else if constexpr (std::is_same_v<NodeT, StoreMap>) {
+      ClearUnstableNodeAspectsForStoreMap(node, is_tracing_enabled);
+    } else if constexpr (!IsSimpleFieldStore(Node::opcode_of<NodeT>) &&
+                         !IsTypedArrayStore(Node::opcode_of<NodeT>)) {
+      // Don't change known node aspects for simple field stores. The only
+      // relevant side effect on these is writes to objects which invalidate
+      // loaded properties and context slots, and we invalidate these already as
+      // part of emitting the store.
+      ClearUnstableNodeAspects(is_tracing_enabled);
+    }
   }
 
   explicit KnownNodeAspects(Zone* zone)
@@ -702,7 +751,7 @@ class KnownNodeAspects {
 
   ValueNode* TryFindLoadedProperty(const LoadedPropertyMap& properties,
                                    ValueNode* lookup_start_object,
-                                   LoadedPropertyMapKey name) {
+                                   PropertyKey name) {
     auto props_for_name = properties.find(name);
     if (props_for_name == properties.end()) return nullptr;
 
@@ -711,24 +760,35 @@ class KnownNodeAspects {
 
     return it->second->UnwrapIdentities();
   }
+
+  NodeInfos::iterator FindInfo(ValueNode* node) {
+    node = node->Unwrap();
+    return node_infos_.find(node);
+  }
+  NodeInfos::const_iterator FindInfo(ValueNode* node) const {
+    node = node->Unwrap();
+    return node_infos_.find(node);
+  }
+  bool IsValid(NodeInfos::iterator& it) { return it != node_infos_.end(); }
+  bool IsValid(NodeInfos::const_iterator& it) const {
+    return it != node_infos_.end();
+  }
 };
 
+template <typename MapContainer>
 class KnownMapsMerger {
  public:
   explicit KnownMapsMerger(compiler::JSHeapBroker* broker, Zone* zone,
-                           base::Vector<const compiler::MapRef> requested_maps)
+                           const MapContainer& requested_maps)
       : broker_(broker), zone_(zone), requested_maps_(requested_maps) {}
 
   void IntersectWithKnownNodeAspects(
       ValueNode* object, const KnownNodeAspects& known_node_aspects) {
-    auto node_info_it = known_node_aspects.FindInfo(object);
-    bool has_node_info = known_node_aspects.IsValid(node_info_it);
-    NodeType type =
-        has_node_info ? node_info_it->second.type() : NodeType::kUnknown;
-    if (has_node_info && node_info_it->second.possible_maps_are_known()) {
+    const NodeInfo* node_info = known_node_aspects.TryGetInfoFor(object);
+    NodeType type = node_info ? node_info->type() : NodeType::kUnknown;
+    if (node_info && node_info->possible_maps_are_known()) {
       // TODO(v8:7700): Make intersection non-quadratic.
-      for (compiler::MapRef possible_map :
-           node_info_it->second.possible_maps()) {
+      for (compiler::MapRef possible_map : node_info->possible_maps()) {
         if (std::find(requested_maps_.begin(), requested_maps_.end(),
                       possible_map) != requested_maps_.end()) {
           // No need to add dependencies, we already have them for all known
@@ -755,7 +815,7 @@ class KnownMapsMerger {
       // universal set, which means just insert all requested maps.
       known_maps_are_subset_of_requested_maps_ = false;
       existing_known_maps_found_ = false;
-      for (compiler::MapRef map : requested_maps_) {
+      for (const compiler::MapRef map : requested_maps_) {
         InsertMap(map);
       }
     }
@@ -809,7 +869,7 @@ class KnownMapsMerger {
  private:
   compiler::JSHeapBroker* broker_;
   Zone* zone_;
-  base::Vector<const compiler::MapRef> requested_maps_;
+  const MapContainer& requested_maps_;
   compiler::ZoneRefSet<Map> intersect_set_;
   bool known_maps_are_subset_of_requested_maps_ = true;
   bool existing_known_maps_found_ = true;

@@ -91,8 +91,8 @@ def get_pressbenchmark_story_cls(
   return None
 
 
-def create_remote_webdriver(driver: webdriver.Remote
-                           ) -> cb_webdriver.RemoteWebDriver:
+def create_remote_webdriver(
+    driver: webdriver.Remote) -> cb_webdriver.RemoteWebDriver:
   """Creates a remote webdriver instance for the driver.
 
   Args:

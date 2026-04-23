@@ -6,22 +6,29 @@ import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
 
 import type {FrameAssociated} from './FrameAssociated.js';
-import {PageResourceLoader, type PageResourceLoadInitiator} from './PageResourceLoader.js';
+import {PageResourceLoader, type PageResourceLoadInitiator, type ResourceLoader} from './PageResourceLoader.js';
 import {type DebugId, parseSourceMap, SourceMap, type SourceMapV3} from './SourceMap.js';
 import {SourceMapCache} from './SourceMapCache.js';
 import {type Target, Type} from './Target.js';
 
+export type SourceMapFactory<T> =
+    (compiledURL: Platform.DevToolsPath.UrlString, sourceMappingURL: Platform.DevToolsPath.UrlString,
+     payload: SourceMapV3, client: T) => SourceMap;
+
 export class SourceMapManager<T extends FrameAssociated> extends Common.ObjectWrapper.ObjectWrapper<EventTypes<T>> {
   readonly #target: Target;
+  readonly #factory: SourceMapFactory<T>;
   #isEnabled = true;
   readonly #clientData = new Map<T, ClientData>();
   readonly #sourceMaps = new Map<SourceMap, T>();
   #attachingClient: T|null = null;
 
-  constructor(target: Target) {
+  constructor(target: Target, factory?: SourceMapFactory<T>) {
     super();
 
     this.#target = target;
+    this.#factory =
+        factory ?? ((compiledURL, sourceMappingURL, payload) => new SourceMap(compiledURL, sourceMappingURL, payload));
   }
 
   setEnabled(isEnabled: boolean): void {
@@ -105,11 +112,17 @@ export class SourceMapManager<T extends FrameAssociated> extends Common.ObjectWr
         if (this.#attachingClient === client) {
           this.#attachingClient = null;
           const initiator = client.createPageResourceLoadInitiator();
+          // TODO(crbug.com/458180550): Pass PageResourceLoader via constructor.
+          //     The reason we grab it here lazily from the context is that otherwise every
+          //     unit test using `createTarget` would need to set up a `PageResourceLoader`, as
+          //     CSSModel and DebuggerModel are autostarted by default, and they create a
+          //     SourceMapManager in their respective constructors.
+          const resourceLoader = this.#target.targetManager().context.get(PageResourceLoader);
           clientData.sourceMapPromise =
-              loadSourceMap(sourceMapURL, client.debugId(), initiator)
+              loadSourceMap(resourceLoader, sourceMapURL, client.debugId(), initiator)
                   .then(
                       payload => {
-                        const sourceMap = new SourceMap(sourceURL, sourceMapURL, payload);
+                        const sourceMap = this.#factory(sourceURL, sourceMapURL, payload, client);
                         if (this.#clientData.get(client) === clientData) {
                           clientData.sourceMap = sourceMap;
                           this.#sourceMaps.set(sourceMap, client);
@@ -167,10 +180,14 @@ export class SourceMapManager<T extends FrameAssociated> extends Common.ObjectWr
       this.dispatchEventToListeners(Events.SourceMapFailedToAttach, {client});
     }
   }
+
+  waitForSourceMapsProcessedForTest(): Promise<unknown> {
+    return Promise.all(this.#sourceMaps.keys().map(sourceMap => sourceMap.scopesFallbackPromiseForTest));
+  }
 }
 
-export async function loadSourceMap(
-    url: Platform.DevToolsPath.UrlString, debugId: DebugId|null,
+async function loadSourceMap(
+    resourceLoader: ResourceLoader, url: Platform.DevToolsPath.UrlString, debugId: DebugId|null,
     initiator: PageResourceLoadInitiator): Promise<SourceMapV3> {
   try {
     if (debugId) {
@@ -180,7 +197,7 @@ export async function loadSourceMap(
       }
     }
 
-    const {content} = await PageResourceLoader.instance().loadResource(url, initiator);
+    const {content} = await resourceLoader.loadResource(url, initiator);
     const sourceMap = parseSourceMap(content);
     if ('debugId' in sourceMap && sourceMap.debugId) {
       // In case something goes wrong with updating the cache, we still want to use the source map.
@@ -193,9 +210,10 @@ export async function loadSourceMap(
 }
 
 export async function tryLoadSourceMap(
-    url: Platform.DevToolsPath.UrlString, initiator: PageResourceLoadInitiator): Promise<SourceMapV3|null> {
+    resourceLoader: ResourceLoader, url: Platform.DevToolsPath.UrlString,
+    initiator: PageResourceLoadInitiator): Promise<SourceMapV3|null> {
   try {
-    return await loadSourceMap(url, null, initiator);
+    return await loadSourceMap(resourceLoader, url, null, initiator);
   } catch (cause) {
     console.error(cause);
     return null;

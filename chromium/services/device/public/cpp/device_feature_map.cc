@@ -23,6 +23,7 @@ namespace {
 // services/device/public/cpp/device_features.h or in other locations in the
 // code base.
 const base::Feature* const kFeaturesExposedToJava[] = {
+    &device::kWebAuthnAndroidSignal,
     &device::kWebAuthnImmediateGet,
     &device::kWebAuthnPasskeyUpgrade,
     &kGenericSensorExtraClasses,
@@ -43,3 +44,5 @@ static jlong JNI_DeviceFeatureMap_GetNativeMap(JNIEnv* env) {
 }
 
 }  // namespace features
+
+DEFINE_JNI(DeviceFeatureMap)

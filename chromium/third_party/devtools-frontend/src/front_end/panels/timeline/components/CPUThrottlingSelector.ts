@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import '../../../ui/components/icon_button/icon_button.js';
+import '../../../ui/kit/kit.js';
 import '../../../ui/components/menus/menus.js';
 
 import * as Common from '../../../core/common/common.js';
@@ -83,7 +83,7 @@ export const DEFAULT_VIEW = (input: ViewInput, _output: undefined, target: HTMLE
   const calibrationLabel = hasCalibratedOnce ? i18nString(UIStrings.recalibrate) : i18nString(UIStrings.calibrate);
 
   // clang-format off
-  /* eslint-disable rulesdir/no-deprecated-component-usages */
+  /* eslint-disable @devtools/no-deprecated-component-usages */
   const template = html`
     <style>${cpuThrottlingSelectorStyles}</style>
     <devtools-select-menu

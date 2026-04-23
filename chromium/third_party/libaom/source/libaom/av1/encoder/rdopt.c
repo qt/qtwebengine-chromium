@@ -3649,7 +3649,7 @@ void av1_rd_pick_intra_mode_sb(const struct AV1_COMP *cpi, struct macroblock *x,
   }
   if (rd_cost->rate == INT_MAX) return;
 
-  ctx->mic = *xd->mi[0];
+  ctx->mic = *mbmi;
   av1_copy_mbmi_ext_to_mbmi_ext_frame(&ctx->mbmi_ext_best, &x->mbmi_ext,
                                       av1_ref_frame_type(xd->mi[0]->ref_frame));
   av1_copy_array(ctx->tx_type_map, xd->tx_type_map, ctx->num_4x4_blk);
@@ -5741,6 +5741,8 @@ static inline void search_intra_modes_in_interframe(
     int bw = mi_size_wide[bsize];
     if (bh > 4 || bw > 4) return;
   }
+
+  mbmi->skip_txfm = 0;
 
   for (int mode_idx = 0; mode_idx < LUMA_MODE_COUNT; ++mode_idx) {
     if (sf->intra_sf.skip_intra_in_interframe &&

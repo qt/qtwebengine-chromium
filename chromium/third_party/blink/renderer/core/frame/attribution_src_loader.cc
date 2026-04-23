@@ -57,9 +57,11 @@
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/space_split_string.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/frame/deprecation/deprecation.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
+#include "third_party/blink/renderer/core/html/anchor_element_utils.h"
 #include "third_party/blink/renderer/core/html/html_anchor_element.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/inspector/identifiers_factory.h"
@@ -152,6 +154,15 @@ Vector<KURL> ParseAttributionSrcUrls(AttributionSrcLoader& loader,
                                      const Container& strings,
                                      HTMLElement* element) {
   CHECK(window);
+
+  // Corresponds to non-WebIDL-based API usage originating from
+  // `<a attributionsrc>`, `<area attributionsrc>`, `<img attributionsrc>`,
+  // `<script attributionsrc>`, `window.open(..., ..., "attributionsrc")`.
+  // TODO(crbug.com/460165751): Report deprecation for presence of
+  // Attribution-Reporting-* headers in responses handled in both this
+  // file and the browser process.
+  Deprecation::CountDeprecation(window,
+                                WebFeature::kAttributionReportingAPIAll);
 
   if (!network::HasAttributionSupport(loader.GetSupport())) {
     LogAuditIssue(window, AttributionReportingIssueType::kNoWebOrOsSupport,
@@ -591,7 +602,8 @@ void AttributionSrcLoader::RegisterFromContextMenuNavigation(
 
   // Adapted from `HTMLAnchorElementBase::HandleClick()`.
   auto referrer_policy = network::mojom::ReferrerPolicy::kDefault;
-  if (anchor->HasRel(kRelationNoReferrer)) {
+  if (AnchorElementUtils::HasRel(anchor->GetLinkRelations(),
+                                 kRelationNoReferrer)) {
     referrer_policy = network::mojom::ReferrerPolicy::kNever;
   } else if (anchor->FastHasAttribute(html_names::kReferrerpolicyAttr)) {
     SecurityPolicy::ReferrerPolicyFromString(

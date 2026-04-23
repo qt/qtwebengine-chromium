@@ -20,7 +20,6 @@
 #include "base/functional/bind.h"
 #include "base/memory/memory_pressure_monitor.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "base/power_monitor/power_observer.h"
 #include "base/threading/thread_checker.h"
 #include "base/values.h"
@@ -202,7 +201,8 @@ struct NET_EXPORT HttpNetworkSessionContext {
 };
 
 // This class holds session objects used by HttpNetworkTransaction objects.
-class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
+class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver,
+                                      public base::MemoryPressureListener {
  public:
   enum SocketPoolType {
     NORMAL_SOCKET_POOL,
@@ -326,7 +326,7 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
 
   // Flush sockets on low memory notifications callback.
   void OnMemoryPressure(
-      base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
+      base::MemoryPressureLevel memory_pressure_level) override;
 
   const raw_ptr<NetLog> net_log_;
   const raw_ptr<HttpServerProperties> http_server_properties_;
@@ -366,7 +366,8 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
   HttpNetworkSessionParams params_;
   HttpNetworkSessionContext context_;
 
-  std::unique_ptr<base::AsyncMemoryPressureListener> memory_pressure_listener_;
+  std::unique_ptr<base::AsyncMemoryPressureListenerRegistration>
+      memory_pressure_listener_registration_;
 
   bool power_suspended_ = false;
 

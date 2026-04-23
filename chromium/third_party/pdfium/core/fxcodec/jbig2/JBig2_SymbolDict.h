@@ -22,9 +22,7 @@ class CJBig2_SymbolDict {
 
   std::unique_ptr<CJBig2_SymbolDict> DeepCopy() const;
 
-  void AddImage(std::unique_ptr<CJBig2_Image> image) {
-    sdexsyms_.push_back(std::move(image));
-  }
+  void AddImage(std::unique_ptr<CJBig2_Image> image);
 
   size_t NumImages() const { return sdexsyms_.size(); }
   CJBig2_Image* GetImage(size_t index) const { return sdexsyms_[index].get(); }

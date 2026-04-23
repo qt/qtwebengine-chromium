@@ -30,6 +30,7 @@
 #include "ink/strokes/input/stroke_input_batch.h"
 #include "ink/types/duration.h"
 #include "ink/types/iterator_range.h"
+#include "ink/types/numbers.h"
 #include "ink/types/physical_distance.h"
 
 namespace ink {
@@ -43,8 +44,8 @@ constexpr float kInverseEnvelopeXScale = 4096;
 constexpr float kInverseEnvelopeYScale = 4096;
 constexpr float kDefaultInverseTimeScale = 1e6;  // microsecond resolution
 constexpr float kInversePressureScale = 4096;
-constexpr float kInverseTiltScale = 4096;
-constexpr float kInverseOrientationScale = 4096;
+constexpr float kInverseTiltScale = 4096 / (numbers::kPi / 2);
+constexpr float kInverseOrientationScale = 4096 / (2 * numbers::kPi);
 
 namespace {
 
@@ -62,6 +63,9 @@ CodedStrokeInputBatch::ToolType ToProtoToolType(StrokeInput::ToolType type) {
   }
 }
 
+int ToQuantizedInt(float value, float inverse_scale, float scaled_origin = 0) {
+  return static_cast<int>(std::round(value * inverse_scale - scaled_origin));
+}
 }  // namespace
 
 void EncodeStrokeInputBatch(const StrokeInputBatch& input_batch,
@@ -74,7 +78,7 @@ void EncodeStrokeInputBatch(const StrokeInputBatch& input_batch,
   // Determine the envelope for the input positions and the maximum input time
   // value.
   Rect stroke_space_bounds =
-      Rect::FromCenterAndDimensions(input_batch.Get(0).position, 0, 0);
+      Rect::FromCenterAndDimensions(input_batch.First().position, 0, 0);
   float elapsed_time_seconds_max = 0.0f;
   for (auto input : input_batch) {
     stroke_space_bounds.Join(input.position);
@@ -198,34 +202,33 @@ void EncodeStrokeInputBatch(const StrokeInputBatch& input_batch,
   int last_int_orientation = 0;
   for (auto input : input_batch) {
     int int_x =
-        static_cast<int>(input.position.x * inverse_x_scale - scaled_x_origin);
+        ToQuantizedInt(input.position.x, inverse_x_scale, scaled_x_origin);
     int int_y =
-        static_cast<int>(input.position.y * inverse_y_scale - scaled_y_origin);
+        ToQuantizedInt(input.position.y, inverse_y_scale, scaled_y_origin);
     x_stroke_space->add_deltas(int_x - last_int_x);
     y_stroke_space->add_deltas(int_y - last_int_y);
     last_int_x = int_x;
     last_int_y = int_y;
 
-    int32_t int_time = static_cast<int32_t>(input.elapsed_time.ToSeconds() *
-                                            inverse_time_scale);
+    int32_t int_time =
+        ToQuantizedInt(input.elapsed_time.ToSeconds(), inverse_time_scale);
     elapsed_time_seconds->add_deltas(int_time - last_int_time);
     last_int_time = int_time;
 
     if (input_batch.HasPressure()) {
-      int int_pressure =
-          static_cast<int>(input.pressure * kInversePressureScale);
+      int int_pressure = ToQuantizedInt(input.pressure, kInversePressureScale);
       pressure->add_deltas(int_pressure - last_int_pressure);
       last_int_pressure = int_pressure;
     }
     if (input_batch.HasTilt()) {
       int int_tilt =
-          static_cast<int>(input.tilt.ValueInRadians() * kInverseTiltScale);
+          ToQuantizedInt(input.tilt.ValueInRadians(), kInverseTiltScale);
       tilt->add_deltas(int_tilt - last_int_tilt);
       last_int_tilt = int_tilt;
     }
     if (input_batch.HasOrientation()) {
-      int int_orientation = static_cast<int>(
-          input.orientation.ValueInRadians() * kInverseOrientationScale);
+      int int_orientation = ToQuantizedInt(input.orientation.ValueInRadians(),
+                                           kInverseOrientationScale);
       orientation->add_deltas(int_orientation - last_int_orientation);
       last_int_orientation = int_orientation;
     }
@@ -277,7 +280,7 @@ absl::StatusOr<StrokeInputBatch> DecodeStrokeInputBatch(
   // TODO: b/355637257 - Add a StrokeInputBatch::Reserve member function.
   for (const auto& input : *range) {
     if (!batch.IsEmpty()) {
-      StrokeInput previous = batch.Get(batch.Size() - 1);
+      StrokeInput previous = batch.Last();
       if (input.position_stroke_space == previous.position &&
           input.elapsed_time == previous.elapsed_time) {
         continue;

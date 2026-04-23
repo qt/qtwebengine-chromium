@@ -8,14 +8,14 @@ import abc
 import datetime as dt
 import json
 import logging
-from typing import (TYPE_CHECKING, Any, ClassVar, Mapping, MutableMapping,
-                    Optional, Sequence, Type)
+from typing import TYPE_CHECKING, Any, ClassVar, Final, Mapping, Optional, \
+    Sequence, Type
 
 from immutabledict import immutabledict
 from typing_extensions import override
 
-from crossbench.benchmarks.base import (PressBenchmark,
-                                        PressBenchmarkStoryFilter)
+from crossbench.benchmarks.base import PressBenchmark, \
+    PressBenchmarkStoryFilter
 from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
 from crossbench.helper import url_helper
 from crossbench.parse import NumberParser, ObjectParser
@@ -137,12 +137,12 @@ class SpeedometerProbeContext(JsonResultProbeContext):
 
   @override
   def flatten_json_data(self, json_data: Any) -> Json:
-    # json_data may contain multiple iterations, merge those first
     json_data = ObjectParser.non_empty_sequence(json_data,
                                                 f"{self.probe.name} metrics")
+    # json_data may contain multiple iterations, merge those first
     merged = MetricsMerger(
         json_data, key_fn=_probe_remove_tests_segments).to_json(
-            value_fn=lambda values: values.geomean, sort=self.probe.SORT_KEYS)
+            value_fn=lambda values: values.average, sort=self.probe.SORT_KEYS)
     return Flatten(merged, sort=self.probe.SORT_KEYS).data
 
 
@@ -155,11 +155,11 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
                iterations: Optional[int] = None,
                url_params: Optional[Mapping[str, str]] = None,
                url: Optional[str] = None) -> None:
-    self._iterations: int = NumberParser.positive_int(
+    self._iterations: Final[int] = NumberParser.positive_int(
         iterations or self.DEFAULT_ITERATIONS,
         "iteration count",
         parse_str=False)
-    self._url_params: Mapping[str, str] = immutabledict(url_params or {})
+    self._url_params: Final[Mapping[str, str]] = immutabledict(url_params or {})
     super().__init__(substories=substories, url=url)
 
   @property
@@ -186,8 +186,8 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
     return dt.timedelta(seconds=60 * 20) + self.duration * 10
 
   @property
-  def url_params(self) -> MutableMapping[str, str]:
-    params: MutableMapping[str, str] = dict(self._url_params)
+  def url_params(self) -> dict[str, str]:
+    params: dict[str, str] = dict(self._url_params)
     if self.iterations != self.DEFAULT_ITERATIONS:
       params["iterationCount"] = str(self.iterations)
     return params
@@ -297,8 +297,7 @@ class SpeedometerBenchmarkStoryFilter(PressBenchmarkStoryFilter):
     return kwargs
 
   @classmethod
-  def url_params_from_cli(cls,
-                          args: argparse.Namespace) -> MutableMapping[str, str]:
+  def url_params_from_cli(cls, args: argparse.Namespace) -> dict[str, str]:
     del args
     return {}
 
@@ -310,8 +309,8 @@ class SpeedometerBenchmarkStoryFilter(PressBenchmarkStoryFilter):
                url: Optional[str] = None,
                iterations: Optional[int] = None,
                url_params: Optional[Mapping[str, str]] = None) -> None:
-    self._iterations = iterations
-    self._url_params = url_params
+    self._iterations: Final[int | None] = iterations
+    self._url_params: Final[Mapping[str, str]] = immutabledict(url_params or {})
     assert issubclass(story_cls, SpeedometerStory)
     super().__init__(story_cls, patterns, args, separate, url)
 

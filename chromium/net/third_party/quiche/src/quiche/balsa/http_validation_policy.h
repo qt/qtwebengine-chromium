@@ -97,6 +97,15 @@ struct QUICHE_EXPORT HttpValidationPolicy {
   // containing multiple consecutive spaces will be rejected.
   FirstLineValidationOption sanitize_firstline_spaces =
       FirstLineValidationOption::NONE;
+
+  // If true, the parser will replace obs-fold in header field values with one
+  // or more space characters.
+  bool sanitize_obs_fold_in_header_values = false;
+
+  // If true, disallow HTTP request methods that do not conform to RFC
+  // 9110, Section 5.6.2.
+  // https://datatracker.ietf.org/doc/html/rfc9110#section-5.6.2
+  bool disallow_invalid_request_methods = false;
 };
 
 }  // namespace quiche

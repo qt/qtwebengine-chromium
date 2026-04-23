@@ -1,7 +1,7 @@
 // Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 import '../../ui/legacy/components/data_grid/data_grid.js';
@@ -173,17 +173,17 @@ export interface ViewInput {
   filterKeys: string[];
   filter: string;
   parseFilter: (filter: string) => TextUtils.TextUtils.ParsedFilter[];
-  onRecord: (e: Event) => void;
+  onRecord: (record: boolean) => void;
   onClear: () => void;
   onSave: () => void;
-  onSplitChange: (e: CustomEvent<string>) => void;
-  onSelect: (e: CustomEvent<HTMLElement|null>) => void;
-  onContextMenu: (e: CustomEvent<{menu: UI.ContextMenu.ContextMenu, element: HTMLElement}>) => void;
-  onFilterChanged: (e: CustomEvent<string>) => void;
-  onCommandChange: (e: CustomEvent<string>) => void;
-  onCommandSubmitted: (e: CustomEvent<string>) => void;
-  onTargetChange: (e: Event) => void;
-  onToggleSidebar: (e: Event) => void;
+  onSplitChange: (onlyMain: boolean) => void;
+  onSelect: (e: Message|undefined) => void;
+  onContextMenu: (message: Message, menu: UI.ContextMenu.ContextMenu) => void;
+  onFilterChanged: (filter: string) => void;
+  onCommandChange: (command: string) => void;
+  onCommandSubmitted: (input: string) => void;
+  onTargetChange: (targetId: string) => void;
+  onToggleSidebar: () => void;
   targets: SDK.Target.Target[];
   selectedTargetId: string;
 }
@@ -203,7 +203,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                              direction="column"
                              sidebar-initial-size="400"
                              sidebar-visibility=${input.sidebarVisible ? 'visible' : 'hidden'}
-                             @change=${input.onSplitChange}>
+                             @change=${(e: CustomEvent<string>) => input.onSplitChange(e.detail === 'OnlyMain')}>
           <div slot="main" class="vbox protocol-monitor-main">
             <devtools-toolbar class="protocol-monitor-toolbar"
                                jslog=${VisualLogging.toolbar('top')}>
@@ -214,22 +214,23 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                                 .variant=${Buttons.Button.Variant.ICON_TOGGLE}
                                 .toggleType=${Buttons.Button.ToggleType.RED}
                                 .toggled=${true}
-                                @click=${input.onRecord}></devtools-button>
+                                @click=${(e: Event) => input.onRecord((e.target as Buttons.Button.Button).toggled)}>
+               </devtools-button>
               <devtools-button title=${i18nString(UIStrings.clearAll)}
                                .iconName=${'clear'}
                                .variant=${Buttons.Button.Variant.TOOLBAR}
                                .jslogContext=${'protocol-monitor.clear-all'}
-                               @click=${input.onClear}></devtools-button>
+                               @click=${() => input.onClear()}></devtools-button>
               <devtools-button title=${i18nString(UIStrings.save)}
                                .iconName=${'download'}
                                .variant=${Buttons.Button.Variant.TOOLBAR}
                                .jslogContext=${'protocol-monitor.save'}
-                               @click=${input.onSave}></devtools-button>
+                               @click=${() => input.onSave()}></devtools-button>
               <devtools-toolbar-input type="filter"
                                       list="filter-suggestions"
                                       style="flex-grow: 1"
                                       value=${input.filter}
-                                      @change=${input.onFilterChanged}>
+                                      @change=${(e: CustomEvent<string>) => input.onFilterChanged(e.detail)}>
                 <datalist id="filter-suggestions">
                   ${input.filterKeys.map(key => html`
                         <option value=${key + ':'}></option>
@@ -242,8 +243,6 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
               <devtools-data-grid
                   striped
                   slot="main"
-                  @select=${input.onSelect}
-                  @contextmenu=${input.onContextMenu}
                   .filters=${input.parseFilter(input.filter)}>
                 <table>
                     <tr>
@@ -274,8 +273,9 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                     </tr>
                     ${
             input.messages.map(
-                (message, index) => html`
-                      <tr data-index=${index}
+                message => html`
+                      <tr @select=${() => input.onSelect(message)}
+                          @contextmenu=${(e: CustomEvent<UI.ContextMenu.ContextMenu>) => input.onContextMenu(message, e.detail)}
                           style="--override-data-grid-row-background-color: var(--sys-color-surface3)">
                         ${'id' in message ? html`
                           <td title="sent">
@@ -320,7 +320,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                                .iconName=${input.sidebarVisible ? 'left-panel-close' : 'left-panel-open'}
                                .variant=${Buttons.Button.Variant.TOOLBAR}
                                .jslogContext=${'protocol-monitor.toggle-command-editor'}
-                               @click=${input.onToggleSidebar}></devtools-button>
+                               @click=${() => input.onToggleSidebar()}></devtools-button>
               </devtools-button>
               <devtools-toolbar-input id="command-input"
                                       style=${styleMap({
@@ -330,8 +330,8 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                                       list="command-input-suggestions"
                                       placeholder=${i18nString(UIStrings.sendRawCDPCommand)}
                                       title=${i18nString(UIStrings.sendRawCDPCommandExplanation)}
-                                      @change=${input.onCommandChange}
-                                      @submit=${input.onCommandSubmitted}>
+                                      @change=${(e: CustomEvent<string>) => input.onCommandChange(e.detail)}
+                                      @submit=${(e: CustomEvent<string>) => input.onCommandSubmitted(e.detail)}>
                 <datalist id="command-input-suggestions">
                   ${input.commandSuggestions.map(c => html`<option value=${c}></option>`)}
                 </datalist>
@@ -340,7 +340,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                       title=${i18nString(UIStrings.selectTarget)}
                       style=${styleMap({display: input.sidebarVisible ? 'none' : 'flex'})}
                       jslog=${VisualLogging.dropDown('target-selector').track({change: true})}
-                      @change=${input.onTargetChange}>
+                      @change=${(e: Event) => input.onTargetChange((e.target as HTMLSelectElement).value)}>
                 ${input.targets.map(target => html`
                   <option jslog=${VisualLogging.item('target').track({click: true})}
                           value=${target.id()} ?selected=${target.id() === input.selectedTargetId}>
@@ -359,7 +359,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
   // clang-format on
 };
 
-export class ProtocolMonitorImpl extends UI.Panel.Panel {
+export class ProtocolMonitorImpl extends UI.Panel.Panel implements SDK.TargetManager.Observer {
   private started: boolean;
   private startTime: number;
   private readonly messageForId = new Map<number, Message>();
@@ -374,6 +374,7 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel {
   #selectedMessage: Message|undefined;
   #filter = '';
   #editorWidget!: JSONEditor;
+  #targetsBySessionId = new Map<string, SDK.Target.Target>();
   constructor(view: View = DEFAULT_VIEW) {
     super('protocol-monitor', true);
     this.#view = view;
@@ -392,6 +393,15 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel {
         SDK.TargetManager.Events.AVAILABLE_TARGETS_CHANGED, () => {
           this.requestUpdate();
         });
+    SDK.TargetManager.TargetManager.instance().observeTargets(this);
+  }
+
+  targetAdded(target: SDK.Target.Target): void {
+    this.#targetsBySessionId.set(target.sessionId, target);
+  }
+
+  targetRemoved(target: SDK.Target.Target): void {
+    this.#targetsBySessionId.delete(target.sessionId);
   }
 
   #populateToolbarInput(): void {
@@ -416,8 +426,8 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel {
       filterKeys: this.#filterKeys,
       filter: this.#filter,
       parseFilter: this.filterParser.parse.bind(this.filterParser),
-      onSplitChange: (e: CustomEvent<string>) => {
-        if (e.detail === 'OnlyMain') {
+      onSplitChange: (onlyMain: boolean) => {
+        if (onlyMain) {
           this.#populateToolbarInput();
           this.#sidebarVisible = false;
         } else {
@@ -427,8 +437,8 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel {
         }
         this.requestUpdate();
       },
-      onRecord: (e: Event) => {
-        this.setRecording((e.target as Buttons.Button.Button).toggled);
+      onRecord: (recording: boolean) => {
+        this.setRecording(recording);
       },
       onClear: () => {
         this.#messages = [];
@@ -438,35 +448,27 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel {
       onSave: () => {
         void this.saveAsFile();
       },
-      onSelect: (e: CustomEvent<HTMLElement|null>) => {
-        const index = parseInt(e.detail?.dataset?.index ?? '', 10);
-        this.#selectedMessage = !isNaN(index) ? this.#messages[index] : undefined;
+      onSelect: (message: Message|undefined) => {
+        this.#selectedMessage = message;
         this.requestUpdate();
       },
-      onContextMenu: (e: CustomEvent<{menu: UI.ContextMenu.ContextMenu, element: HTMLElement}>) => {
-        const message = this.#messages[parseInt(e.detail?.element?.dataset?.index || '', 10)];
-        if (message) {
-          this.#populateContextMenu(e.detail.menu, message);
-        }
+      onContextMenu: this.#populateContextMenu.bind(this),
+      onCommandChange: (command: string) => {
+        this.#command = command;
       },
-      onCommandChange: (e: CustomEvent<string>) => {
-        this.#command = e.detail;
-      },
-      onCommandSubmitted: (e: CustomEvent<string>) => {
-        this.#commandAutocompleteSuggestionProvider.addEntry(e.detail);
-        const {command, parameters} = parseCommandInput(e.detail);
+      onCommandSubmitted: (input: string) => {
+        this.#commandAutocompleteSuggestionProvider.addEntry(input);
+        const {command, parameters} = parseCommandInput(input);
         this.onCommandSend(command, parameters, this.#selectedTargetId);
       },
-      onFilterChanged: (e: CustomEvent<string>) => {
-        this.#filter = e.detail;
+      onFilterChanged: (filter: string) => {
+        this.#filter = filter;
         this.requestUpdate();
       },
-      onTargetChange: (e: Event) => {
-        if (e.target instanceof HTMLSelectElement) {
-          this.#selectedTargetId = e.target.value;
-        }
+      onTargetChange: (targetId: string) => {
+        this.#selectedTargetId = targetId;
       },
-      onToggleSidebar: (_e: Event) => {
+      onToggleSidebar: () => {
         this.#sidebarVisible = !this.#sidebarVisible;
         this.requestUpdate();
       },
@@ -482,7 +484,7 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel {
     this.#view(viewInput, viewOutput, this.contentElement);
   }
 
-  #populateContextMenu(menu: UI.ContextMenu.ContextMenu, message: Message): void {
+  #populateContextMenu(message: Message, menu: UI.ContextMenu.ContextMenu): void {
     /**
      * You can click the "Edit and resend" item in the context menu to be
      * taken to the CDP editor with the filled with the selected command.
@@ -538,6 +540,7 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel {
   }
 
   override wasShown(): void {
+    super.wasShown();
     if (this.started) {
       return;
     }
@@ -559,7 +562,7 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel {
     }
   }
 
-  private messageReceived(message: Message, target: ProtocolClient.InspectorBackend.TargetBase|null): void {
+  private messageReceived(message: Message): void {
     if ('id' in message && message.id) {
       const existingMessage = this.messageForId.get(message.id);
       if (!existingMessage) {
@@ -575,10 +578,11 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel {
       return;
     }
 
+    const target = message.sessionId !== undefined ? this.#targetsBySessionId.get(message.sessionId) : undefined;
     this.#messages.push({
       method: message.method,
       sessionId: message.sessionId,
-      target: (target ?? undefined) as SDK.Target.Target | undefined,
+      target,
       requestTime: Date.now() - this.startTime,
       result: message.params,
     });
@@ -587,14 +591,15 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel {
   }
 
   private messageSent(
-      message: {domain: string, method: string, params: Record<string, unknown>, id: number, sessionId?: string},
-      target: ProtocolClient.InspectorBackend.TargetBase|null): void {
+      message: {domain: string, method: string, params: Record<string, unknown>, id: number, sessionId?: string}):
+      void {
+    const target = message.sessionId !== undefined ? this.#targetsBySessionId.get(message.sessionId) : undefined;
     const messageRecord = {
       method: message.method,
       params: message.params,
       id: message.id,
       sessionId: message.sessionId,
-      target: (target ?? undefined) as SDK.Target.Target | undefined,
+      target,
       requestTime: Date.now() - this.startTime,
     };
     this.#messages.push(messageRecord);

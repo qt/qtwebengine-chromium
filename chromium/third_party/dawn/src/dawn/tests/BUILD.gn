@@ -100,6 +100,12 @@ if (!build_with_chromium) {
       ":gtest",
     ]
   }
+
+  static_library("gmock_main") {
+    testonly = true
+    sources = [ "${googletest_dir}/googlemock/src/gmock_main.cc" ]
+    public_deps = [ ":gmock_and_gtest" ]
+  }
 } else {
   # When we are in Chromium we reuse its targets, and also add some deps that
   # are needed to launch the test in swarming mode.
@@ -364,6 +370,7 @@ dawn_test("dawn_unittests") {
     "unittests/WeakRefTests.cpp",
     "unittests/native/AllowedErrorTests.cpp",
     "unittests/native/BlobTests.cpp",
+    "unittests/native/BufferBaseTests.cpp",
     "unittests/native/CacheRequestTests.cpp",
     "unittests/native/CommandBufferEncodingTests.cpp",
     "unittests/native/CreatePipelineAsyncEventTests.cpp",
@@ -471,7 +478,10 @@ dawn_test("dawn_unittests") {
   }
 
   if (dawn_enable_vulkan) {
-    sources += [ "unittests/validation/YCbCrInfoValidationTests.cpp" ]
+    sources += [
+      "unittests/validation/YCbCrInfoValidationTests.cpp",
+      "unittests/vulkan/MemoryTypeSelectorTests.cpp",
+    ]
   }
 
   if (tint_build_spv_reader) {
@@ -653,6 +663,7 @@ source_set("end2end_tests_sources") {
     "end2end/MemoryHeapPropertiesTests.cpp",
     "end2end/MultiDrawIndexedIndirectTests.cpp",
     "end2end/MultiDrawIndirectTests.cpp",
+    "end2end/MultisampledInterpolationTests.cpp",
     "end2end/MultisampledRenderingTests.cpp",
     "end2end/MultisampledSamplingTests.cpp",
     "end2end/MultithreadTests.cpp",
@@ -812,14 +823,23 @@ source_set("white_box_tests_sources") {
   ]
   libs = []
 
+  if (dawn_enable_webgpu_on_webgpu) {
+    deps += [ "${dawn_root}/src/dawn/replay" ]
+    sources += [ "white_box/CaptureAndReplayTests.cpp" ]
+  }
+
   if (is_mac || is_ios) {
     sources += [ "white_box/SharedTextureMemoryTests_apple.mm" ]
   }
 
-  if (is_win) {
+  if (dawn_enable_d3d11) {
+    sources += [ "white_box/SharedTextureMemoryTests_win.cpp" ]
+  }
+
+  if (dawn_enable_d3d12) {
     sources += [
       "white_box/SharedBufferMemoryTests_win.cpp",
-      "white_box/SharedTextureMemoryTests_win.cpp",
+      "white_box/SharedTextureMemoryTests_win_d3d12.cpp",
     ]
   }
 
@@ -860,7 +880,11 @@ source_set("white_box_tests_sources") {
   ]
 
   if (dawn_enable_d3d11) {
-    sources += [ "white_box/D3D11BufferTests.cpp" ]
+    sources += [
+      "white_box/D3D11BufferTests.cpp",
+      "white_box/D3D11MultithreadTests.cpp",
+      "white_box/D3D11ShaderCachingTests.cpp",
+    ]
   }
 
   if (dawn_enable_d3d12) {

@@ -64,21 +64,6 @@ bool IsBackground(Visibility visibility) {
   }
 }
 
-// Returns true when it is allowed to activate a prerendered page in a
-// background tab.
-bool IsAllowedToActivateInBackgroundForTesting() {
-  // Now it is allowed to activate a prerendered page in a background only on
-  // macOS for running web platform tests. See comments on the flag definition
-  // for more details.
-#if BUILDFLAG(IS_MAC)
-  if (base::FeatureList::IsEnabled(
-          features::kPrerender2AllowActivationInBackground)) {
-    return true;
-  }
-#endif
-  return false;
-}
-
 bool DeviceHasEnoughMemoryForPrerender() {
   // This method disallows prerendering on low-end devices if the
   // kPrerender2MemoryControls feature is enabled.
@@ -108,17 +93,16 @@ bool DeviceHasEnoughMemoryForPrerender() {
   return base::SysInfo::AmountOfPhysicalMemory().InMiB() > memory_threshold_mb;
 }
 
-base::MemoryPressureListener::MemoryPressureLevel
-GetCurrentMemoryPressureLevel() {
+base::MemoryPressureLevel GetCurrentMemoryPressureLevel() {
   // Ignore the memory pressure event if the memory control is disabled.
   if (!base::FeatureList::IsEnabled(
           blink::features::kPrerender2MemoryControls)) {
-    return base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE;
+    return base::MEMORY_PRESSURE_LEVEL_NONE;
   }
 
   auto* monitor = base::MemoryPressureMonitor::Get();
   if (!monitor) {
-    return base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE;
+    return base::MEMORY_PRESSURE_LEVEL_NONE;
   }
   return monitor->GetCurrentPressureLevel(
       base::MemoryPressureMonitorTag::kPrerenderHostRegistry);
@@ -515,11 +499,10 @@ bool IsSlowNetwork(WebContents* web_contents) {
 }  // namespace
 
 PrerenderHostRegistry::PrerenderHostRegistry(WebContents& web_contents)
-    : memory_pressure_listener_(
+    : memory_pressure_listener_registration_(
           FROM_HERE,
           base::MemoryPressureListenerTag::kPrerenderHostRegistry,
-          base::BindRepeating(&PrerenderHostRegistry::OnMemoryPressure,
-                              base::Unretained(this))) {
+          this) {
   Observe(&web_contents);
 }
 
@@ -560,8 +543,8 @@ FrameTreeNodeId PrerenderHostRegistry::CreateAndStartHost(
           ? attributes.initiator_origin.value().GetURL().spec()
           : "(empty_url)";
 
-  TRACE_EVENT2("navigation", "PrerenderHostRegistry::CreateAndStartHost",
-               "attributes", attributes, "initiator_origin", recorded_url);
+  TRACE_EVENT("navigation", "PrerenderHostRegistry::CreateAndStartHost",
+              "attributes", attributes, "initiator_origin", recorded_url);
 
   // The initiator WebContents can be different from the WebContents that will
   // host a prerendered page only when the prerender-in-new-tab runs.
@@ -658,10 +641,10 @@ FrameTreeNodeId PrerenderHostRegistry::CreateAndStartHost(
 
     // Don't prerender under critical memory pressure.
     switch (GetCurrentMemoryPressureLevel()) {
-      case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE:
-      case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE:
+      case base::MEMORY_PRESSURE_LEVEL_NONE:
+      case base::MEMORY_PRESSURE_LEVEL_MODERATE:
         break;
-      case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL:
+      case base::MEMORY_PRESSURE_LEVEL_CRITICAL:
         builder.RejectAsNotEligible(
             attributes, PrerenderFinalStatus::kMemoryPressureOnTrigger);
         return FrameTreeNodeId();
@@ -759,6 +742,17 @@ FrameTreeNodeId PrerenderHostRegistry::CreateAndStartHost(
       }
     }
 
+    // Since IsAllowedToStartPrerenderingForTrigger will check
+    // the number of the active PrerenderHosts triggered by the embedder, we
+    // need to tentatively move the reuse host out of the map first
+    // so that the count can be correctly calculated.
+    // The reuse_host is not yet deleted at this point and can be added back
+    // if the check failes.
+    std::unique_ptr<PrerenderHost> reuse_host;
+    if (base::FeatureList::IsEnabled(features::kPrerender2ReuseHost)) {
+      reuse_host = FindAndTakePrerenderHostToReuse(attributes);
+    }
+
     // CreateAndStartHost can be called in the newly created WebContents's
     // PrerenderHostRegistry for new tab triggers, rather than in initiator
     // WebContents's registry, while it is called in initiator ones for normal
@@ -792,26 +786,30 @@ FrameTreeNodeId PrerenderHostRegistry::CreateAndStartHost(
           break;
       }
       builder.RejectAsFailure(attributes, final_status);
+      // If we cannot start a new prerender, we should release the reuse host
+      // back to the pool.
+      if (reuse_host) {
+        prerender_host_by_frame_tree_node_id_[reuse_host
+                                                  ->frame_tree_node_id()] =
+            std::move(reuse_host);
+      }
       return FrameTreeNodeId();
     }
 
-    std::unique_ptr<PrerenderHost> reuse_host;
-    std::unique_ptr<PrerenderHost> prerender_host;
-    if (base::FeatureList::IsEnabled(features::kPrerender2ReuseHost)) {
-      reuse_host = FindAndTakePrerenderHostToReuse(attributes);
-    }
-    base::UmaHistogramBoolean("Prerender.Experimental.FoundReusePrerenderHost",
-                              reuse_host != nullptr);
-    if (!reuse_host) {
+    // If we find a reusable prerender host under the same site. We will
+    // take over its frame tree and initiate a new navigation to the new
+    // prerender URL.
+    if (reuse_host) {
+      reuse_host->NotifyReused();
+    } else {
       base::UmaHistogramCounts100(
           "Prerender.Experimental.ReusePrerenderHost.PrerenderHostCount.Failed",
           prerender_host_by_frame_tree_node_id_.size());
     }
-    // If we find a reusable prerender host under the same site. We will
-    // take over its frame tree and initiate a new navigation to the new
-    // prerender URL.
-    prerender_host = builder.Build(std::move(reuse_host), attributes,
-                                   prerender_web_contents);
+    base::UmaHistogramBoolean("Prerender.Experimental.FoundReusePrerenderHost",
+                              reuse_host != nullptr);
+    std::unique_ptr<PrerenderHost> prerender_host = builder.Build(
+        std::move(reuse_host), attributes, prerender_web_contents);
     frame_tree_node_id = prerender_host->frame_tree_node_id();
 
     CHECK(!base::Contains(prerender_host_by_frame_tree_node_id_,
@@ -881,9 +879,9 @@ FrameTreeNodeId PrerenderHostRegistry::CreateAndStartHostForNewTab(
       attributes.initiator_origin.has_value()
           ? attributes.initiator_origin.value().GetURL().spec()
           : "(empty_url)";
-  TRACE_EVENT2("navigation",
-               "PrerenderHostRegistry::CreateAndStartHostForNewTab",
-               "attributes", attributes, "initiator_origin", recorded_url);
+  TRACE_EVENT("navigation",
+              "PrerenderHostRegistry::CreateAndStartHostForNewTab",
+              "attributes", attributes, "initiator_origin", recorded_url);
 
   auto handle = std::make_unique<PrerenderNewTabHandle>(
       attributes, *web_contents()->GetBrowserContext());
@@ -986,8 +984,8 @@ FrameTreeNodeId PrerenderHostRegistry::StartPrerendering(
 std::set<FrameTreeNodeId> PrerenderHostRegistry::CancelHosts(
     const std::vector<FrameTreeNodeId>& frame_tree_node_ids,
     const PrerenderCancellationReason& reason) {
-  TRACE_EVENT1("navigation", "PrerenderHostRegistry::CancelHosts",
-               "frame_tree_node_ids", frame_tree_node_ids);
+  TRACE_EVENT("navigation", "PrerenderHostRegistry::CancelHosts",
+              "frame_tree_node_ids", frame_tree_node_ids);
 
   // Cancel must not be requested during activation.
   CHECK(!reserved_prerender_host_);
@@ -1018,8 +1016,8 @@ bool PrerenderHostRegistry::CancelHost(FrameTreeNodeId frame_tree_node_id,
 bool PrerenderHostRegistry::CancelHost(
     FrameTreeNodeId frame_tree_node_id,
     const PrerenderCancellationReason& reason) {
-  TRACE_EVENT1("navigation", "PrerenderHostRegistry::CancelHost",
-               "frame_tree_node_id", frame_tree_node_id);
+  TRACE_EVENT("navigation", "PrerenderHostRegistry::CancelHost",
+              "frame_tree_node_id", frame_tree_node_id);
   std::set<FrameTreeNodeId> cancelled_ids =
       CancelHosts({frame_tree_node_id}, reason);
   return !cancelled_ids.empty();
@@ -1028,8 +1026,8 @@ bool PrerenderHostRegistry::CancelHost(
 void PrerenderHostRegistry::CancelHostsForTriggers(
     std::vector<PreloadingTriggerType> trigger_types,
     const PrerenderCancellationReason& reason) {
-  TRACE_EVENT1("navigation", "PrerenderHostRegistry::CancelHostsForTrigger",
-               "trigger_type", trigger_types[0]);
+  TRACE_EVENT("navigation", "PrerenderHostRegistry::CancelHostsForTrigger",
+              "trigger_type", trigger_types[0]);
 
   std::vector<FrameTreeNodeId> ids_to_be_deleted;
 
@@ -1150,7 +1148,7 @@ bool PrerenderHostRegistry::CancelNewTabHostInternal(
 
 FrameTreeNodeId PrerenderHostRegistry::FindPotentialHostToActivate(
     NavigationRequest& navigation_request) {
-  TRACE_EVENT2(
+  TRACE_EVENT(
       "navigation", "PrerenderHostRegistry::FindPotentialHostToActivate",
       "navigation_url", navigation_request.GetURL().spec(), "render_frame_host",
       navigation_request.frame_tree_node()->current_frame_host());
@@ -1212,9 +1210,9 @@ PrerenderHostRegistry::ReserveHostToActivate(
     FrameTreeNodeId expected_host_id) {
   RenderFrameHostImpl* render_frame_host =
       navigation_request.frame_tree_node()->current_frame_host();
-  TRACE_EVENT2("navigation", "PrerenderHostRegistry::ReserveHostToActivate",
-               "navigation_url", navigation_request.GetURL().spec(),
-               "render_frame_host", render_frame_host);
+  TRACE_EVENT("navigation", "PrerenderHostRegistry::ReserveHostToActivate",
+              "navigation_url", navigation_request.GetURL().spec(),
+              "render_frame_host", render_frame_host);
 
   CHECK(navigation_request.IsInPrimaryMainFrame());
 
@@ -1712,9 +1710,9 @@ bool PrerenderHostRegistry::CanNavigationActivateHost(
     PrerenderHost& host) {
   RenderFrameHostImpl* render_frame_host =
       navigation_request.frame_tree_node()->current_frame_host();
-  TRACE_EVENT2("navigation", "PrerenderHostRegistry::CanNavigationActivateHost",
-               "navigation_url", navigation_request.GetURL().spec(),
-               "render_frame_host", render_frame_host);
+  TRACE_EVENT("navigation", "PrerenderHostRegistry::CanNavigationActivateHost",
+              "navigation_url", navigation_request.GetURL().spec(),
+              "render_frame_host", render_frame_host);
 
   // Disallow activation when the navigation URL has an effective URL like
   // hosted apps and NTP.
@@ -1736,11 +1734,27 @@ bool PrerenderHostRegistry::CanNavigationActivateHost(
     return false;
   }
 
+  // Disallow activation when the navigation happens in the hidden tab.
+  //
+  // This visibility check is a bit tricky:
+  //
+  // - If this host is for prerendering in the same tab, `web_contents()` is the
+  //   same as `host.initiator_web_contents()`. Thus, both web_contents should
+  //   return the same visibility. In this case, we don't need to check both
+  //   web_contents here but it's still necessary for the next case.
+  //
+  // - If this host is for prerendering in a new tab (i.e., `target_hint` is
+  //   `_blank` in speculation rules), `web_contents()` is different from
+  //   `host.initiator_web_contents()`. Depending on platforms (e.g., WPT on
+  //   macOS), `web_contents()`'s visibiltiy can still be hidden and instead
+  //   `host.initiator_web_contents()` is visible at this point. Thus,
+  //   activation is allowed when either of them is visible.
+  //
   // TODO(crbug.com/40249964): Remove the restriction after further
-  // investigation and discussion. Disallow activation when the navigation
-  // happens in the hidden tab.
+  // investigation and discussion.
+  CHECK(host.initiator_web_contents());
   if (web_contents()->GetVisibility() == Visibility::HIDDEN &&
-      !IsAllowedToActivateInBackgroundForTesting()) {
+      host.initiator_web_contents()->GetVisibility() == Visibility::HIDDEN) {
     CancelHost(host.frame_tree_node_id(),
                PrerenderFinalStatus::kActivatedInBackground);
     return false;
@@ -1949,7 +1963,7 @@ bool PrerenderHostRegistry::IsAllowedToStartPrerenderingForTrigger(
 }
 
 void PrerenderHostRegistry::OnMemoryPressure(
-    base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
+    base::MemoryPressureLevel memory_pressure_level) {
   // Ignore the memory pressure event if the memory control is disabled.
   if (!base::FeatureList::IsEnabled(
           blink::features::kPrerender2MemoryControls)) {
@@ -1957,10 +1971,10 @@ void PrerenderHostRegistry::OnMemoryPressure(
   }
 
   switch (memory_pressure_level) {
-    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE:
-    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE:
+    case base::MEMORY_PRESSURE_LEVEL_NONE:
+    case base::MEMORY_PRESSURE_LEVEL_MODERATE:
       break;
-    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL:
+    case base::MEMORY_PRESSURE_LEVEL_CRITICAL:
       CancelAllHosts(PrerenderFinalStatus::kMemoryPressureAfterTriggered);
       break;
   }
@@ -2089,7 +2103,6 @@ PrerenderHostRegistry::FindAndTakePrerenderHostToReuse(
   if (iter != prerender_host_by_frame_tree_node_id_.end()) {
     std::unique_ptr<PrerenderHost> reuse_host = std::move(iter->second);
     prerender_host_by_frame_tree_node_id_.erase(iter);
-    reuse_host->NotifyReused();
     return reuse_host;
   }
   return nullptr;

@@ -111,6 +111,10 @@ namespace ui {
 enum class DomCode : uint32_t;
 }
 
+namespace viz {
+struct CopyOutputBitmapWithMetadata;
+}  // namespace viz
+
 namespace content {
 class FrameTree;
 class MockRenderWidgetHost;
@@ -192,6 +196,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   RenderWidgetHostImpl& operator=(const RenderWidgetHostImpl&) = delete;
 
   ~RenderWidgetHostImpl() override;
+
+  void WillSendInputEventToRenderer(const blink::WebInputEvent& event) override;
 
   // Similar to RenderWidgetHost::FromID, but returning the Impl object.
   static RenderWidgetHostImpl* FromID(int32_t process_id, int32_t routing_id);
@@ -370,6 +376,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       bool& ended_delegated_ink_trail) override;
   void NotifyObserversOfInputEvent(const blink::WebInputEvent& event,
                                    bool dispatched_to_renderer) override;
+  void NotifyObserversOfInputEventWithSource(const blink::WebInputEvent& event,
+                                             input::InputEventSource source,
+                                             bool dispatched_to_renderer);
   void NotifyObserversOfInputEventAcks(
       blink::mojom::InputEventResultSource ack_source,
       blink::mojom::InputEventResultState ack_result,
@@ -490,10 +499,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void RemoveImeInputEventObserver(
       RenderWidgetHost::InputEventObserver* observer) override;
 #endif
-
-  // Returns true if the RenderWidget is hidden.
-  // TODO(mustaq@chromium.org): Use `IsHidden()` instead!
-  bool is_hidden() const { return is_hidden_; }
 
   // Called to notify the RenderWidget that its associated native window
   // got/lost focused.
@@ -827,6 +832,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const std::optional<std::vector<gfx::Rect>>& character_bounds) override;
   void OnImeCancelComposition() override;
   void OnStartStylusWriting() override;
+  void OnUnconfirmedTapConvertedToTap() override;
   void UpdateElementFocusForStylusWriting(
 #if BUILDFLAG(IS_WIN)
       const gfx::Rect& focus_widget_rect_in_dips
@@ -1177,9 +1183,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   void WindowSnapshotReachedScreen(int snapshot_id);
 
-  void OnSnapshotFromSurfaceReceived(int snapshot_id,
-                                     int retry_count,
-                                     const SkBitmap& bitmap);
+  void OnSnapshotFromSurfaceReceived(
+      int snapshot_id,
+      int retry_count,
+      const viz::CopyOutputBitmapWithMetadata& result);
 
   void OnSnapshotReceived(int snapshot_id, gfx::Image image);
 

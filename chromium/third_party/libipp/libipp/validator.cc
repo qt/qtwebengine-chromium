@@ -56,8 +56,9 @@ struct StringValidator {
   // Checks if the string starts from lowercase letter. It does nothing if
   // the input string is empty.
   void CheckFirstLetterIsLowercase() {
-    if (value.empty() || IsLowercaseLetter(value.front()))
+    if (value.empty() || IsLowercaseLetter(value.front())) {
       return;
+    }
     codes.insert(ValidatorCode::kStringMustStartLowercaseLetter);
   }
   // Checks if the input string consists only of letters, digits and
@@ -65,12 +66,15 @@ struct StringValidator {
   void CheckLettersDigits(std::string_view allowed_chars,
                           bool uppercase_letters_allowed = false) {
     for (char c : value) {
-      if (IsLowercaseLetter(c))
+      if (IsLowercaseLetter(c)) {
         continue;
-      if (uppercase_letters_allowed && IsUppercaseLetter(c))
+      }
+      if (uppercase_letters_allowed && IsUppercaseLetter(c)) {
         continue;
-      if (IsDigit(c))
+      }
+      if (IsDigit(c)) {
         continue;
+      }
       if (allowed_chars.find(c) == std::string_view::npos) {
         codes.insert(ValidatorCode::kStringInvalidCharacter);
         break;
@@ -94,11 +98,13 @@ struct StringValidator {
 
 // `year` must be > 0.
 bool IsLeapYear(uint16_t year) {
-  if (year % 4)
+  if (year % 4) {
     return false;
+  }
   // Is divisible by 4.
-  if (year % 100)
+  if (year % 100) {
     return true;
+  }
   // Is divisible by 4 and 100.
   return (year % 400 == 0);
 }
@@ -186,8 +192,9 @@ std::set<ValidatorCode> validateMimeMediaType(std::string_view value) {
 // * rfc8011, section 5.1.11.
 std::set<ValidatorCode> validateOctetString(std::string_view value) {
   std::set<ValidatorCode> codes;
-  if (value.size() > kMaxLengthOfOctetString)
+  if (value.size() > kMaxLengthOfOctetString) {
     codes.insert(ValidatorCode::kStringTooLong);
+  }
   return codes;
 }
 
@@ -244,10 +251,12 @@ std::set<ValidatorCode> validateDateTime(const DateTime& value) {
 std::set<ValidatorCode> validateResolution(Resolution value) {
   std::set<ValidatorCode> codes;
   if (value.units != Resolution::Units::kDotsPerCentimeter &&
-      value.units != Resolution::Units::kDotsPerInch)
+      value.units != Resolution::Units::kDotsPerInch) {
     codes.insert(ValidatorCode::kResolutionInvalidUnit);
-  if (value.xres < 1 || value.yres < 1)
+  }
+  if (value.xres < 1 || value.yres < 1) {
     codes.insert(ValidatorCode::kResolutionInvalidDimension);
+  }
   return codes;
 }
 
@@ -255,8 +264,9 @@ std::set<ValidatorCode> validateResolution(Resolution value) {
 // * rfc8011, section 5.1.14.
 std::set<ValidatorCode> validateRangeOfInteger(RangeOfInteger value) {
   std::set<ValidatorCode> codes;
-  if (value.min_value > value.max_value)
+  if (value.min_value > value.max_value) {
     codes.insert(ValidatorCode::kRangeOfIntegerMaxLessMin);
+  }
   return codes;
 }
 
@@ -266,8 +276,9 @@ std::set<ValidatorCode> validateTextWithLanguage(
     const StringWithLanguage& value) {
   std::set<ValidatorCode> codes = validateTextWithoutLanguage(value.value);
   if (!value.language.empty()) {
-    if (!validateNaturalLanguage(value.language).empty())
+    if (!validateNaturalLanguage(value.language).empty()) {
       codes.insert(ValidatorCode::kStringWithLangInvalidLanguage);
+    }
   }
   return codes;
 }
@@ -278,8 +289,9 @@ std::set<ValidatorCode> validateNameWithLanguage(
     const StringWithLanguage& value) {
   std::set<ValidatorCode> codes = validateNameWithoutLanguage(value.value);
   if (!value.language.empty()) {
-    if (!validateNaturalLanguage(value.language).empty())
+    if (!validateNaturalLanguage(value.language).empty()) {
       codes.insert(ValidatorCode::kStringWithLangInvalidLanguage);
+    }
   }
   return codes;
 }
@@ -375,8 +387,9 @@ ValidationResult ValidateAttribute(const Attribute* attr,
     result.no_errors = false;
     result.keep_going =
         log.AddValidatorError({path, AttrError(std::move(name_errors))});
-    if (!result.keep_going)
+    if (!result.keep_going) {
       return result;
+    }
   }
   const size_t values_count = attr->Size();
   if (attr->Tag() == ValueTag::collection) {
@@ -388,8 +401,9 @@ ValidationResult ValidateAttribute(const Attribute* attr,
         result.no_errors = false;
         result.keep_going = log.AddValidatorError(
             {path, AttrError(i, std::move(value_errors))});
-        if (!result.keep_going)
+        if (!result.keep_going) {
           return result;
+        }
       }
     }
   }
@@ -406,8 +420,9 @@ ValidationResult ValidateCollections(ConstCollsView colls,
       path.PushBack(icoll, attr.Name());
       result = result && ValidateAttribute(&attr, log, path);
       path.PopBack();
-      if (!result.keep_going)
+      if (!result.keep_going) {
         return result;
+      }
     }
     ++icoll;
   }
@@ -510,8 +525,9 @@ bool SimpleValidatorLog::AddValidatorError(const ValidatorError& error) {
 
 bool Validate(const Frame& frame, ValidatorLog& log) {
   ValidationResult result = ValidateHeader(frame, log);
-  if (!result.keep_going)
+  if (!result.keep_going) {
     return result.no_errors;
+  }
   for (GroupTag group_tag : kGroupTags) {
     size_t coll_index = 0;
     for (const Collection& coll : frame.Groups(group_tag)) {
@@ -520,8 +536,9 @@ bool Validate(const Frame& frame, ValidatorLog& log) {
         path.PushBack(coll_index, attr.Name());
         result = result && ValidateAttribute(&attr, log, path);
         path.PopBack();
-        if (!result.keep_going)
+        if (!result.keep_going) {
           return result.no_errors;
+        }
       }
       ++coll_index;
     }

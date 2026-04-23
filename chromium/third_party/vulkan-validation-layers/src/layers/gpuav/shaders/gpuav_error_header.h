@@ -110,7 +110,7 @@ const int kInstructionIdMask = 0x7FFFFFF;
 // This dword is split up as
 // | 31 ..... 16 | 15 ................. 0 |
 // | Error Group | Instrumented Shader Id |
-// Note we have a limit (kMaxActionsPerCommandBuffer) but for simplicity, divide in half until find need to adjust.
+// Note we have a limit (cst::indices_count) but for simplicity, divide in half until find need to adjust.
 const int kActionIdShift = 16;
 const int kActionIdMask = 0xFFFF << kActionIdShift;  // 64k slot
 const int kErrorLoggerIdMask = 0xFFFF;
@@ -152,10 +152,10 @@ const int kInstRayQueryParamOffset_0 = kHeaderSize;
 
 // Validation commands shaders
 // ---
-const int kPreActionParamOffset_0 = kHeaderSize;
-const int kPreActionParamOffset_1 = kHeaderSize + 1;
-const int kPreActionParamOffset_2 = kHeaderSize + 2;
-const int kPreActionParamOffset_3 = kHeaderSize + 3;
+const int kValCmdErrorPayloadDword_0 = kHeaderSize;
+const int kValCmdErrorPayloadDword_1 = kHeaderSize + 1;
+const int kValCmdErrorPayloadDword_2 = kHeaderSize + 2;
+const int kValCmdErrorPayloadDword_3 = kHeaderSize + 3;
 
 // Sizes/Counts
 // -------------------

@@ -91,24 +91,22 @@ class CORE_EXPORT TimelineTrigger : public AnimationTrigger {
     return ComputeTriggerBoundaries(current_offset, timeline_source, timeline);
   }
 
+  void CreateCompositorTrigger() override;
+  void DestroyCompositorTrigger() override;
+
   using TimelineState = ScrollSnapshotTimeline::TimelineState;
 
  private:
-  bool WillAddAnimation(Animation* animation,
-                        const AtomicString& action,
+  void WillAddAnimation(Animation* animation,
+                        Behavior activate_behavior,
+                        Behavior deactivate_behavior,
                         ExceptionState& exception_state) override;
-  void DidAddAnimation(Animation* animation,
-                       const AtomicString& action,
-                       std::optional<Behavior> old_behavior,
-                       Behavior new_behavior,
-                       ExceptionState& exception_state) override;
+  void DidAddAnimation() override;
   void DidRemoveAnimation(Animation* animation) override;
 
-  // Handles playing an animation which is added to a trigger which has already
-  // tripped.
   void HandlePostTripAdd(Animation* animation,
-                         const AtomicString& action,
-                         Behavior behavior,
+                         Behavior activate_behavior,
+                         Behavior deactivate_behavior,
                          ExceptionState& exception_state);
 
   std::optional<TimelineTrigger::TriggerBoundaries>

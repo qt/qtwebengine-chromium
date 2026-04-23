@@ -24,13 +24,11 @@ devtools_module("common") {
     "Gzip.ts",
     "JavaScriptMetaData.ts",
     "Lazy.ts",
-    "Linkifier.ts",
     "MapWithDefault.ts",
     "Mutex.ts",
     "Object.ts",
     "ParsedURL.ts",
     "Progress.ts",
-    "QueryParamHandler.ts",
     "ResolverBase.ts",
     "ResourceType.ts",
     "ReturnToPanel.ts",
@@ -44,7 +42,6 @@ devtools_module("common") {
     "TextDictionary.ts",
     "Throttler.ts",
     "Trie.ts",
-    "Worker.ts",
   ]
 
   deps = [
@@ -74,6 +71,18 @@ devtools_entrypoint("bundle") {
 }
 
 ts_library("unittests") {
+  testonly = true
+
+  sources = [ "Base64.browser.test.ts" ]
+
+  deps = [
+    ":bundle",
+    "../../testing",
+    "../i18n:bundle",
+  ]
+}
+
+devtools_foundation_module("foundation_unittests") {
   testonly = true
 
   sources = [
@@ -108,7 +117,6 @@ ts_library("unittests") {
   deps = [
     ":bundle",
     "../../testing",
-    "../../ui/legacy/components/quick_open:bundle",
     "../i18n:bundle",
   ]
 }

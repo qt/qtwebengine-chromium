@@ -14,10 +14,12 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/test/gtest_util.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -165,15 +167,23 @@ class FakePredictionModelDownloadManager
   ~FakePredictionModelDownloadManager() override = default;
 
   void StartDownload(const GURL& url,
-                     proto::OptimizationTarget optimization_target) override {
+                     proto::OptimizationTarget optimization_target,
+                     const std::optional<download::SchedulingParams>&
+                         scheduling_params) override {
     last_requested_download_ = url;
     last_requested_optimization_target_ = optimization_target;
+    last_requested_scheduling_params_ = scheduling_params;
   }
 
   GURL last_requested_download() const { return last_requested_download_; }
 
   proto::OptimizationTarget last_requested_optimization_target() const {
     return last_requested_optimization_target_;
+  }
+
+  std::optional<download::SchedulingParams> last_requested_scheduling_params()
+      const {
+    return last_requested_scheduling_params_;
   }
 
   void CancelAllPendingDownloads() override { cancel_downloads_called_ = true; }
@@ -187,6 +197,7 @@ class FakePredictionModelDownloadManager
  private:
   GURL last_requested_download_;
   proto::OptimizationTarget last_requested_optimization_target_;
+  std::optional<download::SchedulingParams> last_requested_scheduling_params_;
   bool cancel_downloads_called_ = false;
   bool is_available_ = true;
 };
@@ -381,6 +392,9 @@ class PredictionManagerTestBase : public testing::Test {
     test_download_service_tracker_ =
         std::make_unique<TestProfileDownloadServiceTracker>();
 
+    task_runner_ = base::ThreadPool::CreateSequencedTaskRunner(
+        {base::MayBlock(), base::TaskPriority::BEST_EFFORT});
+
     CreateAndInitializePredictionModelStore();
     RunUntilIdle();
   }
@@ -446,9 +460,6 @@ class PredictionManagerTestBase : public testing::Test {
   FakePredictionModelDownloadManager* prediction_model_download_manager()
       const {
     return static_cast<FakePredictionModelDownloadManager*>(
-        local_state_prefs_.get(),
-        base::BindRepeating(&PredictionManager::GetBaseModelDirForDownload,
-                            base::Unretained(prediction_manager())),
         prediction_manager()->prediction_model_download_manager());
   }
 
@@ -470,6 +481,10 @@ class PredictionManagerTestBase : public testing::Test {
                                    should_fetch_model);
   }
 
+  scoped_refptr<base::SequencedTaskRunner> task_runner() {
+    return task_runner_;
+  }
+
  private:
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::MainThreadType::UI,
@@ -482,6 +497,7 @@ class PredictionManagerTestBase : public testing::Test {
   std::unique_ptr<TestPredictionManager> prediction_manager_;
   std::unique_ptr<TestProfileDownloadServiceTracker>
       test_download_service_tracker_;
+  scoped_refptr<base::SequencedTaskRunner> task_runner_;
 };
 
 class PredictionManagerTest : public PredictionManagerTestBase {
@@ -533,7 +549,8 @@ TEST_F(PredictionManagerTest, FetchModelDisabled) {
 
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
   SetStoreInitialized();
 
   EXPECT_FALSE(prediction_model_fetcher()->models_fetched());
@@ -548,7 +565,8 @@ TEST_F(PredictionManagerTest, FetchModelEnabledAndThenDisabled) {
 
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
   SetStoreInitialized();
 
   EXPECT_TRUE(prediction_model_fetcher()->models_fetched());
@@ -572,7 +590,8 @@ TEST_F(PredictionManagerTest, FetchModelEnabledAndThenDisabled) {
       proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, &observer);
   MoveClockForwardBy(base::Seconds(kUpdateFetchModelAndFeaturesTimeSecs));
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
   RunUntilIdle();
   EXPECT_FALSE(prediction_model_fetcher()->models_fetched());
   EXPECT_TRUE(observer.last_received_model_for_target(
@@ -603,7 +622,8 @@ TEST_F(PredictionManagerTest, AddObserverForOptimizationTargetModel) {
 
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, model_metadata, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, model_metadata,
+      task_runner(), &observer);
   SetStoreInitialized();
   base::RunLoop().RunUntilIdle();
 
@@ -717,7 +737,7 @@ TEST_F(PredictionManagerTest,
   FakeOptimizationTargetModelObserver observer1;
   prediction_manager()->AddObserverForOptimizationTargetModel(
       proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD,
-      /*model_metadata=*/std::nullopt, &observer1);
+      /*model_metadata=*/std::nullopt, task_runner(), &observer1);
   SetStoreInitialized();
 
   // Ensure observer is hooked up.
@@ -739,7 +759,7 @@ TEST_F(PredictionManagerTest,
   FakeOptimizationTargetModelObserver observer2;
   prediction_manager()->AddObserverForOptimizationTargetModel(
       proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD,
-      /*model_metadata=*/std::nullopt, &observer2);
+      /*model_metadata=*/std::nullopt, task_runner(), &observer2);
   RunUntilIdle();
   EXPECT_EQ(base_model_dir1.Append(GetBaseFileNameForModels()),
             observer2
@@ -806,7 +826,8 @@ TEST_F(PredictionManagerTest,
 
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, model_metadata, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, model_metadata,
+      task_runner(), &observer);
   SetStoreInitialized();
 
   // Make sure no models are fetched.
@@ -858,7 +879,8 @@ TEST_F(PredictionManagerTest,
   SetStoreInitialized();
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_MODEL_VALIDATION, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_MODEL_VALIDATION, std::nullopt, task_runner(),
+      &observer);
 
   histogram_tester.ExpectUniqueSample(
       "OptimizationGuide.PredictionManager.ModelAvailableAtRegistration."
@@ -876,7 +898,8 @@ TEST_F(PredictionManagerTest, OptimizationTargetModelObserverReRegistrations) {
 
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
   SetStoreInitialized();
 
   EXPECT_TRUE(prediction_model_fetcher()->models_fetched());
@@ -897,7 +920,8 @@ TEST_F(PredictionManagerTest, OptimizationTargetModelObserverReRegistrations) {
   prediction_manager()->RemoveObserverForOptimizationTargetModel(
       proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, &observer);
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
   EXPECT_TRUE(observer.last_received_model_for_target(
       proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD));
   // Model is delivered from store. No fetch happens.
@@ -912,7 +936,7 @@ TEST_F(PredictionManagerTest, UpdatePredictionModelsWithInvalidModel) {
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
       proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD,
-      /*model_metadata=*/std::nullopt, &observer);
+      /*model_metadata=*/std::nullopt, task_runner(), &observer);
 
   // Set invalid model with no download url.
   proto::PredictionModel model = CreatePredictionModelForModelStore(
@@ -939,7 +963,7 @@ TEST_F(PredictionManagerTest, UpdateModelFileWithSameVersion) {
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
       proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD,
-      /*model_metadata=*/std::nullopt, &observer);
+      /*model_metadata=*/std::nullopt, task_runner(), &observer);
 
   auto base_model_dir =
       GetBaseModelDir(proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD);
@@ -977,7 +1001,8 @@ TEST_F(PredictionManagerTest, DownloadManagerUnavailableShouldNotFetch) {
 
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
 
   SetStoreInitialized();
   EXPECT_FALSE(prediction_model_fetcher()->models_fetched());
@@ -1001,7 +1026,8 @@ TEST_F(PredictionManagerTest, UpdateModelWithDownloadUrl) {
 
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
 
   SetStoreInitialized();
   EXPECT_TRUE(prediction_model_fetcher()->models_fetched());
@@ -1013,15 +1039,46 @@ TEST_F(PredictionManagerTest, UpdateModelWithDownloadUrl) {
       "OptimizationGuide.PredictionManager."
       "DownloadServiceAvailabilityBlockedFetch",
       false, 1);
-  histogram_tester.ExpectUniqueSample(
-      "OptimizationGuide.PredictionManager.IsDownloadUrlValid.PainfulPageLoad",
-      true, 1);
 
   EXPECT_EQ(prediction_model_download_manager()->last_requested_download(),
             GURL("https://example.com/model"));
   EXPECT_EQ(
       prediction_model_download_manager()->last_requested_optimization_target(),
       proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD);
+  EXPECT_FALSE(prediction_model_download_manager()
+                   ->last_requested_scheduling_params()
+                   .has_value());
+}
+
+TEST_F(PredictionManagerTest, ModelDownloadWithCustomSchedulingParams) {
+  CreatePredictionManager();
+  prediction_manager()->SetPredictionModelFetcherForTesting(
+      BuildTestPredictionModelFetcher(
+          PredictionModelFetcherEndState::kFetchSuccessWithModels));
+
+  download::SchedulingParams scheduling_params;
+  scheduling_params.priority = download::SchedulingParams::Priority::LOW;
+  prediction_manager()->SetModelDownloadSchedulingParams(
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, scheduling_params);
+
+  FakeOptimizationTargetModelObserver observer;
+  prediction_manager()->AddObserverForOptimizationTargetModel(
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
+
+  SetStoreInitialized();
+  EXPECT_TRUE(prediction_model_fetcher()->models_fetched());
+
+  EXPECT_EQ(
+      prediction_model_download_manager()->last_requested_optimization_target(),
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD);
+  EXPECT_TRUE(prediction_model_download_manager()
+                  ->last_requested_scheduling_params()
+                  .has_value());
+  EXPECT_EQ(prediction_model_download_manager()
+                ->last_requested_scheduling_params()
+                ->priority,
+            download::SchedulingParams::Priority::LOW);
 }
 
 TEST_F(PredictionManagerTest, UpdateModelForUnregisteredTargetOnModelReady) {
@@ -1045,7 +1102,8 @@ TEST_F(PredictionManagerTest, UpdateModelForUnregisteredTargetOnModelReady) {
   // Now register the model.
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
 
   RunUntilIdle();
 
@@ -1083,7 +1141,8 @@ TEST_F(PredictionManagerTest,
           PredictionModelFetcherEndState::kFetchFailed));
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
 
   SetStoreInitialized();
   EXPECT_FALSE(prediction_model_fetcher()->models_fetched());
@@ -1116,7 +1175,8 @@ TEST_F(PredictionManagerTest,
 
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
   RunUntilIdle();
 
   EXPECT_FALSE(prediction_model_fetcher()->models_fetched());
@@ -1136,7 +1196,8 @@ TEST_F(PredictionManagerTest, ModelFetcherTimerRetryDelay) {
 
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
 
   SetStoreInitialized();
   EXPECT_FALSE(prediction_model_fetcher()->models_fetched());
@@ -1160,7 +1221,8 @@ TEST_F(PredictionManagerTest, ModelFetcherTimerFetchSucceeds) {
 
   FakeOptimizationTargetModelObserver observer;
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
 
   SetStoreInitialized();
   EXPECT_TRUE(prediction_model_fetcher()->models_fetched());
@@ -1186,7 +1248,8 @@ TEST_F(PredictionManagerTest, ModelRemovedWhenMissingInGetModelsResponse) {
   prediction_model_fetcher()->AddOptimizationTargetToSuccessFetch(
       proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD);
   prediction_manager()->AddObserverForOptimizationTargetModel(
-      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, &observer);
+      proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD, std::nullopt, task_runner(),
+      &observer);
 
   // Load the model and let it be saved in the store.
   SetStoreInitialized();

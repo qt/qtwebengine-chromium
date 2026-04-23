@@ -6,6 +6,7 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
@@ -909,13 +910,9 @@ UI.Toolbar.registerToolbarItem({
   condition(config) {
     const isFlagEnabled = config?.devToolsGlobalAiButton?.enabled;
 
-    const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance();
-    const isLocaleRestricted = !devtoolsLocale.locale.startsWith('en-');
-
     const isGeoRestricted = config?.aidaAvailability?.blockedByGeo === true;
     const isPolicyRestricted = config?.aidaAvailability?.blockedByEnterprisePolicy === true;
-    const isAgeRestricted = Boolean(config?.aidaAvailability?.blockedByAge);
-    return Boolean(isFlagEnabled && !isLocaleRestricted && !isGeoRestricted && !isPolicyRestricted && !isAgeRestricted);
+    return Boolean(isFlagEnabled && !isGeoRestricted && !isPolicyRestricted);
   },
   async loadItem() {
     const Main = await loadMainModule();
@@ -935,6 +932,7 @@ UI.Toolbar.registerToolbarItem({
 });
 
 UI.Toolbar.registerToolbarItem({
+  condition: () => !Root.Runtime.Runtime.isTraceApp(),
   async loadItem() {
     const Main = await loadMainModule();
     return Main.MainImpl.MainMenuItem.instance();

@@ -13,8 +13,8 @@ import logging
 import math
 import re
 import shlex
-from typing import (TYPE_CHECKING, Any, Callable, Final, Iterable, Optional,
-                    Sequence, Type, TypeVar, cast)
+from typing import TYPE_CHECKING, Any, Callable, Final, Iterable, Optional, \
+    Sequence, Type, TypeVar, cast
 from urllib import parse as urlparse
 
 import google.protobuf.message
@@ -407,7 +407,6 @@ class ObjectParser:
           f"Failed to parse {type(proto_instance).__name__}: {decode_e}"
       ) from decode_e
 
-
   @classmethod
   def url_str(cls,
               value: str,
@@ -524,7 +523,6 @@ class ObjectParser:
         return False
     raise argparse.ArgumentTypeError(
         f"Expected bool {name} but got {type_str(value)}: {repr(value)}")
-
 
   @classmethod
   def not_none(cls, value: Optional[NotNoneT], name: str = "value") -> NotNoneT:
@@ -732,9 +730,8 @@ class NumberParser:
     str_value = ObjectParser.non_empty_str(value, name)
     match = cls._SIZE_RE.fullmatch(str_value)
     if not match:
-      raise argparse.ArgumentTypeError(
-          f"Invalid {name} format: '{str_value}',"
-          " expected format like '4M' or '256K'")
+      raise argparse.ArgumentTypeError(f"Invalid {name} format: '{str_value}',"
+                                       " expected format like '4M' or '256K'")
     int_value = int(match.group("value"))
     unit = match.group("unit")
     if unit == "K":
@@ -830,7 +827,6 @@ class DurationParser:
     if duration.total_seconds() <= 0:
       raise DurationParseError(f"Expected non-zero {name}, but got {duration}")
     return duration
-
 
   @classmethod
   def positive_or_zero_duration(

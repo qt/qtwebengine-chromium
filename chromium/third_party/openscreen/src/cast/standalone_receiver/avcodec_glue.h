@@ -39,14 +39,12 @@ namespace openscreen::cast {
     return name##UniquePtr(create_func(std::forward<Args>(args)...));   \
   }
 
-DEFINE_AV_UNIQUE_PTR(AVCodecParserContext,
-                     av_parser_init,
-                     av_parser_close(obj));
+DEFINE_AV_UNIQUE_PTR(AVCodecParserContext, av_parser_init, av_parser_close(obj))
 DEFINE_AV_UNIQUE_PTR(AVCodecContext,
                      avcodec_alloc_context3,
-                     avcodec_free_context(&obj));
-DEFINE_AV_UNIQUE_PTR(AVPacket, av_packet_alloc, av_packet_free(&obj));
-DEFINE_AV_UNIQUE_PTR(AVFrame, av_frame_alloc, av_frame_free(&obj));
+                     avcodec_free_context(&obj))
+DEFINE_AV_UNIQUE_PTR(AVPacket, av_packet_alloc, av_packet_free(&obj))
+DEFINE_AV_UNIQUE_PTR(AVFrame, av_frame_alloc, av_frame_free(&obj))
 
 #undef DEFINE_AV_UNIQUE_PTR
 

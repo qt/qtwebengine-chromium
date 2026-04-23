@@ -8,15 +8,18 @@ import("//device/vr/buildflags/buildflags.gni")
 android_library("java") {
   sources = [
     "java/src/org/chromium/components/browser_ui/styles/ChromeColors.java",
+    "java/src/org/chromium/components/browser_ui/styles/IncognitoColors.java",
     "java/src/org/chromium/components/browser_ui/styles/SemanticColorUtils.java",
   ]
   deps = [
     ":java_resources",
+    "//base:base_java",
     "//third_party/android_deps:material_design_java",
     "//third_party/androidx:androidx_annotation_annotation_java",
     "//third_party/androidx:androidx_appcompat_appcompat_java",
     "//third_party/androidx:androidx_appcompat_appcompat_resources_java",
     "//third_party/androidx:androidx_core_core_java",
+    "//ui/android:ui_no_recycler_view_java",
   ]
   resources_package = "org.chromium.components.browser_ui.styles"
 }
@@ -40,6 +43,7 @@ android_resources("java_resources") {
     "java/res/color/chip_text_color_secondary_list.xml",
     "java/res/color/color_on_surface_with_alpha_10.xml",
     "java/res/color/color_on_surface_with_alpha_12.xml",
+    "java/res/color/color_on_surface_with_alpha_16.xml",
     "java/res/color/color_on_surface_with_alpha_20.xml",
     "java/res/color/color_on_surface_with_alpha_8.xml",
     "java/res/color/color_primary_with_alpha_10.xml",
@@ -72,6 +76,8 @@ android_resources("java_resources") {
     "java/res/color/selection_control_button_tint_list.xml",
     "java/res/color/text_button_ripple_color_list.xml",
     "java/res/color/text_highlight_color.xml",
+    "java/res/color/tonal_button_bg_list.xml",
+    "java/res/color/tonal_button_icon_tint_list.xml",
     "java/res/color/toolbar_icon_unfocused_activity_tint_list.xml",
     "java/res/drawable-hdpi/btn_star_filled.png",
     "java/res/drawable-hdpi/ic_delete_white_24dp.png",
@@ -174,6 +180,7 @@ android_resources("java_resources") {
     "java/res/drawable/ic_account_circle.xml",
     "java/res/drawable/ic_account_circle_24dp.xml",
     "java/res/drawable/ic_add.xml",
+    "java/res/drawable/ic_all_bookmarks_icon_16dp.xml",
     "java/res/drawable/ic_android_messages_icon.xml",
     "java/res/drawable/ic_bar_chart_24dp.xml",
     "java/res/drawable/ic_brightness_medium_24dp.xml",
@@ -204,11 +211,12 @@ android_resources("java_resources") {
     "java/res/drawable/ic_folder_blue_24dp.xml",
     "java/res/drawable/ic_gavel_24dp.xml",
     "java/res/drawable/ic_gshield.xml",
+    "java/res/drawable/ic_headphones_24dp.xml",
     "java/res/drawable/ic_help_and_feedback.xml",
     "java/res/drawable/ic_history_24dp.xml",
-    "java/res/drawable/ic_info_outline_grey_16dp.xml",
     "java/res/drawable/ic_info_outline_grey_24dp.xml",
     "java/res/drawable/ic_keep_24dp.xml",
+    "java/res/drawable/ic_keep_off_24dp.xml",
     "java/res/drawable/ic_language.xml",
     "java/res/drawable/ic_language_24.xml",
     "java/res/drawable/ic_lightbulb_24dp.xml",
@@ -245,7 +253,6 @@ android_resources("java_resources") {
     "java/res/drawable/ic_visibility_off_black.xml",
     "java/res/drawable/ic_volume_off_white_24dp.xml",
     "java/res/drawable/ic_volume_on_white_24dp.xml",
-    "java/res/drawable/ic_warning_red_16dp.xml",
     "java/res/drawable/ic_warning_red_24dp.xml",
     "java/res/drawable/ic_warning_red_outline_32dp.xml",
     "java/res/drawable/ic_web_24dp.xml",

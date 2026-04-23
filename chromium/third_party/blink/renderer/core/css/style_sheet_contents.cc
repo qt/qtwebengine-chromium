@@ -108,7 +108,7 @@ StyleSheetContents::StyleSheetContents(const StyleSheetContents& o)
   for (unsigned i = 0; i < pre_import_layer_statement_rules_.size(); ++i) {
     pre_import_layer_statement_rules_[i] = To<StyleRuleLayerStatement>(
         o.pre_import_layer_statement_rules_[i]->Clone(
-            /*new_parent=*/nullptr, /*env_bindings=*/nullptr));
+            /*new_parent=*/nullptr, /*mixin_parameter_bindings=*/nullptr));
   }
 
   // FIXME: Copy import rules.
@@ -122,8 +122,9 @@ StyleSheetContents::StyleSheetContents(const StyleSheetContents& o)
   // Copying child rules is a strict point for deferred property parsing, so
   // there is no need to copy lazy parsing state here.
   for (unsigned i = 0; i < child_rules_.size(); ++i) {
-    child_rules_[i] = o.child_rules_[i]->Clone(/*new_parent=*/nullptr,
-                                               /*env_bindings=*/nullptr);
+    child_rules_[i] =
+        o.child_rules_[i]->Clone(/*new_parent=*/nullptr,
+                                 /*mixin_parameter_bindings=*/nullptr);
   }
 }
 
@@ -829,10 +830,11 @@ static bool MatchMediaForMixins(
 }
 
 // Returns true if at least one @mixin rule was found.
+// If mixins is nullptr, returns as soon as the first @mixin rule is found.
 static bool ExtractMixinsFromRules(
     base::span<const Member<StyleRuleBase>> rules,
     const MediaQueryEvaluator& medium,
-    MixinMap& mixins) {
+    MixinMap* mixins) {
   bool found = false;
   for (StyleRuleBase* rule : rules) {
     // TODO(sesse): @container, @layer, @scope, @starting-style are waiting for
@@ -841,15 +843,20 @@ static bool ExtractMixinsFromRules(
       // We don't update media_query_result_flags right away, because
       // there may not be mixins within this @media. Instead, we store
       // the flags and only set them if we actually see a @mixin.
+      //
+      // Note that we need to search even if the media query returned false,
+      // since it flipping to true would activate mixins (causing invalidation).
       MediaQueryResultFlags flags_if_found;
       HeapVector<MediaQuerySetResult> media_query_set_results_if_found;
-      if (MatchMediaForMixins(medium, media_rule->MediaQueries(),
-                              flags_if_found,
-                              media_query_set_results_if_found)) {
-        if (ExtractMixinsFromRules(media_rule->ChildRules(), medium, mixins)) {
-          found = true;
-          mixins.media_query_result_flags.Add(flags_if_found);
-          mixins.media_query_set_results.AppendVector(
+      const bool match =
+          MatchMediaForMixins(medium, media_rule->MediaQueries(),
+                              flags_if_found, media_query_set_results_if_found);
+      if (ExtractMixinsFromRules(media_rule->ChildRules(), medium,
+                                 match ? mixins : nullptr)) {
+        found |= match;
+        if (mixins) {
+          mixins->media_query_result_flags.Add(flags_if_found);
+          mixins->media_query_set_results.AppendVector(
               std::move(media_query_set_results_if_found));
         }
       }
@@ -859,8 +866,13 @@ static bool ExtractMixinsFromRules(
             ExtractMixinsFromRules(supports_rule->ChildRules(), medium, mixins);
       }
     } else if (auto* mixin_rule = DynamicTo<StyleRuleMixin>(rule)) {
-      mixins.mixins.Set(mixin_rule->GetName(), mixin_rule);
+      if (mixins) {
+        mixins->mixins.Set(mixin_rule->GetName(), mixin_rule);
+      }
       found = true;
+    }
+    if (found && !mixins) {
+      return true;
     }
   }
   return found;
@@ -885,7 +897,7 @@ static bool ExtractMixinsFromSheet(const StyleSheetContents& contents,
     found |=
         ExtractMixinsFromSheet(*import_rule->GetStyleSheet(), medium, mixins);
   }
-  found |= ExtractMixinsFromRules(contents.ChildRules(), medium, mixins);
+  found |= ExtractMixinsFromRules(contents.ChildRules(), medium, &mixins);
   return found;
 }
 

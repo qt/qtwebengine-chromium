@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
@@ -39,8 +39,10 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import * as Extensions from '../../models/extensions/extensions.js';
+import type * as Protocol from '../../generated/protocol.js';
+import * as PanelCommon from '../../panels/common/common.js';
 import type * as Adorners from '../../ui/components/adorners/adorners.js';
+import * as Annotations from '../../ui/components/annotations/annotations.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as TreeOutline from '../../ui/components/tree_outline/tree_outline.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -322,6 +324,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.#domTreeWidget.onSelectedNodeChanged = this.selectedNodeChanged.bind(this);
     this.#domTreeWidget.onElementsTreeUpdated = this.updateBreadcrumbIfNeeded.bind(this);
     this.#domTreeWidget.onDocumentUpdated = this.documentUpdated.bind(this);
+    this.#domTreeWidget.onElementExpanded = this.handleElementExpanded.bind(this);
+    this.#domTreeWidget.onElementCollapsed = this.handleElementCollapsed.bind(this);
     this.#domTreeWidget.setWordWrap(Common.Settings.Settings.instance().moduleSetting('dom-word-wrap').get());
 
     SDK.TargetManager.TargetManager.instance().observeModels(SDK.DOMModel.DOMModel, this, {scoped: true});
@@ -330,8 +334,25 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     Common.Settings.Settings.instance()
         .moduleSetting('show-ua-shadow-dom')
         .addChangeListener(this.showUAShadowDOMChanged.bind(this));
-    Extensions.ExtensionServer.ExtensionServer.instance().addEventListener(
-        Extensions.ExtensionServer.Events.SidebarPaneAdded, this.extensionSidebarPaneAdded, this);
+    PanelCommon.ExtensionServer.ExtensionServer.instance().addEventListener(
+        PanelCommon.ExtensionServer.Events.SidebarPaneAdded, this.extensionSidebarPaneAdded, this);
+
+    if (Annotations.AnnotationRepository.annotationsEnabled()) {
+      PanelCommon.AnnotationManager.instance().initializePlacementForAnnotationType(
+          Annotations.AnnotationType.ELEMENT_NODE, this.resolveInitialState.bind(this), this.#domTreeWidget.element);
+    }
+  }
+
+  private handleElementExpanded(): void {
+    if (Annotations.AnnotationRepository.annotationsEnabled()) {
+      void PanelCommon.AnnotationManager.instance().resolveAnnotationsOfType(Annotations.AnnotationType.ELEMENT_NODE);
+    }
+  }
+
+  private handleElementCollapsed(): void {
+    if (Annotations.AnnotationRepository.annotationsEnabled()) {
+      void PanelCommon.AnnotationManager.instance().resolveAnnotationsOfType(Annotations.AnnotationType.ELEMENT_NODE);
+    }
   }
 
   private initializeFullAccessibilityTreeView(): void {
@@ -484,6 +505,10 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     super.wasShown();
     UI.Context.Context.instance().setFlavor(ElementsPanel, this);
     this.#domTreeWidget.show(this.domTreeContainer);
+
+    if (Annotations.AnnotationRepository.annotationsEnabled()) {
+      void PanelCommon.AnnotationManager.instance().resolveAnnotationsOfType(Annotations.AnnotationType.ELEMENT_NODE);
+    }
   }
 
   override willHide(): void {
@@ -641,7 +666,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       return;
     }
 
-    if (!this.searchConfig || this.searchConfig.query !== query) {
+    if (this.searchConfig?.query !== query) {
       this.onSearchCanceled();
     } else {
       this.hideSearchHighlights();
@@ -1026,7 +1051,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.stylesViewToReveal = stylesView;
 
     this.sidebarPaneView.appendApplicableItems('elements-sidebar');
-    const extensionSidebarPanes = Extensions.ExtensionServer.ExtensionServer.instance().sidebarPanes();
+    const extensionSidebarPanes = PanelCommon.ExtensionServer.ExtensionServer.instance().sidebarPanes();
     for (let i = 0; i < extensionSidebarPanes.length; ++i) {
       this.addExtensionSidebarPane(extensionSidebarPanes[i]);
     }
@@ -1065,11 +1090,11 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   }
 
   private extensionSidebarPaneAdded(
-      event: Common.EventTarget.EventTargetEvent<Extensions.ExtensionPanel.ExtensionSidebarPane>): void {
+      event: Common.EventTarget.EventTargetEvent<PanelCommon.ExtensionPanel.ExtensionSidebarPane>): void {
     this.addExtensionSidebarPane(event.data);
   }
 
-  private addExtensionSidebarPane(pane: Extensions.ExtensionPanel.ExtensionSidebarPane): void {
+  private addExtensionSidebarPane(pane: PanelCommon.ExtensionPanel.ExtensionSidebarPane): void {
     if (this.sidebarPaneView && pane.panelName() === this.name) {
       this.sidebarPaneView.appendView(pane);
     }
@@ -1167,6 +1192,56 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
   copyStyles(node: SDK.DOMModel.DOMNode): void {
     this.#domTreeWidget.copyStyles(node);
+  }
+
+  async resolveInitialState(
+      parentElement: Element, reveal: boolean, lookupId: string,
+      anchor?: SDK.DOMModel.DOMNode|SDK.NetworkRequest.NetworkRequest): Promise<{x: number, y: number}|null> {
+    if (!this.isShowing()) {
+      return null;
+    }
+
+    if (!anchor) {
+      const backendNodeId = Number(lookupId) as Protocol.DOM.BackendNodeId;
+      if (isNaN(backendNodeId)) {
+        return null;
+      }
+      const rootDOMNode = this.#domTreeWidget.rootDOMNode;
+      if (!rootDOMNode) {
+        return null;
+      }
+      const domModel = rootDOMNode.domModel();
+      const nodes = await domModel.pushNodesByBackendIdsToFrontend(new Set([backendNodeId]));
+      if (!nodes) {
+        return null;
+      }
+      const foundNode = nodes.get(backendNodeId);
+      if (!foundNode) {
+        return null;
+      }
+      anchor = foundNode;
+    }
+
+    const element = this.#domTreeWidget.treeElementForNode(anchor as SDK.DOMModel.DOMNode);
+    if (!element) {
+      return null;
+    }
+
+    if (reveal) {
+      // The node must have been revealed in order to calculate its position.
+      await Common.Revealer.reveal(anchor);
+    }
+
+    // The tree element element starts at the top-left of the expand/collapse arrow). We
+    // want to aim for the tagname instead.
+    const offsetToTagName = 22;
+    const yPadding = 5;
+
+    const targetRect = element.listItemElement.getBoundingClientRect();
+    const parentRect = parentElement.getBoundingClientRect();
+    const relativeX = targetRect.x - parentRect.x + offsetToTagName;
+    const relativeY = targetRect.y - parentRect.y + yPadding;
+    return {x: relativeX, y: relativeY};
   }
 
   protected static firstInspectElementCompletedForTest = function(): void {};

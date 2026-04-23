@@ -177,7 +177,7 @@ TextLine::TextLine(ParagraphImpl* owner,
 
     // TODO: This is the fix for flutter. Must be removed...
     for (auto cluster = &start; cluster <= &end; ++cluster) {
-        if (!cluster->run().isPlaceholder()) {
+        if (!cluster->run().isPlaceholder() && !cluster->run().isCursiveScript()) {
             fShift += cluster->getHalfLetterSpacing();
             break;
         }
@@ -929,7 +929,7 @@ void TextLine::iterateThroughClustersInGlyphsOrder(bool reversed,
         auto trimmed = fOwner->clusters(trimmedRange);
         directional_for_each(trailed, reversed != run.leftToRight(), [&](Cluster& cluster) {
             if (ignore) return;
-            bool ghost =  &cluster >= trimmed.end();
+            bool ghost =  &cluster >= trimmed.data() + trimmed.size();
             if (!includeGhosts && ghost) {
                 return;
             }
@@ -1134,7 +1134,7 @@ LineMetrics TextLine::getMetrics() const {
     result.fLeft = this->offset().fX;
     // This is Flutter definition of a baseline
     result.fBaseline = this->offset().fY + this->height() - this->sizes().descent();
-    result.fLineNumber = this - fOwner->lines().begin();
+    result.fLineNumber = this - fOwner->lines().data();
 
     // Fill out the style parts
     this->iterateThroughVisualRuns(false,
@@ -1392,6 +1392,12 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
     this->iterateThroughVisualRuns(true,
         [this, dx, &result]
         (const Run* run, SkScalar runOffsetInLine, TextRange textRange, SkScalar* runWidthInLine) {
+            if (run->isEllipsis()) {
+                auto utf16Index = fOwner->getUTF16Index(this->fText.end);
+                result = { SkToS32(utf16Index) , kDownstream };
+                return false;
+            }
+
             bool keepLooking = true;
             *runWidthInLine = this->iterateThroughSingleRunByStyles(
             TextAdjustment::GraphemeGluster, run, runOffsetInLine, textRange, StyleType::kNone,

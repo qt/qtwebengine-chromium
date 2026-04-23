@@ -15,6 +15,7 @@
 use crate::decoder::*;
 use crate::internal_utils::stream::*;
 use crate::parser::mp4box::*;
+use crate::utils::pixels::ChannelIdc;
 use crate::*;
 
 use std::collections::BTreeMap;
@@ -254,9 +255,9 @@ impl Item {
     }
 
     pub(crate) fn validate_properties(&self, items: &Items, pixi_required: bool) -> AvifResult<()> {
-        let codec_config = self
-            .codec_config()
-            .ok_or(AvifError::BmffParseFailed("missing av1C property".into()))?;
+        let codec_config = self.codec_config().ok_or(AvifError::BmffParseFailed(
+            "missing codec config property".into(),
+        ))?;
         if self.is_derived_image_item() {
             for derived_item_id in &self.source_item_ids {
                 let source_item = items.get(derived_item_id).unwrap();
@@ -291,14 +292,35 @@ impl Item {
         }
         match self.pixi() {
             Some(pixi) => {
-                for depth in &pixi.plane_depths {
-                    // Check that the depth in pixi matches the codec config.
-                    // For derived image items, the codec config comes from the first source item.
-                    // Sample transform items can have a depth different from their source items.
-                    if *depth != codec_config.depth() && !self.is_sample_transform_item() {
-                        return AvifError::bmff_parse_failed(
-                            "pixi depth does not match codec config depth",
-                        );
+                for plane in &pixi.planes {
+                    if let Some(codec_config_depth) = codec_config.depth() {
+                        // Check that the depth in pixi matches the codec config.
+                        // For derived image items, the codec config comes from the first source item.
+                        // Sample transform items can have a depth different from their source items.
+                        if plane.depth != codec_config_depth && !self.is_sample_transform_item() {
+                            return AvifError::bmff_parse_failed(
+                                "pixi depth does not match codec config depth",
+                            );
+                        }
+                    }
+                    if let Some(codec_config_pixel_format) = codec_config.pixel_format() {
+                        // Extended pixi. Check that the subsampling of the chroma planes matches
+                        // the codec config.
+                        if matches!(
+                            plane.channel_idc,
+                            Some(ChannelIdc::SecondColorChannel | ChannelIdc::ThirdColorChannel)
+                        ) {
+                            if let Some(subsampling_type) = plane.subsampling_type {
+                                if subsampling_type != codec_config_pixel_format {
+                                    return AvifError::bmff_parse_failed(format!(
+                                        "pixi {:?} does not match codec config {:?}",
+                                        subsampling_type, codec_config_pixel_format
+                                    ));
+                                }
+                            }
+                            // Do not check subsampling_location.
+                            // It does not matter enough to fail the decoding just because of that.
+                        }
                     }
                 }
             }
@@ -450,6 +472,90 @@ impl Item {
             size: usize_from_u64(checked_sub!(max_offset, min_offset)?)?,
         })
     }
+}
+
+// Returns the depth information from either the codec configuration property or
+// the PixelInformationProperty, or an error if the information cannot be found.
+// Item::validate_properties() checks for cross-property consistency.
+pub(crate) fn depth_from_properties(
+    properties: &[ItemProperty],
+    item_name: &str,
+) -> AvifResult<u8> {
+    if let Some(codec_config) = find_property!(properties, CodecConfiguration) {
+        if let Some(depth) = codec_config.depth() {
+            return Ok(depth);
+        }
+    }
+    if let Some(pixi) = find_property!(properties, PixelInformation) {
+        if let Some(plane) = pixi.planes.first() {
+            // Item::validate_properties() makes sure all planes have the same depth.
+            return Ok(plane.depth);
+        }
+    }
+    AvifError::bmff_parse_failed(format!("{item_name} item must have a specified depth"))
+}
+
+// Returns the subsampling information from either the codec configuration property or the extended
+// PixelInformationProperty (px_flags&1==1), or an error if the information cannot be found.
+// Item::validate_properties() checks for cross-property consistency.
+pub(crate) fn pixel_format_from_properties(
+    properties: &[ItemProperty],
+    item_name: &str,
+) -> AvifResult<PixelFormat> {
+    if let Some(codec_config) = find_property!(properties, CodecConfiguration) {
+        if let Some(pixel_format) = codec_config.pixel_format() {
+            return Ok(pixel_format);
+        }
+    }
+    if let Some(pixi) = find_property!(properties, PixelInformation) {
+        // Returns the channel information if there is only one channel of that type
+        // in the extended PixelInformationProperty (px_flags&1==1).
+        fn get_unique_plane(
+            pixi: &PixelInformation,
+            channel: ChannelIdc,
+        ) -> Option<&PlanePixelInformation> {
+            if pixi
+                .planes
+                .iter()
+                .filter(|plane| plane.channel_idc == Some(channel))
+                .count()
+                == 1
+            {
+                pixi.planes
+                    .iter()
+                    .find(|plane| plane.channel_idc == Some(channel))
+            } else {
+                None
+            }
+        }
+        return match (
+            get_unique_plane(pixi, ChannelIdc::FirstColorChannel),
+            get_unique_plane(pixi, ChannelIdc::SecondColorChannel),
+            get_unique_plane(pixi, ChannelIdc::ThirdColorChannel),
+            get_unique_plane(pixi, ChannelIdc::FourthColorChannel),
+        ) {
+            (Some(_y), None, None, None) => Ok(PixelFormat::Yuv400),
+            (Some(_y), Some(u), Some(v), None) => {
+                if u.subsampling_type == v.subsampling_type {
+                    if let Some(subsampling_type) = u.subsampling_type {
+                        Ok(subsampling_type)
+                    } else {
+                        AvifError::bmff_parse_failed(format!(
+                            "{item_name} item must have subsampling defined"
+                        ))
+                    }
+                } else {
+                    AvifError::bmff_parse_failed(format!(
+                        "{item_name} item must have the same subsampling for both chroma channels"
+                    ))
+                }
+            }
+            _ => AvifError::bmff_parse_failed(format!(
+                "{item_name} item must have exactly one or exactly three unique color channels"
+            )),
+        };
+    }
+    AvifError::bmff_parse_failed(format!("{item_name} item must have a specified format"))
 }
 
 pub type Items = BTreeMap<u32, Item>;

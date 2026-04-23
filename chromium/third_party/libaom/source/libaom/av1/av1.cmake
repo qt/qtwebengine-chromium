@@ -127,6 +127,8 @@ list(APPEND AOM_AV1_ENCODER_SOURCES
             "${AOM_ROOT}/av1/encoder/allintra_vis.c"
             "${AOM_ROOT}/av1/encoder/allintra_vis.h"
             "${AOM_ROOT}/av1/encoder/enc_enums.h"
+            "${AOM_ROOT}/av1/encoder/av1_ext_ratectrl.c"
+            "${AOM_ROOT}/av1/encoder/av1_ext_ratectrl.h"
             "${AOM_ROOT}/av1/encoder/av1_fwd_txfm1d.c"
             "${AOM_ROOT}/av1/encoder/av1_fwd_txfm1d.h"
             "${AOM_ROOT}/av1/encoder/av1_fwd_txfm1d_cfg.h"

@@ -6,6 +6,7 @@
 
 #include <iomanip>
 
+#include "src/base/string-format.h"
 #include "src/codegen/handler-table.h"
 #include "src/codegen/source-position-table.h"
 #include "src/common/globals.h"
@@ -45,7 +46,6 @@ int BytecodeArray::SourceStatementPosition(int offset) const {
 void BytecodeArray::PrintJson(std::ostream& os) {
   DisallowGarbageCollection no_gc;
 
-  Address base_address = GetFirstBytecodeAddress();
   BytecodeArray handle_storage = *this;
   Handle<BytecodeArray> handle(reinterpret_cast<Address*>(&handle_storage));
   interpreter::BytecodeArrayIterator iterator(handle);
@@ -55,12 +55,10 @@ void BytecodeArray::PrintJson(std::ostream& os) {
 
   while (!iterator.done()) {
     if (!first_data) os << ", ";
-    Address current_address = base_address + iterator.current_offset();
     first_data = false;
 
     os << "{\"offset\":" << iterator.current_offset() << ", \"disassembly\":\"";
-    interpreter::BytecodeDecoder::Decode(
-        os, reinterpret_cast<uint8_t*>(current_address), false);
+    iterator.PrintCurrentBytecodeTo(os);
 
     if (interpreter::Bytecodes::IsJump(iterator.current_bytecode())) {
       os << " (" << iterator.GetJumpTargetOffset() << ")";
@@ -90,7 +88,7 @@ void BytecodeArray::PrintJson(std::ostream& os) {
     for (int i = 0; i < constant_pool_length; i++) {
       Tagged<Object> object = constant_pool()->get(i);
       if (i > 0) os << ", ";
-      os << "\"" << object << "\"";
+      os << "\"" << base::JSONEscaped(object) << "\"";
     }
     os << "]";
   }
@@ -133,11 +131,10 @@ void BytecodeArray::Disassemble(Handle<BytecodeArray> handle,
     } else {
       os << "         ";
     }
-    Address current_address = base_address + iterator.current_offset();
-    os << reinterpret_cast<const void*>(current_address) << " @ "
-       << std::setw(4) << iterator.current_offset() << " : ";
-    interpreter::BytecodeDecoder::Decode(
-        os, reinterpret_cast<uint8_t*>(current_address));
+    os << reinterpret_cast<const void*>(base_address +
+                                        iterator.current_offset())
+       << " @ " << std::setw(4) << iterator.current_offset() << " : ";
+    iterator.PrintCurrentBytecodeTo(os);
     if (interpreter::Bytecodes::IsJump(iterator.current_bytecode())) {
       Address jump_target = base_address + iterator.GetJumpTargetOffset();
       os << " (" << reinterpret_cast<void*>(jump_target) << " @ "

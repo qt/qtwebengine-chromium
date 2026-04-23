@@ -203,11 +203,6 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   inline void set_map_safe_transition(IsolateT* isolate, Tagged<Map> value,
                                       ReleaseStoreTag);
 
-  // Compare-and-swaps map word using release store, returns true if the map
-  // word was actually swapped.
-  inline bool release_compare_and_swap_map_word_forwarded(
-      MapWord old_map_word, Tagged<HeapObject> new_target_object);
-
   // Compare-and-swaps map word using relaxed store, returns true if the map
   // word was actually swapped.
   inline bool relaxed_compare_and_swap_map_word_forwarded(
@@ -327,9 +322,15 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   inline void InitExternalPointerField(
       size_t offset, IsolateForSandbox isolate, Address value,
       WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  inline void InitExternalPointerField(
+      size_t offset, IsolateForSandbox isolate, ExternalPointerTag tag,
+      Address value, WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
   template <ExternalPointerTagRange tag_range>
   inline Address ReadExternalPointerField(size_t offset,
                                           IsolateForSandbox isolate) const;
+  inline Address ReadExternalPointerField(
+      size_t offset, IsolateForSandbox isolate,
+      ExternalPointerTagRange tag_range) const;
   // Similar to `ReadExternalPointerField()` but uses the CppHeapPointerTable.
   template <CppHeapPointerTag lower_bound, CppHeapPointerTag upper_bound>
   inline Address ReadCppHeapPointerField(
@@ -341,6 +342,9 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   inline void WriteExternalPointerField(size_t offset,
                                         IsolateForSandbox isolate,
                                         Address value);
+  inline void WriteExternalPointerField(size_t offset,
+                                        IsolateForSandbox isolate,
+                                        ExternalPointerTag tag, Address value);
 
   // Set up a lazily-initialized external pointer field. If the sandbox is
   // enabled, this will set the field to the kNullExternalPointerHandle. It will
@@ -372,9 +376,6 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
       ExternalPointerTag tag);
 
   inline void SetupLazilyInitializedCppHeapPointerField(size_t offset);
-  template <CppHeapPointerTag tag>
-  inline void WriteLazilyInitializedCppHeapPointerField(
-      size_t offset, IsolateForPointerCompression isolate, Address value);
   inline void WriteLazilyInitializedCppHeapPointerField(
       size_t offset, IsolateForPointerCompression isolate, Address value,
       CppHeapPointerTag tag);
@@ -385,9 +386,13 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   //
   // These are only available when the sandbox is enabled, in which case they
   // are the under-the-hood implementation of trusted pointers.
+
   inline void InitSelfIndirectPointerField(
       size_t offset, IsolateForSandbox isolate,
       TrustedPointerPublishingScope* opt_publishing_scope);
+
+  inline void InitSelfIndirectPointerFieldWithoutPublishing(
+      size_t offset, IsolateForSandbox isolate);
 #endif  // V8_ENABLE_SANDBOX
 
   // Trusted pointers.
@@ -398,60 +403,12 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   // ExposedTrustedObject as (only) these objects can be referenced through the
   // trusted pointer table.
   template <IndirectPointerTag tag>
-  inline auto CastExposedTrustedObjectByTag(Tagged<Object> object) const {
-    if constexpr (tag == kCodeIndirectPointerTag) {
-      return TrustedCast<Code>(object);
-    }
-    if constexpr (tag == kBytecodeArrayIndirectPointerTag) {
-      return TrustedCast<BytecodeArray>(object);
-    }
-    if constexpr (tag == kInterpreterDataIndirectPointerTag) {
-      return TrustedCast<InterpreterData>(object);
-    }
-    if constexpr (tag == kUncompiledDataIndirectPointerTag) {
-      return TrustedCast<UncompiledData>(object);
-    }
-    if constexpr (tag == kRegExpDataIndirectPointerTag) {
-      return TrustedCast<RegExpData>(object);
-    }
-#if V8_ENABLE_WEBASSEMBLY
-    if constexpr (tag == kWasmDispatchTableIndirectPointerTag ||
-                  tag == kSharedWasmDispatchTableIndirectPointerTag) {
-      return TrustedCast<WasmDispatchTable>(object);
-    }
-    if constexpr (tag == kWasmTrustedInstanceDataIndirectPointerTag ||
-                  tag == kSharedWasmTrustedInstanceDataIndirectPointerTag) {
-      return TrustedCast<WasmTrustedInstanceData>(object);
-    }
-    if constexpr (tag == kWasmInternalFunctionIndirectPointerTag) {
-      return TrustedCast<WasmInternalFunction>(object);
-    }
-    if constexpr (tag == kWasmSuspenderIndirectPointerTag) {
-      return TrustedCast<WasmSuspenderObject>(object);
-    }
-    if constexpr (tag == kWasmFunctionDataIndirectPointerTag) {
-      return TrustedCast<WasmFunctionData>(object);
-    }
-#endif  // V8_ENABLE_WEBASSEMBLY
-    UNREACHABLE();
-  }
-
-  template <IndirectPointerTag tag>
   inline auto ReadTrustedPointerField(size_t offset,
-                                      IsolateForSandbox isolate) const {
-    // Currently, trusted pointer loads always use acquire semantics as the
-    // under-the-hood indirect pointer loads use acquire loads anyway.
-    return ReadTrustedPointerField<tag>(offset, isolate, kAcquireLoad);
-  }
+                                      IsolateForSandbox isolate) const;
 
   template <IndirectPointerTag tag>
   inline auto ReadTrustedPointerField(size_t offset, IsolateForSandbox isolate,
-                                      AcquireLoadTag acquire_load) const {
-    Tagged<Object> object =
-        ReadMaybeEmptyTrustedPointerField<tag>(offset, isolate, acquire_load);
-
-    return CastExposedTrustedObjectByTag<tag>(object);
-  }
+                                      AcquireLoadTag acquire_load) const;
 
   // Like ReadTrustedPointerField, but if the field is cleared, this will
   // return Smi::zero().
@@ -658,10 +615,6 @@ IS_TYPE_FUNCTION_DECL(SmallOrderedHashTable)
 IS_TYPE_FUNCTION_DECL(PropertyDictionary)
 IS_TYPE_FUNCTION_DECL(AnyHole)
 #undef IS_TYPE_FUNCTION_DECL
-
-// Predicate for IsAnyHole which can be used on any object type -- the standard
-// IsAnyHole check cannot be used for Code space objects.
-V8_INLINE bool SafeIsAnyHole(Tagged<HeapObject> obj);
 
 // Most calls to Is<Oddball> should go via the Tagged<Object> overloads, withst
 // an Isolate/LocalIsolate/ReadOnlyRoots parameter.

@@ -33,34 +33,29 @@
 #include <unordered_map>
 #include <vector>
 
-#include "src/tint/lang/wgsl/sem/variable.h"
-#include "src/tint/utils/command/args.h"
-#include "src/tint/utils/text/color_mode.h"
-
 #if TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 #include "spirv-tools/libspirv.hpp"
 #endif  // TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 
+#include "src/tint/api/common/substitute_overrides_config.h"
+#include "src/tint/api/helpers/generate_bindings.h"
 #include "src/tint/api/tint.h"
 #include "src/tint/cmd/common/helper.h"
-#include "src/tint/lang/core/ir/core_builtin_call.h"
 #include "src/tint/lang/core/ir/disassembler.h"
-#include "src/tint/lang/core/ir/load.h"
+#include "src/tint/lang/core/ir/referenced_module_vars.h"
 #include "src/tint/lang/core/ir/transform/resource_binding_helper.h"
-#include "src/tint/lang/core/ir/transform/single_entry_point.h"
-#include "src/tint/lang/core/ir/transform/substitute_overrides.h"
+#include "src/tint/lang/core/ir/transform/resource_table_helper.h"
 #include "src/tint/lang/core/ir/var.h"
 #include "src/tint/lang/core/type/f16.h"
-#include "src/tint/lang/core/type/resource_type.h"
-#include "src/tint/lang/msl/ir/transform/flatten_bindings.h"
-#include "src/tint/lang/wgsl/ast/module.h"
+#include "src/tint/lang/core/type/pointer.h"
+#include "src/tint/utils/command/args.h"
 #include "src/tint/utils/command/cli.h"
 #include "src/tint/utils/command/command.h"
 #include "src/tint/utils/containers/transform.h"
 #include "src/tint/utils/diagnostic/diagnostic.h"
 #include "src/tint/utils/diagnostic/formatter.h"
 #include "src/tint/utils/macros/defer.h"
-#include "src/tint/utils/rtti/switch.h"
+#include "src/tint/utils/text/color_mode.h"
 #include "src/tint/utils/text/string.h"
 #include "src/tint/utils/text/styled_text.h"
 #include "src/tint/utils/text/styled_text_printer.h"
@@ -71,7 +66,6 @@
 #endif  // TINT_BUILD_WGSL_READER
 
 #if TINT_BUILD_SPV_WRITER
-#include "src/tint/lang/spirv/writer/helpers/generate_bindings.h"
 #include "src/tint/lang/spirv/writer/writer.h"
 #endif  // TINT_BUILD_SPV_WRITER
 
@@ -81,13 +75,11 @@
 
 #if TINT_BUILD_MSL_WRITER
 #include "src/tint/lang/msl/validate/validate.h"
-#include "src/tint/lang/msl/writer/helpers/generate_bindings.h"
 #include "src/tint/lang/msl/writer/writer.h"
 #endif  // TINT_BUILD_MSL_WRITER
 
 #if TINT_BUILD_HLSL_WRITER
 #include "src/tint/lang/hlsl/validate/validate.h"
-#include "src/tint/lang/hlsl/writer/helpers/generate_bindings.h"
 #include "src/tint/lang/hlsl/writer/writer.h"
 #endif  // TINT_BUILD_HLSL_WRITER
 
@@ -775,11 +767,12 @@ Options:
 }
 TINT_END_DISABLE_WARNING(UNSAFE_BUFFER_USAGE);
 
-[[maybe_unused]] tint::diag::Result<tint::core::ir::transform::SubstituteOverridesConfig>
-CreateOverrideMap(const Options& options, tint::inspector::Inspector& inspector) {
+[[maybe_unused]] tint::diag::Result<tint::SubstituteOverridesConfig> CreateOverrideMap(
+    const Options& options,
+    tint::inspector::Inspector& inspector) {
     auto override_names = inspector.GetNamedOverrideIds();
 
-    tint::core::ir::transform::SubstituteOverridesConfig cfg;
+    tint::SubstituteOverridesConfig cfg;
     cfg.map.reserve(options.overrides.Count());
     for (auto& override : options.overrides) {
         const auto& override_name = override.key.Value();
@@ -858,12 +851,22 @@ std::string Disassemble(const std::vector<uint32_t>& data) {
         gen_options.remapped_entry_point_name = "tint_entry_point";
         gen_options.strip_all_names = true;
     }
+    gen_options.entry_point_name = options.ep_name;
     gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
-    gen_options.use_storage_input_output_16 = options.use_storage_input_output_16;
+    gen_options.extensions.use_storage_input_output_16 = options.use_storage_input_output_16;
     gen_options.spirv_version = options.spirv_version;
 
     auto entry_point = inspector.GetEntryPoint(options.ep_name);
+
+    // Run SubstituteOverrides to replace override instructions with constants.
+    // This needs to run after SingleEntryPoint which removes unused overrides.
+    auto substitute_override_cfg = CreateOverrideMap(options, inspector);
+    if (substitute_override_cfg != tint::Success) {
+        std::cerr << "Failed to create override map: " << substitute_override_cfg.Failure() << "\n";
+        return false;
+    }
+    gen_options.substitute_overrides_config = substitute_override_cfg.Get();
 
     // Immediate data Offset must be 4-byte aligned.
     uint32_t offset = tint::RoundUp(4u, entry_point.immediate_data_size);
@@ -875,13 +878,14 @@ std::string Disassemble(const std::vector<uint32_t>& data) {
         offset += 8;
     }
 
-    gen_options.bindings = tint::spirv::writer::GenerateBindings(ir);
+    gen_options.bindings = tint::GenerateBindings(ir, options.ep_name, false, false);
     gen_options.resource_binding = tint::core::ir::transform::GenerateResourceBindingConfig(ir);
+    gen_options.resource_table = tint::core::ir::transform::GenerateResourceTableConfig(ir);
 
     // Enable the Vulkan Memory Model if needed.
     for (auto* ty : ir.Types()) {
         if (ty->Is<tint::core::type::SubgroupMatrix>()) {
-            gen_options.use_vulkan_memory_model = true;
+            gen_options.extensions.use_vulkan_memory_model = true;
         }
     }
 
@@ -984,6 +988,51 @@ bool GenerateWgsl([[maybe_unused]] Options& options,
 #endif  // TINT_BUILD_WGSL_WRITER
 }
 
+#if TINT_BUILD_MSL_WRITER
+tint::msl::writer::ArrayLengthOptions GenerateArrayLengthFromConstants(tint::core::ir::Module& ir,
+                                                                       const std::string& ep_name) {
+    tint::msl::writer::ArrayLengthOptions options{
+        .ubo_binding = 30,
+    };
+
+    tint::core::ir::Function* ep_func = nullptr;
+    for (auto* f : ir.functions) {
+        if (!f->IsEntryPoint()) {
+            continue;
+        }
+        if (ir.NameOf(f).NameView() == ep_name) {
+            ep_func = f;
+            break;
+        }
+    }
+    TINT_ASSERT(ep_func);
+
+    tint::core::ir::ReferencedModuleVars<const tint::core::ir::Module> referenced_module_vars{ir};
+    auto& refs = referenced_module_vars.TransitiveReferences(ep_func);
+
+    // Add array_length_from_constants entries for all storage buffers with runtime sized
+    // arrays used by the given entry point.
+    std::unordered_set<tint::BindingPoint> storage_bindings;
+    for (auto* var : refs) {
+        auto bp = var->BindingPoint();
+        if (!bp.has_value()) {
+            continue;
+        }
+
+        auto* ty = var->Result()->Type()->As<tint::core::type::Pointer>();
+        if (ty && ty->AddressSpace() == tint::core::AddressSpace::kStorage &&
+            !ty->HasFixedFootprint()) {
+            if (storage_bindings.insert(*bp).second) {
+                options.bindpoint_to_size_index.emplace(
+                    *bp, static_cast<uint32_t>(storage_bindings.size() - 1));
+            }
+        }
+    }
+
+    return options;
+}
+#endif  // TINT_BUILD_MSL_WRITER
+
 /// Generate MSL code for a program.
 /// @param options the options that Tint was invoked with
 /// @param inspector the inspector
@@ -993,52 +1042,33 @@ bool GenerateWgsl([[maybe_unused]] Options& options,
                                   [[maybe_unused]] tint::inspector::Inspector& inspector,
                                   [[maybe_unused]] tint::core::ir::Module& ir) {
 #if TINT_BUILD_MSL_WRITER
-    if (!options.use_argument_buffers) {
-        // Remap resource numbers to a flat namespace.
-        auto res = tint::msl::ir::transform::FlattenBindings(ir);
-        if (res != tint::Success) {
-            std::cerr << "Failed to flatten bindings: " << res.Failure().reason << "\n";
-            return false;
-        }
-    }
-
     // Set up the backend options.
     tint::msl::writer::Options gen_options;
     if (options.rename_all) {
         gen_options.remapped_entry_point_name = "tint_entry_point";
         gen_options.strip_all_names = true;
     }
+    gen_options.entry_point_name = options.ep_name;
     gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
     gen_options.pixel_local_attachments = options.pixel_local_attachments;
-    gen_options.bindings = tint::msl::writer::GenerateBindings(ir, options.use_argument_buffers);
+    gen_options.bindings = tint::GenerateBindings(
+        ir, options.ep_name, !options.use_argument_buffers, !options.use_argument_buffers);
     // TODO(crbug.com/366291600): Replace ubo with immediate block for end2end tests
-    gen_options.array_length_from_constants.ubo_binding = 30;
+    gen_options.immediate_binding_point = tint::BindingPoint{.group = 0u, .binding = 30u};
     gen_options.disable_demote_to_helper = options.disable_demote_to_helper;
     gen_options.use_argument_buffers = options.use_argument_buffers;
     gen_options.group_to_argument_buffer_info = options.group_to_argument_buffer_info;
+    gen_options.array_length_from_constants = GenerateArrayLengthFromConstants(ir, options.ep_name);
 
-    // Add array_length_from_constants entries for all storage buffers with runtime sized arrays.
-    std::unordered_set<tint::BindingPoint> storage_bindings;
-    for (auto* inst : *ir.root_block) {
-        auto* var = inst->As<tint::core::ir::Var>();
-        if (!var) {
-            continue;
-        }
-
-        auto bp = var->BindingPoint();
-        if (!bp.has_value()) {
-            continue;
-        }
-
-        auto* ty = var->Result()->Type()->UnwrapPtr();
-        if (!ty->HasFixedFootprint()) {
-            if (storage_bindings.insert(bp.value()).second) {
-                gen_options.array_length_from_constants.bindpoint_to_size_index.emplace(
-                    bp.value(), static_cast<uint32_t>(storage_bindings.size() - 1));
-            }
-        }
+    // Run SubstituteOverrides to replace override instructions with constants.
+    // This needs to run after SingleEntryPoint which removes unused overrides.
+    auto substitute_override_cfg = CreateOverrideMap(options, inspector);
+    if (substitute_override_cfg != tint::Success) {
+        std::cerr << "Failed to create override map: " << substitute_override_cfg.Failure() << "\n";
+        return false;
     }
+    gen_options.substitute_overrides_config = substitute_override_cfg.Get();
 
     // Check that the module and options are supported by the backend.
     auto check = tint::msl::writer::CanGenerate(ir, gen_options);
@@ -1111,6 +1141,7 @@ bool GenerateWgsl([[maybe_unused]] Options& options,
         gen_options.remapped_entry_point_name = "tint_entry_point";
         gen_options.strip_all_names = true;
     }
+    gen_options.entry_point_name = options.ep_name;
     gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
     gen_options.pixel_local = options.pixel_local_options;
@@ -1119,7 +1150,16 @@ bool GenerateWgsl([[maybe_unused]] Options& options,
         options.hlsl_shader_model < kMinShaderModelForPackUnpack4x8InHLSL;
     gen_options.compiler = for_fxc ? tint::hlsl::writer::Options::Compiler::kFXC
                                    : tint::hlsl::writer::Options::Compiler::kDXC;
-    gen_options.bindings = tint::hlsl::writer::GenerateBindings(ir);
+    gen_options.bindings = tint::GenerateBindings(ir, options.ep_name, false, false);
+
+    // Run SubstituteOverrides to replace override instructions with constants.
+    // This needs to run after SingleEntryPoint which removes unused overrides.
+    auto substitute_override_cfg = CreateOverrideMap(options, inspector);
+    if (substitute_override_cfg != tint::Success) {
+        std::cerr << "Failed to create override map: " << substitute_override_cfg.Failure() << "\n";
+        return false;
+    }
+    gen_options.substitute_overrides_config = substitute_override_cfg.Get();
 
     // Check that the module and options are supported by the backend.
     auto check = tint::hlsl::writer::CanGenerate(ir, gen_options);
@@ -1238,7 +1278,17 @@ bool GenerateWgsl([[maybe_unused]] Options& options,
         gen_options.version = tint::glsl::writer::Version();
     }
 
+    gen_options.entry_point_name = options.ep_name;
     gen_options.disable_robustness = !options.enable_robustness;
+
+    // Run SubstituteOverrides to replace override instructions with constants.
+    // This needs to run after SingleEntryPoint which removes unused overrides.
+    auto substitute_override_cfg = CreateOverrideMap(options, inspector);
+    if (substitute_override_cfg != tint::Success) {
+        std::cerr << "Failed to create override map: " << substitute_override_cfg.Failure() << "\n";
+        return false;
+    }
+    gen_options.substitute_overrides_config = substitute_override_cfg.Get();
 
     auto entry_point = inspector.GetEntryPoint(options.ep_name);
 
@@ -1261,7 +1311,9 @@ bool GenerateWgsl([[maybe_unused]] Options& options,
     }
 
     // Generate binding options.
-    gen_options.bindings = tint::glsl::writer::GenerateBindings(ir);
+    auto data = tint::glsl::writer::GenerateBindings(ir, options.ep_name);
+    gen_options.bindings = std::move(data.bindings);
+    gen_options.texture_builtins_from_uniform = std::move(data.texture_builtins_from_uniform);
 
     // Check that the module and options are supported by the backend.
     auto check = tint::glsl::writer::CanGenerate(ir, gen_options);
@@ -1361,49 +1413,24 @@ bool Generate([[maybe_unused]] const Options& options,
         return false;
     }
 
-    // Strip the module down to a single entry point.
-    if (options.ep_name != "") {
-        auto singleEntryPointResult =
-            tint::core::ir::transform::SingleEntryPoint(ir.Get(), options.ep_name);
-        if (singleEntryPointResult != tint::Success) {
-            std::cerr << "SingleEntryPoint failed:\n" << singleEntryPointResult.Failure() << "\n";
-            return false;
-        }
-    }
-
-    // Run SubstituteOverrides to replace override instructions with constants.
-    // This needs to run after SingleEntryPoint which removes unused overrides.
-    auto substitute_override_cfg = CreateOverrideMap(options, inspector);
-    if (substitute_override_cfg != tint::Success) {
-        std::cerr << "Failed to create override map: " << substitute_override_cfg.Failure() << "\n";
-        return false;
-    }
-    auto substituteOverridesResult =
-        tint::core::ir::transform::SubstituteOverrides(ir.Get(), substitute_override_cfg.Get());
-    if (substituteOverridesResult != tint::Success) {
-        std::cerr << "SubstituteOverrides failed:\n" << substituteOverridesResult.Failure() << "\n";
-        return false;
-    }
-
     switch (options.format) {
-        case Format::kSpirv:
-        case Format::kSpvAsm:
-            return GenerateSpirv(options, inspector, ir.Get());
-        case Format::kMsl:
-            return GenerateMsl(options, inspector, ir.Get());
         case Format::kHlsl:
         case Format::kHlslFxc:
             return GenerateHlsl(options, inspector, ir.Get());
+        case Format::kMsl:
+            return GenerateMsl(options, inspector, ir.Get());
+        case Format::kSpirv:
+        case Format::kSpvAsm:
+            return GenerateSpirv(options, inspector, ir.Get());
         case Format::kGlsl:
             return GenerateGlsl(options, inspector, ir.Get());
         case Format::kWgsl:
             TINT_UNREACHABLE();
-        case Format::kNone:
-            break;
         default:
             std::cerr << "Unknown output format specified\n";
             break;
     }
+
 #else
     std::cerr << "Cannot convert WGSL programs to Tint IR without the WGSL reader\n";
 #endif  // TINT_BUILD_WGSL_READER
@@ -1472,7 +1499,8 @@ int Run(tint::VectorRef<std::string_view> arguments, ExeMode exe_mode) {
     }
 
     if (inspector.GetEntryPoints().empty()) {
-        return Generate(options, inspector, info.program) ? 0 : 1;
+        std::cerr << "no entry point found, entry point required\n";
+        return 1;
     }
 
     bool success = true;

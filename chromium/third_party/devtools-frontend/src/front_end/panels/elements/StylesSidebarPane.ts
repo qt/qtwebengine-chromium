@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007 Apple Inc.  All rights reserved.
@@ -44,11 +44,12 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import {createIcon, Icon} from '../../ui/kit/kit.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import * as PanelsCommon from '../common/common.js';
 
 import * as ElementsComponents from './components/components.js';
 import type {ComputedStyleModel, CSSModelChangedEvent} from './ComputedStyleModel.js';
@@ -58,8 +59,8 @@ import {ImagePreviewPopover} from './ImagePreviewPopover.js';
 import * as LayersWidget from './LayersWidget.js';
 import {StyleEditorWidget} from './StyleEditorWidget.js';
 import {
+  AtRuleSection,
   BlankStylePropertiesSection,
-  FontPaletteValuesRuleSection,
   FunctionRuleSection,
   HighlightPseudoStylePropertiesSection,
   KeyframePropertiesSection,
@@ -135,10 +136,12 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 const FILTER_IDLE_PERIOD = 500;
 // Minimum number of @property rules for the @property section block to be folded initially
 const MIN_FOLDED_SECTIONS_COUNT = 5;
-// Title of the registered properties section
+/** Title of the registered properties section **/
 export const REGISTERED_PROPERTY_SECTION_NAME = '@property';
-// Title of the function section
+/** Title of the function section **/
 export const FUNCTION_SECTION_NAME = '@function';
+/** Title of the general at-rule section */
+export const AT_RULE_SECTION_NAME = '@font-*';
 
 // Highlightable properties are those that can be hovered in the sidebar to trigger a specific
 // highlighting mode on the current element.
@@ -354,6 +357,10 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.jumpToSection(functionName, FUNCTION_SECTION_NAME);
   }
 
+  jumpToFontPaletteDefinition(paletteName: string): void {
+    this.jumpToSection(`@font-palette-values ${paletteName}`, AT_RULE_SECTION_NAME);
+  }
+
   forceUpdate(): void {
     this.needsForceUpdate = true;
     this.#swatchPopoverHelper.hide();
@@ -363,7 +370,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   }
 
   private sectionsContainerKeyDown(event: Event): void {
-    const activeElement = Platform.DOMUtilities.deepActiveElement(this.sectionsContainer.contentElement.ownerDocument);
+    const activeElement = UI.DOMUtilities.deepActiveElement(this.sectionsContainer.contentElement.ownerDocument);
     if (!activeElement) {
       return;
     }
@@ -1153,14 +1160,16 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       blocks.push(block);
     }
 
-    const fontPaletteValuesRule = matchedStyles.fontPaletteValuesRule();
-    if (fontPaletteValuesRule) {
-      const block = SectionBlock.createFontPaletteValuesRuleBlock(fontPaletteValuesRule.name().text);
-      this.idleCallbackManager.schedule(() => {
-        block.sections.push(
-            new FontPaletteValuesRuleSection(this, matchedStyles, fontPaletteValuesRule.style, sectionIdx));
-        sectionIdx++;
-      });
+    const atRules = matchedStyles.atRules();
+    if (atRules.length > 0) {
+      const expandedByDefault = atRules.length <= MIN_FOLDED_SECTIONS_COUNT;
+      const block = SectionBlock.createAtRuleBlock(expandedByDefault);
+      for (const atRule of atRules) {
+        this.idleCallbackManager.schedule(() => {
+          block.sections.push(new AtRuleSection(this, matchedStyles, atRule.style, sectionIdx, expandedByDefault));
+          sectionIdx++;
+        });
+      }
       blocks.push(block);
     }
 
@@ -1495,15 +1504,14 @@ export class SectionBlock {
   readonly #titleElement: Element|null;
   sections: StylePropertiesSection[];
   #expanded = false;
-  #icon: IconButton.Icon.Icon|undefined;
+  #icon: Icon|undefined;
   constructor(titleElement: Element|null, expandable?: boolean, expandedByDefault?: boolean) {
     this.#titleElement = titleElement;
     this.sections = [];
     this.#expanded = expandedByDefault ?? false;
 
     if (expandable && titleElement instanceof HTMLElement) {
-      this.#icon =
-          IconButton.Icon.create(this.#expanded ? 'triangle-down' : 'triangle-right', 'section-block-expand-icon');
+      this.#icon = createIcon(this.#expanded ? 'triangle-down' : 'triangle-right', 'section-block-expand-icon');
       titleElement.classList.toggle('empty-section', !this.#expanded);
       UI.ARIAUtils.setExpanded(titleElement, this.#expanded);
       titleElement.appendChild(this.#icon);
@@ -1543,7 +1551,7 @@ export class SectionBlock {
     const pseudoArgumentString = pseudoArgument ? `(${pseudoArgument})` : '';
     const pseudoTypeString = `${pseudoType}${pseudoArgumentString}`;
     UI.UIUtils.createTextChild(separatorElement, i18nString(UIStrings.inheritedFromSPseudoOf, {PH1: pseudoTypeString}));
-    const link = await Common.Linkifier.Linkifier.linkify(node, {
+    const link = PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(node, {
       preventKeyboardFocus: true,
       tooltip: undefined,
     });
@@ -1575,11 +1583,12 @@ export class SectionBlock {
     return new SectionBlock(separatorElement);
   }
 
-  static createFontPaletteValuesRuleBlock(name: string): SectionBlock {
+  static createAtRuleBlock(expandedByDefault: boolean): SectionBlock {
     const separatorElement = document.createElement('div');
+    const block = new SectionBlock(separatorElement, true, expandedByDefault);
     separatorElement.className = 'sidebar-separator';
-    separatorElement.textContent = `@font-palette-values ${name}`;
-    return new SectionBlock(separatorElement);
+    separatorElement.appendChild(document.createTextNode(AT_RULE_SECTION_NAME));
+    return block;
   }
 
   static createPositionTryBlock(positionTryName: string): SectionBlock {
@@ -1595,7 +1604,7 @@ export class SectionBlock {
     separatorElement.className = 'sidebar-separator';
     separatorElement.setAttribute('jslog', `${VisualLogging.sectionHeader('inherited')}`);
     UI.UIUtils.createTextChild(separatorElement, i18nString(UIStrings.inheritedFroms));
-    const link = await Common.Linkifier.Linkifier.linkify(node, {
+    const link = PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(node, {
       preventKeyboardFocus: true,
       tooltip: undefined,
     });
@@ -1954,7 +1963,7 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
       if (!iconInfo) {
         continue;
       }
-      const icon = new IconButton.Icon.Icon();
+      const icon = new Icon();
       icon.name = iconInfo.iconName;
       icon.classList.add('extra-small');
       icon.style.transform = `rotate(${iconInfo.rotate}deg) scale(${iconInfo.scaleX * 1.1}, ${iconInfo.scaleY * 1.1})`;

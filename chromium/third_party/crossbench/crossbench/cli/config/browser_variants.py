@@ -9,8 +9,8 @@ import argparse
 import contextlib
 import dataclasses
 import logging
-from typing import (TYPE_CHECKING, Any, Final, Iterator, Mapping, Optional,
-                    Self, Sequence, Set, TextIO, Type)
+from typing import TYPE_CHECKING, Any, Final, Iterator, Mapping, Optional, \
+    Self, Sequence, Set, TextIO, Type
 
 from typing_extensions import override
 
@@ -26,8 +26,8 @@ from crossbench.browsers.settings import Settings
 from crossbench.browsers.webkit.downloader import WebKitDownloader
 from crossbench.cli.config.browser import SUPPORTED_EMBEDDER, BrowserConfig
 from crossbench.cli.config.driver_type import BrowserDriverType
-from crossbench.cli.config.flags import (DEFAULT_LABEL, FlagsConfig,
-                                         FlagsGroupConfig, FlagsVariantConfig)
+from crossbench.cli.config.flags import DEFAULT_LABEL, FlagsConfig, \
+    FlagsGroupConfig, FlagsVariantConfig
 from crossbench.cli.config.network import NetworkConfig
 from crossbench.config import ConfigError
 from crossbench.flags.base import Flags
@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 # Add some slack for buffer for browser + platform names. Note that ultimately
 # this is going to get cropped to MAX_PART_LEN.
 MAX_LABEL_LEN: Final[int] = pth.MAX_PART_LEN - 50
+
 
 @contextlib.contextmanager
 def late_argument_type_error_wrapper(flag: str) -> Iterator[None]:
@@ -285,8 +286,8 @@ class BaseBrowserVariantsConfig(abc.ABC):
                             browser_config: BrowserConfig) -> plt.Platform:
     return browser_config.get_platform()
 
-  def _config_for_maybe_downloaded_binary(self,
-                               browser_config: BrowserConfig) -> BrowserConfig:
+  def _config_for_maybe_downloaded_binary(
+      self, browser_config: BrowserConfig) -> BrowserConfig:
     path_or_identifier = browser_config.browser
     if isinstance(path_or_identifier, pth.AnyPath):
       return browser_config
@@ -304,7 +305,6 @@ class BaseBrowserVariantsConfig(abc.ABC):
     if browser_config.driver.is_remote:
       return args.remote_driver_path or browser_config.driver.path
     return args.driver_path or browser_config.driver.path
-
 
   def _append_variant(self, args: argparse.Namespace, label: str,
                       browser_cls: Type[Browser], browser_config: BrowserConfig,

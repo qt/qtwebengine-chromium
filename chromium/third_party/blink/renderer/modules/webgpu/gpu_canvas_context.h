@@ -6,8 +6,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGPU_GPU_CANVAS_CONTEXT_H_
 
 #include "base/containers/heap_array.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_tone_mapping_mode.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_canvas_alpha_mode.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_canvas_tone_mapping_mode.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_factory.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
@@ -69,10 +69,9 @@ class GPUCanvasContext : public ScriptWrappable,
   gfx::ColorSpace GetColorSpace() const override;
   // Produces a snapshot of the current contents of the swap chain if possible
   // or else a snapshot of the most-recently presented contents.
-  scoped_refptr<StaticBitmapImage> GetImage(FlushReason) final;
+  scoped_refptr<StaticBitmapImage> GetImage() final;
   scoped_refptr<StaticBitmapImage> PaintRenderingResultsToSnapshot(
-      SourceDrawingBuffer source_buffer,
-      FlushReason reason) override;
+      SourceDrawingBuffer source_buffer) override;
   bool CopyRenderingResultsToVideoFrame(
       WebGraphicsContext3DVideoFramePool* frame_pool,
       SourceDrawingBuffer src_buffer,
@@ -161,7 +160,7 @@ class GPUCanvasContext : public ScriptWrappable,
 
   PredefinedColorSpace color_space_ = PredefinedColorSpace::kSRGB;
   V8GPUCanvasAlphaMode::Enum alpha_mode_;
-  V8GPUCanvasToneMappingMode::Enum tone_mapping_mode_;
+  V8CanvasToneMappingMode::Enum tone_mapping_mode_;
   scoped_refptr<WebGPUTextureAlphaClearer> alpha_clearer_;
   scoped_refptr<WebGPUSwapBufferProvider> swap_buffers_;
 

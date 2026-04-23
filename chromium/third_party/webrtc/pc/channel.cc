@@ -12,7 +12,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -20,6 +19,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
 #include "api/crypto/crypto_options.h"
 #include "api/jsep.h"
@@ -409,7 +409,7 @@ void BaseChannel::OnNetworkRouteChanged(
 }
 
 void BaseChannel::SetFirstPacketReceivedCallback(
-    std::function<void()> callback) {
+    absl::AnyInvocable<void() &&> callback) {
   RTC_DCHECK_RUN_ON(network_thread());
   RTC_DCHECK(!on_first_packet_received_ || !callback);
 
@@ -422,11 +422,20 @@ void BaseChannel::SetFirstPacketReceivedCallback(
   on_first_packet_received_ = std::move(callback);
 }
 
-void BaseChannel::SetFirstPacketSentCallback(std::function<void()> callback) {
+void BaseChannel::SetFirstPacketSentCallback(
+    absl::AnyInvocable<void() &&> callback) {
   RTC_DCHECK_RUN_ON(network_thread());
   RTC_DCHECK(!on_first_packet_sent_ || !callback);
 
   on_first_packet_sent_ = std::move(callback);
+}
+
+void BaseChannel::SetPacketReceivedCallback_n(
+    absl::AnyInvocable<void()> callback) {
+  RTC_DCHECK_RUN_ON(network_thread());
+  RTC_DCHECK(!on_packet_received_n_ || !callback);
+
+  on_packet_received_n_ = std::move(callback);
 }
 
 void BaseChannel::OnTransportReadyToSend(bool ready) {
@@ -478,7 +487,7 @@ bool BaseChannel::SendPacket(bool rtcp,
   }
 
   if (on_first_packet_sent_ && options.info_signaled_after_sent.is_media) {
-    on_first_packet_sent_();
+    std::move(on_first_packet_sent_)();
     on_first_packet_sent_ = nullptr;
   }
 
@@ -491,7 +500,7 @@ void BaseChannel::OnRtpPacket(const RtpPacketReceived& parsed_packet) {
   RTC_DCHECK(network_initialized());
 
   if (on_first_packet_received_) {
-    on_first_packet_received_();
+    std::move(on_first_packet_received_)();
     on_first_packet_received_ = nullptr;
   }
 
@@ -511,6 +520,9 @@ void BaseChannel::OnRtpPacket(const RtpPacketReceived& parsed_packet) {
                            "SRTP is inactive and crypto is required "
                         << ToString();
     return;
+  }
+  if (on_packet_received_n_) {
+    on_packet_received_n_();
   }
   media_receive_channel()->OnPacketReceived(parsed_packet);
 }
@@ -1072,15 +1084,6 @@ VideoChannel::VideoChannel(
                   srtp_required,
                   crypto_options,
                   ssrc_generator) {
-  // TODO(bugs.webrtc.org/13931): Remove when values are set
-  // in a more sensible fashion
-  send_channel()->SetSendCodecChangedCallback([this]() {
-    // Adjust receive streams based on send codec.
-    receive_channel()->SetReceiverFeedbackParameters(
-        send_channel()->SendCodecHasLntf(), send_channel()->SendCodecHasNack(),
-        send_channel()->SendCodecRtcpMode(),
-        send_channel()->SendCodecRtxTime());
-  });
 }
 
 VideoChannel::~VideoChannel() {
@@ -1224,6 +1227,7 @@ bool VideoChannel::SetRemoteContent_w(const MediaContentDescription* content,
   }
   if (type == SdpType::kAnswer || type == SdpType::kPrAnswer) {
     recv_params.extensions = send_params.extensions;
+    recv_params.rtcp.reduced_size = send_params.rtcp.reduced_size;
     if (!media_receive_channel()->SetReceiverParameters(recv_params)) {
       error_desc = StringFormat(
           "Failed to set recv parameters for m-section with mid='%s'.",
@@ -1232,12 +1236,6 @@ bool VideoChannel::SetRemoteContent_w(const MediaContentDescription* content,
     }
     last_recv_params_ = recv_params;
   }
-  // adjust receive streams based on send codec
-  media_receive_channel()->SetReceiverFeedbackParameters(
-      media_send_channel()->SendCodecHasLntf(),
-      media_send_channel()->SendCodecHasNack(),
-      media_send_channel()->SendCodecRtcpMode(),
-      media_send_channel()->SendCodecRtxTime());
   last_send_params_ = send_params;
 
   return UpdateRemoteStreams_w(content, type, error_desc);

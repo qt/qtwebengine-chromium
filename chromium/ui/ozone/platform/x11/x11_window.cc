@@ -670,7 +670,7 @@ void X11Window::SetFullscreen(bool fullscreen, int64_t target_display_id) {
                                    ui::GuessWindowManager() == ui::WM_METACITY;
 
   if (unmaximize_and_remaximize) {
-    Restore();
+    SetWMStateMaximize(false);
   }
 
   // Fullscreen state changes have to be handled manually and then checked
@@ -688,10 +688,13 @@ void X11Window::SetFullscreen(bool fullscreen, int64_t target_display_id) {
 
   bool was_fullscreen = IsFullscreen();
   state_ = new_state;
-  SetFullscreen(fullscreen);
+  SetWMStateFullscreen(fullscreen);
 
   if (unmaximize_and_remaximize) {
-    Maximize();
+    // Setting the should_maximize_after_map_ same way as it is done in
+    // X11Window::Maximize().
+    should_maximize_after_map_ = !window_mapped_in_client_;
+    SetWMStateMaximize(true);
   }
 
   // Try to guess the size we will have after the switch to/from fullscreen:
@@ -733,7 +736,7 @@ void X11Window::SetFullscreen(bool fullscreen, int64_t target_display_id) {
 void X11Window::Maximize() {
   if (IsFullscreen()) {
     // Unfullscreen the window if it is fullscreen.
-    SetFullscreen(false);
+    SetFullscreen(false, display::kInvalidDisplayId);
 
     // Resize the window so that it does not have the same size as a monitor.
     // (Otherwise, some window managers immediately put the window back in
@@ -756,8 +759,7 @@ void X11Window::Maximize() {
   // save this one for later too.
   should_maximize_after_map_ = !window_mapped_in_client_;
 
-  SetWMSpecState(true, x11::GetAtom("_NET_WM_STATE_MAXIMIZED_VERT"),
-                 x11::GetAtom("_NET_WM_STATE_MAXIMIZED_HORZ"));
+  SetWMStateMaximize(true);
 }
 
 void X11Window::Minimize() {
@@ -773,10 +775,11 @@ void X11Window::Restore() {
   if (IsMinimized()) {
     SetWMSpecState(false, x11::GetAtom("_NET_WM_STATE_HIDDEN"),
                    x11::Atom::None);
+  } else if (IsFullscreen()) {
+    SetFullscreen(false, display::kInvalidDisplayId);
   } else if (IsMaximized()) {
     should_maximize_after_map_ = false;
-    SetWMSpecState(false, x11::GetAtom("_NET_WM_STATE_MAXIMIZED_VERT"),
-                   x11::GetAtom("_NET_WM_STATE_MAXIMIZED_HORZ"));
+    SetWMStateMaximize(false);
   }
 }
 
@@ -1015,11 +1018,10 @@ void X11Window::SetShape(std::unique_ptr<ShapeRects> native_shape,
       native_region.op(gfx::RectToSkIRect(rect), SkRegion::kUnion_Op);
     }
     if (!transform.IsIdentity() && !native_region.isEmpty()) {
-      SkPath path_in_dip;
-      if (native_region.getBoundaryPath(&path_in_dip)) {
-        SkPath path_in_pixels;
-        path_in_dip.transform(gfx::TransformToFlattenedSkMatrix(transform),
-                              &path_in_pixels);
+      if (!native_region.isEmpty()) {
+        const SkPath path_in_pixels =
+            native_region.getBoundaryPath().makeTransform(
+                gfx::TransformToFlattenedSkMatrix(transform));
         xregion = x11::CreateRegionFromSkPath(path_in_pixels);
       } else {
         xregion = std::make_unique<std::vector<x11::Rectangle>>();
@@ -1963,9 +1965,14 @@ void X11Window::Map(bool inactive) {
   connection_->Flush();
 }
 
-void X11Window::SetFullscreen(bool fullscreen) {
+void X11Window::SetWMStateFullscreen(bool fullscreen) {
   SetWMSpecState(fullscreen, x11::GetAtom("_NET_WM_STATE_FULLSCREEN"),
                  x11::Atom::None);
+}
+
+void X11Window::SetWMStateMaximize(bool maximize) {
+  SetWMSpecState(maximize, x11::GetAtom("_NET_WM_STATE_MAXIMIZED_VERT"),
+                 x11::GetAtom("_NET_WM_STATE_MAXIMIZED_HORZ"));
 }
 
 bool X11Window::IsActive() const {

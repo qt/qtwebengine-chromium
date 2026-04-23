@@ -24,13 +24,13 @@ pub mod android_mediacodec;
 #[cfg(feature = "aom")]
 pub mod aom;
 
-use crate::decoder::CodecChoice;
 use crate::decoder::GridImageHelper;
 use crate::image::Image;
 use crate::parser::mp4box::CodecConfiguration;
 use crate::AndroidMediaCodecOutputColorFormat;
 use crate::AvifResult;
 use crate::Category;
+use crate::CodecChoice;
 
 #[cfg(feature = "encoder")]
 use crate::encoder::*;
@@ -64,6 +64,7 @@ pub(crate) trait Decoder {
         spatial_id: u8,
         image: &mut Image,
         category: Category,
+        #[cfg(feature = "android_mediacodec")] signal_eos: bool,
     ) -> AvifResult<()>;
     // Decode a list of input images and outputs them into the |grid_image_helper|.
     fn get_next_image_grid(
@@ -82,7 +83,7 @@ pub(crate) trait Decoder {
 pub(crate) struct EncoderConfig {
     pub tile_rows_log2: i32,
     pub tile_columns_log2: i32,
-    pub quantizer: i32,
+    pub quality: f32, // From 0 (maximum distortion) to 100 (lossless) inclusive.
     pub disable_lagged_output: bool,
     pub is_single_image: bool,
     pub speed: Option<u32>,
@@ -127,13 +128,18 @@ impl EncoderConfig {
         options
     }
 
+    pub(crate) fn quantizer(&self) -> i32 {
+        ((100 - (self.quality.clamp(0.0, 100.0) as i32)) * 63 + 50) / 100
+    }
+
     pub(crate) fn min_max_quantizers(&self) -> (u32, u32) {
-        if self.quantizer == 0 {
+        let quantizer = self.quantizer();
+        if quantizer == 0 {
             (0, 0)
         } else {
             (
-                std::cmp::max(self.quantizer - 4, 0) as u32,
-                std::cmp::min(self.quantizer + 4, 63) as u32,
+                std::cmp::max(quantizer - 4, 0) as u32,
+                std::cmp::min(quantizer + 4, 63) as u32,
             )
         }
     }

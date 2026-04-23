@@ -81,7 +81,9 @@ SVGElement::SVGElement(const QualifiedName& tag_name,
       class_name_(
           MakeGarbageCollected<SVGAnimatedString>(this,
                                                   html_names::kClassAttr)) {
-  SetHasCustomStyleCallbacks();
+  if (!RuntimeEnabledFeatures::Svg2CascadeEnabled()) {
+    SetHasCustomStyleCallbacks();
+  }
 }
 
 void SVGElement::DetachLayoutTree(bool performing_reattach) {
@@ -145,7 +147,7 @@ void SVGElement::ReportAttributeParsingError(SVGParsingError error,
   GetDocument().AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
       mojom::ConsoleMessageSource::kRendering,
       mojom::ConsoleMessageLevel::kError,
-      "Error: " + error.Format(tagName(), name, value)));
+      StrCat({"Error: ", error.Format(tagName(), name, value)})));
 }
 
 String SVGElement::title() const {
@@ -746,14 +748,10 @@ void SVGElement::AttributeChanged(const AttributeModificationParams& params) {
       CssPropertyIdForSVGAttributeName(GetExecutionContext(), params.name);
   if (prop_id > CSSPropertyID::kInvalid) {
     UpdatePresentationAttributeStyle(prop_id, params.name, params.new_value);
-    SynchronizeAttributeInShadowInstances(params.name, params.new_value);
-    return;
   }
-
-  if (RuntimeEnabledFeatures::Svg2CascadeEnabled()) {
-    // TODO(crbug.com/40550039): breaks CSS animations/transitions because the
-    // tree is re-created. We need to copy the attribute instead.
-    InvalidateInstances();
+  if (prop_id > CSSPropertyID::kInvalid ||
+      RuntimeEnabledFeatures::Svg2CascadeEnabled()) {
+    SynchronizeAttributeInShadowInstances(params.name, params.new_value);
   }
 }
 
@@ -795,9 +793,6 @@ void SVGElement::SynchronizeAllSVGAttributes() const {
 
 MutableCSSPropertyValueSet*
 SVGElement::GetPresentationAttributeStyleForDirectUpdate() {
-  if (!RuntimeEnabledFeatures::SvgEagerPresAttrStyleUpdateEnabled()) {
-    return nullptr;
-  }
   // If the element is not attached to the layout tree, then just mark dirty.
   if (!GetLayoutObject()) {
     return nullptr;
@@ -894,17 +889,6 @@ void SVGElement::AddAnimatedPropertyToPresentationAttributeStyle(
 
 const ComputedStyle* SVGElement::CustomStyleForLayoutObject(
     const StyleRecalcContext& style_recalc_context) {
-  // If ResolveStyle() needs to create presentation attribute style for the
-  // SVG object, those values need to be parsed, and we want that to happen in
-  // SVG mode using the element sheet (which is a fake stylesheet used for
-  // things like inline style). We don't need to switch the parser mode here
-  // for correctness, but if we don't, CSSParser::ParseValue() will create a
-  // new parser context due to mismatch. So override it temporarily here
-  // to gain a tiny bit of performance.
-  CSSParserContext::ParserModeOverridingScope scope(
-      *GetDocument().ElementSheet().Contents()->ParserContext(),
-      kSVGAttributeMode);
-
   SVGElement* corresponding_element = CorrespondingElement();
   if (!corresponding_element || RuntimeEnabledFeatures::Svg2CascadeEnabled()) {
     return GetDocument().GetStyleResolver().ResolveStyle(this,
@@ -981,8 +965,10 @@ void SVGElement::NotifyResourceClients() const {
 void SVGElement::InvalidateStyleAttribute(
     bool only_changed_independent_properties) {
   Element::InvalidateStyleAttribute(only_changed_independent_properties);
-  if (RuntimeEnabledFeatures::Svg2CascadeEnabled()) {
-    InvalidateInstances();
+  if (RuntimeEnabledFeatures::Svg2CascadeEnabled() &&
+      !InstancesForElement().empty()) {
+    SynchronizeAttributeInShadowInstances(html_names::kStyleAttr,
+                                          getAttribute(html_names::kStyleAttr));
   }
 }
 
@@ -1222,18 +1208,12 @@ SMILTimeContainer* SVGElement::GetTimeContainer() const {
   return ownerSVGElement()->TimeContainer();
 }
 
-// TODO: When implementing <use> scoping rules this may need to be applied more
-// widely. (crbug.com/40550039)
 void SVGElement::SynchronizeAttributeInShadowInstances(
     const QualifiedName& name,
     const AtomicString& value) {
-  if (RuntimeEnabledFeatures::SvgUseInstancesAttributeSyncEnabled()) {
-    const HeapHashSet<WeakMember<SVGElement>>& set = InstancesForElement();
-    for (SVGElement* instance : set) {
-      instance->SetAttributeWithoutValidation(name, value);
-    }
-  } else {
-    InvalidateInstances();
+  const HeapHashSet<WeakMember<SVGElement>>& set = InstancesForElement();
+  for (SVGElement* instance : set) {
+    instance->SetAttributeWithoutValidation(name, value);
   }
 }
 

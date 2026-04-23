@@ -11,8 +11,7 @@ load(
 )
 
 # buildifier: disable=out-of-order-load
-def register_extension_info(**kwargs):
-    pass
+load("//:register_extension_info.bzl", "register_extension_info")
 
 def xnnpack_src_to_target_name(src):
     src = src.split("/")[-1]
@@ -495,6 +494,7 @@ XNNPACK_PARAMS_FOR_ARCH = {
             "-mavxvnni",
             "-mf16c",
             "-mfma",
+            "-mgfni",
         ],
         msvc_x86_32_copts = ["/arch:AVX"],
         msvc_x86_64_copts = ["/arch:AVX"],
@@ -507,6 +507,7 @@ XNNPACK_PARAMS_FOR_ARCH = {
             "-mavxvnniint8",
             "-mf16c",
             "-mfma",
+            "-mgfni",
         ],
         msvc_x86_32_copts = ["/arch:AVX"],
         msvc_x86_64_copts = ["/arch:AVX"],

@@ -228,8 +228,6 @@ class BlinkTransferableMessageStructTraitsWithFakeGpuTest : public Test {
  public:
   void SetUp() override {
     context_provider_ = viz::TestContextProvider::CreateRaster();
-    context_provider_->UnboundTestRasterInterface()->set_gpu_rasterization(
-        true);
     InitializeSharedGpuContextRaster(context_provider_.get());
   }
 
@@ -246,7 +244,8 @@ class BlinkTransferableMessageStructTraitsWithFakeGpuTest : public Test {
   }
 
   ImageBitmap* CreateAcceleratedStaticImageBitmap() {
-    auto client_si = gpu::ClientSharedImage::CreateForTesting();
+    auto client_si = gpu::ClientSharedImage::CreateForTesting(
+        gpu::SHARED_IMAGE_USAGE_RASTER_READ);
 
     return MakeGarbageCollected<ImageBitmap>(
         AcceleratedStaticBitmapImage::CreateFromCanvasSharedImage(

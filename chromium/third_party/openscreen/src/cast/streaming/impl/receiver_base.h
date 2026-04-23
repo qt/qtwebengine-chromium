@@ -11,6 +11,7 @@
 #include "cast/streaming/public/encoded_frame.h"
 #include "cast/streaming/ssrc.h"
 #include "platform/api/time.h"
+#include "platform/base/error.h"
 #include "platform/base/span.h"
 
 namespace openscreen::cast {
@@ -60,13 +61,26 @@ class ReceiverBase {
   // Sets how much time the consumer will need to decode/buffer/render/etc., and
   // otherwise fully process a frame for on-time playback. This information is
   // used by the Receiver to decide whether to skip past frames that have
-  // arrived too late. This method can be called repeatedly to make adjustments
-  // based on changing environmental conditions. It is HIGHLY recommended that
-  // consumers of this API provide a proper processing time, otherwise there
-  // may be significantly larger playout delays.
+  // arrived too late, as well as adjust the reference time of the frame to
+  // factor in the player processing time -- resulting in the frame being
+  // scheduled for playback earlier and decreasing total playout delay. This
+  // method can be called repeatedly to make adjustments based on changing
+  // environmental conditions. It is HIGHLY recommended that consumers of this
+  // API provide a proper processing time, otherwise there may be significantly
+  // larger playout delays.
   //
   // Default setting: kDefaultPlayerProcessingTime
   virtual void SetPlayerProcessingTime(Clock::duration needed_time) = 0;
+
+  // Called by the consumer to report that a frame has been played out. This is
+  // used to report playback statistics to the sender.
+  //
+  // NOTE: the consumer has until `kMaxUnackedFrames` additional frames have
+  // been consumed *after* `frame_id` to report the playout event, otherwise a
+  // kParameterOutOfRange error will be returned.
+  virtual Error ReportPlayoutEvent(FrameId frame_id,
+                                   RtpTimeTicks rtp_timestamp,
+                                   Clock::time_point playout_time) = 0;
 
   // Propagates a "picture loss indicator" notification to the Sender,
   // requesting a key frame so that decode/playout can recover. It is safe to
@@ -91,8 +105,8 @@ class ReceiverBase {
   // this method after being notified via OnFramesReady(), and it can also call
   // this whenever AdvanceToNextFrame() indicates another frame is ready.
   // `buffer` must point to a sufficiently-sized buffer that will be populated
-  // with the frame's payload data. Upon return |frame->data| will be set to the
-  // portion of the buffer that was populated.
+  // with the frame's payload data. The returned frame's `data` will be set to
+  // the portion of the buffer that was populated.
   virtual EncodedFrame ConsumeNextFrame(ByteBuffer buffer) = 0;
 
   // The default "player processing time" amount. See SetPlayerProcessingTime().

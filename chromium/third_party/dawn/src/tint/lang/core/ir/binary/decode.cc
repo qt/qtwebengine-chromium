@@ -179,6 +179,22 @@ struct Decoder {
         return number;
     }
 
+    /// Checks that the given @p name is valid.
+    /// @returns true if the name is valid.
+    bool CheckName(const std::string& name, const char* kind) {
+        if (DAWN_UNLIKELY(name.find('\0') != std::string::npos)) {
+            err_ << kind << " '" << name << "' contains '\\0' before end of the string\n";
+            return false;
+        }
+
+        // Reject excessively long names as they cause problems in some backends.
+        if (DAWN_UNLIKELY(name.length() > 16384)) {
+            err_ << kind << " '" << name << "' is longer than 16384 characters\n";
+            return false;
+        }
+        return true;
+    }
+
     /// @returns true if all blocks are reachable, acyclic nesting depth is less than or equal to
     /// kMaxBlockDepth.
     bool CheckBlocks() {
@@ -246,10 +262,7 @@ struct Decoder {
 
     void PopulateFunction(ir::Function* fn_out, const pb::Function& fn_in) {
         if (!fn_in.name().empty()) {
-            if (DAWN_UNLIKELY(fn_in.name().find('\0') != std::string::npos)) {
-                err_ << "function name '" << fn_in.name()
-                     << "' contains '\\0' before end of the string\n";
-            } else {
+            if (CheckName(fn_in.name(), "function name")) {
                 mod_out_.SetName(fn_out, fn_in.name());
             }
         }
@@ -812,9 +825,7 @@ struct Decoder {
             return mod_out_.Types().invalid();
         }
 
-        if (DAWN_UNLIKELY(struct_name.find('\0') != std::string::npos)) {
-            err_ << "structure name '" << struct_name
-                 << "' contains '\\0' before end of the string\n";
+        if (!CheckName(struct_name, "struct name")) {
             return mod_out_.Types().invalid();
         }
 
@@ -832,9 +843,7 @@ struct Decoder {
                 return mod_out_.Types().invalid();
             }
 
-            if (DAWN_UNLIKELY(member_name.find('\0') != std::string::npos)) {
-                err_ << "member name '" << member_name
-                     << "' contains '\\0' before end of the string\n";
+            if (!CheckName(member_name, "member name")) {
                 return mod_out_.Types().invalid();
             }
 
@@ -1159,9 +1168,7 @@ struct Decoder {
         }
         auto* res_out = b.InstructionResult(type);
         if (!res_in.name().empty()) {
-            if (DAWN_UNLIKELY(res_in.name().find('\0') != std::string::npos)) {
-                err_ << "result name '" << res_in.name()
-                     << "' contains '\\0' before end of the string\n";
+            if (!CheckName(res_in.name(), "result name")) {
                 return nullptr;
             }
             mod_out_.SetName(res_out, res_in.name());
@@ -1177,9 +1184,7 @@ struct Decoder {
         }
         auto* param_out = b.FunctionParam(type);
         if (!param_in.name().empty()) {
-            if (DAWN_UNLIKELY(param_in.name().find('\0') != std::string::npos)) {
-                err_ << "param name '" << param_in.name()
-                     << "' contains '\\0' before end of the string\n";
+            if (!CheckName(param_in.name(), "param name")) {
                 return nullptr;
             }
             mod_out_.SetName(param_out, param_in.name());
@@ -1219,9 +1224,7 @@ struct Decoder {
         }
         auto* param_out = b.BlockParam(type);
         if (!param_in.name().empty()) {
-            if (DAWN_UNLIKELY(param_in.name().find('\0') != std::string::npos)) {
-                err_ << "param name '" << param_in.name()
-                     << "' contains '\\0' before end of the string\n";
+            if (!CheckName(param_in.name(), "param name")) {
                 return nullptr;
             }
             mod_out_.SetName(param_out, param_in.name());
@@ -1312,8 +1315,13 @@ struct Decoder {
             uint32_t i = static_cast<uint32_t>(elements_out.Length());
             auto* value = ConstantValue(element_id);
             if (auto* el_type = type->Element(i); DAWN_UNLIKELY(value->Type() != el_type)) {
-                err_ << "constant composite element value type " << value->Type()->FriendlyName()
-                     << " does not match element type " << el_type->FriendlyName() << "\n";
+                if (!el_type) {
+                    err_ << "constant composite has a null element type\n";
+                } else {
+                    err_ << "constant composite element value type "
+                         << value->Type()->FriendlyName() << " does not match element type "
+                         << el_type->FriendlyName() << "\n";
+                }
                 return b.InvalidConstant()->Value();
             }
             elements_out.Push(value);
@@ -1714,6 +1722,8 @@ struct Decoder {
                 return core::BuiltinValue::kSubgroupInvocationId;
             case pb::BuiltinValue::subgroup_size:
                 return core::BuiltinValue::kSubgroupSize;
+            case pb::BuiltinValue::num_subgroups:
+                return core::BuiltinValue::kNumSubgroups;
             case pb::BuiltinValue::vertex_index:
                 return core::BuiltinValue::kVertexIndex;
             case pb::BuiltinValue::workgroup_id:
@@ -2036,12 +2046,22 @@ struct Decoder {
                 return core::BuiltinFn::kSubgroupMatrixMultiply;
             case pb::BuiltinFn::subgroup_matrix_multiply_accumulate:
                 return core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate;
+            case pb::BuiltinFn::subgroup_matrix_scalar_add:
+                return core::BuiltinFn::kSubgroupMatrixScalarAdd;
+            case pb::BuiltinFn::subgroup_matrix_scalar_multiply:
+                return core::BuiltinFn::kSubgroupMatrixScalarMultiply;
+            case pb::BuiltinFn::subgroup_matrix_scalar_subtract:
+                return core::BuiltinFn::kSubgroupMatrixScalarSubtract;
             case pb::BuiltinFn::print:
                 return core::BuiltinFn::kPrint;
             case pb::BuiltinFn::has_binding:
                 return core::BuiltinFn::kHasBinding;
             case pb::BuiltinFn::get_binding:
                 return core::BuiltinFn::kGetBinding;
+            case pb::BuiltinFn::has_resource:
+                return core::BuiltinFn::kHasResource;
+            case pb::BuiltinFn::get_resource:
+                return core::BuiltinFn::kGetResource;
 
             case pb::BuiltinFn::BuiltinFn_INT_MIN_SENTINEL_DO_NOT_USE_:
             case pb::BuiltinFn::BuiltinFn_INT_MAX_SENTINEL_DO_NOT_USE_:
@@ -2053,11 +2073,11 @@ struct Decoder {
 
 }  // namespace
 
-Result<Module> Decode(Slice<const std::byte> encoded) {
+Result<Module> Decode(std::span<const std::byte> encoded) {
     GOOGLE_PROTOBUF_VERIFY_VERSION;
 
     pb::Module mod_in;
-    if (!mod_in.ParseFromArray(encoded.data, static_cast<int>(encoded.len))) {
+    if (!mod_in.ParseFromArray(encoded.data(), static_cast<int>(encoded.size()))) {
         return Failure{"failed to deserialize protobuf"};
     }
 

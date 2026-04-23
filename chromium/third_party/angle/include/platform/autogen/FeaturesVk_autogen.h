@@ -260,6 +260,12 @@ struct FeaturesVk : FeatureSetBase
         &members,
     };
 
+    FeatureInfo supportsMultiviewMultisampleRenderToTexture = {
+        "supportsMultiviewMultisampleRenderToTexture",
+        FeatureCategory::VulkanFeatures,
+        &members,
+    };
+
     FeatureInfo forceD16TexFilter = {
         "forceD16TexFilter",
         FeatureCategory::VulkanWorkarounds,
@@ -1142,6 +1148,12 @@ struct FeaturesVk : FeatureSetBase
         &members,
     };
 
+    FeatureInfo allowHostImageCopyAfterInitialUpload = {
+        "allowHostImageCopyAfterInitialUpload",
+        FeatureCategory::VulkanFeatures,
+        &members,
+    };
+
     FeatureInfo enableParallelCompileAndLink = {
         "enableParallelCompileAndLink",
         FeatureCategory::VulkanFeatures,
@@ -1270,6 +1282,12 @@ struct FeaturesVk : FeatureSetBase
 
     FeatureInfo useVkEventForBufferBarrier = {
         "useVkEventForBufferBarrier",
+        FeatureCategory::VulkanFeatures,
+        &members,
+    };
+
+    FeatureInfo isVertexSyncDeferred = {
+        "isVertexSyncDeferred",
         FeatureCategory::VulkanFeatures,
         &members,
     };
@@ -1570,6 +1588,42 @@ struct FeaturesVk : FeatureSetBase
 
     FeatureInfo externallySynchronizePipelineCacheAccess = {
         "externallySynchronizePipelineCacheAccess",
+        FeatureCategory::VulkanWorkarounds,
+        &members,
+    };
+
+    FeatureInfo supportShaderPixelLocalStorageAngle = {
+        "supportShaderPixelLocalStorageAngle",
+        FeatureCategory::VulkanFeatures,
+        &members,
+    };
+
+    FeatureInfo debugClDumpCommandStream = {
+        "debugClDumpCommandStream",
+        FeatureCategory::VulkanFeatures,
+        &members,
+    };
+
+    FeatureInfo supportsShaderAtomicInt64 = {
+        "supportsShaderAtomicInt64",
+        FeatureCategory::VulkanFeatures,
+        &members,
+    };
+
+    FeatureInfo forceSizePointerForBoundVertexBuffers = {
+        "forceSizePointerForBoundVertexBuffers",
+        FeatureCategory::VulkanFeatures,
+        &members,
+    };
+
+    FeatureInfo supportFragmentShadingRateExtExtensions = {
+        "supportFragmentShadingRateExtExtensions",
+        FeatureCategory::VulkanFeatures,
+        &members,
+    };
+
+    FeatureInfo dropDepthStencilClearOnInvalidate = {
+        "dropDepthStencilClearOnInvalidate",
         FeatureCategory::VulkanWorkarounds,
         &members,
     };

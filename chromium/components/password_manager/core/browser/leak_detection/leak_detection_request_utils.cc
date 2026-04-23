@@ -13,13 +13,14 @@
 #include "base/debug/dump_without_crashing.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/task/thread_pool.h"
 #include "components/password_manager/core/browser/leak_detection/encryption_utils.h"
 #include "components/password_manager/core/browser/leak_detection/single_lookup_response.h"
+#include "components/signin/public/base/oauth_consumer_id.h"
 #include "components/signin/public/identity_manager/access_token_fetcher.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
-#include "components/signin/public/identity_manager/oauth_consumer_ids.h"
 #include "crypto/sha2.h"
 #include "google_apis/gaia/core_account_id.h"
 
@@ -49,8 +50,7 @@ LookupSingleLeakPayload ProduceHashes(std::string_view username,
   LookupSingleLeakPayload payload;
   payload.username_hash_prefix = BucketizeUsername(canonicalized_username);
   payload.encrypted_payload =
-      ScryptHashUsernameAndPassword(canonicalized_username, password)
-          .value_or("");
+      ScryptHashUsernameAndPassword(canonicalized_username, password);
   if (payload.encrypted_payload.empty()) {
     return LookupSingleLeakPayload();
   }

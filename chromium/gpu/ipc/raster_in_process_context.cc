@@ -13,7 +13,6 @@
 #include "base/task/single_thread_task_runner.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/raster_cmd_helper.h"
-#include "gpu/command_buffer/client/raster_implementation_gles.h"
 #include "gpu/command_buffer/client/shared_memory_limits.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/common/command_buffer.h"
@@ -78,7 +77,7 @@ ContextResult RasterInProcessContext::Initialize(
   raster_implementation_ = std::make_unique<raster::RasterImplementation>(
       raster_helper.get(), transfer_buffer_.get(),
       /*lose_context_when_out_of_memory=*/lose_context_when_out_of_memory,
-      command_buffer_.get(), nullptr /* image_decode_accelerator */);
+      command_buffer_.get());
   result = raster_implementation_->Initialize(memory_limits);
   raster_implementation_->SetLostContextCallback(base::BindOnce(
       []() { EXPECT_TRUE(false) << "Unexpected lost context."; }));

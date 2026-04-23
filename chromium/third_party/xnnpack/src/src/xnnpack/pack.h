@@ -103,11 +103,24 @@ XNN_INTERNAL void xnn_pack_qs8_to_qu8_gemm_goi_w(
     const int8_t* k, const int32_t* b, const float* scale, void* packed_weights,
     size_t extra_bytes, const struct xnn_qs8_packing_params* params);
 
+typedef void (*xnn_pack_qs8_qc2w_gemm_fn)(
+    size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
+    const uint8_t* kernel, const int32_t* bias, const float* scale,
+    void* packed_weights, size_t extra_bytes,
+    const struct xnn_qs8_qc2w_packing_params* params);
+
 typedef void (*xnn_pack_qs8_qc4w_gemm_fn)(
     size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
     const uint8_t* kernel, const int32_t* bias, const float* scale,
     void* packed_weights, size_t extra_bytes,
     const struct xnn_qs8_qc4w_packing_params* params);
+
+// 2 bit signed for qd8
+XNN_INTERNAL void xnn_pack_qs8_qc2w_gemm_goi_w(
+    size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
+    const uint8_t* k, const int32_t* b, const float* scale,
+    void* packed_weights, size_t extra_bytes,
+    const struct xnn_qs8_qc2w_packing_params* params);
 
 // 4 bit signed for qd8
 XNN_INTERNAL void xnn_pack_qs8_qc4w_gemm_goi_w(
@@ -513,6 +526,20 @@ XNN_INTERNAL size_t xnn_packed_stride_kai_qb4_weights_and_biases(
     size_t k_stride,                            //
     size_t extra_bytes);
 
+XNN_INTERNAL void xnn_pack_kai_f16_conv_goki_w_sme(size_t g,              //
+                                                   size_t nc,             //
+                                                   size_t ks,             //
+                                                   size_t kc,             //
+                                                   size_t nr,             //
+                                                   size_t kr,             //
+                                                   size_t sr,             //
+                                                   const uint16_t* k,     //
+                                                   const uint16_t* b,     //
+                                                   const void* scale,     //
+                                                   void* packed_weights,  //
+                                                   size_t extra_bytes,    //
+                                                   const void* params);
+
 XNN_INTERNAL void xnn_pack_kai_qs8_conv_goki_w_sme2(
     size_t g,              //
     size_t nc,             //
@@ -527,13 +554,40 @@ XNN_INTERNAL void xnn_pack_kai_qs8_conv_goki_w_sme2(
     void* packed_weights,  //
     size_t extra_bytes,    //
     const struct xnn_qs8_packing_params* params);
+
+// Returns the packed RHS size (in bytes) per group for KAI f16 conv_goki
+// packer.
+XNN_INTERNAL size_t xnn_packed_size_kai_f16_conv_goki_w(size_t nc,  //
+                                                        size_t ks,  //
+                                                        size_t kc   //
+);
 #endif  // XNN_ENABLE_KLEIDIAI
+
+XNN_INTERNAL size_t xnn_packed_stride_qc2w_weights_and_biases(
+    const struct xnn_gemm_config* gemm_config, size_t k, size_t unused_k_stride,
+    size_t unused_extra_bytes);
+
+XNN_INTERNAL void xnn_pack_qc2w_weights_and_biases(
+    uint32_t flags, const struct xnn_gemm_config* gemm_config,
+    size_t input_channels, size_t output_channels, size_t groups,
+    size_t unused_block_size, size_t k_stride, const void* accumulator_init,
+    const void* weights, xnn_init_scale_params_fn init_extra_data0_fn,
+    const void* extra_data0, size_t extra_data0_element_size,
+    xnn_init_scale_params_fn init_extra_data1_fn, const void* extra_data1,
+    size_t extra_data1_element_size, void* packed_weights_ptr,
+    const void* params);
 
 XNN_INTERNAL void xnn_pack_qs8_to_qu8_gemm_gio_w(
     size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
     size_t k_stride, const int8_t* kernel, const int32_t* bias,
     const float* scale, void* packed_weights, size_t extra_bytes,
     const struct xnn_qs8_packing_params* params);
+
+XNN_INTERNAL void xnn_pack_qs8_qc2w_gemm_gio_w(
+    size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
+    size_t k_stride, const uint8_t* k, const int32_t* b, const float* scale,
+    void* packed_weights, size_t extra_bytes,
+    const struct xnn_qs8_qc2w_packing_params* params);
 
 XNN_INTERNAL void xnn_pack_qs8_qc4w_gemm_gio_w(
     size_t g, size_t nc, size_t kc, size_t nr, size_t kr, size_t sr,
@@ -576,6 +630,17 @@ typedef void (*xnn_pack_f16_igemm_fn)(size_t g, size_t nc, size_t ks, size_t kc,
                                       const uint16_t* bias, const void* scale,
                                       uint16_t* packed_weights,
                                       size_t extra_bytes, const void* params);
+
+/*
+ * KleidiAI variant: same signature except the destination pointer type is
+ * void*. Some KleidiAI packers (e.g. xnn_pack_kai_f16_conv_goki_w_sme) use
+ * void* for the packed_weights parameter. Provide a typedef to allow tests to
+ * pass these packers while still keeping type safety at the call site.
+ */
+typedef void (*xnn_pack_f16_igemm_void_dst_fn)(
+    size_t g, size_t nc, size_t ks, size_t kc, size_t nr, size_t kr, size_t sr,
+    const uint16_t* kernel, const uint16_t* bias, const void* scale,
+    void* packed_weights, size_t extra_bytes, const void* params);
 
 XNN_INTERNAL void xnn_pack_f16_conv_goki_w(
     size_t g, size_t nc, size_t ks, size_t kc, size_t nr, size_t kr, size_t sr,

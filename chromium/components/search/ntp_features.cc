@@ -37,7 +37,12 @@ BASE_FEATURE(kCustomizeChromeSidePanelExtensionsCard,
 
 // If enabled, shows wallpaper search within the Customize Chrome Side Panel.
 // This is a kill switch. Keep indefinitely.
-BASE_FEATURE(kCustomizeChromeWallpaperSearch, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kCustomizeChromeWallpaperSearch,
+#if BUILDFLAG(IS_ANDROID)
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#else
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
 // If enabled, shows entry point on Customize Chrome Side Panel's Appearance
 // page for Wallpaper Search.";
@@ -82,6 +87,9 @@ BASE_FEATURE(kNtpCalendarModule, base::FEATURE_ENABLED_BY_DEFAULT);
 // If enabled, chrome cart module will be shown.
 BASE_FEATURE(kNtpChromeCartModule, base::FEATURE_ENABLED_BY_DEFAULT);
 
+// If enabled, customization of Chrome will be promoted on the NTP.
+BASE_FEATURE(kNtpCustomizeChromeAutoOpen, base::FEATURE_DISABLED_BY_DEFAULT);
+
 #if !defined(OFFICIAL_BUILD)
 // If enabled, dummy modules will be shown.
 // This is a development switch. Keep indefinitely.
@@ -94,7 +102,7 @@ BASE_FEATURE(kNtpDriveModule, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // If enabled, the NTP Drive module does not require sync.
 BASE_FEATURE(kNtpDriveModuleHistorySyncRequirement,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // If enabled, segmentation data will be collected to decide whether or not to
 // show the Drive module.
@@ -230,6 +238,9 @@ BASE_FEATURE(kNtpMobilePromo, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kNtpMicrosoftAuthenticationModule,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// If enabled, the features of NTP Next (AI action chips etc.) will be shown.
+BASE_FEATURE(kNtpNextFeatures, base::FEATURE_DISABLED_BY_DEFAULT);
+
 // If enabled, the OGB loader will request for the async bar parts payload type.
 BASE_FEATURE(kNtpOneGoogleBarAsyncBarParts, base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -245,6 +256,18 @@ BASE_FEATURE(kNtpTabGroupsModule,
 // tab groups.
 BASE_FEATURE(kNtpTabGroupsModuleZeroState,
              "kNtpTabGroupsModuleZeroState",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// If enabled, stale modules will be auto-removed from the NTP.
+BASE_FEATURE(kNtpFeatureOptimizationModuleRemoval,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// If enabled, stale shortcuts will be auto-removed from the NTP.
+BASE_FEATURE(kNtpFeatureOptimizationShortcutsRemoval,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// If enabled, the dismiss module buttons will be removed from the NTP modules.
+BASE_FEATURE(kNtpFeatureOptimizationDismissModulesRemoval,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 const char kNtpModuleIgnoredCriteriaThreshold[] =
@@ -312,6 +335,47 @@ const char kNtpWallpaperSearchButtonAnimationShownThresholdParam[] =
     "NtpWallpaperSearchButtonAnimationShownThresholdParam";
 const char kWallpaperSearchHatsDelayParam[] = "WallpaperSearchHatsDelayParam";
 const char kNtpMobilePromoTargetUrlParam[] = "NtpMobilePromoTargetUrlParam";
+
+const base::FeatureParam<bool> kNtpNextShowStaticTextParam(
+    &ntp_features::kNtpNextFeatures,
+    "NtpNextShowStaticTextParam",
+    false);
+const base::FeatureParam<bool> kNtpNextClientSensitivityCheckParam(
+    &ntp_features::kNtpNextFeatures,
+    "NtpNextClientSensitivityCheckParam",
+    false);
+const base::FeatureParam<bool> kNtpNextShowDeepDiveSuggestionsParam(
+    &ntp_features::kNtpNextFeatures,
+    "NtpNextShowDeepDiveSuggestionsParam",
+    false);
+const base::FeatureParam<bool>
+    kNtpNextSuggestionsFromNewSearchSuggestionsEndpointParam(
+        &ntp_features::kNtpNextFeatures,
+        "NtpNextSuggestionsFromNewSearchSuggestionsEndpointParam",
+        false);
+const base::FeatureParam<bool> kNtpNextShowSimplificationUIParam(
+    &ntp_features::kNtpNextFeatures,
+    "NtpNextShowSimplificationUIParam",
+    false);
+const base::FeatureParam<bool> kNtpNextShowDismissalUIParam(
+    &ntp_features::kNtpNextFeatures,
+    "NtpNextShowDismissalUIParam",
+    false);
+const base::FeatureParam<int> kMaxTilesBeforeShowMore{
+    &ntp_features::kNtpNextFeatures, "max_tiles_before_show_more", 5};
+const base::FeatureParam<bool> kAddTabUploadDelayOnActionChipClick(
+    &ntp_features::kNtpNextFeatures,
+    "AddTabUploadDelayOnActionChipClick",
+    false);
+
+const base::FeatureParam<int> kNtpCustomizeChromeAutoShownMaxCount(
+    &ntp_features::kNtpCustomizeChromeAutoOpen,
+    "max_customize_chrome_auto_shown_count",
+    5);
+const base::FeatureParam<int> kNtpCustomizeChromeAutoShownSessionMaxCount(
+    &ntp_features::kNtpCustomizeChromeAutoOpen,
+    "max_customize_chrome_auto_shown_session_count",
+    5);
 
 const base::FeatureParam<std::string> kNtpCalendarModuleExperimentParam(
     &ntp_features::kNtpCalendarModule,
@@ -410,6 +474,25 @@ const base::FeatureParam<size_t> kNtpTabGroupsModuleMaxGroupCountParam(
     "kNtpTabGroupsModuleMaxGroupCountParam",
     4);
 
+const base::FeatureParam<base::TimeDelta>
+    kShortcutsMinStalenessUpdateTimeInterval(
+        &ntp_features::kNtpFeatureOptimizationShortcutsRemoval,
+        "ShortcutsMinStalenessUpdateTimeInterval",
+        base::Days(1));
+const base::FeatureParam<int> kStaleShortcutsCountThreshold(
+    &ntp_features::kNtpFeatureOptimizationShortcutsRemoval,
+    "StaleShortcutsCountThreshold",
+    60);
+
+const base::FeatureParam<base::TimeDelta> kModuleMinStalenessUpdateTimeInterval(
+    &ntp_features::kNtpFeatureOptimizationModuleRemoval,
+    "ModuleMinStalenessUpdateTimeInterval",
+    base::Days(1));
+const base::FeatureParam<int> kStaleModulesCountThreshold(
+    &ntp_features::kNtpFeatureOptimizationModuleRemoval,
+    "StaleModulesCountThreshold",
+    14);
+
 base::TimeDelta GetModulesLoadTimeout() {
   std::string param_value = base::GetFieldTrialParamValueByFeature(
       kNtpModulesLoadTimeoutMilliseconds,
@@ -458,6 +541,10 @@ std::string GetMobilePromoTargetURL() {
       ntp_features::kNtpMobilePromo,
       ntp_features::kNtpMobilePromoTargetUrlParam);
   return (field_trial_url.empty()) ? kMobilePromoQRCodeURL : field_trial_url;
+}
+
+int GetMaxTilesBeforeShowMore() {
+  return kMaxTilesBeforeShowMore.Get();
 }
 
 }  // namespace ntp_features

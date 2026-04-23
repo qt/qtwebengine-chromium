@@ -260,7 +260,7 @@ declare_args() {
   # outside of Chromium.
   use_asan_backup_ref_ptr =
       build_with_chromium && is_asan &&
-      (is_win || is_android || is_linux || is_mac || is_chromeos)
+      (is_win || is_android || is_linux || is_apple || is_chromeos)
 
   # Use probe-on-destruct unowned ptr detection with ASAN.
   use_raw_ptr_asan_unowned_impl = false
@@ -522,12 +522,6 @@ declare_args() {
   raw_ptr_zero_on_construct = raw_ptr_zero_on_construct_default
   raw_ptr_zero_on_move = raw_ptr_zero_on_move_default
   raw_ptr_zero_on_destruct = raw_ptr_zero_on_destruct_default
-}
-
-declare_args() {
-  # Assert that PartitionAlloc and MiraclePtr run on C++20 when set to true.
-  # Embedders may opt-out of using C++ 20 build.
-  assert_cpp20 = assert_cpp20_default
 }
 
 declare_args() {

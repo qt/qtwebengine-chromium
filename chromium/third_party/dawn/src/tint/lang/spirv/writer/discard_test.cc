@@ -40,7 +40,7 @@ TEST_F(SpirvWriterTest, Discard) {
 
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
     front_facing->SetBuiltin(core::BuiltinValue::kFrontFacing);
-    auto* ep = b.Function("ep", ty.f32(), core::ir::Function::PipelineStage::kFragment);
+    auto* ep = b.Function("main", ty.f32(), core::ir::Function::PipelineStage::kFragment);
     ep->SetParams({front_facing});
     ep->SetReturnLocation(0_u);
 
@@ -56,7 +56,7 @@ TEST_F(SpirvWriterTest, Discard) {
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST(R"(
-   %ep_inner = OpFunction %float None %16
+ %main_inner = OpFunction %float None %16
 %front_facing = OpFunctionParameter %bool
          %17 = OpLabel
                OpSelectionMerge %18 None
@@ -92,7 +92,7 @@ TEST_F(SpirvWriterTest, DiscardBeforeAtomic) {
 
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
     front_facing->SetBuiltin(core::BuiltinValue::kFrontFacing);
-    auto* ep = b.Function("ep", ty.f32(), core::ir::Function::PipelineStage::kFragment);
+    auto* ep = b.Function("main", ty.f32(), core::ir::Function::PipelineStage::kFragment);
     ep->SetParams({front_facing});
     ep->SetReturnLocation(0_u);
 
@@ -108,8 +108,8 @@ TEST_F(SpirvWriterTest, DiscardBeforeAtomic) {
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST(R"(
-               ; Function ep_inner
-   %ep_inner = OpFunction %float None %16
+               ; Function main_inner
+ %main_inner = OpFunction %float None %16
 %front_facing = OpFunctionParameter %bool
          %17 = OpLabel
                OpSelectionMerge %18 None
@@ -143,13 +143,13 @@ TEST_F(SpirvWriterTest, DiscardBeforeAtomic) {
 
 TEST_F(SpirvWriterTest, Discard_DemoteToHelperWithExtension) {
     Options opts{};
-    opts.use_demote_to_helper_invocation_extensions = true;
+    opts.extensions.use_demote_to_helper_invocation = true;
 
     auto* v = b.Var("v", ty.ptr<private_, i32>());
     v->SetInitializer(b.Constant(42_i));
     mod.root_block->Append(v);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    auto* func = b.Function("main", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
         b.Discard();
         auto* load = b.Load(v);
@@ -165,13 +165,13 @@ TEST_F(SpirvWriterTest, Discard_DemoteToHelperWithExtension) {
 
 TEST_F(SpirvWriterTest, Discard_DemoteToHelperAsTransform) {
     Options opts{};
-    opts.use_demote_to_helper_invocation_extensions = false;
+    opts.extensions.use_demote_to_helper_invocation = false;
 
     auto* v = b.Var("v", ty.ptr<private_, i32>());
     v->SetInitializer(b.Constant(42_i));
     mod.root_block->Append(v);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    auto* func = b.Function("main", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
         b.Discard();
         auto* load = b.Load(v);

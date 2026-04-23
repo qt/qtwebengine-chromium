@@ -239,11 +239,11 @@ inline EDisplay CssValueIDToPlatformEnum(CSSValueID v) {
   if (v == CSSValueID::kRubyText) {
     return EDisplay::kRubyText;
   }
-  if (v == CSSValueID::kMasonry) {
-    return EDisplay::kMasonry;
+  if (v == CSSValueID::kGridLanes) {
+    return EDisplay::kGridLanes;
   }
-  if (v == CSSValueID::kInlineMasonry) {
-    return EDisplay::kInlineMasonry;
+  if (v == CSSValueID::kInlineGridLanes) {
+    return EDisplay::kInlineGridLanes;
   }
 
   NOTREACHED();
@@ -337,11 +337,11 @@ inline CSSValueID PlatformEnumToCSSValueID(EDisplay v) {
   if (v == EDisplay::kRubyText) {
     return CSSValueID::kRubyText;
   }
-  if (v == EDisplay::kMasonry) {
-    return CSSValueID::kMasonry;
+  if (v == EDisplay::kGridLanes) {
+    return CSSValueID::kGridLanes;
   }
-  if (v == EDisplay::kInlineMasonry) {
-    return CSSValueID::kInlineMasonry;
+  if (v == EDisplay::kInlineGridLanes) {
+    return CSSValueID::kInlineGridLanes;
   }
 
   NOTREACHED();
@@ -522,6 +522,10 @@ inline TryTactic CssValueIDToPlatformEnum(CSSValueID v) {
       return TryTactic::kFlipInline;
     case CSSValueID::kFlipStart:
       return TryTactic::kFlipStart;
+    case CSSValueID::kFlipX:
+      return TryTactic::kFlipX;
+    case CSSValueID::kFlipY:
+      return TryTactic::kFlipY;
     default:
       NOTREACHED();
   }
@@ -538,20 +542,36 @@ inline CSSValueID PlatformEnumToCSSValueID(TryTactic v) {
       return CSSValueID::kFlipInline;
     case TryTactic::kFlipStart:
       return CSSValueID::kFlipStart;
+    case TryTactic::kFlipX:
+      return CSSValueID::kFlipX;
+    case TryTactic::kFlipY:
+      return CSSValueID::kFlipY;
   }
 }
 
 template <>
 inline EAnimationTriggerBehavior CssValueIDToPlatformEnum(CSSValueID v) {
   switch (v) {
-    case CSSValueID::kOnce:
-      return EAnimationTriggerBehavior::kOnce;
-    case CSSValueID::kRepeat:
-      return EAnimationTriggerBehavior::kRepeat;
-    case CSSValueID::kAlternate:
-      return EAnimationTriggerBehavior::kAlternate;
-    case CSSValueID::kState:
-      return EAnimationTriggerBehavior::kState;
+    case CSSValueID::kPlay:
+      return EAnimationTriggerBehavior::kPlay;
+    case CSSValueID::kPause:
+      return EAnimationTriggerBehavior::kPause;
+    case CSSValueID::kReset:
+      return EAnimationTriggerBehavior::kReset;
+    case CSSValueID::kPlayOnce:
+      return EAnimationTriggerBehavior::kPlayOnce;
+    case CSSValueID::kPlayAlternate:
+      return EAnimationTriggerBehavior::kPlayAlternate;
+    case CSSValueID::kPlayForwards:
+      return EAnimationTriggerBehavior::kPlayForwards;
+    case CSSValueID::kPlayBackwards:
+      return EAnimationTriggerBehavior::kPlayBackwards;
+    case CSSValueID::kPlayPause:
+      return EAnimationTriggerBehavior::kPlayPause;
+    case CSSValueID::kReplay:
+      return EAnimationTriggerBehavior::kReplay;
+    case CSSValueID::kNone:
+      return EAnimationTriggerBehavior::kNone;
     default:
       NOTREACHED();
   }
@@ -560,14 +580,26 @@ inline EAnimationTriggerBehavior CssValueIDToPlatformEnum(CSSValueID v) {
 template <>
 inline CSSValueID PlatformEnumToCSSValueID(EAnimationTriggerBehavior v) {
   switch (v) {
-    case EAnimationTriggerBehavior::kOnce:
-      return CSSValueID::kOnce;
-    case EAnimationTriggerBehavior::kRepeat:
-      return CSSValueID::kRepeat;
-    case EAnimationTriggerBehavior::kAlternate:
-      return CSSValueID::kAlternate;
-    case EAnimationTriggerBehavior::kState:
-      return CSSValueID::kState;
+    case EAnimationTriggerBehavior::kPlay:
+      return CSSValueID::kPlay;
+    case EAnimationTriggerBehavior::kPause:
+      return CSSValueID::kPause;
+    case EAnimationTriggerBehavior::kReset:
+      return CSSValueID::kReset;
+    case EAnimationTriggerBehavior::kPlayOnce:
+      return CSSValueID::kPlayOnce;
+    case EAnimationTriggerBehavior::kPlayAlternate:
+      return CSSValueID::kPlayAlternate;
+    case EAnimationTriggerBehavior::kPlayForwards:
+      return CSSValueID::kPlayForwards;
+    case EAnimationTriggerBehavior::kPlayBackwards:
+      return CSSValueID::kPlayBackwards;
+    case EAnimationTriggerBehavior::kPlayPause:
+      return CSSValueID::kPlayPause;
+    case EAnimationTriggerBehavior::kReplay:
+      return CSSValueID::kReplay;
+    case EAnimationTriggerBehavior::kNone:
+      return CSSValueID::kNone;
     default:
       NOTREACHED();
   }
@@ -636,17 +668,48 @@ inline CSSValueID PlatformEnumToCSSValueID(PositionAreaRegion v) {
       return CSSValueID::kYStart;
     case PositionAreaRegion::kYEnd:
       return CSSValueID::kYEnd;
-    case PositionAreaRegion::kXSelfStart:
-      return CSSValueID::kXSelfStart;
-    case PositionAreaRegion::kXSelfEnd:
-      return CSSValueID::kXSelfEnd;
-    case PositionAreaRegion::kYSelfStart:
-      return CSSValueID::kYSelfStart;
-    case PositionAreaRegion::kYSelfEnd:
-      return CSSValueID::kYSelfEnd;
+    case PositionAreaRegion::kSelfXStart:
+      return CSSValueID::kSelfXStart;
+    case PositionAreaRegion::kSelfXEnd:
+      return CSSValueID::kSelfXEnd;
+    case PositionAreaRegion::kSelfYStart:
+      return CSSValueID::kSelfYStart;
+    case PositionAreaRegion::kSelfYEnd:
+      return CSSValueID::kSelfYEnd;
     case PositionAreaRegion::kAny:
       return CSSValueID::kAny;
   }
+}
+
+template <>
+inline TextJustify CssValueIDToPlatformEnum(CSSValueID v) {
+  switch (v) {
+    case CSSValueID::kNone:
+      return TextJustify::kNone;
+    case CSSValueID::kInterWord:
+      return TextJustify::kInterWord;
+    case CSSValueID::kInterCharacter:
+    case CSSValueID::kDistribute:
+      return TextJustify::kInterCharacter;
+    case CSSValueID::kAuto:
+    default:
+      return TextJustify::kAuto;
+  }
+}
+
+template <>
+inline CSSValueID PlatformEnumToCSSValueID(TextJustify v) {
+  switch (v) {
+    case TextJustify::kAuto:
+      return CSSValueID::kAuto;
+    case TextJustify::kNone:
+      return CSSValueID::kNone;
+    case TextJustify::kInterWord:
+      return CSSValueID::kInterWord;
+    case TextJustify::kInterCharacter:
+      return CSSValueID::kInterCharacter;
+  }
+  NOTREACHED();
 }
 
 }  // namespace blink

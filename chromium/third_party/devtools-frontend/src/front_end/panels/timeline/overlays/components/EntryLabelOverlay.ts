@@ -1,9 +1,9 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
-import '../../../../ui/components/icon_button/icon_button.js';
+import '../../../../ui/kit/kit.js';
 import '../../../../ui/components/tooltips/tooltips.js';
 import '../../../../ui/components/spinners/spinners.js';
 
@@ -15,6 +15,7 @@ import * as Root from '../../../../core/root/root.js';
 import * as AiAssistanceModels from '../../../../models/ai_assistance/ai_assistance.js';
 import * as Buttons from '../../../../ui/components/buttons/buttons.js';
 import * as ComponentHelpers from '../../../../ui/components/helpers/helpers.js';
+import * as UIHelpers from '../../../../ui/helpers/helpers.js';
 import * as UI from '../../../../ui/legacy/legacy.js';
 import * as ThemeSupport from '../../../../ui/legacy/theme_support/theme_support.js';
 import * as Lit from '../../../../ui/lit/lit.js';
@@ -183,10 +184,10 @@ export class EntryLabelOverlay extends HTMLElement {
   /**
    * Required to generate a label with AI.
    */
-  #callTree: AiAssistanceModels.AICallTree|null = null;
+  #callTree: AiAssistanceModels.AICallTree.AICallTree|null = null;
   // Creates or gets the setting if it exists.
   #aiAnnotationsEnabledSetting = Common.Settings.Settings.instance().createSetting('ai-annotations-enabled', false);
-  #agent = new AiAssistanceModels.PerformanceAnnotationsAgent({
+  #agent = new AiAssistanceModels.PerformanceAnnotationsAgent.PerformanceAnnotationsAgent({
     aidaClient: new Host.AidaClient.AidaClient(),
     serverSideLoggingEnabled: isAiAssistanceServerSideLoggingEnabled(),
   });
@@ -246,7 +247,7 @@ export class EntryLabelOverlay extends HTMLElement {
   /**
    * So we can provide a mocked agent in tests. Do not call this method outside of a test!
    */
-  overrideAIAgentForTest(agent: AiAssistanceModels.PerformanceAnnotationsAgent): void {
+  overrideAIAgentForTest(agent: AiAssistanceModels.PerformanceAnnotationsAgent.PerformanceAnnotationsAgent): void {
     this.#agent = agent;
   }
 
@@ -497,7 +498,7 @@ export class EntryLabelOverlay extends HTMLElement {
     selection?.addRange(range);
   }
 
-  set callTree(callTree: AiAssistanceModels.AICallTree|null) {
+  set callTree(callTree: AiAssistanceModels.AICallTree.AICallTree|null) {
     this.#callTree = callTree;
     // If the entry has a calltree, we need to check if we need to show the 'generate label' button.
     this.#setAIButtonRenderState();
@@ -574,7 +575,7 @@ export class EntryLabelOverlay extends HTMLElement {
         },
       ],
       onLearnMoreClick: () => {
-        UI.UIUtils.openInNewTab('https://developer.chrome.com/docs/devtools/performance/annotations#auto-annotations');
+        UIHelpers.openInNewTab('https://developer.chrome.com/docs/devtools/performance/annotations#auto-annotations');
       },
       learnMoreButtonText: UIStringsNotTranslate.learnMoreButton,
     });
@@ -676,7 +677,10 @@ export class EntryLabelOverlay extends HTMLElement {
         @mousedown=${(e: Event) => e.preventDefault()}>
         <button
           class="ai-label-button enabled"
-          @click=${this.#handleAiButtonClick}>
+          @click=${this.#handleAiButtonClick}
+          jslog=${VisualLogging.link('timeline.annotations.ai-generate-label').track({
+            click: true,
+          })}>
           <devtools-icon
             class="pen-icon extra-large"
             name="pen-spark"

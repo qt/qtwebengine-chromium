@@ -56,7 +56,6 @@ class State(BaseState):
 
 class D8Shell:
 
-
   def __init__(self,
                platform: plt.Platform,
                d8_bin: pth.LocalPath,

@@ -40,6 +40,7 @@ FFMPEG_STACK_DIRECTION: Final[dict[Orientation, str]] = {
     Orientation.VERTICAL: "vstack",
 }
 
+
 class VideoProbe(Probe):
   """
   General-purpose Probe that collects screen-recordings.
@@ -127,11 +128,12 @@ class VideoProbe(Probe):
         binaries=("ffmpeg",), message="Missing binaries for video probe: {}")
     # Check that ffmpeg can be executed
     env.check_sh_success("ffmpeg", "-version")
-    env.check_installed(
-        binaries=("montage",),
-        message="Missing 'montage' binary, please install imagemagick.")
-    # Check that montage can be executed
-    env.check_sh_success("montage", "--version")
+    if self.generate_timestrip:
+      env.check_installed(
+          binaries=("montage",),
+          message="Missing 'montage' binary, please install imagemagick.")
+      # Check that montage can be executed
+      env.check_sh_success("montage", "--version")
     self._pre_check_viewport_size(env)
 
   def _pre_check_viewport_size(self, env: RunnerEnv) -> None:
@@ -344,8 +346,8 @@ class VideoProbeContext(ProbeContext[VideoProbe]):
 
   def stop_process(self) -> None:
     if self._record_process:
-      self.browser_platform.terminate_gracefully(self._record_process,
-                                                 timeout=5)
+      self.browser_platform.terminate_gracefully(
+          self._record_process, timeout=5)
       self._record_process = None
 
   def _convert_to_constant_framerate(self) -> None:

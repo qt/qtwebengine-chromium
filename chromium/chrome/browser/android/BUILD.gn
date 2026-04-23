@@ -5,7 +5,10 @@
 source_set("tabs_public") {
   public = [ "tab_features.h" ]
 
-  public_deps = [ "//base" ]
+  public_deps = [
+    "//base",
+    "//ui/base/unowned_user_data",
+  ]
 
   deps = [ "//content/public/browser" ]
 }
@@ -16,11 +19,14 @@ source_set("tabs_impl") {
   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
   deps = [
     ":tabs_public",
-    "//chrome/browser/privacy_sandbox/incognito:tab_observer",
+    "//chrome/browser/contextual_search",
     "//chrome/browser/sync",
+    "//chrome/browser/ui/contextual_search",
     "//components/external_intents/android",
     "//components/favicon/content",
+    "//components/lens",
     "//components/metrics:content",
+    "//components/tabs:public",
     "//content/public/browser",
   ]
 }

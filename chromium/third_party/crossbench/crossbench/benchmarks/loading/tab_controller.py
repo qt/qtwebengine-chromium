@@ -15,6 +15,7 @@ from crossbench.parse import NumberParser
 
 
 class TabController(ConfigObject):
+
   @classmethod
   @override
   def parse_str(cls, value: str) -> TabController:
@@ -54,12 +55,12 @@ class TabController(ConfigObject):
     return True
 
 
-
 @dataclasses.dataclass(frozen=True)
 class SingleTabController(TabController):
   """
   Open given urls in one tab sequentially.
   """
+
   def __iter__(self) -> Iterator[None]:
     yield None
 

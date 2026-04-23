@@ -1065,7 +1065,7 @@ bool SkPngCodec::onGetGainmapCodec(SkGainmapInfo* info, std::unique_ptr<SkCodec>
         return false;
     }
 
-    sk_sp<SkData> data = fGainmapStream->getData();
+    sk_sp<const SkData> data = fGainmapStream->getData();
     if (!data) {
         return false;
     }
@@ -1135,7 +1135,7 @@ std::unique_ptr<SkCodec> Decode(std::unique_ptr<SkStream> stream,
     return SkPngCodec::MakeFromStream(std::move(stream), outResult, chunkReader);
 }
 
-std::unique_ptr<SkCodec> Decode(sk_sp<SkData> data,
+std::unique_ptr<SkCodec> Decode(sk_sp<const SkData> data,
                                 SkCodec::Result* outResult,
                                 SkCodecs::DecodeContext ctx) {
     if (!data) {

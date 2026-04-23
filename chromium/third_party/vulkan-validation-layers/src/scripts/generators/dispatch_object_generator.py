@@ -54,11 +54,11 @@ class APISpecific:
                         'enabled': '!settings.disabled[stateless_checks]'
                     },
                     {
-                        'include': 'generated/deprecation.h',
-                        'device': 'deprecation::Device',
-                        'instance': 'deprecation::Instance',
-                        'type': 'LayerObjectTypeDeprecation',
-                        'enabled': 'settings.enabled[deprecation_detection]'
+                        'include': 'generated/legacy.h',
+                        'device': 'legacy::Device',
+                        'instance': 'legacy::Instance',
+                        'type': 'LayerObjectTypeLegacy',
+                        'enabled': 'settings.enabled[legacy_detection]'
                     },
                     {
                         'include': 'object_tracker/object_lifetime_validation.h',
@@ -103,7 +103,7 @@ class APISpecific:
                     },
                     {
                         'include': 'sync/sync_validation.h',
-                        'device': 'SyncValidator',
+                        'device': 'syncval::SyncValidator',
                         'instance': 'syncval::Instance',
                         'type': 'LayerObjectTypeSyncValidation',
                         'enabled': 'settings.enabled[sync_validation]'

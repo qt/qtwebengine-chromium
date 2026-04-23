@@ -184,10 +184,6 @@ namespace gfx {
 class Rect;
 }
 
-namespace glic {
-class GlicWidgetDelegate;
-}
-
 namespace javascript_dialogs {
 class AppModalDialogViewViews;
 }
@@ -270,7 +266,8 @@ using AccessibleTitleChangedCallback = base::RepeatingCallback<void()>;
 class VIEWS_EXPORT WidgetDelegate {
  public:
   using ClientViewFactory =
-      base::OnceCallback<std::unique_ptr<ClientView>(Widget*)>;
+      base::OnceCallback<std::unique_ptr<ClientView>(Widget*,
+                                                     /*contents_view=*/View*)>;
   using OverlayViewFactory = base::OnceCallback<std::unique_ptr<View>()>;
 
   // FrameViewFactory is a RepeatingCallback because the
@@ -475,7 +472,6 @@ class VIEWS_EXPORT WidgetDelegate {
     friend class ::ShareThisTabDialogView;
     friend class ::SigninViewControllerDelegateViews;
     friend class ::ash::InformedRestoreController;
-    friend class ::glic::GlicWidgetDelegate;
     friend class ::native_app_window::NativeAppWindowViews;
     friend class ::plus_addresses::PlusAddressCreationDialogDelegate;
     friend class ::remoting::MessageBoxCore;

@@ -19,7 +19,6 @@ CSSAnimationData::CSSAnimationData() : CSSTimingData(InitialDuration()) {
   range_end_list_.push_back(InitialRangeEnd());
   composition_list_.push_back(InitialComposition());
   timeline_trigger_name_list_.push_back(InitialTimelineTriggerName());
-  timeline_trigger_behavior_list_.push_back(InitialTimelineTriggerBehavior());
   timeline_trigger_source_list_.push_back(InitialTimelineTriggerSource());
   timeline_trigger_range_start_list_.push_back(
       InitialTimelineTriggerRangeStart());
@@ -38,7 +37,7 @@ std::optional<double> CSSAnimationData::InitialDuration() {
 }
 
 const AtomicString& CSSAnimationData::InitialName() {
-  DEFINE_STATIC_LOCAL(const AtomicString, name, ("none"));
+  DEFINE_STATIC_LOCAL(const AtomicString, name, (""));
   return name;
 }
 
@@ -87,10 +86,12 @@ const StyleTimeline& CSSAnimationData::GetTimelineTriggerSource(
   return GetRepeated(timeline_trigger_source_list_, index);
 }
 
-const Member<const StyleTriggerAttachmentVector>&
+const Member<const StyleTriggerAttachmentVector>
 CSSAnimationData::GetTriggerAttachments(size_t index) const {
   DCHECK_LT(index, name_list_.size());
-  return trigger_attachments_list_.at(index % trigger_attachments_list_.size());
+  return (index < trigger_attachments_list_.size())
+             ? trigger_attachments_list_.at(index)
+             : nullptr;
 }
 
 }  // namespace blink

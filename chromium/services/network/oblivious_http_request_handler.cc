@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
+#include <string>
 
 #include "base/i18n/time_formatting.h"
 #include "base/rand_util.h"
@@ -112,13 +114,14 @@ std::string CreateAndSerializeBhttpMessage(
     const std::string& method,
     mojom::ObliviousHttpRequestBodyPtr request_body,
     net::HttpRequestHeaders::HeaderVector headers) {
-  std::string host_port = request_url.host();
+  std::string host_port = request_url.GetHost();
   if (request_url.has_port()) {
-    host_port += ":" + request_url.port();
+    host_port += ":" + request_url.GetPort();
   }
 
-  quiche::BinaryHttpRequest bhttp_request(
-      {method, request_url.scheme(), host_port, request_url.PathForRequest()});
+  quiche::BinaryHttpRequest bhttp_request({method, request_url.GetScheme(),
+                                           host_port,
+                                           request_url.PathForRequest()});
   bhttp_request.AddHeaderField({net::HttpRequestHeaders::kHost, host_port});
   // Date should be provided by the client to allow for server anti-replay
   // protections (according to the OHTTP spec).
@@ -430,7 +433,7 @@ void ObliviousHttpRequestHandler::RespondWithError(
 
 void ObliviousHttpRequestHandler::OnRequestComplete(
     mojo::RemoteSetElementId id,
-    std::unique_ptr<std::string> response) {
+    std::optional<std::string> response) {
   auto state_iter = client_state_.find(id);
   CHECK(state_iter != client_state_.end());
 
@@ -448,7 +451,7 @@ void ObliviousHttpRequestHandler::OnRequestComplete(
   }
 
   auto maybe_payload =
-      state->ohttp_client->DecryptResponse(std::move(*response));
+      state->ohttp_client->DecryptResponse(std::move(response).value());
   if (!maybe_payload) {
     RespondWithError(id, net::ERR_INVALID_RESPONSE,
                      /*outer_response_error_code=*/std::nullopt);

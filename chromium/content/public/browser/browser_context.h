@@ -25,7 +25,6 @@
 #include "content/public/browser/prefetch_priority.h"
 #include "content/public/browser/prefetch_request_status_listener.h"
 #include "content/public/browser/zoom_level_delegate.h"
-#include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "net/http/http_request_headers.h"
 #include "third_party/blink/public/mojom/blob/blob.mojom-forward.h"
@@ -224,7 +223,8 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
       std::unique_ptr<PrefetchRequestStatusListener> request_status_listener,
       base::TimeDelta ttl,
       bool should_append_variations_header,
-      bool should_disable_block_until_head_timeout);
+      bool should_disable_block_until_head_timeout,
+      bool should_bypass_http_cache);
 
   // Updates the "Accept Language" header that the prefetch service delegate
   // will use.
@@ -351,10 +351,6 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // rvalue ensure that the this method can be called without having access
   // to the declaration of ChromeBrowserContext proto.
   void WriteIntoTrace(perfetto::TracedProto<TraceProto> context) const;
-
-  // Deprecated. Do not add new callers.
-  // TODO(crbug.com/40604019): Get rid of ResourceContext.
-  ResourceContext* GetResourceContext() const;
 
   // Grant third-party cookie access to certain sites that the user visited in
   // the past, according to the popup heuristics described at

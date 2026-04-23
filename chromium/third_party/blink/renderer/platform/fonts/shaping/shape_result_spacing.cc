@@ -6,21 +6,18 @@
 
 #include "third_party/blink/renderer/platform/fonts/font.h"
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
-#include "third_party/blink/renderer/platform/text/text_run.h"
+#include "third_party/blink/renderer/platform/text/justification_opportunity.h"
+#include "third_party/blink/renderer/platform/wtf/text/utf16.h"
 
 namespace blink {
 
-template <typename TextContainerType>
-bool ShapeResultSpacing<TextContainerType>::SetSpacing(
-    const FontDescription& font_description) {
+bool ShapeResultSpacing::SetSpacing(const FontDescription& font_description) {
   return SetSpacing(TextRunLayoutUnit(font_description.LetterSpacing()),
                     TextRunLayoutUnit(font_description.WordSpacing()));
 }
 
-template <typename TextContainerType>
-bool ShapeResultSpacing<TextContainerType>::SetSpacing(
-    TextRunLayoutUnit letter_spacing,
-    TextRunLayoutUnit word_spacing) {
+bool ShapeResultSpacing::SetSpacing(TextRunLayoutUnit letter_spacing,
+                                    TextRunLayoutUnit word_spacing) {
   if (!letter_spacing && !word_spacing) {
     has_spacing_ = false;
     return false;
@@ -34,62 +31,40 @@ bool ShapeResultSpacing<TextContainerType>::SetSpacing(
   return true;
 }
 
-template <typename TextContainerType>
-void ShapeResultSpacing<TextContainerType>::SetExpansion(
-    InlineLayoutUnit expansion,
-    TextDirection direction,
-    bool allows_leading_expansion,
-    bool allows_trailing_expansion) {
+void ShapeResultSpacing::SetExpansion(TextJustify method,
+                                      InlineLayoutUnit expansion,
+                                      TextDirection direction,
+                                      bool allows_leading_expansion,
+                                      bool allows_trailing_expansion) {
   DCHECK_GT(expansion, InlineLayoutUnit());
+  justification_method_ = method;
   expansion_ = expansion;
   ComputeExpansion(allows_leading_expansion, allows_trailing_expansion,
                    direction);
   has_spacing_ |= HasExpansion();
 }
 
-template <typename TextContainerType>
-void ShapeResultSpacing<TextContainerType>::SetSpacingAndExpansion(
-    const FontDescription& font_description) {
-  // Available only for TextRun since it has expansion data.
-  NOTREACHED();
+void ShapeResultSpacing::SetSpacing(const FontDescription& font_description,
+                                    bool normalize_space) {
+  if (SetSpacing(font_description)) {
+    normalize_space_ = normalize_space;
+    allow_tabs_ = false;
+  }
 }
 
-template <>
-void ShapeResultSpacing<TextRun>::SetSpacingAndExpansion(
-    const FontDescription& font_description) {
-  SetSpacingAndExpansion(font_description, text_.NormalizeSpace());
-}
-
-template <typename TextContentType>
-void ShapeResultSpacing<TextContentType>::SetSpacingAndExpansion(
-    const FontDescription& font_description,
-    bool normalize_space) {
-  letter_spacing_ = TextRunLayoutUnit(font_description.LetterSpacing());
-  word_spacing_ = TextRunLayoutUnit(font_description.WordSpacing());
-  expansion_ = InlineLayoutUnit();
-  has_spacing_ = letter_spacing_ || word_spacing_;
-  if (!has_spacing_)
-    return;
-
-  normalize_space_ = normalize_space;
-  allow_tabs_ = false;
-}
-
-template <typename TextContainerType>
-void ShapeResultSpacing<TextContainerType>::ComputeExpansion(
-    bool allows_leading_expansion,
-    bool allows_trailing_expansion,
-    TextDirection direction) {
+void ShapeResultSpacing::ComputeExpansion(bool allows_leading_expansion,
+                                          bool allows_trailing_expansion,
+                                          TextDirection direction) {
   DCHECK_GT(expansion_, InlineLayoutUnit());
 
   is_after_expansion_ = !allows_leading_expansion;
   bool is_after_expansion = is_after_expansion_;
   if (text_.Is8Bit()) {
     expansion_opportunity_count_ = Character::ExpansionOpportunityCount(
-        text_.Span8(), direction, is_after_expansion);
+        justification_method_, text_.Span8(), direction, is_after_expansion);
   } else {
     expansion_opportunity_count_ = Character::ExpansionOpportunityCount(
-        text_.Span16(), direction, is_after_expansion);
+        justification_method_, text_.Span16(), direction, is_after_expansion);
   }
   if (is_after_expansion && !allows_trailing_expansion &&
       expansion_opportunity_count_ > 0) {
@@ -102,8 +77,7 @@ void ShapeResultSpacing<TextContainerType>::ComputeExpansion(
   }
 }
 
-template <typename TextContainerType>
-TextRunLayoutUnit ShapeResultSpacing<TextContainerType>::NextExpansion() {
+TextRunLayoutUnit ShapeResultSpacing::NextExpansion() {
   if (!expansion_opportunity_count_) {
     NOTREACHED();
   }
@@ -120,8 +94,7 @@ TextRunLayoutUnit ShapeResultSpacing<TextContainerType>::NextExpansion() {
   return expansion_per_opportunity_;
 }
 
-template <typename TextContainerType>
-TextRunLayoutUnit ShapeResultSpacing<TextContainerType>::ComputeSpacing(
+TextRunLayoutUnit ShapeResultSpacing::ComputeSpacing(
     const ComputeSpacingParameters& parameters,
     float& offset,
     bool is_cursive_script) {
@@ -156,44 +129,53 @@ TextRunLayoutUnit ShapeResultSpacing<TextContainerType>::ComputeSpacing(
     is_word_spacing_applied_ = true;
   }
 
-  if (!HasExpansion())
-    return spacing;
+  return spacing;
+}
 
-  if (treat_as_space)
-    return spacing + NextExpansion();
+std::pair<float, TextRunLayoutUnit> ShapeResultSpacing::ComputeExpansion(
+    unsigned index,
+    bool is_cursive_script) {
+  if (!HasExpansion() || index >= text_.length()) {
+    return {0.0f, TextRunLayoutUnit()};
+  }
+  DCHECK(!normalize_space_);
+  DCHECK(!allow_tabs_);
 
-  if (text_.Is8Bit())
-    return spacing;
+  float spacing_before = 0;
+  TextRunLayoutUnit spacing_after;
 
-  // isCJKIdeographOrSymbol() has expansion opportunities both before and
-  // after each character.
-  // http://www.w3.org/TR/jlreq/#line_adjustment
-  if (U16_IS_LEAD(character) && index + 1 < text_.length() &&
-      U16_IS_TRAIL(text_[index + 1]))
-    character = U16_GET_SUPPLEMENTARY(character, text_[index + 1]);
-  if (!Character::IsCJKIdeographOrSymbol(character)) {
-    if (!Character::IsDefaultIgnorable(character)) {
-      is_after_expansion_ = false;
-    }
-    return spacing;
+  bool opportunity_before = false;
+  bool opportunity_after = false;
+  if (text_.Is8Bit()) {
+    auto pair = CheckJustificationOpportunity8(
+        justification_method_, text_[index], is_after_expansion_);
+    opportunity_before = pair.first;
+    opportunity_after = pair.second;
+  } else {
+    VLOG(0) << __func__ << " size=" << text_.Span16().size()
+            << " index=" << index;
+    auto pair = CheckJustificationOpportunity16(
+        justification_method_, CodePointAt(text_.Span16(), index),
+        is_after_expansion_);
+    opportunity_before = pair.first;
+    opportunity_after = pair.second;
   }
 
-  if (!is_after_expansion_) {
+  if (opportunity_before) {
     // Take the expansion opportunity before this ideograph.
     TextRunLayoutUnit expand_before = NextExpansion();
     if (expand_before) {
-      offset += expand_before.ToFloat();
-      spacing += expand_before;
+      spacing_before += expand_before.ToFloat();
+      spacing_after += expand_before;
     }
-    if (!HasExpansion())
-      return spacing;
+    if (!HasExpansion()) {
+      return {spacing_before, spacing_after};
+    }
   }
-
-  return spacing + NextExpansion();
+  if (opportunity_after) {
+    return {spacing_before, spacing_after + NextExpansion()};
+  }
+  return {spacing_before, spacing_after};
 }
-
-// Instantiate the template class.
-template class ShapeResultSpacing<TextRun>;
-template class ShapeResultSpacing<String>;
 
 }  // namespace blink

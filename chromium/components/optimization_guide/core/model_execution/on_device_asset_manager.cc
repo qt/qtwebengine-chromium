@@ -6,12 +6,15 @@
 
 #include <memory>
 
+#include "base/task/thread_pool.h"
 #include "components/optimization_guide/core/delivery/optimization_guide_model_provider.h"
 #include "components/optimization_guide/core/model_execution/model_execution_features.h"
 #include "components/optimization_guide/core/model_execution/model_execution_util.h"
+#include "components/optimization_guide/core/model_execution/on_device_features.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_adaptation_loader.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_service_controller.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
+#include "components/optimization_guide/public/mojom/model_broker.mojom-data-view.h"
 #include "components/prefs/pref_service.h"
 
 namespace optimization_guide {
@@ -49,8 +52,16 @@ OnDeviceAssetManager::OnDeviceAssetManager(
           base::BindRepeating(
               &OnDeviceModelServiceController::MaybeUpdateModelAdaptation,
               service_controller.GetWeakPtr())),
-      text_safety_model_observation_(&model_provider, this),
-      language_detection_model_observation_(&model_provider, this) {
+      text_safety_model_observation_(
+          &model_provider,
+          base::ThreadPool::CreateSequencedTaskRunner(
+              {base::MayBlock(), base::TaskPriority::BEST_EFFORT}),
+          this),
+      language_detection_model_observation_(
+          &model_provider,
+          base::ThreadPool::CreateSequencedTaskRunner(
+              {base::MayBlock(), base::TaskPriority::BEST_EFFORT}),
+          this) {
   usage_tracker_->AddObserver(this);
   on_device_component_state_manager_->AddObserver(this);
 
@@ -120,7 +131,7 @@ void OnDeviceAssetManager::StateChanged(
   }
   std::optional<OnDeviceBaseModelSpec> new_spec =
       state ? std::make_optional(state->GetBaseModelSpec()) : std::nullopt;
-  for (auto feature : kAllModelBasedCapabilityKeys) {
+  for (auto feature : OnDeviceFeatureSet::All()) {
     adaptation_loaders_.MaybeRegisterModelDownload(
         feature, new_spec,
         usage_tracker_->WasOnDeviceEligibleFeatureRecentlyUsed(feature));
@@ -128,7 +139,7 @@ void OnDeviceAssetManager::StateChanged(
 }
 
 void OnDeviceAssetManager::OnDeviceEligibleFeatureFirstUsed(
-    ModelBasedCapabilityKey feature) {
+    mojom::OnDeviceFeature feature) {
   const OnDeviceModelComponentState* state =
       on_device_component_state_manager_->GetState();
   std::optional<OnDeviceBaseModelSpec> new_spec =

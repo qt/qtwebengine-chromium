@@ -1,16 +1,16 @@
 // Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import type * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
-import * as Platform from '../../core/platform/platform.js';
 import * as Geometry from '../../models/geometry/geometry.js';
-import * as IconButton from '../components/icon_button/icon_button.js';
+import {createIcon} from '../kit/kit.js';
 import * as VisualLogging from '../visual_logging/visual_logging.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
+import {appendStyle} from './DOMUtilities.js';
 import {AnchorBehavior, GlassPane, MarginBehavior, PointerEventsBehavior} from './GlassPane.js';
 import {ListControl, type ListDelegate, ListMode} from './ListControl.js';
 import {Events as ListModelEvents, type ItemsReplacedEvent, type ListModel} from './ListModel.js';
@@ -38,7 +38,6 @@ export class SoftDropDown<T> implements ListDelegate<T> {
   private list: ListControl<T>;
   private rowHeight: number;
   private width: number;
-  private listWasShowing200msAgo: boolean;
 
   constructor(model: ListModel<T>, delegate: Delegate<T>, jslogContext?: string) {
     this.delegate = delegate;
@@ -55,9 +54,9 @@ export class SoftDropDown<T> implements ListDelegate<T> {
       );
     }
     this.element.classList.add('soft-dropdown');
-    Platform.DOMUtilities.appendStyle(this.element, softDropDownButtonStyles);
+    appendStyle(this.element, softDropDownButtonStyles);
     this.titleElement = this.element.createChild('span', 'title');
-    const dropdownArrowIcon = IconButton.Icon.create('triangle-down');
+    const dropdownArrowIcon = createIcon('triangle-down');
     this.element.appendChild(dropdownArrowIcon);
     ARIAUtils.setExpanded(this.element, false);
 
@@ -79,9 +78,8 @@ export class SoftDropDown<T> implements ListDelegate<T> {
         'jslog',
         `${VisualLogging.menu().parent('mapped').track({resize: true, keydown: 'ArrowUp|ArrowDown|PageUp|PageDown'})}`);
 
-    this.listWasShowing200msAgo = false;
     this.element.addEventListener('mousedown', event => {
-      if (this.listWasShowing200msAgo) {
+      if (this.glassPane.isShowing()) {
         this.hide(event);
       } else if (!this.element.disabled) {
         this.show(event);
@@ -96,9 +94,6 @@ export class SoftDropDown<T> implements ListDelegate<T> {
         return;
       }
 
-      if (!this.listWasShowing200msAgo) {
-        return;
-      }
       this.selectHighlightedItem();
       if (event.target instanceof Element && event.target?.parentElement) {
         // hide() will consume the mouseup event and click won't be triggered
@@ -122,9 +117,6 @@ export class SoftDropDown<T> implements ListDelegate<T> {
       this.list.selectItem(this.selectedItem);
     }
     event.consume(true);
-    window.setTimeout(() => {
-      this.listWasShowing200msAgo = true;
-    }, 200);
   }
 
   private updateGlasspaneSize(): void {
@@ -134,9 +126,6 @@ export class SoftDropDown<T> implements ListDelegate<T> {
   }
 
   private hide(event: Event): void {
-    window.setTimeout(() => {
-      this.listWasShowing200msAgo = false;
-    }, 200);
     this.glassPane.hide();
     this.list.selectItem(null);
     ARIAUtils.setExpanded(this.element, false);

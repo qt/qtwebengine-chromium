@@ -36,18 +36,13 @@ Note that openscreen does not use other features of `depot_tools` like `repo` or
 ## Checking out code
 
 From the parent directory of where you want the openscreen checkout (e.g.,
-`~/my_project_dir`), configure `gclient` and check out openscreen with the
-following commands:
+`~/my_project_dir`), check out openscreen with the following command:
 
 ```bash
-    cd ~/my_project_dir
-    gclient config https://chromium.googlesource.com/openscreen
-    gclient sync
+    fetch openscreen
 ```
 
-The first `gclient` command will create a default .gclient file in
-`~/my_project_dir` that describes how to pull down the `openscreen` repository.
-The second command creates an `openscreen/` subdirectory, downloads the source
+This command will create an `openscreen/` subdirectory, downloads the source
 code, all third-party dependencies, and the toolchain needed to build things;
 and at their appropriate revisions.
 
@@ -68,21 +63,19 @@ dependencies that have changed.
 
 The following are the main tools are required for development/builds.
 
-- Installed by gclient automatically
+- Installed by gclient automatically:
   - Build file generator: `gn` (installed into `buildtools/`)
   - Code formatter: `clang-format` (installed into `buildtools/`)
   - Builder: `ninja`
   - Compiler/Linker: `clang`
-- Installed by you
-  - JSON validator: `yajsv`
-  - `libstdc++`
-  - `gcc`
-  - XCode
+- Installed by you:
+  - `libstdc++` (Linux only)
+  - `gcc` (Linux only, optional)
+  - XCode (macOS only)
 
-## yajsv installation
-
-1. Install `go` from [https://golang.org](https://golang.org) or your Linux package manager.
-2. `go install github.com/neilpa/yajsv@latest`
+NOTE: some executables, like the standalone cast_sender and cast_receiver
+binaries (see the Cast Streaming [README.md](cast/streaming/README.md)), have
+additional dependencies not listed here.
 
 ## libstdc++ (Linux only)
 
@@ -93,16 +86,7 @@ instance of it. On Debian flavors, you can run:
    sudo apt-get install libstdc++-8-dev libstdc++6-8-dbg
 ```
 
-## XCode (Mac only)
-
-You can install the XCode command-line tools only or the full version of
-[XCode](https://apps.apple.com/us/app/xcode/id497799835?mt=12).
-
-```bash
-xcode-select --install
-```
-
-##  gcc (optional, Linux only)
+##  gcc (Linux only, optional)
 
 Setting the `gn` argument `is_clang=false` on Linux enables building using gcc
 instead.
@@ -117,6 +101,15 @@ run:
 
 ```bash
   sudo apt-get install gcc-9
+```
+
+## XCode (macOS only)
+
+You can install the XCode command-line tools only or the full version of
+[XCode](https://apps.apple.com/us/app/xcode/id497799835?mt=12).
+
+```bash
+xcode-select --install
 ```
 
 ## Debug build

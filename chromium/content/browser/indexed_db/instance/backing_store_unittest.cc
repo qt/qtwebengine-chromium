@@ -7,10 +7,10 @@
 #include <memory>
 #include <string>
 
-#include "base/files/file_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/gmock_expected_support.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
 #include "content/browser/indexed_db/instance/backing_store_test_base.h"
 #include "content/browser/indexed_db/instance/backing_store_util.h"
@@ -44,17 +44,12 @@ namespace content::indexed_db {
 class BackingStoreTest : public testing::WithParamInterface<bool>,
                          public BackingStoreTestBase {
  public:
-  BackingStoreTest()
-      : sqlite_override_(BucketContext::OverrideShouldUseSqliteForTesting(
-            IsSqliteBackingStoreEnabled())) {}
+  BackingStoreTest() : BackingStoreTestBase(IsSqliteBackingStoreEnabled()) {}
 
   BackingStoreTest(const BackingStoreTest&) = delete;
   BackingStoreTest& operator=(const BackingStoreTest&) = delete;
 
   bool IsSqliteBackingStoreEnabled() { return GetParam(); }
-
- private:
-  base::AutoReset<std::optional<bool>> sqlite_override_;
 };
 
 INSTANTIATE_TEST_SUITE_P(
@@ -92,8 +87,79 @@ TEST_P(BackingStoreTest, PutGetConsistency) {
     auto result = transaction2->GetRecord(1, key);
     EXPECT_TRUE(result.has_value());
     CommitTransactionAndVerify(*transaction2);
-    EXPECT_EQ(value.bits, result->bits);
+    EXPECT_EQ(base::span(value.bits), base::span(result->bits));
   }
+}
+
+// Tests what happens when a blob returns an error when being read.
+TEST_P(BackingStoreTest, PutBrokenBlob) {
+  const IndexedDBKey& key = key1_;
+  IndexedDBValue& value = value1_;
+
+  // Make a `FakeBlob` with no body (not an empty body), which will return an
+  // error when read.
+  value.external_objects.emplace_back(
+      CreateBlobInfo(u"text/plain", std::nullopt));
+
+  auto db_creation_result = backing_store()->CreateOrOpenDatabase(u"name");
+  ASSERT_TRUE(db_creation_result.has_value());
+  BackingStore::Database& db = **db_creation_result;
+
+  std::unique_ptr<BackingStore::Transaction> transaction =
+      db.CreateTransaction(blink::mojom::IDBTransactionDurability::Relaxed,
+                           blink::mojom::IDBTransactionMode::ReadWrite);
+
+  transaction->Begin(CreateDummyLock());
+  EXPECT_TRUE(transaction->PutRecord(1, key, value.Clone()).has_value());
+  EXPECT_FALSE(CommitTransactionPhaseOneAndVerify(*transaction));
+  transaction->Rollback();
+}
+
+// Tests what happens when a transaction is being committed and a blob is being
+// written (asynchronously) when Rollback() is invoked.
+TEST_P(BackingStoreTest, RollbackDuringBlobWrite) {
+  const IndexedDBKey& key = key1_;
+  IndexedDBValue& value = value1_;
+  value.external_objects.emplace_back(
+      CreateBlobInfo(u"text/plain", "contents"));
+
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<BackingStore::Database> db,
+                       backing_store()->CreateOrOpenDatabase(u"name"));
+  ASSERT_TRUE(db.get());
+
+  std::unique_ptr<BackingStore::Transaction> transaction =
+      db->CreateTransaction(blink::mojom::IDBTransactionDurability::Relaxed,
+                            blink::mojom::IDBTransactionMode::ReadWrite);
+
+  transaction->Begin(CreateDummyLock());
+  EXPECT_TRUE(transaction->PutRecord(1, key, value.Clone()).has_value());
+
+  bool blob_write_callback_lives = false;
+  EXPECT_TRUE(
+      transaction
+          ->CommitPhaseOne(
+              /*blob_write_callback=*/
+              base::IgnoreArgs<StatusOr<BlobWriteResult>>(base::BindOnce(
+                  [](base::AutoReset<bool> auto_reset) {
+                    ADD_FAILURE();
+                    return Status::OK();
+                  },
+                  base::AutoReset(&blob_write_callback_lives, true))),
+              /*serialize_fsa_handle=*/base::DoNothing())
+          .ok());
+  EXPECT_TRUE(blob_write_callback_lives);
+  transaction->Rollback();
+
+  // Make sure the blob write callback was dropped without being called. If
+  // called, it will cause the test to fail with ADD_FAILURE().
+  EXPECT_FALSE(blob_write_callback_lives);
+
+  // Make sure there are no other errors as the backing store potentially
+  // attempts to write blobs in the background. In particular, the LevelDB
+  // store has to explicitly handle the Rollback case to prevent a crash, and
+  // spinning a runloop is necessary to give it a chance to not crash.
+  base::RunLoop().RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_P(BackingStoreTest, Snapshots) {
@@ -373,14 +439,34 @@ TEST_P(BackingStoreTest, DatabaseExists) {
   EXPECT_FALSE(*db2_exists);
 }
 
+TEST_P(BackingStoreTest, DatabaseNamesAreSorted) {
+  // Hold on to one of the created databases.
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<BackingStore::Database> db,
+                       backing_store()->CreateOrOpenDatabase(u"bb"));
+  UpdateDatabaseVersion(*db, 1);
+
+  // Create a couple of other databases but immediately close them.
+  UpdateDatabaseVersion(**backing_store()->CreateOrOpenDatabase(u"c"), 1);
+  UpdateDatabaseVersion(**backing_store()->CreateOrOpenDatabase(u"aaa"), 1);
+
+  // Database names should be in sorted order.
+  ASSERT_OK_AND_ASSIGN(
+      std::vector<blink::mojom::IDBNameAndVersionPtr> names_and_versions,
+      backing_store()->GetDatabaseNamesAndVersions());
+  ASSERT_EQ(names_and_versions.size(), 3U);
+  EXPECT_EQ(names_and_versions[0]->name, u"aaa");
+  EXPECT_EQ(names_and_versions[1]->name, u"bb");
+  EXPECT_EQ(names_and_versions[2]->name, u"c");
+}
+
 class BackingStoreTestWithExternalObjects
     : public testing::WithParamInterface<
           std::tuple<bool, ExternalObjectTestType>>,
       public BackingStoreWithExternalObjectsTestBase {
  public:
   BackingStoreTestWithExternalObjects()
-      : sqlite_override_(BucketContext::OverrideShouldUseSqliteForTesting(
-            IsSqliteBackingStoreEnabled())) {}
+      : BackingStoreWithExternalObjectsTestBase(IsSqliteBackingStoreEnabled()) {
+  }
 
   BackingStoreTestWithExternalObjects(
       const BackingStoreTestWithExternalObjects&) = delete;
@@ -397,9 +483,6 @@ class BackingStoreTestWithExternalObjects
   bool IncludesFileSystemAccessHandles() override {
     return TestType() != ExternalObjectTestType::kOnlyBlobs;
   }
-
- private:
-  base::AutoReset<std::optional<bool>> sqlite_override_;
 };
 
 INSTANTIATE_TEST_SUITE_P(
@@ -456,7 +539,7 @@ TEST_P(BackingStoreTestWithExternalObjects, PutGetConsistency) {
     IndexedDBValue result_value = std::move(result.value());
 
     CommitTransactionAndVerify(*transaction2);
-    EXPECT_EQ(value3_.bits, result_value.bits);
+    EXPECT_EQ(base::span(value3_.bits), base::span(result_value.bits));
 
     EXPECT_TRUE(CheckBlobInfoMatches(result_value.external_objects));
   }
@@ -584,7 +667,7 @@ TEST_P(BackingStoreTestWithExternalObjects, DeleteRange) {
           EXPECT_TRUE(result_value.empty());
         } else {
           EXPECT_FALSE(result_value.empty());
-          EXPECT_EQ(values[j].bits, result_value.bits);
+          EXPECT_EQ(base::span(values[j].bits), base::span(result_value.bits));
         }
       }
     }
@@ -678,7 +761,7 @@ TEST_P(BackingStoreTestWithExternalObjects, DeleteRangeEmptyRange) {
 
         // No records should have been deleted.
         EXPECT_FALSE(result_value.empty());
-        EXPECT_EQ(values[j].bits, result_value.bits);
+        EXPECT_EQ(base::span(values[j].bits), base::span(result_value.bits));
       }
     }
   }

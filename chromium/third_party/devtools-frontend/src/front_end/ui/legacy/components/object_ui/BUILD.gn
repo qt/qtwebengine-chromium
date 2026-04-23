@@ -17,7 +17,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("object_ui") {
+devtools_ui_module("object_ui") {
   sources = [
     "CustomPreviewComponent.ts",
     "JavaScriptREPL.ts",
@@ -39,8 +39,9 @@ devtools_module("object_ui") {
     "../../../../models/text_utils:bundle",
     "../../../../third_party/acorn",
     "../../../../third_party/acorn:bundle",
-    "../../../../ui/components/icon_button:bundle",
     "../../../../ui/components/text_editor:bundle",
+    "../../../../ui/i18n:bundle",
+    "../../../../ui/kit:bundle",
     "../../../../ui/legacy:bundle",
     "../../../../ui/legacy/components/utils:bundle",
   ]
@@ -55,6 +56,9 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility = [
+    # IMPORTANT: Be careful when extending visibility of front_end/ui/legacy/*,
+    # as the UI modules should only be used to actually build user interfaces,
+    # and the business logic should never depend on the UI modules.
     ":*",
     "../../../../panels/application/*",
     "../../../../panels/console/*",
@@ -82,7 +86,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

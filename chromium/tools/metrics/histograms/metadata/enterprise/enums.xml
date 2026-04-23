@@ -72,6 +72,26 @@ chromium-metrics-reviews@google.com.
   <int value="5" label="Invalid Upload URL"/>
 </enum>
 
+<enum name="ClankClientCertificatesBrowserKeySecurityLevel">
+  <summary>
+    The security level of a private key created for client certificate
+    provisioning on Android.
+  </summary>
+  <int value="0" label="OSSoftware"/>
+  <int value="1" label="Trusted Environment"/>
+  <int value="2" label="StrongBox"/>
+  <int value="3" label="Unknown"/>
+</enum>
+
+<enum name="CwsPromotionBannerEvent">
+  <summary>
+    User interaction events with the enterprise promotion banner on the Chrome
+    Web Store.
+  </summary>
+  <int value="0" label="Displayed"/>
+  <int value="1" label="Clicked"/>
+</enum>
+
 <enum name="DataProtectionURLVerdictSource">
   <int value="0" label="Page UserData"/>
   <int value="1" label="Cached lookup result"/>
@@ -109,6 +129,12 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="STORE_KEY_UNAVAILABLE_NOT_INITIALIZED"/>
   <int value="7" label="STORE_KEY_UNAVAILABLE_NOT_LOCKED"/>
   <int value="8" label="STORE_KEY_UNAVAILABLE_MANAGED"/>
+</enum>
+
+<enum name="DeviceSignalsHarmfulAppsStatus">
+  <int value="0" label="Success"/>
+  <int value="1" label="Timeout"/>
+  <int value="2" label="Failed"/>
 </enum>
 
 <enum name="DeviceSignalsParsingError">
@@ -609,6 +635,18 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="kOpen"/>
   <int value="7" label="kShare"/>
 </enum>
+
+<!-- LINT.IfChange(EnterpriseDlpPolicyLevel) -->
+
+<enum name="EnterpriseDlpPolicyLevel">
+  <int value="0" label="Not Set"/>
+  <int value="1" label="Report"/>
+  <int value="2" label="Warn"/>
+  <int value="3" label="Block"/>
+  <int value="4" label="Allow"/>
+</enum>
+
+<!-- LINT.ThenChange(//components/enterprise/data_controls/core/browser/rule.h:Level) -->
 
 <enum name="EnterpriseDlpPolicyRestriction">
   <summary>
@@ -2296,6 +2334,22 @@ chromium-metrics-reviews@google.com.
   <int value="1399" label="DeveloperToolsAvailabilityAllowlist"/>
   <int value="1400" label="DeveloperToolsAvailabilityBlocklist"/>
   <int value="1401" label="LocalNetworkAccessRestrictionsTemporaryOptOut"/>
+  <int value="1402" label="GeminiActOnWebSettings"/>
+  <int value="1403" label="LocalAuthFactorsComplexity"/>
+  <int value="1404" label="ProxyOverrideRules"/>
+  <int value="1405" label="LocalAuthFactors"/>
+  <int value="1406" label="EnableProxyOverrideRulesForAllUsers"/>
+  <int value="1407" label="DefaultIdleDetectionSetting"/>
+  <int value="1408" label="IdleDetectionAllowedForUrls"/>
+  <int value="1409" label="IdleDetectionBlockedForUrls"/>
+  <int value="1410" label="PreciseGeolocationAllowedForUrls"/>
+  <int value="1411" label="GeolocationBlockedForUrls"/>
+  <int value="1412" label="PdfXfaFormsEnabled"/>
+  <int value="1413" label="CameraSaveLocation"/>
+  <int value="1414" label="DeviceLoginScreenPreferSlowKexAlgorithms"/>
+  <int value="1415" label="DeviceLoginScreenPreferSlowCiphers"/>
+  <int value="1416" label="SearchContentSharingSettings"/>
+  <int value="1417" label="StaticStorageQuotaEnabled"/>
 </enum>
 
 <enum name="EnterprisePoliciesSources">
@@ -2522,18 +2576,6 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="Re-registration unsuccessful"/>
 </enum>
 
-<enum name="EnterpriseUserSessionLogins">
-  <summary>
-    Types of sign-in events as defined in
-    chrome/browser/ash/login/enterprise_user_session_metrics.h
-  </summary>
-  <int value="0" label="Regular user"/>
-  <int value="1" label="Manual public session"/>
-  <int value="2" label="Automatic public session"/>
-  <int value="3" label="Manual kiosk session"/>
-  <int value="4" label="Automatic kiosk session"/>
-</enum>
-
 <enum name="IdleTimeoutCase">
   <int value="0" label="Foreground"/>
   <int value="1" label="Background"/>
@@ -2755,6 +2797,7 @@ chromium-metrics-reviews@google.com.
 <enum name="SecurityReportTrigger">
   <int value="0" label="Signals-only report triggered by timer"/>
   <int value="1" label="Signals-only report triggered by cookie change"/>
+  <int value="2" label="Signals-only report triggered by policy change"/>
 </enum>
 
 <enum name="SecuritySignalsMode">

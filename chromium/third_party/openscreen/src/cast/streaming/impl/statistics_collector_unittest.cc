@@ -6,7 +6,7 @@
 
 #include <vector>
 
-#include "cast/streaming/impl/statistics_defines.h"
+#include "cast/streaming/impl/statistics_common.h"
 #include "gtest/gtest.h"
 #include "platform/api/time.h"
 #include "platform/base/span.h"
@@ -35,8 +35,8 @@ TEST_F(StatisticsCollectorTest, CanCollectPacketEvents) {
   // clang-format off
   constexpr PacketEvent kEventOne(
       FrameId(5000),
-      StatisticsEventType::kPacketSentToNetwork,
-      StatisticsEventMediaType::kAudio,
+      StatisticsEvent::Type::kPacketSentToNetwork,
+      StatisticsEvent::MediaType::kAudio,
       RtpTimeTicks(47474838),
       1234u,
       Clock::time_point(milliseconds(12455680)),
@@ -46,8 +46,8 @@ TEST_F(StatisticsCollectorTest, CanCollectPacketEvents) {
 
   constexpr PacketEvent kEventTwo(
       FrameId(20000),
-      StatisticsEventType::kPacketSentToNetwork,
-      StatisticsEventMediaType::kVideo,
+      StatisticsEvent::Type::kPacketSentToNetwork,
+      StatisticsEvent::MediaType::kVideo,
       RtpTimeTicks(4747900),
       553u,
       Clock::time_point(milliseconds(12455880)),
@@ -87,8 +87,8 @@ TEST_F(StatisticsCollectorTest, CanCollectPacketSentEvents) {
   EXPECT_EQ(FrameId(), events[0].frame_id);
   EXPECT_EQ(20u, events[0].size);
   EXPECT_GT(Clock::now(), events[0].timestamp);
-  EXPECT_EQ(StatisticsEventType::kPacketSentToNetwork, events[0].type);
-  EXPECT_EQ(StatisticsEventMediaType::kAudio, events[0].media_type);
+  EXPECT_EQ(StatisticsEvent::Type::kPacketSentToNetwork, events[0].type);
+  EXPECT_EQ(StatisticsEvent::MediaType::kAudio, events[0].media_type);
 
   EXPECT_EQ(3599u, events[1].packet_id);
   EXPECT_EQ(4113u, events[1].max_packet_id);
@@ -96,16 +96,16 @@ TEST_F(StatisticsCollectorTest, CanCollectPacketSentEvents) {
   EXPECT_EQ(FrameId(), events[1].frame_id);
   EXPECT_EQ(21u, events[1].size);
   EXPECT_GT(Clock::now(), events[1].timestamp);
-  EXPECT_EQ(StatisticsEventType::kPacketSentToNetwork, events[1].type);
-  EXPECT_EQ(StatisticsEventMediaType::kVideo, events[1].media_type);
+  EXPECT_EQ(StatisticsEvent::Type::kPacketSentToNetwork, events[1].type);
+  EXPECT_EQ(StatisticsEvent::MediaType::kVideo, events[1].media_type);
 }
 
 TEST_F(StatisticsCollectorTest, CanCollectFrameEvents) {
   // clang-format off
   constexpr FrameEvent kEventOne(
       FrameId(1),
-      StatisticsEventType::kFrameAckReceived,
-      StatisticsEventMediaType::kVideo,
+      StatisticsEvent::Type::kFrameAckReceived,
+      StatisticsEvent::MediaType::kVideo,
       RtpTimeTicks(1233),
       /* size= */ 0,
       Clock::time_point(milliseconds(12345678)),
@@ -118,8 +118,8 @@ TEST_F(StatisticsCollectorTest, CanCollectFrameEvents) {
 
   constexpr FrameEvent kEventTwo(
       FrameId(2),
-      StatisticsEventType::kFramePlayedOut,
-      StatisticsEventMediaType::kAudio,
+      StatisticsEvent::Type::kFramePlayedOut,
+      StatisticsEvent::MediaType::kAudio,
       RtpTimeTicks(1733),
       /* size= */ 6000,
       Clock::time_point(milliseconds(12455680)),

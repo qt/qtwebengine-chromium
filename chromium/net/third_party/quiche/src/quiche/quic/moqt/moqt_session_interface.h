@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <variant>
 
 #include "absl/strings/string_view.h"
 #include "quiche/quic/core/quic_time.h"
@@ -21,15 +22,16 @@
 
 namespace moqt {
 
-// The callback we'll use for all request types going forward. Can only be used
-// once; if the argument is nullopt, an OK response was received. Otherwise, an
-// ERROR response was received.
-using MoqtRequestCallback =
-    quiche::SingleUseCallback<void(std::optional<MoqtRequestError>)>;
-
 using MoqtObjectAckFunction =
     quiche::MultiUseCallback<void(uint64_t group_id, uint64_t object_id,
                                   quic::QuicTimeDelta delta_from_deadline)>;
+
+struct SubscribeOkData {
+  quic::QuicTimeDelta expires;
+  MoqtDeliveryOrder delivery_order;
+  std::optional<Location> largest_location;
+  VersionSpecificParameters parameters = VersionSpecificParameters();
+};
 
 class SubscribeVisitor {
  public:
@@ -39,8 +41,7 @@ class SubscribeVisitor {
   // automatically retry.
   virtual void OnReply(
       const FullTrackName& full_track_name,
-      std::optional<Location> largest_location,
-      std::optional<absl::string_view> error_reason_phrase) = 0;
+      std::variant<SubscribeOkData, MoqtRequestError> response) = 0;
   // Called when the subscription process is far enough that it is possible to
   // send OBJECT_ACK messages; provides a callback to do so. The callback is
   // valid for as long as the session is valid.
@@ -55,6 +56,12 @@ class SubscribeVisitor {
   // draft-ietf-moqt-moq-transport-12. If the application is a relay, it MUST
   // terminate downstream delivery of the track.
   virtual void OnMalformedTrack(const FullTrackName& full_track_name) = 0;
+
+  // End user applications might not care about stream state, but relays will.
+  virtual void OnStreamFin(const FullTrackName& full_track_name,
+                           DataStreamIndex stream) = 0;
+  virtual void OnStreamReset(const FullTrackName& full_track_name,
+                             DataStreamIndex stream) = 0;
 };
 
 // MoqtSession calls this when a FETCH_OK or FETCH_ERROR is received. The
@@ -66,15 +73,15 @@ using FetchResponseCallback =
 // TODO(martinduke): MoqtOutgoingPublishNamespaceCallback and
 // MoqtOutgoingSubscribeNamespaceCallback are deprecated. Remove.
 
-// If |error_message| is nullopt, this is triggered by a PUBLISH_NAMESPACE_OK.
+// If |error| is nullopt, this is triggered by a PUBLISH_NAMESPACE_OK.
 // Otherwise, it is triggered by PUBLISH_NAMESPACE_ERROR or
 // PUBLISH_NAMESPACE_CANCEL. For ERROR or CANCEL, MoqtSession is deleting all
 // PUBLISH_NAMESPACE state immediately after calling this callback.
 // Alternatively, the application can call PublishNamespaceDone() to delete the
 // state.
-using MoqtOutgoingPublishNamespaceCallback = quiche::MultiUseCallback<void(
-    TrackNamespace track_namespace,
-    std::optional<MoqtPublishNamespaceErrorReason> error)>;
+using MoqtOutgoingPublishNamespaceCallback =
+    quiche::MultiUseCallback<void(const TrackNamespace& track_namespace,
+                                  std::optional<MoqtRequestError> error)>;
 
 using MoqtOutgoingSubscribeNamespaceCallback = quiche::SingleUseCallback<void(
     TrackNamespace track_namespace, std::optional<RequestErrorCode> error,
@@ -156,11 +163,20 @@ class MoqtSessionInterface {
       FetchResponseCallback callback, uint64_t num_previous_groups,
       MoqtPriority priority, std::optional<MoqtDeliveryOrder> delivery_order,
       VersionSpecificParameters parameters) = 0;
+  // Send a PUBLISH_NAMESPACE message for |track_namespace|, and call
+  // |publish_namespace_callback| when the response arrives. Will fail
+  // immediately if there is already an unresolved PUBLISH_NAMESPACE for that
+  // namespace.
+  virtual void PublishNamespace(TrackNamespace track_namespace,
+                                MoqtOutgoingPublishNamespaceCallback callback,
+                                VersionSpecificParameters parameters) = 0;
+  // Returns true if message was sent, false if there is no PUBLISH_NAMESPACE to
+  // cancel.
+  virtual bool PublishNamespaceDone(TrackNamespace track_namespace) = 0;
 
   // TODO(martinduke): Add an API for absolute joining fetch.
 
   // TODO: Add SubscribeNamespace, UnsubscribeNamespace method.
-  // TODO: Add PublishNamespace, PublishNamespaceDone method.
   // TODO: Add PublishNamespaceCancel method.
   // TODO: Add TrackStatusRequest method.
   // TODO: Add SubscribeUpdate, PublishDone method.

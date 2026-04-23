@@ -51,6 +51,7 @@
 #include "ui/views/controls/menu/menu_scroll_view_container.h"
 #include "ui/views/controls/menu/menu_types.h"
 #include "ui/views/controls/menu/submenu_view.h"
+#include "ui/views/style/platform_style.h"
 #include "ui/views/test/ax_event_counter.h"
 #include "ui/views/test/menu_test_utils.h"
 #include "ui/views/test/views_test_base.h"
@@ -2699,6 +2700,68 @@ TEST_F(MenuControllerTest, RepostEventToEmptyMenuItem) {
   EXPECT_EQ(menu_controller_delegate(), current_controller_delegate());
 }
 
+#if BUILDFLAG(IS_OZONE)
+// Tests that if a context menu is opened above a submenu from a top level
+// bookmark folder with no parent, and a right-click occurs over the submenu,
+// the folder does not get dismissed. This is a regression test for
+// https://crbug.com/446633193 and https://crbug.com/446647004 where a top level
+// empty folder causes issues.
+TEST_F(MenuControllerTest,
+       TopLevelBookmarkFolderContextMenuShouldNotDismissFolder) {
+  // Override the platform property to force
+  // PlatformSetsParentForNonTopLevelWindows()
+  // to return true for this test.
+  using SupportsForTest =
+      ui::OzonePlatform::PlatformProperties::SupportsForTest;
+  base::AutoReset<SupportsForTest> auto_reset(
+      &ui::OzonePlatform::PlatformProperties::
+          override_set_parent_for_non_top_level_windows_for_test,
+      SupportsForTest::kYes);
+
+  MenuItemView* root_item = menu_item();
+  ASSERT_EQ(nullptr, root_item->GetParentMenuItem());
+
+  // Setup a submenu. Additionally hook up appropriate Widget and View
+  // containers, with bounds, so that hit testing works.
+  SubmenuView* const root_submenu = root_item->GetSubmenu();
+  const auto insets = root_submenu->GetScrollViewContainer()->GetInsets();
+  const gfx::Rect bounds(0, 50, 80 + insets.width(), 40 + insets.height());
+  ShowSubmenu(root_submenu, [&](auto& params) { params.bounds = bounds; });
+  menu_host_for_submenu(root_submenu)
+      ->SetContentsView(root_submenu->GetScrollViewContainer());
+
+  // Create context menu
+  auto context_menu = std::make_unique<MenuItemView>(menu_delegate());
+  context_menu->AppendMenuItem(1, u"Action");
+  context_menu->set_controller(menu_controller());
+
+  auto context_delegate = std::make_unique<TestMenuControllerDelegate>();
+  menu_controller()->AddNestedDelegate(context_delegate.get());
+
+  SetState(root_item);
+
+  menu_controller()->Run(
+      owner(), nullptr, context_menu.get(), gfx::Rect(100, 100, 80, 60),
+      MenuAnchorPosition::kTopLeft, ui::mojom::MenuSourceType::kMouse,
+      MenuController::MenuType::kMenuItemContextMenu);
+
+  EXPECT_TRUE(menu_controller()->IsContextMenu());
+  EXPECT_TRUE(root_item->SubmenuIsShowing());
+  EXPECT_TRUE(context_menu->SubmenuIsShowing());
+
+  gfx::Rect submenu_bounds = context_menu->GetSubmenu()->GetBoundsInScreen();
+  gfx::Point outside_point =
+      submenu_bounds.bottom_right() + gfx::Vector2d(60, 60);
+  ProcessMousePressed(
+      context_menu->GetSubmenu(),
+      ui::MouseEvent(ui::EventType::kMousePressed, outside_point, outside_point,
+                     ui::EventTimeForNow(), ui::EF_LEFT_MOUSE_BUTTON, 0));
+
+  EXPECT_FALSE(context_menu->SubmenuIsShowing());
+  EXPECT_FALSE(root_item->SubmenuIsShowing());
+}
+#endif  // BUILDFLAG(IS_OZONE)
+
 // Drag the mouse from an external view into a menu
 // When the mouse leaves the menu while still in the process of dragging
 // the menu item view highlight should turn off
@@ -3458,10 +3521,10 @@ TEST_F(MenuControllerTest, RemoveEmptyMenuMenuItemWhileSelected) {
   EXPECT_EQ(item, submenu->children()[0]);
 }
 
-#if BUILDFLAG(IS_WIN)
-// The following tests are only relevant on platforms that select the first
-// menu item when a menu is opened via keyboard input.
 TEST_F(MenuControllerTest, FirstMenuItemSelectedWhenOpenedFromKeyboard) {
+  if (!PlatformStyle::kAutoSelectFirstMenuItemFromKeyboard) {
+    GTEST_SKIP() << "Behavior not present on this platform";
+  }
   // Use existing menu items from the test setup.
   MenuItemView* root = menu_item();
   MenuItemView* item1 = root->GetSubmenu()->GetMenuItemAt(0);
@@ -3481,6 +3544,9 @@ TEST_F(MenuControllerTest, FirstMenuItemSelectedWhenOpenedFromKeyboard) {
 }
 
 TEST_F(MenuControllerTest, NoItemSelectedWhenOpenedFromMouse) {
+  if (!PlatformStyle::kAutoSelectFirstMenuItemFromKeyboard) {
+    GTEST_SKIP() << "Behavior not present on this platform";
+  }
   // Use existing menu items from the test setup.
   MenuItemView* root = menu_item();
   MenuItemView* item1 = root->GetSubmenu()->GetMenuItemAt(0);
@@ -3501,6 +3567,10 @@ TEST_F(MenuControllerTest, NoItemSelectedWhenOpenedFromMouse) {
 
 TEST_F(MenuControllerTest,
        FirstMenuItemButtonHotTrackedWhenOpenedFromKeyboard) {
+  if (!PlatformStyle::kAutoSelectFirstMenuItemFromKeyboard) {
+    GTEST_SKIP() << "Behavior not present on this platform";
+  }
+
   // Set up a menu with one button in the first menu item.
   SubmenuView* const submenu = menu_item()->GetSubmenu();
   MenuItemView* first_item = submenu->GetMenuItemAt(0);
@@ -3529,6 +3599,9 @@ TEST_F(MenuControllerTest,
 
 TEST_F(MenuControllerTest,
        FirstMenuItemButtonNotHotTrackedWhenOpenedFromMouse) {
+  if (!PlatformStyle::kAutoSelectFirstMenuItemFromKeyboard) {
+    GTEST_SKIP() << "Behavior not present on this platform";
+  }
   // Set up a menu with one button in the first menu item.
   SubmenuView* const submenu = menu_item()->GetSubmenu();
   MenuItemView* first_item = submenu->GetMenuItemAt(0);
@@ -3554,6 +3627,5 @@ TEST_F(MenuControllerTest,
 
   EXPECT_FALSE(button1->IsHotTracked());
 }
-#endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace views

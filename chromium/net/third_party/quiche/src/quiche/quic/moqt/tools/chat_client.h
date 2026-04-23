@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <optional>
+#include <variant>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
@@ -15,11 +16,11 @@
 #include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/moqt/moqt_known_track_publisher.h"
 #include "quiche/quic/moqt/moqt_messages.h"
+#include "quiche/quic/moqt/moqt_object.h"
 #include "quiche/quic/moqt/moqt_outgoing_queue.h"
-#include "quiche/quic/moqt/moqt_priority.h"
-#include "quiche/quic/moqt/moqt_publisher.h"
 #include "quiche/quic/moqt/moqt_session.h"
-#include "quiche/quic/moqt/moqt_track.h"
+#include "quiche/quic/moqt/moqt_session_callbacks.h"
+#include "quiche/quic/moqt/moqt_session_interface.h"
 #include "quiche/quic/moqt/tools/moqt_client.h"
 #include "quiche/common/platform/api/quiche_export.h"
 #include "quiche/common/quiche_callbacks.h"
@@ -60,7 +61,13 @@ class ChatClient {
              absl::string_view localhost,
              quic::QuicEventLoop* event_loop = nullptr);
   ~ChatClient() {
+    if (!session_is_open_) {
+      return;
+    }
+    session_is_open_ = false;
     if (session_ != nullptr) {
+      // Closing the session can trigger a number of callbacks. The application
+      // is tearing down too, so negate them.r;
       session_->Close();
       session_ = nullptr;
     }
@@ -91,9 +98,9 @@ class ChatClient {
    public:
     RemoteTrackVisitor(ChatClient* client) : client_(client) {}
 
-    void OnReply(const moqt::FullTrackName& full_track_name,
-                 std::optional<Location> largest_id,
-                 std::optional<absl::string_view> reason_phrase) override;
+    void OnReply(
+        const moqt::FullTrackName& full_track_name,
+        std::variant<SubscribeOkData, MoqtRequestError> response) override;
 
     void OnCanAckObjects(MoqtObjectAckFunction) override {}
 
@@ -102,10 +109,13 @@ class ChatClient {
                           absl::string_view object,
                           bool end_of_message) override;
 
-    void OnPublishDone(FullTrackName /*full_track_name*/) override {}
+    void OnPublishDone(FullTrackName) override {}
 
     // TODO(martinduke): Implement this.
     void OnMalformedTrack(const FullTrackName& /*full_track_name*/) override {}
+
+    void OnStreamFin(const FullTrackName&, DataStreamIndex) override {}
+    void OnStreamReset(const FullTrackName&, DataStreamIndex) override {}
 
    private:
     ChatClient* client_;
@@ -116,23 +126,23 @@ class ChatClient {
 
   bool session_is_open() const { return session_is_open_; }
 
-  // Returns true if the client is still doing initial sync: retrieving the
-  // catalog, subscribing to all the users in it, and waiting for the server
-  // to subscribe to the local track.
-  bool is_syncing() const {
-    return subscribes_to_make_ > 0 ||
-           (queue_ == nullptr || !queue_->HasSubscribers());
-  }
+  // Returns true if the client has outstanding subscribes.
+  bool is_syncing() const { return subscribes_to_make_ > 0; }
 
  private:
   void RunEventLoop() { event_loop_->RunEventLoopOnce(kChatEventLoopDuration); }
   // Callback for incoming publish_namespaces.
-  std::optional<MoqtPublishNamespaceErrorReason> OnIncomingPublishNamespace(
+  void OnIncomingPublishNamespace(
       const moqt::TrackNamespace& track_namespace,
-      std::optional<VersionSpecificParameters> parameters);
+      std::optional<VersionSpecificParameters> parameters,
+      moqt::MoqtResponseCallback callback);
 
   // Basic session information
   FullTrackName my_track_name_;
+
+  // Related to subscriptions/publish_namespaces
+  // TODO: One for each subscribe
+  RemoteTrackVisitor remote_track_visitor_;
 
   // General state variables
   // The event loop to use for this client.
@@ -149,10 +159,6 @@ class ChatClient {
   // Related to syncing.
   absl::flat_hash_set<FullTrackName> other_users_;
   int subscribes_to_make_ = 0;
-
-  // Related to subscriptions/publish_namespaces
-  // TODO: One for each subscribe
-  RemoteTrackVisitor remote_track_visitor_;
 
   // Handling outgoing messages
   std::shared_ptr<moqt::MoqtOutgoingQueue> queue_;

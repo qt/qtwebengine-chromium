@@ -107,19 +107,10 @@ inline WriteBarrierModeScope WriteBarrier::GetWriteBarrierModeForObject(
 void WriteBarrier::ForRelocInfo(Tagged<InstructionStream> host,
                                 RelocInfo* rinfo, Tagged<HeapObject> value,
                                 WriteBarrierMode mode) {
-  if (mode == SKIP_WRITE_BARRIER) {
+  if (IsSkipWriteBarrierMode(mode)) {
 #if V8_VERIFY_WRITE_BARRIERS
-    if (v8_flags.verify_write_barriers) {
-      CHECK(!WriteBarrier::IsRequired(host, value));
-    }
+    VerifySkipWriteBarrier(host, value, mode);
 #endif  // V8_VERIFY_WRITE_BARRIERS
-    return;
-  }
-
-  // Used during InstructionStream initialization where we update the write
-  // barriers together separate from the field writes.
-  if (mode == UNSAFE_SKIP_WRITE_BARRIER) {
-    DCHECK(!DisallowGarbageCollection::IsAllowed());
     return;
   }
 
@@ -173,6 +164,12 @@ void WriteBarrier::VerifySkipWriteBarrier(Tagged<HeapObject> host,
   if (v8_flags.verify_write_barriers) {
     if (mode == SKIP_WRITE_BARRIER) {
       CHECK(!WriteBarrier::IsRequired(host, value));
+    } else if (mode == SKIP_WRITE_BARRIER_FOR_GC) {
+      CHECK(LocalHeap::Current()->heap()->IsInGC());
+      CHECK(LocalHeap::Current()->heap()->tracer()->IsInAtomicPause());
+    } else if (mode == UNSAFE_SKIP_WRITE_BARRIER) {
+      // C++ write barriers should not need UNSAFE_SKIP_WRITE_BARRIER.
+      UNREACHABLE();
     } else {
       CHECK_EQ(mode, SKIP_WRITE_BARRIER_SCOPE);
       CHECK_EQ(LocalHeap::Current()->CurrentObjectForWriteBarrierMode(),
@@ -237,7 +234,7 @@ void WriteBarrier::ForIndirectPointer(Tagged<HeapObject> host,
                                       Tagged<HeapObject> value,
                                       WriteBarrierMode mode) {
   // Indirect pointers are only used when the sandbox is enabled.
-  DCHECK(V8_ENABLE_SANDBOX_BOOL);
+#ifdef V8_ENABLE_SANDBOX
   if (mode == SKIP_WRITE_BARRIER) {
 #if V8_VERIFY_WRITE_BARRIERS
     if (v8_flags.verify_write_barriers) {
@@ -252,6 +249,26 @@ void WriteBarrier::ForIndirectPointer(Tagged<HeapObject> host,
     DCHECK(!MemoryChunk::FromHeapObject(value)->InYoungGeneration());
   }
   Marking(host, slot);
+#else
+  UNREACHABLE();
+#endif
+}
+
+// static
+template <typename T, IndirectPointerTag kTag>
+void WriteBarrier::ForIndirectPointer(HeapObjectLayout* host,
+                                      TrustedPointerMember<T, kTag>* slot,
+                                      Tagged<T> value, WriteBarrierMode mode) {
+  // Indirect pointers are only used when the sandbox is enabled.
+#ifdef V8_ENABLE_SANDBOX
+  // TODO(leszeks): Avoid the cast to Address here, pass a pointer to the actual
+  // handle field.
+  ForIndirectPointer(Tagged(host),
+                     IndirectPointerSlot(reinterpret_cast<Address>(slot), kTag),
+                     value, mode);
+#else
+  UNREACHABLE();
+#endif
 }
 
 // static

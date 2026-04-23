@@ -79,7 +79,7 @@ export class PeerConnectionUpdateTable {
     const row = document.createElement('tr');
     tableElement.firstChild.appendChild(row);
 
-    const time = new Date(parseFloat(update.time));
+    const time = new Date(parseFloat(update.timestamp));
     const timeItem = document.createElement('td');
     timeItem.textContent = time.toLocaleString();
     row.appendChild(timeItem);
@@ -130,12 +130,12 @@ export class PeerConnectionUpdateTable {
         'transceiverModified'].includes(update.type)) {
       const data = JSON.parse(update.value);
       type += '(index=' + data.transceiverIndex + ', kind=' + data.kind + ')';
-    } else if (['iceconnectionstatechange', 'connectionstatechange',
-        'signalingstatechange'].includes(update.type)) {
+    } else if (['oniceconnectionstatechange', 'onconnectionstatechange',
+        'onsignalingstatechange'].includes(update.type)) {
       const fieldName = {
-        'iceconnectionstatechange' : 'iceconnectionstate',
-        'connectionstatechange' : 'connectionstate',
-        'signalingstatechange' : 'signalingstate',
+        'oniceconnectionstatechange' : 'iceconnectionstate',
+        'onconnectionstatechange' : 'connectionstate',
+        'onsignalingstatechange' : 'signalingstate',
       }[update.type];
       const el = peerConnectionElement.getElementsByClassName(fieldName)[0];
       const numberOfEvents = el.textContent.split(' => ').length;
@@ -156,9 +156,9 @@ export class PeerConnectionUpdateTable {
     details.appendChild(valueContainer);
 
     // Highlight ICE/DTLS failures and failure callbacks.
-    if ((update.type === 'iceconnectionstatechange' &&
+    if ((update.type === 'oniceconnectionstatechange' &&
          update.value === '"failed"') ||
-        (update.type === 'connectionstatechange' &&
+        (update.type === 'onconnectionstatechange' &&
          update.value === '"failed"') ||
         update.type.indexOf('OnFailure') !== -1 ||
         update.type === 'addIceCandidateFailed') {
@@ -185,7 +185,7 @@ export class PeerConnectionUpdateTable {
         if (update.type === 'setLocalDescription' && lastOfferAnswer &&
             lastOfferAnswer !== update.value) {
           lastSections = SDPUtils.splitSections(
-              lastOfferAnswer.substring(6).split(', sdp: ')[1]);
+              JSON.parse(lastOfferAnswer).sdp);
         }
         // Fold the SDP sections.
         const sections = SDPUtils.splitSections(sdp);

@@ -76,6 +76,7 @@ def parse_display_ndrvs(spdisplays_ndrvs: dict) -> Iterator[DisplayInfo]:
 class MacOsVersion(PosixVersion):
   pass
 
+
 class MacOSPlatform(PosixPlatform):
   SEARCH_PATHS: tuple[pth.AnyPath, ...] = (
       pth.AnyPosixPath("."),
@@ -296,7 +297,6 @@ class MacOSPlatform(PosixPlatform):
           # Fallback. Apps like Firefox have no CFBundleDisplayName.
           display_name = plist.get("CFBundleName")
         return f"{display_name} {version_string}"
-
 
     # Backup solution use the binary (not the .app bundle) with --version.
     maybe_bin_path: pth.AnyPath | None = app_or_bin

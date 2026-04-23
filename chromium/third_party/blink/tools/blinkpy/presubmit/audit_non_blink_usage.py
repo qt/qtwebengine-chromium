@@ -101,6 +101,11 @@ _CONFIG = [
             'base::i18n::TextDirection',
             'base::i18n::ToChar16Ptr',
             'base::i18n::ToUCharPtr',
+            'base::IdType',
+            'base::IdType32',
+            'base::IdType64',
+            'base::IdTypeU32',
+            'base::IdTypeU64',
             'base::JobDelegate',
             'base::JobHandle',
             'base::KiB',
@@ -109,6 +114,8 @@ _CONFIG = [
             'base::MakeRefCounted',
             'base::MatcherStringPattern',
             'base::MatchPattern',
+            'base::MemoryPressureListener',
+            'base::MemoryPressureListenerTag',
             'base::MessagePump',
             'base::MetricsSubSampler',
             'base::MiB',
@@ -231,6 +238,7 @@ _CONFIG = [
 
             # //base/metrics/histogram_functions.h
             'base::UmaHistogram.+',
+            'base::ScopedUmaHistogramTimer',
 
             # //base/metrics/histogram.h
             'base::Histogram',
@@ -651,14 +659,17 @@ _CONFIG = [
             'cc::VERTICAL',
 
             # Animation
+            "cc::PropertyChangeForcesCommitCriteria",
             "cc::AnimationHost",
             "cc::AnimationIdProvider",
+            "cc::AnimationTrigger",
             "cc::AnimationTimeline",
             "cc::FilterKeyframe",
             "cc::KeyframedFilterAnimationCurve",
             "cc::KeyframeModel",
             "cc::ScrollOffsetAnimationCurveFactory",
             "cc::TargetProperty",
+            "cc::TimelineTrigger",
             "gfx::AnimationCurve",
             "gfx::ColorKeyframe",
             "gfx::FloatKeyframe",
@@ -963,7 +974,8 @@ _CONFIG = [
         # //third_party/blink/renderer/platform/scheduler/TaskSchedulingInBlink.md
         # for more.
         'inclass_disallowed': [
-            'base::(SingleThread|Sequenced)TaskRunner::(GetCurrentDefault|CurrentDefaultHandle)'
+            'base::(SingleThread|Sequenced)TaskRunner::(GetCurrentDefault|CurrentDefaultHandle)',
+            'base::(SingleThread|Sequenced)TaskRunner::GetCurrentBestEffort',
         ],
     },
     {
@@ -1016,14 +1028,6 @@ _CONFIG = [
         ['third_party/blink/renderer/controller/oom_intervention_impl.cc'],
         'allowed': [
             'base::BindOnce',
-        ],
-    },
-    {
-        'paths': [
-            'third_party/blink/renderer/controller/user_level_memory_pressure_signal_generator.cc'
-        ],
-        'allowed': [
-            'base::MemoryPressureListener',
         ],
     },
     {
@@ -1193,15 +1197,6 @@ _CONFIG = [
     },
     {
         'paths': [
-            'third_party/blink/renderer/core/editing/commands/undo_stack.cc',
-            'third_party/blink/renderer/core/editing/commands/undo_stack.h'
-        ],
-        'allowed': [
-            'base::MemoryPressureListener',
-        ],
-    },
-    {
-        'paths': [
             'third_party/blink/renderer/core/fetch/data_consumer_handle_test_util.cc'
         ],
         'allowed': [
@@ -1321,6 +1316,7 @@ _CONFIG = [
     {
         'paths': ['third_party/blink/renderer/core/page'],
         'allowed': [
+            'cc::SkiaPaintCanvas',
             'touch_adjustment::.+',
             'viz::FrameSinkId',
         ],
@@ -1461,6 +1457,7 @@ _CONFIG = [
             'third_party/blink/public/platform/web_policy_container.h',
         ],
         'allowed': [
+            'network::ConnectionAllowlists',
             'network::IntegrityPolicy',
         ],
     },
@@ -1472,6 +1469,14 @@ _CONFIG = [
         ],
         'allowed': [
             'media::OutputDeviceStatus',
+        ],
+    },
+    {
+        'paths': [
+            'third_party/blink/public/platform/web_video_frame_submitter.h',
+        ],
+        'allowed': [
+            'gpu::SharedImageInterface',
         ],
     },
     {
@@ -1578,6 +1583,7 @@ _CONFIG = [
             'third_party/blink/renderer/controller/dev_tools_frontend_impl.cc',
             'third_party/blink/renderer/modules/credentialmanagement/authentication_credentials_container.cc',
             'third_party/blink/renderer/modules/credentialmanagement/digital_identity_credential.cc',
+            'third_party/blink/renderer/modules/credentialmanagement/identity_provider.cc',
             'third_party/blink/renderer/modules/filesystem/dev_tools_host_file_system.cc'
         ],
         'allowed': [
@@ -1605,7 +1611,8 @@ _CONFIG = [
     },
     {
         'paths': [
-            'third_party/blink/renderer/core/inspector/inspector_network_agent.cc'
+            'third_party/blink/renderer/core/inspector/inspector_network_agent.cc',
+            'third_party/blink/renderer/core/inspector/inspector_network_agent.h',
         ],
         'allowed': [
             'base::flat_set',
@@ -1614,6 +1621,7 @@ _CONFIG = [
             'net::IPAddress',
             'net::SourceStreamType',
             'net::SSL.+',
+            'url_pattern::SimpleUrlPatternMatcher',
         ],
     },
     {
@@ -1678,6 +1686,7 @@ _CONFIG = [
             'gpu::SharedImageUsageSet',
             'gpu::SyncToken',
             'gpu::webgpu::ReservedTexture',
+            'media::ConvertToMemoryMappedFrame',
             'media::IsOpaque',
             'media::kNoTransformation',
             'media::PaintCanvasVideoRenderer',
@@ -1960,6 +1969,7 @@ _CONFIG = [
             'cc::SkiaPaintCanvas',
             'cc::YUVIndex',
             'cc::YUVSubsampling',
+            'gfx::ContentColorUsage',
             'gpu::kNullSurfaceHandle',
             'gpu::Mailbox',
             'gpu::MailboxHolder',
@@ -1997,6 +2007,7 @@ _CONFIG = [
             'gpu::webgpu::WEBGPU_MAILBOX_NONE',
             'gpu::webgpu::WebGPUInterface',
             'media::PIXEL_FORMAT_NV12',
+            'media::PIXEL_FORMAT_RGBAF16',
             'switches::kEnableUnsafeWebGPU',
         ],
     },
@@ -2036,15 +2047,53 @@ _CONFIG = [
         # base::RefCounted and base::RefCountedThreadSafe should still be
         # explicitly blocked. blink::RefCounted and blink::ThreadSafeRefCounted
         # should be used instead.
+        # Also, there is a blink-specific version of
+        # MemoryPressureListenerRegistration and MemoryConsumerRegistration that
+        # should be used over their base counterpart.
         'allowed': ['.+'],
         'inclass_allowed': ['.+'],
         'disallowed': [
             ('base::RefCounted', 'Use RefCounted'),
             ('base::RefCountedThreadSafe', 'Use ThreadSafeRefCounted'),
+            ('base::MemoryConsumerRegistration',
+             'Use blink::MemoryConsumerRegistration'),
+            ('base::AsyncMemoryConsumerRegistration',
+             'Use blink::MemoryConsumerRegistration'),
+            ('base::MemoryPressureListenerRegistration',
+             'Use blink::MemoryPressureListenerRegistration'),
+            ('base::AsyncMemoryPressureListenerRegistration',
+             'Use blink::MemoryPressureListenerRegistration'),
             # TODO(https://crbug.com/1267866): this warning is shown twice for
             # renderer/platform/ violations.
             _DISALLOW_NON_BLINK_MOJOM,
         ]
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/platform/instrumentation/memory_coordinator/',
+        ],
+        'allowed': [
+            'base::AsyncMemoryConsumerRegistration',
+            'base::MemoryConsumerRegistration',
+        ]
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/platform/instrumentation/memory_pressure_listener.cc',
+            'third_party/blink/renderer/platform/instrumentation/memory_pressure_listener.h',
+        ],
+        'allowed': [
+            'base::AsyncMemoryPressureListenerRegistration',
+        ]
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/platform/bindings/parkable_string_manager.h',
+        ],
+        'allowed': [
+            # ParkableStringManager is not garbage-collected, so is safe to use the base version.
+            'base::AsyncMemoryPressureListenerRegistration',
+        ],
     },
     {
         'paths': [
@@ -2260,7 +2309,6 @@ _CONFIG = [
         # are converted to the STL/WebRTC counterparts in the parent directory.
         'allowed': [
             'base::OnTaskRunnerDeleter',
-            'sigslot::.+',
         ],
     },
     {
@@ -2595,6 +2643,8 @@ _CONFIG = [
         'allowed': [
             'blink_mojom::.+',
             'webnn::.+',
+            'gpu::SharedImageInterface',
+            'viz::SinglePlaneFormat',
         ]
     },
     {
@@ -2714,6 +2764,7 @@ _CONFIG = [
             'third_party/blink/common/features.cc',
         ],
         'allowed': [
+            'net::HttpCache',
             'network::features::kBrowsingTopics',
             'network::features::kInterestGroupStorage',
             'network::features::kSharedStorageAPI',
@@ -2741,11 +2792,33 @@ _CONFIG = [
     },
     {
         'paths': [
-            'third_party/blink/renderer/modules/canvas/canvas_noise_test_util.h',
-            'third_party/blink/renderer/modules/canvas/canvas_noise_test_util.cc',
+            'third_party/blink/common/loader/code_cache_util.cc',
+            'third_party/blink/public/common/loader/code_cache_util.h',
         ],
         'allowed': [
-            'viz::TestRasterInterface',
+            'GURL',
+            'net::SimplifyUrlForRequest',
+        ]
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/core/inspector/thread_debugger_common_impl.cc',
+        ],
+        'allowed': [
+            'gin::kThreadDebuggerCommonImplTag',
+        ]
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/core/xml/parser/xml_document_parser_rs.cc',
+            'third_party/blink/renderer/core/xml/parser/xml_document_parser_rs.h',
+            'third_party/blink/renderer/core/xml/parser/xml_ffi_callbacks.h',
+        ],
+        'allowed': [
+            'rust::(Str(ing)?|Box|Vec)',
+            'xml_ffi::.*',
+            'base::(StringViewToRustSlice|RustStrToStringView)',
+            're2::StringPiece',
         ]
     }
 ]

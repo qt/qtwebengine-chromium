@@ -1,9 +1,9 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
-import '../icon_button/icon_button.js';
+import '../../kit/kit.js';
 
 import * as Common from '../../../core/common/common.js';
 import type * as Host from '../../../core/host/host.js';
@@ -48,8 +48,10 @@ const enum State {
   DONT_SHOW_LINK = 'DontShowLink',
 }
 
-// A link to a survey. The link is rendered aysnchronously because we need to first check if
-// canShowSurvey succeeds.
+/**
+ * A link to a survey. The link is rendered asynchronously because we need to first check if
+ * canShowSurvey succeeds.
+ **/
 export class SurveyLink extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
   #trigger = '';

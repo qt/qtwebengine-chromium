@@ -12,8 +12,8 @@ from crossbench.helper import fs_helper
 from crossbench.probes.chromium_probe import ChromiumProbe
 from crossbench.probes.probe_context import ProbeContext
 from crossbench.probes.result_location import ResultLocation
-from crossbench.probes.results import (BrowserProbeResult, LocalProbeResult,
-                                       ProbeResult)
+from crossbench.probes.results import BrowserProbeResult, LocalProbeResult, \
+    ProbeResult
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser

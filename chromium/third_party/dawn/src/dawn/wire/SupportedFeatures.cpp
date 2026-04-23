@@ -56,6 +56,7 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_SharedTextureMemoryZirconHandle:
         case WGPUFeatureName_SharedTextureMemoryDXGISharedHandle:
         case WGPUFeatureName_SharedTextureMemoryD3D11Texture2D:
+        case WGPUFeatureName_SharedTextureMemoryD3D12Resource:
         case WGPUFeatureName_SharedTextureMemoryIOSurface:
         case WGPUFeatureName_SharedTextureMemoryEGLImage:
         case WGPUFeatureName_SharedFenceVkSemaphoreOpaqueFD:
@@ -65,6 +66,7 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_SharedFenceDXGISharedHandle:
         case WGPUFeatureName_SharedFenceMTLSharedEvent:
         case WGPUFeatureName_SharedBufferMemoryD3D12Resource:
+        case WGPUFeatureName_SharedBufferMemoryD3D12SharedMemoryFileMappingHandle:
 
         case WGPUFeatureName_Depth32FloatStencil8:
         case WGPUFeatureName_TimestampQuery:
@@ -123,6 +125,8 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_TextureComponentSwizzle:
         case WGPUFeatureName_ChromiumExperimentalBindless:
         case WGPUFeatureName_PrimitiveIndex:
+        case WGPUFeatureName_AdapterPropertiesWGPU:
+        case WGPUFeatureName_ChromiumExperimentalSamplingResourceTable:
             return true;
     }
 

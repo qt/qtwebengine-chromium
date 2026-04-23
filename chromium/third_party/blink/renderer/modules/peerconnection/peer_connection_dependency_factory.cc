@@ -12,9 +12,7 @@
 #include <vector>
 
 #include "base/feature_list.h"
-#include "base/functional/bind.h"
 #include "base/functional/callback.h"
-#include "base/functional/callback_forward.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -22,6 +20,7 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/notreached.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
@@ -34,6 +33,7 @@
 #include "media/media_buildflags.h"
 #include "media/mojo/clients/mojo_video_encoder_metrics_provider.h"
 #include "media/video/gpu_video_accelerator_factories.h"
+#include "media/webrtc/webrtc_features.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "net/net_buildflags.h"
 #include "services/network/public/cpp/features.h"
@@ -83,7 +83,9 @@
 #include "third_party/blink/renderer/platform/peerconnection/video_codec_factory.h"
 #include "third_party/blink/renderer/platform/peerconnection/vsync_provider.h"
 #include "third_party/blink/renderer/platform/peerconnection/vsync_tick_provider.h"
+#include "third_party/blink/renderer/platform/peerconnection/webrtc_util.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
+#include "third_party/blink/renderer/platform/wtf/bind_post_task.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_base.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_gfx.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_mojo.h"
@@ -105,13 +107,6 @@
 #include "third_party/webrtc_overrides/timer_based_tick_provider.h"
 
 namespace blink {
-
-template <>
-struct CrossThreadCopier<base::RepeatingCallback<void(base::TimeDelta)>>
-    : public CrossThreadCopierPassThrough<
-          base::RepeatingCallback<void(base::TimeDelta)>> {
-  STATIC_ONLY(CrossThreadCopier);
-};
 
 namespace {
 
@@ -136,13 +131,18 @@ CreateMojoVideoEncoderMetricsProviderFactory(LocalFrame* local_frame) {
 
 network::mojom::IPAddressSpace FromSocketAddress(
     const webrtc::SocketAddress socket_address) {
-  if (socket_address.IsLoopbackIP()) {
-    return network::mojom::IPAddressSpace::kLoopback;
+  switch (socket_address.GetIPAddressType()) {
+    case webrtc::IPAddressType::kAny:
+      return network::mojom::IPAddressSpace::kPublic;
+    case webrtc::IPAddressType::kLoopback:
+      return network::mojom::IPAddressSpace::kLoopback;
+    case webrtc::IPAddressType::kPrivate:
+      return network::mojom::IPAddressSpace::kLocal;
+    case webrtc::IPAddressType::kPublic:
+      return network::mojom::IPAddressSpace::kPublic;
+    case webrtc::IPAddressType::kUnknown:
+      return network::mojom::IPAddressSpace::kUnknown;
   }
-  if (socket_address.IsPrivateIP()) {
-    return network::mojom::IPAddressSpace::kLocal;
-  }
-  return network::mojom::IPAddressSpace::kPublic;
 }
 
 // PeerConnectionDependencies wants to own the factory, so we provide a simple
@@ -180,14 +180,68 @@ class ProxyAsyncDnsResolverFactory final
   raw_ptr<IpcPacketSocketFactory, DanglingUntriaged> ipc_psf_;
 };
 
+LocalNetworkAccessRequestType GetLocalNetworkAccessRequestType(
+    network::mojom::IPAddressSpace originator,
+    network::mojom::IPAddressSpace target) {
+  if (originator == network::mojom::IPAddressSpace::kUnknown ||
+      target == network::mojom::IPAddressSpace::kUnknown) {
+    return LocalNetworkAccessRequestType::kUnknown;
+  }
+
+  switch (originator) {
+    case network::mojom::IPAddressSpace::kLoopback:
+      switch (target) {
+        case network::mojom::IPAddressSpace::kLoopback:
+          return LocalNetworkAccessRequestType::kLoopbackToLoopback;
+        case network::mojom::IPAddressSpace::kLocal:
+          return LocalNetworkAccessRequestType::kLoopbackToLocal;
+        case network::mojom::IPAddressSpace::kPublic:
+          return LocalNetworkAccessRequestType::kLoopbackToPublic;
+        case network::mojom::IPAddressSpace::kUnknown:
+          NOTREACHED();
+      }
+      break;
+    case network::mojom::IPAddressSpace::kLocal:
+      switch (target) {
+        case network::mojom::IPAddressSpace::kLoopback:
+          return LocalNetworkAccessRequestType::kLocalToLoopback;
+        case network::mojom::IPAddressSpace::kLocal:
+          return LocalNetworkAccessRequestType::kLocalToLocal;
+        case network::mojom::IPAddressSpace::kPublic:
+          return LocalNetworkAccessRequestType::kLocalToPublic;
+        case network::mojom::IPAddressSpace::kUnknown:
+          NOTREACHED();
+      }
+      break;
+    case network::mojom::IPAddressSpace::kPublic:
+      switch (target) {
+        case network::mojom::IPAddressSpace::kLoopback:
+          return LocalNetworkAccessRequestType::kPublicToLoopback;
+        case network::mojom::IPAddressSpace::kLocal:
+          return LocalNetworkAccessRequestType::kPublicToLocal;
+        case network::mojom::IPAddressSpace::kPublic:
+          return LocalNetworkAccessRequestType::kPublicToPublic;
+        case network::mojom::IPAddressSpace::kUnknown:
+          NOTREACHED();
+      }
+      break;
+    case network::mojom::IPAddressSpace::kUnknown:
+      NOTREACHED();
+  }
+  NOTREACHED();
+}
+
 class LocalNetworkAccessPermission final
     : public webrtc::LocalNetworkAccessPermissionInterface {
  public:
   explicit LocalNetworkAccessPermission(
       network::mojom::IPAddressSpace originator_address_space,
-      mojo::Remote<mojom::blink::PermissionService> permission_service)
+      mojo::Remote<mojom::blink::PermissionService> permission_service,
+      blink::CrossThreadRepeatingFunction<void(LocalNetworkAccessRequestType)>
+          count_callback)
       : originator_address_space_(originator_address_space),
-        permission_service_(std::move(permission_service)) {}
+        permission_service_(std::move(permission_service)),
+        count_callback_(std::move(count_callback)) {}
 
   ~LocalNetworkAccessPermission() override {
     DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -196,10 +250,20 @@ class LocalNetworkAccessPermission final
   bool ShouldRequestPermission(
       const webrtc::SocketAddress& candidate_address) override {
     DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-    CHECK(RuntimeEnabledFeatures::LocalNetworkAccessWebRTCEnabled());
+
+    const auto target_address_space = FromSocketAddress(candidate_address);
+    auto request_type = GetLocalNetworkAccessRequestType(
+        originator_address_space_, target_address_space);
+    base::UmaHistogramEnumeration(
+        "WebRTC.PeerConnection.LocalNetworkAccess.RequestType", request_type);
+    count_callback_.Run(request_type);
+
+    if (!RuntimeEnabledFeatures::LocalNetworkAccessWebRTCEnabled()) {
+      return false;
+    }
 
     const bool is_less_public = network::IsLessPublicAddressSpace(
-        FromSocketAddress(candidate_address), originator_address_space_);
+        target_address_space, originator_address_space_);
 
     if (network::features::kLocalNetworkAccessChecksWebRTCLoopbackOnly.Get()) {
       return candidate_address.IsLoopbackIP() && is_less_public;
@@ -220,7 +284,7 @@ class LocalNetworkAccessPermission final
         CreatePermissionDescriptor(
             mojom::blink::PermissionName::LOCAL_NETWORK_ACCESS),
         /*user_gesture=*/false,
-        base::BindRepeating(
+        BindRepeating(
             &LocalNetworkAccessPermission::OnPermissionRequested,
             // This is safe because this class owns `permission_service_` which
             // won't call its callback after its destroyed.
@@ -237,7 +301,6 @@ class LocalNetworkAccessPermission final
       case mojom::blink::PermissionStatus::ASK:
       // Treat ASK i.e. the user closing the prompt, as denied.
       case mojom::blink::PermissionStatus::DENIED:
-      case mojom::blink::PermissionStatus::UNSATISFIED_OPTIONS:
         callback_(webrtc::LocalNetworkAccessPermissionStatus::kDenied);
         break;
     }
@@ -247,6 +310,8 @@ class LocalNetworkAccessPermission final
       callback_;
   const network::mojom::IPAddressSpace originator_address_space_;
   mojo::Remote<mojom::blink::PermissionService> permission_service_;
+  blink::CrossThreadRepeatingFunction<void(LocalNetworkAccessRequestType)>
+      count_callback_;
 
   THREAD_CHECKER(thread_checker_);
 
@@ -268,8 +333,6 @@ class LocalNetworkAccessPermissionFactory final
 
   std::unique_ptr<webrtc::LocalNetworkAccessPermissionInterface> Create()
       override {
-    CHECK(RuntimeEnabledFeatures::LocalNetworkAccessWebRTCEnabled());
-
     mojo::Remote<mojom::blink::PermissionService> permission_service;
     PostCrossThreadTask(
         *main_thread_task_runner_.get(), FROM_HERE,
@@ -279,7 +342,12 @@ class LocalNetworkAccessPermissionFactory final
             permission_service.BindNewPipeAndPassReceiver()));
 
     return std::make_unique<LocalNetworkAccessPermission>(
-        originator_address_space_, std::move(permission_service));
+        originator_address_space_, std::move(permission_service),
+        BindPostTask(
+            main_thread_task_runner_,
+            CrossThreadBindRepeating(
+                &PeerConnectionDependencyFactory::CountLocalNetworkAccess,
+                MakeUnwrappingCrossThreadWeakHandle(factory_))));
   }
 
  private:
@@ -585,25 +653,20 @@ void ReportUmaEncodeDecodeCapabilities(
 void WaitForEncoderSupportReady(
     media::GpuVideoAcceleratorFactories* gpu_factories) {
   gpu_factories->NotifyEncoderSupportKnown(
-      base::BindOnce(&ReportUmaEncodeDecodeCapabilities, gpu_factories));
+      BindOnce(&ReportUmaEncodeDecodeCapabilities, Unretained(gpu_factories)));
 }
 
 }  // namespace
 
-// static
-const char PeerConnectionDependencyFactory::kSupplementName[] =
-    "PeerConnectionDependencyFactory";
-
 PeerConnectionDependencyFactory& PeerConnectionDependencyFactory::From(
     ExecutionContext& context) {
   CHECK(!context.IsContextDestroyed());
-  auto* supplement =
-      Supplement<ExecutionContext>::From<PeerConnectionDependencyFactory>(
-          context);
+  PeerConnectionDependencyFactory* supplement =
+      context.GetPeerConnectionDependencyFactory();
   if (!supplement) {
     supplement = MakeGarbageCollected<PeerConnectionDependencyFactory>(
         context, PassKey());
-    ProvideTo(context, supplement);
+    context.SetPeerConnectionDependencyFactory(supplement);
   }
   return *supplement;
 }
@@ -611,8 +674,8 @@ PeerConnectionDependencyFactory& PeerConnectionDependencyFactory::From(
 PeerConnectionDependencyFactory::PeerConnectionDependencyFactory(
     ExecutionContext& context,
     PassKey)
-    : Supplement(context),
-      ExecutionContextLifecycleObserver(&context),
+    : ExecutionContextLifecycleObserver(&context),
+      execution_context_(context),
       context_task_runner_(
           context.GetTaskRunner(TaskType::kInternalMediaRealTime)),
       network_manager_(nullptr),
@@ -629,7 +692,7 @@ PeerConnectionDependencyFactory::PeerConnectionDependencyFactory(
 }
 
 PeerConnectionDependencyFactory::PeerConnectionDependencyFactory()
-    : Supplement(nullptr), ExecutionContextLifecycleObserver(nullptr) {}
+    : ExecutionContextLifecycleObserver(nullptr), execution_context_(nullptr) {}
 
 PeerConnectionDependencyFactory::~PeerConnectionDependencyFactory() = default;
 
@@ -671,21 +734,10 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
       StaticDeps().InitializeWorkerThread();
   StaticDeps().InitializeSignalingThread();
 
-// TODO(crbug.com/355256378): OpenH264 for encoding and FFmpeg for H264 decoding
-// should be detangled such that software decoding can be enabled without
-// software encoding.
-#if BUILDFLAG(RTC_USE_H264) && BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS) && \
-    BUILDFLAG(ENABLE_OPENH264)
-  // Building /w |rtc_use_h264|, is the corresponding run-time feature enabled?
-  if (!base::FeatureList::IsEnabled(
-          blink::features::kWebRtcH264WithOpenH264FFmpeg)) {
+  if (!::features::IsOpenH264SoftwareEncoderEnabledForWebRTC()) {
     // Feature is to be disabled.
     webrtc::DisableRtcUseH264();
   }
-#else
-  webrtc::DisableRtcUseH264();
-#endif  // BUILDFLAG(RTC_USE_H264) && BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS) &&
-        // BUILDFLAG(ENABLE_OPENH264)
 
   EnsureWebRtcAudioDeviceImpl();
 
@@ -707,7 +759,7 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
     // Note that MdnsResponderAdapter is created on the main thread to have
     // access to the connector to the service manager.
     mdns_responder =
-        std::make_unique<MdnsResponderAdapter>(*GetSupplementable());
+        std::make_unique<MdnsResponderAdapter>(*execution_context_);
   }
 #endif  // BUILDFLAG(ENABLE_MDNS)
   PostCrossThreadTask(
@@ -821,22 +873,24 @@ void PeerConnectionDependencyFactory::InitializeSignalingThread(
   std::unique_ptr<webrtc::VideoEncoderFactory> webrtc_encoder_factory =
       blink::CreateWebrtcVideoEncoderFactory(
           gpu_factories, std::move(video_encoder_metrics_provider_factory),
-          base::BindRepeating(&WebrtcVideoPerfReporter::StoreWebrtcVideoStats,
-                              WrapCrossThreadWeakPersistent(
-                                  webrtc_video_perf_reporter_.Get())));
+          ConvertToBaseRepeatingCallback(CrossThreadBindRepeating(
+              &WebrtcVideoPerfReporter::StoreWebrtcVideoStats,
+              WrapCrossThreadWeakPersistent(
+                  webrtc_video_perf_reporter_.Get()))));
   std::unique_ptr<webrtc::VideoDecoderFactory> webrtc_decoder_factory =
       blink::CreateWebrtcVideoDecoderFactory(
           gpu_factories, render_color_space,
-          base::BindRepeating(&WebrtcVideoPerfReporter::StoreWebrtcVideoStats,
-                              WrapCrossThreadWeakPersistent(
-                                  webrtc_video_perf_reporter_.Get())));
+          ConvertToBaseRepeatingCallback(CrossThreadBindRepeating(
+              &WebrtcVideoPerfReporter::StoreWebrtcVideoStats,
+              WrapCrossThreadWeakPersistent(
+                  webrtc_video_perf_reporter_.Get()))));
 
   if (!encode_decode_capabilities_reported_) {
     encode_decode_capabilities_reported_ = true;
     if (gpu_factories) {
       // Wait until decoder and encoder support are known.
       gpu_factories->NotifyDecoderSupportKnown(
-          base::BindOnce(&WaitForEncoderSupportReady, gpu_factories));
+          BindOnce(&WaitForEncoderSupportReady, Unretained(gpu_factories)));
     } else {
       ReportUmaEncodeDecodeCapabilities(gpu_factories);
     }
@@ -929,10 +983,8 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
     dependencies.allocator = CreatePortAllocator(web_frame);
   }
   dependencies.async_dns_resolver_factory = CreateAsyncDnsResolverFactory();
-  if (RuntimeEnabledFeatures::LocalNetworkAccessWebRTCEnabled()) {
-    dependencies.lna_permission_factory =
-        std::make_unique<LocalNetworkAccessPermissionFactory>(this);
-  }
+  dependencies.lna_permission_factory =
+      std::make_unique<LocalNetworkAccessPermissionFactory>(this);
   auto pc_or_error = GetPcFactory()->CreatePeerConnectionOrError(
       config, std::move(dependencies));
   if (pc_or_error.ok()) {
@@ -1035,15 +1087,9 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
         std::make_unique<blink::EmptyNetworkManager>(network_manager_.get());
   }
 
-  std::unique_ptr<LocalNetworkAccessPermissionFactory> lna_permission_factory;
-  if (RuntimeEnabledFeatures::LocalNetworkAccessWebRTCEnabled()) {
-    lna_permission_factory =
-        std::make_unique<LocalNetworkAccessPermissionFactory>(this);
-  }
-
   auto port_allocator = std::make_unique<P2PPortAllocator>(
       std::move(network_manager), socket_factory_.get(), port_config,
-      std::move(lna_permission_factory));
+      std::make_unique<LocalNetworkAccessPermissionFactory>(this));
   if (IsValidPortRange(min_port, max_port))
     port_allocator->SetPortRange(min_port, max_port);
 
@@ -1143,9 +1189,9 @@ void PeerConnectionDependencyFactory::CleanupPeerConnectionFactory() {
   if (signaling_thread) {
     // To avoid a PROXY block-invoke to ~webrtc::PeerConnectionFactory(), we
     // move our reference to the signaling thread in a PostTask.
-    signaling_thread->PostTask(
-        FROM_HERE,
-        base::BindOnce(
+    PostCrossThreadTask(
+        *signaling_thread, FROM_HERE,
+        CrossThreadBindOnce(
             [](webrtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface>
                    pcf) {
               // The binding releases `pcf` on the signaling thread as this
@@ -1239,7 +1285,7 @@ PeerConnectionDependencyFactory::GetGpuFactories() {
 }
 
 void PeerConnectionDependencyFactory::Trace(Visitor* visitor) const {
-  Supplement<ExecutionContext>::Trace(visitor);
+  visitor->Trace(execution_context_);
   ExecutionContextLifecycleObserver::Trace(visitor);
   visitor->Trace(p2p_socket_dispatcher_);
   visitor->Trace(webrtc_video_perf_reporter_);
@@ -1266,6 +1312,40 @@ std::unique_ptr<webrtc::LocalNetworkAccessPermissionFactoryInterface>
 PeerConnectionDependencyFactory::
     CreateLocalNetworkAccessPermissionFactoryForTesting() {
   return std::make_unique<LocalNetworkAccessPermissionFactory>(this);
+}
+
+void PeerConnectionDependencyFactory::CountLocalNetworkAccess(
+    LocalNetworkAccessRequestType request_type) {
+  UseCounter::Count(DomWindow(),
+                    mojom::blink::WebFeature::kWebRTCLocalNetworkAccessCheck);
+
+  switch (request_type) {
+    // To same or more public cases:
+    case LocalNetworkAccessRequestType::kUnknown:
+    case LocalNetworkAccessRequestType::kPublicToPublic:
+    case LocalNetworkAccessRequestType::kLocalToPublic:
+    case LocalNetworkAccessRequestType::kLocalToLocal:
+    case LocalNetworkAccessRequestType::kLoopbackToPublic:
+    case LocalNetworkAccessRequestType::kLoopbackToLocal:
+    case LocalNetworkAccessRequestType::kLoopbackToLoopback:
+      return;
+    // To less public cases:
+    case LocalNetworkAccessRequestType::kPublicToLocal:
+      UseCounter::Count(
+          DomWindow(),
+          mojom::blink::WebFeature::kWebRTCLocalNetworkAccessPublicToLocal);
+      return;
+    case LocalNetworkAccessRequestType::kPublicToLoopback:
+      UseCounter::Count(
+          DomWindow(),
+          mojom::blink::WebFeature::kWebRTCLocalNetworkAccessPublicToLoopback);
+      return;
+    case LocalNetworkAccessRequestType::kLocalToLoopback:
+      UseCounter::Count(
+          DomWindow(),
+          mojom::blink::WebFeature::kWebRTCLocalNetworkAccessLocalToLoopback);
+      return;
+  }
 }
 
 }  // namespace blink

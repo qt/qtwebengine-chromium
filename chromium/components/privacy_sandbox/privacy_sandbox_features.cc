@@ -74,7 +74,7 @@ const base::FeatureParam<bool>
 BASE_FEATURE(kOverridePrivacySandboxSettingsLocalTesting,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kDisablePrivacySandboxPrompts, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kDisablePrivacySandboxPrompts, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kEnforcePrivacySandboxAttestations,
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -107,36 +107,19 @@ BASE_FEATURE(kFingerprintingProtectionUx, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kIpProtectionUx, base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kActUserBypassUx, base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kTrackingProtectionContentSettingIn3pcUx,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kTrackingProtectionContentSettingFor3pcb,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 BASE_FEATURE(kRelatedWebsiteSetsUi, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kRollBackModeB, base::FEATURE_DISABLED_BY_DEFAULT);
 
-#if BUILDFLAG(IS_ANDROID)
-BASE_FEATURE(kTrackingProtectionUserBypassPwa,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kTrackingProtectionUserBypassPwaTrigger,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kDisplayWildcardInContentSettings,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_ANDROID)
+const char kRollBackModeBForcedName[] = "force";
+const base::FeatureParam<bool> kRollBackModeBForced{
+    &kRollBackModeB, kRollBackModeBForcedName, false};
 
 BASE_FEATURE(kPsDualWritePrefsToNoticeStorage,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kPrivateStateTokensDevUI, base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kPrivacySandboxGetPromptFromNoticeService,
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kPrivacySandboxActivityTypeStorage,
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -174,12 +157,6 @@ const base::FeatureParam<std::string> kPrivacySandboxSentimentSurveyTriggerId{
     &kPrivacySandboxSentimentSurvey, "sentiment-survey-trigger-id", ""};
 
 BASE_FEATURE(kPrivacySandboxAdsApiUxEnhancements,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kPrivacySandboxAllowPromptForBlocked3PCookies,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kPrivacySandboxMigratePrefsToSchemaV2,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kPrivacySandboxNoticeFramework, base::FEATURE_DISABLED_BY_DEFAULT);

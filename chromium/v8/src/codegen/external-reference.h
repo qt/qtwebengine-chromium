@@ -91,6 +91,7 @@ enum class IsolateFieldId : uint8_t;
 
 #define EXTERNAL_REFERENCE_LIST(V)                                             \
   V(abort_with_reason, "abort_with_reason")                                    \
+  V(abort_with_sandbox_violation, "abort_with_sandbox_violation")              \
   V(address_of_log_or_trace_osr, "v8_flags.log_or_trace_osr")                  \
   V(address_of_builtin_subclassing_flag, "v8_flags.builtin_subclassing")       \
   V(address_of_double_abs_constant, "double_absolute_constant")                \
@@ -260,6 +261,7 @@ enum class IsolateFieldId : uint8_t;
   IF_WASM(V, wasm_suspend_stack, "wasm_suspend_stack")                         \
   IF_WASM(V, wasm_resume_jspi_stack, "wasm_resume_jspi_stack")                 \
   IF_WASM(V, wasm_resume_wasmfx_stack, "wasm_resume_wasmfx_stack")             \
+  IF_WASM(V, wasm_suspend_wasmfx_stack, "wasm_suspend_wasmfx_stack")           \
   IF_WASM(V, wasm_return_stack, "wasm_return_stack")                           \
   IF_WASM(V, wasm_switch_to_the_central_stack,                                 \
           "wasm::switch_to_the_central_stack")                                 \
@@ -349,6 +351,7 @@ enum class IsolateFieldId : uint8_t;
           "wasm::f16x8_demote_f64x2_zero_wrapper")                             \
   IF_WASM(V, wasm_f16x8_qfma, "wasm::f16x8_qfma_wrapper")                      \
   IF_WASM(V, wasm_f16x8_qfms, "wasm::f16x8_qfms_wrapper")                      \
+  IF_WASM(V, wasm_data_drop, "wasm::data_drop")                                \
   IF_WASM(V, wasm_memory_init, "wasm::memory_init")                            \
   IF_WASM(V, wasm_memory_copy, "wasm::memory_copy")                            \
   IF_WASM(V, wasm_memory_fill, "wasm::memory_fill")                            \
@@ -464,7 +467,7 @@ enum class IsolateFieldId : uint8_t;
   V(re_check_stack_guard_state,                                                \
     "RegExpMacroAssembler*::CheckStackGuardState()")                           \
   V(re_grow_stack, "NativeRegExpMacroAssembler::GrowStack()")                  \
-  V(re_word_character_map, "NativeRegExpMacroAssembler::word_character_map")   \
+  V(re_word_character_map, "RegExpMacroAssembler::word_character_map")         \
   V(re_match_for_call_from_js, "IrregexpInterpreter::MatchForCallFromJs")      \
   V(re_experimental_match_for_call_from_js,                                    \
     "ExperimentalRegExp::MatchForCallFromJs")                                  \
@@ -513,12 +516,8 @@ enum class IsolateFieldId : uint8_t;
 #define EXTERNAL_REFERENCE_LIST_SANDBOX(V)
 #endif  // V8_ENABLE_SANDBOX
 
-#ifdef V8_ENABLE_LEAPTIERING
 #define EXTERNAL_REFERENCE_LIST_LEAPTIERING(V) \
   V(js_dispatch_table_address, "IsolateGroup::current()->js_dispatch_table()")
-#else
-#define EXTERNAL_REFERENCE_LIST_LEAPTIERING(V)
-#endif  // V8_ENABLE_LEAPTIERING
 
 #ifdef V8_ENABLE_CET_SHADOW_STACK
 #define EXTERNAL_REFERENCE_LIST_CET_SHADOW_STACK(V)            \
@@ -696,6 +695,7 @@ size_t hash_value(ExternalReference);
 V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&, ExternalReference);
 
 void abort_with_reason(int reason);
+void abort_with_sandbox_violation();
 
 }  // namespace internal
 }  // namespace v8

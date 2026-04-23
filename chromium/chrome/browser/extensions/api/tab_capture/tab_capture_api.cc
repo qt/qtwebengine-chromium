@@ -16,16 +16,15 @@
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry.h"
+#include "chrome/browser/extensions/browser_window_util.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/media/webrtc/capture_policy_utils.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
-#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/tabs/tab_list_interface.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "content/public/browser/desktop_media_id.h"
@@ -117,32 +116,19 @@ void AddMediaStreamSourceConstraints(content::WebContents* target_contents,
   }
 }
 
-// Find the last-active browser that matches a profile this ExtensionFunction
-// can access.  We can't use FindLastActiveWithProfile() because we may want to
-// include incognito profile browsers.
-BrowserWindowInterface* GetLastActiveBrowser(
-    const Profile* profile,
-    const bool match_incognito_profile) {
-  BrowserWindowInterface* target_browser = nullptr;
-  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
-      [&](BrowserWindowInterface* browser) {
-        Profile* browser_profile = browser->GetProfile();
-        if (browser_profile == profile ||
-            (match_incognito_profile &&
-             browser_profile->GetOriginalProfile() == profile)) {
-          target_browser = browser;
-          return false;  // stop iterating
-        }
-        return true;  // continue iterating
-      });
-
-  return target_browser;
-}
-
 // Get the id of the allowlisted extension.
 std::string GetAllowlistedExtensionID() {
   return base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
       switches::kAllowlistedExtensionID);
+}
+
+content::WebContents* GetActiveWebContents(BrowserWindowInterface* browser) {
+  if (!browser) {
+    return nullptr;
+  }
+  tabs::TabInterface* active_tab =
+      TabListInterface::From(browser)->GetActiveTab();
+  return active_tab ? active_tab->GetContents() : nullptr;
 }
 
 }  // namespace
@@ -155,13 +141,13 @@ ExtensionFunction::ResponseAction TabCaptureCaptureFunction::Run() {
   Profile* profile = Profile::FromBrowserContext(browser_context());
   const bool match_incognito_profile = include_incognito_information();
   BrowserWindowInterface* target_browser =
-      GetLastActiveBrowser(profile, match_incognito_profile);
+      browser_window_util::GetLastActiveBrowserWithProfile(
+          *profile, match_incognito_profile);
   if (!target_browser) {
     return RespondNow(Error(kFindingTabError));
   }
 
-  content::WebContents* target_contents =
-      target_browser->GetFeatures().tab_strip_model()->GetActiveWebContents();
+  content::WebContents* target_contents = GetActiveWebContents(target_browser);
   if (!target_contents) {
     return RespondNow(Error(kFindingTabError));
   }
@@ -250,13 +236,13 @@ ExtensionFunction::ResponseAction TabCaptureGetMediaStreamIdFunction::Run() {
     Profile* profile = Profile::FromBrowserContext(browser_context());
     const bool match_incognito_profile = include_incognito_information();
     BrowserWindowInterface* target_browser =
-        GetLastActiveBrowser(profile, match_incognito_profile);
+        browser_window_util::GetLastActiveBrowserWithProfile(
+            *profile, match_incognito_profile);
     if (!target_browser) {
       return RespondNow(Error(kFindingTabError));
     }
 
-    target_contents =
-        target_browser->GetFeatures().tab_strip_model()->GetActiveWebContents();
+    target_contents = GetActiveWebContents(target_browser);
   }
   if (!target_contents) {
     return RespondNow(Error(kFindingTabError));

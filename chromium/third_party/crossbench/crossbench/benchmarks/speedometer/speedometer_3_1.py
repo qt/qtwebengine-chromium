@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
-from crossbench.benchmarks.speedometer.speedometer_3 import (
-    Speedometer3Benchmark, Speedometer3Probe, Speedometer3ProbeContext,
-    Speedometer3Story)
+from crossbench.benchmarks.speedometer.speedometer_3 import \
+    Speedometer3Benchmark, Speedometer3Probe, Speedometer3ProbeContext, \
+    Speedometer3Story
 
 if TYPE_CHECKING:
   from crossbench.benchmarks.base import VersionParts

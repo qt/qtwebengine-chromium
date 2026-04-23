@@ -87,28 +87,19 @@ inline void UseFixed(Input input, DoubleRegister reg) {
 
 CallKnownJSFunction::CallKnownJSFunction(
     uint64_t bitfield,
-#ifdef V8_ENABLE_LEAPTIERING
     JSDispatchHandle dispatch_handle,
-#endif
     compiler::SharedFunctionInfoRef shared_function_info, ValueNode* closure,
     ValueNode* context, ValueNode* receiver, ValueNode* new_target,
     const compiler::FeedbackSource& feedback_source)
     : Base(bitfield),
-#ifdef V8_ENABLE_LEAPTIERING
       dispatch_handle_(dispatch_handle),
-#endif
       shared_function_info_(shared_function_info),
       expected_parameter_count_(
-#ifdef V8_ENABLE_LEAPTIERING
           IsolateGroup::current()->js_dispatch_table()->GetParameterCount(
               dispatch_handle)
-#else
-          shared_function_info
-              .internal_formal_parameter_count_with_receiver_deprecated()
-#endif
               ),
       feedback_source_(feedback_source) {
-  set_input(kClosureIndex, closure);
+  set_input(kTargetIndex, closure);
   set_input(kContextIndex, context);
   set_input(kReceiverIndex, receiver);
   set_input(kNewTargetIndex, new_target);
@@ -121,6 +112,12 @@ void NodeBase::UnwrapDeoptFrames() {
   }
   if (properties().can_lazy_deopt()) {
     lazy_deopt_info()->Unwrap();
+  }
+}
+
+void NodeBase::ClearInputs() {
+  for (Input input : inputs()) {
+    input.clear();
   }
 }
 
@@ -141,6 +138,17 @@ void NodeBase::OverwriteWith(Opcode new_opcode,
   }
 }
 
+template <typename NodeT, typename... Args>
+NodeT* NodeBase::OverwriteWith(Args&&... args) {
+#ifdef DEBUG
+  CheckCanOverwriteWith(opcode_of<NodeT>, NodeT::kProperties);
+#endif
+  uint64_t bitfield = OpcodeField::encode(opcode_of<NodeT>) |
+                      OpPropertiesField::encode(NodeT::kProperties) |
+                      InputCountField::encode(NodeT::kInputCount);
+  return new (this) NodeT(bitfield, std::forward<Args>(args)...);
+}
+
 void NodeBase::OverwriteWithIdentityTo(ValueNode* node) {
   // OverwriteWith() checks if the node we're overwriting to has the same
   // input count and the same properties. Here we don't need to do that, since
@@ -149,9 +157,7 @@ void NodeBase::OverwriteWithIdentityTo(ValueNode* node) {
   // closest to the input_base().
   DCHECK_GE(input_count(), 1);
   // Remove use of all inputs first.
-  for (Input input : inputs()) {
-    input.clear();
-  }
+  ClearInputs();
   // Unfortunately we cannot remove uses from deopt frames, since these could be
   // shared with other nodes. But we can remove uses from Identity and
   // ReturnedValue nodes.
@@ -174,9 +180,7 @@ void NodeBase::OverwriteWithReturnValue(ValueNode* node) {
 
   DCHECK_GE(input_count(), 1);
   // Remove use of all inputs first.
-  for (Input input : inputs()) {
-    input.clear();
-  }
+  ClearInputs();
   // Unfortunately we cannot remove uses from deopt frames, since these could be
   // shared with other nodes. But we can remove uses from Identity and
   // ReturnedValue nodes.

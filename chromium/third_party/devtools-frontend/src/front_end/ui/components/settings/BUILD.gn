@@ -15,7 +15,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("settings") {
+devtools_ui_module("settings") {
   sources = [
     "SettingCheckbox.ts",
     "SettingDeprecationWarning.ts",
@@ -23,11 +23,13 @@ devtools_module("settings") {
 
   deps = [
     "../../../core/common:bundle",
+    "../../legacy:bundle",
     "../../lit:bundle",
     "../../visual_logging:bundle",
     "../buttons:bundle",
     "../helpers:bundle",
     "../input:bundle",
+    "../tooltips:bundle",
   ]
 }
 
@@ -42,7 +44,7 @@ devtools_entrypoint("bundle") {
   visibility = default_components_visibility + [ "../../legacy/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

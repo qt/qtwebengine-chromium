@@ -457,6 +457,15 @@ UseCounterMetricsRecorder::GetWebFeatureToWebDXFeatureMap() {
           {WebFeature::kXRDOMOverlay, WebDXFeature::kWebxrDomOverlays},
           {WebFeature::kReportingObserver, WebDXFeature::kReporting},
           {WebFeature::kReportingEndpointsHeader, WebDXFeature::kReporting},
+          {WebFeature::kV8MLContext_Dispatch_Method, WebDXFeature::kWebnn},
+          {WebFeature::kTextDetectorDetect, WebDXFeature::kTextDetect},
+          {WebFeature::kSummarizer_Summarize, WebDXFeature::kSummarizer},
+          {WebFeature::kSummarizer_SummarizeStreaming,
+           WebDXFeature::kSummarizer},
+          {WebFeature::kTranslator_Translate, WebDXFeature::kTranslationApi},
+          {WebFeature::kTranslator_TranslateStreaming,
+           WebDXFeature::kTranslationApi},
+          {WebFeature::kLanguageDetector_Detect, WebDXFeature::kTranslationApi},
           // Add new features above this line.
       }};
 
@@ -603,6 +612,7 @@ UseCounterMetricsRecorder::GetCSSProperties2WebDXFeatureMap() {
           {CSSSampleId::kLineBreak, WebDXFeature::kLineBreak},
           {CSSSampleId::kFontLanguageOverride,
            WebDXFeature::kFontLanguageOverride},
+          {CSSSampleId::kTextJustify, WebDXFeature::kTextJustify},
           // Add new features above this line.
       }};
 

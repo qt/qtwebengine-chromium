@@ -74,7 +74,6 @@ union ContextCreationAttribs {
 };
 
 struct CreateCommandBufferParams {
-  int32 share_group_id;
   int32 stream_id;
   SchedulingPriority stream_priority;
   ContextCreationAttribs attribs;
@@ -101,18 +100,6 @@ struct CommandBufferState {
   ContextLostReason context_lost_reason;
   uint32 generation;
   uint32 set_get_buffer_count;
-};
-
-struct ScheduleImageDecodeParams {
-  array<uint8> encoded_data;
-  gfx.mojom.Size output_size;
-  int32 raster_decoder_route_id;
-  uint32 transfer_cache_entry_id;
-  int32 discardable_handle_shm_id;
-  uint32 discardable_handle_shm_offset;
-  uint64 discardable_handle_release_count;
-  gfx.mojom.ColorSpace target_color_space;
-  bool needs_mips;
 };
 
 // Main control interface for a GPU process connection. For now an instance of
@@ -170,12 +157,6 @@ interface GpuChannel {
   // destructor, so that the stub deletes the actual CommandBufferService
   // object that it's hosting.
   [Sync, NoInterrupt] DestroyCommandBuffer(int32 routing_id) => ();
-
-  // Schedules a hardware-accelerated image decode in the GPU process. Renderers
-  // should use gpu::ImageDecodeAcceleratorProxy to schedule decode requests
-  // which are processed by gpu::ImageDecodeAcceleratorStub on the service side.
-  ScheduleImageDecode(ScheduleImageDecodeParams params,
-                      uint64 decode_release_count);
 
   // Sends a batch of DeferredRequests to be executed by the service.
   // `flushed_deferred_message_id` is used to update the per-channel id of
@@ -255,7 +236,7 @@ interface GpuChannel {
   // Note that this method has some similar functionality but is different than
   // above CopyToGpuMemoryBufferAsync in the sense that above method is only
   // used for shared memory GMBs whereas this method is used for native GMBs.
-  [EnableIf=is_win]
+  [EnableIf=is_win|is_android]
   CopyNativeGmbToSharedMemoryAsync(gfx.mojom.GpuMemoryBufferHandle
       buffer_handle, mojo_base.mojom.UnsafeSharedMemoryRegion shared_memory)
                      => (bool success);
@@ -446,14 +427,6 @@ union DeferredSharedImageRequest {
 
   AddReferenceToSharedImageParams add_reference_to_shared_image;
 
-  // See CreateSwapChainParams.
-  [EnableIf=is_win]
-  CreateSwapChainParams create_swap_chain;
-
-  // See PresentSwapChainParams.
-  [EnableIf=is_win]
-  PresentSwapChainParams present_swap_chain;
-
   // See RegisterDxgiFenceParams.
   [EnableIf=is_win]
   RegisterDxgiFenceParams register_dxgi_fence;
@@ -571,40 +544,6 @@ struct AddReferenceToSharedImageParams {
 // complete after the command runs.
 struct CopyToGpuMemoryBufferParams {
   // The mailbox identifying the shared image which should update its GMB.
-  Mailbox mailbox;
-};
-
-[EnableIf=is_win]
-struct CreateSwapChainParams {
-  // Mailbox identifying the front buffer of the swap chain.
-  Mailbox front_buffer_mailbox;
-
-  // Mailbox identifying the back buffer of the swap chain.
-  Mailbox back_buffer_mailbox;
-
-  // Pixel format of the front and back buffers.
-  viz.mojom.SharedImageFormat format;
-
-  // Size of the buffers.
-  gfx.mojom.Size size;
-
-  // Color space of the buffers.
-  gfx.mojom.ColorSpace color_space;
-
-  // Usage flags corresponding to values defined in
-  // gpu/command_buffer/common/shared_image_usage.h.
-  uint32 usage;
-
-  // Which corner is considered the origin of the swap chain's buffers.
-  skia.mojom.SurfaceOrigin surface_origin;
-
-  // Indicates how the alpha component of each pixel is interpreted.
-  skia.mojom.AlphaType alpha_type;
-};
-
-[EnableIf=is_win]
-struct PresentSwapChainParams {
-  // Mailbox identifying the swap chain to present.
   Mailbox mailbox;
 };
 

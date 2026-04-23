@@ -161,19 +161,6 @@ gl::GLContextAttribs GenerateGLContextAttribsForDecoder(
     attribs.client_minor_es_version = 0;
   }
 
-  if (gl::GetGlWorkarounds().disable_es3gl_context) {
-    // Forcefully disable ES3 contexts
-    attribs.client_major_es_version = 2;
-    attribs.client_minor_es_version = 0;
-  }
-
-  if (IsES31ForTestingContextType(context_type)) {
-    // Forcefully disable ES 3.1 contexts. Tests create contexts by initializing
-    // the attributes directly.
-    attribs.client_major_es_version = 2;
-    attribs.client_minor_es_version = 0;
-  }
-
   return attribs;
 }
 
@@ -195,12 +182,7 @@ gl::GLContextAttribs GenerateGLContextAttribsForCompositor(
     attribs.allow_client_arrays = true;
   }
 
-  bool force_es2_context = gl::GetGlWorkarounds().disable_es3gl_context;
-  if (features::UseGles2ForOopR() && use_passthrough_cmd_decoder) {
-    force_es2_context = true;
-  }
-
-  attribs.client_major_es_version = force_es2_context ? 2 : 3;
+  attribs.client_major_es_version = 3;
   attribs.client_minor_es_version = 0;
 
   return attribs;
@@ -229,7 +211,7 @@ GpuPreferences ParseGpuPreferences(const base::CommandLine* command_line) {
   gpu_preferences.enable_gpu_driver_debug_logging =
       command_line->HasSwitch(switches::kEnableGPUDriverDebugLogging);
   gpu_preferences.disable_gpu_program_cache =
-      command_line->HasSwitch(switches::kDisableGpuProgramCache);
+      !features::IsShaderDiskCacheEnabled(command_line);
   gpu_preferences.enforce_gl_minimums =
       command_line->HasSwitch(switches::kEnforceGLMinimums);
   if (GetUintFromSwitch(
@@ -370,11 +352,11 @@ uint32_t GetTextureTargetForIOSurfaces() {
 
 size_t UpdateShaderCacheSizeOnMemoryPressure(
     size_t max_cache_size,
-    base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
+    base::MemoryPressureLevel memory_pressure_level) {
   switch (memory_pressure_level) {
-    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE:
+    case base::MEMORY_PRESSURE_LEVEL_NONE:
       return max_cache_size;
-    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE:
+    case base::MEMORY_PRESSURE_LEVEL_MODERATE:
       if (base::FeatureList::IsEnabled(
               ::features::kAggressiveShaderCacheLimits)) {
         // Ignore moderate memory pressure.
@@ -382,7 +364,7 @@ size_t UpdateShaderCacheSizeOnMemoryPressure(
         max_cache_size /= 4;
       }
       break;
-    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL:
+    case base::MEMORY_PRESSURE_LEVEL_CRITICAL:
       if (base::FeatureList::IsEnabled(
               ::features::kAggressiveShaderCacheLimits)) {
 #if BUILDFLAG(IS_ANDROID)

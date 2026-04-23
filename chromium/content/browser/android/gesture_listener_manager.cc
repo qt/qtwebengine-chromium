@@ -179,7 +179,8 @@ void GestureListenerManager::RenderFrameHostChanged(RenderFrameHost* old_host,
 }
 
 void GestureListenerManager::OnInputEvent(const RenderWidgetHost& widget,
-                                          const blink::WebInputEvent& event) {
+                                          const blink::WebInputEvent& event,
+                                          InputEventSource source) {
   const blink::mojom::EventType event_type = event.GetType();
 
   if (IsUserInteractionInputType(event_type)) {
@@ -383,7 +384,7 @@ void GestureListenerManager::UnobserveRenderFrames() {
   observed_render_frames_.clear();
 }
 
-jlong JNI_GestureListenerManagerImpl_Init(
+static jlong JNI_GestureListenerManagerImpl_Init(
     JNIEnv* env,
     const JavaParamRef<jobject>& obj,
     const JavaParamRef<jobject>& jweb_contents) {
@@ -398,3 +399,5 @@ jlong JNI_GestureListenerManagerImpl_Init(
 }
 
 }  // namespace content
+
+DEFINE_JNI(GestureListenerManagerImpl)

@@ -1,7 +1,7 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -281,6 +281,7 @@ export class TickingFlameChart extends UI.Widget.VBox {
   }
 
   override willHide(): void {
+    super.willHide();
     this.isShown = false;
     if (this.ticking) {
       this.stop();
@@ -288,6 +289,7 @@ export class TickingFlameChart extends UI.Widget.VBox {
   }
 
   override wasShown(): void {
+    super.wasShown();
     this.isShown = true;
     if (this.#canTick && !this.ticking) {
       this.start();

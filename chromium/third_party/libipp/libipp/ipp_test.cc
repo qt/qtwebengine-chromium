@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libipp/attribute.h"
-#include "libipp/builder.h"
-#include "libipp/frame.h"
-#include "libipp/parser.h"
+#include "attribute.h"
+#include "binary_content.h"
+#include "builder.h"
+#include "frame.h"
+#include "parser.h"
 
 #include <cstdint>
 #include <string>
@@ -16,47 +17,6 @@
 // This file contains unit test based on examples from [rfc8010].
 
 namespace {
-
-uint32_t TwosComplementEncoding(int value) {
-  if (value >= 0)
-    return value;
-  uint32_t binary = -static_cast<int64_t>(value);
-  binary = ~binary;
-  ++binary;
-  return binary;
-}
-
-// Helps build binary representation of frames from examples copied from
-// [rfc8010].
-struct BinaryContent {
-  // frame content
-  std::vector<uint8_t> data;
-  // add field with ASCII string
-  void s(std::string s) {
-    for (auto c : s) {
-      data.push_back(static_cast<uint8_t>(c));
-    }
-  }
-  // add 1 byte
-  void u1(int v) {
-    const uint32_t b = TwosComplementEncoding(v);
-    data.push_back(b & 0xffu);
-  }
-  // add 2 bytes
-  void u2(int v) {
-    const uint32_t b = TwosComplementEncoding(v);
-    data.push_back((b >> 8) & 0xffu);
-    data.push_back(b & 0xffu);
-  }
-  // add 4 bytes
-  void u4(int v) {
-    const uint32_t b = TwosComplementEncoding(v);
-    data.push_back((b >> 24) & 0xffu);
-    data.push_back((b >> 16) & 0xffu);
-    data.push_back((b >> 8) & 0xffu);
-    data.push_back(b & 0xffu);
-  }
-};
 
 // function comparing if two collections have the same content
 void CompareCollections(const ipp::Collection& c1, const ipp::Collection& c2) {

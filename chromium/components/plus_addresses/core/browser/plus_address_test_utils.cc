@@ -124,8 +124,8 @@ std::unique_ptr<net::test_server::HttpResponse>
 HandleRequestToPlusAddressWithSuccess(
     const net::test_server::HttpRequest& request) {
   // Ignore unrecognized path.
-  if (request.GetURL().path() != kReservePath &&
-      request.GetURL().path() != kConfirmPath) {
+  if (request.GetURL().GetPath() != kReservePath &&
+      request.GetURL().GetPath() != kConfirmPath) {
     return nullptr;
   }
 
@@ -143,7 +143,7 @@ HandleRequestToPlusAddressWithSuccess(
   http_response->set_content_type("application/json");
   PlusProfile profile = CreatePlusProfile(
       /*plus_address=*/is_refresh ? kFakePlusAddressRefresh : kFakePlusAddress,
-      /*is_confirmed=*/request.GetURL().path() == kConfirmPath);
+      /*is_confirmed=*/request.GetURL().GetPath() == kConfirmPath);
   http_response->set_content(MakeCreationResponse(profile));
   return http_response;
 }
@@ -167,27 +167,6 @@ Matcher<Suggestion> EqualsFillPlusAddressSuggestion(std::string_view address) {
                                 /*main_text=*/base::UTF8ToUTF16(address)),
                Field(&Suggestion::icon, Suggestion::Icon::kPlusAddress),
                Field(&Suggestion::labels, labels));
-}
-
-Matcher<std::vector<Suggestion>> IsSingleCreatePlusAddressSuggestion() {
-  std::vector<std::vector<Suggestion::Text>> labels;
-  if constexpr (!BUILDFLAG(IS_ANDROID)) {
-    labels = {{Suggestion::Text(l10n_util::GetStringUTF16(
-        IDS_PLUS_ADDRESS_CREATE_SUGGESTION_SECONDARY_TEXT))}};
-  }
-  return ElementsAre(AllOf(
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-      EqualsSuggestion(SuggestionType::kCreateNewPlusAddressInline),
-#else
-      EqualsSuggestion(SuggestionType::kCreateNewPlusAddress,
-                       /*main_text=*/l10n_util::GetStringUTF16(
-                           IDS_PLUS_ADDRESS_CREATE_SUGGESTION_MAIN_TEXT)),
-      Field(&Suggestion::iph_metadata,
-            Suggestion::IPHMetadata(
-                &feature_engagement::kIPHPlusAddressCreateSuggestionFeature)),
-#endif
-      Field(&Suggestion::icon, Suggestion::Icon::kPlusAddress),
-      Field(&Suggestion::labels, labels)));
 }
 
 Matcher<std::vector<Suggestion>> IsSingleFillPlusAddressSuggestion(

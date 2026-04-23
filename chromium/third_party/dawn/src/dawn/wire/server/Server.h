@@ -61,7 +61,7 @@ class MemoryTransferService;
 // userdata->foo = 2;
 //
 // callMyCallbackHandler(
-//      ForwardToServer<&Server::MyCallbackHandler>,
+//      ForwardToServer<&Server::MyCallbackHandler>::Callback,
 //      userdata.release());
 //
 // void Server::MyCallbackHandler(MyUserdata* userdata, Other args) { }
@@ -72,36 +72,28 @@ struct CallbackUserdata {
     explicit CallbackUserdata(const std::weak_ptr<Server>& server);
 };
 
-template <auto F>
-struct ForwardToServerHelper {
-    template <typename _>
-    struct ExtractedTypes;
+template <auto F, typename _ = decltype(F)>
+struct ForwardToServerHelper;
 
-    // An internal structure used to unpack the various types that compose the type of F
-    template <typename Return, typename Class, typename UserdataT, typename... Args>
-    struct ExtractedTypes<Return (Class::*)(UserdataT*, Args...)> {
-        using Userdata = UserdataT;
-        using UntypedCallback = Return (*)(Args..., void*, void*);
+template <auto F, typename UserdataT, typename... Args>
+struct ForwardToServerHelper<F, void (Server::*)(UserdataT*, Args...)> {
+    using Userdata = UserdataT;
 
-        static Return Callback(Args... args, void* userdata, void*) {
-            // Acquire the userdata, and cast it to UserdataT.
-            std::unique_ptr<Userdata> data(static_cast<Userdata*>(userdata));
-            auto server = data->server.lock();
-            if (!server) {
-                // Do nothing if the server has already been destroyed.
-                return;
-            }
-            // Forward the arguments and the typed userdata to the Server:: member function.
-            (server.get()->*F)(data.get(), std::forward<decltype(args)>(args)...);
-            server.get()->Flush();
+    static void Callback(Args... args, void* userdata, void*) {
+        // Acquire the userdata, and cast it to UserdataT.
+        std::unique_ptr<Userdata> data(static_cast<Userdata*>(userdata));
+        auto server = data->server.lock();
+        if (!server) {
+            // Do nothing if the server has already been destroyed.
+            return;
         }
-    };
-
-    static constexpr typename ExtractedTypes<decltype(F)>::UntypedCallback Create() {
-        return ExtractedTypes<decltype(F)>::Callback;
+        // Forward the arguments and the typed userdata to the Server:: member function.
+        {
+            auto serverGuard = server.get()->GetGuard();
+            (server.get()->*F)(data.get(), std::forward<decltype(args)>(args)...);
+        }
+        server.get()->Flush();
     }
-
-    using Userdata = typename ExtractedTypes<decltype(F)>::Userdata;
 };
 
 struct MapUserdata : CallbackUserdata {
@@ -181,7 +173,7 @@ class Server : public ServerBase {
     ~Server() override;
 
     // ChunkedCommandHandler implementation
-    const volatile char* HandleCommandsImpl(const volatile char* commands, size_t size) override;
+    const volatile char* HandleCommands(const volatile char* commands, size_t size) override;
 
     WireResult InjectBuffer(WGPUBuffer buffer, const Handle& handle, const Handle& deviceHandle);
     WireResult InjectTexture(WGPUTexture texture, const Handle& handle, const Handle& deviceHandle);
@@ -191,7 +183,7 @@ class Server : public ServerBase {
     WireResult InjectInstance(WGPUInstance instance, const Handle& handle);
 
     WGPUDevice GetDevice(uint32_t id, uint32_t generation);
-    bool IsDeviceKnown(WGPUDevice device) const;
+    using ServerBase::IsDeviceKnown;
 
     // Flushes the command serialized from server->client if spontaneous callbacks are enabled.
     void Flush();
@@ -207,7 +199,7 @@ class Server : public ServerBase {
               WGPUCallbackMode DefaultMode = WGPUCallbackMode_AllowProcessEvents>
     CallbackInfo MakeCallbackInfo(ForwardToServerHelper<F>::Userdata* userdata) {
         return {nullptr, mUseSpontaneousCallbacks ? WGPUCallbackMode_AllowSpontaneous : DefaultMode,
-                ForwardToServerHelper<F>::Create(), userdata, nullptr};
+                &ForwardToServerHelper<F>::Callback, userdata, nullptr};
     }
 
   private:
@@ -226,15 +218,6 @@ class Server : public ServerBase {
         mSerializer->SerializeCommand(cmd, std::forward<Extensions>(es)...);
     }
 
-    template <typename T>
-    WireResult FillReservation(ObjectId id, T handle, Known<T>* known = nullptr) {
-        auto result = Objects<T>().FillReservation(id, handle, known);
-        if (result == WireResult::FatalError) {
-            Release(mProcs, handle);
-        }
-        return result;
-    }
-
     // Wrapper RAII helper for structs with FreeMember calls.
     template <typename Struct>
     class FreeMembers : public Struct {
@@ -249,11 +232,11 @@ class Server : public ServerBase {
     void SetForwardingDeviceCallbacks(Known<WGPUDevice> device);
     void ClearDeviceCallbacks(WGPUDevice device);
 
-    // Error callbacks
-    void OnUncapturedError(ObjectHandle device, WGPUErrorType type, WGPUStringView message);
-    void OnLogging(ObjectHandle device, WGPULoggingType type, WGPUStringView message);
-
-    // Async event callbacks
+    // Async event callbacks:
+    //   These callbacks are expected to be called while holding the server object lock via
+    //   |GetGuard|, and should almost always be followed by a call to |Flush|. Note that
+    //   pretty much all of these functions are called as a part of
+    //   ForwardToServerHelper::Callback unless specified otherwise in the comments.
     void OnDeviceLost(DeviceLostUserdata* userdata,
                       WGPUDevice const* device,
                       WGPUDeviceLostReason reason,
@@ -287,12 +270,18 @@ class Server : public ServerBase {
                                  WGPURequestDeviceStatus status,
                                  WGPUDevice device,
                                  WGPUStringView message);
+    // The |OnUncapturedError| callback is special in that:
+    //   1) It is a repeating callback, so it can't be used with ForwardToServerHelper::Callback.
+    void OnUncapturedError(ObjectHandle device, WGPUErrorType type, WGPUStringView message);
+    // The |OnLogging| callback is special in that:
+    //   1) It is a repeating callback, so it can't be used with ForwardToServerHelper::Callback.
+    //   2) It does not require holding the server object storage lock, i.e. |GetGuard| before
+    //      being called because it never interacts with the object store.
+    void OnLogging(ObjectHandle device, WGPULoggingType type, WGPUStringView message);
 
 #include "dawn/wire/server/ServerPrototypes_autogen.inc"
 
-    WireDeserializeAllocator mAllocator;
     MutexProtected<ChunkedCommandSerializer> mSerializer;
-    DawnProcTable mProcs;
     std::unique_ptr<MemoryTransferService> mOwnedMemoryTransferService = nullptr;
     raw_ptr<MemoryTransferService> mMemoryTransferService = nullptr;
     bool mUseSpontaneousCallbacks = false;

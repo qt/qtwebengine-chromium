@@ -30,6 +30,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/logging/logging_settings.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
 #include "base/memory/read_only_shared_memory_region.h"
@@ -399,9 +400,11 @@ MjpegDecodeAcceleratorTestEnvironment::MapToVideoFrame(
     LOG(ERROR) << "Failed to map buffer";
     return nullptr;
   }
-  std::array<uint8_t*, 3> data{};
-  for (size_t i = 0; i < layout.num_planes(); i++)
-    data[i] = static_cast<uint8_t*>(buffer->memory(i));
+  std::array<base::span<uint8_t>, media::VideoFrame::kMaxPlanes> data{};
+  for (size_t i = 0; i < layout.num_planes(); i++) {
+    data[i] = UNSAFE_TODO(base::span(static_cast<uint8_t*>(buffer->memory(i)),
+                                     layout.planes()[i].size));
+  }
   scoped_refptr<media::VideoFrame> frame =
       media::VideoFrame::WrapExternalYuvDataWithLayout(
           layout, visible_rect, visible_rect.size(), data[0], data[1], data[2],

@@ -73,11 +73,9 @@ class CodedStrokeInputBatchIterator {
 
   friend bool operator==(const CodedStrokeInputBatchIterator& lhs,
                          const CodedStrokeInputBatchIterator& rhs) {
+    // Just checking one of these is sufficient to ensure that the iterators
+    // are pointing at the same underlying data.
     return lhs.x_stroke_space_ == rhs.x_stroke_space_;
-  }
-  friend bool operator!=(const CodedStrokeInputBatchIterator& lhs,
-                         const CodedStrokeInputBatchIterator& rhs) {
-    return lhs.x_stroke_space_ != rhs.x_stroke_space_;
   }
 
  private:

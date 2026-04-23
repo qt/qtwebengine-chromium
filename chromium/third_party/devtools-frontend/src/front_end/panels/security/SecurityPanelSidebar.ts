@@ -1,19 +1,18 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as Protocol from '../../generated/protocol.js';
-import type * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import type {Icon} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import {CookieControlsTreeElement} from './CookieControlsTreeElement.js';
 import {CookieReportTreeElement} from './CookieReportTreeElement.js';
-import {IPProtectionTreeElement} from './IPProtectionTreeElement.js';
 import lockIconStyles from './lockIcon.css.js';
 import {OriginTreeElement} from './OriginTreeElement.js';
 import {
@@ -42,10 +41,6 @@ const UIStrings = {
    * @description Sidebar element text in the Security panel
    */
   flagControls: 'Controls',
-  /**
-   * @description Sidebar element text in the Security panel
-   */
-  ipProtection: 'IP Protection',
   /**
    * @description Text in Security Panel of the Security panel
    */
@@ -78,12 +73,11 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export class SecurityPanelSidebar extends UI.Widget.VBox {
   readonly #securitySidebarLastItemSetting: Common.Settings.Setting<string>;
   readonly sidebarTree: UI.TreeOutline.TreeOutlineInShadow;
-  readonly #originGroupTitles: Map<OriginGroup, {title: string, icon?: IconButton.Icon.Icon}>;
+  readonly #originGroupTitles: Map<OriginGroup, {title: string, icon?: Icon}>;
   #originGroups: Map<OriginGroup, UI.TreeOutline.TreeElement>;
   securityOverviewElement: OriginTreeElement;
   readonly #cookieControlsTreeElement: CookieControlsTreeElement|undefined;
   readonly cookieReportTreeElement: CookieReportTreeElement|undefined;
-  readonly ipProtectionTreeElement: IPProtectionTreeElement|undefined;
   readonly #elementsByOrigin: Map<string, OriginTreeElement>;
   readonly #mainViewReloadMessage: UI.TreeOutline.TreeElement;
   #mainOrigin: string|null;
@@ -107,11 +101,6 @@ export class SecurityPanelSidebar extends UI.Widget.VBox {
       privacyTreeSection.appendChild(this.#cookieControlsTreeElement);
       this.cookieReportTreeElement = new CookieReportTreeElement(i18nString(UIStrings.cookieReport), 'cookie-report');
       privacyTreeSection.appendChild(this.cookieReportTreeElement);
-
-      if (Root.Runtime.hostConfig.devToolsIpProtectionPanelInDevTools?.enabled) {
-        this.ipProtectionTreeElement = new IPProtectionTreeElement(i18nString(UIStrings.ipProtection), 'ip-protection');
-        privacyTreeSection.appendChild(this.ipProtectionTreeElement);
-      }
 
       // If this if the first time this setting is set, go to the controls tool
       if (this.#securitySidebarLastItemSetting.get() === '') {
@@ -187,16 +176,9 @@ export class SecurityPanelSidebar extends UI.Widget.VBox {
         this.#securitySidebarLastItemSetting.get() === this.#cookieControlsTreeElement.elemId) {
       this.#cookieControlsTreeElement.select();
       this.#cookieControlsTreeElement.showElement();
-    } else if (
-        this.cookieReportTreeElement &&
-        this.#securitySidebarLastItemSetting.get() === this.cookieReportTreeElement.elemId) {
+    } else if (this.#securitySidebarLastItemSetting.get() === this.cookieReportTreeElement?.elemId) {
       this.cookieReportTreeElement.select();
       this.cookieReportTreeElement.showElement();
-    } else if (
-        this.ipProtectionTreeElement &&
-        this.#securitySidebarLastItemSetting.get() === this.ipProtectionTreeElement.elemId) {
-      this.ipProtectionTreeElement.select();
-      this.ipProtectionTreeElement.showElement();
     } else {
       this.securityOverviewElement.select();
       this.securityOverviewElement.showElement();
@@ -222,8 +204,7 @@ export class SecurityPanelSidebar extends UI.Widget.VBox {
     return this.#originGroups.get(originGroup) as UI.TreeOutline.TreeElement;
   }
 
-  #createOriginGroupElement(originGroupTitle: string, originGroupIcon?: IconButton.Icon.Icon):
-      UI.TreeOutline.TreeElement {
+  #createOriginGroupElement(originGroupTitle: string, originGroupIcon?: Icon): UI.TreeOutline.TreeElement {
     const originGroup = new UI.TreeOutline.TreeElement(originGroupTitle, true);
     originGroup.selectable = false;
     originGroup.expand();

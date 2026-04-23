@@ -22,7 +22,7 @@ export class SourceMappingsUpdated extends Event {
   }
 }
 
-// The code location key is created as a concatenation of its fields.
+/** The code location key is created as a concatenation of its fields. **/
 export const resolvedCodeLocationDataNames = new Map<string, ResolvedCodeLocationData|null>();
 
 export class SourceMapsResolver extends EventTarget {
@@ -92,12 +92,41 @@ export class SourceMapsResolver extends EventTarget {
     if (resolvedCallFrameURL) {
       return resolvedCallFrameURL;
     }
+
     // If no source mapping was found for an entry's URL, then default
     // to the URL value contained in the event itself, if any.
     const url = Trace.Handlers.Helpers.getNonResolvedURL(entry, parsedTrace.data);
     if (url) {
       return Workspace.Workspace.WorkspaceImpl.instance().uiSourceCodeForURL(url)?.url() ?? url;
     }
+    return null;
+  }
+
+  static codeLocationForEntry(parsedTrace: Trace.TraceModel.ParsedTrace, entry: Trace.Types.Events.Event):
+      {url: Platform.DevToolsPath.UrlString, line?: number, column?: number}|null {
+    const uiLocation = SourceMapsResolver.resolvedCodeLocationForEntry(entry)?.devtoolsLocation;
+    if (uiLocation) {
+      return {url: uiLocation.uiSourceCode.url(), line: uiLocation.lineNumber, column: uiLocation.columnNumber};
+    }
+
+    // If no source mapping was found for an entry's URL, then default
+    // to the frame contained in the event itself, if any.
+    const rawCallFrame = Trace.Helpers.Trace.rawCallFrameForEntry(entry);
+    if (rawCallFrame) {
+      const line = rawCallFrame.lineNumber >= 0 ? rawCallFrame.lineNumber : undefined;
+      const column = rawCallFrame.columnNumber >= 0 ? rawCallFrame.columnNumber : undefined;
+      return {url: rawCallFrame.url as Platform.DevToolsPath.UrlString, line, column};
+    }
+
+    // Lastly, look for just a url.
+    let url = Trace.Handlers.Helpers.getNonResolvedURL(entry, parsedTrace.data);
+    if (url) {
+      url = Workspace.Workspace.WorkspaceImpl.instance().uiSourceCodeForURL(url)?.url() ?? url;
+    }
+    if (url) {
+      return {url};
+    }
+
     return null;
   }
 
@@ -173,7 +202,7 @@ export class SourceMapsResolver extends EventTarget {
           const resolvedFunctionName =
               await SourceMapScopes.NamesResolver.resolveProfileFrameFunctionName(node.callFrame, target);
           updatedMappings ||= Boolean(resolvedFunctionName);
-          node.setFunctionName(resolvedFunctionName);
+          node.setOriginalFunctionName(resolvedFunctionName);
 
           const debuggerModel = target.model(SDK.DebuggerModel.DebuggerModel);
           const script = debuggerModel?.scriptForId(node.scriptId) || null;

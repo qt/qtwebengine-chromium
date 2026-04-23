@@ -29,6 +29,8 @@
 #include "utils/image_utils.h"
 #include "utils/sync_utils.h"
 
+namespace syncval {
+
 // Range generators for to allow event scope filtration to be limited to the top of the resource access traversal pipeline
 //
 // Note: there is no "begin/end" or reset facility.  These are each written as "one time through" generators.
@@ -39,21 +41,21 @@
 //  ++ -- advance to the next non-empty range (or end)
 
 // Generate the ranges that are the intersection of range and the entries in the RangeMap
-template <typename RangeMap, typename KeyType = typename RangeMap::key_type>
 class MapRangesRangeGenerator {
   public:
     // Default constructed is safe to dereference for "empty" test, but for no other operation.
-    MapRangesRangeGenerator() : range_(), map_(nullptr), map_pos_(), current_() {
-        // Default construction for KeyType *must* be empty range
+    MapRangesRangeGenerator() {
+        // Default construction *must* be empty range
         assert(current_.empty());
     }
-    MapRangesRangeGenerator(const RangeMap &filter, const KeyType &range) : range_(range), map_(&filter), map_pos_(), current_() {
+    MapRangesRangeGenerator(const AccessMap &filter, const AccessRange &range)
+        : range_(range), map_(&filter), map_pos_(), current_() {
         SeekBegin();
     }
     MapRangesRangeGenerator(const MapRangesRangeGenerator &from) = default;
 
-    const KeyType &operator*() const { return current_; }
-    const KeyType *operator->() const { return &current_; }
+    const AccessRange &operator*() const { return current_; }
+    const AccessRange *operator->() const { return &current_; }
     MapRangesRangeGenerator &operator++() {
         ++map_pos_;
         UpdateCurrent();
@@ -64,14 +66,14 @@ class MapRangesRangeGenerator {
 
   protected:
     void UpdateCurrent() {
-        if (map_pos_ != map_->cend()) {
+        if (map_pos_ != map_->end()) {
             current_ = range_ & map_pos_->first;
         } else {
-            current_ = KeyType();
+            current_ = {};
         }
     }
     void SeekBegin() {
-        map_pos_ = map_->lower_bound(range_);
+        map_pos_ = map_->LowerBound(range_.begin);
         UpdateCurrent();
     }
 
@@ -81,21 +83,20 @@ class MapRangesRangeGenerator {
     MapRangesRangeGenerator &PredicatedIncrement(Pred &pred) {
         do {
             ++map_pos_;
-        } while (map_pos_ != map_->cend() && map_pos_->first.intersects(range_) && !pred(map_pos_));
+        } while (map_pos_ != map_->end() && map_pos_->first.intersects(range_) && !pred(map_pos_));
         UpdateCurrent();
         return *this;
     }
 
-    const KeyType range_;
-    const RangeMap *map_;
-    typename RangeMap::const_iterator map_pos_;
-    KeyType current_;
+    const AccessRange range_;
+    const AccessMap *map_ = nullptr;
+    AccessMap::const_iterator map_pos_;
+    AccessRange current_;
 };
-using EventSimpleRangeGenerator = MapRangesRangeGenerator<AccessContext::ScopeMap>;
+using EventSimpleRangeGenerator = MapRangesRangeGenerator;
 
 // Generate the ranges that are the intersection of the RangeGen ranges and the entries in the FilterMap
-// Templated to allow for different Range generators or map sources...
-template <typename RangeMap, typename RangeGen, typename KeyType = typename RangeMap::key_type>
+template <typename RangeGen>
 class FilteredGeneratorGenerator {
   public:
     // Default constructed is safe to dereference for "empty" test, but for no other operation.
@@ -103,16 +104,16 @@ class FilteredGeneratorGenerator {
         // Default construction for KeyType *must* be empty range
         assert(current_.empty());
     }
-    FilteredGeneratorGenerator(const RangeMap &filter, RangeGen &gen) : filter_(&filter), gen_(gen), filter_pos_(), current_() {
+    FilteredGeneratorGenerator(const AccessMap &filter, RangeGen &gen) : filter_(&filter), gen_(gen), filter_pos_(), current_() {
         SeekBegin();
     }
     FilteredGeneratorGenerator(const FilteredGeneratorGenerator &from) = default;
-    const KeyType &operator*() const { return current_; }
-    const KeyType *operator->() const { return &current_; }
+    const AccessRange &operator*() const { return current_; }
+    const AccessRange *operator->() const { return &current_; }
     FilteredGeneratorGenerator &operator++() {
-        KeyType gen_range = GenRange();
-        KeyType filter_range = FilterRange();
-        current_ = KeyType();
+        AccessRange gen_range = GenRange();
+        AccessRange filter_range = FilterRange();
+        current_ = {};
         while (gen_range.non_empty() && filter_range.non_empty() && current_.empty()) {
             if (gen_range.end > filter_range.end) {
                 // if the generated range is beyond the filter_range, advance the filter range
@@ -128,15 +129,16 @@ class FilteredGeneratorGenerator {
     bool operator==(const FilteredGeneratorGenerator &other) const { return current_ == other.current_; }
 
   private:
-    KeyType AdvanceFilter() {
+    AccessRange AdvanceFilter() {
         ++filter_pos_;
         auto filter_range = FilterRange();
+        assert(filter_range.valid());
         if (filter_range.valid()) {
             FastForwardGen(filter_range);
         }
         return filter_range;
     }
-    KeyType AdvanceGen() {
+    AccessRange AdvanceGen() {
         ++gen_;
         auto gen_range = GenRange();
         if (gen_range.valid()) {
@@ -145,10 +147,10 @@ class FilteredGeneratorGenerator {
         return gen_range;
     }
 
-    KeyType FilterRange() const { return (filter_pos_ != filter_->cend()) ? filter_pos_->first : KeyType(); }
-    KeyType GenRange() const { return *gen_; }
+    AccessRange FilterRange() const { return (filter_pos_ != filter_->end()) ? filter_pos_->first : AccessRange{}; }
+    AccessRange GenRange() const { return *gen_; }
 
-    KeyType FastForwardFilter(const KeyType &range) {
+    AccessRange FastForwardFilter(const AccessRange &range) {
         auto filter_range = FilterRange();
         int retry_count = 0;
         const static int kRetryLimit = 2;  // TODO -- determine whether this limit is optimal
@@ -159,7 +161,7 @@ class FilteredGeneratorGenerator {
                 retry_count++;
             } else {
                 // Okay we've tried walking, do a seek.
-                filter_pos_ = filter_->lower_bound(range);
+                filter_pos_ = filter_->LowerBound(range.begin);
                 break;
             }
         }
@@ -168,7 +170,7 @@ class FilteredGeneratorGenerator {
 
     // TODO: Consider adding "seek" (or an absolute bound "get" to range generators to make this walk
     // faster.
-    KeyType FastForwardGen(const KeyType &range) {
+    AccessRange FastForwardGen(const AccessRange &range) {
         auto gen_range = GenRange();
         while (!gen_range.empty() && (gen_range.end <= range.begin)) {
             ++gen_;
@@ -180,21 +182,21 @@ class FilteredGeneratorGenerator {
     void SeekBegin() {
         auto gen_range = GenRange();
         if (gen_range.empty()) {
-            current_ = KeyType();
-            filter_pos_ = filter_->cend();
+            current_ = {};
+            filter_pos_ = filter_->end();
         } else {
-            filter_pos_ = filter_->lower_bound(gen_range);
+            filter_pos_ = filter_->LowerBound(gen_range.begin);
             current_ = gen_range & FilterRange();
         }
     }
 
-    const RangeMap *filter_;
+    const AccessMap *filter_ = nullptr;
     RangeGen gen_;
-    typename RangeMap::const_iterator filter_pos_;
-    KeyType current_;
+    AccessMap::const_iterator filter_pos_;
+    AccessRange current_;
 };
 
-using EventImageRangeGenerator = FilteredGeneratorGenerator<AccessContext::ScopeMap, subresource_adapter::ImageRangeGenerator>;
+using EventImageRangeGenerator = FilteredGeneratorGenerator<subresource_adapter::ImageRangeGenerator>;
 
 void BarrierSet::MakeMemoryBarriers(const SyncExecScope &src, const SyncExecScope &dst, uint32_t memory_barrier_count,
                                     const VkMemoryBarrier *barriers) {
@@ -405,13 +407,11 @@ ResourceUsageTag SyncOpPipelineBarrier::Record(CommandBufferAccessContext *cb_co
 struct ApplyGlobalBarrierFunctor {
     ApplyGlobalBarrierFunctor(QueueId queue_id, const SyncBarrier &barrier) : barrier_scope(barrier, queue_id), barrier(barrier) {}
 
-    using Iterator = ResourceAccessRangeMap::iterator;
-    Iterator Infill(ResourceAccessRangeMap *accesses, const Iterator &pos_hint, const ResourceAccessRange &range) const {
-        return pos_hint;
-    }
+    using Iterator = AccessMap::iterator;
+    Iterator Infill(AccessMap *accesses, const Iterator &pos_hint, const AccessRange &range) const { return pos_hint; }
 
     void operator()(const Iterator &pos) const {
-        ResourceAccessState &access_state = pos->second;
+        AccessState &access_state = pos->second;
         access_state.ApplyBarrier(barrier_scope, barrier);
     }
 
@@ -449,13 +449,13 @@ void SyncOpPipelineBarrier::ApplyMultipleBarriers(CommandExecutionContext &exec_
     for (const SyncBufferMemoryBarrier &barrier : barrier_set_.buffer_memory_barriers) {
         if (SimpleBinding(*barrier.buffer)) {
             const VkDeviceSize base_address = ResourceBaseAddress(*barrier.buffer);
-            const ResourceAccessRange range = barrier.range + base_address;
+            const AccessRange range = barrier.range + base_address;
             ApplyMarkupFunctor markup_action(false);
             access_context->UpdateMemoryAccessRangeState(markup_action, range);
         }
     }
     for (const SyncImageMemoryBarrier &barrier : barrier_set_.image_memory_barriers) {
-        const auto &sub_state = syncval_state::SubState(*barrier.image);
+        const auto &sub_state = SubState(*barrier.image);
         const bool can_transition_depth_slices =
             CanTransitionDepthSlices(exec_context.GetSyncState().extensions, sub_state.base.create_info);
         auto range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, can_transition_depth_slices);
@@ -472,7 +472,7 @@ void SyncOpPipelineBarrier::ApplyMultipleBarriers(CommandExecutionContext &exec_
             CollectBarriersFunctor collect_barriers(barrier_scope, barrier.barrier, false, vvl::kNoIndex32, pending_barriers);
 
             const VkDeviceSize base_address = ResourceBaseAddress(*barrier.buffer);
-            const ResourceAccessRange range = barrier.range + base_address;
+            const AccessRange range = barrier.range + base_address;
 
             access_context->UpdateMemoryAccessRangeState(collect_barriers, range);
         }
@@ -482,7 +482,7 @@ void SyncOpPipelineBarrier::ApplyMultipleBarriers(CommandExecutionContext &exec_
         CollectBarriersFunctor collect_barriers(barrier_scope, barrier.barrier, barrier.layout_transition, barrier.handle_index,
                                                 pending_barriers);
 
-        const auto &sub_state = syncval_state::SubState(*barrier.image);
+        const auto &sub_state = SubState(*barrier.image);
         const bool can_transition_depth_slices =
             CanTransitionDepthSlices(exec_context.GetSyncState().extensions, sub_state.base.create_info);
         auto range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, can_transition_depth_slices);
@@ -795,14 +795,14 @@ void SyncOpWaitEvents::ReplayRecord(CommandExecutionContext &exec_context, Resou
             for (const SyncBufferMemoryBarrier &barrier : barrier_set.buffer_memory_barriers) {
                 if (SimpleBinding(*barrier.buffer)) {
                     const VkDeviceSize base_address = ResourceBaseAddress(*barrier.buffer);
-                    const ResourceAccessRange range = barrier.range + base_address;
+                    const AccessRange range = barrier.range + base_address;
                     EventSimpleRangeGenerator filtered_range_gen(sync_event->FirstScope(), range);
                     ApplyMarkupFunctor markup_action(false);
                     access_context->UpdateMemoryAccessState(markup_action, filtered_range_gen);
                 }
             }
             for (const SyncImageMemoryBarrier &barrier : barrier_set.image_memory_barriers) {
-                const auto &sub_state = syncval_state::SubState(*barrier.image);
+                const auto &sub_state = SubState(*barrier.image);
                 const bool can_transition_depth_slices =
                     CanTransitionDepthSlices(exec_context.GetSyncState().extensions, sub_state.base.create_info);
                 ImageRangeGen range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, can_transition_depth_slices);
@@ -839,7 +839,7 @@ void SyncOpWaitEvents::ReplayRecord(CommandExecutionContext &exec_context, Resou
                     CollectBarriersFunctor collect_barriers(barrier_scope, event_barrier, false, vvl::kNoIndex32, pending_barriers);
 
                     const VkDeviceSize base_address = ResourceBaseAddress(*barrier.buffer);
-                    const ResourceAccessRange range = barrier.range + base_address;
+                    const AccessRange range = barrier.range + base_address;
                     EventSimpleRangeGenerator range_gen(sync_event->FirstScope(), range);
 
                     access_context->UpdateMemoryAccessState(collect_barriers, range_gen);
@@ -851,7 +851,7 @@ void SyncOpWaitEvents::ReplayRecord(CommandExecutionContext &exec_context, Resou
                 CollectBarriersFunctor collect_barriers(barrier_scope, event_barrier, barrier.layout_transition,
                                                         barrier.handle_index, pending_barriers);
 
-                const auto &sub_state = syncval_state::SubState(*barrier.image);
+                const auto &sub_state = SubState(*barrier.image);
                 const bool can_transition_depth_slices =
                     CanTransitionDepthSlices(exec_context.GetSyncState().extensions, sub_state.base.create_info);
                 ImageRangeGen range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, can_transition_depth_slices);
@@ -984,7 +984,6 @@ SyncOpSetEvent::SyncOpSetEvent(vvl::Func command, const SyncValidator &sync_stat
                                VkPipelineStageFlags2 stageMask, const AccessContext *access_context)
     : SyncOpBase(command),
       event_(sync_state.Get<vvl::Event>(event)),
-      recorded_context_(),
       src_exec_scope_(SyncExecScope::MakeSrc(queue_flags, stageMask)),
       dep_info_() {
     // Snapshot the current access_context for later inspection at wait time.
@@ -992,7 +991,9 @@ SyncOpSetEvent::SyncOpSetEvent(vvl::Func command, const SyncValidator &sync_stat
     //       access context (include barrier state for chaining) won't necessarily contain the needed information at Wait
     //       or Submit time reference.
     if (access_context) {
-        recorded_context_ = std::make_shared<const AccessContext>(*access_context);
+        auto new_context = std::make_shared<AccessContext>(sync_state);
+        new_context->InitFrom(*access_context);
+        recorded_context_ = new_context;
     }
 }
 
@@ -1000,11 +1001,12 @@ SyncOpSetEvent::SyncOpSetEvent(vvl::Func command, const SyncValidator &sync_stat
                                const VkDependencyInfo &dep_info, const AccessContext *access_context)
     : SyncOpBase(command),
       event_(sync_state.Get<vvl::Event>(event)),
-      recorded_context_(),
       src_exec_scope_(SyncExecScope::MakeSrc(queue_flags, sync_utils::GetExecScopes(dep_info).src)),
       dep_info_(new vku::safe_VkDependencyInfo(&dep_info)) {
     if (access_context) {
-        recorded_context_ = std::make_shared<const AccessContext>(*access_context);
+        auto new_context = std::make_shared<AccessContext>(sync_state);
+        new_context->InitFrom(*access_context);
+        recorded_context_ = new_context;
     }
 }
 
@@ -1098,7 +1100,8 @@ void SyncOpSetEvent::ReplayRecord(CommandExecutionContext &exec_context, Resourc
     const QueueId queue_id = exec_context.GetQueueId();
 
     // Note: merged_context is a copy of the access_context, combined with the recorded context
-    auto merged_context = std::make_shared<AccessContext>(*access_context);
+    auto merged_context = std::make_shared<AccessContext>(*access_context->validator);
+    merged_context->InitFrom(*access_context);
     merged_context->ResolveFromContext(QueueTagOffsetBarrierAction(queue_id, exec_tag), *recorded_context_);
     merged_context->TrimAndClearFirstAccess();  // Ensure the copy is minimal and normalized
     DoRecord(queue_id, exec_tag, merged_context, events_context);
@@ -1169,11 +1172,13 @@ bool SyncOpBeginRenderPass::Validate(const CommandBufferAccessContext &cb_contex
 
     const uint32_t subpass = 0;
 
-    // Construct the state we can use to validate against... (since validation is const and RecordCmdBeginRenderPass
-    // hasn't happened yet)
-    const std::vector<AccessContext> empty_context_vector;
-    AccessContext temp_context(subpass, cb_context.GetQueueFlags(), rp_state.subpass_dependencies, empty_context_vector,
-                               cb_context.GetCurrentAccessContext());
+    // Construct the state to validate against (since validation is const and RecordCmdBeginRenderPass hasn't happened yet).
+    // TODO: investigate if using nullptr in InitFrom is safe (this just follows the initial implementation - it assumes
+    // that array of subpass dependencies won't be indexed, but it's not obvious).
+    AccessContext temp_context(cb_context.GetSyncState());
+
+    temp_context.InitFrom(subpass, cb_context.GetQueueFlags(), rp_state.subpass_dependencies, nullptr,
+                          cb_context.GetCurrentAccessContext());
 
     // Validate attachment operations
     if (attachments_.empty()) return skip;
@@ -1319,7 +1324,7 @@ AccessContext *ReplayState::ReplayStateRenderPassNext() { return rp_replay_.Next
 void ReplayState::ReplayStateRenderPassEnd(AccessContext &external_context) { rp_replay_.End(external_context); }
 
 const AccessContext *ReplayState::GetRecordedAccessContext() const {
-    if (rp_replay_) {
+    if (rp_replay_.begin_op) {
         return rp_replay_.replay_context;
     }
     return recorded_context_.GetCurrentAccessContext();
@@ -1371,20 +1376,17 @@ bool ReplayState::ValidateFirstUse() {
 }
 AccessContext *ReplayState::RenderPassReplayState::Begin(VkQueueFlags queue_flags, const SyncOpBeginRenderPass &begin_op_,
                                                          const AccessContext &external_context) {
-    Reset();
+    const RenderPassAccessContext *rp_context = begin_op_.GetRenderPassAccessContext();
+    assert(rp_context);
 
     begin_op = &begin_op_;
+    replay_context = &rp_context->GetSubpassContexts()[0];
     subpass = 0;
-
-    const RenderPassAccessContext *rp_context = begin_op->GetRenderPassAccessContext();
-    assert(rp_context);
-    replay_context = &rp_context->GetContexts()[0];
-
-    InitSubpassContexts(queue_flags, *rp_context->GetRenderPassState(), &external_context, subpass_contexts);
+    subpass_contexts = InitSubpassContexts(queue_flags, *rp_context->GetRenderPassState(), external_context);
 
     // Replace the Async contexts with the the async context of the "external" context
     // For replay we don't care about async subpasses, just async queue batches
-    for (auto &context : subpass_contexts) {
+    for (AccessContext &context : GetSubpassContexts()) {
         context.ClearAsyncContexts();
         context.ImportAsyncContexts(external_context);
     }
@@ -1397,13 +1399,18 @@ AccessContext *ReplayState::RenderPassReplayState::Next() {
 
     const RenderPassAccessContext *rp_context = begin_op->GetRenderPassAccessContext();
 
-    replay_context = &rp_context->GetContexts()[subpass];
+    replay_context = &rp_context->GetSubpassContexts()[subpass];
     return &subpass_contexts[subpass];
 }
 
 void ReplayState::RenderPassReplayState::End(AccessContext &external_context) {
-    external_context.ResolveChildContexts(subpass_contexts);
-    Reset();
+    external_context.ResolveChildContexts(GetSubpassContexts());
+    *this = RenderPassReplayState{};
+}
+
+vvl::span<AccessContext> ReplayState::RenderPassReplayState::GetSubpassContexts() {
+    return vvl::make_span(subpass_contexts.get(),
+                          begin_op->GetRenderPassAccessContext()->GetRenderPassState()->create_info.subpassCount);
 }
 
 void SyncEventsContext::ApplyBarrier(const SyncExecScope &src, const SyncExecScope &dst, ResourceUsageTag tag) {
@@ -1488,3 +1495,5 @@ void SyncEventState::AddReferencedTags(ResourceUsageTagSet &referenced) const {
         first_scope->AddReferencedTags(referenced);
     }
 }
+
+}  // namespace syncval

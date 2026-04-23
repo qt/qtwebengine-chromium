@@ -23,7 +23,6 @@ class WinVersion(PlatformVersion):
   pass
 
 
-
 class WinPlatform(Platform):
   # TODO: support remote platforms
   SEARCH_PATHS = (
@@ -61,7 +60,6 @@ class WinPlatform(Platform):
   def powershell_stdout(self, *args, **kwargs) -> str:
     cmd = ["powershell", "-c", *args]
     return self.sh_stdout(*cmd, **kwargs)
-
 
   @functools.cached_property
   @override
@@ -168,7 +166,6 @@ class WinPlatform(Platform):
     except Exception as e:  # noqa: BLE001
       logging.debug("Failed to extract binary tool version: %s", e)
     raise ValueError(f"Could not extract version for {app_or_bin}")
-
 
   @override
   def symlink_or_copy(self, src: pth.AnyPathLike,

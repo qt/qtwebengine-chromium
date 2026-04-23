@@ -16,9 +16,8 @@
 
 #include <cstdint>
 #include <optional>
-#include <vector>
 
-#include "absl/algorithm/container.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/log/absl_check.h"
 #include "absl/log/absl_log.h"
@@ -29,11 +28,12 @@
 #include "ink/brush/brush.h"
 #include "ink/brush/brush_coat.h"
 #include "ink/geometry/mesh_format.h"
-#include "ink/geometry/mutable_mesh.h"
 #include "ink/geometry/partitioned_mesh.h"
 #include "ink/strokes/input/internal/stroke_input_validation_helpers.h"
 #include "ink/strokes/input/stroke_input.h"
 #include "ink/strokes/input/stroke_input_batch.h"
+#include "ink/strokes/internal/modeled_stroke_input.h"
+#include "ink/strokes/internal/stroke_input_modeler.h"
 #include "ink/strokes/internal/stroke_shape_update.h"
 #include "ink/strokes/internal/stroke_vertex.h"
 #include "ink/strokes/stroke.h"
@@ -70,9 +70,10 @@ void InProgressStroke::Start(const Brush& brush, uint32_t noise_seed) {
     shape_builders_.resize(num_coats);
   }
 
+  input_modeler_.StartStroke(brush_->GetFamily().GetInputModel(),
+                             brush_->GetEpsilon());
   for (uint32_t i = 0; i < num_coats; ++i) {
-    shape_builders_[i].StartStroke(brush_->GetFamily().GetInputModel(),
-                                   coats[i], brush_->GetSize(),
+    shape_builders_[i].StartStroke(coats[i], brush_->GetSize(),
                                    brush_->GetEpsilon(), noise_seed);
   }
 }
@@ -150,10 +151,11 @@ absl::Status InProgressStroke::UpdateShape(Duration32 current_elapsed_time) {
 
   current_elapsed_time_ = current_elapsed_time;
 
+  input_modeler_.ExtendStroke(queued_real_inputs_, queued_predicted_inputs_,
+                              current_elapsed_time);
   uint32_t num_coats = BrushCoatCount();
   for (uint32_t i = 0; i < num_coats; ++i) {
-    StrokeShapeUpdate update = shape_builders_[i].ExtendStroke(
-        queued_real_inputs_, queued_predicted_inputs_, current_elapsed_time);
+    StrokeShapeUpdate update = shape_builders_[i].ExtendStroke(input_modeler_);
 
     updated_region_.Add(update.region);
     // TODO: b/286547863 - Pass `update.first_vertex_offset` and
@@ -169,9 +171,16 @@ bool InProgressStroke::NeedsUpdate() const {
   if (!queued_real_inputs_.IsEmpty() || !queued_predicted_inputs_.IsEmpty()) {
     return true;
   }
+  return ChangesWithTime();
+}
+
+bool InProgressStroke::ChangesWithTime() const {
+  const strokes_internal::InputModelerState& input_modeler_state =
+      input_modeler_.GetState();
   uint32_t num_coats = BrushCoatCount();
   for (uint32_t coat_index = 0; coat_index < num_coats; ++coat_index) {
-    if (shape_builders_[coat_index].HasUnfinishedTimeBehaviors()) {
+    if (shape_builders_[coat_index].HasUnfinishedTimeBehaviors(
+            input_modeler_state)) {
       return true;
     }
   }
@@ -191,9 +200,9 @@ absl::Status InProgressStroke::ValidateNewInputs(
     const StrokeInput& last_old_real_input =
         queued_real_inputs_.IsEmpty()
             ? processed_inputs_.Get(real_input_count_ - 1)
-            : queued_real_inputs_.Get(queued_real_inputs_.Size() - 1);
+            : queued_real_inputs_.Last();
     const StrokeInput& first_new_input =
-        real_inputs.IsEmpty() ? predicted_inputs.Get(0) : real_inputs.Get(0);
+        real_inputs.IsEmpty() ? predicted_inputs.First() : real_inputs.First();
     if (absl::Status status =
             ValidateConsecutiveInputs(last_old_real_input, first_new_input);
         !status.ok()) {
@@ -205,7 +214,7 @@ absl::Status InProgressStroke::ValidateNewInputs(
   // predicted input is valid against the last real input.
   if (!real_inputs.IsEmpty() && !predicted_inputs.IsEmpty()) {
     if (absl::Status status = ValidateConsecutiveInputs(
-            real_inputs.Get(real_inputs.Size() - 1), predicted_inputs.Get(0));
+            real_inputs.Last(), predicted_inputs.First());
         !status.ok()) {
       return status;
     }
@@ -248,19 +257,16 @@ Stroke InProgressStroke::CopyToStroke(
       custom_packing_arrays(num_coats);
 
   for (uint32_t coat_index = 0; coat_index < num_coats; ++coat_index) {
+    const MeshFormat& format = GetMeshFormat(coat_index);
     switch (retain_attributes) {
       case RetainAttributes::kAll:
         break;
       case RetainAttributes::kUsedByThisBrush: {
-        std::vector<MeshFormat::AttributeId> required_attributes =
-            brush_internal::GetRequiredAttributeIds(
-                brush->GetFamily().GetCoats()[coat_index]);
-        for (MeshFormat::Attribute attribute :
-             GetMesh(coat_index).Format().Attributes()) {
-          if (absl::c_find_if(required_attributes,
-                              [attribute](MeshFormat::AttributeId id) {
-                                return id == attribute.id;
-                              }) == required_attributes.end()) {
+        absl::flat_hash_set<MeshFormat::AttributeId> required_attributes;
+        brush_internal::AddAttributeIdsRequiredByCoat(
+            brush->GetFamily().GetCoats()[coat_index], required_attributes);
+        for (MeshFormat::Attribute attribute : format.Attributes()) {
+          if (!required_attributes.contains(attribute.id)) {
             omit_attributes[coat_index].push_back(attribute.id);
           }
         }
@@ -269,7 +275,7 @@ Stroke InProgressStroke::CopyToStroke(
     }
 
     custom_packing_arrays[coat_index] = StrokeVertex::MakeCustomPackingArray(
-        GetMesh(coat_index).Format(), omit_attributes[coat_index]);
+        format, omit_attributes[coat_index]);
 
     mesh_groups.push_back({
         .mesh = &GetMesh(coat_index),

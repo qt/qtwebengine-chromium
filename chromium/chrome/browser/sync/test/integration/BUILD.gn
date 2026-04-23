@@ -18,18 +18,22 @@ source_set("sync_integration_tests_impl") {
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
   deps = [
     ":sync_integration_test_support",
+    "//chrome/browser/autofill",
     "//chrome/browser/history",
     "//chrome/browser/password_manager/factories",
     "//chrome/browser/plus_addresses",
     "//chrome/browser/prefs",
     "//chrome/browser/reading_list",
     "//chrome/browser/signin",
+    "//chrome/browser/subscription_eligibility",
     "//chrome/browser/sync",
     "//chrome/browser/tab_group_sync:factories",
     "//chrome/browser/ui:browser_navigator_params_headers",
     "//chrome/browser/ui:ui_features",
     "//chrome/test:browser_tests_runner",
     "//chrome/test:test_support",
+    "//components/autofill/core/browser",
+    "//components/autofill/core/browser:test_support",
     "//components/bookmarks/browser",
     "//components/commerce/core:feature_list",
     "//components/data_sharing/public",
@@ -50,6 +54,7 @@ source_set("sync_integration_tests_impl") {
   ]
 
   sources = [
+    "single_client_account_setting_sync_test.cc",
     "single_client_autofill_profile_sync_test.cc",
     "single_client_bookmarks_sync_test.cc",
     "single_client_collaboration_group_sync_test.cc",
@@ -141,15 +146,16 @@ source_set("sync_integration_tests_impl") {
       "single_client_themes_sync_test.cc",
       "single_client_user_consents_sync_test.cc",
       "single_client_user_events_sync_test.cc",
+      "single_client_valuable_metadata_sync_test.cc",
       "single_client_valuables_sync_test.cc",
       "single_client_wallet_credential_sync_test.cc",
       "single_client_wallet_sync_test.cc",
-      "single_client_web_apps_sync_generated_icon_fix_sync_test.cc",
-      "single_client_web_apps_sync_test.cc",
       "single_client_webauthn_credentials_sync_test.cc",
       "sync_auth_test.cc",
       "sync_errors_test.cc",
       "sync_os_crypt_async_migration_test.cc",
+      "web_apps/single_client_web_apps_sync_generated_icon_fix_sync_test.cc",
+      "web_apps/single_client_web_apps_sync_test.cc",
 
       # Tests with two clients can't run on Android because Android doesn't
       # support multiple profiles.
@@ -173,15 +179,15 @@ source_set("sync_integration_tests_impl") {
       "two_client_user_events_sync_test.cc",
       "two_client_wallet_credential_sync_test.cc",
       "two_client_wallet_sync_test.cc",
-      "two_client_web_apps_bmo_sync_test.cc",
-      "two_client_web_apps_generated_icon_fix_test.cc",
-      "two_client_web_apps_integration_test.cc",
-      "two_client_web_apps_integration_test_base.cc",
-      "two_client_web_apps_integration_test_base.h",
-      "two_client_web_apps_sync_test.cc",
       "two_client_webauthn_credentials_sync_test.cc",
-      "web_apps_sync_test_base.cc",
-      "web_apps_sync_test_base.h",
+      "web_apps/two_client_web_apps_bmo_sync_test.cc",
+      "web_apps/two_client_web_apps_generated_icon_fix_test.cc",
+      "web_apps/two_client_web_apps_integration_test.cc",
+      "web_apps/two_client_web_apps_integration_test_base.cc",
+      "web_apps/two_client_web_apps_integration_test_base.h",
+      "web_apps/two_client_web_apps_sync_test.cc",
+      "web_apps/web_apps_sync_test_base.cc",
+      "web_apps/web_apps_sync_test_base.h",
     ]
     if (!is_mac) {
       # Dictionary sync is disabled on Mac.
@@ -191,19 +197,21 @@ source_set("sync_integration_tests_impl") {
       ]
     }
     if (is_win || is_mac || is_linux) {
-      sources += [ "two_client_web_apps_integration_test_mac_win_linux.cc" ]
+      sources +=
+          [ "web_apps/two_client_web_apps_integration_test_mac_win_linux.cc" ]
     }
     if (is_win || is_linux) {
-      sources += [ "two_client_web_apps_integration_test_win_linux.cc" ]
+      sources +=
+          [ "web_apps/two_client_web_apps_integration_test_win_linux.cc" ]
     }
     if (is_mac) {
-      sources += [ "two_client_web_apps_integration_test_mac.cc" ]
+      sources += [ "web_apps/two_client_web_apps_integration_test_mac.cc" ]
     }
     if (is_win) {
-      sources += [ "two_client_web_apps_integration_test_win.cc" ]
+      sources += [ "web_apps/two_client_web_apps_integration_test_win.cc" ]
     }
     if (is_chromeos) {
-      sources += [ "two_client_web_apps_integration_test_cros.cc" ]
+      sources += [ "web_apps/two_client_web_apps_integration_test_cros.cc" ]
     }
     if (!is_chromeos) {
       sources += [
@@ -221,6 +229,7 @@ source_set("sync_integration_tests_impl") {
       "//chrome/browser/apps/link_capturing",
       "//chrome/browser/autofill",
       "//chrome/browser/browsing_data:constants",
+      "//chrome/browser/consent_auditor",
       "//chrome/browser/metrics/desktop_session_duration",
       "//chrome/browser/search_engines",
       "//chrome/browser/send_tab_to_self",
@@ -578,7 +587,6 @@ source_set("sync_integration_test_support") {
       "//chrome/browser/ash/printing",
       "//chrome/browser/ash/system_web_apps/test_support",
       "//chromeos/ash/components/browser_context_helper",
-      "//chromeos/ash/components/network/portal_detector",
       "//chromeos/ash/experiences/arc:arc_test_support",
       "//chromeos/ash/experiences/arc/mojom",
       "//chromeos/printing",

@@ -106,7 +106,8 @@ private:
 // all the replaying is complete. This will pin the GrBackendTextures in VRAM.
 class DDLPromiseImageHelper {
 public:
-    DDLPromiseImageHelper(const SkYUVAPixmapInfo::SupportedDataTypes& supportedYUVADataTypes)
+    explicit DDLPromiseImageHelper(
+            const SkYUVAPixmapInfo::SupportedDataTypes& supportedYUVADataTypes)
             : fSupportedYUVADataTypes(supportedYUVADataTypes) {}
     ~DDLPromiseImageHelper() = default;
 
@@ -126,7 +127,7 @@ public:
 private:
     void createCallbackContexts(GrDirectContext*);
     // reinflate a deflated SKP, replacing all the indices with promise images.
-    sk_sp<SkPicture> reinflateSKP(sk_sp<GrContextThreadSafeProxy>, SkData* deflatedSKP);
+    sk_sp<SkPicture> reinflateSKP(sk_sp<GrContextThreadSafeProxy>, const SkData* deflatedSKP);
 
     // This is the information extracted into this class from the parsing of the skp file.
     // Once it has all been uploaded to the GPU and distributed to the promise images, it

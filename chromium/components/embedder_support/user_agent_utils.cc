@@ -632,6 +632,8 @@ std::string GetPlatformVersion() {
 
 #if BUILDFLAG(IS_WIN)
   return GetWindowsPlatformVersion();
+#elif BUILDFLAG(IS_FUCHSIA)
+  return std::string();
 #else
 
   int32_t major, minor, bugfix = 0;
@@ -667,11 +669,6 @@ std::string GetPlatformForUAMetadata() {
 }
 
 blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
-  return GetUserAgentMetadata(nullptr, only_low_entropy_ch);
-}
-
-blink::UserAgentMetadata GetUserAgentMetadata(const PrefService* pref_service,
-                                              bool only_low_entropy_ch) {
   blink::UserAgentMetadata metadata;
 
   // Low entropy client hints.

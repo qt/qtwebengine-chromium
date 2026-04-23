@@ -107,11 +107,14 @@ struct DeviceExtensionProperties {
     VkPhysicalDeviceRenderPassStripedPropertiesARM renderpass_striped_props;
     VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory_host_props;
     VkPhysicalDeviceMaintenance9PropertiesKHR maintenance9_props;
+    VkPhysicalDeviceMaintenance10PropertiesKHR maintenance10_props;
     VkPhysicalDeviceTensorPropertiesARM tensor_properties;
     VkPhysicalDeviceCopyMemoryIndirectPropertiesKHR copy_memory_indirect_props;
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
     VkPhysicalDeviceExternalFormatResolvePropertiesANDROID android_format_resolve_props;
 #endif
+    VkPhysicalDeviceMemoryDecompressionPropertiesEXT memory_decompression_props;
+    VkPhysicalDevicePerformanceCountersByRegionPropertiesARM renderpass_counter_by_region_props;
 };
 
 // This object holds all static state for the device (device properties, enabled extensions/features, etc.)
@@ -236,6 +239,7 @@ class Instance : public HandleWrapper {
     ~Instance();
 
     void InitValidationObjects();
+    void FindSupportedExtensions();
 
     // VkDisplayKHR objects are statically created in the driver at VkCreateInstance.
     // They live with the PhyiscalDevice and apps never created/destroy them.

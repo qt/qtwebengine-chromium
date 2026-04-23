@@ -40,6 +40,7 @@
 #include "chrome/browser/usb/usb_chooser_context_factory.h"
 #include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_url_info.h"
 #include "chrome/browser/web_applications/web_app.h"
+#include "chrome/browser/web_applications/web_app_filter.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/common/pref_names.h"
@@ -229,18 +230,15 @@ constexpr auto kContentSettingsTypeGroupNames = std::to_array<
     {ContentSettingsType::THIRD_PARTY_STORAGE_PARTITIONING, nullptr},
     {ContentSettingsType::ALL_SCREEN_CAPTURE, nullptr},
     {ContentSettingsType::COOKIE_CONTROLS_METADATA, nullptr},
-    {ContentSettingsType::TPCD_TRIAL, nullptr},
     {ContentSettingsType::TPCD_METADATA_GRANTS, nullptr},
     // TODO(crbug.com/40101962): Update the name once the design is finalized
     // for the integration with Safety Hub.
     {ContentSettingsType::FILE_SYSTEM_ACCESS_EXTENDED_PERMISSION, nullptr},
     {ContentSettingsType::TPCD_HEURISTICS_GRANTS, nullptr},
     {ContentSettingsType::FILE_SYSTEM_ACCESS_RESTORE_PERMISSION, nullptr},
-    {ContentSettingsType::TOP_LEVEL_TPCD_TRIAL, nullptr},
     {ContentSettingsType::SUB_APP_INSTALLATION_PROMPTS, nullptr},
     {ContentSettingsType::DIRECT_SOCKETS, nullptr},
     {ContentSettingsType::REVOKED_ABUSIVE_NOTIFICATION_PERMISSIONS, nullptr},
-    {ContentSettingsType::TOP_LEVEL_TPCD_ORIGIN_TRIAL, nullptr},
     {ContentSettingsType::DISPLAY_MEDIA_SYSTEM_AUDIO, nullptr},
     {ContentSettingsType::STORAGE_ACCESS_HEADER_ORIGIN_TRIAL, nullptr},
     // TODO(crbug.com/368266658): Implement the UI for Direct Sockets PNA.
@@ -576,6 +574,7 @@ std::vector<ContentSettingsType> GetVisiblePermissionCategories(
   // so are not included here.
   static base::NoDestructor<std::vector<ContentSettingsType>> base_types{{
       ContentSettingsType::AR,
+      ContentSettingsType::AUTO_PICTURE_IN_PICTURE,
       ContentSettingsType::AUTOMATIC_DOWNLOADS,
       ContentSettingsType::BACKGROUND_SYNC,
       ContentSettingsType::CLIPBOARD_READ_WRITE,
@@ -634,11 +633,6 @@ std::vector<ContentSettingsType> GetVisiblePermissionCategories(
     if (base::FeatureList::IsEnabled(
             subresource_filter::kSafeBrowsingSubresourceFilter)) {
       base_types->push_back(ContentSettingsType::ADS);
-    }
-
-    if (base::FeatureList::IsEnabled(
-            blink::features::kMediaSessionEnterPictureInPicture)) {
-      base_types->push_back(ContentSettingsType::AUTO_PICTURE_IN_PICTURE);
     }
 
     if (base::FeatureList::IsEnabled(blink::features::kSpeakerSelection)) {
@@ -1462,7 +1456,8 @@ std::vector<web_app::IsolatedWebAppUrlInfo> GetInstalledIsolatedWebApps(
   std::vector<web_app::IsolatedWebAppUrlInfo> iwas;
   web_app::WebAppRegistrar& registrar = web_app_provider->registrar_unsafe();
   for (const web_app::WebApp& web_app : registrar.GetApps()) {
-    if (!registrar.IsIsolated(web_app.app_id())) {
+    if (!registrar.AppMatches(web_app.app_id(),
+                              web_app::WebAppFilter::IsIsolatedApp())) {
       continue;
     }
     base::expected<web_app::IsolatedWebAppUrlInfo, std::string> url_info =

@@ -28,7 +28,6 @@
 #include "src/tint/lang/spirv/writer/raise/raise.h"
 
 #include "src/tint/lang/core/ir/module.h"
-#include "src/tint/lang/core/ir/transform/add_empty_entry_point.h"
 #include "src/tint/lang/core/ir/transform/bgra8unorm_polyfill.h"
 #include "src/tint/lang/core/ir/transform/binary_polyfill.h"
 #include "src/tint/lang/core/ir/transform/binding_remapper.h"
@@ -37,19 +36,23 @@
 #include "src/tint/lang/core/ir/transform/builtin_scalarize.h"
 #include "src/tint/lang/core/ir/transform/combine_access_instructions.h"
 #include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
+#include "src/tint/lang/core/ir/transform/decompose_uniform_access.h"
 #include "src/tint/lang/core/ir/transform/demote_to_helper.h"
 #include "src/tint/lang/core/ir/transform/direct_variable_access.h"
 #include "src/tint/lang/core/ir/transform/multiplanar_external_texture.h"
 #include "src/tint/lang/core/ir/transform/prepare_immediate_data.h"
 #include "src/tint/lang/core/ir/transform/preserve_padding.h"
 #include "src/tint/lang/core/ir/transform/prevent_infinite_loops.h"
+#include "src/tint/lang/core/ir/transform/remove_uniform_vector_component_loads.h"
 #include "src/tint/lang/core/ir/transform/resource_binding.h"
+#include "src/tint/lang/core/ir/transform/resource_table.h"
 #include "src/tint/lang/core/ir/transform/robustness.h"
 #include "src/tint/lang/core/ir/transform/signed_integer_polyfill.h"
+#include "src/tint/lang/core/ir/transform/single_entry_point.h"
 #include "src/tint/lang/core/ir/transform/std140.h"
+#include "src/tint/lang/core/ir/transform/substitute_overrides.h"
 #include "src/tint/lang/core/ir/transform/vectorize_scalar_matrix_constructors.h"
 #include "src/tint/lang/core/ir/transform/zero_init_workgroup_memory.h"
-#include "src/tint/lang/core/type/f32.h"
 #include "src/tint/lang/spirv/writer/common/option_helpers.h"
 #include "src/tint/lang/spirv/writer/raise/builtin_polyfill.h"
 #include "src/tint/lang/spirv/writer/raise/case_switch_to_if_else.h"
@@ -61,7 +64,9 @@
 #include "src/tint/lang/spirv/writer/raise/pass_matrix_by_pointer.h"
 #include "src/tint/lang/spirv/writer/raise/remove_unreachable_in_loop_continuing.h"
 #include "src/tint/lang/spirv/writer/raise/resource_binding.h"
+#include "src/tint/lang/spirv/writer/raise/resource_table.h"
 #include "src/tint/lang/spirv/writer/raise/shader_io.h"
+#include "src/tint/lang/spirv/writer/raise/unary_polyfill.h"
 #include "src/tint/lang/spirv/writer/raise/var_for_dynamic_index.h"
 
 namespace tint::spirv::writer {
@@ -75,6 +80,11 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         }                                \
     } while (false)
 
+    RUN_TRANSFORM(core::ir::transform::SingleEntryPoint, module, options.entry_point_name);
+
+    RUN_TRANSFORM(core::ir::transform::SubstituteOverrides, module,
+                  options.substitute_overrides_config);
+
     tint::transform::multiplanar::BindingsMap multiplanar_map{};
     RemapperData remapper_data{};
     PopulateRemapperAndMultiplanarOptions(options, remapper_data, multiplanar_map);
@@ -83,11 +93,11 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 
     if (!options.disable_robustness) {
         core::ir::transform::RobustnessConfig config;
-        if (options.disable_image_robustness) {
+        if (options.extensions.disable_image_robustness) {
             config.clamp_texture = false;
         }
         config.disable_runtime_sized_array_index_clamping =
-            options.disable_runtime_sized_array_index_clamping;
+            options.extensions.disable_runtime_sized_array_index_clamping;
         config.use_integer_range_analysis = options.enable_integer_range_analysis;
         RUN_TRANSFORM(core::ir::transform::Robustness, module, config);
 
@@ -98,6 +108,12 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         spirv::writer::raise::ResourceBindingHelper helper;
         RUN_TRANSFORM(core::ir::transform::ResourceBinding, module,
                       options.resource_binding.value(), &helper);
+    }
+
+    if (options.resource_table.has_value()) {
+        spirv::writer::raise::ResourceTableHelper helper;
+        RUN_TRANSFORM(core::ir::transform::ResourceTable, module, options.resource_table.value(),
+                      &helper);
     }
 
     // PrepareImmediateData must come before any transform that needs internal immediate data.
@@ -131,12 +147,12 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     core_polyfills.insert_bits = core::ir::transform::BuiltinPolyfillLevel::kClampOrRangeCheck;
     core_polyfills.saturate = true;
     core_polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
-    core_polyfills.dot_4x8_packed = options.polyfill_dot_4x8_packed;
+    core_polyfills.dot_4x8_packed = options.extensions.dot_4x8_packed;
     core_polyfills.pack_unpack_4x8 = true;
     core_polyfills.pack_4xu8_clamp = true;
-    core_polyfills.pack_unpack_4x8_norm = options.polyfill_pack_unpack_4x8_norm;
+    core_polyfills.pack_unpack_4x8_norm = options.workarounds.polyfill_pack_unpack_4x8_norm;
     core_polyfills.abs_signed_int = true;
-    core_polyfills.subgroup_broadcast_f16 = options.polyfill_subgroup_broadcast_f16;
+    core_polyfills.subgroup_broadcast_f16 = options.workarounds.polyfill_subgroup_broadcast_f16;
     RUN_TRANSFORM(core::ir::transform::BuiltinPolyfill, module, core_polyfills);
 
     core::ir::transform::ConversionPolyfillConfig conversion_polyfills;
@@ -146,7 +162,7 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     RUN_TRANSFORM(core::ir::transform::MultiplanarExternalTexture, module, multiplanar_map);
 
     if (!options.disable_workgroup_init &&
-        !options.use_zero_initialize_workgroup_memory_extension) {
+        !options.extensions.use_zero_initialize_workgroup_memory) {
         RUN_TRANSFORM(core::ir::transform::ZeroInitWorkgroupMemory, module);
     }
 
@@ -156,24 +172,32 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     core::ir::transform::DirectVariableAccessOptions dva_options;
     dva_options.transform_function = true;
     dva_options.transform_private = true;
-    dva_options.transform_handle = options.dva_transform_handle;
+    dva_options.transform_handle = options.workarounds.dva_transform_handle;
     RUN_TRANSFORM(core::ir::transform::DirectVariableAccess, module, dva_options);
 
     // Fixup loads of binding_arrays of handles that may have been introduced by
     // DirectVariableAccess (DVA). Vulkan drivers that need DVA of handle expect binding_arrays to
     // stay as pointer and many mishandle by-value binding_arrays.
-    if (options.dva_transform_handle) {
+    if (options.workarounds.dva_transform_handle) {
         RUN_TRANSFORM(raise::KeepBindingArrayAsPointer, module);
     }
 
-    if (options.pass_matrix_by_pointer) {
+    if (options.workarounds.pass_matrix_by_pointer) {
         // PassMatrixByPointer must come after PreservePadding+DirectVariableAccess.
         RUN_TRANSFORM(raise::PassMatrixByPointer, module);
     }
 
-    RUN_TRANSFORM(core::ir::transform::AddEmptyEntryPoint, module);
     RUN_TRANSFORM(core::ir::transform::Bgra8UnormPolyfill, module);
+
+    if (options.extensions.decompose_uniform_buffers) {
+        // DecomposeUniformAccess must come before BlockDecoratedStructs, which will wrap the
+        // uniform variable in a structure.
+        RUN_TRANSFORM(core::ir::transform::DecomposeUniformAccess, module);
+    } else {
+        RUN_TRANSFORM(core::ir::transform::Std140, module);
+    }
     RUN_TRANSFORM(core::ir::transform::BlockDecoratedStructs, module);
+
     RUN_TRANSFORM(core::ir::transform::VectorizeScalarMatrixConstructors, module);
 
     // CombineAccessInstructions must come after DirectVariableAccess and BlockDecoratedStructs.
@@ -181,42 +205,56 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     // produce pointers to matrices.
     RUN_TRANSFORM(core::ir::transform::CombineAccessInstructions, module);
 
-    if (!options.use_demote_to_helper_invocation_extensions) {
+    // RemoveUniformVectorComponentLoads is used to work around a Qualcomm driver bug.
+    // See crbug.com/452350626.
+    RUN_TRANSFORM(core::ir::transform::RemoveUniformVectorComponentLoads, module);
+
+    if (!options.extensions.use_demote_to_helper_invocation) {
         // DemoteToHelper must come before any transform that introduces non-core instructions.
         RUN_TRANSFORM(core::ir::transform::DemoteToHelper, module);
     }
 
-    raise::PolyfillConfig config = {.use_vulkan_memory_model = options.use_vulkan_memory_model,
-                                    .version = options.spirv_version,
-                                    .subgroup_shuffle_clamped = options.subgroup_shuffle_clamped};
+    raise::PolyfillConfig config = {
+        .use_vulkan_memory_model = options.extensions.use_vulkan_memory_model,
+        .version = options.spirv_version,
+        .subgroup_shuffle_clamped = options.workarounds.subgroup_shuffle_clamped};
     RUN_TRANSFORM(raise::BuiltinPolyfill, module, config);
     RUN_TRANSFORM(raise::ExpandImplicitSplats, module);
 
     core::ir::transform::BuiltinScalarizeConfig scalarize_config{
-        .scalarize_clamp = options.scalarize_max_min_clamp,
-        .scalarize_max = options.scalarize_max_min_clamp,
-        .scalarize_min = options.scalarize_max_min_clamp};
+        .scalarize_clamp = options.workarounds.scalarize_max_min_clamp,
+        .scalarize_max = options.workarounds.scalarize_max_min_clamp,
+        .scalarize_min = options.workarounds.scalarize_max_min_clamp};
     RUN_TRANSFORM(core::ir::transform::BuiltinScalarize, module, scalarize_config);
 
     core::ir::transform::SignedIntegerPolyfillConfig signed_integer_cfg{
         .signed_negation = true, .signed_arithmetic = true, .signed_shiftleft = true};
     RUN_TRANSFORM(core::ir::transform::SignedIntegerPolyfill, module, signed_integer_cfg);
 
+    // AMD mesa front end optimizer bug for unary negation and abs.
+    // Fixed in 25.3 - See crbug.com/448294721
+    raise::UnaryPolyfillConfig unary_polyfill_cfg = {
+        .polyfill_f32_negation = options.workarounds.polyfill_unary_f32_negation,
+        .polyfill_f32_abs = options.workarounds.polyfill_f32_abs};
+
+    RUN_TRANSFORM(raise::UnaryPolyfill, module, unary_polyfill_cfg);
+
     // kAllowAnyInputAttachmentIndexType required after ExpandImplicitSplats
     RUN_TRANSFORM(raise::HandleMatrixArithmetic, module);
     RUN_TRANSFORM(raise::MergeReturn, module);
-    if (options.polyfill_case_switch) {
+    if (options.workarounds.polyfill_case_switch) {
         RUN_TRANSFORM(raise::CaseSwitchToIfElse, module);
     }
     RUN_TRANSFORM(raise::RemoveUnreachableInLoopContinuing, module);
     RUN_TRANSFORM(
         raise::ShaderIO, module,
         raise::ShaderIOConfig{immediate_data_layout.Get(), options.emit_vertex_point_size,
-                              !options.use_storage_input_output_16, options.depth_range_offsets});
-    RUN_TRANSFORM(core::ir::transform::Std140, module);
+                              !options.extensions.use_storage_input_output_16,
+                              options.apply_pixel_center_polyfill, options.depth_range_offsets});
 
-    // ForkExplicitLayoutTypes must come after Std140, since it rewrites host-shareable array types
-    // to use the explicitly laid array type defined by the SPIR-V dialect.
+    // ForkExplicitLayoutTypes must come after DecomposeUniformAccess, since it rewrites
+    // host-shareable array types to use the explicitly laid array type defined by the SPIR-V
+    // dialect.
     RUN_TRANSFORM(raise::ForkExplicitLayoutTypes, module, options.spirv_version);
 
     RUN_TRANSFORM(raise::VarForDynamicIndex, module);

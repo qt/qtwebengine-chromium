@@ -20,17 +20,20 @@
 #include <vulkan/utility/vk_safe_struct.hpp>
 #include "error_message/error_location.h"
 
-class CommandBufferAccessContext;
-class CommandExecutionContext;
-class RenderPassAccessContext;
-class ReplayState;
-class SyncValidator;
 struct DeviceExtensions;
 
 namespace vvl {
 class ImageView;
 class RenderPass;
 }  // namespace vvl
+
+namespace syncval {
+
+class CommandBufferAccessContext;
+class CommandExecutionContext;
+class RenderPassAccessContext;
+class ReplayState;
+class SyncValidator;
 
 struct SyncEventState {
     enum IgnoreReason { NotIgnored = 0, ResetWaitRace, Reset2WaitRace, SetRace, MissingStageBits, SetVsWait2, MissingSetEvent };
@@ -61,7 +64,7 @@ struct SyncEventState {
     SyncEventState(const SyncEventState::EventPointer &event_state);
 
     void ResetFirstScope();
-    const AccessContext::ScopeMap &FirstScope() const { return first_scope->GetAccessStateMap(); }
+    const AccessContext::ScopeMap &FirstScope() const { return first_scope->GetAccessMap(); }
     IgnoreReason IsIgnoredByWait(vvl::Func command, VkPipelineStageFlags2 srcStageMask) const;
     bool HasBarrier(VkPipelineStageFlags2 stageMask, VkPipelineStageFlags2 exec_scope) const;
     void AddReferencedTags(ResourceUsageTagSet &referenced) const;
@@ -117,11 +120,11 @@ class SyncEventsContext {
 struct SyncBufferMemoryBarrier {
     std::shared_ptr<const vvl::Buffer> buffer;
     SyncBarrier barrier;
-    ResourceAccessRange range;
+    AccessRange range;
 
-    SyncBufferMemoryBarrier(const std::shared_ptr<const vvl::Buffer> &buffer, const SyncBarrier &barrier,
-                            const ResourceAccessRange &range)
-        : buffer(buffer), barrier(barrier), range(range) {}
+	SyncBufferMemoryBarrier(const std::shared_ptr<const vvl::Buffer> &buffer, const SyncBarrier &barrier,
+							const AccessRange &range)
+		: buffer(buffer), barrier(barrier), range(range) {}
 };
 
 struct SyncImageMemoryBarrier {
@@ -336,34 +339,25 @@ struct BatchBarrierOp {
 
     BatchBarrierOp(QueueId queue_id, const SyncBarrier &barrier) : barrier(barrier), barrier_scope(barrier, queue_id) {}
 
-    void operator()(ResourceAccessState *access_state) const {
-        access_state->ApplyBarrier(barrier_scope, barrier);
-    }
+    void operator()(AccessState *access_state) const { access_state->ApplyBarrier(barrier_scope, barrier); }
 };
 
 // Allow keep track of the exec contexts replay state
 class ReplayState {
   public:
+    // A minimal subset of the functionality present in the RenderPassAccessContext. Since the accesses are recorded in the
+    // first_use information of the recorded access contexts, s.t. all we need to support is the barrier/resolve operations
     struct RenderPassReplayState {
-        // A minimal subset of the functionality present in the RenderPassAccessContext. Since the accesses are recorded in the
-        // first_use information of the recorded access contexts, s.t. all we need to support is the barrier/resolve operations
-        RenderPassReplayState() { Reset(); }
         AccessContext *Begin(VkQueueFlags queue_flags, const SyncOpBeginRenderPass &begin_op_,
                              const AccessContext &external_context);
         AccessContext *Next();
         void End(AccessContext &external_context);
+        vvl::span<AccessContext> GetSubpassContexts();
 
         const SyncOpBeginRenderPass *begin_op = nullptr;
         const AccessContext *replay_context = nullptr;
         uint32_t subpass = VK_SUBPASS_EXTERNAL;
-        std::vector<AccessContext> subpass_contexts;
-        void Reset() {
-            begin_op = nullptr;
-            replay_context = nullptr;
-            subpass = VK_SUBPASS_EXTERNAL;
-            subpass_contexts.clear();
-        }
-        operator bool() const { return begin_op != nullptr; }
+        std::unique_ptr<AccessContext[]> subpass_contexts;
     };
 
     bool ValidateFirstUse();
@@ -390,3 +384,5 @@ class ReplayState {
     const ResourceUsageTag base_tag_;
     RenderPassReplayState rp_replay_;
 };
+
+}  // namespace syncval

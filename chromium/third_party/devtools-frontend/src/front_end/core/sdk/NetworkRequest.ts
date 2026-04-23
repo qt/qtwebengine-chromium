@@ -236,8 +236,6 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
   #initialPriority: Protocol.Network.ResourcePriority|null = null;
   #currentPriority: Protocol.Network.ResourcePriority|null = null;
   #signedExchangeInfo: Protocol.Network.SignedExchangeInfo|null = null;
-  #webBundleInfo: WebBundleInfo|null = null;
-  #webBundleInnerRequestInfo: WebBundleInnerRequestInfo|null = null;
   #resourceType: Common.ResourceType.ResourceType = Common.ResourceType.resourceTypes.Other;
   #contentData: Promise<TextUtils.ContentData.ContentDataOrError>|null = null;
   #streamingContentData: Promise<TextUtils.StreamingContentData.StreamingContentDataOrError>|null = null;
@@ -319,8 +317,8 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
   responseReceivedPromiseResolve?: () => void;
   directSocketInfo?: DirectSocketInfo;
   readonly #directSocketChunks: DirectSocketChunk[] = [];
-  #isIpProtectionUsed: boolean;
   #isAdRelated: boolean;
+  #appliedNetworkConditionsId?: string;
 
   constructor(
       requestId: string,
@@ -342,7 +340,6 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.#loaderId = loaderId;
     this.#initiator = initiator;
     this.#hasUserGesture = hasUserGesture;
-    this.#isIpProtectionUsed = false;
     this.#isAdRelated = false;
   }
 
@@ -455,6 +452,10 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
 
   get loaderId(): Protocol.Network.LoaderId|null {
     return this.#loaderId;
+  }
+
+  get appliedNetworkConditionsId(): string|undefined {
+    return this.#appliedNetworkConditionsId;
   }
 
   setRemoteAddress(ip: string, port: number): void {
@@ -1500,22 +1501,6 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     return this.#signedExchangeInfo;
   }
 
-  setWebBundleInfo(info: WebBundleInfo|null): void {
-    this.#webBundleInfo = info;
-  }
-
-  webBundleInfo(): WebBundleInfo|null {
-    return this.#webBundleInfo;
-  }
-
-  setWebBundleInnerRequestInfo(info: WebBundleInnerRequestInfo|null): void {
-    this.#webBundleInnerRequestInfo = info;
-  }
-
-  webBundleInnerRequestInfo(): WebBundleInnerRequestInfo|null {
-    return this.#webBundleInnerRequestInfo;
-  }
-
   async populateImageSource(image: HTMLImageElement): Promise<void> {
     const contentData = await this.requestContentData();
     if (TextUtils.ContentData.ContentData.isError(contentData)) {
@@ -1631,6 +1616,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.#hasExtraRequestInfo = true;
     this.setRequestHeadersText('');  // Mark request headers as non-provisional
     this.#clientSecurityState = extraRequestInfo.clientSecurityState;
+    this.#appliedNetworkConditionsId = extraRequestInfo.appliedNetworkConditionsId;
     if (extraRequestInfo.connectTiming) {
       this.setConnectTimingFromExtraInfo(extraRequestInfo.connectTiming);
     }
@@ -1641,6 +1627,10 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
             Protocol.Network.CookieBlockedReason.ThirdPartyPhaseout,
             ),
     );
+  }
+
+  setAppliedNetworkConditions(appliedNetworkConditionsId: string): void {
+    this.#appliedNetworkConditionsId = appliedNetworkConditionsId;
   }
 
   hasExtraRequestInfo(): boolean {
@@ -1842,14 +1832,6 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
 
   isSameSite(): boolean|null {
     return this.#isSameSite;
-  }
-
-  setIsIpProtectionUsed(isIpProtectionUsed: boolean): void {
-    this.#isIpProtectionUsed = isIpProtectionUsed;
-  }
-
-  isIpProtectionUsed(): boolean|null {
-    return this.#isIpProtectionUsed;
   }
 
   setIsAdRelated(isAdRelated: boolean): void {
@@ -2188,6 +2170,7 @@ export interface ExtraRequestInfo {
   clientSecurityState?: Protocol.Network.ClientSecurityState;
   connectTiming: Protocol.Network.ConnectTiming;
   siteHasCookieInOtherPartition?: boolean;
+  appliedNetworkConditionsId?: string;
 }
 
 export interface ExtraResponseInfo {
@@ -2205,16 +2188,6 @@ export interface ExtraResponseInfo {
 
 export interface EarlyHintsInfo {
   responseHeaders: NameValue[];
-}
-
-export interface WebBundleInfo {
-  resourceUrls?: Platform.DevToolsPath.UrlString[];
-  errorMessage?: string;
-}
-
-export interface WebBundleInnerRequestInfo {
-  bundleRequestId?: string;
-  errorMessage?: string;
 }
 
 export type OverrideType = 'content'|'headers';
@@ -2242,6 +2215,9 @@ export interface DirectSocketCreateOptions {
   sendBufferSize?: number;
   receiveBufferSize?: number;
   dnsQueryType?: Protocol.Network.DirectSocketDnsQueryType;
+  multicastLoopback?: boolean;
+  multicastTimeToLive?: number;
+  multicastAllowAddressSharing?: boolean;
 }
 
 export interface DirectSocketOpenInfo {
@@ -2257,6 +2233,7 @@ export interface DirectSocketInfo {
   errorMessage?: string;
   createOptions: DirectSocketCreateOptions;
   openInfo?: DirectSocketOpenInfo;
+  joinedMulticastGroups?: Set<string>;
 }
 
 export interface DirectSocketChunk {

@@ -1,7 +1,7 @@
 // Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
@@ -117,6 +117,7 @@ export class EventSourceMessagesView extends UI.Widget.VBox {
   }
 
   override willHide(): void {
+    super.willHide();
     this.request.removeEventListener(SDK.NetworkRequest.Events.EVENT_SOURCE_MESSAGE_ADDED, this.messageAdded, this);
   }
 

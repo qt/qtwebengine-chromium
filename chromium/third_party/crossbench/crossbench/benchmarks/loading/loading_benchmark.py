@@ -6,20 +6,19 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-from typing import (TYPE_CHECKING, Any, ClassVar, Mapping, Optional, Sequence,
-                    Type)
+from typing import TYPE_CHECKING, Any, ClassVar, Mapping, Optional, Sequence, \
+    Type
 
 from typing_extensions import override
 
 from crossbench.benchmarks.base import StoryFilter, SubStoryBenchmark
-from crossbench.benchmarks.loading.config.pages import (
-    DevToolsRecorderPagesConfig, ListPagesConfig, PageConfig, PagesConfig)
+from crossbench.benchmarks.loading.config.pages import \
+    DevToolsRecorderPagesConfig, ListPagesConfig, PageConfig, PagesConfig
 from crossbench.benchmarks.loading.page.base import DEFAULT_DURATION, Page
 from crossbench.benchmarks.loading.page.combined import CombinedPage
 from crossbench.benchmarks.loading.page.interactive import InteractivePage
-from crossbench.benchmarks.loading.page.live import (PAGE_LIST,
-                                                     PAGE_LIST_SMALL, PAGES,
-                                                     LivePage)
+from crossbench.benchmarks.loading.page.live import PAGE_LIST, \
+    PAGE_LIST_SMALL, PAGES, LivePage
 from crossbench.benchmarks.loading.playback_controller import \
     PlaybackController
 from crossbench.benchmarks.loading.tab_controller import TabController

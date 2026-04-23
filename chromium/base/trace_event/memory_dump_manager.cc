@@ -26,6 +26,7 @@
 #include "base/trace_event/heap_profiler_allocation_context_tracker.h"
 #include "base/trace_event/malloc_dump_provider.h"
 #include "base/trace_event/memory_dump_provider.h"
+#include "base/trace_event/memory_dump_request_args.h"
 #include "base/trace_event/memory_dump_scheduler.h"
 #include "base/trace_event/memory_infra_background_allowlist.h"
 #include "base/trace_event/process_memory_dump.h"
@@ -95,7 +96,7 @@ MemoryDumpManager* MemoryDumpManager::GetInstance() {
 std::unique_ptr<MemoryDumpManager>
 MemoryDumpManager::CreateInstanceForTesting() {
   DCHECK(!g_memory_dump_manager_for_testing);
-  std::unique_ptr<MemoryDumpManager> instance(new MemoryDumpManager());
+  auto instance = base::WrapUnique(new MemoryDumpManager());
   g_memory_dump_manager_for_testing = instance.get();
   return instance;
 }
@@ -479,7 +480,7 @@ void MemoryDumpManager::FinishAsyncProcessDump(
 
   if (!pmd_async_state->callback.is_null()) {
     std::move(pmd_async_state->callback)
-        .Run(true /* success */, dump_guid,
+        .Run(ProcessMemoryDumpOutcome::kSuccess, dump_guid,
              std::move(pmd_async_state->process_memory_dump));
   }
 

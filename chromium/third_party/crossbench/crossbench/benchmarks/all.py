@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from crossbench.benchmarks.devtools_frontend.devtools_frontend_benchmark import \
+    DevToolsFrontendBenchmark
 from crossbench.benchmarks.embedder import EmbedderBenchmark
 from crossbench.benchmarks.jetstream import (JetStream11Benchmark,
                                              JetStream20Benchmark,
@@ -16,7 +18,8 @@ from crossbench.benchmarks.loadline import (
     LoadLine1PhoneFastBenchmark, LoadLine1TabletBenchmark,
     LoadLine1TabletDebugBenchmark, LoadLine1TabletFastBenchmark,
     LoadLine2PhoneBenchmark, LoadLine2PhoneDebugBenchmark,
-    LoadLine2TabletBenchmark, LoadLine2TabletDebugBenchmark)
+    LoadLine2TabletBenchmark, LoadLine2TabletDebugBenchmark,
+    LoadLine2WebApiPhoneBenchmark, LoadLine2WebApiPhoneDebugBenchmark)
 from crossbench.benchmarks.manual import ManualBenchmark
 from crossbench.benchmarks.memory.memory_benchmark import MemoryBenchmark
 from crossbench.benchmarks.motionmark import (
@@ -28,6 +31,7 @@ from crossbench.benchmarks.speedometer import (
     Speedometer30Benchmark, Speedometer31Benchmark, SpeedometerMainBenchmark)
 
 __all__ = [
+    "DevToolsFrontendBenchmark",
     "EmbedderBenchmark",
     "JetStream11Benchmark",
     "JetStream20Benchmark",
@@ -45,6 +49,8 @@ __all__ = [
     "LoadLine2PhoneDebugBenchmark",
     "LoadLine2TabletBenchmark",
     "LoadLine2TabletDebugBenchmark",
+    "LoadLine2WebApiPhoneBenchmark",
+    "LoadLine2WebApiPhoneDebugBenchmark",
     "ManualBenchmark",
     "MemoryBenchmark",
     "MotionMark10Benchmark",

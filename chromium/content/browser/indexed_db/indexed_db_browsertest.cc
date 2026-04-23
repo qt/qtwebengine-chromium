@@ -68,6 +68,9 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
+#include "sql/database.h"
+#include "sql/statement.h"
+#include "sql/test/test_helpers.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
@@ -151,7 +154,7 @@ class IndexedDBBrowserTestBase : public ContentBrowserTest {
     NavigateToURLBlockUntilNavigationsComplete(the_browser, test_url, 2);
     VLOG(0) << "Navigation done.";
     std::string result =
-        the_browser->web_contents()->GetLastCommittedURL().ref();
+        the_browser->web_contents()->GetLastCommittedURL().GetRef();
     if (result != "pass") {
       std::string js_result = EvalJs(the_browser, "getLog()").ExtractString();
       FAIL() << "Failed: " << js_result;
@@ -475,25 +478,6 @@ IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTest, Bug109187Test) {
   NavigateToURLBlockUntilNavigationsComplete(shell(), url, 1);
 }
 
-IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTest, Bug941965Test) {
-  if (using_sqlite_) {
-    GTEST_SKIP() << "Flaky with SQLite, see crbug.com/435459644";
-  }
-
-  // Double-open an incognito window to test that saving & reading a blob from
-  // indexeddb works.
-  Shell* incognito_browser = CreateOffTheRecordBrowser();
-  SimpleTest(GetTestUrl("indexeddb", "simple_blob_read.html"),
-             incognito_browser);
-  ASSERT_TRUE(incognito_browser);
-  incognito_browser->Close();
-  incognito_browser = CreateOffTheRecordBrowser();
-  SimpleTest(GetTestUrl("indexeddb", "simple_blob_read.html"),
-             incognito_browser);
-  ASSERT_TRUE(incognito_browser);
-  incognito_browser->Close();
-}
-
 class IndexedDBBrowserTestWithLowQuota : public IndexedDBBrowserTest {
  public:
   IndexedDBBrowserTestWithLowQuota() = default;
@@ -535,6 +519,21 @@ class IndexedDBBrowserTestWithGCExposed : public IndexedDBBrowserTest {
 IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTestWithGCExposed,
                        DatabaseCallbacksTest) {
   SimpleTest(GetTestUrl("indexeddb", "database_callbacks_first.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTestWithGCExposed, Bug941965Test) {
+  // Double-open an incognito window to test that saving & reading a blob from
+  // indexeddb works.
+  Shell* incognito_browser = CreateOffTheRecordBrowser();
+  SimpleTest(GetTestUrl("indexeddb", "simple_blob_read.html"),
+             incognito_browser);
+  ASSERT_TRUE(incognito_browser);
+  incognito_browser->Close();
+  incognito_browser = CreateOffTheRecordBrowser();
+  SimpleTest(GetTestUrl("indexeddb", "simple_blob_read.html"),
+             incognito_browser);
+  ASSERT_TRUE(incognito_browser);
+  incognito_browser->Close();
 }
 
 IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTestWithGCExposed, Bug346955148Test) {
@@ -918,6 +917,15 @@ IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTest, DeleteBucketDataDeletesBlobs) {
   EXPECT_EQ(0, RequestUsage());
 }
 
+IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTestWithGCExposed, BlobHistograms) {
+  base::HistogramTester histograms;
+  SimpleTest(GetTestUrl("indexeddb", "simple_blob_read.html"));
+  histograms.ExpectBucketCount("IndexedDB.BackingStore.WriteBlobs.OnDisk",
+                               0 /*Status::Type::kOk*/, 1);
+  histograms.ExpectBucketCount("IndexedDB.BackingStore.ReadBlob.OnDisk",
+                               0 /*net::Error::OK*/, 1);
+}
+
 // Regression test for crbug.com/330868483
 // In this test,
 //   1. the page reads a blob
@@ -929,11 +937,6 @@ IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTest, DeleteBucketDataDeletesBlobs) {
 //   5. the blob reference is dropped and GC'd again
 //   6. don't crash
 IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTestWithGCExposed, ForceCloseWithBlob) {
-  if (using_sqlite_) {
-    // TODO(crbug.com/419208485): Enable this test after handling active blob
-    // references during force close.
-    GTEST_SKIP();
-  }
   const GURL kTestUrl = GetTestUrl("indexeddb", "write_and_read_blob.html");
   SimpleTest(kTestUrl);
   DeleteBucketData(
@@ -944,7 +947,8 @@ IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTestWithGCExposed, ForceCloseWithBlob) {
   // the same blob is read again.
   std::ignore = EvalJs(shell(), "testThenGc()");
   while (true) {
-    std::string result = shell()->web_contents()->GetLastCommittedURL().ref();
+    std::string result =
+        shell()->web_contents()->GetLastCommittedURL().GetRef();
     if (!result.empty()) {
       EXPECT_EQ(result, "pass");
       break;
@@ -1074,6 +1078,7 @@ std::unique_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
         bucket_locator, base::BindLambdaForTesting([&]() {
           control_test->GetFilePathForTesting(
               bucket_locator,
+              /*for_sqlite=*/false,
               base::BindLambdaForTesting([&](const base::FilePath& path) {
                 CorruptDatabase(path);
                 loop.Quit();
@@ -1302,7 +1307,7 @@ IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTest, LargeSlicedFile) {
   same_tab_observer.Wait();
 
   // This part is copied from `SimpleTest()`.
-  std::string result = shell()->web_contents()->GetLastCommittedURL().ref();
+  std::string result = shell()->web_contents()->GetLastCommittedURL().GetRef();
   if (result != "pass") {
     std::string js_result = EvalJs(shell(), "getLog()").ExtractString();
     FAIL() << "Failed: " << js_result;
@@ -1431,6 +1436,67 @@ IN_PROC_BROWSER_TEST_F(IndexedDBLevelDBOnlyTest, LargeValueReadBlobMissing) {
   histogram_tester.ExpectTotalCount("IndexedDB.WrappedBlobLoadTime", 1);
 }
 
+IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTest, GetAllChunking) {
+  GURL test_url = GetTestUrl("indexeddb", "get_all_chunking.html");
+  SimpleTest(GURL(absl::StrFormat("%s?chunk_size=%i", test_url.spec(),
+                                  blink::mojom::kIDBGetAllChunkSize)));
+}
+
+// Large values are NOT wrapped when using SQLite, but are wrapped when using
+// LevelDB.
+IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTest, LargeValueIsWrapped) {
+  const GURL kTestUrl =
+      GetTestUrl("indexeddb", "write_and_read_large_value.html");
+  SimpleTest(kTestUrl);
+
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  ASSERT_OK_AND_ASSIGN(
+      const storage::BucketInfo bucket_info,
+      GetOrCreateBucket(storage::BucketInitParams::ForDefaultBucket(
+          blink::StorageKey::CreateFirstParty(url::Origin::Create(kTestUrl)))));
+
+  if (using_sqlite_) {
+    base::test::TestFuture<base::FilePath> future;
+    auto control_test = GetControlTest();
+    control_test->GetFilePathForTesting(
+        bucket_info.ToBucketLocator(), /*for_sqlite=*/true,
+        future.GetCallback<const base::FilePath&>());
+    base::FilePath db_dir = future.Take();
+    base::FilePath db_file;
+
+    base::FileEnumerator enumerator(db_dir, /*recursive=*/false,
+                                    base::FileEnumerator::FILES);
+    for (base::FilePath file = enumerator.Next(); !file.empty();
+         file = enumerator.Next()) {
+      if (file.MaybeAsASCII().find("-wal") != std::string::npos) {
+        continue;
+      }
+      db_file = file;
+    }
+    ASSERT_FALSE(db_file.empty());
+
+    shell()->Close();
+
+    // We have to try to open the database multiple times because the files
+    // (both main DB file and -wal journal) may still be held open by the
+    // backing store.
+    std::unique_ptr<sql::Database> db;
+    ASSERT_TRUE(base::test::RunUntil([&db, &db_file]() {
+      db = std::make_unique<sql::Database>(sql::test::kTestTag);
+      return db->Open(db_file);
+    }));
+
+    sql::Statement s(db->GetUniqueStatement("SELECT COUNT(*) FROM blobs"));
+    ASSERT_TRUE(s.Step());
+    EXPECT_EQ(0, s.ColumnInt(0));
+  } else {
+    base::FilePath blob_path =
+        PathForBlob(bucket_info.ToBucketLocator(), /*database_id=*/1,
+                    DatabaseMetaDataKey::kBlobNumberGeneratorInitialNumber);
+    EXPECT_TRUE(base::PathExists(blob_path));
+  }
+}
+
 // The blob key corruption test runs in a separate class to avoid corrupting
 // an IDB store that other tests use.
 // This test is for https://crbug.com/1039446.
@@ -1507,6 +1573,11 @@ IN_PROC_BROWSER_TEST_P(IndexedDBIncognitoTest, BucketDurabilityOverride) {
   DISABLED_FOR_SQLITE_PENDING_FAILURE_INJECTION();
   FailOperation(FailClass::LEVELDB_TRANSACTION, FailMethod::COMMIT_SYNC, 2, 1);
   SimpleTest(GetTestUrl("indexeddb", "bucket_durability_override.html"),
+             shell_);
+}
+
+IN_PROC_BROWSER_TEST_P(IndexedDBIncognitoTest, DatabaseOutlivesConnection) {
+  SimpleTest(GetTestUrl("indexeddb", "database_outlives_connection.html"),
              shell_);
 }
 

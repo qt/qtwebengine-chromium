@@ -12,6 +12,7 @@
 #include "components/metrics/dwa/dwa_pref_names.h"
 #include "components/metrics/dwa/dwa_recorder.h"
 #include "components/metrics/metrics_state_manager.h"
+#include "components/metrics/private_metrics/private_metrics_features.h"
 #include "components/metrics/private_metrics/private_metrics_pref_names.h"
 #include "components/metrics/test/test_metrics_service_client.h"
 #include "components/prefs/pref_service.h"
@@ -21,6 +22,7 @@
 #include "third_party/federated_compute/src/fcp/confidentialcompute/crypto.h"
 
 namespace metrics::dwa {
+namespace {
 
 const char kDwaInitSequenceHistogramName[] = "DWA.InitSequence";
 
@@ -33,7 +35,7 @@ class DwaServiceTest : public testing::Test {
     DwaService::RegisterPrefs(prefs_.registry());
 
     scoped_feature_list_.InitWithFeatures(
-        {dwa::kDwaFeature, dwa::kPrivateMetricsFeature}, {});
+        {dwa::kDwaFeature, private_metrics::kPrivateMetricsFeature}, {});
   }
 
   DwaServiceTest(const DwaServiceTest&) = delete;
@@ -53,7 +55,7 @@ class DwaServiceTest : public testing::Test {
   }
 
   int GetPersistedLogCount() {
-    if (base::FeatureList::IsEnabled(kPrivateMetricsFeature)) {
+    if (base::FeatureList::IsEnabled(private_metrics::kPrivateMetricsFeature)) {
       return prefs_.GetList(private_metrics::prefs::kUnsentLogStoreName).size();
     }
     return prefs_.GetList(prefs::kUnsentLogStoreName).size();
@@ -357,6 +359,39 @@ TEST_F(DwaServiceTest, EncryptPrivateMetricReport) {
   EXPECT_TRUE(encrypted_report->has_report_type());
 }
 
+TEST_F(DwaServiceTest, BuildPrivateMetricEndpointPayloadFromEncryptedReport) {
+  TestingPrefServiceSimple pref_service;
+  DwaService::RegisterPrefs(pref_service.registry());
+
+  fcp::confidential_compute::MessageDecryptor decryptor;
+  auto recipient_public_key =
+      decryptor.GetPublicKey([](absl::string_view) { return ""; }, 0);
+  auto decoded_public_key =
+      fcp::confidential_compute::OkpCwt::Decode(*recipient_public_key);
+  decoded_public_key->public_key.value().key_id = "key-id";
+
+  ::private_metrics::PrivateMetricReport report;
+  report.set_ephemeral_id(DwaService::GetEphemeralClientId(pref_service));
+  auto epoch_id = (base::Time::Now() - base::Time::UnixEpoch()).InDays();
+  report.set_epoch_id(epoch_id);
+
+  auto encrypted_report = DwaService::EncryptPrivateMetricReport(
+      report, *recipient_public_key, *decoded_public_key);
+  ASSERT_TRUE(encrypted_report.has_value());
+
+  auto payload =
+      DwaService::BuildPrivateMetricEndpointPayloadFromEncryptedReport(
+          std::move(encrypted_report.value()));
+  ASSERT_TRUE(payload.has_value());
+  EXPECT_TRUE(payload->has_encrypted_private_metric_report());
+  EXPECT_TRUE(
+      payload->encrypted_private_metric_report().has_encrypted_report());
+  EXPECT_TRUE(payload->encrypted_private_metric_report()
+                  .has_serialized_report_header());
+  EXPECT_TRUE(payload->encrypted_private_metric_report().has_report_header());
+  EXPECT_TRUE(payload->has_report_type());
+}
+
 TEST_F(DwaServiceEnvironmentTest, Flush) {
   DwaService service(&client_, &prefs_, nullptr);
   SetEncryptionPublicKeyForTesting(&service);
@@ -518,4 +553,5 @@ TEST_F(DwaServiceEnvironmentTest, LogsRotatedPeriodically) {
   EXPECT_EQ(GetPersistedLogCount(), 0);
 }
 
+}  // namespace
 }  // namespace metrics::dwa

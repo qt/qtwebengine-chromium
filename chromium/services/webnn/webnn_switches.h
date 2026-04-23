@@ -56,6 +56,29 @@ inline constexpr char kWebNNOrtLibraryPathForTesting[] =
 inline constexpr char kWebNNOrtEpLibraryPathForTesting[] =
     "webnn-ort-ep-library-path-for-testing";
 
+// Force ONNX Runtime to only select one specific execution provider (EP) device
+// which matches the given EP name, hardware vendor id and hardware device id
+// for WebNN during the ORT session creation stage.
+// Notes:
+// 1. Available EP devices can be queried in logs when the
+// `webnn-ort-logging-level` is set to `VERBOSE` or `INFO`. If no matching
+// device is found, the ORT session creation fails.
+// 2. The CPU fallback EP device is added implicitly in ORT by default unless
+// disabled explicitly by `webnn-ort-disable-cpu-fallback` switch.
+//
+// The value should be in the format:
+// <ep_name>,<hardware_vendor_id>,<hardware_device_id>
+// Please note that all the entries must be provided in order, and both
+// hardware_vendor_id and hardware_device_id are hexadecimal strings.
+//
+// Usage: For example, specifying an Intel GPU device using OpenVINO EP:
+// --webnn-ort-ep-device=OpenVINOExecutionProvider,0x8086,0x4680
+inline constexpr char kWebNNOrtEpDevice[] = "webnn-ort-ep-device";
+
+// Enable all execution providers, ignoring the enabled flag blocklist.
+inline constexpr char kWebNNOrtIgnoreEpBlocklist[] =
+    "webnn-ort-ignore-ep-blocklist";
+
 // Configure the graph optimization level of ONNX Runtime.
 // Usage: --webnn-ort-graph-optimization-level=DISABLE_ALL
 // Other levels could be "BASIC", "EXTENDED" and "ALL".
@@ -68,6 +91,17 @@ inline constexpr char kWebNNOrtGraphOptimizationLevel[] =
 // "WebNNOrtProfile" as default.
 // Usage: --no-sandbox --webnn-ort-enable-profiling="WebNNOrtOvCpuProfile"
 inline constexpr char kWebNNOrtEnableProfiling[] = "webnn-ort-enable-profiling";
+
+// This switch allows us to disable the fallback to default ORT CPU EP which is
+// enabled by default.
+// When this switch is set:
+// 1. ORT session creation fails if non-CPU EPs cannot fully support all graph
+// nodes.
+// 2. Disables OpenVINO EP internal CPU fallback if NPU model compilation fails
+// (for debugging).
+// Usage: --webnn-ort-disable-cpu-fallback
+inline constexpr char kWebNNOrtDisableCpuFallback[] =
+    "webnn-ort-disable-cpu-fallback";
 #endif  // BUILDFLAG(IS_WIN)
 
 extern base::span<const char* const> GetWebNNSwitchesCopiedFromGpuProcessHost();

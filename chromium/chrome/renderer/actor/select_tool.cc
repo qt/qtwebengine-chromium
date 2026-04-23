@@ -11,6 +11,7 @@
 #include "base/notimplemented.h"
 #include "chrome/common/actor/action_result.h"
 #include "chrome/common/actor/actor_logging.h"
+#include "chrome/common/chrome_features.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/actor/tool_utils.h"
 #include "content/public/renderer/render_frame.h"
@@ -20,6 +21,7 @@
 #include "third_party/blink/public/web/web_node.h"
 #include "third_party/blink/public/web/web_option_element.h"
 #include "third_party/blink/public/web/web_select_element.h"
+#include "third_party/blink/public/web/web_view.h"
 
 namespace actor {
 
@@ -55,18 +57,7 @@ void SelectTool::Execute(ToolFinishedCallback callback) {
   WebString value = validated_result.value().option_value;
   select.SetValue(value, /*send_events=*/true);
 
-  // If the select tool makes the selection in a popup widget (e.g., a dropdown
-  // menu), de-focus so the popup is hidden. An visible popup could occlude
-  // the contents underneath it.
-  select.Blur();
-
-  // Check if the set value is now the current value in the <select>
-  if (select.Value() != value) {
-    std::move(callback).Run(
-        MakeResult(mojom::ActionResultCode::kSelectUnexpectedValue,
-                   absl::StrFormat("ValueAfter [%s]", select.Value().Utf8())));
-    return;
-  }
+  frame_->GetWebFrame()->View()->CancelPagePopup();
 
   std::move(callback).Run(MakeOkResult());
 }
@@ -80,9 +71,13 @@ SelectTool::ValidatedResult SelectTool::Validate() const {
   CHECK(frame_->GetWebFrame());
   CHECK(frame_->GetWebFrame()->FrameWidget());
 
-  if (target_->is_coordinate()) {
-    NOTIMPLEMENTED() << "Coordinate-based target is not yet supported.";
-    return base::unexpected(MakeErrorResult());
+  if (target_->is_coordinate_dip()) {
+    static constexpr std::string_view kErrorMessage =
+        "Coordinate-based target is not yet supported.";
+    NOTIMPLEMENTED() << kErrorMessage;
+    return base::unexpected(MakeResult(mojom::ActionResultCode::kNotImplemented,
+                                       /*requires_page_stabilization=*/false,
+                                       kErrorMessage));
   }
 
   auto resolved_target = ValidateAndResolveTarget();
@@ -96,12 +91,14 @@ SelectTool::ValidatedResult SelectTool::Validate() const {
   if (!select) {
     return base::unexpected(
         MakeResult(mojom::ActionResultCode::kSelectInvalidElement,
+                   /*requires_page_stabilization=*/false,
                    absl::StrFormat("Element [%s]", base::ToString(node))));
   }
 
   if (!select.IsEnabled()) {
     return base::unexpected(
         MakeResult(mojom::ActionResultCode::kElementDisabled,
+                   /*requires_page_stabilization=*/false,
                    absl::StrFormat("Element [%s]", base::ToString(select))));
   }
 
@@ -112,6 +109,7 @@ SelectTool::ValidatedResult SelectTool::Validate() const {
       if (!option.IsEnabled()) {
         return base::unexpected(MakeResult(
             mojom::ActionResultCode::kSelectOptionDisabled,
+            /*requires_page_stabilization=*/false,
             absl::StrFormat("SelectElement[%s] OptionElement [%s]",
                             base::ToString(select), base::ToString(option))));
       }
@@ -121,6 +119,7 @@ SelectTool::ValidatedResult SelectTool::Validate() const {
 
   return base::unexpected(
       MakeResult(mojom::ActionResultCode::kSelectNoSuchOption,
+                 /*requires_page_stabilization=*/false,
                  absl::StrFormat("SelectElement[%s]", base::ToString(select))));
 }
 

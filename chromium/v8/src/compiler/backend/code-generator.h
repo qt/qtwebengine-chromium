@@ -95,6 +95,7 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
 
 #if V8_ENABLE_WEBASSEMBLY
   base::OwnedVector<uint8_t> GenerateWasmDeoptimizationData();
+  base::OwnedVector<wasm::WasmCode::EffectHandler> GenerateWasmEffectHandler();
 #endif
 
   base::OwnedVector<uint8_t> GetSourcePositionTable();
@@ -242,19 +243,11 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
   // contains the expected pointer to the start of the instruction stream.
   void AssembleCodeStartRegisterCheck();
 
-#ifdef V8_ENABLE_LEAPTIERING
   // Generates code to check whether the {kJavaScriptCallDispatchHandleRegister}
   // references a valid entry compatible with this code.
   void AssembleDispatchHandleRegisterCheck();
-#endif  // V8_ENABLE_LEAPTIERING
 
-  // When entering a code that is marked for deoptimization, rather continuing
-  // with its execution, we jump to a lazy compiled code. We need to do this
-  // because this code has already been deoptimized and needs to be unlinked
-  // from the JS functions referring it.
-  // TODO(olivf, 42204201) Rename this to AssertNotDeoptimized once
-  // non-leaptiering is removed from the codebase.
-  void BailoutIfDeoptimized();
+  void AssertNotDeoptimized();
 
   // Assemble NOP instruction for lazy deoptimization. This place will be
   // patched later as a jump instruction to deoptimization trampoline.
@@ -401,6 +394,12 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
     int pc_offset;
   };
 
+  struct EffectHandlerInfo {
+    int tag_index;
+    Label* handler;
+    int pc_offset;
+  };
+
   friend class OutOfLineCode;
   friend class CodeGeneratorTester;
 
@@ -420,6 +419,7 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
   GapResolver resolver_;
   SafepointTableBuilder safepoints_;
   ZoneVector<HandlerInfo> handlers_;
+  ZoneVector<EffectHandlerInfo> effect_handlers_;
   int next_deoptimization_id_ = 0;
   int deopt_exit_start_offset_ = 0;
   int eager_deopt_count_ = 0;

@@ -179,6 +179,8 @@ class CORE_EXPORT ContainerNode : public Node {
   void ParserFinishedBuildingDocumentFragment(ShouldNotifyInsertedNodes);
   void ParserRemoveChild(Node&);
   void ParserInsertBefore(Node* new_child, Node& ref_child);
+  void ParserRemoveAllChildren();
+  void ParserReplaceChild(Node& new_child, Node& old_child);
   void ParserTakeAllChildrenFrom(ContainerNode&);
 
   void RemoveChildren();
@@ -475,6 +477,7 @@ class CORE_EXPORT ContainerNode : public Node {
   // only.
   String getHTML(const GetHTMLOptions*, ExceptionState&) const;
 
+  WritableStream* streamAppendHTMLUnsafe(ScriptState*, ExceptionState&);
   WritableStream* patchSelf(ScriptState*, ExceptionState&);
   WritableStream* patchAfter(ScriptState*, Node* a, ExceptionState&);
   WritableStream* patchBefore(ScriptState*, Node* b, ExceptionState&);

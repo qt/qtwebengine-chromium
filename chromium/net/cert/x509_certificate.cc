@@ -376,11 +376,11 @@ bool X509Certificate::GetSubjectAltName(
 
   if (dns_names) {
     for (const auto& dns_name : subject_alt_names->dns_names)
-      dns_names->push_back(std::string(dns_name));
+      dns_names->emplace_back(dns_name);
   }
   if (ip_addrs) {
     for (const auto& addr : subject_alt_names->ip_addresses) {
-      ip_addrs->push_back(std::string(addr.AsStringView()));
+      ip_addrs->emplace_back(base::as_string_view(addr));
     }
   }
 
@@ -463,10 +463,8 @@ bool X509Certificate::VerifyHostname(
 
   // Fully handle all cases where |hostname| contains an IP address.
   if (host_info.IsIPAddress()) {
-    std::string_view ip_addr_string(
-        reinterpret_cast<const char*>(host_info.address),
-        host_info.AddressLength());
-    return base::Contains(cert_san_ip_addrs, ip_addr_string);
+    return base::Contains(cert_san_ip_addrs,
+                          base::as_string_view(host_info.AddressSpan()));
   }
 
   // The host portion of a URL may support a variety of name resolution formats

@@ -1,56 +1,57 @@
 // trace_processor probe example
 {
-  probes: {
-    trace_processor: {
+  "probes": {
+    "trace_processor": {
       // If necessary, a custom path for trace_processor_shell can be passed
       // trace_processor_bin: "/optional/path/to/trace_processor_shell"
-      queries: [
+      "queries": [
         // Queries can be specified as a reference to a file in
-        // crossbench/probes/perfetto/trace_processor/queries:
-        speedometer_cpu_time
+        // crossbench/probes/trace_processor/queries:
+        "speedometer_cpu_time"
         // Or specified inline:
         {
-          name: my_query
-          sql: select dur from slice where slice.name = 'my_slice'
+          "name": "my_query"
+          "sql": "select dur from slice where slice.name = 'my_slice'"
         }
       ]
-      metrics: [
-        trace_stats
+      "metrics": [
+        "trace_stats"
       ]
       // Additional directories containing trace processor modules
       // can be specified:
-      module_paths: [
-        /my_project/modules/ext
+      "module_paths": [
+        "/my_project/modules/ext"
       ]
       // Perfetto v2 metric definitions can be specified either inline
       // or as a path:
-      metric_definitions: [
-        ./metric_def.textproto
-        '''
-          metric_spec: {
-            id: "inline_textproto_metric"
-            value: "metric_column"
-            query {
-              id: "query_id"
-              table {
-                table_name: "metric_table"
-                module_name: "module_name"
-                column_names: "metric_column"
+      "metric_definitions": [
+        "./metric_def.textproto"
+        
+          '''
+            metric_spec: {
+              id: "inline_textproto_metric"
+              value: "metric_column"
+              query {
+                id: "query_id"
+                table {
+                  table_name: "metric_table"
+                  module_name: "module_name"
+                  column_names: "metric_column"
+                }
               }
             }
-          }
-        '''
+          '''
       ]
       // Metrics to include only in the trace summary can be specified.
       // summary_metrics will include everything in the 'metrics' list as well
       // as additional metrics (such as v2 metrics) specified here:
-      summary_metrics: [
-        file_metric_def_textproto
-        inline_textproto_metric
+      "summary_metrics": [
+        "file_metric_def_textproto"
+        "inline_textproto_metric"
       ]
     }
-    perfetto: {
-      textproto:
+    "perfetto": {
+      "textproto":
         '''
           buffers {
             size_kb: 300000

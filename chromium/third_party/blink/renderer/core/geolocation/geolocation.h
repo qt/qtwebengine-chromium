@@ -46,7 +46,6 @@
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
-#include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/timer.h"
 
 namespace blink {
@@ -58,16 +57,13 @@ enum class PermissionStatus;
 class LocalFrame;
 class Navigator;
 
-class CORE_EXPORT Geolocation final
-    : public ScriptWrappable,
-      public ActiveScriptWrappable<Geolocation>,
-      public Supplement<Navigator>,
-      public ExecutionContextLifecycleObserver,
-      public PageVisibilityObserver {
+class CORE_EXPORT Geolocation final : public ScriptWrappable,
+                                      public ActiveScriptWrappable<Geolocation>,
+                                      public ExecutionContextLifecycleObserver,
+                                      public PageVisibilityObserver {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  static const char kSupplementName[];
   static Geolocation* geolocation(Navigator&);
 
   explicit Geolocation(Navigator&);
@@ -82,27 +78,41 @@ class CORE_EXPORT Geolocation final
 
   // Creates a oneshot and attempts to obtain a position that meets the
   // constraints of the options. This method gets called when the geolocation
-  // API is invoked from V8.
-  void getCurrentPosition(V8PositionCallback*,
-                          V8PositionErrorCallback* = nullptr,
-                          const PositionOptions* = PositionOptions::Create());
-
-  // Creates a watcher that will be notified whenever a new position is
-  // available that meets the constraints of the options.
-  int watchPosition(V8PositionCallback*,
-                    V8PositionErrorCallback* = nullptr,
-                    const PositionOptions* = PositionOptions::Create());
-
-  // Removes all references to the watcher, it will not be updated again.
-  void clearWatch(int watch_id);
+  // API is invoked from script.
+  void getCurrentPositionForBindings(
+      V8PositionCallback*,
+      V8PositionErrorCallback* = nullptr,
+      const PositionOptions* = PositionOptions::Create());
 
   // Creates a oneshot and attempts to obtain a position that meets the
   // constraints of the options. This method gets called when the geolocation
   // API is invoked from Blink.
-  void RequestPosition(
+  void GetCurrentPosition(
       base::RepeatingCallback<
           void(base::expected<Geoposition*, GeolocationPositionError*>)>,
       const PositionOptions* = PositionOptions::Create());
+
+  // Creates a watcher that will be notified whenever a new position is
+  // available that meets the constraints of the options. This method gets
+  // called when the geolocation API is invoked from script.
+  int watchPositionForBindings(
+      V8PositionCallback*,
+      V8PositionErrorCallback* = nullptr,
+      const PositionOptions* = PositionOptions::Create());
+
+  // Creates a watcher that will be notified whenever a new position is
+  // available that meets the constraints of the options. This method gets
+  // called when the geolocation API is invoked from Blink.
+  // Returns an watch ID, which can be used to clear the watcher.
+  int WatchPosition(
+      base::RepeatingCallback<
+          void(base::expected<Geoposition*, GeolocationPositionError*>)>,
+      const PositionOptions* = PositionOptions::Create());
+
+  int WatchPositionInternal(GeoNotifier* notifier);
+
+  // Removes all references to the watcher, it will not be updated again.
+  void clearWatch(int watch_id);
 
   // Notifies this that a new position is available. Must never be called
   // before permission is granted by the user.

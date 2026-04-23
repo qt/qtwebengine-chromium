@@ -1,7 +1,6 @@
 // Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
@@ -14,6 +13,7 @@ import * as Bindings from '../../models/bindings/bindings.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {Directives, html, i18nTemplate as unboundI18nTemplate, render, type TemplateResult} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import {CoverageDecorationManager} from './CoverageDecorationManager.js';
@@ -124,148 +124,237 @@ const UIStrings = {
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/coverage/CoverageView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+const i18nTemplate = unboundI18nTemplate.bind(undefined, str_);
+const {ref} = Directives;
+const {bindToAction, bindToSetting} = UI.UIUtils;
+const {widgetConfig} = UI.Widget;
 
 let coverageViewInstance: CoverageView|undefined;
 
-export class CoverageView extends UI.Widget.VBox {
-  private model: CoverageModel|null;
-  private decorationManager: CoverageDecorationManager|null;
-  private readonly coverageTypeComboBox: UI.Toolbar.ToolbarComboBox;
-  private readonly coverageTypeComboBoxSetting: Common.Settings.Setting<number>;
-  private toggleRecordAction: UI.ActionRegistration.Action;
-  private readonly toggleRecordButton: UI.Toolbar.ToolbarButton;
-  private inlineReloadButton: Element|null;
-  private readonly startWithReloadButton: UI.Toolbar.ToolbarButton|undefined;
-  private readonly clearAction: UI.ActionRegistration.Action;
-  private readonly exportAction: UI.ActionRegistration.Action;
-  private textFilterRegExp: RegExp|null;
-  private readonly filterInput: UI.Toolbar.ToolbarInput;
-  private typeFilterValue: number|null;
-  private readonly filterByTypeComboBox: UI.Toolbar.ToolbarComboBox;
-  private showContentScriptsSetting: Common.Settings.Setting<boolean>;
-  private readonly contentScriptsCheckbox: UI.Toolbar.ToolbarSettingCheckbox;
-  private readonly coverageResultsElement: HTMLElement;
-  private readonly landingPage: UI.Widget.VBox;
-  private readonly bfcacheReloadPromptPage: UI.Widget.VBox;
-  private readonly activationReloadPromptPage: UI.Widget.VBox;
-  private listView: CoverageListView;
-  private readonly statusToolbarElement: HTMLElement;
-  private statusMessageElement: HTMLElement;
+export interface CoverageViewInput {
+  coverageType: number;
+  recording: boolean;
+  supportsRecordOnReload: boolean;
+  textFilter: RegExp|null;
+  typeFilter: number|null;
+  showContentScriptsSetting: Common.Settings.Setting<boolean>;
 
-  constructor() {
+  needsReload: 'bfcache-page'|'prerender-page'|null;
+  coverageInfo: CoverageListItem[]|null;
+  selectedUrl: Platform.DevToolsPath.UrlString|null;
+  statusMessage: string;
+
+  onCoverageTypeChanged: (newValue: number) => void;
+  onFilterChanged: (e: string) => void;
+  onTypeFilterChanged: (newValue: number) => void;
+}
+
+export interface CoverageViewOutput {
+  focusResults: () => void;
+}
+
+export type View = (input: CoverageViewInput, output: CoverageViewOutput, target: HTMLElement) => void;
+
+export const DEFAULT_VIEW: View = (input, output, target) => {
+  // clang-format off
+  render(html`
+      <style>${coverageViewStyles}</style>
+      <div class="coverage-toolbar-container" jslog=${VisualLogging.toolbar()} role="toolbar">
+        <devtools-toolbar class="coverage-toolbar" role="presentation" wrappable>
+          <select title=${i18nString(UIStrings.chooseCoverageGranularityPer)}
+              aria-label=${i18nString(UIStrings.chooseCoverageGranularityPer)}
+              jslog=${VisualLogging.dropDown('coverage-type').track({change: true})}
+              @change=${(event: Event) => input.onCoverageTypeChanged((event.target as HTMLSelectElement).selectedIndex)}
+              .selectedIndex=${input.coverageType}
+              ?disabled=${input.recording}>
+            <option value=${CoverageType.JAVA_SCRIPT | CoverageType.JAVA_SCRIPT_PER_FUNCTION}
+                    jslog=${VisualLogging.item(`${CoverageType.JAVA_SCRIPT | CoverageType.JAVA_SCRIPT_PER_FUNCTION}`).track({click: true})}>
+                 ${i18nString(UIStrings.perFunction)}
+            </option>
+            <option value=${CoverageType.JAVA_SCRIPT}
+                    jslog=${VisualLogging.item(`${CoverageType.JAVA_SCRIPT}`).track({click: true})}>
+              ${i18nString(UIStrings.perBlock)}
+            </option>
+          </select>
+          <devtools-button ${bindToAction(input.supportsRecordOnReload && !input.recording ?
+                            'coverage.start-with-reload' : 'coverage.toggle-recording')}>
+          </devtools-button>
+          <devtools-button ${bindToAction('coverage.clear')}></devtools-button>
+          <div class="toolbar-divider"></div>
+          <devtools-button ${bindToAction('coverage.export')}></devtools-button>
+          <div class="toolbar-divider"></div>
+          <devtools-toolbar-input type="filter" placeholder=${i18nString(UIStrings.filterByUrl)}
+              ?disabled=${!Boolean(input.coverageInfo)}
+               @change=${(e: CustomEvent<string>) => input.onFilterChanged(e.detail)}
+               style="flex-grow:1; flex-shrink:1">
+          </devtools-toolbar-input>
+          <div class="toolbar-divider"></div>
+          <select title=${i18nString(UIStrings.filterCoverageByType)}
+              aria-label=${i18nString(UIStrings.filterCoverageByType)}
+              jslog=${VisualLogging.dropDown('coverage-by-type').track({change: true})}
+              ?disabled=${!Boolean(input.coverageInfo)}
+              @change=${(event: Event) => input.onTypeFilterChanged(
+                  Number((event.target as HTMLSelectElement).selectedOptions[0]?.value))}>
+            <option value="" jslog=${VisualLogging.item('').track({click: true})}
+                    .selected=${input.typeFilter === null}>${i18nString(UIStrings.all)}</option>
+            <option value=${CoverageType.CSS}
+                    jslog=${VisualLogging.item(`${CoverageType.CSS}`).track({click: true})}
+                    .selected=${input.typeFilter === CoverageType.CSS}>
+              ${i18nString(UIStrings.css)}
+            </option>
+            <option value=${CoverageType.JAVA_SCRIPT | CoverageType.JAVA_SCRIPT_PER_FUNCTION}
+                   jslog=${VisualLogging.item(`${CoverageType.JAVA_SCRIPT | CoverageType.JAVA_SCRIPT_PER_FUNCTION}`).track({click: true})}
+                   .selected=${(input.typeFilter !== null && Boolean(input.typeFilter & (CoverageType.JAVA_SCRIPT | CoverageType.JAVA_SCRIPT_PER_FUNCTION)))}>
+              ${i18nString(UIStrings.javascript)}
+            </option>
+          </select>
+          <div class="toolbar-divider"></div>
+          <devtools-checkbox title=${i18nString(UIStrings.includeExtensionContentScripts)}
+              ${bindToSetting(input.showContentScriptsSetting)}
+              ?disabled=${!Boolean(input.coverageInfo)}>
+            ${i18nString(UIStrings.contentScripts)}
+          </devtools-checkbox>
+        </devtools-toolbar>
+      </div>
+      <div class="coverage-results">
+        ${input.needsReload ?
+            renderReloadPromptPage(input.needsReload === 'bfcache-page' ?
+              i18nString(UIStrings.bfcacheNoCapture) : i18nString(UIStrings.activationNoCapture),
+              input.needsReload)
+        : input.coverageInfo ? html`
+          <devtools-widget autofocus class="results" .widgetConfig=${widgetConfig(CoverageListView, {
+              coverageInfo: input.coverageInfo,
+              highlightRegExp: input.textFilter,
+              selectedUrl: input.selectedUrl,
+            })}
+            ${ref(e => { if (e instanceof HTMLElement) { output.focusResults = () => { e.focus(); };}})}>`
+        : renderLandingPage(input.supportsRecordOnReload)}
+      </div>
+      <div class="coverage-toolbar-summary">
+        <div class="coverage-message">
+            ${input.statusMessage}
+        </div>
+    </div>`, target);
+  // clang-format on
+};
+
+function renderLandingPage(supportsRecordOnReload: boolean): TemplateResult {
+  if (supportsRecordOnReload) {
+    // clang-format off
+    return html`
+      <devtools-widget .widgetConfig=${widgetConfig(UI.EmptyWidget.EmptyWidget,{
+          header: i18nString(UIStrings.noCoverageData),
+          link: 'https://developer.chrome.com/docs/devtools/coverage' as Platform.DevToolsPath.UrlString,
+          text: i18nString(UIStrings.clickTheReloadButtonSToReloadAnd, {PH1: i18nString(UIStrings.reloadPage)}),
+          })}>
+        <devtools-button ${bindToAction('coverage.start-with-reload')}
+                          .variant=${Buttons.Button.Variant.TONAL} .iconName=${undefined}>
+          ${i18nString(UIStrings.reloadPage)}
+        </devtools-button>
+      </devtools-widget>`;
+    // clang-format on
+  }
+  // clang-format off
+  return html`
+    <devtools-widget .widgetConfig=${widgetConfig(UI.EmptyWidget.EmptyWidget,{
+        header: i18nString(UIStrings.noCoverageData),
+        link: 'https://developer.chrome.com/docs/devtools/coverage' as Platform.DevToolsPath.UrlString,
+        text: i18nString(UIStrings.clickTheRecordButtonSToStart, {PH1: i18nString(UIStrings.startRecording)}),
+        })}>
+      <devtools-button ${bindToAction('coverage.toggle-recording')}
+                       .variant=${Buttons.Button.Variant.TONAL} .iconName=${undefined}>
+        ${i18nString(UIStrings.startRecording)}
+      </devtools-button>
+    </devtools-widget>`;
+  // clang-format on
+}
+
+function renderReloadPromptPage(message: Common.UIString.LocalizedString, className: string): TemplateResult {
+  // clang-format off
+  return html`
+    <div class="widget vbox ${className}">
+      <div class="message">${message}</div>
+      <span class="message">
+        ${i18nTemplate(UIStrings.reloadPrompt, {PH1: html`
+          <devtools-button class="inline-button" ${bindToAction('inspector-main.reload')}></devtools-button>`})}
+      </span>
+    </div>`;
+  // clang-format on
+}
+
+export class CoverageView extends UI.Widget.VBox {
+  #model: CoverageModel|null;
+  #decorationManager: CoverageDecorationManager|null;
+  readonly #coverageTypeComboBoxSetting: Common.Settings.Setting<number>;
+  readonly #toggleRecordAction: UI.ActionRegistration.Action;
+  readonly #clearAction: UI.ActionRegistration.Action;
+  readonly #exportAction: UI.ActionRegistration.Action;
+  #textFilter: RegExp|null;
+  #typeFilter: number|null;
+  readonly #showContentScriptsSetting: Common.Settings.Setting<boolean>;
+
+  readonly #view: View;
+  #supportsRecordOnReload: boolean;
+  #needsReload: 'bfcache-page'|'prerender-page'|null = null;
+  #statusMessage = '';
+  #output: CoverageViewOutput = {focusResults: () => {}};
+  #coverageInfo: CoverageListItem[]|null = null;
+  #selectedUrl: Platform.DevToolsPath.UrlString|null = null;
+
+  constructor(view: View = DEFAULT_VIEW) {
     super({
       jslog: `${VisualLogging.panel('coverage').track({resize: true})}`,
       useShadowDom: true,
+      delegatesFocus: true,
     });
     this.registerRequiredCSS(coverageViewStyles);
+    this.#view = view;
 
-    this.model = null;
-    this.decorationManager = null;
+    this.#model = null;
+    this.#decorationManager = null;
 
-    const toolbarContainer = this.contentElement.createChild('div', 'coverage-toolbar-container');
-    toolbarContainer.setAttribute('jslog', `${VisualLogging.toolbar()}`);
-    toolbarContainer.role = 'toolbar';
-    const toolbar = toolbarContainer.createChild('devtools-toolbar', 'coverage-toolbar');
-    toolbar.role = 'presentation';
-    toolbar.wrappable = true;
-
-    this.coverageTypeComboBox = new UI.Toolbar.ToolbarComboBox(
-        this.onCoverageTypeComboBoxSelectionChanged.bind(this), i18nString(UIStrings.chooseCoverageGranularityPer),
-        undefined, 'coverage-type');
-    const coverageTypes = [
-      {
-        label: i18nString(UIStrings.perFunction),
-        value: CoverageType.JAVA_SCRIPT | CoverageType.JAVA_SCRIPT_PER_FUNCTION,
-      },
-      {
-        label: i18nString(UIStrings.perBlock),
-        value: CoverageType.JAVA_SCRIPT,
-      },
-    ];
-    for (const type of coverageTypes) {
-      this.coverageTypeComboBox.addOption(this.coverageTypeComboBox.createOption(type.label, `${type.value}`));
-    }
-    this.coverageTypeComboBoxSetting =
+    this.#coverageTypeComboBoxSetting =
         Common.Settings.Settings.instance().createSetting('coverage-view-coverage-type', 0);
-    this.coverageTypeComboBox.setSelectedIndex(this.coverageTypeComboBoxSetting.get());
-    this.coverageTypeComboBox.setEnabled(true);
-    toolbar.appendToolbarItem(this.coverageTypeComboBox);
-    this.toggleRecordAction = UI.ActionRegistry.ActionRegistry.instance().getAction('coverage.toggle-recording');
-    this.toggleRecordButton = UI.Toolbar.Toolbar.createActionButton(this.toggleRecordAction);
-    toolbar.appendToolbarItem(this.toggleRecordButton);
+
+    this.#toggleRecordAction = UI.ActionRegistry.ActionRegistry.instance().getAction('coverage.toggle-recording');
 
     const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
-    const mainTargetSupportsRecordOnReload = mainTarget?.model(SDK.ResourceTreeModel.ResourceTreeModel);
-    this.inlineReloadButton = null;
-    if (mainTargetSupportsRecordOnReload) {
-      this.startWithReloadButton = UI.Toolbar.Toolbar.createActionButton('coverage.start-with-reload');
-      toolbar.appendToolbarItem(this.startWithReloadButton);
-      this.toggleRecordButton.setEnabled(false);
-      this.toggleRecordButton.setVisible(false);
-    }
-    this.clearAction = UI.ActionRegistry.ActionRegistry.instance().getAction('coverage.clear');
-    this.clearAction.setEnabled(false);
-    toolbar.appendToolbarItem(UI.Toolbar.Toolbar.createActionButton(this.clearAction));
+    this.#supportsRecordOnReload = Boolean(mainTarget?.model(SDK.ResourceTreeModel.ResourceTreeModel));
+    this.#clearAction = UI.ActionRegistry.ActionRegistry.instance().getAction('coverage.clear');
+    this.#clearAction.setEnabled(false);
+    this.#exportAction = UI.ActionRegistry.ActionRegistry.instance().getAction('coverage.export');
+    this.#exportAction.setEnabled(false);
 
-    toolbar.appendSeparator();
-    this.exportAction = UI.ActionRegistry.ActionRegistry.instance().getAction('coverage.export');
-    this.exportAction.setEnabled(false);
-    toolbar.appendToolbarItem(UI.Toolbar.Toolbar.createActionButton(this.exportAction));
+    this.#textFilter = null;
 
-    this.textFilterRegExp = null;
-    toolbar.appendSeparator();
-    this.filterInput = new UI.Toolbar.ToolbarFilter(i18nString(UIStrings.filterByUrl), 1, 1);
-    this.filterInput.setEnabled(false);
-    this.filterInput.addEventListener(UI.Toolbar.ToolbarInput.Event.TEXT_CHANGED, this.onFilterChanged, this);
-    toolbar.appendToolbarItem(this.filterInput);
+    this.#typeFilter = null;
 
-    toolbar.appendSeparator();
+    this.#showContentScriptsSetting = Common.Settings.Settings.instance().createSetting('show-content-scripts', false);
+    this.#showContentScriptsSetting.addChangeListener(this.#onFilterChanged, this);
 
-    this.typeFilterValue = null;
-    this.filterByTypeComboBox = new UI.Toolbar.ToolbarComboBox(
-        this.onFilterByTypeChanged.bind(this), i18nString(UIStrings.filterCoverageByType), undefined,
-        'coverage-by-type');
-    const options = [
-      {
-        label: i18nString(UIStrings.all),
-        value: '',
+    this.requestUpdate();
+  }
+
+  override performUpdate(): void {
+    const input: CoverageViewInput = {
+      coverageType: this.#coverageTypeComboBoxSetting.get(),
+      recording: this.#toggleRecordAction.toggled(),
+      supportsRecordOnReload: this.#supportsRecordOnReload,
+      typeFilter: this.#typeFilter,
+      showContentScriptsSetting: this.#showContentScriptsSetting,
+      needsReload: this.#needsReload,
+      coverageInfo: this.#coverageInfo,
+      textFilter: this.#textFilter,
+      selectedUrl: this.#selectedUrl,
+      statusMessage: this.#statusMessage,
+      onCoverageTypeChanged: this.#onCoverageTypeChanged.bind(this),
+      onFilterChanged: (value: string) => {
+        this.#textFilter = value ? Platform.StringUtilities.createPlainTextSearchRegex(value, 'i') : null;
+        this.#onFilterChanged();
       },
-      {
-        label: i18nString(UIStrings.css),
-        value: CoverageType.CSS,
-      },
-      {
-        label: i18nString(UIStrings.javascript),
-        value: CoverageType.JAVA_SCRIPT | CoverageType.JAVA_SCRIPT_PER_FUNCTION,
-      },
-    ];
-    for (const option of options) {
-      this.filterByTypeComboBox.addOption(this.filterByTypeComboBox.createOption(option.label, `${option.value}`));
-    }
-
-    this.filterByTypeComboBox.setSelectedIndex(0);
-    this.filterByTypeComboBox.setEnabled(false);
-    toolbar.appendToolbarItem(this.filterByTypeComboBox);
-
-    toolbar.appendSeparator();
-    this.showContentScriptsSetting = Common.Settings.Settings.instance().createSetting('show-content-scripts', false);
-    this.showContentScriptsSetting.addChangeListener(this.onFilterChanged, this);
-    this.contentScriptsCheckbox = new UI.Toolbar.ToolbarSettingCheckbox(
-        this.showContentScriptsSetting, i18nString(UIStrings.includeExtensionContentScripts),
-        i18nString(UIStrings.contentScripts));
-    this.contentScriptsCheckbox.setEnabled(false);
-    toolbar.appendToolbarItem(this.contentScriptsCheckbox);
-
-    this.coverageResultsElement = this.contentElement.createChild('div', 'coverage-results');
-    this.landingPage = this.buildLandingPage();
-    this.bfcacheReloadPromptPage = this.buildReloadPromptPage(i18nString(UIStrings.bfcacheNoCapture), 'bfcache-page');
-    this.activationReloadPromptPage =
-        this.buildReloadPromptPage(i18nString(UIStrings.activationNoCapture), 'prerender-page');
-    this.listView = new CoverageListView();
-
-    this.statusToolbarElement = this.contentElement.createChild('div', 'coverage-toolbar-summary');
-    this.statusMessageElement = this.statusToolbarElement.createChild('div', 'coverage-message');
-    this.landingPage.show(this.coverageResultsElement);
+      onTypeFilterChanged: this.#onTypeFilterChanged.bind(this),
+    };
+    this.#view(input, this.#output, this.contentElement);
   }
 
   static instance(): CoverageView {
@@ -279,68 +368,27 @@ export class CoverageView extends UI.Widget.VBox {
     coverageViewInstance = undefined;
   }
 
-  private buildLandingPage(): UI.Widget.VBox {
-    const widget = new UI.EmptyWidget.EmptyWidget(i18nString(UIStrings.noCoverageData), '');
-    widget.link = 'https://developer.chrome.com/docs/devtools/coverage' as Platform.DevToolsPath.UrlString;
-    if (this.startWithReloadButton) {
-      const action = UI.ActionRegistry.ActionRegistry.instance().getAction('coverage.start-with-reload');
-      if (action) {
-        widget.text = i18nString(UIStrings.clickTheReloadButtonSToReloadAnd, {PH1: i18nString(UIStrings.reloadPage)});
-        const button = UI.UIUtils.createTextButton(
-            i18nString(UIStrings.reloadPage), () => action.execute(),
-            {jslogContext: action.id(), variant: Buttons.Button.Variant.TONAL});
-        widget.contentElement.append(button);
-      }
-    } else {
-      widget.text = i18nString(UIStrings.clickTheRecordButtonSToStart, {PH1: i18nString(UIStrings.startRecording)});
-      const button = UI.UIUtils.createTextButton(
-          i18nString(UIStrings.startRecording), () => this.toggleRecordAction.execute(),
-          {jslogContext: this.toggleRecordAction.id(), variant: Buttons.Button.Variant.TONAL});
-      widget.contentElement.append(button);
-    }
-    return widget;
-  }
-
-  private buildReloadPromptPage(message: Common.UIString.LocalizedString, className: string): UI.Widget.VBox {
-    const widget = new UI.Widget.VBox();
-    const reasonDiv = document.createElement('div');
-    reasonDiv.classList.add('message');
-    reasonDiv.textContent = message;
-    widget.contentElement.appendChild(reasonDiv);
-    this.inlineReloadButton =
-        UI.UIUtils.createInlineButton(UI.Toolbar.Toolbar.createActionButton('inspector-main.reload'));
-    const messageElement =
-        i18n.i18n.getFormatLocalizedString(str_, UIStrings.reloadPrompt, {PH1: this.inlineReloadButton});
-    messageElement.classList.add('message');
-    widget.contentElement.appendChild(messageElement);
-    widget.element.classList.add(className);
-    return widget;
-  }
-
   clear(): void {
-    if (this.model) {
-      this.model.reset();
+    if (this.#model) {
+      this.#model.reset();
     }
-    this.reset();
+    this.#reset();
   }
 
-  private reset(): void {
-    if (this.decorationManager) {
-      this.decorationManager.dispose();
-      this.decorationManager = null;
+  #reset(): void {
+    if (this.#decorationManager) {
+      this.#decorationManager.dispose();
+      this.#decorationManager = null;
     }
-    this.listView.reset();
-    this.listView.detach();
-    this.landingPage.show(this.coverageResultsElement);
-    this.statusMessageElement.textContent = '';
-    this.filterInput.setEnabled(false);
-    this.filterByTypeComboBox.setEnabled(false);
-    this.contentScriptsCheckbox.setEnabled(false);
-    this.exportAction.setEnabled(false);
+    this.#needsReload = null;
+    this.#coverageInfo = null;
+    this.#statusMessage = '';
+    this.#exportAction.setEnabled(false);
+    this.requestUpdate();
   }
 
   toggleRecording(): void {
-    const enable = !this.toggleRecordAction.toggled();
+    const enable = !this.#toggleRecordAction.toggled();
 
     if (enable) {
       void this.startRecording({reload: false, jsCoveragePerBlock: this.isBlockCoverageSelected()});
@@ -350,31 +398,22 @@ export class CoverageView extends UI.Widget.VBox {
   }
 
   isBlockCoverageSelected(): boolean {
-    const option = this.coverageTypeComboBox.selectedOption();
-    const coverageType = Number(option ? option.value : Number.NaN);
     // Check that Coverage.CoverageType.JavaScriptPerFunction is not present.
-    return coverageType === CoverageType.JAVA_SCRIPT;
+    return this.#coverageTypeComboBoxSetting.get() === CoverageType.JAVA_SCRIPT;
   }
 
-  private selectCoverageType(jsCoveragePerBlock: boolean): void {
+  #selectCoverageType(jsCoveragePerBlock: boolean): void {
     const selectedIndex = jsCoveragePerBlock ? 1 : 0;
-    this.coverageTypeComboBox.setSelectedIndex(selectedIndex);
+    this.#coverageTypeComboBoxSetting.set(selectedIndex);
   }
 
-  private onCoverageTypeComboBoxSelectionChanged(): void {
-    this.coverageTypeComboBoxSetting.set(this.coverageTypeComboBox.selectedIndex());
+  #onCoverageTypeChanged(newValue: number): void {
+    this.#coverageTypeComboBoxSetting.set(newValue);
   }
 
   async startRecording(options: {reload: (boolean|undefined), jsCoveragePerBlock: (boolean|undefined)}|null):
       Promise<void> {
-    let hadFocus, reloadButtonFocused;
-    if ((this.startWithReloadButton?.element.hasFocus()) || (this.inlineReloadButton?.hasFocus())) {
-      reloadButtonFocused = true;
-    } else if (this.hasFocus()) {
-      hadFocus = true;
-    }
-
-    this.reset();
+    this.#reset();
     const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
     if (!mainTarget) {
       return;
@@ -382,77 +421,63 @@ export class CoverageView extends UI.Widget.VBox {
 
     const {reload, jsCoveragePerBlock} = {reload: false, jsCoveragePerBlock: false, ...options};
 
-    if (!this.model || reload) {
-      this.model = mainTarget.model(CoverageModel);
+    if (!this.#model || reload) {
+      this.#model = mainTarget.model(CoverageModel);
     }
-    if (!this.model) {
+    if (!this.#model) {
       return;
     }
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.CoverageStarted);
     if (jsCoveragePerBlock) {
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.CoverageStartedPerBlock);
     }
-    const success = await this.model.start(Boolean(jsCoveragePerBlock));
+    const success = await this.#model.start(Boolean(jsCoveragePerBlock));
     if (!success) {
       return;
     }
-    this.selectCoverageType(Boolean(jsCoveragePerBlock));
-    this.model.addEventListener(Events.CoverageUpdated, this.onCoverageDataReceived, this);
-    this.model.addEventListener(Events.SourceMapResolved, this.updateListView, this);
+    this.#selectCoverageType(Boolean(jsCoveragePerBlock));
+    this.#model.addEventListener(Events.CoverageUpdated, this.#onCoverageDataReceived, this);
+    this.#model.addEventListener(Events.SourceMapResolved, this.#updateListView, this);
     const resourceTreeModel = mainTarget.model(SDK.ResourceTreeModel.ResourceTreeModel);
     SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.PrimaryPageChanged,
-        this.onPrimaryPageChanged, this);
-    this.decorationManager = new CoverageDecorationManager(
-        this.model, Workspace.Workspace.WorkspaceImpl.instance(),
+        this.#onPrimaryPageChanged, this);
+    this.#decorationManager = new CoverageDecorationManager(
+        this.#model, Workspace.Workspace.WorkspaceImpl.instance(),
         Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(),
         Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.instance());
-    this.toggleRecordAction.setToggled(true);
-    this.clearAction.setEnabled(false);
-    if (this.startWithReloadButton) {
-      this.startWithReloadButton.setEnabled(false);
-      this.startWithReloadButton.setVisible(false);
-      this.toggleRecordButton.setEnabled(true);
-      this.toggleRecordButton.setVisible(true);
-      if (reloadButtonFocused) {
-        this.toggleRecordButton.focus();
-      }
-    }
-    this.coverageTypeComboBox.setEnabled(false);
-    this.filterInput.setEnabled(true);
-    this.filterByTypeComboBox.setEnabled(true);
-    this.contentScriptsCheckbox.setEnabled(true);
-    if (this.landingPage.isShowing()) {
-      this.landingPage.detach();
-    }
-    this.listView.show(this.coverageResultsElement);
-    if (hadFocus && !reloadButtonFocused) {
-      this.listView.focus();
-    }
+    this.#toggleRecordAction.setToggled(true);
+    this.#clearAction.setEnabled(false);
+    this.#coverageInfo = [];
+    this.#needsReload = null;
+    this.requestUpdate();
+    await this.updateComplete;
+
+    this.#output.focusResults();
     if (reload && resourceTreeModel) {
       resourceTreeModel.reloadPage();
     } else {
-      void this.model.startPolling();
+      void this.#model.startPolling();
     }
   }
 
-  private onCoverageDataReceived(event: Common.EventTarget.EventTargetEvent<CoverageInfo[]>): void {
+  #onCoverageDataReceived(event: Common.EventTarget.EventTargetEvent<CoverageInfo[]>): void {
     const data = event.data;
-    this.updateViews(data);
+    this.#updateViews(data);
   }
 
-  private updateListView(): void {
+  #updateListView(): void {
     const entries =
-        (this.model?.entries() || [])
-            .map(entry => this.toCoverageListItem(entry))
-            .filter(info => this.isVisible(info))
+        (this.#model?.entries() || [])
+            .map(entry => this.#toCoverageListItem(entry))
+            .filter(info => this.#isVisible(info))
             .map(
                 (entry: CoverageListItem) =>
-                    ({...entry, sources: entry.sources.filter((entry: CoverageListItem) => this.isVisible(entry))}));
-    this.listView.update(entries, this.textFilterRegExp);
+                    ({...entry, sources: entry.sources.filter((entry: CoverageListItem) => this.#isVisible(entry))}));
+    this.#coverageInfo = entries;
   }
 
-  private toCoverageListItem(info: URLCoverageInfo): CoverageListItem {
+  #toCoverageListItem(info: URLCoverageInfo): CoverageListItem {
     return {
       url: info.url(),
       type: info.type(),
@@ -461,7 +486,7 @@ export class CoverageView extends UI.Widget.VBox {
       unusedSize: info.unusedSize(),
       usedPercentage: info.usedPercentage(),
       unusedPercentage: info.unusedPercentage(),
-      sources: [...info.sourcesURLCoverageInfo.values()].map(this.toCoverageListItem, this),
+      sources: [...info.sourcesURLCoverageInfo.values()].map(this.#toCoverageListItem, this),
       isContentScript: info.isContentScript(),
       generatedUrl: info instanceof SourceURLCoverageInfo ? info.generatedURLCoverageInfo.url() : undefined,
     };
@@ -470,27 +495,18 @@ export class CoverageView extends UI.Widget.VBox {
   async stopRecording(): Promise<void> {
     SDK.TargetManager.TargetManager.instance().removeModelListener(
         SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.PrimaryPageChanged,
-        this.onPrimaryPageChanged, this);
-    if (this.hasFocus()) {
-      this.listView.focus();
-    }
+        this.#onPrimaryPageChanged, this);
     // Stopping the model triggers one last poll to get the final data.
-    if (this.model) {
-      await this.model.stop();
-      this.model.removeEventListener(Events.CoverageUpdated, this.onCoverageDataReceived, this);
+    if (this.#model) {
+      await this.#model.stop();
+      this.#model.removeEventListener(Events.CoverageUpdated, this.#onCoverageDataReceived, this);
     }
-    this.toggleRecordAction.setToggled(false);
-    this.coverageTypeComboBox.setEnabled(true);
-    if (this.startWithReloadButton) {
-      this.startWithReloadButton.setEnabled(true);
-      this.startWithReloadButton.setVisible(true);
-      this.toggleRecordButton.setEnabled(false);
-      this.toggleRecordButton.setVisible(false);
-    }
-    this.clearAction.setEnabled(true);
+    this.#toggleRecordAction.setToggled(false);
+    this.#clearAction.setEnabled(true);
+    this.requestUpdate();
   }
 
-  private async onPrimaryPageChanged(
+  async #onPrimaryPageChanged(
       event: Common.EventTarget.EventTargetEvent<
           {frame: SDK.ResourceTreeModel.ResourceTreeFrame, type: SDK.ResourceTreeModel.PrimaryPageChangeType}>):
       Promise<void> {
@@ -500,71 +516,64 @@ export class CoverageView extends UI.Widget.VBox {
       return;
     }
     // If the primary page target has changed (due to MPArch activation), switch to new CoverageModel.
-    if (this.model !== coverageModel) {
-      if (this.model) {
-        await this.model.stop();
-        this.model.removeEventListener(Events.CoverageUpdated, this.onCoverageDataReceived, this);
+    if (this.#model !== coverageModel) {
+      if (this.#model) {
+        await this.#model.stop();
+        this.#model.removeEventListener(Events.CoverageUpdated, this.#onCoverageDataReceived, this);
       }
-      this.model = coverageModel;
-      const success = await this.model.start(this.isBlockCoverageSelected());
+      this.#model = coverageModel;
+      const success = await this.#model.start(this.isBlockCoverageSelected());
       if (!success) {
         return;
       }
 
-      this.model.addEventListener(Events.CoverageUpdated, this.onCoverageDataReceived, this);
-      this.decorationManager = new CoverageDecorationManager(
-          this.model, Workspace.Workspace.WorkspaceImpl.instance(),
+      this.#model.addEventListener(Events.CoverageUpdated, this.#onCoverageDataReceived, this);
+      this.#decorationManager = new CoverageDecorationManager(
+          this.#model, Workspace.Workspace.WorkspaceImpl.instance(),
           Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(),
           Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.instance());
     }
 
-    if (this.bfcacheReloadPromptPage.isShowing()) {
-      this.bfcacheReloadPromptPage.detach();
-      this.listView.show(this.coverageResultsElement);
-    }
-    if (this.activationReloadPromptPage.isShowing()) {
-      this.activationReloadPromptPage.detach();
-      this.listView.show(this.coverageResultsElement);
-    }
-    if (frame.backForwardCacheDetails.restoredFromCache) {
-      this.listView.detach();
-      this.bfcacheReloadPromptPage.show(this.coverageResultsElement);
-    }
     if (event.data.type === SDK.ResourceTreeModel.PrimaryPageChangeType.ACTIVATION) {
-      this.listView.detach();
-      this.activationReloadPromptPage.show(this.coverageResultsElement);
+      this.#needsReload = 'prerender-page';
+    } else if (frame.backForwardCacheDetails.restoredFromCache) {
+      this.#needsReload = 'bfcache-page';
+    } else {
+      this.#needsReload = null;
+      this.#coverageInfo = [];
     }
+    this.requestUpdate();
 
-    this.model.reset();
-    this.decorationManager?.reset();
-    this.listView.reset();
-    void this.model.startPolling();
+    this.#model.reset();
+    this.#decorationManager?.reset();
+    void this.#model.startPolling();
   }
 
-  private updateViews(updatedEntries: CoverageInfo[]): void {
-    this.updateStats();
-    this.updateListView();
-    this.exportAction.setEnabled(this.model !== null && this.model.entries().length > 0);
-    this.decorationManager?.update(updatedEntries);
+  #updateViews(updatedEntries: CoverageInfo[]): void {
+    this.#updateStats();
+    this.#updateListView();
+    this.#exportAction.setEnabled(this.#model !== null && this.#model.entries().length > 0);
+    this.#decorationManager?.update(updatedEntries);
+    this.requestUpdate();
   }
 
-  private updateStats(): void {
+  #updateStats(): void {
     const all = {total: 0, unused: 0};
     const filtered = {total: 0, unused: 0};
-    const filterApplied = this.textFilterRegExp !== null;
-    if (this.model) {
-      for (const info of this.model.entries()) {
+    const filterApplied = this.#textFilter !== null;
+    if (this.#model) {
+      for (const info of this.#model.entries()) {
         all.total += info.size();
         all.unused += info.unusedSize();
-        const listItem = this.toCoverageListItem(info);
-        if (this.isVisible(listItem)) {
-          if (this.textFilterRegExp?.test(info.url())) {
+        const listItem = this.#toCoverageListItem(info);
+        if (this.#isVisible(listItem)) {
+          if (this.#textFilter?.test(info.url())) {
             filtered.total += info.size();
             filtered.unused += info.unusedSize();
           } else {
             // If it doesn't match the filter, calculate the stats from visible children if there are any
             for (const childInfo of info.sourcesURLCoverageInfo.values()) {
-              if (this.isVisible(this.toCoverageListItem(childInfo))) {
+              if (this.#isVisible(this.#toCoverageListItem(childInfo))) {
                 filtered.total += childInfo.size();
                 filtered.unused += childInfo.unusedSize();
               }
@@ -573,7 +582,7 @@ export class CoverageView extends UI.Widget.VBox {
         }
       }
     }
-    this.statusMessageElement.textContent = filterApplied ?
+    this.#statusMessage = filterApplied ?
         i18nString(UIStrings.filteredSTotalS, {PH1: formatStat(filtered), PH2: formatStat(all)}) :
         formatStat(all);
 
@@ -589,51 +598,42 @@ export class CoverageView extends UI.Widget.VBox {
     }
   }
 
-  private onFilterChanged(): void {
-    if (!this.listView) {
-      return;
-    }
-    const text = this.filterInput.value();
-    this.textFilterRegExp = text ? Platform.StringUtilities.createPlainTextSearchRegex(text, 'i') : null;
-    this.updateListView();
-    this.updateStats();
+  #onFilterChanged(): void {
+    this.#updateListView();
+    this.#updateStats();
+    this.requestUpdate();
   }
 
-  private onFilterByTypeChanged(): void {
-    if (!this.listView) {
-      return;
-    }
-
+  #onTypeFilterChanged(typeFilter: number): void {
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.CoverageReportFiltered);
 
-    const option = this.filterByTypeComboBox.selectedOption();
-    const type = option?.value;
-    this.typeFilterValue = parseInt(type || '', 10) || null;
-    this.updateListView();
-    this.updateStats();
+    this.#typeFilter = typeFilter;
+    this.#updateListView();
+    this.#updateStats();
+    this.requestUpdate();
   }
 
-  private isVisible(coverageInfo: CoverageListItem): boolean {
+  #isVisible(coverageInfo: CoverageListItem): boolean {
     const url = coverageInfo.url;
     if (url.startsWith(CoverageView.EXTENSION_BINDINGS_URL_PREFIX)) {
       return false;
     }
-    if (coverageInfo.isContentScript && !this.showContentScriptsSetting.get()) {
+    if (coverageInfo.isContentScript && !this.#showContentScriptsSetting.get()) {
       return false;
     }
-    if (this.typeFilterValue && !(coverageInfo.type & this.typeFilterValue)) {
+    if (this.#typeFilter && !(coverageInfo.type & this.#typeFilter)) {
       return false;
     }
     // If it's a parent, check if any children are visible
     if (coverageInfo.sources.length > 0) {
       for (const sourceURLCoverageInfo of coverageInfo.sources) {
-        if (this.isVisible(sourceURLCoverageInfo)) {
+        if (this.#isVisible(sourceURLCoverageInfo)) {
           return true;
         }
       }
     }
 
-    return !this.textFilterRegExp || this.textFilterRegExp.test(url);
+    return !this.#textFilter || this.#textFilter.test(url);
   }
 
   async exportReport(): Promise<void> {
@@ -644,11 +644,12 @@ export class CoverageView extends UI.Widget.VBox {
     if (!accepted) {
       return;
     }
-    this.model && await this.model.exportReport(fos);
+    this.#model && await this.#model.exportReport(fos);
   }
 
   selectCoverageItemByUrl(url: string): void {
-    this.listView.selectByUrl(url as Platform.DevToolsPath.UrlString);
+    this.#selectedUrl = url as Platform.DevToolsPath.UrlString;
+    this.requestUpdate();
   }
 
   static readonly EXTENSION_BINDINGS_URL_PREFIX = 'extensions::';
@@ -661,6 +662,10 @@ export class CoverageView extends UI.Widget.VBox {
   override willHide(): void {
     super.willHide();
     UI.Context.Context.instance().setFlavor(CoverageView, null);
+  }
+
+  get model(): CoverageModel|null {
+    return this.#model;
   }
 }
 

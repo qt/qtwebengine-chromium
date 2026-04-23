@@ -26,15 +26,10 @@ import {createContentProviderUISourceCodes, createFileSystemUISourceCode} from '
 import {createViewFunctionStub} from './ViewFunctionHelpers.js';
 
 function createMockAidaClient(doConversation: Host.AidaClient.AidaClient['doConversation']):
-    Host.AidaClient.AidaClient {
-  const doConversationStub = sinon.stub();
-  const registerClientEventStub = sinon.stub();
-  const completeCodeStub = sinon.stub();
-  return {
-    doConversation: doConversationStub.callsFake(doConversation),
-    registerClientEvent: registerClientEventStub,
-    completeCode: completeCodeStub,
-  };
+    sinon.SinonStubbedInstance<Host.AidaClient.AidaClient> {
+  const aidaClient = sinon.createStubInstance(Host.AidaClient.AidaClient);
+  aidaClient.doConversation.callsFake(doConversation);
+  return aidaClient;
 }
 
 export const MockAidaAbortError = {
@@ -56,7 +51,7 @@ export type MockAidaResponse = Omit<Host.AidaClient.DoConversationResponse, 'com
  * The last chunk sets completed flag to true;
  */
 export function mockAidaClient(data: Array<[MockAidaResponse, ...MockAidaResponse[]]> = []):
-    Host.AidaClient.AidaClient {
+    sinon.SinonStubbedInstance<Host.AidaClient.AidaClient> {
   let callId = 0;
   async function* provideAnswer(_: Host.AidaClient.DoConversationRequest, options?: {signal?: AbortSignal}) {
     if (!data[callId]) {
@@ -288,6 +283,7 @@ export function initializePersistenceImplForTests(): void {
     targetManager: SDK.TargetManager.TargetManager.instance(),
     resourceMapping:
         new Bindings.ResourceMapping.ResourceMapping(SDK.TargetManager.TargetManager.instance(), workspace),
+    workspace,
     ignoreListManager: Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true}),
   });
   const breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance({
@@ -318,10 +314,11 @@ export function openHistoryContextMenu(
   const contextMenu = new UI.ContextMenu.ContextMenu(new MouseEvent('click'));
   lastUpdate.populateHistoryMenu(contextMenu);
 
-  const freestylerEntry = findMenuItemWithLabel(contextMenu.defaultSection(), item);
+  const entry = findMenuItemWithLabel(contextMenu.defaultSection(), item);
   return {
     contextMenu,
-    id: freestylerEntry?.id(),
+    id: entry?.id(),
+    entry,
   };
 }
 

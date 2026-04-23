@@ -44,8 +44,7 @@ describeWithEnvironment('ProtocolMonitor', () => {
   });
 
   it('sends commands', async () => {
-    view.input.onCommandSubmitted(
-        new CustomEvent('submit', {detail: '{"command":"Test.test","parameters":{"test":"test"}}'}));
+    view.input.onCommandSubmitted('{"command":"Test.test","parameters":{"test":"test"}}');
     sinon.assert.calledOnce(sendRawMessageStub);
     sinon.assert.calledOnce(sendRawMessageStub);
     assert.strictEqual(sendRawMessageStub.getCall(0).args[0], 'Test.test');
@@ -54,8 +53,8 @@ describeWithEnvironment('ProtocolMonitor', () => {
   });
 
   it('includes previous commands into autocomplete', async () => {
-    view.input.onCommandSubmitted(new CustomEvent('submit', {detail: 'Test.test1'}));
-    view.input.onCommandSubmitted(new CustomEvent('submit', {detail: 'Test.test2'}));
+    view.input.onCommandSubmitted('Test.test1');
+    view.input.onCommandSubmitted('Test.test2');
     protocolMonitor.requestUpdate();
     assert.includeOrderedMembers(
         (await view.nextInput).commandSuggestions, ['Test.test2', 'Test.test1', 'Accessibility.disable']);
@@ -63,7 +62,7 @@ describeWithEnvironment('ProtocolMonitor', () => {
 
   it('records commands', async () => {
     protocolMonitor.wasShown();
-    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 1}, null);
+    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 1});
     assert.deepEqual((await view.nextInput).messages.map(m => ({method: m.method, params: m.params, id: m.id})), [
       {
         method: 'Test.test',
@@ -72,15 +71,13 @@ describeWithEnvironment('ProtocolMonitor', () => {
       },
     ]);
 
-    InspectorBackend.test.onMessageReceived?.(
-        {
-          id: 1,
-          method: 'Test.test',
-          params: {test: 'test'},
-          requestTime: 0,
-          result: {test: 'test'},
-        },
-        null);
+    InspectorBackend.test.onMessageReceived?.({
+      id: 1,
+      method: 'Test.test',
+      params: {test: 'test'},
+      requestTime: 0,
+      result: {test: 'test'},
+    });
     assert.deepEqual(
         (await view.nextInput).messages.map(m => ({method: m.method, params: m.params, id: m.id, result: m.result})), [
           {
@@ -93,10 +90,10 @@ describeWithEnvironment('ProtocolMonitor', () => {
   });
 
   it('only records commands if recording is enabled', async () => {
-    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 1}, null);
+    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 1});
 
     protocolMonitor.wasShown();
-    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 2}, null);
+    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 2});
     assert.deepEqual((await view.nextInput).messages.map(m => ({method: m.method, params: m.params, id: m.id})), [
       {
         method: 'Test.test',
@@ -105,10 +102,10 @@ describeWithEnvironment('ProtocolMonitor', () => {
       },
     ]);
 
-    view.input.onRecord({target: {toggled: false}} as unknown as Event);
-    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 3}, null);
-    view.input.onRecord({target: {toggled: true}} as unknown as Event);
-    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 4}, null);
+    view.input.onRecord(false);
+    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 3});
+    view.input.onRecord(true);
+    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 4});
     assert.deepEqual((await view.nextInput).messages.map(m => ({method: m.method, params: m.params, id: m.id})), [
       {
         method: 'Test.test',
@@ -125,7 +122,7 @@ describeWithEnvironment('ProtocolMonitor', () => {
 
   it('clears messages', async () => {
     protocolMonitor.wasShown();
-    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 2}, null);
+    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 2});
     assert.lengthOf((await view.nextInput).messages, 1);
 
     view.input.onClear();
@@ -137,7 +134,7 @@ describeWithEnvironment('ProtocolMonitor', () => {
     const fileManagerCloseCall = expectCall(fileManager.close);
 
     protocolMonitor.wasShown();
-    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 2}, null);
+    InspectorBackend.test.onMessageSent?.({domain: 'Test', method: 'Test.test', params: {test: 'test'}, id: 2});
 
     const TIMESTAMP = 42;
     const clock = sinon.useFakeTimers();
@@ -158,23 +155,35 @@ describeWithEnvironment('ProtocolMonitor', () => {
 
   describe('context menu', () => {
     let menu!: UI.ContextMenu.ContextMenu;
-    let element!: HTMLElement;
 
-    function triggerContextMenu(index: number) {
+    function triggerContextMenu(message: ProtocolMonitor.ProtocolMonitor.Message): void {
       menu = new UI.ContextMenu.ContextMenu(new Event('contextmenu'));
-      element = {dataset: {index: `${index}`}} as unknown as HTMLElement;
-      view.input.onSelect(new CustomEvent('select', {detail: element}));
-      view.input.onContextMenu(new CustomEvent('contextmenu', {detail: {menu, element}}));
+      view.input.onSelect(message);
+      view.input.onContextMenu(message, menu);
     }
+    const MESSAGES = [
+      {
+        domain: 'Test',
+        method: 'Test.test1',
+        params: {test: 'test'},
+        id: 1,
+        requestTime: 0,
+      },
+      {
+        domain: 'Test',
+        method: 'Test.test2',
+        params: {test: 'test'},
+        id: 2,
+        requestTime: 1,
+      },
+    ];
 
     beforeEach(() => {
       menu = new UI.ContextMenu.ContextMenu(new Event('contextmenu'));
       protocolMonitor.wasShown();
-      InspectorBackend.test.onMessageSent?.(
-          {domain: 'Test', method: 'Test.test1', params: {test: 'test'}, id: 2}, null);
-      InspectorBackend.test.onMessageSent?.(
-          {domain: 'Test', method: 'Test.test2', params: {test: 'test'}, id: 2}, null);
-      triggerContextMenu(1);
+      InspectorBackend.test.onMessageSent?.(MESSAGES[0]);
+      InspectorBackend.test.onMessageSent?.(MESSAGES[1]);
+      triggerContextMenu(MESSAGES[1]);
     });
 
     it('priovides edit and resend context menu item', async () => {
@@ -189,7 +198,7 @@ describeWithEnvironment('ProtocolMonitor', () => {
 
       const displayCommandStub = sinon.stub(jsonEditor, 'displayCommand');
 
-      triggerContextMenu(0);
+      triggerContextMenu(MESSAGES[0]);
       editAndResend = findMenuItemWithLabel(menu.editSection(), 'Edit and resend');
       assert.exists(editAndResend);
       menu.invokeHandler(editAndResend.id());
@@ -229,7 +238,7 @@ describeWithEnvironment('ProtocolMonitor', () => {
           value: 'test',
         },
       ];
-      view.input.onSplitChange(new CustomEvent('change', {detail: 'OnlyMain'}));
+      view.input.onSplitChange(true);
       assert.deepEqual((await view.nextInput).command, '{"command":"Test.test","parameters":{"test":"test"}}');
     });
 
@@ -239,13 +248,13 @@ describeWithEnvironment('ProtocolMonitor', () => {
         {id: () => 'value1'} as SDK.Target.Target,
         {id: () => 'value2'} as SDK.Target.Target,
       ]);
-      view.input.onSplitChange(new CustomEvent('change', {detail: 'OnlyMain'}));
+      view.input.onSplitChange(true);
       assert.deepEqual((await view.nextInput).selectedTargetId, 'value2');
     });
 
     it('should not display the command into the input bar if the command is empty string', async () => {
       jsonEditor.command = '';
-      view.input.onSplitChange(new CustomEvent('change', {detail: 'OnlyMain'}));
+      view.input.onSplitChange(true);
 
       assert.deepEqual((await view.nextInput).command, '');
     });
@@ -468,17 +477,17 @@ describeWithEnvironment('ProtocolMonitor', () => {
         filterKeys: ['method', 'request', 'response', 'target', 'session'],
         filter: '',
         parseFilter: (_: string) => [],
-        onSplitChange: (_: CustomEvent<string>) => {},
-        onRecord: (_: Event) => {},
+        onSplitChange: (_: boolean) => {},
+        onRecord: (_: boolean) => {},
         onClear: () => {},
         onSave: () => {},
-        onSelect: (_: CustomEvent<HTMLElement|null>) => {},
-        onContextMenu: (_: CustomEvent<{menu: UI.ContextMenu.ContextMenu, element: HTMLElement}>) => {},
-        onCommandChange: (_: CustomEvent<string>) => {},
-        onCommandSubmitted: (_: CustomEvent<string>) => {},
-        onFilterChanged: (_: CustomEvent<string>) => {},
-        onTargetChange: (_: Event) => {},
-        onToggleSidebar: (_: Event) => {},
+        onSelect: (_: ProtocolMonitor.ProtocolMonitor.Message|undefined) => {},
+        onContextMenu: (_1: ProtocolMonitor.ProtocolMonitor.Message, _2: UI.ContextMenu.ContextMenu) => {},
+        onCommandChange: (_: string) => {},
+        onCommandSubmitted: (_: string) => {},
+        onFilterChanged: (_: string) => {},
+        onTargetChange: (_: string) => {},
+        onToggleSidebar: () => {},
         targets: [],
         selectedTargetId: 'main',
       };
@@ -522,17 +531,17 @@ describeWithEnvironment('ProtocolMonitor', () => {
         filterKeys: ['method', 'request', 'response', 'target', 'session'],
         filter: 'method:Test.test3',
         parseFilter: (_: string) => [{key: 'method', text: 'test3', negative: false}],
-        onSplitChange: (_: CustomEvent<string>) => {},
-        onRecord: (_: Event) => {},
+        onSplitChange: (_: boolean) => {},
+        onRecord: (_: boolean) => {},
         onClear: () => {},
         onSave: () => {},
-        onSelect: (_: CustomEvent<HTMLElement|null>) => {},
-        onContextMenu: (_: CustomEvent<{menu: UI.ContextMenu.ContextMenu, element: HTMLElement}>) => {},
-        onCommandChange: (_: CustomEvent<string>) => {},
-        onCommandSubmitted: (_: CustomEvent<string>) => {},
-        onFilterChanged: (_: CustomEvent<string>) => {},
-        onTargetChange: (_: Event) => {},
-        onToggleSidebar: (_: Event) => {},
+        onSelect: (_: ProtocolMonitor.ProtocolMonitor.Message|undefined) => {},
+        onContextMenu: (_1: ProtocolMonitor.ProtocolMonitor.Message, _2: UI.ContextMenu.ContextMenu) => {},
+        onCommandChange: (_: string) => {},
+        onCommandSubmitted: (_: string) => {},
+        onFilterChanged: (_: string) => {},
+        onTargetChange: (_: string) => {},
+        onToggleSidebar: () => {},
         targets: [
           {id: () => 'main', name: () => 'Main', inspectedURL: () => 'www.example.com'},
           {id: () => 'prerender', name: () => 'Prerender', inspectedURL: () => 'www.example.com/prerender'}

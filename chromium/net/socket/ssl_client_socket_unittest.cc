@@ -19,7 +19,6 @@
 
 #include "base/containers/span.h"
 #include "base/containers/span_reader.h"
-#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -1176,8 +1175,9 @@ class ZeroRTTResponse : public test_server::HttpResponse {
 
 std::unique_ptr<test_server::HttpResponse> HandleZeroRTTRequest(
     const test_server::HttpRequest& request) {
-  if (request.GetURL().path() != "/zerortt" || !request.ssl_info)
+  if (request.GetURL().GetPath() != "/zerortt" || !request.ssl_info) {
     return nullptr;
+  }
 
   return std::make_unique<ZeroRTTResponse>(
       request.ssl_info->early_data_received);

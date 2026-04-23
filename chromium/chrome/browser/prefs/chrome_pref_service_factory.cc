@@ -38,6 +38,7 @@
 #include "chrome/browser/ui/profiles/profile_error_dialog.h"
 #include "chrome/common/buildflags.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/branded_strings.h"
@@ -84,12 +85,13 @@
 #include "base/files/file_util.h"
 #endif
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 #include "extensions/browser/pref_names.h"
 #endif
 
 #if BUILDFLAG(IS_WIN)
 #include "base/enterprise_util.h"
+#include "services/preferences/tracked/features.h"
 #endif  // BUILDFLAG(IS_WIN)
 
 using content::BrowserContext;
@@ -127,7 +129,7 @@ const auto kTrackedPrefs = std::to_array<prefs::TrackedPreferenceMetadata>({
      PrefTrackingStrategy::ATOMIC, ValueType::IMPERSONAL},
     {4, prefs::kURLsToRestoreOnStartup, EnforcementLevel::ENFORCE_ON_LOAD,
      PrefTrackingStrategy::ATOMIC, ValueType::IMPERSONAL},
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
     {5, extensions::pref_names::kExtensions, EnforcementLevel::NO_ENFORCEMENT,
      PrefTrackingStrategy::SPLIT, ValueType::IMPERSONAL},
 #endif
@@ -173,7 +175,7 @@ const auto kTrackedPrefs = std::to_array<prefs::TrackedPreferenceMetadata>({
     {34, enterprise_signin::prefs::kPolicyRecoveryToken,
      EnforcementLevel::ENFORCE_ON_LOAD, PrefTrackingStrategy::ATOMIC,
      ValueType::IMPERSONAL},
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
     {35, prefs::kExtensionsUIDeveloperMode, EnforcementLevel::ENFORCE_ON_LOAD,
      PrefTrackingStrategy::ATOMIC, ValueType::IMPERSONAL},
 #endif
@@ -215,8 +217,11 @@ SettingsEnforcementGroup GetSettingsEnforcementGroup() {
 #if BUILDFLAG(IS_WIN)
   if (!g_disable_domain_check_for_testing) {
     static const bool is_domain_joined = base::IsEnterpriseDevice();
-    if (is_domain_joined)
+    if (is_domain_joined &&
+        !base::FeatureList::IsEnabled(
+            tracked::kEnableEncryptedTrackedPrefOnEnterprise)) {
       return GROUP_NO_ENFORCEMENT;
+    }
   }
 #endif
 
@@ -254,7 +259,7 @@ GetTrackingConfiguration() {
       data->enforcement_level = EnforcementLevel::ENFORCE_ON_LOAD;
     }
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
     if (enforcement_group >= GROUP_ENFORCE_ALWAYS_WITH_EXTENSIONS_AND_DSE &&
         data->name == extensions::pref_names::kExtensions) {
       // Specifically enable extension settings enforcement.
@@ -566,6 +571,14 @@ base::Time GetResetTime(Profile* profile) {
 
 void ClearResetTime(Profile* profile) {
   ProfilePrefStoreManager::ClearResetTime(profile->GetPrefs());
+}
+
+const base::Value::List& GetTamperedPrefList(Profile* profile) {
+  return profile->GetPrefs()->GetList(user_prefs::kTrackedPreferencesReset);
+}
+
+void ClearTamperedPrefList(Profile* profile) {
+  profile->GetPrefs()->ClearPref(user_prefs::kTrackedPreferencesReset);
 }
 
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {

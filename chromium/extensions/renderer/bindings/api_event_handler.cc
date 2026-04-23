@@ -265,14 +265,17 @@ void APIEventHandler::FireEventInContext(const std::string& event_name,
   }
 
   FireEventInContext(event_name, context, &v8_args, std::move(filter),
-                     /*callback=*/v8::Local<v8::Function>());
+                     /*on_dispatched_callback=*/v8::Local<v8::Function>(),
+                     /*listener_error_callback=*/v8::Local<v8::Function>());
 }
 
-void APIEventHandler::FireEventInContext(const std::string& event_name,
-                                         v8::Local<v8::Context> context,
-                                         v8::LocalVector<v8::Value>* arguments,
-                                         mojom::EventFilteringInfoPtr filter,
-                                         v8::Local<v8::Function> callback) {
+void APIEventHandler::FireEventInContext(
+    const std::string& event_name,
+    v8::Local<v8::Context> context,
+    v8::LocalVector<v8::Value>* arguments,
+    mojom::EventFilteringInfoPtr filter,
+    v8::Local<v8::Function> on_dispatched_callback,
+    v8::Local<v8::Function> listener_error_callback) {
   APIEventPerContextData* data =
       APIEventPerContextData::GetFrom(context, kDontCreateIfMissing);
   if (!data) {
@@ -302,10 +305,13 @@ void APIEventHandler::FireEventInContext(const std::string& event_name,
       api_response_validator_->ValidateEvent(context, event_name, *arguments);
     }
 
-    emitter->Fire(context, arguments, std::move(filter), callback);
+    emitter->Fire(context, arguments, std::move(filter), on_dispatched_callback,
+                  listener_error_callback);
   } else {
-    DCHECK(callback.IsEmpty())
-        << "Can't use an event callback with argument massagers.";
+    DCHECK(on_dispatched_callback.IsEmpty())
+        << "Can't use an event on dispatched callback with argument massagers.";
+    DCHECK(listener_error_callback.IsEmpty())
+        << "Can't use a listener error callback with argument massagers.";
 
     v8::HandleScope handle_scope(isolate);
     v8::Local<v8::Function> massager = massager_iter->second.Get(isolate);
@@ -374,7 +380,7 @@ bool APIEventHandler::HasListenerForEvent(const std::string& event_name,
   gin::Converter<EventEmitter*>::FromV8(isolate, iter->second.Get(isolate),
                                         &emitter);
   CHECK(emitter);
-  return emitter->GetNumListeners() > 0;
+  return emitter->HasListeners();
 }
 
 void APIEventHandler::InvalidateContext(v8::Local<v8::Context> context) {
@@ -415,23 +421,6 @@ void APIEventHandler::InvalidateContext(v8::Local<v8::Context> context) {
   // before the PerContextData is deleted. We have a check that guarantees that
   // no new EventEmitters are created after the PerContextData is deleted, so
   // no new emitters should be created after this point.
-}
-
-size_t APIEventHandler::GetNumEventListenersForTesting(
-    const std::string& event_name,
-    v8::Local<v8::Context> context) {
-  APIEventPerContextData* data =
-      APIEventPerContextData::GetFrom(context, kDontCreateIfMissing);
-  DCHECK(data);
-
-  auto iter = data->emitters.find(event_name);
-  CHECK(iter != data->emitters.end());
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  EventEmitter* emitter = nullptr;
-  gin::Converter<EventEmitter*>::FromV8(isolate, iter->second.Get(isolate),
-                                        &emitter);
-  CHECK(emitter);
-  return emitter->GetNumListeners();
 }
 
 }  // namespace extensions

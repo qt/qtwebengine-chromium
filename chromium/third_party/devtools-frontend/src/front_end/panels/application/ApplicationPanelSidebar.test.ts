@@ -129,7 +129,8 @@ describeWithMockConnection('ApplicationPanelSidebar', () => {
     createTarget({parentTarget: tabTarget, subtype: 'prerender'});
     target = createTarget({parentTarget: tabTarget});
     sinon.stub(UI.ViewManager.ViewManager.instance(), 'showView').resolves();  // Silence console error
-    setMockConnectionResponseHandler('Storage.getSharedStorageEntries', () => ({}));
+    setMockConnectionResponseHandler(
+        'Storage.getSharedStorageEntries', () => ({} as Protocol.Storage.GetSharedStorageEntriesResponse));
     setMockConnectionResponseHandler('Storage.setSharedStorageTracking', () => ({}));
   });
 
@@ -192,10 +193,8 @@ describeWithMockConnection('ApplicationPanelSidebar', () => {
 
     assert.strictEqual(sidebar.sharedStorageListTreeElement.childCount(), 4);
     assert.deepEqual(sidebar.sharedStorageListTreeElement.children().map(e => e.title), [
+      TEST_ORIGIN_A, TEST_ORIGIN_B, TEST_ORIGIN_C,
       'https://example.com',  // frame origin
-      TEST_ORIGIN_A,
-      TEST_ORIGIN_B,
-      TEST_ORIGIN_C,
     ]);
 
     sidebar.sharedStorageListTreeElement.view.setDefaultIdForTesting(ID);

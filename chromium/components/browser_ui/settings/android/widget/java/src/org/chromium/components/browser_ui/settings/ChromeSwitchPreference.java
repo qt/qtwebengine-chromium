@@ -22,13 +22,12 @@ import androidx.preference.SwitchPreferenceCompat;
 
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
+import org.chromium.components.browser_ui.widget.containment.ContainmentItem;
 import org.chromium.components.browser_ui.widget.containment.ContainmentUiUtils;
-import org.chromium.components.browser_ui.widget.containment.CustomStyledContainer;
 
 /** A Chrome switch preference that supports managed preferences. */
 @NullMarked
-public class ChromeSwitchPreference extends SwitchPreferenceCompat
-        implements CustomStyledContainer {
+public class ChromeSwitchPreference extends SwitchPreferenceCompat implements ContainmentItem {
     private @Nullable ManagedPreferenceDelegate mManagedPrefDelegate;
 
     /** The View for this preference. */
@@ -185,5 +184,12 @@ public class ChromeSwitchPreference extends SwitchPreferenceCompat
     @Override
     public @BackgroundStyle int getCustomBackgroundStyle() {
         return mBackgroundStyle;
+    }
+
+    @Override
+    public int getCustomMinHeight() {
+        return getContext()
+                .getResources()
+                .getDimensionPixelSize(R.dimen.settings_toggle_item_min_height);
     }
 }

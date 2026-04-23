@@ -1,16 +1,17 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
-import '../../ui/components/cards/cards.js';
+import '../../ui/kit/kit.js';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import {createIcon, type Icon} from '../../ui/kit/kit.js';
+import * as SettingsUI from '../../ui/legacy/components/settings_ui/settings_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
@@ -42,6 +43,11 @@ const UIStrings = {
    * @description Link text in the settings pane to add another shortcut for an action
    */
   addAShortcut: 'Add a shortcut',
+  /**
+   * @description Placeholder text in the settings pane when adding a new shortcut.
+   * Explaining that key strokes are going to be recoded.
+   */
+  recordingKeys: 'Recoding keys',
   /**
    * @description Label for a button in the settings pane that confirms changes to a keyboard shortcut
    */
@@ -121,8 +127,8 @@ export class KeybindsSettingsTab extends UI.Widget.VBox implements UI.ListContro
     const keybindsSetSetting = Common.Settings.Settings.instance().moduleSetting('active-keybind-set');
     const userShortcutsSetting = Common.Settings.Settings.instance().moduleSetting('user-shortcuts');
     keybindsSetSetting.addChangeListener(this.update, this);
-    const keybindsSetSelect =
-        UI.SettingsUI.createControlForSetting(keybindsSetSetting, i18nString(UIStrings.matchShortcutsFromPreset));
+    const keybindsSetSelect = SettingsUI.SettingsUI.createControlForSetting(
+        keybindsSetSetting, i18nString(UIStrings.matchShortcutsFromPreset));
 
     const card = settingsContent.createChild('devtools-card');
     card.heading = i18nString(UIStrings.shortcuts);
@@ -265,30 +271,29 @@ export class KeybindsSettingsTab extends UI.Widget.VBox implements UI.ListContro
   }
 
   private createListItems(): KeybindsItem[] {
-    const actions = UI.ActionRegistry.ActionRegistry.instance().actions().sort((actionA, actionB) => {
-      if (actionA.category() < actionB.category()) {
-        return -1;
-      }
-      if (actionA.category() > actionB.category()) {
-        return 1;
-      }
-      if (actionA.id() < actionB.id()) {
-        return -1;
-      }
-      if (actionA.id() > actionB.id()) {
-        return 1;
-      }
-      return 0;
-    });
+    const actions = UI.ActionRegistry.ActionRegistry.instance()
+                        .actions()
+                        .filter(action => action.configurableBindings())
+                        .sort((actionA, actionB) => {
+                          if (actionA.category() < actionB.category()) {
+                            return -1;
+                          }
+                          if (actionA.category() > actionB.category()) {
+                            return 1;
+                          }
+                          if (actionA.id() < actionB.id()) {
+                            return -1;
+                          }
+                          if (actionA.id() > actionB.id()) {
+                            return 1;
+                          }
+                          return 0;
+                        });
 
     const items: KeybindsItem[] = [];
 
     let currentCategory: UI.ActionRegistration.ActionCategory;
     actions.forEach(action => {
-      if (action.id() === 'elements.toggle-element-search') {
-        return;
-      }
-
       if (currentCategory !== action.category()) {
         items.push(action.category());
       }
@@ -299,8 +304,8 @@ export class KeybindsSettingsTab extends UI.Widget.VBox implements UI.ListContro
   }
 
   onEscapeKeyPressed(event: Event): void {
-    const deepActiveElement = Platform.DOMUtilities.deepActiveElement(document);
-    if (this.editingRow && deepActiveElement && deepActiveElement.nodeName === 'INPUT') {
+    const deepActiveElement = UI.DOMUtilities.deepActiveElement(document);
+    if (this.editingRow && deepActiveElement?.nodeName === 'INPUT') {
       this.editingRow.onEscapeKeyPressed(event);
     }
   }
@@ -378,7 +383,7 @@ export class ShortcutListItem {
 
   private createEmptyInfo(): void {
     if (UI.ShortcutRegistry.ShortcutRegistry.instance().actionHasDefaultShortcut(this.item.id())) {
-      const icon = IconButton.Icon.create('keyboard-pen', 'keybinds-modified');
+      const icon = createIcon('keyboard-pen', 'keybinds-modified');
       UI.ARIAUtils.setLabel(icon, i18nString(UIStrings.shortcutModified));
       this.element.appendChild(icon);
     }
@@ -436,9 +441,9 @@ export class ShortcutListItem {
     if (this.editedShortcuts.has(shortcut) && !this.editedShortcuts.get(shortcut)) {
       return;
     }
-    let icon: IconButton.Icon.Icon;
+    let icon: Icon;
     if (shortcut.type !== UI.KeyboardShortcut.Type.UNSET_SHORTCUT && !shortcut.isDefault()) {
-      icon = IconButton.Icon.create('keyboard-pen', 'keybinds-modified');
+      icon = createIcon('keyboard-pen', 'keybinds-modified');
       UI.ARIAUtils.setLabel(icon, i18nString(UIStrings.shortcutModified));
       this.element.appendChild(icon);
     }
@@ -446,6 +451,7 @@ export class ShortcutListItem {
     if (this.isEditing) {
       const shortcutInput = shortcutElement.createChild('input', 'harmony-input');
       shortcutInput.setAttribute('jslog', `${VisualLogging.textField().track({change: true})}`);
+      shortcutInput.setAttribute('placeholder', i18nString(UIStrings.recordingKeys));
       shortcutInput.spellcheck = false;
       shortcutInput.maxLength = 0;
       this.shortcutInputs.set(shortcut, shortcutInput);
@@ -588,7 +594,7 @@ export class ShortcutListItem {
   }
 
   onEscapeKeyPressed(event: Event): void {
-    const activeElement = Platform.DOMUtilities.deepActiveElement(document);
+    const activeElement = UI.DOMUtilities.deepActiveElement(document);
     for (const [shortcut, shortcutInput] of this.shortcutInputs.entries()) {
       if (activeElement === shortcutInput) {
         this.onShortcutInputKeyDown(shortcut, shortcutInput as HTMLInputElement, event);

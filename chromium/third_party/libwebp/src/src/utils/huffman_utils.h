@@ -16,8 +16,11 @@
 
 #include <assert.h>
 
+#include "src/utils/bounds_safety.h"
 #include "src/webp/format_constants.h"
 #include "src/webp/types.h"
+
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,10 +48,10 @@ typedef struct {
 
 // Contiguous memory segment of HuffmanCodes.
 typedef struct HuffmanTablesSegment {
-  HuffmanCode* start;
+  HuffmanCode* WEBP_COUNTED_BY_OR_NULL(size) start;
   // Pointer to where we are writing into the segment. Starts at 'start' and
   // cannot go beyond 'start' + 'size'.
-  HuffmanCode* curr_table;
+  HuffmanCode* WEBP_UNSAFE_INDEXABLE curr_table;
   // Pointer to the next segment in the chain.
   struct HuffmanTablesSegment* next;
   int size;
@@ -102,10 +105,10 @@ void VP8LHtreeGroupsFree(HTreeGroup* const htree_groups);
 // the huffman table.
 // Returns built table size or 0 in case of error (invalid tree or
 // memory error).
-WEBP_NODISCARD int VP8LBuildHuffmanTable(HuffmanTables* const root_table,
-                                         int root_bits,
-                                         const int code_lengths[],
-                                         int code_lengths_size);
+WEBP_NODISCARD int VP8LBuildHuffmanTable(
+    HuffmanTables* const root_table, int root_bits,
+    const int WEBP_COUNTED_BY(code_lengths_size) code_lengths[],
+    int code_lengths_size);
 
 #ifdef __cplusplus
 }  // extern "C"

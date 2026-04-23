@@ -85,8 +85,10 @@ export function extractOriginFromTrace(firstNavigationURL: string): string|null 
 }
 
 export type EventsInThread<T extends Types.Events.Event> = Map<Types.Events.ThreadID, T[]>;
-// Each thread contains events. Events indicate the thread and process IDs, which are
-// used to store the event in the correct process thread entry below.
+/**
+ * Each thread contains events. Events indicate the thread and process IDs, which are
+ * used to store the event in the correct process thread entry below.
+ **/
 export function addEventToProcessThread<T extends Types.Events.Event>(
     event: T,
     eventsInProcessThread: Map<Types.Events.ProcessID, EventsInThread<T>>,
@@ -575,6 +577,19 @@ export function getStackTraceTopCallFrameInEventPayload(event: Types.Events.Even
   }
 }
 
+export function rawCallFrameForEntry(entry: Types.Events.Event): Protocol.Runtime.CallFrame|null {
+  if (Types.Events.isProfileCall(entry)) {
+    return entry.callFrame;
+  }
+
+  const topCallFrame = getStackTraceTopCallFrameInEventPayload(entry);
+  if (topCallFrame) {
+    return topCallFrame as Protocol.Runtime.CallFrame;
+  }
+
+  return null;
+}
+
 /**
  * Given a 1-based call frame creates a 0-based one.
  */
@@ -822,8 +837,10 @@ export function extractSampleTraceId(event: Types.Events.Event): number|null {
   return event.args?.sampleTraceId ?? event.args?.data?.sampleTraceId ?? null;
 }
 
-// This exactly matches Trace.Styles.visibleTypes. See the runtime verification in maybeInitStylesMap.
-// TODO(crbug.com/410884528)
+/**
+ * This exactly matches Trace.Styles.visibleTypes. See the runtime verification in maybeInitStylesMap.
+ * TODO(crbug.com/410884528)
+ **/
 export const VISIBLE_TRACE_EVENT_TYPES = new Set<Types.Events.Name>([
   Types.Events.Name.ABORT_POST_TASK_CALLBACK,
   Types.Events.Name.ANIMATION,

@@ -23,7 +23,7 @@
  */
 
 use fontconfig_bindings::{
-    FcWeightFromOpenTypeDouble, FC_DUAL, FC_MONO, FC_SLANT_ITALIC, FC_SLANT_OBLIQUE,
+    FcWeightFromOpenTypeDouble, FC_SPACING_DUAL, FC_SPACING_MONO, FC_SLANT_ITALIC, FC_SLANT_OBLIQUE,
     FC_SLANT_ROMAN, FC_WEIGHT_BLACK, FC_WEIGHT_BOLD, FC_WEIGHT_BOOK, FC_WEIGHT_DEMIBOLD,
     FC_WEIGHT_DEMILIGHT, FC_WEIGHT_EXTRABLACK, FC_WEIGHT_EXTRABOLD, FC_WEIGHT_EXTRALIGHT,
     FC_WEIGHT_HEAVY, FC_WEIGHT_LIGHT, FC_WEIGHT_MEDIUM, FC_WEIGHT_NORMAL, FC_WEIGHT_REGULAR,
@@ -332,13 +332,13 @@ impl<'a> AttributesToPattern<'a> {
         }
 
         match encountered_advances.len() {
-            1 => Some(FC_MONO as i32),
+            1 => Some(FC_SPACING_MONO as i32),
             2 if approximately_equal(
                 encountered_advances[0].min(encountered_advances[1]) * 2.0,
                 encountered_advances[0].max(encountered_advances[1]),
             ) =>
             {
-                Some(FC_DUAL as i32)
+                Some(FC_SPACING_DUAL as i32)
             }
 
             _ => None,
@@ -662,7 +662,7 @@ pub fn append_style_elements(
 #[cfg(test)]
 mod test {
     use crate::attributes::AttributesToPattern;
-    use fontconfig_bindings::{FC_DUAL, FC_MONO};
+    use fontconfig_bindings::{FC_SPACING_DUAL, FC_SPACING_MONO};
 
     const THRESHOLD_FACTOR_DOWN: f32 = 1.0 - 1.0 / 33.0;
     const THRESHOLD_FACTOR_UP: f32 = 1.0 + 1.0 / 33.0;
@@ -676,7 +676,7 @@ mod test {
 
     #[test]
     fn spacing_mono() {
-        assert_spacing([10.0].iter().cloned(), Some(FC_MONO as i32));
+        assert_spacing([10.0].iter().cloned(), Some(FC_SPACING_MONO as i32));
 
         assert_spacing(
             [
@@ -688,7 +688,7 @@ mod test {
             ]
             .iter()
             .cloned(),
-            Some(FC_MONO as i32),
+            Some(FC_SPACING_MONO as i32),
         );
     }
 
@@ -711,11 +711,11 @@ mod test {
 
     #[test]
     fn advances_dual() {
-        assert_spacing([10.0, 20.0].iter().cloned(), Some(FC_DUAL as i32));
+        assert_spacing([10.0, 20.0].iter().cloned(), Some(FC_SPACING_DUAL as i32));
 
         assert_spacing(
             [10.0, 20.0, 10.0, 20.0, 10.0, 20.0].iter().cloned(),
-            Some(FC_DUAL as i32),
+            Some(FC_SPACING_DUAL as i32),
         );
 
         assert_spacing(
@@ -729,7 +729,7 @@ mod test {
             ]
             .iter()
             .cloned(),
-            Some(FC_DUAL as i32),
+            Some(FC_SPACING_DUAL as i32),
         );
     }
 }

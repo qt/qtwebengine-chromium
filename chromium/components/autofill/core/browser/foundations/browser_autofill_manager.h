@@ -35,6 +35,7 @@
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/foundations/autofill_driver.h"
 #include "components/autofill/core/browser/foundations/autofill_manager.h"
+#include "components/autofill/core/browser/integrators/address_on_typing/address_on_typing_manager.h"
 #include "components/autofill/core/browser/integrators/autofill_ai/autofill_ai_manager.h"
 #include "components/autofill/core/browser/integrators/fast_checkout/fast_checkout_delegate.h"
 #include "components/autofill/core/browser/integrators/one_time_tokens/metrics/otp_form_event_logger.h"
@@ -78,24 +79,19 @@ class FormData;
 class FormFieldData;
 struct SuggestionsContext;
 
-namespace autofill_metrics {
-
-class CreditCardFormEventLogger;
-
-}  // namespace autofill_metrics
-
 namespace payments {
 class AmountExtractionManager;
 class BnplManager;
 }  // namespace payments
 
-// Enum for the value patterns metric. Don't renumerate existing value. They are
-// used for metrics.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
 enum class ValuePatternsMetric {
   kNoPatternFound = 0,
-  kUpiVpa = 1,  // UPI virtual payment address.
-  kIban = 2,    // International Bank Account Number.
-  kMaxValue = kIban,
+  kUpiVpa = 1,            // UPI virtual payment address.
+  kIban = 2,              // International Bank Account Number.
+  kAchRoutingNumber = 3,  // U.S. ABA Routing Transit Number, used in ACH.
+  kMaxValue = kAchRoutingNumber,
 };
 
 class BrowserAutofillManager;
@@ -237,8 +233,8 @@ class BrowserAutofillManager : public AutofillManager {
   // Upload the current pending form.
   void ProcessPendingFormForUpload();
 
-  CreditCardAccessManager& GetCreditCardAccessManager();
-  const CreditCardAccessManager& GetCreditCardAccessManager() const;
+  CreditCardAccessManager* GetCreditCardAccessManager() override;
+  const CreditCardAccessManager* GetCreditCardAccessManager() const override;
 
   // Gets the payments BNPL manager owned by `this`. This will be used to
   // handle BNPL flows. May return nullptr if BNPL is not supported on the
@@ -247,7 +243,7 @@ class BrowserAutofillManager : public AutofillManager {
 
   // Gets the amount extraction manager owned by `this`. This will be used for
   // flows that require amount extraction from the page.
-  payments::AmountExtractionManager& GetAmountExtractionManager();
+  virtual payments::AmountExtractionManager& GetAmountExtractionManager();
 
   // Handles post-filling logic of `form`, like notifying observers and logging
   // form metrics.
@@ -274,11 +270,12 @@ class BrowserAutofillManager : public AutofillManager {
   void OnFocusOnNonFormFieldImpl() override;
   void OnFocusOnFormFieldImpl(const FormData& form,
                               const FieldGlobalId& field_id) override;
-  void OnDidAutofillFormImpl(const FormData& form,
-                             const base::TimeTicks timestamp) override;
+  void OnDidAutofillFormImpl(const FormData& form) override;
   void OnDidEndTextFieldEditingImpl() override;
   void OnHidePopupImpl() override;
-  void OnSelectFieldOptionsDidChangeImpl(const FormData& form) override;
+  void OnSelectFieldOptionsDidChangeImpl(
+      const FormData& form,
+      const FieldGlobalId& field_id) override;
   void OnJavaScriptChangedAutofilledValueImpl(
       const FormData& form,
       const FieldGlobalId& field_id,
@@ -341,15 +338,20 @@ class BrowserAutofillManager : public AutofillManager {
       const FormGlobalId& form_id,
       const FieldGlobalId& field_id) const;
 
+  // This reference is not stable over the lifetime of BrowserAutofillManager.
   virtual autofill_metrics::CreditCardFormEventLogger&
   GetCreditCardFormEventLogger();
 
+  // This reference is not stable over the lifetime of BrowserAutofillManager.
+  autofill_metrics::OtpFormEventLogger& GetOtpFormEventLogger() {
+    return metrics_->otp_form_event_logger;
+  }
+
   // Returns an appropriate EventFormLogger, depending on the given `field`'s
   // type. May return nullptr.
+  // This pointer is not stable over the lifetime of BrowserAutofillManager.
   autofill_metrics::FormEventLoggerBase* GetEventFormLogger(
       const AutofillField& field);
-
-  std::optional<MetricsState>& GetMetricState() { return metrics_; }
 
  protected:
   // Returns the card image for `credit_card`. If the `credit_card` has a card
@@ -462,10 +464,6 @@ class BrowserAutofillManager : public AutofillManager {
   bool ShouldShowScanCreditCard(const FormStructure& form,
                                 const AutofillField& trigger_field);
 
-  // Examines `form` and returns true if it is in a non-secure context or its
-  // action attribute targets a HTTP url.
-  bool IsFormNonSecure(const FormStructure& form) const;
-
   // Checks whether JavaScript cleared an autofilled value within
   // kLimitBeforeRefill after the filling and records metrics for this. This
   // method should be called after we learned that JavaScript modified an
@@ -474,12 +472,11 @@ class BrowserAutofillManager : public AutofillManager {
   void AnalyzeJavaScriptChangedAutofilledValue(const FormStructure& form,
                                                AutofillField& field);
 
-  // Evaluates the specifics of the ablation study, updates `context`, and
-  // returns whether the study is enabled/disabled.
-  bool EvaluateAblationStudy(
-      const std::vector<Suggestion>& address_and_credit_card_suggestions,
-      AutofillField& autofill_field,
-      SuggestionsContext& context);
+  // Evaluates the specifics of the ablation study, and returns whether the
+  // study is enabled/disabled.
+  bool EvaluateAblationStudy(AutofillField& autofill_field,
+                             FillingProduct filling_product,
+                             bool has_suggestions);
 
   // Returns a list with the suggestions available for `field`. Which fields of
   // the `form` are filled depends on the `trigger_source`. `context` could
@@ -506,6 +503,7 @@ class BrowserAutofillManager : public AutofillManager {
       const FormFieldData& field,
       AutofillSuggestionTriggerSource trigger_source,
       SuggestionsContext context,
+      base::TimeTicks suggestion_generation_start_time,
       std::vector<std::pair<SuggestionGenerator::SuggestionDataSource,
                             std::vector<SuggestionGenerator::SuggestionData>>>
           suggestion_data);
@@ -518,6 +516,7 @@ class BrowserAutofillManager : public AutofillManager {
       const FieldGlobalId& field_id,
       AutofillSuggestionTriggerSource trigger_source,
       SuggestionsContext context,
+      base::TimeTicks suggestion_generation_start_time,
       std::vector<SuggestionGenerator::ReturnedSuggestions>
           returned_suggestions);
 
@@ -543,19 +542,22 @@ class BrowserAutofillManager : public AutofillManager {
   void GenerateSuggestionsAndMaybeShowUIPhase1(
       const FormData& form,
       const FormFieldData& field,
-      AutofillSuggestionTriggerSource trigger_source);
+      AutofillSuggestionTriggerSource trigger_source,
+      base::TimeTicks suggestion_generator_start_time);
   void GenerateSuggestionsAndMaybeShowUIPhase2(
       const FormData& form,
       const FormFieldData& field,
       AutofillSuggestionTriggerSource trigger_source,
       SuggestionsContext context,
-      std::optional<std::vector<std::string>> plus_addresses);
+      base::TimeTicks suggestion_generator_start_time,
+      std::vector<std::string> plus_addresses);
   void GenerateSuggestionsAndMaybeShowUIPhase3(
       const FormData& form,
       const FormFieldData& field,
       AutofillSuggestionTriggerSource trigger_source,
       SuggestionsContext context,
-      std::optional<std::vector<std::string>> plus_addresses,
+      base::TimeTicks suggestion_generator_start_time,
+      std::vector<std::string> plus_addresses,
       std::vector<std::string> one_time_passwords);
 
   // Receives the lists of plus address and single field form fill suggestions
@@ -564,10 +566,8 @@ class BrowserAutofillManager : public AutofillManager {
   // `OnGenerateSuggestionsCallback`.
   void OnGeneratedPlusAddressAndSingleFieldFillSuggestions(
       AutofillPlusAddressDelegate::SuggestionContext suggestions_context,
-      PasswordFormClassification::Type password_form_type,
-      const FormGlobalId& form_id,
+      const FormData& form,
       const FormFieldData& field,
-      bool should_offer_single_field_form_fill,
       OnGenerateSuggestionsCallback callback,
       std::vector<Suggestion> plus_address_suggestions,
       std::vector<Suggestion> single_field_suggestions);
@@ -588,6 +588,7 @@ class BrowserAutofillManager : public AutofillManager {
       const FieldGlobalId& field_id,
       AutofillSuggestionTriggerSource trigger_source,
       const SuggestionsContext& context,
+      base::TimeTicks suggestion_generation_start_time,
       bool show_suggestions,
       std::vector<Suggestion> suggestions);
 
@@ -598,7 +599,6 @@ class BrowserAutofillManager : public AutofillManager {
       std::vector<Suggestion> plus_address_suggestions,
       std::vector<Suggestion> address_suggestions,
       AutofillPlusAddressDelegate::SuggestionContext suggestions_context,
-      PasswordFormClassification::Type password_form_type,
       const FormGlobalId& form_id,
       const FieldGlobalId& field_id,
       OnGenerateSuggestionsCallback callback);
@@ -650,9 +650,10 @@ class BrowserAutofillManager : public AutofillManager {
           identification_time);
 
   // Populates `suggestion_generators_` with those capable of producing
-  // suggestions for field with `field_id` given `context`.
-  void InitializeSuggestionGenerators(const SuggestionsContext& context,
-                                      FieldGlobalId field_id);
+  // suggestions for field with `field_id` given `trigger_source`.
+  void InitializeSuggestionGenerators(
+      AutofillSuggestionTriggerSource trigger_source,
+      FieldGlobalId field_id);
 
   // Delegates to perform external processing (display, selection) on
   // our behalf.
@@ -663,10 +664,6 @@ class BrowserAutofillManager : public AutofillManager {
 
   // This is always non-nullopt except very briefly during Reset().
   std::optional<MetricsState> metrics_ = std::make_optional<MetricsState>(this);
-
-  // If this is true, we consider the form to be secure. (Only use this for
-  // testing purposes).
-  std::optional<bool> consider_form_as_secure_for_testing_;
 
   // A copy of the currently interacted form data.
   std::optional<FormData> pending_form_data_;
@@ -703,6 +700,9 @@ class BrowserAutofillManager : public AutofillManager {
   std::u16string last_unlocked_credit_card_cvc_;
   std::vector<std::unique_ptr<SuggestionGenerator>> suggestion_generators_;
 
+  // Handles general Address on typing feature management, mainly the logic
+  // behind its strike database.
+  AddressOnTypingManager address_on_typing_manager_;
   base::WeakPtrFactory<BrowserAutofillManager> weak_ptr_factory_{this};
 };
 

@@ -88,12 +88,26 @@ class StrokeInputBatch {
 
   void Clear();
 
-  size_t Size() const;
+  int Size() const;
   bool IsEmpty() const;
 
   // Returns a copy of this `StrokeInputBatch` that initially has unique
   // ownership of its memory. See comment above regarding copy-on-write
   // behavior.
+  //
+  // Usually there is no need to use this method, since `StrokeInputBatch`'s
+  // copy-on-write semantics make normal copies cheap. However, there are a
+  // couple potential reasons to use this method in certain situations:
+  //   1. The new copy returned from this method will not have any excess
+  //      capcity, so using this method can save memory in the long run if the
+  //      new copy isn't going to be mutated, and the original copy will later
+  //      be thrown away or its storage reused.
+  //   2. If one or both copies will later be mutated, making a normal copy
+  //      would mean that that later mutation would require a new allocation
+  //      anyway.  Using `MakeDeepCopy` allows for more explicit control over
+  //      when that allocation happens.
+  // For both of these reasons, `InProgressStroke` objects (which are often
+  // reused) use this method when copying input data into completed `Stroke`s.
   StrokeInputBatch MakeDeepCopy() const;
 
   // Validates and sets the value of the i-th input.
@@ -103,9 +117,19 @@ class StrokeInputBatch {
   // held value.
   //
   // Returns an error and does not modify the batch if validation fails.
-  absl::Status Set(size_t i, const StrokeInput& input);
+  absl::Status Set(int i, const StrokeInput& input);
 
-  StrokeInput Get(size_t i) const;
+  // Returns the `StrokeInput` at index `i`. CHECK-fails if `i < 0` or if `i >=
+  // Size()`.
+  StrokeInput Get(int i) const;
+
+  // Returns the first `StrokeInput` in the batch. CHECK-fails if the batch is
+  // empty.
+  StrokeInput First() const;
+
+  // Returns the last `StrokeInput` in the batch. CHECK-fails if the batch is
+  // empty.
+  StrokeInput Last() const;
 
   // Validates and appends a new `input`.
   //
@@ -125,7 +149,7 @@ class StrokeInputBatch {
   // If `start` + `count` is greater than `Size()`, then all elements from
   // `start` until the end of the input batch are erased. CHECK-fails if `start`
   // is not less than or equal to `Size()`.
-  void Erase(size_t start, size_t count = std::numeric_limits<size_t>::max());
+  void Erase(int start, int count = std::numeric_limits<int>::max());
 
   // Returns the current input tool type or `StrokeInput::ToolType::kUnknown`
   // if the batch is empty.
@@ -187,7 +211,7 @@ class StrokeInputBatch {
  private:
   void DebugCheckSizeAndFormatAreConsistent() const {
     ABSL_DCHECK_EQ(size_ * FloatsPerInput(),
-                   data_.HasValue() ? data_->size() : 0);
+                   data_.HasValue() ? static_cast<int>(data_->size()) : 0);
   }
 
   // The following helpers return the number of floats needed to store the
@@ -232,7 +256,7 @@ class StrokeInputBatch {
 
   // Store metadata inline so that simple getters do not need an extra branch
   // and pointer indirection:
-  size_t size_ = 0;
+  int size_ = 0;
   StrokeInput::ToolType tool_type_ = StrokeInput::ToolType::kUnknown;
   PhysicalDistance stroke_unit_length_ = StrokeInput::kNoStrokeUnitLength;
   uint32_t noise_seed_ = 0;
@@ -270,13 +294,13 @@ class StrokeInputBatch::ConstIterator {
   ConstIterator& operator++();
   ConstIterator operator++(int);
 
+  // Not default because it ignores the cached value_.
   friend bool operator==(const ConstIterator& lhs, const ConstIterator& rhs);
-  friend bool operator!=(const ConstIterator& lhs, const ConstIterator& rhs);
 
  private:
   friend class StrokeInputBatch;
 
-  ConstIterator(const StrokeInputBatch& inputs, size_t index) {
+  ConstIterator(const StrokeInputBatch& inputs, int index) {
     if (!inputs.data_.HasValue()) return;
     batch_subdata_ = absl::MakeSpan(inputs.data_.Value())
                          .subspan(index * inputs.FloatsPerInput());
@@ -297,12 +321,16 @@ class StrokeInputBatch::ConstIterator {
 // ---------------------------------------------------------------------------
 //                     Implementation details below
 
-inline size_t StrokeInputBatch::Size() const {
+inline int StrokeInputBatch::Size() const {
   DebugCheckSizeAndFormatAreConsistent();
   return size_;
 }
 
 inline bool StrokeInputBatch::IsEmpty() const { return Size() == 0; }
+
+inline StrokeInput StrokeInputBatch::First() const { return Get(0); }
+
+inline StrokeInput StrokeInputBatch::Last() const { return Get(Size() - 1); }
 
 inline StrokeInputBatch::ConstIterator StrokeInputBatch::begin() const {
   return StrokeInputBatch::ConstIterator(*this, 0);
@@ -363,11 +391,6 @@ StrokeInputBatch::ConstIterator::operator*() const {
 inline bool operator==(const StrokeInputBatch::ConstIterator& lhs,
                        const StrokeInputBatch::ConstIterator& rhs) {
   return lhs.batch_subdata_.data() == rhs.batch_subdata_.data();
-}
-
-inline bool operator!=(const StrokeInputBatch::ConstIterator& lhs,
-                       const StrokeInputBatch::ConstIterator& rhs) {
-  return !(lhs == rhs);
 }
 
 inline int StrokeInputBatch::FloatsPerInput(bool has_pressure, bool has_tilt,

@@ -125,9 +125,9 @@ class NATProxyServerSocket : public AsyncProxyServerSocket {
 
     bool remainder = (*len > 0);
     BufferInput(false);
-    SignalConnectRequest(this, dest_addr);
+    NotifyConnectRequest(this, dest_addr);
     if (remainder) {
-      SignalReadEvent(this);
+      NotifyReadEvent(this);
     }
   }
 };

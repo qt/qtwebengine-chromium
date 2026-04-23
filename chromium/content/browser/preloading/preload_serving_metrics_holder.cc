@@ -6,6 +6,7 @@
 
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
+#include "base/no_destructor.h"
 
 namespace content {
 
@@ -69,6 +70,12 @@ void PreloadServingMetricsHolder::SetPrerenderInitialPreloadServingMetrics(
 
   preload_serving_metrics_->prerender_initial_preload_serving_metrics =
       std::move(prerender_initial_preload_serving_metrics);
+}
+
+void PreloadServingMetricsHolder::
+    SetIsPrerenderAbortedByPrerenderURLLoaderThrottle(bool value) {
+  preload_serving_metrics_
+      ->is_prerender_aborted_by_prerender_url_loader_throttle = value;
 }
 
 std::unique_ptr<PreloadServingMetrics> PreloadServingMetricsHolder::Take() {

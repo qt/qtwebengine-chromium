@@ -180,12 +180,14 @@ class DescriptorSetLayoutDef {
     uint32_t GetNonInlineDescriptorCount() const { return non_inline_descriptor_count_; };
     uint32_t GetDynamicDescriptorCount() const { return dynamic_descriptor_count_; };
     bool HasImmutableSamplers() const { return !immutable_sampler_create_infos_.empty(); };
+    bool HasYcbcrSamplers() const { return has_ycbcr_samplers_; };
     VkDescriptorSetLayoutCreateFlags GetCreateFlags() const { return flags_; }
     // For a given binding, return the number of descriptors in that binding and all successive bindings
     uint32_t GetBindingCount() const { return binding_count_; };
     // Return true if given binding is present in this layout
     bool HasBinding(const uint32_t binding) const { return binding_to_index_map_.count(binding) > 0; };
-    // Return true if binding 1 beyond given exists and has same type, stageFlags & immutable sampler use
+    // Return the index into the sorted list of bindings
+    // **NOT** the index VkDescriptorSetLayoutCreateInfo::pBindings, as we sort the bindings
     uint32_t GetIndexFromBinding(uint32_t binding) const;
     // Various Get functions that can either be passed a binding#, which will
     //  be automatically translated into the appropriate index, or the index# can be passed in directly
@@ -216,7 +218,11 @@ class DescriptorSetLayoutDef {
     VkDescriptorBindingFlags GetDescriptorBindingFlagsFromBinding(const uint32_t binding) const {
         return GetDescriptorBindingFlagsFromIndex(GetIndexFromBinding(binding));
     }
+
+    // Return array with a size of descriptorCount for the given binding index,
+    // or an emtpy array if the binding does not use immutable samplers
     const std::vector<vku::safe_VkSamplerCreateInfo> &GetImmutableSamplerCreateInfosFromIndex(uint32_t index) const;
+
     size_t GetImmutableSamplersCombinedHashFromIndex(uint32_t index) const;
 
     bool IsTypeMutable(const VkDescriptorType type, uint32_t binding) const;
@@ -262,8 +268,16 @@ class DescriptorSetLayoutDef {
     // The vector is allocated only if there is at least one binding with immutable samplers
     std::vector<size_t> immutable_sampler_combined_hashes_;
 
-    // List of mutable types for each binding: [binding][mutable type]
-    std::vector<std::vector<VkDescriptorType>> mutable_types_;
+    // Help detect if any of the the immutable samplers used are YCbCr
+    bool has_ycbcr_samplers_;
+
+    struct MutableBindingCreation {
+        uint32_t original_index;  // into VkDescriptorSetLayoutCreateInfo::pBindings
+        std::vector<VkDescriptorType> types;
+    };
+    // List of mutable types for each binding: [index][mutable type]
+    // Will need to use GetIndexFromBinding() to get [index]
+    std::vector<MutableBindingCreation> mutable_bindings_;
 
     // Containing non-emtpy bindings in numerical order
     std::set<uint32_t> non_empty_bindings_;
@@ -314,6 +328,7 @@ class DescriptorSetLayout : public StateObject {
     uint32_t GetDynamicDescriptorCount() const { return layout_id_->GetDynamicDescriptorCount(); };
     uint32_t GetBindingCount() const { return layout_id_->GetBindingCount(); };
     bool HasImmutableSamplers() const { return layout_id_->HasImmutableSamplers(); };
+    bool HasYcbcrSamplers() const { return layout_id_->HasYcbcrSamplers(); };
     VkDescriptorSetLayoutCreateFlags GetCreateFlags() const { return layout_id_->GetCreateFlags(); }
     uint32_t GetIndexFromBinding(uint32_t binding) const { return layout_id_->GetIndexFromBinding(binding); }
     // Various Get functions that can either be passed a binding#, which will
@@ -357,6 +372,9 @@ class DescriptorSetLayout : public StateObject {
     VkDescriptorBindingFlags GetDescriptorBindingFlagsFromBinding(const uint32_t binding) const {
         return layout_id_->GetDescriptorBindingFlagsFromBinding(binding);
     }
+    const std::vector<vku::safe_VkSamplerCreateInfo> &GetImmutableSamplerCreateInfosFromIndex(uint32_t index) const {
+        return layout_id_->GetImmutableSamplerCreateInfosFromIndex(index);
+    }
     VkSampler const *GetImmutableSamplerPtrFromIndex(const uint32_t index) const {
         assert(index < GetBindingCount());
         const uint32_t binding = layout_id_->GetBindingInfoFromIndex(index)->binding;
@@ -388,6 +406,7 @@ class DescriptorSetLayout : public StateObject {
 
   private:
     DescriptorSetLayoutId layout_id_{};
+    // according to vkGetDescriptorSetLayoutSizeEXT
     VkDeviceSize layout_size_in_bytes_ = 0;
     vku::safe_VkDescriptorSetLayoutCreateInfo desc_set_layout_ci{};
 

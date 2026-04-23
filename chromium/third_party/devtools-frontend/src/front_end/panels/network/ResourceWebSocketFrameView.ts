@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2012 Research In Motion Limited. All rights reserved.
@@ -120,6 +120,7 @@ export class ResourceWebSocketFrameView extends ResourceChunkView<SDK.NetworkReq
   }
 
   override willHide(): void {
+    super.willHide();
     this.request.removeEventListener(SDK.NetworkRequest.Events.WEBSOCKET_FRAME_ADDED, this.onWebSocketFrameAdded, this);
   }
 

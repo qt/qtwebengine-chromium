@@ -56,8 +56,7 @@ def CheckChange(input_api: Any, output_api: Any, on_commit: bool) -> Any:
   # License header checks:
   # ---------------------------------------------------------------------------
   results += input_api.canned_checks.CheckLicense(
-      input_api, output_api,
-      source_file_filter=source_file_filter)
+      input_api, output_api, source_file_filter=source_file_filter)
 
   # ---------------------------------------------------------------------------
   # Ruff:
@@ -78,7 +77,6 @@ def CheckChange(input_api: Any, output_api: Any, on_commit: bool) -> Any:
           kwargs={},
           python3=True,
       ))
-
 
   # ---------------------------------------------------------------------------
   # MyPy:
@@ -138,46 +136,43 @@ def SortImports(input_api: Any, output_api: Any, results: list,
   for py_file in modified_py_files:
     if GlobalSkipChecks(input_api, py_file):
       continue
-    full_py_path = pathlib.Path(
-      input_api.change.RepositoryRoot()) / py_file
+    full_py_path = pathlib.Path(input_api.change.RepositoryRoot()) / py_file
     original_contents = input_api.ReadFile(str(full_py_path), "r")
-    subprocess.run([
-              input_api.python_executable,
-              "-m", "isort",
-              full_py_path], check=True)
+    subprocess.run([input_api.python_executable, "-m", "isort", full_py_path],
+                   check=True)
     formatted_contents = input_api.ReadFile(str(full_py_path), "r")
     if original_contents != formatted_contents:
       results.append(
-        output_api.PresubmitPromptWarning(
-            "Unsorted python imports in file:",
-            items=[str(full_py_path)],
-            long_text="Please update your commit with the formatted file."))
+          output_api.PresubmitPromptWarning(
+              "Unsorted python imports in file:",
+              items=[str(full_py_path)],
+              long_text="Please update your commit with the formatted file."))
 
 
 def FormatHjsonFiles(input_api: Any, output_api: Any, results: list,
                      modified_hjson_files: list[str]) -> None:
   for hjson_file in modified_hjson_files:
     full_hjson_path = pathlib.Path(
-      input_api.change.RepositoryRoot()) / hjson_file
+        input_api.change.RepositoryRoot()) / hjson_file
 
     try:
       formatted_contents: str = FormatHjsonFile(input_api, full_hjson_path)
     except ValueError as e:
       results.append(
-        output_api.PresubmitPromptWarning(
-            "Malformed hjson file:",
-            items=[str(full_hjson_path)],
-            long_text=str(e)))
+          output_api.PresubmitPromptWarning(
+              "Malformed hjson file:",
+              items=[str(full_hjson_path)],
+              long_text=str(e)))
       continue
 
     original_contents = input_api.ReadFile(str(full_hjson_path), "r")
     if original_contents != formatted_contents:
       full_hjson_path.write_text(formatted_contents)
       results.append(
-        output_api.PresubmitPromptWarning(
-            "Unformatted hjson file:",
-            items=[str(full_hjson_path)],
-            long_text="Please update your commit with the formatted file."))
+          output_api.PresubmitPromptWarning(
+              "Unformatted hjson file:",
+              items=[str(full_hjson_path)],
+              long_text="Please update your commit with the formatted file."))
 
 
 def ModifiedFiles(input_api: Any,
@@ -264,7 +259,8 @@ def FormatHjsonFile(input_api: Any, hjson_file: pathlib.Path) -> str:
 
   try:
     return subprocess.run([
-        node_bin, hjson_js_bin, "-rt", "-sl", "-nocol", "-cond=0",
+        node_bin, hjson_js_bin, "-rt", "-sl", "-nocol", "-cond=0", "-quote=all",
+        "-ml",
         str(hjson_file)
     ],
                           check=True,

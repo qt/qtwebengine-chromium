@@ -36,6 +36,8 @@ component("webnn_service") {
     "error.h",
     "scoped_sequence.cc",
     "scoped_sequence.h",
+    "sequence_deleter.cc",
+    "sequence_deleter.h",
     "webnn_constant_operand.cc",
     "webnn_constant_operand.h",
     "webnn_context_impl.cc",
@@ -63,6 +65,7 @@ component("webnn_service") {
     "//gpu/command_buffer/service:gles2",
     "//gpu/config",
     "//mojo/public/cpp/bindings",
+    "//services/viz/privileged/mojom/gl",
     "//services/webnn/public/mojom",
     "//third_party/tflite:buildflags",
   ]
@@ -168,12 +171,12 @@ component("webnn_service") {
 
   if (is_win) {
     sources += [
-      "ort/buffer_content_ort.cc",
-      "ort/buffer_content_ort.h",
       "ort/context_impl_ort.cc",
       "ort/context_impl_ort.h",
       "ort/context_provider_ort.cc",
       "ort/context_provider_ort.h",
+      "ort/device_allocator.cc",
+      "ort/device_allocator.h",
       "ort/environment.cc",
       "ort/environment.h",
       "ort/external_weights_manager.cc",
@@ -182,6 +185,8 @@ component("webnn_service") {
       "ort/graph_builder_ort.h",
       "ort/graph_impl_ort.cc",
       "ort/graph_impl_ort.h",
+      "ort/logging.cc",
+      "ort/logging.h",
       "ort/model_editor.cc",
       "ort/model_editor.h",
       "ort/ort_data_type.cc",
@@ -190,15 +195,13 @@ component("webnn_service") {
       "ort/ort_session_options.h",
       "ort/ort_status.cc",
       "ort/ort_status.h",
-      "ort/ort_tensor.cc",
-      "ort/ort_tensor.h",
       "ort/platform_functions_ort.cc",
       "ort/platform_functions_ort.h",
       "ort/scoped_ort_types.h",
       "ort/tensor_impl_ort.cc",
       "ort/tensor_impl_ort.h",
     ]
-    deps += [ "//third_party/onnxruntime_headers" ]
+    deps += [ "//third_party/windows_app_sdk_headers" ]
 
     libs += [ "runtimeobject.lib" ]
 
@@ -207,7 +210,7 @@ component("webnn_service") {
     configs += [ "//build/config/compiler:no_exit_time_destructors" ]
   }
 
-  if (is_mac || webnn_use_tflite) {
+  if (is_apple || webnn_use_tflite) {
     sources += [
       "queueable_resource_state.h",
       "queueable_resource_state_base.cc",
@@ -228,10 +231,10 @@ source_set("webnn_test_support") {
   deps = [
     ":webnn_service",
     "//base",
-    "//base/test:test_support",
     "//gpu/command_buffer/service",
     "//gpu/config",
     "//mojo/public/cpp/bindings",
+    "//services/viz/privileged/mojom/gl",
     "//services/webnn/public/mojom",
   ]
 }

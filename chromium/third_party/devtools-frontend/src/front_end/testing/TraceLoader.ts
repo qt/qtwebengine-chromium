@@ -6,7 +6,7 @@ import * as Common from '../core/common/common.js';
 import * as SDK from '../core/sdk/sdk.js';
 import type * as Protocol from '../generated/protocol.js';
 import * as Trace from '../models/trace/trace.js';
-import * as Timeline from '../panels/timeline/timeline.js';
+import type * as Timeline from '../panels/timeline/timeline.js';
 import * as TraceBounds from '../services/trace_bounds/trace_bounds.js';
 
 // We maintain two caches:
@@ -145,10 +145,15 @@ export class TraceLoader {
    */
   static async traceEngine(
       context: Mocha.Context|Mocha.Suite|null, name: string,
-      config: Trace.Types.Configuration.Configuration = Trace.Types.Configuration.defaults()):
-      Promise<Trace.TraceModel.ParsedTrace> {
+      config: Trace.Types.Configuration.Configuration = Trace.Types.Configuration.defaults(), opts = {
+        withTimelinePanel: true,
+      }): Promise<Trace.TraceModel.ParsedTrace> {
     if (context) {
       TraceLoader.setTestTimeout(context);
+    }
+    let timelineModule: typeof Timeline|undefined;
+    if (opts.withTimelinePanel) {
+      timelineModule = await import('../panels/timeline/timeline.js');
     }
     // Force the TraceBounds to be reset to empty. This ensures that in
     // tests where we are using the new engine data we don't accidentally
@@ -170,8 +175,11 @@ export class TraceLoader {
         }
         Trace.Helpers.SyntheticEvents.SyntheticEventsManager.activate(syntheticEventsManager);
         TraceLoader.initTraceBoundsManager(parsedTrace);
-        Timeline.ModificationsManager.ModificationsManager.reset();
-        Timeline.ModificationsManager.ModificationsManager.initAndActivateModificationsManager(fromCache.model, 0);
+        if (timelineModule) {
+          timelineModule.ModificationsManager.ModificationsManager.reset();
+          timelineModule.ModificationsManager.ModificationsManager.initAndActivateModificationsManager(
+              fromCache.model, 0);
+        }
       }, 4_000, 'Initializing state for cached trace');
       return parsedTrace;
     }
@@ -183,18 +191,20 @@ export class TraceLoader {
     const parsedTraceFileAndModel = await wrapInTimeout(context, async () => {
       return await TraceLoader.executeTraceEngineOnFileContents(
           fileContents, /* emulate fresh recording */ false, config);
-    }, 15_000, `Executing traceEngine for ${name}`);
+    }, 30_000, `Executing traceEngine for ${name}`);
 
     const cacheByName = traceEngineCache.get(name) ?? new Map<string, ParsedTraceAndModel>();
     cacheByName.set(configCacheKey, parsedTraceFileAndModel);
     traceEngineCache.set(name, cacheByName);
 
     TraceLoader.initTraceBoundsManager(parsedTraceFileAndModel.parsedTrace);
-    await wrapInTimeout(context, () => {
-      Timeline.ModificationsManager.ModificationsManager.reset();
-      Timeline.ModificationsManager.ModificationsManager.initAndActivateModificationsManager(
-          parsedTraceFileAndModel.model, 0);
-    }, 5_000, `Creating modification manager for ${name}`);
+    if (timelineModule) {
+      await wrapInTimeout(context, () => {
+        timelineModule.ModificationsManager.ModificationsManager.reset();
+        timelineModule.ModificationsManager.ModificationsManager.initAndActivateModificationsManager(
+            parsedTraceFileAndModel.model, 0);
+      }, 5_000, `Creating modification manager for ${name}`);
+    }
     return parsedTraceFileAndModel.parsedTrace;
   }
 
@@ -278,6 +288,16 @@ export class TraceLoader {
 }
 
 export async function fetchFileAsText(url: URL): Promise<string> {
+  if (typeof window === 'undefined') {
+    // @ts-expect-error no node types here.
+    const fs = await import('node:fs/promises');
+    // @ts-expect-error no node types here.
+    const {fileURLToPath} = await import('node:url');
+    const path = fileURLToPath(url);
+    const buffer = await fs.readFile(path);
+    const contents = await Common.Gzip.arrayBufferToString(buffer);
+    return contents;
+  }
   const response = await fetch(url);
   if (response.status !== 200) {
     throw new Error(`Unable to load ${url}`);
@@ -308,10 +328,17 @@ async function wrapInTimeout<T>(
   const timeoutId = setTimeout(() => {
     let testTitle = '(unknown test)';
     if (mochaContext) {
-      if (isMochaContext(mochaContext)) {
-        testTitle = mochaContext.currentTest?.fullTitle() ?? testTitle;
-      } else {
-        testTitle = mochaContext.fullTitle();
+      try {
+        if (isMochaContext(mochaContext)) {
+          testTitle = mochaContext.currentTest?.fullTitle() ?? testTitle;
+        } else {
+          // For unknown reasons, we cannot trust the Mocha.Suite types in TS.
+          // They may be out of sync with the karma-mocha plugin.
+          // But, `suite.test.title` is present.
+          testTitle = (mochaContext as unknown as {test: {title: string}}).test.title;
+        }
+      } catch (e) {
+        console.error('Determining Mocha test context for trace timeout failed', e);
       }
     }
     console.error(`TraceLoader: [${stepName}]: took longer than ${timeoutMs}ms in test "${testTitle}"`);

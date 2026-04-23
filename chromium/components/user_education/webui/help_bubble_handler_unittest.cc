@@ -64,12 +64,14 @@ class MockHelpBubbleClient : public help_bubble::mojom::HelpBubbleClient {
 // method.
 class TestHelpBubbleHandler : public HelpBubbleHandlerBase {
  public:
-  explicit TestHelpBubbleHandler(
-      const std::vector<ui::ElementIdentifier>& identifiers,
-      std::unique_ptr<VisibilityProvider> visibility_provider)
+  TestHelpBubbleHandler(const std::vector<ui::ElementIdentifier>& identifiers,
+                        std::unique_ptr<VisibilityProvider> visibility_provider)
       : HelpBubbleHandlerBase(
             std::make_unique<ClientProvider>(),
             std::move(visibility_provider),
+            base::BindRepeating([]() -> content::WebContents* {
+              NOTREACHED() << "Should not call this in tests.";
+            }),
             identifiers,
             ui::ElementContext::CreateFakeContextForTesting(this)) {}
 
@@ -81,10 +83,6 @@ class TestHelpBubbleHandler : public HelpBubbleHandlerBase {
     return static_cast<ClientProvider*>(client_provider())->client_;
   }
 
-  content::WebUIController* GetController() override {
-    NOTREACHED() << "Should not call this in tests.";
-  }
-
   class MockVisibilityProvider
       : public HelpBubbleHandlerBase::VisibilityProvider {
    public:
@@ -93,7 +91,7 @@ class TestHelpBubbleHandler : public HelpBubbleHandlerBase {
 
     using HelpBubbleHandlerBase::VisibilityProvider::SetLastKnownVisibility;
 
-    MOCK_METHOD(std::optional<bool>, CheckIsVisible, (), (override));
+    MOCK_METHOD(bool, CheckIsVisible, (), (override));
   };
 
  private:
@@ -775,35 +773,6 @@ TEST_F(HelpBubbleHandlerTest, WebContentsNotVisibleResultsInNoElement) {
       kHelpBubbleHandlerTestElementIdentifier.GetName(), true, kElementBounds);
 }
 
-TEST_F(HelpBubbleHandlerTest, WebContentsVisibilityNotAvailable) {
-  UNCALLED_MOCK_CALLBACK(ui::ElementTracker::Callback, element_shown);
-  const auto subscription =
-      ui::ElementTracker::GetElementTracker()
-          ->AddElementShownInAnyContextCallback(
-              kHelpBubbleHandlerTestElementIdentifier, element_shown.Get());
-
-  EXPECT_CALL(*visibility_provider_, CheckIsVisible)
-      .WillOnce(testing::Return(std::nullopt));
-  tracked_element_handler()->TrackedElementVisibilityChanged(
-      kHelpBubbleHandlerTestElementIdentifier.GetName(), true, kElementBounds);
-}
-
-TEST_F(HelpBubbleHandlerTest, ElementShownOnmWebContentsBecomingVisible) {
-  UNCALLED_MOCK_CALLBACK(ui::ElementTracker::Callback, element_shown);
-  const auto subscription =
-      ui::ElementTracker::GetElementTracker()
-          ->AddElementShownInAnyContextCallback(
-              kHelpBubbleHandlerTestElementIdentifier, element_shown.Get());
-
-  EXPECT_CALL(*visibility_provider_, CheckIsVisible)
-      .WillOnce(testing::Return(std::nullopt));
-  tracked_element_handler()->TrackedElementVisibilityChanged(
-      kHelpBubbleHandlerTestElementIdentifier.GetName(), true, kElementBounds);
-
-  EXPECT_CALL_IN_SCOPE(element_shown, Run,
-                       visibility_provider_->SetLastKnownVisibility(true));
-}
-
 TEST_F(HelpBubbleHandlerTest, ElementHiddenWebContentsBecomingInvisible) {
   UNCALLED_MOCK_CALLBACK(ui::ElementTracker::Callback, element_hidden);
 
@@ -844,22 +813,6 @@ TEST_F(HelpBubbleHandlerTest, ElementHiddenWebContentsBecomingUnknown) {
   EXPECT_CALL_IN_SCOPE(
       element_hidden, Run,
       visibility_provider_->SetLastKnownVisibility(std::nullopt));
-}
-
-TEST_F(HelpBubbleHandlerTest, RepeatedlyQueriesVisibility) {
-  UNCALLED_MOCK_CALLBACK(ui::ElementTracker::Callback, element_shown);
-  const auto subscription =
-      ui::ElementTracker::GetElementTracker()
-          ->AddElementShownInAnyContextCallback(
-              kHelpBubbleHandlerTestElementIdentifier, element_shown.Get());
-
-  EXPECT_CALL(*visibility_provider_, CheckIsVisible)
-      .Times(2)
-      .WillRepeatedly(testing::Return(std::nullopt));
-  tracked_element_handler()->TrackedElementVisibilityChanged(
-      kHelpBubbleHandlerTestElementIdentifier.GetName(), true, kElementBounds);
-  tracked_element_handler()->TrackedElementVisibilityChanged(
-      kHelpBubbleHandlerTestElementIdentifier2.GetName(), true, kElementBounds);
 }
 
 TEST_F(HelpBubbleHandlerTest, WebContentsVisibilityCanChangeMultipleTimes) {

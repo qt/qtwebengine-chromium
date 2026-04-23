@@ -166,6 +166,7 @@ source_set("unit_tests") {
 source_set("tests_hook") {
   # This target is intentionally not test-only, as the main app depends on it.
   sources = [ "tests_hook.h" ]
+  deps = [ "//base" ]
 }
 
 source_set("tests_fake_hook") {
@@ -177,6 +178,7 @@ source_set("tests_fake_hook") {
     "//components/feature_engagement/public",
     "//components/signin/internal/identity_manager",
     "//ios/chrome/browser/feature_engagement/model",
+    "//ios/chrome/browser/shared/public/snackbar:constants",
   ]
 }
 
@@ -191,6 +193,7 @@ source_set("perf_tests_hook") {
     "//components/feature_engagement/public",
     "//components/signin/internal/identity_manager",
     "//ios/chrome/browser/feature_engagement/model",
+    "//ios/chrome/browser/shared/public/snackbar:constants",
     "//ios/public/provider/chrome/browser/primes:primes_api",
   ]
 }
@@ -711,6 +714,8 @@ chrome_app("chrome") {
   if (ios_chrome_orderfile != "") {
     orderfile_path = ios_chrome_orderfile
   }
+
+  link_framework_first = "EarlyMallocZoneRegistration"
 
   bundle_deps = [
     "//ios/chrome/app/resources",

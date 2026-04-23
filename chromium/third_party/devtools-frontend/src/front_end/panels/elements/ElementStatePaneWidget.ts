@@ -5,6 +5,7 @@
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
+import * as UIHelpers from '../../ui/helpers/helpers.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {html, render, type TemplateResult} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -12,7 +13,7 @@ import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import elementStatePaneWidgetStyles from './elementStatePaneWidget.css.js';
 
-const {bindToSetting} = UI.SettingsUI;
+const {bindToSetting} = UI.UIUtils;
 
 const UIStrings = {
   /**
@@ -66,6 +67,7 @@ enum SpecificPseudoStates {
   PLACEHOLDER_SHOWN = 'placeholder-shown',
   AUTOFILL = 'autofill',
   OPEN = 'open',
+  TARGET_CURRENT = 'target-current',
 }
 
 interface ElementState {
@@ -107,7 +109,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
             jslog=${VisualLogging.toggle('emulate-page-focus').track({change: true})} ${bindToSetting('emulate-page-focus')}>${
           i18nString(UIStrings.emulateFocusedPage)}</devtools-checkbox>
         <devtools-button
-            @click=${() => UI.UIUtils.openInNewTab('https://developer.chrome.com/docs/devtools/rendering/apply-effects#emulate_a_focused_page')}
+            @click=${() => UIHelpers.openInNewTab('https://developer.chrome.com/docs/devtools/rendering/apply-effects#emulate_a_focused_page')}
            .data=${{
               variant: Buttons.Button.Variant.ICON,
               iconName: 'help',
@@ -179,6 +181,8 @@ export class ElementStatePaneWidget extends UI.Widget.Widget {
         SpecificPseudoStates.PLACEHOLDER_SHOWN, {state: SpecificPseudoStates.PLACEHOLDER_SHOWN, type: 'specific'});
     this.#states.set(SpecificPseudoStates.AUTOFILL, {state: SpecificPseudoStates.AUTOFILL, type: 'specific'});
     this.#states.set(SpecificPseudoStates.OPEN, {state: SpecificPseudoStates.OPEN, type: 'specific'});
+    this.#states.set(
+        SpecificPseudoStates.TARGET_CURRENT, {state: SpecificPseudoStates.TARGET_CURRENT, type: 'specific'});
 
     setDualStateCheckboxes(SpecificPseudoStates.VALID, SpecificPseudoStates.INVALID);
     setDualStateCheckboxes(SpecificPseudoStates.USER_VALID, SpecificPseudoStates.USER_INVALID);
@@ -267,6 +271,9 @@ export class ElementStatePaneWidget extends UI.Widget.Widget {
     };
     const isElementOfTypes = (node: SDK.DOMModel.DOMNode, types: string[]): boolean => {
       return types.includes(node.nodeName()?.toLowerCase());
+    };
+    const isAnchorElementWithHref = (node: SDK.DOMModel.DOMNode): boolean => {
+      return isElementOfTypes(node, ['a']) && node.getAttribute('href') !== undefined;
     };
     const isInputWithTypeRadioOrCheckbox = (node: SDK.DOMModel.DOMNode): boolean => {
       return isElementOfTypes(node, ['input']) &&
@@ -384,6 +391,12 @@ export class ElementStatePaneWidget extends UI.Widget.Widget {
       hideSpecificCheckbox(SpecificPseudoStates.OPEN, false);
     } else {
       hideSpecificCheckbox(SpecificPseudoStates.OPEN, true);
+    }
+
+    if (isAnchorElementWithHref(node) || node.pseudoType() === 'scroll-marker') {
+      hideSpecificCheckbox(SpecificPseudoStates.TARGET_CURRENT, false);
+    } else {
+      hideSpecificCheckbox(SpecificPseudoStates.TARGET_CURRENT, true);
     }
   }
 }

@@ -51,8 +51,9 @@ bool ScopeInfo::Equals(Tagged<ScopeInfo> other, bool is_live_edit_compare,
   for (int index = 0; index < length(); ++index) {
     if (out_last_checked_field) *out_last_checked_field = index;
     if (index == kFlags) continue;
-    if (is_live_edit_compare && index >= kPositionInfoStart &&
-        index <= kPositionInfoEnd) {
+    if (is_live_edit_compare &&
+        ((index >= kPositionInfoStart && index <= kPositionInfoEnd) ||
+         index == InferredFunctionNameIndex())) {
       continue;
     }
     Tagged<Object> entry = get(index);
@@ -154,9 +155,9 @@ Handle<ScopeInfo> ScopeInfo::Create(IsolateT* isolate, Zone* zone, Scope* scope,
   bool has_inlined_local_names =
       context_local_count < kScopeInfoMaxInlinedLocalNamesSize;
 
-  const bool has_new_target =
-      scope->is_declaration_scope() &&
-      scope->AsDeclarationScope()->new_target_var() != nullptr;
+  const bool allocates_arguments =
+      scope->is_function_scope() &&
+      scope->AsDeclarationScope()->arguments() != nullptr;
   // TODO(cbruni): Don't always waste a field for the inferred name.
   const bool has_inferred_function_name = scope->is_function_scope();
 
@@ -235,7 +236,7 @@ Handle<ScopeInfo> ScopeInfo::Create(IsolateT* isolate, Zone* zone, Scope* scope,
       (scope->is_module_scope()
            ? 2 + kModuleVariableEntryLength * module_vars_count
            : 0) +
-      (has_dependent_code ? 1 : 0);
+      (has_dependent_code ? 1 : 0) + (scope->is_function_scope() ? 1 : 0);
 
   // Create hash table if local names are not inlined.
   Handle<NameToIndexHashTable> local_names_hashtable;
@@ -271,7 +272,7 @@ Handle<ScopeInfo> ScopeInfo::Create(IsolateT* isolate, Zone* zone, Scope* scope,
         ReceiverVariableBits::encode(receiver_info) |
         ClassScopeHasPrivateBrandBit::encode(has_brand) |
         HasSavedClassVariableBit::encode(should_save_class_variable) |
-        HasNewTargetBit::encode(has_new_target) |
+        AllocatesArgumentsBit::encode(allocates_arguments) |
         FunctionVariableBits::encode(function_name_info) |
         HasInferredFunctionNameBit::encode(has_inferred_function_name) |
         IsAsmModuleBit::encode(is_asm_module) |
@@ -445,6 +446,17 @@ Handle<ScopeInfo> ScopeInfo::Create(IsolateT* isolate, Zone* zone, Scope* scope,
       ReadOnlyRoots roots(isolate);
       scope_info->set(index++, DependentCode::empty_dependent_code(roots));
     }
+    DCHECK_EQ(index, scope_info->UnusedParameterBitsIndex());
+    if (scope->is_function_scope()) {
+      uint32_t unused_parameter_bits = 0;
+      auto func_scope = scope->AsDeclarationScope();
+      int count = std::min(31, func_scope->num_parameters());
+      for (int i = 0; i < count; ++i) {
+        bool unused = !func_scope->parameter(i)->is_used();
+        unused_parameter_bits |= static_cast<uint32_t>(unused) << i;
+      }
+      scope_info->set(index++, Smi::From31BitPattern(unused_parameter_bits));
+    }
   }
 
   DCHECK_EQ(index, scope_info_handle->length());
@@ -481,7 +493,8 @@ DirectHandle<ScopeInfo> ScopeInfo::CreateForWithScope(
       DeclarationScopeBit::encode(false) |
       ReceiverVariableBits::encode(VariableAllocationInfo::NONE) |
       ClassScopeHasPrivateBrandBit::encode(false) |
-      HasSavedClassVariableBit::encode(false) | HasNewTargetBit::encode(false) |
+      HasSavedClassVariableBit::encode(false) |
+      AllocatesArgumentsBit::encode(false) |
       FunctionVariableBits::encode(VariableAllocationInfo::NONE) |
       IsAsmModuleBit::encode(false) | HasSimpleParametersBit::encode(true) |
       FunctionKindBits::encode(FunctionKind::kNormalFunction) |
@@ -508,6 +521,7 @@ DirectHandle<ScopeInfo> ScopeInfo::CreateForWithScope(
     scope_info->set(index++, outer);
   }
   DCHECK_EQ(index, scope_info->DependentCodeIndex());
+  DCHECK_EQ(index, scope_info->UnusedParameterBitsIndex());
   DCHECK_EQ(index, scope_info->length());
   DCHECK_EQ(length, scope_info->length());
   DCHECK_EQ(0, scope_info->ParameterCount());
@@ -562,7 +576,8 @@ DirectHandle<ScopeInfo> ScopeInfo::CreateForBootstrapping(
   DCHECK_LT(context_local_count, kScopeInfoMaxInlinedLocalNamesSize);
   const int length = kVariablePartIndex + 2 * context_local_count +
                      (is_empty_function ? kFunctionNameEntries : 0) +
-                     (has_inferred_function_name ? 1 : 0);
+                     (has_inferred_function_name ? 1 : 0) +
+                     (is_empty_function ? 1 : 0);
 
   Factory* factory = isolate->factory();
   DirectHandle<ScopeInfo> scope_info =
@@ -581,7 +596,10 @@ DirectHandle<ScopeInfo> ScopeInfo::CreateForBootstrapping(
       ReceiverVariableBits::encode(is_script ? VariableAllocationInfo::CONTEXT
                                              : VariableAllocationInfo::UNUSED) |
       ClassScopeHasPrivateBrandBit::encode(false) |
-      HasSavedClassVariableBit::encode(false) | HasNewTargetBit::encode(false) |
+      HasSavedClassVariableBit::encode(false) |
+      // We don't know the value of this flag, so set defensively.
+      AllocatesArgumentsBit::encode(type == BootstrappingType::kFunction &&
+                                    !is_empty_function) |
       FunctionVariableBits::encode(is_empty_function
                                        ? VariableAllocationInfo::UNUSED
                                        : VariableAllocationInfo::NONE) |
@@ -632,6 +650,11 @@ DirectHandle<ScopeInfo> ScopeInfo::CreateForBootstrapping(
   }
   DCHECK_EQ(index, raw_scope_info->OuterScopeInfoIndex());
   DCHECK_EQ(index, raw_scope_info->DependentCodeIndex());
+  DCHECK_EQ(index, scope_info->UnusedParameterBitsIndex());
+  if (is_empty_function) {
+    // unused parameters
+    raw_scope_info->set(index++, Smi::zero());
+  }
   DCHECK_EQ(index, raw_scope_info->length());
   DCHECK_EQ(length, raw_scope_info->length());
   DCHECK_EQ(raw_scope_info->ParameterCount(), parameter_count);
@@ -808,8 +831,28 @@ bool ScopeInfo::HasSavedClassVariable() const {
   return HasSavedClassVariableBit::decode(Flags());
 }
 
-bool ScopeInfo::HasNewTarget() const {
-  return HasNewTargetBit::decode(Flags());
+bool ScopeInfo::IsSloppyNormalJSFunction() const {
+  return function_kind() == FunctionKind::kNormalFunction &&
+         is_sloppy(language_mode());
+}
+
+bool ScopeInfo::CanOnlyAccessFixedFormalParameters() const {
+  FunctionKind function_kind = this->function_kind();
+  return
+      // Filter out builtins.
+      !IsEmpty() &&
+      // Can't be a SloppyNormalJSFunction.
+      !IsSloppyNormalJSFunction() &&
+      // TODO(dcarney): Make this function kind filter exact. It's currently
+      //                fine if it's not as this results in conservation
+      //                optimizations.
+      (function_kind == FunctionKind::kNormalFunction ||
+       function_kind == FunctionKind::kArrowFunction) &&
+      // Can't have arguments allocated in the frame for any reason since this
+      // indicates potential reachability.
+      !AllocatesArgumentsBit::decode(Flags()) &&
+      // Can't have rest parameters.
+      HasSimpleParameters();
 }
 
 bool ScopeInfo::HasFunctionName() const {
@@ -1162,6 +1205,10 @@ void ScopeInfo::ModuleVariable(int i, Tagged<String>* name, int* index,
 
 int ScopeInfo::DependentCodeIndex() const {
   return ConvertOffsetToIndex(DependentCodeOffset());
+}
+
+int ScopeInfo::UnusedParameterBitsIndex() const {
+  return ConvertOffsetToIndex(UnusedParameterBitsOffset());
 }
 
 uint32_t ScopeInfo::Hash() {

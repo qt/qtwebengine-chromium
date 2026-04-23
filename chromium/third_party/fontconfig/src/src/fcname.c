@@ -136,90 +136,8 @@ FcObjectName (FcObject object)
 
 typedef FcChar8 *FC8;
 
-static const FcConstant _FcBaseConstants[] = {
-    { (FC8) "thin",           "weight",         FC_WEIGHT_THIN          },
-    { (FC8) "extralight",     "weight",         FC_WEIGHT_EXTRALIGHT    },
-    { (FC8) "ultralight",     "weight",         FC_WEIGHT_EXTRALIGHT    },
-    { (FC8) "demilight",      "weight",         FC_WEIGHT_DEMILIGHT     },
-    { (FC8) "semilight",      "weight",         FC_WEIGHT_DEMILIGHT     },
-    { (FC8) "light",          "weight",         FC_WEIGHT_LIGHT         },
-    { (FC8) "book",           "weight",         FC_WEIGHT_BOOK          },
-    { (FC8) "regular",        "weight",         FC_WEIGHT_REGULAR       },
-    { (FC8) "normal",         "weight",         FC_WEIGHT_NORMAL        },
-    { (FC8) "medium",         "weight",         FC_WEIGHT_MEDIUM        },
-    { (FC8) "demibold",       "weight",         FC_WEIGHT_DEMIBOLD      },
-    { (FC8) "semibold",       "weight",         FC_WEIGHT_DEMIBOLD      },
-    { (FC8) "bold",           "weight",         FC_WEIGHT_BOLD          },
-    { (FC8) "extrabold",      "weight",         FC_WEIGHT_EXTRABOLD     },
-    { (FC8) "ultrabold",      "weight",         FC_WEIGHT_EXTRABOLD     },
-    { (FC8) "black",          "weight",         FC_WEIGHT_BLACK         },
-    { (FC8) "heavy",          "weight",         FC_WEIGHT_HEAVY         },
-    { (FC8) "extrablack",     "weight",         FC_WEIGHT_EXTRABLACK    },
-    { (FC8) "ultrablack",     "weight",         FC_WEIGHT_ULTRABLACK    },
+#include "fcconst.h"
 
-    { (FC8) "roman",          "slant",          FC_SLANT_ROMAN          },
-    { (FC8) "italic",         "slant",          FC_SLANT_ITALIC         },
-    { (FC8) "oblique",        "slant",          FC_SLANT_OBLIQUE        },
-
-    { (FC8) "ultracondensed", "width",          FC_WIDTH_ULTRACONDENSED },
-    { (FC8) "extracondensed", "width",          FC_WIDTH_EXTRACONDENSED },
-    { (FC8) "condensed",      "width",          FC_WIDTH_CONDENSED      },
-    { (FC8) "semicondensed",  "width",          FC_WIDTH_SEMICONDENSED  },
-    { (FC8) "normal",         "width",          FC_WIDTH_NORMAL         },
-    { (FC8) "semiexpanded",   "width",          FC_WIDTH_SEMIEXPANDED   },
-    { (FC8) "expanded",       "width",          FC_WIDTH_EXPANDED       },
-    { (FC8) "extraexpanded",  "width",          FC_WIDTH_EXTRAEXPANDED  },
-    { (FC8) "ultraexpanded",  "width",          FC_WIDTH_ULTRAEXPANDED  },
-
-    { (FC8) "proportional",   "spacing",        FC_PROPORTIONAL         },
-    { (FC8) "dual",           "spacing",        FC_DUAL                 },
-    { (FC8) "mono",           "spacing",        FC_MONO                 },
-    { (FC8) "charcell",       "spacing",        FC_CHARCELL             },
-
-    { (FC8) "unknown",        "rgba",           FC_RGBA_UNKNOWN         },
-    { (FC8) "rgb",            "rgba",           FC_RGBA_RGB             },
-    { (FC8) "bgr",            "rgba",           FC_RGBA_BGR             },
-    { (FC8) "vrgb",           "rgba",           FC_RGBA_VRGB            },
-    { (FC8) "vbgr",           "rgba",           FC_RGBA_VBGR            },
-    { (FC8) "none",           "rgba",           FC_RGBA_NONE            },
-
-    { (FC8) "hintnone",       "hintstyle",      FC_HINT_NONE            },
-    { (FC8) "hintslight",     "hintstyle",      FC_HINT_SLIGHT          },
-    { (FC8) "hintmedium",     "hintstyle",      FC_HINT_MEDIUM          },
-    { (FC8) "hintfull",       "hintstyle",      FC_HINT_FULL            },
-
-    { (FC8) "antialias",      "antialias",      FcTrue                  },
-    { (FC8) "hinting",        "hinting",        FcTrue                  },
-    { (FC8) "verticallayout", "verticallayout", FcTrue                  },
-    { (FC8) "autohint",       "autohint",       FcTrue                  },
-    { (FC8) "globaladvance",  "globaladvance",  FcTrue                  }, /* deprecated */
-    { (FC8) "outline",        "outline",        FcTrue                  },
-    { (FC8) "scalable",       "scalable",       FcTrue                  },
-    { (FC8) "minspace",       "minspace",       FcTrue                  },
-    { (FC8) "embolden",       "embolden",       FcTrue                  },
-    { (FC8) "embeddedbitmap", "embeddedbitmap", FcTrue                  },
-    { (FC8) "decorative",     "decorative",     FcTrue                  },
-    { (FC8) "lcdnone",        "lcdfilter",      FC_LCD_NONE             },
-    { (FC8) "lcddefault",     "lcdfilter",      FC_LCD_DEFAULT          },
-    { (FC8) "lcdlight",       "lcdfilter",      FC_LCD_LIGHT            },
-    { (FC8) "lcdlegacy",      "lcdfilter",      FC_LCD_LEGACY           },
-
-    { (FC8) "serif",          "genericfamily",  FC_FAMILY_SERIF         },
-    { (FC8) "sans-serif",     "genericfamily",  FC_FAMILY_SANS          },
-    { (FC8) "monospace",      "genericfamily",  FC_FAMILY_MONO          },
-    { (FC8) "cursive",        "genericfamily",  FC_FAMILY_CURSIVE       },
-    { (FC8) "fantasy",        "genericfamily",  FC_FAMILY_FANTASY       },
-    { (FC8) "system-ui",      "genericfamily",  FC_FAMILY_SYSTEM_UI     },
-    { (FC8) "ui-serif",       "genericfamily",  FC_FAMILY_UI_SERIF      },
-    { (FC8) "ui-sans-serif",  "genericfamily",  FC_FAMILY_UI_SANS       },
-    { (FC8) "ui-monospace",   "genericfamily",  FC_FAMILY_UI_MONO       },
-    { (FC8) "ui-rounded",     "genericfamily",  FC_FAMILY_UI_ROUNDED    },
-    { (FC8) "emoji",          "genericfamily",  FC_FAMILY_EMOJI         },
-    { (FC8) "math",           "genericfamily",  FC_FAMILY_MATH          },
-    { (FC8) "fangsong",       "genericfamily",  FC_FAMILY_FANGSONG      },
-};
-
-#define NUM_FC_CONSTANTS (sizeof _FcBaseConstants / sizeof _FcBaseConstants[0])
 
 FcBool
 FcNameRegisterConstants (const FcConstant *consts, int nconsts)
@@ -235,29 +153,80 @@ FcNameUnregisterConstants (const FcConstant *consts, int nconsts)
     return FcFalse;
 }
 
+static int
+FcNameFindConstant (const FcChar8 *string)
+{
+    int min, max;
+    int last = NUM_FC_CONST_SYMBOLS - 1;
+    FcChar8 c = FcToLower (string[0]);
+    FcChar8 b = FcToLower (_FcBaseConstantSymbols[0].name[0]);
+    FcChar8 e = FcToLower (_FcBaseConstantSymbols[last - 1].name[0]);
+
+    if (c < b || c > e)
+	return -1; /* not found */
+    for (min = 0, max = last; min <= max;) {
+	int mid = (min + max) / 2;
+	int ret;
+
+	ret = FcStrCmpIgnoreCase (_FcBaseConstantSymbols[mid].name, string);
+	if (ret > 0)
+	    max = mid - 1;
+	else if (ret < 0)
+	    min = mid + 1;
+	else
+	    return mid;
+    }
+    return -1;
+}
+
 const FcConstant *
 FcNameGetConstant (const FcChar8 *string)
 {
-    unsigned int i;
+    int pos = FcNameFindConstant (string);
 
-    for (i = 0; i < NUM_FC_CONSTANTS; i++)
-	if (!FcStrCmpIgnoreCase (string, _FcBaseConstants[i].name))
-	    return &_FcBaseConstants[i];
+    if (pos >= 0) {
+	const FcConstSymbolMap *sym = &_FcBaseConstantSymbols[pos];
 
-    return 0;
+	if (sym->values[1].object != FC_INVALID_OBJECT) {
+	    fprintf (stderr, "Fontconfig error: the ambiguous constant name: %s: Use :<property name>=<keyword> instead of :<keyword>\n", string);
+	    return NULL;
+	} else {
+            return &_FcBaseConstantObjects[sym->values[0].idx_obj].values[sym->values[0].idx_variant];
+	}
+    }
+    return NULL;
+}
+
+static const FcConstant *
+FcNameGetConstantForObject (const FcChar8 *string, FcObject object)
+{
+    int i;
+
+    if (object > FC_MAX_BASE_OBJECT)
+	return NULL;
+    for (i = 0; _FcBaseConstantObjects[object].values[i].name != NULL; i++) {
+	FcChar8 c = FcToLower (string[0]);
+	FcChar8 b = FcToLower (_FcBaseConstantObjects[object].values[i].name[0]);
+	int     ret;
+
+	if (c < b)
+	    return NULL;
+	ret = FcStrCmpIgnoreCase (_FcBaseConstantObjects[object].values[i].name, string);
+	if (ret > 0)
+	    return NULL;
+	else if (ret == 0) {
+	    return &_FcBaseConstantObjects[object].values[i];
+	}
+    }
+    return NULL;
 }
 
 const FcConstant *
 FcNameGetConstantFor (const FcChar8 *string, const char *object)
 {
-    unsigned int i;
+    FcObject o = FcObjectFromName (object);
 
-    for (i = 0; i < NUM_FC_CONSTANTS; i++)
-	if (!FcStrCmpIgnoreCase (string, _FcBaseConstants[i].name) &&
-	    !FcStrCmpIgnoreCase ((const FcChar8 *)object, (const FcChar8 *)_FcBaseConstants[i].object))
-	    return &_FcBaseConstants[i];
-
-    return 0;
+    return FcNameGetConstantForObject (string, o);
 }
 
 FcBool
@@ -273,19 +242,12 @@ FcNameConstant (const FcChar8 *string, int *result)
 }
 
 FcBool
-FcNameConstantWithObjectCheck (const FcChar8 *string, const char *object, int *result)
+FcNameConstantWithObjectCheck (const FcChar8 *string, FcObject object, int *result)
 {
     const FcConstant *c;
 
-    if ((c = FcNameGetConstantFor (string, object))) {
-	*result = c->value;
-	return FcTrue;
-    } else if ((c = FcNameGetConstant (string))) {
-	if (strcmp (c->object, object) != 0) {
-	    fprintf (stderr, "Fontconfig error: Unexpected constant name `%s' used for object `%s': should be `%s'\n", string, object, c->object);
-	    return FcFalse;
-	}
-	/* Unlikely to reach out */
+    c = FcNameGetConstantForObject (string, object);
+    if (c) {
 	*result = c->value;
 	return FcTrue;
     }
@@ -337,11 +299,12 @@ FcNameConvert (FcType type, const char *object, FcChar8 *string)
     FcMatrix m;
     double   b, e;
     char    *p;
+    FcObject o = FcObjectFromName (object);
 
     v.type = type;
     switch ((int)v.type) {
     case FcTypeInteger:
-	if (!FcNameConstantWithObjectCheck (string, object, &v.u.i))
+	if (!FcNameConstantWithObjectCheck (string, o, &v.u.i))
 	    v.u.i = atoi ((char *)string);
 	break;
     case FcTypeString:
@@ -380,15 +343,15 @@ FcNameConvert (FcType type, const char *object, FcChar8 *string)
 	    sc = malloc (len + 1);
 	    ec = malloc (len + 1);
 	    if (sc && ec && sscanf ((char *)string, "[%s %[^]]]", sc, ec) == 2) {
-		if (FcNameConstantWithObjectCheck ((const FcChar8 *)sc, object, &si) &&
-		    FcNameConstantWithObjectCheck ((const FcChar8 *)ec, object, &ei))
+		if (FcNameConstantWithObjectCheck ((const FcChar8 *)sc, o, &si) &&
+		    FcNameConstantWithObjectCheck ((const FcChar8 *)ec, o, &ei))
 		    v.u.r = FcRangeCreateDouble (si, ei);
 		else
 		    goto bail1;
 	    } else {
 	    bail1:
 		v.type = FcTypeDouble;
-		if (FcNameConstantWithObjectCheck (string, object, &si)) {
+		if (FcNameConstantWithObjectCheck (string, o, &si)) {
 		    v.u.d = (double)si;
 		} else {
 		    v.u.d = strtod ((char *)string, &p);

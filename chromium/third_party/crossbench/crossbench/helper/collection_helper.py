@@ -5,8 +5,8 @@
 from __future__ import annotations
 
 import difflib
-from typing import (TYPE_CHECKING, Any, Callable, Iterable, Optional, Protocol,
-                    TypeVar)
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional, \
+    Protocol, TypeVar
 
 if TYPE_CHECKING:
   from crossbench.path import AnyPath

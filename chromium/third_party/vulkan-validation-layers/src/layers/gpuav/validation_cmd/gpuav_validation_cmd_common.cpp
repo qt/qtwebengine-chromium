@@ -35,18 +35,23 @@ static void BindErrorLoggingDescSet(Validator &gpuav, CommandBufferSubState &cb_
     std::array<uint32_t, 2> dynamic_offsets = {
         {cmd_index * gpuav.indices_buffer_alignment_, error_logger_index * gpuav.indices_buffer_alignment_}};
 
-    ValidationCommandsCommon &val_cmd_common = cb_state.shared_resources_cache.Get<ValidationCommandsCommon>();
+    ValidationCommandsGpuavState &val_cmd_gpuav_state =
+        gpuav.shared_resources_cache.GetOrCreate<ValidationCommandsGpuavState>(gpuav, Location(vvl::Func::Empty));
+    ValidationCommandsCbState &val_cmd_cb_state = cb_state.shared_resources_cache.GetOrCreate<ValidationCommandsCbState>(
+        gpuav, cb_state, val_cmd_gpuav_state.error_logging_desc_set_layout_, Location(vvl::Func::Empty));
     DispatchCmdBindDescriptorSets(cb_state.VkHandle(), bind_point, pipeline_layout, glsl::kDiagCommonDescriptorSet, 1,
-                                  &val_cmd_common.error_logging_desc_set_, static_cast<uint32_t>(dynamic_offsets.size()),
+                                  &val_cmd_cb_state.error_logging_desc_set_, static_cast<uint32_t>(dynamic_offsets.size()),
                                   dynamic_offsets.data());
 }
 
 void BindShaderResourcesHelper(Validator &gpuav, CommandBufferSubState &cb_state, uint32_t cmd_index, uint32_t error_logger_index,
                                VkPipelineLayout pipeline_layout, VkDescriptorSet desc_set,
                                const std::vector<VkWriteDescriptorSet> &descriptor_writes, const uint32_t push_constants_byte_size,
-                               const void *push_constants) {
+                               const void *push_constants, bool bind_error_logging_desc_set) {
     // Error logging resources
-    BindErrorLoggingDescSet(gpuav, cb_state, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, cmd_index, error_logger_index);
+    if (bind_error_logging_desc_set) {
+        BindErrorLoggingDescSet(gpuav, cb_state, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, cmd_index, error_logger_index);
+    }
 
     // Any push constants byte size below 4 is illegal. Can come from empty push constant struct
     if (push_constants_byte_size >= 4) {
@@ -54,7 +59,7 @@ void BindShaderResourcesHelper(Validator &gpuav, CommandBufferSubState &cb_state
                                  push_constants);
     }
 
-    if (!descriptor_writes.empty()) {
+    if (desc_set != VK_NULL_HANDLE && !descriptor_writes.empty()) {
         // Specific resources
         DispatchUpdateDescriptorSets(gpuav.device, uint32_t(descriptor_writes.size()), descriptor_writes.data(), 0, nullptr);
 
@@ -64,9 +69,8 @@ void BindShaderResourcesHelper(Validator &gpuav, CommandBufferSubState &cb_state
 }
 }  // namespace internal
 
-ValidationCommandsCommon::ValidationCommandsCommon(Validator &gpuav, CommandBufferSubState &cb, const Location &loc)
-    : gpuav_(gpuav) {
-    const std::vector<VkDescriptorSetLayoutBinding> validation_cmd_bindings = {
+ValidationCommandsGpuavState::ValidationCommandsGpuavState(Validator &gpuav, const Location &loc) : gpuav_(gpuav) {
+    const std::array<VkDescriptorSetLayoutBinding, 4> validation_cmd_bindings = {{
         // Error output buffer
         {glsl::kBindingDiagErrorBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
         // Buffer holding action command index in command buffer
@@ -75,24 +79,32 @@ ValidationCommandsCommon::ValidationCommandsCommon(Validator &gpuav, CommandBuff
         {glsl::kBindingDiagCmdResourceIndex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_ALL, nullptr},
         // Commands errors counts buffer
         {glsl::kBindingDiagCmdErrorsCount, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
-    };
+    }};
 
-    if (error_logging_desc_set_layout_ == VK_NULL_HANDLE) {
-        VkDescriptorSetLayoutCreateInfo validation_cmd_desc_set_layout_ci = vku::InitStructHelper();
-        validation_cmd_desc_set_layout_ci.bindingCount = static_cast<uint32_t>(validation_cmd_bindings.size());
-        validation_cmd_desc_set_layout_ci.pBindings = validation_cmd_bindings.data();
-        const VkResult result = DispatchCreateDescriptorSetLayout(gpuav_.device, &validation_cmd_desc_set_layout_ci, nullptr,
-                                                                  &error_logging_desc_set_layout_);
-        if (result != VK_SUCCESS) {
-            gpuav_.InternalError(gpuav_.device, loc, "Unable to create descriptor set layout used for validation commands.");
-            return;
-        }
+    VkDescriptorSetLayoutCreateInfo validation_cmd_desc_set_layout_ci = vku::InitStructHelper();
+    validation_cmd_desc_set_layout_ci.bindingCount = static_cast<uint32_t>(validation_cmd_bindings.size());
+    validation_cmd_desc_set_layout_ci.pBindings = validation_cmd_bindings.data();
+    const VkResult result = DispatchCreateDescriptorSetLayout(gpuav_.device, &validation_cmd_desc_set_layout_ci, nullptr,
+                                                              &error_logging_desc_set_layout_);
+    if (result != VK_SUCCESS) {
+        gpuav_.InternalError(gpuav_.device, loc, "Unable to create descriptor set layout used for validation commands.");
+        return;
     }
+}
 
+ValidationCommandsGpuavState::~ValidationCommandsGpuavState() {
+    if (error_logging_desc_set_layout_ != VK_NULL_HANDLE) {
+        DispatchDestroyDescriptorSetLayout(gpuav_.device, error_logging_desc_set_layout_, nullptr);
+    }
+}
+
+ValidationCommandsCbState::ValidationCommandsCbState(Validator &gpuav, CommandBufferSubState &cb,
+                                                     VkDescriptorSetLayout error_logging_desc_set_layout, const Location &loc)
+    : gpuav_(gpuav) {
     assert((validation_cmd_desc_pool_ == VK_NULL_HANDLE) == (error_logging_desc_set_ == VK_NULL_HANDLE));
     if (validation_cmd_desc_pool_ == VK_NULL_HANDLE && error_logging_desc_set_ == VK_NULL_HANDLE) {
-        const VkResult result = gpuav_.desc_set_manager_->GetDescriptorSet(
-            &validation_cmd_desc_pool_, error_logging_desc_set_layout_, &error_logging_desc_set_);
+        const VkResult result = gpuav_.desc_set_manager_->GetDescriptorSet(&validation_cmd_desc_pool_,
+                                                                           error_logging_desc_set_layout, &error_logging_desc_set_);
         if (result != VK_SUCCESS) {
             gpuav_.InternalError(gpuav_.device, loc, "Unable to create descriptor set used for validation commands.");
             return;
@@ -100,7 +112,6 @@ ValidationCommandsCommon::ValidationCommandsCommon(Validator &gpuav, CommandBuff
     }
 
     std::array<VkWriteDescriptorSet, 4> validation_cmd_descriptor_writes = {};
-    assert(validation_cmd_bindings.size() == validation_cmd_descriptor_writes.size());
 
     VkDescriptorBufferInfo error_output_buffer_desc_info = {};
 
@@ -118,8 +129,8 @@ ValidationCommandsCommon::ValidationCommandsCommon(Validator &gpuav, CommandBuff
 
     VkDescriptorBufferInfo cmd_indices_buffer_desc_info = {};
 
-    assert(!gpuav_.indices_buffer_.IsDestroyed());
-    cmd_indices_buffer_desc_info.buffer = gpuav_.indices_buffer_.VkHandle();
+    assert(!gpuav_.global_indices_buffer_.IsDestroyed());
+    cmd_indices_buffer_desc_info.buffer = gpuav_.global_indices_buffer_.VkHandle();
     cmd_indices_buffer_desc_info.offset = 0;
     cmd_indices_buffer_desc_info.range = sizeof(uint32_t);
 
@@ -149,16 +160,9 @@ ValidationCommandsCommon::ValidationCommandsCommon(Validator &gpuav, CommandBuff
                                  validation_cmd_descriptor_writes.data(), 0, NULL);
 }
 
-ValidationCommandsCommon::~ValidationCommandsCommon() {
+ValidationCommandsCbState::~ValidationCommandsCbState() {
     if (validation_cmd_desc_pool_ != VK_NULL_HANDLE && error_logging_desc_set_ != VK_NULL_HANDLE) {
         gpuav_.desc_set_manager_->PutBackDescriptorSet(validation_cmd_desc_pool_, error_logging_desc_set_);
-        validation_cmd_desc_pool_ = VK_NULL_HANDLE;
-        error_logging_desc_set_ = VK_NULL_HANDLE;
-    }
-
-    if (error_logging_desc_set_layout_ != VK_NULL_HANDLE) {
-        DispatchDestroyDescriptorSetLayout(gpuav_.device, error_logging_desc_set_layout_, nullptr);
-        error_logging_desc_set_layout_ = VK_NULL_HANDLE;
     }
 }
 }  // namespace valcmd

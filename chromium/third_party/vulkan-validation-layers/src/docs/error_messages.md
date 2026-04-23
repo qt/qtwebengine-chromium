@@ -148,13 +148,13 @@ To try it out, use `vkconfig` or set with
 
 ```bash
 # Windows
-set VK_LAYER_MESSAGE_FORMAT_JSON=1
+set VK_VALIDATION_MESSAGE_FORMAT_JSON=1
 
 # Linux
-export VK_LAYER_MESSAGE_FORMAT_JSON=1
+export VK_VALIDATION_MESSAGE_FORMAT_JSON=1
 
 # Android
-adb setprop debug.vulkan.khronos_validation.message_format_json=1
+adb shell setprop debug.vulkan.khronos_validation.message_format_json=1
 ```
 
 # Logging to a file
@@ -175,8 +175,8 @@ export VK_LAYER_DEBUG_ACTION=VK_DBG_LAYER_ACTION_LOG_MSG
 export VK_LAYER_LOG_FILENAME=/tmp/vvl_errors.txt
 
 # Android
-adb setprop debug.vulkan.khronos_validation.debug_action=VK_DBG_LAYER_ACTION_LOG_MSG
-adb setprop debug.vulkan.khronos_validation.log_filename=/data/local/tmp/vvl_errors.txt
+adb shell setprop debug.vulkan.khronos_validation.debug_action=VK_DBG_LAYER_ACTION_LOG_MSG
+adb shell setprop debug.vulkan.khronos_validation.log_filename=/data/local/tmp/vvl_errors.txt
 ```
 
 # Additional information

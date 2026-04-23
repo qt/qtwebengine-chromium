@@ -35,6 +35,7 @@ namespace openscreen::cast {
 
 struct EncodedFrame;
 class ReceiverPacketRouter;
+class ReceiverTest;
 
 // The Cast Streaming Receiver, a peer corresponding to some Cast Streaming
 // Sender at the other end of a network link.
@@ -60,7 +61,7 @@ class ReceiverPacketRouter;
 //   class MyPlayer : public openscreen::cast::Receiver::Consumer {
 //    public:
 //     explicit MyPlayer(Receiver* receiver) : receiver_(receiver) {
-//       recevier_->SetPlayerProcessingTime(std::chrono::milliseconds(10));
+//       receiver_->SetPlayerProcessingTime(std::chrono::milliseconds(10));
 //       receiver_->SetConsumer(this);
 //     }
 //
@@ -123,6 +124,9 @@ class Receiver : public ReceiverBase {
   Ssrc ssrc() const override;
   void SetConsumer(Consumer* consumer) override;
   void SetPlayerProcessingTime(Clock::duration needed_time) override;
+  Error ReportPlayoutEvent(FrameId frame_id,
+                           RtpTimeTicks rtp_timestamp,
+                           Clock::time_point playout_time) override;
   void RequestKeyFrame() override;
   int AdvanceToNextFrame() override;
   EncodedFrame ConsumeNextFrame(ByteBuffer buffer) override;
@@ -141,6 +145,42 @@ class Receiver : public ReceiverBase {
   // for consumption.
   static constexpr int kNoFramesReady = ReceiverBase::kNoFramesReady;
 
+  // An entry in the circular queue (see `pending_frames_`).
+  struct PendingFrame {
+    // NOTE: to free resources, the collector may be Reset().
+    FrameCollector collector;
+
+    // The Receiver's [local] Clock time when this frame was originally captured
+    // at the Sender. This is computed and assigned when the RTP packet with ID
+    // 0 is processed. Add the target playout delay to this to get the target
+    // playout time.
+    std::optional<Clock::time_point> estimated_capture_time;
+
+    std::optional<RtpTimeTicks> rtp_timestamp;
+
+    PendingFrame();
+    ~PendingFrame();
+
+    void Reset();
+  };
+
+  CompoundRtcpBuilder* GetRtcpBuilderForTesting() {
+    return rtcp_builder_.get();
+  }
+  void SetRtcpBuilderForTesting(
+      std::unique_ptr<CompoundRtcpBuilder> rtcp_builder) {
+    rtcp_builder_ = std::move(rtcp_builder);
+  }
+
+  RtcpSession* GetRtcpSessionForTesting() { return &rtcp_session_; }
+  PendingFrame& GetQueueEntryForTesting(FrameId frame_id) {
+    return GetQueueEntry(frame_id);
+  }
+
+  Clock::duration GetPlayerProcessingTimeForTesting() const {
+    return player_processing_time_;
+  }
+
  protected:
   friend class ReceiverPacketRouter;
 
@@ -152,29 +192,12 @@ class Receiver : public ReceiverBase {
                             std::vector<uint8_t> packet);
 
  private:
-  // An entry in the circular queue (see `pending_frames_`).
-  struct PendingFrame {
-    FrameCollector collector;
-
-    // The Receiver's [local] Clock time when this frame was originally captured
-    // at the Sender. This is computed and assigned when the RTP packet with ID
-    // 0 is processed. Add the target playout delay to this to get the target
-    // playout time.
-    std::optional<Clock::time_point> estimated_capture_time;
-
-    PendingFrame();
-    ~PendingFrame();
-
-    // Reset this entry to its initial state, freeing resources.
-    void Reset();
-  };
-
   // Get/Set the checkpoint FrameId. This indicates that all of the packets for
   // all frames up to and including this FrameId have been successfully received
   // (or otherwise do not need to be re-transmitted).
-  FrameId checkpoint_frame() const { return rtcp_builder_.checkpoint_frame(); }
+  FrameId checkpoint_frame() const { return rtcp_builder_->checkpoint_frame(); }
   void set_checkpoint_frame(FrameId frame_id) {
-    rtcp_builder_.SetCheckpointFrame(frame_id);
+    rtcp_builder_->SetCheckpointFrame(frame_id);
   }
 
   // Send an RTCP packet to the Sender immediately, to acknowledge the complete
@@ -217,12 +240,15 @@ class Receiver : public ReceiverBase {
   // frames become ready. The default argument value means "without delay."
   void ScheduleFrameReadyCheck(Clock::time_point when = Alarm::kImmediately);
 
+  void AddEventToPendingLogs(RtpTimeTicks rtp_timestamp,
+                             RtcpReceiverEventLogMessage event_log);
+
   const ClockNowFunctionPtr now_;
   ReceiverPacketRouter& packet_router_;
   const SessionConfig config_;
   RtcpSession rtcp_session_;
   SenderReportParser rtcp_parser_;
-  CompoundRtcpBuilder rtcp_builder_;
+  std::unique_ptr<CompoundRtcpBuilder> rtcp_builder_;
   PacketReceiveStatsTracker stats_tracker_;  // Tracks transmission stats.
   RtpPacketParser rtp_parser_;
   const int rtp_timebase_;    // RTP timestamp ticks per second.
@@ -267,12 +293,19 @@ class Receiver : public ReceiverBase {
 
   // The frame queue (circular), which tracks which frames are in-flight, stores
   // data for partially-received frames, and holds onto completed frames until
-  // the consumer consumes them.
+  // the consumer consumes them. After the frame has been consumed, its capture
+  // time and rtp_timestamp are intentionally left valid so they may be used
+  // for statistics gathering. The consumer then has until the slot is reused
+  // to report playout events, after which an error will be thrown.
   //
   // Use GetQueueEntry() to access a slot. The currently-active slots are those
   // for the frames after `last_frame_consumed_` and up-to/including
   // `latest_frame_expected_`.
   std::array<PendingFrame, kMaxUnackedFrames> pending_frames_{};
+
+  // A vector containing the RTP timestamps of all of the frames that are
+  // implicitly ACKed by the checkpoint frame ID advancing.
+  std::vector<RtpTimeTicks> pending_frame_acks_;
 
   // Tracks the recent changes to the target playout delay, which is controlled
   // by the Sender. The FrameId indicates the first frame where a new delay
@@ -296,6 +329,8 @@ class Receiver : public ReceiverBase {
   // Scheduled to check whether there are frames ready and, if there are, to
   // notify the Consumer via OnFramesReady().
   Alarm consumption_alarm_;
+
+  std::vector<RtcpReceiverFrameLogMessage> pending_logs_;
 
   // The interval between sending ACK/NACK feedback RTCP messages while
   // incomplete frames exist in the queue.

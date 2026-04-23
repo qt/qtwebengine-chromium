@@ -14,6 +14,7 @@
 #include "services/network/public/mojom/web_sandbox_flags.mojom-blink.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
+#include "third_party/blink/renderer/bindings/core/v8/binding_security.h"
 #include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/post_message_helper.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
@@ -45,6 +46,7 @@
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/core/url/dom_origin.h"
 #include "third_party/blink/renderer/platform/bindings/source_location.h"
 #include "third_party/blink/renderer/platform/bindings/v8_dom_wrapper.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -231,6 +233,14 @@ DOMWindow::DOMWindow(Frame& frame)
 DOMWindow::~DOMWindow() {
   // The frame must be disconnected before finalization.
   DCHECK(!frame_);
+}
+
+DOMOrigin* DOMWindow::GetDOMOrigin(LocalDOMWindow* accessing_window) const {
+  if (BindingSecurity::ShouldAllowAccessTo(accessing_window, this) &&
+      IsLocalDOMWindow()) {
+    return DOMOrigin::Create(To<LocalDOMWindow>(this)->GetSecurityOrigin());
+  }
+  return nullptr;
 }
 
 v8::Local<v8::Value> DOMWindow::Wrap(ScriptState* script_state) {
@@ -1024,16 +1034,6 @@ void DOMWindow::DoPostMessage(scoped_refptr<SerializedScriptValue> message,
       UseCounter::Count(source, WebFeature::kCrossSitePostMessage);
     }
   }
-  auto* local_dom_window = DynamicTo<LocalDOMWindow>(this);
-  KURL target_url = local_dom_window
-                        ? local_dom_window->Url()
-                        : KURL(NullURL(), target_security_origin->ToString());
-  if (!source->GetContentSecurityPolicy()->AllowConnectToSource(
-          target_url, target_url, RedirectStatus::kNoRedirect,
-          ReportingDisposition::kSuppressReporting)) {
-    UseCounter::Count(
-        source, WebFeature::kPostMessageOutgoingWouldBeBlockedByConnectSrc);
-  }
   UserActivation* user_activation = nullptr;
   if (options->includeUserActivation())
     user_activation = UserActivation::CreateSnapshot(source);
@@ -1152,48 +1152,6 @@ void DOMWindow::RecordWindowProxyAccessMetrics(
     UseCounter::Count(
         accessing_window,
         counter_it->second.cross_origin_property_access_from_other_page);
-  }
-}
-
-std::optional<DOMWindow::ProxyAccessBlockedReason>
-DOMWindow::GetProxyAccessBlockedReason(v8::Isolate* isolate) const {
-  if (!GetFrame()) {
-    // Proxy is disconnected so we cannot take any action anyway.
-    return std::nullopt;
-  }
-
-  LocalDOMWindow* accessing_window = CurrentDOMWindow(isolate);
-  CHECK(accessing_window);
-
-  LocalFrame* accessing_frame = accessing_window->GetFrame();
-  if (!accessing_frame) {
-    // Context is disconnected so we cannot take any action anyway.
-    return std::nullopt;
-  }
-
-  // Returns an exception message if this window proxy or the window accessing
-  // are not in the same page and one is in a partitioned popin. We check this
-  // case first as it overlaps with the COOP:RP case below.
-  // See https://explainers-by-googlers.github.io/partitioned-popins/
-  if (GetFrame()->GetPage() != accessing_frame->GetPage() &&
-      (accessing_frame->GetPage()->IsPartitionedPopin() ||
-       GetFrame()->GetPage()->IsPartitionedPopin())) {
-    return DOMWindow::ProxyAccessBlockedReason::kPartitionedPopins;
-  }
-
-  // Our fallback allows access.
-  return std::nullopt;
-}
-
-// static
-String DOMWindow::GetProxyAccessBlockedExceptionMessage(
-    DOMWindow::ProxyAccessBlockedReason reason) {
-  switch (reason) {
-    case ProxyAccessBlockedReason::kCoopRp:
-      return "Cross-Origin-Opener-Policy: 'restrict-properties' blocked the "
-             "access.";
-    case ProxyAccessBlockedReason::kPartitionedPopins:
-      return "Partitioned Popin blocked the access.";
   }
 }
 

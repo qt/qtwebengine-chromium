@@ -2,138 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
-import * as Platform from '../../core/platform/platform.js';
-import type * as Root from '../../core/root/root.js';
 import {raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {updateHostConfig} from '../../testing/EnvironmentHelpers.js';
+import {createFakeSetting} from '../../testing/EnvironmentHelpers.js';
 import type * as Buttons from '../components/buttons/buttons.js';
 import * as Lit from '../lit/lit.js';
 
 import * as UI from './legacy.js';
 
-const {html} = Lit;
-
-const {urlString} = Platform.DevToolsPath;
+const {html, nothing} = Lit;
 
 describe('UIUtils', () => {
-  describe('openInNewTab', () => {
-    const {openInNewTab} = UI.UIUtils;
-    const {InspectorFrontendHostInstance} = Host.InspectorFrontendHost;
-
-    it('throws a TypeError if the URL is invalid', () => {
-      assert.throws(() => openInNewTab('ThisIsNotAValidURL'), TypeError);
-    });
-
-    it('opens URLs via host bindings', () => {
-      const stub = sinon.stub(InspectorFrontendHostInstance, 'openInNewTab');
-
-      openInNewTab('https://www.google.com/');
-
-      sinon.assert.callCount(stub, 1);
-      assert.deepEqual(stub.args[0], ['https://www.google.com/']);
-    });
-
-    it('doesn\'t override existing `utm_source` search parameters', () => {
-      const URLs = [
-        'http://developer.chrome.com/docs/devtools/workspaces/?utm_source=unittests',
-        'http://developers.google.com/learn/?utm_source=unittests',
-        'http://web.dev/?utm_source=unittests',
-        'http://www.google.com/?utm_source=unittests',
-        'https://developer.chrome.com/docs/devtools/?utm_source=unittests',
-        'https://developers.google.com/community/?utm_source=unittests',
-        'https://www.google.com/?utm_source=unittests',
-        'https://web.dev/baseline/?utm_source=unittests',
-      ];
-      for (const url of URLs) {
-        const stub = sinon.stub(InspectorFrontendHostInstance, 'openInNewTab');
-
-        openInNewTab(url);
-
-        sinon.assert.calledOnceWithExactly(stub, urlString`${url}`);
-        stub.restore();
-      }
-    });
-
-    it('adds `utm_source` search parameter to Google documentation set links', () => {
-      const URLs = [
-        'http://developer.chrome.com/docs/devtools/workspaces/',
-        'http://developers.google.com/learn/',
-        'http://web.dev/',
-        'https://developer.chrome.com/docs/devtools/',
-        'https://developers.google.com/community/',
-        'https://web.dev/baseline/',
-      ];
-      for (const url of URLs) {
-        const stub = sinon.stub(InspectorFrontendHostInstance, 'openInNewTab');
-
-        openInNewTab(url);
-
-        sinon.assert.calledOnce(stub);
-        assert.strictEqual(new URL(stub.args[0][0]).searchParams.get('utm_source'), 'devtools');
-        stub.restore();
-      }
-    });
-
-    it('adds `utm_campaign` search parameter to Google documentation set links', () => {
-      const CHANNELS: Array<typeof Root.Runtime.hostConfig.channel> = [
-        'stable',
-        'beta',
-        'dev',
-        'canary',
-      ];
-      const URLs = [
-        'http://developer.chrome.com/docs/devtools/workspaces/',
-        'http://developers.google.com/learn/',
-        'http://web.dev/',
-        'https://developer.chrome.com/docs/devtools/',
-        'https://developers.google.com/community/',
-        'https://web.dev/baseline/',
-      ];
-      for (const channel of CHANNELS) {
-        updateHostConfig({channel});
-
-        for (const url of URLs) {
-          const stub = sinon.stub(InspectorFrontendHostInstance, 'openInNewTab');
-
-          openInNewTab(url);
-
-          sinon.assert.calledOnce(stub);
-          assert.strictEqual(new URL(stub.args[0][0]).searchParams.get('utm_campaign'), channel);
-          stub.restore();
-        }
-      }
-    });
-
-    it('correctly preserves anchors', () => {
-      updateHostConfig({channel: 'stable'});
-      const stub = sinon.stub(InspectorFrontendHostInstance, 'openInNewTab');
-
-      openInNewTab('https://developer.chrome.com/docs/devtools/settings/ignore-list/#skip-third-party');
-
-      sinon.assert.calledOnce(stub);
-      const url = new URL(stub.args[0][0]);
-      assert.strictEqual(url.hash, '#skip-third-party');
-      assert.strictEqual(url.searchParams.get('utm_campaign'), 'stable');
-      assert.strictEqual(url.searchParams.get('utm_source'), 'devtools');
-    });
-
-    it('correctly preserves other search params', () => {
-      updateHostConfig({channel: 'stable'});
-      const stub = sinon.stub(InspectorFrontendHostInstance, 'openInNewTab');
-
-      openInNewTab('http://web.dev/route?foo=bar&baz=devtools');
-
-      sinon.assert.calledOnce(stub);
-      const url = new URL(stub.args[0][0]);
-      assert.strictEqual(url.searchParams.get('baz'), 'devtools');
-      assert.strictEqual(url.searchParams.get('foo'), 'bar');
-      assert.strictEqual(url.searchParams.get('utm_campaign'), 'stable');
-      assert.strictEqual(url.searchParams.get('utm_source'), 'devtools');
-    });
-  });
-
   describe('LongClickController', () => {
     it('does not invoke callback when disposed', () => {
       const clock = sinon.useFakeTimers({toFake: ['setTimeout']});
@@ -248,7 +127,7 @@ describe('UIUtils', () => {
       const {button, container, action} = setup();
       const spy = sinon.spy(action, 'removeEventListener');
 
-      Lit.render(html``, container);
+      Lit.render(nothing, container);
 
       assert.isFalse(button.isConnected);
       sinon.assert.calledWith(spy, UI.ActionRegistration.Events.ENABLED);
@@ -337,13 +216,11 @@ describe('UIUtils', () => {
           [{node: 'TEST-ELEMENT', attributeName: null}, {node: 'TEST-ELEMENT', attributeName: null}]);
 
       container.clear();
-      Lit.render(html``, container);
+      Lit.render(nothing, container);
       await raf();
       assert.deepEqual(nodeContents(container.additions), []);
       assert.deepEqual(nodeContents(container.removals), [{DIV: 'inner'}]);
-      assert.deepEqual(
-          container.updates,
-          [{node: 'TEST-ELEMENT', attributeName: null}, {node: 'TEST-ELEMENT', attributeName: null}]);
+      assert.deepEqual(container.updates, [{node: 'TEST-ELEMENT', attributeName: null}]);
     });
 
     it('observes its attributes for modifications', async () => {
@@ -392,8 +269,7 @@ describe('UIUtils', () => {
       Lit.render(
           html`
         <test-element
-          .template=${html`<button @click=${onClick}>button</button>`}
-        </test-element>`,
+          .template=${html`<button @click=${onClick}>button</button>`}></test-element>`,
           container);
 
       await raf();
@@ -463,5 +339,152 @@ describe('UIUtils', () => {
         sinon.assert.calledOnce(divClickHandler);
       });
     });
+  });
+});
+
+describe('bindToSetting (string)', () => {
+  function setup(validate?: (arg: string) => boolean) {
+    const {bindToSetting} = UI.UIUtils;
+    const setting = createFakeSetting<string>('fake-setting', 'defaultValue');
+    const container = document.createElement('div');
+    renderElementIntoDOM(container);
+    const inputRef = Lit.Directives.createRef<HTMLInputElement>();
+    Lit.render(html`<input ${Lit.Directives.ref(inputRef)} ${bindToSetting(setting, validate)}></input>`, container);
+
+    const input = inputRef.value;
+    assert.exists(input);
+
+    return {input, setting, container};
+  }
+
+  it('shows the current value on initial render', () => {
+    const {input} = setup();
+
+    assert.strictEqual(input.value, 'defaultValue');
+  });
+
+  it('changes the setting when the input changes', () => {
+    const {setting, input} = setup();
+
+    input.value = 'new value via user edit';
+    input.dispatchEvent(new Event('change'));
+
+    assert.strictEqual(setting.get(), 'new value via user edit');
+  });
+
+  it('changes the input when the setting changes', () => {
+    const {setting, input} = setup();
+
+    setting.set('new value via change listener');
+
+    assert.strictEqual(input.value, 'new value via change listener');
+  });
+
+  it('does not change the setting when validation fails', () => {
+    const {setting, input} = setup(arg => /[0-9]+/.test(arg));
+
+    input.value = 'text must not update the setting';
+    input.dispatchEvent(new Event('change'));
+
+    assert.strictEqual(setting.get(), 'defaultValue');
+
+    input.value = '42';
+    input.dispatchEvent(new Event('change'));
+
+    assert.strictEqual(setting.get(), '42');
+  });
+
+  it('removes the change listener when the input is removed from the DOM', () => {
+    const {setting, input, container} = setup();
+    Lit.render(nothing, container);
+
+    setting.set('new value via change listener');
+
+    assert.isFalse(input.isConnected);
+    assert.strictEqual(input.value, 'defaultValue');
+  });
+});
+
+describe('bindToSetting (boolean)', () => {
+  function setup() {
+    const {bindToSetting} = UI.UIUtils;
+    const setting = createFakeSetting<boolean>('fake-setting', true);
+    const container = document.createElement('div');
+    renderElementIntoDOM(container);
+    const inputRef = Lit.Directives.createRef<UI.UIUtils.CheckboxLabel>();
+    Lit.render(
+        html`<devtools-checkbox ${Lit.Directives.ref(inputRef)} ${bindToSetting(setting)}></devtools-checkbox>`,
+        container);
+
+    const input = inputRef.value;
+    assert.exists(input);
+
+    return {input, setting, container};
+  }
+
+  it('shows the current value on initial render', () => {
+    const {input} = setup();
+
+    assert.isTrue(input.checked);
+  });
+
+  it('changes the setting when the checkbox changes', () => {
+    const {input, setting} = setup();
+
+    input.checked = false;
+    input.dispatchEvent(new Event('change'));
+
+    assert.isFalse(setting.get());
+  });
+
+  it('changes the checkbox when the setting changes', () => {
+    const {input, setting} = setup();
+
+    setting.set(false);
+
+    assert.isFalse(input.checked);
+  });
+
+  it('removes the change listener when the input is removed from the DOM', () => {
+    const {setting, input, container} = setup();
+    Lit.render(nothing, container);
+
+    setting.set(false);
+
+    assert.isFalse(input.isConnected);
+    assert.isTrue(input.checked);
+  });
+});
+
+describe('bindCheckbox', () => {
+  function setup() {
+    const setting = createFakeSetting<boolean>('fake-setting', true);
+    const input = document.createElement('devtools-checkbox');
+    UI.UIUtils.bindCheckbox(input, setting);
+
+    return {setting, input};
+  }
+
+  it('shows the current value on initial render', () => {
+    const {input} = setup();
+
+    assert.isTrue(input.checked);
+  });
+
+  it('changes the setting when the checkbox changes', () => {
+    const {input, setting} = setup();
+
+    input.checked = false;
+    input.dispatchEvent(new Event('change'));
+
+    assert.isFalse(setting.get());
+  });
+
+  it('changes the checkbox when the setting changes', () => {
+    const {input, setting} = setup();
+
+    setting.set(false);
+
+    assert.isFalse(input.checked);
   });
 });

@@ -451,16 +451,30 @@ void xnn_compute_dqgemm(struct gemm_context* restrict context,
   while (mr_block_size > 0) {
     const size_t mr_step = min(mr_block_size, context->mr);
 
-    context->dq_ukernel.function[XNN_UARCH_DEFAULT](
-        mr_step, nr_block_size, context->k_scaled,
-        (const void*)((uintptr_t)context->a + mr_block_start * a_stride),
-        a_stride,
-        (const void*)((uintptr_t)context->packed_w +
-                      nr_block_start * context->w_stride),
-        (void*)((uintptr_t)context->c + mr_block_start * cm_stride +
-                (nr_block_start << context->log2_csize)),
-        cm_stride, context->cn_stride, context->fused_params,
-        &context->quantization_params[mr_block_start]);
+    if (context->with_row_sum) {
+      context->dq_qc2w_ukernel.function[XNN_UARCH_DEFAULT](
+          mr_step, nr_block_size, context->k_scaled,
+          (const void*)((uintptr_t)context->a + mr_block_start * a_stride),
+          a_stride,
+          (const void*)((uintptr_t)context->packed_w +
+                        nr_block_start * context->w_stride),
+          (void*)((uintptr_t)context->c + mr_block_start * cm_stride +
+                  (nr_block_start << context->log2_csize)),
+          cm_stride, context->cn_stride, context->fused_params,
+          &context->row_sum[mr_block_start],
+          &context->quantization_params[mr_block_start]);
+    } else {
+      context->dq_ukernel.function[XNN_UARCH_DEFAULT](
+          mr_step, nr_block_size, context->k_scaled,
+          (const void*)((uintptr_t)context->a + mr_block_start * a_stride),
+          a_stride,
+          (const void*)((uintptr_t)context->packed_w +
+                        nr_block_start * context->w_stride),
+          (void*)((uintptr_t)context->c + mr_block_start * cm_stride +
+                  (nr_block_start << context->log2_csize)),
+          cm_stride, context->cn_stride, context->fused_params,
+          &context->quantization_params[mr_block_start]);
+    }
     mr_block_size -= mr_step;
     mr_block_start += mr_step;
   }
@@ -663,14 +677,27 @@ XNN_INLINE static void compute_inline_packed_qp8gemm(
 
     // Call the appropriate GEMM kernel.
     if (context->dynamic_quantization) {
-      const struct xnn_qd8_quantization_params* quantization_params = packed_lhs;
-      const void* packed_inputs =
-          (const void*)((uintptr_t)packed_lhs +
-                        mr * sizeof(struct xnn_qd8_quantization_params));
-      context->dq_ukernel.function[uarch_index](
-          mr_step, nc, k_scaled, packed_inputs, packed_input_stride, packed_w,
-          (void*)(c + mr_block_start * cm_stride), cm_stride, cn_stride,
-          context->fused_params, quantization_params);
+      const struct xnn_qd8_quantization_params* quantization_params =
+          packed_lhs;
+
+      if (context->with_row_sum) {
+        const float* row_sum = (const float*)((uintptr_t)packed_lhs +
+            mr * sizeof(struct xnn_qd8_quantization_params));
+        const void* packed_inputs =
+            (const void*)((uintptr_t)row_sum + mr * sizeof(float));
+        context->dq_qc2w_ukernel.function[uarch_index](
+            mr_step, nc, k_scaled, packed_inputs, packed_input_stride, packed_w,
+            (void*)(c + mr_block_start * cm_stride), cm_stride, cn_stride,
+            context->fused_params, row_sum, quantization_params);
+      } else {
+        const void* packed_inputs =
+            (const void*)((uintptr_t)packed_lhs +
+                          mr * sizeof(struct xnn_qd8_quantization_params));
+        context->dq_ukernel.function[uarch_index](
+            mr_step, nc, k_scaled, packed_inputs, packed_input_stride, packed_w,
+            (void*)(c + mr_block_start * cm_stride), cm_stride, cn_stride,
+            context->fused_params, quantization_params);
+      }
     } else {
       context->qp8_ukernel.function[uarch_index](
           mr_step, nc, k_scaled, packed_lhs, packed_w,
@@ -874,6 +901,11 @@ static void compute_batch_inline_packed_igemm(
   const size_t kc = context->kc;
   const size_t ks = context->ks;
   const size_t cm_stride = context->cm_stride;
+  const size_t kc_elems =
+      kc >> context->packed_lh_config->log2_input_element_size;
+  const size_t cm_stride_elems = cm_stride >> context->log2_csize;
+  const size_t cm_stride_kernel =
+      (context->log2_csize == 0) ? cm_stride : cm_stride_elems;
   const size_t a_offset = context->a_offset + batch_index * context->ba_stride +
                           group_index * context->ga_stride;
   const void* packed_w = (const void*)((uintptr_t)context->packed_w +
@@ -889,7 +921,7 @@ static void compute_batch_inline_packed_igemm(
 
     // Pack the LHS data into the workspace.
     context->packed_lh_config->pack_lh_for_igemm_fn(
-        mr_step, kc, ks, mr_packed, context->kr, context->sr,
+        mr_step, kc_elems, ks, mr_packed, context->kr, context->sr,
         /*a=*/
         (const void**)((uintptr_t)context->indirect_a +
                        mr_block_start * ks * sizeof(void*)),
@@ -897,8 +929,8 @@ static void compute_batch_inline_packed_igemm(
 
     // Compute the iGEMM on the packed LHS data.
     context->ukernel.packed_lhs_function[uarch_index](
-        mr_step, context->nc, kc, ks, /*packed_lhs=*/workspace, packed_w,
-        (void*)(c + mr_block_start * cm_stride), cm_stride, &context->params);
+        mr_step, context->nc, kc_elems, ks, /*packed_lhs=*/workspace, packed_w,
+        (void*)(c + mr_block_start * cm_stride), cm_stride_kernel, &context->params);
 
     mr_block_size -= mr_step;
     mr_block_start += mr_step;
@@ -1864,6 +1896,10 @@ void xnn_compute_pad_qd8_params(
         context->quantization_params[batch_size - 1].zero_point;
     context->quantization_params[batch_size + i].inv_scale =
         context->quantization_params[batch_size - 1].inv_scale;
+
+    if (context->rsum_ukernel) {
+      context->row_sum[batch_size + i] = context->row_sum[batch_size - 1];
+    }
   }
 }
 
@@ -1939,6 +1975,15 @@ void xnn_compute_f32_qx8_convert(
   params.scalar.output_zero_point =
       context->quantization_params[batch_index].zero_point;
   context->convert_ukernel(n, input, output, (union xnn_unary_uparams*)&params);
+
+  if (context->rsum_ukernel) {
+    // Compute and store the row sum of the quantized output.
+    const size_t num_bytes = n / sizeof(float) * sizeof(int8_t);
+    int32_t row_sum = 0;
+    struct xnn_qs8_rsum_params rsum_params;
+    context->rsum_ukernel(num_bytes, output, &row_sum, &rsum_params);
+    context->row_sum[batch_index] = (float)row_sum;
+  }
 }
 
 void xnn_compute_f32_qd8_convert(
@@ -2106,16 +2151,31 @@ void xnn_compute_hmp_dqgemm(struct gemm_context* restrict context,
 
   while (mr_block_size > 0) {
     const size_t mr_step = min(mr_block_size, context->mr);
-    context->dq_ukernel.function[uarch_index](
-        mr_step, nr_block_size, context->k_scaled,
-        (const void*)((uintptr_t)context->a + mr_block_start * a_stride),
-        a_stride,
-        (const void*)((uintptr_t)context->packed_w +
-                      nr_block_start * context->w_stride),
-        (void*)((uintptr_t)context->c + mr_block_start * cm_stride +
-                (nr_block_start << context->log2_csize)),
-        cm_stride, context->cn_stride, context->fused_params,
-        &context->quantization_params[mr_block_start]);
+
+    if (context->with_row_sum) {
+      context->dq_qc2w_ukernel.function[uarch_index](
+          mr_step, nr_block_size, context->k_scaled,
+          (const void*)((uintptr_t)context->a + mr_block_start * a_stride),
+          a_stride,
+          (const void*)((uintptr_t)context->packed_w +
+                        nr_block_start * context->w_stride),
+          (void*)((uintptr_t)context->c + mr_block_start * cm_stride +
+                  (nr_block_start << context->log2_csize)),
+          cm_stride, context->cn_stride, context->fused_params,
+          &context->row_sum[mr_block_start],
+          &context->quantization_params[mr_block_start]);
+    } else {
+      context->dq_ukernel.function[uarch_index](
+          mr_step, nr_block_size, context->k_scaled,
+          (const void*)((uintptr_t)context->a + mr_block_start * a_stride),
+          a_stride,
+          (const void*)((uintptr_t)context->packed_w +
+                        nr_block_start * context->w_stride),
+          (void*)((uintptr_t)context->c + mr_block_start * cm_stride +
+                  (nr_block_start << context->log2_csize)),
+          cm_stride, context->cn_stride, context->fused_params,
+          &context->quantization_params[mr_block_start]);
+    }
     mr_block_size -= mr_step;
     mr_block_start += mr_step;
   }
@@ -2372,7 +2432,7 @@ enum xnn_status xnn_run_operator_with_index(xnn_operator_t op,
   }
 
   uint32_t flags = PTHREADPOOL_FLAG_DISABLE_DENORMALS;
-  if (op->flags & XNN_FLAG_YIELD_WORKERS) {
+  if (op->flags & XNN_FLAG_DONT_SPIN_WORKERS) {
     flags |= PTHREADPOOL_FLAG_YIELD_WORKERS;
   }
   for (size_t i = 0; i < op->num_compute_invocations; i++) {

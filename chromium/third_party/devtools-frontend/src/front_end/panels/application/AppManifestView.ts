@@ -1,7 +1,7 @@
 // Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -10,7 +10,8 @@ import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import * as uiI18n from '../../ui/i18n/i18n.js';
+import {createIcon} from '../../ui/kit/kit.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -516,7 +517,7 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
     this.protocolHandlersSection =
         this.reportView.appendSection(i18nString(UIStrings.protocolHandlers), 'undefined,protocol-handlers');
     this.protocolHandlersView = new ApplicationComponents.ProtocolHandlersView.ProtocolHandlersView();
-    this.protocolHandlersSection.appendFieldWithCustomView(this.protocolHandlersView);
+    this.protocolHandlersView.show(this.protocolHandlersSection.getFieldElement());
     this.iconsSection = this.reportView.appendSection(i18nString(UIStrings.icons), 'report-section-icons', 'icons');
     this.windowControlsSection =
         this.reportView.appendSection(UIStrings.windowControlsOverlay, undefined, 'window-controls-overlay');
@@ -675,7 +676,7 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
       UI.ARIAUtils.setLabel(appIdField, 'App Id');
       appIdField.textContent = appId;
 
-      const helpIcon = IconButton.Icon.create('help', 'inline-icon');
+      const helpIcon = createIcon('help', 'inline-icon');
       helpIcon.title = i18nString(UIStrings.appIdExplainer);
       helpIcon.setAttribute('jslog', `${VisualLogging.action('help').track({hover: true})}`);
       appIdField.appendChild(helpIcon);
@@ -704,7 +705,7 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
           Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(recommendedId);
         });
         suggestedIdNote.appendChild(
-            i18n.i18n.getFormatLocalizedString(str_, UIStrings.appIdNote, {PH1: suggestedIdSpan, PH2: copyButton}));
+            uiI18n.getFormatLocalizedString(str_, UIStrings.appIdNote, {PH1: suggestedIdSpan, PH2: copyButton}));
       }
     } else {
       this.identitySection.removeField(i18nString(UIStrings.computedAppId));
@@ -752,7 +753,8 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
     }
 
     const protocolHandlers = parsedManifest['protocol_handlers'] || [];
-    this.protocolHandlersView.data = {protocolHandlers, manifestLink: url};
+    this.protocolHandlersView.protocolHandlers = protocolHandlers;
+    this.protocolHandlersView.manifestLink = url;
 
     const icons = parsedManifest['icons'] || [];
     this.iconsSection.clearContent();
@@ -781,7 +783,7 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
         'https://web.dev/maskable-icon/', i18nString(UIStrings.documentationOnMaskableIcons), undefined, undefined,
         'learn-more');
     this.iconsSection.appendRow().appendChild(
-        i18n.i18n.getFormatLocalizedString(str_, UIStrings.needHelpReadOurS, {PH1: documentationLink}));
+        uiI18n.getFormatLocalizedString(str_, UIStrings.needHelpReadOurS, {PH1: documentationLink}));
 
     let squareSizedIconAvailable = false;
     for (const icon of icons) {
@@ -932,32 +934,32 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
     const wcoStatusMessage = this.windowControlsSection.appendRow();
 
     if (hasWco) {
-      const checkmarkIcon = IconButton.Icon.create('check-circle', 'inline-icon');
+      const checkmarkIcon = createIcon('check-circle', 'inline-icon');
       wcoStatusMessage.appendChild(checkmarkIcon);
 
       const wco = document.createElement('code');
       wco.classList.add('wco');
       wco.textContent = 'window-controls-overlay';
-      wcoStatusMessage.appendChild(i18n.i18n.getFormatLocalizedString(
-          str_, UIStrings.wcoFound, {PH1: wco, PH2: displayOverrideText, PH3: link}));
+      wcoStatusMessage.appendChild(
+          uiI18n.getFormatLocalizedString(str_, UIStrings.wcoFound, {PH1: wco, PH2: displayOverrideText, PH3: link}));
 
       if (this.overlayModel) {
         await this.appendWindowControlsToSection(this.overlayModel, url, stringProperty('theme_color'));
       }
     } else {
-      const infoIcon = IconButton.Icon.create('info', 'inline-icon');
+      const infoIcon = createIcon('info', 'inline-icon');
 
       wcoStatusMessage.appendChild(infoIcon);
 
       wcoStatusMessage.appendChild(
-          i18n.i18n.getFormatLocalizedString(str_, UIStrings.wcoNotFound, {PH1: displayOverrideText}));
+          uiI18n.getFormatLocalizedString(str_, UIStrings.wcoNotFound, {PH1: displayOverrideText}));
     }
 
     const wcoDocumentationLink = UI.XLink.XLink.create(
         'https://learn.microsoft.com/en-us/microsoft-edge/progressive-web-apps-chromium/how-to/window-controls-overlay',
         i18nString(UIStrings.customizePwaTitleBar), undefined, undefined, 'customize-pwa-tittle-bar');
     this.windowControlsSection.appendRow().appendChild(
-        i18n.i18n.getFormatLocalizedString(str_, UIStrings.wcoNeedHelpReadMore, {PH1: wcoDocumentationLink}));
+        uiI18n.getFormatLocalizedString(str_, UIStrings.wcoNeedHelpReadMore, {PH1: wcoDocumentationLink}));
 
     this.dispatchEventToListeners(Events.MANIFEST_RENDERED);
   }

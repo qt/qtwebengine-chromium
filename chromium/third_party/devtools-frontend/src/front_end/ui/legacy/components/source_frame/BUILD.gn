@@ -19,7 +19,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("source_frame") {
+devtools_ui_module("source_frame") {
   sources = [
     "BinaryResourceViewFactory.ts",
     "FontView.ts",
@@ -44,6 +44,7 @@ devtools_module("source_frame") {
     "../../../../panels/common:bundle",
     "../../../../panels/linear_memory_inspector/components:bundle",
     "../../../../third_party/diff:bundle",
+    "../../../../ui/components/highlighting:bundle",
     "../../../../ui/components/text_editor:bundle",
     "../../../../ui/legacy:bundle",
     "../../../../ui/legacy/components/object_ui:bundle",
@@ -59,6 +60,9 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility = [
+    # IMPORTANT: Be careful when extending visibility of front_end/ui/legacy/*,
+    # as the UI modules should only be used to actually build user interfaces,
+    # and the business logic should never depend on the UI modules.
     ":*",
     "../../../../panels/application/*",
     "../../../../panels/coverage/*",
@@ -85,7 +89,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

@@ -25,44 +25,7 @@
 #include "absl/strings/str_join.h"
 #include "ink/geometry/point.h"
 
-namespace ink {
-
-bool EasingFunction::operator==(const EasingFunction& other) const {
-  return parameters == other.parameters;
-}
-
-bool EasingFunction::operator!=(const EasingFunction& other) const {
-  return !(*this == other);
-}
-
-bool EasingFunction::CubicBezier::operator==(const CubicBezier& other) const {
-  return x1 == other.x1 && y1 == other.y1 && x2 == other.x2 && y2 == other.y2;
-}
-
-bool EasingFunction::CubicBezier::operator!=(
-    const EasingFunction::CubicBezier& other) const {
-  return !(*this == other);
-}
-
-bool EasingFunction::Linear::operator==(const Linear& other) const {
-  return points == other.points;
-}
-
-bool EasingFunction::Linear::operator!=(
-    const EasingFunction::Linear& other) const {
-  return !(*this == other);
-}
-
-bool EasingFunction::Steps::operator==(const Steps& other) const {
-  return step_count == other.step_count && step_position == other.step_position;
-}
-
-bool EasingFunction::Steps::operator!=(
-    const EasingFunction::Steps& other) const {
-  return !(*this == other);
-}
-
-namespace brush_internal {
+namespace ink::brush_internal {
 namespace {
 
 bool IsValidPredefinedEasingFunction(EasingFunction::Predefined predefined) {
@@ -237,5 +200,4 @@ std::string ToFormattedString(const EasingFunction::Parameters& parameters) {
                     parameters);
 }
 
-}  // namespace brush_internal
-}  // namespace ink
+}  // namespace ink::brush_internal

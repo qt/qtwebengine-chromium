@@ -212,10 +212,19 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     }
 
     EnableFeature(Feature::SharedTextureMemoryDXGISharedHandle);
+    EnableFeature(Feature::SharedTextureMemoryD3D12Resource);
     EnableFeature(Feature::SharedFenceDXGISharedHandle);
 
     if (SupportsBufferMapExtendedUsages()) {
         EnableFeature(Feature::BufferMapExtendedUsages);
+    }
+
+    // Temporarily only enable SharedBufferMemoryD3D12SharedMemoryFileMappingHandle on cache
+    // coherent UMA.
+    // TODO(386255678): enable SharedBufferMemoryD3D12SharedMemoryFileMappingHandle on other
+    // architectures.
+    if (GetDeviceInfo().supportsExistingHeap && SupportsBufferMapExtendedUsages()) {
+        EnableFeature(Feature::SharedBufferMemoryD3D12SharedMemoryFileMappingHandle);
     }
 
     // Only check one format here because of D3D12 "Supported as a Set" mechanism: if any format
@@ -332,7 +341,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     limits->v1.maxDynamicUniformBuffersPerPipelineLayout = 10;
     limits->v1.maxDynamicStorageBuffersPerPipelineLayout = 8;
 
-    limits->v1.maxImmediateSize = kMaxSupportedImmediateDataBytes;
+    limits->v1.maxImmediateSize = kMaxImmediateDataBytes;
 
     // https://docs.microsoft.com/en-us/windows/win32/direct3dhlsl/sm5-attributes-numthreads
     limits->v1.maxComputeWorkgroupSizeX = D3D12_CS_THREAD_GROUP_MAX_X;
@@ -398,8 +407,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
             2 * limits->v1.maxBindGroups +
                 // dynamic uniform buffers: 2 for root descriptor
                 2 * limits->v1.maxDynamicUniformBuffersPerPipelineLayout +
-                // dynamic storage buffers: 2 for root descriptor plus 1 for the size constant
-                3 * limits->v1.maxDynamicStorageBuffersPerPipelineLayout +
+                // dynamic storage buffers: 1 for the size constant, 1 for the offset constant
+                2 * limits->v1.maxDynamicStorageBuffersPerPipelineLayout +
                 // immediates: 1 slot per 4 bytes
                 limits->v1.maxImmediateSize / kImmediateConstantElementByteSize +
                 // builtins and unused slots
@@ -570,6 +579,10 @@ void PhysicalDevice::CleanUpDebugLayerFilters() {
 
 void PhysicalDevice::SetupBackendAdapterToggles(dawn::platform::Platform* platform,
                                                 TogglesState* adapterToggles) const {
+    // We don't check if the compiler libraries is available here. Compiler libraries are checked
+    // and loaded according to device's UseDXC toggle during device creation, and the creation would
+    // just fail if required compiler is not available. This is to avoid expensive loading of DLLs
+    // that we will not use immediately (or at all).
 #ifdef DAWN_USE_BUILT_DXC
     if (GetDeviceInfo().highestSupportedShaderModel < 60) {
         // If shader model < 6.0, though, we must use FXC.
@@ -885,7 +898,8 @@ MaybeError PhysicalDevice::ResetInternalDeviceForTestingImpl() {
     return {};
 }
 
-void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
+                                               const TogglesState&) const {
     if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
         // https://microsoft.github.io/DirectX-Specs/d3d/D3D12GPUUploadHeaps.html describes
         // the properties of D3D12 Default/Upload/Readback heaps.

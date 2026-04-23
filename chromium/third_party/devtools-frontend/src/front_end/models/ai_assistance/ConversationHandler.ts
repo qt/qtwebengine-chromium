@@ -8,27 +8,22 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import * as Snackbars from '../../ui/components/snackbars/snackbars.js';
-import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as NetworkTimeCalculator from '../network_time_calculator/network_time_calculator.js';
 
 import {
   type AiAgent,
   type ExternalRequestResponse,
   ExternalRequestResponseType,
-  type ResponseData,
   ResponseType
 } from './agents/AiAgent.js';
-import {FileAgent} from './agents/FileAgent.js';
 import {NetworkAgent, RequestContext} from './agents/NetworkAgent.js';
-import {PerformanceAgent, type PerformanceTraceContext} from './agents/PerformanceAgent.js';
+import type {PerformanceTraceContext} from './agents/PerformanceAgent.js';
 import {NodeContext, StylingAgent} from './agents/StylingAgent.js';
+import {AiConversation} from './AiConversation.js';
 import {
-  Conversation,
   ConversationType,
 } from './AiHistoryStorage.js';
 import {getDisabledReasons} from './AiUtils.js';
-import type {ChangeManager} from './ChangeManager.js';
 
 interface ExternalStylingRequestParameters {
   conversationType: ConversationType.STYLING;
@@ -44,8 +39,7 @@ interface ExternalNetworkRequestParameters {
 
 export interface ExternalPerformanceAIConversationData {
   conversationHandler: ConversationHandler;
-  conversation: Conversation;
-  agent: AiAgent<unknown>;
+  conversation: AiConversation;
   selected: PerformanceTraceContext;
 }
 
@@ -54,13 +48,6 @@ export interface ExternalPerformanceRequestParameters {
   prompt: string;
   data: ExternalPerformanceAIConversationData;
 }
-
-const UIStrings = {
-  /**
-   * @description Notification shown to the user whenever DevTools receives an external request.
-   */
-  externalRequestReceived: '`DevTools` received an external request',
-} as const;
 
 /*
 * Strings that don't need to be translated at this time.
@@ -72,8 +59,6 @@ const UIStringsNotTranslate = {
   enableInSettings: 'For AI features to be available, you need to enable AI assistance in DevTools settings.',
 } as const;
 
-const str_ = i18n.i18n.registerUIStrings('models/ai_assistance/ConversationHandler.ts', UIStrings);
-const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 const lockedString = i18n.i18n.lockedString;
 
 function isAiAssistanceServerSideLoggingEnabled(): boolean {
@@ -124,17 +109,16 @@ async function inspectNetworkRequestByUrl(selector: string): Promise<SDK.Network
 
 let conversationHandlerInstance: ConversationHandler|undefined;
 
-export class ConversationHandler {
+export class ConversationHandler extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   #aiAssistanceEnabledSetting: Common.Settings.Setting<boolean>|undefined;
   #aidaClient: Host.AidaClient.AidaClient;
   #aidaAvailability?: Host.AidaClient.AidaAccessPreconditions;
 
   private constructor(
       aidaClient: Host.AidaClient.AidaClient, aidaAvailability?: Host.AidaClient.AidaAccessPreconditions) {
+    super();
     this.#aidaClient = aidaClient;
-    if (aidaAvailability) {
-      this.#aidaAvailability = aidaAvailability;
-    }
+    this.#aidaAvailability = aidaAvailability;
     this.#aiAssistanceEnabledSetting = this.#getAiAssistanceEnabledSetting();
   }
 
@@ -152,6 +136,10 @@ export class ConversationHandler {
 
   static removeInstance(): void {
     conversationHandlerInstance = undefined;
+  }
+
+  get aidaClient(): Host.AidaClient.AidaClient {
+    return this.#aidaClient;
   }
 
   #getAiAssistanceEnabledSetting(): Common.Settings.Setting<boolean>|undefined {
@@ -186,7 +174,7 @@ export class ConversationHandler {
       ExternalPerformanceRequestParameters,
       ): Promise<AsyncGenerator<ExternalRequestResponse, ExternalRequestResponse>> {
     try {
-      Snackbars.Snackbar.Snackbar.show({message: i18nString(UIStrings.externalRequestReceived)});
+      this.dispatchEventToListeners(ConversationHandlerEvents.EXTERNAL_REQUEST_RECEIVED);
       const disabledReasons = await this.#getDisabledReasons();
       const aiAssistanceSetting = this.#aiAssistanceEnabledSetting?.getIfNotDisabled();
       if (!aiAssistanceSetting) {
@@ -196,7 +184,8 @@ export class ConversationHandler {
         return this.#generateErrorResponse(disabledReasons.join(' '));
       }
 
-      void VisualLogging.logFunctionCall(`start-conversation-${parameters.conversationType}`, 'external');
+      this.dispatchEventToListeners(
+          ConversationHandlerEvents.EXTERNAL_CONVERSATION_STARTED, parameters.conversationType);
       switch (parameters.conversationType) {
         case ConversationType.STYLING: {
           return await this.#handleExternalStylingConversation(parameters.prompt, parameters.selector);
@@ -214,19 +203,6 @@ export class ConversationHandler {
     }
   }
 
-  async *
-      handleConversationWithHistory(
-          items: AsyncIterable<ResponseData, void, void>, conversation: Conversation|undefined):
-          AsyncGenerator<ResponseData, void, void> {
-    for await (const data of items) {
-      // We don't want to save partial responses to the conversation history.
-      if (data.type !== ResponseType.ANSWER || data.complete) {
-        void conversation?.addHistoryItem(data);
-      }
-      yield data;
-    }
-  }
-
   async * #createAndDoExternalConversation(opts: {
     conversationType: ConversationType,
     aiAgent: AiAgent<unknown>,
@@ -234,27 +210,27 @@ export class ConversationHandler {
     selected: NodeContext|PerformanceTraceContext|RequestContext|null,
   }): AsyncGenerator<ExternalRequestResponse, ExternalRequestResponse> {
     const {conversationType, aiAgent, prompt, selected} = opts;
-    const conversation = new Conversation(
+    const conversation = new AiConversation(
         conversationType,
         [],
         aiAgent.id,
         /* isReadOnly */ true,
+        this.#aidaClient,
+        undefined,
         /* isExternal */ true,
     );
-    return yield* this.#doExternalConversation({conversation, aiAgent, prompt, selected});
+    return yield* this.#doExternalConversation({conversation, prompt, selected});
   }
 
   async * #doExternalConversation(opts: {
-    conversation: Conversation,
-    aiAgent: AiAgent<unknown>,
+    conversation: AiConversation,
     prompt: string,
     selected: NodeContext|PerformanceTraceContext|RequestContext|null,
   }): AsyncGenerator<ExternalRequestResponse, ExternalRequestResponse> {
-    const {conversation, aiAgent, prompt, selected} = opts;
-    const generator = aiAgent.run(prompt, {selected});
-    const generatorWithHistory = this.handleConversationWithHistory(generator, conversation);
+    const {conversation, prompt, selected} = opts;
+    const generator = conversation.run(prompt, {selected});
     const devToolsLogs: object[] = [];
-    for await (const data of generatorWithHistory) {
+    for await (const data of generator) {
       if (data.type !== ResponseType.ANSWER || data.complete) {
         devToolsLogs.push(data);
       }
@@ -283,7 +259,10 @@ export class ConversationHandler {
 
   async #handleExternalStylingConversation(prompt: string, selector = 'body'):
       Promise<AsyncGenerator<ExternalRequestResponse, ExternalRequestResponse>> {
-    const stylingAgent = this.createAgent(ConversationType.STYLING);
+    const stylingAgent = new StylingAgent({
+      aidaClient: this.#aidaClient,
+      serverSideLoggingEnabled: isAiAssistanceServerSideLoggingEnabled(),
+    });
     const node = await inspectElementBySelector(selector);
     if (node) {
       await node.setAsInspectedNode();
@@ -301,7 +280,6 @@ export class ConversationHandler {
       Promise<AsyncGenerator<ExternalRequestResponse, ExternalRequestResponse>> {
     return this.#doExternalConversation({
       conversation: data.conversation,
-      aiAgent: data.agent,
       prompt,
       selected: data.selected,
     });
@@ -309,7 +287,10 @@ export class ConversationHandler {
 
   async #handleExternalNetworkConversation(prompt: string, requestUrl: string):
       Promise<AsyncGenerator<ExternalRequestResponse, ExternalRequestResponse>> {
-    const networkAgent = this.createAgent(ConversationType.NETWORK);
+    const networkAgent = new NetworkAgent({
+      aidaClient: this.#aidaClient,
+      serverSideLoggingEnabled: isAiAssistanceServerSideLoggingEnabled(),
+    });
     const request = await inspectNetworkRequestByUrl(requestUrl);
     if (!request) {
       return this.#generateErrorResponse(`Can't find request with the given selector ${requestUrl}`);
@@ -325,34 +306,14 @@ export class ConversationHandler {
       selected: new RequestContext(request, calculator),
     });
   }
+}
 
-  createAgent(conversationType: ConversationType, changeManager?: ChangeManager): AiAgent<unknown> {
-    const options = {
-      aidaClient: this.#aidaClient,
-      serverSideLoggingEnabled: isAiAssistanceServerSideLoggingEnabled(),
-    };
-    let agent: AiAgent<unknown>;
-    switch (conversationType) {
-      case ConversationType.STYLING: {
-        agent = new StylingAgent({
-          ...options,
-          changeManager,
-        });
-        break;
-      }
-      case ConversationType.NETWORK: {
-        agent = new NetworkAgent(options);
-        break;
-      }
-      case ConversationType.FILE: {
-        agent = new FileAgent(options);
-        break;
-      }
-      case ConversationType.PERFORMANCE: {
-        agent = new PerformanceAgent(options);
-        break;
-      }
-    }
-    return agent;
-  }
+export const enum ConversationHandlerEvents {
+  EXTERNAL_REQUEST_RECEIVED = 'ExternalRequestReceived',
+  EXTERNAL_CONVERSATION_STARTED = 'ExternalConversationStarted',
+}
+
+export interface EventTypes {
+  [ConversationHandlerEvents.EXTERNAL_REQUEST_RECEIVED]: void;
+  [ConversationHandlerEvents.EXTERNAL_CONVERSATION_STARTED]: ConversationType;
 }

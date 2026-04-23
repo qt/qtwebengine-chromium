@@ -18,7 +18,10 @@
 extern "C" {
 #endif
 
+#include "src/utils/bounds_safety.h"
 #include "src/webp/types.h"
+
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
 
 #define WEBP_RESCALER_RFIX 32  // fixed-point precision for multiplies
 #define WEBP_RESCALER_ONE (1ull << WEBP_RESCALER_RFIX)
@@ -43,7 +46,9 @@ struct WebPRescaler {
   int src_y, dst_y;           // row counters for input and output
   uint8_t* dst;
   int dst_stride;
-  rescaler_t *irow, *frow;  // work buffer
+  // work buffer
+  rescaler_t* WEBP_COUNTED_BY(dst_width* num_channels) irow;
+  rescaler_t* WEBP_COUNTED_BY(dst_width* num_channels) frow;
 };
 
 // Initialize a rescaler given scratch area 'work' and dimensions of src & dst.
@@ -51,7 +56,8 @@ struct WebPRescaler {
 int WebPRescalerInit(WebPRescaler* const rescaler, int src_width,
                      int src_height, uint8_t* const dst, int dst_width,
                      int dst_height, int dst_stride, int num_channels,
-                     rescaler_t* const work);
+                     rescaler_t* const WEBP_COUNTED_BY(2ULL * dst_width *
+                                                       num_channels) work);
 
 // If either 'scaled_width' or 'scaled_height' (but not both) is 0 the value
 // will be calculated preserving the aspect ratio, otherwise the values are

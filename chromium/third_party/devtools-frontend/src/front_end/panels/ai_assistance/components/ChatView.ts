@@ -1,19 +1,20 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import '../../../ui/components/spinners/spinners.js';
 
 import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
-import type * as Platform from '../../../core/platform/platform.js';
+import * as Platform from '../../../core/platform/platform.js';
 import * as Root from '../../../core/root/root.js';
 import * as SDK from '../../../core/sdk/sdk.js';
 import * as AiAssistanceModel from '../../../models/ai_assistance/ai_assistance.js';
+import * as Trace from '../../../models/trace/trace.js';
 import * as Workspace from '../../../models/workspace/workspace.js';
-import * as ElementsPanel from '../../../panels/elements/elements.js';
+import * as PanelsCommon from '../../../panels/common/common.js';
 import * as PanelUtils from '../../../panels/utils/utils.js';
 import * as Marked from '../../../third_party/marked/marked.js';
 import * as Buttons from '../../../ui/components/buttons/buttons.js';
@@ -31,46 +32,9 @@ const {html, Directives: {ifDefined, ref}} = Lit;
 
 const UIStrings = {
   /**
-   * @description The error message when the user is not logged in into Chrome.
-   */
-  notLoggedIn: 'This feature is only available when you are signed into Chrome with your Google account',
-  /**
-   * @description Message shown when the user is offline.
-   */
-  offline: 'Check your internet connection and try again',
-  /**
-   * @description Text for a link to Chrome DevTools Settings.
-   */
-  settingsLink: 'AI assistance in Settings',
-  /**
-   * @description Text for asking the user to turn the AI assistance feature in settings first before they are able to use it.
-   * @example {AI assistance in Settings} PH1
-   */
-  turnOnForStyles: 'Turn on {PH1} to get help with understanding CSS styles',
-  /**
-   * @description Text for asking the user to turn the AI assistance feature in settings first before they are able to use it.
-   * @example {AI assistance in Settings} PH1
-   */
-  turnOnForStylesAndRequests: 'Turn on {PH1} to get help with styles and network requests',
-  /**
-   * @description Text for asking the user to turn the AI assistance feature in settings first before they are able to use it.
-   * @example {AI assistance in Settings} PH1
-   */
-  turnOnForStylesRequestsAndFiles: 'Turn on {PH1} to get help with styles, network requests, and files',
-  /**
-   * @description Text for asking the user to turn the AI assistance feature in settings first before they are able to use it.
-   * @example {AI assistance in Settings} PH1
-   */
-  turnOnForStylesRequestsPerformanceAndFiles:
-      'Turn on {PH1} to get help with styles, network requests, performance, and files',
-  /**
    * @description The footer disclaimer that links to more information about the AI feature.
    */
   learnAbout: 'Learn about AI in DevTools',
-  /**
-   * @description Text informing the user that AI assistance is not available in Incognito mode or Guest mode.
-   */
-  notAvailableInIncognitoMode: 'AI assistance is not available in Incognito mode or Guest mode',
 
   /**
    * @description Label added to the text input to describe the context for screen readers. Not shown visibly on screen.
@@ -203,10 +167,6 @@ const UIStringsNotTranslate = {
    * @description Title for the add image button.
    */
   addImageButtonTitle: 'Add image',
-  /**
-   * @description Disclaimer text right after the chat input.
-   */
-  inputDisclaimerForEmptyState: 'This is an experimental AI feature and won\'t always get it right.',
 } as const;
 
 const str_ = i18n.i18n.registerUIStrings('panels/ai_assistance/components/ChatView.ts', UIStrings);
@@ -225,7 +185,7 @@ export interface Step {
   output?: string;
   canceled?: boolean;
   sideEffect?: ConfirmSideEffectDialog;
-  contextDetails?: [AiAssistanceModel.ContextDetail, ...AiAssistanceModel.ContextDetail[]];
+  contextDetails?: [AiAssistanceModel.AiAgent.ContextDetail, ...AiAssistanceModel.AiAgent.ContextDetail[]];
 }
 
 interface ConfirmSideEffectDialog {
@@ -243,8 +203,21 @@ export type ImageInputData = {
   isLoading: false,
   data: string,
   mimeType: string,
-  inputType: AiAssistanceModel.MultimodalInputType,
+  inputType: AiAssistanceModel.AiAgent.MultimodalInputType,
 };
+
+export interface AnswerPart {
+  type: 'answer';
+  text: string;
+  suggestions?: [string, ...string[]];
+}
+
+export interface StepPart {
+  type: 'step';
+  step: Step;
+}
+
+export type ModelMessagePart = AnswerPart|StepPart;
 
 export interface UserChatMessage {
   entity: ChatMessageEntity.USER;
@@ -253,25 +226,17 @@ export interface UserChatMessage {
 }
 export interface ModelChatMessage {
   entity: ChatMessageEntity.MODEL;
-  steps: Step[];
-  suggestions?: [string, ...string[]];
-  answer?: string;
-  error?: AiAssistanceModel.ErrorType;
+  parts: ModelMessagePart[];
+  error?: AiAssistanceModel.AiAgent.ErrorType;
   rpcId?: Host.AidaClient.RpcGlobalId;
 }
 
 export type ChatMessage = UserChatMessage|ModelChatMessage;
 
-export const enum State {
-  CONSENT_VIEW = 'consent-view',
-  CHAT_VIEW = 'chat-view',
-  EXPLORE_VIEW = 'explore-view'
-}
-
 export interface Props {
   onTextSubmit:
       (text: string, imageInput?: Host.AidaClient.Part,
-       multimodalInputType?: AiAssistanceModel.MultimodalInputType) => void;
+       multimodalInputType?: AiAssistanceModel.AiAgent.MultimodalInputType) => void;
   onInspectElementClick: () => void;
   onFeedbackSubmit: (rpcId: Host.AidaClient.RpcGlobalId, rate: Host.AidaClient.Rating, feedback?: string) => void;
   onCancelClick: () => void;
@@ -282,28 +247,27 @@ export interface Props {
   onRemoveImageInput?: () => void;
   onTextInputChange: (input: string) => void;
   onLoadImage?: (file: File) => Promise<void>;
-  changeManager: AiAssistanceModel.ChangeManager;
+  changeManager: AiAssistanceModel.ChangeManager.ChangeManager;
   inspectElementToggled: boolean;
-  state: State;
-  aidaAvailability: Host.AidaClient.AidaAccessPreconditions;
   messages: ChatMessage[];
-  selectedContext: AiAssistanceModel.ConversationContext<unknown>|null;
+  selectedContext: AiAssistanceModel.AiAgent.ConversationContext<unknown>|null;
   isLoading: boolean;
   canShowFeedbackForm: boolean;
   userInfo: Pick<Host.InspectorFrontendHostAPI.SyncInformation, 'accountImage'|'accountFullName'>;
-  conversationType?: AiAssistanceModel.ConversationType;
+  conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType;
   isReadOnly: boolean;
   blockedByCrossOrigin: boolean;
   changeSummary?: string;
   multimodalInputEnabled?: boolean;
   imageInput?: ImageInputData;
   isTextInputDisabled: boolean;
-  emptyStateSuggestions: AiAssistanceModel.ConversationSuggestion[];
+  emptyStateSuggestions: AiAssistanceModel.AiAgent.ConversationSuggestion[];
   inputPlaceholder: Platform.UIString.LocalizedString;
   disclaimerText: Platform.UIString.LocalizedString;
   isTextInputEmpty: boolean;
   uploadImageInputEnabled?: boolean;
   markdownRenderer: MarkdownLitRenderer;
+  additionalFloatyContext: UI.Floaty.FloatyContextSelection[];
 }
 
 export class ChatView extends HTMLElement {
@@ -351,14 +315,6 @@ export class ChatView extends HTMLElement {
 
   disconnectedCallback(): void {
     this.#messagesContainerResizeObserver.disconnect();
-  }
-
-  clearTextInput(): void {
-    const textArea = this.#shadow.querySelector('.chat-input') as HTMLTextAreaElement;
-    if (!textArea) {
-      return;
-    }
-    textArea.value = '';
   }
 
   focusTextInput(): void {
@@ -518,48 +474,63 @@ export class ChatView extends HTMLElement {
     const renderFooter = (): Lit.LitTemplate => {
       const classes = Lit.Directives.classMap({
         'chat-view-footer': true,
-        'has-conversation': !!this.#props.conversationType,
         'is-read-only': this.#props.isReadOnly,
       });
 
       // clang-format off
-      const footerContents = this.#props.conversationType
-        ? renderRelevantDataDisclaimer({
-          isLoading: this.#props.isLoading,
-          blockedByCrossOrigin: this.#props.blockedByCrossOrigin,
-          tooltipId: RELEVANT_DATA_LINK_FOOTER_ID,
-          disclaimerText: this.#props.disclaimerText,
-        })
-        : html`<p>
-            ${lockedString(UIStringsNotTranslate.inputDisclaimerForEmptyState)}
-            <button
-              class="link"
-              role="link"
-              jslog=${VisualLogging.link('open-ai-settings').track({
-                click: true,
-              })}
-              @click=${() => {
-                void UI.ViewManager.ViewManager.instance().showView(
-                  'chrome-ai',
-                );
-              }}
-            >${i18nString(UIStrings.learnAbout)}</button>
-          </p>`;
-
       return html`
         <footer class=${classes} jslog=${VisualLogging.section('footer')}>
-          ${footerContents}
+          ${renderRelevantDataDisclaimer({
+            isLoading: this.#props.isLoading,
+            blockedByCrossOrigin: this.#props.blockedByCrossOrigin,
+            tooltipId: RELEVANT_DATA_LINK_FOOTER_ID,
+            disclaimerText: this.#props.disclaimerText
+          })}
         </footer>
       `;
+      // clang-format on
     };
+
+    const renderInputOrReadOnlySection = (): Lit.LitTemplate => {
+      if (this.#props.isReadOnly) {
+        return renderReadOnlySection({
+          onNewConversation: this.#props.onNewConversation,
+        });
+      }
+
+      return renderChatInput({
+        isLoading: this.#props.isLoading,
+        blockedByCrossOrigin: this.#props.blockedByCrossOrigin,
+        isTextInputDisabled: this.#props.isTextInputDisabled,
+        inputPlaceholder: this.#props.inputPlaceholder,
+        disclaimerText: this.#props.disclaimerText,
+        selectedContext: this.#props.selectedContext,
+        inspectElementToggled: this.#props.inspectElementToggled,
+        multimodalInputEnabled: this.#props.multimodalInputEnabled,
+        conversationType: this.#props.conversationType,
+        imageInput: this.#props.imageInput,
+        isTextInputEmpty: this.#props.isTextInputEmpty,
+        uploadImageInputEnabled: this.#props.uploadImageInputEnabled,
+        onContextClick: this.#props.onContextClick,
+        onInspectElementClick: this.#props.onInspectElementClick,
+        onSubmit: this.#handleSubmit,
+        onTextAreaKeyDown: this.#handleTextAreaKeyDown,
+        onCancel: this.#handleCancel,
+        onNewConversation: this.#props.onNewConversation,
+        onTakeScreenshot: this.#props.onTakeScreenshot,
+        onRemoveImageInput: this.#props.onRemoveImageInput,
+        onTextInputChange: this.#props.onTextInputChange,
+        onImageUpload: this.#handleImageUpload,
+        additionalFloatyContext: this.#props.additionalFloatyContext,
+      });
+    };
+
     // clang-format off
     Lit.render(html`
       <style>${chatViewStyles}</style>
       <div class="chat-ui">
         <main @scroll=${this.#handleScroll} ${ref(this.#mainElementRef)}>
           ${renderMainContents({
-            state: this.#props.state,
-            aidaAvailability: this.#props.aidaAvailability,
             messages: this.#props.messages,
             isLoading: this.#props.isLoading,
             isReadOnly: this.#props.isReadOnly,
@@ -568,7 +539,6 @@ export class ChatView extends HTMLElement {
             suggestions: this.#props.emptyStateSuggestions,
             userInfo: this.#props.userInfo,
             markdownRenderer: this.#props.markdownRenderer,
-            conversationType: this.#props.conversationType,
             changeSummary: this.#props.changeSummary,
             changeManager: this.#props.changeManager,
             onSuggestionClick: this.#handleSuggestionClick,
@@ -576,38 +546,7 @@ export class ChatView extends HTMLElement {
             onMessageContainerRef: this.#handleMessageContainerRef,
             onCopyResponseClick: this.#props.onCopyResponseClick,
           })}
-          ${this.#props.isReadOnly
-            ? renderReadOnlySection({
-                conversationType: this.#props.conversationType,
-                onNewConversation: this.#props.onNewConversation,
-              })
-            : renderChatInput({
-                isLoading: this.#props.isLoading,
-                blockedByCrossOrigin: this.#props.blockedByCrossOrigin,
-                isTextInputDisabled: this.#props.isTextInputDisabled,
-                inputPlaceholder: this.#props.inputPlaceholder,
-                state: this.#props.state,
-                disclaimerText: this.#props.disclaimerText,
-                selectedContext: this.#props.selectedContext,
-                inspectElementToggled: this.#props.inspectElementToggled,
-                multimodalInputEnabled: this.#props.multimodalInputEnabled,
-                conversationType: this.#props.conversationType,
-                imageInput: this.#props.imageInput,
-                isTextInputEmpty: this.#props.isTextInputEmpty,
-                aidaAvailability: this.#props.aidaAvailability,
-                uploadImageInputEnabled: this.#props.uploadImageInputEnabled,
-                onContextClick: this.#props.onContextClick,
-                onInspectElementClick: this.#props.onInspectElementClick,
-                onSubmit: this.#handleSubmit,
-                onTextAreaKeyDown: this.#handleTextAreaKeyDown,
-                onCancel: this.#handleCancel,
-                onNewConversation: this.#props.onNewConversation,
-                onTakeScreenshot: this.#props.onTakeScreenshot,
-                onRemoveImageInput: this.#props.onRemoveImageInput,
-                onTextInputChange: this.#props.onTextInputChange,
-                onImageUpload: this.#handleImageUpload,
-              })
-          }
+          ${renderInputOrReadOnlySection()}
         </main>
        ${renderFooter()}
       </div>
@@ -766,7 +705,7 @@ function renderStep({step, isLoading, markdownRenderer, isLast}: {
 }): Lit.LitTemplate {
   const stepClasses = Lit.Directives.classMap({
     step: true,
-    empty: !step.thought && !step.code && !step.contextDetails,
+    empty: !step.thought && !step.code && !step.contextDetails && !step.sideEffect,
     paused: Boolean(step.sideEffect),
     canceled: Boolean(step.canceled),
   });
@@ -834,14 +773,14 @@ function renderError(message: ModelChatMessage): Lit.LitTemplate {
   if (message.error) {
     let errorMessage;
     switch (message.error) {
-      case AiAssistanceModel.ErrorType.UNKNOWN:
-      case AiAssistanceModel.ErrorType.BLOCK:
+      case AiAssistanceModel.AiAgent.ErrorType.UNKNOWN:
+      case AiAssistanceModel.AiAgent.ErrorType.BLOCK:
         errorMessage = UIStringsNotTranslate.systemError;
         break;
-      case AiAssistanceModel.ErrorType.MAX_STEPS:
+      case AiAssistanceModel.AiAgent.ErrorType.MAX_STEPS:
         errorMessage = UIStringsNotTranslate.maxStepsError;
         break;
-      case AiAssistanceModel.ErrorType.ABORT:
+      case AiAssistanceModel.AiAgent.ErrorType.ABORT:
         return html`<p class="aborted" jslog=${VisualLogging.section('aborted')}>${
             lockedString(UIStringsNotTranslate.stoppedResponse)}</p>`;
     }
@@ -915,20 +854,21 @@ function renderChatMessage({
         </div>
       </div>
       ${Lit.Directives.repeat(
-        message.steps,
+        message.parts,
         (_, index) => index,
-        step => {
+        (part, index) => {
+          const isLastPart = index === message.parts.length - 1;
+          if (part.type === 'answer') {
+            return html`<p>${renderTextAsMarkdown(part.text, markdownRenderer, { animate: !isReadOnly && isLoading && isLast && isLastPart })}</p>`;
+          }
           return renderStep({
-            step,
+            step: part.step,
             isLoading,
             markdownRenderer,
-            isLast: [...message.steps.values()].at(-1) === step && isLast,
+            isLast: isLastPart && isLast,
           });
         },
       )}
-      ${message.answer
-        ? html`<p>${renderTextAsMarkdown(message.answer, markdownRenderer, { animate: !isReadOnly && isLoading && isLast })}</p>`
-        : Lit.nothing}
       ${renderError(message)}
       ${isLast && isLoading
         ? Lit.nothing
@@ -940,7 +880,7 @@ function renderChatMessage({
               }
               onFeedbackSubmit(message.rpcId, rating, feedback);
             },
-            suggestions: (isLast && !isReadOnly) ? message.suggestions : undefined,
+            suggestions: (isLast && !isReadOnly && message.parts.at(-1)?.type === 'answer') ? (message.parts.at(-1) as AnswerPart).suggestions : undefined,
             onSuggestionClick,
             onCopyResponseClick: () => onCopyResponseClick(message),
             canShowFeedbackForm,
@@ -952,7 +892,7 @@ function renderChatMessage({
 }
 
 function renderImageChatMessage(inlineData: Host.AidaClient.MediaBlob): Lit.LitTemplate {
-  if (inlineData.data === AiAssistanceModel.NOT_FOUND_IMAGE_DATA) {
+  if (inlineData.data === AiAssistanceModel.AiConversation.NOT_FOUND_IMAGE_DATA) {
     // clang-format off
     return html`<div class="unavailable-image" title=${UIStringsNotTranslate.imageUnavailable}>
       <devtools-icon name='file-image'></devtools-icon>
@@ -970,7 +910,7 @@ function renderImageChatMessage(inlineData: Host.AidaClient.MediaBlob): Lit.LitT
   // clang-format on
 }
 
-function renderContextIcon(context: AiAssistanceModel.ConversationContext<unknown>|null): Lit.LitTemplate {
+function renderContextIcon(context: AiAssistanceModel.AiAgent.ConversationContext<unknown>|null): Lit.LitTemplate {
   if (!context) {
     return Lit.nothing;
   }
@@ -983,7 +923,7 @@ function renderContextIcon(context: AiAssistanceModel.ConversationContext<unknow
   if (item instanceof Workspace.UISourceCode.UISourceCode) {
     return PanelUtils.PanelUtils.getIconForSourceFile(item);
   }
-  if (item instanceof AiAssistanceModel.AgentFocus) {
+  if (item instanceof AiAssistanceModel.AIContext.AgentFocus) {
     return html`<devtools-icon name="performance" title="Performance"></devtools-icon>`;
   }
   if (item instanceof SDK.DOMModel.DOMNode) {
@@ -993,13 +933,13 @@ function renderContextIcon(context: AiAssistanceModel.ConversationContext<unknow
 }
 
 function renderContextTitle(
-    context: AiAssistanceModel.ConversationContext<unknown>, disabled: boolean): Lit.TemplateResult|string {
+    context: AiAssistanceModel.AiAgent.ConversationContext<unknown>, disabled: boolean): Lit.TemplateResult|string {
   const item = context.getItem();
   if (item instanceof SDK.DOMModel.DOMNode) {
     // FIXME: move this to the model code.
-    const hiddenClassList =
-        item.classNames().filter(className => className.startsWith(AiAssistanceModel.AI_ASSISTANCE_CSS_CLASS_NAME));
-    return html`<devtools-widget .widgetConfig=${UI.Widget.widgetConfig(ElementsPanel.DOMLinkifier.DOMNodeLink, {
+    const hiddenClassList = item.classNames().filter(
+        className => className.startsWith(AiAssistanceModel.Injected.AI_ASSISTANCE_CSS_CLASS_NAME));
+    return html`<devtools-widget .widgetConfig=${UI.Widget.widgetConfig(PanelsCommon.DOMLinkifier.DOMNodeLink, {
       node: item,
       options: {hiddenClassList, disabled}
     })}></devtools-widget>`;
@@ -1015,19 +955,18 @@ function renderSelection({
   onContextClick,
   onInspectElementClick,
 }: {
-  selectedContext: AiAssistanceModel.ConversationContext<unknown>|null,
+  selectedContext: AiAssistanceModel.AiAgent.ConversationContext<unknown>|null,
   inspectElementToggled: boolean,
   isTextInputDisabled: boolean,
   onContextClick: () => void | Promise<void>,
   onInspectElementClick: () => void,
-  conversationType?: AiAssistanceModel.ConversationType,
+  conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType,
 }): Lit.LitTemplate {
-  if (!conversationType) {
+  if (!selectedContext) {
     return Lit.nothing;
   }
-
   // TODO: currently the picker behavior is SDKNode specific.
-  const hasPickerBehavior = conversationType === AiAssistanceModel.ConversationType.STYLING;
+  const hasPickerBehavior = conversationType === AiAssistanceModel.AiHistoryStorage.ConversationType.STYLING;
 
   const resourceClass = Lit.Directives.classMap({
     'not-selected': !selectedContext,
@@ -1035,10 +974,6 @@ function renderSelection({
     'has-picker-behavior': hasPickerBehavior,
     disabled: isTextInputDisabled,
   });
-
-  if (!selectedContext && !hasPickerBehavior) {
-    return Lit.nothing;
-  }
 
   const handleKeyDown = (ev: KeyboardEvent): void => {
     if (ev.key === 'Enter' || ev.key === ' ') {
@@ -1106,7 +1041,7 @@ function renderMessages({
   onCopyResponseClick: (message: ModelChatMessage) => void,
   onMessageContainerRef: (el: Element|undefined) => void,
   changeSummary?: string,
-  changeManager?: AiAssistanceModel.ChangeManager,
+  changeManager?: AiAssistanceModel.ChangeManager.ChangeManager,
 }): Lit.TemplateResult {
   function renderPatchWidget(): Lit.LitTemplate {
     if (isLoading) {
@@ -1148,7 +1083,7 @@ function renderMessages({
 
 function renderEmptyState({isTextInputDisabled, suggestions, onSuggestionClick}: {
   isTextInputDisabled: boolean,
-  suggestions: AiAssistanceModel.ConversationSuggestion[],
+  suggestions: AiAssistanceModel.AiAgent.ConversationSuggestion[],
   onSuggestionClick: (suggestion: string) => void,
 }): Lit.TemplateResult {
   // clang-format off
@@ -1182,14 +1117,9 @@ function renderEmptyState({isTextInputDisabled, suggestions, onSuggestionClick}:
   // clang-format on
 }
 
-function renderReadOnlySection({onNewConversation, conversationType}: {
+function renderReadOnlySection({onNewConversation}: {
   onNewConversation: () => void,
-  conversationType?: AiAssistanceModel.ConversationType,
 }): Lit.LitTemplate {
-  if (!conversationType) {
-    return Lit.nothing;
-  }
-
   // clang-format off
   return html`<div
     class="chat-readonly-container"
@@ -1384,8 +1314,10 @@ function renderRelevantDataDisclaimer({isLoading, blockedByCrossOrigin, tooltipI
   tooltipId: string,
   disclaimerText: string,
 }): Lit.LitTemplate {
-  const classes =
-      Lit.Directives.classMap({'chat-input-disclaimer': true, 'hide-divider': !isLoading && blockedByCrossOrigin});
+  const classes = Lit.Directives.classMap({
+    'chat-input-disclaimer': true,
+    'hide-divider': !isLoading && blockedByCrossOrigin,
+  });
   // clang-format off
   return html`
     <p class=${classes}>
@@ -1400,7 +1332,7 @@ function renderRelevantDataDisclaimer({isLoading, blockedByCrossOrigin, tooltipI
           void UI.ViewManager.ViewManager.instance().showView('chrome-ai');
         }}
       >${lockedString('Relevant data')}</button>&nbsp;${lockedString('is sent to Google')}
-      ${renderDisclamerTooltip(tooltipId, disclaimerText)}
+      ${renderDisclaimerTooltip(tooltipId, disclaimerText)}
     </p>
   `;
   // clang-format on
@@ -1411,7 +1343,6 @@ function renderChatInput({
   blockedByCrossOrigin,
   isTextInputDisabled,
   inputPlaceholder,
-  state,
   selectedContext,
   inspectElementToggled,
   multimodalInputEnabled,
@@ -1419,8 +1350,8 @@ function renderChatInput({
   imageInput,
   isTextInputEmpty,
   uploadImageInputEnabled,
-  aidaAvailability,
   disclaimerText,
+  additionalFloatyContext,
   onContextClick,
   onInspectElementClick,
   onSubmit,
@@ -1436,11 +1367,10 @@ function renderChatInput({
   blockedByCrossOrigin: boolean,
   isTextInputDisabled: boolean,
   inputPlaceholder: Platform.UIString.LocalizedString,
-  state: State,
-  selectedContext: AiAssistanceModel.ConversationContext<unknown>|null,
+  selectedContext: AiAssistanceModel.AiAgent.ConversationContext<unknown>|null,
   inspectElementToggled: boolean,
   isTextInputEmpty: boolean,
-  aidaAvailability: Host.AidaClient.AidaAccessPreconditions,
+  additionalFloatyContext: UI.Floaty.FloatyContextSelection[],
   disclaimerText: string,
   onContextClick: () => void,
   onInspectElementClick: () => void,
@@ -1449,63 +1379,89 @@ function renderChatInput({
   onCancel: (ev: SubmitEvent) => void,
   onNewConversation: () => void,
   onTextInputChange: (input: string) => void,
+  conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType,
   multimodalInputEnabled?: boolean,
-  conversationType?: AiAssistanceModel.ConversationType,
   imageInput?: ImageInputData,
   uploadImageInputEnabled?: boolean,
   onTakeScreenshot?: () => void,
   onRemoveImageInput?: () => void,
   onImageUpload?: (ev: Event) => void,
 }): Lit.LitTemplate {
-  if (!conversationType) {
-    return Lit.nothing;
-  }
-
-  const shouldShowMultiLine = state !== State.CONSENT_VIEW &&
-      aidaAvailability === Host.AidaClient.AidaAccessPreconditions.AVAILABLE && selectedContext;
   const chatInputContainerCls = Lit.Directives.classMap({
     'chat-input-container': true,
-    'single-line-layout': !shouldShowMultiLine,
+    'single-line-layout': !selectedContext,
     disabled: isTextInputDisabled,
   });
 
   // clang-format off
-  return html`
-  <form class="input-form" @submit=${onSubmit}>
+  return html` <form class="input-form" @submit=${onSubmit}>
+  ${renderFloatyExtraContext(additionalFloatyContext)}
     <div class=${chatInputContainerCls}>
-      ${renderImageInput(
-        {multimodalInputEnabled, imageInput, isTextInputDisabled, onRemoveImageInput}
-      )}
-      <textarea class="chat-input"
+      ${renderImageInput({
+        multimodalInputEnabled,
+        imageInput,
+        isTextInputDisabled,
+        onRemoveImageInput,
+      })}
+      <textarea
+        class="chat-input"
         .disabled=${isTextInputDisabled}
         wrap="hard"
         maxlength="10000"
         @keydown=${onTextAreaKeyDown}
-        @input=${(event: KeyboardEvent) => onTextInputChange((event.target as HTMLInputElement).value)}
+        @input=${(event: KeyboardEvent) =>
+          onTextInputChange((event.target as HTMLInputElement).value)}
         placeholder=${inputPlaceholder}
-        jslog=${VisualLogging.textField('query').track({change: true, keydown: 'Enter'})}
+        jslog=${VisualLogging.textField('query').track({
+          change: true,
+          keydown: 'Enter',
+        })}
         aria-description=${i18nString(UIStrings.inputTextAriaDescription)}
+        ${ref(el => {
+          // If the elements is disabled reset the text to show
+          // the place holder
+          if (el && isTextInputDisabled) {
+            (el as HTMLInputElement).value = '';
+          }
+        })}
       ></textarea>
       <div class="chat-input-actions">
         <div class="chat-input-actions-left">
-          ${shouldShowMultiLine ? renderSelection({
+          ${renderSelection({
             selectedContext,
             inspectElementToggled,
             conversationType,
             isTextInputDisabled,
             onContextClick,
             onInspectElementClick,
-          }) : Lit.nothing}
+          })}
         </div>
         <div class="chat-input-actions-right">
           <div class="chat-input-disclaimer-container">
-            ${renderRelevantDataDisclaimer({ isLoading, blockedByCrossOrigin, tooltipId: RELEVANT_DATA_LINK_CHAT_ID, disclaimerText})}
+            ${renderRelevantDataDisclaimer({
+              isLoading,
+              blockedByCrossOrigin,
+              tooltipId: RELEVANT_DATA_LINK_CHAT_ID,
+              disclaimerText,
+            })}
           </div>
           ${renderMultimodalInputButtons({
-            multimodalInputEnabled, blockedByCrossOrigin, isTextInputDisabled, imageInput, uploadImageInputEnabled, onTakeScreenshot, onImageUpload
+            multimodalInputEnabled,
+            blockedByCrossOrigin,
+            isTextInputDisabled,
+            imageInput,
+            uploadImageInputEnabled,
+            onTakeScreenshot,
+            onImageUpload,
           })}
           ${renderChatInputButtons({
-            isLoading, blockedByCrossOrigin, isTextInputDisabled, isTextInputEmpty, imageInput, onCancel, onNewConversation
+            isLoading,
+            blockedByCrossOrigin,
+            isTextInputDisabled,
+            isTextInputEmpty,
+            imageInput,
+            onCancel,
+            onNewConversation,
           })}
         </div>
       </div>
@@ -1514,75 +1470,76 @@ function renderChatInput({
   // clang-format on
 }
 
-function renderAidaUnavailableContents(
-    aidaAvailability:
-        Exclude<Host.AidaClient.AidaAccessPreconditions, Host.AidaClient.AidaAccessPreconditions.AVAILABLE>):
-    Lit.TemplateResult {
-  switch (aidaAvailability) {
-    case Host.AidaClient.AidaAccessPreconditions.NO_ACCOUNT_EMAIL:
-    case Host.AidaClient.AidaAccessPreconditions.SYNC_IS_PAUSED: {
-      return html`${i18nString(UIStrings.notLoggedIn)}`;
-    }
-    case Host.AidaClient.AidaAccessPreconditions.NO_INTERNET: {
-      return html`${i18nString(UIStrings.offline)}`;
-    }
-  }
-}
-
-function renderConsentViewContents(): Lit.TemplateResult {
-  const settingsLink = document.createElement('span');
-  settingsLink.textContent = i18nString(UIStrings.settingsLink);
-  settingsLink.classList.add('link');
-  UI.ARIAUtils.markAsLink(settingsLink);
-  settingsLink.addEventListener('click', () => {
-    void UI.ViewManager.ViewManager.instance().showView('chrome-ai');
-  });
-  settingsLink.setAttribute('jslog', `${VisualLogging.action('open-ai-settings').track({click: true})}`);
-
-  let consentViewContents: HTMLSpanElement;
-  // TODO(ergunsh): Should this `view` access `hostConfig` at all?
-  const config = Root.Runtime.hostConfig;
-  if (config.isOffTheRecord) {
-    return html`${i18nString(UIStrings.notAvailableInIncognitoMode)}`;
-  }
-  if (config.devToolsAiAssistancePerformanceAgent?.enabled) {
-    consentViewContents = i18n.i18n.getFormatLocalizedString(
-        str_, UIStrings.turnOnForStylesRequestsPerformanceAndFiles, {PH1: settingsLink});
-  } else if (config.devToolsAiAssistanceFileAgent?.enabled) {
-    consentViewContents =
-        i18n.i18n.getFormatLocalizedString(str_, UIStrings.turnOnForStylesRequestsAndFiles, {PH1: settingsLink});
-  } else if (config.devToolsAiAssistanceNetworkAgent?.enabled) {
-    consentViewContents =
-        i18n.i18n.getFormatLocalizedString(str_, UIStrings.turnOnForStylesAndRequests, {PH1: settingsLink});
-  } else {
-    consentViewContents = i18n.i18n.getFormatLocalizedString(str_, UIStrings.turnOnForStyles, {PH1: settingsLink});
+function renderFloatyExtraContext(contexts: UI.Floaty.FloatyContextSelection[]): Lit.LitTemplate {
+  if (!Root.Runtime.hostConfig.devToolsGreenDevUi?.enabled) {
+    return Lit.nothing;
   }
 
-  return html`${consentViewContents}`;
-}
-
-function renderDisabledState(contents: Lit.TemplateResult): Lit.TemplateResult {
   // clang-format off
   return html`
-    <div class="empty-state-container">
-      <div class="disabled-view">
-        <div class="disabled-view-icon-container">
-          <devtools-icon
-            name="smart-assistant"
-          ></devtools-icon>
-        </div>
-        <div>
-          ${contents}
-        </div>
-      </div>
-    </div>
+  <ul class="floaty">
+    ${contexts.map(c => {
+      function onDelete(e: MouseEvent): void {
+        e.preventDefault();
+        UI.Floaty.onFloatyContextDelete(c);
+      }
+
+      return html`<li>
+        <span class="context-item">
+          ${renderFloatyContext(c)}
+        </span>
+        <devtools-button
+          class="floaty-delete-button"
+          @click=${onDelete}
+          .data=${{
+            variant: Buttons.Button.Variant.ICON,
+            iconName: 'cross',
+            title: 'Delete',
+            size: Buttons.Button.Size.SMALL,
+          } as Buttons.Button.ButtonData}
+        ></devtools-button>
+      </li>`;
+    })}
+    <li class="open-floaty">
+      <devtools-button
+        class="floaty-add-button"
+        @click=${UI.Floaty.onFloatyOpen}
+        .data=${{
+          variant: Buttons.Button.Variant.ICON,
+          iconName: 'select-element',
+          title: 'Open context picker',
+          size: Buttons.Button.Size.SMALL,
+        } as Buttons.Button.ButtonData}
+      ></devtools-button>
+    </li>
+  </ul>
   `;
   // clang-format on
 }
 
+function renderFloatyContext(context: UI.Floaty.FloatyContextSelection): Lit.TemplateResult {
+  if (context instanceof SDK.NetworkRequest.NetworkRequest) {
+    return html`${context.url()}`;
+  }
+
+  if (context instanceof SDK.DOMModel.DOMNode) {
+    return html`<devtools-widget .widgetConfig=${
+        UI.Widget.widgetConfig(PanelsCommon.DOMLinkifier.DOMNodeLink, {node: context})}>`;
+  }
+
+  if ('insight' in context) {
+    return html`${context.insight.title}`;
+  }
+
+  if ('event' in context && 'traceStartTime' in context) {
+    const time = Trace.Types.Timing.Micro(context.event.ts - context.traceStartTime);
+    return html`${context.event.name} @ ${i18n.TimeUtilities.formatMicroSecondsAsMillisFixed(time)}`;
+  }
+
+  Platform.assertNever(context, 'Unsupported context');
+}
+
 function renderMainContents({
-  state,
-  aidaAvailability,
   messages,
   isLoading,
   isReadOnly,
@@ -1591,7 +1548,6 @@ function renderMainContents({
   suggestions,
   userInfo,
   markdownRenderer,
-  conversationType,
   changeSummary,
   changeManager,
   onSuggestionClick,
@@ -1599,36 +1555,21 @@ function renderMainContents({
   onCopyResponseClick,
   onMessageContainerRef,
 }: {
-  state: State,
-  aidaAvailability: Host.AidaClient.AidaAccessPreconditions,
   messages: ChatMessage[],
   isLoading: boolean,
   isReadOnly: boolean,
   canShowFeedbackForm: boolean,
   isTextInputDisabled: boolean,
-  suggestions: AiAssistanceModel.ConversationSuggestion[],
+  suggestions: AiAssistanceModel.AiAgent.ConversationSuggestion[],
   userInfo: Pick<Host.InspectorFrontendHostAPI.SyncInformation, 'accountImage'|'accountFullName'>,
   markdownRenderer: MarkdownLitRenderer,
-  changeManager: AiAssistanceModel.ChangeManager,
+  changeManager: AiAssistanceModel.ChangeManager.ChangeManager,
   onSuggestionClick: (suggestion: string) => void,
   onFeedbackSubmit: (rpcId: Host.AidaClient.RpcGlobalId, rate: Host.AidaClient.Rating, feedback?: string) => void,
   onCopyResponseClick: (message: ModelChatMessage) => void,
   onMessageContainerRef: (el: Element|undefined) => void,
-  conversationType?: AiAssistanceModel.ConversationType,
   changeSummary?: string,
 }): Lit.LitTemplate {
-  if (state === State.CONSENT_VIEW) {
-    return renderDisabledState(renderConsentViewContents());
-  }
-
-  if (aidaAvailability !== Host.AidaClient.AidaAccessPreconditions.AVAILABLE) {
-    return renderDisabledState(renderAidaUnavailableContents(aidaAvailability));
-  }
-
-  if (!conversationType) {
-    return Lit.nothing;
-  }
-
   if (messages.length > 0) {
     return renderMessages({
       messages,
@@ -1649,12 +1590,12 @@ function renderMainContents({
   return renderEmptyState({isTextInputDisabled, suggestions, onSuggestionClick});
 }
 
-function renderDisclamerTooltip(id: string, disclaimerText: string): Lit.TemplateResult {
+function renderDisclaimerTooltip(id: string, disclaimerText: string): Lit.TemplateResult {
   // clang-format off
   return html`
     <devtools-tooltip
       id=${id}
-      variant=${'rich'}
+      variant="rich"
     >
       <div class="info-tooltip-container">
         ${disclaimerText}

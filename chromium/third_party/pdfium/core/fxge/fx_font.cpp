@@ -35,7 +35,8 @@ ByteString GetStringFromTable(pdfium::span<const uint8_t> string_span,
 
 }  // namespace
 
-FX_RECT GetGlyphsBBox(const std::vector<TextGlyphPos>& glyphs, int anti_alias) {
+FX_RECT GetGlyphsBBox(const std::vector<TextGlyphPos>& glyphs,
+                      FontAntiAliasingMode anti_alias) {
   FX_RECT rect;
   bool bStarted = false;
   for (const TextGlyphPos& glyph : glyphs) {
@@ -49,7 +50,7 @@ FX_RECT GetGlyphsBBox(const std::vector<TextGlyphPos>& glyphs, int anti_alias) {
     }
 
     int char_width = glyph.glyph_->GetBitmap()->GetWidth();
-    if (anti_alias == FT_RENDER_MODE_LCD) {
+    if (anti_alias == FontAntiAliasingMode::kLcd) {
       char_width /= 3;
     }
 

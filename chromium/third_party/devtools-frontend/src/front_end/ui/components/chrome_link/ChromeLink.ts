@@ -1,7 +1,7 @@
 // Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
 import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
@@ -19,8 +19,10 @@ declare global {
   }
 }
 
-// Use this component to render links to 'chrome://...'-URLs
-// (for which regular <x-link>s do not work).
+/**
+ * Use this component to render links to 'chrome://...'-URLs
+ * (for which regular <x-link>s do not work).
+ **/
 export class ChromeLink extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
   #href = '';
@@ -60,7 +62,7 @@ export class ChromeLink extends HTMLElement {
     // clang-format off
     render(
       /* x-link doesn't work with custom click/keydown handlers */
-      /* eslint-disable rulesdir/no-a-tags-in-lit */
+      /* eslint-disable @devtools/no-a-tags-in-lit */
       html`
         <style>${chromeLinkStyles}</style>
         <a href=${this.#href} class="link" target="_blank"

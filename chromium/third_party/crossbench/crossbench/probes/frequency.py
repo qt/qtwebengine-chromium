@@ -114,7 +114,6 @@ class FrequencyProbeContext(ProbeContext[FrequencyProbe]):
   _MIN_FREQUENCY_FILE: str = "scaling_min_freq"
   _MAX_FREQUENCY_FILE: str = "scaling_max_freq"
 
-
   def __init__(self, probe: FrequencyProbe, run: Run) -> None:
     super().__init__(probe, run)
     self._previous_frequencies: list[_FrequencyState] = []

@@ -54,6 +54,7 @@ ACTIONS: dict[ActionType, Type[Action]] = {}
 # annotations on classmethods with decorators.
 ActionT = TypeVar("ActionT", bound="Action")
 
+
 class Action(ConfigObject, metaclass=abc.ABCMeta):
   TYPE: ClassVar[ActionType] = ActionType.GET
 

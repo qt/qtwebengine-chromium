@@ -23,7 +23,6 @@
 #include <unistd.h>
 
 #include "base/allocator/partition_alloc_features.h"
-#include "base/android/background_thread_pool_field_trial.h"
 #include "base/feature_list.h"
 #include "base/features.h"
 #include "base/notreached.h"
@@ -54,6 +53,7 @@
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
+#include "base/android/background_thread_pool_field_trial.h"
 
 #if !defined(F_DUPFD_CLOEXEC)
 #define F_DUPFD_CLOEXEC (F_LINUX_SPECIFIC_BASE + 6)
@@ -297,7 +297,7 @@ ResultExpr RestrictFcntlCommands() {
   const uint64_t kAllowedMask = O_ACCMODE | O_APPEND | O_NONBLOCK | O_SYNC |
                                 kOLargeFileFlag | O_CLOEXEC | O_NOATIME;
 #if BUILDFLAG(IS_ANDROID)
-  const uint64_t kOsSpecificSeals = F_SEAL_FUTURE_WRITE;
+  const uint64_t kOsSpecificSeals = F_SEAL_WRITE | F_SEAL_FUTURE_WRITE;
 #else
   const uint64_t kOsSpecificSeals = 0;
 #endif

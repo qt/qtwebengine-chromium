@@ -405,8 +405,16 @@ static inline uint8_t constant_time_select_8(crypto_word_t mask, uint8_t a,
 // constant_time_select_int acts like |constant_time_select| but operates on
 // ints.
 static inline int constant_time_select_int(crypto_word_t mask, int a, int b) {
-  return (int)(constant_time_select_w(mask, (crypto_word_t)(a),
-                                      (crypto_word_t)(b)));
+  return static_cast<int>(constant_time_select_w(
+      mask, static_cast<crypto_word_t>(a), static_cast<crypto_word_t>(b)));
+}
+
+// constant_time_select_32 acts like |constant_time_select| but operates on
+// 32-bit values.
+static inline uint32_t constant_time_select_32(crypto_word_t mask, uint32_t a,
+                                               uint32_t b) {
+  return static_cast<uint32_t>(
+      constant_time_select_w(mask, crypto_word_t{a}, crypto_word_t{b}));
 }
 
 // constant_time_conditional_memcpy copies |n| bytes from |src| to |dst| if
@@ -440,6 +448,7 @@ static inline void constant_time_conditional_memxor(void *dst, const void *src,
   for (size_t i = 0; i < n_vec; i += 32) {
     *(v32u8 *)&out[i] ^= masks & *(v32u8 *)&in[i];
   }
+  in += n_vec;
   out += n_vec;
   n -= n_vec;
 #endif
@@ -740,9 +749,9 @@ typedef struct {
   uint8_t num_reserved;
 } CRYPTO_EX_DATA_CLASS;
 
-#define CRYPTO_EX_DATA_CLASS_INIT {CRYPTO_MUTEX_INIT, NULL, NULL, {}, 0}
+#define CRYPTO_EX_DATA_CLASS_INIT {CRYPTO_MUTEX_INIT, nullptr, nullptr, {}, 0}
 #define CRYPTO_EX_DATA_CLASS_INIT_WITH_APP_DATA \
-  {CRYPTO_MUTEX_INIT, NULL, NULL, {}, 1}
+  {CRYPTO_MUTEX_INIT, nullptr, nullptr, {}, 1}
 
 // CRYPTO_get_ex_new_index_ex allocates a new index for |ex_data_class|. Each
 // class of object should provide a wrapper function that uses the correct
@@ -823,7 +832,7 @@ extern "C++" {
 
 static inline const void *OPENSSL_memchr(const void *s, int c, size_t n) {
   if (n == 0) {
-    return NULL;
+    return nullptr;
   }
 
   return memchr(s, c, n);
@@ -831,7 +840,7 @@ static inline const void *OPENSSL_memchr(const void *s, int c, size_t n) {
 
 static inline void *OPENSSL_memchr(void *s, int c, size_t n) {
   if (n == 0) {
-    return NULL;
+    return nullptr;
   }
 
   return memchr(s, c, n);
@@ -842,7 +851,7 @@ static inline void *OPENSSL_memchr(void *s, int c, size_t n) {
 
 static inline void *OPENSSL_memchr(const void *s, int c, size_t n) {
   if (n == 0) {
-    return NULL;
+    return nullptr;
   }
 
   return memchr(s, c, n);
@@ -1086,7 +1095,7 @@ inline void boringssl_fips_inc_counter(enum fips_counter_t counter) {}
 #if defined(BORINGSSL_FIPS_BREAK_TESTS)
 inline int boringssl_fips_break_test(const char *test) {
   const char *const value = getenv("BORINGSSL_FIPS_BREAK_TEST");
-  return value != NULL && strcmp(value, test) == 0;
+  return value != nullptr && strcmp(value, test) == 0;
 }
 #else
 inline int boringssl_fips_break_test(const char *test) { return 0; }

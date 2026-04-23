@@ -54,7 +54,7 @@ openscreen_source_set("cast_receiver_lib") {
       "sdl_video_player.h",
     ]
     include_dirs = ffmpeg_include_dirs + libsdl2_include_dirs
-    lib_dirs = ffmpeg_lib_dirs + libsdl2_lib_dirs
+    lib_dirs = external_lib_dirs + ffmpeg_lib_dirs + libsdl2_lib_dirs
     libs = ffmpeg_libs + libsdl2_libs
   } else {
     sources += [

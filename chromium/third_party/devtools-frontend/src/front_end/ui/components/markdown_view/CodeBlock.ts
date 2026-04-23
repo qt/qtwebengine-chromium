@@ -1,15 +1,15 @@
 // Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
 import '../../../ui/legacy/legacy.js'; // for x-link
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as CodeMirror from '../../../third_party/codemirror.next/codemirror.next.js';
 import * as Buttons from '../../../ui/components/buttons/buttons.js';
-import * as CopyToClipboard from '../../../ui/components/copy_to_clipboard/copy_to_clipboard.js';
 import * as TextEditor from '../../../ui/components/text_editor/text_editor.js';
+import * as UI from '../../../ui/legacy/legacy.js';
 import * as Lit from '../../lit/lit.js';
 import * as VisualLogging from '../../visual_logging/visual_logging.js';
 
@@ -191,7 +191,7 @@ export class CodeBlock extends HTMLElement {
   }
 
   #onCopy(): void {
-    CopyToClipboard.copyTextToClipboard(this.#code, i18nString(UIStrings.copied));
+    UI.UIUtils.copyTextToClipboard(this.#code, i18nString(UIStrings.copied));
     this.#copied = true;
     void this.#render();
     clearTimeout(this.#timer);

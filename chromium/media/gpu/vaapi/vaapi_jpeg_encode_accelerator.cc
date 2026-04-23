@@ -310,7 +310,7 @@ void VaapiJpegEncodeAccelerator::Encoder::EncodeWithDmaBufTask(
   std::unique_ptr<gfx::ClientNativePixmap> native_pixmap =
       client_native_pixmap_factory_->ImportFromHandle(
           std::move(output_gmb_handle).native_pixmap_handle(),
-          native_pixmap_size, gfx::BufferFormat::R_8,
+          native_pixmap_size, viz::SinglePlaneFormat::kR_8,
           gfx::BufferUsage::SCANOUT_CAMERA_READ_WRITE);
   if (native_pixmap == nullptr) {
     VLOGF(1) << "Failed to create NativePixmap from handle";
@@ -333,8 +333,8 @@ void VaapiJpegEncodeAccelerator::Encoder::EncodeWithDmaBufTask(
   uint8_t* output_memory =
       static_cast<uint8_t*>(native_pixmap->GetMemoryAddress(0));
   size_t encoded_size = 0;
-  // Since the format of |native_pixmap| is gfx::BufferFormat::R_8, we can
-  // use its area as the maximum bytes we need to download to avoid buffer
+  // Since the format of |native_pixmap| is viz::SinglePlaneFormat::kR_8, we
+  // can use its area as the maximum bytes we need to download to avoid buffer
   // overflow.
   // Since we didn't supply EXIF data to the JPEG encoder, it creates a default
   // APP0 segment in the header. We will download the result to an offset and

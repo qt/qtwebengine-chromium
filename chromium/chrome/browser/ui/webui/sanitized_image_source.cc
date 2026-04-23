@@ -6,6 +6,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -77,7 +78,7 @@ bool IsGooglePhotosUrl(const GURL& url) {
   };
 
   for (const char* const suffix : kGooglePhotosHostSuffixes) {
-    if (base::EndsWith(url.host_piece(), suffix)) {
+    if (base::EndsWith(url.host(), suffix)) {
       return true;
     }
   }
@@ -132,7 +133,7 @@ void SanitizedImageSource::StartDataRequest(
     content::URLDataSource::GotDataCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  std::string image_url_or_params = url.query();
+  std::string image_url_or_params = url.GetQuery();
   if (url != GURL(base::StrCat(
                  {chrome::kChromeUIImageURL, "?", image_url_or_params}))) {
     std::move(callback).Run(nullptr);
@@ -283,7 +284,7 @@ void SanitizedImageSource::OnImageLoaded(
     std::unique_ptr<network::SimpleURLLoader> loader,
     RequestAttributes request_attributes,
     content::URLDataSource::GotDataCallback callback,
-    std::unique_ptr<std::string> body) {
+    std::optional<std::string> body) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (loader->NetError() != net::OK || !body) {

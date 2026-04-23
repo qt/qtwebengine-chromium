@@ -39,11 +39,14 @@
 #include "src/tint/lang/core/type/builtin_structs.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
+#include "src/tint/lang/core/type/i8.h"
 #include "src/tint/lang/core/type/input_attachment.h"
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/texture.h"
+#include "src/tint/lang/core/type/u8.h"
+#include "src/tint/lang/spirv/ir/binary.h"
 #include "src/tint/lang/spirv/ir/builtin_call.h"
 #include "src/tint/lang/spirv/ir/literal_operand.h"
 #include "src/tint/lang/spirv/type/resource_binding.h"
@@ -181,6 +184,7 @@ struct State {
     void Process() {
         // Find the builtins that need replacing.
         Vector<core::ir::CoreBuiltinCall*, 4> worklist;
+        Vector<core::ir::Construct*, 4> subgroup_matrix_constructors;
 
         // Replace types for function parameters if necessary
         for (auto fn : ir.functions) {
@@ -242,6 +246,9 @@ struct State {
                     case core::BuiltinFn::kSubgroupMatrixStore:
                     case core::BuiltinFn::kSubgroupMatrixMultiply:
                     case core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
+                    case core::BuiltinFn::kSubgroupMatrixScalarAdd:
+                    case core::BuiltinFn::kSubgroupMatrixScalarSubtract:
+                    case core::BuiltinFn::kSubgroupMatrixScalarMultiply:
                         worklist.Push(builtin);
                         break;
                     case core::BuiltinFn::kQuantizeToF16:
@@ -251,6 +258,14 @@ struct State {
                         break;
                     default:
                         break;
+                }
+            }
+            if (auto* construct = inst->As<core::ir::Construct>()) {
+                if (auto* sm = construct->Result()->Type()->As<core::type::SubgroupMatrix>()) {
+                    if (sm->Type()->IsAnyOf<core::type::I8, core::type::U8>() &&
+                        construct->Args().Length() > 0) {
+                        subgroup_matrix_constructors.Push(construct);
+                    }
                 }
             }
         }
@@ -344,9 +359,41 @@ struct State {
                 case core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
                     SubgroupMatrixMultiplyAccumulate(builtin);
                     break;
+                case core::BuiltinFn::kSubgroupMatrixScalarAdd:
+                    SubgroupMatrixScalar(builtin, core::BinaryOp::kAdd);
+                    break;
+                case core::BuiltinFn::kSubgroupMatrixScalarSubtract:
+                    SubgroupMatrixScalar(builtin, core::BinaryOp::kSubtract);
+                    break;
+                case core::BuiltinFn::kSubgroupMatrixScalarMultiply:
+                    SubgroupMatrixScalar(builtin, core::BinaryOp::kMultiply);
+                    break;
                 default:
                     break;
             }
+        }
+
+        // Replace non-zero subgroup matrix constructors that use 8-bit component types.
+        // SPIR-V requires that the value passed to OpCompositeConstruct is an 8-bit value.
+        for (auto* construct : subgroup_matrix_constructors) {
+            auto* sm_ty = construct->Result()->Type()->As<core::type::SubgroupMatrix>();
+            TINT_IR_ASSERT(ir, construct->Args().Length() == 1u);
+            TINT_IR_ASSERT(ir, sm_ty);
+            auto* value = construct->Args()[0];
+            b.InsertBefore(construct, [&] {
+                if (sm_ty->Type()->Is<core::type::I8>()) {
+                    value = b.CallExplicit<spirv::ir::BuiltinCall>(
+                                 ty.i8(), spirv::BuiltinFn::kSConvert, Vector{ty.i8()},
+                                 b.Call(ty.i32(), core::BuiltinFn::kClamp, value, -128_i, 127_i))
+                                ->Result();
+                } else if (sm_ty->Type()->Is<core::type::U8>()) {
+                    value = b.CallExplicit<spirv::ir::BuiltinCall>(
+                                 ty.u8(), spirv::BuiltinFn::kUConvert, Vector{ty.u8()},
+                                 b.Call(ty.u32(), core::BuiltinFn::kClamp, value, 0_u, 255_u))
+                                ->Result();
+                }
+            });
+            construct->SetArg(0, value);
         }
     }
 
@@ -365,12 +412,12 @@ struct State {
         while (auto* let = tint::As<core::ir::Let>(ptr->Instruction())) {
             ptr = let->Value()->As<core::ir::InstructionResult>();
         }
-        TINT_ASSERT(ptr);
+        TINT_IR_ASSERT(ir, ptr);
 
         auto* access = ptr->Instruction()->As<core::ir::Access>();
-        TINT_ASSERT(access);
-        TINT_ASSERT(access->Indices().Length() == 1u);
-        TINT_ASSERT(access->Object()->Type()->UnwrapPtr()->Is<core::type::Struct>());
+        TINT_IR_ASSERT(ir, access);
+        TINT_IR_ASSERT(ir, access->Indices().Length() == 1u);
+        TINT_IR_ASSERT(ir, access->Object()->Type()->UnwrapPtr()->Is<core::type::Struct>());
         auto* const_idx = access->Indices()[0]->As<core::ir::Constant>();
 
         // Replace the builtin call with a call to the spirv.array_length intrinsic.
@@ -394,7 +441,7 @@ struct State {
                 case core::AddressSpace::kStorage:
                     return b.Constant(u32(SpvScopeDevice));
                 default:
-                    TINT_UNREACHABLE() << "unhandled atomic address space";
+                    TINT_IR_UNREACHABLE(ir) << "unhandled atomic address space";
             }
         }();
         auto* memory_semantics = b.Constant(u32(SpvMemorySemanticsMaskNone));
@@ -430,7 +477,7 @@ struct State {
 
                 // Compare the original value to the comparator to see if an exchange happened.
                 auto* original = call->Result();
-                auto* compare = b.Equal(ty.bool_(), original, cmp);
+                auto* compare = b.Equal(original, cmp);
                 compare->InsertBefore(builtin);
 
                 // Construct the atomicCompareExchange result structure.
@@ -478,7 +525,7 @@ struct State {
                 call->AppendArg(builtin->Args()[1]);
                 break;
             default:
-                TINT_UNREACHABLE() << "unhandled atomic builtin";
+                TINT_IR_UNREACHABLE(ir) << "unhandled atomic builtin";
         }
 
         call->InsertBefore(builtin);
@@ -688,7 +735,7 @@ struct State {
 
         // Use OpSampledImage to create an OpTypeSampledImage object.
         auto* sampled_image = b.CallExplicit<spirv::ir::BuiltinCall>(
-            ty.Get<type::SampledImage>(texture_ty), spirv::BuiltinFn::kSampledImage,
+            ty.Get<type::SampledImage>(texture_ty), spirv::BuiltinFn::kOpSampledImage,
             Vector{texture_ty}, Vector{texture, sampler});
         sampled_image->InsertBefore(builtin);
 
@@ -736,7 +783,7 @@ struct State {
                 operands.offset = next_arg();
                 break;
             default:
-                TINT_UNREACHABLE() << "unhandled texture sample builtin";
+                TINT_IR_UNREACHABLE(ir) << "unhandled texture sample builtin";
         }
 
         // Start building the argument list for the function.
@@ -793,7 +840,7 @@ struct State {
 
         // Use OpSampledImage to create an OpTypeSampledImage object.
         auto* sampled_image = b.CallExplicit<spirv::ir::BuiltinCall>(
-            ty.Get<type::SampledImage>(texture_ty), spirv::BuiltinFn::kSampledImage,
+            ty.Get<type::SampledImage>(texture_ty), spirv::BuiltinFn::kOpSampledImage,
             Vector{texture_ty}, Vector{texture, sampler});
         sampled_image->InsertBefore(builtin);
 
@@ -819,7 +866,7 @@ struct State {
                 operands.offset = next_arg();
                 break;
             default:
-                TINT_UNIMPLEMENTED() << "unhandled texture gather builtin";
+                TINT_IR_UNIMPLEMENTED(ir) << "unhandled texture gather builtin";
         }
 
         // Start building the argument list for the function.
@@ -1061,7 +1108,7 @@ struct State {
     void QuantizeToF16Vec(core::ir::CoreBuiltinCall* builtin) {
         auto* arg = builtin->Args()[0];
         auto* vec = arg->Type()->As<core::type::Vector>();
-        TINT_ASSERT(vec);
+        TINT_IR_ASSERT(ir, vec);
 
         // Replace the builtin call with a call to the spirv.dot intrinsic.
         Vector<core::ir::Value*, 4> args;
@@ -1080,7 +1127,7 @@ struct State {
     /// Handle an inputAttachmentLoad() builtin.
     /// @param builtin the builtin call instruction
     void InputAttachmentLoad(core::ir::CoreBuiltinCall* builtin) {
-        TINT_ASSERT(builtin->Args().Length() == 1);
+        TINT_IR_ASSERT(ir, builtin->Args().Length() == 1);
 
         auto* texture = builtin->Args()[0];
         // coords for input_attachment are always (0, 0)
@@ -1095,7 +1142,7 @@ struct State {
         // Call the builtin.
         // The result is always a vec4 in SPIR-V.
         auto* result_ty = builtin->Result()->Type();
-        TINT_ASSERT(result_ty->Is<core::type::Vector>());
+        TINT_IR_ASSERT(ir, result_ty->Is<core::type::Vector>());
 
         core::ir::Instruction* result = b.Call<spirv::ir::BuiltinCall>(
             result_ty, spirv::BuiltinFn::kImageRead, std::move(builtin_args));
@@ -1109,7 +1156,7 @@ struct State {
     /// builtins.
     /// @param builtin the builtin call instruction
     void SubgroupShuffle(core::ir::CoreBuiltinCall* builtin, bool clamp_subgroup_shuffle) {
-        TINT_ASSERT(builtin->Args().Length() == 2);
+        TINT_IR_ASSERT(ir, builtin->Args().Length() == 2);
         // The second argument is either 'id' , 'delta', or 'mask'.
         // All must be bound by [0, 128)
         auto* arg2 = builtin->Args()[1];
@@ -1135,9 +1182,9 @@ struct State {
     /// Handle a SubgroupBroadcast() builtin.
     /// @param builtin the builtin call instruction
     void SubgroupBroadcast(core::ir::CoreBuiltinCall* builtin) {
-        TINT_ASSERT(builtin->Args().Length() == 2);
+        TINT_IR_ASSERT(ir, builtin->Args().Length() == 2);
         auto* id = builtin->Args()[1];
-        TINT_ASSERT(id->Is<core::ir::Constant>());
+        TINT_IR_ASSERT(ir, id->Is<core::ir::Constant>());
 
         // For const signed int IDs, compile-time convert to u32 to maintain constness.
         if (id->Type()->IsSignedIntegerScalar()) {
@@ -1148,9 +1195,9 @@ struct State {
     /// Handle a QuadBroadcast() builtin.
     /// @param builtin the builtin call instruction
     void QuadBroadcast(core::ir::CoreBuiltinCall* builtin) {
-        TINT_ASSERT(builtin->Args().Length() == 2);
+        TINT_IR_ASSERT(ir, builtin->Args().Length() == 2);
         auto* id = builtin->Args()[1];
-        TINT_ASSERT(id->Is<core::ir::Constant>());
+        TINT_IR_ASSERT(ir, id->Is<core::ir::Constant>());
 
         // For const signed int IDs, compile-time convert to u32 to maintain constness.
         if (id->Type()->IsSignedIntegerScalar()) {
@@ -1307,6 +1354,33 @@ struct State {
             b.CallWithResult<spirv::ir::BuiltinCall>(builtin->DetachResult(),
                                                      spirv::BuiltinFn::kCooperativeMatrixMulAdd,
                                                      left, right, acc, operands);
+        });
+        builtin->Destroy();
+    }
+
+    /// Replace a subgroupMatrixScalar builtin.
+    /// @param builtin the builtin call instruction
+    /// @param op the operation to perform
+    void SubgroupMatrixScalar(core::ir::CoreBuiltinCall* builtin, core::BinaryOp op) {
+        b.InsertBefore(builtin, [&] {
+            auto* mat = builtin->Args()[0];
+            auto* scalar = builtin->Args()[1];
+
+            auto* sm_ty = mat->Type()->As<core::type::SubgroupMatrix>();
+            if (sm_ty->Type()->Is<core::type::I8>()) {
+                scalar = b.CallExplicit<spirv::ir::BuiltinCall>(
+                              ty.i8(), spirv::BuiltinFn::kSConvert, Vector{ty.i8()},
+                              b.Call(ty.i32(), core::BuiltinFn::kClamp, scalar, -128_i, 127_i))
+                             ->Result();
+            } else if (sm_ty->Type()->Is<core::type::U8>()) {
+                scalar = b.CallExplicit<spirv::ir::BuiltinCall>(
+                              ty.u8(), spirv::BuiltinFn::kUConvert, Vector{ty.u8()},
+                              b.Call(ty.u32(), core::BuiltinFn::kClamp, scalar, 0_u, 255_u))
+                             ->Result();
+            }
+
+            auto* scalar_mat = b.Construct(sm_ty, scalar);
+            b.BinaryWithResult<spirv::ir::Binary>(builtin->DetachResult(), op, mat, scalar_mat);
         });
         builtin->Destroy();
     }

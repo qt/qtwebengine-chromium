@@ -6,6 +6,7 @@
 
 #include <optional>
 
+#include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/token.h"
 #include "base/types/expected.h"
@@ -175,7 +176,7 @@ BrowserCaptureMediaStreamTrack::ApplySubCaptureTarget(
   CHECK(type == SubCaptureTarget::Type::kCropTarget ||
         type == SubCaptureTarget::Type::kRestrictionTarget);
 
-  const std::string metric_name_prefix =
+  const String metric_name_prefix =
       (type == SubCaptureTarget::Type::kCropTarget)
           ? "Media.RegionCapture.CropTo"
           : "Media.ElementCapture.RestrictTo";

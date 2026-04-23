@@ -85,6 +85,7 @@ class SDLPlayerBase : public Receiver::Consumer, public Decoder::Client {
  private:
   struct PendingFrame : public PresentableFrame {
     Clock::time_point start_time;
+    RtpTimeTicks rtp_timestamp;
 
     PendingFrame();
     ~PendingFrame();

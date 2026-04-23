@@ -12,7 +12,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -22,6 +21,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
 #include "api/audio_codecs/audio_codec_pair_id.h"
@@ -126,7 +126,7 @@ RtpTransceiver::RtpTransceiver(const Environment& env,
       codec_lookup_helper_(codec_lookup_helper) {
   RTC_DCHECK(media_type == MediaType::AUDIO || media_type == MediaType::VIDEO);
   RTC_DCHECK(context_);
-  RTC_DCHECK(context_->media_engine());
+  RTC_DCHECK(context_->is_configured_for_media());
   RTC_DCHECK(codec_lookup_helper_);
 }
 
@@ -137,7 +137,7 @@ RtpTransceiver::RtpTransceiver(
     ConnectionContext* context,
     CodecLookupHelper* codec_lookup_helper,
     std::vector<RtpHeaderExtensionCapability> header_extensions_to_negotiate,
-    std::function<void()> on_negotiation_needed)
+    absl::AnyInvocable<void()> on_negotiation_needed)
     : env_(env),
       thread_(GetCurrentTaskQueueOrThread()),
       unified_plan_(true),
@@ -148,7 +148,7 @@ RtpTransceiver::RtpTransceiver(
           std::move(header_extensions_to_negotiate)),
       on_negotiation_needed_(std::move(on_negotiation_needed)) {
   RTC_DCHECK(context_);
-  RTC_DCHECK(context_->media_engine());
+  RTC_DCHECK(context_->is_configured_for_media());
   RTC_DCHECK(media_type_ == MediaType::AUDIO ||
              media_type_ == MediaType::VIDEO);
   RTC_DCHECK_EQ(sender->media_type(), receiver->media_type());
@@ -210,7 +210,8 @@ RTCError RtpTransceiver::CreateChannel(
     const AudioOptions& audio_options,
     const VideoOptions& video_options,
     VideoBitrateAllocatorFactory* video_bitrate_allocator_factory,
-    std::function<RtpTransportInternal*(absl::string_view)> transport_lookup) {
+    absl::AnyInvocable<RtpTransportInternal*(absl::string_view) &&>
+        transport_lookup) {
   RTC_DCHECK_RUN_ON(thread_);
   RTC_DCHECK(!channel());
 
@@ -281,13 +282,14 @@ RTCError RtpTransceiver::CreateChannel(
           context()->ssrc_generator());
     });
   }
-  SetChannel(std::move(new_channel), transport_lookup);
+  SetChannel(std::move(new_channel), std::move(transport_lookup));
   return RTCError::OK();
 }
 
 void RtpTransceiver::SetChannel(
     std::unique_ptr<ChannelInterface> channel,
-    std::function<RtpTransportInternal*(const std::string&)> transport_lookup) {
+    absl::AnyInvocable<RtpTransportInternal*(const std::string&) &&>
+        transport_lookup) {
   RTC_DCHECK_RUN_ON(thread_);
   RTC_DCHECK(channel);
   RTC_DCHECK(transport_lookup);
@@ -312,19 +314,24 @@ void RtpTransceiver::SetChannel(
   // Similarly, if the channel() accessor is limited to the network thread, that
   // helps with keeping the channel implementation requirements being met and
   // avoids synchronization for accessing the pointer or network related state.
-  context()->network_thread()->BlockingCall([&]() {
-    channel_->SetRtpTransport(transport_lookup(channel_->mid()));
-    channel_->SetFirstPacketReceivedCallback(
-        [thread = thread_, flag = signaling_thread_safety_, this]() mutable {
+  context()->network_thread()->BlockingCall(
+      [&, flag = signaling_thread_safety_]() {
+        channel_->SetRtpTransport(std::move(transport_lookup)(channel_->mid()));
+        channel_->SetFirstPacketReceivedCallback([thread = thread_, flag = flag,
+                                                  this]() mutable {
           thread->PostTask(
               SafeTask(std::move(flag), [this]() { OnFirstPacketReceived(); }));
         });
-    channel_->SetFirstPacketSentCallback(
-        [thread = thread_, flag = signaling_thread_safety_, this]() mutable {
+        channel_->SetFirstPacketSentCallback([thread = thread_, flag = flag,
+                                              this]() mutable {
           thread->PostTask(
               SafeTask(std::move(flag), [this]() { OnFirstPacketSent(); }));
         });
-  });
+        channel_->SetPacketReceivedCallback_n([this, flag = flag]() {
+          RTC_DCHECK_RUN_ON(context()->network_thread());
+          OnPacketReceived(flag);
+        });
+      });
   PushNewMediaChannel();
 
   RTC_DCHECK_BLOCK_COUNT_NO_MORE_THAN(2);
@@ -345,6 +352,7 @@ void RtpTransceiver::ClearChannel() {
   context()->network_thread()->BlockingCall([&]() {
     channel_->SetFirstPacketReceivedCallback(nullptr);
     channel_->SetFirstPacketSentCallback(nullptr);
+    channel_->SetPacketReceivedCallback_n(nullptr);
     channel_->SetRtpTransport(nullptr);
   });
 
@@ -360,6 +368,7 @@ void RtpTransceiver::PushNewMediaChannel() {
     return;
   }
   context()->worker_thread()->BlockingCall([&]() {
+    RTC_DCHECK_RUN_ON(context()->worker_thread());
     // Push down the new media_channel.
     auto* media_send_channel = channel_->media_send_channel();
     for (const auto& sender : senders_) {
@@ -378,6 +387,7 @@ void RtpTransceiver::DeleteChannel() {
   // Ensure that channel_ is not reachable via transceiver, but is deleted
   // only after clearing the references in senders_ and receivers_.
   context()->worker_thread()->BlockingCall([&]() {
+    RTC_DCHECK_RUN_ON(context()->worker_thread());
     auto channel_to_delete = std::move(channel_);
     // Clear the media channel reference from senders and receivers.
     for (const auto& sender : senders_) {
@@ -389,6 +399,7 @@ void RtpTransceiver::DeleteChannel() {
     // The channel is destroyed here, on the worker thread as it needs to
     // be.
     channel_to_delete.reset();
+    media_engine_ref_.reset();
   });
 }
 
@@ -475,10 +486,40 @@ std::optional<std::string> RtpTransceiver::mid() const {
   return mid_;
 }
 
+// RTC_RUN_ON(context()->worker_thread())
+MediaEngineInterface* RtpTransceiver::media_engine() {
+  if (!media_engine_ref_) {
+    media_engine_ref_ =
+        std::make_unique<ConnectionContext::MediaEngineReference>(
+            scoped_refptr<ConnectionContext>(context_));
+  }
+  return media_engine_ref_->media_engine();
+}
+
 void RtpTransceiver::OnFirstPacketReceived() {
   for (const auto& receiver : receivers_) {
     receiver->internal()->NotifyFirstPacketReceived();
   }
+}
+
+// RTC_RUN_ON(context()->network_thread())
+void RtpTransceiver::OnPacketReceived(
+    scoped_refptr<PendingTaskSafetyFlag> safety) {
+  if (!receptive_) {
+    return;
+  }
+  if (packet_notified_after_receptive_) {
+    return;
+  }
+  packet_notified_after_receptive_ = true;
+  thread_->PostTask(SafeTask(safety, [this]() {
+    if (stopping() || stopped()) {
+      return;
+    }
+    for (const auto& receiver : receivers_) {
+      receiver->internal()->NotifyFirstPacketReceivedAfterReceptiveChange();
+    }
+  }));
 }
 
 void RtpTransceiver::OnFirstPacketSent() {
@@ -500,13 +541,14 @@ scoped_refptr<RtpReceiverInterface> RtpTransceiver::receiver() const {
 }
 
 void RtpTransceiver::set_current_direction(RtpTransceiverDirection direction) {
+  if (current_direction_ == direction)
+    return;
   RTC_LOG(LS_INFO) << "Changing transceiver (MID=" << mid_.value_or("<not set>")
                    << ") current direction from "
                    << (current_direction_ ? RtpTransceiverDirectionToString(
                                                 *current_direction_)
                                           : "<not set>")
-                   << " to " << RtpTransceiverDirectionToString(direction)
-                   << ".";
+                   << " to " << RtpTransceiverDirectionToString(direction);
   current_direction_ = direction;
   if (RtpTransceiverDirectionHasSend(*current_direction_)) {
     has_ever_been_used_to_send_ = true;
@@ -565,6 +607,21 @@ std::optional<RtpTransceiverDirection> RtpTransceiver::current_direction()
 
 std::optional<RtpTransceiverDirection> RtpTransceiver::fired_direction() const {
   return fired_direction_;
+}
+
+bool RtpTransceiver::receptive() const {
+  return receptive_;
+}
+
+void RtpTransceiver::set_receptive(bool receptive) {
+  RTC_DCHECK_RUN_ON(thread_);
+  bool old_receptive = receptive_.exchange(receptive);
+  if (receptive && !old_receptive) {
+    context()->network_thread()->PostTask([&]() {
+      RTC_DCHECK_RUN_ON(context()->network_thread());
+      packet_notified_after_receptive_ = false;
+    });
+  }
 }
 
 void RtpTransceiver::StopSendingAndReceiving() {
@@ -646,6 +703,7 @@ void RtpTransceiver::StopTransceiverProcedure() {
     sender->internal()->SetTransceiverAsStopped();
 
   // 3. Set transceiver.[[Receptive]] to false.
+  receptive_ = false;
   // 4. Set transceiver.[[CurrentDirection]] to null.
   current_direction_ = std::nullopt;
 }
@@ -760,28 +818,47 @@ std::vector<RtpCodecCapability> RtpTransceiver::filtered_codec_preferences()
 
 std::vector<RtpHeaderExtensionCapability>
 RtpTransceiver::GetHeaderExtensionsToNegotiate() const {
+  RTC_DCHECK_RUN_ON(thread_);
   return header_extensions_to_negotiate_;
 }
 
-std::vector<RtpHeaderExtensionCapability>
-RtpTransceiver::GetNegotiatedHeaderExtensions() const {
-  RTC_DCHECK_RUN_ON(thread_);
+std::vector<RtpHeaderExtensionCapability> ModifyCapabilitiesAccordingToHeaders(
+    const std::vector<RtpHeaderExtensionCapability>& old_values,
+    const std::vector<RtpExtension>& extension_list) {
   std::vector<RtpHeaderExtensionCapability> result;
-  result.reserve(header_extensions_to_negotiate_.size());
-  for (const auto& ext : header_extensions_to_negotiate_) {
-    auto negotiated = absl::c_find_if(negotiated_header_extensions_,
-                                      [&ext](const RtpExtension& negotiated) {
-                                        return negotiated.uri == ext.uri;
-                                      });
-    RtpHeaderExtensionCapability capability(ext.uri);
+  result.reserve(old_values.size());
+  // Create new capability objects that start as a copy of the old values.
+  for (RtpHeaderExtensionCapability capability : old_values) {
+    auto negotiated = absl::c_find_if(
+        extension_list, [&capability](const RtpExtension& negotiated) {
+          return negotiated.uri == capability.uri;
+        });
     // TODO(bugs.webrtc.org/7477): extend when header extensions support
     // direction.
-    capability.direction = negotiated != negotiated_header_extensions_.end()
-                               ? RtpTransceiverDirection::kSendRecv
-                               : RtpTransceiverDirection::kStopped;
+    if (negotiated != extension_list.end()) {
+      capability.direction = RtpTransceiverDirection::kSendRecv;
+      capability.preferred_id = negotiated->id;
+      capability.preferred_encrypt = negotiated->encrypt;
+    } else {
+      capability.direction = RtpTransceiverDirection::kStopped;
+    }
     result.push_back(capability);
   }
   return result;
+}
+std::vector<RtpHeaderExtensionCapability>
+RtpTransceiver::GetNegotiatedHeaderExtensions() const {
+  RTC_DCHECK_RUN_ON(thread_);
+  return ModifyCapabilitiesAccordingToHeaders(header_extensions_to_negotiate_,
+                                              negotiated_header_extensions_);
+}
+
+std::vector<RtpHeaderExtensionCapability>
+RtpTransceiver::GetOfferedAndImplementedHeaderExtensions(
+    const MediaContentDescription* content) const {
+  RTC_DCHECK_RUN_ON(thread_);
+  return ModifyCapabilitiesAccordingToHeaders(header_extensions_to_negotiate_,
+                                              content->rtp_header_extensions());
 }
 
 // Helper function to determine mandatory-to-negotiate extensions.
@@ -795,6 +872,7 @@ bool IsMandatoryHeaderExtension(const std::string& uri) {
 
 RTCError RtpTransceiver::SetHeaderExtensionsToNegotiate(
     ArrayView<const RtpHeaderExtensionCapability> header_extensions) {
+  RTC_DCHECK_RUN_ON(thread_);
   // https://w3c.github.io/webrtc-extensions/#dom-rtcrtptransceiver-setheaderextensionstonegotiate
   if (header_extensions.size() != header_extensions_to_negotiate_.size()) {
     return RTCError(RTCErrorType::INVALID_MODIFICATION,
@@ -833,11 +911,24 @@ void RtpTransceiver::OnNegotiationUpdate(
     const MediaContentDescription* content) {
   RTC_DCHECK_RUN_ON(thread_);
   RTC_DCHECK(content);
-  if (sdp_type == SdpType::kAnswer) {
+  if (sdp_type == SdpType::kAnswer || sdp_type == SdpType::kPrAnswer) {
     negotiated_header_extensions_ = content->rtp_header_extensions();
     if (env_.field_trials().IsEnabled(
             "WebRTC-HeaderExtensionNegotiateMemory")) {
       header_extensions_to_negotiate_ = GetNegotiatedHeaderExtensions();
+    }
+  } else if (sdp_type == SdpType::kOffer) {
+    if (env_.field_trials().IsEnabled(
+            "WebRTC-HeaderExtensionNegotiateMemory")) {
+      header_extensions_for_rollback_ = header_extensions_to_negotiate_;
+      header_extensions_to_negotiate_ =
+          GetOfferedAndImplementedHeaderExtensions(content);
+    }
+  } else if (sdp_type == SdpType::kRollback) {
+    if (env_.field_trials().IsEnabled(
+            "WebRTC-HeaderExtensionNegotiateMemory")) {
+      RTC_CHECK(!header_extensions_for_rollback_.empty());
+      header_extensions_to_negotiate_ = header_extensions_for_rollback_;
     }
   }
 }

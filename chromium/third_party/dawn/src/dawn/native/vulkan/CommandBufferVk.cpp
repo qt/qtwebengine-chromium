@@ -77,9 +77,9 @@ VkIndexType VulkanIndexType(wgpu::IndexFormat format) {
 
 bool HasSameTextureCopyExtent(const TextureCopy& srcCopy,
                               const TextureCopy& dstCopy,
-                              const Extent3D& copySize) {
-    Extent3D imageExtentSrc = ComputeTextureCopyExtent(srcCopy, copySize);
-    Extent3D imageExtentDst = ComputeTextureCopyExtent(dstCopy, copySize);
+                              const TexelExtent3D& copySize) {
+    TexelExtent3D imageExtentSrc = ComputeTextureCopyExtent(srcCopy, copySize);
+    TexelExtent3D imageExtentDst = ComputeTextureCopyExtent(dstCopy, copySize);
     return imageExtentSrc.width == imageExtentDst.width &&
            imageExtentSrc.height == imageExtentDst.height &&
            imageExtentSrc.depthOrArrayLayers == imageExtentDst.depthOrArrayLayers;
@@ -87,7 +87,7 @@ bool HasSameTextureCopyExtent(const TextureCopy& srcCopy,
 
 VkImageCopy ComputeImageCopyRegion(const TextureCopy& srcCopy,
                                    const TextureCopy& dstCopy,
-                                   const Extent3D& copySize,
+                                   const TexelExtent3D& copySize,
                                    Aspect aspect) {
     const Texture* srcTexture = ToBackend(srcCopy.texture.Get());
     const Texture* dstTexture = ToBackend(dstCopy.texture.Get());
@@ -100,8 +100,8 @@ VkImageCopy ComputeImageCopyRegion(const TextureCopy& srcCopy,
 
     bool has3DTextureInCopy = false;
 
-    region.srcOffset.x = srcCopy.origin.x;
-    region.srcOffset.y = srcCopy.origin.y;
+    region.srcOffset.x = static_cast<uint32_t>(srcCopy.origin.x);
+    region.srcOffset.y = static_cast<uint32_t>(srcCopy.origin.y);
     switch (srcTexture->GetDimension()) {
         case wgpu::TextureDimension::Undefined:
             DAWN_UNREACHABLE();
@@ -111,20 +111,20 @@ VkImageCopy ComputeImageCopyRegion(const TextureCopy& srcCopy,
             region.srcOffset.z = 0;
             break;
         case wgpu::TextureDimension::e2D:
-            region.srcSubresource.baseArrayLayer = srcCopy.origin.z;
-            region.srcSubresource.layerCount = copySize.depthOrArrayLayers;
+            region.srcSubresource.baseArrayLayer = static_cast<uint32_t>(srcCopy.origin.z);
+            region.srcSubresource.layerCount = static_cast<uint32_t>(copySize.depthOrArrayLayers);
             region.srcOffset.z = 0;
             break;
         case wgpu::TextureDimension::e3D:
             has3DTextureInCopy = true;
             region.srcSubresource.baseArrayLayer = 0;
             region.srcSubresource.layerCount = 1;
-            region.srcOffset.z = srcCopy.origin.z;
+            region.srcOffset.z = static_cast<uint32_t>(srcCopy.origin.z);
             break;
     }
 
-    region.dstOffset.x = dstCopy.origin.x;
-    region.dstOffset.y = dstCopy.origin.y;
+    region.dstOffset.x = static_cast<uint32_t>(dstCopy.origin.x);
+    region.dstOffset.y = static_cast<uint32_t>(dstCopy.origin.y);
     switch (dstTexture->GetDimension()) {
         case wgpu::TextureDimension::Undefined:
             DAWN_UNREACHABLE();
@@ -134,23 +134,24 @@ VkImageCopy ComputeImageCopyRegion(const TextureCopy& srcCopy,
             region.dstOffset.z = 0;
             break;
         case wgpu::TextureDimension::e2D:
-            region.dstSubresource.baseArrayLayer = dstCopy.origin.z;
-            region.dstSubresource.layerCount = copySize.depthOrArrayLayers;
+            region.dstSubresource.baseArrayLayer = static_cast<uint32_t>(dstCopy.origin.z);
+            region.dstSubresource.layerCount = static_cast<uint32_t>(copySize.depthOrArrayLayers);
             region.dstOffset.z = 0;
             break;
         case wgpu::TextureDimension::e3D:
             has3DTextureInCopy = true;
             region.dstSubresource.baseArrayLayer = 0;
             region.dstSubresource.layerCount = 1;
-            region.dstOffset.z = dstCopy.origin.z;
+            region.dstOffset.z = static_cast<uint32_t>(dstCopy.origin.z);
             break;
     }
 
     DAWN_ASSERT(HasSameTextureCopyExtent(srcCopy, dstCopy, copySize));
-    Extent3D imageExtent = ComputeTextureCopyExtent(dstCopy, copySize);
-    region.extent.width = imageExtent.width;
-    region.extent.height = imageExtent.height;
-    region.extent.depth = has3DTextureInCopy ? copySize.depthOrArrayLayers : 1;
+    TexelExtent3D imageExtent = ComputeTextureCopyExtent(dstCopy, copySize);
+    region.extent.width = static_cast<uint32_t>(imageExtent.width);
+    region.extent.height = static_cast<uint32_t>(imageExtent.height);
+    region.extent.depth =
+        has3DTextureInCopy ? static_cast<uint32_t>(copySize.depthOrArrayLayers) : 1;
 
     return region;
 }
@@ -295,18 +296,21 @@ MaybeError PrepareResourcesForSyncScope(Device* device,
     // This avoids creating unnecessary fragment->vertex dependencies when merging barriers.
     // Eg. merging a compute->vertex barrier and a fragment->fragment barrier would create
     // a compute|fragment->vertex|fragment barrier.
-    const VkPipelineStageFlags vertexStages = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
-                                              VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-                                              VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+    static constexpr VkPipelineStageFlags kVertexStages = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+                                                          VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                                                          VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
 
-    struct Barriers {
+    struct ImageBarriers {
         std::vector<VkImageMemoryBarrier> imageBarriers;
         VkPipelineStageFlags srcStages = 0;
         VkPipelineStageFlags dstStages = 0;
     };
 
-    Barriers vertexBarriers;
-    Barriers nonVertexBarriers;
+    ImageBarriers vertexImageBarriers;
+    ImageBarriers nonVertexImageBarriers;
+
+    BufferBarrier vertexBufferBarrier;
+    BufferBarrier nonVertexBufferBarrier;
 
     for (size_t i = 0; i < scope.buffers.size(); ++i) {
         Buffer* buffer = ToBackend(scope.buffers[i]);
@@ -324,11 +328,18 @@ MaybeError PrepareResourcesForSyncScope(Device* device,
         wgpu::BufferUsage usage =
             scope.bufferSyncInfos[i].usage & (~kIndirectBufferForFrontendValidation);
 
-        buffer->TrackUsageAndGetResourceBarrier(recordingContext, usage,
-                                                scope.bufferSyncInfos[i].shaderStages);
+        recordingContext->CheckBufferNeedsEagerTransition(buffer, usage);
+        BufferBarrier barrier =
+            buffer->TrackUsageAndGetResourceBarrier(usage, scope.bufferSyncInfos[i].shaderStages);
+
+        if (barrier.dstStages & kVertexStages) {
+            vertexBufferBarrier.Merge(barrier);
+        } else {
+            nonVertexBufferBarrier.Merge(barrier);
+        }
     }
 
-    auto MergeImageBarriers = [](Barriers* barriers, VkPipelineStageFlags srcStages,
+    auto MergeImageBarriers = [](ImageBarriers* barriers, VkPipelineStageFlags srcStages,
                                  VkPipelineStageFlags dstStages,
                                  const std::vector<VkImageMemoryBarrier>& imageBarriers) {
         barriers->srcStages |= srcStages;
@@ -359,20 +370,22 @@ MaybeError PrepareResourcesForSyncScope(Device* device,
                                         &srcStages, &dstStages);
 
         if (!imageBarriers.empty()) {
-            MergeImageBarriers((dstStages & vertexStages) ? &vertexBarriers : &nonVertexBarriers,
-                               srcStages, dstStages, imageBarriers);
+            MergeImageBarriers(
+                (dstStages & kVertexStages) ? &vertexImageBarriers : &nonVertexImageBarriers,
+                srcStages, dstStages, imageBarriers);
             imageBarriers.clear();
         }
     }
 
-    for (const Barriers& barriers : {vertexBarriers, nonVertexBarriers}) {
+    for (const ImageBarriers& barriers : {vertexImageBarriers, nonVertexImageBarriers}) {
         if (!barriers.imageBarriers.empty()) {
             device->fn.CmdPipelineBarrier(
                 recordingContext->commandBuffer, barriers.srcStages, barriers.dstStages, 0, 0,
                 nullptr, 0, nullptr, barriers.imageBarriers.size(), barriers.imageBarriers.data());
         }
     }
-    recordingContext->EmitBufferBarriers(device);
+    recordingContext->EmitBufferBarrierIfNecessary(device, vertexBufferBarrier);
+    recordingContext->EmitBufferBarrierIfNecessary(device, nonVertexBufferBarrier);
 
     return {};
 }
@@ -634,20 +647,18 @@ MaybeError CommandBuffer::RecordCopyImageWithTemporaryBuffer(
     CommandRecordingContext* recordingContext,
     const TextureCopy& srcCopy,
     const TextureCopy& dstCopy,
-    const Extent3D& copySize) {
+    const TexelExtent3D& texelCopySize) {
     DAWN_ASSERT(srcCopy.texture->GetFormat().CopyCompatibleWith(dstCopy.texture->GetFormat()));
     DAWN_ASSERT(srcCopy.aspect == dstCopy.aspect);
-    dawn::native::Format format = srcCopy.texture->GetFormat();
-    const TexelBlockInfo& blockInfo = format.GetAspectInfo(srcCopy.aspect).block;
-    DAWN_ASSERT(copySize.width % blockInfo.width == 0);
-    uint32_t widthInBlocks = copySize.width / blockInfo.width;
-    DAWN_ASSERT(copySize.height % blockInfo.height == 0);
-    uint32_t heightInBlocks = copySize.height / blockInfo.height;
+    const TypedTexelBlockInfo& blockInfo = GetBlockInfo(srcCopy);
+    const BlockExtent3D copySize = blockInfo.ToBlock(texelCopySize);
+    BlockCount widthInBlocks = copySize.width;
+    BlockCount heightInBlocks = copySize.height;
 
     // Create the temporary buffer. Note that We don't need to respect WebGPU's 256 alignment
     // because it isn't a hard constraint in Vulkan.
     uint64_t tempBufferSize =
-        widthInBlocks * heightInBlocks * copySize.depthOrArrayLayers * blockInfo.byteSize;
+        blockInfo.ToBytes(widthInBlocks * heightInBlocks * copySize.depthOrArrayLayers);
     BufferDescriptor tempBufferDescriptor;
     tempBufferDescriptor.size = tempBufferSize;
     tempBufferDescriptor.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
@@ -661,7 +672,7 @@ MaybeError CommandBuffer::RecordCopyImageWithTemporaryBuffer(
     tempBufferCopy.buffer = tempBuffer;
     tempBufferCopy.rowsPerImage = heightInBlocks;
     tempBufferCopy.offset = 0;
-    tempBufferCopy.bytesPerRow = copySize.width / blockInfo.width * blockInfo.byteSize;
+    tempBufferCopy.blocksPerRow = widthInBlocks;
 
     VkCommandBuffer commands = recordingContext->commandBuffer;
     VkImage srcImage = ToBackend(srcCopy.texture)->GetHandle();
@@ -746,8 +757,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
 
             case Command::CopyBufferToTexture: {
                 CopyBufferToTextureCmd* copy = mCommands.NextCommand<CopyBufferToTextureCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -756,7 +766,9 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
 
                 ToBackend(src.buffer)->EnsureDataInitialized(recordingContext);
 
-                VkBufferImageCopy region = ComputeBufferImageCopyRegion(src, dst, copy->copySize);
+                const TypedTexelBlockInfo& blockInfo = GetBlockInfo(dst);
+                VkBufferImageCopy region =
+                    ComputeBufferImageCopyRegion(src, dst, blockInfo.ToBlock(copy->copySize));
                 VkImageSubresourceLayers subresource = region.imageSubresource;
 
                 SubresourceRange range =
@@ -789,8 +801,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
 
             case Command::CopyTextureToBuffer: {
                 CopyTextureToBufferCmd* copy = mCommands.NextCommand<CopyTextureToBufferCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -799,7 +810,9 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
 
                 ToBackend(dst.buffer)->EnsureDataInitializedAsDestination(recordingContext, copy);
 
-                VkBufferImageCopy region = ComputeBufferImageCopyRegion(dst, src, copy->copySize);
+                const TypedTexelBlockInfo& blockInfo = GetBlockInfo(src);
+                VkBufferImageCopy region =
+                    ComputeBufferImageCopyRegion(dst, src, blockInfo.ToBlock(copy->copySize));
 
                 SubresourceRange range =
                     GetSubresourcesAffectedByCopy(copy->source, copy->copySize);
@@ -823,8 +836,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
 
             case Command::CopyTextureToTexture: {
                 CopyTextureToTextureCmd* copy = mCommands.NextCommand<CopyTextureToTextureCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -1236,12 +1248,12 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* recordingCo
                 break;
             }
 
-            case Command::SetImmediateData: {
-                SetImmediateDataCmd* cmd = mCommands.NextCommand<SetImmediateDataCmd>();
+            case Command::SetImmediates: {
+                SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
                 uint8_t* value = nullptr;
                 value = mCommands.NextData<uint8_t>(cmd->size);
-                immediates.SetImmediateData(cmd->offset, value, cmd->size);
+                immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }
 
@@ -1514,12 +1526,12 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingCon
                 break;
             }
 
-            case Command::SetImmediateData: {
-                SetImmediateDataCmd* cmd = mCommands.NextCommand<SetImmediateDataCmd>();
+            case Command::SetImmediates: {
+                SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
                 uint8_t* value = nullptr;
                 value = mCommands.NextData<uint8_t>(cmd->size);
-                immediates.SetImmediateData(cmd->offset, value, cmd->size);
+                immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }
 

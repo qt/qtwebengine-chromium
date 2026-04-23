@@ -91,21 +91,6 @@ bool CPWL_Edit::CanSelectAll() const {
   return GetSelectWordRange() != edit_impl_->GetWholeWordRange();
 }
 
-bool CPWL_Edit::CanCopy() const {
-  return !HasFlag(PES_PASSWORD) && edit_impl_->IsSelected();
-}
-
-bool CPWL_Edit::CanCut() const {
-  return CanCopy() && !IsReadOnly();
-}
-
-void CPWL_Edit::CutText() {
-  if (!CanCut()) {
-    return;
-  }
-  edit_impl_->ClearSelection();
-}
-
 void CPWL_Edit::OnCreated() {
   SetFontSize(GetCreationParams()->fFontSize);
   edit_impl_->SetFontMap(GetFontMap());
@@ -362,43 +347,7 @@ bool CPWL_Edit::OnKeyDown(FWL_VKEYCODE nKeyCode, Mask<FWL_EVENTFLAG> nFlag) {
     }
   }
 
-  bool bRet = this_observed->OnKeyDownInternal(nKeyCode, nFlag);
-
-  // In case of implementation swallow the OnKeyDown event.
-  if (this_observed->IsProceedtoOnChar(nKeyCode, nFlag)) {
-    return true;
-  }
-  return bRet;
-}
-
-// static
-bool CPWL_Edit::IsProceedtoOnChar(FWL_VKEYCODE nKeyCode,
-                                  Mask<FWL_EVENTFLAG> nFlag) {
-  bool bCtrl = IsPlatformShortcutKey(nFlag);
-  bool bAlt = IsALTKeyDown(nFlag);
-  if (bCtrl && !bAlt) {
-    // hot keys for edit control.
-    switch (nKeyCode) {
-      case FWL_VKEY_A:
-      case FWL_VKEY_C:
-      case FWL_VKEY_V:
-      case FWL_VKEY_X:
-      case FWL_VKEY_Z:
-        return true;
-      default:
-        break;
-    }
-  }
-  // control characters.
-  switch (nKeyCode) {
-    case FWL_VKEY_Escape:
-    case FWL_VKEY_Back:
-    case FWL_VKEY_Return:
-    case FWL_VKEY_Space:
-      return true;
-    default:
-      return false;
-  }
+  return this_observed->OnKeyDownInternal(nKeyCode, nFlag);
 }
 
 bool CPWL_Edit::OnChar(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag) {
@@ -554,27 +503,7 @@ bool CPWL_Edit::OnKeyDownInternal(FWL_VKEYCODE nKeyCode,
     return true;
   }
 
-  bool bRet = CPWL_Wnd::OnKeyDown(nKeyCode, nFlag);
-
-  // FILTER
-  switch (nKeyCode) {
-    default:
-      return false;
-    case FWL_VKEY_Delete:
-    case FWL_VKEY_Up:
-    case FWL_VKEY_Down:
-    case FWL_VKEY_Left:
-    case FWL_VKEY_Right:
-    case FWL_VKEY_Home:
-    case FWL_VKEY_End:
-    case FWL_VKEY_Insert:
-    case FWL_VKEY_A:
-    case FWL_VKEY_C:
-    case FWL_VKEY_V:
-    case FWL_VKEY_X:
-    case FWL_VKEY_Z:
-      break;
-  }
+  CPWL_Wnd::OnKeyDown(nKeyCode, nFlag);
 
   if (nKeyCode == FWL_VKEY_Delete && edit_impl_->IsSelected()) {
     nKeyCode = FWL_VKEY_Unknown;
@@ -583,11 +512,6 @@ bool CPWL_Edit::OnKeyDownInternal(FWL_VKEYCODE nKeyCode,
   switch (nKeyCode) {
     case FWL_VKEY_Delete:
       Delete();
-      return true;
-    case FWL_VKEY_Insert:
-      if (IsSHIFTKeyDown(nFlag)) {
-        PasteText();
-      }
       return true;
     case FWL_VKEY_Up:
       edit_impl_->OnVK_UP(IsSHIFTKeyDown(nFlag));
@@ -608,17 +532,11 @@ bool CPWL_Edit::OnKeyDownInternal(FWL_VKEYCODE nKeyCode,
       edit_impl_->OnVK_END(IsSHIFTKeyDown(nFlag), IsCTRLKeyDown(nFlag));
       return true;
     case FWL_VKEY_Unknown:
-      if (!IsSHIFTKeyDown(nFlag)) {
-        ClearSelection();
-      } else {
-        CutText();
-      }
+      ClearSelection();
       return true;
     default:
-      break;
+      return false;
   }
-
-  return bRet;
 }
 
 bool CPWL_Edit::OnCharInternal(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag) {
@@ -632,6 +550,7 @@ bool CPWL_Edit::OnCharInternal(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag) {
   switch (nChar) {
     case pdfium::ascii::kNewline:
     case pdfium::ascii::kEscape:
+    case pdfium::ascii::kDelete:  // Delete is handled in OnKeyDown
       return false;
     default:
       break;
@@ -645,15 +564,6 @@ bool CPWL_Edit::OnCharInternal(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag) {
 
   if (bCtrl && !bAlt) {
     switch (nChar) {
-      case pdfium::ascii::kControlC:
-        CopyText();
-        return true;
-      case pdfium::ascii::kControlV:
-        PasteText();
-        return true;
-      case pdfium::ascii::kControlX:
-        CutText();
-        return true;
       case pdfium::ascii::kControlA:
         SelectAllText();
         return true;
@@ -675,26 +585,7 @@ bool CPWL_Edit::OnCharInternal(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag) {
     return true;
   }
 
-  if (edit_impl_->IsSelected() && word == pdfium::ascii::kBackspace) {
-    word = pdfium::ascii::kNul;
-  }
-
-  ClearSelection();
-
-  switch (word) {
-    case pdfium::ascii::kBackspace:
-      Backspace();
-      break;
-    case pdfium::ascii::kReturn:
-      InsertReturn();
-      break;
-    case pdfium::ascii::kNul:
-      break;
-    default:
-      InsertWord(word, GetCharSet());
-      break;
-  }
-
+  edit_impl_->TypeChar(word, GetCharSet());
   return true;
 }
 
@@ -834,31 +725,9 @@ CFX_PointF CPWL_Edit::GetScrollPos() const {
   return edit_impl_->GetScrollPos();
 }
 
-void CPWL_Edit::CopyText() {}
-
-void CPWL_Edit::PasteText() {}
-
-void CPWL_Edit::InsertWord(uint16_t word, FX_Charset nCharset) {
-  if (!IsReadOnly()) {
-    edit_impl_->InsertWord(word, nCharset);
-  }
-}
-
-void CPWL_Edit::InsertReturn() {
-  if (!IsReadOnly()) {
-    edit_impl_->InsertReturn();
-  }
-}
-
 void CPWL_Edit::Delete() {
   if (!IsReadOnly()) {
     edit_impl_->Delete();
-  }
-}
-
-void CPWL_Edit::Backspace() {
-  if (!IsReadOnly()) {
-    edit_impl_->Backspace();
   }
 }
 
@@ -876,6 +745,10 @@ bool CPWL_Edit::Undo() {
 
 bool CPWL_Edit::Redo() {
   return CanRedo() && edit_impl_->Redo();
+}
+
+void CPWL_Edit::SetMaxUndoItemsForTest(size_t items) {
+  edit_impl_->SetMaxUndoItemsForTest(items);
 }
 
 void CPWL_Edit::SetReadyToInput() {

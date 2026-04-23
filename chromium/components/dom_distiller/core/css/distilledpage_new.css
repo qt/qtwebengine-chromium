@@ -66,13 +66,13 @@ article :is(ul, ol, figure) * {
 }
 
 /* Text rules. */
-
 html {
     font-size: 16px;
 }
 
 body {
-    line-height: 1.5rem; /* 18px */
+    font-weight: normal;
+    line-height: 1.5rem; /* 24px */
 }
 
 #title-holder, h1 {
@@ -81,10 +81,15 @@ body {
     font-weight: bold;
 }
 
-h2, h3, h4, h5, h6 {
-    font-size: 1.5rem; /* 24px */
-    line-height: 2.25rem; /* 36px */
-    font-weight: bold;
+h2[itemprop="description"], h3, h4, h5, h6 {
+    font-size: 1rem;
+    font-weight: normal;
+    line-height: 1.5rem; /* 24px */
+}
+
+h2 {
+  font-size: 1.25rem; /* 20px */
+  line-height: 1.75rem; /* 28px */
 }
 
 /* Styles for images and captions. */
@@ -108,10 +113,30 @@ img.distilled-full-width-img {
   width: 100%;
 }
 
+@media (prefers-color-scheme: dark) {
+  img.distilled-inline-img {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}
+
 img, figcaption, picture:first-child + p:last-child {
-    font-size: 0.75rem; /* 12px */
-    line-height: 1.125rem; /* 18px */
-    font-style: italic;
+  font-size: 0.75rem; /* 12px */
+  line-height: 1.125rem; /* 18px */
+  font-style: italic;
+}
+
+/* Styles for SVGs that use a local resource pointer. */
+.distilled-svg-with-local-ref {
+  display: none;
+}
+
+/*
+  If there are inlined divs in a span (to host an image for example), they will
+  be replaced by a paragraph element which is display: block by default. This
+  style will cause the image to be inline instead.
+*/
+span p {
+  display: inline;
 }
 
 /* list specific styling */
@@ -122,4 +147,24 @@ ul, ol {
     padding-inline-end: 0;
     padding: 0;
     margin: 0;
+}
+
+ul.distilled-content-list {
+  list-style-type: disc;
+  padding-inline-start: 2.5em;
+}
+
+ol.distilled-content-list {
+  list-style-type: decimal;
+  padding-inline-start: 2.5em;
+}
+
+/* Table styling. */
+
+/* Styles for scrollable containers, e.g., for wide tables. */
+.distilled-scrollable-container {
+  overflow-x: auto;
+<if expr="is_ios">
+  -webkit-overflow-scrolling: touch;
+</if>
 }

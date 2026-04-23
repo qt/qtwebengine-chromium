@@ -34,6 +34,7 @@
 
 #include "src/tint/api/common/binding_point.h"
 #include "src/tint/api/common/bindings.h"
+#include "src/tint/api/common/substitute_overrides_config.h"
 #include "src/tint/api/common/vertex_pulling_config.h"
 #include "src/tint/utils/reflection.h"
 
@@ -87,6 +88,9 @@ struct Options {
     /// @returns this Options
     Options& operator=(const Options&);
 
+    /// The entry point name to emit.
+    std::string entry_point_name = {};
+
     /// An optional remapped name to use when emitting the entry point.
     std::string remapped_entry_point_name = {};
 
@@ -97,7 +101,7 @@ struct Options {
     bool disable_robustness = false;
 
     /// Set to `true` to enable integer range analysis in robustness transform.
-    bool enable_integer_range_analysis = false;
+    bool enable_integer_range_analysis = true;
 
     /// Set to `true` to disable workgroup memory zero initialization
     bool disable_workgroup_init = false;
@@ -114,6 +118,9 @@ struct Options {
 
     /// Set to `true` to polyfill `unpack2x16snorm()`.
     bool polyfill_unpack_2x16_snorm = false;
+
+    /// Set to `true` to polyfill `unpack2x16unorm()`.
+    bool polyfill_unpack_2x16_unorm = false;
 
     /// Set to `true` to scalarize max min and clamp builtins.
     bool scalarize_max_min_clamp = false;
@@ -157,8 +164,12 @@ struct Options {
     /// The bindings.
     Bindings bindings;
 
+    // Substitute Overrides
+    SubstituteOverridesConfig substitute_overrides_config = {};
+
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(Options,
+                 entry_point_name,
                  remapped_entry_point_name,
                  strip_all_names,
                  disable_robustness,
@@ -168,6 +179,7 @@ struct Options {
                  emit_vertex_point_size,
                  disable_polyfill_integer_div_mod,
                  polyfill_unpack_2x16_snorm,
+                 polyfill_unpack_2x16_unorm,
                  scalarize_max_min_clamp,
                  disable_module_constant_f16,
                  polyfill_subgroup_broadcast_f16,
@@ -180,7 +192,8 @@ struct Options {
                  vertex_pulling_config,
                  immediate_binding_point,
                  group_to_argument_buffer_info,
-                 bindings);
+                 bindings,
+                 substitute_overrides_config);
     TINT_REFLECT_EQUALS(Options);
     TINT_REFLECT_HASH_CODE(Options);
 };

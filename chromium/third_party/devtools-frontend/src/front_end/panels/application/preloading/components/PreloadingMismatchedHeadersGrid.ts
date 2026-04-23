@@ -1,7 +1,7 @@
 // Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import '../../../../ui/legacy/components/data_grid/data_grid.js';
 
@@ -39,12 +39,12 @@ const {render, html} = Lit;
 
 export class PreloadingMismatchedHeadersGrid extends LegacyWrapper.LegacyWrapper.WrappableComponent<UI.Widget.VBox> {
   readonly #shadow = this.attachShadow({mode: 'open'});
-  #data: SDK.PreloadingModel.PrerenderAttempt|null = null;
+  #data: SDK.PreloadingModel.PrerenderAttempt|SDK.PreloadingModel.PrerenderUntilScriptAttempt|null = null;
   connectedCallback(): void {
     this.#render();
   }
 
-  set data(data: SDK.PreloadingModel.PrerenderAttempt) {
+  set data(data: SDK.PreloadingModel.PrerenderAttempt|SDK.PreloadingModel.PrerenderUntilScriptAttempt) {
     if (data.mismatchedHeaders === null) {
       return;
     }

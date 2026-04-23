@@ -3051,9 +3051,6 @@ class AuctionRunnerTest : public RenderViewHostTestHarness,
   network::mojom::ClientSecurityStatePtr GetClientSecurityState() override {
     return network::mojom::ClientSecurityState::New();
   }
-  std::optional<std::string> GetCookieDeprecationLabel() override {
-    return std::nullopt;
-  }
   void GetTrustedKeyValueServerKey(
       const url::Origin& scope_origin,
       const std::optional<url::Origin>& coordinator,
@@ -21781,7 +21778,7 @@ TEST_F(AuctionRunnerTest, ModelingSignalsPassed) {
     EXPECT_EQ(GURL("https://ad1.com/"), result_.ad_descriptor->url);
 
     ASSERT_EQ(result_.report_urls.size(), 1u);
-    std::string_view query = result_.report_urls[0].query_piece();
+    std::string_view query = result_.report_urls[0].query();
     std::vector<std::string_view> split = base::SplitStringPiece(
         query, "=", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
     ASSERT_EQ(split.size(), 2u);
@@ -21906,7 +21903,7 @@ TEST_F(AuctionRunnerTest, JoinCountPassedToReportWin) {
     EXPECT_EQ(GURL("https://ad1.com/"), result_.ad_descriptor->url);
 
     ASSERT_EQ(result_.report_urls.size(), 1u);
-    std::string_view query = result_.report_urls[0].query_piece();
+    std::string_view query = result_.report_urls[0].query();
     std::vector<std::string_view> split = base::SplitStringPiece(
         query, "=", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
     ASSERT_EQ(split.size(), 2u);
@@ -21990,7 +21987,7 @@ TEST_F(AuctionRunnerTest, RecencyPassedReportWin) {
     EXPECT_EQ(GURL("https://ad1.com/"), result_.ad_descriptor->url);
 
     ASSERT_EQ(result_.report_urls.size(), 1u);
-    std::string_view query = result_.report_urls[0].query_piece();
+    std::string_view query = result_.report_urls[0].query();
     std::vector<std::string_view> split = base::SplitStringPiece(
         query, "=", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
     ASSERT_EQ(split.size(), 2u);

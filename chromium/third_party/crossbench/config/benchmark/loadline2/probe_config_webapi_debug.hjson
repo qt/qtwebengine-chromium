@@ -1,0 +1,9 @@
+{
+  "probes": {
+    "js": {}
+    "perfetto": {
+      "trace_browser_startup": true
+      "textproto": "perfetto_debug.pbtxt"
+    }
+  }
+}

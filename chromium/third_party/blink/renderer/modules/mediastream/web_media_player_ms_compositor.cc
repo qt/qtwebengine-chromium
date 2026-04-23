@@ -17,6 +17,7 @@
 #include "base/not_fatal_until.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/bind_post_task.h"
+#include "base/task/common/task_annotator.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/values.h"
@@ -43,12 +44,6 @@
 #include "third_party/skia/include/core/SkSurface.h"
 
 namespace blink {
-
-template <typename T>
-struct CrossThreadCopier<std::optional<T>>
-    : public CrossThreadCopierPassThrough<std::optional<T>> {
-  STATIC_ONLY(CrossThreadCopier);
-};
 
 namespace {
 
@@ -502,11 +497,12 @@ void WebMediaPlayerMSCompositor::EnqueueFrame(
   // maximum_composition_delay_in_frames field is set in the video frame
   // metadata. See  VideoReceiveStream2::UpdatePlayoutDelays() for how this
   // value is computed.
-  if ((rendering_frame_buffer_->renderer_algorithm() !=
-       VideoRendererAlgorithmWrapper::kLowLatency) &&
-      (pending_frames_info_.size() !=
-       rendering_frame_buffer_->frames_queued())) {
-    pending_frames_info_.pop_back();
+  if (rendering_frame_buffer_->renderer_algorithm() !=
+      VideoRendererAlgorithmWrapper::kLowLatency) {
+    while (pending_frames_info_.size() >
+           rendering_frame_buffer_->frames_queued()) {
+      pending_frames_info_.pop_back();
+    }
     DCHECK_EQ(pending_frames_info_.size(),
               rendering_frame_buffer_->frames_queued());
   }
@@ -689,9 +685,7 @@ bool WebMediaPlayerMSCompositor::MapTimestampsToRenderTimeTicks(
     // No exact reference time was found, so calculate an estimated one using
     // the nearest known timestamp.
     if (min_delta.is_positive()) {
-      reference_time =
-          reference_time + (min_delta / (timestamp + min_delta)) *
-                               (reference_time - base::TimeTicks());
+      reference_time += min_delta;
     }
 
     wall_clock_times->push_back(reference_time);

@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #ifndef GPU_COMMAND_BUFFER_CLIENT_SHARE_GROUP_H_
 #define GPU_COMMAND_BUFFER_CLIENT_SHARE_GROUP_H_
 
@@ -16,10 +11,10 @@
 #include <array>
 #include <memory>
 
+#include "base/compiler_specific.h"
 #include "base/synchronization/lock.h"
 #include "gles2_impl_export.h"
 #include "gpu/command_buffer/client/client_discardable_manager.h"
-#include "gpu/command_buffer/client/client_discardable_texture_manager.h"
 #include "gpu/command_buffer/client/ref_counted.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 
@@ -52,7 +47,7 @@ class ShareGroupContextData {
   };
 
   IdHandlerData* id_handler_data(int namespace_id) {
-    return &id_handler_data_[namespace_id];
+    return UNSAFE_TODO(&id_handler_data_[namespace_id]);
   }
 
  private:
@@ -158,10 +153,6 @@ class GLES2_IMPL_EXPORT ShareGroup
 
   uint64_t TracingGUID() const { return tracing_guid_; }
 
-  ClientDiscardableTextureManager* discardable_texture_manager() {
-    return &discardable_texture_manager_;
-  }
-
   // Mark the ShareGroup as lost when an error occurs on any context in the
   // group. This is thread safe as contexts may be on different threads.
   void Lose();
@@ -184,7 +175,6 @@ class GLES2_IMPL_EXPORT ShareGroup
              id_namespaces::kNumRangeIdNamespaces>
       range_id_handlers_;
   std::unique_ptr<ProgramInfoManager> program_info_manager_;
-  ClientDiscardableTextureManager discardable_texture_manager_;
 
   uint64_t tracing_guid_;
 

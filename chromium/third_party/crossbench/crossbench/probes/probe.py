@@ -5,22 +5,23 @@
 from __future__ import annotations
 
 import abc
+import enum
 import logging
-from typing import (TYPE_CHECKING, ClassVar, Hashable, Optional, Self, Set,
-                    Type, TypeVar)
+from typing import TYPE_CHECKING, ClassVar, Hashable, Optional, Self, Set, \
+    Type, TypeVar
 
 from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench import plt
-from crossbench.config import ConfigParser, UnusedPropertiesMode
+from crossbench.config import ConfigParser, UnusedPropertiesMode, config_dir
 # TODO: Keep commonly used classes here.
 from crossbench.probes.probe_context import ProbeContext  # noqa: TC001
 from crossbench.probes.probe_error import ProbeIncompatibleBrowser
 from crossbench.probes.probe_result_key import ProbeResultKey
 from crossbench.probes.result_location import ResultLocation
-from crossbench.probes.results import (EmptyProbeResult, LocalProbeResult,
-                                       ProbeResult)
+from crossbench.probes.results import EmptyProbeResult, LocalProbeResult, \
+    ProbeResult
 
 if TYPE_CHECKING:
   from crossbench.browsers.attributes import BrowserAttributes
@@ -36,7 +37,6 @@ if TYPE_CHECKING:
   from crossbench.runner.groups.stories import StoriesRunGroup
   from crossbench.runner.run import Run
   from crossbench.runner.runner import Runner
-
 
 ProbeT = TypeVar("ProbeT", bound="Probe")
 
@@ -60,6 +60,15 @@ class ProbeConfigParser(ConfigParser[ProbeT]):
 
 
 ProbeKeyT = tuple[tuple[str, Hashable], ...]
+
+
+@enum.unique
+class ProbePriority(enum.IntEnum):
+  INTERNAL = enum.auto()
+  PRE_TRACE_PROCESSOR = enum.auto()
+  TRACE_PROCESSOR = enum.auto()
+  PRE_USER = enum.auto()
+  USER = enum.auto()
 
 
 class Probe(ProbeResultKey, abc.ABC):
@@ -96,6 +105,8 @@ class Probe(ProbeResultKey, abc.ABC):
   RESULT_LOCATION: ClassVar[ResultLocation] = ResultLocation.LOCAL
   # Set to True if the probe only works on battery power with single runs.
   BATTERY_ONLY: ClassVar[bool] = False
+  # Location within the probe list
+  PRIORITY: ClassVar[ProbePriority] = ProbePriority.USER
 
   @classmethod
   def config_parser(cls) -> ProbeConfigParser[Self]:
@@ -112,6 +123,15 @@ class Probe(ProbeResultKey, abc.ABC):
   @classmethod
   def help_text(cls) -> str:
     return cls.config_parser().help
+
+  @classmethod
+  def help_text_items(cls) -> list[tuple[str, str]]:
+    probe_config_file = config_dir() / f"doc/probe/{cls.NAME}.config.hjson"
+    if probe_config_file.exists():
+      return [
+          ("example config", str(probe_config_file)),
+      ]
+    return []
 
   @classmethod
   def summary_text(cls) -> str:

@@ -2,13 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/features.gni")
-
 static_library("service") {
   sources = [
     "active_devices_provider.h",
     "backend_migrator.cc",
     "backend_migrator.h",
+    "bookmark_sync_error_state.cc",
+    "bookmark_sync_error_state.h",
     "configure_context.cc",
     "configure_context.h",
     "data_type_controller.cc",

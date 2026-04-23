@@ -105,6 +105,7 @@ void SDLPlayerBase::OnFramesReady(int buffer_size) {
   OSP_CHECK_EQ(frames_to_render_.count(frame.frame_id), 0);
   PendingFrame& pending_frame = frames_to_render_[frame.frame_id];
   pending_frame.start_time = start_time;
+  pending_frame.rtp_timestamp = frame.rtp_timestamp;
 
   pending_frame.presentation_time = ResyncAndDeterminePresentationTime(frame);
 
@@ -182,6 +183,7 @@ void SDLPlayerBase::RenderAndSchedulePresentation() {
 
   // Remove the frame from the queue, making it the `current_frame_`. Then,
   // render it and, if successful, schedule its presentation.
+  const FrameId frame_id = it->first;
   current_frame_ = std::move(it->second);
   frames_to_render_.erase(it);
   const ErrorOr<Clock::time_point> presentation_time =
@@ -192,11 +194,12 @@ void SDLPlayerBase::RenderAndSchedulePresentation() {
   }
   state_ = kScheduledToPresent;
   presentation_alarm_.Schedule(
-      [this] {
+      [this, frame_id, rtp_timestamp = current_frame_.rtp_timestamp] {
         Present();
         if (state_ == kScheduledToPresent) {
           state_ = kPresented;
         }
+        receiver_.ReportPlayoutEvent(frame_id, rtp_timestamp, now_());
         ResumeRendering();
       },
       presentation_time.value());

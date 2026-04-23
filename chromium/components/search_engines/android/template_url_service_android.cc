@@ -315,9 +315,13 @@ TemplateUrlServiceAndroid::GetComposeplateUrl(
   }
 
   return url::GURLAndroid::FromNativeGURL(
-      env, GetUrlForAim(template_url_service_,
-                        omnibox::ANDROID_CHROME_NTP_FAKE_OMNIBOX_ENTRY_POINT,
-                        /*query_start_time=*/base::Time::Now()));
+      env,
+      GetUrlForAim(template_url_service_,
+                   omnibox::ANDROID_CHROME_NTP_FAKE_OMNIBOX_ENTRY_POINT,
+                   /*query_start_time=*/base::Time::Now(),
+                   /*query_text=*/std::u16string(),
+                   lens::LensOverlayInvocationSource::kOmniboxContextualQuery,
+                   /*additional_params=*/{}));
 }
 
 base::android::ScopedJavaLocalRef<jobject>
@@ -529,3 +533,5 @@ TemplateUrlServiceAndroid::GetImageUrlAndPostContent(JNIEnv* env) {
   output.push_back(post_content.first);
   return base::android::ToJavaArrayOfStrings(env, output);
 }
+
+DEFINE_JNI(TemplateUrlService)

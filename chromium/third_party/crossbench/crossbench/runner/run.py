@@ -15,8 +15,8 @@ from crossbench import path as pth
 from crossbench.browsers.splash_screen import SplashScreenData
 from crossbench.cli import ui
 from crossbench.cli.config.env import ValidationMode
+from crossbench.env.base import ValidationError
 from crossbench.env.run_env import RunEnv
-from crossbench.env.runner_env import ValidationError
 from crossbench.exception import Annotator, TInfoStack
 from crossbench.helper.cwd import change_cwd
 from crossbench.helper.durations import Durations
@@ -326,9 +326,9 @@ class Run(ResultOrigin):
     self._start_datetime = dt.datetime.now()
     logging.debug("Creating Run(%s) out dir: %s", self, self._out_dir)
     self._out_dir.mkdir(parents=True, exist_ok=True)
-    if not self.runner.create_symlinks:
-      logging.debug("Symlinks disabled by command line option")
+    if not self.create_symlinks:
       return
+    self.runner.create_run_symlinks(self)
     self._setup_runs_dir()
     self._setup_session_dir()
 
@@ -336,8 +336,6 @@ class Run(ResultOrigin):
     browser_dir = self.browser_session.browser_dir
     runs_dir = browser_dir / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
-    if not self.create_symlinks:
-      return
     # Source: BROWSER / "runs" / RUN
     # Target: BROWSER / "stories" / STORY / REPETITION / CACHE_TEMP
     run_dir = runs_dir / str(self.index)
@@ -349,8 +347,6 @@ class Run(ResultOrigin):
     session_run_dir = self._out_dir / "session"
     assert not session_run_dir.exists(), (
         f"Cannot setup session dir twice: {session_run_dir}")
-    if not self.create_symlinks:
-      return
     # Source: BROWSER / "stories" / STORY / REPETITION / CACHE_TEMP / "session"
     # Target: BROWSER / "sessions" / SESSION
     relative_session_dir = (
@@ -486,6 +482,9 @@ class Run(ResultOrigin):
       return
     logging.info("- " * 40)
     RunAnnotation.log_all(self.annotations, limit=10)
+
+  def has_probe_context(self, probe_cls: Type[ProbeT]) -> bool:
+    return self._probe_context_manager.has_probe_context(probe_cls)
 
   def get_probe_context(self,
                         probe_cls: Type[ProbeT]) -> ProbeContext[ProbeT] | None:

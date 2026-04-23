@@ -20,6 +20,8 @@
 #include "sync/sync_image.h"
 #include "sync/sync_reporting.h"
 
+namespace syncval {
+
 AcquiredImage::AcquiredImage(const PresentedImage& presented, ResourceUsageTag acq_tag)
     : image(presented.image), generator(presented.range_gen), present_tag(presented.tag), acquire_tag(acq_tag) {}
 
@@ -159,7 +161,7 @@ std::optional<SignalInfo> SignalsUpdate::OnTimelineWait(VkSemaphore semaphore, u
     return resolving_signal;  // empty result if it is a wait-before-signal
 }
 
-void syncval_state::SwapchainSubState::RecordPresentedImage(PresentedImage&& presented_image) {
+void SwapchainSubState::RecordPresentedImage(PresentedImage&& presented_image) {
     // All presented images are stored within the swapchain until the are reaquired.
     const uint32_t image_index = presented_image.image_index;
     if (image_index >= presented.size()) presented.resize(image_index + 1);
@@ -169,7 +171,7 @@ void syncval_state::SwapchainSubState::RecordPresentedImage(PresentedImage&& pre
 }
 
 // We move from the presented images array 1) so we don't copy shared_ptr, and 2) to mark it acquired
-PresentedImage syncval_state::SwapchainSubState::MovePresentedImage(uint32_t image_index) {
+PresentedImage SwapchainSubState::MovePresentedImage(uint32_t image_index) {
     if (presented.size() <= image_index) presented.resize(image_index + 1);
     PresentedImage ret_val = std::move(presented[image_index]);
     if (ret_val.Invalid()) {
@@ -180,7 +182,7 @@ PresentedImage syncval_state::SwapchainSubState::MovePresentedImage(uint32_t ima
     return ret_val;
 }
 
-void syncval_state::SwapchainSubState::GetPresentBatches(std::vector<QueueBatchContext::Ptr>& batches) const {
+void SwapchainSubState::GetPresentBatches(std::vector<QueueBatchContext::Ptr>& batches) const {
     for (const auto& presented_image : presented) {
         if (presented_image.batch) {
             batches.push_back(presented_image.batch);
@@ -191,7 +193,7 @@ void syncval_state::SwapchainSubState::GetPresentBatches(std::vector<QueueBatchC
 class ApplySemaphoreBarrierAction {
   public:
     ApplySemaphoreBarrierAction(const SemaphoreScope& signal, const SemaphoreScope& wait) : signal_(signal), wait_(wait) {}
-    void operator()(ResourceAccessState* access) const { access->ApplySemaphore(signal_, wait_); }
+    void operator()(AccessState* access) const { access->ApplySemaphore(signal_, wait_); }
 
   private:
     const SemaphoreScope& signal_;
@@ -202,7 +204,7 @@ class ApplyAcquireNextSemaphoreAction {
   public:
     ApplyAcquireNextSemaphoreAction(const SyncExecScope& wait_scope, ResourceUsageTag acquire_tag)
         : barrier_(GetAcquireBarrier(wait_scope)), acq_tag_(acquire_tag) {}
-    void operator()(ResourceAccessState* access) const {
+    void operator()(AccessState* access) const {
         // Note that the present operations may or may not be present, given that the fence wait may have cleared them out.
         // Also, if a subsequent present has happened, we *don't* want to protect that...
         if (access->LastWriteTag() <= acq_tag_) {
@@ -270,18 +272,17 @@ QueueBatchContext::QueueBatchContext(const SyncValidator& sync_state, const Queu
     : CommandExecutionContext(sync_state, queue_state.GetQueueFlags()),
       queue_state_(&queue_state),
       tag_range_(0, 0),
+      access_context_(sync_state),
       current_access_context_(&access_context_),
-      batch_log_(),
       queue_sync_tag_(sync_state.GetQueueIdLimit(), ResourceUsageTag(0)) {
     sync_state_.stats.AddQueueBatchContext();
 }
 
 QueueBatchContext::QueueBatchContext(const SyncValidator& sync_state)
     : CommandExecutionContext(sync_state, 0),
-      queue_state_(),
       tag_range_(0, 0),
+      access_context_(sync_state),
       current_access_context_(&access_context_),
-      batch_log_(),
       queue_sync_tag_(sync_state.GetQueueIdLimit(), ResourceUsageTag(0)) {
     sync_state_.stats.AddQueueBatchContext();
 }
@@ -310,8 +311,8 @@ VulkanTypedHandle QueueBatchContext::Handle() const { return queue_state_->Handl
 
 template <typename Predicate>
 void QueueBatchContext::ApplyPredicatedWait(Predicate& predicate, const LastSynchronizedPresent& last_synchronized_present) {
-    access_context_.EraseIf([this, &last_synchronized_present, &predicate](ResourceAccessRangeMap::value_type& access) {
-        ResourceAccessState& access_state = access.second;
+    access_context_.EraseIf([this, &last_synchronized_present, &predicate](AccessMap::value_type& access) {
+        AccessState& access_state = access.second;
 
         // Tell EraseIf to remove present accesses that are already synchronized according to LastSynchronizedPresent
         if (access_state.HasWriteOp() && access_state.LastWrite().IsPresent()) {
@@ -342,10 +343,10 @@ void QueueBatchContext::ApplyTaggedWait(QueueId queue_id, ResourceUsageTag tag,
         // This isn't just avoid an unneeded test, but to allow *all* queues to to be waited in a single pass
         // (and it does avoid doing the same test for every access, as well as avoiding the need for the predicate
         // to grok Queue/Device/Wait differences.
-        ResourceAccessState::WaitTagPredicate predicate{tag};
+        AccessState::WaitTagPredicate predicate{tag};
         ApplyPredicatedWait(predicate, last_synchronized_present);
     } else {
-        ResourceAccessState::WaitQueueTagPredicate predicate{queue_id, tag};
+        AccessState::WaitQueueTagPredicate predicate{queue_id, tag};
         ApplyPredicatedWait(predicate, last_synchronized_present);
     }
 
@@ -356,14 +357,13 @@ void QueueBatchContext::ApplyTaggedWait(QueueId queue_id, ResourceUsageTag tag,
 }
 
 void QueueBatchContext::ApplyAcquireWait(const AcquiredImage& acquired) {
-    ResourceAccessState::WaitAcquirePredicate predicate{acquired.present_tag, acquired.acquire_tag};
+    AccessState::WaitAcquirePredicate predicate{acquired.present_tag, acquired.acquire_tag};
     ApplyPredicatedWait(predicate, {});
 }
 
-void QueueBatchContext::OnResourceDestroyed(const ResourceAccessRange& resource_range) {
+void QueueBatchContext::OnResourceDestroyed(const AccessRange& resource_range) {
     // Remove all accesses associated with the resource being destroyed
-    access_context_.EraseIf(
-        [&resource_range](ResourceAccessRangeMap::value_type& access) { return resource_range.includes(access.first); });
+    access_context_.EraseIf([&resource_range](AccessMap::value_type& access) { return resource_range.includes(access.first); });
 }
 
 void QueueBatchContext::BeginRenderPassReplaySetup(ReplayState& replay, const SyncOpBeginRenderPass& begin_op) {
@@ -681,12 +681,12 @@ bool QueueBatchContext::ValidateSubmit(const std::vector<CommandBufferConstPtr>&
     uint32_t tag_count = 0;
     for (const auto& cb : command_buffers) {
         if (!cb) continue;
-        tag_count += static_cast<uint32_t>(syncval_state::SubState(*cb).access_context.GetTagCount());
+        tag_count += static_cast<uint32_t>(SubState(*cb).access_context.GetTagCount());
     }
     batch.base_tag = SetupBatchTags(tag_count);
 
     for (size_t index = 0; index < command_buffers.size(); index++) {
-        const auto& cb = syncval_state::SubState(*command_buffers[index]);
+        const auto& cb = SubState(*command_buffers[index]);
         // Validate and resolve command buffers that has tagged commands
         const CommandBufferAccessContext& access_context = cb.access_context;
         if (access_context.GetTagCount() > 0) {
@@ -905,7 +905,7 @@ BatchAccessLog::AccessRecord BatchAccessLog::CBSubmitLog::GetAccessRecord(Resour
     assert(log_);
     assert(index < log_->size());
     const ResourceUsageRecord* record = &(*log_)[index];
-    const auto debug_name_provider = (record->label_command_index == vvl::kU32Max) ? nullptr : this;
+    const auto debug_name_provider = (record->label_command_index == vvl::kNoIndex32) ? nullptr : this;
     return AccessRecord{&batch_, record, debug_name_provider};
 }
 
@@ -938,7 +938,7 @@ void PresentedImage::ExportToSwapchain(SyncValidator&) {  // Include this argume
     // If the swapchain is dead just ignore the present
     auto swap_lock = swapchain_state.lock();
     if (vvl::StateObject::Invalid(swap_lock)) return;
-    auto& sub_state = syncval_state::SubState(*swap_lock);
+    auto& sub_state = SubState(*swap_lock);
     sub_state.RecordPresentedImage(std::move(*this));
 }
 
@@ -953,7 +953,7 @@ void PresentedImage::SetImage(uint32_t at_index) {
         range_gen = ImageRangeGen();
     } else {
         // For valid images create the type/range_gen to used to scope the semaphore operations
-        const auto& sub_state = syncval_state::SubState(*image);
+        const auto& sub_state = SubState(*image);
         range_gen = sub_state.MakeImageRangeGen(image->full_range, false);
     }
 }
@@ -963,3 +963,5 @@ void PresentedImage::UpdateMemoryAccess(SyncAccessIndex usage, ResourceUsageTag 
     // Intentional copy. The range_gen argument is not copied by the Update... call below
     access_context.UpdateAccessState(range_gen, usage, SyncOrdering::kNonAttachment, ResourceUsageTagEx{tag}, flags);
 }
+
+}  // namespace syncval

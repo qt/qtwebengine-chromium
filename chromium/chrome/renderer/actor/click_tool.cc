@@ -7,12 +7,15 @@
 #include <cstdint>
 #include <optional>
 
+#include "base/check.h"
+#include "base/functional/bind.h"
 #include "base/strings/to_string.h"
 #include "base/time/time.h"
 #include "base/types/expected.h"
 #include "chrome/common/actor/action_result.h"
 #include "chrome/common/actor/actor_logging.h"
 #include "chrome/common/actor/journal_details_builder.h"
+#include "chrome/renderer/actor/click_dispatcher.h"
 #include "chrome/renderer/actor/tool_utils.h"
 #include "content/public/renderer/render_frame.h"
 #include "third_party/abseil-cpp/absl/strings/str_format.h"
@@ -60,8 +63,6 @@ void ClickTool::Execute(ToolFinishedCallback callback) {
     return;
   }
 
-  gfx::PointF click_point = validated_result.value();
-
   WebMouseEvent::Button button;
   switch (action_->type) {
     case mojom::ClickAction::Type::kLeft: {
@@ -85,12 +86,14 @@ void ClickTool::Execute(ToolFinishedCallback callback) {
     }
   }
 
-  journal_->Log(task_id_, "ClickTool::Execute",
-                JournalDetailsBuilder().Add("point", click_point).Build());
+  ResolvedTarget target = validated_result.value();
+  journal_->Log(
+      task_id_, "ClickTool::Execute",
+      JournalDetailsBuilder().Add("point", target.widget_point).Build());
 
-  mojom::ActionResultPtr result = CreateAndDispatchClick(
-      button, click_count, click_point, frame_->GetWebFrame()->FrameWidget());
-  std::move(callback).Run(std::move(result));
+  CHECK(!click_dispatcher_);
+  click_dispatcher_.emplace(button, click_count, target, *this,
+                            std::move(callback));
 }
 
 std::string ClickTool::DebugString() const {
@@ -101,6 +104,13 @@ std::string ClickTool::DebugString() const {
 
 bool ClickTool::SupportsPaintStability() const {
   return true;
+}
+
+void ClickTool::Cancel() {
+  if (click_dispatcher_) {
+    click_dispatcher_->Cancel();
+    click_dispatcher_.reset();
+  }
 }
 
 ClickTool::ValidatedResult ClickTool::Validate() const {
@@ -120,11 +130,12 @@ ClickTool::ValidatedResult ClickTool::Validate() const {
     if (!form_element.IsNull() && !form_element.IsEnabled()) {
       return base::unexpected(MakeResult(
           mojom::ActionResultCode::kElementDisabled,
+          /*requires_page_stabilization=*/false,
           absl::StrFormat("[Element %s]", base::ToString(form_element))));
     }
   }
 
-  return resolved_target->point;
+  return resolved_target;
 }
 
 }  // namespace actor

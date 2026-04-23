@@ -123,7 +123,7 @@ RTCEncodedVideoFrame* RTCEncodedVideoFrame::Create(
     if (!set_metadata.has_value()) {
       exception_state.ThrowDOMException(
           DOMExceptionCode::kInvalidModificationError,
-          "Cannot create a new VideoFrame: " + set_metadata.error());
+          StrCat({"Cannot create a new VideoFrame: ", set_metadata.error()}));
       return nullptr;
     }
   }
@@ -213,7 +213,7 @@ RTCEncodedVideoFrameMetadata* RTCEncodedVideoFrame::getMetadata(
     if (std::optional<base::TimeTicks> receive_time =
             delegate_->ReceiveTime()) {
       metadata->setReceiveTime(
-          RTCEncodedFrameTimestampFromTimeTicks(context, *receive_time));
+          RTCTimeStampFromTimeTicks(context, *receive_time));
     }
     if (std::optional<CaptureTimeInfo> capture_time_info =
             delegate_->CaptureTime()) {
@@ -302,7 +302,7 @@ void RTCEncodedVideoFrame::setMetadata(ExecutionContext* context,
   if (!set_metadata.has_value()) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kInvalidModificationError,
-        "Cannot setMetadata: " + set_metadata.error());
+        StrCat({"Cannot setMetadata: ", set_metadata.error()}));
   }
 }
 

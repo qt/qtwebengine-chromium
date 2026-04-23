@@ -35,6 +35,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/cors_origin_pattern_setter.h"
 #include "content/public/browser/devtools_agent_host_client.h"
+#include "content/public/browser/devtools_manager_delegate.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "url/url_constants.h"
 
@@ -1229,13 +1230,17 @@ Response TargetHandler::ActivateTarget(const std::string& target_id) {
 
 Response TargetHandler::CloseTarget(const std::string& target_id,
                                     bool* out_success) {
-  if (access_mode_ == AccessMode::kAutoAttachOnly) {
-    return Response::ServerError(kNotAllowedError);
-  }
   scoped_refptr<DevToolsAgentHost> agent_host =
       DevToolsAgentHost::GetForId(target_id);
   if (!agent_host) {
     return Response::InvalidParams(kTargetNotFound);
+  }
+  if (access_mode_ == AccessMode::kAutoAttachOnly) {
+    // Only allow to close the targets that we are attached to.
+    if (target_id != owner_target_id_ &&
+        !base::Contains(auto_attached_sessions_, agent_host.get())) {
+      return Response::ServerError(kNotAllowedError);
+    }
   }
   if (!agent_host->Close()) {
     return Response::InvalidParams("Specified target doesn't support closing");
@@ -1251,21 +1256,25 @@ void TargetHandler::ExposeDevToolsProtocol(
     std::unique_ptr<ExposeDevToolsProtocolCallback> callback) {
   if (access_mode_ != AccessMode::kBrowser) {
     callback->sendFailure(Response::InvalidParams(kNotAllowedError));
+    return;
   }
   scoped_refptr<DevToolsAgentHost> agent_host =
       DevToolsAgentHost::GetForId(target_id);
   if (!agent_host) {
     callback->sendFailure(Response::InvalidParams(kTargetNotFound));
+    return;
   }
 
   if (BrowserToPageConnector::GetInstanceMap()[agent_host.get()]) {
     callback->sendFailure(Response::ServerError(base::StringPrintf(
         "Target with id %s is already granted remote debugging bindings.",
         target_id.c_str())));
+    return;
   }
   if (!agent_host->GetWebContents()) {
     callback->sendFailure(Response::ServerError(
         "RemoteDebuggingBinding can be granted only to page targets"));
+    return;
   }
 
   BrowserConnectorHostClientPermissions permissions;
@@ -1616,7 +1625,29 @@ void TargetHandler::AddWorkerThrottle(
   }
 }
 
+Response TargetHandler::GetDevToolsTarget(
+    const std::string& target_id,
+    std::optional<std::string>* out_target_id) {
+  if (access_mode_ != AccessMode::kBrowser) {
+    return protocol::Response::ServerError(kNotAllowedError);
+  }
+  scoped_refptr<DevToolsAgentHostImpl> agent_host =
+      DevToolsAgentHostImpl::GetForId(target_id);
+
+  if (!agent_host) {
+    return protocol::Response::InvalidParams(kTargetNotFound);
+  }
+
+  if (scoped_refptr<DevToolsAgentHost> devtools_agent_host =
+          agent_host->GetDevToolsAgentHost()) {
+    *out_target_id = devtools_agent_host->GetId();
+  }
+
+  return protocol::Response::Success();
+}
+
 Response TargetHandler::OpenDevTools(const std::string& target_id,
+                                     std::optional<std::string> panel_id,
                                      std::string* out_target_id) {
   if (access_mode_ != AccessMode::kBrowser) {
     return protocol::Response::ServerError(kNotAllowedError);
@@ -1629,7 +1660,8 @@ Response TargetHandler::OpenDevTools(const std::string& target_id,
   }
 
   scoped_refptr<DevToolsAgentHost> devtools_agent_host =
-      agent_host->OpenDevTools();
+      agent_host->OpenDevTools(
+          content::DevToolsManagerDelegate::DevToolsOptions(panel_id));
   if (!devtools_agent_host) {
     return protocol::Response::ServerError("Failed to create DevTools window");
   }

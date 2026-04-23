@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 import * as fill_constants from '//components/autofill/ios/form_util/resources/fill_constants.js';
+import * as inferenceUtil from '//components/autofill/ios/form_util/resources/fill_element_inference_util.js';
 import * as fillUtil from '//components/autofill/ios/form_util/resources/fill_util.js';
-import {isTextAreaElement} from '//components/autofill/ios/form_util/resources/fill_element_inference_util.js';
-import {gCrWeb, gCrWebLegacy} from '//ios/web/public/js_messaging/resources/gcrweb.js';
+import {webFormElementToFormData} from '//components/autofill/ios/form_util/resources/fill_web_form.js';
+import {getFormControlElements, getFormElementFromIdentifier, getFormElementFromRendererId, getIframeElements} from '//components/autofill/ios/form_util/resources/form_utils.js';
+import {gCrWeb} from '//ios/web/public/js_messaging/resources/gcrweb.js';
 import {isTextField, sendWebKitMessage, trim} from '//ios/web/public/js_messaging/resources/utils.js';
-
 
 /**
  * @fileoverview Installs Autofill management functions on the __gCrWeb object.
@@ -125,7 +126,7 @@ function isFormInteresting_(form) {
 function countEditableElements_(elements) {
   let numEditableElements = 0;
   for (const element of elements) {
-    if (!__gCrWeb.fill.isCheckableElement(element)) {
+    if (!inferenceUtil.isCheckableElement(element)) {
       ++numEditableElements;
     }
   }
@@ -139,7 +140,7 @@ function countEditableElements_(elements) {
  *     empty if no match.
  */
 function getUnownedIframes() {
-  return Array.from(gCrWebLegacy.form.getIframeElements(document))
+  return Array.from(getIframeElements(document))
       .filter(e => !e.closest('form'));
 }
 
@@ -154,8 +155,7 @@ function getUnownedIframes() {
 function extractUnownedFields(restrictUnownedFieldsToFormlessCheckout) {
   const fieldsets = [];
   const unownedControlElements =
-      __gCrWeb.fill.getUnownedAutofillableFormFieldElements(
-          document.all, fieldsets);
+      fillUtil.getUnownedAutofillableFormFieldElements(document.all, fieldsets);
   const numEditableUnownedElements =
       countEditableElements_(unownedControlElements);
   const iframeElements =
@@ -270,12 +270,12 @@ __gCrWeb.autofill['fillForm'] = function(data, forceFillFieldID) {
   for (const [fieldId, fieldData] of Object.entries(data.fields)) {
     const element = __gCrWeb.fill.getElementByUniqueID(Number(fieldId));
 
-    if (!__gCrWeb.fill.isAutofillableElement(element)) {
+    if (!inferenceUtil.isAutofillableElement(element)) {
       continue;
     }
 
     // TODO(crbug.com/40573146): Investigate autofilling checkable elements.
-    if (__gCrWeb.fill.isCheckableElement(element)) {
+    if (inferenceUtil.isCheckableElement(element)) {
       continue;
     }
 
@@ -288,7 +288,7 @@ __gCrWeb.autofill['fillForm'] = function(data, forceFillFieldID) {
     const shouldBeForceFilled = fieldId === forceFillFieldID.toString();
     if (element.value && __gCrWeb.form.fieldWasEditedByUser(element) &&
         !__gCrWeb.autofill.sanitizedFieldIsEmpty(element.value) &&
-        !shouldBeForceFilled && !__gCrWeb.fill.isSelectElement(element) &&
+        !shouldBeForceFilled && !inferenceUtil.isSelectElement(element) &&
         !((element.hasAttribute('value') &&
            element.getAttribute('value') === element.value) ||
           (element.hasAttribute('placeholder') &&
@@ -301,7 +301,7 @@ __gCrWeb.autofill['fillForm'] = function(data, forceFillFieldID) {
 
     (function(_element, _value, _section, _delay) {
       window.setTimeout(function() {
-        __gCrWeb.fill.setInputElementValue(_value, _element, function() {
+        fillUtil.setInputElementValue(_value, _element, function() {
           _element.setAttribute('chrome-autofilled', '');
           _element.isAutofilled = true;
           _element.autofillSection = _section;
@@ -320,8 +320,7 @@ __gCrWeb.autofill['fillForm'] = function(data, forceFillFieldID) {
     window.setTimeout(() => {
       let formData = new __gCrWeb['common'].JSONSafeObject();
       if (_form) {
-        if (!__gCrWeb.fill.webFormElementToFormData(
-                window, _form, null, formData, /*field=*/ null)) {
+        if (!webFormElementToFormData(window, _form, null, formData)) {
           formData = null;
         }
       } else {
@@ -342,7 +341,7 @@ __gCrWeb.autofill['fillForm'] = function(data, forceFillFieldID) {
   // Individual control elements may be left with 'input' event listeners but
   // they are harmless.
   const formResetListener = function(evt) {
-    const controlElements = __gCrWeb.form.getFormControlElements(evt.target);
+    const controlElements = getFormControlElements(evt.target);
     for (let i = 0; i < controlElements.length; ++i) {
       controlElements[i].removeAttribute('chrome-autofilled');
       controlElements[i].isAutofilled = false;
@@ -382,11 +381,11 @@ __gCrWeb.autofill['clearAutofilledFields'] = function(
     formUniqueID, fieldUniqueID) {
   const clearedElements = [];
 
-  const form = __gCrWeb.form.getFormElementFromRendererId(formUniqueID);
+  const form = getFormElementFromRendererId(formUniqueID);
 
   const controlElements = form ?
-      __gCrWeb.form.getFormControlElements(form) :
-      __gCrWeb.fill.getUnownedAutofillableFormFieldElements(
+      getFormControlElements(form) :
+      fillUtil.getUnownedAutofillableFormFieldElements(
           document.all,
           /*fieldsets=*/[]);
 
@@ -410,25 +409,23 @@ __gCrWeb.autofill['clearAutofilledFields'] = function(
     }
 
     let value = null;
-    if (isTextField(element) || isTextAreaElement(element)) {
+    if (isTextField(element) || inferenceUtil.isTextAreaElement(element)) {
       value = '';
-    } else if (__gCrWeb.fill.isSelectElement(element)) {
+    } else if (inferenceUtil.isSelectElement(element)) {
       // Reset to the first index.
       // TODO(bondd): Store initial values and reset to the correct one here.
       value = element.options[0].value;
-    } else if (__gCrWeb.fill.isCheckableElement(element)) {
+    } else if (inferenceUtil.isCheckableElement(element)) {
       // TODO(crbug.com/40573146): Investigate autofilling checkable elements.
     }
     if (value !== null) {
       (function(_element, _value, _delay) {
         window.setTimeout(function() {
-          __gCrWeb.fill.setInputElementValue(
-              _value, _element, function(changed) {
-                _element.removeAttribute('chrome-autofilled');
-                _element.isAutofilled = false;
-                _element.removeEventListener(
-                    'input', controlElementInputListener_);
-              });
+          fillUtil.setInputElementValue(_value, _element, function(changed) {
+            _element.removeAttribute('chrome-autofilled');
+            _element.isAutofilled = false;
+            _element.removeEventListener('input', controlElementInputListener_);
+          });
         }, _delay);
       })(element, value, delay);
       delay += __gCrWeb.autofill.delayBetweenFieldFillingMs;
@@ -493,8 +490,8 @@ __gCrWeb.autofill.extractNewForms = function(
     }
 
     const form = new __gCrWeb['common'].JSONSafeObject();
-    if (!__gCrWeb.fill.webFormElementToFormData(
-            window, formElement, null, form, /*field=*/ null,
+    if (!webFormElementToFormData(
+            window, formElement, null, form, /*field=*/ undefined,
             canExtractChildFrames())) {
       continue;
     }
@@ -566,7 +563,7 @@ __gCrWeb.autofill.fillFormField = function(data, field) {
   }
 
   let filled = false;
-  if (isTextField(field) || isTextAreaElement(field)) {
+  if (isTextField(field) || inferenceUtil.isTextAreaElement(field)) {
     let sanitizedValue = data['value'];
 
     if (isTextField(field)) {
@@ -579,12 +576,12 @@ __gCrWeb.autofill.fillFormField = function(data, field) {
       sanitizedValue = data['value'].substr(0, maxLength);
     }
 
-    filled = __gCrWeb.fill.setInputElementValue(sanitizedValue, field);
+    filled = fillUtil.setInputElementValue(sanitizedValue, field);
     field.isAutofilled = true;
-  } else if (__gCrWeb.fill.isSelectElement(field)) {
-    filled = __gCrWeb.fill.setInputElementValue(data['value'], field);
-  } else if (__gCrWeb.fill.isCheckableElement(field)) {
-    filled = __gCrWeb.fill.setInputElementValue(data['is_checked'], field);
+  } else if (inferenceUtil.isSelectElement(field)) {
+    filled = fillUtil.setInputElementValue(data['value'], field);
+  } else if (inferenceUtil.isCheckableElement(field)) {
+    filled = fillUtil.setInputElementValue(data['is_checked'], field);
   }
   return filled;
 };
@@ -606,7 +603,7 @@ __gCrWeb.autofill.extractAutofillableElementsFromSet = function(
   const autofillableElements = [];
   for (let i = 0; i < controlElements.length; ++i) {
     const element = controlElements[i];
-    if (!__gCrWeb.fill.isAutofillableElement(element)) {
+    if (!inferenceUtil.isAutofillableElement(element)) {
       continue;
     }
     autofillableElements.push(element);
@@ -626,7 +623,7 @@ __gCrWeb.autofill.extractAutofillableElementsFromSet = function(
  * @return {Array<FormControlElement>} The array of autofillable elements.
  */
 __gCrWeb.autofill.extractAutofillableElementsInForm = function(formElement) {
-  const controlElements = __gCrWeb.form.getFormControlElements(formElement);
+  const controlElements = getFormControlElements(formElement);
   return __gCrWeb.autofill.extractAutofillableElementsFromSet(controlElements);
 };
 
@@ -639,12 +636,12 @@ __gCrWeb.autofill.extractAutofillableElementsInForm = function(formElement) {
  */
 __gCrWeb.autofill['fillPredictionData'] = function(data) {
   for (const formName in data) {
-    const form = __gCrWeb.form.getFormElementFromIdentifier(formName);
+    const form = getFormElementFromIdentifier(formName);
     const formData = data[formName];
-    const controlElements = __gCrWeb.form.getFormControlElements(form);
+    const controlElements = getFormControlElements(form);
     for (let i = 0; i < controlElements.length; ++i) {
       const element = controlElements[i];
-      if (!__gCrWeb.fill.isAutofillableElement(element)) {
+      if (!inferenceUtil.isAutofillableElement(element)) {
         continue;
       }
       const elementID = fillUtil.getUniqueID(element);

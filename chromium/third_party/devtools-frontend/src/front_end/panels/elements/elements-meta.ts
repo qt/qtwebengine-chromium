@@ -454,6 +454,7 @@ UI.ActionRegistration.registerActionExtension({
       platform: UI.ActionRegistration.Platforms.MAC,
     },
   ],
+  configurableBindings: false,
 });
 
 UI.ActionRegistration.registerActionExtension({
@@ -687,18 +688,5 @@ UI.UIUtils.registerRenderer({
   async loadRenderer() {
     const Elements = await loadElementsModule();
     return Elements.ElementsTreeOutlineRenderer.Renderer.instance();
-  },
-});
-
-Common.Linkifier.registerLinkifier({
-  contextTypes() {
-    return [
-      SDK.DOMModel.DOMNode,
-      SDK.DOMModel.DeferredDOMNode,
-    ];
-  },
-  async loadLinkifier() {
-    const Elements = await loadElementsModule();
-    return Elements.DOMLinkifier.Linkifier.instance();
   },
 });

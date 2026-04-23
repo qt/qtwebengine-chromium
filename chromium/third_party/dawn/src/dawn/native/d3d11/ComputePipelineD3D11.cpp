@@ -36,6 +36,8 @@
 #include "dawn/native/d3d11/DeviceD3D11.h"
 #include "dawn/native/d3d11/ShaderModuleD3D11.h"
 #include "dawn/native/d3d11/UtilsD3D11.h"
+#include "dawn/platform/DawnPlatform.h"
+#include "dawn/platform/tracing/TraceEvent.h"
 
 namespace dawn::native::d3d11 {
 
@@ -83,10 +85,11 @@ MaybeError ComputePipeline::InitializeImpl() {
                     ToBackend(programmableStage.module)
                         ->Compile(programmableStage, SingleShaderStage::Compute,
                                   ToBackend(GetLayout()), compileFlags, GetImmediateMask()));
-    DAWN_TRY(CheckHRESULT(device->GetD3D11Device()->CreateComputeShader(
-                              compiledShader.shaderBlob.Data(), compiledShader.shaderBlob.Size(),
-                              nullptr, &mComputeShader),
-                          "D3D11 create compute shader"));
+    {
+        TRACE_EVENT0(device->GetPlatform(), General, "ComputePipelineD3D11::CreateComputeShader");
+        SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(device->GetPlatform(), "D3D11.CreateComputeShaderUs");
+        DAWN_TRY_ASSIGN(mComputeShader, device->GetOrCreateComputeShader(compiledShader));
+    }
 
     SetLabelImpl();
 
@@ -104,6 +107,10 @@ void ComputePipeline::ApplyNow(const ScopedSwapStateCommandRecordingContext* com
 
 bool ComputePipeline::UsesNumWorkgroups() const {
     return GetStage(SingleShaderStage::Compute).metadata->usesNumWorkgroups;
+}
+
+ID3D11ComputeShader* ComputePipeline::GetD3D11ComputeShaderForTesting() {
+    return mComputeShader.Get();
 }
 
 }  // namespace dawn::native::d3d11

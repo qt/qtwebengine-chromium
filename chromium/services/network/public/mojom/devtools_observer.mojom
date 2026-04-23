@@ -66,14 +66,6 @@ struct URLResponseHeadDevToolsInfo {
   SSLInfo? ssl_info;
   IPEndPoint remote_endpoint;
   bool emitted_extra_info;
-  // Set to true if the response was proxied through IP Protection proxies. Set
-  // to false otherwise.
-
-  // This will allow DevTools to know if a request
-  // was subject to IP Protection, so that the Network Panel can filter by those
-  // requests. This value can be true for cached responses when the original
-  // request was proxied. Tracked at crbug.com/425645896.
-  bool is_for_ip_protection;
 };
 
 // This is sent with OnRawRequest to indicate if the site has any partitioned
@@ -182,32 +174,6 @@ interface DevToolsObserver {
   OnOrbError(
     string? devtools_request_id,
     url.mojom.Url url);
-
-  // Called when parsing the .wbn file has succeeded. The event
-  // contains the information about the web bundle contents.
-  OnSubresourceWebBundleMetadata(
-    string devtool_request_id,
-    array<url.mojom.Url> urls);
-
-  // Called when parsing the .wbn file has failed.
-  OnSubresourceWebBundleMetadataError(
-    string devtool_request_id,
-    string error_message);
-
-  // Called when handling requests for resources within a .wbn file.
-  // Note: this will only be fired for resources that are requested by the
-  // webpage.
-  OnSubresourceWebBundleInnerResponse(
-    string inner_request_devtools_id,
-    url.mojom.Url url,
-    string? bundle_request_devtools_id);
-
-  // Called when an error occurs while handling a request within a .wbn file.
-  OnSubresourceWebBundleInnerResponseError(
-    string inner_request_devtools_id,
-    url.mojom.Url url,
-    string error_message,
-    string? bundle_request_devtools_id);
 
   // Called when an error occurs while handling a response with
   // "Use-As-Dictionary" header, or fetching request with a registered

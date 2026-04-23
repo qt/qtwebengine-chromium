@@ -15,6 +15,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/unsafe_shared_memory_region.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/task/common/task_annotator.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
@@ -222,19 +223,7 @@ MojoGpuVideoAcceleratorFactories::IsDecoderConfigSupported(
     return Supported::kFalse;
   }
 
-  auto supported_decoder_configs =
-      codec_factory_->GetSupportedVideoDecoderConfigs();
-  if (!supported_decoder_configs) {
-    return Supported::kUnknown;
-  }
-
-  // Iterate over the supported configs.
-  for (const auto& supported : *supported_decoder_configs) {
-    if (supported.Matches(config)) {
-      return Supported::kTrue;
-    }
-  }
-  return Supported::kFalse;
+  return codec_factory_->IsDecoderConfigSupported(config);
 }
 
 media::VideoDecoderType MojoGpuVideoAcceleratorFactories::GetDecoderType() {

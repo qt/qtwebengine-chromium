@@ -1,7 +1,7 @@
 // Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
@@ -328,7 +328,7 @@ export class LighthousePanel extends UI.Panel.Panel {
     this.reportSelector.prepend(optionElement);
     this.refreshToolbarUI();
     this.renderReport(lighthouseResult);
-    this.newButton.element.focus();
+    (this.auditResultsElement.querySelector('.lh-topbar__url') as HTMLElement | null)?.focus();
   }
 
   private handleDrop(dataTransfer: DataTransfer): void {

@@ -258,7 +258,6 @@ static void PrintRelocInfo(std::ostringstream& out, Isolate* isolate,
                   address, IsolateGroup::current()->external_ref_table());
     out << "    ;; external reference (" << reference_name << ")";
   } else if (rmode == RelocInfo::JS_DISPATCH_HANDLE) {
-#ifdef V8_ENABLE_LEAPTIERING
     JSDispatchHandle dispatch_handle = relocinfo->js_dispatch_handle();
     out << "    ;; js dispatch handle:0x" << std::hex << dispatch_handle;
     if (dispatch_handle != kNullJSDispatchHandle) {
@@ -271,9 +270,6 @@ static void PrintRelocInfo(std::ostringstream& out, Isolate* isolate,
         out << " " << CodeKindToString(kind);
       }
     }
-#else
-    UNREACHABLE();
-#endif
   } else if (RelocInfo::IsCodeTargetMode(rmode)) {
     out << "    ;; code:";
     Tagged<Code> code =
@@ -378,13 +374,17 @@ static int DecodeIt(Isolate* isolate, ExternalReferenceEncoder* ref_encoder,
       if (pc_address <= current_pc - range_limit) continue;
     }
 
-    // Collect RelocInfo for this instruction (prev_pc .. pc-1)
+    // Collect RelocInfo for this instruction (prev_pc .. pc)
     std::vector<const char*> comments;
     std::vector<Address> pcs;
     std::vector<RelocInfo::Mode> rmodes;
     std::vector<intptr_t> datas;
-    while (!rit.done() && rit.rinfo()->pc() < reinterpret_cast<Address>(pc)) {
-      // Collect all data.
+    while (!rit.done() &&
+           (rit.rinfo()->pc() < reinterpret_cast<Address>(pc) ||
+            (rit.rinfo()->pc() == reinterpret_cast<Address>(pc) &&
+             RelocInfo::IsDeoptMode(rit.rinfo()->rmode())))) {
+      // Collect all data. Deopt-related data is associated with the exact pc,
+      // not before the pc.
       pcs.push_back(rit.rinfo()->pc());
       rmodes.push_back(rit.rinfo()->rmode());
       datas.push_back(rit.rinfo()->data());

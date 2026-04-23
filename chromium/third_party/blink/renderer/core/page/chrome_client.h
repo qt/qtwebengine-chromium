@@ -61,6 +61,7 @@
 #undef CreateWindow
 
 namespace cc {
+enum class PropertyChangeForcesCommitCriteria;
 class AnimationHost;
 class AnimationTimeline;
 struct ElementId;
@@ -145,10 +146,12 @@ class CORE_EXPORT ChromeClient : public GarbageCollected<ChromeClient> {
 
   virtual void SetWindowRect(const gfx::Rect&, LocalFrame&) = 0;
 
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   virtual void Minimize(LocalFrame&) = 0;
   virtual void Maximize(LocalFrame&) = 0;
   virtual void Restore(LocalFrame&) = 0;
   virtual void SetResizable(bool resizable, LocalFrame&) = 0;
+#endif
 
   // For non-composited WebViews that exist to contribute to a "parent" WebView
   // painting. This informs the client of the area that needs to be redrawn.
@@ -229,6 +232,10 @@ class CORE_EXPORT ChromeClient : public GarbageCollected<ChromeClient> {
                                     cc::PaintHoldingCommitTrigger) = 0;
   virtual void SetShouldThrottleFrameRate(bool flag,
                                           LocalFrame& main_frame) = 0;
+  virtual void RequestMainFrameOnCompositorAnimation(
+      LocalFrame&,
+      cc::PropertyChangeForcesCommitCriteria
+          property_change_forces_commit_criteria) = 0;
 
   virtual std::unique_ptr<cc::ScopedPauseRendering> PauseRendering(
       LocalFrame& main_frame) = 0;
@@ -485,7 +492,9 @@ class CORE_EXPORT ChromeClient : public GarbageCollected<ChromeClient> {
   virtual void ClosePagePopup(PagePopup*) = 0;
   virtual DOMWindow* PagePopupWindowForTesting() const = 0;
 
-  virtual void SetUseExternalPopupMenusForTesting(bool) {}
+  // Allow overriding whether external popup menus are used.
+  virtual void SetUseExternalPopupMenus(bool) {}
+  virtual bool UseExternalPopupMenus() const { return false; }
 
   virtual void SetBrowserControlsState(float top_height,
                                        float bottom_height,
@@ -614,7 +623,7 @@ class CORE_EXPORT ChromeClient : public GarbageCollected<ChromeClient> {
 
   virtual float ZoomFactorForViewportLayout() { return 1; }
 
-  virtual void OnFirstContentfulPaint() {}
+  virtual void OnFirstContentfulPaint(const base::TimeDelta& duration) {}
 
  protected:
   ChromeClient() = default;

@@ -27,6 +27,7 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_utils.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/chrome_signin_pref_names.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/supervised_user/supervised_user_service_factory.h"
@@ -53,7 +54,10 @@
 #include "components/keyed_service/core/service_access_type.h"
 #include "components/prefs/pref_service.h"
 #include "components/query_parser/snippet.h"
+#include "components/signin/public/base/signin_pref_names.h"
+#include "components/signin/public/base/signin_prefs.h"
 #include "components/signin/public/identity_manager/account_info.h"
+#include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/supervised_user/core/browser/supervised_user_preferences.h"
 #include "components/supervised_user/core/browser/supervised_user_service.h"
@@ -78,6 +82,9 @@ using history::WebHistoryService;
 namespace {
 
 #if !BUILDFLAG(IS_CHROMEOS)
+constexpr int kHistorySyncPromoShownThreshold = 5;
+constexpr base::TimeDelta kHistorySyncPromoCooldown = base::Days(7);
+
 history::mojom::AccountInfoPtr CreateAccountInfoDataMojo(
     const AccountInfo& info) {
   history::mojom::AccountInfoPtr account_info_mojo =
@@ -240,7 +247,7 @@ history::mojom::HistoryEntryPtr HistoryEntryToMojom(
   // When the domain is empty, use the scheme instead. This allows for a
   // sensible treatment of e.g. file: URLs when group by domain is on.
   if (domain.empty()) {
-    domain = base::UTF8ToUTF16(entry.url.scheme() + ":");
+    domain = base::UTF8ToUTF16(entry.url.GetScheme() + ":");
   }
 
   // The items which are to be written into result are also described in
@@ -417,6 +424,7 @@ void BrowsingHistoryHandler::SendHistoryQuery(
   options.max_count = max_count;
   options.policy_for_404_visits = history::VisitQuery404sPolicy::kExclude404s;
   options.duplicate_policy = history::QueryOptions::REMOVE_DUPLICATES_PER_DAY;
+  options.include_actor_visits = true;
   std::string query_without_prefix = query;
 
   const std::string kHostPrefix = "host:";
@@ -488,7 +496,7 @@ void BrowsingHistoryHandler::TurnOnHistorySync() {
 #if !BUILDFLAG(IS_CHROMEOS)
   Browser* browser = chrome::FindBrowserWithTab(web_contents_);
   if (browser) {
-    signin_ui_util::TriggerSignInForHistorySyncOptIn(
+    signin_ui_util::SignInAndEnableHistorySync(
         browser, profile_, signin_metrics::AccessPoint::kRecentTabs);
   }
 #else
@@ -497,6 +505,140 @@ void BrowsingHistoryHandler::TurnOnHistorySync() {
   NOTREACHED();
 #endif
 }
+
+#if !BUILDFLAG(IS_CHROMEOS)
+void BrowsingHistoryHandler::ShouldShowHistoryPageHistorySyncPromo(
+    ShouldShowHistoryPageHistorySyncPromoCallback callback) {
+  const int promo_shown_count = GetHistoryPageHistorySyncPromoShownCount();
+
+  // If the promo has been shown more than the threshold, the promo should not
+  // be shown.
+  if (promo_shown_count >= kHistorySyncPromoShownThreshold) {
+    std::move(callback).Run(false);
+    return;
+  }
+
+  const bool shown_after_dismissal =
+      IsHistoryPageHistorySyncPromoShownAfterDismissal();
+  // If the promo was dismissed and shown once after dismissal, the promo should
+  // not be shown anymore.
+  if (shown_after_dismissal) {
+    std::move(callback).Run(false);
+    return;
+  }
+  const base::Time last_dismissed_timestamp =
+      GetHistoryPageHistorySyncPromoLastDismissedTimestamp();
+  const bool was_dismissed = !last_dismissed_timestamp.is_null();
+  // If the promo was dismissed and the cooldown has not passed, the promo
+  // should not be shown.
+  if (was_dismissed &&
+      clock_->Now() < last_dismissed_timestamp + kHistorySyncPromoCooldown) {
+    std::move(callback).Run(false);
+    return;
+  }
+
+  std::move(callback).Run(true);
+}
+
+void BrowsingHistoryHandler::RecordHistoryPageHistorySyncPromoDismissed() {
+  SetHistoryPageHistorySyncPromoLastDismissedTimestamp(clock_->Now());
+}
+
+void BrowsingHistoryHandler::IncrementHistoryPageHistorySyncPromoShownCount() {
+  IncrementHistoryPageHistorySyncPromoShownCountPref();
+
+  const base::Time last_dismissed_timestamp =
+      GetHistoryPageHistorySyncPromoLastDismissedTimestamp();
+  const bool was_dismissed = !last_dismissed_timestamp.is_null();
+  if (was_dismissed) {
+    SetHistoryPageHistorySyncPromoShownAfterDismissal();
+  }
+}
+
+int BrowsingHistoryHandler::GetHistoryPageHistorySyncPromoShownCount() const {
+  const AccountInfo account =
+      signin_ui_util::GetSingleAccountForPromos(&identity_manager_.get());
+  if (account.gaia.empty()) {
+    return profile_->GetPrefs()->GetInteger(
+        prefs::kHistoryPageHistorySyncPromoShownCountPerProfile);
+  }
+
+  return SigninPrefs(*profile_->GetPrefs())
+      .GetHistoryPageHistorySyncPromoShownCount(account.gaia);
+}
+
+base::Time
+BrowsingHistoryHandler::GetHistoryPageHistorySyncPromoLastDismissedTimestamp()
+    const {
+  const AccountInfo account =
+      signin_ui_util::GetSingleAccountForPromos(&identity_manager_.get());
+  if (account.gaia.empty()) {
+    return profile_->GetPrefs()->GetTime(
+        prefs::kHistoryPageHistorySyncPromoLastDismissedTimestampPerProfile);
+  }
+
+  return SigninPrefs(*profile_->GetPrefs())
+      .GetHistoryPageHistorySyncPromoLastDismissedTimestamp(account.gaia)
+      .value_or(base::Time());
+}
+
+bool BrowsingHistoryHandler::IsHistoryPageHistorySyncPromoShownAfterDismissal()
+    const {
+  const AccountInfo account =
+      signin_ui_util::GetSingleAccountForPromos(&identity_manager_.get());
+  if (account.gaia.empty()) {
+    return profile_->GetPrefs()->GetBoolean(
+        prefs::kHistoryPageHistorySyncPromoShownAfterDismissalPerProfile);
+  }
+
+  return SigninPrefs(*profile_->GetPrefs())
+      .GetHistoryPageHistorySyncPromoShownAfterDismissal(account.gaia);
+}
+
+void BrowsingHistoryHandler::
+    SetHistoryPageHistorySyncPromoLastDismissedTimestamp(base::Time time) {
+  const AccountInfo account =
+      signin_ui_util::GetSingleAccountForPromos(&identity_manager_.get());
+  if (account.gaia.empty()) {
+    profile_->GetPrefs()->SetTime(
+        prefs::kHistoryPageHistorySyncPromoLastDismissedTimestampPerProfile,
+        time);
+  } else {
+    SigninPrefs(*profile_->GetPrefs())
+        .SetHistoryPageHistorySyncPromoLastDismissedTimestamp(account.gaia,
+                                                              time);
+  }
+}
+
+void BrowsingHistoryHandler::
+    IncrementHistoryPageHistorySyncPromoShownCountPref() {
+  const AccountInfo account =
+      signin_ui_util::GetSingleAccountForPromos(&identity_manager_.get());
+  if (account.gaia.empty()) {
+    const int promo_shown_count = profile_->GetPrefs()->GetInteger(
+        prefs::kHistoryPageHistorySyncPromoShownCountPerProfile);
+    profile_->GetPrefs()->SetInteger(
+        prefs::kHistoryPageHistorySyncPromoShownCountPerProfile,
+        promo_shown_count + 1);
+  } else {
+    SigninPrefs(*profile_->GetPrefs())
+        .IncrementHistoryPageHistorySyncPromoShownCount(account.gaia);
+  }
+}
+
+void BrowsingHistoryHandler::
+    SetHistoryPageHistorySyncPromoShownAfterDismissal() {
+  const AccountInfo account =
+      signin_ui_util::GetSingleAccountForPromos(&identity_manager_.get());
+  if (account.gaia.empty()) {
+    profile_->GetPrefs()->SetBoolean(
+        prefs::kHistoryPageHistorySyncPromoShownAfterDismissalPerProfile, true);
+  } else {
+    SigninPrefs(*profile_->GetPrefs())
+        .SetHistoryPageHistorySyncPromoShownAfterDismissal(account.gaia);
+  }
+}
+#endif
 
 void BrowsingHistoryHandler::RemoveBookmark(const std::string& url) {
   BookmarkModel* model = BookmarkModelFactory::GetForBrowserContext(profile_);

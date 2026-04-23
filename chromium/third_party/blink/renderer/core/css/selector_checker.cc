@@ -36,6 +36,7 @@
 #include "third_party/blink/renderer/core/css/css_selector_list.h"
 #include "third_party/blink/renderer/core/css/part_names.h"
 #include "third_party/blink/renderer/core/css/post_style_update_scope.h"
+#include "third_party/blink/renderer/core/css/route_query.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_scope_data.h"
@@ -71,7 +72,9 @@
 #include "third_party/blink/renderer/core/html/html_dialog_element.h"
 #include "third_party/blink/renderer/core/html/html_document.h"
 #include "third_party/blink/renderer/core/html/html_frame_element_base.h"
+#include "third_party/blink/renderer/core/html/html_menu_bar_element.h"
 #include "third_party/blink/renderer/core/html/html_menu_item_element.h"
+#include "third_party/blink/renderer/core/html/html_menu_list_element.h"
 #include "third_party/blink/renderer/core/html/html_permission_element.h"
 #include "third_party/blink/renderer/core/html/html_slot_element.h"
 #include "third_party/blink/renderer/core/html/media/html_audio_element.h"
@@ -87,6 +90,7 @@
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
 #include "third_party/blink/renderer/core/page/spatial_navigation_controller.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/core/route_matching/route.h"
 #include "third_party/blink/renderer/core/scroll/scrollable_area.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_theme.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
@@ -572,8 +576,6 @@ SelectorChecker::FeaturelessMatch SelectorChecker::MatchShadowHost(
     case CSSSelector::kPseudoOnlyOfType:
     case CSSSelector::kPseudoOptional:
     case CSSSelector::kPseudoPart:
-    case CSSSelector::kPseudoPermissionElementInvalidStyle:
-    case CSSSelector::kPseudoPermissionElementOccluded:
     case CSSSelector::kPseudoPermissionGranted:
     case CSSSelector::kPseudoPermissionIcon:
     case CSSSelector::kPseudoPlaceholder:
@@ -584,6 +586,7 @@ SelectorChecker::FeaturelessMatch SelectorChecker::MatchShadowHost(
     case CSSSelector::kPseudoResizer:
     case CSSSelector::kPseudoRightPage:
     case CSSSelector::kPseudoRoot:
+    case CSSSelector::kPseudoRouteMatch:
     case CSSSelector::kPseudoScrollbar:
     case CSSSelector::kPseudoScrollbarButton:
     case CSSSelector::kPseudoScrollbarCorner:
@@ -631,6 +634,8 @@ SelectorChecker::FeaturelessMatch SelectorChecker::MatchShadowHost(
     case CSSSelector::kPseudoHostHasNonAutoAppearance:
     case CSSSelector::kPseudoIsHtml:
     case CSSSelector::kPseudoListBox:
+    case CSSSelector::kPseudoMenulistPopoverWithMenubarAnchor:
+    case CSSSelector::kPseudoMenulistPopoverWithMenulistAnchor:
     case CSSSelector::kPseudoMultiSelectFocus:
     case CSSSelector::kPseudoOpen:
     case CSSSelector::kPseudoPastCue:
@@ -656,6 +661,8 @@ SelectorChecker::FeaturelessMatch SelectorChecker::MatchShadowHost(
     case CSSSelector::kPseudoScrollMarker:
     case CSSSelector::kPseudoScrollMarkerGroup:
     case CSSSelector::kPseudoScrollButton:
+    case CSSSelector::kPseudoOverscrollAreaParent:
+    case CSSSelector::kPseudoOverscrollClientArea:
       // These pseudos are not allowed to match featureless elements. When
       // adding new pseudos here, they would typically be allowed if they are
       // logical pseudos which take selector arguments.
@@ -858,9 +865,8 @@ SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
 
   // Disable :visited matching when we see the first link or try to match
   // anything else than an ancestor.
-  if ((!context.is_sub_selector || context.in_nested_complex_selector) &&
-      (context.element->IsLink() || (relation != CSSSelector::kDescendant &&
-                                     relation != CSSSelector::kChild))) {
+  if (context.element->IsLink() || (relation != CSSSelector::kDescendant &&
+                                    relation != CSSSelector::kChild)) {
     DisallowMatchVisited(next_context);
   }
 
@@ -1273,9 +1279,7 @@ ALWAYS_INLINE bool SelectorChecker::CheckOne(
         selector.GetPseudoType() != CSSSelector::kPseudoScope) {
       return false;
     }
-    if (RuntimeEnabledFeatures::CSSNegatedFeaturelessEnabled()) {
-      return MatchShadowHost(context, result) == kFeaturelessMatches;
-    }
+    return MatchShadowHost(context, result) == kFeaturelessMatches;
   }
   if (RuntimeEnabledFeatures::CSSLogicalCombinationPseudoEnabled()) {
     if (context.pseudo_id != kPseudoIdNone) {
@@ -1780,8 +1784,13 @@ EarlyBreakOnHasArgumentChecking CheckEarlyBreakForHasArgument(
 }
 
 bool MatchesExternalSVGUseTarget(Element& element) {
-  const auto* svg_element = DynamicTo<SVGElement>(element);
-  return svg_element && svg_element->IsResourceTarget();
+  if (const auto* svg_element = DynamicTo<SVGElement>(element)) {
+    if (const SVGElement* corresponding = svg_element->CorrespondingElement()) {
+      svg_element = corresponding;
+    }
+    return svg_element->IsResourceTarget();
+  }
+  return false;
 }
 
 }  // namespace
@@ -2047,6 +2056,21 @@ bool SelectorChecker::CheckPseudoHas(const SelectorCheckingContext& context,
   return false;
 }
 
+bool SelectorChecker::CheckPseudoRouteMatch(
+    const SelectorCheckingContext& context,
+    MatchResult& result) const {
+  DCHECK(context.selector);
+  DCHECK(context.selector->GetRouteLocation());
+  Element& element = GetCandidateElement(context, result);
+  const auto* anchor = DynamicTo<HTMLAnchorElement>(&element);
+  if (!anchor) {
+    return false;
+  }
+  const Route* route = context.selector->GetRouteLocation()->FindOrCreateRoute(
+      element.GetDocument());
+  return route && route->MatchesUrl(anchor->Href());
+}
+
 bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
                                        MatchResult& result) const {
   Element& element = GetCandidateElement(context, result);
@@ -2144,9 +2168,10 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
         DCHECK((transition->Scope() == &element && context.pseudo_id) ||
                element.IsPseudoElement());
         DCHECK(context.pseudo_argument || element.IsPseudoElement());
-        const AtomicString& pseudo_argument = element.IsPseudoElement()
-                                                  ? element.GetPseudoArgument()
-                                                  : *context.pseudo_argument;
+        const AtomicString& pseudo_argument =
+            element.IsPseudoElement()
+                ? To<PseudoElement>(element).GetPseudoArgument()
+                : *context.pseudo_argument;
         return transition->MatchForOnlyChild(pseudo_id_to_check,
                                              pseudo_argument);
       }
@@ -2567,6 +2592,11 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
       break;
     }
     case CSSSelector::kPseudoTargetCurrent: {
+      probe::ForcePseudoState(&element, CSSSelector::kPseudoTargetCurrent,
+                              &force_pseudo_state);
+      if (force_pseudo_state) {
+        return true;
+      }
       if (element.IsScrollMarkerPseudoElement()) {
         return To<ScrollMarkerPseudoElement>(element).IsSelected();
       }
@@ -2621,6 +2651,9 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
     }
     case CSSSelector::kPseudoRoot:
       return element == element.GetDocument().documentElement();
+    case CSSSelector::kPseudoRouteMatch:
+      DCHECK(RuntimeEnabledFeatures::RouteMatchingEnabled());
+      return CheckPseudoRouteMatch(context, result);
     case CSSSelector::kPseudoLang: {
       auto* vtt_element = DynamicTo<VTTElement>(element);
       AtomicString value = vtt_element ? vtt_element->Language()
@@ -2688,6 +2721,22 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
         return input->IsPickerVisible();
       }
       return false;
+    case CSSSelector::kPseudoMenulistPopoverWithMenubarAnchor:
+      if (auto* menulist = DynamicTo<HTMLMenuListElement>(element)) {
+        if (auto* menuitem_anchor = DynamicTo<HTMLMenuItemElement>(
+                menulist->GetPopoverData()->invoker())) {
+          return IsA<HTMLMenuBarElement>(menuitem_anchor->OwningMenuElement());
+        }
+      }
+      return false;
+    case CSSSelector::kPseudoMenulistPopoverWithMenulistAnchor:
+      if (auto* menulist = DynamicTo<HTMLMenuListElement>(element)) {
+        if (auto* menuitem_anchor = DynamicTo<HTMLMenuItemElement>(
+                menulist->GetPopoverData()->invoker())) {
+          return IsA<HTMLMenuListElement>(menuitem_anchor->OwningMenuElement());
+        }
+      }
+      return false;
     case CSSSelector::kPseudoFullscreen:
     // fall through
     case CSSSelector::kPseudoFullScreen:
@@ -2701,21 +2750,13 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
     }
     case CSSSelector::kPseudoPermissionGranted: {
       CHECK(RuntimeEnabledFeatures::PermissionElementEnabled(
-          element.GetExecutionContext()));
+                element.GetExecutionContext()) ||
+            RuntimeEnabledFeatures::GeolocationElementEnabled(
+                element.GetExecutionContext()) ||
+            RuntimeEnabledFeatures::UserMediaElementEnabled(
+                element.GetExecutionContext()));
       auto* permission_element = DynamicTo<HTMLPermissionElement>(element);
       return permission_element && permission_element->granted();
-    }
-    case CSSSelector::kPseudoPermissionElementInvalidStyle: {
-      CHECK(RuntimeEnabledFeatures::PermissionElementEnabled(
-          element.GetExecutionContext()));
-      auto* permission_element = DynamicTo<HTMLPermissionElement>(element);
-      return permission_element && permission_element->HasInvalidStyle();
-    }
-    case CSSSelector::kPseudoPermissionElementOccluded: {
-      CHECK(RuntimeEnabledFeatures::PermissionElementEnabled(
-          element.GetExecutionContext()));
-      auto* permission_element = DynamicTo<HTMLPermissionElement>(element);
-      return permission_element && permission_element->IsOccluded();
     }
     case CSSSelector::kPseudoPictureInPicture:
       return PictureInPictureController::IsElementInPictureInPicture(&element);
@@ -2787,11 +2828,8 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
               : WebFeature::kCSSSelectorHostContextInLiveProfile);
       [[fallthrough]];
     case CSSSelector::kPseudoHost:
-      if (RuntimeEnabledFeatures::CSSNegatedFeaturelessEnabled()) {
-        DCHECK(!IsAtShadowHost(context));
-        return false;
-      }
-      return CheckPseudoHost(context, result);
+      DCHECK(!IsAtShadowHost(context));
+      return false;
     case CSSSelector::kPseudoSpatialNavigationFocus:
       DCHECK(is_ua_rule_);
       return MatchesSpatialNavigationFocusPseudoClass(element);
@@ -3062,9 +3100,10 @@ bool SelectorChecker::CheckPseudoElement(const SelectorCheckingContext& context,
       CHECK(!selector.IdentList().empty());
       const AtomicString& name_or_wildcard = selector.IdentList()[0];
 
-      const String& pseudo_argument = element.IsPseudoElement()
-                                          ? element.GetPseudoArgument()
-                                          : pseudo_argument_;
+      const String& pseudo_argument =
+          element.IsPseudoElement()
+              ? To<PseudoElement>(element).GetPseudoArgument()
+              : pseudo_argument_;
       // note that the pseudo_ident_list is the class list, and
       // pseudo_argument is the name, while in the selector the IdentList() is
       // both the name and the classes.
@@ -3105,6 +3144,10 @@ bool SelectorChecker::CheckPseudoElement(const SelectorCheckingContext& context,
       }
       result.dynamic_pseudo = context.pseudo_id;
       return true;
+    }
+    case CSSSelector::kPseudoOverscrollAreaParent:
+    case CSSSelector::kPseudoOverscrollClientArea: {
+      return element.GetPseudoIdForStyling() == pseudo_id;
     }
     case CSSSelector::kPseudoScrollButton:
       return MatchScrollButton(element, context, result);

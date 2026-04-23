@@ -104,13 +104,19 @@ class UiSelectorConfig(ConfigObject):
     parser = ConfigParser(
         cls, unused_properties_mode=UnusedPropertiesMode.ERROR)
     parser.add_argument(
-        "res", type=ObjectParser.non_empty_str, required=False,
+        "res",
+        type=ObjectParser.non_empty_str,
+        required=False,
         help="Resource name of the UI element to match.")
     parser.add_argument(
-        "clazz", type=ObjectParser.non_empty_str, required=False,
+        "clazz",
+        type=ObjectParser.non_empty_str,
+        required=False,
         help="Class name of the UI element to match.")
     parser.add_argument(
-        "text", type=ObjectParser.non_empty_str, required=False,
+        "text",
+        type=ObjectParser.non_empty_str,
+        required=False,
         help="Text of the UI element to match.")
     return parser
 
@@ -148,8 +154,8 @@ class PositionConfig(ConfigObject):
       return cls(coordinates=coordinates_parser.parse(config))
 
     ui_selector_parser = UiSelectorConfig.config_parser()
-    if (ui_selector_parser.has_all_required_args(config)
-        and ui_selector_parser.has_any_args(config)):
+    if (ui_selector_parser.has_all_required_args(config) and
+        ui_selector_parser.has_any_args(config)):
       return cls(ui_selector=ui_selector_parser.parse(config))
 
     raise argparse.ArgumentTypeError(
@@ -177,17 +183,13 @@ class PositionConfig(ConfigObject):
                        res: str | None = None,
                        clazz: str | None = None,
                        text: str | None = None) -> PositionConfig:
-    return cls(
-        ui_selector=UiSelectorConfig(
-            res=res,
-            clazz=clazz,
-            text=text))
+    return cls(ui_selector=UiSelectorConfig(res=res, clazz=clazz, text=text))
 
   @override
   def validate(self) -> None:
     super().validate()
-    if (bool(self.coordinates) + bool(self.selector)
-        + bool(self.ui_selector)) != 1:
+    if (bool(self.coordinates) + bool(self.selector) +
+        bool(self.ui_selector)) != 1:
       raise ValueError(
           "Position config must have exactly one coordinates or selector")
 

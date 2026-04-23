@@ -119,6 +119,8 @@ component("features") {
   output_name = "autofill_core_common_features"
   defines = [ "IS_AUTOFILL_IMPL" ]
   sources = [
+    "autofill_debug_features.cc",
+    "autofill_debug_features.h",
     "autofill_features.cc",
     "autofill_features.h",
     "autofill_payments_features.cc",
@@ -166,6 +168,7 @@ source_set("unit_tests") {
     "logging/log_buffer_unittest.cc",
     "save_password_progress_logger_unittest.cc",
     "signatures_unittest.cc",
+    "unique_ids_unittest.cc",
   ]
 
   deps = [

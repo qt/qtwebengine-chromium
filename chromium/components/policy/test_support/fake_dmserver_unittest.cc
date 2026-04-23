@@ -5,6 +5,7 @@
 #include "components/policy/test_support/fake_dmserver.h"
 
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -19,7 +20,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
-#include "base/functional/callback_forward.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/strings/stringprintf.h"
@@ -118,8 +118,8 @@ class FakeDMServerTest : public testing::Test {
   // TODO(b/240445061): Check response content to verify the returned policy.
   int SendRequest(const GURL& server_url, const std::string& request_path) {
     std::string request_url =
-        base::StringPrintf("http://%s:%s%s", server_url.host().c_str(),
-                           server_url.port().c_str(), request_path.c_str());
+        base::StringPrintf("http://%s:%s%s", server_url.GetHost().c_str(),
+                           server_url.GetPort().c_str(), request_path.c_str());
     std::unique_ptr<network::ResourceRequest> resource_request =
         std::make_unique<network::ResourceRequest>();
     resource_request->method = net::HttpRequestHeaders::kPostMethod;
@@ -133,10 +133,10 @@ class FakeDMServerTest : public testing::Test {
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory =
         base::MakeRefCounted<network::TestSharedURLLoaderFactory>();
 
-    base::test::TestFuture<std::unique_ptr<std::string>> test_future;
+    base::test::TestFuture<std::optional<std::string>> test_future;
     url_loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
         url_loader_factory.get(), test_future.GetCallback());
-    const std::unique_ptr<std::string> response_body = test_future.Take();
+    const std::optional<std::string> response_body = test_future.Take();
     if (response_body) {
       LOG(INFO) << "Response body: " << *response_body;
     }

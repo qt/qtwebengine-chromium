@@ -1,7 +1,7 @@
 // Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api, @devtools/no-lit-render-outside-of-view */
 
 import * as Common from '../../../../core/common/common.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
@@ -10,6 +10,7 @@ import * as Geometry from '../../../../models/geometry/geometry.js';
 import * as TextUtils from '../../../../models/text_utils/text_utils.js';
 import * as Diff from '../../../../third_party/diff/diff.js';
 import * as TextPrompt from '../../../../ui/components/text_prompt/text_prompt.js';
+import {type LitTemplate, nothing, render} from '../../../lit/lit.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
 
@@ -117,9 +118,9 @@ export class FilteredListWidget extends Common.ObjectWrapper.eventMixin<EventTyp
     this.queryChangedCallback = queryChangedCallback;
   }
 
-  static highlightRanges(element: Element, query: string, caseInsensitive?: boolean): boolean {
+  static getHighlightRanges(text: string, query: string, caseInsensitive?: boolean): string {
     if (!query) {
-      return false;
+      return '';
     }
 
     function rangesForMatch(text: string, query: string): TextUtils.TextRange.SourceRange[]|null {
@@ -138,19 +139,11 @@ export class FilteredListWidget extends Common.ObjectWrapper.eventMixin<EventTyp
       return ranges;
     }
 
-    if (element.textContent === null) {
-      return false;
-    }
-    const text = element.textContent;
     let ranges = rangesForMatch(text, query);
     if (!ranges || caseInsensitive) {
       ranges = rangesForMatch(text.toUpperCase(), query.toUpperCase());
     }
-    if (ranges) {
-      UI.UIUtils.highlightRangesWithStyleClass(element, ranges, 'highlight');
-      return true;
-    }
-    return false;
+    return ranges?.map(range => `${range.offset},${range.length}`).join(' ') || '';
   }
 
   setCommandPrefix(commandPrefix: string): void {
@@ -229,6 +222,7 @@ export class FilteredListWidget extends Common.ObjectWrapper.eventMixin<EventTyp
   }
 
   override willHide(): void {
+    super.willHide();
     if (this.provider) {
       this.provider.detach();
     }
@@ -281,20 +275,14 @@ export class FilteredListWidget extends Common.ObjectWrapper.eventMixin<EventTyp
 
   createElementForItem(item: number): Element {
     const wrapperElement = document.createElement('div');
-    wrapperElement.className = 'filtered-list-widget-item-wrapper';
+    wrapperElement.className = 'filtered-list-widget-item';
 
-    const itemElement = wrapperElement.createChild('div');
-    const renderAsTwoRows = this.provider?.renderAsTwoRows();
-    itemElement.className = 'filtered-list-widget-item ' + (renderAsTwoRows ? 'two-rows' : 'one-row');
-    const titleElement = itemElement.createChild('div', 'filtered-list-widget-title');
-    const subtitleElement = itemElement.createChild('div', 'filtered-list-widget-subtitle');
-    subtitleElement.textContent = '\u200B';
     if (this.provider) {
-      this.provider.renderItem(item, this.cleanValue(), titleElement, subtitleElement);
+      render(this.provider.renderItem(item, this.cleanValue()), wrapperElement);
       wrapperElement.setAttribute(
           'jslog', `${VisualLogging.item(this.provider.jslogContextAt(item)).track({click: true})}`);
     }
-    UI.ARIAUtils.markAsOption(itemElement);
+    UI.ARIAUtils.markAsOption(wrapperElement);
     return wrapperElement;
   }
 
@@ -626,15 +614,12 @@ export class Provider {
     return 1;
   }
 
-  renderItem(_itemIndex: number, _query: string, _titleElement: Element, _subtitleElement: Element): void {
+  renderItem(_itemIndex: number, _query: string): LitTemplate {
+    return nothing;
   }
 
   jslogContextAt(_itemIndex: number): string {
     return this.jslogContext;
-  }
-
-  renderAsTwoRows(): boolean {
-    return false;
   }
 
   selectItem(_itemIndex: number|null, _promptValue: string): void {

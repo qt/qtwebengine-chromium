@@ -3,19 +3,21 @@
 // found in the LICENSE file.
 
 globalThis.document ??= {
-    readyState: 'complete',
-    querySelectorAll() {
-      return [,];
-    },
-    getElementById(name) {
-      return {
-        classList: {
-          contains(name) {
-            return true;
-          }
+  readyState: 'complete',
+  querySelectorAll() {
+    return [
+      ,
+    ];
+  },
+  getElementById(name) {
+    return {
+      classList: {
+        contains(name) {
+          return true;
         }
       }
-    },
+    }
+  },
 };
 globalThis.isInBrowser ??= false;
 globalThis.readFile ??= read;

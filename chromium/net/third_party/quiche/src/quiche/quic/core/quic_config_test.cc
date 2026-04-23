@@ -12,17 +12,22 @@
 #include "quiche/quic/core/crypto/crypto_handshake_message.h"
 #include "quiche/quic/core/crypto/crypto_protocol.h"
 #include "quiche/quic/core/crypto/transport_parameters.h"
+#include "quiche/quic/core/quic_connection_id.h"
 #include "quiche/quic/core/quic_constants.h"
 #include "quiche/quic/core/quic_error_codes.h"
-#include "quiche/quic/core/quic_packets.h"
+#include "quiche/quic/core/quic_tag.h"
 #include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_utils.h"
+#include "quiche/quic/core/quic_versions.h"
 #include "quiche/quic/platform/api/quic_expect_bug.h"
 #include "quiche/quic/platform/api/quic_flags.h"
+#include "quiche/quic/platform/api/quic_ip_address.h"
+#include "quiche/quic/platform/api/quic_socket_address.h"
 #include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/test_tools/quic_config_peer.h"
 #include "quiche/quic/test_tools/quic_test_utils.h"
+#include "quiche/common/quiche_ip_address_family.h"
 
 namespace quic {
 namespace test {
@@ -469,6 +474,7 @@ TEST_P(QuicConfigTest, FillTransportParams) {
     return;
   }
   const std::string kFakeGoogleHandshakeMessage = "Fake handshake message";
+  const std::string kFakeSni = "example.com";
   const int32_t kDiscardLength = 2000;
   config_.SetInitialMaxStreamDataBytesIncomingBidirectionalToSend(
       2 * kMinimumFlowControlSendWindow);
@@ -486,6 +492,7 @@ TEST_P(QuicConfigTest, FillTransportParams) {
   config_.SetMinAckDelayDraft10Ms(kDefaultMinAckDelayTimeMs);
   config_.SetDiscardLengthToSend(kDiscardLength);
   config_.SetGoogleHandshakeMessageToSend(kFakeGoogleHandshakeMessage);
+  config_.SetDebuggingSniToSend(kFakeSni);
   config_.SetReliableStreamReset(true);
 
   QuicIpAddress host;
@@ -548,6 +555,7 @@ TEST_P(QuicConfigTest, FillTransportParams) {
             new_stateless_reset_token);
   EXPECT_EQ(kDiscardLength, params.discard_length);
   EXPECT_EQ(kFakeGoogleHandshakeMessage, params.google_handshake_message);
+  EXPECT_EQ(kFakeSni, params.debugging_sni);
 
   EXPECT_TRUE(params.reliable_stream_reset);
 }
@@ -660,6 +668,7 @@ TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
     return;
   }
   const std::string kFakeGoogleHandshakeMessage = "Fake handshake message";
+  const std::string kFakeSni = "example.com";
   const int32_t kDiscardLength = 2000;
   TransportParameters params;
 
@@ -682,6 +691,7 @@ TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
   params.retry_source_connection_id = TestConnectionId(0x3333);
   params.discard_length = kDiscardLength;
   params.google_handshake_message = kFakeGoogleHandshakeMessage;
+  params.debugging_sni = kFakeSni;
 
   std::string error_details;
   EXPECT_THAT(config_.ProcessTransportParameters(
@@ -802,6 +812,7 @@ TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
             TestConnectionId(0x3333));
   EXPECT_EQ(kFakeGoogleHandshakeMessage,
             config_.GetReceivedGoogleHandshakeMessage());
+  EXPECT_EQ(kFakeSni, config_.GetReceivedDebuggingSni());
   EXPECT_EQ(kDiscardLength, config_.GetDiscardLengthReceived());
 }
 

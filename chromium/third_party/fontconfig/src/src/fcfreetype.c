@@ -1728,7 +1728,7 @@ FcFreeTypeQueryFaceInternal (const FT_Face   face,
      * the attribute.  Sigh.
      */
     if ((face->face_flags & FT_FACE_FLAG_FIXED_WIDTH) != 0)
-	if (!FcPatternObjectAddInteger (pat, FC_SPACING_OBJECT, FC_MONO))
+	if (!FcPatternObjectAddInteger (pat, FC_SPACING_OBJECT, FC_SPACING_MONO))
 	    goto bail1;
 #endif
 
@@ -1967,11 +1967,11 @@ FcFreeTypeQueryFaceInternal (const FT_Face   face,
     if (FT_Get_BDF_Property (face, "SPACING", &prop) == 0 &&
         prop.type == BDF_PROPERTY_TYPE_ATOM && prop.u.atom != NULL) {
 	if (!strcmp (prop.u.atom, "c") || !strcmp (prop.u.atom, "C"))
-	    spacing = FC_CHARCELL;
+	    spacing = FC_SPACING_CHARCELL;
 	else if (!strcmp (prop.u.atom, "m") || !strcmp (prop.u.atom, "M"))
-	    spacing = FC_MONO;
+	    spacing = FC_SPACING_MONO;
 	else if (!strcmp (prop.u.atom, "p") || !strcmp (prop.u.atom, "P"))
-	    spacing = FC_PROPORTIONAL;
+	    spacing = FC_SPACING_PROPORTIONAL;
     }
 #endif
 
@@ -2015,7 +2015,7 @@ FcFreeTypeQueryFaceInternal (const FT_Face   face,
 
     FcLangSetDestroy (ls);
 
-    if (spacing != FC_PROPORTIONAL)
+    if (spacing != FC_SPACING_PROPORTIONAL)
 	if (!FcPatternObjectAddInteger (pat, FC_SPACING_OBJECT, spacing))
 	    goto bail2;
 
@@ -2440,13 +2440,13 @@ FcFreeTypeSpacing (FT_Face face)
     }
 
     if (num_advances <= 1)
-	return FC_MONO;
+	return FC_SPACING_MONO;
     else if (num_advances == 2 &&
              fc_approximately_equal (fc_min (advances[0], advances[1]) * 2,
                                      fc_max (advances[0], advances[1])))
-	return FC_DUAL;
+	return FC_SPACING_DUAL;
     else
-	return FC_PROPORTIONAL;
+	return FC_SPACING_PROPORTIONAL;
 }
 
 FcCharSet *

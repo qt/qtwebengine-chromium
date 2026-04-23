@@ -37,7 +37,7 @@ using net::MockTransaction;
 using net::TEST_MODE_SYNC_NET_START;
 
 const char kUploadData[] = "upload_data";
-int64_t kUploadIdentifier = 17;
+constexpr int64_t kUploadIdentifier = 17;
 
 class TestCallback {
  public:
@@ -375,6 +375,7 @@ TEST(ThrottlingControllerTest, SetConditions) {
   // but in some cases fails to parse:
   helper.SetNetworkState({
       {"ht tp://", NetworkConditions{false}},
+      {"*.css", NetworkConditions{false}},
   });
   EXPECT_EQ(helper.GetThrottlingProfile()->matcher_count(), 0u);
 }

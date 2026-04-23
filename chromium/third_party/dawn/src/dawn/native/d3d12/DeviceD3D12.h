@@ -72,6 +72,8 @@ class Device final : public d3d::Device {
     MaybeError TickImpl() override;
 
     ID3D12Device* GetD3D12Device() const;
+    ComPtr<ID3D11On12Device> GetOrCreateD3D11On12Device();
+    ComPtr<ID3D12CommandQueue> GetD3D12CommandQueue() const;
 
     ComPtr<ID3D12CommandSignature> GetDispatchIndirectSignature() const;
     ComPtr<ID3D12CommandSignature> GetDrawIndirectSignature() const;
@@ -103,7 +105,7 @@ class Device final : public d3d::Device {
                                        uint64_t destinationOffset,
                                        uint64_t size);
 
-    MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
+    MaybeError CopyFromStagingToTextureImpl(BufferBase* source,
                                             const TexelCopyBufferLayout& src,
                                             const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
@@ -191,8 +193,7 @@ class Device final : public d3d::Device {
     ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-        const std::vector<tint::wgsl::Extension>& internalExtensions,
-        ShaderModuleParseResult* parseResult) override;
+        const std::vector<tint::wgsl::Extension>& internalExtensions) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
         SwapChainBase* previousSwapChain,
@@ -222,7 +223,7 @@ class Device final : public d3d::Device {
     void AppendDebugLayerMessages(ErrorData* error) override;
     void AppendDeviceLostMessage(ErrorData* error) override;
 
-    ResultOrError<ComPtr<ID3D11On12Device>> GetOrCreateD3D11on12Device();
+    ResultOrError<ComPtr<ID3D11On12Device>> GetOrCreateD3D11On12DeviceInternal();
     void Flush11On12DeviceToAvoidLeaks();
 
     MaybeError EnsureCompilerLibraries();

@@ -154,3 +154,9 @@ class RepeatTimer(threading.Timer):
 def spinner(sleep: float = 0.5, title: str = "") -> Iterator[Spinner]:
   with Spinner(IS_ATTY, sleep, title).open() as spinner_instance:
     yield spinner_instance
+
+
+def prompt(message: str = "",
+           hint: str = "",
+           color: str = colorama.Fore.RESET) -> str:
+  return input(f"{color}{message}{colorama.Fore.RESET} {hint}")

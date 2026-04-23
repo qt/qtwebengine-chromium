@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {readFileSync} from 'fs';
 import glob from 'glob';
+import {readFileSync} from 'node:fs';
 import * as ts from 'typescript';
 import yargs from 'yargs';
 import {hideBin} from 'yargs/helpers';
@@ -25,8 +25,9 @@ const argv = yargs(hideBin(process.argv))
                  .parseSync();
 
 /**
- * Usage: node --no-warnings --experimental-strip-types
- * scripts/extract_bugs.ts
+ * Node v24 expected.
+ * Usage: node scripts/extract_bugs.ts
+ *
  *
  * Finds all skipped tests and returns associated bug IDs and the test
  * files (tab-separated).

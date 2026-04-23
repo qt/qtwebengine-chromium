@@ -237,6 +237,9 @@ class TCompiler : public TShHandleBase
         return mShaderVersion == 100 && !IsWebGLBasedSpec(mShaderSpec);
     }
 
+    // Get built-in extensions with default behavior.
+    const TExtensionBehavior &getExtensionBehavior() const;
+
   protected:
     // Add emulated functions to the built-in function emulator.
     virtual void initBuiltInFunctionEmulator(BuiltInFunctionEmulator *emu,
@@ -246,8 +249,6 @@ class TCompiler : public TShHandleBase
     [[nodiscard]] virtual bool translate(TIntermBlock *root,
                                          const ShCompileOptions &compileOptions,
                                          PerformanceDiagnostics *perfDiagnostics) = 0;
-    // Get built-in extensions with default behavior.
-    const TExtensionBehavior &getExtensionBehavior() const;
     const char *getSourcePath() const;
     // Relies on collectVariables having been called.
     bool isVaryingDefined(const char *varyingName);
@@ -279,8 +280,6 @@ class TCompiler : public TShHandleBase
     bool initBuiltInSymbolTable(const ShBuiltInResources &resources);
     // Compute the string representation of the built-in resources
     void setResourceString();
-    // Return false if the call depth is exceeded.
-    bool checkCallDepth();
     // Insert statements to reference all members in unused uniform blocks with standard and shared
     // layout. This is to work around a Mac driver that treats unused standard/shared
     // uniform blocks as inactive.
@@ -295,8 +294,8 @@ class TCompiler : public TShHandleBase
     [[nodiscard]] bool initializeGLPosition(TIntermBlock *root);
     // Return true if the maximum expression complexity is below the limit.
     bool limitExpressionComplexity(TIntermBlock *root);
-    // Creates the function call DAG for further analysis, returning false if there is a recursion
-    bool initCallDag(TIntermNode *root);
+    // Creates the function call DAG for further analysis.
+    void initCallDag(TIntermNode *root);
     void tagUsedFunctions();
     void internalTagUsedFunction(size_t index);
 
@@ -318,7 +317,7 @@ class TCompiler : public TShHandleBase
 
     // Fetches and stores shader metadata that is not stored within the AST itself, such as shader
     // version.
-    void setASTMetadata(const TParseContext &parseContext);
+    void setShaderMetadata(const TParseContext &parseContext);
 
     // Check if shader version meets the requirement.
     bool checkShaderVersion(TParseContext *parseContext);
@@ -327,8 +326,6 @@ class TCompiler : public TShHandleBase
     bool checkAndSimplifyAST(TIntermBlock *root,
                              const TParseContext &parseContext,
                              const ShCompileOptions &compileOptions);
-
-    bool postParseChecks(TParseContext *parseContext);
 
     sh::GLenum mShaderType;
     ShShaderSpec mShaderSpec;

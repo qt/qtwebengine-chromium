@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_GAP_CROSS_GAP_H_
 
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/layout/gap/gap_utils.h"
 #include "third_party/blink/renderer/core/layout/geometry/logical_offset.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
@@ -15,7 +16,7 @@ namespace blink {
 // and "after" the `MainGap` associated with this `CrossGap`. Where `start` and
 // `end` describe the index range within the `cross_gaps_` vector of the
 // `GapGeometry` where a given `CrossGap` is stored.
-class CrossGapRange {
+class CORE_EXPORT CrossGapRange {
  public:
   CrossGapRange(wtf_size_t start, wtf_size_t end)
       : start_index_(start), end_index_(end) {}
@@ -38,29 +39,9 @@ class CrossGapRange {
 
   // Increments the range. `cross_gap_index` is the index of the cross gap being
   // processed.
-  void Increment(wtf_size_t cross_gap_index) {
-    if (!start_index_.has_value()) {
-      start_index_ = cross_gap_index;
+  void Increment(wtf_size_t cross_gap_index);
 
-      // Both start at the same index, but subsequent calls will increment the
-      // end index.
-      end_index_ = cross_gap_index;
-    } else {
-      CHECK(end_index_.has_value());
-      CHECK_GT(cross_gap_index, *end_index_);
-      CHECK_GT(cross_gap_index, *start_index_);
-      end_index_ = cross_gap_index;
-    }
-  }
-
-  String ToString() const {
-    String str;
-    str = "(" +
-          (start_index_.has_value() ? String::Number(*start_index_) : "null") +
-          " --> " +
-          (end_index_.has_value() ? String::Number(*end_index_) : "null") + ")";
-    return str;
-  }
+  String ToString() const;
 
   bool operator==(const CrossGapRange& other) const {
     return start_index_ == other.start_index_ && end_index_ == other.end_index_;
@@ -97,28 +78,7 @@ class CORE_EXPORT CrossGap {
 
   LogicalOffset GetGapOffset() const { return gap_logical_offset_; }
 
-  String ToString(bool verbose = false) const {
-    if (verbose) {
-      String edge_state;
-      if (edge_state_ == EdgeIntersectionState::kStart) {
-        edge_state = "kStart";
-      } else if (edge_state_ == EdgeIntersectionState::kEnd) {
-        edge_state = "kEnd";
-      } else if (edge_state_ == EdgeIntersectionState::kBoth) {
-        edge_state = "kBoth";
-      } else {
-        edge_state = "kNone";
-      }
-      return String("CrossStartOffset(") +
-             gap_logical_offset_.inline_offset.ToString() + ", " +
-             gap_logical_offset_.block_offset.ToString() + "); " +
-             "EdgeState: " + edge_state + ";";
-    }
-
-    return String("CrossStartOffset(") +
-           gap_logical_offset_.inline_offset.ToString() + ", " +
-           gap_logical_offset_.block_offset.ToString() + ")";
-  }
+  String ToString(bool verbose = false) const;
 
   void SetEdgeIntersectionState(EdgeIntersectionState state) {
     edge_state_ = state;
@@ -133,10 +93,34 @@ class CORE_EXPORT CrossGap {
   }
   bool GapIntersectsContainerEdge() const { return edge_state_ != kNone; }
 
+  bool HasGapSegmentStateRanges() const {
+    return gap_segment_state_ranges_.has_value();
+  }
+
+  const GapSegmentStateRanges& GetGapSegmentStateRanges() const {
+    CHECK(gap_segment_state_ranges_.has_value());
+    return gap_segment_state_ranges_.value();
+  }
+
+  void AddGapSegmentStateRange(
+      const GapSegmentStateRange& gap_segment_state_range);
+
+  static void UpdateCrossGapRangeEdgeState(
+      Vector<CrossGap>& cross_gaps,
+      wtf_size_t start_index,
+      wtf_size_t end_index,
+      CrossGap::EdgeIntersectionState new_state);
+
  private:
   LogicalOffset gap_logical_offset_;
 
   EdgeIntersectionState edge_state_ = EdgeIntersectionState::kNone;
+
+  // If present, holds slices of this cross gap, each with a `GapSegmentState`
+  // (Blocked / Empty). A cross gap usually spans range [1, N) in one piece, but
+  // the presence of spanning items or empty cells can break it into multiple
+  // state-specific sub‑ranges.
+  std::optional<GapSegmentStateRanges> gap_segment_state_ranges_;
 };
 
 }  // namespace blink

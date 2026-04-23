@@ -29,6 +29,7 @@
 #include "crypto/hash.h"
 #include "crypto/hkdf.h"
 #include "crypto/hmac.h"
+#include "crypto/secure_util.h"
 #include "device/bluetooth/test/bluetooth_test.h"
 #include "device/bluetooth/test/mock_bluetooth_adapter.h"
 #include "device/fido/cable/fido_ble_frames.h"
@@ -143,19 +144,10 @@ std::vector<uint8_t> ConstructAuthenticatorHelloReply(
     base::span<const uint8_t> hello_msg,
     std::string_view handshake_key) {
   auto reply = fido_parsing_utils::Materialize(hello_msg);
-  crypto::HMAC hmac(crypto::HMAC::SHA256);
-  if (!hmac.Init(handshake_key))
-    return std::vector<uint8_t>();
+  const auto hmac =
+      crypto::hmac::SignSha256(base::as_byte_span(handshake_key), hello_msg);
 
-  std::array<uint8_t, 32> authenticator_hello_mac;
-  if (!hmac.Sign(base::as_string_view(hello_msg),
-                 authenticator_hello_mac.data(),
-                 authenticator_hello_mac.size())) {
-    return std::vector<uint8_t>();
-  }
-
-  fido_parsing_utils::Append(&reply,
-                             base::span(authenticator_hello_mac).first<16>());
+  fido_parsing_utils::Append(&reply, base::span(hmac).first<16>());
   return reply;
 }
 
@@ -196,19 +188,17 @@ class FakeCableAuthenticator {
     if (handshake_message.size() <= 16)
       return false;
 
-    crypto::HMAC hmac(crypto::HMAC::SHA256);
-    if (!hmac.Init(handshake_key_))
-      return false;
-
     // Handshake message from client should be concatenation of client hello
     // message (42 bytes) with message authentication code (16 bytes).
     if (handshake_message.size() != 58)
       return false;
 
-    const auto client_hello = handshake_message.first(42u);
-    if (!hmac.VerifyTruncated(
-            base::as_string_view(client_hello),
-            base::as_string_view(handshake_message.subspan<42>()))) {
+    const auto [client_hello, expected_mac] = handshake_message.split_at(42u);
+    const auto actual_mac = crypto::hmac::SignSha256(
+        base::as_byte_span(handshake_key_), client_hello);
+    const auto actual_mac_truncated =
+        base::span(actual_mac).first(std::size(expected_mac));
+    if (!crypto::SecureMemEqual(expected_mac, actual_mac_truncated)) {
       return false;
     }
 

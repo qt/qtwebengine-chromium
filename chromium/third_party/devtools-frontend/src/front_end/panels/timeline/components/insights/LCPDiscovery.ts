@@ -1,13 +1,14 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import './Checklist.js';
 
 import * as i18n from '../../../../core/i18n/i18n.js';
 import type {LCPDiscoveryInsightModel} from '../../../../models/trace/insights/LCPDiscovery.js';
 import * as Trace from '../../../../models/trace/trace.js';
+import * as uiI18n from '../../../../ui/i18n/i18n.js';
 import * as Lit from '../../../../ui/lit/lit.js';
 
 import {BaseInsightComponent} from './BaseInsightComponent.js';
@@ -17,7 +18,7 @@ const {UIStrings, i18nString, getImageData} = Trace.Insights.Models.LCPDiscovery
 
 const {html} = Lit;
 
-// eslint-disable-next-line rulesdir/l10n-filename-matches
+// eslint-disable-next-line @devtools/l10n-filename-matches
 const str_ = i18n.i18n.registerUIStrings('models/trace/insights/LCPDiscovery.ts', UIStrings);
 
 export class LCPDiscovery extends BaseInsightComponent<LCPDiscoveryInsightModel> {
@@ -63,7 +64,7 @@ export class LCPDiscovery extends BaseInsightComponent<LCPDiscoveryInsightModel>
     const timeWrapper = document.createElement('span');
     timeWrapper.classList.add('discovery-time-ms');
     timeWrapper.innerText = i18n.TimeUtilities.formatMicroSecondsAsMillisFixed(delay);
-    return i18n.i18n.getFormatLocalizedString(str_, UIStrings.lcpLoadDelay, {PH1: timeWrapper});
+    return uiI18n.getFormatLocalizedString(str_, UIStrings.lcpLoadDelay, {PH1: timeWrapper});
   }
 
   override renderContent(): Lit.LitTemplate {

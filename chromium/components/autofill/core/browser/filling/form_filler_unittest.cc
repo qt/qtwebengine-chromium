@@ -25,6 +25,7 @@
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
+#include "components/autofill/core/browser/filling/test_form_filler.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/form_structure_test_api.h"
 #include "components/autofill/core/browser/foundations/browser_autofill_manager.h"
@@ -49,6 +50,7 @@
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_data_test_api.h"
 #include "components/autofill/core/common/form_field_data.h"
+#include "components/autofill/core/common/mojom/autofill_types.mojom-data-view.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -153,21 +155,18 @@ class FormFillerTest
     task_environment_.FastForwardBy(year2020 - AutofillClock::Now());
 
     InitAutofillClient();
-    autofill_client()
-        .GetPaymentsAutofillClient()
-        ->set_payments_network_interface(
-            std::make_unique<payments::TestPaymentsNetworkInterface>(
-                autofill_client().GetURLLoaderFactory(),
-                autofill_client().GetIdentityManager(),
-                &autofill_client().GetPersonalDataManager()));
+    payments_autofill_client().set_payments_network_interface(
+        std::make_unique<payments::TestPaymentsNetworkInterface>(
+            autofill_client().GetURLLoaderFactory(),
+            autofill_client().GetIdentityManager(),
+            &autofill_client().GetPersonalDataManager()));
     CreateAutofillDriver();
 
     // Mandatory re-auth is required for credit card autofill on automotive, so
     // the authenticator response needs to be properly mocked.
 #if BUILDFLAG(IS_ANDROID)
-    autofill_client()
-        .GetPaymentsAutofillClient()
-        ->SetUpDeviceBiometricAuthenticatorSuccessOnAutomotive();
+    payments_autofill_client()
+        .SetUpDeviceBiometricAuthenticatorSuccessOnAutomotive();
 #endif
   }
 
@@ -215,7 +214,8 @@ class FormFillerTest
     // to the iframe security policy).
     EXPECT_CALL(autofill_driver(), ApplyFormAction)
         .WillOnce(
-            DoAll(SaveArgElementsTo<2>(&filled_fields), Return(global_ids)));
+            DoAll(SaveArgElementsTo<2>(&filled_fields), Return(global_ids)))
+        .WillRepeatedly({});
     trigger(form);
     // Copy the filled data into the form.
     for (FormFieldData& field : test_api(form).fields()) {
@@ -295,9 +295,8 @@ class FormFillerTest
   // Convenience method to cast the FullCardRequest into a CardUnmaskDelegate.
   CardUnmaskDelegate* full_card_unmask_delegate() {
     payments::FullCardRequest* full_card_request =
-        autofill_client()
-            .GetPaymentsAutofillClient()
-            ->GetCvcAuthenticator()
+        payments_autofill_client()
+            .GetCvcAuthenticator()
             .full_card_request_.get();
     DCHECK(full_card_request);
     return static_cast<CardUnmaskDelegate*>(full_card_request);
@@ -632,8 +631,9 @@ TEST_F(FormFillerTest, PaymentsSwappingWithPartiallyEmptyData) {
                           "4234-5678-9012-3456",  // Visa
                           "04", "", "1");
 
-  std::vector<FormFieldData> filled_fields =
-      AutofillForm(form, form.fields().front(), &credit_card_full).fields();
+  FormData filled_form =
+      AutofillForm(form, form.fields().front(), &credit_card_full);
+  std::vector<FormFieldData> filled_fields = filled_form.fields();
 
   EXPECT_THAT(filled_fields[0], AutofilledWith(credit_card_full.GetInfo(
                                     CREDIT_CARD_NAME_FULL, kAppLocale)));
@@ -641,14 +641,49 @@ TEST_F(FormFillerTest, PaymentsSwappingWithPartiallyEmptyData) {
                                     CREDIT_CARD_EXP_4_DIGIT_YEAR, kAppLocale)));
   EXPECT_TRUE(filled_fields[3].is_autofilled());
 
-  filled_fields =
-      AutofillForm(form, form.fields().front(), &credit_card_with_empty_data)
+  std::vector<FormFieldData> updated_fields =
+      AutofillForm(filled_form, filled_form.fields().front(),
+                   &credit_card_with_empty_data)
           .fields();
-  EXPECT_THAT(filled_fields[0],
+  EXPECT_THAT(updated_fields[0],
               AutofilledWith(credit_card_with_empty_data.GetInfo(
                   CREDIT_CARD_NAME_FULL, kAppLocale)));
-  EXPECT_EQ(filled_fields[3].value(), u"");
-  EXPECT_FALSE(filled_fields[3].is_autofilled());
+  EXPECT_EQ(updated_fields[3].value(), u"");
+  EXPECT_FALSE(updated_fields[3].is_autofilled());
+}
+
+// Tests that when payment form fields are autofilled and payment swapping is
+// enabled, the cached AutofillField is updated correctly.
+TEST_F(FormFillerTest, PaymentsSwappingUpdatesAutofillField) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      features::kAutofillPaymentsFieldSwapping);
+
+  FormData form = test::CreateTestCreditCardFormData(/*is_https=*/true,
+                                                     /*use_month_type=*/false);
+  FormsSeen({form});
+
+  CreditCard credit_card_full;
+  test::SetCreditCardInfo(&credit_card_full, "Elvis Presley",
+                          "4234 5678 9012 3456",  // Visa
+                          "04", "2999", "1");
+
+  CreditCard credit_card_with_empty_data;
+  test::SetCreditCardInfo(&credit_card_with_empty_data, "Elvis Presley New",
+                          "4234-5678-9012-3456",  // Visa
+                          "04", "", "1");
+
+  FormData filled_form =
+      AutofillForm(form, form.fields().front(), &credit_card_full);
+  FormStructure* filled_form_structure = GetFormStructure(filled_form);
+  EXPECT_TRUE(filled_form_structure->field(0)->is_autofilled());
+  EXPECT_TRUE(filled_form_structure->field(3)->is_autofilled());
+
+  FormData updated_form = AutofillForm(
+      filled_form, filled_form.fields().front(), &credit_card_with_empty_data);
+  FormStructure* updated_form_structure = GetFormStructure(updated_form);
+  EXPECT_TRUE(updated_form_structure->field(0)->is_autofilled());
+  EXPECT_FALSE(updated_form_structure->field(3)->is_autofilled());
 }
 
 struct PartialCreditCardDateParams {
@@ -1469,11 +1504,14 @@ TEST_F(FormFillerTest, FillFirstPhoneNumber_HiddenFieldShouldNotCount) {
   EXPECT_EQ(u"6505554567", filled_fields[2].value());
 }
 
-// Tests that only hidden/presentational select fields are filled.
-TEST_F(FormFillerTest, FormWithHiddenOrPresentationalFields) {
+// Tests that non-focusable fields are not filled unless they are select
+// elements.
+TEST_F(FormFillerTest, FillNonFocusableFields) {
   FormData form = test::GetFormData(
       {.fields = {{.role = NAME_FULL, .autocomplete_attribute = "name"}}});
 
+  // <input role="presentation"> were considered unfillable in the past but are
+  // now fillable.
   test_api(form).Append(
       test::CreateTestSelectField("Country", "country", "", "country",
                                   {"CA", "US"}, {"Canada", "United States"}));
@@ -1503,7 +1541,7 @@ TEST_F(FormFillerTest, FormWithHiddenOrPresentationalFields) {
   EXPECT_THAT(filled_fields[1], AutofilledWith(u"US"));
   EXPECT_THAT(filled_fields[2], AutofilledWith(u"CA"));
   EXPECT_FALSE(filled_fields[3].is_autofilled());
-  EXPECT_FALSE(filled_fields[4].is_autofilled());
+  EXPECT_TRUE(filled_fields[4].is_autofilled());
 }
 
 TEST_F(FormFillerTest, FillFirstPhoneNumber_MultipleSectionFilledCorrectly) {
@@ -1547,10 +1585,8 @@ TEST_F(FormFillerTest, FillFirstPhoneNumber_MultipleSectionFilledCorrectly) {
 }
 
 TEST_F(FormFillerTest, FillPassportEntity) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures({features::kAutofillAiWithDataSchema,
-                                 features::kAutofillUnionTypesForAutofillAi},
-                                {});
+  base::test::ScopedFeatureList feature_list(
+      features::kAutofillAiWithDataSchema);
   FormData form = test::GetFormData({.fields = {
                                          // Passport number:
                                          {.role = UNKNOWN_TYPE},
@@ -1803,6 +1839,64 @@ TEST_F(FormFillerTest, PreFilledCCFieldInAddressFormDoesNotCauseCrash) {
   AutofillProfile profile = test::GetFullProfile();
   AutofillForm(form, form.fields().front(), &profile);
   // Expect that this test doesn't cause a crash.
+}
+
+class MockFormFiller : public TestFormFiller {
+ public:
+  MockFormFiller(BrowserAutofillManager& manager) : TestFormFiller(manager) {}
+  MOCK_METHOD(void,
+              ScheduleRefill,
+              (const FormData& form,
+               RefillContext& refill_context,
+               AutofillTriggerSource trigger_source,
+               RefillTriggerReason refill_trigger_reason),
+              (override));
+};
+
+class RefillTest : public FormFillerTest {
+ public:
+  void SetUp() override {
+    FormFillerTest::SetUp();
+    test_api(autofill_manager())
+        .set_form_filler(std::make_unique<MockFormFiller>(autofill_manager()));
+  }
+
+  MockFormFiller& mock_form_filler() {
+    return static_cast<MockFormFiller&>(form_filler());
+  }
+
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+TEST_F(RefillTest, SelectOptionsChanged_IrrelevantSelectField) {
+  AutofillProfile profile = test::GetFullProfile();
+  {
+    base::test::ScopedFeatureList scoped_feature_list;
+    scoped_feature_list.InitAndDisableFeature(
+        features::kAutofillFewerTrivialRefills);
+    FormData form = test::GetFormData(
+        {.fields = {
+             {.role = NAME_FULL, .autocomplete_attribute = "name"},
+             {.form_control_type = mojom::FormControlType::kSelectOne}}});
+    FormsSeen({form});
+    AutofillForm(form, form.fields().front(), &profile);
+    EXPECT_CALL(mock_form_filler(), ScheduleRefill).Times(1);
+    autofill_manager().OnSelectFieldOptionsDidChange(
+        form, form.fields().back().global_id());
+  }
+  {
+    base::test::ScopedFeatureList scoped_feature_list{
+        features::kAutofillFewerTrivialRefills};
+    FormData form = test::GetFormData(
+        {.fields = {
+             {.role = NAME_FULL, .autocomplete_attribute = "name"},
+             {.form_control_type = mojom::FormControlType::kSelectOne}}});
+    FormsSeen({form});
+    AutofillForm(form, form.fields().front(), &profile);
+    EXPECT_CALL(mock_form_filler(), ScheduleRefill).Times(0);
+    autofill_manager().OnSelectFieldOptionsDidChangeImpl(
+        form, form.fields().back().global_id());
+  }
 }
 
 // The following Refill Tests ensure that Autofill can handle the situation

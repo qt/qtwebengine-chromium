@@ -1,7 +1,8 @@
 Name: webpagereplay
-URL: https://chromium.googlesource.com/webpagereplay
+URL: This is the canonical public repository
 Version: b30671dabd2070d609350c85734264a6dfac7eb0
-License: 2020 The Chromium Authors
+Update Mechanism: Autoroll
+License: BSD-3-Clause
 License File: LICENSE
 Security Critical: no
 Shipped: no

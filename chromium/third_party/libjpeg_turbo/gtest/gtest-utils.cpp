@@ -18,7 +18,11 @@
  * 3. This notice may not be removed or altered from any source distribution.
  */
 
+#include "base/containers/span.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "crypto/obsolete/md5.h"
 #include "gtest-utils.h"
 
 #if defined(OS_WIN)
@@ -55,6 +59,11 @@ bool CompareFileAndMD5(const base::FilePath& path,
   if (!base::ReadFileToString(path, &output)) {
     return false;
   }
-  const std::string md5 = base::MD5String(output);
+  const std::string md5 = GetMd5AsHex(output);
   return expected_md5 == md5;
+}
+
+std::string GetMd5AsHex(std::string_view data) {
+  return base::ToLowerASCII(
+      base::HexEncode(crypto::obsolete::Md5::HashForTesting(base::as_byte_span(data))));
 }

@@ -27,6 +27,7 @@ devtools_module("issues_manager") {
     "GenericIssue.ts",
     "HeavyAdIssue.ts",
     "Issue.ts",
+    "IssueAggregator.ts",
     "IssueResolver.ts",
     "IssuesManager.ts",
     "IssuesManagerEvents.ts",
@@ -34,6 +35,7 @@ devtools_module("issues_manager") {
     "MarkdownIssueDescription.ts",
     "MixedContentIssue.ts",
     "PartitioningBlobURLIssue.ts",
+    "PermissionElementIssue.ts",
     "PropertyRuleIssue.ts",
     "QuirksModeIssue.ts",
     "RelatedIssue.ts",
@@ -43,7 +45,6 @@ devtools_module("issues_manager") {
     "SourceFrameIssuesManager.ts",
     "StylesheetLoadingIssue.ts",
     "UnencodedDigestIssue.ts",
-    "UserReidentificationIssue.ts",
   ]
 
   deps = [
@@ -126,10 +127,11 @@ devtools_issue_description_files = [
   "genericFormInputWithNoLabelError.md",
   "genericFormAutocompleteAttributeEmptyError.md",
   "genericFormEmptyIdAndNameAttributesForInputError.md",
-  "genericFormAriaLabelledByToNonExistingId.md",
+  "genericFormAriaLabelledByToNonExistingIdError.md",
   "genericFormInputAssignedAutocompleteValueToIdOrNameAttributeError.md",
-  "genericFormLabelHasNeitherForNorNestedInput.md",
+  "genericFormLabelHasNeitherForNorNestedInputError.md",
   "genericFormLabelForMatchesNonExistingIdError.md",
+  "genericNavigationEntryMarkedSkippable.md",
   "genericResponseWasBlockedByORB.md",
   "federatedAuthRequestApprovalDeclined.md",
   "federatedAuthRequestTooManyRequests.md",
@@ -162,6 +164,29 @@ devtools_issue_description_files = [
   "heavyAd.md",
   "LowTextContrast.md",
   "mixedContent.md",
+  "permissionElementActivationDisabled.md",
+  "permissionElementActivationDisabledWithOccluder.md",
+  "permissionElementActivationDisabledWithOccluderParent.md",
+  "permissionElementCspFrameAncestorsMissing.md",
+  "permissionElementFencedFrameDisallowed.md",
+  "permissionElementFontSizeTooLarge.md",
+  "permissionElementFontSizeTooSmall.md",
+  "permissionElementGeolocationDeprecated.md",
+  "permissionElementInsetBoxShadowUnsupported.md",
+  "permissionElementInvalidDisplayStyle.md",
+  "permissionElementInvalidSizeValue.md",
+  "permissionElementInvalidType.md",
+  "permissionElementInvalidTypeActivation.md",
+  "permissionElementLowContrast.md",
+  "permissionElementNonOpaqueColor.md",
+  "permissionElementPaddingBottomUnsupported.md",
+  "permissionElementPaddingRightUnsupported.md",
+  "permissionElementPermissionsPolicyBlocked.md",
+  "permissionElementRegistrationFailed.md",
+  "permissionElementRequestInProgress.md",
+  "permissionElementSecurityChecksFailed.md",
+  "permissionElementTypeNotSupported.md",
+  "permissionElementUntrustedEvent.md",
   "SameSiteExcludeContextDowngradeRead.md",
   "SameSiteExcludeContextDowngradeSet.md",
   "SameSiteExcludeNavigationContextDowngrade.md",
@@ -207,8 +232,10 @@ devtools_issue_description_files = [
   "sharedDictionaryWriteErrorInsufficientResources.md",
   "sharedDictionaryWriteErrorInvalidMatchField.md",
   "sharedDictionaryWriteErrorInvalidStructuredHeader.md",
+  "sharedDictionaryWriteErrorInvalidTTLField.md",
   "sharedDictionaryWriteErrorNavigationRequest.md",
   "sharedDictionaryWriteErrorNoMatchField.md",
+  "sharedDictionaryWriteErrorNonIntegerTTLField.md",
   "sharedDictionaryWriteErrorNonListMatchDestField.md",
   "sharedDictionaryWriteErrorNonSecureContext.md",
   "sharedDictionaryWriteErrorNonStringIdField.md",
@@ -247,7 +274,6 @@ devtools_issue_description_files = [
   "unencodedDigestIncorrectDigestType.md",
   "unencodedDigestMalformedDictionary.md",
   "unencodedDigestUnknownAlgorithm.md",
-  "userReidentificationBlocked.md",
 ]
 
 devtools_pre_built("descriptions") {
@@ -270,6 +296,7 @@ devtools_entrypoint("bundle") {
 
   visibility = [
     ":*",
+    "../../../mcp/*",
     "../../entrypoints/main/*",
     "../../panels/application/*",
     "../../panels/console/*",
@@ -294,15 +321,31 @@ ts_library("unittests") {
 
   sources = [
     "CheckFormsIssuesTrigger.test.ts",
+    "IssuesManager.test.ts",
+  ]
+
+  deps = [
+    ":bundle",
+    "../../core/common:bundle",
+    "../../core/sdk:bundle",
+    "../../testing",
+  ]
+}
+
+devtools_foundation_module("foundation_unittests") {
+  testonly = true
+
+  sources = [
     "DeprecationIssue.test.ts",
     "ElementAccessibilityIssue.test.ts",
     "FederatedAuthUserInfoRequestIssue.test.ts",
     "GenericIssue.test.ts",
     "Issue.test.ts",
+    "IssueAggregator.test.ts",
     "IssueResolver.test.ts",
-    "IssuesManager.test.ts",
     "LowTextContrastIssue.test.ts",
     "MarkdownIssueDescription.test.ts",
+    "PermissionElementIssue.test.ts",
     "PropertyRuleIssue.test.ts",
     "RelatedIssue.test.ts",
     "SRIMessageSignatureIssue.test.ts",

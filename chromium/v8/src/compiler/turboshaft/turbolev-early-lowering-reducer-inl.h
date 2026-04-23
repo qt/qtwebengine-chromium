@@ -46,17 +46,10 @@ class TurbolevEarlyLoweringReducer : public Next {
 
     if (first_instance_type == last_instance_type) {
 #if V8_STATIC_ROOTS_BOOL
-      if (InstanceTypeChecker::UniqueMapOfInstanceType(first_instance_type)) {
-        std::optional<RootIndex> expected_index =
-            InstanceTypeChecker::UniqueMapOfInstanceType(first_instance_type);
-        CHECK(expected_index.has_value());
-        Handle<HeapObject> expected_map =
-            Cast<HeapObject>(isolate_->root_handle(expected_index.value()));
-        __ DeoptimizeIfNot(__ TaggedEqual(map, __ HeapConstant(expected_map)),
-                           frame_state, DeoptimizeReason::kWrongInstanceType,
-                           feedback);
-        return;
-      }
+      // If this DCHECK fails, then we could special-case for this and just do a
+      // single map compare rather than loading the instance type.
+      DCHECK(
+          !InstanceTypeChecker::UniqueMapOfInstanceType(first_instance_type));
 #endif  // V8_STATIC_ROOTS_BOOL
       V<Word32> instance_type = __ LoadInstanceTypeField(map);
       __ DeoptimizeIfNot(__ Word32Equal(instance_type, first_instance_type),
@@ -167,8 +160,8 @@ class TurbolevEarlyLoweringReducer : public Next {
 
     BIND(do_throw);
     {
-      __ CallRuntime_ThrowConstructorReturnedNonObject(
-          isolate_, frame_state, native_context, lazy_deopt_on_throw);
+      __ template CallRuntime<runtime::ThrowConstructorReturnedNonObject>(
+          frame_state, native_context, {}, lazy_deopt_on_throw);
       // ThrowConstructorReturnedNonObject should not return.
       __ Unreachable();
     }
@@ -225,9 +218,9 @@ class TurbolevEarlyLoweringReducer : public Next {
         if (is_simple) {
           __ StoreField(object, AccessBuilder::ForMap(), target_map);
         } else {
-          __ CallRuntime_TransitionElementsKind(
-              isolate_, __ NoContextConstant(), V<HeapObject>::Cast(object),
-              target_map);
+          __ template CallRuntime<runtime::TransitionElementsKind>(
+              __ NoContextConstant(), {.object = V<HeapObject>::Cast(object),
+                                       .target_map = target_map});
         }
         GOTO(end, target_map);
       }
@@ -283,9 +276,10 @@ class TurbolevEarlyLoweringReducer : public Next {
         GOTO(call_runtime);
 
         BIND(call_runtime);
-        GOTO(done, __ CallRuntime_HasInPrototypeChain(
-                       isolate_, frame_state, native_context,
-                       lazy_deopt_on_throw, object, target_proto));
+        GOTO(done, __ template CallRuntime<runtime::HasInPrototypeChain>(
+                       frame_state, native_context,
+                       {.object = object, .prototype = target_proto},
+                       lazy_deopt_on_throw));
       }
       GOTO(object_is_direct);
 
@@ -312,8 +306,9 @@ class TurbolevEarlyLoweringReducer : public Next {
         __ template LoadField<Word32>(map, AccessBuilder::ForMapBitField3());
     IF (UNLIKELY(__ Word32BitwiseAnd(bitfield3,
                                      Map::Bits3::IsDeprecatedBit::kMask))) {
-      V<Object> object_or_smi = __ CallRuntime_TryMigrateInstance(
-          isolate_, __ NoContextConstant(), object);
+      V<Object> object_or_smi =
+          __ template CallRuntime<runtime::TryMigrateInstance>(
+              __ NoContextConstant(), {.heap_object = object});
       __ DeoptimizeIf(__ ObjectIsSmi(object_or_smi), frame_state,
                       DeoptimizeReason::kInstanceMigrationFailed, feedback);
       // Reload the map since TryMigrateInstance might have changed it.

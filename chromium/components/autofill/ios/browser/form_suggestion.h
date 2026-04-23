@@ -35,7 +35,9 @@ enum class SuggestionFeatureForIPH {
   // Denoting IPH for the plus address create suggestion.
   kPlusAddressCreation = 2,
   // Denoting IPH for the home and work address suggestion.
-  kHomeAndWorkAddressSuggestion = 3
+  kHomeAndWorkAddressSuggestion = 3,
+  // Denoting IPH for the name and email suggestion.
+  kAccountNameEmailSuggestion = 4
 };
 
 // Enum class used to determine the icon for the suggestion.
@@ -66,6 +68,9 @@ enum class SuggestionIconType {
 // The suggestion icon; either a custom icon if available, or the network icon
 // otherwise.
 @property(copy, readonly, nonatomic) UIImage* icon;
+
+// Indicates whether the suggestion has a custom card art image.
+@property(assign, readonly, nonatomic) BOOL hasCustomCardArtImage;
 
 // Denotes the suggestion type.
 @property(assign, readonly, nonatomic) autofill::SuggestionType type;
@@ -102,6 +107,19 @@ enum class SuggestionIconType {
 // knowing which provider to use for filling the suggestion. Must be set before
 // the suggestion is filled when kStatelessFormSuggestionController is enabled.
 @property(nonatomic, weak) id<FormSuggestionProvider> provider;
+
+// Returns FormSuggestion (immutable) with given values.
++ (FormSuggestion*)suggestionWithValue:(NSString*)value
+                            minorValue:(NSString*)minorValue
+                    displayDescription:(NSString*)displayDescription
+                                  icon:(UIImage*)icon
+                 hasCustomCardArtImage:(BOOL)hasCustomCardArtImage
+                                  type:(autofill::SuggestionType)type
+                               payload:(autofill::Suggestion::Payload)payload
+           fieldByFieldFillingTypeUsed:
+               (autofill::FieldType)fieldByFieldFillingTypeUsed
+                        requiresReauth:(BOOL)requiresReauth
+            acceptanceA11yAnnouncement:(NSString*)acceptanceA11yAnnouncement;
 
 // Returns FormSuggestion (immutable) with given values.
 + (FormSuggestion*)suggestionWithValue:(NSString*)value

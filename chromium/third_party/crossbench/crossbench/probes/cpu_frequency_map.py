@@ -8,8 +8,8 @@ import abc
 import argparse
 import enum
 import re
-from typing import (TYPE_CHECKING, Any, Final, Hashable, Mapping, Pattern,
-                    TypeAlias)
+from typing import TYPE_CHECKING, Any, Final, Hashable, Mapping, Pattern, \
+    TypeAlias
 
 from immutabledict import immutabledict
 from typing_extensions import override

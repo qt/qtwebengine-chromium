@@ -31,6 +31,7 @@ from collections import namedtuple, defaultdict
 from copy import deepcopy
 
 from generator_lib import Generator, run_generator, FileRender, GeneratorOutput
+from webgpu_json_utility import build_doc_map, load_json_data
 
 ############################################################
 # OBJECT MODEL
@@ -419,13 +420,6 @@ class StructureType(Record, Type):
         return any(member.requires_struct_defaulting
                    for member in self.members)
 
-    @property
-    # Returns True if the structure can be created with no parameters, e.g. all of its members have
-    # defaults or are optional,
-    def has_basic_constructor(self):
-        return all((member.optional or member.default_value
-                    or member.type.hasUndefined) for member in self.members)
-
 
 class CallbackInfoType(StructureType):
     def __init__(self, is_enabled, name, json_data):
@@ -707,6 +701,7 @@ def compute_wire_params(api_params, wire_json):
 
     commands = []
     return_commands = []
+    special_commands = []
 
     wire_json['special items']['client_handwritten_commands'] += wire_json[
         'special items']['client_side_commands']
@@ -772,9 +767,14 @@ def compute_wire_params(api_params, wire_json):
         return_commands.append(
             Command(name, linked_record_members(json_data, types)))
 
+    for (name, json_data) in wire_json['special commands'].items():
+        special_commands.append(
+            Command(name, linked_record_members(json_data, types)))
+
     wire_params['cmd_records'] = {
         'command': commands,
-        'return command': return_commands
+        'return command': return_commands,
+        'special command': special_commands
     }
 
     for commands in wire_params['cmd_records'].values():
@@ -792,14 +792,103 @@ def compute_wire_params(api_params, wire_json):
 ############################################################
 
 
-def compute_kotlin_params(loaded_json, kotlin_json):
+# Color the structures to determine which converters
+# (Kotlin -> Native and Native -> Kotlin) are required.
+def analyze_converter_usage(params_kotlin):
+    # Initialize flags for both standard structures and callback info structures.
+    for struct in params_kotlin['by_category']['structure'] + params_kotlin[
+            'by_category']['callback info']:
+        struct.needs_n2k = False
+        struct.needs_k2n = False
+
+    # Get the map of chained structs.
+    chain_children = params_kotlin.get('chain_children', {})
+
+    def mark_n2k(typ):
+        # Only proceed if it's a structure and hasn't been marked yet to avoid infinite recursion.
+        if isinstance(typ, StructureType) and not typ.needs_n2k:
+            typ.needs_n2k = True
+            # Recursively mark all members of this structure.
+            for member in typ.members:
+                mark_n2k(member.type)
+
+    def mark_k2n(typ):
+        # Only proceed if it's a structure and hasn't been marked yet to avoid infinite recursion.
+        if isinstance(typ, StructureType) and not typ.needs_k2n:
+            typ.needs_k2n = True
+            # Recursively mark all members of this structure.
+            for member in typ.members:
+                mark_k2n(member.type)
+            # Recursively mark all potential chained children.
+            for child in chain_children.get(typ.name.get(), []):
+                mark_k2n(child)
+
+    # Scan Objects and Methods for roots.
+    for obj in params_kotlin['by_category']['object']:
+        for method in obj.methods:
+            if not params_kotlin['include_method'](obj, method):
+                continue
+
+            # Root A: Return values are always Native -> Kotlin.
+            if method.returns:
+                mark_n2k(method.returns.type)
+
+            # Root B: Output parameters (mutable pointers '*') are Native -> Kotlin.
+            for arg in method.arguments:
+                if arg.annotation == '*':
+                    mark_n2k(arg.type)
+                else:
+                    mark_k2n(arg.type)
+
+    # Scan Callback Functions for roots.
+    for cb in params_kotlin['by_category']['callback function']:
+        for arg in cb.arguments:
+            mark_n2k(arg.type)
+
+    # Scan global functions if API exposes them.
+    for func in params_kotlin['by_category']['function']:
+        if func.returns:
+            mark_n2k(func.returns.type)
+        for arg in func.arguments:
+            if arg.annotation == '*':
+                mark_n2k(arg.type)
+            else:
+                mark_k2n(arg.type)
+
+
+def compute_kotlin_params(loaded_json, kotlin_json, webgpu_json_data=None):
     params_kotlin = parse_json(loaded_json, enabled_tags=['art'])
     params_kotlin['kotlin_package'] = kotlin_json['kotlin_package']
     params_kotlin['jni_primitives'] = kotlin_json['jni_primitives']
     params_kotlin['jni_signatures'] = kotlin_json['jni_signatures']
     kt_file_path = params_kotlin['kotlin_package'].replace('.', '/')
+    customize_api = kotlin_json["customize_api"]
+    customize_objects = customize_api["objects"]
+    customize_structures = customize_api["structures"]
+    customize_enums = customize_api["enums"]
 
     def kotlin_record_members(members):
+        # Members are sorted in the following order.
+        # 1. members with no default value (except callbacks).
+        # 2. members with default values.
+        # 3. callbacks.
+        for member in sorted(kotlin_record_members_unsorted(members),
+                             key=lambda arg: kotlin_default(arg) is not None):
+            yield member
+
+        # Callbacks always go at the end.
+        for member in members:
+            if member.type.category == 'callback info':
+                for callback_info_member in member.type.members:
+                    if callback_info_member.type.category == 'callback function':
+                        # We give the callback function a new name based on the callback info.
+                        name = member.name.get().removesuffix(' info')
+                        function_member = deepcopy(callback_info_member)
+                        function_member.name = Name(name)
+                        yield function_member
+                    continue
+
+    def kotlin_record_members_unsorted(members):
         for member in members:
             # length parameters are omitted because Kotlin containers have 'length'.
             if member in [m.length for m in members]:
@@ -814,7 +903,98 @@ def compute_kotlin_params(loaded_json, kotlin_json):
             if member.annotation == '*' and member.length == 'constant':
                 continue
 
+            # We replace the callback info with an executor here.
+            if member.type.category == 'callback info':
+                name = member.name.get().removesuffix(' info')
+                yield RecordMember(
+                    Name(name + ' executor'),
+                    Type('java.util.concurrent.Executor',
+                         {'category': 'kotlin type'}), None, {})
+                continue
+
             yield member
+
+
+    # Calculate if we should, and can, provide a Kotlin default value for a given argument.
+    # This will affect its order in the method parameter and structure field lists.
+    def kotlin_default(arg):
+        # Optional and non-optional container parameters are defaulted to empty containers to match
+        # the behavior of the JavaScript API.
+        if arg.length and arg.length != 'constant' and arg.type.name.get(
+        ) != 'void':
+            if arg.type.category in [
+                    'callback function', 'callback info', 'function pointer',
+                    'object', 'structure'
+            ]:
+                return 'arrayOf()'
+            return 'intArrayOf()'
+
+        # All other optional types default to 'null'.
+        if arg.optional:
+            return 'null'
+
+        # Non-optional structures are defaulted to a defaulted structure if we can construct one.
+        # This is to match the behavior of the JavaScript API which lets clients pass undefined
+        # structure values even for non-optional fields.
+        if arg.type.category in [
+                'structure', 'callback info'
+        ] and arg.type.name.get() != 'string view' and all(
+                kotlin_default(member) is not None
+                for member in arg.type.members):
+            constructor_args = []
+            # default_value = zero is a special defaulting variation from C we have to emulate.
+            if arg.default_value == 'zero':
+                constructor_args = [
+                    f"{member.name.camelCase()} = {member.type.name.CamelCase()}.{as_ktName(value.name.CamelCase())}"
+                    for member in kotlin_record_members(arg.type.members)
+                    if member.type.category in ['bitmask', 'enum']
+                    for value in member.type.values if value.value == 0
+                ]
+            return f"{arg.type.name.CamelCase()}({', '.join(constructor_args)})"
+
+        # For bitmasks/enums we insert the full type of the default. No default value doesn't mean
+        # no default in the bindings, because it should match the bitmask/enum labeled 'undefined'.
+        if arg.type.category in ['bitmask', 'enum']:
+            for value in arg.type.values:
+                if value.name.name == (arg.default_value or 'undefined'):
+                    return f"{arg.type.name.CamelCase()}.{as_ktName(value.name.CamelCase())}"
+            return arg.default_value
+
+        # Everything remaining requires a default value in the dawn.json.
+        if arg.default_value in [None, 'nullptr']:
+            return None
+
+        if arg.type.category == 'native':
+            # Is this a Dawn named constant that can be matched with the global definition?
+            constant = find_by_name(by_category["constant"], arg.default_value)
+            if constant:
+                return 'Constants.' + as_ktName(constant.name.SNAKE_CASE())
+
+            # Convert double/floats to the Kotlin format.
+            if arg.type.name.get() in ['double', 'float']:
+                return "%.1ff" % float(arg.default_value.rstrip('fF'))
+
+            # Java doesn't have unsigned 32 bit / 64 bit variables so the cleanest workaround is
+            # to insert the bitwise equivalent of a signed number.
+            if arg.type.name.get() in ['int', 'int32_t', 'uint32_t'
+                                       ] and arg.default_value == '0xFFFFFFFF':
+                return '-0x7FFFFFFF'
+            if arg.type.name.get() in [
+                    'int64_t', 'uint64_t', 'size_t'
+            ] and arg.default_value == '0xFFFFFFFFFFFFFFFF':
+                return '-0x7FFFFFFFFFFFFFFF'
+
+            # In all remaining cases the default as specified in dawn.json will work verbatim in
+            # Kotlin.
+            return arg.default_value
+
+        unreachable_code(
+            f"no logic to default '{arg.type.name.get()}' in category '{arg.type.category}'"
+        )
+        return None
+
+    def kotlin_name(type):
+        return f"{'GPU' if type.category == 'object' else ''}{type.name.CamelCase()}"
 
     def kotlin_return(method):
         for argument in method.arguments:
@@ -832,6 +1012,19 @@ def compute_kotlin_params(loaded_json, kotlin_json):
                         and argument.type.category == 'structure'):
                     return argument
 
+        # Check for "status-only" return.
+        if (method.returns
+                and method.returns.type.name.canonical_case() == 'status'):
+            # This is a function like GPUBuffer.readMappedRange(). Its C return is a status,
+            # but it has no "out" parameters. The idiomatic Kotlin function
+            # should return Unit and throw an exception on failure.
+            return None
+
+        # If the function should return an omitted structure, we return nothing instead.
+        if method.returns and method.returns.type.category == 'structure' and not include_structure(
+                method.returns.type):
+            return None
+
         # Return values are not treated as optional to keep the Kotlin API simple.
         # Methods are expected to return an object if declared. If they can't, dawn may raise an
         # error (converted to a Kotlin exception); otherwise JNI will throw NullPointerException.
@@ -840,21 +1033,36 @@ def compute_kotlin_params(loaded_json, kotlin_json):
             method.returns.type, method.returns.annotation, False,
             method.json_data) if method.returns else None
 
-    # TODO(b/352047733): Replace methods that require special handling with an exceptions list.
-    def include_method(method):
+    def include_method(obj, method):
         if method.returns and method.returns.type.category == 'function pointer':
             # Kotlin doesn't support returning functions.
             return False
-        return True
 
-    # Whether to create structure converters (or use handwritten converters).
+        if obj is None:
+            return True
+
+        # Is the method marked omitted in dawn_kotlin.json?
+        return customize_objects.get(obj.name.get(),
+                                     {}).get("methods", {}).get(
+                                         method.name.get(),
+                                         {}).get('omitted') is not True
+
     def include_structure(structure):
         if structure.name.canonical_case() == "string view":
             return False
-        return True
+        # Is the structure marked omitted in dawn_kotlin.json?
+        return customize_structures.get(structure.name.get(),
+                                        {}).get('omitted') is not True
 
-    def jni_name(type):
-        return kt_file_path + '/' + type.name.CamelCase()
+    def include_enum(enum):
+        return customize_enums.get(enum.name.get(),
+                                   {}).get('omitted') is not True
+
+    def jni_name(type, category=None):
+        if type.category == 'kotlin type':
+            # Standard library Kotlin class (with namespace) just needs converting.
+            return type.name.get().replace('.', '/')
+        return f"{kt_file_path}/{kotlin_name(type)}"
 
     # A structure may need to know which other structures listed it as a chain root, e.g.
     # to know whether to mark the generated class 'open'.
@@ -863,19 +1071,32 @@ def compute_kotlin_params(loaded_json, kotlin_json):
     for structure in by_category['structure']:
         for chain_root in structure.chain_roots:
             chain_children[chain_root.name.get()].append(structure)
+
+    kdocs_params = {
+        'language': 'kotlin',
+        'kdocs_blocklist': kotlin_json['kdocs_blocklist'],
+        'kdocs_replacements': kotlin_json['kdocs_replacements'],
+    }
+    params_kotlin['kdocs'] = build_doc_map(by_category=by_category,
+                                           json_data=webgpu_json_data,
+                                           params=kdocs_params)
     params_kotlin['chain_children'] = chain_children
+    params_kotlin['kotlin_default'] = kotlin_default
     params_kotlin['kotlin_return'] = kotlin_return
+    params_kotlin['kotlin_name'] = kotlin_name
     params_kotlin['include_method'] = include_method
     params_kotlin['include_structure'] = include_structure
+    params_kotlin['include_enum'] = include_enum
     params_kotlin['kotlin_record_members'] = kotlin_record_members
     params_kotlin['jni_name'] = jni_name
-    params_kotlin['has_kotlin_classes'] = (
-        by_category['callback function'] + by_category['callback info'] +
-        by_category['enum'] + by_category['function pointer'] +
-        by_category['object'] + [
-            structure for structure in by_category['structure']
-            if include_structure(structure)
-        ])
+    params_kotlin['has_kotlin_classes'] = by_category['callback function'] + [
+        enum for enum in by_category['enum'] if include_enum(enum)
+    ] + by_category['function pointer'] + by_category['object'] + [
+        structure for structure in by_category['structure']
+        if include_structure(structure)
+    ]
+
+    analyze_converter_usage(params_kotlin)
 
     return params_kotlin
 
@@ -1207,6 +1428,10 @@ class MultiGeneratorFromDawnJSON(Generator):
                             default=None,
                             type=str,
                             help='The KOTLIN JSON definition to use.')
+        parser.add_argument('--webgpu-json',
+                            default=None,
+                            type=str,
+                            help='The WebGPU API documentation to use.')
         parser.add_argument(
             '--targets',
             required=True,
@@ -1230,6 +1455,10 @@ class MultiGeneratorFromDawnJSON(Generator):
         if args.kotlin_json:
             with open(args.kotlin_json) as f:
                 kotlin_json = json.loads(f.read())
+
+        webgpu_json_data = None
+        if args.webgpu_json:
+            webgpu_json_data = load_json_data(args.webgpu_json)
 
         renders = []
         imported_templates = []
@@ -1573,60 +1802,70 @@ class MultiGeneratorFromDawnJSON(Generator):
                            wire_params))
 
         if 'kotlin' in targets:
-            params_kotlin = compute_kotlin_params(loaded_json, kotlin_json)
+            params_kotlin = compute_kotlin_params(loaded_json, kotlin_json,
+                                                  webgpu_json_data)
             kt_file_path = params_kotlin['kotlin_package'].replace('.', '/')
             jni_name = params_kotlin['jni_name']
 
             imported_templates += [
+                "art/api_kotlin_async_helpers.kt",
                 "art/api_kotlin_types.kt",
             ]
 
             by_category = params_kotlin['by_category']
-            for structure in by_category['structure'] + by_category[
-                    'callback info']:
-                if structure.name.get() != "string view":
+            for structure in by_category['structure']:
+                if params_kotlin['include_structure'](structure):
                     renders.append(
-                        FileRender('art/api_kotlin_structure.kt',
-                                   'java/' + jni_name(structure) + '.kt', [
-                                       RENDER_PARAMS_BASE, params_kotlin, {
-                                           'structure': structure
-                                       }
-                                   ]))
+                        FileRender(
+                            'art/api_kotlin_structure.kt', 'java/' +
+                            jni_name(structure, category='structure') + '.kt',
+                            [
+                                RENDER_PARAMS_BASE, params_kotlin, {
+                                    'structure': structure
+                                }
+                            ]))
             for obj in by_category['object']:
                 renders.append(
                     FileRender(
                         'art/api_kotlin_object.kt',
-                        'java/' + jni_name(obj) + '.kt',
+                        'java/' + jni_name(obj, category='object') + '.kt',
                         [RENDER_PARAMS_BASE, params_kotlin, {
                             'obj': obj
                         }]))
             for function_pointer in (by_category['function pointer'] +
                                      by_category['callback function']):
                 renders.append(
-                    FileRender('art/api_kotlin_function_pointer.kt',
-                               'java/' + jni_name(function_pointer) + '.kt', [
-                                   RENDER_PARAMS_BASE, params_kotlin, {
-                                       'function_pointer': function_pointer
-                                   }
-                               ]))
+                    FileRender(
+                        'art/api_kotlin_function_pointer.kt', 'java/' +
+                        jni_name(function_pointer,
+                                 category='function pointer') + '.kt', [
+                                     RENDER_PARAMS_BASE, params_kotlin, {
+                                         'function_pointer': function_pointer
+                                     }
+                                 ]))
+
+            renders.append(
+                FileRender('art/api_kotlin_exceptions.kt',
+                           'java/' + kt_file_path + '/Exceptions.kt',
+                           [RENDER_PARAMS_BASE, params_kotlin]))
+
             renders.append(
                 FileRender('art/api_kotlin_functions.kt',
                            'java/' + kt_file_path + '/Functions.kt',
                            [RENDER_PARAMS_BASE, params_kotlin]))
-            renders.append(
-                FileRender('art/api_kotlin_async_helpers.kt',
-                           'java/' + kt_file_path + '/AsyncHelpers.kt',
-                           [RENDER_PARAMS_BASE, params_kotlin]))
 
             for enum in (params_kotlin['by_category']['bitmask'] +
                          params_kotlin['by_category']['enum']):
-                renders.append(
-                    FileRender(
-                        'art/api_kotlin_enum.kt',
-                        'java/' + jni_name(enum) + '.kt',
-                        [RENDER_PARAMS_BASE, params_kotlin, {
-                            'enum': enum
-                        }]))
+                if params_kotlin['include_enum'](enum):
+                    renders.append(
+                        FileRender(
+                            'art/api_kotlin_enum.kt',
+                            'java/' + jni_name(enum, category='enum') + '.kt',
+                            [
+                                RENDER_PARAMS_BASE, params_kotlin, {
+                                    'enum': enum
+                                }
+                            ]))
 
             renders.append(
                 FileRender('art/api_kotlin_constants.kt',
@@ -1634,7 +1873,8 @@ class MultiGeneratorFromDawnJSON(Generator):
                            [RENDER_PARAMS_BASE, params_kotlin]))
 
         if "jni" in targets:
-            params_kotlin = compute_kotlin_params(loaded_json, kotlin_json)
+            params_kotlin = compute_kotlin_params(loaded_json, kotlin_json,
+                                                  webgpu_json_data)
 
             imported_templates += [
                 "art/api_jni_types.cpp",

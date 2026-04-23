@@ -20,7 +20,7 @@ namespace gin {
 enum WrappablePointerTag : uint16_t {
   // The type tags for gin::Wrappable start at the end of the value range to
   // avoid overlaps with the type tags of blink::ScriptWrappable.
-  kFirstPointerTag = 1501,
+  kFirstPointerTag = 1601,
   kAccessibilityControllerBindings,  // content::AccessibilityControllerBindings
   kAPIBindingBridge,                 // extensions::APIBindingBridge
   kAPIBindingJSUtil,                 // extensions::APIBindingJSUtil
@@ -38,6 +38,8 @@ enum WrappablePointerTag : uint16_t {
   kGinPort,                          // extensions::GinPort
   kGpuBenchmarking,                  // content::GpuBenchmarking
   kJsBinding,                        // js_injection::JsBinding
+  kJsMessageEvent,                   // android_webview::JsMessageEvent
+  kJsSandboxMessagePort,             // android_webview::JsSandboxMessagePort
   kJSHookInterface,                  // extensions::JSHookInterface
   kLastErrorObject,                  // extensions::LastErrorObject
   kLocalStorageArea,                 // extensions::LocalStorageArea

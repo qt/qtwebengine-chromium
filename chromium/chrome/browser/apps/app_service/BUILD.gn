@@ -172,7 +172,9 @@ source_set("app_service") {
       "//components/image_fetcher/core",
       "//components/services/app_service/public/cpp:macros",
       "//components/ukm",
+      "//components/webapps/isolated_web_apps:scheme",
       "//services/metrics/public/cpp:ukm_builders",
+      "//third_party/blink/public/common:headers",
       "//ui/native_window_tracker",
 
       # For circular deps.
@@ -195,7 +197,6 @@ source_set("app_service") {
       "//chrome/browser/ash/policy/handlers",
       "//chrome/browser/ash/printing",
       "//chrome/browser/ash/remote_apps",
-      "//chrome/browser/ash/scalable_iph",
       "//chrome/browser/ash/scanning",
       "//chrome/browser/ash/system_logs",
       "//chrome/browser/ash/system_web_apps/apps",
@@ -245,7 +246,6 @@ source_set("app_service") {
       "//chrome/browser/ash/policy/handlers",
       "//chrome/browser/ash/printing",
       "//chrome/browser/ash/remote_apps",
-      "//chrome/browser/ash/scalable_iph",
       "//chrome/browser/ash/scanning",
       "//chrome/browser/ash/system_logs",
       "//chrome/browser/ash/system_web_apps/apps",
@@ -377,6 +377,7 @@ source_set("test_support") {
 
   deps = [
     "//base/test:test_support",
+    "//components/account_id:test_support",
     "//ui/gfx:test_support",
   ]
 

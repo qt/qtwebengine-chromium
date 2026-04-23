@@ -858,6 +858,7 @@
   // See crbug.com/747724
   TestSuite.prototype.testOfflineNetworkConditions = async function() {
     const test = this;
+    SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditionsEnabled = true;
     SDK.NetworkManager.MultitargetNetworkManager.instance().setNetworkConditions(SDK.NetworkManager.OfflineConditions);
 
     function finishRequest(request) {
@@ -952,7 +953,12 @@
     }
 
     function gotPreferences(prefs) {
-      Main.Main.instanceForTest.createSettings(prefs);
+      Common.Settings.Settings.instance({
+        forceNew: true,
+        ...Main.Main.instanceForTest.createSettingsStorage(prefs),
+        settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
+        runSettingsMigration: false,
+      });
 
       const localSetting = Common.Settings.Settings.instance().createLocalSetting('local', undefined);
       test.assertEquals('object', typeof localSetting.get());
@@ -1065,7 +1071,7 @@
         this.fail(text);
       }  // This will throw.
     }
-    // Neither PASS nor FAIL, so wait for more messages.
+    /** Neither PASS nor FAIL, so wait for more messages. **/
     function onConsoleMessage(event) {
       const text = event.data.messageText;
       if (text === 'PASS') {
@@ -1337,6 +1343,7 @@
   };
 
   TestSuite.prototype.testExtensionWebSocketOfflineNetworkConditions = async function(websocketPort) {
+    SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.conditionsEnabled = true;
     SDK.NetworkManager.MultitargetNetworkManager.instance().setNetworkConditions(SDK.NetworkManager.OfflineConditions);
 
     // TODO(crbug.com/1263900): Currently we don't send loadingFailed for web sockets.

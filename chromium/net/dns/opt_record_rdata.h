@@ -114,6 +114,10 @@ class NET_EXPORT_PRIVATE OptRecordRdata : public RecordRdata {
     // Attempts to parse an EDE option from `data`. Returns nullptr on failure.
     static std::unique_ptr<EdeOpt> Create(base::span<const uint8_t> data);
 
+    // Allocates an EDE option suitable for a DNS query that indicates support
+    // for EDE with Structured DNS Errors.
+    static std::unique_ptr<EdeOpt> CreateStructuredErrorsRequest();
+
     uint16_t GetCode() const override;
     uint16_t info_code() const { return info_code_; }
     std::string_view extra_text() const { return extra_text_; }
@@ -123,7 +127,7 @@ class NET_EXPORT_PRIVATE OptRecordRdata : public RecordRdata {
     // Convert a uint16_t to an EdeInfoCode enum.
     static EdeInfoCode GetEnumFromInfoCode(uint16_t info_code);
 
-    const std::optional<FilteringDetails>& filtering_details() const {
+    const std::vector<FilteringDetails>& filtering_details() const {
       return filtering_details_;
     }
 
@@ -132,7 +136,7 @@ class NET_EXPORT_PRIVATE OptRecordRdata : public RecordRdata {
 
     uint16_t info_code_;
     std::string extra_text_;
-    std::optional<FilteringDetails> filtering_details_;
+    std::vector<FilteringDetails> filtering_details_;
   };
 
   class NET_EXPORT_PRIVATE PaddingOpt : public Opt {

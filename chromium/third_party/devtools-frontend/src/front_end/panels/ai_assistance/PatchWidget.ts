@@ -1,7 +1,6 @@
 // Copyright 2025 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../ui/legacy/legacy.js';
 import '../../ui/components/markdown_view/markdown_view.js';
@@ -187,42 +186,8 @@ export interface ViewOutput {
 }
 
 type View = (input: ViewInput, output: ViewOutput, target: HTMLElement) => void;
-
-export class PatchWidget extends UI.Widget.Widget {
-  changeSummary = '';
-  changeManager: AiAssistanceModel.ChangeManager|undefined;
-  // Whether the user completed first run experience dialog or not.
-  #aiPatchingFreCompletedSetting =
-      Common.Settings.Settings.instance().createSetting('ai-assistance-patching-fre-completed', false);
-  #projectIdSetting =
-      Common.Settings.Settings.instance().createSetting('ai-assistance-patching-selected-project-id', '');
-  #view: View;
-  #viewOutput: ViewOutput = {};
-  #aidaClient: Host.AidaClient.AidaClient;
-  #applyPatchAbortController?: AbortController;
-  #project?: Workspace.Workspace.Project;
-  #patchSources?: string;
-  #savedToDisk?: boolean;
-  #noLogging: boolean;  // Whether the enterprise setting is `ALLOW_WITHOUT_LOGGING` or not.
-  #patchSuggestionState = PatchSuggestionState.INITIAL;
-  #workspaceDiff = WorkspaceDiff.WorkspaceDiff.workspaceDiff();
-  #workspace = Workspace.Workspace.WorkspaceImpl.instance();
-  #automaticFileSystem =
-      Persistence.AutomaticFileSystemManager.AutomaticFileSystemManager.instance().automaticFileSystem;
-  #applyToDisconnectedAutomaticWorkspace = false;
-  // `rpcId` from the `applyPatch` request
-  #rpcId: Host.AidaClient.RpcGlobalId|null = null;
-
-  constructor(element?: HTMLElement, view?: View, opts?: {
-    aidaClient: Host.AidaClient.AidaClient,
-  }) {
-    super(element);
-    this.#aidaClient = opts?.aidaClient ?? new Host.AidaClient.AidaClient();
-    this.#noLogging = Root.Runtime.hostConfig.aidaAvailability?.enterprisePolicyValue ===
-        Root.Runtime.GenAiEnterprisePolicyValue.ALLOW_WITHOUT_LOGGING;
-
-    // clang-format off
-    this.#view = view ?? ((input, output, target) => {
+const DEFAULT_VIEW: View =
+    (input, output, target) => {
       if (!input.changeSummary && input.patchSuggestionState === PatchSuggestionState.INITIAL) {
         return;
       }
@@ -345,11 +310,13 @@ export class PatchWidget extends UI.Widget.Widget {
         const iconName = input.projectType === SelectedProjectType.AUTOMATIC_DISCONNECTED ? 'folder-off' : input.projectType === SelectedProjectType.AUTOMATIC_CONNECTED ? 'folder-asterisk' : 'folder';
         return html`
         <div class="footer">
-          ${input.projectName ? html`
+          ${
+            input.projectName ? html`
             <div class="change-workspace" jslog=${VisualLogging.section('patch-widget.workspace')}>
                 <devtools-icon .name=${iconName}></devtools-icon>
                 <span class="folder-name" title=${input.projectPath}>${input.projectName}</span>
-              ${input.onChangeWorkspaceClick ? html`
+              ${
+                                    input.onChangeWorkspaceClick ? html`
                 <devtools-button
                   @click=${input.onChangeWorkspaceClick}
                   .jslogContext=${'change-workspace'}
@@ -358,18 +325,24 @@ export class PatchWidget extends UI.Widget.Widget {
                   .disabled=${input.patchSuggestionState === PatchSuggestionState.LOADING}
                   ${Directives.ref(output.changeRef)}
                 >${lockedString(UIStringsNotTranslate.change)}</devtools-button>
-              ` : nothing}
+              ` :
+                                                                   nothing}
             </div>
-          ` : nothing}
+          ` :
+                                nothing}
           <div class="apply-to-workspace-container" aria-live="polite">
-            ${input.patchSuggestionState === PatchSuggestionState.LOADING ? html`
-              <div class="loading-text-container" jslog=${VisualLogging.section('patch-widget.apply-to-workspace-loading')}>
+            ${
+            input.patchSuggestionState === PatchSuggestionState.LOADING ?
+                html`
+              <div class="loading-text-container" jslog=${
+                    VisualLogging.section('patch-widget.apply-to-workspace-loading')}>
                 <devtools-spinner></devtools-spinner>
                 <span>
                   ${lockedString(UIStringsNotTranslate.applyingToWorkspace)}
                 </span>
               </div>
-            ` : html`
+            ` :
+                html`
                 <devtools-button
                 @click=${input.onApplyToWorkspace}
                 .jslogContext=${'patch-widget.apply-to-workspace'}
@@ -377,12 +350,14 @@ export class PatchWidget extends UI.Widget.Widget {
                 ${lockedString(UIStringsNotTranslate.applyToWorkspace)}
               </devtools-button>
             `}
-            ${input.patchSuggestionState === PatchSuggestionState.LOADING ? html`<devtools-button
+            ${
+            input.patchSuggestionState === PatchSuggestionState.LOADING ? html`<devtools-button
               @click=${input.onCancel}
               .jslogContext=${'cancel'}
               .variant=${Buttons.Button.Variant.OUTLINED}>
               ${lockedString(UIStringsNotTranslate.cancel)}
-            </devtools-button>` : nothing}
+            </devtools-button>` :
+                                                                          nothing}
             <devtools-button
               aria-details="info-tooltip"
               .jslogContext=${'patch-widget.info-tooltip-trigger'}
@@ -391,7 +366,7 @@ export class PatchWidget extends UI.Widget.Widget {
             ></devtools-button>
             <devtools-tooltip
                 id="info-tooltip"
-                variant=${'rich'}
+                variant="rich"
               >
              <div class="info-tooltip-container">
                ${input.applyToWorkspaceTooltipText}
@@ -399,8 +374,8 @@ export class PatchWidget extends UI.Widget.Widget {
                  class="link tooltip-link"
                  role="link"
                  jslog=${VisualLogging.link('open-ai-settings').track({
-                   click: true,
-                 })}
+          click: true,
+        })}
                  @click=${input.onLearnMoreTooltipClick}
                >${lockedString(UIStringsNotTranslate.learnMore)}</button>
              </div>
@@ -428,9 +403,43 @@ export class PatchWidget extends UI.Widget.Widget {
           </details>
         `;
 
-      render(template, target, {host: target});
-    });
-    // clang-format on
+      render(template, target);
+    };
+
+export class PatchWidget extends UI.Widget.Widget {
+  changeSummary = '';
+  changeManager: AiAssistanceModel.ChangeManager.ChangeManager|undefined;
+  // Whether the user completed first run experience dialog or not.
+  #aiPatchingFreCompletedSetting =
+      Common.Settings.Settings.instance().createSetting('ai-assistance-patching-fre-completed', false);
+  #projectIdSetting =
+      Common.Settings.Settings.instance().createSetting('ai-assistance-patching-selected-project-id', '');
+  #view: View;
+  #viewOutput: ViewOutput = {};
+  #aidaClient: Host.AidaClient.AidaClient;
+  #applyPatchAbortController?: AbortController;
+  #project?: Workspace.Workspace.Project;
+  #patchSources?: string;
+  #savedToDisk?: boolean;
+  #noLogging: boolean;  // Whether the enterprise setting is `ALLOW_WITHOUT_LOGGING` or not.
+  #patchSuggestionState = PatchSuggestionState.INITIAL;
+  #workspaceDiff = WorkspaceDiff.WorkspaceDiff.workspaceDiff();
+  #workspace = Workspace.Workspace.WorkspaceImpl.instance();
+  #automaticFileSystem =
+      Persistence.AutomaticFileSystemManager.AutomaticFileSystemManager.instance().automaticFileSystem;
+  #applyToDisconnectedAutomaticWorkspace = false;
+  // `rpcId` from the `applyPatch` request
+  #rpcId: Host.AidaClient.RpcGlobalId|null = null;
+
+  constructor(element?: HTMLElement, view = DEFAULT_VIEW, opts?: {
+    aidaClient: Host.AidaClient.AidaClient,
+  }) {
+    super(element);
+    this.#aidaClient = opts?.aidaClient ?? new Host.AidaClient.AidaClient();
+    this.#noLogging = Root.Runtime.hostConfig.aidaAvailability?.enterprisePolicyValue ===
+        Root.Runtime.GenAiEnterprisePolicyValue.ALLOW_WITHOUT_LOGGING;
+    this.#view = view;
+
     this.requestUpdate();
   }
 
@@ -519,6 +528,7 @@ export class PatchWidget extends UI.Widget.Widget {
   }
 
   override willHide(): void {
+    super.willHide();
     this.#applyToDisconnectedAutomaticWorkspace = false;
     if (isAiAssistancePatchingEnabled()) {
       this.#workspace.removeEventListener(Workspace.Workspace.Events.ProjectAdded, this.#onProjectAdded, this);
@@ -681,11 +691,11 @@ export class PatchWidget extends UI.Widget.Widget {
     // user already had other modified files, the widget will still transition to the
     // success state (displaying all current workspace modifications).
     const hasChanges = this.#modifiedFiles.length > 0;
-    if (response?.type === AiAssistanceModel.ResponseType.ANSWER && hasChanges) {
+    if (response?.type === AiAssistanceModel.AiAgent.ResponseType.ANSWER && hasChanges) {
       this.#patchSuggestionState = PatchSuggestionState.SUCCESS;
     } else if (
-        response?.type === AiAssistanceModel.ResponseType.ERROR &&
-        response.error === AiAssistanceModel.ErrorType.ABORT) {
+        response?.type === AiAssistanceModel.AiAgent.ResponseType.ERROR &&
+        response.error === AiAssistanceModel.AiAgent.ErrorType.ABORT) {
       // If this is an abort error, we're returning back to the initial state.
       this.#patchSuggestionState = PatchSuggestionState.INITIAL;
     } else {
@@ -748,14 +758,14 @@ ${processedFiles.map(filename => `* ${filename}`).join('\n')}`;
   }
 
   async #applyPatch(changeSummary: string): Promise<{
-    response: AiAssistanceModel.ResponseData | undefined,
+    response: AiAssistanceModel.AiAgent.ResponseData | undefined,
     processedFiles: string[],
   }> {
     if (!this.#project) {
       throw new Error('Project does not exist');
     }
     this.#applyPatchAbortController = new AbortController();
-    const agent = new AiAssistanceModel.PatchAgent({
+    const agent = new AiAssistanceModel.PatchAgent.PatchAgent({
       aidaClient: this.#aidaClient,
       serverSideLoggingEnabled: false,
       project: this.#project,
@@ -798,7 +808,7 @@ window.aiAssistanceTestPatchPrompt =
     throw new Error('project not found');
   }
   const aidaClient = new Host.AidaClient.AidaClient();
-  const agent = new AiAssistanceModel.PatchAgent({
+  const agent = new AiAssistanceModel.PatchAgent.PatchAgent({
     aidaClient,
     serverSideLoggingEnabled: false,
     project,
@@ -806,7 +816,7 @@ window.aiAssistanceTestPatchPrompt =
   try {
     const assertionFailures = [];
     const {processedFiles, responses} = await agent.applyChanges(changeSummary);
-    if (responses.at(-1)?.type === AiAssistanceModel.ResponseType.ERROR) {
+    if (responses.at(-1)?.type === AiAssistanceModel.AiAgent.ResponseType.ERROR) {
       return {
         error: 'failed to patch',
         debugInfo: {

@@ -19,6 +19,9 @@
 
 namespace v8 {
 class Isolate;
+namespace internal {
+class ThreadLocalTop;
+}
 }
 
 namespace v8::internal::wasm {
@@ -83,6 +86,9 @@ class StackMemory {
 #endif
     return memory_limit - kStackBaseSafetyOffset;
   }
+  void set_current_continuation(Tagged<WasmContinuationObject> cont) {
+    current_cont_ = cont;
+  }
   bool IsValidContinuation(Tagged<WasmContinuationObject> cont);
   JumpBuffer* jmpbuf() { return &jmpbuf_; }
   bool Contains(Address addr) {
@@ -119,7 +125,8 @@ class StackMemory {
       segment = segment->next_segment_;
     }
   }
-  void Iterate(v8::internal::RootVisitor* v, Isolate* isolate);
+  void Iterate(v8::internal::RootVisitor* v, Isolate* isolate,
+               ThreadLocalTop* thread);
 
   Address old_fp() { return active_segment_->old_fp; }
   bool Grow(Address current_fp, size_t min_size);
@@ -168,7 +175,13 @@ class StackMemory {
   void set_func_ref(Tagged<WasmFuncRef> func_ref) { func_ref_ = func_ref; }
   static int func_ref_offset() { return OFFSET_OF(StackMemory, func_ref_); }
 
-  static int JSCentralStackLimitMarginKB() { return DEBUG_BOOL ? 80 : 40; }
+  static int JSCentralStackLimitMarginKB() {
+#if defined(DEBUG) || defined(V8_USE_ADDRESS_SANITIZER)
+    return 80;
+#else
+    return 40;
+#endif
+  }
 
   static int JSGrowableStackLimitMarginKB() {
     if (!v8_flags.experimental_wasm_growable_stacks) {
@@ -197,6 +210,9 @@ class StackMemory {
   }
   constexpr static uint32_t jmpbuf_offset() {
     return OFFSET_OF(StackMemory, jmpbuf_);
+  }
+  constexpr static uint32_t current_continuation_offset() {
+    return OFFSET_OF(StackMemory, current_cont_);
   }
   Address central_stack_sp() const { return central_stack_sp_; }
   void set_central_stack_sp(Address sp) { central_stack_sp_ = sp; }

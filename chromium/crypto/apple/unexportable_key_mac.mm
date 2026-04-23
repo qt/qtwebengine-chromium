@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "crypto/unexportable_key.h"
 
 #import <CoreFoundation/CoreFoundation.h>
@@ -27,9 +22,11 @@
 #include "base/apple/scoped_cftyperef.h"
 #include "base/containers/contains.h"
 #include "base/containers/span.h"
+#include "base/containers/to_vector.h"
 #include "base/logging.h"
 #include "base/memory/scoped_policy.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/notimplemented.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
@@ -37,14 +34,9 @@
 #include "crypto/apple/keychain_util.h"
 #include "crypto/apple/keychain_v2.h"
 #include "crypto/apple/unexportable_key_mac.h"
+#include "crypto/keypair.h"
 #include "crypto/signature_verifier.h"
 #include "crypto/unexportable_key_metrics.h"
-#include "third_party/boringssl/src/include/openssl/bn.h"
-#include "third_party/boringssl/src/include/openssl/bytestring.h"
-#include "third_party/boringssl/src/include/openssl/ec.h"
-#include "third_party/boringssl/src/include/openssl/evp.h"
-#include "third_party/boringssl/src/include/openssl/mem.h"
-#include "third_party/boringssl/src/include/openssl/obj.h"
 
 using base::apple::CFToNSPtrCast;
 using base::apple::NSToCFPtrCast;
@@ -53,48 +45,20 @@ namespace crypto::apple {
 
 namespace {
 
-// The size of an uncompressed x9.63 encoded EC public key, 04 || X || Y.
-constexpr size_t kUncompressedPointLength = 65;
-
 // The value of the kSecAttrLabel when generating the key. The documentation
 // claims this should be a user-visible label, but there does not exist any UI
 // that shows this value. Therefore, it is left untranslated.
 constexpr char kAttrLabel[] = "Chromium unexportable key";
 
-// Copies a CFDataRef into a vector of bytes.
-std::vector<uint8_t> CFDataToVec(CFDataRef data) {
-  auto span = base::apple::CFDataToSpan(data);
-  return {span.begin(), span.end()};
-}
-
 std::optional<std::vector<uint8_t>> Convertx963ToDerSpki(
     base::span<const uint8_t> x962) {
-  // Parse x9.63 point into an |EC_POINT|.
-  bssl::UniquePtr<EC_GROUP> p256(
-      EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1));
-  bssl::UniquePtr<EC_POINT> point(EC_POINT_new(p256.get()));
-  if (x962.size() != kUncompressedPointLength ||
-      x962[0] != POINT_CONVERSION_UNCOMPRESSED ||
-      !EC_POINT_oct2point(p256.get(), point.get(), x962.data(), x962.size(),
-                          /*ctx=*/nullptr)) {
+  std::optional<crypto::keypair::PublicKey> imported =
+      crypto::keypair::PublicKey::FromEcP256Point(x962);
+  if (!imported) {
     LOG(ERROR) << "P-256 public key is not on curve";
     return std::nullopt;
   }
-  // Marshal point into a DER SPKI.
-  bssl::UniquePtr<EC_KEY> ec_key(
-      EC_KEY_new_by_curve_name(NID_X9_62_prime256v1));
-  CHECK(EC_KEY_set_public_key(ec_key.get(), point.get()));
-  bssl::UniquePtr<EVP_PKEY> pkey(EVP_PKEY_new());
-  CHECK(EVP_PKEY_assign_EC_KEY(pkey.get(), ec_key.release()));
-  bssl::ScopedCBB cbb;
-  uint8_t* der_bytes = nullptr;
-  size_t der_bytes_len = 0;
-  CHECK(CBB_init(cbb.get(), /* initial size */ 128) &&
-        EVP_marshal_public_key(cbb.get(), pkey.get()) &&
-        CBB_finish(cbb.get(), &der_bytes, &der_bytes_len));
-  std::vector<uint8_t> ret(der_bytes, der_bytes + der_bytes_len);
-  OPENSSL_free(der_bytes);
-  return ret;
+  return imported->ToSubjectPublicKeyInfo();
 }
 
 // Logs `status` to an error histogram capturing that `operation` failed for a
@@ -125,10 +89,10 @@ class UnexportableSigningKeyMac : public UnexportableSigningKey {
   UnexportableSigningKeyMac(base::apple::ScopedCFTypeRef<SecKeyRef> key,
                             CFDictionaryRef key_attributes)
       : key_(std::move(key)),
-        application_label_(
-            CFDataToVec(base::apple::GetValueFromDictionary<CFDataRef>(
+        application_label_(base::ToVector(base::apple::CFDataToSpan(
+            base::apple::GetValueFromDictionary<CFDataRef>(
                 key_attributes,
-                kSecAttrApplicationLabel))) {
+                kSecAttrApplicationLabel)))) {
     base::apple::ScopedCFTypeRef<SecKeyRef> public_key(
         crypto::apple::KeychainV2::GetInstance().KeyCopyPublicKey(key_.get()));
     base::apple::ScopedCFTypeRef<CFDataRef> x962_bytes(
@@ -176,7 +140,7 @@ class UnexportableSigningKeyMac : public UnexportableSigningKey {
       LogKeychainOperationError(TPMOperation::kMessageSigning, error);
       return std::nullopt;
     }
-    return CFDataToVec(signature.get());
+    return base::ToVector(base::apple::CFDataToSpan(signature.get()));
   }
 
   bool IsHardwareBacked() const override { return true; }
@@ -246,7 +210,7 @@ UnexportableKeyProviderMac::GenerateSigningKeySlowly(
       // kSecAccessControlUserPresence is documented[1] (at the time of
       // writing) to be "equivalent to specifying kSecAccessControlBiometryAny,
       // kSecAccessControlOr, and kSecAccessControlDevicePasscode". This is
-      // incorrect because includingkSecAccessControlBiometryAny causes key
+      // incorrect because including kSecAccessControlBiometryAny causes key
       // creation to fail if biometrics are supported but not enrolled. It also
       // appears to support Apple Watch confirmation, but this isn't documented
       // (and kSecAccessControlWatch is deprecated as of macOS 15).
@@ -348,6 +312,18 @@ UnexportableKeyProviderMac::FromWrappedSigningKeySlowly(
                                                      key_attributes);
 }
 
+StatefulUnexportableKeyProvider*
+UnexportableKeyProviderMac::AsStatefulUnexportableKeyProvider() {
+  return this;
+}
+
+std::optional<std::vector<std::unique_ptr<UnexportableSigningKey>>>
+UnexportableKeyProviderMac::GetAllSigningKeysSlowly() {
+  // TODO(crbug.com/455539044): Implement this.
+  NOTIMPLEMENTED();
+  return std::nullopt;
+}
+
 bool UnexportableKeyProviderMac::DeleteSigningKeySlowly(
     base::span<const uint8_t> wrapped_key) {
   base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
@@ -357,6 +333,7 @@ bool UnexportableKeyProviderMac::DeleteSigningKeySlowly(
     CFToNSPtrCast(kSecAttrKeyType) :
         CFToNSPtrCast(kSecAttrKeyTypeECSECPrimeRandom),
     CFToNSPtrCast(kSecAttrAccessGroup) : objc_storage_->keychain_access_group_,
+    CFToNSPtrCast(kSecAttrApplicationTag) : objc_storage_->application_tag_,
     CFToNSPtrCast(kSecAttrApplicationLabel) :
         [NSData dataWithBytes:wrapped_key.data() length:wrapped_key.size()],
   };
@@ -383,6 +360,12 @@ std::unique_ptr<UnexportableKeyProviderMac> GetUnexportableKeyProviderMac(
   }
 #endif  // !BUILDFLAG(IS_IOS)
   return std::make_unique<UnexportableKeyProviderMac>(std::move(config));
+}
+
+std::optional<size_t> UnexportableKeyProviderMac::DeleteAllSigningKeysSlowly() {
+  // TODO(crbug.com/455539044): Implement this.
+  NOTIMPLEMENTED();
+  return std::nullopt;
 }
 
 }  // namespace crypto::apple

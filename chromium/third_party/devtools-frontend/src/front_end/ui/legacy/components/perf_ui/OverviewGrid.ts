@@ -1,13 +1,13 @@
 // Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../../../core/common/common.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
 import * as Platform from '../../../../core/platform/platform.js';
 import type * as NetworkTimeCalculator from '../../../../models/network_time_calculator/network_time_calculator.js';
-import * as IconButton from '../../../components/icon_button/icon_button.js';
+import {createIcon, type Icon} from '../../../kit/kit.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
 
@@ -137,7 +137,7 @@ export class Window extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   private breadcrumbButtonContainerElement: HTMLElement;
   private createBreadcrumbButton: HTMLElement;
   private curtainsRange?: HTMLElement;
-  private breadcrumbZoomIcon?: IconButton.Icon.Icon;
+  private breadcrumbZoomIcon?: Icon;
 
   private overviewWindowSelector!: WindowSelector|undefined;
   private offsetLeft!: number;
@@ -176,7 +176,7 @@ export class Window extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
 
     this.parentElement.addEventListener('wheel', this.onMouseWheel.bind(this), true);
     this.parentElement.addEventListener('dblclick', this.resizeWindowMaximum.bind(this), true);
-    Platform.DOMUtilities.appendStyle(this.parentElement, overviewGridStyles);
+    UI.DOMUtilities.appendStyle(this.parentElement, overviewGridStyles);
 
     this.leftResizeElement = parentElement.createChild('div', 'overview-grid-window-resizer');
     UI.UIUtils.installDragHandle(
@@ -213,7 +213,7 @@ export class Window extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
 
   enableCreateBreadcrumbsButton(): HTMLElement {
     this.curtainsRange = this.createBreadcrumbButton.createChild('div');
-    this.breadcrumbZoomIcon = IconButton.Icon.create('zoom-in');
+    this.breadcrumbZoomIcon = createIcon('zoom-in');
     this.createBreadcrumbButton.appendChild(this.breadcrumbZoomIcon);
     this.createBreadcrumbButton.addEventListener('click', () => {
       this.#createBreadcrumb();

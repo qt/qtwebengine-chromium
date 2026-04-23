@@ -263,6 +263,7 @@
       "contexts": ["webui"],
       "matches": [
         "chrome://add-supervision/*",
+        "chrome://contextual-tasks/*",
         "chrome://extensions/*",
         "chrome://glic/*",
         "chrome://glic-fre/*",
@@ -389,6 +390,7 @@
       "chrome://bookmarks-side-panel.top-chrome/*",
       "chrome://certificate-manager/*",
       "chrome://compare/*",
+      "chrome://contextual-tasks/*",
       "chrome://customize-chrome-side-panel.top-chrome/*",
       "chrome://shopping-insights-side-panel.top-chrome/*",
       "chrome://eche-app/*",
@@ -401,6 +403,7 @@
       "chrome://history/*",
       "chrome://new-tab-page/*",
       "chrome://newtab-footer/*",
+      "chrome://omnibox-popup.top-chrome/*",
       "chrome://oobe/*",
       "chrome://os-settings/*",
       "chrome://password-manager/*",
@@ -427,7 +430,8 @@
       "chrome-untrusted://mako/*",
       "chrome-untrusted://projector/*",
       "chrome-untrusted://read-anything-side-panel.top-chrome/*",
-      "chrome-untrusted://data-sharing/*"
+      "chrome-untrusted://data-sharing/*",
+      "chrome-untrusted://class-tools-remote-display/*"
     ]
   }],
   "metricsPrivateIndividualApis": {
@@ -575,6 +579,13 @@
     "disallow_for_service_workers": true
   },
   "runtime.getManifest": {
+    "contexts": [
+      "privileged_extension",
+      "unprivileged_extension",
+      "content_script"
+    ]
+  },
+  "runtime.getVersion": {
     "contexts": [
       "privileged_extension",
       "unprivileged_extension",
@@ -895,6 +906,7 @@
     "matches": [
       "chrome://add-supervision/*",
       "chrome://chrome-signin/*",
+      "chrome://contextual-tasks/*",
       "chrome://glic/*",
       "chrome://glic-fre/*",
       "chrome://graduation/*",
@@ -940,6 +952,7 @@
     "matches": [
       "chrome://add-supervision/*",
       "chrome://chrome-signin/*",
+      "chrome://contextual-tasks/*",
       "chrome://glic/*",
       "chrome://glic-fre/*",
       "chrome://graduation/*",
@@ -983,6 +996,7 @@
     "matches": [
       "chrome://add-supervision/*",
       "chrome://chrome-signin/*",
+      "chrome://contextual-tasks/*",
       "chrome://glic/*",
       "chrome://graduation/*",
       "chrome://home/*",

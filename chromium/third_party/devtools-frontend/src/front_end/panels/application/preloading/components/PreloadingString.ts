@@ -4,7 +4,7 @@
 
 import type * as Common from '../../../../core/common/common.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
-import type * as Platform from '../../../../core/platform/platform.js';
+import * as Platform from '../../../../core/platform/platform.js';
 import {assertNotNullOrUndefined} from '../../../../core/platform/platform.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
 import * as Protocol from '../../../../generated/protocol.js';
@@ -445,7 +445,7 @@ export const PrefetchReasonDescription: Record<string, {name: () => Platform.UIS
   PrefetchEvictedAfterBrowsingDataRemoved: {name: i18nLazyString(UIStrings.PrefetchEvictedAfterBrowsingDataRemoved)},
 };
 
-// Decoding PrefetchFinalStatus prefetchAttempt to failure description.
+/** Decoding PrefetchFinalStatus prefetchAttempt to failure description. **/
 export function prefetchFailureReason({prefetchStatus}: SDK.PreloadingModel.PrefetchAttempt): string|null {
   // If you face an error on rolling CDP changes, see
   // https://docs.google.com/document/d/1PnrfowsZMt62PX1EvvTp2Nqs3ji1zrklrAEe1JYbkTk
@@ -534,8 +534,9 @@ export function prefetchFailureReason({prefetchStatus}: SDK.PreloadingModel.Pref
   }
 }
 
-// Detailed failure reason for PrerenderFinalStatus.
-export function prerenderFailureReason(attempt: SDK.PreloadingModel.PrerenderAttempt): string|null {
+/** Detailed failure reason for PrerenderFinalStatus. **/
+export function prerenderFailureReason(
+    attempt: SDK.PreloadingModel.PrerenderAttempt|SDK.PreloadingModel.PrerenderUntilScriptAttempt): string|null {
   // If you face an error on rolling CDP changes, see
   // https://docs.google.com/document/d/1PnrfowsZMt62PX1EvvTp2Nqs3ji1zrklrAEe1JYbkTk
   switch (attempt.prerenderStatus) {
@@ -730,12 +731,42 @@ export function ruleSetTagOrLocationShort(
 }
 
 export function capitalizedAction(action: Protocol.Preload.SpeculationAction): Common.UIString.LocalizedString {
-  // Use "prefetch"/"prerender" as is in SpeculationRules.
   switch (action) {
     case Protocol.Preload.SpeculationAction.Prefetch:
       return i18n.i18n.lockedString('Prefetch');
     case Protocol.Preload.SpeculationAction.Prerender:
       return i18n.i18n.lockedString('Prerender');
+    case Protocol.Preload.SpeculationAction.PrerenderUntilScript:
+      return i18n.i18n.lockedString('Prerender until script');
+  }
+}
+
+export function sortOrder(attempt: SDK.PreloadingModel.PreloadingAttempt): number {
+  switch (attempt.status) {
+    case SDK.PreloadingModel.PreloadingStatus.NOT_SUPPORTED:
+      return 0;
+    case SDK.PreloadingModel.PreloadingStatus.PENDING:
+      return 1;
+    case SDK.PreloadingModel.PreloadingStatus.RUNNING:
+      return 2;
+    case SDK.PreloadingModel.PreloadingStatus.READY:
+      return 3;
+    case SDK.PreloadingModel.PreloadingStatus.SUCCESS:
+      return 4;
+    case SDK.PreloadingModel.PreloadingStatus.FAILURE: {
+      switch (attempt.action) {
+        case Protocol.Preload.SpeculationAction.Prefetch:
+          return 5;
+        case Protocol.Preload.SpeculationAction.Prerender:
+          return 6;
+        case Protocol.Preload.SpeculationAction.PrerenderUntilScript:
+          return 7;
+      }
+    }
+    case SDK.PreloadingModel.PreloadingStatus.NOT_TRIGGERED:
+      return 8;
+    default:
+      Platform.assertNever(attempt.status, 'Unknown Preloading attempt status');
   }
 }
 
@@ -776,8 +807,10 @@ export function composedStatus(attempt: SDK.PreloadingModel.PreloadingAttempt): 
       const detail = prefetchFailureReason(attempt) ?? i18n.i18n.lockedString('Internal error');
       return short + ' - ' + detail;
     }
-    case Protocol.Preload.SpeculationAction.Prerender: {
-      const detail = prerenderFailureReason(attempt);
+    case Protocol.Preload.SpeculationAction.Prerender:
+    case Protocol.Preload.SpeculationAction.PrerenderUntilScript: {
+      const detail = prerenderFailureReason(
+          attempt as SDK.PreloadingModel.PrerenderAttempt | SDK.PreloadingModel.PrerenderUntilScriptAttempt);
       assertNotNullOrUndefined(detail);
       return short + ' - ' + detail;
     }

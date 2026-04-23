@@ -16,6 +16,7 @@ namespace internal {
 class AccessCheckInfo;
 class FastKeyAccumulator;
 class JSProxy;
+class PropertyCallbackArguments;
 
 enum AddKeyConversion { DO_NOT_CONVERT, CONVERT_TO_ARRAY_INDEX };
 
@@ -121,7 +122,7 @@ class KeyAccumulator final {
                                           DirectHandle<JSReceiver> target);
 
   V8_WARN_UNUSED_RESULT ExceptionStatus FilterForEnumerableProperties(
-      DirectHandle<JSReceiver> receiver, DirectHandle<JSObject> object,
+      PropertyCallbackArguments& args,
       DirectHandle<InterceptorInfo> interceptor, DirectHandle<JSObject> result,
       IndexedOrNamed type);
 
@@ -197,6 +198,7 @@ class FastKeyAccumulator {
   bool is_receiver_simple_enum() { return is_receiver_simple_enum_; }
   bool has_empty_prototype() { return has_empty_prototype_; }
   bool may_have_elements() { return may_have_elements_; }
+  bool MayHaveSymbols();
 
   MaybeHandle<FixedArray> GetKeys(
       GetKeysConversion convert = GetKeysConversion::kKeepNumbers);

@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, ClassVar, Iterable, Optional
 from typing_extensions import override
 
 from crossbench.helper.wait import WaitRange
-from crossbench.probes.internal.base import (InternalJsonResultProbe,
-                                             InternalJsonResultProbeContext)
+from crossbench.probes.internal.base import InternalJsonResultProbe, \
+    InternalJsonResultProbeContext
 from crossbench.probes.probe import ProbeIncompatibleBrowser
 from crossbench.probes.results import EmptyProbeResult, LocalProbeResult
 
@@ -136,9 +136,6 @@ class ThermalMonitorProbe(InternalJsonResultProbe):
     merged_path = group.get_local_probe_result_path(self)
     with merged_path.open("w", encoding="utf-8") as f:
       json.dump({"max_observed_status": group_max_status}, f, indent=2)
-      # TODO(375390958): figure out why files aren't fully written to
-      # pyfakefs here.
-      f.write("\n")
 
     return LocalProbeResult(json=(merged_path,))
 

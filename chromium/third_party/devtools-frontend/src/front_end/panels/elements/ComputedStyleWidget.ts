@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007 Apple Inc.  All rights reserved.
@@ -191,7 +191,7 @@ const createTraceElement =
       return trace;
     };
 
-// clang-format off
+/** clang-format off **/
 class ColorRenderer extends rendererBase(SDK.CSSPropertyParserMatchers.ColorMatch) {
   // clang-format on
   override render(match: SDK.CSSPropertyParserMatchers.ColorMatch, context: RenderingContext): Node[] {
@@ -255,7 +255,7 @@ type ComputedStyleData = {
   name: string,
 };
 
-export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
+export class ComputedStyleWidget extends UI.Widget.VBox {
   private computedStyleModel: ComputedStyleModel;
   private readonly showInheritedComputedStylePropertiesSetting: Common.Settings.Setting<boolean>;
   private readonly groupComputedStylesSetting: Common.Settings.Setting<boolean>;
@@ -269,22 +269,22 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
   #treeData?: TreeOutline.TreeOutline.TreeOutlineData<ComputedStyleData>;
 
   constructor(computedStyleModel: ComputedStyleModel) {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(computedStyleSidebarPaneStyles);
 
     this.contentElement.classList.add('styles-sidebar-computed-style-widget');
 
     this.computedStyleModel = computedStyleModel;
-    this.computedStyleModel.addEventListener(Events.CSS_MODEL_CHANGED, this.update, this);
-    this.computedStyleModel.addEventListener(Events.COMPUTED_STYLE_CHANGED, this.update, this);
+    this.computedStyleModel.addEventListener(Events.CSS_MODEL_CHANGED, this.requestUpdate, this);
+    this.computedStyleModel.addEventListener(Events.COMPUTED_STYLE_CHANGED, this.requestUpdate, this);
 
     this.showInheritedComputedStylePropertiesSetting =
         Common.Settings.Settings.instance().createSetting('show-inherited-computed-style-properties', false);
-    this.showInheritedComputedStylePropertiesSetting.addChangeListener(this.update.bind(this));
+    this.showInheritedComputedStylePropertiesSetting.addChangeListener(this.requestUpdate.bind(this));
 
     this.groupComputedStylesSetting = Common.Settings.Settings.instance().createSetting('group-computed-styles', false);
     this.groupComputedStylesSetting.addChangeListener(() => {
-      this.update();
+      this.requestUpdate();
     });
 
     const hbox = this.contentElement.createChild('div', 'hbox styles-sidebar-pane-toolbar');
@@ -330,10 +330,11 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
   }
 
   override willHide(): void {
+    super.willHide();
     UI.Context.Context.instance().setFlavor(ComputedStyleWidget, null);
   }
 
-  override async doUpdate(): Promise<void> {
+  override async performUpdate(): Promise<void> {
     const [nodeStyles, matchedStyles] =
         await Promise.all([this.computedStyleModel.fetchComputedStyle(), this.fetchMatchedCascade()]);
     if (!nodeStyles || !matchedStyles) {

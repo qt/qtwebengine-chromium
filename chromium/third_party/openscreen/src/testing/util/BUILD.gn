@@ -11,7 +11,10 @@ openscreen_source_set("util") {
 
   visibility += [ "../../*" ]
 
-  public = [ "task_util.h" ]
+  public = [
+    "chrono_test_helpers.h",
+    "task_util.h",
+  ]
 
   public_deps = [
     "../../platform",

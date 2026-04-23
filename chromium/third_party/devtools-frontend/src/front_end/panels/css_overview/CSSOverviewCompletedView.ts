@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import '../../ui/legacy/components/data_grid/data_grid.js';
-import '../../ui/components/icon_button/icon_button.js';
+import '../../ui/kit/kit.js';
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -17,6 +17,7 @@ import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {Directives, html, type LitTemplate, nothing, render, type TemplateResult} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import * as PanelsCommon from '../common/common.js';
 
 import cssOverviewCompletedViewStyles from './cssOverviewCompletedView.css.js';
 import type {GlobalStyleStats} from './CSSOverviewModel.js';
@@ -502,7 +503,7 @@ function renderContrastIssue(key: string, issues: ContrastIssue[]): TemplateResu
     </button>
     <div class="block-title">
       ${showAPCA ? html`
-        <div class="contrast-warning hidden" $="apca">
+        <div class="contrast-warning hidden">
           <span class="threshold-label">${i18nString(UIStrings.apca)}</span>
           ${minContrastIssue.thresholdsViolated.apca ? createClearIcon() : createCheckIcon()}
         </div>` : html`
@@ -510,7 +511,7 @@ function renderContrastIssue(key: string, issues: ContrastIssue[]): TemplateResu
           <span class="threshold-label">${i18nString(UIStrings.aa)}</span>
           ${minContrastIssue.thresholdsViolated.aa ? createClearIcon() : createCheckIcon()}
         </div>
-        <div class="contrast-warning hidden" $="aaa">
+        <div class="contrast-warning hidden">
           <span class="threshold-label">${i18nString(UIStrings.aaa)}</span>
           ${minContrastIssue.thresholdsViolated.aaa ? createClearIcon() : createCheckIcon()}
         </div>`}
@@ -984,7 +985,7 @@ export class ElementDetailsView extends UI.Widget.Widget {
       if ('nodeId' in item && visibility.has('node-id')) {
         const frontendNode = relatedNodesMap?.get(item.nodeId) ?? null;
         if (frontendNode) {
-          link = await Common.Linkifier.Linkifier.linkify(frontendNode) as HTMLElement;
+          link = PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(frontendNode);
           showNode = () => frontendNode.scrollIntoView();
         }
       }
@@ -1073,5 +1074,5 @@ function createClearIcon(): TemplateResult {
 function createCheckIcon(): TemplateResult {
   return html`
     <devtools-icon name="checkmark" class="small"
-        style="color:var(--icon-checkmark-green);></devtools-icon>`;
+        style="color:var(--icon-checkmark-green);"></devtools-icon>`;
 }

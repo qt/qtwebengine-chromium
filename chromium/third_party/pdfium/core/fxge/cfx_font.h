@@ -22,11 +22,7 @@
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/unowned_ptr_exclusion.h"
 #include "core/fxge/cfx_face.h"
-#include "core/fxge/freetype/fx_freetype.h"
-
-#if defined(PDF_USE_SKIA)
 #include "core/fxge/fx_font.h"
-#endif
 
 class CFX_GlyphBitmap;
 class CFX_GlyphCache;
@@ -73,7 +69,7 @@ class CFX_Font {
                     bool force_vertical,
                     uint64_t object_tag);
   RetainPtr<CFX_Face> GetFace() const { return face_; }
-  bool HasFaceRec() const { return face_ && face_->GetRec(); }
+  bool HasFaceRec() const { return face_ && face_->HasFaceRec(); }
   CFX_SubstFont* GetSubstFont() const { return subst_font_.get(); }
   int GetSubstFontItalicAngle() const;
 
@@ -92,7 +88,7 @@ class CFX_Font {
       bool bFontStyle,
       const CFX_Matrix& matrix,
       int dest_width,
-      int anti_alias,
+      FontAntiAliasingMode anti_alias,
       CFX_TextRenderOptions* text_options) const;
   const CFX_Path* LoadGlyphPath(uint32_t glyph_index, int dest_width) const;
   int GetGlyphWidth(uint32_t glyph_index) const;
@@ -140,12 +136,6 @@ class CFX_Font {
   void ReleasePlatformResource();
 #endif
   ByteString GetFamilyNameOrUntitled() const;
-
-#if defined(PDF_ENABLE_XFA)
-  // |owned_file_| must outlive |owned_stream_rec_|.
-  RetainPtr<IFX_SeekableReadStream> owned_file_;
-  std::unique_ptr<FXFT_StreamRec> owned_stream_rec_;  // Must outlive |face_|.
-#endif
 
   mutable RetainPtr<CFX_Face> face_;
   mutable RetainPtr<CFX_GlyphCache> glyph_cache_;

@@ -22,13 +22,14 @@
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/cfx_substfont.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
+#include "core/fxge/fx_font.h"
 #include "core/fxge/text_char_pos.h"
 
 namespace {
 
 void DoNothing(void* info, const void* data, size_t size) {}
 
-bool CGDrawGlyphRun(CGContextRef pContext,
+bool CGDrawGlyphRun(CGContextRef context,
                     pdfium::span<const TextCharPos> pCharPos,
                     CFX_Font* font,
                     const CFX_Matrix& mtObject2Device,
@@ -76,8 +77,8 @@ bool CGDrawGlyphRun(CGContextRef pContext,
     new_matrix.b = -new_matrix.b;
     new_matrix.d = -new_matrix.d;
   }
-  quartz2d.SetGraphicsTextMatrix(pContext, new_matrix);
-  return quartz2d.DrawGraphicsString(pContext, font->GetPlatformFont(),
+  quartz2d.SetGraphicsTextMatrix(context, new_matrix);
+  return quartz2d.DrawGraphicsString(context, font->GetPlatformFont(),
                                      font_size, glyph_indices, glyph_positions,
                                      argb);
 }
@@ -181,7 +182,7 @@ std::unique_ptr<CFX_GlyphBitmap> CFX_GlyphCache::RenderGlyph_Nativetext(
     uint32_t glyph_index,
     const CFX_Matrix& matrix,
     int dest_width,
-    int anti_alias) {
+    FontAntiAliasingMode anti_alias) {
   return nullptr;
 }
 

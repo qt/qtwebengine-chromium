@@ -15,10 +15,12 @@
 #include "build/build_config.h"
 #include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/observed_ptr.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/span.h"
 #include "core/fxge/freetype/fx_freetype.h"
+#include "core/fxge/fx_font.h"
 
 namespace fxge {
 enum class FontEncoding : uint32_t;
@@ -36,6 +38,12 @@ class CFX_Face final : public Retainable, public Observable {
   struct CharCodeAndIndex {
     uint32_t char_code;
     uint32_t glyph_index;
+  };
+
+  struct FontStyleInfo {
+    // Style utilizes enum FontStyle values
+    uint32_t style;
+    uint32_t os2_codepage_mask;
   };
 
   // Note that this corresponds to the cmap header in fonts, and not the cmap
@@ -58,10 +66,17 @@ class CFX_Face final : public Retainable, public Observable {
                                  pdfium::span<const FT_Byte> data,
                                  FT_Long face_index);
 
-  static RetainPtr<CFX_Face> Open(FT_Library library,
-                                  const FT_Open_Args* args,
-                                  FT_Long face_index);
-
+#if defined(PDF_ENABLE_XFA)
+  static RetainPtr<CFX_Face> OpenFromStream(
+      FT_Library library,
+      const RetainPtr<IFX_SeekableReadStream>& font_stream,
+      FT_Long face_index);
+#endif
+#if BUILDFLAG(IS_ANDROID)
+  static RetainPtr<CFX_Face> OpenFromFilePath(FT_Library library,
+                                              ByteStringView path,
+                                              int32_t face_index);
+#endif
   bool HasGlyphNames() const;
   bool IsTtOt() const;
   bool IsTricky() const;
@@ -69,11 +84,11 @@ class CFX_Face final : public Retainable, public Observable {
 
 #if defined(PDF_ENABLE_XFA)
   bool IsScalable() const;
-  void ClearExternalStream();
 #endif
 
   bool IsItalic() const;
   bool IsBold() const;
+  FontStyleInfo GetFontStyleInfo();
 
   ByteString GetFamilyName() const;
   ByteString GetStyleName() const;
@@ -91,21 +106,22 @@ class CFX_Face final : public Retainable, public Observable {
 
   std::optional<std::array<uint32_t, 4>> GetOs2UnicodeRange();
   std::optional<std::array<uint32_t, 2>> GetOs2CodePageRange();
-  std::optional<std::array<uint8_t, 2>> GetOs2Panose();
 
   int GetGlyphCount() const;
   // TODO(crbug.com/pdfium/2037): Can this method be private?
   FX_RECT GetGlyphBBox() const;
+  std::optional<FX_RECT> GetFontGlyphBBox(uint32_t glyph_index);
   std::unique_ptr<CFX_GlyphBitmap> RenderGlyph(const CFX_Font* font,
                                                uint32_t glyph_index,
                                                bool bFontStyle,
                                                const CFX_Matrix& matrix,
                                                int dest_width,
-                                               int anti_alias);
+                                               FontAntiAliasingMode anti_alias);
   std::unique_ptr<CFX_Path> LoadGlyphPath(uint32_t glyph_index,
                                           int dest_width,
                                           bool is_vertical,
                                           const CFX_SubstFont* subst_font);
+  int GetGlyphTTWidth() const;
   int GetGlyphWidth(uint32_t glyph_index,
                     int dest_width,
                     int weight,
@@ -126,25 +142,45 @@ class CFX_Face final : public Retainable, public Observable {
   int GetCharMapEncodingIdByIndex(size_t index) const;
   fxge::FontEncoding GetCharMapEncodingByIndex(size_t index) const;
   size_t GetCharMapCount() const;
+  int LoadGlyph(uint32_t glyph_index, bool scale);
+  ByteString GetPostscriptName();
+  CFX_Size GetPixelSize() const;
   void SetCharMap(CharMap map);
   void SetCharMapByIndex(size_t index);
   bool SelectCharMap(fxge::FontEncoding encoding);
-
   bool SetPixelSize(uint32_t width, uint32_t height);
+
+#if defined(PDF_ENABLE_XFA)
+  int GetNumFaces() const;
+#endif
 
 #if BUILDFLAG(IS_WIN)
   bool CanEmbed();
 #endif
 
-  FXFT_FaceRec* GetRec() { return rec_.get(); }
-  const FXFT_FaceRec* GetRec() const { return rec_.get(); }
+  bool HasFaceRec() const { return !!GetRec(); }
 
- private:
+private:
+  friend class ScopedFontTransform;
+
   CFX_Face(FXFT_FaceRec* pRec, RetainPtr<Retainable> pDesc);
   ~CFX_Face() override;
 
-  void AdjustVariationParams(int glyph_index, int dest_width, int weight);
+  FXFT_FaceRec* GetRec() { return rec_.get(); }
+  const FXFT_FaceRec* GetRec() const { return rec_.get(); }
 
+  void AdjustVariationParams(int glyph_index, int dest_width, int weight);
+  std::optional<std::array<uint8_t, 2>> GetOs2Panose();
+#if BUILDFLAG(IS_ANDROID) || defined(PDF_ENABLE_XFA)
+  static RetainPtr<CFX_Face> Open(FT_Library library,
+                                  const FT_Open_Args* args,
+                                  FT_Long face_index);
+#endif
+
+  // `owned_font_stream_` must outlive `owned_stream_rec_`.
+  RetainPtr<IFX_SeekableReadStream> owned_font_stream_;
+  // `owned_stream_rec_` must outlive `rec_`.
+  std::unique_ptr<FXFT_StreamRec> owned_stream_rec_;
   ScopedFXFTFaceRec const rec_;
   RetainPtr<Retainable> const desc_;
 };

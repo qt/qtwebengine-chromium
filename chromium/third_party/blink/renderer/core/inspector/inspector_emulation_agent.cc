@@ -893,14 +893,9 @@ protocol::Response InspectorEmulationAgent::setUserAgentOverride(
 
 protocol::Response InspectorEmulationAgent::setLocaleOverride(
     std::optional<String> maybe_locale) {
-  // Only allow resetting overrides set by the same agent.
-  if (locale_override_.Get().empty() &&
-      LocaleController::instance().has_locale_override()) {
-    return protocol::Response::ServerError(
-        "Another locale override is already in effect");
-  }
   String locale = maybe_locale.value_or(String());
-  String error = LocaleController::instance().SetLocaleOverride(locale);
+  String error = LocaleController::instance().SetLocaleOverride(
+      locale, locale_override_.Get().empty());
   if (!error.empty())
     return protocol::Response::ServerError(error.Utf8());
   locale_override_.Set(locale);
@@ -909,21 +904,25 @@ protocol::Response InspectorEmulationAgent::setLocaleOverride(
 
 protocol::Response InspectorEmulationAgent::setTimezoneOverride(
     const String& timezone_id) {
-  if (timezone_id == TimeZoneController::TimeZoneIdOverride()) {
-    // Do nothing.
-  } else if (timezone_id.empty()) {
+  if (timezone_id.empty()) {
     timezone_override_.reset();
   } else {
     if (timezone_override_) {
       timezone_override_->change(timezone_id);
     } else {
-      timezone_override_ = TimeZoneController::SetTimeZoneOverride(timezone_id);
-    }
-    if (!timezone_override_) {
-      return TimeZoneController::HasTimeZoneOverride()
-                 ? protocol::Response::ServerError(
-                       "Timezone override is already in effect")
-                 : protocol::Response::InvalidParams("Invalid timezone id");
+      auto result = TimeZoneController::SetTimeZoneOverride(timezone_id);
+      switch (result.status) {
+        case TimeZoneController::TimeZoneOverrideStatus::kSuccess:
+          if (result.handle) {
+            timezone_override_ = std::move(result.handle);
+          }
+          break;
+        case TimeZoneController::TimeZoneOverrideStatus::kAlreadyInEffect:
+          return protocol::Response::ServerError(
+              "Timezone override is already in effect");
+        case TimeZoneController::TimeZoneOverrideStatus::kInvalidTimezone:
+          return protocol::Response::InvalidParams("Invalid timezone id");
+      }
     }
   }
 

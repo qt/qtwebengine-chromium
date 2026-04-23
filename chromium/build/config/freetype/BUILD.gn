@@ -2,8 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/features.gni")
 import("//build/config/freetype/freetype.gni")
+
+assert(enable_freetype)
 
 group("freetype") {
   if (use_system_freetype) {

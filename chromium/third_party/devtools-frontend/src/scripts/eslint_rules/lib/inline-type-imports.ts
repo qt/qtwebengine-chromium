@@ -36,8 +36,10 @@ export default createRule({
     // The key is the literal import path ("../foo.js");
     const valueImports = new Map<string, ImportDeclaration>();
 
-    // Takes the node that represents an import ("Foo", "Foo as Bar") and
-    // return the literal text.
+    /**
+     * Takes the node that represents an import ("Foo", "Foo as Bar") and
+     * return the literal text.
+     **/
     function getTextForImportSpecifier(specifier: ImportSpecifier): string {
       // => import {Foo as Bar} from 'foo';
       // Foo = imported name
@@ -89,7 +91,7 @@ export default createRule({
 
       const fixes: TSESLint.RuleFix[] = [];
 
-      if (typeToken && typeToken.value === 'type' && typeToken.range) {
+      if (typeToken?.value === 'type' && typeToken.range) {
         // Remove the " type" text after "import".
         fixes.push(fixer.removeRange(typeToken.range));
         // Potentially remove the space after 'type' if it exists
@@ -105,7 +107,7 @@ export default createRule({
               .map(spec => {
                 if (spec.importKind === 'type') {
                   const typeKeywordToken = sourceCode.getFirstToken(spec);
-                  if (typeKeywordToken && typeKeywordToken.value === 'type' && typeKeywordToken.range) {
+                  if (typeKeywordToken?.value === 'type' && typeKeywordToken.range) {
                     const spaceAfter = sourceCode.getTokenAfter(typeKeywordToken);
                     // Remove 'type' and the space after it
                     const endRange = (spaceAfter?.range) ? spaceAfter.range[0] : typeKeywordToken.range[1];

@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2008 Apple Inc. All Rights Reserved.
@@ -35,7 +35,8 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Geometry from '../../models/geometry/geometry.js';
 import * as Lit from '../../ui/lit/lit.js';
 
-import {createShadowRootWithCoreStyles} from './UIUtils.js';
+import {appendStyle, deepActiveElement} from './DOMUtilities.js';
+import {cloneCustomElement, createShadowRootWithCoreStyles} from './UIUtils.js';
 
 // Remember the original DOM mutation methods here, since we
 // will override them below to sanity check the Widget system.
@@ -66,6 +67,73 @@ export function widgetConfig<F extends WidgetFactory<Widget>, ParamKeys extends 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     WidgetConfig<any> {
   return new WidgetConfig(widgetClass, widgetParams);
+}
+
+let currentUpdateQueue: Map<Widget, PromiseWithResolvers<void>>|null = null;
+const currentlyProcessed = new Set<Widget>();
+let nextUpdateQueue = new Map<Widget, PromiseWithResolvers<void>>();
+let pendingAnimationFrame: number|null = null;
+
+function enqueueIntoNextUpdateQueue(widget: Widget): Promise<void> {
+  const scheduledUpdate = nextUpdateQueue.get(widget) ?? Promise.withResolvers<void>();
+  nextUpdateQueue.delete(widget);
+  nextUpdateQueue.set(widget, scheduledUpdate);
+  if (pendingAnimationFrame === null) {
+    pendingAnimationFrame = requestAnimationFrame(runNextUpdate);
+  }
+  return scheduledUpdate.promise;
+}
+
+function enqueueWidgetUpdate(widget: Widget): Promise<void> {
+  if (currentUpdateQueue) {
+    if (currentlyProcessed.has(widget)) {
+      return enqueueIntoNextUpdateQueue(widget);
+    }
+    const scheduledUpdate = currentUpdateQueue.get(widget) ?? Promise.withResolvers<void>();
+    currentUpdateQueue.delete(widget);
+    currentUpdateQueue.set(widget, scheduledUpdate);
+    return scheduledUpdate.promise;
+  }
+  return enqueueIntoNextUpdateQueue(widget);
+}
+
+function cancelUpdate(widget: Widget): void {
+  if (currentUpdateQueue) {
+    const scheduledUpdate = currentUpdateQueue.get(widget);
+    if (scheduledUpdate) {
+      scheduledUpdate.resolve();
+      currentUpdateQueue.delete(widget);
+    }
+  }
+  const scheduledUpdate = nextUpdateQueue.get(widget);
+  if (scheduledUpdate) {
+    scheduledUpdate.resolve();
+    nextUpdateQueue.delete(widget);
+  }
+}
+
+function runNextUpdate(): void {
+  pendingAnimationFrame = null;
+  if (!currentUpdateQueue) {
+    currentUpdateQueue = nextUpdateQueue;
+    nextUpdateQueue = new Map();
+  }
+  for (const [widget, {resolve}] of currentUpdateQueue) {
+    currentlyProcessed.add(widget);
+    void (async () => {
+      await widget.performUpdate();
+      resolve();
+    })();
+  }
+  currentUpdateQueue.clear();
+  queueMicrotask(() => {
+    if (currentUpdateQueue && currentUpdateQueue.size > 0) {
+      runNextUpdate();
+    } else {
+      currentUpdateQueue = null;
+      currentlyProcessed.clear();
+    }
+  });
 }
 
 export class WidgetElement<WidgetT extends Widget> extends HTMLElement {
@@ -125,6 +193,14 @@ export class WidgetElement<WidgetT extends Widget> extends HTMLElement {
     widget.show(this.parentElement as HTMLElement, undefined, /* suppressOrphanWidgetError= */ true);
   }
 
+  disconnectedCallback(): void {
+    const widget = Widget.get(this);
+    if (widget) {
+      widget.setHideOnDetach();
+      widget.detach();
+    }
+  }
+
   override appendChild<T extends Node>(child: T): T {
     if (child instanceof HTMLElement && child.tagName !== 'STYLE') {
       Widget.getOrCreateWidget(child).show(this);
@@ -161,12 +237,14 @@ export class WidgetElement<WidgetT extends Widget> extends HTMLElement {
   }
 
   override cloneNode(deep: boolean): Node {
-    const clone = super.cloneNode(deep) as WidgetElement<WidgetT>;
+    const clone = cloneCustomElement(this, deep);
     if (!this.#widgetClass) {
       throw new Error('No widgetClass defined');
     }
-    clone.#widgetClass = this.#widgetClass;
-    clone.#widgetParams = this.#widgetParams;
+    clone.widgetConfig = {
+      widgetClass: this.#widgetClass,
+      widgetParams: this.#widgetParams,
+    };
     return clone;
   }
 }
@@ -210,8 +288,7 @@ function decrementWidgetCounter(parentElement: Element, childElement: Element): 
 // The resolved `updateComplete` promise, which is used as a marker for the
 // Widget's `#updateComplete` private property to indicate that there's no
 // pending update.
-const UPDATE_COMPLETE = Promise.resolve(true);
-const UPDATE_COMPLETE_RESOLVE = (_result: boolean): void => {};
+const UPDATE_COMPLETE = Promise.resolve();
 
 /**
  * Additional options passed to the `Widget` constructor to configure the
@@ -254,7 +331,6 @@ export interface WidgetOptions {
 export class Widget {
   readonly element: HTMLElement;
   contentElement: HTMLElement;
-  defaultFocusedChild: Widget|null = null;
   #shadowRoot: typeof Element.prototype.shadowRoot;
   #visible = false;
   #isRoot = false;
@@ -264,14 +340,11 @@ export class Widget {
   #notificationDepth = 0;
   #invalidationsSuspended = 0;
   #parentWidget: Widget|null = null;
-  #defaultFocusedElement?: Element|null;
   #cachedConstraints?: Geometry.Constraints;
   #constraints?: Geometry.Constraints;
   #invalidationsRequested?: boolean;
   #externallyManaged?: boolean;
   #updateComplete = UPDATE_COMPLETE;
-  #updateCompleteResolve = UPDATE_COMPLETE_RESOLVE;
-  #updateRequestID = 0;
 
   /**
    * Constructs a new `Widget` with the given `options`.
@@ -559,6 +632,10 @@ export class Widget {
         originalAppendChild.call(parentElement, this.element);
       }
     }
+    const focusedElementsCount = this.#parentWidget?.getDefaultFocusedElements?.()?.length ?? 0;
+    if (this.element.hasAttribute('autofocus') && focusedElementsCount > 1) {
+      this.element.removeAttribute('autofocus');
+    }
 
     if (!wasVisible && this.parentIsShowing()) {
       this.processWasShown();
@@ -610,14 +687,7 @@ export class Widget {
       return;
     }
 
-    // Cancel any pending update.
-    if (this.#updateRequestID !== 0) {
-      cancelAnimationFrame(this.#updateRequestID);
-      this.#updateCompleteResolve(true);
-      this.#updateCompleteResolve = UPDATE_COMPLETE_RESOLVE;
-      this.#updateComplete = UPDATE_COMPLETE;
-      this.#updateRequestID = 0;
-    }
+    cancelUpdate(this);
 
     // hideOnDetach means that we should never remove element from dom - content
     // has iframes and detaching it will hurt.
@@ -641,9 +711,6 @@ export class Widget {
       const childIndex = this.#parentWidget.#children.indexOf(this);
       assert(childIndex >= 0, 'Attempt to remove non-child widget');
       this.#parentWidget.#children.splice(childIndex, 1);
-      if (this.#parentWidget.defaultFocusedChild === this) {
-        this.#parentWidget.defaultFocusedChild = null;
-      }
       this.#parentWidget.childWasDetached(this);
       this.#parentWidget = null;
     } else {
@@ -700,7 +767,7 @@ export class Widget {
 
   registerRequiredCSS(...cssFiles: Array<string&{_tag: 'CSS-in-JS'}>): void {
     for (const cssFile of cssFiles) {
-      Platform.DOMUtilities.appendStyle(this.#shadowRoot ?? this.element, cssFile);
+      appendStyle(this.#shadowRoot ?? this.element, cssFile);
     }
   }
 
@@ -724,40 +791,85 @@ export class Widget {
   }
 
   setDefaultFocusedElement(element: Element|null): void {
-    this.#defaultFocusedElement = element;
+    const defaultFocusedElement = this.getDefaultFocusedElement();
+    if (defaultFocusedElement) {
+      defaultFocusedElement.removeAttribute('autofocus');
+    }
+    if (element) {
+      element.setAttribute('autofocus', '');
+    }
   }
 
   setDefaultFocusedChild(child: Widget): void {
     assert(child.#parentWidget === this, 'Attempt to set non-child widget as default focused.');
-    this.defaultFocusedChild = child;
+
+    const defaultFocusedElement = this.getDefaultFocusedElement();
+    if (defaultFocusedElement) {
+      defaultFocusedElement.removeAttribute('autofocus');
+    }
+    child.element.setAttribute('autofocus', '');
+  }
+
+  getDefaultFocusedElements(): HTMLElement[] {
+    const autofocusElements = [...this.contentElement.querySelectorAll<HTMLElement>('[autofocus]')];
+    if (this.contentElement !== this.element) {
+      if (this.contentElement.hasAttribute('autofocus')) {
+        autofocusElements.push(this.contentElement);
+      }
+      if (autofocusElements.length === 0) {
+        autofocusElements.push(...this.element.querySelectorAll<HTMLElement>('[autofocus]'));
+      }
+    }
+    return autofocusElements.filter(autofocusElement => {
+      let widgetElement: Element|null = autofocusElement;
+      while (widgetElement) {
+        const widget = Widget.get(widgetElement);
+        if (widget) {
+          if (widgetElement === autofocusElement && widget.#parentWidget === this && widget.#visible) {
+            return true;
+          }
+          return widget === this;
+        }
+        widgetElement = widgetElement.parentElementOrShadowHost();
+      }
+      return false;
+    });
+  }
+
+  getDefaultFocusedElement(): HTMLElement|null {
+    const elements = this.getDefaultFocusedElements();
+    if (elements.length > 1) {
+      console.error(
+          'Multiple autofocus elements found', this.constructor.name,
+          ...elements.map(e => Platform.StringUtilities.trimMiddle(e.outerHTML, 250)));
+    }
+    return elements[0] || null;
   }
 
   focus(): void {
     if (!this.isShowing()) {
       return;
     }
-
-    const element = (this.#defaultFocusedElement as HTMLElement | null);
-    if (element) {
-      if (!element.hasFocus()) {
-        element.focus();
+    const autofocusElement = this.getDefaultFocusedElement();
+    if (autofocusElement) {
+      const widget = Widget.get(autofocusElement);
+      if (widget && widget !== this) {
+        widget.focus();
+      } else {
+        autofocusElement.focus();
       }
       return;
     }
 
-    if (this.defaultFocusedChild && this.defaultFocusedChild.#visible) {
-      this.defaultFocusedChild.focus();
-    } else {
-      for (const child of this.#children) {
-        if (child.#visible) {
-          child.focus();
-          return;
-        }
+    for (const child of this.#children) {
+      if (child.#visible) {
+        child.focus();
+        return;
       }
-      let child = this.contentElement.traverseNextNode(this.contentElement);
-      while (child) {
-        child = child.traverseNextNode(this.contentElement);
-      }
+    }
+
+    if (this.element === this.contentElement && this.element.hasAttribute('autofocus')) {
+      this.element.focus();
     }
   }
 
@@ -855,21 +967,6 @@ export class Widget {
   performUpdate(): Promise<void>|void {
   }
 
-  async #performUpdateCallback(): Promise<boolean> {
-    // Mark this update cycle as complete by assigning
-    // the marker sentinel.
-    this.#updateComplete = UPDATE_COMPLETE;
-    this.#updateCompleteResolve = UPDATE_COMPLETE_RESOLVE;
-    this.#updateRequestID = 0;
-
-    // Run the actual update logic.
-    await this.performUpdate();
-
-    // Resolve the `updateComplete` with `true` if no
-    // new update was triggered during this cycle.
-    return this.#updateComplete === UPDATE_COMPLETE;
-  }
-
   /**
    * Schedules an asynchronous update for this widget.
    *
@@ -877,12 +974,7 @@ export class Widget {
    * frame.
    */
   requestUpdate(): void {
-    if (this.#updateComplete === UPDATE_COMPLETE) {
-      this.#updateComplete = new Promise((resolve, reject) => {
-        this.#updateCompleteResolve = resolve;
-        this.#updateRequestID = requestAnimationFrame(() => this.#performUpdateCallback().then(resolve, reject));
-      });
-    }
+    this.#updateComplete = enqueueWidgetUpdate(this);
   }
 
   /**
@@ -910,7 +1002,7 @@ export class Widget {
    *          updating, the value is `true` if there are no more pending updates,
    *          and `false` if the update cycle triggered another update.
    */
-  get updateComplete(): Promise<boolean> {
+  get updateComplete(): Promise<void> {
     return this.#updateComplete;
   }
 }
@@ -1015,7 +1107,7 @@ export class WidgetFocusRestorer {
   private previous: HTMLElement|null;
   constructor(widget: Widget) {
     this.widget = widget;
-    this.previous = (Platform.DOMUtilities.deepActiveElement(widget.element.ownerDocument) as HTMLElement | null);
+    this.previous = (deepActiveElement(widget.element.ownerDocument) as HTMLElement | null);
     widget.focus();
   }
 

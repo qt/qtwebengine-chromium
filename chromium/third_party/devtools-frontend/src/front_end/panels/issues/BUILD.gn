@@ -15,7 +15,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("issues") {
+devtools_ui_module("issues") {
   sources = [
     "AffectedBlockedByResponseView.ts",
     "AffectedCookiesView.ts",
@@ -27,6 +27,7 @@ devtools_module("issues") {
     "AffectedHeavyAdView.ts",
     "AffectedMetadataAllowedSitesView.ts",
     "AffectedPartitioningBlobURLView.ts",
+    "AffectedPermissionElementsView.ts",
     "AffectedResourcesView.ts",
     "AffectedSharedArrayBufferIssueDetailsView.ts",
     "AffectedSourcesView.ts",
@@ -35,7 +36,6 @@ devtools_module("issues") {
     "CorsIssueDetailsView.ts",
     "GenericIssueDetailsView.ts",
     "HiddenIssuesRow.ts",
-    "IssueAggregator.ts",
     "IssueKindView.ts",
     "IssueRevealer.ts",
     "IssueView.ts",
@@ -59,6 +59,7 @@ devtools_module("issues") {
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/utils:bundle",
     "../../ui/lit:bundle",
+    "../common:bundle",
     "./components:bundle",
   ]
 }
@@ -94,11 +95,10 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
-    "IssueAggregator.test.ts",
     "IssueView.test.ts",
     "IssuesPane.test.ts",
   ]

@@ -30,7 +30,7 @@ export function setupPageResourceLoaderForSourceMap(sourceMapContent: string) {
 
 export async function loadBasicSourceMapExample(target: SDK.Target.Target):
     Promise<{sourceMap: SDK.SourceMap.SourceMap, script: SDK.Script.Script}> {
-  const SCRIPT_ID = '25';
+  const SCRIPT_ID = '25' as Protocol.Runtime.ScriptId;
 
   const SCRIPT_URL = 'file://main.js';
 
@@ -58,6 +58,7 @@ export async function loadBasicSourceMapExample(target: SDK.Target.Target):
     forceNew: true,
     resourceMapping,
     targetManager,
+    workspace,
     ignoreListManager,
   });
   SDK.PageResourceLoader.PageResourceLoader.instance({
@@ -89,8 +90,9 @@ export async function loadBasicSourceMapExample(target: SDK.Target.Target):
     startColumn: 0,
     endLine: (SCRIPT_SOURCE.match(/^/gm)?.length ?? 1) - 1,
     endColumn: SCRIPT_SOURCE.length - SCRIPT_SOURCE.lastIndexOf('\n') - 1,
-    executionContextId: 1,
+    executionContextId: 1 as Protocol.Runtime.ExecutionContextId,
     hash: '',
+    buildId: '',
     hasSourceURL: false,
     sourceMapURL: SOURCE_MAP_URL,
   });
@@ -109,5 +111,6 @@ export async function loadBasicSourceMapExample(target: SDK.Target.Target):
   if (!sourceMap) {
     throw new Error('Source map could not be registered');
   }
+
   return {sourceMap, script};
 }

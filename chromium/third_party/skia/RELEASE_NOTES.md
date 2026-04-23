@@ -2,6 +2,73 @@ Skia Graphics Release Notes
 
 This file includes a list of high level updates for each milestone release.
 
+Milestone 144
+-------------
+  * `SkSerialProcs` now are expected to return a pointer-to-const data. This was implied before, but
+    is now made explicit.
+  * `SkImage::refEncodedData()` and `SkImageGenerator::refEncodedData()` now returns a pointer to
+    const SkData to more explicitly signal that this is a read-only view into the data.
+  * Define a new public enum, `SampleCount`, that enforces the valid sample count values that Graphite
+    supports (1, 2, 4, 8, 16). `TextureInfo::numSamples() -> uint8_t` is replaced with
+    `TextureInfo::sampleCount() -> SampleCount`.
+
+    Backend specific texture infos, e.g. `DawnTextureInfo`,
+    `VulkanTextureInfo`, and `MtlTextureInfo` still represent sample count as a `uint8_t` for
+    convience with the backend APIs. This `uint8_t` value is validated when wrapping the backend info
+    into a `TextureInfo`; if it's not a `SampleCount` value, then an empty `TextureInfo` is returned.
+  * The existing ContextOptions `PipelineCallback` has been deprecated in favor of the new `PipelineCachingCallback`.
+
+    The new callback provides extra information to the user allowing determination of how often a Pipeline is used and if any Precompiled Pipelines were unused. This information can be used to create a more effective set of Precompile PaintOptions.
+  * New `SkSVGCanvas::Make` overload allows explicitly specifying which PNG encoder
+    should be used.  This enables avoiding a hardcoded, transitive dependency on
+    either `libpng` or Rust PNG.
+  * `kR16_unorm_SkColorType` added to `SkColorType`.
+  * `include/docs/SkXPSLibpngHelpers.h` and `include/docs/SkXPSRustPngHelpers.h`
+    have been removed - please use a small lambda instead (e.g. see
+    https://crrev.com/c/7090470).
+
+* * *
+
+Milestone 143
+-------------
+  * Added `detachAsVector` method to `SkDynamicMemoryStream`.
+  * Added new public APIs to `SkPngRustEncoder` for
+    encoding an `SkImage` or `SkPixmap` into `SkData`.
+  * A new persistent pipeline storage feature has been added to Graphite. For now, it is only relevant to Graphite's native Vulkan backend. The API consists of:
+
+    1) A new PersistentPipelineStorage abstract base class which can be implemented to persist Pipeline data across Context lifetimes.
+
+    2) A matching ContextOptions::fPersistentPipelineStorage member variable which can be used to pass the PersistentPipelineStorage-derived object to Graphite.
+
+    3) A Context::syncPipelineData method that, when possible, passes the current Pipeline data to the ContextOptions::fPersistentPipelineStorage object.
+  * `SkMemoryStream` now takes in a `const SkData`, as it's a read-only view into that data.
+    `SkMemory::getData()` now returns a `const sk_sp<SkData>`.
+  * SkPath is migrating to become immutable (its geometry).
+
+    In this new version, SkPath will lose all of its methds like moveTo(), lineTo(), etc. and rely on SkPathBuilder for creating paths. Additionally, there are now additional Factories for creating paths in one-call, so often a pathbuilder object may not be needed.
+
+        static SkPath Raw(...);
+        static SkPath Rect(...);
+        static SkPath Oval(...);
+        static SkPath Circle(...);
+        static SkPath RRect(...);
+        static SkPath Polygon(...);
+        static SkPath Line(...);
+
+    Clients that create or edit paths need to switch over to using these factories and/or SkPathBuilder.
+
+    The flag that triggers this is SK_HIDE_PATH_EDIT_METHODS. This means that for now Skia can be built in either way -- but in a subsequent release, this flag will be removed, and SkPath will permanently be in its immutable form.
+  * The `SkPathBuilder::rArcTo` (relative arc to) method has been updated to align with
+    the absolute version (`SkPathBuilder::arcTo`).
+  * `SkPixmap::addrN` and `SkImageInfo::computeOffset` will now assert for negative values of x and y in debug mode.
+  * New `SkXPS::MakeDocument` overload allows explicitly specifying which
+    PNG encoder should be used.  This enables avoiding a hardcoded, transitive
+    dependency on either `libpng` or Rust PNG.  To ease the transition, two
+    new helper functions have been added to the `SkXPS` namespace:
+    `EncodePngUsingLibpng` and `EncodePngUsingRust`.
+
+* * *
+
 Milestone 142
 -------------
   * Add enum class `skgpu::graphite::MarkFrameBoundary` to be used to specify whether a submission is the last logical submission for a frame.

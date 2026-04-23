@@ -33,7 +33,6 @@
 #include <utility>
 
 #include "base/gtest_prod_util.h"
-#include "base/memory/scoped_refptr.h"
 #include "third_party/blink/public/mojom/render_accessibility.mojom-blink.h"
 #include "third_party/blink/public/web/web_ax_enums.h"
 #include "third_party/blink/renderer/core/accessibility/ax_object_cache_base.h"
@@ -777,7 +776,7 @@ class MODULES_EXPORT AXObjectCacheImpl : public AXObjectCacheBase {
   const LayoutObject* CachedPreviousOnLine(const LayoutObject* layout_object);
 
   // Updates the node on which the browser last requested accessibility focus.
-  void UpdateAccessibilityFocus(AXID id) { accessibility_focus_ = id; }
+  void UpdateAccessibilityFocus(AXID id);
 
 #if AX_FAIL_FAST_BUILD()
   void AddNodeRequiringCacheUpdate(AXID ax_id, TreeUpdateReason reason);

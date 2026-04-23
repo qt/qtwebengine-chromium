@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/modules/xr/xr_session.h"
 #include "third_party/blink/renderer/modules/xr/xr_swap_chain.h"
 #include "third_party/blink/renderer/modules/xr/xr_system.h"
+#include "third_party/blink/renderer/modules/xr/xr_utils.h"
 
 namespace blink {
 
@@ -26,7 +27,7 @@ XRCompositionLayer::XRCompositionLayer(XRGraphicsBinding* binding,
 }
 
 V8XRLayerLayout XRCompositionLayer::layout() const {
-  return V8XRLayerLayout(V8XRLayerLayout::Enum::kDefault);
+  return V8XRLayerLayout(layout_);
 }
 
 bool XRCompositionLayer::blendTextureSourceAlpha() const {
@@ -35,6 +36,7 @@ bool XRCompositionLayer::blendTextureSourceAlpha() const {
 
 void XRCompositionLayer::setBlendTextureSourceAlpha(bool value) {
   blend_texture_source_alpha_ = value;
+  SetModified(true);
 }
 
 std::optional<bool> XRCompositionLayer::chromaticAberrationCorrection() const {
@@ -60,22 +62,15 @@ float XRCompositionLayer::opacity() const {
 
 void XRCompositionLayer::setOpacity(float value) {
   opacity_ = value;
+  SetModified(true);
 }
 
 uint16_t XRCompositionLayer::mipLevels() const {
   return mip_levels_;
 }
 
-bool XRCompositionLayer::needsRedraw() const {
-  return needs_redraw_;
-}
-
 void XRCompositionLayer::destroy() const {
   NOTIMPLEMENTED();
-}
-
-void XRCompositionLayer::SetNeedsRedraw(bool needsRedraw) {
-  needs_redraw_ = needsRedraw;
 }
 
 void XRCompositionLayer::SetLayout(V8XRLayerLayout layout) {
@@ -95,7 +90,7 @@ uint16_t XRCompositionLayer::textureHeight() const {
 }
 
 uint16_t XRCompositionLayer::textureArrayLength() const {
-  return drawing_context_->TextureWidth();
+  return drawing_context_->TextureArrayLength();
 }
 
 void XRCompositionLayer::OnFrameStart() {
@@ -105,16 +100,50 @@ void XRCompositionLayer::OnFrameStart() {
 void XRCompositionLayer::OnFrameEnd() {
   drawing_context_->OnFrameEnd();
 
-  XRFrameProvider* frame_provider = session()->xr()->frameProvider();
-
   if (IsModified()) {
-    if (XRProjectionLayer* layer = DynamicTo<XRProjectionLayer>(this); layer) {
-      frame_provider->UpdateLayerViewports(layer);
-      SetModified(false);
-    }
+    UpdateLayerBackend();
+    SetModified(false);
   }
 
-  frame_provider->SubmitCompositionLayer(this);
+  XRFrameProvider* frame_provider = session()->xr()->frameProvider();
+  frame_provider->SubmitLayer(layer_id(), drawing_context_,
+                              drawing_context_->TextureWasQueried());
+
+  // Reset needs redraw state because texture was requested and submitted.
+  if (drawing_context_->TextureWasQueried()) {
+    SetNeedsRedraw(false);
+  }
+}
+
+XrLayerClient* XRCompositionLayer::LayerClient() {
+  return drawing_context();
+}
+
+device::mojom::blink::XRCompositionLayerDataPtr
+XRCompositionLayer::CreateLayerData() const {
+  auto layer_data = device::mojom::blink::XRCompositionLayerData::New();
+  // Readonly data.
+  layer_data->read_only_data = device::mojom::blink::XRLayerReadOnlyData::New();
+  layer_data->read_only_data->layer_id = layer_id();
+  layer_data->read_only_data->texture_width = textureWidth();
+  layer_data->read_only_data->texture_height = textureHeight();
+  layer_data->read_only_data->is_static = isStatic();
+  layer_data->read_only_data->layout = V8ToMojomLayerLayout(layout_);
+  // Mutable data.
+  layer_data->mutable_data = device::mojom::blink::XRLayerMutableData::New();
+  layer_data->mutable_data->blend_texture_source_alpha =
+      blendTextureSourceAlpha();
+  layer_data->mutable_data->opacity = opacity();
+  layer_data->mutable_data->native_origin_information = NativeOrigin();
+
+  // Layer Specific data.
+  layer_data->mutable_data->layer_data = CreateLayerSpecificData();
+
+  return layer_data;
+}
+
+bool XRCompositionLayer::isStatic() const {
+  return false;
 }
 
 void XRCompositionLayer::Trace(Visitor* visitor) const {

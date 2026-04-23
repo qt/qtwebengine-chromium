@@ -10,7 +10,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/task/sequenced_task_runner.h"
@@ -51,7 +50,6 @@ using AuthRequestCallbackHelper =
 using FedCmEntry = ukm::builders::Blink_FedCm;
 using FedCmIdpEntry = ukm::builders::Blink_FedCmIdp;
 using RequesterFrameType = content::webid::RequesterFrameType;
-using FetchStatus = content::IdpNetworkRequestManager::FetchStatus;
 using RequestTokenCallback =
     content::webid::RequestService::RequestTokenCallback;
 using blink::mojom::RequestTokenStatus;
@@ -115,13 +113,14 @@ class TestIdpNetworkRequestManager : public MockIdpNetworkRequestManager {
                                   endpoints, idp_metadata));
   }
 
-  void SendAccountsRequest(const url::Origin& idp_origin,
+  bool SendAccountsRequest(const url::Origin& idp_origin,
                            const GURL& accounts_url,
                            const std::string& client_id,
                            AccountsRequestCallback callback) override {
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(callback), kFetchStatusSuccess, kAccounts));
+    return true;
   }
 
   void SendTokenRequest(
@@ -157,8 +156,7 @@ class TestIdpNetworkRequestManager : public MockIdpNetworkRequestManager {
   // If true, will send `client_is_third_party_to_top_frame_origin: true` in the
   // client metadata request.
   bool send_client_is_third_party_to_top_frame_origin_{false};
-  FetchStatus kFetchStatusSuccess{
-      IdpNetworkRequestManager::ParseStatus::kSuccess, net::HTTP_OK};
+  FetchStatus kFetchStatusSuccess{ParseStatus::kSuccess, net::HTTP_OK};
 };
 
 class TestDialogController
@@ -189,7 +187,6 @@ class TestDialogController
       const std::vector<IdentityProviderDataPtr>& idp_list,
       const std::vector<IdentityRequestAccountPtr>& accounts,
       blink::mojom::RpMode rp_mode,
-      const std::vector<IdentityRequestAccountPtr>& new_accounts,
       IdentityRequestDialogController::AccountSelectionCallback on_selected,
       IdentityRequestDialogController::LoginToIdPCallback on_add_account,
       IdentityRequestDialogController::DismissCallback dismiss_callback,

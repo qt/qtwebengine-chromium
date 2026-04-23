@@ -1,7 +1,7 @@
 // Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../../../core/common/common.js';
 import * as Host from '../../../../core/host/host.js';
@@ -121,7 +121,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
   private readonly lazyContent: () => Promise<TextUtils.ContentData.ContentDataOrError>;
   private prettyInternal: boolean;
   private rawContent: string|CodeMirror.Text|null;
-  private formattedMap: Formatter.ScriptFormatter.FormatterSourceMapping|null;
+  protected formattedMap: Formatter.ScriptFormatter.FormatterSourceMapping|null;
   private readonly prettyToggle: UI.Toolbar.ToolbarToggle;
   private shouldAutoPrettyPrint: boolean;
   private readonly progressToolbarItem: UI.Toolbar.ToolbarItem;
@@ -400,6 +400,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
       newSelection = textEditor.createSelection(
           {lineNumber: start[0], columnNumber: start[1]}, {lineNumber: end[0], columnNumber: end[1]});
     } else {
+      this.formattedMap = null;
       await this.setContent(this.rawContent || '');
       this.baseDoc = textEditor.state.doc;
       const start = this.prettyToRawLocation(startPos.lineNumber, startPos.columnNumber);
@@ -480,6 +481,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
   }
 
   override wasShown(): void {
+    super.wasShown();
     void this.ensureContentLoaded();
     this.wasShownOrLoaded();
   }
@@ -1050,12 +1052,6 @@ export interface Transformer {
   };
 }
 
-export const enum DecoratorType {
-  PERFORMANCE = 'performance',
-  MEMORY = 'memory',
-  COVERAGE = 'coverage',
-}
-
 const config = {
   editable: new CodeMirror.Compartment(),
   language: new CodeMirror.Compartment(),
@@ -1134,8 +1130,7 @@ const searchHighlighter = CodeMirror.ViewPlugin.fromClass(class {
             }
             if (match[0].length) {
               const start = pos + match.index, end = start + match[0].length;
-              const current =
-                  active.currentRange && active.currentRange.from === start && active.currentRange.to === end;
+              const current = active.currentRange?.from === start && active.currentRange.to === end;
               builder.add(start, end, current ? currentSearchMatchDeco : searchMatchDeco);
             } else {
               active.regexp.regex.lastIndex = match.index + 1;
@@ -1153,7 +1148,7 @@ const nonBreakableLineMark = new (class extends CodeMirror.GutterMarker {
   override elementClass = 'cm-nonBreakableLine';
 })();
 
-// Effect to add lines (by position) to the set of non-breakable lines.
+/** Effect to add lines (by position) to the set of non-breakable lines. **/
 export const addNonBreakableLines = CodeMirror.StateEffect.define<readonly number[]>();
 
 const nonBreakableLines = CodeMirror.StateField.define<CodeMirror.RangeSet<CodeMirror.GutterMarker>>({
@@ -1227,13 +1222,13 @@ const sourceFrameTheme = CodeMirror.EditorView.theme({
 export type RevealPosition = number|{lineNumber: number, columnNumber?: number}|
     {from: {lineNumber: number, columnNumber: number}, to: {lineNumber: number, columnNumber: number}};
 
-// This is usually an Infobar but is also used for AiCodeCompletionSummaryToolbar
+/** This is usually an Infobar but is also used for AiCodeCompletionSummaryToolbar **/
 export interface SourceFrameInfobar {
   element: HTMLElement;
   order?: number;
 }
 
-// Infobar panel state, used to show additional panels below the editor.
+/** Infobar panel state, used to show additional panels below the editor. **/
 export const addSourceFrameInfobar = CodeMirror.StateEffect.define<SourceFrameInfobar>();
 export const removeSourceFrameInfobar = CodeMirror.StateEffect.define<SourceFrameInfobar>();
 

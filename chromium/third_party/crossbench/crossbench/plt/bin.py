@@ -5,8 +5,8 @@
 from __future__ import annotations
 
 import functools
-from typing import (TYPE_CHECKING, ClassVar, Final, Iterable, Optional,
-                    TypeAlias)
+from typing import TYPE_CHECKING, ClassVar, Final, Iterable, Optional, \
+    TypeAlias
 
 from typing_extensions import override
 
@@ -15,7 +15,6 @@ from crossbench import path as pth
 if TYPE_CHECKING:
   from crossbench.plt.base import Platform
   BinaryLookup: TypeAlias = pth.AnyPathLike | Iterable[pth.AnyPathLike]
-
 
 
 class BinaryNotFoundError(RuntimeError):

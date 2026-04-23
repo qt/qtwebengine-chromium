@@ -370,6 +370,14 @@ class CORE_EXPORT PaintLayerScrollableArea final
                            scroll_type, source_type, scroll_behavior);
   }
 
+  // Scrolls by one page in the given direction, using PageScrollSnapStrategy
+  // to find the appropriate snap position. This ensures consistent behavior
+  // across all paging operations (clicking scrollbar track, page down, space
+  // bar, ::scroll-button). Returns true if the scroll was performed.
+  bool ScrollByPageWithSnap(ScrollDirectionPhysical direction,
+                            mojom::blink::ScrollBehavior scroll_behavior =
+                                mojom::blink::ScrollBehavior::kAuto);
+
   // This will set the scroll position without clamping, and it will do all
   // post-update work even if the scroll position didn't change.
   void SetScrollOffsetUnconditionally(
@@ -679,12 +687,21 @@ class CORE_EXPORT PaintLayerScrollableArea final
   void RemoveScrollMarkerGroupContainerData(
       ScrollMarkerGroupData* scroll_marker_group_data);
 
-  ContainerScrollDirection LastScrollDirectionHorizontal() const {
-    return last_scroll_direction_horizontal_;
+  ContainerScrolled LastScrolledHorizontal() const {
+    return last_scrolled_horizontal_;
   }
-  ContainerScrollDirection LastScrollDirectionVertical() const {
-    return last_scroll_direction_vertical_;
+  ContainerScrolled LastScrolledVertical() const {
+    return last_scrolled_vertical_;
   }
+
+  struct StyleBasedScrollbarData {
+    EOverflow overflow_x;
+    EOverflow overflow_y;
+    unsigned gutter;
+    EScrollbarWidth width;
+  };
+  gfx::Size ComputeScrollbarWidthsForViewportUnits(
+      StyleBasedScrollbarData) const;
 
  private:
   bool NeedsHypotheticalScrollbarThickness(ScrollbarOrientation) const;
@@ -711,9 +728,9 @@ class CORE_EXPORT PaintLayerScrollableArea final
   // Only relative scrolls [0] should affect scroll-state() query last direction
   // feature. This function is used to update `ScrollStateQuerySnapshot` last
   // direction. [0] https://drafts.csswg.org/css-scroll-snap-1/#relative-scroll
-  void UpdateLastScrollDirection(const ScrollOffset& previous_offset,
-                                 const ScrollOffset& new_offset,
-                                 cc::ScrollSourceType);
+  void UpdateLastScrolled(const ScrollOffset& previous_offset,
+                          const ScrollOffset& new_offset,
+                          cc::ScrollSourceType);
 
   int VerticalScrollbarStart() const;
   int HorizontalScrollbarStart() const;
@@ -877,10 +894,8 @@ class CORE_EXPORT PaintLayerScrollableArea final
 
   gfx::PointF last_cull_rect_update_scroll_position_;
 
-  ContainerScrollDirection last_scroll_direction_horizontal_ =
-      ContainerScrollDirection::kNone;
-  ContainerScrollDirection last_scroll_direction_vertical_ =
-      ContainerScrollDirection::kNone;
+  ContainerScrolled last_scrolled_horizontal_ = ContainerScrolled::kNone;
+  ContainerScrolled last_scrolled_vertical_ = ContainerScrolled::kNone;
 
   class ScrollingBackgroundDisplayItemClient final
       : public GarbageCollected<ScrollingBackgroundDisplayItemClient>,

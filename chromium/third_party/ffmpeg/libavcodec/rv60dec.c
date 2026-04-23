@@ -33,6 +33,8 @@
 #include "unary.h"
 #include "videodsp.h"
 
+#include "libavutil/attributes.h"
+
 static const int8_t frame_types[4] = {AV_PICTURE_TYPE_I, AV_PICTURE_TYPE_P, AV_PICTURE_TYPE_B, AV_PICTURE_TYPE_NONE};
 
 enum CUType {
@@ -307,6 +309,9 @@ static int update_dimensions_clear_info(RV60Context *s, int width, int height)
 
     if ((ret = av_reallocp_array(&s->blk_info, s->blk_stride * (s->cu_height << 4), sizeof(s->blk_info[0]))) < 0)
         return ret;
+
+    memset(s->pu_info, 0, s->pu_stride * (s->cu_height << 3) * sizeof(s->pu_info[0]));
+    memset(s->blk_info, 0, s->blk_stride * (s->cu_height << 4) * sizeof(s->blk_info[0]));
 
     for (int j = 0; j < s->cu_height << 4; j++)
         for (int i = 0; i < s->cu_width << 4; i++)
@@ -2261,7 +2266,7 @@ static int decode_slice(AVCodecContext *avctx, void *tdata, int cu_y, int thread
             ff_thread_progress_await(&s->progress[cu_y - 1], cu_x + 2);
 
         qp = s->qp + read_qp_offset(&gb, s->qp_off_type);
-        if (qp < 0) {
+        if (qp < 0 || qp >= 64) {
             ret = AVERROR_INVALIDDATA;
             break;
         }
@@ -2394,7 +2399,7 @@ static int rv60_decode_frame(AVCodecContext *avctx, AVFrame * frame,
     return avpkt->size;
 }
 
-static void rv60_flush(AVCodecContext *avctx)
+static av_cold void rv60_flush(AVCodecContext *avctx)
 {
     RV60Context *s = avctx->priv_data;
 

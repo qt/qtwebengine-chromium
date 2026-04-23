@@ -2,16 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as NetworkTimeCalculator from '../../models/network_time_calculator/network_time_calculator.js';
+import * as PanelCommon from '../../panels/common/common.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import * as Annotations from '../../ui/components/annotations/annotations.js';
 import * as LegacyWrapper from '../../ui/components/legacy_wrapper/legacy_wrapper.js';
+import {Icon} from '../../ui/kit/kit.js';
 import type * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -208,7 +210,7 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
           i18nString(UIStrings.responsePreview));
       const signedExchangeInfo = request.signedExchangeInfo();
       if (signedExchangeInfo?.errors?.length) {
-        const icon = new IconButton.Icon.Icon();
+        const icon = new Icon();
         icon.name = 'cross-circle-filled';
         icon.classList.add('small');
         UI.Tooltip.Tooltip.install(icon, i18nString(UIStrings.signedexchangeError));
@@ -232,7 +234,7 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
 
     this.appendTab(
         NetworkForward.UIRequestLocation.UIRequestTabs.TIMING, i18nString(UIStrings.timing),
-        new RequestTimingView(request, calculator), i18nString(UIStrings.requestAndResponseTimeline));
+        RequestTimingView.create(request, calculator), i18nString(UIStrings.requestAndResponseTimeline));
 
     if (request.trustTokenParams()) {
       this.appendTab(
@@ -265,9 +267,19 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
       this.#selectTab(this.#initialTab);
       this.#initialTab = undefined;
     }
+
+    if (Annotations.AnnotationRepository.annotationsEnabled()) {
+      PanelCommon.AnnotationManager.instance().initializePlacementForAnnotationType(
+          Annotations.AnnotationType.NETWORK_REQUEST_SUBPANEL_HEADERS, this.resolveInitialState.bind(this),
+          this.element);
+
+      void PanelCommon.AnnotationManager.instance().resolveAnnotationsOfType(
+          Annotations.AnnotationType.NETWORK_REQUEST_SUBPANEL_HEADERS);
+    }
   }
 
   override willHide(): void {
+    super.willHide();
     this.#request.removeEventListener(
         SDK.NetworkRequest.Events.REQUEST_HEADERS_CHANGED, this.requestHeadersChanged, this);
     this.#request.removeEventListener(
@@ -291,7 +303,7 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
           i18nString(UIStrings.requestAndResponseCookies));
     }
     if (this.#request.hasThirdPartyCookiePhaseoutIssue()) {
-      const icon = new IconButton.Icon.Icon();
+      const icon = new Icon();
       icon.name = 'warning-filled';
       icon.classList.add('small');
       icon.title = i18nString(UIStrings.thirdPartyPhaseout);
@@ -316,7 +328,7 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
     const trustTokenResult = this.#request.trustTokenOperationDoneEvent();
     if (trustTokenResult &&
         !NetworkComponents.RequestTrustTokensView.statusConsideredSuccess(trustTokenResult.status)) {
-      const icon = new IconButton.Icon.Icon();
+      const icon = new Icon();
       icon.name = 'cross-circle-filled';
       icon.classList.add('small');
       this.setTabIcon(NetworkForward.UIRequestLocation.UIRequestTabs.TRUST_TOKENS, icon);
@@ -333,6 +345,34 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
         }
       }, 0);
     }
+  }
+
+  async resolveInitialState(
+      parentElement: Element, reveal: boolean, lookupId: string,
+      anchor?: SDK.DOMModel.DOMNode|SDK.NetworkRequest.NetworkRequest): Promise<{x: number, y: number}|null> {
+    const request = anchor as SDK.NetworkRequest.NetworkRequest;
+    if ((request && request !== this.request()) || (lookupId !== this.request().requestId())) {
+      return null;
+    }
+
+    if (!this.#headersViewComponent) {
+      return null;
+    }
+    await this.#headersViewComponent.render();
+
+    const element = this.#headersViewComponent.getHeaderElementById('request-url');
+    if (!element) {
+      return null;
+    }
+
+    const targetRect = element.getBoundingClientRect();
+    const parentRect = parentElement.getBoundingClientRect();
+    // Adjust the anchor position slightly.
+    const adjustX = 15;
+    const adjustY = -19;
+    const relativeX = targetRect.x - parentRect.x + adjustX;
+    const relativeY = targetRect.y - parentRect.y + adjustY;
+    return {x: relativeX, y: relativeY};
   }
 
   private tabSelected(event: Common.EventTarget.EventTargetEvent<UI.TabbedPane.EventData>): void {

@@ -389,6 +389,10 @@ class SharedFunctionInfo
   inline uint16_t internal_formal_parameter_count_with_receiver() const;
   inline uint16_t internal_formal_parameter_count_without_receiver() const;
 
+  inline uint32_t unused_parameter_bits() const;
+  inline bool CanOnlyAccessFixedFormalParameters() const;
+  inline bool IsSloppyNormalJSFunction() const;
+
  private:
   using TorqueGeneratedSharedFunctionInfo::formal_parameter_count;
   using TorqueGeneratedSharedFunctionInfo::set_formal_parameter_count;
@@ -427,6 +431,9 @@ class SharedFunctionInfo
 
   // Some code may encounter unreachable unusable objects and needs to skip
   // over them without crashing.
+  // If we end up needing to check for this condition in many places, it might
+  // be easier to instead clear the trusted pointer of these SFIs as they are
+  // anyway unusable (and should always be unreachable as well).
   inline bool HasUnpublishedTrustedData(IsolateForSandbox isolate) const;
 
  private:
@@ -753,7 +760,7 @@ class SharedFunctionInfo
   // Returns `false` if formal parameters include rest parameters, optional
   // parameters, or destructuring parameters.
   // TODO(caitp): make this a flag set during parsing
-  inline bool has_simple_parameters();
+  inline bool has_simple_parameters() const;
 
   // Initialize a SharedFunctionInfo from a parsed or preparsed function
   // literal.

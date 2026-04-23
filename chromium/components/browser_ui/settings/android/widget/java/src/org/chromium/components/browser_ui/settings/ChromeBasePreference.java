@@ -19,8 +19,8 @@ import androidx.preference.PreferenceViewHolder;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
+import org.chromium.components.browser_ui.widget.containment.ContainmentItem;
 import org.chromium.components.browser_ui.widget.containment.ContainmentUiUtils;
-import org.chromium.components.browser_ui.widget.containment.CustomStyledContainer;
 
 /**
  * A preference that supports some Chrome-specific customizations:
@@ -35,7 +35,7 @@ import org.chromium.components.browser_ui.widget.containment.CustomStyledContain
  * ColorStateList is set, only the default color will be used.
  */
 @NullMarked
-public class ChromeBasePreference extends Preference implements CustomStyledContainer {
+public class ChromeBasePreference extends Preference implements ContainmentItem {
     private final @Nullable ColorStateList mIconTint;
     private final int mBackgroundStyle;
     private final int mBackgroundColor;
@@ -76,12 +76,35 @@ public class ChromeBasePreference extends Preference implements CustomStyledCont
 
     /** Sets the ManagedPreferenceDelegate which will determine whether this preference is managed. */
     public void setManagedPreferenceDelegate(ManagedPreferenceDelegate delegate) {
+        setManagedPreferenceDelegate(delegate, /* allowManagedIcon= */ true, mHasCustomLayout);
+    }
+
+    /**
+     * Sets the ManagedPreferenceDelegate which will determine whether this preference is managed.
+     *
+     * @param delegate The delegate that checks if the preference is managed.
+     * @param allowManagedIcon Whether to show an icon if the preference is managed.
+     * @param hasCustomLayout Whether the preference has a custom layout.
+     */
+    protected void setManagedPreferenceDelegate(
+            @Nullable ManagedPreferenceDelegate delegate,
+            boolean allowManagedIcon,
+            boolean hasCustomLayout) {
         mManagedPrefDelegate = delegate;
         ManagedPreferencesUtils.initPreference(
-                mManagedPrefDelegate,
-                this,
-                /* allowManagedIcon= */ true,
-                /* hasCustomLayout= */ mHasCustomLayout);
+                mManagedPrefDelegate, this, allowManagedIcon, hasCustomLayout);
+    }
+
+    /**
+     * If a {@link ManagedPreferenceDelegate} has been set, check if this preference is managed.
+     *
+     * @return True if the preference is managed.
+     */
+    public boolean isManaged() {
+        if (mManagedPrefDelegate == null) return false;
+
+        return mManagedPrefDelegate.isPreferenceControlledByPolicy(this)
+                || mManagedPrefDelegate.isPreferenceControlledByCustodian(this);
     }
 
     @Override

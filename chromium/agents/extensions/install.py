@@ -9,11 +9,150 @@ This script is a wrapper around the `gemini extensions` commands.
 """
 
 import argparse
-import re
+import json
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.append(str(_PROJECT_ROOT))
+from agents.common import gemini_helpers
+
+
+IGNORED_EXTENSIONS = ['example-server']
+
+
+@dataclass
+class ExtensionInfo:
+    """Holds information about an extension."""
+    name: str
+    available: str = '-'
+    installed: str = '-'
+    linked: bool = False
+    enabled_for_workspace: bool = False
+
+
+def _get_extension_version(extension_path: Path) -> str:
+    """Returns the version of the extension from its manifest file."""
+    manifest_path = extension_path / 'gemini-extension.json'
+    if not manifest_path.exists():
+        return '-'
+    with open(manifest_path, encoding='utf-8') as f:
+        try:
+            data = json.load(f)
+            return data.get('version', '-')
+        except json.JSONDecodeError:
+            return '-'
+
+
+def _get_available_extensions(
+        project_root: Path | None,
+        extra_extensions_dirs: list[Path] | None) -> dict[str, ExtensionInfo]:
+    """Returns a dictionary of available extensions."""
+    data = {}
+    dirs = get_extensions_dirs(project_root,
+                               extra_extensions_dirs=extra_extensions_dirs)
+    for extensions_dir in dirs:
+        for name in get_extensions_from_dir(extensions_dir):
+            if name in IGNORED_EXTENSIONS:
+                continue
+            path = extensions_dir / name
+            version = _get_extension_version(path)
+            data[name] = ExtensionInfo(name=name, available=version)
+    return data
+
+
+def _parse_installed_extensions_output(
+        output: str) -> dict[str, ExtensionInfo]:
+    """Parses the output of `gemini extensions list` and returns a dictionary of
+    installed extension details.
+    """
+    data: dict[str, ExtensionInfo] = {}
+    current_name = None
+    for line in output.splitlines():
+        is_indented = line.lstrip() != line
+        if not is_indented:
+            # This is a name/version line
+            parts = line.split()
+            if (len(parts) >= 2 and parts[-1].startswith('(')
+                    and parts[-1].endswith(')')):
+                name = parts[-2]
+                version = parts[-1].strip('()')
+                current_name = name
+                data[current_name] = ExtensionInfo(
+                    name=name,
+                    installed=version,
+                )
+        elif current_name and is_indented:
+            # This is a detail line
+            stripped_line = line.strip()
+            current_ext = data[current_name]
+            if (stripped_line.startswith('Source:')
+                    and '(Type: link)' in stripped_line):
+                current_ext.linked = True
+            elif (stripped_line.startswith('Enabled (Workspace):')
+                  and 'true' in stripped_line):
+                current_ext.enabled_for_workspace = True
+
+    return data
+
+
+def _print_extensions_table(data: dict[str, ExtensionInfo]) -> None:
+    """Prints a formatted table of extensions."""
+    headers = ['EXTENSION', 'AVAILABLE', 'INSTALLED', 'LINKED', 'ENABLED']
+    col_widths = {h: len(h) for h in headers}
+    for name, ext_data in data.items():
+        col_widths['EXTENSION'] = max(col_widths['EXTENSION'], len(name))
+        col_widths['AVAILABLE'] = max(col_widths['AVAILABLE'],
+                                      len(ext_data.available))
+        col_widths['INSTALLED'] = max(col_widths['INSTALLED'],
+                                      len(ext_data.installed))
+        col_widths['ENABLED'] = max(
+            col_widths['ENABLED'],
+            len('workspace') if ext_data.enabled_for_workspace else 0)
+
+    col_sep = '  '
+    header_line = col_sep.join(h.ljust(col_widths[h]) for h in headers)
+    print(header_line)
+    print(col_sep.join('-' * col_widths[h] for h in headers))
+
+    for name in sorted(data.keys()):
+        ext_data = data[name]
+        row = [
+            name.ljust(col_widths['EXTENSION']),
+            ext_data.available.ljust(col_widths['AVAILABLE']),
+            ext_data.installed.ljust(col_widths['INSTALLED']),
+            ('yes' if ext_data.linked else 'no').ljust(col_widths['LINKED']),
+            ('workspace' if ext_data.enabled_for_workspace else '-').ljust(
+                col_widths['ENABLED']),
+        ]
+        print(col_sep.join(row))
+
+
+def _handle_list_command(project_root: Path | None,
+                         extra_extensions_dirs: list[Path]) -> None:
+    """Shows all available and installed extensions."""
+    gemini_cmd = gemini_helpers.get_gemini_executable()
+    all_data = _get_available_extensions(project_root, extra_extensions_dirs)
+
+    # Get installed extensions
+    result = subprocess.run([gemini_cmd, 'extensions', 'list'],
+                            capture_output=True,
+                            text=True,
+                            check=True)
+    installed_data = _parse_installed_extensions_output(result.stdout)
+
+    for name, data in installed_data.items():
+        if name not in all_data:
+            all_data[name] = data
+        else:
+            all_data[name].installed = data.installed
+            all_data[name].linked = data.linked
+            all_data[name].enabled_for_workspace = data.enabled_for_workspace
+
+    _print_extensions_table(all_data)
 
 
 def get_extensions_from_dir(extensions_dir: Path) -> list[str]:
@@ -32,18 +171,9 @@ def get_extensions_from_dir(extensions_dir: Path) -> list[str]:
     ]
 
 
-def get_project_root() -> Path | None:
+def get_project_root() -> Path:
     """Gets the project root."""
-    try:
-        # Derive the `chromium/src` directory from `__file__` because:
-        # 1. We can't assume a valid `git` environment (cogfs with Cider-G).
-        # 2. We can't assume a valid `gclient` environment (e.g., in a `git
-        #    worktree` created by the prompt evaluation script).
-        return Path(__file__).parents[2]
-    except IndexError:
-        print(f'Error: Could not determine project root for {__file__}.',
-              file=sys.stderr)
-        return None
+    return _PROJECT_ROOT
 
 
 def get_extensions_dirs(
@@ -89,10 +219,13 @@ def get_global_extension_dir() -> Path:
     return Path.home() / '.gemini' / 'extensions'
 
 
-def _run_command(command: list[str]) -> None:
+def _run_command(command: list[str], skip_prompt: bool = False) -> None:
     """Runs a command and handles errors."""
     try:
-        subprocess.run(command, check=True)
+        if skip_prompt:
+            subprocess.run(command, check=True, input='y\n', encoding='utf-8')
+        else:
+            subprocess.run(command, check=True)
     except FileNotFoundError:
         print(
             f"Error: Command '{command[0]}' not found. Is 'gemini' in your "
@@ -138,6 +271,7 @@ def fix_extensions(project_root: Path | None) -> None:
     user_extensions_dir = get_global_extension_dir()
     source_dirs = get_extensions_dirs(project_root)
 
+    gemini_cmd = gemini_helpers.get_gemini_executable()
     print('Found project-level extensions. Converting to the new model...')
     for extension in extensions:
         if (user_extensions_dir / extension).exists():
@@ -160,35 +294,18 @@ def fix_extensions(project_root: Path | None) -> None:
 
         print(f'Fixing "{extension}"...')
         _run_command([
-            'gemini', 'extensions', 'link',
+            gemini_cmd, 'extensions', 'link',
             str(source_dir_for_ext / extension)
         ])
         _run_command(
-            ['gemini', 'extensions', 'disable', extension, '--scope=User'])
-        _run_command(
-            ['gemini', 'extensions', 'enable', extension, '--scope=Workspace'])
+            [gemini_cmd, 'extensions', 'disable', extension, '--scope=User'])
+        _run_command([
+            gemini_cmd, 'extensions', 'enable', extension, '--scope=Workspace'
+        ])
 
     print('Removing old project-level extensions directory...')
     shutil.rmtree(project_extensions_dir)
     print('Done.')
-
-
-def get_gemini_version() -> str | None:
-    """Gets the version of the Gemini CLI."""
-    try:
-        result = subprocess.run(
-            ['gemini', '--version'],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        output = result.stdout.strip()
-        match = re.search(r'\d+\.\d+\.\d+', output)
-        if match:
-            return match.group(0)
-        return None
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
 
 
 def _check_for_workspace_extensions(project_root: Path | None) -> None:
@@ -205,8 +322,8 @@ def _check_for_workspace_extensions(project_root: Path | None) -> None:
 
 def check_gemini_version() -> None:
     """Checks if the Gemini CLI version is sufficient."""
-    required_version = (0, 4, 0)
-    version_str = get_gemini_version()
+    required_version = (0, 8, 0)
+    version_str = gemini_helpers.get_gemini_version()
     if not version_str:
         print(
             'Error: Could not determine Gemini CLI version. Please ensure '
@@ -273,6 +390,11 @@ def main() -> None:
 
     update_parser = subparsers.add_parser('update', help='Update extensions.')
     update_parser.add_argument(
+        '--skip-prompt',
+        action='store_true',
+        help='Skip any interactive prompts.',
+    )
+    update_parser.add_argument(
         'extensions',
         nargs='*',
         help=('A list of extension directory names to update. If not '
@@ -297,8 +419,10 @@ def main() -> None:
         parser.print_help()
         sys.exit(1)
 
+    gemini_cmd = gemini_helpers.get_gemini_executable()
+
     if args.command == 'list':
-        _run_command(['gemini', 'extensions', 'list'])
+        _handle_list_command(project_root, args.extra_extensions_dir)
         return
 
     if args.command == 'fix':
@@ -307,7 +431,7 @@ def main() -> None:
 
     extensions_to_process = args.extensions
     if not extensions_to_process and args.command == 'update':
-        _run_command(['gemini', 'extensions', 'update', '--all'])
+        _run_command([gemini_cmd, 'extensions', 'update', '--all'])
         return
 
     for extension in extensions_to_process:
@@ -320,16 +444,28 @@ def main() -> None:
                 print(f"Error: Extension '{extension}' not found.",
                       file=sys.stderr)
                 sys.exit(1)
-            cmd = ['gemini', 'extensions']
+            cmd = [gemini_cmd, 'extensions']
             if args.copy:
-                cmd.extend(['install', '--path', str(source_dir / extension)])
+                cmd.extend(['install', str(source_dir / extension)])
             else:
                 cmd.extend(['link', str(source_dir / extension)])
-            _run_command(cmd)
+            _run_command(cmd, skip_prompt=args.skip_prompt)
         elif args.command == 'update':
-            _run_command(['gemini', 'extensions', 'update', extension])
+            _run_command([gemini_cmd, 'extensions', 'update', extension],
+                         skip_prompt=args.skip_prompt)
         elif args.command == 'remove':
-            _run_command(['gemini', 'extensions', 'uninstall', extension])
+            if '_' in extension:
+                # gemini rejects extension names with _ in them so if they're
+                # already installed we need to delete them directly
+                try:
+                    shutil.rmtree(get_global_extension_dir() / extension)
+                except OSError as e:
+                    print(f"Error removing extension '{extension}': {e}",
+                          file=sys.stderr)
+                    sys.exit(1)
+            else:
+                _run_command(
+                    [gemini_cmd, 'extensions', 'uninstall', extension])
 
 
 if __name__ == '__main__':

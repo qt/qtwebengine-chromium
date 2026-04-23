@@ -23,6 +23,7 @@
 #include <stdio.h>
 
 #include "cmdutils.h"
+#include "fopen_utf8.h"
 #include "opt_common.h"
 
 #include "libavutil/avassert.h"
@@ -808,7 +809,8 @@ int show_filters(void *optctx, const char *opt, const char *arg)
            "  A = Audio input/output\n"
            "  V = Video input/output\n"
            "  N = Dynamic number and/or type of input/output\n"
-           "  | = Source or sink filter\n");
+           "  | = Source or sink filter\n"
+           "  ------\n");
     while ((filter = av_filter_iterate(&opaque))) {
         descr_cur = descr;
         for (i = 0; i < 2; i++) {
@@ -990,7 +992,7 @@ int show_pix_fmts(void *optctx, const char *opt, const char *arg)
 #endif
 
     while ((pix_desc = av_pix_fmt_desc_next(pix_desc))) {
-        enum AVPixelFormat av_unused pix_fmt = av_pix_fmt_desc_get_id(pix_desc);
+        av_unused enum AVPixelFormat pix_fmt = av_pix_fmt_desc_get_id(pix_desc);
         printf("%c%c%c%c%c %-16s       %d            %3d      %d",
                sws_isSupportedInput (pix_fmt)              ? 'I' : '.',
                sws_isSupportedOutput(pix_fmt)              ? 'O' : '.',
@@ -1204,7 +1206,7 @@ int init_report(const char *env, FILE **file)
     if (!envlevel)
         report_file_level = FFMAX(report_file_level, prog_loglevel);
 
-    report_file = fopen(filename.str, "w");
+    report_file = fopen_utf8(filename.str, "w");
     if (!report_file) {
         int ret = AVERROR(errno);
         av_log(NULL, AV_LOG_ERROR, "Failed to open report \"%s\": %s\n",

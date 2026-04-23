@@ -15,7 +15,7 @@
 #include "base/feature_list.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
 #include "base/threading/thread_checker.h"
@@ -100,8 +100,27 @@ class NetworkTimeTracker {
 
   class NetworkTimeObserver : public base::CheckedObserver {
    public:
+    explicit NetworkTimeObserver(NetworkTimeTracker* tracker);
+
+    NetworkTimeObserver(const NetworkTimeObserver&) = delete;
+    NetworkTimeObserver& operator=(const NetworkTimeObserver&) = delete;
+
+    // Called when the network time changes.
     virtual void OnNetworkTimeChanged(
         const TimeTracker::TimeTrackerState state) = 0;
+
+    // Called when the NetworkTimeTracker is destroyed. This allows the observer
+    // to remove itself from the NetworkTimeTracker's observer list, and clear
+    // its pointer to the NetworkTimeTracker. This method may be overridden,
+    // but if so, the parent class method must be called to ensure the above
+    // contract is upheld.
+    virtual void OnNetworkTimeTrackerDestroyed(NetworkTimeTracker* tracker);
+
+   protected:
+    ~NetworkTimeObserver() override;
+
+   private:
+    raw_ptr<NetworkTimeTracker> tracker_;
   };
 
   static void RegisterPrefs(PrefRegistrySimple* registry);

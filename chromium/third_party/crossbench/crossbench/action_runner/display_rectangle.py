@@ -11,6 +11,7 @@ from crossbench.benchmarks.loading.point import Point
 
 SCROLL_BOUNDS_OFFSET_FACTOR: float = 0.1
 
+
 @dataclasses.dataclass(frozen=False)
 # Represents a rectangular section of the device's display.
 class DisplayRectangle:

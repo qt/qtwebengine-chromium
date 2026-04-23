@@ -1,10 +1,10 @@
 // Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /* The following disable is needed until all the partial view functions are part of one view function */
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import '../../ui/legacy/legacy.js';
 
@@ -18,6 +18,7 @@ import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Lit from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import * as PanelsCommon from '../common/common.js';
 
 import {AnimationGroupPreviewUI} from './AnimationGroupPreviewUI.js';
 import animationTimelineStyles from './animationTimeline.css.js';
@@ -165,7 +166,7 @@ const DEFAULT_TOOLBAR_VIEW: ToolbarView = (input: ToolbarViewInput, output: unde
           const isSelected = input.selectedPlaybackRate === playbackRate;
           const textContent = playbackRate ? i18nString(UIStrings.playbackRatePlaceholder, {PH1: playbackRate * 100}) : i18nString(UIStrings.pause);
           return html`
-            <button class="animation-playback-rate-button" jslog=${VisualLogging.action().context(`animations.playback-rate-${playbackRate * 100}`).track({
+            <button jslog=${VisualLogging.action().context(`animations.playback-rate-${playbackRate * 100}`).track({
               click: true,
               keydown: 'ArrowUp|ArrowDown|ArrowLeft|ArrowRight',
             })}
@@ -219,6 +220,8 @@ const DEFAULT_TOOLBAR_VIEW: ToolbarView = (input: ToolbarViewInput, output: unde
 };
 // clang-format on
 
+const DEFAULT_DURATION = 100;
+
 let animationTimelineInstance: AnimationTimeline;
 export class AnimationTimeline extends UI.Widget.VBox implements
     SDK.TargetManager.SDKModelObserver<SDK.AnimationModel.AnimationModel> {
@@ -233,7 +236,6 @@ export class AnimationTimeline extends UI.Widget.VBox implements
   #clearButton!: UI.Toolbar.ToolbarButton;
   #selectedGroup!: SDK.AnimationModel.AnimationGroup|null;
   #renderQueue!: AnimationUI[];
-  #defaultDuration: number;
   #duration: number;
   #timelineControlsWidth: number;
   readonly #nodesMap: Map<number, NodeUI>;
@@ -297,8 +299,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements
         i18nString(UIStrings.noEffectSelected), i18nString(UIStrings.selectAnEffectAboveToInspectAnd));
     noEffectSelectedPlaceholder.show(timelineHint);
 
-    /** @constant */ this.#defaultDuration = 100;
-    this.#duration = this.#defaultDuration;
+    this.#duration = DEFAULT_DURATION;
     this.#nodesMap = new Map();
     this.#uiAnimations = [];
     this.#groupBuffer = [];
@@ -374,6 +375,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements
   }
 
   override willHide(): void {
+    super.willHide();
     for (const animationModel of SDK.TargetManager.TargetManager.instance().models(
              SDK.AnimationModel.AnimationModel, {scoped: true})) {
       this.removeEventListeners(animationModel);
@@ -506,14 +508,6 @@ export class AnimationTimeline extends UI.Widget.VBox implements
   }
 
   private setPlaybackRate(playbackRate: number): void {
-    if (playbackRate !== this.#playbackRate) {
-      Host.userMetrics.animationPlaybackRateChanged(
-          playbackRate === 0.1      ? Host.UserMetrics.AnimationsPlaybackRate.PERCENT_10 :
-              playbackRate === 0.25 ? Host.UserMetrics.AnimationsPlaybackRate.PERCENT_25 :
-              playbackRate === 1    ? Host.UserMetrics.AnimationsPlaybackRate.PERCENT_100 :
-                                      Host.UserMetrics.AnimationsPlaybackRate.OTHER);
-    }
-
     this.#playbackRate = playbackRate;
     for (const animationModel of SDK.TargetManager.TargetManager.instance().models(
              SDK.AnimationModel.AnimationModel, {scoped: true})) {
@@ -613,7 +607,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements
     this.#nodesMap.clear();
     this.#animationsMap.clear();
     this.#animationsContainer.removeChildren();
-    this.#duration = this.#defaultDuration;
+    this.#duration = DEFAULT_DURATION;
     this.#timelineScrubber.classList.add('hidden');
     this.#gridHeader.classList.remove('scrubber-enabled');
     this.#selectedGroup = null;
@@ -1221,13 +1215,12 @@ export class NodeUI {
     }
     this.#node = node;
     this.nodeChanged();
-    void Common.Linkifier.Linkifier.linkify(node).then(link => {
-      link.addEventListener('click', () => {
-        Host.userMetrics.actionTaken(Host.UserMetrics.Action.AnimatedNodeDescriptionClicked);
-      });
-
-      this.#description.appendChild(link);
+    const link = PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(node);
+    link.addEventListener('click', () => {
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.AnimatedNodeDescriptionClicked);
     });
+
+    this.#description.appendChild(link);
     if (!node.ownerDocument) {
       this.nodeRemoved();
     }

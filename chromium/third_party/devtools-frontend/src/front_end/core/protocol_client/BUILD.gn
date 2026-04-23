@@ -6,10 +6,12 @@ import("../../../scripts/build/ninja/devtools_entrypoint.gni")
 import("../../../scripts/build/ninja/devtools_module.gni")
 import("../../../scripts/build/typescript/typescript.gni")
 
-devtools_module("protocol_client") {
+devtools_foundation_module("protocol_client") {
   sources = [
+    "CDPConnection.ts",
+    "ConnectionTransport.ts",
+    "DevToolsCDPConnection.ts",
     "InspectorBackend.ts",
-    "NodeURL.ts",
   ]
 
   deps = [
@@ -34,10 +36,8 @@ devtools_entrypoint("bundle") {
 ts_library("unittests") {
   testonly = true
 
-  sources = [ "NodeURL.test.ts" ]
+  # TODO(crbug.com/451502260): Add tests for CDPConnection implementation.
+  sources = [ "Dummy.test.ts" ]
 
-  deps = [
-    ":bundle",
-    "../host:bundle",
-  ]
+  deps = [ ":bundle" ]
 }

@@ -806,21 +806,21 @@ bool Device::ValidateCreateImageDrmFormatModifiers(const VkImageCreateInfo &crea
     if (!IsExtEnabled(extensions.vk_ext_image_drm_format_modifier)) return skip;
 
     const auto drm_format_mod_list = vku::FindStructInPNextChain<VkImageDrmFormatModifierListCreateInfoEXT>(create_info.pNext);
-    const auto drm_format_mod_explict =
+    const auto drm_format_mod_explicit =
         vku::FindStructInPNextChain<VkImageDrmFormatModifierExplicitCreateInfoEXT>(create_info.pNext);
     if (create_info.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
-        if ((!drm_format_mod_list) && (!drm_format_mod_explict)) {
+        if ((!drm_format_mod_list) && (!drm_format_mod_explicit)) {
             skip |= LogError("VUID-VkImageCreateInfo-tiling-02261", device, create_info_loc.dot(Field::tiling),
                              "is VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT but pNext is missing "
                              "VkImageDrmFormatModifierListCreateInfoEXT or "
                              "VkImageDrmFormatModifierExplicitCreateInfoEXT.");
-        } else if ((drm_format_mod_list) && (drm_format_mod_explict)) {
+        } else if ((drm_format_mod_list) && (drm_format_mod_explicit)) {
             skip |= LogError("VUID-VkImageCreateInfo-tiling-02261", device, create_info_loc.dot(Field::tiling),
                              "is VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT but pNext has both "
                              "VkImageDrmFormatModifierListCreateInfoEXT and "
                              "VkImageDrmFormatModifierExplicitCreateInfoEXT.");
-        } else if (drm_format_mod_explict) {
-            image_create_drm_format_modifiers.push_back(drm_format_mod_explict->drmFormatModifier);
+        } else if (drm_format_mod_explicit) {
+            image_create_drm_format_modifiers.push_back(drm_format_mod_explicit->drmFormatModifier);
         } else if (drm_format_mod_list) {
             for (uint32_t i = 0; i < drm_format_mod_list->drmFormatModifierCount; i++) {
                 image_create_drm_format_modifiers.push_back(*drm_format_mod_list->pDrmFormatModifiers);
@@ -844,36 +844,36 @@ bool Device::ValidateCreateImageDrmFormatModifiers(const VkImageCreateInfo &crea
                          "is %s, but there is a "
                          "VkImageDrmFormatModifierListCreateInfoEXT in the pNext chain",
                          string_VkImageTiling(create_info.tiling));
-    } else if (drm_format_mod_explict) {
+    } else if (drm_format_mod_explicit) {
         skip |= LogError("VUID-VkImageCreateInfo-pNext-02262", device, create_info_loc.dot(Field::tiling),
                          "is %s, but there is a VkImageDrmFormatModifierExplicitCreateInfoEXT "
                          "in the pNext chain",
                          string_VkImageTiling(create_info.tiling));
     }
 
-    if (drm_format_mod_explict && drm_format_mod_explict->pPlaneLayouts) {
-        for (uint32_t i = 0; i < drm_format_mod_explict->drmFormatModifierPlaneCount; ++i) {
+    if (drm_format_mod_explicit && drm_format_mod_explicit->pPlaneLayouts) {
+        for (uint32_t i = 0; i < drm_format_mod_explicit->drmFormatModifierPlaneCount; ++i) {
             const Location drm_loc =
                 create_info_loc.pNext(Struct::VkImageDrmFormatModifierExplicitCreateInfoEXT, Field::pPlaneLayouts, i);
-            if (drm_format_mod_explict->pPlaneLayouts[i].size != 0) {
+            if (drm_format_mod_explicit->pPlaneLayouts[i].size != 0) {
                 skip |= LogError("VUID-VkImageDrmFormatModifierExplicitCreateInfoEXT-size-02267", device, drm_loc.dot(Field::size),
-                                 "is not zero (%" PRIu64 ").", drm_format_mod_explict->pPlaneLayouts[i].size);
+                                 "is not zero (%" PRIu64 ").", drm_format_mod_explicit->pPlaneLayouts[i].size);
             }
-            if (create_info.arrayLayers == 1 && drm_format_mod_explict->pPlaneLayouts[i].arrayPitch != 0) {
+            if (create_info.arrayLayers == 1 && drm_format_mod_explicit->pPlaneLayouts[i].arrayPitch != 0) {
                 skip |= LogError("VUID-VkImageDrmFormatModifierExplicitCreateInfoEXT-arrayPitch-02268", device,
                                  drm_loc.dot(Field::arrayPitch), "is %" PRIu64 " and arrayLayers is 1.",
-                                 drm_format_mod_explict->pPlaneLayouts[i].arrayPitch);
+                                 drm_format_mod_explicit->pPlaneLayouts[i].arrayPitch);
             }
-            if (create_info.extent.depth == 1 && drm_format_mod_explict->pPlaneLayouts[i].depthPitch != 0) {
+            if (create_info.extent.depth == 1 && drm_format_mod_explicit->pPlaneLayouts[i].depthPitch != 0) {
                 skip |= LogError("VUID-VkImageDrmFormatModifierExplicitCreateInfoEXT-depthPitch-02269", device,
                                  drm_loc.dot(Field::depthPitch), "is %" PRIu64 " and extext.depth is 1.",
-                                 drm_format_mod_explict->pPlaneLayouts[i].depthPitch);
+                                 drm_format_mod_explicit->pPlaneLayouts[i].depthPitch);
             }
         }
     }
 
     const auto compression_control = vku::FindStructInPNextChain<VkImageCompressionControlEXT>(create_info.pNext);
-    if (drm_format_mod_explict && compression_control) {
+    if (drm_format_mod_explicit && compression_control) {
         skip |= LogError("VUID-VkImageCreateInfo-pNext-06746", device, create_info_loc.dot(Field::pNext),
                          "has both VkImageCompressionControlEXT and VkImageDrmFormatModifierExplicitCreateInfoEXT.\n%s",
                          PrintPNextChain(Struct::VkImageCreateInfo, create_info.pNext).c_str());
@@ -1020,6 +1020,108 @@ bool Device::manual_PreCallValidateGetDeviceImageSubresourceLayout(VkDevice devi
             skip |= LogError("VUID-VkDeviceImageSubresourceInfo-tiling-08717", device, subresource_loc.dot(Field::aspectMask),
                              "(%s) is invalid for %s (%s).", string_VkImageAspectFlags(aspect_mask).c_str(),
                              create_info_loc.dot(Field::format).Fields().c_str(), string_VkFormat(image_format));
+        }
+    }
+
+    return skip;
+}
+
+bool Device::manual_PreCallValidateCmdResolveImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
+                                                   VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount,
+                                                   const VkImageResolve *pRegions, const Context &context) const {
+    bool skip = false;
+
+    for (uint32_t i = 0; i < regionCount; i++) {
+        const Location region_loc = context.error_obj.location.dot(Field::pRegions, i);
+        const Location src_subresource_loc = region_loc.dot(Field::srcSubresource);
+        const Location dst_subresource_loc = region_loc.dot(Field::dstSubresource);
+
+        if (pRegions[i].srcSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT) {
+            skip |= LogError("VUID-VkImageResolve-aspectMask-10981", commandBuffer, src_subresource_loc, "is %s.",
+                             string_VkImageAspectFlags(pRegions[i].srcSubresource.aspectMask).c_str());
+        }
+        if (pRegions[i].dstSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT) {
+            skip |= LogError("VUID-VkImageResolve-aspectMask-10981", commandBuffer, dst_subresource_loc, "is %s.",
+                             string_VkImageAspectFlags(pRegions[i].dstSubresource.aspectMask).c_str());
+        }
+
+        if (pRegions[i].srcSubresource.aspectMask != pRegions[i].dstSubresource.aspectMask) {
+            skip |=
+                LogError("VUID-vkCmdResolveImage-srcSubresource-11802", commandBuffer, src_subresource_loc.dot(Field::aspectMask),
+                         "(%s) is not equal to %s (%s)", string_VkImageAspectFlags(pRegions[i].srcSubresource.aspectMask).c_str(),
+                         dst_subresource_loc.dot(Field::aspectMask).Fields().c_str(),
+                         string_VkImageAspectFlags(pRegions[i].dstSubresource.aspectMask).c_str());
+        }
+    }
+
+    return skip;
+}
+
+bool Device::manual_PreCallValidateCmdResolveImage2(VkCommandBuffer commandBuffer, const VkResolveImageInfo2 *pResolveImageInfo,
+                                                    const Context &context) const {
+    bool skip = false;
+    const Location resolve_info_loc = context.error_obj.location.dot(Field::pResolveImageInfo);
+    for (uint32_t i = 0; i < pResolveImageInfo->regionCount; i++) {
+        const Location region_loc = resolve_info_loc.dot(Field::pRegions, i);
+        const Location src_subresource_loc = region_loc.dot(Field::srcSubresource);
+        const Location dst_subresource_loc = region_loc.dot(Field::dstSubresource);
+        const VkImageResolve2 &region = pResolveImageInfo->pRegions[i];
+
+        if (enabled_features.maintenance10) {
+            if (region.srcSubresource.aspectMask &
+                ~(VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
+                skip |= LogError("VUID-VkImageResolve2-aspectMask-10993", commandBuffer, src_subresource_loc, "is %s.",
+                                 string_VkImageAspectFlags(region.srcSubresource.aspectMask).c_str());
+            }
+            if (region.dstSubresource.aspectMask &
+                ~(VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
+                skip |= LogError("VUID-VkImageResolve2-aspectMask-10993", commandBuffer, dst_subresource_loc, "is %s.",
+                                 string_VkImageAspectFlags(region.dstSubresource.aspectMask).c_str());
+            }
+        } else {
+            if (region.srcSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT) {
+                skip |= LogError("VUID-VkImageResolve2-maintenance10-10994", commandBuffer, src_subresource_loc,
+                                 "is %s. (Having maintenance 10 feature enable would allow VK_IMAGE_ASPECT_DEPTH_BIT and "
+                                 "VK_IMAGE_ASPECT_STENCIL_BIT).",
+                                 string_VkImageAspectFlags(region.srcSubresource.aspectMask).c_str());
+            }
+            if (region.dstSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT) {
+                skip |= LogError("VUID-VkImageResolve2-maintenance10-10994", commandBuffer, dst_subresource_loc,
+                                 "is %s. (Having maintenance 10 feature enable would allow VK_IMAGE_ASPECT_DEPTH_BIT and "
+                                 "VK_IMAGE_ASPECT_STENCIL_BIT).",
+                                 string_VkImageAspectFlags(region.dstSubresource.aspectMask).c_str());
+            }
+        }
+        if (region.srcSubresource.aspectMask != region.dstSubresource.aspectMask) {
+            skip |=
+                LogError("VUID-VkResolveImageInfo2-srcSubresource-11802", commandBuffer, src_subresource_loc.dot(Field::aspectMask),
+                         "(%s) is not equal to %s (%s)", string_VkImageAspectFlags(region.srcSubresource.aspectMask).c_str(),
+                         dst_subresource_loc.dot(Field::aspectMask).Fields().c_str(),
+                         string_VkImageAspectFlags(region.dstSubresource.aspectMask).c_str());
+        }
+    }
+
+    if (const auto *resolve_mode_info = vku::FindStructInPNextChain<VkResolveImageModeInfoKHR>(pResolveImageInfo->pNext)) {
+        const auto both_skip_and_enable_transfer_flags =
+            VK_RESOLVE_IMAGE_SKIP_TRANSFER_FUNCTION_BIT_KHR | VK_RESOLVE_IMAGE_ENABLE_TRANSFER_FUNCTION_BIT_KHR;
+        if ((resolve_mode_info->flags & both_skip_and_enable_transfer_flags) == both_skip_and_enable_transfer_flags) {
+            skip |= LogError("VUID-VkResolveImageModeInfoKHR-flags-10995", commandBuffer,
+                             resolve_info_loc.pNext(Struct::VkResolveImageModeInfoKHR, Field::flags), "is %s.",
+                             string_VkResolveImageFlagsKHR(resolve_mode_info->flags).c_str());
+        }
+
+        if ((resolve_mode_info->flags & both_skip_and_enable_transfer_flags)) {
+            if (!phys_dev_ext_props.maintenance10_props.resolveSrgbFormatSupportsTransferFunctionControl) {
+                skip |= LogError("VUID-VkResolveImageModeInfoKHR-flags-10996", commandBuffer,
+                                 resolve_info_loc.pNext(Struct::VkResolveImageModeInfoKHR, Field::flags),
+                                 "is %s but resolveSrgbFormatSupportsTransferFunctionControl is not supported on this device.",
+                                 string_VkResolveImageFlagsKHR(resolve_mode_info->flags).c_str());
+            }
+            if (resolve_mode_info->resolveMode != VK_RESOLVE_MODE_AVERAGE_BIT) {
+                skip |= LogError("VUID-VkResolveImageModeInfoKHR-flags-10997", commandBuffer,
+                                 resolve_info_loc.pNext(Struct::VkResolveImageModeInfoKHR, Field::resolveMode), "is %s.",
+                                 string_VkResolveModeFlagBits(resolve_mode_info->resolveMode));
+            }
         }
     }
 

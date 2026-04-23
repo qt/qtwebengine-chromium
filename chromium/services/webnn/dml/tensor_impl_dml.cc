@@ -25,7 +25,7 @@ TensorImplDml::TensorImplDml(
 
 TensorImplDml::TensorImplDml(
     mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
-    std::unique_ptr<gpu::WebNNTensorRepresentation> representation,
+    RepresentationPtr representation,
     base::WeakPtr<WebNNContextImpl> context,
     mojom::TensorInfoPtr tensor_info)
     : WebNNTensorImpl(std::move(receiver),
@@ -98,8 +98,8 @@ scoped_refptr<gfx::D3DSharedFence> TensorImplDml::EndAccessWebNN() {
       command_queue->submission_fence(), last_submission_fence_value_);
 }
 
-void TensorImplDml::ExportTensorImpl(
-    std::unique_ptr<gpu::WebNNTensorRepresentation::ScopedAccess> access) {
+void TensorImplDml::ExportTensorImpl(ScopedAccessPtr access,
+                                     ExportTensorCallback callback) {
   CHECK(access);
 
   auto webnn_fence_to_wait_for = EndAccessWebNN();
@@ -107,11 +107,18 @@ void TensorImplDml::ExportTensorImpl(
       << "[WebNN] Failed to end access on WebNNTensor";
 
   access->SetReleaseFence(std::move(webnn_fence_to_wait_for));
+  std::move(callback).Run(context_->GenVerifiedSyncToken());
 }
 
-bool TensorImplDml::ImportTensorImpl(
-    std::unique_ptr<gpu::WebNNTensorRepresentation::ScopedAccess> access) {
-  CHECK(access);
+bool TensorImplDml::ImportTensorImpl() {
+  CHECK(representation_);
+  // Tensor will own the access.
+  auto access =
+      ScopedAccessPtr(representation_->BeginScopedAccess().release(),
+                      OnTaskRunnerDeleter(context_->main_task_runner()));
+  if (!access) {
+    return false;
+  }
 
   // First access, no fence required.
   auto d3d_write_fence = access->GetAcquireFence();
@@ -130,7 +137,7 @@ bool TensorImplDml::ImportTensorImpl(
   CHECK_EQ(hr, S_OK) << "[WebNN] Failed to open handle of a D3D fence";
 
   if (!BeginAccessWebNN(d3d12_write_fence, d3d_write_fence->GetFenceValue())) {
-    LOG(ERROR) << "[WebNN} Failed to begin access on WebNNTensor";
+    LOG(ERROR) << "[WebNN] Failed to begin access on WebNNTensor";
     return false;
   }
 

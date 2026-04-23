@@ -233,6 +233,10 @@ struct OOMDetails {
 using OOMErrorCallback = void (*)(const char* location,
                                   const OOMDetails& details);
 
+using OOMErrorCallbackWithData = void (*)(const char* location,
+                                          const OOMDetails& details,
+                                          void* data);
+
 using MessageCallback = void (*)(Local<Message> message, Local<Value> data);
 
 // --- Tracing ---
@@ -255,6 +259,15 @@ enum class CrashKeyId {
 };
 
 using AddCrashKeyCallback = void (*)(CrashKeyId id, const std::string& value);
+
+// --- CrashKeyString Callbacks ---
+using CrashKey = void*;
+enum class CrashKeySize { Size32, Size64, Size256, Size1024 };
+
+using AllocateCrashKeyStringCallback =
+    std::function<CrashKey(const char key[], CrashKeySize size)>;
+using SetCrashKeyStringCallback =
+    std::function<void(CrashKey key, const std::string_view value)>;
 
 // --- Enter/Leave Script Callback ---
 using BeforeCallEnteredCallback = void (*)(Isolate*);
@@ -334,6 +347,7 @@ using SharedArrayBufferConstructorEnabledCallback =
  */
 enum class ModuleImportPhase {
   kSource,
+  kDefer,
   kEvaluation,
 };
 

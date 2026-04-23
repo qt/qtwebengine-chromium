@@ -7,9 +7,9 @@ from __future__ import annotations
 import logging
 import os
 import shlex
-import sys
-from typing import TYPE_CHECKING, Sequence, cast
+from typing import TYPE_CHECKING, Any, Final, Sequence, cast
 
+from immutabledict import immutabledict
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from typing_extensions import override
@@ -21,17 +21,22 @@ if TYPE_CHECKING:
   from selenium.webdriver.chromium.webdriver import ChromiumDriver
 
   from crossbench import path as pth
-  from crossbench.benchmarks.embedder.embedder_benchmark import (
-      EmbedderBenchmark)
+  from crossbench.benchmarks.embedder.embedder_benchmark import \
+      EmbedderBenchmark
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
-EMBEDDER_SHORT_NAME_TO_PACKAGE = {
-  "googlequicksearchbox": "com.google.android.googlequicksearchbox",
-  "velvet": "com.google.android.googlequicksearchbox",
-}
+EMBEDDER_SHORT_NAME_TO_PACKAGE: Final[immutabledict[str, str]] = immutabledict({
+    "googlequicksearchbox":
+        "com.google.android.googlequicksearchbox",
+    "velvet":
+        "com.google.android.googlequicksearchbox",
+    "maitier":
+        "com.google.android.libraries.ads.mobile.maitier.testapps.webview",
+})
 
 
 class WebviewEmbedder(Webview):
+
   @override
   def start(self, session: BrowserSessionRunGroup) -> None:
     # Start is a no-op. Embedder activity will be started by the Benchmark.
@@ -69,11 +74,30 @@ class WebviewEmbedder(Webview):
     driver = webdriver.Chrome(options=options, service=service)
     return driver
 
-  def start_driver(self, session: BrowserSessionRunGroup) -> ChromiumDriver:
+  def _init_driver(self, session: BrowserSessionRunGroup) -> None:
     assert self._driver_path
     self._private_driver = self._start_driver(session, self._driver_path)
     self._set_driver_timeouts(session)
-    return self._private_driver
+
+  def start_driver(self, session: BrowserSessionRunGroup) -> ChromiumDriver:
+    self._init_driver(session)
+    # Take a snapshot of all handles as we might need to restart driver
+    handles = self._private_driver.window_handles[:]
+    for handle in handles:
+      self._private_driver.switch_to.window(handle)
+      try:
+        # Check tab responsiveness
+        _ = self._private_driver.current_url
+      except Exception:  # noqa: BLE001
+        # This is probably the wrong tab. Restart the driver and try another.
+        self._private_driver.quit()
+        self._init_driver(session)
+        continue
+      else:
+        # This tab works, we can return the driver.
+        return cast("ChromiumDriver", self._private_driver)
+    # We tried all tabs and none worked.
+    raise RuntimeError("Failed to attach driver")
 
   @override
   def _create_options(self, session: BrowserSessionRunGroup,
@@ -82,9 +106,8 @@ class WebviewEmbedder(Webview):
     options.add_experimental_option("androidPackage", self.android_package)
     session_benchmark = cast("EmbedderBenchmark", session.benchmark)
     if process_name := session_benchmark.embedder_process_name:
-      options.add_experimental_option(
-          "androidProcess",
-          f"{self.android_package}:{process_name}")
+      options.add_experimental_option("androidProcess",
+                                      f"{self.android_package}:{process_name}")
     options.add_experimental_option("androidUseRunningApp", True)
     return options
 
@@ -108,8 +131,16 @@ class WebviewEmbedder(Webview):
   @override
   def _setup_binary(self) -> None:
     if self.path.suffix == ".apk":
-      with ui.spinner():
-        sys.stdout.write(f"   Installing {self.path.name} on {self.platform}\r")
-        local_path = cast("pth.LocalPath", self.path)
-        self.platform.adb.install(local_path)
+      title = f"Installing {self.path.name} on {self.platform}"
+      with ui.spinner(title=title):
+        self.platform.adb.install(self.path)
     super()._setup_binary()
+
+  @override
+  def performance_mark(self,
+                       name: str,
+                       detail: Any = None,
+                       prefix: str = "crossbench-") -> None:
+    # The driver, and Webview instance might not exist when this is called
+    # See also comments above on .start()
+    logging.debug("%s: skipping performance_mark: %s%s", self, prefix, name)

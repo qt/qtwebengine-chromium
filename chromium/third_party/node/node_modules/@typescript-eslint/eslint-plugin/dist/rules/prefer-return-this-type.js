@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const utils_1 = require("@typescript-eslint/utils");
+const ts_api_utils_1 = require("ts-api-utils");
 const ts = __importStar(require("typescript"));
 const util_1 = require("../util");
 exports.default = (0, util_1.createRule)({
@@ -73,7 +74,7 @@ exports.default = (0, util_1.createRule)({
         }
         function isThisSpecifiedInParameters(originalFunc) {
             const firstArg = originalFunc.params.at(0);
-            return !!(firstArg?.type === utils_1.AST_NODE_TYPES.Identifier && firstArg.name === 'this');
+            return (firstArg?.type === utils_1.AST_NODE_TYPES.Identifier && firstArg.name === 'this');
         }
         function isFunctionReturningThis(originalFunc, originalClass) {
             if (isThisSpecifiedInParameters(originalFunc)) {
@@ -108,6 +109,11 @@ exports.default = (0, util_1.createRule)({
                 if (classType.thisType === type) {
                     hasReturnThis = true;
                     return;
+                }
+                if ((0, ts_api_utils_1.isUnionType)(type) &&
+                    type.types.some(typePart => typePart === classType)) {
+                    hasReturnClassType = true;
+                    return true;
                 }
                 return;
             });

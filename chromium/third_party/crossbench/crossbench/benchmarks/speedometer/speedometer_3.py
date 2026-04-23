@@ -7,14 +7,14 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import enum
-from typing import (TYPE_CHECKING, Any, ClassVar, MutableMapping, Optional,
-                    Sequence, cast)
+from typing import TYPE_CHECKING, Any, ClassVar, Final, Optional, Sequence, \
+    cast
 
 from typing_extensions import override
 
-from crossbench.benchmarks.speedometer.speedometer import (
-    SpeedometerBenchmark, SpeedometerBenchmarkStoryFilter, SpeedometerProbe,
-    SpeedometerProbeContext, SpeedometerStory)
+from crossbench.benchmarks.speedometer.speedometer import \
+    SpeedometerBenchmark, SpeedometerBenchmarkStoryFilter, SpeedometerProbe, \
+    SpeedometerProbeContext, SpeedometerStory
 from crossbench.browsers import viewport as vp
 from crossbench.helper import url_helper
 from crossbench.parse import DurationParser, NumberParser, ObjectParser
@@ -261,15 +261,16 @@ class Speedometer3Story(SpeedometerStory, metaclass=abc.ABCMeta):
 
   @property
   @override
-  def url_params(self) -> MutableMapping[str, str]:
-    url_params: MutableMapping[str, str] = super().url_params
+  def url_params(self) -> dict[str, str]:
+    url_params: dict[str, str] = super().url_params
     if tuple(self.substories) != self.default_story_names():
       url_params["suites"] = ",".join(self.substories)
     return url_params
 
   @property
+  @override
   def test_url(self) -> str:
-    params: MutableMapping[str, str] = self.url_params
+    params: dict[str, str] = self.url_params
     params["developerMode"] = ""
     params["startAutomatically"] = ""
     official_test_url = url_helper.update_url_query(self.URL, params)
@@ -329,9 +330,8 @@ class Speedometer3BenchmarkStoryFilter(SpeedometerBenchmarkStoryFilter):
 
   @classmethod
   @override
-  def url_params_from_cli(cls,
-                          args: argparse.Namespace) -> MutableMapping[str, Any]:
-    url_params: MutableMapping[str, str] = super().url_params_from_cli(args)
+  def url_params_from_cli(cls, args: argparse.Namespace) -> dict[str, Any]:
+    url_params: dict[str, str] = super().url_params_from_cli(args)
     if sync_wait := args.sync_wait:
       url_params["waitBeforeSync"] = str(to_ms(sync_wait))
     if sync_warmup := args.sync_warmup:
@@ -375,7 +375,7 @@ class Speedometer3Benchmark(SpeedometerBenchmark, metaclass=abc.ABCMeta):
                action_runner_config: Optional[ActionRunnerConfig] = None,
                custom_url: Optional[str] = None,
                detailed_metrics: bool = False) -> None:
-    self._detailed_metrics = detailed_metrics
+    self._detailed_metrics: Final[bool] = detailed_metrics
     super().__init__(stories, action_runner_config, custom_url)
 
   @property

@@ -271,9 +271,11 @@ class CORE_EXPORT EditContext final : public EventTarget,
 
   bool HasValidCompositionBounds() const;
 
+  // Notify browser process to cancel the ongoing composition.
+  void CancelComposition();
   // Delete the characters in the existing composition range and end the
   // composition.
-  void CancelComposition();
+  void OnCancelComposition();
 
   void ClearCompositionState();
 
@@ -283,6 +285,13 @@ class CORE_EXPORT EditContext final : public EventTarget,
   // Returns selection_end_ if selection_end_ >= selection_start_,
   // otherwise returns selection_start_.
   uint32_t OrderedSelectionEnd() const;
+
+  // TODO(crbug.com/379170477): These can be removed when `updateText` adjusts
+  // the selection offsets to stay within `text_` bounds.
+  // Returns minimum of `selection_start_` and `text_` length.
+  uint32_t BoundedSelectionStart() const;
+  // Returns minimum of `selection_end_` and `text_` length.
+  uint32_t BoundedSelectionEnd() const;
 
   // EditContext member variables.
   String text_;

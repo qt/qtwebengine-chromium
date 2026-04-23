@@ -159,7 +159,9 @@ impl Tile {
             image: Image::default(),
             codec_config: item
                 .codec_config()
-                .ok_or(AvifError::BmffParseFailed("missing av1C property".into()))?
+                .ok_or(AvifError::BmffParseFailed(
+                    "missing codec config property".into(),
+                ))?
                 .clone(),
             ..Tile::default()
         };

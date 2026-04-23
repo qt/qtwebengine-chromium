@@ -7,6 +7,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import enum
+import logging
 from typing import TYPE_CHECKING, Any, Mapping, Self, Sequence, Set
 
 import google.auth.transport.requests
@@ -137,9 +138,23 @@ class BondClient:
         secret.to_json(), scopes=[SCOPE])
     self._meetings_with_bots = set()
 
-  def _get_request_headers(self) -> Mapping[str, str]:
+  def _refresh_credentials(self, timeout: dt.timedelta, retry: int = 3) -> None:
+    deadline = dt.datetime.now() + timeout
+    i = 0
+    while True:
+      try:
+        self._credentials.refresh(google.auth.transport.requests.Request())
+        return
+      except Exception as e:
+        if i < retry and dt.datetime.now() < deadline:
+          logging.warning("Bond failed to refresh credentials, retrying: %s", e)
+          i += 1
+          continue
+        raise e
+
+  def _get_request_headers(self, timeout: dt.timedelta) -> Mapping[str, str]:
     if self._credentials.token_state is not TokenState.FRESH:
-      self._credentials.refresh(google.auth.transport.requests.Request())
+      self._refresh_credentials(timeout)
     assert self._credentials.token
     return {"Authorization": f"Bearer {self._credentials.token}"}
 
@@ -148,7 +163,11 @@ class BondClient:
                        body_json: Any,
                        timeout: dt.timedelta,
                        retry: int = 3) -> requests.Response:
-    headers = self._get_request_headers()
+    deadline = dt.datetime.now() + timeout
+    headers = self._get_request_headers(timeout)
+    timeout = deadline - dt.datetime.now()
+    if timeout <= dt.timedelta(0):
+      raise TimeoutError("Refreshing credentials used up timeout")
     return url_helper.post(
         url=url,
         body_json=body_json,
@@ -173,6 +192,7 @@ class BondClient:
                                    "conference")
     conference_code = ObjectParser.non_empty_str(conference["conferenceCode"],
                                                  "conferenceCode")
+    logging.info("Bond created meeting: %s", conference_code)
     return conference_code
 
   def add_bots(self, conference_code: str, config: AddBotsConfig,

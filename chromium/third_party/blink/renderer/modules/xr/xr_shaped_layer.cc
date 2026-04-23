@@ -5,8 +5,8 @@
 #include "third_party/blink/renderer/modules/xr/xr_shaped_layer.h"
 
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_layer_init.h"
+#include "third_party/blink/renderer/modules/xr/xr_reference_space.h"
 #include "third_party/blink/renderer/modules/xr/xr_session.h"
-#include "third_party/blink/renderer/modules/xr/xr_space.h"
 
 namespace blink {
 
@@ -23,13 +23,36 @@ XRShapedLayer::XRShapedLayer(const XRLayerInit* init,
   SetMipLevels(init->mipLevels());
 }
 
-bool XRShapedLayer::InitializeLayer() const {
-  return false;
+bool XRShapedLayer::isStatic() const {
+  return is_static_;
 }
 
 void XRShapedLayer::setSpace(XRSpace* space) {
   xr_space_ = space;
   SetModified(true);
+}
+
+device::mojom::blink::XRNativeOriginInformationPtr XRShapedLayer::NativeOrigin()
+    const {
+  return xr_space_->NativeOrigin();
+}
+
+void XRShapedLayer::UpdateLayerBackend() {
+  if (auto* layer_manager = session()->LayerManager(); layer_manager) {
+    device::mojom::blink::XRLayerMutableDataPtr mutable_data =
+        device::mojom::blink::XRLayerMutableData::New();
+    mutable_data->blend_texture_source_alpha = blendTextureSourceAlpha();
+    mutable_data->opacity = opacity();
+    mutable_data->native_origin_information = NativeOrigin();
+
+    // Layer Specific data.
+    mutable_data->layer_data = CreateLayerSpecificData();
+    layer_manager->UpdateCompositionLayer(layer_id(), std::move(mutable_data));
+  }
+}
+
+bool XRShapedLayer::IsRedrawEventSupported() const {
+  return true;
 }
 
 void XRShapedLayer::Trace(Visitor* visitor) const {

@@ -1,7 +1,8 @@
 // Copyright 2025 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+
+import '../../ui/kit/kit.js';
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -10,7 +11,6 @@ import type * as Workspace from '../../models/workspace/workspace.js';
 import * as WorkspaceDiff from '../../models/workspace_diff/workspace_diff.js';
 import type * as Diff from '../../third_party/diff/diff.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
-import * as CopyToClipboard from '../../ui/components/copy_to_clipboard/copy_to_clipboard.js';
 import type * as DiffView from '../../ui/components/diff_view/diff_view.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Lit from '../../ui/lit/lit.js';
@@ -102,6 +102,18 @@ function renderSingleDiffView(singleDiffViewInput: SingleDiffViewInput): Lit.Tem
   // clang-format on
 }
 
+const DEFAULT_VIEW: View = (input, output, target) => {
+  // clang-format off
+  Lit.render(
+      html`
+      <div class="combined-diff-view">
+        ${input.singleDiffViewInputs.map(singleDiffViewInput => renderSingleDiffView(singleDiffViewInput))}
+      </div>
+    `,
+      target);
+  // clang-format on
+};
+
 export class CombinedDiffView extends UI.Widget.Widget {
   /**
    * Ignores urls that start with any in the list
@@ -114,19 +126,7 @@ export class CombinedDiffView extends UI.Widget.Widget {
   #copiedFiles: Record<string, boolean> = {};
   #view: View;
   #viewOutput: ViewOutput = {};
-  constructor(element?: HTMLElement, view: View = (input, output, target) => {
-    output.scrollToSelectedDiff = () => {
-      target.querySelector('details.selected')?.scrollIntoView();
-    };
-
-    Lit.render(
-        html`
-      <div class="combined-diff-view">
-        ${input.singleDiffViewInputs.map(singleDiffViewInput => renderSingleDiffView(singleDiffViewInput))}
-      </div>
-    `,
-        target, {host: target});
-  }) {
+  constructor(element?: HTMLElement, view: View = DEFAULT_VIEW) {
     super(element);
     this.registerRequiredCSS(combinedDiffViewStyles);
     this.#view = view;
@@ -140,6 +140,7 @@ export class CombinedDiffView extends UI.Widget.Widget {
   }
 
   override willHide(): void {
+    super.willHide();
     this.#workspaceDiff?.removeEventListener(
         WorkspaceDiff.WorkspaceDiff.Events.MODIFIED_STATUS_CHANGED, this.#onDiffModifiedStatusChanged, this);
   }
@@ -149,7 +150,7 @@ export class CombinedDiffView extends UI.Widget.Widget {
     void this.#initializeModifiedUISourceCodes();
   }
 
-  set selectedFileUrl(fileUrl: string) {
+  set selectedFileUrl(fileUrl: string|undefined) {
     this.#selectedFileUrl = fileUrl;
     this.requestUpdate();
     void this.updateComplete.then(() => {
@@ -167,7 +168,7 @@ export class CombinedDiffView extends UI.Widget.Widget {
       return;
     }
 
-    CopyToClipboard.copyTextToClipboard(content.text, i18nString(UIStrings.copied));
+    UI.UIUtils.copyTextToClipboard(content.text, i18nString(UIStrings.copied));
     this.#copiedFiles[fileUrl] = true;
     this.requestUpdate();
     setTimeout(() => {

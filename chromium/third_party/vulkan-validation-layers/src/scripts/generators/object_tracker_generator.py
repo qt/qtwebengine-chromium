@@ -20,7 +20,7 @@
 # limitations under the License.
 
 import os
-from generators.generator_utils import buildListVUID, getVUID, PlatformGuardHelper
+from generators.generator_utils import buildListVUID, getVUID, createObject, destroyObject, PlatformGuardHelper
 from vulkan_object import Handle, Command, Struct, Member, Param
 from base_generator import BaseGenerator
 
@@ -145,6 +145,12 @@ class ObjectTrackerOutputGenerator(BaseGenerator):
             # For tracking lifetime of linked GPL libraries
             'vkCreateGraphicsPipelines',
             'vkCreatePipelineBinariesKHR',
+            # For tracking poisoned objects
+            'vkCreateDescriptorSetLayout',
+            'vkCreatePipelineLayout',
+            'vkCreateComputePipelines',
+            'vkCreateRayTracingPipelinesNV',
+            'vkCreateDataGraphPipelinesARM',
         ]
 
         # These VUIDS are not implicit, but are best handled in this layer. Codegen for vkDestroy calls will generate a key
@@ -248,6 +254,7 @@ class ObjectTrackerOutputGenerator(BaseGenerator):
             'vkUpdateDescriptorSetWithTemplate',
             'vkUpdateDescriptorSetWithTemplateKHR',
             'vkAcquireNextImageKHR',
+            'vkAcquireImageOHOS',
             'vkMergeValidationCachesEXT',
             'vkBindOpticalFlowSessionImageNV',
             ]
@@ -738,12 +745,17 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
         # Same as above, but memberName has naming collision so need to use struct name as well
         if commandName == 'vkCreateGraphicsPipelines' and structName == 'VkGraphicsPipelineShaderGroupsCreateInfoNV' and memberName == 'pPipelines':
             return '"UNASSIGNED-VkGraphicsPipelineShaderGroupsCreateInfoNV-pPipelines-parent"'
+
         if commandName == 'vkGetDataGraphPipelineSessionBindPointRequirementsARM' and memberName == 'session':
             return '"VUID-vkGetDataGraphPipelineSessionBindPointRequirementsARM-session-09783"'
+        if structName == 'VkDataGraphPipelineSessionMemoryRequirementsInfoARM' and memberName == 'session':
+            return '"VUID-vkGetDataGraphPipelineSessionMemoryRequirementsARM-session-09950"'
 
         if structName == 'VkDataGraphPipelineInfoARM' and memberName == 'dataGraphPipeline':
             if commandName == 'vkGetDataGraphPipelinePropertiesARM':
                 return '"VUID-vkGetDataGraphPipelinePropertiesARM-dataGraphPipeline-09802"'
+            if commandName == 'vkGetDataGraphPipelineAvailablePropertiesARM':
+                return '"VUID-vkGetDataGraphPipelineAvailablePropertiesARM-dataGraphPipeline-09888"'
 
         # These are cases where multiple commands call the struct
         if structName == 'VkPipelineExecutableInfoKHR' and memberName == 'pipeline':
@@ -845,10 +857,14 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
             return '"UNASSIGNED-VkDataGraphPipelineSessionCreateInfoARM-dataGraphPipeline-parent"'
         if structName == 'VkDataGraphPipelineSessionBindPointRequirementsInfoARM' and memberName == 'session':
             return '"UNASSIGNED-VkDataGraphPipelineSessionBindPointRequirementsInfoARM-session-parent"'
-        if structName == 'VkDataGraphPipelineSessionMemoryRequirementsInfoARM' and memberName == 'session':
-            return '"UNASSIGNED-VkDataGraphPipelineSessionMemoryRequirementsInfoARM-session-parent"'
-        if structName == 'VkDataGraphPipelineInfoARM' and memberName == 'dataGraphPipeline':
-            return '"UNASSIGNED-VkDataGraphPipelineInfoARM-dataGraphPipeline-parent"'
+        if structName == 'VkCopyMemoryToImageIndirectInfoKHR' and memberName == 'dstImage':
+            return '"UNASSIGNED-VkCopyMemoryToImageIndirectInfoKHR-dstImage-parent"'
+        if structName == 'VkSwapchainCalibratedTimestampInfoEXT' and memberName == 'swapchain':
+            return '"UNASSIGNED-VkSwapchainCalibratedTimestampInfoEXT-swapchain-parent"'
+        if structName == 'VkPastPresentationTimingInfoEXT' and memberName == 'swapchain':
+            return '"UNASSIGNED-VkPastPresentationTimingInfoEXT-swapchain-parent"'
+        if structName == 'VkMemoryGetNativeBufferInfoOHOS' and memberName == 'memory':
+            return '"UNASSIGNED-VkMemoryGetNativeBufferInfoOHOS-memory-parent"'
 
         # Common parents because the structs have more then one handle that needs to be check
         if (structName == 'VkBufferMemoryBarrier' and memberName == 'buffer') or (structName == 'VkImageMemoryBarrier' and memberName == 'image'):
@@ -972,32 +988,20 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
                     chassis_parent_vuid = parent_vuid # keep parent vuid for "Checked by chassis" comment
                     parent_vuid = 'kVUIDUndefined'
 
-                parent_object_type = '' # empty value corresponds to C++ default parameter value (kVulkanObjectTypeDevice)
-                if parent_type != 'Device':
-                    parent_object_type = f', kVulkanObjectType{parent_type}'
-
-                # Special case: VUID-VkSwapchainCreateInfoKHR-commonparent
-                # This is a problematic VUID in the form it's defined in the spec 1.3.265. Details (internal link):
-                # https://gitlab.khronos.org/vulkan/vulkan/-/issues/2983
-                # Ideally such VUID should be split into two since there are two different parents:
-                # VkInstance for surface and VkDevice for oldSwapchain
-                if parentName == 'VkSwapchainCreateInfoKHR' and member.name == 'oldSwapchain':
-                    parent_object_type = ", kVulkanObjectTypeDevice"
-
                 if member.length:
                     location = f'{errorLoc}.dot(Field::{member.name}, {index})'
                     countName = f'{prefix}{member.length}'
                     pre_call_validate += f'''
                         if (({countName} > 0) && ({prefix}{member.name})) {{
                             for (uint32_t {index} = 0; {index} < {countName}; ++{index}) {{
-                                skip |= ValidateObject({prefix}{member.name}[{index}], kVulkanObjectType{member.type[2:]}, {nullAllowed}, {param_vuid}, {parent_vuid}, {location}{parent_object_type});
+                                skip |= ValidateObject({prefix}{member.name}[{index}], kVulkanObjectType{member.type[2:]}, {nullAllowed}, {param_vuid}, {parent_vuid}, {location});
                             }}
                         }}\n'''
                 elif 'basePipelineHandle' in member.name:
                     pre_call_validate += f'if (({prefix}flags & VK_PIPELINE_CREATE_DERIVATIVE_BIT) && ({prefix}basePipelineIndex == -1))\n'
                     manual_vuid_index = parentName + '-' + member.name
                     param_vuid = self.manual_vuids.get(manual_vuid_index, "kVUIDUndefined")
-                    pre_call_validate += f'skip |= ValidateObject({prefix}{member.name}, kVulkanObjectType{member.type[2:]}, false, {param_vuid}, {parent_vuid}, error_obj.location{parent_object_type});\n'
+                    pre_call_validate += f'skip |= ValidateObject({prefix}{member.name}, kVulkanObjectType{member.type[2:]}, false, {param_vuid}, {parent_vuid}, error_obj.location);\n'
                 elif function_dispatchable_parameter:
                     pre_call_validate += f'// Checked by chassis: {member.name}: {param_vuid}\n'
                     if chassis_parent_vuid != 'kVUIDUndefined':
@@ -1012,16 +1016,24 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
                         else:
                             pre_call_validate += '// There should be an explicit VU (if not that is a spec bug)\n'
                             pre_call_validate += '{\n'
-                        pre_call_validate += f'skip |= ValidateObject({prefix}{member.name}, kVulkanObjectType{member.type[2:]}, {nullAllowed}, {param_vuid}, {parent_vuid}, {location}{parent_object_type});\n'
+                        pre_call_validate += f'skip |= ValidateObject({prefix}{member.name}, kVulkanObjectType{member.type[2:]}, {nullAllowed}, {param_vuid}, {parent_vuid}, {location});\n'
                         pre_call_validate += '}\n'
                 else:
                     location = f'{errorLoc}.dot(Field::{member.name})'
                     if self.vk.commands[topCommand].device and self.vk.handles[member.type].instance:
                         # Use case when for device-level API call we should use instance-level validation object
                         pre_call_validate += 'auto instance_object_lifetimes = static_cast<Instance*>(dispatch_instance_->GetValidationObject(container_type));\n'
-                        pre_call_validate += f'skip |= instance_object_lifetimes->ValidateObject({prefix}{member.name}, kVulkanObjectType{member.type[2:]}, {nullAllowed}, {param_vuid}, {parent_vuid}, {location}{parent_object_type});\n'
+                        pre_call_validate += f'skip |= instance_object_lifetimes->ValidateObject({prefix}{member.name}, kVulkanObjectType{member.type[2:]}, {nullAllowed}, {param_vuid}, {parent_vuid}, {location});\n'
                     else:
-                        pre_call_validate += f'skip |= ValidateObject({prefix}{member.name}, kVulkanObjectType{member.type[2:]}, {nullAllowed}, {param_vuid}, {parent_vuid}, {location}{parent_object_type});\n'
+                        # TODO: describe in more general way which commands and which parameters to check for poisoned objects
+                        # NOTE: graphics pipeline is not checked because of GPL, ray tracing KHR is also in the manual code
+                        check_poisoned_layout = (topCommand in ['vkCreateComputePipelines', 'vkCreateRayTracingPipelinesNV', 'vkCreateDataGraphPipelinesARM']) and member.name == 'layout'
+                        check_poisoned_layout = check_poisoned_layout or (topCommand == 'vkCmdBindPipeline' and member.name == 'pipeline')
+
+                        if check_poisoned_layout:
+                            pre_call_validate += f'skip |= ValidateObject({prefix}{member.name}, kVulkanObjectType{member.type[2:]}, {nullAllowed}, false, {param_vuid}, {parent_vuid}, {location});\n'
+                        else:
+                            pre_call_validate += f'skip |= ValidateObject({prefix}{member.name}, kVulkanObjectType{member.type[2:]}, {nullAllowed}, {param_vuid}, {parent_vuid}, {location});\n'
 
             # Handle Structs that contain objects at some level
             elif member.type in self.vk.structs:
@@ -1092,8 +1104,8 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
         pre_call_record = ''
         post_call_record = ''
         isGetCreate = 'vkGet' in command.name and command.params[-1].pointer and not command.params[-1].const
-        isCreate = any(x in command.name for x in ['Create', 'Allocate', 'Enumerate', 'RegisterDeviceEvent', 'RegisterDisplayEvent', 'AcquirePerformanceConfigurationINTEL']) or isGetCreate
-        isDestroy = any(x in command.name for x in ['Destroy', 'Free', 'ReleasePerformanceConfigurationINTEL'])
+        isCreate = createObject(command.name) or isGetCreate
+        isDestroy = destroyObject(command.name)
 
         # TODO - we need to wrap with autogen list here for header to still build the function definition,
         # but this function is being used in the header to duplicate work to know if the function will be used

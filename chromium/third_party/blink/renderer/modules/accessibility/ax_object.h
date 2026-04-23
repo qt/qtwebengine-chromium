@@ -71,6 +71,10 @@ struct AXNodeData;
 struct AXRelativeBounds;
 }
 
+namespace cc {
+enum class ScrollSourceType;
+}
+
 namespace blink {
 
 class AbstractInlineTextBox;
@@ -947,9 +951,9 @@ class MODULES_EXPORT AXObject : public GarbageCollected<AXObject> {
   // Heuristic to get the target popover for an invoking element.
   AXObject* GetPopoverTargetForInvoker() const;
 
-  // Heuristic to get the target element defined by the `commandfor` attribute
-  // on an invoking element.
-  AXObject* GetCommandForElement() const;
+  // Retrieves the target element defined by the `commandfor` attribute
+  // on an invoking element, if a details relationship should be set up.
+  AXObject* GetCommandForElementForDetailsRelation() const;
 
   // Heuristic to get the target element for an element with the `interestfor`
   // attribute. Returns null if the `interestfor` can be exposed as a
@@ -1021,6 +1025,14 @@ class MODULES_EXPORT AXObject : public GarbageCollected<AXObject> {
   // Find first ancestor or |this| that matches.
   const AXObject* AncestorMenuListOption() const;
   const AXObject* AncestorMenuList() const;
+
+  // Helper for scroll markers in tabs mode.
+  virtual bool ComputeIsIgnoredAsInsideInactiveScrollMarkerTab() {
+    return false;
+  }
+  bool InsideOriginatingElementForInactiveScrollMarkerInTabsMode() const {
+    return cached_is_ignored_as_inside_inactive_scroll_marker_tab_;
+  }
 
   // ARIA live-region features.
   bool IsLiveRegionRoot() const;  // Any live region, including polite="off".
@@ -1427,8 +1439,9 @@ class MODULES_EXPORT AXObject : public GarbageCollected<AXObject> {
   gfx::Point GetScrollOffset() const;
   gfx::Point MinimumScrollOffset() const;
   gfx::Point MaximumScrollOffset() const;
-  void Scroll(ax::mojom::blink::Action scroll_action) const;
-  void SetScrollOffset(const gfx::Point&) const;
+  void Scroll(ax::mojom::blink::Action scroll_action,
+              cc::ScrollSourceType) const;
+  void SetScrollOffset(const gfx::Point&, cc::ScrollSourceType) const;
 
   // Tables and grids.
   bool IsTableLikeRole() const;
@@ -1543,6 +1556,9 @@ class MODULES_EXPORT AXObject : public GarbageCollected<AXObject> {
   // Only children that are included in tree, maybe rename to children_in_tree_.
   AXObjectVector children_;
   bool has_dirty_descendants_ = false;
+  // When true, actions may use more expensive layout-based computations.
+  // e.g. DefaultActionVerb::kClickInHitTest.
+  bool use_layout_based_action_ = false;
 
   // The final role, taking into account the ARIA role and native role.
   ax::mojom::blink::Role role_;
@@ -1589,7 +1605,6 @@ class MODULES_EXPORT AXObject : public GarbageCollected<AXObject> {
   ax::mojom::blink::Role ButtonRoleType() const;
 
   bool CanSetSelectedAttribute() const;
-  const AXObject* InertRoot() const;
 
   // Finds table, table row, and table cell parents and children
   // skipping over generic containers.
@@ -1692,6 +1707,9 @@ class MODULES_EXPORT AXObject : public GarbageCollected<AXObject> {
   bool cached_is_descendant_of_disabled_node_ : 1 = false;
   bool cached_can_set_focus_attribute_ : 1 = false;
   bool cached_is_in_menu_list_subtree_ : 1 = false;
+  // True if this object is inside the originating element for an inactive
+  // ::scroll-marker in tabs mode.
+  bool cached_is_ignored_as_inside_inactive_scroll_marker_tab_ : 1 = false;
   bool always_load_inline_text_boxes_ : 1 = false;  // Used for Android only.
   std::optional<bool> cached_is_on_screen_;
 

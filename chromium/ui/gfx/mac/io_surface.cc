@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/354829279): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "ui/gfx/mac/io_surface.h"
 
 #include <Availability.h>
@@ -23,7 +18,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/trace_event/trace_event.h"
 #include "components/viz/common/resources/shared_image_format.h"
-#include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/icc_profile.h"
 #include "ui/gfx/mac/color_space_util.h"
@@ -252,7 +246,7 @@ ScopedIOSurface CreateIOSurface(const gfx::Size& size,
         IOSurfaceAlignProperty(kIOSurfaceAllocSize, total_bytes_alloc);
     AddIntegerValue(properties.get(), kIOSurfaceAllocSize, total_bytes_alloc);
   } else {
-    const size_t bytes_per_element = format.BitsPerPixel() / 8;
+    const size_t bytes_per_element = format.BytesPerPixel();
     const size_t bytes_per_row = IOSurfaceAlignProperty(
         kIOSurfaceBytesPerRow,
         base::bits::AlignUp(static_cast<size_t>(size.width()), size_t{2}) *

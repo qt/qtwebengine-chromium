@@ -30,6 +30,7 @@
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/log_event.h"
 #include "components/autofill/core/browser/proto/server.pb.h"
+#include "components/autofill/core/common/autofill_debug_features.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_internals/log_message.h"
 #include "components/autofill/core/common/autofill_internals/logging_scope.h"
@@ -468,17 +469,7 @@ void EncodeFormFieldsForUpload(
 
     if (field_options) {
       for (const auto& [type, string] : field_options->format_strings) {
-        DCHECK([&]() {
-          switch (type) {
-            case FormatString_Type_AFFIX:
-              return data_util::IsValidAffixFormat(string);
-            case FormatString_Type_DATE:
-              return data_util::IsValidDateFormat(string);
-            case FormatString_Type_FLIGHT_NUMBER:
-              return data_util::IsValidFlightNumberFormat(string);
-          }
-          return false;
-        }());
+        DCHECK(AutofillFormatString::IsValid(string, type));
         auto* added_format_string = added_field->add_format_string();
         added_format_string->set_type(type);
         added_format_string->set_format_string(base::UTF16ToUTF8(string));
@@ -753,16 +744,16 @@ GetSuggestionsMapFromResponse(
   }
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   if (base::FeatureList::IsEnabled(
-          features::test::kAutofillOverridePredictions)) {
+          features::debug::kAutofillOverridePredictions)) {
     if (std::string param =
-            features::test::kAutofillOverridePredictionsSpecification.Get();
+            features::debug::kAutofillOverridePredictionsSpecification.Get();
         !param.empty()) {
       InsertParsedOverrides(
           ParseServerPredictionOverrides(param, OverrideFormat::kSpec),
           fields_suggestions);
     }
     if (std::string param =
-            features::test::kAutofillOverridePredictionsJson.Get();
+            features::debug::kAutofillOverridePredictionsJson.Get();
         !param.empty()) {
       InsertParsedOverrides(
           ParseServerPredictionOverrides(param, OverrideFormat::kJson),
@@ -1054,17 +1045,15 @@ void ProcessServerPredictionsQueryResponse(
             field_suggestion->password_requirements());
       }
       if (field_suggestion->has_format_string()) {
-        switch (field_suggestion->format_string().type()) {
-          case FormatString_Type_AFFIX:
-          case FormatString_Type_DATE:
-          case FormatString_Type_FLIGHT_NUMBER:
-            field->set_format_string_unless_overruled(
-                AutofillFormatString(
-                    base::UTF8ToUTF16(
-                        field_suggestion->format_string().format_string()),
-                    field_suggestion->format_string().type()),
-                AutofillFormatStringSource::kServer);
-            break;
+        std::u16string format_string_value = base::UTF8ToUTF16(
+            field_suggestion->format_string().format_string());
+        if (AutofillFormatString::IsValid(
+                format_string_value,
+                field_suggestion->format_string().type())) {
+          field->set_format_string_unless_overruled(
+              AutofillFormatString(format_string_value,
+                                   field_suggestion->format_string().type()),
+              AutofillFormatStringSource::kServer);
         }
       }
       ++field_rank_map[field->GetFieldSignature()];

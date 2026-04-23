@@ -133,7 +133,6 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   static scoped_refptr<DrawingBuffer> Create(
       std::unique_ptr<WebGraphicsContext3DProvider>,
       const Platform::WebGLContextInfo&,
-      bool using_swap_chain,
       Client*,
       const gfx::Size&,
       bool premultiplied_alpha,
@@ -299,6 +298,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
       const gfx::ColorSpace& dst_color_space,
       WebGraphicsContext3DVideoFramePool::FrameReadyCallback callback);
 
+  base::ByteCount EstimatedSizeInBytes() const;
   int SampleCount() const { return sample_count_; }
   bool ExplicitResolveOfMultisampleData() const {
     return anti_aliasing_mode_ == kAntialiasingModeMSAAExplicitResolve;
@@ -310,7 +310,9 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   // Restore all state that may have been dirtied by any call.
   void RestoreAllState();
 
-  bool UsingSwapChain() const { return using_swap_chain_; }
+  // Returns true if the drawing buffer supports direct (no-copy) export for low
+  // latency (e.g., to the display compositor).
+  bool SupportsNoCopyExportForLowLatency();
 
   // Keep track of low latency buffer status.
   bool low_latency_enabled() const { return low_latency_enabled_; }
@@ -327,7 +329,6 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
  protected:  // For unittests
   DrawingBuffer(std::unique_ptr<WebGraphicsContext3DProvider>,
                 const Platform::WebGLContextInfo&,
-                bool using_swap_chain,
                 bool desynchronized,
                 std::unique_ptr<Extensions3DUtil>,
                 Client*,
@@ -422,6 +423,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
     void BeginAccess(const gpu::SyncToken& sync_token, bool readonly);
     gpu::SyncToken EndAccess();
     void ForceCleanUp();
+    base::ByteCount EstimatedSizeInBytes() const;
 
     // The thread on which the ColorBuffer is created and the DrawingBuffer is
     // bound to.
@@ -595,9 +597,6 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   // Reallocate Multisampled renderbuffer, used by explicit resolve when resize
   // and GPU switch
   bool ReallocateMultisampleRenderbuffer(const gfx::Size&);
-
-  // Presents swap chain if swap chain is being used and contents have changed.
-  void ResolveAndPresentSwapChainIfNeeded();
 
   WebGraphicsSharedImageInterfaceProvider*
   GetSharedImageInterfaceProviderForBitmap();

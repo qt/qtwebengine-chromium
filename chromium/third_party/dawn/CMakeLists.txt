@@ -139,6 +139,12 @@ option(DAWN_ENABLE_INSTALL "Enable install step for Dawn libraries" OFF)
 option(DAWN_ENABLE_TSAN "Enable thread sanitizer" OFF)
 option(DAWN_ENABLE_MSAN "Enable memory sanitizer" OFF)
 option(DAWN_ENABLE_UBSAN "Enable undefined behaviour sanitizer" OFF)
+option(DAWN_ENABLE_RTTI "Enable RTTI (implicitly enabled if DAWN_ENABLE_UBSAN is enabled)" OFF)
+if (DAWN_ENABLE_UBSAN)
+    # DAWN_ENABLE_UBSAN includes -fsanitize=vptr which does not work without RTTI. Force enable it
+    # (by shadowing the option with a normal variable so we don't overwrite it in CMakeCache.txt).
+    set(DAWN_ENABLE_RTTI ON)
+endif()
 
 option(DAWN_ENABLE_D3D11 "Enable compilation of the D3D11 backend" ${ENABLE_D3D11})
 option(DAWN_ENABLE_D3D12 "Enable compilation of the D3D12 backend" ${ENABLE_D3D12})
@@ -186,12 +192,15 @@ set_if_not_defined(DAWN_PROTOBUF_DIR "${DAWN_THIRD_PARTY_DIR}/protobuf" "Directo
 set_if_not_defined(DAWN_LPM_DIR "${DAWN_THIRD_PARTY_DIR}/libprotobuf-mutator/src" "Directory in which to find libprotobuf")
 set_if_not_defined(DAWN_EMDAWNWEBGPU_DIR "${DAWN_THIRD_PARTY_DIR}/emdawnwebgpu" "Directory in which to find Dawn specific Emscripten bindings")
 set_if_not_defined(DAWN_GOOGLETEST_DIR "${DAWN_THIRD_PARTY_DIR}/googletest" "Directory in which to find googletest")
-
+set_if_not_defined(DAWN_EGL_REGISTRY_DIR "${DAWN_THIRD_PARTY_DIR}/khronos/EGL-Registry" "Directory in which to find EGL-Registry")
+set_if_not_defined(DAWN_OPENGL_REGISTRY_DIR "${DAWN_THIRD_PARTY_DIR}/khronos/OpenGL-Registry" "Directory in which to find OpenGL-Registry")
 set_if_not_defined(DAWN_SPIRV_TOOLS_DIR "${DAWN_THIRD_PARTY_DIR}/spirv-tools/src" "Directory in which to find SPIRV-Tools")
 set_if_not_defined(DAWN_SPIRV_HEADERS_DIR "${DAWN_THIRD_PARTY_DIR}/spirv-headers/src" "Directory in which to find SPIRV-Headers")
 set_if_not_defined(DAWN_GLSLANG_DIR "${DAWN_THIRD_PARTY_DIR}/glslang/src" "Directory in which to find GLSLang")
 set_if_not_defined(DAWN_VULKAN_HEADERS_DIR "${DAWN_THIRD_PARTY_DIR}/vulkan-headers/src" "Directory in which to find Vulkan-Headers")
 set_if_not_defined(DAWN_VULKAN_UTILITY_LIBRARIES_DIR "${DAWN_THIRD_PARTY_DIR}/vulkan-utility-libraries/src" "Directory in which to find Vulkan-Utility-Libraries")
+set_if_not_defined(DAWN_WEBGPU_HEADERS_DIR "${DAWN_THIRD_PARTY_DIR}/webgpu-headers/src" "Directory in which to find webgpu headers")
+
 
 # Handling of the type of monolithic library to build, if any.
 set(DAWN_BUILD_MONOLITHIC_LIBRARY "STATIC" CACHE STRING "Build monolithic library: SHARED, STATIC, or OFF.")
@@ -231,6 +240,7 @@ option(TINT_BUILD_HLSL_WRITER "Build the HLSL output writer" ${DAWN_ENABLE_D3D12
 option(TINT_BUILD_MSL_WRITER "Build the MSL output writer" ${DAWN_ENABLE_METAL})
 option(TINT_BUILD_SPV_WRITER "Build the SPIR-V output writer" ${DAWN_ENABLE_VULKAN})
 option(TINT_BUILD_WGSL_WRITER "Build the WGSL output writer" ON)
+option(TINT_BUILD_NULL_WRITER "Build the NULL output writer" ${DAWN_ENABLE_NULL})
 
 option(TINT_BUILD_IR_BINARY "Build IR binary format support" ${DAWN_BUILD_PROTOBUF})
 option(TINT_BUILD_FUZZERS "Build fuzzers" OFF)
@@ -282,12 +292,14 @@ message(STATUS "Tint build HLSL writer: ${TINT_BUILD_HLSL_WRITER}")
 message(STATUS "Tint build MSL writer: ${TINT_BUILD_MSL_WRITER}")
 message(STATUS "Tint build SPIR-V writer: ${TINT_BUILD_SPV_WRITER}")
 message(STATUS "Tint build WGSL writer: ${TINT_BUILD_WGSL_WRITER}")
+message(STATUS "Tint build NULL writer: ${TINT_BUILD_NULL_WRITER}")
 message(STATUS "")
 
-message(STATUS "Dawn build with ASAN: ${DAWN_ENABLE_ASAN}")
-message(STATUS "Dawn build with TSAN: ${DAWN_ENABLE_TSAN}")
-message(STATUS "Dawn build with MSAN: ${DAWN_ENABLE_MSAN}")
-message(STATUS "Dawn build with UBSAN: ${DAWN_ENABLE_UBSAN}")
+message(STATUS "Dawn build with ASan: ${DAWN_ENABLE_ASAN}")
+message(STATUS "Dawn build with TSan: ${DAWN_ENABLE_TSAN}")
+message(STATUS "Dawn build with MSan: ${DAWN_ENABLE_MSAN}")
+message(STATUS "Dawn build with UBSan: ${DAWN_ENABLE_UBSAN}")
+message(STATUS "Dawn build with RTTI: ${DAWN_ENABLE_RTTI}")
 message(STATUS "DAWN Werror: ${DAWN_WERROR}")
 message(STATUS "Dawn enable install: ${DAWN_ENABLE_INSTALL}")
 message(STATUS "Dawn allow system component fallback: ${DAWN_FORCE_SYSTEM_COMPONENT_LOAD}")

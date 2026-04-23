@@ -14,8 +14,8 @@ from crossbench.action_runner.default_action_runner import DefaultActionRunner
 from crossbench.action_runner.display_rectangle import DisplayRectangle
 from crossbench.action_runner.element_not_found_error import \
     ElementNotFoundError
-from crossbench.action_runner.screenshot_annotation import (
-    ScreenshotPointAnnotation, ScreenshotRectAnnotation)
+from crossbench.action_runner.screenshot_annotation import \
+    ScreenshotPointAnnotation, ScreenshotRectAnnotation
 from crossbench.benchmarks.loading.point import Point
 
 if TYPE_CHECKING:
@@ -89,15 +89,6 @@ class ViewportInfo:
 
 class AndroidInputActionRunner(DefaultActionRunner):
   """Custom ActionRunner for Android."""
-
-  # Represents the position of the chrome main window relative to the entire
-  # screen as reported by Android window manager.
-  _raw_chrome_window_bounds: DisplayRectangle | None = None
-
-  @property
-  def raw_chrome_window_bounds(self) -> DisplayRectangle:
-    assert self._raw_chrome_window_bounds, "Uninitialized chrome window bounds"
-    return self._raw_chrome_window_bounds
 
   _BOUNDS_RE: Final[re.Pattern] = re.compile(
       r"mAppBounds=Rect\((?P<left>\d+), (?P<top>\d+) - (?P<right>\d+),"
@@ -198,8 +189,8 @@ return [
       elif ui_selector := action.position.ui_selector:
         if use_mouse:
           raise InputSourceNotImplementedError(
-            self, action, action.input_source,
-            "Mouse actions not implemented for UiSelectorConfig")
+              self, action, action.input_source,
+              "Mouse actions not implemented for UiSelectorConfig")
         self._click_ui_selector(run, ui_selector, action.timeout)
       elif selector_config := action.position.selector:
         if selector_config.wait:
@@ -274,38 +265,34 @@ return [
      height) = actions.js(
          script, arguments=[selector, scroll_into_view])
 
-    # If the chrome window position has not yet been found,
-    # initialize it now.
-    # Note: this assumes the chrome app will not be moved or resized during
-    # the test.
-    if not self._raw_chrome_window_bounds:
-      self._raw_chrome_window_bounds = self._find_chrome_window_size(run)
+    raw_chrome_window_bounds: DisplayRectangle = self._find_chrome_window_size(
+        run)
 
     element_rect: DisplayRectangle | None = None
     if found_element:
       element_rect = DisplayRectangle(Point(left, top), width, height)
 
-    return ViewportInfo(self.raw_chrome_window_bounds, inner_height,
-                        inner_width, element_rect)
-
+    return ViewportInfo(raw_chrome_window_bounds, inner_height, inner_width,
+                        element_rect)
 
   # Returns the name of the browser's main window as reported by android's
   # window manager.
   def _get_browser_window_name(self,
                                browser_attributes: BrowserAttributes) -> str:
     if browser_attributes.is_chrome:
-      return "chrome.Main"
+      return "chrome"
 
     raise RuntimeError("Unsupported browser for android action runner.")
 
   def _find_chrome_window_size(self, run: Run) -> DisplayRectangle:
     # Find the chrome app window position by dumping the android app window
-    # list.
+    # list. The list is sorted from highest to lowest z-order, so the first
+    # Chrome window is the focused window.
     #
-    # Chrome's main view is always called 'chrome.Main' and is followed by the
+    # Chrome's main view always contains 'chrome' and is followed by the
     # configuration for that window.
     #
-    # The mAppBounds config of the chrome.Main window contains the dimensions
+    # The mAppBounds config of the chrome window contains the dimensions
     # for the visible part of the current chrome window formatted like this for
     # a 800 height by 480 width window:
     #
@@ -337,17 +324,15 @@ return [
     characters = characters.replace(" ", "%s")
     run.browser_platform.sh("input", "keyboard", "text", characters)
 
-  def _send_keyevent(self, run: Run, keyevent:str) -> None:
+  def _send_keyevent(self, run: Run, keyevent: str) -> None:
     run.browser_platform.sh("input", "keyevent", keyevent)
 
-  def _click_ui_selector(self,
-                         run: Run,
-                         ui_selector: UiSelectorConfig,
+  def _click_ui_selector(self, run: Run, ui_selector: UiSelectorConfig,
                          timeout: dt.timedelta) -> None:
     ad = cast("AndroidAdbPlatform", run.browser_platform).uiautomator_device
     selector_dict = ui_selector.to_json()
     ui_object = ad.ui(**ui_selector.to_json())
     # This verification step verifies if the element exists.
-    assert ui_object.wait.exists(timeout=timeout), (
-      f"Element with selector {selector_dict} not found")
+    assert ui_object.wait.exists(
+        timeout=timeout), (f"Element with selector {selector_dict} not found")
     ui_object.click()

@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) IBM Corp. 2009  All rights reserved.
@@ -42,8 +42,9 @@ import type * as Protocol from '../../generated/protocol.js';
 import * as Formatter from '../../models/formatter/formatter.js';
 import * as SourceMapScopes from '../../models/source_map_scopes/source_map_scopes.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
+import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
-// eslint-disable-next-line rulesdir/es-modules-import
+// eslint-disable-next-line @devtools/es-modules-import
 import objectValueStyles from '../../ui/legacy/components/object_ui/objectValue.css.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -94,7 +95,7 @@ const str_ = i18n.i18n.registerUIStrings('panels/sources/WatchExpressionsSidebar
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 let watchExpressionsSidebarPaneInstance: WatchExpressionsSidebarPane;
 
-export class WatchExpressionsSidebarPane extends UI.ThrottledWidget.ThrottledWidget implements
+export class WatchExpressionsSidebarPane extends UI.Widget.VBox implements
     UI.ActionRegistration.ActionDelegate, UI.Toolbar.ItemsProvider,
     UI.ContextMenu.Provider<ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement|UISourceCodeFrame> {
   private watchExpressions: WatchExpression[];
@@ -106,7 +107,7 @@ export class WatchExpressionsSidebarPane extends UI.ThrottledWidget.ThrottledWid
   private readonly expandController: ObjectUI.ObjectPropertiesSection.ObjectPropertiesSectionsTreeExpandController;
   private readonly linkifier: Components.Linkifier.Linkifier;
   private constructor() {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(watchExpressionsSidebarPaneStyles, objectValueStyles);
 
     // TODO(szuend): Replace with a Set once the web test
@@ -125,7 +126,7 @@ export class WatchExpressionsSidebarPane extends UI.ThrottledWidget.ThrottledWid
     this.refreshButton = new UI.Toolbar.ToolbarButton(
         i18nString(UIStrings.refreshWatchExpressions), 'refresh', undefined, 'refresh-watch-expressions');
     this.refreshButton.setSize(Buttons.Button.Size.SMALL);
-    this.refreshButton.addEventListener(UI.Toolbar.ToolbarButton.Events.CLICK, this.update, this);
+    this.refreshButton.addEventListener(UI.Toolbar.ToolbarButton.Events.CLICK, this.requestUpdate, this);
 
     this.contentElement.classList.add('watch-expressions');
     this.contentElement.setAttribute('jslog', `${VisualLogging.section('sources.watch')}`);
@@ -138,10 +139,10 @@ export class WatchExpressionsSidebarPane extends UI.ThrottledWidget.ThrottledWid
     this.expandController =
         new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSectionsTreeExpandController(this.treeOutline);
 
-    UI.Context.Context.instance().addFlavorChangeListener(SDK.RuntimeModel.ExecutionContext, this.update, this);
-    UI.Context.Context.instance().addFlavorChangeListener(SDK.DebuggerModel.CallFrame, this.update, this);
+    UI.Context.Context.instance().addFlavorChangeListener(SDK.RuntimeModel.ExecutionContext, this.requestUpdate, this);
+    UI.Context.Context.instance().addFlavorChangeListener(SDK.DebuggerModel.CallFrame, this.requestUpdate, this);
     this.linkifier = new Components.Linkifier.Linkifier();
-    this.update();
+    this.requestUpdate();
   }
 
   static instance(): WatchExpressionsSidebarPane {
@@ -182,7 +183,7 @@ export class WatchExpressionsSidebarPane extends UI.ThrottledWidget.ThrottledWid
     this.createWatchExpression(null).startEditing();
   }
 
-  override async doUpdate(): Promise<void> {
+  override async performUpdate(): Promise<void> {
     this.linkifier.reset();
     this.contentElement.removeChildren();
     this.treeOutline.removeChildren();
@@ -265,14 +266,14 @@ export class WatchExpressionsSidebarPane extends UI.ThrottledWidget.ThrottledWid
   private deleteAllButtonClicked(): void {
     this.watchExpressions = [];
     this.saveExpressions();
-    this.update();
+    this.requestUpdate();
   }
 
   private async focusAndAddExpressionToWatch(expression: string): Promise<void> {
     await UI.ViewManager.ViewManager.instance().showView('sources.watch');
     this.createWatchExpression(expression);
     this.saveExpressions();
-    this.update();
+    this.requestUpdate();
   }
 
   handleAction(_context: UI.Context.Context, _actionId: string): boolean {
@@ -290,7 +291,7 @@ export class WatchExpressionsSidebarPane extends UI.ThrottledWidget.ThrottledWid
       _event: Event, contextMenu: UI.ContextMenu.ContextMenu,
       target: ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement|UISourceCodeFrame): void {
     if (target instanceof ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement) {
-      if (!target.property.synthetic) {
+      if (!target.property.property.synthetic) {
         contextMenu.debugSection().appendItem(
             i18nString(UIStrings.addPropertyPathToWatch), () => this.focusAndAddExpressionToWatch(target.path()),
             {jslogContext: 'add-property-path-to-watch'});
@@ -306,6 +307,13 @@ export class WatchExpressionsSidebarPane extends UI.ThrottledWidget.ThrottledWid
   }
 }
 
+class ObjectPropertyPrompt extends UI.TextPrompt.TextPrompt {
+  constructor() {
+    super();
+    this.initialize(TextEditor.JavaScript.completeInContext);
+  }
+}
+
 export class WatchExpression extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   #treeElement!: UI.TreeOutline.TreeElement;
   private nameElement!: Element;
@@ -315,7 +323,7 @@ export class WatchExpression extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   private element: HTMLDivElement;
   private editing: boolean;
   private linkifier: Components.Linkifier.Linkifier;
-  private textPrompt?: ObjectUI.ObjectPropertiesSection.ObjectPropertyPrompt;
+  private textPrompt?: ObjectPropertyPrompt;
   private result?: SDK.RemoteObject.RemoteObject|null;
   private preventClickTimeout?: number;
   constructor(
@@ -390,7 +398,7 @@ export class WatchExpression extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     this.element.removeChildren();
     const newDiv = this.element.createChild('div');
     newDiv.textContent = this.nameElement.textContent;
-    this.textPrompt = new ObjectUI.ObjectPropertiesSection.ObjectPropertyPrompt();
+    this.textPrompt = new ObjectPropertyPrompt();
     this.textPrompt.renderAsBlock();
     const proxyElement = (this.textPrompt.attachAndStartEditing(newDiv, this.finishEditing.bind(this)) as HTMLElement);
     this.#treeElement.listItemElement.classList.add('watch-expression-editing');
@@ -498,7 +506,7 @@ export class WatchExpression extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       const propertyValue =
           ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.createPropertyValueWithCustomSupport(
               expressionValue, Boolean(exceptionDetails), false /* showPreview */, this.linkifier);
-      this.valueElement = propertyValue.element;
+      this.valueElement = propertyValue;
     }
     const separatorElement = document.createElement('span');
     separatorElement.classList.add('watch-expressions-separator');
@@ -514,7 +522,8 @@ export class WatchExpression extends Common.ObjectWrapper.ObjectWrapper<EventTyp
 
     if (!exceptionDetails && expressionValue && expressionValue.hasChildren && !expressionValue.customPreview()) {
       headerElement.classList.add('watch-expression-object-header');
-      this.#treeElement = new ObjectUI.ObjectPropertiesSection.RootElement(expressionValue, this.linkifier);
+      this.#treeElement = new ObjectUI.ObjectPropertiesSection.RootElement(
+          new ObjectUI.ObjectPropertiesSection.ObjectTree(expressionValue), this.linkifier);
       this.expandController.watchSection(
           (this.#expression as string), (this.#treeElement as ObjectUI.ObjectPropertiesSection.RootElement));
       this.#treeElement.toggleOnClick = false;

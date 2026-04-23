@@ -4,7 +4,7 @@
  *
  *   TrueType Glyph Loader (body).
  *
- * Copyright (C) 1996-2024 by
+ * Copyright (C) 1996-2025 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -2217,6 +2217,10 @@
       exec = size->context;
 
 #ifdef TT_SUPPORT_SUBPIXEL_HINTING_MINIMAL
+      /* reset backward compatibility; note that */ 
+      /* the CVT program always runs without it  */
+      exec->backward_compatibility = 0;
+
       if ( driver->interpreter_version == TT_INTERPRETER_VERSION_40 )
       {
         grayscale = FALSE;
@@ -2283,8 +2287,7 @@
            mode != FT_RENDER_MODE_MONO                              &&
            !FT_IS_TRICKY( glyph->face )                             )
         exec->backward_compatibility = ( size->GS.instruct_control & 4 ) ^ 4;
-      else
-        exec->backward_compatibility = 0;
+
 #endif /* TT_SUPPORT_SUBPIXEL_HINTING_MINIMAL */
 
       loader->exec = exec;

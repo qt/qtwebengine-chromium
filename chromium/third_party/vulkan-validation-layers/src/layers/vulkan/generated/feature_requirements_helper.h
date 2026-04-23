@@ -142,6 +142,8 @@ enum class Feature {
     customBorderColorWithoutFormat,
     // VkPhysicalDeviceCustomBorderColorFeaturesEXT
     customBorderColors,
+    // VkPhysicalDeviceCustomResolveFeaturesEXT
+    customResolve,
     // VkPhysicalDeviceDataGraphFeaturesARM
     dataGraph,
     // VkPhysicalDeviceDataGraphFeaturesARM
@@ -152,6 +154,8 @@ enum class Feature {
     dataGraphSpecializationConstants,
     // VkPhysicalDeviceDataGraphFeaturesARM
     dataGraphUpdateAfterBind,
+    // VkPhysicalDeviceDataGraphModelFeaturesQCOM
+    dataGraphModel,
     // VkPhysicalDeviceDedicatedAllocationImageAliasingFeaturesNV
     dedicatedAllocationImageAliasing,
     // VkPhysicalDeviceDenseGeometryFormatFeaturesAMDX
@@ -542,6 +546,8 @@ enum class Feature {
     stippledSmoothLines,
     // VkPhysicalDeviceLinearColorAttachmentFeaturesNV
     linearColorAttachment,
+    // VkPhysicalDeviceMaintenance10FeaturesKHR
+    maintenance10,
     // VkPhysicalDeviceMaintenance4Features, VkPhysicalDeviceVulkan13Features
     maintenance4,
     // VkPhysicalDeviceMaintenance5Features, VkPhysicalDeviceVulkan14Features
@@ -560,7 +566,7 @@ enum class Feature {
     memoryMapRangePlaced,
     // VkPhysicalDeviceMapMemoryPlacedFeaturesEXT
     memoryUnmapReserve,
-    // VkPhysicalDeviceMemoryDecompressionFeaturesNV
+    // VkPhysicalDeviceMemoryDecompressionFeaturesEXT
     memoryDecompression,
     // VkPhysicalDeviceMemoryPriorityFeaturesEXT
     memoryPriority,
@@ -614,6 +620,8 @@ enum class Feature {
     dynamicPipelineLayout,
     // VkPhysicalDevicePerStageDescriptorSetFeaturesNV
     perStageDescriptorSet,
+    // VkPhysicalDevicePerformanceCountersByRegionFeaturesARM
+    performanceCountersByRegion,
     // VkPhysicalDevicePerformanceQueryFeaturesKHR
     performanceCounterMultipleQueryPools,
     // VkPhysicalDevicePerformanceQueryFeaturesKHR
@@ -676,6 +684,12 @@ enum class Feature {
     presentMetering,
     // VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR
     presentModeFifoLatestReady,
+    // VkPhysicalDevicePresentTimingFeaturesEXT
+    presentAtAbsoluteTime,
+    // VkPhysicalDevicePresentTimingFeaturesEXT
+    presentAtRelativeTime,
+    // VkPhysicalDevicePresentTimingFeaturesEXT
+    presentTiming,
     // VkPhysicalDevicePresentWait2FeaturesKHR
     presentWait2,
     // VkPhysicalDevicePresentWaitFeaturesKHR
@@ -710,7 +724,7 @@ enum class Feature {
     shaderRawAccessChains,
     // VkPhysicalDeviceRayQueryFeaturesKHR
     rayQuery,
-    // VkPhysicalDeviceRayTracingInvocationReorderFeaturesNV
+    // VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT, VkPhysicalDeviceRayTracingInvocationReorderFeaturesNV
     rayTracingInvocationReorder,
     // VkPhysicalDeviceRayTracingLinearSweptSpheresFeaturesNV
     linearSweptSpheres,
@@ -758,6 +772,8 @@ enum class Feature {
     schedulingControls,
     // VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures, VkPhysicalDeviceVulkan12Features
     separateDepthStencilLayouts,
+    // VkPhysicalDeviceShader64BitIndexingFeaturesEXT
+    shader64BitIndexing,
     // VkPhysicalDeviceShaderAtomicFloat16VectorFeaturesNV
     shaderFloat16VectorAtomics,
     // VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT
@@ -846,6 +862,12 @@ enum class Feature {
     shaderFloat8CooperativeMatrix,
     // VkPhysicalDeviceShaderFloatControls2Features, VkPhysicalDeviceVulkan14Features
     shaderFloatControls2,
+    // VkPhysicalDeviceShaderFmaFeaturesKHR
+    shaderFmaFloat16,
+    // VkPhysicalDeviceShaderFmaFeaturesKHR
+    shaderFmaFloat32,
+    // VkPhysicalDeviceShaderFmaFeaturesKHR
+    shaderFmaFloat64,
     // VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT
     shaderImageInt64Atomics,
     // VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT
@@ -886,6 +908,8 @@ enum class Feature {
     shaderTileImageDepthReadAccess,
     // VkPhysicalDeviceShaderTileImageFeaturesEXT
     shaderTileImageStencilReadAccess,
+    // VkPhysicalDeviceShaderUniformBufferUnsizedArrayFeaturesEXT
+    shaderUniformBufferUnsizedArray,
     // VkPhysicalDeviceShaderUntypedPointersFeaturesKHR
     shaderUntypedPointers,
     // VkPhysicalDeviceShadingRateImageFeaturesNV

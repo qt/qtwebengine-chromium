@@ -9,13 +9,14 @@ import {
   getEventPromise,
   renderElementIntoDOM,
 } from '../../../testing/DOMHelpers.js';
-import {describeWithLocale} from '../../../testing/EnvironmentHelpers.js';
+import {setupLocaleHooks} from '../../../testing/LocaleHelpers.js';
 
 import * as LinearMemoryInspectorComponents from './components.js';
 
 export const DISPLAY_JUMP_TO_POINTER_BUTTON_SELECTOR = '[data-jump]';
 
-describeWithLocale('ValueInterpreterDisplay', () => {
+describe('ValueInterpreterDisplay', () => {
+  setupLocaleHooks();
   const combinationsForNumbers = [
     {endianness: LinearMemoryInspectorComponents.ValueInterpreterDisplayUtils.Endianness.LITTLE, signed: true},
     {endianness: LinearMemoryInspectorComponents.ValueInterpreterDisplayUtils.Endianness.LITTLE, signed: false},
@@ -433,9 +434,7 @@ describeWithLocale('ValueInterpreterDisplay', () => {
     const selection = document.getSelection();
 
     for (let i = 0; i < dataValues.length; ++i) {
-      if (selection === null) {
-        assert.fail('Selection is null');
-      }
+      assert.exists(selection);
       // Set range around the element.
       range.selectNodeContents(dataValues[i]);
       // Remove ranges associated with selection.

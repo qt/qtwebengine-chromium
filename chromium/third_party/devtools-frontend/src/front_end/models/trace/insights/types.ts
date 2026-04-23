@@ -76,6 +76,7 @@ export type InsightModel<UIStrings extends Record<string, string> = Record<strin
       strings: UIStrings,
       title: Common.UIString.LocalizedString,
       description: Common.UIString.LocalizedString,
+      docs: string,
       category: InsightCategory,
       state: 'pass' | 'fail' | 'informative',
       /** Used by RelatedInsightChips.ts */
@@ -101,7 +102,7 @@ export type InsightModel<UIStrings extends Record<string, string> = Record<strin
     };
 
 export type PartialInsightModel<T> =
-    Omit<T, 'strings'|'title'|'description'|'category'|'state'|'insightKey'|'navigationId'|'frameId'>;
+    Omit<T, 'strings'|'title'|'description'|'docs'|'category'|'state'|'insightKey'|'navigationId'|'frameId'>;
 
 /**
  * Contains insights for a specific navigation. If a trace began after a navigation already started,
@@ -109,21 +110,31 @@ export type PartialInsightModel<T> =
  * navigation (or the end of the trace).
  */
 export interface InsightSet {
-  /** If for a navigation, this is the navigationId. Else it is Trace.Types.Events.NO_NAVIGATION. */
+  /** If for a navigation, this is of the form "NAVIGATION_(index)". Else it is Trace.Types.Events.NO_NAVIGATION. */
   id: Types.Events.NavigationId;
   /** The URL to show in the accordion list. */
   url: URL;
   frameId: string;
   bounds: Types.Timing.TraceWindowMicro;
+  /** Contains results for all non-errored insights. */
   model: InsightModels;
+  /** Contains errors for all insights that had an internal error. */
+  modelErrors: InsightModelErrors;
   navigation?: Types.Events.NavigationStart;
 }
 
 /**
- * Contains insights for a specific insight set.
+ * Contains insights for a specific insight set. If missing, it error'd.
  */
 export type InsightModels = {
-  [I in keyof InsightModelsType]: ReturnType<InsightModelsType[I]['generateInsight']>;
+  [I in keyof InsightModelsType]?: ReturnType<InsightModelsType[I]['generateInsight']>;
+};
+
+/**
+ * Contains an internal error for each insight in a specific insight set.
+ */
+export type InsightModelErrors = {
+  [I in keyof InsightModelsType]?: Error;
 };
 
 /**

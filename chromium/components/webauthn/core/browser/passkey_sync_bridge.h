@@ -9,11 +9,11 @@
 #include <string>
 
 #include "base/containers/flat_set.h"
-#include "base/feature_list.h"
 #include "base/functional/callback_forward.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/default_clock.h"
+#include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "components/sync/model/data_type_store.h"
 #include "components/sync/model/data_type_sync_bridge.h"
@@ -75,14 +75,21 @@ class PasskeySyncBridge : public syncer::DataTypeSyncBridge,
   base::flat_set<std::string> GetAllSyncIds() const override;
   std::vector<sync_pb::WebauthnCredentialSpecifics> GetAllPasskeys()
       const override;
+  std::vector<sync_pb::WebauthnCredentialSpecifics> GetUnShadowedPasskeys()
+      const override;
   std::optional<sync_pb::WebauthnCredentialSpecifics> GetPasskeyByCredentialId(
       const std::string& rp_id,
       const std::string& credential_id) const override;
+  std::optional<sync_pb::WebauthnCredentialSpecifics> GetPasskeyByUserId(
+      const std::string& rp_id,
+      const std::string& user_id) const override;
   std::vector<sync_pb::WebauthnCredentialSpecifics>
   GetPasskeysForRelyingPartyId(const std::string& rp_id) const override;
   bool DeletePasskey(const std::string& credential_id,
                      const base::Location& location) override;
-  bool SetPasskeyHidden(const std::string& credential_id, bool hidden) override;
+  bool HidePasskey(const std::string& credential_id,
+                   base::Time hidden_time) override;
+  bool UnhidePasskey(const std::string& credential_id) override;
   void DeleteAllPasskeys() override;
   bool UpdatePasskey(const std::string& credential_id,
                      PasskeyUpdate change,

@@ -128,7 +128,6 @@ class NavigationURLLoaderTest : public testing::Test {
             nullptr /* blob_url_loader_factory */,
             base::UnguessableToken::Create() /* devtools_navigation_token */,
             base::UnguessableToken::Create() /* devtools_frame_token */,
-            net::HttpRequestHeaders() /* cors_exempt_headers */,
             nullptr /* client_security_state */,
             std::nullopt /* devtools_accepted_stream_types */,
             false /* is_pdf */,
@@ -214,7 +213,7 @@ TEST_F(NavigationURLLoaderTest, RequestFailedCertErrorFatal) {
   auto* storage_partition = browser_context_->GetDefaultStoragePartition();
   base::RunLoop run_loop;
   storage_partition->GetNetworkContext()->AddHSTS(
-      url.host(), expiry, include_subdomains, run_loop.QuitClosure());
+      url.GetHost(), expiry, include_subdomains, run_loop.QuitClosure());
   run_loop.Run();
 
   TestNavigationURLLoaderDelegate delegate;

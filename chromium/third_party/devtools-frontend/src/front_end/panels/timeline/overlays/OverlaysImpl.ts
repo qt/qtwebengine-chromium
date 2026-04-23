@@ -1,7 +1,7 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../../core/common/common.js';
 import * as i18n from '../../../core/i18n/i18n.js';
@@ -209,9 +209,11 @@ export interface OverlayEntryQueries {
   firstVisibleParentForEntry: (entry: Trace.Types.Events.Event) => Trace.Types.Events.Event | null;
 }
 
-// An event dispatched when one of the Annotation Overlays (overlay created by the user,
-// ex. Trace.Types.Overlays.EntryLabel) is removed or updated. When one of the Annotation Overlays is removed or updated,
-// ModificationsManager listens to this event and updates the current annotations.
+/**
+ * An event dispatched when one of the Annotation Overlays (overlay created by the user,
+ * ex. Trace.Types.Overlays.EntryLabel) is removed or updated. When one of the Annotation Overlays is removed or updated,
+ * ModificationsManager listens to this event and updates the current annotations.
+ **/
 export type UpdateAction = 'Remove'|'Update';
 export class AnnotationOverlayActionEvent extends Event {
   static readonly eventName = 'annotationoverlayactionsevent';
@@ -1476,7 +1478,7 @@ export class Overlays extends EventTarget {
         const component = new Components.EntryLabelOverlay.EntryLabelOverlay(overlay.label, shouldDrawLabelBelowEntry);
         // Generate the AI Call Tree for the AI Auto-Annotation feature.
         const parsedTrace = this.#queries.parsedTrace();
-        const callTree = parsedTrace ? AIAssistance.AICallTree.fromEvent(overlay.entry, parsedTrace) : null;
+        const callTree = parsedTrace ? AIAssistance.AICallTree.AICallTree.fromEvent(overlay.entry, parsedTrace) : null;
         component.callTree = callTree;
 
         component.addEventListener(

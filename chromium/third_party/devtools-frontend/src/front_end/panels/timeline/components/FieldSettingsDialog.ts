@@ -1,7 +1,7 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import './OriginMap.js';
 
@@ -11,6 +11,7 @@ import * as Buttons from '../../../ui/components/buttons/buttons.js';
 import * as Dialogs from '../../../ui/components/dialogs/dialogs.js';
 import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import * as Input from '../../../ui/components/input/input.js';
+import * as uiI18n from '../../../ui/i18n/i18n.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
@@ -309,8 +310,10 @@ export class FieldSettingsDialog extends HTMLElement {
     return html`
       <div class="origin-mapping-description">${i18nString(UIStrings.mapDevelopmentOrigins)}</div>
       <devtools-origin-map
-        on-render=${ComponentHelpers.Directives.nodeRenderedCallback(node => {
-          this.#originMap = node as OriginMap;
+        ${Lit.Directives.ref(el => {
+          if (el instanceof HTMLElement) {
+            this.#originMap = el as OriginMap;
+          }
         })}
       ></devtools-origin-map>
       <div class="origin-mapping-button-section">
@@ -321,7 +324,7 @@ export class FieldSettingsDialog extends HTMLElement {
             title: i18nString(UIStrings.new),
             iconName: 'plus',
           } as Buttons.Button.ButtonData}
-          jslogContext=${'new-origin-mapping'}
+          jslogContext="new-origin-mapping"
         >${i18nString(UIStrings.new)}</devtools-button>
       </div>
     `;
@@ -331,7 +334,7 @@ export class FieldSettingsDialog extends HTMLElement {
   #render = (): void => {
     const linkEl =
         UI.XLink.XLink.create('https://developer.chrome.com/docs/crux', i18n.i18n.lockedString('Chrome UX Report'));
-    const descriptionEl = i18n.i18n.getFormatLocalizedString(str_, UIStrings.fetchAggregated, {PH1: linkEl});
+    const descriptionEl = uiI18n.getFormatLocalizedString(str_, UIStrings.fetchAggregated, {PH1: linkEl});
 
     // clang-format off
     const output = html`
@@ -346,8 +349,10 @@ export class FieldSettingsDialog extends HTMLElement {
         .jslogContext=${'timeline.field-data.settings'}
         .expectedMutationsSelector=${'.timeline-settings-pane option'}
         .dialogTitle=${i18nString(UIStrings.configureFieldData)}
-        on-render=${ComponentHelpers.Directives.nodeRenderedCallback(node => {
-          this.#dialog = node as Dialogs.Dialog.Dialog;
+        ${Lit.Directives.ref(el => {
+          if (el instanceof HTMLElement) {
+            this.#dialog = el as Dialogs.Dialog.Dialog;
+          }
         })}
       >
         <div class="content">

@@ -12,8 +12,8 @@ from typing_extensions import override
 
 from crossbench import config
 from crossbench import path as pth
-from crossbench.benchmarks.loadline.loadline import (LoadLineBenchmark,
-                                                     LoadLineProbe)
+from crossbench.benchmarks.loadline.loadline import LoadLineBenchmark, \
+    LoadLineProbe
 from crossbench.probes.probe_context import ProbeContext
 
 if TYPE_CHECKING:
@@ -74,7 +74,6 @@ class LoadLine1Probe(LoadLineProbe):
       logging.warning("Some runs were affected by network latency. "
                       "Results can be non-representative.")
     return process_breakdown(df)
-
 
 
 class LoadLine1ProbeContext(ProbeContext[LoadLine1Probe]):

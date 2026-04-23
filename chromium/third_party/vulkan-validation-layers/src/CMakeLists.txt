@@ -19,7 +19,7 @@ cmake_minimum_required(VERSION 3.22.1)
 # The VERSION field is generated with the "--generated-version" flag in the generate_source.py script
 #
 # If working with unreleased extensions, make sure the header and validation version are all on the same header version
-project(VVL VERSION 1.4.328 LANGUAGES CXX)
+project(VVL VERSION 1.4.335 LANGUAGES CXX)
 
 # This variable enables downstream users to customize the target API
 # variant (e.g. Vulkan SC)
@@ -57,6 +57,7 @@ elseif(APPLE)
 else()
     option(BUILD_WSI_XCB_SUPPORT "Build XCB WSI support" ON)
     option(BUILD_WSI_XLIB_SUPPORT "Build Xlib WSI support" ON)
+    option(BUILD_WSI_XLIB_XRANDR_SUPPORT "Build X11 Xrandr WSI support" ON)
     option(BUILD_WSI_WAYLAND_SUPPORT "Build Wayland WSI support" ON)
 
     if (BUILD_WSI_XCB_SUPPORT OR BUILD_WSI_XLIB_SUPPORT OR BUILD_WSI_WAYLAND_SUPPORT)
@@ -70,7 +71,11 @@ else()
 
     if(BUILD_WSI_XLIB_SUPPORT)
         pkg_check_modules(X11 REQUIRED QUIET IMPORTED_TARGET x11)
-        add_compile_definitions(VK_USE_PLATFORM_XLIB_KHR VK_USE_PLATFORM_XLIB_XRANDR_EXT)
+        add_compile_definitions(VK_USE_PLATFORM_XLIB_KHR)
+        if(BUILD_WSI_XLIB_XRANDR_SUPPORT)
+            pkg_check_modules(XRANDR REQUIRED QUIET IMPORTED_TARGET xrandr)
+            add_compile_definitions(VK_USE_PLATFORM_XLIB_XRANDR_EXT)
+        endif()
     endif()
 
     if(BUILD_WSI_WAYLAND_SUPPORT)
@@ -111,7 +116,7 @@ if (VVL_ENABLE_TRACY)
     endif()
 endif()
 
-find_package(VulkanHeaders ${CMAKE_PROJECT_VERSION} CONFIG QUIET)
+find_package(VulkanHeaders ${PROJECT_VERSION} CONFIG QUIET)
 
 find_package(VulkanUtilityLibraries CONFIG QUIET)
 
@@ -203,6 +208,34 @@ elseif(MSVC)
 endif()
 
 add_subdirectory(layers)
+
+if(MSVC AND UPDATE_DEPS)
+    set(SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+    file(GLOB_RECURSE SCRIPTS
+        "${SCRIPTS_DIR}/*.py"
+        "${SCRIPTS_DIR}/*.json"
+    )
+    add_custom_target(Scripts SOURCES ${SCRIPTS})
+    source_group(TREE ${SCRIPTS_DIR} PREFIX "Scripts" FILES ${SCRIPTS})
+
+    set(EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external")
+    file(GLOB_RECURSE EXTERNAL_HEADER_FILES
+            "${GLSLANG_INSTALL_DIR}/*.h"
+            "${GLSLANG_INSTALL_DIR}/*.hpp"
+            "${VULKAN_HEADERS_INSTALL_DIR}/*.h"
+            "${VULKAN_HEADERS_INSTALL_DIR}/*.hpp"
+            "${VULKAN_UTILITY_LIBRARIES_INSTALL_DIR}/*.h"
+            "${VULKAN_UTILITY_LIBRARIES_INSTALL_DIR}/*.hpp"
+            "${SPIRV_HEADERS_INSTALL_DIR}/*.h"
+            "${SPIRV_HEADERS_INSTALL_DIR}/*.hpp"
+            "${SPIRV_TOOLS_INSTALL_DIR}/*.h"
+            "${SPIRV_TOOLS_INSTALL_DIR}/*.hpp"
+            "${GOOGLETEST_INSTALL_DIR}/*.h"
+            "${MIMALLOC_INSTALL_DIR}/*.h"
+    )
+    add_custom_target(External SOURCES ${EXTERNAL_HEADER_FILES})
+    source_group(TREE ${EXTERNAL_DIR} PREFIX "External" FILES ${EXTERNAL_HEADER_FILES})
+endif()
 
 option(BUILD_TESTS "Build the tests")
 if(BUILD_TESTS)

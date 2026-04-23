@@ -13,6 +13,7 @@ from crossbench.action_runner.action_runner_listener import \
     ActionRunnerListener
 from crossbench.action_runner.bond_base import BondActionRunner
 from crossbench.benchmarks.loading.input_source import InputSource
+from crossbench.cli import ui
 
 if TYPE_CHECKING:
   from crossbench.action_runner.action import all as i_action
@@ -96,15 +97,16 @@ class ActionRunner:
     with exception.annotate(f"block {block_index}: {block.label}"):
       with self._info_stack_annotate(f"block_{block_index}"):
         for action_index, action in enumerate(block, start=1):
-          if self._step_by_step_mode:
-            logging.critical("[STEP-BY-STEP MODE] Next step: %s",
-                             action.to_json())
-            logging.critical("[STEP-BY-STEP MODE] Press Enter to continue")
-            input()
           with self._info_stack_annotate(f"action_{action_index}"):
             with exception.annotate(f"action {action_index}: {str(action)}"):
-              self._failure_screenshot_annotations = []
-              action.run_with(run, self)
+              self._run_action_step(run, action)
+
+  def _run_action_step(self, run: Run, action: i_action.Action) -> None:
+    if self._step_by_step_mode:
+      logging.critical("[STEP-BY-STEP MODE] Next ste: %s", action.to_json())
+      ui.prompt("[STEP-BY-STEP MODE] Press Enter to continue")
+    self._failure_screenshot_annotations = []
+    action.run_with(run, self)
 
   def wait(self, run: Run, action: i_action.WaitAction) -> None:
     with run.actions("WaitAction", measure=False) as actions:
@@ -219,6 +221,11 @@ class ActionRunner:
 
   def invoke_probe(self, run: Run, action: BaseProbeAction) -> None:
     del run
+    raise ActionNotImplementedError(self, action)
+
+  def open_devtools(self, _run: Run,
+                    action: i_action.OpenDevToolsAction) -> None:
+    del _run
     raise ActionNotImplementedError(self, action)
 
   def screenshot_impl(

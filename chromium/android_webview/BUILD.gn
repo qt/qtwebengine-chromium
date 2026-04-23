@@ -464,7 +464,6 @@ if (_is_default_toolchain) {
   android_library("browser_java") {
     sources = [
       "java/src/org/chromium/android_webview/AndroidProtocolHandler.java",
-      "java/src/org/chromium/android_webview/AppDefinedDomains.java",
       "java/src/org/chromium/android_webview/AwActionModeCallback.java",
       "java/src/org/chromium/android_webview/AwBackForwardCacheSettings.java",
       "java/src/org/chromium/android_webview/AwBrowserContext.java",
@@ -499,6 +498,7 @@ if (_is_default_toolchain) {
       "java/src/org/chromium/android_webview/AwMediaIntegrityApiStatusConfig.java",
       "java/src/org/chromium/android_webview/AwNavigation.java",
       "java/src/org/chromium/android_webview/AwNavigationClient.java",
+      "java/src/org/chromium/android_webview/AwNavigationListener.java",
       "java/src/org/chromium/android_webview/AwNavigationParams.java",
       "java/src/org/chromium/android_webview/AwNetLogsConnection.java",
       "java/src/org/chromium/android_webview/AwNetworkChangeNotifierRegistrationPolicy.java",
@@ -506,6 +506,7 @@ if (_is_default_toolchain) {
       "java/src/org/chromium/android_webview/AwOriginMatchedHeader.java",
       "java/src/org/chromium/android_webview/AwPacProcessor.java",
       "java/src/org/chromium/android_webview/AwPage.java",
+      "java/src/org/chromium/android_webview/AwPasswordEchoSettingController.java",
       "java/src/org/chromium/android_webview/AwPdfExporter.java",
       "java/src/org/chromium/android_webview/AwPreconnector.java",
       "java/src/org/chromium/android_webview/AwPrefetchCallback.java",
@@ -609,6 +610,7 @@ if (_is_default_toolchain) {
       "java/src/org/chromium/android_webview/safe_mode/DisableStartupTasksSafeModeAction.java",
       "java/src/org/chromium/android_webview/safe_mode/NoopSafeModeAction.java",
       "java/src/org/chromium/android_webview/selection/AwSelectionActionMenuDelegate.java",
+      "java/src/org/chromium/android_webview/selection/PlatformSelectionActionMenuDelegate.java",
       "java/src/org/chromium/android_webview/selection/SamsungSelectionActionMenuDelegate.java",
       "java/src/org/chromium/android_webview/selection/SelectionActionMenuDelegateProvider.java",
       "java/src/org/chromium/android_webview/supervised_user/AwSupervisedUserHelper.java",
@@ -630,6 +632,7 @@ if (_is_default_toolchain) {
       "//android_webview/support_library/boundary_interfaces:boundary_interface_java",
       "//base:base_java",
       "//base:content_uri_utils_java",
+      "//base:flagged_apis_java",
       "//base/version_info/android:version_constants_java",
       "//build/android:build_java",
       "//cc/mojom:mojom_java",
@@ -839,6 +842,7 @@ if (_is_default_toolchain) {
       "//ui/accessibility:accessibility_features_java",
       "//ui/android:ui_android_features_java",
       "//ui/base:ui_base_features_java",
+      "//ui/events:ui_events_features_java",
       "//ui/gfx:ui_gfx_java",
     ]
 
@@ -1019,13 +1023,6 @@ if (_is_default_toolchain) {
     }
   }
 
-  android_assets("stub_assets") {
-    renaming_sources =
-        [ "$root_gen_dir/components/resources/about_credits.html" ]
-    renaming_destinations = [ "webview_licenses.notice" ]
-    deps = [ "//components/resources:about_credits" ]
-  }
-
   android_resources("resources") {
     sources = [
       "java/res/drawable-hdpi/ic_play_circle_outline_black_48dp.png",
@@ -1041,7 +1038,6 @@ if (_is_default_toolchain) {
       "java/res/layout/aw_context_menu_fullscreen_container.xml",
       "java/res/layout/aw_context_menu_header.xml",
       "java/res/layout/aw_context_menu_row.xml",
-      "java/res/values/styles.xml",
     ]
     deps = [ ":strings_grd" ]
   }
@@ -1213,7 +1209,6 @@ generate_jni("common_jni") {
 generate_jni("browser_jni_headers") {
   sources = [
     "java/src/org/chromium/android_webview/AndroidProtocolHandler.java",
-    "java/src/org/chromium/android_webview/AppDefinedDomains.java",
     "java/src/org/chromium/android_webview/AwBackForwardCacheSettings.java",
     "java/src/org/chromium/android_webview/AwBrowserContext.java",
     "java/src/org/chromium/android_webview/AwBrowserContextStore.java",

@@ -51,24 +51,15 @@ const Capabilities kRobustnessCapabilities{
 
 /// Configuration options that control when to clamp accesses.
 struct RobustnessConfig {
-    /// Should non-pointer accesses be clamped?
-    bool clamp_value = true;
-
     /// Should texture accesses be clamped?
     bool clamp_texture = true;
 
-    /// Should accesses to pointers with the 'function' address space be clamped?
-    bool clamp_function = true;
-    /// Should accesses to pointers with the 'private' address space be clamped?
-    bool clamp_private = true;
     /// Should accesses to pointers with the 'immediate' address space be clamped?
     bool clamp_immediate_data = true;
     /// Should accesses to pointers with the 'storage' address space be clamped?
     bool clamp_storage = true;
     /// Should accesses to pointers with the 'uniform' address space be clamped?
     bool clamp_uniform = true;
-    /// Should accesses to pointers with the 'workgroup' address space be clamped?
-    bool clamp_workgroup = true;
 
     /// Should subgroup matrix builtins be predicated?
     /// Note that the stride parameter will still be clamped if predication is disabled.
@@ -85,14 +76,10 @@ struct RobustnessConfig {
 
     /// Reflection for this class
     TINT_REFLECT(RobustnessConfig,
-                 clamp_value,
                  clamp_texture,
-                 clamp_function,
-                 clamp_private,
                  clamp_immediate_data,
                  clamp_storage,
                  clamp_uniform,
-                 clamp_workgroup,
                  predicate_subgroup_matrix,
                  bindings_ignored,
                  disable_runtime_sized_array_index_clamping,

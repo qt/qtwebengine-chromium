@@ -4,6 +4,10 @@
 
 #include "components/endpoint_fetcher/endpoint_fetcher.h"
 
+#include <optional>
+#include <string>
+#include <utility>
+
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/strings/strcat.h"
@@ -86,11 +90,8 @@ EndpointFetcher::RequestParams::Builder::Build() {
   // Perform consistency checks based on AuthType before building.
   switch (request_params_->auth_type_) {
     case OAUTH:
-      DCHECK(request_params_->oauth_consumer_name.has_value() &&
-             !request_params_->oauth_consumer_name->empty())
-          << "OAUTH requests require oauth_consumer_name.";
-      DCHECK(!request_params_->oauth_scopes.empty())
-          << "OAUTH requests require oauth_scopes.";
+      DCHECK(request_params_->oauth_consumer_id.has_value())
+          << "OAUTH requests require oauth_consumer_id.";
       DCHECK(request_params_->consent_level.has_value())
           << "OAUTH requests require consent_level.";
       break;
@@ -158,12 +159,12 @@ void EndpointFetcher::Fetch(EndpointFetcherCallback endpoint_fetcher_callback) {
           &EndpointFetcher::OnAuthTokenFetched, weak_ptr_factory_.GetWeakPtr(),
           std::move(endpoint_fetcher_callback));
 
-      access_token_fetcher_ = std::make_unique<
-          signin::PrimaryAccountAccessTokenFetcher>(
-          request_params_.oauth_consumer_name.value(), identity_manager_,
-          request_params_.oauth_scopes, std::move(token_callback),
-          signin::PrimaryAccountAccessTokenFetcher::Mode::kWaitUntilAvailable,
-          *request_params_.consent_level);
+        access_token_fetcher_ = std::make_unique<
+            signin::PrimaryAccountAccessTokenFetcher>(
+            request_params_.oauth_consumer_id.value(), identity_manager_,
+            std::move(token_callback),
+            signin::PrimaryAccountAccessTokenFetcher::Mode::kWaitUntilAvailable,
+            *request_params_.consent_level);
       break;
     }
     case CHROME_API_KEY:
@@ -275,10 +276,10 @@ void EndpointFetcher::PerformHttpRequest(
   simple_url_loader_->SetTimeoutDuration(request_params_.timeout());
   simple_url_loader_->SetAllowHttpErrorResults(true);
 
-  network::SimpleURLLoader::BodyAsStringCallbackDeprecated
-      body_as_string_callback = base::BindOnce(
-          &EndpointFetcher::OnResponseFetched, weak_ptr_factory_.GetWeakPtr(),
-          std::move(endpoint_fetcher_callback));
+  network::SimpleURLLoader::BodyAsStringCallback body_as_string_callback =
+      base::BindOnce(&EndpointFetcher::OnResponseFetched,
+                     weak_ptr_factory_.GetWeakPtr(),
+                     std::move(endpoint_fetcher_callback));
 
   simple_url_loader_->DownloadToString(
       url_loader_factory_.get(), std::move(body_as_string_callback),
@@ -287,7 +288,7 @@ void EndpointFetcher::PerformHttpRequest(
 
 void EndpointFetcher::OnResponseFetched(
     EndpointFetcherCallback endpoint_fetcher_callback,
-    std::unique_ptr<std::string> response_body) {
+    std::optional<std::string> response_body) {
   auto response = std::make_unique<EndpointResponse>();
   std::string mime_type;
   if (const auto* response_info = simple_url_loader_->ResponseInfo();
@@ -312,8 +313,8 @@ void EndpointFetcher::OnResponseFetched(
     // valid string pointer -- if we don't, send a simple message indicating
     // there was a response error (similar to below).
     // TODO: Think about how to better handle different MIME-types here.
-    response->response =
-        response_body ? *response_body : "There was a response error.";
+    response->response = response_body ? std::move(response_body).value()
+                                       : "There was a response error.";
     std::move(endpoint_fetcher_callback).Run(std::move(response));
     return;
   }
@@ -324,7 +325,7 @@ void EndpointFetcher::OnResponseFetched(
   }
 
   if (response_body) {
-    response->response = *response_body;
+    response->response = std::move(response_body).value();
   } else {
     std::string net_error = net::ErrorToString(net_error_code);
     VLOG(1) << __func__ << " with response error: " << net_error;

@@ -7,6 +7,10 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/types/expected.h"
+#include "third_party/blink/public/common/manifest/manifest_util.h"
+#include "third_party/blink/public/mojom/manifest/manifest.mojom-blink.h"
+#include "third_party/blink/public/mojom/manifest/manifest_manager.mojom-blink.h"
 #include "third_party/blink/public/platform/interface_registry.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/frame_console.h"
@@ -47,9 +51,6 @@ void ManifestManager::Result::SetManifest(mojom::blink::ManifestPtr manifest) {
 }
 
 // static
-const char ManifestManager::kSupplementName[] = "ManifestManager";
-
-// static
 void WebManifestManager::RequestManifestForTesting(WebLocalFrame* web_frame,
                                                    Callback callback) {
   auto* window = To<WebLocalFrameImpl>(web_frame)->GetFrame()->DomWindow();
@@ -59,17 +60,17 @@ void WebManifestManager::RequestManifestForTesting(WebLocalFrame* web_frame,
 
 // static
 ManifestManager* ManifestManager::From(LocalDOMWindow& window) {
-  auto* manager = Supplement<LocalDOMWindow>::From<ManifestManager>(window);
+  ManifestManager* manager = window.GetManifestManager();
   if (!manager) {
     manager = MakeGarbageCollected<ManifestManager>(window);
-    Supplement<LocalDOMWindow>::ProvideTo(window, manager);
+    window.SetManifestManager(manager);
   }
   return manager;
 }
 
 ManifestManager::ManifestManager(LocalDOMWindow& window)
-    : Supplement<LocalDOMWindow>(window),
-      ExecutionContextLifecycleObserver(&window),
+    : ExecutionContextLifecycleObserver(&window),
+      local_dom_window_(window),
       receivers_(this, GetExecutionContext()) {
   if (window.GetFrame()->IsMainFrame()) {
     manifest_change_notifier_ =
@@ -86,6 +87,29 @@ void ManifestManager::RequestManifest(RequestManifestCallback callback) {
       [](RequestManifestCallback callback, const Result& result) {
         std::move(callback).Run(result.result(), result.manifest_url(),
                                 result.manifest().Clone());
+      },
+      std::move(callback)));
+}
+
+void ManifestManager::RequestManifestAndErrors(
+    RequestManifestAndErrorsCallback callback) {
+  RequestManifestImpl(blink::BindOnce(
+      [](RequestManifestAndErrorsCallback callback, const Result& result) {
+        switch (result.result()) {
+          case mojom::blink::ManifestRequestResult::kManifestFailedToFetch:
+          case mojom::blink::ManifestRequestResult::kManifestFailedToParse:
+          case mojom::blink::ManifestRequestResult::kUnexpectedFailure:
+          case mojom::blink::ManifestRequestResult::kNoManifestAllowed:
+            std::move(callback).Run(
+                base::unexpected(mojom::blink::RequestManifestError::New(
+                    result.result(),
+                    std::move(result.debug_info().Clone()->errors))));
+            return;
+          case mojom::blink::ManifestRequestResult::kNoManifestSpecified:
+          case mojom::blink::ManifestRequestResult::kSuccess:
+            std::move(callback).Run(result.manifest().Clone());
+            return;
+        }
       },
       std::move(callback)));
 }
@@ -129,13 +153,13 @@ void ManifestManager::RequestManifestForTesting(
 
 bool ManifestManager::CanFetchManifest() {
   // Do not fetch the manifest if we are on an opaque origin.
-  return !GetSupplementable()->GetSecurityOrigin()->IsOpaque() &&
-         GetSupplementable()->Url().IsValid();
+  return !local_dom_window_->GetSecurityOrigin()->IsOpaque() &&
+         local_dom_window_->Url().IsValid();
 }
 
 void ManifestManager::RequestManifestImpl(
     InternalRequestManifestCallback callback) {
-  if (!GetSupplementable()->GetFrame()) {
+  if (!local_dom_window_->GetFrame()) {
     std::move(callback).Run(
         Result(mojom::blink::ManifestRequestResult::kUnexpectedFailure));
     return;
@@ -170,7 +194,7 @@ void ManifestManager::FetchManifest() {
     return;
   }
 
-  LocalDOMWindow& window = *GetSupplementable();
+  LocalDOMWindow& window = *local_dom_window_;
   KURL manifest_url = ManifestURL();
   if (manifest_url.IsEmpty()) {
     ResolveCallbacks(
@@ -212,7 +236,7 @@ void ManifestManager::OnManifestFetchComplete(const KURL& document_url,
                        response.CurrentRequestUrl().GetString().Utf8().c_str(),
                        response.HttpStatusCode());
 
-    GetSupplementable()->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
+    local_dom_window_->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kOther,
         mojom::blink::ConsoleMessageLevel::kError, message,
         CaptureSourceLocation()));
@@ -240,7 +264,7 @@ void ManifestManager::ParseManifestFromPage(const KURL& document_url,
   // technically incorrect JSON syntax anyway. See crbug.com/1264024
   bool has_comments = parser.Parse();
   if (has_comments) {
-    UseCounter::Count(GetSupplementable(),
+    UseCounter::Count(local_dom_window_,
                       WebFeature::kWebAppManifestHasComments);
   }
 
@@ -258,7 +282,7 @@ void ManifestManager::ParseManifestFromPage(const KURL& document_url,
         ManifestURL().GetString(), String(), error->line, error->column,
         nullptr, 0);
 
-    GetSupplementable()->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
+    local_dom_window_->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kOther,
         error->critical ? mojom::blink::ConsoleMessageLevel::kError
                         : mojom::blink::ConsoleMessageLevel::kWarning,
@@ -284,7 +308,7 @@ void ManifestManager::ParseManifestFromPage(const KURL& document_url,
         result.manifest().scope.IsValid());
 
   // At this point, the manifest is validly parsed, and is not the default one.
-  UseCounter::CountWebDXFeature(GetSupplementable(), WebDXFeature::kManifest);
+  UseCounter::CountWebDXFeature(local_dom_window_, WebDXFeature::kManifest);
   ResolveCallbacks(std::move(result));
 }
 
@@ -319,16 +343,14 @@ void ManifestManager::ResolveCallbacks(Result result) {
 }
 
 KURL ManifestManager::ManifestURL() const {
-  HTMLLinkElement* link_element =
-      GetSupplementable()->document()->LinkManifest();
+  HTMLLinkElement* link_element = local_dom_window_->document()->LinkManifest();
   if (!link_element)
     return KURL();
   return link_element->Href();
 }
 
 bool ManifestManager::ManifestUseCredentials() const {
-  HTMLLinkElement* link_element =
-      GetSupplementable()->document()->LinkManifest();
+  HTMLLinkElement* link_element = local_dom_window_->document()->LinkManifest();
   if (!link_element)
     return false;
   return EqualIgnoringASCIICase(
@@ -339,13 +361,13 @@ bool ManifestManager::ManifestUseCredentials() const {
 void ManifestManager::BindReceiver(
     mojo::PendingReceiver<mojom::blink::ManifestManager> receiver) {
   receivers_.Add(std::move(receiver),
-                 GetSupplementable()->GetTaskRunner(TaskType::kNetworking));
+                 local_dom_window_->GetTaskRunner(TaskType::kNetworking));
 }
 
 mojom::blink::ManifestPtr ManifestManager::DefaultManifest() {
   // Generate the default manifest for failures, and use the current window url
   // as the manifest_url for resolving resources in the default manifest.
-  LocalDOMWindow& window = *GetSupplementable();
+  LocalDOMWindow& window = *local_dom_window_;
   ManifestParser parser(/*data=*/"{ }", /*manifest_url=*/window.Url(),
                         /*document_url=*/window.Url(), GetExecutionContext());
   parser.Parse();
@@ -372,7 +394,7 @@ void ManifestManager::Trace(Visitor* visitor) const {
   visitor->Trace(fetcher_);
   visitor->Trace(manifest_change_notifier_);
   visitor->Trace(receivers_);
-  Supplement<LocalDOMWindow>::Trace(visitor);
+  visitor->Trace(local_dom_window_);
   ExecutionContextLifecycleObserver::Trace(visitor);
 }
 

@@ -87,7 +87,7 @@ mojom::blink::DidOverscrollParamsPtr ToDidOverscrollParams(
       overscroll_params->latest_overscroll_delta,
       overscroll_params->current_fling_velocity,
       overscroll_params->causal_event_viewport_point,
-      overscroll_params->overscroll_behavior);
+      overscroll_params->overscroll_behavior, overscroll_params->source_device);
 }
 
 void CallCallback(
@@ -1222,13 +1222,9 @@ void WidgetInputHandlerManager::DidHandleInputEventSentToCompositor(
 
   mojom::blink::InputEventResultState ack_state =
       InputEventDispositionToAck(event_disposition);
-  if (event->Event().GetType() ==
-      blink::WebInputEvent::Type::kGestureScrollUpdate) {
-    input_event_queue_->OnGestureScrollUpdateAck(ack_state);
-  }
-  if (event->Event().GetType() ==
-      blink::WebInputEvent::Type::kGestureScrollEnd) {
-    input_event_queue_->OnGestureScrollEndAck(ack_state);
+  if (event->Event().IsGestureScroll()) {
+    input_event_queue_->OnGestureScrollEventAck(event->Event().GetType(),
+                                                ack_state);
   }
 
   if (ack_state == mojom::blink::InputEventResultState::kConsumed) {
@@ -1350,8 +1346,11 @@ void WidgetInputHandlerManager::ObserveGestureEventOnInputHandlingThread(
   // observe the event.
   if (!input_handler_proxy_->elastic_overscroll_controller())
     return;
+  const cc::ElementId latched_element_id =
+      input_handler_proxy_->LatchedScrollerElementId();
   input_handler_proxy_->elastic_overscroll_controller()
-      ->ObserveGestureEventAndResult(gesture_event, scroll_result);
+      ->ObserveGestureEventAndResult(latched_element_id, gesture_event,
+                                     scroll_result);
 }
 
 const scoped_refptr<base::SingleThreadTaskRunner>&

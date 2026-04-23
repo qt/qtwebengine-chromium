@@ -17,6 +17,7 @@
 #pragma once
 
 #include "error_message/error_location.h"
+#include "state_tracker/descriptor_mode.h"
 #include "state_tracker/shader_instruction.h"
 #include "state_tracker/state_tracker.h"
 #include "gpuav/spirv/interface.h"
@@ -71,7 +72,13 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
 
   public:
     GpuShaderInstrumentor(vvl::dispatch::Device *dev, vvl::InstanceProxy *instance, LayerObjectTypeId type)
-        : BaseClass(dev, instance, type) {}
+        : BaseClass(dev, instance, type) {
+        for (uint32_t i = 0; i < vvl::DescriptorModeCount; i++) {
+            dummy_desc_layout_[i] = VK_NULL_HANDLE;
+            instrumentation_desc_layout_[i] = VK_NULL_HANDLE;
+            instrumentation_pipeline_layout_[i] = VK_NULL_HANDLE;
+        }
+    }
 
     ReadLockGuard ReadLock() const override;
     WriteLockGuard WriteLock() override;
@@ -149,6 +156,7 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
 
     void InternalError(LogObjectList objlist, const Location &loc, const char *const specific_message) const;
     void InternalWarning(LogObjectList objlist, const Location &loc, const char *const specific_message) const;
+    void AdjustmentWarning(LogObjectList objlist, const Location &loc, const char *const specific_message) const;
     void InternalInfo(LogObjectList objlist, const Location &loc, const char *const specific_message) const;
 
     bool IsSelectiveInstrumentationEnabled(const void *pNext);
@@ -188,13 +196,15 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
     template <typename SafeCreateInfo>
     [[nodiscard]] bool PreCallRecordPipelineCreationShaderInstrumentation(
         const VkAllocationCallbacks *pAllocator, vvl::Pipeline &pipeline_state, SafeCreateInfo &modified_pipeline_ci,
-        const Location &loc, std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata);
+        uint32_t stages_count, const Location &loc,
+        std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata);
     void PostCallRecordPipelineCreationShaderInstrumentation(
-        vvl::Pipeline &pipeline_state, std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata);
+        vvl::Pipeline &pipeline_state, uint32_t stages_count,
+        std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata);
 
     // We have GPL variations for graphics as they defer instrumentation until linking
     [[nodiscard]] bool PreCallRecordPipelineCreationShaderInstrumentationGPL(
-        const VkAllocationCallbacks *pAllocator, vvl::Pipeline &pipeline_state,
+        const VkAllocationCallbacks *pAllocator, vvl::Pipeline &linked_pipeline_state,
         vku::safe_VkGraphicsPipelineCreateInfo &modified_pipeline_ci, const Location &loc,
         std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata);
     void PostCallRecordPipelineCreationShaderInstrumentationGPL(
@@ -207,8 +217,16 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
                           std::vector<uint32_t> &out_instrumented_spirv);
 
   public:
-    VkDescriptorSetLayout GetInstrumentationDescriptorSetLayout() { return instrumentation_desc_layout_; }
-    VkPipelineLayout GetInstrumentationPipelineLayout() { return instrumentation_pipeline_layout_; }
+    void SetupClassicDescriptor(const Location &loc);
+    void SetupDescriptorBuffers(const Location &loc);
+
+    VkDescriptorSetLayout GetInstrumentationDescriptorSetLayout(vvl::DescriptorMode mode) {
+        return instrumentation_desc_layout_[mode];
+    }
+    VkPipelineLayout GetInstrumentationPipelineLayout(vvl::DescriptorMode mode) { return instrumentation_pipeline_layout_[mode]; }
+
+    // Used for both creating VkPipelineLayout and VkShaderEXT
+    vvl::DescriptorMode SelectDescriptorModeFromDSL(uint32_t set_layout_count, const VkDescriptorSetLayout *set_layouts) const;
 
     // When aborting we will disconnect all future chassis calls.
     // If we are deep into a call stack, we can use this to return up to the chassis call.
@@ -220,11 +238,16 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
     // The descriptor slot we will be injecting our error buffer into
     uint32_t instrumentation_desc_set_bind_index_ = 0;
     // This is a layout used to "pad" a pipeline layout to fill in any gaps to the selected bind index
-    VkDescriptorSetLayout dummy_desc_layout_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout dummy_desc_layout_[vvl::DescriptorModeCount];
     vvl::concurrent_unordered_map<uint32_t, InstrumentedShader> instrumented_shaders_map_;
     std::vector<VkDescriptorSetLayoutBinding> instrumentation_bindings_;
 
-    std::vector<spirv::InternalOnlyDebugPrintf> intenral_only_debug_printf_;
+    std::vector<spirv::InternalOnlyDebugPrintf> internal_only_debug_printf_;
+
+    // Size to reserve in front of every resource descriptor buffer
+    VkDeviceSize resource_descriptor_buffer_size_ = 0;
+    // Each vector index maps to the binding number with the offset to map to (with the start offset included)
+    std::vector<VkDeviceSize> resource_descriptor_buffer_offsets_;
 
     // These are the same as enabled_features, but may have been altered at setup time. This should be use for any feature GPU-AV
     // might force on. We need to track these changes separately so that they don't influence non-GPU-AV parts of validation.
@@ -236,9 +259,8 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
     bool IsShaderSelectedForInstrumentation(vku::safe_VkShaderModuleCreateInfo *modified_shader_module_ci,
                                             VkShaderModule modified_shader, const Location &loc);
     void Cleanup();
-    // These are objects used to inject our descriptor set into the command buffer
-    VkDescriptorSetLayout instrumentation_desc_layout_ = VK_NULL_HANDLE;
-    VkPipelineLayout instrumentation_pipeline_layout_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout instrumentation_desc_layout_[vvl::DescriptorModeCount];
+    VkPipelineLayout instrumentation_pipeline_layout_[vvl::DescriptorModeCount];
 
     // Pass select_instrumented_shaders from vkCreateShaderModule to CreatePipeline time
     vvl::unordered_set<VkShaderModule> selected_instrumented_shaders;

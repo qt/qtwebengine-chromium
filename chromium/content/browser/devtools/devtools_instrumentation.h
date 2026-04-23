@@ -27,7 +27,6 @@
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/frame_tree_node_id.h"
 #include "content/public/browser/global_routing_id.h"
-#include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "net/cookies/cookie_setting_override.h"
 #include "net/filter/source_stream_type.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
@@ -119,12 +118,12 @@ void ApplyAuctionNetworkRequestOverrides(FrameTreeNode* frame_tree_node,
                                          network::ResourceRequest* request,
                                          bool* network_instrumentation_enabled);
 
-// If this function caused the User-Agent header to be overridden,
-// `devtools_user_agent_overridden` will be set to true; otherwise, it will be
-// set to false. If this function caused the Accept-Language header to be
-// overridden, `devtools_accept_language_overridden` will be set to true;
-// otherwise, it will be set to false. If the Referrer header was overridden,
-// `referrer_override` will be set to the new Referrer header value.
+// If this function overrides the `User-Agent` header value, it sets
+// `devtools_user_agent_overridden` to true; otherwise, false. If
+// this function overrides the `Accept-Language` header, it sets
+// `devtools_accept_language_overridden` to true; otherwise, false. If
+// this function overrides the `Referrer` header, it sets `referrer_override` to
+// the new Referrer header value.
 void ApplyNetworkRequestOverrides(
     FrameTreeNode* frame_tree_node,
     blink::mojom::BeginNavigationParams* begin_params,
@@ -208,15 +207,29 @@ void OnNavigationRequestFailed(
     const NavigationRequest& nav_request,
     const network::URLLoaderCompletionStatus& status);
 
+// Entry function for creating, storing, and surfacing a
+// NavigationEntryMarkedSkippable generic issue in the DevTools panel
+//
+// The URL expected here should come from the FrameNavigationEntry that will be
+// skipped on back/forward navigation, due to the history manipulation
+// intervention. This is the URL of the document that will be skipped.
+//
+// The RenderFrameHost expected here is the one in which the navigation that
+// caused the skippable entry occurred. For example, if a navigation in an
+// iframe's document causes a history entry to be marked as skippable,
+// `rfh` would be the RenderFrameHost for that iframe's document.
+void OnNavigationEntryMarkedSkippable(const GURL& url,
+                                      RenderFrameHostImpl* rfh);
+
 // Logs fetch keepalive requests proxied via browser to Network panel.
 //
 // As the implementation requires a RenderFrameHost to locate a
-// RenderFrameDevToolsAgentHost to attach the logs to, `frame_free_node` must
-// not be nullptr. This doesn't really fit the whole need as such requests may
-// be sent after RenderFrameHost unload.
+// RenderFrameDevToolsAgentHost to attach the logs to, `frame_free_node`
+// must not be nullptr. This doesn't really fit the whole need as such
+// requests may be sent after RenderFrameHost unload.
 //
-// Caller also needs to make sure to avoid duplicated logging that may already
-// happens in the request initiator renderer.
+// Caller also needs to make sure to avoid duplicated logging that may
+// already happens in the request initiator renderer.
 void OnFetchKeepAliveRequestWillBeSent(
     FrameTreeNode* frame_tree_node,
     const std::string& request_id,
@@ -330,6 +343,7 @@ void DidActivatePrerender(const NavigationRequest& nav_request,
 void DidUpdatePrerenderStatus(
     FrameTreeNodeId initiator_frame_tree_node_id,
     const base::UnguessableToken& initiator_devtools_navigation_token,
+    blink::mojom::SpeculationAction action,
     const GURL& prerender_url,
     std::optional<blink::mojom::SpeculationTargetHint> target_hint,
     const base::UnguessableToken& preload_pipeline_id,
@@ -510,8 +524,10 @@ void DidShowFedCmDialog(RenderFrameHost& render_frame_host);
 void DidCloseFedCmDialog(RenderFrameHost& render_frame_host);
 
 // Fires Network Handler to capture FedCM request and response events.
-void WillSendFedCmNetworkRequest(FrameTreeNodeId frame_tree_node_id,
-                                 const network::ResourceRequest& request);
+void WillSendFedCmNetworkRequest(
+    FrameTreeNodeId frame_tree_node_id,
+    const network::ResourceRequest& request,
+    const std::optional<std::string>& request_body = std::nullopt);
 void DidReceiveFedCmNetworkResponse(
     FrameTreeNodeId frame_tree_node_id,
     const std::string& devtools_request_id,

@@ -20,12 +20,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 
 #include "av1_parse.h"
+#include "avcodec.h"
 #include "cbs.h"
 #include "cbs_av1.h"
-#include "parser.h"
+#include "parser_internal.h"
 
 typedef struct AV1ParseContext {
     CodedBitstreamContext *cbc;
@@ -200,7 +202,7 @@ static av_cold int av1_parser_init(AVCodecParserContext *ctx)
     return 0;
 }
 
-static void av1_parser_close(AVCodecParserContext *ctx)
+static av_cold void av1_parser_close(AVCodecParserContext *ctx)
 {
     AV1ParseContext *s = ctx->priv_data;
 
@@ -208,10 +210,10 @@ static void av1_parser_close(AVCodecParserContext *ctx)
     ff_cbs_close(&s->cbc);
 }
 
-const AVCodecParser ff_av1_parser = {
-    .codec_ids      = { AV_CODEC_ID_AV1 },
+const FFCodecParser ff_av1_parser = {
+    PARSER_CODEC_LIST(AV_CODEC_ID_AV1),
     .priv_data_size = sizeof(AV1ParseContext),
-    .parser_init    = av1_parser_init,
-    .parser_close   = av1_parser_close,
-    .parser_parse   = av1_parser_parse,
+    .init           = av1_parser_init,
+    .close          = av1_parser_close,
+    .parse          = av1_parser_parse,
 };

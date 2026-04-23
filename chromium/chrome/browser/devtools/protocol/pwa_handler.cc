@@ -316,7 +316,7 @@ void PWAHandler::InstallFromUrl(const std::string& in_manifest_id,
     std::move(callback)->sendFailure(
         protocol::Response::MethodNotFound(base::StrCat(
             {"Installing webapp from url ", in_install_url_or_bundle_url,
-             " with scheme [", url.scheme(), "] is not supported yet."})));
+             " with scheme [", url.GetScheme(), "] is not supported yet."})));
     return;
   }
   auto* scheduler = GetScheduler();
@@ -337,7 +337,7 @@ void PWAHandler::InstallWebBundleFromUrl(
     std::unique_ptr<InstallCallback> callback) {
   base::expected<web_package::SignedWebBundleId, std::string>
       expected_bundle_id =
-          web_package::SignedWebBundleId::Create(manifest_url.host());
+          web_package::SignedWebBundleId::Create(manifest_url.GetHost());
 
   if (!expected_bundle_id.has_value()) {
     std::move(callback)->sendFailure(protocol::Response::InvalidParams(
@@ -388,7 +388,7 @@ void PWAHandler::InstallWebBundleFromUrl(
   } else {
     std::move(callback)->sendFailure(protocol::Response::MethodNotFound(
         base::StrCat({"Installing webapp from url ", web_bundle_url.spec(),
-                      " with scheme [", web_bundle_url.scheme(),
+                      " with scheme [", web_bundle_url.GetScheme(),
                       "] is not supported yet."})));
   }
 }
@@ -570,7 +570,6 @@ void PWAHandler::LaunchFilesInApp(
     provider->scheduler().LaunchApp(
         app_id, *base::CommandLine::ForCurrentProcess(),
         /* current_directory */ base::FilePath{},
-        /* url_handler_launch_url */ std::nullopt,
         /* protocol_handler_launch_url */ std::nullopt,
         /* file_launch_url */ url, paths,
         base::BindOnce(

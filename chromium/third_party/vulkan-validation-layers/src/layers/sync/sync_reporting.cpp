@@ -20,6 +20,8 @@
 #include "error_message/error_strings.h"
 #include "utils/math_utils.h"
 
+namespace syncval {
+
 constexpr VkAccessFlags2 kAllAccesses = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
 
 static const char *string_SyncHazard(SyncHazard hazard) {
@@ -608,7 +610,7 @@ static ResourceUsageInfo GetResourceUsageInfoFromRecord(ResourceUsageTagEx tag_e
 
         // Associated resource
         if (tag_ex.handle_index != vvl::kNoIndex32) {
-            auto &cb_context = syncval_state::SubState(*record.cb_state);
+            auto &cb_context = SubState(*record.cb_state);
             const auto &handle_records = cb_context.access_context.GetHandleRecords();
 
             // Command buffer can be in inconsistent state due to unhandled core validation error (core validation is disabled).
@@ -630,7 +632,7 @@ static ResourceUsageInfo GetResourceUsageInfoFromRecord(ResourceUsageTagEx tag_e
 
 ResourceUsageInfo CommandBufferAccessContext::GetResourceUsageInfo(ResourceUsageTagEx tag_ex) const {
     const ResourceUsageRecord &record = (*access_log_)[tag_ex.tag];
-    const auto debug_name_provider = (record.label_command_index == vvl::kU32Max) ? nullptr : this;
+    const auto debug_name_provider = (record.label_command_index == vvl::kNoIndex32) ? nullptr : this;
     return GetResourceUsageInfoFromRecord(tag_ex, record, debug_name_provider);
 }
 
@@ -651,3 +653,5 @@ ResourceUsageInfo QueueBatchContext::GetResourceUsageInfo(ResourceUsageTagEx tag
     }
     return info;
 }
+
+}  // namespace syncval

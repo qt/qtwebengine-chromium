@@ -22,7 +22,6 @@
 #include "gpu/config/gpu_driver_bug_workarounds.h"
 #include "gpu/config/gpu_preferences.h"
 #include "gpu/gpu_gles2_export.h"
-#include "gpu/ipc/common/gpu_memory_buffer_support.h"
 #include "gpu/ipc/common/shared_image_pool_client_interface.mojom.h"
 #include "gpu/ipc/common/surface_handle.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
@@ -39,6 +38,10 @@ class SharedImageCopyManager;
 class D3DImageBackingFactory;
 struct GpuFeatureInfo;
 struct GpuPreferences;
+
+#if BUILDFLAG(IS_ANDROID)
+class AHardwareBufferImageBackingFactory;
+#endif
 
 class GPU_GLES2_EXPORT SharedImageFactory {
  public:
@@ -101,18 +104,6 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   bool HasImages() const { return !shared_images_.empty(); }
   void DestroyAllSharedImages(bool have_context);
 
-#if BUILDFLAG(IS_WIN)
-  bool CreateSwapChain(const Mailbox& front_buffer_mailbox,
-                       const Mailbox& back_buffer_mailbox,
-                       viz::SharedImageFormat format,
-                       const gfx::Size& size,
-                       const gfx::ColorSpace& color_space,
-                       GrSurfaceOrigin surface_origin,
-                       SkAlphaType alpha_type,
-                       gpu::SharedImageUsageSet usage);
-  bool PresentSwapChain(const Mailbox& mailbox);
-#endif  // BUILDFLAG(IS_WIN)
-
 #if BUILDFLAG(IS_FUCHSIA)
   void RegisterSysmemBufferCollection(zx::eventpair service_handle,
                                       zx::channel sysmem_token,
@@ -174,6 +165,10 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   SharedContextState* shared_context_state() { return context_state_.get(); }
   const scoped_refptr<SharedImageCopyManager>& copy_manager();
 
+  static bool IsNativeBufferSupported(viz::SharedImageFormat format,
+                                      gfx::BufferUsage usage,
+                                      const gfx::GpuExtraInfo& gpu_extra_info);
+
   base::WeakPtr<SharedImageFactory> GetWeakPtr();
 
  private:
@@ -195,8 +190,6 @@ class GPU_GLES2_EXPORT SharedImageFactory {
                            gfx::GpuMemoryBufferType gmb_type,
                            const gfx::Size& size,
                            const std::string& debug_label);
-  bool IsNativeBufferSupported(gfx::BufferFormat format,
-                               gfx::BufferUsage usage);
 #if BUILDFLAG(IS_WIN)
   bool IsD3DSharedImageSupported() const;
 #endif
@@ -236,13 +229,15 @@ class GPU_GLES2_EXPORT SharedImageFactory {
 #endif
 
   gfx::GpuExtraInfo gpu_extra_info_;
-  gpu::GpuMemoryBufferConfigurationSet supported_gmb_configurations_;
-  bool supported_gmb_configurations_inited_ = false;
   gpu::GpuPreferences gpu_preferences_;
 #if BUILDFLAG(IS_MAC)
   uint32_t texture_target_for_io_surfaces_;
 #endif
   gpu::GpuDriverBugWorkarounds workarounds_;
+
+#if BUILDFLAG(IS_ANDROID)
+  raw_ptr<AHardwareBufferImageBackingFactory> ahb_factory_ = nullptr;
+#endif
 
   raw_ptr<SharedImageBackingFactory> backing_factory_for_testing_ = nullptr;
   base::WeakPtrFactory<SharedImageFactory> weak_ptr_factory_{this};

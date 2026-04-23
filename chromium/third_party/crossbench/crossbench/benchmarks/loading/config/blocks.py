@@ -4,12 +4,11 @@
 
 from __future__ import annotations
 
-import argparse
 import dataclasses
 import datetime as dt
 import functools
-from typing import (TYPE_CHECKING, Any, Final, Iterator, Optional, Self,
-                    Sequence, cast)
+from typing import TYPE_CHECKING, Any, Final, Iterator, Optional, Self, \
+    Sequence, cast
 
 from typing_extensions import override
 
@@ -104,15 +103,13 @@ class ActionBlock(ConfigObject):
     self.validate_actions()
 
   def validate_actions(self) -> None:
-    ObjectParser.non_empty_sequence(self.actions, "actions")
+    ObjectParser.sequence(self.actions, "actions")
     # TODO: enable validating action indices
     # for index, action in enumerate(self.actions):
     #   if index != action.index:
     #     raise ValueError(
     #         f"action[{index}].index should be {index}, "
     #         f"but got {action.index}")
-    if not self.actions:
-      raise argparse.ArgumentTypeError("Invalid block without actions")
 
   def run_with(self, runner: ActionRunner, run: Run,
                page: InteractivePage) -> None:

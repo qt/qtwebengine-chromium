@@ -113,7 +113,6 @@ class DownloadsProbeContext(ProbeContext[DownloadsProbe]):
     pass
 
 
-
 class FileWatchDownloadsProbeContext(DownloadsProbeContext):
 
   def __init__(self, probe: DownloadsProbe, run: Run,

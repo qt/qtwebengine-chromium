@@ -111,22 +111,34 @@ class JsonParseInternalizer {
                                          DirectHandle<Object> result,
                                          Handle<Object> reviver,
                                          Handle<String> source,
-                                         MaybeHandle<Object> val_node);
+                                         MaybeHandle<Object> val_node,
+                                         bool pass_context_argument);
 
  private:
   JsonParseInternalizer(Isolate* isolate, Handle<JSReceiver> reviver,
                         Handle<String> source)
       : isolate_(isolate), reviver_(reviver), source_(source) {}
 
-  enum WithOrWithoutSource { kWithoutSource, kWithSource };
+  enum ReviverMode {
+    kWithoutContext,  // Two-arg reviver callback, no context argument.
+    kWithoutSource,   // Three-arg reviver callback, context argument has no
+                      // source property.
+    kWithSource,      // Three-arg reviver callback, context object has source
+                      // property.
+  };
 
-  template <WithOrWithoutSource with_source>
+  static constexpr ReviverMode NoSource(ReviverMode old_mode) {
+    if (old_mode == kWithSource) return kWithoutSource;
+    return old_mode;
+  }
+
+  template <ReviverMode reviver_mode>
   MaybeHandle<Object> InternalizeJsonProperty(DirectHandle<JSReceiver> holder,
                                               DirectHandle<String> key,
-                                              Handle<Object> val_node,
+                                              MaybeHandle<Object> val_node,
                                               DirectHandle<Object> snapshot);
 
-  template <WithOrWithoutSource with_source>
+  template <ReviverMode reviver_mode>
   bool RecurseAndApply(Handle<JSReceiver> holder, Handle<String> name,
                        Handle<Object> val_node, Handle<Object> snapshot);
 
@@ -152,7 +164,45 @@ enum class JsonToken : uint8_t {
   EOS
 };
 
-// A simple json parser.
+template <JsonToken token, JsonToken... tokens>
+concept JsonTokenIsOneOf = ((token == tokens) || ...);
+
+template <JsonToken token>
+concept JsonTokenIsCharacter =
+    JsonTokenIsOneOf<token, JsonToken::STRING, JsonToken::LBRACE,
+                     JsonToken::RBRACE, JsonToken::LBRACK, JsonToken::RBRACK,
+                     JsonToken::TRUE_LITERAL, JsonToken::FALSE_LITERAL,
+                     JsonToken::NULL_LITERAL, JsonToken::COLON,
+                     JsonToken::COMMA>;
+
+constexpr uint8_t JsonTokenToCharacter(JsonToken token) {
+  switch (token) {
+    case JsonToken::STRING:
+      return '"';
+    case JsonToken::LBRACE:
+      return '{';
+    case JsonToken::RBRACE:
+      return '}';
+    case JsonToken::LBRACK:
+      return '[';
+    case JsonToken::RBRACK:
+      return ']';
+    case JsonToken::TRUE_LITERAL:
+      return 't';
+    case JsonToken::FALSE_LITERAL:
+      return 'f';
+    case JsonToken::NULL_LITERAL:
+      return 'n';
+    case JsonToken::COLON:
+      return ':';
+    case JsonToken::COMMA:
+      return ',';
+    default:
+      CONSTEXPR_UNREACHABLE();
+  }
+}
+
+// A json parser.
 template <typename Char>
 class JsonParser final {
  public:
@@ -166,22 +216,7 @@ class JsonParser final {
 
   V8_WARN_UNUSED_RESULT static MaybeHandle<Object> Parse(
       Isolate* isolate, Handle<String> source, Handle<Object> reviver,
-      std::optional<ScriptDetails> script_details) {
-    HighAllocationThroughputScope high_throughput_scope(
-        V8::GetCurrentPlatform());
-    Handle<Object> result;
-    MaybeHandle<Object> val_node;
-    {
-      JsonParser parser(isolate, source, script_details);
-      ASSIGN_RETURN_ON_EXCEPTION(isolate, result, parser.ParseJson(reviver));
-      val_node = parser.parsed_val_node_;
-    }
-    if (IsCallable(*reviver)) {
-      return JsonParseInternalizer::Internalize(isolate, result, reviver,
-                                                source, val_node);
-    }
-    return result;
-  }
+      std::optional<ScriptDetails> script_details);
 
   static constexpr base::uc32 kEndOfString = static_cast<base::uc32>(-1);
   static constexpr base::uc32 kInvalidUnicodeCharacter =
@@ -216,14 +251,19 @@ class JsonParser final {
              std::optional<ScriptDetails> script_details);
   ~JsonParser();
 
-  // Parse a string containing a single JSON value.
-  MaybeHandle<Object> ParseJson(DirectHandle<Object> reviver);
+  // Parse a string containing a single JSON value.  If
+  // collect_source_strings is true then we also build the data structures
+  // for the reviver callback.  This includes both the source strings for
+  // primitive values, and also the val_nodes for non-primitive objects, used
+  // for detecting whether the user has changed the deserialized 'this'
+  // object that was implicitly passed to the reviver key-value callback.
+  MaybeHandle<Object> ParseJson(bool collect_source_strings);
 
   bool ParseRawJson();
 
   void advance() { ++cursor_; }
 
-  base::uc32 CurrentCharacter() {
+  base::uc32 CurrentCharacter() const {
     if (V8_UNLIKELY(is_at_end())) return kEndOfString;
     return *cursor_;
   }
@@ -235,37 +275,58 @@ class JsonParser final {
 
   void AdvanceToNonDecimal();
 
-  V8_INLINE JsonToken peek() const { return next_; }
+  V8_INLINE JsonToken peek() const;
 
   void Consume(JsonToken token) {
     DCHECK_EQ(peek(), token);
     advance();
   }
 
+  template <JsonToken token>
+  V8_INLINE bool IsNextToken() {
+    if constexpr (token == JsonToken::EOS) {
+      return is_at_end();
+    } else if constexpr (JsonTokenIsCharacter<token>) {
+      constexpr Char expected_char = JsonTokenToCharacter(token);
+      return V8_LIKELY(expected_char == CurrentCharacter());
+    } else {
+      return false;
+    }
+  }
+
+  template <JsonToken token>
+  V8_WARN_UNUSED_RESULT bool Check() {
+    if (V8_LIKELY(IsNextToken<token>())) {
+      advance();
+      return true;
+    }
+    GetNextNonWhitespaceToken();
+    if (peek() == token) {
+      advance();
+      return true;
+    }
+    return false;
+  }
+
+  template <JsonToken token>
   V8_WARN_UNUSED_RESULT bool Expect(
-      JsonToken token,
       std::optional<MessageTemplate> errorMessage = std::nullopt) {
     if (V8_LIKELY(peek() == token)) {
       advance();
       return true;
     }
-    errorMessage ? ReportUnexpectedToken(peek(), errorMessage.value())
-                 : ReportUnexpectedToken(peek());
+    ReportUnexpectedToken(peek(), errorMessage);
     return false;
   }
 
+  template <JsonToken token>
   V8_WARN_UNUSED_RESULT bool ExpectNext(
-      JsonToken token,
-      std::optional<MessageTemplate> errorMessage = std::nullopt) {
-    SkipWhitespace();
-    return errorMessage ? Expect(token, errorMessage.value()) : Expect(token);
-  }
-
-  V8_WARN_UNUSED_RESULT bool Check(JsonToken token) {
-    SkipWhitespace();
-    if (next_ != token) return false;
-    advance();
-    return true;
+      std::optional<MessageTemplate> errorMessage) {
+    if (Check<token>()) {
+      return true;
+    }
+    ReportUnexpectedToken(peek(), errorMessage);
+    return false;
   }
 
   template <size_t N>
@@ -298,7 +359,7 @@ class JsonParser final {
   // The JSON lexical grammar is specified in the ECMAScript 5 standard,
   // section 15.12.1.1. The only allowed whitespace characters between tokens
   // are tab, carriage-return, newline and space.
-  void SkipWhitespace();
+  void GetNextNonWhitespaceToken();
 
   // A JSON string (production JSONString) is subset of valid JavaScript string
   // literals. The string must only be double-quoted (not single-quoted), and

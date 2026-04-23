@@ -4,6 +4,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+
 XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__1x2_scalar_float, 32, uint32_t, 1, 2)
 XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__1x2_scalar_int, 32, uint32_t, 1, 2)
 XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__1x4_scalar_float, 32, uint32_t, 1, 4)
@@ -21,20 +22,26 @@ XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__4x2_scalar_int,
 XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__4x4_scalar_float, 32, uint32_t, 4, 4)
 XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__4x4_scalar_int, 32, uint32_t, 4, 4)
 
-#if XNN_ARCH_X86 || XNN_ARCH_X86_64
-XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__4x4_multi_mov_sse2, 32, uint32_t, 4, 4)
-XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__4x4_multi_multi_sse2, 32, uint32_t, 4, 4)
-XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__4x4_multi_switch_sse2, 32, uint32_t, 4, 4)
-XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__4x4_reuse_mov_sse2, 32, uint32_t, 4, 4)
-XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__4x4_reuse_multi_sse2, 32, uint32_t, 4, 4)
-XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__4x4_reuse_switch_sse2, 32, uint32_t, 4, 4)
-XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__4x4_sse, 32, uint32_t, 4, 4)
+#if XNN_ENABLE_SSE && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
+XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_sse, xnn_x32_transposec_ukernel__4x4_sse, 32, uint32_t, 4, 4)
+#endif  // XNN_ENABLE_SSE && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
+
+#if XNN_ENABLE_SSE2 && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
+XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_sse2, xnn_x32_transposec_ukernel__4x4_multi_mov_sse2, 32, uint32_t, 4, 4)
+XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_sse2, xnn_x32_transposec_ukernel__4x4_multi_multi_sse2, 32, uint32_t, 4, 4)
+XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_sse2, xnn_x32_transposec_ukernel__4x4_multi_switch_sse2, 32, uint32_t, 4, 4)
+XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_sse2, xnn_x32_transposec_ukernel__4x4_reuse_mov_sse2, 32, uint32_t, 4, 4)
+XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_sse2, xnn_x32_transposec_ukernel__4x4_reuse_multi_sse2, 32, uint32_t, 4, 4)
+XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_sse2, xnn_x32_transposec_ukernel__4x4_reuse_switch_sse2, 32, uint32_t, 4, 4)
+#endif  // XNN_ENABLE_SSE2 && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
+
+#if XNN_ENABLE_AVX && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_avx, xnn_x32_transposec_ukernel__8x8_multi_mov_avx, 32, uint32_t, 8, 8)
 XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_avx, xnn_x32_transposec_ukernel__8x8_multi_switch_avx, 32, uint32_t, 8, 8)
 XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_avx, xnn_x32_transposec_ukernel__8x8_reuse_mov_avx, 32, uint32_t, 8, 8)
 XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_avx, xnn_x32_transposec_ukernel__8x8_reuse_multi_avx, 32, uint32_t, 8, 8)
 XNN_TRANSPOSE_UKERNEL(xnn_arch_x86_avx, xnn_x32_transposec_ukernel__8x8_reuse_switch_avx, 32, uint32_t, 8, 8)
-#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+#endif  // XNN_ENABLE_AVX && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 
 #if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
 XNN_TRANSPOSE_UKERNEL(xnn_arch_none, xnn_x32_transposec_ukernel__4x4_multi_mov_wasmsimd, 32, uint32_t, 4, 4)
@@ -76,6 +83,6 @@ XNN_TRANSPOSE_UKERNEL(xnn_arch_arm_neon, xnn_x32_transposec_ukernel__4x4_aarch64
 #endif  // XNN_ARCH_ARM64
 
 #if XNN_ARCH_HEXAGON && XNN_ENABLE_HVX
-XNN_TRANSPOSE_UKERNEL(0,xnn_x32_transposec_ukernel__32x32_multi_multi_hvx, 32, uint32_t, 32, 32)
+XNN_TRANSPOSE_UKERNEL(xnn_arch_hvx, xnn_x32_transposec_ukernel__32x32_multi_multi_hvx, 32, uint32_t, 32, 32)
 #endif  // XNN_ARCH_HEXAGON && XNN_ENABLE_HVX
 

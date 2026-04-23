@@ -13,13 +13,12 @@ Note: This is a jinja2 template, processed at build time into the final resource
     <!-- Light themes -->
     <!-- Colors should be mirrored by Theme.BrowserUI.DialogWhenLarge and
          Theme.BrowserUI.AlertDialog.NoActionBar. -->
-    <style name="Theme.BrowserUI.Light" parent="Theme.Material3.Light.NoActionBar">
+    <style name="Theme.BrowserUI.Light" parent="Theme.Material3Expressive.Light.NoActionBar">
         <item name="dynamicColorThemeOverlay">@style/ThemeOverlay.BrowserUI.DynamicColors</item>
 
         {% macro color_palette_light_attributes() %}
         <!-- Color palettes -->
         <item name="colorPrimary">@color/baseline_primary_40</item>
-        <item name="colorPrimaryDark">@android:color/black</item>
         <item name="colorPrimaryInverse">@color/baseline_primary_80</item>
         <item name="colorOnPrimary">@color/baseline_primary_100</item>
         <item name="colorPrimaryContainer">@color/baseline_primary_90</item>
@@ -94,10 +93,6 @@ Note: This is a jinja2 template, processed at build time into the final resource
         <item name="radioButtonStyle">@style/Widget.BrowserUI.RadioButton</item>
         <item name="materialSwitchStyle">@style/Widget.BrowserUI.Switch</item>
 
-        <!-- Status bar color -->
-        <item name="android:statusBarColor">@android:color/black</item>
-        <item name="android:windowLightStatusBar">false</item>
-
         <!-- Spinner styles -->
         <item name="spinnerStyle">@style/SpinnerStyle</item>
         <item name="android:progressBarStyle">@style/ProgressBarStyle</item>
@@ -132,6 +127,15 @@ Note: This is a jinja2 template, processed at build time into the final resource
         <item name="android:windowOptOutEdgeToEdgeEnforcement" tools:targetApi="35">true</item>
 
         <item name="android:forceDarkAllowed">false</item>
+
+        <!-- TODO(crbug.com/419879223): Clean these up once the styles are finalized. -->
+        <!-- Baseline app menu styles. -->
+        <item name="overflowMenuButtonStyle">@style/OverflowMenuButton</item>
+        <item name="overflowMenuActionBarBgDrawable">@drawable/menu_action_bar_bg</item>
+        <item name="appMenuIconRowPadding">0dp</item>
+
+        <!-- Tab switcher button styles. -->
+        <item name="newTabButtonStyle">@style/NewTabButtonStyle</item>
         {% endmacro %}
         {{ misc_attributes() }}
 
@@ -144,6 +148,7 @@ Note: This is a jinja2 template, processed at build time into the final resource
 
         <!-- List item dimensions. -->
         <item name="listItemHeight">?attr/minInteractTargetSize</item>
+        <item name="listItemHeightLarge">@dimen/list_menu_item_min_height_large</item>
         <item name="listItemIconSize">@dimen/list_menu_item_icon_size</item>
         <item name="listItemIconPadding">@dimen/list_menu_item_icon_padding</item>
         <item name="listItemControlPadding">@dimen/list_menu_item_control_padding</item>
@@ -160,6 +165,10 @@ Note: This is a jinja2 template, processed at build time into the final resource
         <item name="textLargeLeading">@dimen/text_size_large_leading</item>
         <!-- LINT.ThenChange(//ui/android/java/res/values/themes.xml:AdaptiveDensityDefaults) -->
 
+        <!-- Button attributes -->
+        <item name="iconRowButtonSizeOverlay">@style/SizeOverlay.BrowserUI.IconRowButton</item>
+        <item name="colorButtonSizeOverlay">@style/SizeOverlay.BrowserUI.ColorButton</item>
+
         <!-- Toolbar button dimensions. -->
         <item name="toolbarButtonWidth">@dimen/toolbar_button_width</item>
         <item name="toolbarButtonHeight">@dimen/toolbar_button_height</item>
@@ -170,6 +179,15 @@ Note: This is a jinja2 template, processed at build time into the final resource
         <item name="locationBarActionButtonWidth">@dimen/location_bar_action_icon_width</item>
         <item name="locationBarActionButtonHeight">@dimen/location_bar_action_icon_height</item>
         <item name="locationBarActionButtonMarginHorizontal">@dimen/location_bar_action_icon_margin_horizontal</item>
+        <!-- We need to set the location bar action button’s constraints differently for desktop
+        and mobile because mobile introduced Fusebox, which positions the button below
+        location_bar_attachments (anchored to the bottom of the location bar). On desktop,
+        however, the button must remain vertically centered inside location bar, so its Top and
+        Bottom constraints are applied separately via
+        ThemeOverlay.BrowserUI.DesktopDensity.TabStrip. Resetting to null here to allow the
+        buttons to fallback to the expected bottom-anchored position on mobile.-->
+        <item name="locationBarActionButtonConstraintTopToTopOf">@null</item>
+        <item name="locationBarActionButtonConstraintBottomToBottomOf">@null</item>
 
         <!-- Close button dimensions. -->
         <item name="closeButtonWidth">@dimen/close_button_width</item>
@@ -181,13 +199,17 @@ Note: This is a jinja2 template, processed at build time into the final resource
         <!-- Window Properties -->
         <item name="android:windowBackground">@macro/default_bg_color</item>
         <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/splash_screen_bg</item>
+
+        <!-- Status bar color -->
+        <item name="android:statusBarColor">@macro/default_bg_color</item>
+        <item name="android:windowLightStatusBar">@bool/window_light_status_bar</item>
         {% endmacro %}
         {{ full_window_attributes() }}
     </style>
     <style name="Theme.BrowserUI.DayNight" parent="Theme.BrowserUI.Light" />
 
     <!-- Colors should be mirrored by Theme.BrowserUI -->
-    <style name="Theme.BrowserUI.Light.DialogWhenLarge" parent="Theme.Material3.Light.DialogWhenLarge">
+    <style name="Theme.BrowserUI.Light.DialogWhenLarge" parent="Theme.Material3Expressive.Light.DialogWhenLarge">
         <item name="dynamicColorThemeOverlay">@style/ThemeOverlay.BrowserUI.DynamicColors</item>
 
         {{ color_palette_light_attributes() }}
@@ -201,7 +223,7 @@ Note: This is a jinja2 template, processed at build time into the final resource
          an activity theme on its own. In addition to mirroring |Theme.BrowserUI|, this should
          include all the attributes that |ThemeOverlay.BrowserUI.AlertDialog| has.
          -->
-    <style name="Theme.BrowserUI.Light.AlertDialog.NoActionBar" parent="Theme.Material3.Light.Dialog.Alert">
+    <style name="Theme.BrowserUI.Light.AlertDialog.NoActionBar" parent="Theme.Material3Expressive.Light.Dialog.Alert">
         <item name="dynamicColorThemeOverlay">@style/ThemeOverlay.BrowserUI.DynamicColors</item>
 
         {{ color_palette_light_attributes() }}
@@ -230,7 +252,7 @@ Note: This is a jinja2 template, processed at build time into the final resource
     <style name="Theme.BrowserUI.DayNight.AlertDialog.NoActionBar" parent="Theme.BrowserUI.Light.AlertDialog.NoActionBar"/>
 
     <!-- Dark themes -->
-    <style name="Theme.BrowserUI.Dark" parent="Theme.Material3.Dark.NoActionBar">
+    <style name="Theme.BrowserUI.Dark" parent="Theme.Material3Expressive.Dark.NoActionBar">
         {% macro color_palette_dark_attributes() %}
         <!-- Color palettes -->
         <item name="colorPrimary">@color/baseline_primary_80</item>
@@ -264,14 +286,14 @@ Note: This is a jinja2 template, processed at build time into the final resource
         {{ full_window_attributes() }}
     </style>
 
-    <style name="Theme.BrowserUI.Dark.DialogWhenLarge" parent="Theme.Material3.Dark.DialogWhenLarge">
+    <style name="Theme.BrowserUI.Dark.DialogWhenLarge" parent="Theme.Material3Expressive.Dark.DialogWhenLarge">
         {{ color_palette_dark_attributes() }}
         {{ other_color_attributes() }}
         {{ misc_attributes() }}
         {{ adaptive_density_attributes() }}
     </style>
 
-    <style name="Theme.BrowserUI.Dark.AlertDialog.NoActionBar" parent="Theme.Material3.Dark.Dialog.Alert">
+    <style name="Theme.BrowserUI.Dark.AlertDialog.NoActionBar" parent="Theme.Material3Expressive.Dark.Dialog.Alert">
         {{ color_palette_dark_attributes() }}
         {{ other_color_attributes() }}
         {{ misc_attributes() }}
@@ -334,11 +356,16 @@ Note: This is a jinja2 template, processed at build time into the final resource
         <item name="popupBgCornerRadius">@dimen/popup_bg_corner_radius_16dp</item>
 
         <!-- List item dimensions. -->
+        <item name="listItemHeightLarge">@dimen/list_menu_item_min_height_large_desktop</item>
         <item name="listItemIconSize">@dimen/list_menu_item_icon_size_desktop</item>
         <item name="listItemIconPadding">@dimen/list_menu_item_icon_padding_desktop</item>
         <item name="listItemControlPadding">@dimen/list_menu_item_control_padding_desktop</item>
         <item name="listItemIconTextSpacing">@dimen/list_menu_item_start_icon_end_margin_desktop</item>
         <item name="listDividerHeight">@dimen/list_divider_layout_height_desktop</item>
+
+        <!-- Button attributes -->
+        <item name="iconRowButtonSizeOverlay">@style/SizeOverlay.BrowserUI.IconRowButton.DesktopDensity</item>
+        <item name="colorButtonSizeOverlay">@style/SizeOverlay.BrowserUI.ColorButton.DesktopDensity</item>
     </style>
 
     <style name="ThemeOverlay.BrowserUI.DesktopDensity.TabStrip" parent="">
@@ -352,6 +379,8 @@ Note: This is a jinja2 template, processed at build time into the final resource
         <item name="locationBarActionButtonWidth">@dimen/location_bar_action_icon_width_desktop</item>
         <item name="locationBarActionButtonHeight">@dimen/location_bar_action_icon_height_desktop</item>
         <item name="locationBarActionButtonMarginHorizontal">@dimen/location_bar_action_icon_margin_horizontal_desktop</item>
+        <item name="locationBarActionButtonConstraintTopToTopOf">@id/location_bar</item>
+        <item name="locationBarActionButtonConstraintBottomToBottomOf">@id/location_bar</item>
 
         <!-- Close button dimensions. -->
         <item name="closeButtonWidth">@dimen/close_button_width_desktop</item>
@@ -367,5 +396,11 @@ Note: This is a jinja2 template, processed at build time into the final resource
     <style name="ThemeOverlay.BrowserUI.ForcedLightForTesting" parent="">
         {{ color_palette_light_attributes() }}
         <!-- TODO(crbug.com/438804527): Update Incognito theme overlay with missing attributes. -->
+    </style>
+
+    <style name="ThemeOverlay.BrowserUI.ExpressiveUpdate" parent="">
+        <item name="overflowMenuButtonStyle">@style/OverflowMenuButton.Expressive</item>
+        <item name="overflowMenuActionBarBgDrawable">@empty</item>
+        <item name="appMenuIconRowPadding">8dp</item>
     </style>
 </resources>

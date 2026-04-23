@@ -280,11 +280,11 @@ TEST_P(UpdateCorpusDatabaseTest,
       RunBinaryMaybeWithCentipede(GetCorpusDatabaseTestingBinaryPath(),
                                   fst_run_options);
 
-  // Adjust the fuzzing time so that only 1s remains.
+  // Adjust the fuzzing time so that only 10s remains.
   const absl::StatusOr<std::string> fuzzing_time_file =
       FindFile(corpus_database.path().c_str(), "fuzzing_time");
   ASSERT_TRUE(fuzzing_time_file.ok()) << fst_std_err;
-  ASSERT_TRUE(WriteFile(*fuzzing_time_file, "299s"));
+  ASSERT_TRUE(WriteFile(*fuzzing_time_file, "290s"));
 
   // 2nd run that should resume due to the same execution ID.
   RunOptions snd_run_options;
@@ -301,7 +301,7 @@ TEST_P(UpdateCorpusDatabaseTest,
       snd_std_err,
       // The resumed fuzz test is the first one defined in the binary.
       AllOf(HasSubstr("Resuming running the fuzz test FuzzTest.FailsInTwoWays"),
-            HasSubstr("Fuzzing FuzzTest.FailsInTwoWays for 1s"),
+            HasSubstr("Fuzzing FuzzTest.FailsInTwoWays for 10s"),
             // Make sure that FailsInTwoWays finished.
             HasSubstr("Fuzzing FuzzTest.FailsWithStackOverflow")));
 
@@ -382,11 +382,11 @@ TEST_P(UpdateCorpusDatabaseTest,
   auto [status, std_out, std_err] = RunBinaryMaybeWithCentipede(
       GetCorpusDatabaseTestingBinaryPath(), run_options);
 
-  EXPECT_THAT_LOG(
-      std_err,
-      AllOf(HasSubstr("Replaying FuzzTest.FailsInTwoWays"),
-            HasSubstr("Replaying FuzzTest.FailsWithStackOverflow"),
-            HasSubstr("[S0.0] begin-fuzz"), HasSubstr("[S1.0] begin-fuzz")));
+  EXPECT_THAT_LOG(std_err,
+                  AllOf(HasSubstr("Replaying FuzzTest.FailsInTwoWays"),
+                        HasSubstr("Replaying FuzzTest.FailsWithStackOverflow"),
+                        HasSubstr("[S0.0] begin-load-shard"),
+                        HasSubstr("[S1.0] begin-load-shard")));
   EXPECT_THAT_LOG(std_err,
                   AllOf(ContainsRegex(
                             R"re((?s)=== Summary of detected crashes ===

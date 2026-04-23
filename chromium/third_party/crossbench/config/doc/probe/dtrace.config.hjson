@@ -2,9 +2,9 @@
 // `script_path` to the path of your own DTrace script. The script should
 // generate output through stdout which will be redirected to an output file.
 {
-  probes: {
+  "probes": {
     "dtrace": {
-      script_path : "./dtrace.config.example.d",
-    },
+      "script_path": "./dtrace.config.example.d"
+    }
   }
 }

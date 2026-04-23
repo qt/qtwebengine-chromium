@@ -7,18 +7,19 @@
 #include <memory>
 #include <utility>
 
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
-#include "base/functional/callback_forward.h"
-#include "components/optimization_guide/core/model_execution/feature_keys.h"
-#include "components/optimization_guide/core/model_execution/model_execution_features.h"
 #include "components/optimization_guide/core/model_execution/model_execution_util.h"
+#include "components/optimization_guide/core/model_execution/on_device_features.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_adaptation_loader.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_component.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_feature_adapter.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/proto/model_quality_metadata.pb.h"
 #include "components/optimization_guide/proto/text_safety_model_metadata.pb.h"
+#include "components/optimization_guide/public/mojom/model_broker.mojom-data-view.h"
 #include "services/on_device_model/android/backend_model_impl_android.h"
+#include "services/on_device_model/android/downloader_params.mojom.h"
 #include "services/on_device_model/android/model_downloader_android.h"
 #include "services/on_device_model/on_device_model_mojom_impl.h"
 #include "services/on_device_model/public/mojom/on_device_model.mojom.h"
@@ -52,6 +53,19 @@ proto::OnDeviceModelVersions GetModelVersions(const OnDeviceBaseModelSpec& spec,
   base_model_metadata->set_base_model_name(spec.model_name);
   base_model_metadata->set_base_model_version(spec.model_version);
   return versions;
+}
+
+bool RequirePersistentModeForFeature(mojom::OnDeviceFeature feature) {
+  switch (feature) {
+    case mojom::OnDeviceFeature::kScamDetection:
+      // TODO(crbug.com/428248156): Pending decision on whether it is required
+      // to gate scam detection on persistent mode, which may limit device reach
+      // on other OEMs.
+      return base::FeatureList::IsEnabled(
+          features::kRequirePersistentModeForScamDetection);
+    default:
+      return true;
+  }
 }
 
 class SolutionImpl : public ModelBrokerImpl::Solution {
@@ -131,6 +145,11 @@ void SolutionImpl::ReportHealthyCompletion() {
 
 }  // namespace
 
+namespace features {
+BASE_FEATURE(kRequirePersistentModeForScamDetection,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+}  // namespace features
+
 ModelBrokerAndroid::ModelService::ModelService() = default;
 ModelBrokerAndroid::ModelService::~ModelService() = default;
 ModelBrokerAndroid::ModelService::ModelService(ModelService&&) = default;
@@ -148,27 +167,27 @@ class ModelBrokerAndroid::SolutionFactory final
   // asset like a safety config.
   void UpdateSolutionProviders();
   // Updates model availability for one feature.
-  void UpdateSolutionProvider(ModelBasedCapabilityKey feature);
+  void UpdateSolutionProvider(mojom::OnDeviceFeature feature);
 
  private:
   // UsageTracker::Observer
   void OnDeviceEligibleFeatureFirstUsed(
-      ModelBasedCapabilityKey feature) override;
+      mojom::OnDeviceFeature feature) override;
 
   // Asks AICore to download the base model.
-  void MaybeStartDownload(ModelBasedCapabilityKey feature);
+  void MaybeStartDownload(mojom::OnDeviceFeature feature);
 
   // Called when an AICore model was found (or not supported).
   void OnAICoreModelUpdated(
-      ModelBasedCapabilityKey feature,
+      mojom::OnDeviceFeature feature,
       base::expected<BaseModelSpec, DownloadFailureReason> result);
 
   // Updates the model adaptation for the feature.
-  void MaybeUpdateModelAdaptation(ModelBasedCapabilityKey feature,
+  void MaybeUpdateModelAdaptation(mojom::OnDeviceFeature feature,
                                   MaybeAdaptationMetadata adaptation_metadata);
 
   // Constructs a solution for the feature.
-  ModelBrokerImpl::MaybeSolution MakeSolution(ModelBasedCapabilityKey feature);
+  ModelBrokerImpl::MaybeSolution MakeSolution(mojom::OnDeviceFeature feature);
 
   // The broker that owns |this|.
   raw_ref<ModelBrokerAndroid> parent_;
@@ -181,12 +200,12 @@ class ModelBrokerAndroid::SolutionFactory final
 
   // The base model spec for each feature. This is set when the base model is
   // downloaded.
-  absl::flat_hash_map<ModelBasedCapabilityKey, OnDeviceBaseModelSpec>
+  absl::flat_hash_map<mojom::OnDeviceFeature, OnDeviceBaseModelSpec>
       base_model_specs_;
 
   // Map from feature to the downloader for the base model. The downloader is
   // not null if and only if a download is ongoing.
-  absl::flat_hash_map<ModelBasedCapabilityKey,
+  absl::flat_hash_map<mojom::OnDeviceFeature,
                       std::unique_ptr<on_device_model::ModelDownloaderAndroid>>
       model_downloaders_;
 
@@ -202,7 +221,7 @@ ModelBrokerAndroid::SolutionFactory::SolutionFactory(ModelBrokerAndroid& parent)
                               base::Unretained(this))) {
   parent_->usage_tracker_.AddObserver(this);
   // Start model downloads for recently used features
-  for (auto feature : kAllModelBasedCapabilityKeys) {
+  for (auto feature : OnDeviceFeatureSet::All()) {
     if (parent_->usage_tracker_.WasOnDeviceEligibleFeatureRecentlyUsed(
             feature)) {
       MaybeStartDownload(feature);
@@ -214,12 +233,12 @@ ModelBrokerAndroid::SolutionFactory::~SolutionFactory() {
 }
 
 void ModelBrokerAndroid::SolutionFactory::OnDeviceEligibleFeatureFirstUsed(
-    ModelBasedCapabilityKey feature) {
+    mojom::OnDeviceFeature feature) {
   MaybeStartDownload(feature);
 }
 
 void ModelBrokerAndroid::SolutionFactory::MaybeStartDownload(
-    ModelBasedCapabilityKey feature) {
+    mojom::OnDeviceFeature feature) {
   if (!IsModelAllowed(&(*parent_->local_state_))) {
     MaybeUpdateModelAdaptation(
         feature, base::unexpected(AdaptationUnavailability::kNotSupported));
@@ -229,9 +248,11 @@ void ModelBrokerAndroid::SolutionFactory::MaybeStartDownload(
   if (model_downloaders_.contains(feature)) {
     return;
   }
+  auto params = on_device_model::mojom::DownloaderParams::New();
+  params->require_persistent_mode = RequirePersistentModeForFeature(feature);
   model_downloaders_[feature] =
       std::make_unique<on_device_model::ModelDownloaderAndroid>(
-          ToModelExecutionFeatureProto(feature));
+          ToModelExecutionFeatureProto(feature), std::move(params));
   model_downloaders_[feature]->StartDownload(
       base::BindOnce(&SolutionFactory::OnAICoreModelUpdated,
                      weak_ptr_factory_.GetWeakPtr(), feature));
@@ -239,7 +260,7 @@ void ModelBrokerAndroid::SolutionFactory::MaybeStartDownload(
 }
 
 void ModelBrokerAndroid::SolutionFactory::OnAICoreModelUpdated(
-    ModelBasedCapabilityKey feature,
+    mojom::OnDeviceFeature feature,
     base::expected<BaseModelSpec, DownloadFailureReason> result) {
   // The download has completed, so the downloader can be removed.
   model_downloaders_.erase(feature);
@@ -260,7 +281,7 @@ void ModelBrokerAndroid::SolutionFactory::OnAICoreModelUpdated(
 }
 
 void ModelBrokerAndroid::SolutionFactory::MaybeUpdateModelAdaptation(
-    ModelBasedCapabilityKey feature,
+    mojom::OnDeviceFeature feature,
     MaybeAdaptationMetadata adaptation_metadata) {
   if (adaptation_metadata_.MaybeUpdate(feature,
                                        std::move(adaptation_metadata))) {
@@ -276,18 +297,13 @@ void ModelBrokerAndroid::SolutionFactory::UpdateSolutionProviders() {
 }
 
 void ModelBrokerAndroid::SolutionFactory::UpdateSolutionProvider(
-    ModelBasedCapabilityKey feature) {
+    mojom::OnDeviceFeature feature) {
   parent_->impl_.GetSolutionProvider(feature).Update(MakeSolution(feature));
 }
 
 ModelBrokerImpl::MaybeSolution
 ModelBrokerAndroid::SolutionFactory::MakeSolution(
-    ModelBasedCapabilityKey feature) {
-  if (!features::internal::GetOptimizationTargetForCapability(feature)) {
-    return base::unexpected(
-        OnDeviceModelEligibilityReason::kFeatureExecutionNotEnabled);
-  }
-
+    mojom::OnDeviceFeature feature) {
   // Check feature config.
   MaybeAdaptationMetadata metadata = adaptation_metadata_.Get(feature);
   if (!metadata.has_value()) {
@@ -324,9 +340,11 @@ ModelBrokerAndroid::ModelBrokerAndroid(
                                 base::Unretained(this))) {}
 ModelBrokerAndroid::~ModelBrokerAndroid() = default;
 
-void ModelBrokerAndroid::BindBroker(
+void ModelBrokerAndroid::BindModelBroker(
     mojo::PendingReceiver<mojom::ModelBroker> receiver) {
-  impl_.BindBroker(std::move(receiver));
+  if (features::IsOnDeviceExecutionEnabled()) {
+    impl_.BindBroker(std::move(receiver));
+  }
 }
 
 mojo::Remote<on_device_model::mojom::OnDeviceModel>&

@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any, ClassVar, MutableMapping
 
 from typing_extensions import override
 
-from crossbench.benchmarks.speedometer.speedometer import (
-    SpeedometerProbe, SpeedometerProbeContext, SpeedometerStory)
+from crossbench.benchmarks.speedometer.speedometer import SpeedometerProbe, \
+    SpeedometerProbeContext, SpeedometerStory
 from crossbench.helper import url_helper
 from crossbench.parse import ObjectParser
 

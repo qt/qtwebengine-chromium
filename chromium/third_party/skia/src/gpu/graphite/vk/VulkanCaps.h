@@ -28,7 +28,7 @@ public:
                Protected);
     ~VulkanCaps() override;
 
-    bool isSampleCountSupported(TextureFormat, uint8_t requestedSampleCount) const override;
+    bool isSampleCountSupported(TextureFormat, SampleCount requestedSampleCount) const override;
     TextureFormat getDepthStencilFormat(SkEnumBitMask<DepthStencilFlags>) const override;
 
     TextureInfo getDefaultAttachmentTextureInfo(AttachmentDesc,
@@ -52,6 +52,7 @@ public:
     DstReadStrategy getDstReadStrategy() const override;
 
     ImmutableSamplerInfo getImmutableSamplerInfo(const TextureInfo&) const override;
+    std::string toString(const ImmutableSamplerInfo&) const override;
 
     UniqueKey makeGraphicsPipelineKey(const GraphicsPipelineDesc&,
                                       const RenderPassDesc&) const override;
@@ -121,6 +122,10 @@ public:
 
     bool supportsFrameBoundary() const { return fSupportsFrameBoundary; }
 
+    bool supportsPipelineCreationCacheControl() const {
+        return fSupportsPipelineCreationCacheControl;
+    }
+
 private:
     void init(const ContextOptions&,
               const skgpu::VulkanInterface*,
@@ -156,6 +161,11 @@ private:
         bool fHostImageCopy = false;
         // From VkPhysicalDeviceFrameBoundaryFeaturesEXT:
         bool fFrameBoundary = false;
+        // From VkPhysicalDevicePipelineCreationCacheControlFeatures or
+        // VkPhysicalDeviceVulkan13Features
+        bool fPipelineCreationCacheControl = false;
+        // From VkPhysicalDeviceRGBA10X6FormatsFeaturesEXT
+        bool fFormatRGBA10x6WithoutYCbCrSampler = false;
     };
     EnabledFeatures getEnabledFeatures(const VkPhysicalDeviceFeatures2*,
                                        uint32_t physicalDeviceVersion);
@@ -180,7 +190,8 @@ private:
 
     void initFormatTable(const skgpu::VulkanInterface*,
                          VkPhysicalDevice,
-                         const VkPhysicalDeviceProperties&);
+                         const VkPhysicalDeviceProperties&,
+                         const EnabledFeatures&);
 
     void initDepthStencilFormatTable(const skgpu::VulkanInterface*,
                                      VkPhysicalDevice,
@@ -219,7 +230,7 @@ private:
                               VkFormat,
                               VkImageUsageFlags);
 
-        bool isSampleCountSupported(int requestedCount) const;
+        bool isSampleCountSupported(SampleCount requestedCount) const;
 
         VkSampleCountFlags fSampleCounts = 0;
     };
@@ -238,7 +249,7 @@ private:
         void init(const skgpu::VulkanInterface*, const VulkanCaps&, VkPhysicalDevice, VkFormat);
 
         bool isTexturable(VkImageTiling) const;
-        bool isRenderable(VkImageTiling, uint32_t sampleCount) const;
+        bool isRenderable(VkImageTiling, SampleCount sampleCount) const;
         bool isStorage(VkImageTiling) const;
         bool isTransferSrc(VkImageTiling) const;
         bool isTransferDst(VkImageTiling) const;
@@ -278,7 +289,7 @@ private:
     VkFormat getFormatFromColorType(SkColorType) const;
 
     // Map VkFormat to FormatInfo.
-    static const size_t kNumVkFormats = 23;
+    static const size_t kNumVkFormats = 24;
     FormatInfo fFormatTable[kNumVkFormats];
 
     FormatInfo& getFormatInfo(VkFormat);
@@ -327,6 +338,7 @@ private:
     bool fSupportsRasterizationOrderColorAttachmentAccess = false;
     bool fIsInputAttachmentReadCoherent = false;
     bool fSupportsFrameBoundary = false;
+    bool fSupportsPipelineCreationCacheControl = false;
 
     // Flags to enable workarounds for driver bugs
     bool fMustLoadFullImageForMSAA = false;

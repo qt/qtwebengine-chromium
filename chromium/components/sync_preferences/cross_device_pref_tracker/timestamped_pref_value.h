@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_SYNC_PREFERENCES_CROSS_DEVICE_PREF_TRACKER_TIMESTAMPED_PREF_VALUE_H_
 #define COMPONENTS_SYNC_PREFERENCES_CROSS_DEVICE_PREF_TRACKER_TIMESTAMPED_PREF_VALUE_H_
 
+#include <string>
+
 #include "base/time/time.h"
 #include "base/values.h"
 
@@ -19,6 +21,16 @@ namespace sync_preferences {
 struct TimestampedPrefValue {
   base::Value value;
   base::Time last_observed_change_time;
+  std::string device_sync_cache_guid;
+
+  // Returns a deep copy of this `TimestampedPrefValue`.
+  TimestampedPrefValue Clone() const {
+    return TimestampedPrefValue{
+        .value = value.Clone(),
+        .last_observed_change_time = last_observed_change_time,
+        .device_sync_cache_guid = device_sync_cache_guid,
+    };
+  }
 };
 
 }  // namespace sync_preferences

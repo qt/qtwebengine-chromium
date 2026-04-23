@@ -11,11 +11,11 @@ TODO(crbug.com/388590912): Add more details.
 """
 
 import argparse
-import collections
 import io
-import json
 import re
 import sys
+from entity_schema_parser import parse_entity_schema
+
 
 # For 'foo-bar' returns 'kFooBar', which is the conventional format of C++
 # constants.
@@ -23,30 +23,36 @@ def name_to_constant(str):
   return 'k' + ''.join(
     re.sub(r'[^\w\s]', '', s.capitalize()) for s in str.split())
 
+
 # The enum constant's name of an entity type.
 def entity_name(entity, qualified = True):
   prefix = 'EntityTypeName::' if qualified else ''
   return prefix + name_to_constant(entity)
+
 
 # The enum constant's name of an attribute type.
 def attribute_name(entity, attribute, qualified = True):
   prefix = 'AttributeTypeName::' if qualified else ''
   return prefix + name_to_constant(entity +' '+ attribute)
 
+
 # Adds to list of unqualified enum constant values a `kMaxValue` constant.
 def add_kMaxValue(constants):
   constants = list(constants)
   return constants + ['kMaxValue = '+ constants[-1]]
+
 
 # An expression that creates a DenseSet of attribute types.
 def attribute_dense_set(entity, attributes):
   names = (attribute_name(entity, attribute) for attribute in attributes)
   return f'DenseSet<AttributeType>{{{", ".join((f"AttributeType({name})" for name in names))}}}'
 
+
 # An expression that creates an array of DenseSets of attribute types.
 def attribute_dense_set_array(entity, attributes_sets):
   dense_sets = [attribute_dense_set(entity, attributes) for attributes in attributes_sets]
   return f'std::array<DenseSet<AttributeType>, {len(dense_sets)}>{{{", ".join(dense_sets)}}}'
+
 
 # Generates entity and attribute type name enum definitions.
 def generate_cpp_enums(schema):
@@ -59,6 +65,7 @@ def generate_cpp_enums(schema):
   yield f'enum class EntityTypeName {{ {", ".join(add_kMaxValue(entities))} }};'
   yield ''
   yield f'enum class AttributeTypeName {{ {", ".join(add_kMaxValue(attributes))} }};'
+
 
 # Generates the function implementations.
 def generate_cpp_functions(schema):
@@ -149,8 +156,10 @@ def generate_cpp_functions(schema):
   yield 'DenseSet<AttributeType> EntityType::attributes() const {'
   yield '  switch (name_) {'
   for entity in schema:
-    yield f'    case {entity_name(entity["name"])}:'
-    yield f'      return {attribute_dense_set(entity["name"], entity["attributes"])};'
+    yield f'    case {entity_name(entity["name"])}: {{'
+    yield f'      static constexpr auto s = {attribute_dense_set(entity["name"], entity["attributes"])};'
+    yield f'      return s;'
+    yield f'    }}'
   yield '  }'
   yield '  NOTREACHED();'
   yield '}'
@@ -194,15 +203,6 @@ def generate_cpp_functions(schema):
     yield f'      static constexpr auto as = {attribute_dense_set_array(entity["name"], entity["strike keys"])};'
     yield f'      return as;'
     yield f'    }}'
-  yield '  }'
-  yield '  NOTREACHED();'
-  yield '}'
-  yield ''
-  yield 'bool EntityType::syncable() const {'
-  yield '  switch (name_) {'
-  for entity, syncable in ((entity['name'], entity['syncable']) for entity in schema):
-    yield f'    case {entity_name(entity)}:'
-    yield f'      return {"true" if syncable else "false"};'
   yield '  }'
   yield '  NOTREACHED();'
   yield '}'
@@ -301,139 +301,6 @@ namespace autofill {{
   yield f"""
 }}  // namespace autofill"""
 
-REQUIRED_KEYS = {'name', 'attributes', 'obfuscated attributes', 'required fields', 'import constraints', 'merge constraints', 'strike keys', 'disambiguation order', 'syncable', 'read only'}
-OPTIONAL_KEYS = {'experiment feature', 'excluded geo-ips'}
-CONSTRAINTS_KEYS = {'import constraints', 'merge constraints', 'strike keys', 'required fields'}
-
-# For brevity, the schema allows shorthands:
-# - Constraints in the JSON object can refer to each other, e.g.,
-#   { "import constraints":  [ ["foo", "bar"], ["qux"] ],
-#     "merge constraints":   "import constraints" }
-#   expands to
-#   { "import constraints":  [ ["foo", "bar"], ["qux"] ],
-#     "merge constraints":   [ ["foo", "bar"], ["qux"] ] }
-# - Constraints can use keywords:
-#   { "import constraints":  "any",
-#     "merge constraints":   "all" }
-#   expands to
-#   { "import constraints":  [ ["foo"], ["bar"], ["qux"] ],
-#     "merge constraints":   [ ["foo", "bar", "qux"] ] }
-def resolve_shorthands(schema):
-  for entity in schema:
-    # Constraints can be the shorthands 'all' (= all attributes) or 'any' (= at
-    # least one attribute):
-    for constraints_key in CONSTRAINTS_KEYS:
-      if entity[constraints_key] == 'all':
-        entity[constraints_key] = [[attribute for attribute in entity['attributes']]]
-      if entity[constraints_key] == 'any':
-        entity[constraints_key] = [[attribute] for attribute in entity['attributes']]
-
-    # Constraints can refer to one another.
-    for (lhs, rhs) in ((lhs, rhs) for lhs in CONSTRAINTS_KEYS for rhs in CONSTRAINTS_KEYS):
-      if entity[lhs] == rhs and isinstance(entity[rhs], list):
-        entity[lhs] = entity[rhs]
-
-# Runs plausibility checks on the schema.
-# If the schema does not meet them, it aborts the script (which in turn aborts
-# the build).
-def validate_schema(schema):
-  def validate_attribute_list(entity, attributes, allow_empty, report):
-    if not isinstance(attributes, list):
-      report('is not a list')
-    if attributes == [] and not allow_empty:
-      report('is an empty list')
-
-    duplicate_attributes = {a for a, count in collections.Counter(attributes).items() if count > 1}
-    for a in duplicate_attributes:
-      report(f'contains a duplicate attribute {a}')
-
-    unknown_attributes = set(attributes) - set(entity['attributes'])
-    for a in unknown_attributes:
-      report(f'contains an unknown attribute "{a}"')
-
-  def validate_entity(entity, report):
-    missing_keys = REQUIRED_KEYS - entity.keys()
-    for k in missing_keys:
-      report(f'missing key "{k}"')
-    if missing_keys:
-      return  # We'd hit Python errors if we continue this iteration.
-
-    unknown_keys = entity.keys() - (REQUIRED_KEYS | OPTIONAL_KEYS)
-    for k in unknown_keys:
-      report(f'unknown key "{k}"')
-
-    if not isinstance(entity['name'], str):
-      report('"name": value is not a string')
-
-    if entity['name'] == '':
-      report('"name": value is the empty string')
-
-    if entity['read only']:
-      if entity['import constraints'] != []:
-        report('"import constraints": value must be empty if "read only" is true')
-      if entity['merge constraints'] != []:
-        report('"merge constraints": value must be empty if "read only" is true')
-      if entity['strike keys'] != []:
-        report('"strike keys": value must be empty if "read only" is true')
-
-    known_attributes = set(entity['attributes'])
-    for attribute in known_attributes:
-      if not isinstance(attribute, str):
-        report(f'attribute {attribute} is not a string')
-      if attribute == '':
-        report(f'attribute {attribute} is empty')
-
-    def validate_attributes(attributes, prefix, allow_empty=False):
-      validate_attribute_list(entity, attributes, allow_empty, lambda msg: report(prefix +' '+ msg))
-
-    validate_attributes(entity['attributes'], prefix='"attributes"')
-    validate_attributes(entity['obfuscated attributes'], allow_empty=True, prefix='"obfuscated attributes"')
-    validate_attributes(entity['disambiguation order'], allow_empty=True, prefix='"disambiguation order"')
-    for constraints_key in CONSTRAINTS_KEYS:
-      for constraint in entity[constraints_key]:
-        validate_attributes(constraint, prefix=f'"{constraints_key}": some constraint')
-
-    if not isinstance(entity['syncable'], bool):
-      report('"syncable": value is not a Boolean')
-
-    if not isinstance(entity.get('experiment feature', ''), str):
-      report('"experiment feature": value is not a string')
-
-  found_error = False
-
-  def print_error(entity, msg):
-    nonlocal found_error
-    found_error = True
-    name = entity.get('name', '<unnamed>')
-    print(f'Error: Autofill AI schema: entity "{name}": {msg}', file=sys.stderr)
-
-  for entity in schema:
-    validate_entity(entity, report=lambda msg: print_error(entity, msg))
-
-  if found_error:
-    sys.exit(1)
-
-def parse_schema(input_file, output_files):
-  schema = {}
-  with io.open(input_file, 'r', encoding='utf-8') as input_handle:
-    schema = json.load(input_handle)
-
-  resolve_shorthands(schema)
-  validate_schema(schema)
-
-  def write_to_handle(generator, output_file):
-    include_guard = re.sub(r'\W', '_', output_file.upper()) +'_'
-    with io.open(output_file, 'w', encoding='utf-8') as output_handle:
-      for line in generator(schema, include_guard):
-        line += '\n'
-        # unicode() exists and is necessary only in Python 2, not in Python 3.
-        if sys.version_info[0] < 3:
-          line = unicode(s, 'utf-8')
-        output_handle.write(line)
-
-  write_to_handle(generate_cpp_enums_header, output_files[0])
-  write_to_handle(generate_cpp_functions_header, output_files[1])
-
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(
       description='Transpiles an Autofill AI schema from JSON to C++.')
@@ -458,5 +325,21 @@ if __name__ == '__main__':
   args = parser.parse_args()
   if not args.input or not args.output:
     parser.print_help()
-  else:
-    parse_schema(args.input, args.output)
+    sys.exit(1)
+
+  schema = parse_entity_schema(args.input)
+  if not schema:
+    sys.exit(1)
+
+  def write_to_handle(generator, output_file):
+    include_guard = re.sub(r'\W', '_', output_file.upper()) +'_'
+    with io.open(output_file, 'w', encoding='utf-8') as output_handle:
+      for line in generator(schema, include_guard):
+        line += '\n'
+        # unicode() exists and is necessary only in Python 2, not in Python 3.
+        if sys.version_info[0] < 3:
+          line = unicode(s, 'utf-8')
+        output_handle.write(line)
+
+  write_to_handle(generate_cpp_enums_header, args.output[0])
+  write_to_handle(generate_cpp_functions_header, args.output[1])

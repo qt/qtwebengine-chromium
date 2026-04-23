@@ -8,8 +8,8 @@ import abc
 import argparse
 import logging
 import re
-from typing import (TYPE_CHECKING, Any, ClassVar, Generic, Mapping, Optional,
-                    Sequence, Type, TypeAlias, TypeVar, cast)
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Mapping, Optional, \
+    Sequence, Type, TypeAlias, TypeVar, cast
 
 from ordered_set import OrderedSet
 from typing_extensions import override
@@ -31,7 +31,6 @@ if TYPE_CHECKING:
   from crossbench.cli.types import Subparsers
   from crossbench.plt.base import Platform
   from crossbench.runner.runner import Runner
-
 
 
 class Benchmark(abc.ABC):
@@ -446,6 +445,7 @@ class PressBenchmarkStoryFilter(StoryFilter[PressBenchmarkStoryT],
 
 
 VersionParts: TypeAlias = tuple[str] | tuple[int, ...]
+
 
 class PressBenchmark(SubStoryBenchmark):
   STORY_FILTER_CLS: ClassVar = PressBenchmarkStoryFilter

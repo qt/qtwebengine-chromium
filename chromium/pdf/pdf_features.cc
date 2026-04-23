@@ -6,6 +6,7 @@
 
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
+#include "build/build_config.h"
 #include "pdf/buildflags.h"
 
 namespace chrome_pdf::features {
@@ -46,6 +47,18 @@ BASE_FEATURE(kPdfUseSkiaRenderer, base::FEATURE_DISABLED_BY_DEFAULT);
 // Feature has no effect if Chrome is built with no XFA support.
 BASE_FEATURE(kPdfXfaSupport, base::FEATURE_DISABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+// Enables PDFium's version 2 font mapping interface, which uses per-request
+// font matching instead of enumerating all fonts upfront. This eliminates the
+// need for the ListFamilies() IPC call and improves PDF load performance on
+// Linux and ChromeOS. Version 2 makes PDFium call MapFont() directly for each
+// font request rather than searching a pre-built font list.
+//
+// TODO(crbug.com/462403025): Remove this flag and the code that exists only to
+// support the version 1 font mapping interface, once this safely rolls out.
+BASE_FEATURE(kPdfiumPerRequestFontMatching, base::FEATURE_ENABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+
 #if BUILDFLAG(ENABLE_PDF_INK2)
 BASE_FEATURE(kPdfInk2, base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -61,6 +74,15 @@ const base::FeatureParam<bool> kPdfInk2TextHighlighting{
 #if BUILDFLAG(ENABLE_PDF_SAVE_TO_DRIVE)
 // Saves the PDF file to Google Drive.
 BASE_FEATURE(kPdfSaveToDrive, base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Enables the survey for saving PDF to Google Drive.
+BASE_FEATURE(kPdfSaveToDriveSurvey, base::FEATURE_DISABLED_BY_DEFAULT);
+// The consumer survey trigger ID.
+const base::FeatureParam<std::string> kPdfSaveToDriveSurveyConsumerTriggerId{
+    &kPdfSaveToDriveSurvey, "consumer-trigger-id", ""};
+// The enterprise survey trigger ID.
+const base::FeatureParam<std::string> kPdfSaveToDriveSurveyEnterpriseTriggerId{
+    &kPdfSaveToDriveSurvey, "enterprise-trigger-id", ""};
 #endif  // BUILDFLAG(ENABLE_PDF_SAVE_TO_DRIVE)
 
 void SetIsOopifPdfPolicyEnabled(bool is_oopif_pdf_policy_enabled) {

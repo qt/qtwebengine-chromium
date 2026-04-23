@@ -378,6 +378,10 @@ static inline void dealloc_compressor_data(AV1_COMP *cpi) {
 
   aom_free(cpi->mb_delta_q);
   cpi->mb_delta_q = NULL;
+
+#if !CONFIG_REALTIME_ONLY
+  av1_free_tpl_gop_stats(&cpi->extrc_tpl_gop_stats);
+#endif
 }
 
 static inline void allocate_gradient_info_for_hog(AV1_COMP *cpi) {

@@ -22,3 +22,7 @@ std::unique_ptr<CJBig2_SymbolDict> CJBig2_SymbolDict::DeepCopy() const {
   dst->gr_contexts_ = gr_contexts_;
   return dst;
 }
+
+void CJBig2_SymbolDict::AddImage(std::unique_ptr<CJBig2_Image> image) {
+  sdexsyms_.push_back(std::move(image));
+}

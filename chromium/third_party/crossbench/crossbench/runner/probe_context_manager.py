@@ -8,8 +8,8 @@ import abc
 import contextlib
 import datetime as dt
 import logging
-from typing import (TYPE_CHECKING, Generic, Iterable, Iterator, Self, Type,
-                    TypeVar)
+from typing import TYPE_CHECKING, Generic, Iterable, Iterator, Self, Type, \
+    TypeVar
 
 from crossbench.helper.state import State, StateMachine
 from crossbench.probes.probe_context import BaseProbeContext, ProbeContext
@@ -165,6 +165,9 @@ class ProbeContextManager(abc.ABC, Generic[ResultOriginT, ProbeContextT]):
   @abc.abstractmethod
   def _create_probe_context(self, probe: Probe) -> ProbeContextT | None:
     pass
+
+  def has_probe_context(self, probe_cls: Type[ProbeT]) -> bool:
+    return probe_cls in self._probe_contexts
 
   def get_probe_context(self,
                         probe_cls: Type[ProbeT]) -> ProbeContext[ProbeT] | None:

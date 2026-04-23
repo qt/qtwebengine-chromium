@@ -42,7 +42,7 @@ struct fpu_state {
 #endif
 };
 
-static inline struct fpu_state get_fpu_state() {
+static inline struct fpu_state get_fpu_state(void) {
   struct fpu_state state = {0};
 #if defined(_MSC_VER) && defined(_M_ARM)
   state.fpscr = (uint32_t)_MoveFromCoprocessor(10, 7, 1, 0, 0);
@@ -76,7 +76,7 @@ static inline void set_fpu_state(const struct fpu_state state) {
 #endif
 }
 
-static inline void disable_fpu_denormals() {
+static inline void disable_fpu_denormals(void) {
 #if defined(_MSC_VER) && defined(_M_ARM)
   int fpscr = _MoveFromCoprocessor(10, 7, 1, 0, 0);
   fpscr |= 0x1000000;

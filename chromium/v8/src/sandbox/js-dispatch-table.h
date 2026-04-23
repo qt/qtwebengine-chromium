@@ -12,7 +12,6 @@
 #include "src/runtime/runtime.h"
 #include "src/sandbox/external-entity-table.h"
 
-#ifdef V8_ENABLE_LEAPTIERING
 
 namespace v8 {
 namespace internal {
@@ -195,7 +194,7 @@ class V8_EXPORT_PRIVATE JSDispatchTable
   JSDispatchTable& operator=(const JSDispatchTable&) = delete;
 
   // The Spaces used by a JSDispatchTable.
-  using Space = Base::SpaceWithBlackAllocationSupport;
+  using Space = Base::Space;
 
   // Retrieves the entrypoint of the entry referenced by the given handle.
   inline Address GetEntrypoint(JSDispatchHandle handle);
@@ -307,6 +306,11 @@ class V8_EXPORT_PRIVATE JSDispatchTable
 
   static constexpr bool kWriteBarrierSetsEntryMarkBit = true;
 
+  static bool MaybeValidJSDispatchHandle(uint32_t handle) {
+    return ((handle >> kJSDispatchHandleShift) << kJSDispatchHandleShift) ==
+           handle;
+  }
+
  private:
   static inline bool IsCompatibleCode(Tagged<Code> code,
                                       uint16_t parameter_count);
@@ -332,6 +336,5 @@ class V8_EXPORT_PRIVATE JSDispatchTable
 }  // namespace internal
 }  // namespace v8
 
-#endif  // V8_ENABLE_LEAPTIERING
 
 #endif  // V8_SANDBOX_JS_DISPATCH_TABLE_H_

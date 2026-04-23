@@ -204,6 +204,15 @@ export type FunctionCallHandlerResult<Result> = {
   requiresApproval: true,
 }|{error: string};
 
+export interface FunctionHandlerOptions {
+  /**
+   * Shows that the user approved
+   * the execution if it was required
+   */
+  approved?: boolean;
+  signal?: AbortSignal;
+}
+
 export interface FunctionDeclaration<Args extends Record<string, unknown>, ReturnType> {
   /**
    * Description of function, this is send to the LLM
@@ -228,14 +237,8 @@ export interface FunctionDeclaration<Args extends Record<string, unknown>, Retur
   /**
    * Function implementation that the LLM will try to execute,
    */
-  handler: (args: Args, options?: {
-    /**
-     * Shows that the user approved
-     * the execution if it was required
-     */
-    approved?: boolean,
-    signal?: AbortSignal,
-  }) => Promise<FunctionCallHandlerResult<ReturnType>>;
+
+  handler(args: Args, options?: FunctionHandlerOptions): Promise<FunctionCallHandlerResult<ReturnType>>;
 }
 
 interface AidaFetchResult {
@@ -484,11 +487,14 @@ export abstract class AiAgent<T> {
   }
 
   async *
-      run(initialQuery: string, options: {
-        selected: ConversationContext<T>|null,
-        signal?: AbortSignal,
-      },
-          multimodalInput?: MultimodalInput): AsyncGenerator<ResponseData, void, void> {
+      run(
+          initialQuery: string,
+          options: {
+            selected: ConversationContext<T>|null,
+            signal?: AbortSignal,
+          },
+          multimodalInput?: MultimodalInput,
+          ): AsyncGenerator<ResponseData, void, void> {
     await options.selected?.refresh();
 
     if (options.selected) {
@@ -567,12 +573,14 @@ export abstract class AiAgent<T> {
         if (!('answer' in parsedResponse)) {
           throw new Error('Expected a completed response to have an answer');
         }
-        this.#history.push({
-          parts: [{
-            text: parsedResponse.answer,
-          }],
-          role: Host.AidaClient.Role.MODEL,
-        });
+        if (!functionCall) {
+          this.#history.push({
+            parts: [{
+              text: parsedResponse.answer,
+            }],
+            role: Host.AidaClient.Role.MODEL,
+          });
+        }
         Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiAssistanceAnswerReceived);
         yield {
           type: ResponseType.ANSWER,
@@ -581,12 +589,17 @@ export abstract class AiAgent<T> {
           complete: true,
           rpcId,
         };
-        break;
+        if (!functionCall) {
+          break;
+        }
       }
 
       if (functionCall) {
         try {
-          const result = yield* this.#callFunction(functionCall.name, functionCall.args, options);
+          const result = yield* this.#callFunction(functionCall.name, functionCall.args, {
+            ...options,
+            explanation: textResponse,
+          });
           if (options.signal?.aborted) {
             yield this.#createErrorResponse(ErrorType.ABORT);
             break;
@@ -613,21 +626,30 @@ export abstract class AiAgent<T> {
     }
   }
 
-  async * #callFunction(name: string, args: Record<string, unknown>, options?: {
-    signal?: AbortSignal,
-    approved?: boolean,
-  }): AsyncGenerator<FunctionCallResponseData, {result: unknown}> {
+  async *
+      #callFunction(
+          name: string,
+          args: Record<string, unknown>,
+          options?: FunctionHandlerOptions&{explanation?: string},
+          ): AsyncGenerator<FunctionCallResponseData, {result: unknown}> {
     const call = this.#functionDeclarations.get(name);
     if (!call) {
       throw new Error(`Function ${name} is not found.`);
     }
+    const parts: Host.AidaClient.Part[] = [];
+    if (options?.explanation) {
+      parts.push({
+        text: options.explanation,
+      });
+    }
+    parts.push({
+      functionCall: {
+        name,
+        args,
+      },
+    });
     this.#history.push({
-      parts: [{
-        functionCall: {
-          name,
-          args,
-        },
-      }],
+      parts,
       role: Host.AidaClient.Role.MODEL,
     });
 
@@ -650,7 +672,7 @@ export abstract class AiAgent<T> {
       }
     }
 
-    let result = await call.handler(args, options) as FunctionCallHandlerResult<unknown>;
+    let result = await call.handler(args, options);
 
     if ('requiresApproval' in result) {
       if (code) {
@@ -680,9 +702,7 @@ export abstract class AiAgent<T> {
 
       yield {
         type: ResponseType.SIDE_EFFECT,
-        confirm: (result: boolean) => {
-          sideEffectConfirmationPromiseWithResolvers.resolve(result);
-        },
+        confirm: sideEffectConfirmationPromiseWithResolvers.resolve,
       };
 
       const approvedRun = await sideEffectConfirmationPromiseWithResolvers.promise;
@@ -738,6 +758,7 @@ export abstract class AiAgent<T> {
           rpcId,
           functionCall: aidaResponse.functionCalls[0],
           completed: true,
+          text: aidaResponse.explanation,
         };
         break;
       }

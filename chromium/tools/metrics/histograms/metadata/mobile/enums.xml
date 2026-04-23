@@ -235,6 +235,10 @@ chromium-metrics-reviews@google.com.
   <int value="65" label="Share local tab group"/>
   <int value="66" label="Leave shared tab group"/>
   <int value="67" label="Delete shared tab group"/>
+  <int value="68" label="Gemini with image entry point"/>
+  <int value="69" label="Pin the site to most visited sites section"/>
+  <int value="70" label="Unpin the site from most visited sites section"/>
+  <int value="71" label="Edit on pinned site on most visited sites section"/>
 </enum>
 
 <enum name="IOSMenuScenario">
@@ -275,6 +279,7 @@ chromium-metrics-reviews@google.com.
   <int value="34" label="Image on a Reader Mode page"/>
   <int value="35" label="Image-Link on a Reader Mode page"/>
   <int value="36" label="Link on a Reader Mode page"/>
+  <int value="37" label="Tab Group button in the Overflow Menu"/>
 </enum>
 
 <enum name="IOSShareAction">

@@ -275,21 +275,15 @@ LanguageSettingsPrivateGetLanguageListFunction::Run() {
 
 #if BUILDFLAG(IS_WIN)
   if (spellcheck::UseBrowserSpellChecker()) {
-    if (!base::FeatureList::IsEnabled(
-            spellcheck::kWinDelaySpellcheckServiceInit)) {
-      // Platform dictionary support already determined at browser startup.
-      UpdateSupportedPlatformDictionaries();
-    } else {
-      // Asynchronously load the dictionaries to determine platform support.
-      SpellcheckService* service =
-          SpellcheckServiceFactory::GetForContext(browser_context());
-      AddRef();  // Balanced in OnDictionariesInitialized
-      service->InitializeDictionaries(
-          base::BindOnce(&LanguageSettingsPrivateGetLanguageListFunction::
-                             OnDictionariesInitialized,
-                         base::Unretained(this)));
-      return RespondLater();
-    }
+    // Asynchronously load the dictionaries to determine platform support.
+    SpellcheckService* service =
+        SpellcheckServiceFactory::GetForContext(browser_context());
+    AddRef();  // Balanced in OnDictionariesInitialized
+    service->InitializeDictionaries(
+        base::BindOnce(&LanguageSettingsPrivateGetLanguageListFunction::
+                           OnDictionariesInitialized,
+                       base::Unretained(this)));
+    return RespondLater();
   }
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -586,10 +580,11 @@ LanguageSettingsPrivateGetSpellcheckWordsFunction::GetSpellcheckWords() const {
 
   // TODO(michaelpg): Sort using app locale.
   base::Value::List word_list;
-  const std::set<std::string>& words = dictionary->GetWords();
+  std::set<std::string> words = dictionary->GetWords();
   word_list.reserve(words.size());
-  for (const std::string& word : words)
-    word_list.Append(word);
+  for (auto it = words.begin(); it != words.end();) {
+    word_list.Append(std::move(words.extract(it++).value()));
+  }
   return word_list;
 }
 

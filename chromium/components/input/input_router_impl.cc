@@ -92,6 +92,7 @@ InputRouterImpl::InputRouterImpl(
                            this,
                            fling_scheduler_client,
                            config.gesture_config),
+      touch_action_filter_(this),
       device_scale_factor_(1.f) {
   weak_this_ = weak_ptr_factory_.GetWeakPtr();
 
@@ -107,18 +108,14 @@ void InputRouterImpl::SendMouseEvent(
     const MouseEventWithLatencyInfo& mouse_event,
     MouseEventCallback event_result_callback,
     DispatchToRendererCallback& dispatch_callback) {
-  if ((!IsActive() &&
-       base::FeatureList::IsEnabled(
-           blink::features::kDropInputEventsWhilePaintHolding)) ||
-      (mouse_event.event.GetType() == WebInputEvent::Type::kMouseDown &&
+  if ((mouse_event.event.GetType() == WebInputEvent::Type::kMouseDown &&
        gesture_event_queue_.GetTouchpadTapSuppressionController()
            ->ShouldSuppressMouseDown(mouse_event)) ||
       (mouse_event.event.GetType() == WebInputEvent::Type::kMouseUp &&
        gesture_event_queue_.GetTouchpadTapSuppressionController()
            ->ShouldSuppressMouseUp())) {
-    // Run DispatchToRendererCallback before the event ack callback since
-    // RenderWidgetHostImpl input observers would generally expect to see an
-    // event before they see an ack for the event.
+    // See the comment in `FilterAndSendWebInputEvent` about the order of the
+    // callbacks here.
     std::move(dispatch_callback)
         .Run(mouse_event.event, DispatchToRendererResult::kNotDispatched);
 
@@ -135,13 +132,6 @@ void InputRouterImpl::SendMouseEvent(
 void InputRouterImpl::SendWheelEvent(
     const MouseWheelEventWithLatencyInfo& wheel_event,
     DispatchToRendererCallback& dispatch_callback) {
-  if (!IsActive() && base::FeatureList::IsEnabled(
-                         blink::features::kDropInputEventsWhilePaintHolding)) {
-    std::move(dispatch_callback)
-        .Run(wheel_event.event, DispatchToRendererResult::kNotDispatched);
-    return;
-  }
-
   wheel_event_queue_.QueueEvent(wheel_event, dispatch_callback);
 }
 
@@ -149,21 +139,6 @@ void InputRouterImpl::SendKeyboardEvent(
     const NativeWebKeyboardEventWithLatencyInfo& key_event,
     KeyboardEventCallback event_result_callback,
     DispatchToRendererCallback& dispatch_callback) {
-  if (!IsActive() && base::FeatureList::IsEnabled(
-                         blink::features::kDropInputEventsWhilePaintHolding)) {
-    // Run DispatchToRendererCallback before the event ack callback, since
-    // running the event ack callback before this might result in UseAfterFree
-    // bug as the RenderInputRouter might be destroyed synchronously in case of
-    // Ctrl+W callback.
-    std::move(dispatch_callback)
-        .Run(key_event.event, DispatchToRendererResult::kNotDispatched);
-
-    std::move(event_result_callback)
-        .Run(key_event, blink::mojom::InputEventResultSource::kBrowser,
-             blink::mojom::InputEventResultState::kIgnored);
-    return;
-  }
-
   gesture_event_queue_.StopFling();
   blink::mojom::WidgetInputHandler::DispatchEventCallback callback =
       base::BindOnce(&InputRouterImpl::KeyboardEventHandled, weak_this_,
@@ -175,14 +150,6 @@ void InputRouterImpl::SendKeyboardEvent(
 void InputRouterImpl::SendGestureEvent(
     const GestureEventWithLatencyInfo& original_gesture_event,
     DispatchToRendererCallback& dispatch_callback) {
-  if (!IsActive() && base::FeatureList::IsEnabled(
-                         blink::features::kDropInputEventsWhilePaintHolding)) {
-    std::move(dispatch_callback)
-        .Run(original_gesture_event.event,
-             DispatchToRendererResult::kNotDispatched);
-    return;
-  }
-
   TRACE_EVENT0("input", "InputRouterImpl::SendGestureEvent");
   input_stream_validator_.Validate(original_gesture_event.event);
 
@@ -190,6 +157,8 @@ void InputRouterImpl::SendGestureEvent(
 
   if (gesture_event_queue_.PassToFlingController(gesture_event)) {
     TRACE_EVENT_INSTANT0("input", "FilteredForFling", TRACE_EVENT_SCOPE_THREAD);
+    // See the comment in `FilterAndSendWebInputEvent` about the order of the
+    // callbacks here.
     std::move(dispatch_callback)
         .Run(original_gesture_event.event,
              DispatchToRendererResult::kNotDispatched);
@@ -219,6 +188,8 @@ void InputRouterImpl::SendGestureEventWithoutQueueing(
   if (existing_result == FilterGestureEventResult::kFiltered) {
     TRACE_EVENT_INSTANT0("input", "FilteredForTouchAction",
                          TRACE_EVENT_SCOPE_THREAD);
+    // See the comment in `FilterAndSendWebInputEvent` about the order of the
+    // callbacks here.
     std::move(dispatch_callback)
         .Run(gesture_event.event, DispatchToRendererResult::kNotDispatched);
     disposition_handler_->OnGestureEventAck(
@@ -336,13 +307,6 @@ bool InputRouterImpl::HandleGestureScrollForStylusWriting(
 void InputRouterImpl::SendTouchEvent(
     const TouchEventWithLatencyInfo& touch_event,
     DispatchToRendererCallback& dispatch_callback) {
-  if (!IsActive() && base::FeatureList::IsEnabled(
-                         blink::features::kDropInputEventsWhilePaintHolding)) {
-    std::move(dispatch_callback)
-        .Run(touch_event.event, DispatchToRendererResult::kNotDispatched);
-    return;
-  }
-
   TouchEventWithLatencyInfo updated_touch_event = touch_event;
   SetMovementXYForTouchPoints(&updated_touch_event.event);
   input_stream_validator_.Validate(updated_touch_event.event);
@@ -660,12 +624,18 @@ void InputRouterImpl::FilterAndSendWebInputEvent(
     const ui::LatencyInfo& latency_info,
     blink::mojom::WidgetInputHandler::DispatchEventCallback callback,
     DispatchToRendererCallback& dispatch_callback) {
+  // We need to run DispatchToRendererCallback before the event ack callback,
+  // since running the event ack callback before this might result in
+  // UseAfterFree bug as the RenderInputRouter might be destroyed synchronously
+  // in case of Ctrl+W callback.
+
   TRACE_EVENT1("input", "InputRouterImpl::FilterAndSendWebInputEvent", "type",
                WebInputEvent::GetName(input_event.GetType()));
 
   output_stream_validator_.Validate(input_event);
   blink::mojom::InputEventResultState filtered_state =
       client_->FilterInputEvent(input_event, latency_info);
+
   if (WasHandled(filtered_state)) {
     TRACE_EVENT_INSTANT0("input", "InputEventFiltered",
                          TRACE_EVENT_SCOPE_THREAD);
@@ -928,6 +898,10 @@ void InputRouterImpl::ForceResetTouchActionForTest() {
 
 bool InputRouterImpl::IsFlingActiveForTest() {
   return gesture_event_queue_.IsFlingActiveForTest();
+}
+
+void InputRouterImpl::OnUnconfirmedTapConvertedToTap() {
+  client_->OnUnconfirmedTapConvertedToTap();
 }
 
 void InputRouterImpl::UpdateTouchAckTimeoutEnabled() {

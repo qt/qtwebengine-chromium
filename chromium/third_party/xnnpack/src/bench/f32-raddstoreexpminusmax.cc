@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC
+// Copyright 2019-2025 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
@@ -19,6 +19,7 @@
 #include "src/xnnpack/microparams-init.h"
 #include "src/xnnpack/raddstoreexpminusmax.h"
 #include "src/xnnpack/reduce.h"
+#include "test/replicable_random_device.h"
 #include <benchmark/benchmark.h>
 
 static void f32_raddstoreexpminusmax(
@@ -35,8 +36,7 @@ static void f32_raddstoreexpminusmax(
   const size_t packed_elements =
       benchmark::utils::RoundUp(elements, cache_line_size_max / sizeof(float));
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(
       std::uniform_real_distribution<float>(-1000.0f, 1000.0f), std::ref(rng));
 
@@ -207,7 +207,6 @@ BENCHMARK_CAPTURE(f32_raddstoreexpminusmax, rvv_rr2_p6_u4v,
 #endif  // XNN_ARCH_RISCV && XNN_ENABLE_RISCV_VECTOR
 
 #if XNN_ENABLE_AVX256SKX && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
-
 BENCHMARK_CAPTURE(f32_raddstoreexpminusmax, avx256skx_rr2_p5_u8,
                   xnn_f32_rmax_ukernel__avx_u32_acc4,
                   xnn_f32_raddstoreexpminusmax_ukernel__avx256skx_rr2_p5_u8,
@@ -294,7 +293,7 @@ BENCHMARK_CAPTURE(f32_raddstoreexpminusmax, avx512f_rr2_p5_u64_acc4,
     ->UseRealTime();
 #endif  // XNN_ENABLE_AVX512F && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 
-#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+#if XNN_ENABLE_AVX2 && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 BENCHMARK_CAPTURE(f32_raddstoreexpminusmax, avx2_rr1_p5_u8,
                   xnn_f32_rmax_ukernel__avx_u32_acc4,
                   xnn_f32_raddstoreexpminusmax_ukernel__avx2_rr1_p5_u8, nullptr,
@@ -344,7 +343,9 @@ BENCHMARK_CAPTURE(f32_raddstoreexpminusmax, avx2_rr2_p5_u32_acc4,
                   nullptr, xnn_arch_x86_avx2)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
+#endif  // XNN_ENABLE_AVX2 && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 
+#if XNN_ENABLE_SSE2 && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 BENCHMARK_CAPTURE(f32_raddstoreexpminusmax, sse2_rr2_p5_u4,
                   xnn_f32_rmax_ukernel__sse_u16_acc4,
                   xnn_f32_raddstoreexpminusmax_ukernel__sse2_rr2_p5_u4, nullptr)
@@ -368,7 +369,7 @@ BENCHMARK_CAPTURE(f32_raddstoreexpminusmax, sse2_rr2_p5_u16_acc4,
                   nullptr)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+#endif  // XNN_ENABLE_SSE2 && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 
 #if XNN_ARCH_WASMRELAXEDSIMD
 BENCHMARK_CAPTURE(

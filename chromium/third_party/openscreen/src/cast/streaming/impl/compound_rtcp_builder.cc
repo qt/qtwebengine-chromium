@@ -11,6 +11,7 @@
 #include "cast/streaming/impl/packet_util.h"
 #include "cast/streaming/impl/rtcp_session.h"
 #include "platform/base/span.h"
+#include "util/chrono_helpers.h"
 #include "util/integer_division.h"
 #include "util/osp_logging.h"
 #include "util/std_util.h"
@@ -81,6 +82,11 @@ void CompoundRtcpBuilder::IncludeFeedbackInNextPacket(
 #endif
 }
 
+void CompoundRtcpBuilder::IncludeReceiverLogsInNextPacket(
+    std::vector<RtcpReceiverFrameLogMessage> logs) {
+  logs_for_next_packet_ = std::move(logs);
+}
+
 ByteBuffer CompoundRtcpBuilder::BuildPacket(Clock::time_point send_time,
                                             ByteBuffer buffer) {
   OSP_CHECK_GE(buffer.size(), kRequiredBufferSize);
@@ -106,6 +112,10 @@ ByteBuffer CompoundRtcpBuilder::BuildPacket(Clock::time_point send_time,
   // Cast Feedback: Checkpoint information, and add as many NACKs and ACKs as
   // the remaining space available in the buffer will allow for.
   AppendCastFeedbackPacket(buffer);
+
+  // Receiver Log: Add as many receiver logs as the remaining space available
+  // in the buffer will allow for.
+  AppendReceiverLogPacket(buffer);
 
   uint8_t* const packet_end = buffer.data();
   return ByteBuffer(packet_begin, packet_end - packet_begin);
@@ -161,7 +171,7 @@ void CompoundRtcpBuilder::AppendCastFeedbackPacket(ByteBuffer& buffer) {
   // Reserve space for the RTCP Common Header. It will be serialized later,
   // after the total size of the Cast Feedback message is known.
   ByteBuffer space_for_header = ReserveSpace(kRtcpCommonHeaderSize, buffer);
-  uint8_t* const feedback_fields_begin = buffer.data();
+  const size_t initial_buffer_size = buffer.size();
 
   // Append the mandatory fields.
   AppendField<uint32_t>(session_.receiver_ssrc(), buffer);
@@ -192,8 +202,7 @@ void CompoundRtcpBuilder::AppendCastFeedbackPacket(ByteBuffer& buffer) {
   RtcpCommonHeader header;
   header.packet_type = RtcpPacketType::kPayloadSpecific;
   header.with.subtype = RtcpSubtype::kFeedback;
-  uint8_t* const feedback_fields_end = buffer.data();
-  header.payload_size = feedback_fields_end - feedback_fields_begin;
+  header.payload_size = initial_buffer_size - buffer.size();
   header.AppendFields(space_for_header);
 
   ++feedback_count_;
@@ -314,6 +323,86 @@ void CompoundRtcpBuilder::AppendCastFeedbackAckFields(ByteBuffer& buffer) {
   *octet_count_field = num_ack_bitvector_octets;
 
   acks_for_next_packet_.clear();
+}
+
+void CompoundRtcpBuilder::AppendReceiverLogPacket(ByteBuffer& buffer) {
+  if (logs_for_next_packet_.empty()) {
+    return;
+  }
+
+  // Reserve space for the RTCP Common Header. It will be serialized later,
+  // after the total size of the message is known.
+  ByteBuffer space_for_header = ReserveSpace(kRtcpCommonHeaderSize, buffer);
+  const size_t initial_buffer_size = buffer.size();
+
+  // Append the mandatory fields.
+  AppendField<uint32_t>(session_.receiver_ssrc(), buffer);
+  AppendField<uint32_t>(kCastName, buffer);
+
+  for (const auto& frame_log : logs_for_next_packet_) {
+    if (buffer.size() < kRtcpReceiverFrameLogMessageHeaderSize) {
+      break;
+    }
+    AppendField<uint32_t>(frame_log.rtp_timestamp.lower_32_bits(), buffer);
+
+    const int num_events = frame_log.messages.size();
+    // The number of events is encoded as N-1.
+    const uint8_t num_events_wire = num_events - 1;
+
+    // The event timestamp is a 24-bit field.
+    const auto event_timestamp_ms =
+        to_milliseconds(frame_log.messages[0].timestamp - session_.start_time())
+            .count();
+    const uint32_t event_timestamp_wire =
+        static_cast<uint32_t>(event_timestamp_ms);
+
+    AppendField<uint32_t>(
+        (num_events_wire << 24) | (event_timestamp_wire & 0xFFFFFF), buffer);
+
+    for (const auto& event_log : frame_log.messages) {
+      if (buffer.size() < kRtcpReceiverFrameLogMessageBlockSize) {
+        FinalizeReceiverLogPacket(space_for_header,
+                                  initial_buffer_size - buffer.size());
+        return;
+      }
+
+      uint16_t delay_delta_or_packet_id = 0;
+      if (event_log.type == StatisticsEvent::Type::kPacketReceived) {
+        delay_delta_or_packet_id = event_log.packet_id;
+      } else {
+        delay_delta_or_packet_id =
+            static_cast<uint16_t>(event_log.delay.count());
+      }
+      AppendField<uint16_t>(delay_delta_or_packet_id, buffer);
+
+      // The event type on the wire is a 4-bit field.
+      const auto wire_type =
+          static_cast<uint8_t>(StatisticsEvent::ToWireType(event_log.type));
+      const auto event_timestamp_delta_ms =
+          to_milliseconds(event_log.timestamp - frame_log.messages[0].timestamp)
+              .count();
+      const uint16_t wire_timestamp =
+          static_cast<uint16_t>(event_timestamp_delta_ms);
+
+      AppendField<uint16_t>((wire_type << 12) | (wire_timestamp & 0xFFF),
+                            buffer);
+    }
+  }
+
+  FinalizeReceiverLogPacket(space_for_header,
+                            initial_buffer_size - buffer.size());
+}
+
+void CompoundRtcpBuilder::FinalizeReceiverLogPacket(
+    ByteBuffer& space_for_header,
+    size_t payload_size) {
+  RtcpCommonHeader header;
+  header.packet_type = RtcpPacketType::kApplicationDefined;
+  header.with.subtype = RtcpSubtype::kReceiverLog;
+  header.payload_size = payload_size;
+  header.AppendFields(space_for_header);
+
+  logs_for_next_packet_.clear();
 }
 
 }  // namespace openscreen::cast

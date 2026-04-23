@@ -1,12 +1,12 @@
 // Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as NetworkTimeCalculator from '../../models/network_time_calculator/network_time_calculator.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import {Icon} from '../../ui/kit/kit.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -181,7 +181,7 @@ export class NetworkLogViewColumns {
   private waterfallScroller!: HTMLElement;
   private waterfallScrollerContent!: HTMLDivElement;
   private waterfallHeaderElement!: HTMLElement;
-  private waterfallColumnSortIcon!: IconButton.Icon.Icon;
+  private waterfallColumnSortIcon!: Icon;
   private activeWaterfallSortId!: string;
   private popoverHelper?: UI.PopoverHelper.PopoverHelper;
   private hasScrollerTouchStarted?: boolean;
@@ -415,7 +415,7 @@ export class NetworkLogViewColumns {
     this.waterfallHeaderElement.createChild('div', 'hover-layer');
     const innerElement = this.waterfallHeaderElement.createChild('div');
     innerElement.textContent = i18nString(UIStrings.waterfall);
-    this.waterfallColumnSortIcon = new IconButton.Icon.Icon();
+    this.waterfallColumnSortIcon = new Icon();
     this.waterfallColumnSortIcon.className = 'sort-order-icon';
     this.waterfallHeaderElement.createChild('div', 'sort-order-icon-container')
         .appendChild(this.waterfallColumnSortIcon);

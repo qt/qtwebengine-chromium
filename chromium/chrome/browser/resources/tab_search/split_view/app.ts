@@ -5,13 +5,14 @@
 import '/strings.m.js';
 import '../tab_search_item.js';
 import '../selectable_lazy_list.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 
 import {ColorChangeUpdater} from 'chrome://resources/cr_components/color_change_listener/colors_css_updater.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import type {SelectableLazyListElement} from '../selectable_lazy_list.js';
-import {normalizeURL, TabData, TabItemType} from '../tab_data.js';
+import {getDisplayHostnameForUrl, normalizeURL, TabData, TabItemType} from '../tab_data.js';
 import type {ProfileData, Tab, TabsRemovedInfo, TabUpdateInfo} from '../tab_search.mojom-webui.js';
 import type {TabSearchApiProxy} from '../tab_search_api_proxy.js';
 import {TabSearchApiProxyImpl} from '../tab_search_api_proxy.js';
@@ -144,8 +145,9 @@ export class SplitNewTabPageAppElement extends CrLitElement {
     const hostWindow =
         profileData.windows.find(({isHostWindow}) => isHostWindow)!;
     this.allEligibleTabs_ =
-        hostWindow.tabs.filter(tab => !tab.visible && !tab.split)
-            .map(tab => this.getTabData_(tab, true, TabItemType.OPEN_TAB));
+        hostWindow?.tabs?.filter(tab => !tab.visible && !tab.split)
+            .map(tab => this.getTabData_(tab, true, TabItemType.OPEN_TAB)) ||
+        [];
     this.sortTabs_();
     this.updateComplete.then(() => {
       this.updateViewportHeight_(profileData);
@@ -210,8 +212,9 @@ export class SplitNewTabPageAppElement extends CrLitElement {
 
   private getTabData_(tab: Tab, inActiveWindow: boolean, type: TabItemType):
       TabData {
-    const tabData =
-        new TabData(tab, type, new URL(normalizeURL(tab.url.url)).hostname);
+    const displayUrl =
+        getDisplayHostnameForUrl(new URL(normalizeURL(tab.url.url)));
+    const tabData = new TabData(tab, type, displayUrl);
 
     if (type === TabItemType.OPEN_TAB) {
       tabData.inActiveWindow = inActiveWindow;

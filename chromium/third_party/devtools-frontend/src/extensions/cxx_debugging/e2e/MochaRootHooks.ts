@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as path from 'path';
+import * as path from 'node:path';
 import * as puppeteer from 'puppeteer-core';
 import {dumpCollectedErrors} from 'test/conductor/events.js';
 import * as MochaHooks from 'test/conductor/mocha_hooks.js';
@@ -43,7 +43,7 @@ async function beforeAll() {
       `--disable-extensions-except=${EXTENSION_DIR}`,
       `--window-size=${defaultViewport.width + 20, defaultViewport.height + 100}`,
       `--custom-devtools-frontend=${new URL(`${DEVTOOLS_DIR}/front_end`, 'file://').href}`,
-      '--disable-features=RenderDocument',
+      '--disable-features=RenderDocument,DevToolsAiPromptApi',
     ],
   });
 

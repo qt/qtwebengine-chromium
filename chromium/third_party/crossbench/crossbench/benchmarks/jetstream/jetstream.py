@@ -133,7 +133,6 @@ class JetStreamProbe(
     return parts[0] != "Total" and parts[1] == "score"
 
 
-
 class JetStreamProbeContext(JsonResultProbeContext):
   JS: ClassVar[str] = """
   let results = Object.create(null);

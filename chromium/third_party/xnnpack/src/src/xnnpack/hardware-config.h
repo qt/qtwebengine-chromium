@@ -37,25 +37,27 @@ enum xnn_arch_flags {
   xnn_arch_arm_sme = 1 << 14,
   xnn_arch_arm_sme2 = 1 << 15,
 #elif XNN_ARCH_X86 || XNN_ARCH_X86_64
-  xnn_arch_x86_ssse3 = 1 << 0,
-  xnn_arch_x86_sse4_1 = 1 << 1,
-  xnn_arch_x86_avx = 1 << 2,
-  xnn_arch_x86_f16c = 1 << 3,
-  xnn_arch_x86_fma3 = 1 << 4,
-  xnn_arch_x86_avx2 = 1 << 5,
-  xnn_arch_x86_avx512f = 1 << 6,
-  xnn_arch_x86_avx512vbmi = 1 << 7,
-  xnn_arch_x86_avx512skx = 1 << 8,
-  xnn_arch_x86_avx512vnni = 1 << 9,
-  xnn_arch_x86_avx512vnnigfni = 1 << 10,
-  xnn_arch_x86_avxvnni = 1 << 11,
-  xnn_arch_x86_avxvnniint8 = 1 << 12,
-  xnn_arch_x86_avx256skx = 1 << 13,
-  xnn_arch_x86_avx256vnni = 1 << 14,
-  xnn_arch_x86_avx256vnnigfni = 1 << 15,
-  xnn_arch_x86_avx512amx = 1 << 16,
-  xnn_arch_x86_avx512fp16 = 1 << 17,
-  xnn_arch_x86_avx512bf16 = 1 << 18,
+  xnn_arch_x86_sse = 1 << 0,
+  xnn_arch_x86_sse2 = 1 << 1,
+  xnn_arch_x86_ssse3 = 1 << 2,
+  xnn_arch_x86_sse4_1 = 1 << 3,
+  xnn_arch_x86_avx = 1 << 4,
+  xnn_arch_x86_f16c = 1 << 5,
+  xnn_arch_x86_fma3 = 1 << 6,
+  xnn_arch_x86_avx2 = 1 << 7,
+  xnn_arch_x86_avx512f = 1 << 8,
+  xnn_arch_x86_avx512vbmi = 1 << 9,
+  xnn_arch_x86_avx512skx = 1 << 10,
+  xnn_arch_x86_avx512vnni = 1 << 11,
+  xnn_arch_x86_avx512vnnigfni = 1 << 12,
+  xnn_arch_x86_avxvnni = 1 << 13,
+  xnn_arch_x86_avxvnniint8 = 1 << 14,
+  xnn_arch_x86_avx256skx = 1 << 15,
+  xnn_arch_x86_avx256vnni = 1 << 16,
+  xnn_arch_x86_avx256vnnigfni = 1 << 17,
+  xnn_arch_x86_avx512amx = 1 << 18,
+  xnn_arch_x86_avx512fp16 = 1 << 19,
+  xnn_arch_x86_avx512bf16 = 1 << 20,
 #elif XNN_ARCH_RISCV
   xnn_arch_riscv_vector = 1 << 0,
   xnn_arch_riscv_vector_fp16_arith = 1 << 1,
@@ -83,6 +85,7 @@ enum xnn_uarch {
   xnn_uarch_dhyana,
   xnn_uarch_zen,
   xnn_uarch_zen4,
+  xnn_uarch_zen5,
 
   xnn_uarch_cortex_a5,
   xnn_uarch_cortex_a7,
@@ -153,14 +156,23 @@ static inline bool xnn_is_bf16_compatible_config(
 #endif
 }
 
+static inline bool xnn_is_qc2w_compatible_config(
+    const struct xnn_hardware_config* hardware_config) {
+#if (XNN_ARCH_ARM || XNN_ARCH_ARM64)
+  return (hardware_config->arch_flags & xnn_arch_arm_neon_dot);
+#else
+  return false;
+#endif
+}
+
 static inline bool xnn_is_f16_compatible_config(
     const struct xnn_hardware_config* hardware_config) {
 #if (XNN_ARCH_ARM && XNN_ENABLE_ARM_FP16_VECTOR && \
      XNN_ENABLE_ARM_FP16_SCALAR) ||                \
     (XNN_ARCH_ARM64 && XNN_ENABLE_ARM_FP16_VECTOR)
   return (hardware_config->arch_flags & xnn_arch_arm_neon_fp16_arith);
-#elif XNN_ARCH_X86 || XNN_ARCH_X86_64
-  return (hardware_config->arch_flags & xnn_arch_x86_avx2);
+#elif XNN_ENABLE_AVX && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
+  return (hardware_config->arch_flags & xnn_arch_x86_f16c) && (hardware_config->arch_flags & xnn_arch_x86_avx);
 #else
   return false;
 #endif

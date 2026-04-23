@@ -44,10 +44,9 @@ struct Triangle {
   // the point at `index` + 1 modulo 3.
   // `index` must be 0, 1, or 2.
   Segment GetEdge(int index) const;
-};
 
-bool operator==(const Triangle& lhs, const Triangle& rhs);
-bool operator!=(const Triangle& lhs, const Triangle& rhs);
+  friend bool operator==(const Triangle&, const Triangle&) = default;
+};
 
 namespace triangle_internal {
 std::string ToFormattedString(const Triangle& t);
@@ -56,17 +55,6 @@ std::string ToFormattedString(const Triangle& t);
 template <typename Sink>
 void AbslStringify(Sink& sink, const Triangle& t) {
   sink.Append(triangle_internal::ToFormattedString(t));
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Inline function definitions
-////////////////////////////////////////////////////////////////////////////////
-
-inline bool operator==(const Triangle& lhs, const Triangle& rhs) {
-  return lhs.p0 == rhs.p0 && lhs.p1 == rhs.p1 && lhs.p2 == rhs.p2;
-}
-inline bool operator!=(const Triangle& lhs, const Triangle& rhs) {
-  return !(lhs == rhs);
 }
 
 }  // namespace ink

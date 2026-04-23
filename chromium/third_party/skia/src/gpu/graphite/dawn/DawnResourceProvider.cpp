@@ -30,7 +30,7 @@ namespace skgpu::graphite {
 
 namespace {
 
-constexpr int kBufferBindingSizeAlignment = 16;
+constexpr uint32_t kBufferBindingSizeAlignment = 16;
 constexpr int kMaxNumberOfCachedBufferBindGroups = 1024;
 constexpr int kMaxNumberOfCachedTextureBindGroups = 4096;
 
@@ -53,7 +53,7 @@ wgpu::RenderPipeline create_blit_render_pipeline(const DawnSharedContext* shared
                                                  const char* fsEntryPoint,
                                                  wgpu::TextureFormat renderPassColorFormat,
                                                  wgpu::TextureFormat renderPassDepthStencilFormat,
-                                                 int numSamples) {
+                                                 SampleCount sampleCount) {
     wgpu::RenderPipelineDescriptor descriptor;
     descriptor.label = label;
     descriptor.layout = nullptr;
@@ -93,7 +93,7 @@ wgpu::RenderPipeline create_blit_render_pipeline(const DawnSharedContext* shared
     descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleStrip;
     descriptor.primitive.stripIndexFormat = wgpu::IndexFormat::Undefined;
 
-    descriptor.multisample.count = numSamples;
+    descriptor.multisample.count = (uint8_t) sampleCount;
     descriptor.multisample.mask = 0xFFFFFFFF;
     descriptor.multisample.alphaToCoverageEnabled = false;
 
@@ -421,12 +421,12 @@ DawnResourceProvider::DawnResourceProvider(SharedContext* sharedContext,
 DawnResourceProvider::~DawnResourceProvider() = default;
 
 DawnResourceProvider::BlitWithDrawEncoder DawnResourceProvider::findOrCreateBlitWithDrawEncoder(
-        const RenderPassDesc& renderPassDesc, int srcSampleCount) {
+        const RenderPassDesc& renderPassDesc, SampleCount srcSampleCount) {
     // Currently Dawn only supports one sample count > 1. So we can optimize the pipeline key by
     // specifying whether the source has MSAA or not.
-    SkASSERT(srcSampleCount <= 1 ||
+    SkASSERT(srcSampleCount == SampleCount::k1 ||
              srcSampleCount == this->dawnSharedContext()->dawnCaps()->defaultMSAASamplesCount());
-    const bool srcIsMSAA = srcSampleCount > 1;
+    const bool srcIsMSAA = srcSampleCount > SampleCount::k1;
     const uint32_t pipelineKey = this->dawnSharedContext()->dawnCaps()->getRenderPassDescKeyForPipeline(
             renderPassDesc, srcIsMSAA);
     wgpu::RenderPipeline pipeline = fBlitWithDrawPipelines[pipelineKey];
@@ -477,7 +477,7 @@ DawnResourceProvider::BlitWithDrawEncoder DawnResourceProvider::findOrCreateBlit
             "@fragment\n"
             "fn SampleMSAAFS(input: VertexOutput) -> @location(0) vec4<f32> {"
                 "let coords = getSamplingCoords(input);"
-                "const sampleCount = %d;"
+                "const sampleCount = %u;"
                 "var sum = vec4f(0.0);"
                 "for (var i: u32 = 0; i < sampleCount; i = i + 1) {"
                     "sum += textureLoad(msColorMap, coords, i);"
@@ -486,7 +486,8 @@ DawnResourceProvider::BlitWithDrawEncoder DawnResourceProvider::findOrCreateBlit
             "}";
 
         auto shaderModule = create_shader_module(
-                dawnSharedContext()->device(), SkStringPrintf(kShaderSrc, srcSampleCount).c_str());
+                dawnSharedContext()->device(),
+                SkStringPrintf(kShaderSrc, (unsigned) srcSampleCount).c_str());
 
         pipeline = create_blit_render_pipeline(
                 dawnSharedContext(),
@@ -498,7 +499,7 @@ DawnResourceProvider::BlitWithDrawEncoder DawnResourceProvider::findOrCreateBlit
                 TextureFormatToDawnFormat(renderPassDesc.fColorAttachment.fFormat),
                 /*renderPassDepthStencilFormat=*/
                 TextureFormatToDawnFormat(renderPassDesc.fDepthStencilAttachment.fFormat),
-                /*numSamples=*/renderPassDesc.fColorAttachment.fSampleCount);
+                renderPassDesc.fColorAttachment.fSampleCount);
 
         if (pipeline) {
             fBlitWithDrawPipelines.set(pipelineKey, pipeline);
@@ -558,23 +559,6 @@ sk_sp<DawnTexture> DawnResourceProvider::findOrCreateDiscardableMSAALoadTexture(
     return sk_sp<DawnTexture>(static_cast<DawnTexture*>(texture.release()));
 }
 
-sk_sp<GraphicsPipeline> DawnResourceProvider::createGraphicsPipeline(
-        const RuntimeEffectDictionary* runtimeDict,
-        const UniqueKey& pipelineKey,
-        const GraphicsPipelineDesc& pipelineDesc,
-        const RenderPassDesc& renderPassDesc,
-        SkEnumBitMask<PipelineCreationFlags> pipelineCreationFlags,
-        uint32_t compilationID) {
-    return DawnGraphicsPipeline::Make(this->dawnSharedContext(),
-                                      this,
-                                      runtimeDict,
-                                      pipelineKey,
-                                      pipelineDesc,
-                                      renderPassDesc,
-                                      pipelineCreationFlags,
-                                      compilationID);
-}
-
 sk_sp<ComputePipeline> DawnResourceProvider::createComputePipeline(
         const ComputePipelineDesc& desc) {
     return DawnComputePipeline::Make(this->dawnSharedContext(), desc);
@@ -631,7 +615,8 @@ sk_sp<DawnBuffer> DawnResourceProvider::findOrCreateDawnBuffer(size_t size,
                                                                BufferType type,
                                                                AccessPattern accessPattern,
                                                                std::string_view label) {
-    sk_sp<Buffer> buffer = this->findOrCreateBuffer(size, type, accessPattern, std::move(label));
+    sk_sp<Buffer> buffer = this->findOrCreateNonShareableBuffer(
+            size, type, accessPattern, std::move(label));
     DawnBuffer* ptr = static_cast<DawnBuffer*>(buffer.release());
     return sk_sp<DawnBuffer>(ptr);
 }
@@ -671,8 +656,7 @@ const wgpu::BindGroup& DawnResourceProvider::findOrCreateUniformBuffersBindGroup
 
     constexpr uint32_t kBindingIndices[] = {
         DawnGraphicsPipeline::kIntrinsicUniformBufferIndex,
-        DawnGraphicsPipeline::kRenderStepUniformBufferIndex,
-        DawnGraphicsPipeline::kPaintUniformBufferIndex,
+        DawnGraphicsPipeline::kCombinedUniformIndex,
         DawnGraphicsPipeline::kGradientBufferIndex,
     };
 

@@ -28,7 +28,6 @@ if TYPE_CHECKING:
   from crossbench.cli.types import Subparsers
   from crossbench.runner.run import Run
 
-
 UNMUTE_AUDIO_SCRIPT: Final[str] = """
   document.getElementById('unmuteButton').click();
 """
@@ -61,8 +60,7 @@ class PowerlineStory(Story):
         actions.show_url(self.url_from_story(run.story.name))
       with run.actions("Autoplay") as actions:
         actions.wait_for_ready_state(
-          ReadyState.COMPLETE, timeout=dt.timedelta(seconds=5)
-        )
+            ReadyState.COMPLETE, timeout=dt.timedelta(seconds=5))
         actions.js(UNMUTE_AUDIO_SCRIPT)
       if self.should_remute(run.story.name):
         with run.actions("Remute") as actions:
@@ -128,9 +126,9 @@ class PowerlineBenchmark(Benchmark):
     # interact with the page first. https://developer.chrome.com/blog/autoplay
     assert browser_attributes.is_chromium_based
     return Flags({
-      "--autoplay-policy": "no-user-gesture-required",
-      "--enable-renderer-backgrounding": None,
-      "--enable-background-timer-throttling": None
+        "--autoplay-policy": "no-user-gesture-required",
+        "--enable-renderer-backgrounding": None,
+        "--enable-background-timer-throttling": None
     })
 
   @classmethod

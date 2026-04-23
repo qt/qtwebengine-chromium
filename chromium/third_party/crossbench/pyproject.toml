@@ -1,3 +1,6 @@
+[tool.isort]
+multi_line_output = 2
+
 [tool.poetry]
 name = "crossbench"
 version = "1.0.5"
@@ -30,7 +33,7 @@ numpy = "1.26.4"
 ordered-set = "4.1.0"
 pandas = "2.2.3"
 perfetto = "0.13.1"
-protobuf = "~6.32.0"
+protobuf = "~6.32.1"
 psutil = "5.8.0"
 pygments = "2.14.0"
 python = ">=3.11,<3.13"
@@ -53,8 +56,8 @@ cb_validate_hjson= 'crossbench.scripts:cb_validate_hjson'
 [tool.poetry.group.dev.dependencies]
 debugpy = "1.8.0"
 isort = "5.10.1"
-mypy = "1.13.0"
-pyfakefs = "5.7.3"
+mypy = "1.17.1"
+pyfakefs = "5.9.2"
 pyrefly = "^0.31.0"
 pytest = "8.3.4"
 pytest-cov = "4.0.0"
@@ -84,7 +87,9 @@ testpaths = [
 # The `exclude` list takes a glob pattern of directories and files to ignore.
 # The paths are relative to the project root.
 exclude = [
+    "buildtools/*",
     "protoc/gen/*",
+    "third_party/*",
 ]
 target-version = "py311"
 

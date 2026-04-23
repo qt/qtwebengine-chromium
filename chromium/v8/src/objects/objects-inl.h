@@ -55,6 +55,7 @@
 #include "src/objects/tagged-impl-inl.h"
 #include "src/objects/tagged-index.h"
 #include "src/objects/templates.h"
+#include "src/objects/trusted-pointer-inl.h"
 #include "src/roots/roots.h"
 #include "src/sandbox/bounded-size-inl.h"
 #include "src/sandbox/code-pointer-inl.h"
@@ -217,23 +218,6 @@ bool IsAnyHole(Tagged<HeapObject> obj, PtrComprCageBase) {
   return IsAnyHole(obj);
 }
 
-bool SafeIsAnyHole(Tagged<HeapObject> obj) {
-  if (detail::IsAnyHoleNoSpaceCheck(obj)) {
-#if V8_STATIC_ROOTS_BOOL
-    // Only check this after the hole check succeeds, to make it cheaper in the
-    // common case that things aren't holes.
-    if (!obj.IsInMainCageBase()) return false;
-#endif
-    return true;
-  }
-  return false;
-}
-
-bool SafeIsAnyHole(Tagged<Object> obj) {
-  Tagged<HeapObject> ho;
-  return TryCast<HeapObject>(obj, &ho) && SafeIsAnyHole(ho);
-}
-
 bool IsHole(Tagged<HeapObject> obj) { return IsAnyHole(obj); }
 
 bool IsHole(Tagged<HeapObject> obj, PtrComprCageBase) { return IsAnyHole(obj); }
@@ -300,40 +284,9 @@ IS_HELPER_DEF(Number)
 template <typename... T>
 struct CastTraits<Union<T...>> {
   static inline bool AllowFrom(Tagged<Object> value) {
-    // Make sure to test for holes first, recursing into a check of the Union
-    // without a Hole.
-    if constexpr (base::has_type_v<Hole, T...>) {
-      return IsAnyHole(value) ||
-             CastTraits<typename Union<T...>::template Without<Hole>>::
-                 AllowFrom(value);
-    }
-#define CHECK_HOLE_IF_HAS_HOLE(Type, ...)                             \
-  if constexpr (base::has_type_v<Type, T...>) {                       \
-    return Is##Type(value) ||                                         \
-           CastTraits<typename Union<T...>::template Without<Type>>:: \
-               AllowFrom(value);                                      \
-  }
-    HOLE_LIST(CHECK_HOLE_IF_HAS_HOLE)
-#undef CHECK_HOLE_IF_HAS_HOLE
-
     return (Is<T>(value) || ...);
   }
   static inline bool AllowFrom(Tagged<HeapObject> value) {
-    // Make sure to test for holes first.
-    if constexpr (base::has_type_v<Hole, T...>) {
-      return IsAnyHole(value) ||
-             CastTraits<typename Union<T...>::template Without<Hole>>::
-                 AllowFrom(value);
-    }
-#define CHECK_HOLE_IF_HAS_HOLE(Type, ...)                             \
-  if constexpr (base::has_type_v<Type, T...>) {                       \
-    return Is##Type(value) ||                                         \
-           CastTraits<typename Union<T...>::template Without<Type>>:: \
-               AllowFrom(value);                                      \
-  }
-    HOLE_LIST(CHECK_HOLE_IF_HAS_HOLE)
-#undef CHECK_HOLE_IF_HAS_HOLE
-
     return (Is<T>(value) || ...);
   }
 };
@@ -474,8 +427,11 @@ constexpr bool FastInReadOnlySpaceOrSmallSmi(Tagged_t obj) {
   // roots. This is not strictly necessary and can be relaxed in future as the
   // most prominent static roots are anyways allocated at the beginning of the
   // first page.
-  static_assert(StaticReadOnlyRoot::kLastAllocatedRoot < kRegularPageSize);
-  return obj < kRegularPageSize;
+  constexpr int kLastStaticRootPage =
+      RoundUp<kRegularPageSize>(StaticReadOnlyRoot::kLastAllocatedRoot);
+  static_assert(kLastStaticRootPage <=
+                V8_CONTIGUOUS_COMPRESSED_RO_SPACE_SIZE_MB * MB);
+  return obj < kLastStaticRootPage;
 #else   // !V8_STATIC_ROOTS_BOOL
   return false;
 #endif  // !V8_STATIC_ROOTS_BOOL
@@ -751,7 +707,7 @@ DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsAccessCheckNeeded) {
     // TODO(ishell): compare security tokens here in order to allow ICs to
     // take fast paths for cross context accesses.
     Tagged<JSGlobalObject> global = isolate->context()->global_object();
-    return proxy->IsDetachedFrom(isolate, global);
+    return proxy->IsDetachedFrom(global);
   }
   return obj->map(cage_base)->is_access_check_needed();
 }
@@ -1102,10 +1058,26 @@ void HeapObject::InitExternalPointerField(size_t offset,
                                              tag, mode);
 }
 
+void HeapObject::InitExternalPointerField(size_t offset,
+                                          IsolateForSandbox isolate,
+                                          ExternalPointerTag tag, Address value,
+                                          WriteBarrierMode mode) {
+  i::InitExternalPointerField(address(), field_address(offset), isolate, tag,
+                              value);
+  CONDITIONAL_EXTERNAL_POINTER_WRITE_BARRIER(*this, static_cast<int>(offset),
+                                             tag, mode);
+}
+
 template <ExternalPointerTagRange tag_range>
 Address HeapObject::ReadExternalPointerField(size_t offset,
                                              IsolateForSandbox isolate) const {
   return i::ReadExternalPointerField<tag_range>(field_address(offset), isolate);
+}
+
+Address HeapObject::ReadExternalPointerField(
+    size_t offset, IsolateForSandbox isolate,
+    ExternalPointerTagRange tag_range) const {
+  return i::ReadExternalPointerField(field_address(offset), isolate, tag_range);
 }
 
 template <CppHeapPointerTag lower_bound, CppHeapPointerTag upper_bound>
@@ -1126,6 +1098,13 @@ void HeapObject::WriteExternalPointerField(size_t offset,
                                            IsolateForSandbox isolate,
                                            Address value) {
   i::WriteExternalPointerField<tag>(field_address(offset), isolate, value);
+}
+
+void HeapObject::WriteExternalPointerField(size_t offset,
+                                           IsolateForSandbox isolate,
+                                           ExternalPointerTag tag,
+                                           Address value) {
+  i::WriteExternalPointerField(field_address(offset), isolate, tag, value);
 }
 
 void HeapObject::SetupLazilyInitializedExternalPointerField(size_t offset) {
@@ -1186,13 +1165,6 @@ void HeapObject::SetupLazilyInitializedCppHeapPointerField(size_t offset) {
   CppHeapPointerSlot(field_address(offset)).init();
 }
 
-template <CppHeapPointerTag tag>
-void HeapObject::WriteLazilyInitializedCppHeapPointerField(
-    size_t offset, IsolateForPointerCompression isolate, Address value) {
-  i::WriteLazilyInitializedCppHeapPointerField<tag>(field_address(offset),
-                                                    isolate, value);
-}
-
 void HeapObject::WriteLazilyInitializedCppHeapPointerField(
     size_t offset, IsolateForPointerCompression isolate, Address value,
     CppHeapPointerTag tag) {
@@ -1214,6 +1186,13 @@ void HeapObject::InitSelfIndirectPointerField(
                                   opt_publishing_scope);
 }
 
+void HeapObject::InitSelfIndirectPointerFieldWithoutPublishing(
+    size_t offset, IsolateForSandbox isolate) {
+  DCHECK(IsExposedTrustedObject(*this));
+  i::InitSelfIndirectPointerField(field_address(offset), isolate, *this,
+                                  kUnpublishedIndirectPointerTag, nullptr);
+}
+
 void HeapObjectLayout::InitSelfIndirectPointerField(
     std::atomic<IndirectPointerHandle>* field_ptr, IsolateForSandbox isolate,
     TrustedPointerPublishingScope* opt_publishing_scope) {
@@ -1228,63 +1207,50 @@ void HeapObjectLayout::InitSelfIndirectPointerField(
 #endif  // V8_ENABLE_SANDBOX
 
 template <IndirectPointerTag tag>
+inline auto HeapObject::ReadTrustedPointerField(
+    size_t offset, IsolateForSandbox isolate) const {
+  return TrustedPointerField::ReadTrustedPointerField<tag>(*this, offset,
+                                                           isolate);
+}
+
+template <IndirectPointerTag tag>
+inline auto HeapObject::ReadTrustedPointerField(
+    size_t offset, IsolateForSandbox isolate,
+    AcquireLoadTag acquire_load) const {
+  return TrustedPointerField::ReadTrustedPointerField<tag>(
+      *this, offset, isolate, acquire_load);
+}
+
+template <IndirectPointerTag tag>
 Tagged<Object> HeapObject::ReadMaybeEmptyTrustedPointerField(
     size_t offset, IsolateForSandbox isolate,
     AcquireLoadTag acquire_load) const {
-#ifdef V8_ENABLE_SANDBOX
-  return i::ReadIndirectPointerField<tag>(field_address(offset), isolate,
-                                          acquire_load);
-#else
-  return TaggedField<Object>::Acquire_Load(*this, static_cast<int>(offset));
-#endif
+  return TrustedPointerField::ReadMaybeEmptyTrustedPointerField<tag>(
+      *this, offset, isolate, acquire_load);
 }
 
 template <IndirectPointerTag tag>
 void HeapObject::WriteTrustedPointerField(size_t offset,
                                           Tagged<ExposedTrustedObject> value) {
-  // Currently, trusted pointer stores always use release semantics as the
-  // under-the-hood indirect pointer stores use release stores anyway.
-#ifdef V8_ENABLE_SANDBOX
-  i::WriteIndirectPointerField<tag>(field_address(offset), value,
-                                    kReleaseStore);
-#else
-  TaggedField<ExposedTrustedObject>::Release_Store(
-      *this, static_cast<int>(offset), value);
-#endif
+  TrustedPointerField::WriteTrustedPointerField<tag>(*this, offset, value);
 }
 
 bool HeapObject::IsTrustedPointerFieldEmpty(size_t offset) const {
-#ifdef V8_ENABLE_SANDBOX
-  IndirectPointerHandle handle = ACQUIRE_READ_UINT32_FIELD(*this, offset);
-  return handle == kNullIndirectPointerHandle;
-#else
-  PtrComprCageBase cage_base = GetPtrComprCageBase(*this);
-  return IsSmi(TaggedField<Object>::Acquire_Load(cage_base, *this,
-                                                 static_cast<int>(offset)));
-#endif
+  return TrustedPointerField::IsTrustedPointerFieldEmpty(*this, offset);
 }
 
 bool HeapObject::IsTrustedPointerFieldUnpublished(
     size_t offset, IndirectPointerTag tag, IsolateForSandbox isolate) const {
-#ifdef V8_ENABLE_SANDBOX
-  IndirectPointerHandle handle = ACQUIRE_READ_UINT32_FIELD(*this, offset);
-  const TrustedPointerTable& table = isolate.GetTrustedPointerTableFor(tag);
-  return table.IsUnpublished(handle);
-#else
-  return false;
-#endif
+  return TrustedPointerField::IsTrustedPointerFieldUnpublished(*this, offset,
+                                                               tag, isolate);
 }
 
 void HeapObject::ClearTrustedPointerField(size_t offset) {
-#ifdef V8_ENABLE_SANDBOX
-  RELEASE_WRITE_UINT32_FIELD(*this, offset, kNullIndirectPointerHandle);
-#else
-  TaggedField<Smi>::Release_Store(*this, static_cast<int>(offset), Smi::zero());
-#endif
+  TrustedPointerField::ClearTrustedPointerField(*this, offset);
 }
 
 void HeapObject::ClearTrustedPointerField(size_t offset, ReleaseStoreTag) {
-  return ClearTrustedPointerField(offset);
+  TrustedPointerField::ClearTrustedPointerField(*this, offset, kReleaseStore);
 }
 
 Tagged<Code> HeapObject::ReadCodePointerField(size_t offset,
@@ -1320,7 +1286,6 @@ template <typename ObjectType>
 JSDispatchHandle HeapObject::AllocateAndInstallJSDispatchHandle(
     ObjectType host, size_t offset, Isolate* isolate, uint16_t parameter_count,
     DirectHandle<Code> code, WriteBarrierMode mode) {
-#ifdef V8_ENABLE_LEAPTIERING
   JSDispatchTable::Space* space =
       isolate->GetJSDispatchTableSpaceFor(host->field_address(offset));
   JSDispatchHandle handle =
@@ -1335,9 +1300,6 @@ JSDispatchHandle HeapObject::AllocateAndInstallJSDispatchHandle(
   CONDITIONAL_JS_DISPATCH_HANDLE_WRITE_BARRIER(*host, handle, mode);
 
   return handle;
-#else
-  UNREACHABLE();
-#endif  // V8_ENABLE_LEAPTIERING
 }
 
 ObjectSlot HeapObject::RawField(int byte_offset) const {
@@ -1412,7 +1374,7 @@ MapWord MapWord::FromForwardingAddress(Tagged<HeapObject> map_word_host,
 }
 
 Tagged<HeapObject> MapWord::ToForwardingAddress(
-    Tagged<HeapObject> map_word_host) {
+    Tagged<HeapObject> map_word_host) const {
   DCHECK(IsForwardingAddress());
 #ifdef V8_EXTERNAL_CODE_SPACE
   // When the sandbox or the external code space is enabled, forwarding
@@ -1741,14 +1703,6 @@ void HeapObject::set_map_word_forwarded(Tagged<HeapObject> target_object,
                                         ReleaseStoreTag) {
   MapField::Release_Store_Map_Word(
       *this, MapWord::FromForwardingAddress(*this, target_object));
-}
-
-bool HeapObject::release_compare_and_swap_map_word_forwarded(
-    MapWord old_map_word, Tagged<HeapObject> new_target_object) {
-  Tagged_t result = MapField::Release_CompareAndSwap(
-      *this, old_map_word,
-      MapWord::FromForwardingAddress(*this, new_target_object));
-  return result == static_cast<Tagged_t>(old_map_word.ptr());
 }
 
 bool HeapObject::relaxed_compare_and_swap_map_word_forwarded(

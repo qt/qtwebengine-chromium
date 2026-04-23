@@ -17,21 +17,30 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "src/utils/bounds_safety.h"
 #include "src/utils/utils.h"
 #include "src/webp/types.h"
+
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
 
 //------------------------------------------------------------------------------
 // VP8LColorCache.
 
 int VP8LColorCacheInit(VP8LColorCache* const color_cache, int hash_bits) {
   const int hash_size = 1 << hash_bits;
+  uint32_t* colors = (uint32_t*)WebPSafeCalloc((uint64_t)hash_size,
+                                               sizeof(*color_cache->colors));
   assert(color_cache != NULL);
   assert(hash_bits > 0);
-  color_cache->colors = (uint32_t*)WebPSafeCalloc((uint64_t)hash_size,
-                                                  sizeof(*color_cache->colors));
-  if (color_cache->colors == NULL) return 0;
+  if (colors == NULL) {
+    color_cache->colors = NULL;
+    WEBP_SELF_ASSIGN(color_cache->hash_bits);
+    return 0;
+  }
   color_cache->hash_shift = 32 - hash_bits;
   color_cache->hash_bits = hash_bits;
+  color_cache->colors = WEBP_UNSAFE_FORGE_BIDI_INDEXABLE(
+      uint32_t*, colors, (size_t)hash_size * sizeof(*color_cache->colors));
   return 1;
 }
 
@@ -39,6 +48,7 @@ void VP8LColorCacheClear(VP8LColorCache* const color_cache) {
   if (color_cache != NULL) {
     WebPSafeFree(color_cache->colors);
     color_cache->colors = NULL;
+    WEBP_SELF_ASSIGN(color_cache->hash_bits);
   }
 }
 
@@ -47,6 +57,6 @@ void VP8LColorCacheCopy(const VP8LColorCache* const src,
   assert(src != NULL);
   assert(dst != NULL);
   assert(src->hash_bits == dst->hash_bits);
-  memcpy(dst->colors, src->colors,
-         ((size_t)1u << dst->hash_bits) * sizeof(*dst->colors));
+  WEBP_UNSAFE_MEMCPY(dst->colors, src->colors,
+                     ((size_t)1u << dst->hash_bits) * sizeof(*dst->colors));
 }

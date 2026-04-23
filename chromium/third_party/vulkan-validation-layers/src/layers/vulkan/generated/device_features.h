@@ -150,6 +150,8 @@ struct DeviceFeatures {
     bool customBorderColorWithoutFormat;
     // VkPhysicalDeviceCustomBorderColorFeaturesEXT
     bool customBorderColors;
+    // VkPhysicalDeviceCustomResolveFeaturesEXT
+    bool customResolve;
     // VkPhysicalDeviceDataGraphFeaturesARM
     bool dataGraph;
     // VkPhysicalDeviceDataGraphFeaturesARM
@@ -160,6 +162,8 @@ struct DeviceFeatures {
     bool dataGraphSpecializationConstants;
     // VkPhysicalDeviceDataGraphFeaturesARM
     bool dataGraphUpdateAfterBind;
+    // VkPhysicalDeviceDataGraphModelFeaturesQCOM
+    bool dataGraphModel;
     // VkPhysicalDeviceDedicatedAllocationImageAliasingFeaturesNV
     bool dedicatedAllocationImageAliasing;
     // VkPhysicalDeviceDenseGeometryFormatFeaturesAMDX
@@ -552,6 +556,8 @@ struct DeviceFeatures {
     bool stippledSmoothLines;
     // VkPhysicalDeviceLinearColorAttachmentFeaturesNV
     bool linearColorAttachment;
+    // VkPhysicalDeviceMaintenance10FeaturesKHR
+    bool maintenance10;
     // VkPhysicalDeviceMaintenance4Features, VkPhysicalDeviceVulkan13Features
     bool maintenance4;
     // VkPhysicalDeviceMaintenance5Features, VkPhysicalDeviceVulkan14Features
@@ -570,7 +576,7 @@ struct DeviceFeatures {
     bool memoryMapRangePlaced;
     // VkPhysicalDeviceMapMemoryPlacedFeaturesEXT
     bool memoryUnmapReserve;
-    // VkPhysicalDeviceMemoryDecompressionFeaturesNV
+    // VkPhysicalDeviceMemoryDecompressionFeaturesEXT
     bool memoryDecompression;
     // VkPhysicalDeviceMemoryPriorityFeaturesEXT
     bool memoryPriority;
@@ -624,6 +630,8 @@ struct DeviceFeatures {
     bool dynamicPipelineLayout;
     // VkPhysicalDevicePerStageDescriptorSetFeaturesNV
     bool perStageDescriptorSet;
+    // VkPhysicalDevicePerformanceCountersByRegionFeaturesARM
+    bool performanceCountersByRegion;
     // VkPhysicalDevicePerformanceQueryFeaturesKHR
     bool performanceCounterMultipleQueryPools;
     // VkPhysicalDevicePerformanceQueryFeaturesKHR
@@ -686,6 +694,12 @@ struct DeviceFeatures {
     bool presentMetering;
     // VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR
     bool presentModeFifoLatestReady;
+    // VkPhysicalDevicePresentTimingFeaturesEXT
+    bool presentAtAbsoluteTime;
+    // VkPhysicalDevicePresentTimingFeaturesEXT
+    bool presentAtRelativeTime;
+    // VkPhysicalDevicePresentTimingFeaturesEXT
+    bool presentTiming;
     // VkPhysicalDevicePresentWait2FeaturesKHR
     bool presentWait2;
     // VkPhysicalDevicePresentWaitFeaturesKHR
@@ -720,7 +734,7 @@ struct DeviceFeatures {
     bool shaderRawAccessChains;
     // VkPhysicalDeviceRayQueryFeaturesKHR
     bool rayQuery;
-    // VkPhysicalDeviceRayTracingInvocationReorderFeaturesNV
+    // VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT, VkPhysicalDeviceRayTracingInvocationReorderFeaturesNV
     bool rayTracingInvocationReorder;
     // VkPhysicalDeviceRayTracingLinearSweptSpheresFeaturesNV
     bool linearSweptSpheres;
@@ -768,6 +782,8 @@ struct DeviceFeatures {
     bool schedulingControls;
     // VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures, VkPhysicalDeviceVulkan12Features
     bool separateDepthStencilLayouts;
+    // VkPhysicalDeviceShader64BitIndexingFeaturesEXT
+    bool shader64BitIndexing;
     // VkPhysicalDeviceShaderAtomicFloat16VectorFeaturesNV
     bool shaderFloat16VectorAtomics;
     // VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT
@@ -856,6 +872,12 @@ struct DeviceFeatures {
     bool shaderFloat8CooperativeMatrix;
     // VkPhysicalDeviceShaderFloatControls2Features, VkPhysicalDeviceVulkan14Features
     bool shaderFloatControls2;
+    // VkPhysicalDeviceShaderFmaFeaturesKHR
+    bool shaderFmaFloat16;
+    // VkPhysicalDeviceShaderFmaFeaturesKHR
+    bool shaderFmaFloat32;
+    // VkPhysicalDeviceShaderFmaFeaturesKHR
+    bool shaderFmaFloat64;
     // VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT
     bool shaderImageInt64Atomics;
     // VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT
@@ -896,6 +918,8 @@ struct DeviceFeatures {
     bool shaderTileImageDepthReadAccess;
     // VkPhysicalDeviceShaderTileImageFeaturesEXT
     bool shaderTileImageStencilReadAccess;
+    // VkPhysicalDeviceShaderUniformBufferUnsizedArrayFeaturesEXT
+    bool shaderUniformBufferUnsizedArray;
     // VkPhysicalDeviceShaderUntypedPointersFeaturesKHR
     bool shaderUntypedPointers;
     // VkPhysicalDeviceShadingRateImageFeaturesNV

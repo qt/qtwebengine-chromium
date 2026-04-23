@@ -94,10 +94,10 @@ questions.
 Rust is allowed for third party libraries. Unlike C++ libraries, Rust third
 party libraries are [regularly rolled to updated versions by a
 rotation](https://chromium.googlesource.com/chromium/src/tools/+/HEAD/crates/create_update_cl.md)
-and can be audited for unsafety. The process for adding a Googler adding new Rust third-party
-dependencies is documented at go/chrome-rust. External contributors adding a new
-third party Rust dependency will be shepherded through the process as part of
-their ATL review.
+and can be audited for unsafety.
+The process for importing a new Rust third-party dependency is documented at
+[`//third_party/rust/README-importing-new-crates.md`](../third_party/rust/README-importing-new-crates.md)
+(Googlers can also find additional considerations at go/chrome-rust).
 
 Email rust-dev@chromium.org with any questions about the Rust toolchain.
 
@@ -195,7 +195,7 @@ in third_party/OWNERS for help.
 
 See [Moving large files to Google Storage](https://goto.google.com/checking-in-large-files)
 
-# Standard directory structure for dependencies {standard-dep-structure}
+# Standard directory structure for dependencies {#standard-dep-structure}
 
 Regardless of how you import a dependency, you should use the following
 directory structure. This folder layout enforces separation between first and
@@ -399,6 +399,10 @@ about:credits page in Google Chrome builds.
 If the library will never be shipped as a part of Chrome (e.g. build-time tools,
 testing tools), make sure to set the "Shipped" field to "no" so that the license
 is not included in about:credits page ([more on this below](#credits)).
+
+README.chromium files contain a 'License Android Compatible' field indicating whether
+the package's license is compatible with Android. This is optional if the package is
+not shipped, or uses a standard license.
 
 When a dependency allows a choice of license, OWNERS should choose the least
 restrictive license that meets Chromium's needs and document only the chosen

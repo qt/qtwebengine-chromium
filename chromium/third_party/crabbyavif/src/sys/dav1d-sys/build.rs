@@ -97,6 +97,7 @@ fn main() -> Result<(), String> {
         .layout_tests(false)
         .generate_comments(false);
     let allowlist_items = &[
+        "DAV1D_MAX_THREADS",
         "dav1d_close",
         "dav1d_data_unref",
         "dav1d_data_wrap",

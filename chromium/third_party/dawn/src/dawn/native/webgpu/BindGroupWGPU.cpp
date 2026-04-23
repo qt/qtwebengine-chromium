@@ -27,11 +27,17 @@
 
 #include "dawn/native/webgpu/BindGroupWGPU.h"
 
+#include <vector>
+
 #include "absl/container/inlined_vector.h"
+#include "dawn/common/MatchVariant.h"
 #include "dawn/common/StringViewUtils.h"
 #include "dawn/native/webgpu/BindGroupLayoutWGPU.h"
 #include "dawn/native/webgpu/BufferWGPU.h"
+#include "dawn/native/webgpu/CaptureContext.h"
+#include "dawn/native/webgpu/ComputePipelineWGPU.h"
 #include "dawn/native/webgpu/DeviceWGPU.h"
+#include "dawn/native/webgpu/RenderPipelineWGPU.h"
 #include "dawn/native/webgpu/SamplerWGPU.h"
 #include "dawn/native/webgpu/TextureWGPU.h"
 
@@ -87,7 +93,9 @@ ResultOrError<Ref<BindGroup>> BindGroup::Create(
 }
 
 BindGroup::BindGroup(Device* device, const UnpackedPtr<BindGroupDescriptor>& descriptor)
-    : BindGroupBase(this, device, descriptor), ObjectWGPU(device->wgpu.bindGroupRelease) {
+    : BindGroupBase(this, device, descriptor),
+      RecordableObject(schema::ObjectType::BindGroup),
+      ObjectWGPU(device->wgpu.bindGroupRelease) {
     ComboBindGroupDescriptor desc(*descriptor);
     mInnerHandle =
         ToBackend(GetDevice())
@@ -106,6 +114,107 @@ void BindGroup::DeleteThis() {
     Ref<BindGroupLayout> layout = ToBackend(GetLayout());
     BindGroupBase::DeleteThis();
     layout->DeallocateBindGroup(this);
+}
+
+void BindGroup::SetLabelImpl() {
+    ToBackend(GetDevice())->CaptureSetLabel(this, GetLabel());
+}
+
+MaybeError BindGroup::AddReferenced(CaptureContext& captureContext) {
+    // We have to include any referenced bound textures views as the front end does
+    // not track texture views.
+    BindGroupLayoutInternalBase* layout = GetLayout();
+    DAWN_TRY(captureContext.AddResource(ToBackend(layout)));
+
+    {
+        const auto& bindingMap = layout->GetBindingMap();
+        for (const auto& [bindingNumber, apiBindingIndex] : bindingMap) {
+            BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
+            const auto& bindingInfo = layout->GetAPIBindingInfo(apiBindingIndex);
+
+            DAWN_TRY(MatchVariant(
+                bindingInfo.bindingLayout,
+                [&](const SamplerBindingInfo& info) -> MaybeError {
+                    return captureContext.AddResource(ToBackend(GetBindingAsSampler(bindingIndex)));
+                },
+                [&](const StorageTextureBindingInfo& info) -> MaybeError {
+                    return captureContext.AddResource(
+                        ToBackend(GetBindingAsTextureView(bindingIndex)));
+                },
+                [&](const TextureBindingInfo& info) -> MaybeError {
+                    return captureContext.AddResource(
+                        ToBackend(GetBindingAsTextureView(bindingIndex)));
+                },
+                [&](const auto& info) -> MaybeError { return {}; }));
+        }
+    }
+
+    return {};
+}
+
+MaybeError BindGroup::CaptureCreationParameters(CaptureContext& captureContext) {
+    BindGroupLayoutInternalBase* layout = GetLayout();
+    const auto& bindingMap = layout->GetBindingMap();
+
+    schema::BindGroup bg{{
+        .layoutId = captureContext.GetId(layout),
+        .numEntries = uint32_t(bindingMap.size()),
+    }};
+    Serialize(captureContext, bg);
+
+    for (const auto& [bindingNumber, apiBindingIndex] : bindingMap) {
+        BindingIndex bindingIndex = layout->AsBindingIndex(apiBindingIndex);
+        const auto& bindingInfo = layout->GetAPIBindingInfo(apiBindingIndex);
+        uint32_t binding = uint32_t(bindingNumber);
+
+        MatchVariant(
+            bindingInfo.bindingLayout,
+            [&](const BufferBindingInfo& info) {
+                const auto& entry = GetBindingAsBufferBinding(bindingIndex);
+                schema::BindGroupEntryTypeBufferBinding data{{
+                    .binding = binding,
+                    .data{{
+                        .bufferId = captureContext.GetId(entry.buffer),
+                        .offset = entry.offset,
+                        .size = entry.size,
+                    }},
+                }};
+                Serialize(captureContext, data);
+            },
+            [&](const SamplerBindingInfo& info) {
+                const auto& entry = GetBindingAsSampler(bindingIndex);
+                schema::BindGroupEntryTypeSamplerBinding data{{
+                    .binding = binding,
+                    .data{{
+                        .samplerId = captureContext.GetId(entry),
+                    }},
+                }};
+                Serialize(captureContext, data);
+            },
+            [&](const StorageTextureBindingInfo& info) {
+                const auto& entry = GetBindingAsTextureView(bindingIndex);
+                schema::BindGroupEntryTypeTextureBinding data{{
+                    .binding = binding,
+                    .data{{
+                        .textureViewId = captureContext.GetId(entry),
+                    }},
+                }};
+                Serialize(captureContext, data);
+            },
+            [&](const TextureBindingInfo& info) {
+                const auto& entry = GetBindingAsTextureView(bindingIndex);
+                schema::BindGroupEntryTypeTextureBinding data{{
+                    .binding = binding,
+                    .data{{
+                        .textureViewId = captureContext.GetId(entry),
+                    }},
+                }};
+                Serialize(captureContext, data);
+            },
+            [&](const auto& info) { DAWN_CHECK(false); });
+    }
+
+    return {};
 }
 
 }  // namespace dawn::native::webgpu

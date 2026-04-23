@@ -58,7 +58,6 @@
 #include "content/browser/aggregation_service/public_key.h"
 #include "content/browser/attribution_reporting/attribution_background_registrations_id.h"
 #include "content/browser/attribution_reporting/attribution_data_host_manager.h"
-#include "content/browser/attribution_reporting/attribution_features.h"
 #include "content/browser/attribution_reporting/attribution_manager_impl.h"
 #include "content/browser/attribution_reporting/attribution_os_level_manager.h"
 #include "content/browser/attribution_reporting/attribution_report.h"
@@ -413,11 +412,6 @@ void Handle(const AttributionSimulationEvent::EndRequest& event,
       BackgroundRegistrationsId(event.request_id));
 }
 
-void Handle(const AttributionSimulationEvent::Navigation& event,
-            AttributionManager& manager) {
-  manager.UpdateLastNavigationTime(base::Time::Now());
-}
-
 void FastForwardUntilReportsConsumed(AttributionManager& manager,
                                      BrowserTaskEnvironment& task_environment) {
   while (true) {
@@ -465,13 +459,6 @@ RunAttributionInteropSimulation(
       scoped_api_state;
   if (run.config.needs_cross_app_web) {
     scoped_api_state.emplace(AttributionOsLevelManager::ApiState::kEnabled);
-  }
-
-  if (run.config.needs_retry_after_new_navigation) {
-    enabled_features.push_back(base::test::FeatureRefAndParams(  // IN-TEST
-        kAttributionReportNavigationBasedRetry,
-        {{"navigation_retry_attempt",
-          *run.config.needs_retry_after_new_navigation}}));
   }
 
   base::test::ScopedFeatureList scoped_feature_list;
@@ -621,16 +608,15 @@ RunAttributionInteropSimulation(
 void MaybeAdjustReportBody(const GURL& url,
                            base::Value& payload,
                            ReportBodyAdjuster& adjuster) {
-  if (base::EndsWith(url.path_piece(), "/report-aggregate-attribution")) {
+  if (base::EndsWith(url.path(), "/report-aggregate-attribution")) {
     if (base::Value::Dict* dict = payload.GetIfDict()) {
       adjuster.AdjustAggregatable(*dict);
     }
-  } else if (base::EndsWith(url.path_piece(), "/report-event-attribution")) {
+  } else if (base::EndsWith(url.path(), "/report-event-attribution")) {
     if (base::Value::Dict* dict = payload.GetIfDict()) {
       adjuster.AdjustEventLevel(*dict);
     }
-  } else if (url.path_piece() ==
-             "/.well-known/attribution-reporting/debug/verbose") {
+  } else if (url.path() == "/.well-known/attribution-reporting/debug/verbose") {
     if (base::Value::List* list = payload.GetIfList()) {
       for (auto& item : *list) {
         base::Value::Dict* dict = item.GetIfDict();
@@ -645,7 +631,7 @@ void MaybeAdjustReportBody(const GURL& url,
         }
       }
     }
-  } else if (url.path_piece() ==
+  } else if (url.path() ==
              "/.well-known/attribution-reporting/debug/"
              "report-aggregate-debug") {
     if (base::Value::Dict* dict = payload.GetIfDict()) {

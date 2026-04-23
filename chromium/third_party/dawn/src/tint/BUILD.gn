@@ -98,6 +98,12 @@ config("tint_public_config") {
     defines += [ "TINT_BUILD_HLSL_WRITER=0" ]
   }
 
+  if (tint_build_null_writer) {
+    defines += [ "TINT_BUILD_NULL_WRITER=1" ]
+  } else {
+    defines += [ "TINT_BUILD_NULL_WRITER=0" ]
+  }
+
   if (tint_build_glsl_writer) {
     defines += [ "TINT_BUILD_GLSL_WRITER=1" ]
   } else {
@@ -272,17 +278,6 @@ if (tint_build_benchmarks) {
   }
 }
 
-group("abseil") {
-  # When building within Chromium or ANGLE we need to include "//third_party/abseil-cpp:absl" while
-  # it's beneficial to be more specific with standalone Dawn, especially when it comes to
-  # including it as a dependency in other projects (such as Skia).
-  if (build_with_chromium || build_with_angle) {
-    public_deps = [ "$dawn_abseil_dir:absl" ]
-  } else {
-    public_deps = [ "${dawn_root}/third_party/gn/abseil-cpp:strings" ]
-  }
-}
-
 source_set("winsock") {
   libs = [ "ws2_32.lib" ]
 }
@@ -319,7 +314,7 @@ group("cmds") {
   if (tint_build_tintd) {
     deps += [ "${tint_src_dir}/cmd/tintd" ]
   }
-  if (tint_has_fuzzers && tint_build_ir_binary) {
+  if (tint_build_ir_binary) {
     if (tint_build_wgsl_reader) {
       deps += [ "${tint_src_dir}/cmd/fuzz/ir/as" ]
     }
@@ -332,20 +327,18 @@ group("cmds") {
 group("fuzzers") {
   testonly = true
   data_deps = []
-  if (tint_has_fuzzers) {
-    if (tint_build_wgsl_reader) {
-      data_deps += [ "${tint_src_dir}/cmd/fuzz/wgsl" ]
-    }
-    if (tint_build_ir_binary) {
-      data_deps += [ "${tint_src_dir}/cmd/fuzz/ir" ]
-    }
+  if (tint_build_wgsl_reader) {
+    data_deps += [ "${tint_src_dir}/cmd/fuzz/wgsl" ]
+  }
+  if (tint_build_ir_binary) {
+    data_deps += [ "${tint_src_dir}/cmd/fuzz/ir" ]
   }
 }
 
 group("fuzzer_corpus_tools") {
   testonly = true
   data_deps = [ ":fuzzers" ]
-  if (tint_has_fuzzers && tint_build_ir_binary) {
+  if (tint_build_ir_binary) {
     data_deps += [ "${tint_src_dir}/cmd/fuzz/ir/as" ]
   }
 }
@@ -356,7 +349,11 @@ group("fuzzer_corpus_tests") {
     ":fuzzer_corpus_tools",
     "${dawn_root}/tools:go_tools",
   ]
-  data = [ "${dawn_root}/test/tint/" ]
+  data = [
+    "${dawn_root}/scripts/run_tint_fuzzer_corpus_tests.py",
+    "${dawn_root}/test/tint/",
+    "${dawn_root}/tools/python/",
+  ]
 }
 
 group("tests") {
@@ -369,8 +366,9 @@ group("tests") {
 
 group("benchmarks") {
   testonly = true
-  deps = []
+  data_deps = []
   if (tint_build_benchmarks && tint_build_wgsl_reader) {
-    deps += [ "${tint_src_dir}/cmd/bench:bench_cmd" ]
+    data_deps += [ "${tint_src_dir}/cmd/bench:bench_cmd" ]
   }
+  data = [ "${dawn_root}/scripts/run_tint_benchmark_test.py" ]
 }

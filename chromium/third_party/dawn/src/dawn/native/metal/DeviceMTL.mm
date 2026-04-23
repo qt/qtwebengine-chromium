@@ -225,9 +225,8 @@ ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescripto
 }
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-    const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult) {
-    return ShaderModule::Create(this, descriptor, internalExtensions, parseResult);
+    const std::vector<tint::wgsl::Extension>& internalExtensions) {
+    return ShaderModule::Create(this, descriptor, internalExtensions);
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
                                                               SwapChainBase* previousSwapChain,
@@ -347,7 +346,7 @@ MaybeError Device::CopyFromStagingToBuffer(BufferBase* source,
 // In Metal we don't write from the CPU to the texture directly which can be done using the
 // replaceRegion function, because the function requires a non-private storage mode and Dawn
 // sets the private storage mode by default for all textures except IOSurfaces on macOS.
-MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
+MaybeError Device::CopyFromStagingToTextureImpl(BufferBase* source,
                                                 const TexelCopyBufferLayout& dataLayout,
                                                 const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
@@ -360,8 +359,8 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
     RecordCopyBufferToTexture(
         ToBackend(GetQueue())->GetPendingCommandContext(QueueBase::SubmitMode::Passive),
         ToBackend(source)->GetMTLBuffer(), source->GetSize(), dataLayout.offset,
-        dataLayout.bytesPerRow, dataLayout.rowsPerImage, texture, dst.mipLevel, dst.origin,
-        dst.aspect, copySizePixels);
+        dataLayout.bytesPerRow, dataLayout.rowsPerImage, texture, dst.mipLevel,
+        dst.origin.ToOrigin3D(), dst.aspect, copySizePixels);
     return {};
 }
 

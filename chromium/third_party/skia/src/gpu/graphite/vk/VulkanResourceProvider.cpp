@@ -107,6 +107,10 @@ const VulkanSharedContext* VulkanResourceProvider::vulkanSharedContext() const {
     return static_cast<const VulkanSharedContext*>(fSharedContext);
 }
 
+VulkanSharedContext* VulkanResourceProvider::nonConstVulkanSharedContext() {
+    return static_cast<VulkanSharedContext*>(fSharedContext);
+}
+
 sk_sp<Texture> VulkanResourceProvider::onCreateWrappedTexture(const BackendTexture& texture) {
     sk_sp<VulkanYcbcrConversion> ycbcrConversion;
     const auto& vkInfo = TextureInfoPriv::Get<VulkanTextureInfo>(texture.info());
@@ -124,23 +128,6 @@ sk_sp<Texture> VulkanResourceProvider::onCreateWrappedTexture(const BackendTextu
                                       BackendTextures::GetVkImage(texture),
                                       /*alloc=*/{} /*Skia does not own wrapped texture memory*/,
                                       std::move(ycbcrConversion));
-}
-
-sk_sp<GraphicsPipeline> VulkanResourceProvider::createGraphicsPipeline(
-        const RuntimeEffectDictionary* runtimeDict,
-        const UniqueKey& pipelineKey,
-        const GraphicsPipelineDesc& pipelineDesc,
-        const RenderPassDesc& renderPassDesc,
-        SkEnumBitMask<PipelineCreationFlags> pipelineCreationFlags,
-        uint32_t compilationID) {
-    return VulkanGraphicsPipeline::Make(this->vulkanSharedContext(),
-                                        this,
-                                        runtimeDict,
-                                        pipelineKey,
-                                        pipelineDesc,
-                                        renderPassDesc,
-                                        pipelineCreationFlags,
-                                        compilationID);
 }
 
 sk_sp<ComputePipeline> VulkanResourceProvider::createComputePipeline(const ComputePipelineDesc&) {
@@ -611,7 +598,7 @@ sk_sp<VulkanGraphicsPipeline> VulkanResourceProvider::findOrCreateLoadMSAAPipeli
     }
 
     sk_sp<VulkanGraphicsPipeline> pipeline = VulkanGraphicsPipeline::MakeLoadMSAAPipeline(
-            this->vulkanSharedContext(), this, *fLoadMSAAProgram, renderPassDesc);
+            this->nonConstVulkanSharedContext(), *fLoadMSAAProgram, renderPassDesc);
     if (!pipeline) {
         SKGPU_LOG_E("Failed to create MSAA load pipeline");
         return nullptr;
@@ -685,7 +672,15 @@ BackendTexture VulkanResourceProvider::onCreateBackendTexture(AHardwareBuffer* h
         if (isRenderable) {
             // Renderable attachments can be used as input attachments if we are loading from MSAA.
             usageFlags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+            // Opt into MSAA-render-to-SS to match getDefaultSampled/AttachmentInfo in VulkanCaps
+            if (vkCaps.msaaRenderToSingleSampledSupport()) {
+                imgCreateflags |= VK_IMAGE_CREATE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_BIT_EXT;
+            }
         }
+        // For non-renderable Graphite-created textures, VulkanCaps also attempts to use
+        // VK_IMAGE_USAGE_HOST_TRANSFER_BIT, but if we are wrapping an AHardwareBuffer, its contents
+        // are presumably managed by the client and we aren't expecting to have to write directly
+        // to it from CPU memory.
     }
     VulkanTextureInfo vkTexInfo {
             VK_SAMPLE_COUNT_1_BIT,

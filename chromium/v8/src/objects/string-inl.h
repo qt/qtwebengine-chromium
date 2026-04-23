@@ -1076,7 +1076,7 @@ String::FlatContent String::GetFlatContent(
 template <typename T, template <typename> typename HandleType>
   requires(std::is_convertible_v<HandleType<T>, DirectHandle<String>>)
 HandleType<String> String::Share(Isolate* isolate, HandleType<T> string) {
-  DCHECK(v8_flags.shared_string_table);
+  DCHECK(v8_flags.shared_strings);
   MaybeDirectHandle<Map> new_map;
   switch (
       isolate->factory()->ComputeSharingStrategyForString(string, &new_map)) {
@@ -1219,6 +1219,12 @@ size_t String::Utf8Length(Isolate* isolate, DirectHandle<String> string) {
     auto vec = content.ToOneByteVector();
     return simdutf::utf8_length_from_latin1(
         reinterpret_cast<const char*>(vec.begin()), vec.size());
+  }
+
+  base::Vector<const base::uc16> vec = content.ToUC16Vector();
+  const char16_t* data = reinterpret_cast<const char16_t*>(vec.begin());
+  if (simdutf::validate_utf16(data, vec.size())) {
+    return simdutf::utf8_length_from_utf16(data, vec.size());
   }
 
   // TODO(419496232): Use simdutf once upstream bug is resolved.

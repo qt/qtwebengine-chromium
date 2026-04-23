@@ -353,51 +353,47 @@ const UIStrings = {
   /**
    * @description Label of a checkbox in the DevTools settings UI.
    */
-  enableRemoteFileLoading:
-      'Allow `DevTools` to load resources, such as source maps, from remote file paths. Disabled by default for security reasons.',
+  enableRemoteFileLoading: 'Allow loading remote file path resources in DevTools',
+  /**
+   * @description Tooltip text for a setting that controls whether external resource can be loaded in DevTools.
+   */
+  remoteFileLoadingInfo: 'Example resource are source maps. Disabled by default for security reasons.',
   /**
    * @description Tooltip text for a setting that controls the network cache. Disabling the network cache can simulate the network connections of users that are visiting a page for the first time.
    */
   networkCacheExplanation:
       'Disabling the network cache will simulate a network experience similar to a first time visitor.',
+  /**
+   * @description Setting under the Sources category to toggle usage of JavaScript source maps.
+   */
+  javaScriptSourceMaps: 'JavaScript source maps',
+  /**
+   * @description Title of a setting under the Sources category that can be invoked through the Command Menu
+   */
+  enableJavaScriptSourceMaps: 'Enable JavaScript source maps',
+  /**
+   * @description Title of a setting under the Sources category that can be invoked through the Command Menu
+   */
+  disableJavaScriptSourceMaps: 'Disable JavaScript source maps',
+  /**
+   * @description Title of a setting under the Sources category
+   */
+  cssSourceMaps: 'CSS source maps',
+  /**
+   * @description Title of a setting under the Sources category that can be invoked through the Command Menu
+   */
+  enableCssSourceMaps: 'Enable CSS source maps',
+  /**
+   * @description Title of a setting under the Sources category that can be invoked through the Command Menu
+   */
+  disableCssSourceMaps: 'Disable CSS source maps',
+  /**
+   * @description Title of a setting under the Console category in Settings
+   */
+  logXmlhttprequests: 'Log XMLHttpRequests',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('core/sdk/sdk-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
-
-Common.Settings.registerSettingExtension({
-  storageType: Common.Settings.SettingStorageType.SYNCED,
-  settingName: 'skip-stack-frames-pattern',
-  settingType: Common.Settings.SettingType.REGEX,
-  defaultValue: '/node_modules/|^node:',
-});
-
-Common.Settings.registerSettingExtension({
-  storageType: Common.Settings.SettingStorageType.SYNCED,
-  settingName: 'skip-content-scripts',
-  settingType: Common.Settings.SettingType.BOOLEAN,
-  defaultValue: true,
-});
-
-Common.Settings.registerSettingExtension({
-  storageType: Common.Settings.SettingStorageType.SYNCED,
-  settingName: 'automatically-ignore-list-known-third-party-scripts',
-  settingType: Common.Settings.SettingType.BOOLEAN,
-  defaultValue: true,
-});
-
-Common.Settings.registerSettingExtension({
-  storageType: Common.Settings.SettingStorageType.SYNCED,
-  settingName: 'skip-anonymous-scripts',
-  settingType: Common.Settings.SettingType.BOOLEAN,
-  defaultValue: false,
-});
-
-Common.Settings.registerSettingExtension({
-  storageType: Common.Settings.SettingStorageType.SYNCED,
-  settingName: 'enable-ignore-listing',
-  settingType: Common.Settings.SettingType.BOOLEAN,
-  defaultValue: true,
-});
 
 Common.Settings.registerSettingExtension({
   category: Common.Settings.SettingCategory.CONSOLE,
@@ -1158,6 +1154,56 @@ Common.Settings.registerSettingExtension({
   storageType: Common.Settings.SettingStorageType.SYNCED,
   title: i18nLazyString(UIStrings.enableRemoteFileLoading),
   settingName: 'network.enable-remote-file-loading',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: false,
+  learnMore: {
+    tooltip: i18nLazyString(UIStrings.remoteFileLoadingInfo),
+  }
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.SOURCES,
+  storageType: Common.Settings.SettingStorageType.SYNCED,
+  title: i18nLazyString(UIStrings.javaScriptSourceMaps),
+  settingName: 'js-source-maps-enabled',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
+  options: [
+    {
+      value: true,
+      title: i18nLazyString(UIStrings.enableJavaScriptSourceMaps),
+    },
+    {
+      value: false,
+      title: i18nLazyString(UIStrings.disableJavaScriptSourceMaps),
+    },
+  ],
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.SOURCES,
+  storageType: Common.Settings.SettingStorageType.SYNCED,
+  title: i18nLazyString(UIStrings.cssSourceMaps),
+  settingName: 'css-source-maps-enabled',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
+  options: [
+    {
+      value: true,
+      title: i18nLazyString(UIStrings.enableCssSourceMaps),
+    },
+    {
+      value: false,
+      title: i18nLazyString(UIStrings.disableCssSourceMaps),
+    },
+  ],
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.CONSOLE,
+  storageType: Common.Settings.SettingStorageType.SYNCED,
+  title: i18nLazyString(UIStrings.logXmlhttprequests),
+  settingName: 'monitoring-xhr-enabled',
   settingType: Common.Settings.SettingType.BOOLEAN,
   defaultValue: false,
 });

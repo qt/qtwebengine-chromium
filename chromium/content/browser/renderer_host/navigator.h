@@ -9,14 +9,13 @@
 #include <optional>
 
 #include "base/memory/raw_ptr.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "content/browser/renderer_host/navigation_controller_impl.h"
 #include "content/common/content_export.h"
 #include "content/common/navigation_client.mojom.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_discard_reason.h"
 #include "mojo/public/cpp/bindings/pending_associated_remote.h"
-#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "net/storage_access_api/status.h"
 #include "third_party/blink/public/common/navigation/impression.h"
 #include "third_party/blink/public/mojom/frame/triggering_event_info.mojom-shared.h"

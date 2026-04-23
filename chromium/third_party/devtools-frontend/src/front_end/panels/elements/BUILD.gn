@@ -14,7 +14,6 @@ generate_css("css_files") {
     "classesPaneWidget.css",
     "computedStyleSidebarPane.css",
     "cssValueTraceView.css",
-    "domLinkifier.css",
     "elementStatePaneWidget.css",
     "elementsPanel.css",
     "elementsTreeOutline.css",
@@ -29,10 +28,11 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("elements") {
+devtools_ui_module("elements") {
   sources = [
     "AccessibilityTreeUtils.ts",
     "AccessibilityTreeView.ts",
+    "AdoptedStyleSheetTreeElement.ts",
     "CSSRuleValidator.ts",
     "CSSRuleValidatorHelper.ts",
     "CSSValueTraceView.ts",
@@ -40,7 +40,6 @@ devtools_module("elements") {
     "ColorSwatchPopoverIcon.ts",
     "ComputedStyleModel.ts",
     "ComputedStyleWidget.ts",
-    "DOMLinkifier.ts",
     "DOMPath.ts",
     "ElementIssueUtils.ts",
     "ElementStatePaneWidget.ts",
@@ -88,6 +87,7 @@ devtools_module("elements") {
     "../../models/issues_manager:bundle",
     "../../models/workspace:bundle",
     "../../models/workspace_diff:bundle",
+    "../../panels/common:bundle",
     "../../panels/emulation:bundle",
     "../../panels/event_listeners:bundle",
     "../../panels/issues:bundle",
@@ -95,20 +95,22 @@ devtools_module("elements") {
     "../../panels/mobile_throttling:bundle",
     "../../panels/utils:bundle",
     "../../ui/components/adorners:bundle",
+    "../../ui/components/annotations:bundle",
     "../../ui/components/buttons:bundle",
     "../../ui/components/code_highlighter:bundle",
-    "../../ui/components/copy_to_clipboard:bundle",
     "../../ui/components/highlighting:bundle",
-    "../../ui/components/icon_button:bundle",
     "../../ui/components/text_editor:bundle",
     "../../ui/components/tooltips:bundle",
     "../../ui/components/tree_outline:bundle",
+    "../../ui/helpers:bundle",
+    "../../ui/kit:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/color_picker:bundle",
     "../../ui/legacy/components/inline_editor:bundle",
     "../../ui/legacy/components/object_ui:bundle",
     "../../ui/legacy/components/utils:bundle",
     "../../ui/lit:bundle",
+    "../common:bundle",
     "./components:bundle",
   ]
 
@@ -159,7 +161,7 @@ devtools_entrypoint("meta") {
   ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
@@ -170,7 +172,6 @@ ts_library("unittests") {
     "ColorSwatchPopoverIcon.test.ts",
     "ComputedStyleModel.test.ts",
     "ComputedStyleWidget.test.ts",
-    "DOMLinkifier.test.ts",
     "DOMTreeWidget.test.ts",
     "ElementStatePaneWidget.test.ts",
     "ElementsPanel.test.ts",

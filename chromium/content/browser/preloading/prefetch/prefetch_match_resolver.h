@@ -56,10 +56,12 @@ enum class PrefetchPotentialCandidateServingResult {
   // determined.
   kNotServedIneligiblePrefetch = 4,
 
+  // Deprecated
+  //
   // The candidate is not served because the candidate received
   // `OnDeterminedHead()` but its associated `PrefetchServableState` is
   // not `kServable`.
-  kNotServedUnsatisfiedPrefetchServeableState = 5,
+  // kNotServedUnsatisfiedPrefetchServeableState = 5,
 
   // The candidate is not served because the candidate's
   // `PrefetchServiceWorkerState` was matched with the expected one when
@@ -77,7 +79,31 @@ enum class PrefetchPotentialCandidateServingResult {
   // `PrefetchBlockUntilHeadTimeout()`.
   kNotServedBlockUntilHeadTimeout = 8,
 
-  kMaxValue = kNotServedBlockUntilHeadTimeout,
+  // The candidate is not served because
+  // `PrefetchContainer::Observer::OnDeterminedHead()` is called with
+  // `PrefetchServableState::kShouldBlockUntilHeadReceived`. Basically, we don't
+  // expect to enter this path, but there is a buggy corner case.
+  kNotServedOnDeterminedHeadWithShouldBlockUntilHeadReceived = 9,
+  // The candidate is not served because
+  // `PrefetchContainer::Observer::OnDeterminedHead()` is called but the
+  // prefetch has been expired.
+  kNotServedOnDeterminedHeadWithServableExpired = 10,
+  // The candidate is not served due to ineligible redirect.
+  kNotServedIneligibleRedirect = 11,
+  // The candidate is not served because the loading is failed.
+  kNotServedLoadFailed = 12,
+  // Deprecated
+  //
+  // The candidate is not served because
+  // `PrefetchContainer::Observer::OnDeterminedHead()` is called with
+  // `PrefetchServableState::kNotServable` except for expired nor failure. We
+  // don't expect to enter this path.
+  // kNotServedOnDeterminedHeadWithNotServableUnknown = 13,
+
+  // A special value for `PrefetchMatchResolver::UnblockForNoCandidates()`.
+  kNotServedNoCandidates = 14,
+
+  kMaxValue = kNotServedNoCandidates,
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/prefetch/enums.xml)
 
@@ -132,7 +158,8 @@ class CONTENT_EXPORT PrefetchMatchResolver final
       PrefetchServiceWorkerState expected_service_worker_state,
       base::WeakPtr<PrefetchServingPageMetricsContainer>
           serving_page_metrics_container,
-      Callback callback);
+      Callback callback,
+      perfetto::Flow flow);
   static void FindPrefetchForTesting(
       PrefetchService& prefetch_service,
       PrefetchKey navigated_key,
@@ -141,6 +168,8 @@ class CONTENT_EXPORT PrefetchMatchResolver final
       base::WeakPtr<PrefetchServingPageMetricsContainer>
           serving_page_metrics_container,
       Callback callback);
+
+  void AttachPrefetchMatchPrerenderDebugMetrics();
 
  private:
   struct CandidateData final {
@@ -160,7 +189,8 @@ class CONTENT_EXPORT PrefetchMatchResolver final
       base::WeakPtr<PrerenderHost> prerender_host,
       base::WeakPtr<PrefetchServingPageMetricsContainer>
           serving_page_metrics_container,
-      Callback callback);
+      Callback callback,
+      perfetto::Flow flow);
 
   explicit PrefetchMatchResolver(
       base::WeakPtr<NavigationRequest> navigation_request,
@@ -169,7 +199,8 @@ class CONTENT_EXPORT PrefetchMatchResolver final
       PrefetchServiceWorkerState expected_service_worker_state,
       bool is_nav_prerender,
       base::WeakPtr<PrerenderHost> prerender_host,
-      Callback callback);
+      Callback callback,
+      perfetto::Flow flow);
 
   // Returns blocked duration. Returns null iff it's not blocked yet.
   std::optional<base::TimeDelta> GetBlockedDuration() const;
@@ -247,6 +278,7 @@ class CONTENT_EXPORT PrefetchMatchResolver final
   const PrefetchServiceWorkerState expected_service_worker_state_;
   // Callback that is called at the match end.
   Callback callback_;
+  perfetto::Flow flow_;
   // Is the `NavigationHandle` for initial navigation of prerender or not.
   const bool is_nav_prerender_;
   // And its `PrerenderHost`.

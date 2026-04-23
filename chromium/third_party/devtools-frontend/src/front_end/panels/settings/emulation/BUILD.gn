@@ -11,12 +11,12 @@ generate_css("css_files") {
   sources = [ "devicesSettingsTab.css" ]
 }
 
-devtools_module("emulation") {
+devtools_ui_module("emulation") {
   sources = [ "DevicesSettingsTab.ts" ]
 
   deps = [
     "../../../core/i18n:bundle",
-    "../../../ui/components/cards:bundle",
+    "../../../ui/kit:bundle",
     "../../../ui/legacy:bundle",
     "../../emulation:bundle",
     "./components:bundle",

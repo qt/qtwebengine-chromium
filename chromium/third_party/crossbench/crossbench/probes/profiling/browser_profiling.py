@@ -14,10 +14,10 @@ from typing_extensions import override
 import crossbench.probes.perfetto.traceconv as cb_traceconv
 from crossbench.browsers.chromium.webdriver import ChromiumBasedWebDriver
 from crossbench.helper.path_finder import TraceconvFinder
-from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
-                                     ProbeKeyT)
-from crossbench.probes.probe_error import (ProbeIncompatibleBrowser,
-                                           ProbeValidationError)
+from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext, \
+    ProbeKeyT
+from crossbench.probes.probe_error import ProbeIncompatibleBrowser, \
+    ProbeValidationError
 from crossbench.probes.result_location import ResultLocation
 from crossbench.str_enum_with_help import StrEnumWithHelp
 
@@ -205,8 +205,8 @@ class ChromiumWebDriverBrowserProfilingProbeContext(BrowserProfilingProbeContext
     if legacy_json_file := cb_traceconv.convert_to_json(self.host_platform,
                                                         self.probe.traceconv,
                                                         trace_file):
-      return self.local_result(trace=(trace_file,), json=(legacy_json_file,))
-    return self.local_result(trace=(trace_file,))
+      return self.local_result(perfetto=(trace_file,), json=(legacy_json_file,))
+    return self.local_result(perfetto=(trace_file,))
 
 
 class FirefoxBrowserProfilingProbeContext(BrowserProfilingProbeContext):

@@ -1,7 +1,7 @@
 // Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -9,7 +9,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
-import * as IconButton from '../components/icon_button/icon_button.js';
+import {createIcon, type Icon} from '../kit/kit.js';
 import * as VisualLogging from '../visual_logging/visual_logging.js';
 
 import type {ActionDelegate as ActionDelegateInterface} from './ActionRegistration.js';
@@ -19,6 +19,7 @@ import type {Context} from './Context.js';
 import type {ContextMenu} from './ContextMenu.js';
 import {Dialog} from './Dialog.js';
 import {DockController, DockState, Events as DockControllerEvents} from './DockController.js';
+import {Floaty} from './Floaty.js';
 import {GlassPane} from './GlassPane.js';
 import {Infobar, Type as InfobarType} from './Infobar.js';
 import {KeyboardShortcut} from './KeyboardShortcut.js';
@@ -359,18 +360,31 @@ export class InspectorView extends VBox implements ViewLocationResolver {
     this.element.style.setProperty('--devtools-window-top', `${rect.top}px`);
     this.element.style.setProperty('--devtools-window-bottom', `${window.innerHeight - rect.bottom}px`);
     this.element.style.setProperty('--devtools-window-height', `${rect.height}px`);
+
+    if (Floaty.exists()) {
+      Floaty.instance().setDevToolsRect(rect);
+    }
   }
 
   override wasShown(): void {
+    super.wasShown();
     this.#resizeObserver.observe(this.element);
     this.#observedResize();
     this.element.ownerDocument.addEventListener('keydown', this.keyDownBound, false);
     DockController.instance().addEventListener(
         DockControllerEvents.DOCK_SIDE_CHANGED, this.#applyDrawerOrientationForDockSide, this);
     this.#applyDrawerOrientationForDockSide();
+
+    if (Root.Runtime.hostConfig.devToolsGreenDevUi?.enabled) {
+      Floaty.instance({
+        forceNew: true,
+        document: this.element.ownerDocument,
+      });
+    }
   }
 
   override willHide(): void {
+    super.willHide();
     this.#resizeObserver.unobserve(this.element);
     this.element.ownerDocument.removeEventListener('keydown', this.keyDownBound, false);
     DockController.instance().removeEventListener(
@@ -427,10 +441,10 @@ export class InspectorView extends VBox implements ViewLocationResolver {
     // Find the tabbed location where the panel lives
     const tabbedPane = this.getTabbedPaneForTabId(tabId);
     if (tabbedPane) {
-      let icon: IconButton.Icon.Icon|null = null;
+      let icon: Icon|null = null;
       if (warnings.length !== 0) {
         const warning = warnings.length === 1 ? warnings[0] : '· ' + warnings.join('\n· ');
-        icon = IconButton.Icon.create('warning-filled', 'small');
+        icon = createIcon('warning-filled', 'small');
         icon.classList.add('warning');
         Tooltip.install(icon, warning);
       }

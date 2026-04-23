@@ -16,7 +16,7 @@ source_set("drm") {
   deps = [
     "//base",
     "//build/config/linux/libdrm",
-    "//components/viz/common:shared_image_format",
+    "//components/viz/common/resources:shared_image_format",
     "//ui/gfx:buffer_types",
   ]
 }
@@ -38,7 +38,7 @@ source_set("gbm") {
     ":drm",
     "//base",
     "//build/config/linux/libdrm",
-    "//components/viz/common:shared_image_format",
+    "//components/viz/common/resources:shared_image_format",
     "//skia",
     "//third_party/minigbm",
     "//ui/gfx:buffer_types",
@@ -49,15 +49,16 @@ source_set("gbm") {
 }
 
 if (ozone_platform_x11) {
-  component("gpu_memory_buffer_support_x11") {
+  component("gbm_support_x11") {
     sources = [
-      "gpu_memory_buffer_support_x11.cc",
-      "gpu_memory_buffer_support_x11.h",
+      "gbm_support_x11.cc",
+      "gbm_support_x11.h",
     ]
     deps = [
       ":drm",
       ":gbm",
       "//base",
+      "//components/viz/common/resources:shared_image_format",
       "//skia",
       "//ui/gfx:buffer_types",
       "//ui/gfx:memory_buffer",

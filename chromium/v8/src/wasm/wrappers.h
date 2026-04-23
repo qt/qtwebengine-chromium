@@ -15,6 +15,31 @@
 #include "src/wasm/turboshaft-graph-interface.h"
 #include "src/wasm/wasm-engine.h"
 
+namespace v8::internal::compiler::turboshaft {
+struct WasmBodyInliningResult {
+  enum class Type {
+    kSuccessWithValue,  // Inlining succeeded and produced a value.
+    kSuccessVoid,       // Inlining succeeded for a void function (no value).
+    kFailed             // Inlining failed, e.g., because of bailing out due to
+                        // unsupported operations in the inlinee.
+  };
+
+  Type type = Type::kFailed;
+  OptionalV<Any> value = OptionalV<Any>::Nullopt();
+
+  static WasmBodyInliningResult SuccessWithValue(V<Any> result_value) {
+    return {Type::kSuccessWithValue, result_value};
+  }
+  static WasmBodyInliningResult SuccessVoid() {
+    return {Type::kSuccessVoid, OptionalV<Any>::Nullopt()};
+  }
+  static WasmBodyInliningResult Failed() {
+    return {Type::kFailed, OptionalV<Any>::Nullopt()};
+  }
+  bool IsSuccess() const { return type != Type::kFailed; }
+};
+}  // namespace v8::internal::compiler::turboshaft
+
 namespace v8::internal::wasm {
 
 #include "src/compiler/turboshaft/define-assembler-macros.inc"
@@ -63,9 +88,11 @@ class WasmWrapperTSGraphBuilder : public WasmGraphBuilderBase<Assembler> {
   };
 
   WasmWrapperTSGraphBuilder(
-      Zone* zone, Assembler& assembler, const CanonicalSig* sig,
+      Isolate* isolate, Zone* zone, Assembler& assembler,
+      const CanonicalSig* sig,
       std::optional<InlinedFunctionData> inlined_function_data = {})
       : WasmGraphBuilderBase<Assembler>(zone, assembler),
+        isolate_(isolate),
         sig_(sig),
         inlined_function_data_(std::move(inlined_function_data)) {}
 
@@ -80,11 +107,11 @@ class WasmWrapperTSGraphBuilder : public WasmGraphBuilderBase<Assembler> {
 
   V<Smi> BuildChangeInt32ToSmi(V<Word32> value) {
     // With pointer compression, only the lower 32 bits are used.
-    return V<Smi>::Cast(COMPRESS_POINTERS_BOOL
-                            ? __ BitcastWord32ToWord64(__ Word32ShiftLeft(
-                                  value, BuildSmiShiftBitsConstant32()))
-                            : __ Word64ShiftLeft(__ ChangeInt32ToInt64(value),
-                                                 BuildSmiShiftBitsConstant()));
+    return COMPRESS_POINTERS_BOOL ? __ BitcastWord32ToSmi(__ Word32ShiftLeft(
+                                        value, BuildSmiShiftBitsConstant32()))
+                                  : __ BitcastWordPtrToSmi(__ WordPtrShiftLeft(
+                                        __ ChangeInt32ToIntPtr(value),
+                                        BuildSmiShiftBitsConstant()));
   }
 
   V<WordPtr> GetTargetForBuiltinCall(Builtin builtin) {
@@ -151,17 +178,19 @@ class WasmWrapperTSGraphBuilder : public WasmGraphBuilderBase<Assembler> {
                                 V<Word32> callee,
                                 const base::Vector<OpIndex> args,
                                 base::Vector<OpIndex> returns,
-                                OptionalV<FrameState> frame_state);
+                                OptionalV<FrameState> frame_state,
+                                compiler::LazyDeoptOnThrow lazy_deopt_on_throw);
 
   OpIndex BuildCallAndReturn(V<Context> js_context, V<HeapObject> function_data,
                              base::Vector<OpIndex> args, bool do_conversion,
-                             OptionalV<FrameState> frame_state);
+                             OptionalV<FrameState> frame_state,
+                             compiler::LazyDeoptOnThrow lazy_deopt_on_throw);
 
-  V<Any> BuildJSToWasmWrapperImpl(bool receiver_is_first_param,
-                                  V<JSFunction> js_closure,
-                                  V<Context> js_context,
-                                  base::Vector<const OpIndex> arguments,
-                                  OptionalV<FrameState> frame_state);
+  V<Any> BuildJSToWasmWrapperImpl(
+      bool receiver_is_first_param, V<JSFunction> js_closure,
+      V<Context> js_context, base::Vector<const OpIndex> arguments,
+      OptionalV<FrameState> frame_state,
+      compiler::LazyDeoptOnThrow lazy_deopt_on_throw);
 
   void BuildJSToWasmWrapper(bool receiver_is_first_param);
 
@@ -336,97 +365,102 @@ class WasmWrapperTSGraphBuilder : public WasmGraphBuilderBase<Assembler> {
 
   OpIndex FromJS(V<Object> input, OpIndex context, CanonicalValueType type,
                  OptionalOpIndex frame_state = {}) {
-    switch (type.kind()) {
-      case kRef:
-      case kRefNull: {
-        switch (type.heap_representation_non_shared()) {
-          // TODO(14034): Add more fast paths?
-          case HeapType::kExtern: {
-            if (type.kind() == kRef) {
-              IF (UNLIKELY(__ TaggedEqual(input, LOAD_ROOT(NullValue)))) {
-                __ WasmCallRuntime(__ phase_zone(),
-                                   Runtime::kWasmThrowJSTypeError, {}, context);
-                __ Unreachable();
-              }
-            }
-            if (v8_flags.experimental_wasm_shared &&
-                type.heap_representation() == HeapType::kExternShared) {
-              Label<Object> done(&Asm());
-              IF_NOT (__ IsSmi(input)) {
-                V<WordPtr> flags = __ LoadPageFlags(V<HeapObject>::Cast(input));
-                V<WordPtr> shared_or_read_only = __ WordPtrBitwiseAnd(
-                    flags, static_cast<uintptr_t>(
-                               MemoryChunk::IN_WRITABLE_SHARED_SPACE |
-                               MemoryChunk::READ_ONLY_HEAP));
-                IF (UNLIKELY(__ WordPtrEqual(shared_or_read_only, 0))) {
-                  // If it isn't shared, yet, use the runtime function.
-                  std::initializer_list<const OpIndex> inputs = {
-                      input, __ IntPtrConstant(IntToSmi(
-                                 static_cast<int>(type.raw_bit_field())))};
-                  GOTO(done, __ WasmCallRuntime(__ phase_zone(),
-                                                Runtime::kWasmJSToWasmObject,
-                                                inputs, context));
-                }
-              }
-              GOTO(done, input);
-              BIND(done, result);
-              return result;
-            }
-            return input;
-          }
-          case HeapType::kString:
-            return BuildCheckString(input, context, type);
-          case HeapType::kExn:
-          case HeapType::kNoExn: {
-            UNREACHABLE();
-          }
-          case HeapType::kNoExtern:
-          case HeapType::kNone:
-          case HeapType::kNoFunc:
-          case HeapType::kI31:
-          case HeapType::kAny:
-          case HeapType::kFunc:
-          case HeapType::kStruct:
-          case HeapType::kArray:
-          case HeapType::kEq:
-          default: {
-            // Make sure ValueType fits in a Smi.
-            static_assert(ValueType::kLastUsedBit + 1 <= kSmiValueSize);
-
-            std::initializer_list<const OpIndex> inputs = {
-                input, __ IntPtrConstant(
-                           IntToSmi(static_cast<int>(type.raw_bit_field())))};
-            return __ WasmCallRuntime(
-                __ phase_zone(), Runtime::kWasmJSToWasmObject, inputs, context);
-          }
-        }
-      }
-      case kF32:
-        return __ TruncateFloat64ToFloat32(
-            BuildChangeTaggedToFloat64(input, context, frame_state));
-
-      case kF64:
-        return BuildChangeTaggedToFloat64(input, context, frame_state);
-
-      case kI32:
-        return BuildChangeTaggedToInt32(input, context, frame_state);
-
-      case kI64:
+    if (type.is_numeric()) {
+      switch (type.numeric_kind()) {
+        case NumericKind::kI32:
+          return BuildChangeTaggedToInt32(input, context, frame_state);
+        case NumericKind::kI64:
 #ifdef V8_ENABLE_TURBOFAN
-        // i64 values can only come from BigInt.
-        return BuildChangeBigIntToInt64(input, context, frame_state);
+          // i64 values can only come from BigInt.
+          return BuildChangeBigIntToInt64(input, context, frame_state);
 #endif
-
-      case kS128:
-      case kI8:
-      case kI16:
-      case kF16:
-      case kTop:
-      case kBottom:
-      case kVoid:
-        // If this is reached, then IsJSCompatibleSignature() is too permissive.
-        UNREACHABLE();
+        case NumericKind::kF32:
+          return __ TruncateFloat64ToFloat32(
+              BuildChangeTaggedToFloat64(input, context, frame_state));
+        case NumericKind::kF64:
+          return BuildChangeTaggedToFloat64(input, context, frame_state);
+        case NumericKind::kS128:
+        case NumericKind::kI8:
+        case NumericKind::kI16:
+        case NumericKind::kF16:
+          UNREACHABLE();
+      }
     }
+    if (type.is_abstract_ref()) {
+      switch (type.generic_kind()) {
+        // TODO(14034): Add more fast paths?
+        case GenericKind::kExtern: {
+          if (type.is_non_nullable()) {
+            IF (UNLIKELY(__ TaggedEqual(input, LOAD_ROOT(NullValue)))) {
+              __ WasmCallRuntime(__ phase_zone(),
+                                 Runtime::kWasmThrowJSTypeError, {}, context);
+              __ Unreachable();
+            }
+          }
+          if (v8_flags.experimental_wasm_shared && type.is_shared()) {
+            Label<Object> done(&Asm());
+            IF_NOT (__ IsSmi(input)) {
+              V<WordPtr> flags = __ LoadPageFlags(V<HeapObject>::Cast(input));
+              V<WordPtr> shared_or_read_only = __ WordPtrBitwiseAnd(
+                  flags,
+                  static_cast<uintptr_t>(MemoryChunk::IN_WRITABLE_SHARED_SPACE |
+                                         MemoryChunk::READ_ONLY_HEAP));
+              IF (UNLIKELY(__ WordPtrEqual(shared_or_read_only, 0))) {
+                // If it isn't shared, yet, use the runtime function.
+                std::initializer_list<const OpIndex> inputs = {
+                    input, __ IntPtrConstant(IntToSmi(
+                               static_cast<int>(type.raw_bit_field())))};
+                GOTO(done, __ WasmCallRuntime(__ phase_zone(),
+                                              Runtime::kWasmJSToWasmObject,
+                                              inputs, context));
+              }
+            }
+            GOTO(done, input);
+            BIND(done, result);
+            return result;
+          }
+          return input;
+        }
+        case GenericKind::kString:
+          return BuildCheckString(input, context, type);
+
+        case GenericKind::kNoExtern:
+        case GenericKind::kNoFunc:
+        case GenericKind::kNone:
+        case GenericKind::kFunc:
+        case GenericKind::kAny:
+        case GenericKind::kEq:
+        case GenericKind::kI31:
+        case GenericKind::kStruct:
+        case GenericKind::kArray:
+          break;  // Fall through.
+
+        case GenericKind::kVoid:
+        case GenericKind::kTop:
+        case GenericKind::kBottom:
+        case GenericKind::kExternString:
+        case GenericKind::kExn:
+        case GenericKind::kNoExn:
+        case GenericKind::kNoCont:
+        case GenericKind::kCont:
+        case GenericKind::kStringViewWtf8:
+        case GenericKind::kStringViewWtf16:
+        case GenericKind::kStringViewIter:
+          // If this is reached, then IsJSCompatibleSignature() is too
+          // permissive.
+          UNREACHABLE();
+      }
+    }
+    // Both indexed and allow-listed generic references get here.
+
+    // Make sure ValueType fits in a Smi.
+    static_assert(ValueType::kLastUsedBit + 1 <= kSmiValueSize);
+
+    std::initializer_list<const OpIndex> inputs = {
+        input,
+        __ IntPtrConstant(IntToSmi(static_cast<int>(type.raw_bit_field())))};
+    return __ WasmCallRuntime(__ phase_zone(), Runtime::kWasmJSToWasmObject,
+                              inputs, context);
   }
 
   bool QualifiesForFastTransform() {
@@ -674,12 +708,13 @@ class WasmWrapperTSGraphBuilder : public WasmGraphBuilderBase<Assembler> {
   }
 
  private:
-  V<Object> InlineWasmFunctionInsideWrapper(V<Context> js_context,
-                                            V<WasmFunctionData> function_data,
-                                            base::Vector<OpIndex> inlined_args,
-                                            bool do_conversion,
-                                            OptionalV<FrameState> frame_state);
+  V<Object> InlineWasmFunctionInsideWrapper(
+      V<Context> js_context, V<WasmFunctionData> function_data,
+      base::Vector<OpIndex> inlined_args, bool do_conversion,
+      OptionalV<FrameState> frame_state,
+      compiler::LazyDeoptOnThrow lazy_deopt_on_throw);
 
+  Isolate* isolate_;  // Only available when inlining the wrapper into JS.
   const CanonicalSig* const sig_;
   std::optional<InlinedFunctionData> inlined_function_data_;
 };

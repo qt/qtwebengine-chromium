@@ -38,6 +38,7 @@
 #include "dawn/common/WeakRef.h"
 #include "dawn/common/ityp_array.h"
 #include "dawn/common/ityp_bitset.h"
+#include "dawn/native/BlockInfo.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/Format.h"
 #include "dawn/native/Forward.h"
@@ -77,9 +78,6 @@ bool IsValidSampleCount(uint32_t sampleCount);
 // then `secondSwizzle`, like the order of WGSL swizzles (`value.rgba.rgba`).
 wgpu::TextureComponentSwizzle ComposeSwizzle(wgpu::TextureComponentSwizzle firstSwizzle,
                                              wgpu::TextureComponentSwizzle secondSwizzle);
-
-// Checks if two swizzles are functionally identical.
-bool AreSwizzleEquivalent(wgpu::TextureComponentSwizzle lhs, wgpu::TextureComponentSwizzle rhs);
 
 // The default swizzle as defined by the WebGPU specification.
 static constexpr wgpu::TextureComponentSwizzle kRGBASwizzle = {
@@ -197,13 +195,14 @@ class TextureBase : public RefCountedWithExternalCount<SharedResource> {
     bool IsMultisampledTexture() const;
 
     // Returns true if the size covers the whole subresource.
-    bool CoversFullSubresource(uint32_t mipLevel, Aspect aspect, const Extent3D& size) const;
+    bool CoversFullSubresource(uint32_t mipLevel, Aspect aspect, const TexelExtent3D& size) const;
 
     // For a texture with non-block-compressed texture format, its physical size is always equal
     // to its virtual size. For a texture with block compressed texture format, the physical
     // size is the one with paddings if necessary, which is always a multiple of the block size
     // and used in texture copying. The virtual size is the one without paddings, which is not
     // required to be a multiple of the block size and used in texture sampling.
+    // TODO(crbug.com/424536624): Return BlockExtent3D for these functions.
     Extent3D GetMipLevelSingleSubresourcePhysicalSize(uint32_t level, Aspect aspect) const;
     Extent3D GetMipLevelSingleSubresourceVirtualSize(uint32_t level, Aspect aspect) const;
     Extent3D ClampToMipLevelVirtualSize(uint32_t level,
@@ -371,10 +370,7 @@ class TextureViewBase : public ApiObjectBase {
     wgpu::TextureUsage GetInternalUsage() const;
 
     wgpu::TextureComponentSwizzle GetSwizzle() const;
-    wgpu::ComponentSwizzle GetSwizzleRed() const;
-    wgpu::ComponentSwizzle GetSwizzleGreen() const;
-    wgpu::ComponentSwizzle GetSwizzleBlue() const;
-    wgpu::ComponentSwizzle GetSwizzleAlpha() const;
+    bool IsSwizzleIdentity() const;
 
     virtual bool IsYCbCr() const;
     // Valid to call only if `IsYCbCr()` is true.
@@ -399,6 +395,7 @@ class TextureViewBase : public ApiObjectBase {
     wgpu::ComponentSwizzle mSwizzleGreen = wgpu::ComponentSwizzle::G;
     wgpu::ComponentSwizzle mSwizzleBlue = wgpu::ComponentSwizzle::B;
     wgpu::ComponentSwizzle mSwizzleAlpha = wgpu::ComponentSwizzle::A;
+    bool mIsSwizzleIdentity = false;
 };
 
 }  // namespace dawn::native

@@ -4,7 +4,7 @@
 
 import '../../ui/legacy/legacy.js';
 import '../../ui/components/buttons/buttons.js';
-import '../../ui/components/cards/cards.js';
+import '../../ui/kit/kit.js';
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -14,6 +14,7 @@ import * as UI from '../../ui/legacy/legacy.js';
 import {html, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
+import {EditFileSystemView} from './EditFileSystemView.js';
 import workspaceSettingsTabStyles from './workspaceSettingsTab.css.js';
 
 const UIStrings = {
@@ -60,7 +61,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
             <input
               class="harmony-input"
               jslog=${VisualLogging.textField().track({keydown: 'Enter', change: true}).context(input.excludePatternSetting.name)}
-              ${UI.SettingsUI.bindToSetting(input.excludePatternSetting)}
+              ${UI.UIUtils.bindToSetting(input.excludePatternSetting)}
               id="workspace-setting-folder-exclude-pattern"></input>
           </div>
           <div class="mappings-info">${i18nString(UIStrings.mappingsAreInferredAutomatically)}</div>
@@ -71,7 +72,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
             <div class="mapping-view-container">
               <devtools-widget .widgetConfig=${
                   UI.Widget.widgetConfig(
-                      Persistence.EditFileSystemView.EditFileSystemView,
+                      EditFileSystemView,
                       {fileSystem: fileSystem.fileSystem})}>
               </devtools-widget>
             </div>
@@ -106,6 +107,7 @@ export class WorkspaceSettingsTab extends UI.Widget.VBox {
   }
 
   override wasShown(): void {
+    super.wasShown();
     this.#eventListeners = [
       Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager.instance().addEventListener(
           Persistence.IsolatedFileSystemManager.Events.FileSystemAdded, this.requestUpdate.bind(this)),
@@ -117,6 +119,7 @@ export class WorkspaceSettingsTab extends UI.Widget.VBox {
   }
 
   override willHide(): void {
+    super.willHide();
     Common.EventTarget.removeEventListeners(this.#eventListeners);
     this.#eventListeners = [];
   }

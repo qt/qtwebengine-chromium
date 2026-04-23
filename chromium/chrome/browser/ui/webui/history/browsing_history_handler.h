@@ -93,6 +93,12 @@ class BrowsingHistoryHandler : public history::mojom::PageHandler,
   // history::mojom::PageHandler:
   void RequestAccountInfo(RequestAccountInfoCallback callback) override;
   void TurnOnHistorySync() override;
+#if !BUILDFLAG(IS_CHROMEOS)
+  void ShouldShowHistoryPageHistorySyncPromo(
+      ShouldShowHistoryPageHistorySyncPromoCallback callback) override;
+  void RecordHistoryPageHistorySyncPromoDismissed() override;
+  void IncrementHistoryPageHistorySyncPromoShownCount() override;
+#endif
 
   // For tests. This does not take the ownership of the clock. |clock| must
   // outlive the BrowsingHistoryHandler instance.
@@ -122,6 +128,18 @@ class BrowsingHistoryHandler : public history::mojom::PageHandler,
   FRIEND_TEST_ALL_PREFIXES(BrowsingHistoryHandlerTest,
                            ObservingWebHistoryDeletions);
   FRIEND_TEST_ALL_PREFIXES(BrowsingHistoryHandlerTest, MdTruncatesTitles);
+
+#if !BUILDFLAG(IS_CHROMEOS)
+  int GetHistoryPageHistorySyncPromoShownCount() const;
+  void IncrementHistoryPageHistorySyncPromoShownCountPref();
+
+  base::Time GetHistoryPageHistorySyncPromoLastDismissedTimestamp() const;
+  void SetHistoryPageHistorySyncPromoLastDismissedTimestamp(base::Time time);
+
+  bool IsHistoryPageHistorySyncPromoShownAfterDismissal() const;
+  // Sets pref to true when the history sync promo was shown after dismissal.
+  void SetHistoryPageHistorySyncPromoShownAfterDismissal();
+#endif
 
   base::WeakPtr<TopChromeWebUIController::Embedder> side_panel_embedder_;
 

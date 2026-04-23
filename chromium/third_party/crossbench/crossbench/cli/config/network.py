@@ -12,13 +12,13 @@ from typing import TYPE_CHECKING, Any, ClassVar, Optional, Self
 from typing_extensions import override
 
 from crossbench import exception
-from crossbench.cli.config.network_speed import (NetworkSpeedConfig,
-                                                 NetworkSpeedPreset)
+from crossbench.cli.config.network_speed import NetworkSpeedConfig, \
+    NetworkSpeedPreset
 from crossbench.config import ConfigEnum, ConfigObject, ConfigParser
 from crossbench.network.live import LiveNetwork
 from crossbench.network.local_file_server import LocalFileNetwork
-from crossbench.network.replay.wpr import (LocalWprReplayNetwork,
-                                           RemoteWprReplayNetwork)
+from crossbench.network.replay.wpr import LocalWprReplayNetwork, \
+    RemoteWprReplayNetwork
 from crossbench.network.traffic_shaping import ts_proxy
 from crossbench.network.traffic_shaping.live import NoTrafficShaper
 from crossbench.parse import PathParser
@@ -42,6 +42,7 @@ def _parse_existing_file_path_and_resolve(value: str) -> pth.LocalPath:
   # It would be best to implement this in PathParser, e.g. crrev.com/c/6713595.
   return PathParser.json_file_path(value).resolve()
 
+
 @enum.unique
 class NetworkType(ConfigEnum):
   LIVE = ("live", "Live network.")
@@ -64,7 +65,10 @@ class NetworkConfig(ConfigObject):
   persist_server: bool = False
   run_on_device: bool = False
   skip_deterministic_script_injection: bool = False
+  no_archive_certificates: bool = False
   response_transformations_file: pth.LocalPath | None = None
+  cross_platform_mode: bool = False
+  host: str | None = None
 
   @classmethod
   def default(cls, type: Optional[NetworkType] = None) -> Self:
@@ -108,11 +112,36 @@ class NetworkConfig(ConfigObject):
         help=("Don't inject the deterministic.js script into every response "
               "in WPR replay mode. See crbug.com/428945380"))
     parser.add_argument(
+        "no_archive_certificates",
+        type=bool,
+        default=False,
+        help=(
+            "For 'wpr' network only. By default, WPR stores certificates in "
+            "the archive during recording (minted from the root ones) and "
+            "reads them during replay. Such certificates will expire "
+            "eventually, so this setup is only suitable when the client "
+            "ignores TLS errors (e.g. due to "
+            "--ignore-certificate-errors-spki-list in a Chromium browser), or "
+            "for short-lived experiments. Otherwise, use this flag to prevent "
+            "WPR from reading/writing archive certificates. New certificates "
+            "will be generated on replay time, with caching by host."))
+    parser.add_argument(
         "response_transformations_file",
         type=_parse_existing_file_path_and_resolve,
         help=("Path to a JSON file specifying transformation rules to apply to "
               "specific responses, e.g. inject a script in google.com. See "
               "WebPageReplay docs for more info on the expected file format."))
+    parser.add_argument(
+        "cross_platform_mode",
+        type=bool,
+        default=False,
+        help=("A special mode when WPR doesn't use ADB port forwarding or any "
+              "Chromium-specific flags to setup network. Instead WPR serves "
+              "requests on standard http/https ports and delegates network "
+              "setup to the user. Requires root privileges on the host. "
+              "Incompatible with 'run_on_device' setting."))
+    parser.add_argument(
+        "host", type=str, help=("A host for WPR server to bind to."))
     return parser
 
   @classmethod
@@ -223,25 +252,19 @@ class NetworkConfig(ConfigObject):
             "NetworkConfig with type=local requires "
             "a valid local dir path to serve files.")
       PathParser.non_empty_dir_path(self.path, "local-serve dir")
-    if self.wpr_go_bin and self.type is not NetworkType.WPR:
+
+    wpr_only_options = ("wpr_go_bin", "persist_server", "run_on_device",
+                        "skip_deterministic_script_injection", "host",
+                        "no_archive_certificates",
+                        "response_transformations_file", "cross_platform_mode")
+    for option in wpr_only_options:
+      if getattr(self, option) and self.type is not NetworkType.WPR:
+        raise argparse.ArgumentTypeError(
+            f"{option} can only be used for the WPR replay network")
+
+    if self.cross_platform_mode and self.run_on_device:
       raise argparse.ArgumentTypeError(
-          "wpr_go_bin can only be used for the WPR replay network")
-    if self.persist_server and self.type is not NetworkType.WPR:
-      # TODO: support file server as well
-      raise argparse.ArgumentTypeError(
-          "persist_server can only be used for the WPR replay network")
-    if self.run_on_device and self.type is not NetworkType.WPR:
-      raise argparse.ArgumentTypeError(
-          "run_on_device can only be used for the WPR replay network")
-    if (self.skip_deterministic_script_injection and
-        self.type is not NetworkType.WPR):
-      raise argparse.ArgumentTypeError(
-          "skip_deterministic_script_injection can only be used for the WPR "
-          "replay network")
-    if self.response_transformations_file and self.type is not NetworkType.WPR:
-      raise argparse.ArgumentTypeError(
-          "response_transformations_file can only be used for the WPR replay "
-          "network")
+          "cross_platform_mode is incompatible with run_on_device")
 
   def create(self, browser_platform: Platform) -> Network:
     with exception.annotate_argparsing(
@@ -264,18 +287,23 @@ class NetworkConfig(ConfigObject):
               self.wpr_go_bin,
               browser_platform,
               self.persist_server,
+              no_archive_certificates=self.no_archive_certificates,
               response_transformations_file=self.response_transformations_file,
               inject_deterministic_script=not self
-              .skip_deterministic_script_injection)
+              .skip_deterministic_script_injection,
+              host=self.host)
         return LocalWprReplayNetwork(
             self.url or str(self.path),
             traffic_shaper,
             self.wpr_go_bin,
             browser_platform,
             self.persist_server,
+            no_archive_certificates=self.no_archive_certificates,
             response_transformations_file=self.response_transformations_file,
             inject_deterministic_script=not self
-            .skip_deterministic_script_injection)
+            .skip_deterministic_script_injection,
+            cross_platform_mode=self.cross_platform_mode,
+            host=self.host)
     raise ValueError(f"Unknown network type {self.type}")
 
   def _create_traffic_shaper(self, browser_platform: Platform) -> TrafficShaper:

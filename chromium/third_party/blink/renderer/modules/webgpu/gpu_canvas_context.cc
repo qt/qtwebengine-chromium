@@ -9,10 +9,10 @@
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_htmlcanvaselement_offscreencanvas.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_tone_mapping.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_tone_mapping_mode.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_canvas_alpha_mode.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_canvas_configuration.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_canvas_tone_mapping.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_canvas_tone_mapping_mode.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_offscreen_rendering_context.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_rendering_context.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
@@ -170,7 +170,7 @@ void GPUCanvasContext::Dispose() {
   CanvasRenderingContext::Dispose();
 }
 
-scoped_refptr<StaticBitmapImage> GPUCanvasContext::GetImage(FlushReason) {
+scoped_refptr<StaticBitmapImage> GPUCanvasContext::GetImage() {
   if (!swap_buffers_) {
     return nullptr;
   }
@@ -283,12 +283,11 @@ GPUCanvasContext::PaintRenderingResultsToCanvas(
 
 scoped_refptr<StaticBitmapImage>
 GPUCanvasContext::PaintRenderingResultsToSnapshot(
-    SourceDrawingBuffer source_buffer,
-    FlushReason reason) {
+    SourceDrawingBuffer source_buffer) {
   CanvasResourceProviderSharedImage* provider =
       PaintRenderingResultsToCanvas(source_buffer);
 
-  return provider ? provider->Snapshot(reason) : nullptr;
+  return provider ? provider->Snapshot() : nullptr;
 }
 
 bool GPUCanvasContext::CopyRenderingResultsToVideoFrame(
@@ -473,6 +472,14 @@ void GPUCanvasContext::configure(const GPUCanvasConfiguration* descriptor,
   }
 #endif
 
+#if BUILDFLAG(IS_LINUX)
+  if (texture_descriptor_.format == wgpu::TextureFormat::BGRA8Unorm) {
+    // WebGPU on vulkan with GL interop cannot support BGRA due to bugs in
+    // mesa. See anglebug.com/40644739
+    copy_to_swap_texture_required_ = true;
+  }
+#endif
+
   // If the context is configured with STORAGE_BINDING texture usage and
   // "bgra8unorm" is the preferred format but the adapter doesn't support the
   // "bgra8unorm-storage" feature, we can guess that the app is using the
@@ -563,9 +570,9 @@ void GPUCanvasContext::configure(const GPUCanvasConfiguration* descriptor,
   if (descriptor->hasToneMapping() && descriptor->toneMapping()->hasMode()) {
     tone_mapping_mode_ = descriptor->toneMapping()->mode().AsEnum();
     switch (tone_mapping_mode_) {
-      case V8GPUCanvasToneMappingMode::Enum::kStandard:
+      case V8CanvasToneMappingMode::Enum::kStandard:
         break;
-      case V8GPUCanvasToneMappingMode::Enum::kExtended:
+      case V8CanvasToneMappingMode::Enum::kExtended:
         hdr_metadata.extended_range.emplace(
             /*current_headroom=*/gfx::HdrMetadataExtendedRange::
                 kDefaultHdrHeadroom,
@@ -651,7 +658,7 @@ GPUCanvasConfiguration* GPUCanvasContext::getConfiguration() {
   configuration->setColorSpace(PredefinedColorSpaceToV8(color_space_));
   configuration->setAlphaMode(alpha_mode_);
 
-  GPUCanvasToneMapping* tone_mapping = GPUCanvasToneMapping::Create();
+  CanvasToneMapping* tone_mapping = CanvasToneMapping::Create();
   tone_mapping->setMode(tone_mapping_mode_);
   configuration->setToneMapping(tone_mapping);
 
@@ -1014,7 +1021,7 @@ scoped_refptr<StaticBitmapImage> GPUCanvasContext::SnapshotInternal(
     return nullptr;
   }
 
-  return resource_provider->Snapshot(FlushReason::kNone);
+  return resource_provider->Snapshot();
 }
 
 base::WeakPtr<WebGraphicsContext3DProviderWrapper>

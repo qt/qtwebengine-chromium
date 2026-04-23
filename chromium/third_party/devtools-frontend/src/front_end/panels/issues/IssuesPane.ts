@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
@@ -14,12 +14,6 @@ import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import {HiddenIssuesRow} from './HiddenIssuesRow.js';
-import {
-  type AggregatedIssue,
-  type AggregationKey,
-  Events as IssueAggregatorEvents,
-  IssueAggregator,
-} from './IssueAggregator.js';
 import {getGroupIssuesByKindSetting, IssueKindView, issueKindViewSortPriority} from './IssueKindView.js';
 import issuesPaneStyles from './issuesPane.css.js';
 import issuesTreeStyles from './issuesTree.css.js';
@@ -112,6 +106,10 @@ const UIStrings = {
    * @description Category title for the different 'Generic' issues.
    */
   generic: 'Generic',
+  /**
+   * @description Category title for a group of permission element issues
+   */
+  permissionElement: 'PEPC Element',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/issues/IssuesPane.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -153,6 +151,8 @@ class IssueCategoryView extends UI.TreeOutline.TreeElement {
         return i18nString(UIStrings.quirksMode);
       case IssuesManager.Issue.IssueCategory.GENERIC:
         return i18nString(UIStrings.generic);
+      case IssuesManager.Issue.IssueCategory.PERMISSION_ELEMENT:
+        return i18nString(UIStrings.permissionElement);
       case IssuesManager.Issue.IssueCategory.OTHER:
         return i18nString(UIStrings.other);
     }
@@ -181,14 +181,14 @@ export function getGroupIssuesByCategorySetting(): Common.Settings.Setting<boole
 
 export class IssuesPane extends UI.Widget.VBox {
   #categoryViews: Map<IssuesManager.Issue.IssueCategory, IssueCategoryView>;
-  #issueViews: Map<AggregationKey, IssueView>;
+  #issueViews: Map<IssuesManager.IssueAggregator.AggregationKey, IssueView>;
   #kindViews: Map<IssuesManager.Issue.IssueKind, IssueKindView>;
   #showThirdPartyCheckbox: UI.Toolbar.ToolbarSettingCheckbox|null;
   #issuesTree: UI.TreeOutline.TreeOutlineInShadow;
   #hiddenIssuesRow: HiddenIssuesRow;
   #noIssuesMessageDiv: UI.EmptyWidget.EmptyWidget;
   #issuesManager: IssuesManager.IssuesManager.IssuesManager;
-  #aggregator: IssueAggregator;
+  #aggregator: IssuesManager.IssueAggregator.IssueAggregator;
   #issueViewUpdatePromise: Promise<void> = Promise.resolve();
 
   constructor() {
@@ -222,9 +222,11 @@ export class IssuesPane extends UI.Widget.VBox {
     this.#noIssuesMessageDiv.show(this.contentElement);
 
     this.#issuesManager = IssuesManager.IssuesManager.IssuesManager.instance();
-    this.#aggregator = new IssueAggregator(this.#issuesManager);
-    this.#aggregator.addEventListener(IssueAggregatorEvents.AGGREGATED_ISSUE_UPDATED, this.#issueUpdated, this);
-    this.#aggregator.addEventListener(IssueAggregatorEvents.FULL_UPDATE_REQUIRED, this.#onFullUpdate, this);
+    this.#aggregator = new IssuesManager.IssueAggregator.IssueAggregator(this.#issuesManager);
+    this.#aggregator.addEventListener(
+        IssuesManager.IssueAggregator.Events.AGGREGATED_ISSUE_UPDATED, this.#issueUpdated, this);
+    this.#aggregator.addEventListener(
+        IssuesManager.IssueAggregator.Events.FULL_UPDATE_REQUIRED, this.#onFullUpdate, this);
     this.#hiddenIssuesRow.hidden = this.#issuesManager.numberOfHiddenIssues() === 0;
     this.#onFullUpdate();
     this.#issuesManager.addEventListener(
@@ -292,16 +294,16 @@ export class IssuesPane extends UI.Widget.VBox {
     return {toolbarContainer};
   }
 
-  #issueUpdated(event: Common.EventTarget.EventTargetEvent<AggregatedIssue>): void {
+  #issueUpdated(event: Common.EventTarget.EventTargetEvent<IssuesManager.IssueAggregator.AggregatedIssue>): void {
     this.#scheduleIssueViewUpdate(event.data);
   }
 
-  #scheduleIssueViewUpdate(issue: AggregatedIssue): void {
+  #scheduleIssueViewUpdate(issue: IssuesManager.IssueAggregator.AggregatedIssue): void {
     this.#issueViewUpdatePromise = this.#issueViewUpdatePromise.then(() => this.#updateIssueView(issue));
   }
 
   /** Don't call directly. Use `scheduleIssueViewUpdate` instead. */
-  async #updateIssueView(issue: AggregatedIssue): Promise<void> {
+  async #updateIssueView(issue: IssuesManager.IssueAggregator.AggregatedIssue): Promise<void> {
     let issueView = this.#issueViews.get(issue.aggregationKey());
     if (!issueView) {
       const description = issue.getDescription();
@@ -361,7 +363,8 @@ export class IssuesPane extends UI.Widget.VBox {
     }
   }
 
-  #getIssueViewParent(issue: AggregatedIssue): UI.TreeOutline.TreeOutline|UI.TreeOutline.TreeElement {
+  #getIssueViewParent(issue: IssuesManager.IssueAggregator.AggregatedIssue): UI.TreeOutline.TreeOutline
+      |UI.TreeOutline.TreeElement {
     if (issue.isHidden()) {
       return this.#hiddenIssuesRow;
     }

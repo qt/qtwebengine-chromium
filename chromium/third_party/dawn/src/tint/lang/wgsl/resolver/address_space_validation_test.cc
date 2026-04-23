@@ -555,14 +555,10 @@ TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_UniformBuffer_Struct_Run
     Alias("t", ty.ptr<uniform>(Source{{90, 12}}, ty("S")));
 
     ASSERT_FALSE(r()->Resolve());
-    EXPECT_EQ(
-        r()->error(),
-        R"(12:34 error: 'uniform' storage requires that array elements are aligned to 16 bytes, but array element of type 'i32' has a stride of 4 bytes. Consider using a vector or struct as the element type instead.
-note: see layout of struct:
-/*           align(4) size(4) */ struct S {
-/* offset(0) align(4) size(4) */   m : array<i32>,
-/*                            */ };
-90:12 note: 'S' used in address space 'uniform' here)");
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: runtime-sized arrays can only be used in the <storage> address space
+56:78 note: while analyzing structure member S.m
+90:12 note: while instantiating ptr<uniform, S, read>)");
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_UniformBufferBool) {
@@ -844,9 +840,7 @@ TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_UniformBufferStructF16Al
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_ImmediateBool) {
-    // enable chromium_experimental_immediate;
     // var<immediate> g : bool;
-    Enable(wgsl::Extension::kChromiumExperimentalImmediate);
     GlobalVar(Source{{56, 78}}, "g", ty.bool_(Source{{12, 34}}), core::AddressSpace::kImmediate);
 
     ASSERT_FALSE(r()->Resolve());
@@ -857,9 +851,7 @@ TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_ImmediateBool) {
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_ImmediateBool) {
-    // enable chromium_experimental_immediate;
     // type t = ptr<immediate, bool>;
-    Enable(wgsl::Extension::kChromiumExperimentalImmediate);
     Alias(Source{{56, 78}}, "t", ty.ptr<immediate>(ty.bool_(Source{{12, 34}})));
 
     ASSERT_FALSE(r()->Resolve());
@@ -871,10 +863,8 @@ note: while instantiating ptr<immediate, bool, read>)");
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_ImmediateF16) {
     // enable f16;
-    // enable chromium_experimental_immediate;
     // var<immediate> g : f16;
     Enable(wgsl::Extension::kF16);
-    Enable(wgsl::Extension::kChromiumExperimentalImmediate);
     GlobalVar("g", ty.f16(Source{{56, 78}}), core::AddressSpace::kImmediate);
 
     ASSERT_FALSE(r()->Resolve());
@@ -884,10 +874,8 @@ TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_ImmediateF16) {
 
 TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_ImmediateF16) {
     // enable f16;
-    // enable chromium_experimental_immediate;
     // type t = ptr<immediate, f16>;
     Enable(wgsl::Extension::kF16);
-    Enable(wgsl::Extension::kChromiumExperimentalImmediate);
     Alias("t", ty.ptr<immediate>(ty.f16(Source{{56, 78}})));
 
     ASSERT_FALSE(r()->Resolve());
@@ -896,9 +884,7 @@ TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_ImmediateF16) {
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_ImmediatePointer) {
-    // enable chromium_experimental_immediate;
     // var<immediate> g : ptr<private, f32>;
-    Enable(wgsl::Extension::kChromiumExperimentalImmediate);
     GlobalVar(Source{{56, 78}}, "g", ty.ptr<private_, f32>(Source{{12, 34}}),
               core::AddressSpace::kImmediate);
 
@@ -910,46 +896,36 @@ TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_ImmediatePointer) {
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_ImmediateIntScalar) {
-    // enable chromium_experimental_immediate;
     // var<immediate> g : i32;
-    Enable(wgsl::Extension::kChromiumExperimentalImmediate);
     GlobalVar("g", ty.i32(), core::AddressSpace::kImmediate);
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_ImmediateIntScalar) {
-    // enable chromium_experimental_immediate;
     // type t = ptr<immediate, i32>;
-    Enable(wgsl::Extension::kChromiumExperimentalImmediate);
     Alias("t", ty.ptr<immediate, i32>());
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_ImmediateVectorF32) {
-    // enable chromium_experimental_immediate;
     // var<immediate> g : vec4<f32>;
-    Enable(wgsl::Extension::kChromiumExperimentalImmediate);
     GlobalVar("g", ty.vec4<f32>(), core::AddressSpace::kImmediate);
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_ImmediateVectorF32) {
-    // enable chromium_experimental_immediate;
     // var<immediate> g : vec4<f32>;
-    Enable(wgsl::Extension::kChromiumExperimentalImmediate);
     Alias("t", ty.ptr<immediate, vec4<f32>>());
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_ImmediateArrayF32) {
-    // enable chromium_experimental_immediate;
     // struct S { a : f32}
     // var<immediate> g : array<S, 3u>;
-    Enable(wgsl::Extension::kChromiumExperimentalImmediate);
     Structure("S", Vector{Member("a", ty.f32())});
     GlobalVar("g", ty.array(ty("S"), 3_u), core::AddressSpace::kImmediate);
 
@@ -957,10 +933,8 @@ TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_ImmediateArrayF32) {
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_ImmediateArrayF32) {
-    // enable chromium_experimental_immediate;
     // struct S { a : f32}
     // type t = ptr<immediate, array<S, 3u>>;
-    Enable(wgsl::Extension::kChromiumExperimentalImmediate);
     Structure("S", Vector{Member("a", ty.f32())});
     Alias("t", ty.ptr<immediate>(ty.array(ty("S"), 3_u)));
 

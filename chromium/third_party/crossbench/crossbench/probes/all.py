@@ -12,6 +12,7 @@ from crossbench.probes.chromium_pgo import ChromiumPgoProbe
 from crossbench.probes.debugger import DebuggerProbe
 from crossbench.probes.downloads import DownloadsProbe
 from crossbench.probes.dtrace import DTraceProbe
+from crossbench.probes.dump_heap import DumpHeapProbe
 from crossbench.probes.dump_html import DumpHtmlProbe
 from crossbench.probes.embedder import WebviewEmbedderProbe
 from crossbench.probes.etm import EtmProbe
@@ -27,8 +28,6 @@ from crossbench.probes.js import JSProbe
 from crossbench.probes.json import JsonResultProbe
 from crossbench.probes.meminfo import MeminfoProbe
 from crossbench.probes.perfetto.perfetto import PerfettoProbe
-from crossbench.probes.perfetto.trace_processor.trace_processor import \
-    TraceProcessorProbe
 from crossbench.probes.perfetto.tracing import TracingProbe
 from crossbench.probes.performance_entries import PerformanceEntriesProbe
 from crossbench.probes.polling import PollingShellProbe
@@ -41,6 +40,8 @@ from crossbench.probes.screenshot import ScreenshotProbe
 from crossbench.probes.shell import ShellProbe
 from crossbench.probes.system_stats import SystemStatsProbe
 from crossbench.probes.thermal_monitor import ThermalMonitorProbe
+from crossbench.probes.trace_processor.trace_processor import \
+    TraceProcessorProbe
 from crossbench.probes.v8.builtins_pgo import V8BuiltinsPGOProbe
 from crossbench.probes.v8.log import V8LogProbe
 from crossbench.probes.v8.rcs import V8RCSProbe
@@ -87,7 +88,6 @@ INTERNAL_PROBES: InternalProbeTuple = (
 assert DEFAULT_INTERNAL_PROBES[0] == ResultsSummaryProbe
 assert DEFAULT_INTERNAL_PROBES[1] == DurationsProbe
 
-
 # Probes that can be used on arbitrary stories and may be user configurable.
 GENERAL_PURPOSE_PROBES: tuple[Type[Probe], ...] = (
     BrowserProfilingProbe,
@@ -96,6 +96,7 @@ GENERAL_PURPOSE_PROBES: tuple[Type[Probe], ...] = (
     DebuggerProbe,
     DownloadsProbe,
     DTraceProbe,
+    DumpHeapProbe,
     DumpHtmlProbe,
     WebviewEmbedderProbe,
     EtmProbe,

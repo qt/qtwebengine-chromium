@@ -20,12 +20,14 @@
 #include <variant>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush_coat.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/brush/brush_tip.h"
+#include "ink/types/duration.h"
 
 namespace ink {
 
@@ -46,18 +48,39 @@ class BrushFamily {
   // later.
   struct ExperimentalRawPositionModel {};
 
+  // A naive model that passes through raw inputs mostly unchanged.  This is an
+  // experimental configuration which may be adjusted or removed later.
+  struct ExperimentalNaiveModel {};
+
+  // Averages nearby inputs together within a sliding time window. To be valid,
+  // the window size must be finite and strictly positive, and the upsampling
+  // period must be strictly positive (but may be infinte, to completely disable
+  // upsampling). This is an experimental configuration which may be adjusted or
+  // removed later.
+  struct SlidingWindowModel {
+    // The duration over which to average together nearby raw inputs. Typically
+    // this should be somewhere in the 1 ms to 100 ms range.
+    Duration32 window_size = Duration32::Millis(20);
+    // The maximum duration between modeled inputs; if raw inputs are spaced
+    // more than this far apart in time, then additional modeled inputs will be
+    // inserted between them. Set this to `Duration32::Infinite()` to disable
+    // upsampling.
+    Duration32 upsampling_period = Duration32::Seconds(1.0 / 180.0);
+  };
+
   // Specifies a model for turning a sequence of raw hardware inputs (e.g. from
   // a stylus, touchscreen, or mouse) into a sequence of smoothed, modeled
   // inputs. Raw hardware inputs tend to be noisy, and must be smoothed before
   // being passed into a brush's behaviors and extruded into a mesh in order to
   // get a good-looking stroke.
-  using InputModel = std::variant<SpringModel, ExperimentalRawPositionModel>;
+  using InputModel = std::variant<SpringModel, ExperimentalRawPositionModel,
+                                  ExperimentalNaiveModel, SlidingWindowModel>;
+
+  // LINT.ThenChange(../strokes/internal/stroke_input_modeler_test.cc:input_model_types)
 
   // Returns the default `InputModel` that will be used by
   // `BrushFamily::Create()` when none is specified.
   static InputModel DefaultInputModel();
-
-  // LINT.ThenChange(../strokes/internal/stroke_input_modeler.cc:input_model_types)
 
   // Returns the maximum number of `BrushCoat`s that a `BrushFamily` is allowed
   // to have. Note that this limit may increase in the future.
@@ -142,6 +165,19 @@ class BrushFamily {
   std::string client_brush_family_id_;
   InputModel input_model_;
 };
+
+namespace brush_internal {
+
+absl::Status ValidateInputModel(const BrushFamily::InputModel& model);
+
+std::string ToFormattedString(const BrushFamily::InputModel& model);
+
+}  // namespace brush_internal
+
+template <typename Sink>
+void AbslStringify(Sink& sink, const BrushFamily::InputModel& model) {
+  sink.Append(brush_internal::ToFormattedString(model));
+}
 
 // ---------------------------------------------------------------------------
 //                     Implementation details below

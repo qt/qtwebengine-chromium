@@ -18,7 +18,15 @@
 #pragma once
 #include "sync/sync_commandbuffer.h"
 #include "state_tracker/queue_state.h"
-#include "containers/small_container.h"
+#include "containers/small_vector.h"
+#include "containers/range_map.h"
+
+namespace vvl {
+class CommandBuffer;
+class Semaphore;
+}  // namespace vvl
+
+namespace syncval {
 
 struct PresentedImage;
 class QueueBatchContext;
@@ -28,11 +36,6 @@ class SyncValidator;
 
 using BatchContextPtr = std::shared_ptr<QueueBatchContext>;
 using BatchContextConstPtr = std::shared_ptr<const QueueBatchContext>;
-
-namespace vvl {
-class CommandBuffer;
-class Semaphore;
-}  // namespace vvl
 
 using CommandBufferConstPtr = std::shared_ptr<const vvl::CommandBuffer>;
 
@@ -349,7 +352,7 @@ class QueueBatchContext : public CommandExecutionContext, public std::enable_sha
     void ApplyPredicatedWait(Predicate &predicate, const LastSynchronizedPresent &last_synchronized_present);
     void ApplyTaggedWait(QueueId queue_id, ResourceUsageTag tag, const LastSynchronizedPresent &last_synchronized_present);
     void ApplyAcquireWait(const AcquiredImage &acquired);
-    void OnResourceDestroyed(const ResourceAccessRange &resource_range);
+    void OnResourceDestroyed(const AccessRange &resource_range);
 
     void BeginRenderPassReplaySetup(ReplayState &replay, const SyncOpBeginRenderPass &begin_op);
     void NextSubpassReplaySetup(ReplayState &replay);
@@ -441,3 +444,5 @@ struct QueueSubmitCmdState {
     SignalsUpdate signals_update;
     QueueSubmitCmdState(const SyncValidator &sync_validator) : signals_update(sync_validator) {}
 };
+
+}  // namespace syncval

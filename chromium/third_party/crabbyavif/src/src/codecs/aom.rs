@@ -251,10 +251,10 @@ impl Encoder for Aom {
                 codec_control!(
                     self,
                     aome_enc_control_id_AOME_SET_CQ_LEVEL,
-                    config.quantizer
+                    config.quantizer()
                 );
             }
-            if config.quantizer == 0 {
+            if config.quantizer() == 0 {
                 codec_control!(self, aome_enc_control_id_AV1E_SET_LOSSLESS, 1);
             }
             if config.tile_rows_log2 != 0 {
@@ -368,7 +368,7 @@ impl Encoder for Aom {
                 return AvifError::not_implemented();
             }
             let last_config = self.config.unwrap_ref();
-            if last_config.quantizer != config.quantizer {
+            if last_config.quantizer() != config.quantizer() {
                 if aom_config.rc_end_usage == aom_rc_mode_AOM_VBR
                     || aom_config.rc_end_usage == aom_rc_mode_AOM_CBR
                 {
@@ -392,13 +392,13 @@ impl Encoder for Aom {
                     codec_control!(
                         self,
                         aome_enc_control_id_AOME_SET_CQ_LEVEL,
-                        config.quantizer
+                        config.quantizer()
                     );
                 }
                 codec_control!(
                     self,
                     aome_enc_control_id_AV1E_SET_LOSSLESS,
-                    if config.quantizer == 0 { 1 } else { 0 }
+                    if config.quantizer() == 0 { 1 } else { 0 }
                 );
             }
             if last_config.tile_rows_log2 != config.tile_rows_log2 {

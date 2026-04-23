@@ -104,7 +104,9 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     if (!this.framesInternal.has(frameId)) {
       return null;
     }
-    const response = await this.storageAgent.invoke_getStorageKeyForFrame({frameId});
+
+    // TODO(crbug.com/445966299): Refactor to use `storageAgent().invoke_getStorageKey()` instead.
+    const response = await this.storageAgent.invoke_getStorageKey({frameId});
     if (response.getError() === 'Frame tree node for given frame not found') {
       return null;
     }
@@ -889,7 +891,7 @@ export class ResourceTreeFrame {
 
   addRequest(request: NetworkRequest): void {
     let resource = this.resourcesMap.get(request.url());
-    if (resource && resource.request === request) {
+    if (resource?.request === request) {
       // Already in the tree, we just got an extra update.
       return;
     }

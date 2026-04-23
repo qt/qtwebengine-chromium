@@ -345,9 +345,12 @@ FakeRenderFrameMetadataObserver::FakeRenderFrameMetadataObserver(
 // MockInputEventObserver -------------------------------------------------
 class MockInputEventObserver : public RenderWidgetHost::InputEventObserver {
  public:
-  MOCK_METHOD2(OnInputEvent,
-               void(const RenderWidgetHost& widget,
-                    const blink::WebInputEvent&));
+  MOCK_METHOD(void,
+              OnInputEvent,
+              (const RenderWidgetHost& widget,
+               const blink::WebInputEvent&,
+               InputEventSource),
+              (override));
 #if BUILDFLAG(IS_ANDROID)
   MOCK_METHOD1(OnImeTextCommittedEvent, void(const std::u16string& text_str));
   MOCK_METHOD1(OnImeSetComposingTextEvent,
@@ -826,6 +829,12 @@ class RenderWidgetHostTest : public testing::Test {
 
   void ReleaseTouchPoint(int index) {
     touch_event_.ReleasePoint(index);
+  }
+
+  void WaitForHang() {
+    task_environment_.FastForwardBy(input::kHungRendererDelay +
+                                    input::kHungRendererPingTimeout +
+                                    base::Milliseconds(10));
   }
 
   BrowserTaskEnvironment task_environment_{
@@ -1805,7 +1814,8 @@ TEST_F(RenderWidgetHostTest, UnhandledGestureEvent) {
 // Test that the hang monitor timer expires properly if a new timer is started
 // while one is in progress (see crbug.com/11007).
 TEST_F(RenderWidgetHostTest, DontPostponeInputEventAckTimeout) {
-  base::TimeDelta delay = input::kHungRendererDelay;
+  base::TimeDelta delay =
+      input::kHungRendererDelay + input::kHungRendererPingTimeout;
 
   // Start a timeout.
   host_->GetRenderInputRouter()->StartInputEventAckTimeoutForTesting();
@@ -1833,8 +1843,7 @@ TEST_F(RenderWidgetHostTest, StopAndStartInputEventAckTimeout) {
   host_->GetRenderInputRouter()->StartInputEventAckTimeoutForTesting();
 
   // Wait long enough for first timeout and see if it fired.
-  task_environment_.FastForwardBy(input::kHungRendererDelay +
-                                  base::Milliseconds(10));
+  WaitForHang();
   EXPECT_TRUE(delegate_->unresponsive_timer_fired());
 }
 
@@ -1848,21 +1857,18 @@ TEST_F(RenderWidgetHostTest, InputEventAckTimeoutDisabledForInputWhenHidden) {
 
   // The timeout should not fire.
   EXPECT_FALSE(delegate_->unresponsive_timer_fired());
-  task_environment_.FastForwardBy(input::kHungRendererDelay +
-                                  base::Milliseconds(10));
+  WaitForHang();
   EXPECT_FALSE(delegate_->unresponsive_timer_fired());
 
   // The timeout should never reactivate while hidden.
   SimulateMouseEvent(WebInputEvent::Type::kMouseMove, 10, 10, 0, false);
-  task_environment_.FastForwardBy(input::kHungRendererDelay +
-                                  base::Milliseconds(10));
+  WaitForHang();
   EXPECT_FALSE(delegate_->unresponsive_timer_fired());
 
   // Showing the widget should restore the timeout, as the events have
   // not yet been ack'ed.
   host_->WasShown({} /* record_tab_switch_time_request */);
-  task_environment_.FastForwardBy(input::kHungRendererDelay +
-                                  base::Milliseconds(10));
+  WaitForHang();
   EXPECT_TRUE(delegate_->unresponsive_timer_fired());
 }
 
@@ -1885,8 +1891,7 @@ TEST_F(RenderWidgetHostTest, MultipleInputEvents) {
       blink::mojom::InputEventResultState::kConsumed);
 
   // Wait long enough for second timeout and see if it fired.
-  task_environment_.FastForwardBy(input::kHungRendererDelay +
-                                  base::Milliseconds(10));
+  WaitForHang();
   EXPECT_TRUE(delegate_->unresponsive_timer_fired());
 }
 
@@ -2238,9 +2243,9 @@ TEST_F(RenderWidgetHostTest, RendererExitedResetsIsHidden) {
   host_->SetView(new TestView(host_.get()));
   host_->WasShown({} /* record_tab_switch_time_request */);
 
-  ASSERT_FALSE(host_->is_hidden());
+  ASSERT_FALSE(host_->IsHidden());
   host_->RendererExited();
-  ASSERT_TRUE(host_->is_hidden());
+  ASSERT_TRUE(host_->IsHidden());
 
   // Make sure the input router is in a fresh state.
   ASSERT_FALSE(host_->input_router()->HasPendingEvents());
@@ -2267,7 +2272,7 @@ TEST_F(RenderWidgetHostTest, RendererExitedNoDrag) {
 
   GURL http_url = GURL("http://www.domain.com/index.html");
   DropData drop_data;
-  drop_data.url = http_url;
+  drop_data.url_infos = {ui::ClipboardUrlInfo{http_url, u""}};
   drop_data.html_base_url = http_url;
   FileSystemAccessManagerImpl* file_system_manager =
       static_cast<StoragePartitionImpl*>(process_->GetStoragePartition())
@@ -2470,7 +2475,7 @@ TEST_F(RenderWidgetHostTest, AddAndRemoveInputEventObserver) {
   // Confirm OnInputEvent is triggered.
   input::NativeWebKeyboardEvent native_event =
       CreateNativeWebKeyboardEvent(WebInputEvent::Type::kChar);
-  EXPECT_CALL(observer, OnInputEvent(_, _)).Times(1);
+  EXPECT_CALL(observer, OnInputEvent(_, _, _)).Times(1);
   std::move(host_->GetRenderInputRouter()->GetDispatchToRendererCallback())
       .Run(native_event, input::DispatchToRendererResult::kNotDispatched);
 
@@ -2478,7 +2483,7 @@ TEST_F(RenderWidgetHostTest, AddAndRemoveInputEventObserver) {
   host_->RemoveInputEventObserver(&observer);
 
   // Confirm InputEventObserver is removed.
-  EXPECT_CALL(observer, OnInputEvent(_, _)).Times(0);
+  EXPECT_CALL(observer, OnInputEvent(_, _, _)).Times(0);
   std::move(host_->GetRenderInputRouter()->GetDispatchToRendererCallback())
       .Run(native_event, input::DispatchToRendererResult::kNotDispatched);
 }
@@ -2497,7 +2502,7 @@ TEST_F(RenderWidgetHostTest, ScopedObservationWithInputEventObserver) {
   // Confirm OnInputEvent is triggered.
   input::NativeWebKeyboardEvent native_event =
       CreateNativeWebKeyboardEvent(WebInputEvent::Type::kChar);
-  EXPECT_CALL(observer, OnInputEvent(_, _)).Times(1);
+  EXPECT_CALL(observer, OnInputEvent(_, _, _)).Times(1);
   std::move(host_->GetRenderInputRouter()->GetDispatchToRendererCallback())
       .Run(native_event, input::DispatchToRendererResult::kNotDispatched);
 
@@ -2505,7 +2510,7 @@ TEST_F(RenderWidgetHostTest, ScopedObservationWithInputEventObserver) {
   scoped_observation.Reset();
 
   // Confirm InputEventObserver is removed.
-  EXPECT_CALL(observer, OnInputEvent(_, _)).Times(0);
+  EXPECT_CALL(observer, OnInputEvent(_, _, _)).Times(0);
   std::move(host_->GetRenderInputRouter()->GetDispatchToRendererCallback())
       .Run(native_event, input::DispatchToRendererResult::kNotDispatched);
 }

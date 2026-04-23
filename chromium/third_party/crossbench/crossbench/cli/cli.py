@@ -25,6 +25,7 @@ from crossbench.cli.subcommand.describe import DescribeSubcommand
 from crossbench.cli.subcommand.devtools_recorder_proxy.subcommand import \
     DevtoolsRecorderProxySubcommand
 from crossbench.cli.subcommand.help import HelpSubcommand
+from crossbench.cli.subcommand.pinpoint import PinpointSubcommand
 from crossbench.cli.subcommand.version import VersionSubcommand
 from crossbench.helper.collection_helper import close_matches_message
 from crossbench.probes.all import GENERAL_PURPOSE_PROBES
@@ -62,6 +63,7 @@ class CrossBenchArgumentError(argparse.ArgumentError):
 
 argparse.ArgumentError = CrossBenchArgumentError  # type: ignore
 
+
 class EnableDebuggingAction(argparse.Action):
   """Custom action to set both --throw and -vvv."""
 
@@ -77,9 +79,9 @@ class EnableDebuggingAction(argparse.Action):
 
 
 class MainCrossBenchArgumentParser(CrossBenchArgumentParser):
-
   @override
-  def print_help(self, file: IO[str] | None = None) -> None:
+  def print_help(self,
+                 file: IO[str] | None = None) -> None:  # type: ignore[override]
     file = file or sys.stdout
     super().print_help(file=file)
     self.print_probes(file=file)
@@ -122,8 +124,10 @@ class MainCrossBenchArgumentParser(CrossBenchArgumentParser):
     readme_file = pth.AnyPath(__file__).parents[2] / "README.md"
     file.write(f"  See {readme_file} for more details and instructions.\n")
 
+
 class CrossBenchCLI:
   BENCHMARKS: tuple[BenchmarkClass, ...] = (
+      benchmarks.DevToolsFrontendBenchmark,
       benchmarks.EmbedderBenchmark,
       # JetStream:
       benchmarks.JetStream11Benchmark,
@@ -145,6 +149,8 @@ class CrossBenchCLI:
       benchmarks.LoadLine2PhoneDebugBenchmark,
       benchmarks.LoadLine2TabletBenchmark,
       benchmarks.LoadLine2TabletDebugBenchmark,
+      benchmarks.LoadLine2WebApiPhoneBenchmark,
+      benchmarks.LoadLine2WebApiPhoneDebugBenchmark,
       # Manual:
       benchmarks.ManualBenchmark,
       # Memory:
@@ -182,6 +188,7 @@ class CrossBenchCLI:
     self._help_subcommand = HelpSubcommand(self)
     self._version_subcommand = VersionSubcommand(self)
     self._recorder_proxy_subcommand = DevtoolsRecorderProxySubcommand(self)
+    self._pinpoint_subcommand = PinpointSubcommand(self)
     self._last_subcommand: CrossbenchSubcommand | None = None
     self.args = argparse.Namespace()
     self._setup_subcommands()

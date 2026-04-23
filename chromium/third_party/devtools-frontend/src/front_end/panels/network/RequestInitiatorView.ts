@@ -1,7 +1,7 @@
 // Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -56,7 +56,7 @@ export class RequestInitiatorView extends UI.Widget.VBox {
     const networkManager = SDK.NetworkManager.NetworkManager.forRequest(request);
     const target = networkManager ? networkManager.target() : undefined;
     return new Components.JSPresentationUtils.StackTracePreviewContent(
-        undefined, target, linkifier, {stackTrace: initiator.stack, tabStops: focusableLink});
+        undefined, target, linkifier, {runtimeStackTrace: initiator.stack, tabStops: focusableLink});
   }
 
   private createTree(): UI.TreeOutline.TreeOutlineInShadow {
@@ -140,6 +140,7 @@ export class RequestInitiatorView extends UI.Widget.VBox {
   }
 
   override wasShown(): void {
+    super.wasShown();
     if (this.hasShown) {
       return;
     }

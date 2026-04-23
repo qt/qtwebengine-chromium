@@ -134,14 +134,13 @@ void TensorImplTflite::WriteTensorImpl(mojo_base::BigBuffer src_buffer) {
   task->Enqueue();
 }
 
-bool TensorImplTflite::ImportTensorImpl(
-    std::unique_ptr<gpu::WebNNTensorRepresentation::ScopedAccess> access) {
+bool TensorImplTflite::ImportTensorImpl() {
   NOTIMPLEMENTED();
   return false;
 }
 
-void TensorImplTflite::ExportTensorImpl(
-    std::unique_ptr<gpu::WebNNTensorRepresentation::ScopedAccess> access) {
+void TensorImplTflite::ExportTensorImpl(ScopedAccessPtr access,
+                                        ExportTensorCallback callback) {
   NOTIMPLEMENTED();
 }
 

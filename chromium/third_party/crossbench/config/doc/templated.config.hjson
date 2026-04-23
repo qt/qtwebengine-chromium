@@ -16,32 +16,32 @@
   // "$[DONT_SUBSTITUTE]" in the final config.
 
   "args": {
-    "GOOGLE_URL": "https://www.google.com",
+    "GOOGLE_URL": "https://www.google.com"
     "COOKIE_BANNER_ACTION": {
-        "action": "click",
-        "position": {
-          "required": false,
-          "selector": "xpath///button/div[contains(text(),'akzeptieren')]",
-        },
-    },
-    "SCROLL_DISTANCE": 500,
+      "action": "click"
+      "position": {
+        "required": false
+        "selector": "xpath///button/div[contains(text(),'akzeptieren')]"
+      }
+    }
+    "SCROLL_DISTANCE": 500
     "SCROLL_DURATION": "10s"
-  },
+  }
   "template": {
-    pages: {
-        "Google": [
-            {
-                "action": "get",
-                "url": "$[GOOGLE_URL]",
-                "duration": "2s"
-            },
-            "$[COOKIE_BANNER_ACTION]",
-            {
-                "action": "scroll",
-                "distance": "$[SCROLL_DISTANCE]",
-                "duration": "$[SCROLL_DURATION]"
-            }
-        ]
+    "pages": {
+      "Google": [
+        {
+          "action": "get"
+          "url": "$[GOOGLE_URL]"
+          "duration": "2s"
+        }
+        "$[COOKIE_BANNER_ACTION]"
+        {
+          "action": "scroll"
+          "distance": "$[SCROLL_DISTANCE]"
+          "duration": "$[SCROLL_DURATION]"
+        }
+      ]
     }
   }
 }

@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import collections
 import re
-from typing import (Any, ClassVar, Final, Iterable, Iterator, Optional, Self,
-                    Set, TypeAlias, TypeVar, Union)
+from typing import Any, ClassVar, Final, Iterable, Iterator, Optional, Self, \
+    Set, TypeAlias, TypeVar, Union
 
 from typing_extensions import override
 
@@ -40,7 +40,6 @@ class Freezable:
     if not msg:
       msg = f"Cannot modify frozen {type(self).__name__}"
     raise FrozenFlagsError(msg)
-
 
 
 FlagsData: TypeAlias = Union[None, dict[str, str], "Flags",
@@ -175,7 +174,6 @@ class BasicFlags(Freezable, collections.UserDict):
     if flag_value != old_value:
       raise ValueError(f"Flag {flag_name}={repr(flag_value)} was already set "
                        f"with a different previous value: {repr(old_value)}")
-
 
   def update(  # type: ignore
       self,

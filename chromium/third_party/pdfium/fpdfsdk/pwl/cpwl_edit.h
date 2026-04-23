@@ -86,11 +86,9 @@ class CPWL_Edit final : public CPWL_Wnd {
   void SetCharArray(int32_t nCharArray);
   void SetLimitChar(int32_t nLimitChar);
   bool CanSelectAll() const;
-  bool CanCopy() const;
-  bool CanCut() const;
-  void CutText();
   void SetText(const WideString& csText);
   bool IsTextFull() const;
+  void SetMaxUndoItemsForTest(size_t items);
 
   static float GetCharArrayAutoFontSize(const CPDF_Font* font,
                                         const CFX_FloatRect& rcPlate,
@@ -101,22 +99,11 @@ class CPWL_Edit final : public CPWL_Wnd {
                 const CFX_PointF& ptFoot);
 
  private:
-  // In case of implementation swallow the OnKeyDown event. If the event is
-  // swallowed, implementation may do other unexpected things, which is not the
-  // control means to do.
-  static bool IsProceedtoOnChar(FWL_VKEYCODE nKeyCode,
-                                Mask<FWL_EVENTFLAG> nFlag);
-
   bool OnKeyDownInternal(FWL_VKEYCODE nKeyCode, Mask<FWL_EVENTFLAG> nFlag);
   bool OnCharInternal(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag);
 
-  void CopyText();
-  void PasteText();
-  void InsertWord(uint16_t word, FX_Charset nCharset);
-  void InsertReturn();
   bool IsWndHorV() const;
   void Delete();
-  void Backspace();
   void GetCaretInfo(CFX_PointF* ptHead, CFX_PointF* ptFoot) const;
   void SetEditCaret(bool bVisible);
 

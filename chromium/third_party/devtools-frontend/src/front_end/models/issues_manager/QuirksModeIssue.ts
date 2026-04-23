@@ -18,26 +18,19 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('models/issues_manager/QuirksModeIssue.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
-export class QuirksModeIssue extends Issue {
-  #issueDetails: Protocol.Audits.QuirksModeIssueDetails;
-
-  constructor(issueDetails: Protocol.Audits.QuirksModeIssueDetails, issuesModel: SDK.IssuesModel.IssuesModel) {
+export class QuirksModeIssue extends Issue<Protocol.Audits.QuirksModeIssueDetails> {
+  constructor(issueDetails: Protocol.Audits.QuirksModeIssueDetails, issuesModel: SDK.IssuesModel.IssuesModel|null) {
     const mode = issueDetails.isLimitedQuirksMode ? 'LimitedQuirksMode' : 'QuirksMode';
     const umaCode = [Protocol.Audits.InspectorIssueCode.QuirksModeIssue, mode].join('::');
-    super({code: Protocol.Audits.InspectorIssueCode.QuirksModeIssue, umaCode}, issuesModel);
-    this.#issueDetails = issueDetails;
+    super({code: Protocol.Audits.InspectorIssueCode.QuirksModeIssue, umaCode}, issueDetails, issuesModel);
   }
 
   primaryKey(): string {
-    return `${this.code()}-(${this.#issueDetails.documentNodeId})-(${this.#issueDetails.url})`;
+    return `${this.code()}-(${this.details().documentNodeId})-(${this.details().url})`;
   }
 
   getCategory(): IssueCategory {
     return IssueCategory.QUIRKS_MODE;
-  }
-
-  details(): Protocol.Audits.QuirksModeIssueDetails {
-    return this.#issueDetails;
   }
 
   getDescription(): MarkdownIssueDescription {
@@ -56,8 +49,9 @@ export class QuirksModeIssue extends Issue {
     return IssueKind.IMPROVEMENT;
   }
 
-  static fromInspectorIssue(issuesModel: SDK.IssuesModel.IssuesModel, inspectorIssue: Protocol.Audits.InspectorIssue):
-      QuirksModeIssue[] {
+  static fromInspectorIssue(
+      issuesModel: SDK.IssuesModel.IssuesModel|null,
+      inspectorIssue: Protocol.Audits.InspectorIssue): QuirksModeIssue[] {
     const quirksModeIssueDetails = inspectorIssue.details.quirksModeIssueDetails;
     if (!quirksModeIssueDetails) {
       console.warn('Quirks Mode issue without details received.');

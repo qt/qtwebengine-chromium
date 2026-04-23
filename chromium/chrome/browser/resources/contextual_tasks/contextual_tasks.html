@@ -1,12 +1,27 @@
 <!DOCTYPE HTML>
-<html>
+<html dir="$i18n{textdirection}" lang="$i18n{language}">
   <head>
     <meta charset="utf-8">
-    <title>Contextual Tasks</title>
+    <title>$i18n{title}</title>
+    <link rel="stylesheet" href="//resources/css/text_defaults_md.css">
+    <link rel="stylesheet" href="//theme/colors.css?sets=chrome">
     <style>
-      body {
-        padding: 0;
+      html, body {
+        height: 100%;
         margin: 0;
+        overscroll-behavior-x: contain;
+        padding: 0;
+        width: 100%;
+      }
+
+      body {
+        align-items: stretch;
+        display: flex;
+        flex-direction: column;
+      }
+
+      contextual-tasks-app {
+        flex-grow: 1;
       }
     </style>
   </head>

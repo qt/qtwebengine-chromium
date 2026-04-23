@@ -671,40 +671,18 @@ void CodeGenerator::AssembleCodeStartRegisterCheck() {
   __ pop(eax);  // Restore eax.
 }
 
-#ifdef V8_ENABLE_LEAPTIERING
 void CodeGenerator::AssembleDispatchHandleRegisterCheck() {
   CHECK(!V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE_BOOL);
 }
-#endif  // V8_ENABLE_LEAPTIERING
 
-// Check if the code object is marked for deoptimization. If it is, then it
-// jumps to the CompileLazyDeoptimizedCode builtin. In order to do this we need
-// to:
-//    1. read from memory the word that contains that bit, which can be found in
-//       the flags in the referenced {Code} object;
-//    2. test kMarkedForDeoptimizationBit in those flags; and
-//    3. if it is not zero then it jumps to the builtin.
-//
-// Note: With leaptiering we simply assert the code is not deoptimized.
-void CodeGenerator::BailoutIfDeoptimized() {
+void CodeGenerator::AssertNotDeoptimized() {
   int offset = InstructionStream::kCodeOffset - InstructionStream::kHeaderSize;
-  if (v8_flags.debug_code || !V8_ENABLE_LEAPTIERING_BOOL) {
-    __ push(eax);  // Push eax so we can use it as a scratch register.
-    __ mov(eax, Operand(kJavaScriptCallCodeStartRegister, offset));
-    __ test(FieldOperand(eax, Code::kFlagsOffset),
-            Immediate(1 << Code::kMarkedForDeoptimizationBit));
-    __ pop(eax);  // Restore eax.
-  }
-#ifdef V8_ENABLE_LEAPTIERING
-  if (v8_flags.debug_code) {
-    __ Assert(zero, AbortReason::kInvalidDeoptimizedCode);
-  }
-#else
-  Label skip;
-  __ j(zero, &skip, Label::kNear);
-  __ TailCallBuiltin(Builtin::kCompileLazyDeoptimizedCode);
-  __ bind(&skip);
-#endif
+  __ push(eax);  // Push eax so we can use it as a scratch register.
+  __ mov(eax, Operand(kJavaScriptCallCodeStartRegister, offset));
+  __ test(FieldOperand(eax, Code::kFlagsOffset),
+          Immediate(1 << Code::kMarkedForDeoptimizationBit));
+  __ pop(eax);  // Restore eax.
+  __ Assert(zero, AbortReason::kInvalidDeoptimizedCode);
 }
 
 // Assembles an instruction after register allocation, producing machine code.
@@ -4252,7 +4230,7 @@ void CodeGenerator::AssembleConstructFrame() {
                    CommonFrameConstants::kFixedFrameSizeAboveFp)));
         __ wasm_call(static_cast<Address>(Builtin::kWasmHandleStackOverflow),
                      RelocInfo::WASM_STUB_CALL);
-        // If the call succesfully grew the stack, we don't expect it to have
+        // If the call successfully grew the stack, we don't expect it to have
         // allocated any heap objects or otherwise triggered any GC.
         // If it was not able to grow the stack, it may have triggered a GC when
         // allocating the stack overflow exception object, but the call did not

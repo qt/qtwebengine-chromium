@@ -16,7 +16,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("lighthouse") {
+devtools_ui_module("lighthouse") {
   sources = [
     "LighthouseController.ts",
     "LighthousePanel.ts",
@@ -38,6 +38,7 @@ devtools_module("lighthouse") {
     "../../core/protocol_client:bundle",
     "../../core/root:bundle",
     "../../core/sdk:bundle",
+    "../../generated:protocol",
     "../../models/geometry:bundle",
     "../../models/text_utils:bundle",
     "../../models/trace:bundle",
@@ -46,6 +47,7 @@ devtools_module("lighthouse") {
     "../../third_party/lighthouse/report",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/utils:bundle",
+    "../common:bundle",
   ]
 }
 
@@ -78,7 +80,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

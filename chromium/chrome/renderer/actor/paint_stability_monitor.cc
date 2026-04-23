@@ -4,11 +4,13 @@
 
 #include "chrome/renderer/actor/paint_stability_monitor.h"
 
+#include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/common/actor/actor_logging.h"
 #include "chrome/common/actor/journal_details_builder.h"
 #include "chrome/common/chrome_features.h"
+#include "chrome/renderer/actor/page_stability_metrics.h"
 #include "content/public/renderer/render_frame.h"
 #include "third_party/abseil-cpp/absl/strings/str_format.h"
 #include "third_party/blink/public/web/web_interaction_effects_monitor.h"
@@ -44,16 +46,22 @@ base::TimeDelta GetSubsequentPaintTimeout() {
 
 // static
 std::unique_ptr<PaintStabilityMonitor> PaintStabilityMonitor::MaybeCreate(
-    content::RenderFrame& frame) {
+    content::RenderFrame& frame,
+    TaskId task_id,
+    Journal& journal) {
   if (features::kActorPaintStabilityMode.Get() ==
       ActorPaintStabilityMode::kDisabled) {
     return nullptr;
   }
-  return base::WrapUnique(new PaintStabilityMonitor(frame));
+  return base::WrapUnique(new PaintStabilityMonitor(frame, task_id, journal));
 }
 
-PaintStabilityMonitor::PaintStabilityMonitor(content::RenderFrame& frame)
+PaintStabilityMonitor::PaintStabilityMonitor(content::RenderFrame& frame,
+                                             TaskId task_id,
+                                             Journal& journal)
     : mode_(features::kActorPaintStabilityMode.Get()),
+      task_id_(task_id),
+      journal_(journal),
       interaction_effects_monitor_(
           std::make_unique<blink::WebInteractionEffectsMonitor>(
               *frame.GetWebFrame(),
@@ -63,16 +71,17 @@ PaintStabilityMonitor::PaintStabilityMonitor(content::RenderFrame& frame)
 
 PaintStabilityMonitor::~PaintStabilityMonitor() = default;
 
-void PaintStabilityMonitor::Start(Journal::PendingAsyncEntry* journal_entry) {
-  CHECK(!journal_entry_);
+void PaintStabilityMonitor::Start(PageStabilityMetrics* metrics) {
   CHECK(!is_stable_callback_);
-  journal_entry_ = journal_entry;
+  metrics_ = metrics;
 
-  journal_entry_->Log("InteractionContentfulPaint",
-                      JournalDetailsBuilder()
-                          .Add("initial_painted_area",
-                               interaction_effects_monitor_->TotalPaintedArea())
-                          .Build());
+  is_started_ = true;
+
+  journal_->Log(task_id_, "PaintStabilityMonitor: InteractionContentfulPaint",
+                JournalDetailsBuilder()
+                    .Add("initial_painted_area",
+                         interaction_effects_monitor_->TotalPaintedArea())
+                    .Build());
 
   // There won't be any interactions if the underlying frame does not support
   // monitoring, which is the case for iframes. Avoid invoking the
@@ -87,9 +96,9 @@ void PaintStabilityMonitor::Start(Journal::PendingAsyncEntry* journal_entry) {
 }
 
 void PaintStabilityMonitor::WaitForStable(base::OnceClosure callback) {
-  CHECK(journal_entry_);
   CHECK(!is_stable_callback_);
   is_stable_callback_ = std::move(callback);
+  is_wait_for_stable_started_ = true;
   // Paint stability might have been reached between `Start()` and now.
   if (is_stability_reached_) {
     OnPaintStabilityDetected();
@@ -98,29 +107,39 @@ void PaintStabilityMonitor::WaitForStable(base::OnceClosure callback) {
 
 void PaintStabilityMonitor::OnContentfulPaint(uint64_t new_painted_area) {
   // Don't do anything if `Start()` hasn't been called yet.
-  if (!journal_entry_) {
+  if (!is_started_) {
     return;
   }
-  CHECK(journal_entry_);
-  journal_entry_->Log("InteractionContentfulPaint",
-                      JournalDetailsBuilder()
-                          .Add("total_painted_area",
-                               interaction_effects_monitor_->TotalPaintedArea())
-                          .Add("new_painted_area", new_painted_area)
-                          .Add("was_stability_reached", is_stability_reached_)
-                          .Build());
+
+  if (metrics_) {
+    metrics_->OnInteractionContentfulPaint();
+  }
+
+  // We keep the paint stability monitor actively monitoring for interaction
+  // effects so that the metric can still be recorded if there's new contentful
+  // paint after the stability was reached.
+  if (is_wait_for_stable_started_ && is_stability_reached_) {
+    return;
+  }
+
+  journal_->Log(task_id_, "PaintStabilityMonitor: InteractionContentfulPaint",
+                JournalDetailsBuilder()
+                    .Add("total_painted_area",
+                         interaction_effects_monitor_->TotalPaintedArea())
+                    .Add("new_painted_area", new_painted_area)
+                    .Add("was_stability_reached", is_stability_reached_)
+                    .Build());
   is_stability_reached_ = false;
   ScheduleContentfulPaintTimeoutTask(FROM_HERE, GetSubsequentPaintTimeout());
 }
 
 void PaintStabilityMonitor::OnPaintStabilityDetected() {
-  CHECK(journal_entry_);
-  journal_entry_->Log("PaintStabilityDetected",
-                      JournalDetailsBuilder()
-                          .Add("total_painted_area",
-                               interaction_effects_monitor_->TotalPaintedArea())
-                          .Add("is_waiting_for_stable", !!is_stable_callback_)
-                          .Build());
+  journal_->Log(task_id_, "PaintStabilityMonitor: Stability Detected",
+                JournalDetailsBuilder()
+                    .Add("total_painted_area",
+                         interaction_effects_monitor_->TotalPaintedArea())
+                    .Add("is_waiting_for_stable", !!is_stable_callback_)
+                    .Build());
   is_stability_reached_ = true;
 
   // If we're only logging, continue monitoring to log post-stable contentful
@@ -140,8 +159,8 @@ void PaintStabilityMonitor::OnPaintStabilityDetected() {
   // smaller global timeout for pages and interactions that the
   // `interaction_effects_monitor_` does a poor job of attributing (DOM node
   // removal/hiding, <canvas>, <iframe>, etc.
-  interaction_effects_monitor_.reset();
-  std::move(is_stable_callback_).Run();
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, std::move(is_stable_callback_));
 }
 
 void PaintStabilityMonitor::ScheduleContentfulPaintTimeoutTask(

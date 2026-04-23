@@ -80,6 +80,8 @@ class CONTENT_EXPORT OverscrollControllerAndroid
   void Enable();
   void Disable();
 
+  void SetTouchpadOverscrollHistoryNavigation(bool enabled);
+
   // Returns true if the controller is actively handling the current input
   // sequence. This state persists until reset by
   // MotionEventAndroid::Action::DOWN from the next input sequence.
@@ -91,7 +93,8 @@ class CONTENT_EXPORT OverscrollControllerAndroid
 
   // Start RenderWidgetHost::InputEventObserver overrides
   void OnInputEvent(const RenderWidgetHost& widget,
-                    const blink::WebInputEvent&) override;
+                    const blink::WebInputEvent& event,
+                    InputEventSource source) override;
   void OnInputEventAck(const RenderWidgetHost& widget,
                        blink::mojom::InputEventResultSource source,
                        blink::mojom::InputEventResultState state,

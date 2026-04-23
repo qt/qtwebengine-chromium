@@ -33,7 +33,7 @@ public:
     }
     bool supportsPartialLoadResolve() const { return fSupportsPartialLoadResolve; }
 
-    bool isSampleCountSupported(TextureFormat, uint8_t requestedSampleCount) const override;
+    bool isSampleCountSupported(TextureFormat, SampleCount requestedSampleCount) const override;
     TextureFormat getDepthStencilFormat(SkEnumBitMask<DepthStencilFlags>) const override;
 
     TextureInfo getDefaultAttachmentTextureInfo(AttachmentDesc,
@@ -58,6 +58,8 @@ public:
                               const RendererProvider*) const override;
     UniqueKey makeComputePipelineKey(const ComputePipelineDesc&) const override;
     ImmutableSamplerInfo getImmutableSamplerInfo(const TextureInfo&) const override;
+    std::string toString(const ImmutableSamplerInfo&) const override;
+
     bool isRenderable(const TextureInfo&) const override;
     bool isStorage(const TextureInfo&) const override;
 

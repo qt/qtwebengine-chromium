@@ -135,6 +135,7 @@ class CORE_EXPORT WindowPerformance final : public Performance,
   void AddContainerTiming(const DOMPaintTimingInfo& paint_timing_info,
                           const gfx::Rect& rect,
                           uint64_t size,
+                          Element* root_element,
                           const AtomicString& identifier,
                           Element* last_painted_element,
                           const DOMPaintTimingInfo& first_paint_timing_info);
@@ -182,19 +183,20 @@ class CORE_EXPORT WindowPerformance final : public Performance,
       base::TimeTicks visibility_change_timestamp);
 
   void OnLargestContentfulPaintUpdated(
-      std::optional<DOMPaintTimingInfo> paint_timing_info,
+      const DOMPaintTimingInfo& paint_timing_info,
       uint64_t paint_size,
       base::TimeTicks load_time,
       const AtomicString& id,
       const String& url,
       Element*);
   void OnInteractionContentfulPaintUpdated(
-      std::optional<DOMPaintTimingInfo> paint_timing_info,
+      const DOMPaintTimingInfo& paint_timing_info,
       uint64_t paint_size,
       base::TimeTicks load_time,
       const AtomicString& id,
       const String& url,
-      Element*, uint32_t navigation_id);
+      Element*,
+      uint32_t navigation_id);
 
   void Trace(Visitor*) const override;
 

@@ -11,7 +11,7 @@
 #include "cast/streaming/impl/rtp_defines.h"
 #include "cast/streaming/impl/session_config.h"
 #include "cast/streaming/impl/statistics_collector.h"
-#include "cast/streaming/impl/statistics_defines.h"
+#include "cast/streaming/impl/statistics_common.h"
 #include "cast/streaming/public/environment.h"
 #include "platform/base/trivial_clock_traits.h"
 #include "util/chrono_helpers.h"
@@ -32,11 +32,11 @@ void StatisticsDispatcher::DispatchEnqueueEvents(StreamType stream_type,
   if (!environment_.statistics_collector()) {
     return;
   }
-  const StatisticsEventMediaType media_type = ToMediaType(stream_type);
+  const auto media_type = StatisticsEvent::ToMediaType(stream_type);
 
   // Submit a capture begin event.
   FrameEvent capture_begin_event;
-  capture_begin_event.type = StatisticsEventType::kFrameCaptureBegin;
+  capture_begin_event.type = StatisticsEvent::Type::kFrameCaptureBegin;
   capture_begin_event.media_type = media_type;
   capture_begin_event.rtp_timestamp = frame.rtp_timestamp;
   capture_begin_event.timestamp =
@@ -48,7 +48,7 @@ void StatisticsDispatcher::DispatchEnqueueEvents(StreamType stream_type,
 
   // Submit a capture end event.
   FrameEvent capture_end_event;
-  capture_end_event.type = StatisticsEventType::kFrameCaptureEnd;
+  capture_end_event.type = StatisticsEvent::Type::kFrameCaptureEnd;
   capture_end_event.media_type = media_type;
   capture_end_event.rtp_timestamp = frame.rtp_timestamp;
   capture_end_event.timestamp =
@@ -61,7 +61,7 @@ void StatisticsDispatcher::DispatchEnqueueEvents(StreamType stream_type,
   // Submit an encoded event.
   FrameEvent encode_event;
   encode_event.timestamp = environment_.now();
-  encode_event.type = StatisticsEventType::kFrameEncoded;
+  encode_event.type = StatisticsEvent::Type::kFrameEncoded;
   encode_event.media_type = media_type;
   encode_event.rtp_timestamp = frame.rtp_timestamp;
   encode_event.frame_id = frame.frame_id;
@@ -82,8 +82,8 @@ void StatisticsDispatcher::DispatchAckEvent(StreamType stream_type,
 
   FrameEvent ack_event;
   ack_event.timestamp = environment_.now();
-  ack_event.type = StatisticsEventType::kFrameAckReceived;
-  ack_event.media_type = ToMediaType(stream_type);
+  ack_event.type = StatisticsEvent::Type::kFrameAckReceived;
+  ack_event.media_type = StatisticsEvent::ToMediaType(stream_type);
   ack_event.rtp_timestamp = rtp_timestamp;
   ack_event.frame_id = frame_id;
 
@@ -98,12 +98,12 @@ void StatisticsDispatcher::DispatchFrameLogMessages(
   }
 
   const Clock::time_point now = environment_.now();
-  const StatisticsEventMediaType media_type = ToMediaType(stream_type);
+  const auto media_type = StatisticsEvent::ToMediaType(stream_type);
   for (const RtcpReceiverFrameLogMessage& log_message : messages) {
     for (const RtcpReceiverEventLogMessage& event_message :
          log_message.messages) {
       switch (event_message.type) {
-        case StatisticsEventType::kPacketReceived: {
+        case StatisticsEvent::Type::kPacketReceived: {
           PacketEvent event;
           event.timestamp = event_message.timestamp;
           event.received_timestamp = now;
@@ -115,16 +115,16 @@ void StatisticsDispatcher::DispatchFrameLogMessages(
               std::move(event));
         } break;
 
-        case StatisticsEventType::kFrameAckSent:
-        case StatisticsEventType::kFrameDecoded:
-        case StatisticsEventType::kFramePlayedOut: {
+        case StatisticsEvent::Type::kFrameAckSent:
+        case StatisticsEvent::Type::kFrameDecoded:
+        case StatisticsEvent::Type::kFramePlayedOut: {
           FrameEvent event;
           event.timestamp = event_message.timestamp;
           event.received_timestamp = now;
           event.type = event_message.type;
           event.media_type = media_type;
           event.rtp_timestamp = log_message.rtp_timestamp;
-          if (event.type == StatisticsEventType::kFramePlayedOut) {
+          if (event.type == StatisticsEvent::Type::kFramePlayedOut) {
             event.delay_delta = event_message.delay;
           }
           environment_.statistics_collector()->CollectFrameEvent(
@@ -133,7 +133,7 @@ void StatisticsDispatcher::DispatchFrameLogMessages(
 
         default:
           OSP_VLOG << "Received log message via RTCP that we did not expect, "
-                      "StatisticsEventType="
+                      "StatisticsEvent::Type="
                    << static_cast<int>(event_message.type);
           break;
       }

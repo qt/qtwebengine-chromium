@@ -239,12 +239,22 @@ ReadAnythingUntrustedPageHandler::ReadAnythingUntrustedPageHandler(
     mojo::PendingRemote<UntrustedPage> page,
     mojo::PendingReceiver<UntrustedPageHandler> receiver,
     content::WebUI* web_ui,
-    bool use_screen_ai_service)
+    bool use_screen_ai_service
+#if BUILDFLAG(IS_CHROMEOS)
+    ,
+    std::unique_ptr<ChromeOsExtensionWrapper> extension_wrapper
+#endif
+    )
     : profile_(Profile::FromWebUI(web_ui)),
       web_ui_(web_ui),
       receiver_(this, std::move(receiver)),
       page_(std::move(page)),
-      use_screen_ai_service_(use_screen_ai_service) {
+      use_screen_ai_service_(use_screen_ai_service)
+#if BUILDFLAG(IS_CHROMEOS)
+      ,
+      extension_wrapper_(std::move(extension_wrapper))
+#endif
+{
   ax_action_handler_observer_.Observe(
       ui::AXActionHandlerRegistry::GetInstance());
 
@@ -253,7 +263,9 @@ ReadAnythingUntrustedPageHandler::ReadAnythingUntrustedPageHandler(
 
   extensions::ExtensionRegistry::Get(profile_)->AddObserver(this);
 #else
-  extension_wrapper_ = std::make_unique<ChromeOsExtensionWrapper>();
+  if (features::IsReadAnythingReadAloudEnabled()) {
+    extension_wrapper_->ActivateSpeechEngine(profile_);
+  }
 #endif
   side_panel_controller_ = ReadAnythingSidePanelControllerGlue::FromWebContents(
                                web_ui_->GetWebContents())
@@ -353,6 +365,9 @@ ReadAnythingUntrustedPageHandler::~ReadAnythingUntrustedPageHandler() {
   auto* session_controller = ash::SessionController::Get();
   if (session_controller) {
     session_controller->RemoveObserver(this);
+  }
+  if (features::IsReadAnythingReadAloudEnabled()) {
+    extension_wrapper_->ReleaseSpeechEngine(profile_);
   }
   extension_wrapper_.reset();
 #endif
@@ -514,11 +529,6 @@ void ReadAnythingUntrustedPageHandler::OnExtensionReady(
 
 #else
 
-void ReadAnythingUntrustedPageHandler::SetChromeOsExtensionWrapperForTesting(
-    std::unique_ptr<ChromeOsExtensionWrapper> wrapper) {
-  extension_wrapper_ = std::move(wrapper);
-}
-
 // Called when LanguagePackManager::InstallPack is complete.
 void ReadAnythingUntrustedPageHandler::OnInstallPackResponse(
     const PackResult& pack_result) {
@@ -557,29 +567,6 @@ void ReadAnythingUntrustedPageHandler::SendOrQueueLanguageRequest(
 }
 
 void ReadAnythingUntrustedPageHandler::SendNextLanguageRequest() {
-  // Ensure the TTS engine is awake first. WakeEventPage returns false if it's
-  // already awake.
-  bool awake = extension_wrapper_->WakeEngine(
-      profile_,
-      base::BindOnce(&ReadAnythingUntrustedPageHandler::OnTtsEngineAwake,
-                     weak_factory_.GetWeakPtr()));
-  if (awake) {
-    OnTtsEngineAwake(true);
-  }
-}
-
-void ReadAnythingUntrustedPageHandler::OnTtsEngineAwake(bool success) {
-  if (!success) {
-    if (!queued_language_requests_.empty()) {
-      queued_language_requests_.pop_front();
-    }
-    auto voicePackInfo = read_anything::mojom::VoicePackInfo::New();
-    voicePackInfo->pack_state =
-        VoicePackInstallationState::NewErrorCode(ErrorCode::kNotReached);
-    OnGetVoicePackInfo(std::move(voicePackInfo));
-    return;
-  }
-
   // If we're already waiting for a response for another language, do nothing.
   // The next language will be queued up once this one is complete.
   if (has_pending_language_request_ || queued_language_requests_.empty()) {
@@ -869,6 +856,21 @@ void ReadAnythingUntrustedPageHandler::OnScreenshotRequested() {
   web_screenshotter_->RequestScreenshot(main_observer_->web_contents());
 }
 
+void ReadAnythingUntrustedPageHandler::OnDistillationStatus(
+    read_anything::mojom::DistillationStatus status,
+    int word_count) {
+  if (last_open_trigger_.has_value() &&
+      last_open_trigger_.value() == ReadAnythingOpenTrigger::kOmniboxChip) {
+    last_open_trigger_.reset();
+    base::UmaHistogramEnumeration(
+        "Accessibility.ReadAnything.DistillationStatusAfterOmnibox", status,
+        read_anything::mojom::DistillationStatus::kMaxValue);
+    base::UmaHistogramCustomCounts(
+        "Accessibility.ReadAnything.WordsDistilledAfterOmnibox", word_count, 1,
+        kMaxWordsDistilled, kWordsDistilledBuckets);
+  }
+}
+
 void ReadAnythingUntrustedPageHandler::SetDefaultLanguageCode(
     const std::string& code) {
   page_->SetLanguageCode(code);
@@ -879,11 +881,16 @@ void ReadAnythingUntrustedPageHandler::SetDefaultLanguageCode(
 // ReadAnythingSidePanelController::Observer:
 ///////////////////////////////////////////////////////////////////////////////
 
-void ReadAnythingUntrustedPageHandler::Activate(bool active) {
+void ReadAnythingUntrustedPageHandler::Activate(
+    bool active,
+    std::optional<ReadAnythingOpenTrigger> open_trigger) {
   active_ = active;
+  if (active_) {
+    last_open_trigger_ = open_trigger;
+  }
   if (features::IsReadAnythingReadAloudEnabled() && !active &&
-      side_panel_controller_->tab()->IsActivated() && !tab_will_detach_) {
-    page_->OnReadingModeHidden();
+      !tab_will_detach_) {
+    page_->OnReadingModeHidden(side_panel_controller_->tab()->IsActivated());
   }
 }
 
@@ -939,7 +946,11 @@ void ReadAnythingUntrustedPageHandler::SetUpPdfObserver() {
 
 void ReadAnythingUntrustedPageHandler::OnActiveAXTreeIDChanged() {
   is_pdf_ = false;
-  if (!active_) {
+  // If the side panel is not active, we should not send the active tree id.
+  // This check is skipped when immersive read anything is enabled because
+  // there are times when the side panel is inactive but the Reading Mode
+  // application is still running, so we do need to send the active tree id.
+  if (!active_ && !features::IsImmersiveReadAnythingEnabled()) {
     VLOG(1) << "Sending unknown tree because not active";
     page_->OnActiveAXTreeIDChanged(ui::AXTreeIDUnknown(), ukm::kInvalidSourceId,
                                    /*is_pdf=*/false);

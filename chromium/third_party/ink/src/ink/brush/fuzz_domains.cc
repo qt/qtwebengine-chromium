@@ -19,13 +19,16 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
 
 #include "fuzztest/fuzztest.h"
+#include "absl/container/inlined_vector.h"
 #include "absl/log/absl_check.h"
 #include "absl/status/statusor.h"
+#include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush.h"
 #include "ink/brush/brush_behavior.h"
@@ -33,6 +36,7 @@
 #include "ink/brush/brush_family.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/brush/brush_tip.h"
+#include "ink/brush/color_function.h"
 #include "ink/brush/easing_function.h"
 #include "ink/color/color.h"
 #include "ink/color/fuzz_domains.h"
@@ -54,6 +58,7 @@ using fuzztest::FlatMap;
 using fuzztest::InRange;
 using fuzztest::Just;
 using fuzztest::Map;
+using fuzztest::NonEmpty;
 using fuzztest::NonNegative;
 using fuzztest::OneOf;
 using fuzztest::OptionalOf;
@@ -268,6 +273,14 @@ Domain<BrushBehavior::PolarTarget> ArbitraryBrushBehaviorPolarTarget() {
   });
 }
 // LINT.ThenChange(brush_behavior.h:polar_target)
+
+Domain<ColorFunction::OpacityMultiplier> ValidColorFunctionOpacityMultiplier() {
+  return StructOf<ColorFunction::OpacityMultiplier>(FiniteNonNegativeFloat());
+}
+
+Domain<ColorFunction::ReplaceColor> ValidColorFunctionReplaceColor() {
+  return StructOf<ColorFunction::ReplaceColor>(ArbitraryColor());
+}
 
 // LINT.IfChange(predefined)
 Domain<EasingFunction::Predefined> ArbitraryEasingFunctionPredefined() {
@@ -516,12 +529,18 @@ Domain<BrushBehavior::Node> ValidBrushBehaviorNode(DomainVariant variant) {
 }
 
 Domain<BrushCoat> ValidBrushCoat(DomainVariant variant) {
-  return StructOf<BrushCoat>(ValidBrushTip(variant), ValidBrushPaint(variant));
+  return StructOf<BrushCoat>(ValidBrushTip(variant),
+                             Map(
+                                 [](const std::vector<BrushPaint>& paints) {
+                                   return absl::InlinedVector<BrushPaint, 1>(
+                                       paints.begin(), paints.end());
+                                 },
+                                 NonEmpty(VectorOf(ValidBrushPaint(variant)))));
 }
 
 Domain<BrushFamily> ValidBrushFamily(DomainVariant variant) {
   return Map(
-      [](absl::Span<const BrushCoat> coats, const std::string id,
+      [](absl::Span<const BrushCoat> coats, const std::string& id,
          const BrushFamily::InputModel& input_model) {
         return BrushFamily::Create(coats, id, input_model).value();
       },
@@ -534,7 +553,10 @@ Domain<BrushFamily> ValidBrushFamily(DomainVariant variant) {
 
 Domain<BrushFamily::InputModel> ValidBrushFamilyInputModel() {
   return VariantOf(StructOf<BrushFamily::SpringModel>(),
-                   StructOf<BrushFamily::ExperimentalRawPositionModel>());
+                   StructOf<BrushFamily::ExperimentalRawPositionModel>(),
+                   StructOf<BrushFamily::ExperimentalNaiveModel>(),
+                   StructOf<BrushFamily::SlidingWindowModel>(
+                       FinitePositiveDuration32(), PositiveDuration32()));
 }
 
 namespace {
@@ -552,7 +574,7 @@ Domain<BrushPaint::TextureSizeUnit> ArbitraryBrushPaintTextureSizeUnit() {
 Domain<BrushPaint::TextureMapping> ArbitraryBrushPaintTextureMapping() {
   return ElementOf({
       BrushPaint::TextureMapping::kTiling,
-      BrushPaint::TextureMapping::kWinding,
+      BrushPaint::TextureMapping::kStamping,
   });
 }
 // LINT.ThenChange(brush_paint.h:texture_mapping)
@@ -608,7 +630,8 @@ Domain<BrushPaint::TextureKeyframe> ValidBrushPaintTextureKeyframe() {
 fuzztest::Domain<BrushPaint::TextureLayer>
 ValidBrushPaintTextureLayerWithMappingAndAnimationFrames(
     BrushPaint::TextureMapping mapping, int animation_frames,
-    int animation_rows, int animation_columns, DomainVariant variant) {
+    int animation_rows, int animation_columns,
+    absl::Duration animation_duration, DomainVariant variant) {
   auto texture_layer = [=](Vec size) {
     auto size_jitter_domain =
         StructOf<Vec>(InRange<float>(0.f, size.x), InRange<float>(0.f, size.y));
@@ -618,6 +641,7 @@ ValidBrushPaintTextureLayerWithMappingAndAnimationFrames(
     auto animation_frames_domain = Just(animation_frames);
     auto animation_rows_domain = Just(animation_rows);
     auto animation_columns_domain = Just(animation_columns);
+    auto animation_duration_domain = Just(animation_duration);
     auto keyframes_domain = VectorOf(ValidBrushPaintTextureKeyframe());
     if (variant == DomainVariant::kValidAndSerializable) {
       size_jitter_domain =
@@ -628,6 +652,7 @@ ValidBrushPaintTextureLayerWithMappingAndAnimationFrames(
       animation_frames_domain = Just(1);
       animation_rows_domain = Just(1);
       animation_columns_domain = Just(1);
+      animation_duration_domain = Just(absl::Seconds(1));
       keyframes_domain = VectorOf(ValidBrushPaintTextureKeyframe()).WithSize(0);
     }
     return StructOf<BrushPaint::TextureLayer>(
@@ -638,22 +663,38 @@ ValidBrushPaintTextureLayerWithMappingAndAnimationFrames(
         StructOf<Vec>(InRange<float>(0.f, 1.f), InRange<float>(0.f, 1.f)),
         FiniteAngle(), size_jitter_domain, offset_jitter_domain,
         rotation_jitter_domain, InRange(0.f, 1.f), animation_frames_domain,
-        animation_rows_domain, animation_columns_domain, keyframes_domain,
+        animation_rows_domain, animation_columns_domain,
+        animation_duration_domain, keyframes_domain,
         ArbitraryBrushPaintBlendMode());
   };
   return FlatMap(texture_layer,
                  StructOf<Vec>(FinitePositiveFloat(), FinitePositiveFloat()));
 }
 
+// LINT.IfChange(self_overlap)
+Domain<BrushPaint::SelfOverlap> ArbitraryBrushPaintSelfOverlap() {
+  return ElementOf({
+      BrushPaint::SelfOverlap::kAny,
+      BrushPaint::SelfOverlap::kAccumulate,
+      BrushPaint::SelfOverlap::kDiscard,
+  });
+}
+// LINT.ThenChange(brush_paint.h:self_overlap)
+
 fuzztest::Domain<BrushPaint> ValidBrushPaint(DomainVariant variant) {
   return FlatMap(
       [=](BrushPaint::TextureMapping mapping,
-          std::tuple<int, int, int> animation_frames_rows_columns) {
+          std::tuple<int, int, int> animation_frames_rows_columns,
+          absl::Duration animation_duration) {
         return std::apply(
             [&](int frames, int rows, int columns) {
-              return fuzztest::StructOf<BrushPaint>(VectorOf(
-                  ValidBrushPaintTextureLayerWithMappingAndAnimationFrames(
-                      mapping, frames, rows, columns, variant)));
+              return fuzztest::StructOf<BrushPaint>(
+                  VectorOf(
+                      ValidBrushPaintTextureLayerWithMappingAndAnimationFrames(
+                          mapping, frames, rows, columns, animation_duration,
+                          variant)),
+                  VectorOf(ValidColorFunction()),
+                  ArbitraryBrushPaintSelfOverlap());
             },
             animation_frames_rows_columns);
       },
@@ -663,7 +704,9 @@ fuzztest::Domain<BrushPaint> ValidBrushPaint(DomainVariant variant) {
             return TupleOf(InRange<int>(1, rows * columns), Just(rows),
                            Just(columns));
           },
-          InRange<int>(1, 1 << 12), InRange<int>(1, 1 << 12)));
+          InRange<int>(1, 1 << 12), InRange<int>(1, 1 << 12)),
+      fuzztest::Map([](int64_t ms) { return absl::Milliseconds(ms); },
+                    fuzztest::InRange(1, 1 << 24)));
 }
 
 Domain<BrushTip> ValidBrushTip(DomainVariant variant) {
@@ -673,9 +716,8 @@ Domain<BrushTip> ValidBrushTip(DomainVariant variant) {
       Filter([](Vec scale) { return scale != Vec(); },
              StructOf<Vec>(FiniteNonNegativeFloat(), FiniteNonNegativeFloat())),
       InRange<float>(0.f, 1.f), AngleInRange(-kQuarterTurn, kQuarterTurn),
-      InRange<float>(0.f, 1.f), FiniteAngle(), InRange<float>(0.f, 2.f),
-      FiniteNonNegativeFloat(), FiniteNonNegativeDuration32(),
-      VectorOf(ValidBrushBehavior(variant)));
+      InRange<float>(0.f, 1.f), FiniteAngle(), FiniteNonNegativeFloat(),
+      FiniteNonNegativeDuration32(), VectorOf(ValidBrushBehavior(variant)));
 }
 
 }  // namespace
@@ -734,6 +776,11 @@ Domain<BrushTip> ValidBrushTip() {
 
 Domain<BrushTip> SerializableBrushTip() {
   return ValidBrushTip(DomainVariant::kValidAndSerializable);
+}
+
+Domain<ColorFunction> ValidColorFunction() {
+  return StructOf<ColorFunction>(VariantOf(
+      ValidColorFunctionOpacityMultiplier(), ValidColorFunctionReplaceColor()));
 }
 
 Domain<EasingFunction> ValidEasingFunction() {

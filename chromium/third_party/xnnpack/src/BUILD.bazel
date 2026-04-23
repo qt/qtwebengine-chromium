@@ -14,8 +14,6 @@ load(
     "xnnpack_cc_library",
     "xnnpack_cxx_library",
     "xnnpack_if_kleidiai_enabled",
-    "xnnpack_lib_deps",
-    "xnnpack_lib_srcs",
     "xnnpack_min_size_copts",
     "xnnpack_select_if",
     "xnnpack_slinky_deps",
@@ -142,6 +140,7 @@ xnnpack_cc_library(
         "include/xnnpack.h",
     ],
     deps = [
+        ":fingerprint_id",
         "@pthreadpool",
     ],
 )
@@ -424,31 +423,6 @@ xnnpack_cc_library(
 xnnpack_cc_library(
     name = "assembly",
     textual_hdrs = ["src/xnnpack/assembly.h"],
-)
-
-genrule(
-    name = "generated_microkernel_lists",
-    srcs = glob([
-        "**/*.c",
-        "**/*.cc",
-        "**/*.S",
-    ]),
-    outs = ([
-                "testdata/gen/microkernels.bzl",
-                "testdata/cmake/gen/microkernels.cmake",
-            ] + ["testdata/gen/" + arch + "_microkernels.bzl" for arch in xnnpack_archs()] +
-            ["testdata/cmake/gen/" + arch + "_microkernels.cmake" for arch in xnnpack_archs()]),
-    cmd = ("$(location //tools:update_microkernels) " +
-           "--output $(RULEDIR)/testdata " +
-           "--root_dir %s" % (package_name() if package_name() else ".")),
-    tools = ["//tools:update_microkernels"],
-)
-
-filegroup(
-    name = "cmake_microkernel_lists",
-    srcs = glob([
-        "cmake/gen/*.cmake",
-    ]),
 )
 
 # Generate the prod/all microkernel libraries for each architecture.
@@ -776,6 +750,56 @@ xnnpack_cc_library(
 )
 
 xnnpack_cc_library(
+    name = "fingerprint_id",
+    srcs = ["src/operators/fingerprint_id.c"],
+    hdrs = [
+        "src/operators/fingerprint_id.h",
+        "src/operators/fingerprint_id.h.inc",
+    ],
+)
+
+xnnpack_cc_library(
+    name = "fingerprint_cache",
+    srcs = ["src/operators/fingerprint_cache.c"],
+    hdrs = ["src/operators/fingerprint_cache.h"],
+    deps = [
+        ":allocator",
+        ":cache",
+        ":fingerprint_id",
+        ":init_once",
+        ":mutex",
+        ":operator_delete",
+        ":xnnpack_h",
+    ],
+)
+
+xnnpack_cc_library(
+    name = "fingerprint_check",
+    srcs = ["src/xnnpack/fingerprint_check.c"],
+    deps = [
+        ":common",
+        ":fingerprint_cache",  # build_cleaner: keep
+        ":fingerprint_id",
+        ":internal",
+        ":logging",
+        ":xnnpack_h",
+    ],
+)
+
+xnnpack_cc_library(
+    name = "operator_delete",
+    srcs = ["src/operator-delete.c"],
+    deps = [
+        ":allocator",
+        ":logging",
+        ":operator_h",
+        ":operator_utils",
+        ":params",
+        ":xnnpack_h",
+    ],
+)
+
+xnnpack_cc_library(
     name = "operators",
     srcs = OPERATOR_SRCS,
     hdrs = [
@@ -794,6 +818,8 @@ xnnpack_cc_library(
         ":cache",
         ":common",
         ":datatype",
+        ":fingerprint_cache",
+        ":fingerprint_id",
         ":indirection",
         ":internal",
         ":logging",
@@ -806,6 +832,7 @@ xnnpack_cc_library(
         ":microparams_init",
         ":node_type",
         ":normalization",
+        ":operator_delete",
         ":operator_type",
         ":operator_utils",
         ":pack_lh",
@@ -813,9 +840,11 @@ xnnpack_cc_library(
         ":params",
         ":quantization",
         ":reference_ukernels",
+        ":subgraph_h",
         ":xnnpack_h",
         "//src/configs:config_hdrs",
         "//src/configs:hardware_config",
+        "//src/configs:microkernel_configs",
         "@pthreadpool",
     ],
 )
@@ -866,6 +895,7 @@ xnnpack_cc_library(
         ":memory",
         ":microkernel_hdrs",
         ":microkernel_type",
+        ":mutex",
         ":node_type",
         ":operator_type",
         ":operator_utils",
@@ -911,7 +941,10 @@ xnnpack_cc_library(
 
 xnnpack_cc_library(
     name = "XNNPACK",
-    srcs = xnnpack_lib_srcs(),
+    srcs = select({
+        "//ynnpack/xnnpack:use_ynnpack": [],
+        "//conditions:default": ["src/init.c"],
+    }),
     hdrs = [
         "include/experimental.h",
         "include/xnnpack.h",
@@ -924,7 +957,30 @@ xnnpack_cc_library(
         "//conditions:default": [],
     }),
     visibility = xnnpack_visibility(),
-    deps = xnnpack_lib_deps(),
+    deps = select({
+        "//ynnpack/xnnpack:use_ynnpack": ["//ynnpack/xnnpack"],
+        "//conditions:default": [
+            "//:allocator",
+            "//:build_identifier",  # build_cleaner: keep
+            "//:common",  # build_cleaner: keep
+            "//:fingerprint_check",
+            "//:fingerprint_id",
+            "//:init_once",
+            "//:logging",
+            "//:math",  # build_cleaner: keep
+            "//:microkernel_hdrs",  # build_cleaner: keep
+            "//:microparams_h",  # build_cleaner: keep
+            "//:microparams_init",  # build_cleaner: keep
+            "//:operators",  # build_cleaner: keep
+            "//:params",
+            "//:subgraph",  # build_cleaner: keep
+            "//src/configs:hardware_config",
+            "//src/configs:microkernel_configs",  # build_cleaner: keep
+            "@pthreadpool",
+        ],
+    }) + xnnpack_if_kleidiai_enabled([
+        "@KleidiAI//:common",
+    ]),
 )
 
 ############################# Build configurations #############################
@@ -1109,6 +1165,102 @@ config_setting(
     define_values = {"xnn_enable_avx512bf16": "false"},
 )
 
+# Enables usage of Intel SSE kernels.
+config_setting(
+    name = "xnn_enable_sse_explicit_true",
+    define_values = {"xnn_enable_sse": "true"},
+)
+
+# Disables usage of Intel SSE kernels.
+config_setting(
+    name = "xnn_enable_sse_explicit_false",
+    define_values = {"xnn_enable_sse": "false"},
+)
+
+# Enables usage of Intel SSE2 kernels.
+config_setting(
+    name = "xnn_enable_sse2_explicit_true",
+    define_values = {"xnn_enable_sse2": "true"},
+)
+
+# Disables usage of Intel SSE2 kernels.
+config_setting(
+    name = "xnn_enable_sse2_explicit_false",
+    define_values = {"xnn_enable_sse2": "false"},
+)
+
+# Enables usage of Intel SSSE3 kernels.
+config_setting(
+    name = "xnn_enable_ssse3_explicit_true",
+    define_values = {"xnn_enable_ssse3": "true"},
+)
+
+# Disables usage of Intel SSSE3 kernels.
+config_setting(
+    name = "xnn_enable_ssse3_explicit_false",
+    define_values = {"xnn_enable_ssse3": "false"},
+)
+
+# Enables usage of Intel SSE41 kernels.
+config_setting(
+    name = "xnn_enable_sse41_explicit_true",
+    define_values = {"xnn_enable_sse41": "true"},
+)
+
+# Disables usage of Intel SSE41 kernels.
+config_setting(
+    name = "xnn_enable_sse41_explicit_false",
+    define_values = {"xnn_enable_sse41": "false"},
+)
+
+# Enables usage of Intel AVX kernels.
+config_setting(
+    name = "xnn_enable_avx_explicit_true",
+    define_values = {"xnn_enable_avx": "true"},
+)
+
+# Disables usage of Intel AVX kernels.
+config_setting(
+    name = "xnn_enable_avx_explicit_false",
+    define_values = {"xnn_enable_avx": "false"},
+)
+
+# Enables usage of Intel F16C (f16 convert) kernels.
+config_setting(
+    name = "xnn_enable_f16c_explicit_true",
+    define_values = {"xnn_enable_f16c": "true"},
+)
+
+# Disables usage of Intel F16C (f16 convert) kernels.
+config_setting(
+    name = "xnn_enable_f16c_explicit_false",
+    define_values = {"xnn_enable_f16c": "false"},
+)
+
+# Enables usage of Intel FMA3 (fused multiply accumulate) kernels.
+config_setting(
+    name = "xnn_enable_fma3_explicit_true",
+    define_values = {"xnn_enable_fma3": "true"},
+)
+
+# Disables usage of Intel FMA3 (fused multiply accumulate) kernels.
+config_setting(
+    name = "xnn_enable_fma3_explicit_false",
+    define_values = {"xnn_enable_fma3": "false"},
+)
+
+# Enables usage of Intel AVX2 kernels.
+config_setting(
+    name = "xnn_enable_avx2_explicit_true",
+    define_values = {"xnn_enable_avx2": "true"},
+)
+
+# Disables usage of Intel AVX2 kernels.
+config_setting(
+    name = "xnn_enable_avx2_explicit_false",
+    define_values = {"xnn_enable_avx2": "false"},
+)
+
 # Enables usage of Intel AVX-VNNI (integer dot product) kernels.
 config_setting(
     name = "xnn_enable_avxvnni_explicit_true",
@@ -1261,8 +1413,13 @@ config_setting(
 
 # Enables usage of slinky locality optimizations
 config_setting(
-    name = "slinky_enabled",
+    name = "xnn_use_slinky_explicit_true",
     define_values = {"xnn_use_slinky": "true"},
+)
+
+config_setting(
+    name = "xnn_use_slinky_explicit_false",
+    define_values = {"xnn_use_slinky": "false"},
 )
 
 # Enables usage of WASM SIMD AVX-256 revectorization kernels.
@@ -1606,6 +1763,134 @@ alias(
 )
 
 selects.config_setting_group(
+    name = "sse_enabled_by_default",
+    match_any = [
+        "//build_config:x86",
+    ],
+)
+
+alias(
+    name = "sse_enabled",
+    actual = select({
+        ":xnn_enable_sse_explicit_true": ":xnn_enable_sse_explicit_true",
+        ":xnn_enable_sse_explicit_false": ":xnn_enable_sse_explicit_true",
+        "//conditions:default": ":sse_enabled_by_default",
+    }),
+)
+
+selects.config_setting_group(
+    name = "sse2_enabled_by_default",
+    match_any = [
+        "//build_config:x86",
+    ],
+)
+
+alias(
+    name = "sse2_enabled",
+    actual = select({
+        ":xnn_enable_sse2_explicit_true": ":xnn_enable_sse2_explicit_true",
+        ":xnn_enable_sse2_explicit_false": ":xnn_enable_sse2_explicit_true",
+        "//conditions:default": ":sse2_enabled_by_default",
+    }),
+)
+
+selects.config_setting_group(
+    name = "ssse3_enabled_by_default",
+    match_any = [
+        "//build_config:x86",
+    ],
+)
+
+alias(
+    name = "ssse3_enabled",
+    actual = select({
+        ":xnn_enable_ssse3_explicit_true": ":xnn_enable_ssse3_explicit_true",
+        ":xnn_enable_ssse3_explicit_false": ":xnn_enable_ssse3_explicit_true",
+        "//conditions:default": ":ssse3_enabled_by_default",
+    }),
+)
+
+selects.config_setting_group(
+    name = "sse41_enabled_by_default",
+    match_any = [
+        "//build_config:x86",
+    ],
+)
+
+alias(
+    name = "sse41_enabled",
+    actual = select({
+        ":xnn_enable_sse41_explicit_true": ":xnn_enable_sse41_explicit_true",
+        ":xnn_enable_sse41_explicit_false": ":xnn_enable_sse41_explicit_true",
+        "//conditions:default": ":sse41_enabled_by_default",
+    }),
+)
+
+selects.config_setting_group(
+    name = "avx_enabled_by_default",
+    match_any = [
+        "//build_config:x86",
+    ],
+)
+
+alias(
+    name = "avx_enabled",
+    actual = select({
+        ":xnn_enable_avx_explicit_true": ":xnn_enable_avx_explicit_true",
+        ":xnn_enable_avx_explicit_false": ":xnn_enable_avx_explicit_true",
+        "//conditions:default": ":avx_enabled_by_default",
+    }),
+)
+
+selects.config_setting_group(
+    name = "f16c_enabled_by_default",
+    match_any = [
+        "//build_config:x86",
+    ],
+)
+
+alias(
+    name = "f16c_enabled",
+    actual = select({
+        ":xnn_enable_f16c_explicit_true": ":xnn_enable_f16c_explicit_true",
+        ":xnn_enable_f16c_explicit_false": ":xnn_enable_f16c_explicit_true",
+        "//conditions:default": ":f16c_enabled_by_default",
+    }),
+)
+
+selects.config_setting_group(
+    name = "fma3_enabled_by_default",
+    match_any = [
+        "//build_config:x86",
+    ],
+)
+
+alias(
+    name = "fma3_enabled",
+    actual = select({
+        ":xnn_enable_fma3_explicit_true": ":xnn_enable_fma3_explicit_true",
+        ":xnn_enable_fma3_explicit_false": ":xnn_enable_fma3_explicit_true",
+        "//conditions:default": ":fma3_enabled_by_default",
+    }),
+)
+
+selects.config_setting_group(
+    name = "avx2_enabled_by_default",
+    match_any = [
+        "//build_config:x86",
+    ],
+)
+
+alias(
+    name = "avx2_enabled",
+    actual = select({
+        ":xnn_enable_avx2_explicit_true": ":xnn_enable_avx2_explicit_true",
+        ":xnn_enable_avx2_explicit_false": ":xnn_enable_avx2_explicit_true",
+        "//conditions:default": ":avx2_enabled_by_default",
+    }),
+)
+
+selects.config_setting_group(
     name = "avxvnni_enabled_by_default",
     match_any = [
         "//build_config:x86",
@@ -1752,6 +2037,32 @@ alias(
         ":xnn_enable_cpuinfo_explicit_true": ":xnn_enable_cpuinfo_explicit_true",
         ":xnn_enable_cpuinfo_explicit_false": ":xnn_enable_cpuinfo_explicit_true",
         "//conditions:default": ":cpuinfo_enabled_by_default",
+    }),
+)
+
+selects.config_setting_group(
+    name = "slinky_enabled_by_default",
+    match_any = [
+        "//build_config:linux_x86",
+        "//build_config:linux_arm64",
+    ],
+)
+
+alias(
+    name = "slinky_enabled",
+    actual = select({
+        ":xnn_use_slinky_explicit_true": ":xnn_use_slinky_explicit_true",
+        ":xnn_use_slinky_explicit_false": ":xnn_use_slinky_explicit_true",
+        "//conditions:default": ":slinky_enabled_by_default",
+    }),
+)
+
+alias(
+    name = "use_slinky",
+    actual = select({
+        ":xnn_use_slinky_explicit_true": ":xnn_use_slinky_explicit_true",
+        ":xnn_use_slinky_explicit_false": ":xnn_use_slinky_explicit_true",
+        "//conditions:default": ":xnn_use_slinky_explicit_true",
     }),
 )
 

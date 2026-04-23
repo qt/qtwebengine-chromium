@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -15,8 +15,8 @@ import * as Persistence from '../../models/persistence/persistence.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as Spinners from '../../ui/components/spinners/spinners.js';
+import {createIcon} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as Snippets from '../snippets/snippets.js';
@@ -819,9 +819,9 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     }
     if (this.scriptsTree.selectedTreeElement) {
       // If the tree outline is being marked as "being edited" (i.e. we're renaming a file
-      // or chosing the name for a new snippet), we shall not proceed with revealing here,
+      // or choosing the name for a new snippet), we shall not proceed with revealing here,
       // as that will steal focus from the input widget and thus cancel editing. The
-      // test/e2e/snippets/breakpoint_test.ts exercises this.
+      // test/e2e/snippets/breakpoint.test.ts exercises this.
       if (UI.UIUtils.isBeingEdited(this.scriptsTree.selectedTreeElement.treeOutline?.element)) {
         return null;
       }
@@ -1287,7 +1287,7 @@ export class NavigatorFolderTreeElement extends UI.TreeOutline.TreeElement {
       iconType = 'folder-asterisk';
     }
 
-    const icon = IconButton.Icon.create(iconType);
+    const icon = createIcon(iconType);
     this.setLeadingIcons([icon]);
   }
 
@@ -1912,7 +1912,7 @@ export class NavigatorFolderTreeNode extends NavigatorTreeNode {
   }
 
   override wasPopulated(): void {
-    if (!this.treeElement || this.treeElement.node !== this) {
+    if (this.treeElement?.node !== this) {
       return;
     }
     this.addChildrenRecursive();

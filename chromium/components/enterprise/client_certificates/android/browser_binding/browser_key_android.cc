@@ -91,4 +91,12 @@ std::optional<std::vector<uint8_t>> BrowserKeyAndroid::Sign(
   return signature_output;
 }
 
+BrowserKey::SecurityLevel BrowserKeyAndroid::GetSecurityLevel() const {
+  JNIEnv* env = jni_zero::AttachCurrentThread();
+  return static_cast<BrowserKey::SecurityLevel>(
+      Java_BrowserKey_getSecurityLevel(env, impl_));
+}
+
 }  // namespace client_certificates
+
+DEFINE_JNI(BrowserKey)

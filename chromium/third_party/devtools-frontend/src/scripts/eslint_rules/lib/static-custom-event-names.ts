@@ -18,7 +18,7 @@ type RuleFixer = TSESLint.RuleFixer;
 
 // Define message IDs type based on meta.messages
 
-// Define the structure for the return value of findConstructorAndSuperCallAndFirstArgumentToSuper
+/** Define the structure for the return value of findConstructorAndSuperCallAndFirstArgumentToSuper **/
 interface FoundNodes {
   constructor: MethodDefinition|undefined;
   superExpression: ExpressionStatement|undefined;
@@ -69,7 +69,7 @@ export default createRule({
             bodyNode.expression.callee?.type === 'Super';
       });
 
-      if (!superExpression || superExpression.expression.type !== 'CallExpression') {
+      if (superExpression?.expression.type !== 'CallExpression') {
         return foundNodes;
       }
       foundNodes.superExpression = superExpression;
@@ -104,7 +104,7 @@ export default createRule({
       }
 
       const {firstArgumentToSuper} = findConstructorAndSuperCallAndFirstArgumentToSuper(node);
-      if (!firstArgumentToSuper || firstArgumentToSuper.type !== 'Literal') {
+      if (firstArgumentToSuper?.type !== 'Literal') {
         // Either it's OK, or it's some value that isn't a string literal, so we should bail.
         return [];
       }
@@ -195,7 +195,7 @@ export default createRule({
         }
 
         // Check if the class extends the global 'Event'
-        if (!node.superClass || node.superClass.type !== 'Identifier' || node.superClass.name !== 'Event') {
+        if (node.superClass?.type !== 'Identifier' || node.superClass.name !== 'Event') {
           return;
         }
 

@@ -40,19 +40,34 @@ class QUICHE_EXPORT SendAlgorithmInterface {
           rtt(rtt),
           allow_cwnd_to_decrease(allow_cwnd_to_decrease) {}
 
-    bool operator==(const NetworkParams& other) const {
-      return bandwidth == other.bandwidth && rtt == other.rtt &&
-             max_initial_congestion_window ==
-                 other.max_initial_congestion_window &&
-             allow_cwnd_to_decrease == other.allow_cwnd_to_decrease &&
-             is_rtt_trusted == other.is_rtt_trusted;
+    template <typename Sink>
+    friend void AbslStringify(Sink& sink, const NetworkParams& params) {
+      absl::Format(&sink,
+                   "NetworkParams { "
+                   "bandwidth: %v, "
+                   "rtt: %v, "
+                   "max_initial_congestion_window: %v, "
+                   "allow_cwnd_to_decrease: %v, "
+                   "is_rtt_trusted: %v, "
+                   "clamp_cwnd_and_rtt_before_send_algorithm: %v}",
+                   params.bandwidth, params.rtt,
+                   params.max_initial_congestion_window,
+                   params.allow_cwnd_to_decrease, params.is_rtt_trusted,
+                   params.clamp_cwnd_and_rtt_before_send_algorithm);
     }
+
+    bool operator==(const NetworkParams& other) const = default;
 
     QuicBandwidth bandwidth = QuicBandwidth::Zero();
     QuicTime::Delta rtt = QuicTime::Delta::Zero();
     int max_initial_congestion_window = 0;
     bool allow_cwnd_to_decrease = false;
     bool is_rtt_trusted = false;
+    // TODO: b/409269141 - Remove this field when deprecating the experiment.
+    // When true, `QuicSentPacketManager::AdjustNetworkParameters()` will clamp
+    // the bandwidth and rtt to large values before passing them to the send
+    // algorithm.
+    bool clamp_cwnd_and_rtt_before_send_algorithm = false;
   };
 
   static SendAlgorithmInterface* Create(

@@ -11,7 +11,6 @@
 
 #include "base/barrier_closure.h"
 #include "base/functional/bind.h"
-#include "base/functional/callback_forward.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/browser/permissions/permission_service_context.h"
@@ -379,30 +378,6 @@ void PermissionControllerImpl::NotifyChangedSubscriptions(
   }
 }
 
-void PermissionControllerImpl::GrantOverridesForDevTools(
-    base::optional_ref<const url::Origin> requesting_origin,
-    base::optional_ref<const url::Origin> embedding_origin,
-    const std::vector<PermissionType>& permissions,
-    base::OnceCallback<void(OverrideStatus)> callback) {
-  GrantPermissionOverrides(requesting_origin, embedding_origin, permissions,
-                           std::move(callback));
-}
-
-void PermissionControllerImpl::SetOverrideForDevTools(
-    base::optional_ref<const url::Origin> requesting_origin,
-    base::optional_ref<const url::Origin> embedding_origin,
-    PermissionType permission,
-    const PermissionStatus& status,
-    base::OnceCallback<void(OverrideStatus)> callback) {
-  SetPermissionOverride(requesting_origin, embedding_origin, permission, status,
-                        std::move(callback));
-}
-
-void PermissionControllerImpl::ResetOverridesForDevTools(
-    base::OnceClosure callback) {
-  ResetPermissionOverrides(std::move(callback));
-}
-
 void PermissionControllerImpl::SetPermissionOverride(
     base::optional_ref<const url::Origin> requesting_origin,
     base::optional_ref<const url::Origin> embedding_origin,
@@ -650,8 +625,8 @@ PermissionResult PermissionControllerImpl::GetPermissionResultInternal(
       url::Origin::Create(embedding_origin));
 }
 
-PermissionStatus
-PermissionControllerImpl::GetPermissionStatusForCurrentDocumentInternal(
+PermissionResult
+PermissionControllerImpl::GetPermissionResultForCurrentDocumentInternal(
     const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
     RenderFrameHost* render_frame_host,
     bool should_include_device_status) {
@@ -662,22 +637,23 @@ PermissionControllerImpl::GetPermissionStatusForCurrentDocumentInternal(
       render_frame_host->GetMainFrame()->GetLastCommittedOrigin(),
       permission_type);
   if (permission_result) {
-    return permission_result->status;
+    return permission_result.value();
   }
+
   PermissionControllerDelegate* delegate =
       browser_context_->GetPermissionControllerDelegate();
   if (!delegate) {
-    return PermissionStatus::DENIED;
+    return PermissionResult(PermissionStatus::DENIED);
   }
-  if (VerifyContextOfCurrentDocument(permission_type, render_frame_host)
-          .status == PermissionStatus::DENIED) {
-    return PermissionStatus::DENIED;
+
+  PermissionResult result =
+      VerifyContextOfCurrentDocument(permission_type, render_frame_host);
+  if (result.status == PermissionStatus::DENIED) {
+    return result;
   }
-  return delegate
-      ->GetPermissionResultForCurrentDocument(permission_descriptor,
-                                              render_frame_host,
-                                              should_include_device_status)
-      .status;
+
+  return delegate->GetPermissionResultForCurrentDocument(
+      permission_descriptor, render_frame_host, should_include_device_status);
 }
 
 PermissionStatus PermissionControllerImpl::GetPermissionStatusForWorker(
@@ -719,37 +695,16 @@ PermissionStatus
 PermissionControllerImpl::GetPermissionStatusForCurrentDocument(
     const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
     RenderFrameHost* render_frame_host) {
-  return GetPermissionStatusForCurrentDocumentInternal(permission_descriptor,
-                                                       render_frame_host);
+  return GetPermissionResultForCurrentDocument(permission_descriptor,
+                                               render_frame_host)
+      .status;
 }
 
 PermissionResult
 PermissionControllerImpl::GetPermissionResultForCurrentDocument(
     const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
     RenderFrameHost* render_frame_host) {
-  auto permission_type =
-      blink::PermissionDescriptorToPermissionType(permission_descriptor);
-  std::optional<PermissionResult> permission_result = permission_overrides_.Get(
-      render_frame_host->GetLastCommittedOrigin(),
-      render_frame_host->GetMainFrame()->GetLastCommittedOrigin(),
-      permission_type);
-  if (permission_result) {
-    return permission_result.value();
-  }
-
-  PermissionControllerDelegate* delegate =
-      browser_context_->GetPermissionControllerDelegate();
-  if (!delegate) {
-    return PermissionResult(PermissionStatus::DENIED);
-  }
-
-  PermissionResult result =
-      VerifyContextOfCurrentDocument(permission_type, render_frame_host);
-  if (result.status == PermissionStatus::DENIED) {
-    return result;
-  }
-
-  return delegate->GetPermissionResultForCurrentDocument(
+  return GetPermissionResultForCurrentDocumentInternal(
       permission_descriptor, render_frame_host,
       /*should_include_device_status=*/false);
 }
@@ -827,9 +782,11 @@ PermissionControllerImpl::GetPermissionResultForEmbeddedRequester(
 PermissionStatus PermissionControllerImpl::GetCombinedPermissionAndDeviceStatus(
     const blink::mojom::PermissionDescriptorPtr& permission,
     RenderFrameHost* render_frame_host) {
-  CHECK(PermissionUtil::IsDevicePermission(permission));
-  return GetPermissionStatusForCurrentDocumentInternal(
-      permission, render_frame_host, /*should_include_device_status=*/true);
+  CHECK(PermissionUtil::IsDevicePermission(permission)) << permission->name;
+  return GetPermissionResultForCurrentDocumentInternal(
+             permission, render_frame_host,
+             /*should_include_device_status=*/true)
+      .status;
 }
 
 void PermissionControllerImpl::ResetPermission(PermissionType permission,

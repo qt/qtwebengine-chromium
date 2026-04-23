@@ -242,7 +242,7 @@ class TimeoutMonitor;
 namespace mojo {
 class MessageFilter;
 class UrgentMessageScope;
-}
+}  // namespace mojo
 
 namespace network {
 struct ResourceRequest;
@@ -281,6 +281,7 @@ class IdleManagerImpl;
 class NavigationEarlyHintsManager;
 class NavigationRequest;
 class PeerConnectionTrackerHost;
+class PendingNavigation;
 class PrefetchedSignedExchangeCache;
 class PrerenderCancellationReason;
 class PresentationServiceImpl;
@@ -300,7 +301,6 @@ class SiteInfo;
 class SpeechSynthesisImpl;
 class WebAuthRequestSecurityChecker;
 class WebUIImpl;
-struct PendingNavigation;
 struct ResourceTimingInfo;
 
 // To be called when a RenderFrameHostImpl receives an event.
@@ -585,6 +585,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   bool Reload() override;
   bool IsDOMContentLoaded() override;
   void UpdateIsAdFrame(bool is_ad_frame) override;
+  bool IsAdFrame() const override;
   void SetIsXrOverlaySetup() override;
   ukm::SourceId GetPageUkmSourceId() override;
   StoragePartitionImpl* GetStoragePartition() override;
@@ -685,7 +686,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // to RenderFrameHostDelegate::GetClipboardTypesIfPolicyApplied(). See the
   // description of the latter method for complete details.
   std::optional<std::vector<std::u16string>> GetClipboardTypesIfPolicyApplied(
-    const ui::ClipboardSequenceNumberToken& seqno);
+      const ui::ClipboardSequenceNumberToken& seqno);
 
   void SendAccessibilityEventsToManager(ui::AXUpdatesAndEvents& details);
   void ExerciseAccessibilityForTest();
@@ -723,7 +724,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   blink::web_pref::WebPreferences GetOrCreateWebPreferences();
 
   // IPC::Listener
-  bool OnMessageReceived(const IPC::Message& msg) override;
   void OnAssociatedInterfaceRequest(
       const std::string& interface_name,
       mojo::ScopedInterfaceEndpointHandle handle) override;
@@ -1539,6 +1539,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
       // The number of observed cookie modifications.
       int64_t cookie_modification_count = 0;
       int64_t http_only_cookie_modification_count = 0;
+      int64_t non_http_only_cookie_modification_count = 0;
       // The number of observed cookie modifications that should be removed
       // since we want to adjust the count by subtracting the number of cookie
       // modification from the navigation itself.
@@ -1765,6 +1766,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // client end to the renderer process.
   void BindBrowserInterfaceBrokerReceiver(
       mojo::PendingReceiver<blink::mojom::BrowserInterfaceBroker>);
+  bool ResetBrowserInterfaceBrokerReceiverForTesting();
 
   // Binds the receiver end of the `AssociatedInterfaceProvider` interface. This
   // is called whenever we generate a remote/receiver pair for this interface
@@ -1801,15 +1803,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
   }
   mojo::Receiver<blink::mojom::BrowserInterfaceBroker>&
   browser_interface_broker_receiver_for_testing() {
-    return broker_receiver_;
+    CHECK(broker_holder_);
+    return broker_holder_->broker_receiver();
   }
+  bool has_broker_holder_for_testing() { return broker_holder_.has_value(); }
   void SetKeepAliveTimeoutForTesting(base::TimeDelta timeout);
 
-  network::mojom::WebSandboxFlags active_sandbox_flags() {
-    CHECK(policy_container_host_)
-        << LifecycleStateImplToString(lifecycle_state_);
-    return policy_container_host_->sandbox_flags();
-  }
+  network::mojom::WebSandboxFlags active_sandbox_flags();
   bool is_mhtml_document() const { return is_mhtml_document_; }
 
   // Returns whether this document is a subframe of a MHTML document.
@@ -1953,8 +1953,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Posts a message from a frame in another process to the current renderer.
   void PostMessageEvent(
       const std::optional<blink::RemoteFrameToken>& source_token,
-      const std::u16string& source_origin,
-      const std::u16string& target_origin,
+      const url::Origin* source_origin,
+      const url::Origin* target_origin,
       blink::TransferableMessage message);
 
   // Requests to swap the current frame into the frame tree, replacing the
@@ -2681,14 +2681,17 @@ class CONTENT_EXPORT RenderFrameHostImpl
                      SetWindowRectCallback callback) override;
   void DidFirstVisuallyNonEmptyPaint() override;
   void DidAccessInitialMainDocument() override;
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   void Minimize() override;
   void Maximize() override;
   void Restore() override;
   void SetResizable(bool resizable) override;
+#endif
   void DraggableRegionsChanged(
       std::vector<blink::mojom::DraggableRegionPtr> regions) override;
   void NotifyDocumentInteractive() override;
-  void OnFirstContentfulPaint() override;
+  void OnFirstContentfulPaint(base::TimeDelta duration) override;
+  void NotifyFirstContentfulPaint();
   void SetStorageAccessApiStatus(net::StorageAccessApiStatus status) override;
 
   void ReportNoBinderForInterface(const std::string& error);
@@ -3030,6 +3033,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
       const std::optional<url::Origin>& remote_desktop_client_override_origin,
       base::OnceCallback<void(blink::mojom::AuthenticatorStatus, bool)>
           callback);
+  void PerformReportWebAuthSecurityChecks(
+      const std::string& relying_party_id,
+      const url::Origin& effective_origin,
+      base::OnceCallback<void(blink::mojom::AuthenticatorStatus, bool)>
+          callback);
 #endif
 
   using JavaScriptResultAndTypeCallback =
@@ -3214,14 +3222,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // roots have disabled untrusted network access.
   bool CanReadFromSharedStorage();
 
-  // Returns true if this RFH's compositor should be reused by a speculative
-  // RFH with the `speculative_site_instance`.
-  // Returns false if the speculative RFH should initialize a new compositor.
-  bool ShouldReuseCompositing(
-      SiteInstanceImpl& speculative_site_instance) const;
-
-  void NotifyWillCreateRenderWidgetOnCommit();
-
   // If this RenderFrameHost is a local root (i.e., either the main frame or a
   // subframe in a different process than its parent), this returns the
   // RenderWidgetHost corresponding to this frame. Otherwise this returns null.
@@ -3280,12 +3280,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Allows tests to disable the unload event timer to simulate bugs that
   // happen before it fires (to avoid flakiness).
   void DisableUnloadTimerForTesting();
-
-  // Returns true if the `delegate()` for this host is a partitioned
-  // popin and this host is not within a fenced frame (as this prevents the
-  // popin from impacting partitioning).
-  // See https://explainers-by-googlers.github.io/partitioned-popins/
-  bool ShouldPartitionAsPopin() const override;
 
   bool IsFullCookieAccessAllowed() override;
 
@@ -3424,7 +3418,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   friend class WebContentsSplitCacheBrowserTest;
   friend class RenderFrameHostManagerUnloadBrowserTest;
   friend class NavigationBrowserTest;
-  friend class FrameHostInterceptorForPopins;
 
   FRIEND_TEST_ALL_PREFIXES(NavigatorTest, TwoNavigationsRacingCommit);
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostImplBeforeUnloadBrowserTest,
@@ -3586,6 +3579,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
                            FinalPoliciesAboutBlankWithInitiatorAndHistory);
 
   class SubresourceLoaderFactoriesConfig;
+
+  void CreateBrokerHolder();
 
   FrameTreeNode* GetSibling(int relative_offset) const;
 
@@ -4127,6 +4122,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // this frame's subtree.
   void PendingDeletionCheckCompletedOnSubtree();
 
+  // Call PendingDeletionCheckCompletedOnSubtree now or later, depending on
+  // the feature gate DelayRfhDestructionsOnUnloadAndDetach.
+  void PendingDeletionCheckCompletedOnSubtreeNowOrLater();
+
   // In this RenderFramehost, cancels every:
   // - Non-pending commit NavigationRequest owned by the FrameTreeNode that
   // intends to commit in this RFH
@@ -4226,13 +4225,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // RenderFrameHost.
   void SetEmbeddingToken(const base::UnguessableToken& embedding_token);
 
-  // Records a DocumentCreated UKM event and the corresponding identifiability
-  // study metric. Called when a Document is committed in this frame.
-  void RecordDocumentCreatedUkmEvent(
-      const url::Origin& origin,
-      const ukm::SourceId document_ukm_source_id,
-      ukm::UkmRecorder* ukm_recorder,
-      bool only_record_identifiability_metric = false);
+  // Records a DocumentCreated UKM event. Called after the navigation has
+  // committed.
+  void RecordDocumentCreatedUkmEvent(const url::Origin& origin,
+                                     const ukm::SourceId document_ukm_source_id,
+                                     ukm::UkmRecorder* ukm_recorder);
 
   // Initializes |policy_container_host_|. Constructor helper.
   //
@@ -4390,10 +4387,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
   std::vector<RenderFrameHostImpl*> GetAncestorChainForStorageKeyCalculation(
       const url::Origin& new_rfh_origin);
 
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   // Returns whether the `RenderFrameHost` can use Additional Windowing Controls
   // APIs.
   // https://github.com/explainers-by-googlers/additional-windowing-controls/blob/main/README.md
   bool CanUseWindowingControls(std::string_view js_api_name);
+#endif
 
   // Notifies when the renderer side Widget instance has been created and mojo
   // interfaces to it can be bound.
@@ -4404,15 +4403,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   std::optional<mojo::UrgentMessageScope> MakeUrgentMessageScopeIfNeeded();
 
 #if BUILDFLAG(IS_ANDROID)
-  // These functions are called after a WebAuthn relying party check has
-  // completed. See `PerformMakeCredentialWebAuthSecurityChecks` and
-  // `PerformGetAssertionWebAuthSecurityChecks`.
-  void OnGetAssertionWebAuthSecurityChecksCompleted(
-      base::OnceCallback<void(blink::mojom::AuthenticatorStatus, bool)>
-          callback,
-      bool is_cross_origin,
-      blink::mojom::AuthenticatorStatus status);
-  void OnMakeCredentialWebAuthSecurityChecksCompleted(
+  // This function is called after a WebAuthn relying party check has
+  // completed. See `Perform*WebAuthSecurityChecks`.
+  void OnWebAuthSecurityChecksCompleted(
       base::OnceCallback<void(blink::mojom::AuthenticatorStatus, bool)>
           callback,
       bool is_cross_origin,
@@ -4459,6 +4452,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // called either when the renderer acknowledges the operation completed
   // successfully or the renderer was proactively terminated.
   void MaybeNotifyDiscardedFrame();
+
+  // Removes FrameNavigationEntries that will no longer be used from the last
+  // committed NavigationEntry. Must be called when this frame transitions to
+  // kRunningUnloadHandlers or kReadyToBeDeleted, when the frame is detaching.
+  void CleanupLastCommittedNavigationEntry();
 
   // The RenderViewHost that this RenderFrameHost is associated with.
   //
@@ -5492,20 +5490,42 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // to change across MPArch activations like prerendering.
   const base::UnguessableToken devtools_frame_token_;
 
-  // BrowserInterfaceBroker implementation through which this
-  // RenderFrameHostImpl exposes document-scoped Mojo services to the currently
-  // active document in the corresponding RenderFrame.
-  //
-  // The interfaces that can be requested from this broker are defined in the
-  // content/browser/browser_interface_binders.cc file, in the functions which
-  // take a `RenderFrameHostImpl*` parameter.
-  //
-  // `broker_` is located below other members to avoid ordering issue by access
-  // them during initializing BrowserInterfaceBrokerImpl.
-  BrowserInterfaceBrokerImpl<RenderFrameHostImpl, RenderFrameHost*> broker_{
-      this};
-  mojo::Receiver<blink::mojom::BrowserInterfaceBroker> broker_receiver_{
-      &broker_};
+  // A holder for the BrowserInterfaceBrokerImpl and its receiver. By default
+  // this is constructed along with the RFHI. When kLazyBrowserInterfaceBroker
+  // is enabled the struct is lazily instantiated when the RFHI becomes
+  // associated with a renderer process. Lazy instantiation avoids the memory
+  // overhead of mojo objects and binder maps reducing the memory footprint
+  // of an empty WebContents without a renderer by about 1/3rd.
+  // See https://crbug.com/450912216 for details.
+  struct BrokerHolder {
+   public:
+    explicit BrokerHolder(RenderFrameHostImpl* host);
+    ~BrokerHolder();
+
+    BrokerHolder(const BrokerHolder&) = delete;
+    BrokerHolder& operator=(const BrokerHolder&) = delete;
+
+    BrowserInterfaceBrokerImpl<RenderFrameHostImpl, RenderFrameHost*>&
+    broker() {
+      return broker_;
+    }
+
+    mojo::Receiver<blink::mojom::BrowserInterfaceBroker>& broker_receiver() {
+      return broker_receiver_;
+    }
+
+   private:
+    // BrowserInterfaceBroker implementation through which this
+    // RenderFrameHostImpl exposes document-scoped Mojo services to the
+    // currently active document in the corresponding RenderFrame.
+    //
+    // The interfaces that can be requested from this broker are defined in the
+    // content/browser/browser_interface_binders.cc file, in the functions which
+    // take a `RenderFrameHostImpl*` parameter.
+    BrowserInterfaceBrokerImpl<RenderFrameHostImpl, RenderFrameHost*> broker_;
+    mojo::Receiver<blink::mojom::BrowserInterfaceBroker> broker_receiver_;
+  };
+  std::optional<BrokerHolder> broker_holder_;
 
   // The listener should be moved from the `NavigationRequest` when committing
   // a navigation in this `RenderFrameHostImpl`. It will be owned by the
@@ -5516,10 +5536,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // Listens for changes to DeviceBoundSessions on this page.
   std::unique_ptr<DeviceBoundSessionObserver> device_bound_session_observer_;
-
-  // If true, the renderer side widget is created after the navigation is
-  // committed.
-  bool waiting_for_renderer_widget_creation_after_commit_ = false;
 
   // Deferred shared storage operations to run after navigation commit in the
   // event of a race between navigation and subresource request(s).

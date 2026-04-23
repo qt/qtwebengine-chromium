@@ -8,13 +8,14 @@ from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
-from crossbench.benchmarks.speedometer.speedometer import (
-    ProbeClsTupleT, SpeedometerBenchmark)
-from crossbench.benchmarks.speedometer.speedometer_2 import (
-    Speedometer2Probe, Speedometer2ProbeContext, Speedometer2Story)
+from crossbench.benchmarks.speedometer.speedometer import ProbeClsTupleT, \
+    SpeedometerBenchmark
+from crossbench.benchmarks.speedometer.speedometer_2 import \
+    Speedometer2Probe, Speedometer2ProbeContext, Speedometer2Story
 
 if TYPE_CHECKING:
   from crossbench.benchmarks.base import VersionParts
+
 
 class Speedometer20Probe(Speedometer2Probe):
   NAME: ClassVar[str] = "speedometer_2.0"

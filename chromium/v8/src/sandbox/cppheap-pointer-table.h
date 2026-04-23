@@ -17,8 +17,7 @@
 
 #ifdef V8_COMPRESS_POINTERS
 
-namespace v8 {
-namespace internal {
+namespace v8::internal {
 
 class Isolate;
 class Counters;
@@ -89,6 +88,7 @@ struct CppHeapPointerTableEntry {
 
  private:
   friend class CppHeapPointerTable;
+  friend class CppHeapPointerTableEntryPrinter;
 
   struct Payload {
     Payload(Address pointer, CppHeapPointerTag tag)
@@ -151,7 +151,10 @@ struct CppHeapPointerTableEntry {
                                    kCppHeapPointerPayloadShift);
     }
 
-    CppHeapPointerTag ExtractTag() const { UNREACHABLE(); }
+    CppHeapPointerTag ExtractTag() const {
+      return static_cast<CppHeapPointerTag>(encoded_word_ >>
+                                            kCppHeapPointerTagShift);
+    }
 
     bool ContainsFreelistLink() const {
       return IsTaggedWith(CppHeapPointerTag::kFreeEntryTag);
@@ -181,7 +184,7 @@ struct CppHeapPointerTableEntry {
     Address encoded_word_;
   };
 
-  inline Payload GetRawPayload() {
+  inline Payload GetRawPayload() const {
     return payload_.load(std::memory_order_relaxed);
   }
   inline void SetRawPayload(Payload new_payload) {
@@ -222,17 +225,7 @@ class V8_EXPORT_PRIVATE CppHeapPointerTable
   CppHeapPointerTable(const CppHeapPointerTable&) = delete;
   CppHeapPointerTable& operator=(const CppHeapPointerTable&) = delete;
 
-  // The Spaces used by an CppHeapPointerTable.
-  class Space : public Base::Space {
-   public:
-    bool allocate_black() { return allocate_black_; }
-    void set_allocate_black(bool allocate_black) {
-      allocate_black_ = allocate_black;
-    }
-
-   private:
-    bool allocate_black_ = false;
-  };
+  using Space = Base::Space;
 
   // Retrieves the entry referenced by the given handle.
   //
@@ -281,8 +274,24 @@ class V8_EXPORT_PRIVATE CppHeapPointerTable
       uint32_t start_of_evacuation_area);
 };
 
-}  // namespace internal
-}  // namespace v8
+#ifdef OBJECT_PRINT
+
+class CppHeapPointerTableEntryPrinter {
+ public:
+  static void PrintHeader(const char* space_name);
+  static void PrintIfInUse(
+      CppHeapPointerHandle handle, const CppHeapPointerTableEntry& entry,
+      std::function<bool(CppHeapPointerTag)> entry_callback);
+  static void PrintFooter();
+};
+
+template <>
+class TableEntryPrinter<CppHeapPointerTableEntry>
+    : public CppHeapPointerTableEntryPrinter {};
+
+#endif  // OBJECT_PRINT
+
+}  // namespace v8::internal
 
 #endif  // V8_COMPRESS_POINTERS
 

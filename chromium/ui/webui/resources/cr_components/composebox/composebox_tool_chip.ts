@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import '//resources/cr_elements/cr_button/cr_button.js';
+import '//resources/cr_elements/cr_icon/cr_icon.js';
+
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 
 import {getCss} from './composebox_tool_chip.css.js';
@@ -9,13 +12,13 @@ import {getHtml} from './composebox_tool_chip.html.js';
 
 declare global {
   interface HTMLElementTagNameMap {
-    'composebox-tool-chip': ComposeboxToolChipElement;
+    'cr-composebox-tool-chip': ComposeboxToolChipElement;
   }
 }
 
 export class ComposeboxToolChipElement extends CrLitElement {
   static get is() {
-    return 'composebox-tool-chip';
+    return 'cr-composebox-tool-chip';
   }
 
   static override get styles() {
@@ -27,11 +30,13 @@ export class ComposeboxToolChipElement extends CrLitElement {
       icon: {type: String},
       label: {type: String},
       visible: {type: Boolean},
+      removeChipAriaLabel: {type: String},
     };
   }
   protected accessor icon:string = '';
   protected accessor label:string = '';
   protected accessor visible:boolean = false;
+  protected accessor removeChipAriaLabel: string = '';
 
   override render() {
     if (!this.visible) {

@@ -174,6 +174,13 @@ class BuiltinArgumentsTS {
   V<WordPtr> base_;
 };
 
+// Deduction guide.
+template <typename A, typename T>
+BuiltinArgumentsTS(
+    A*, compiler::turboshaft::V<T>,
+    compiler::turboshaft::OptionalV<compiler::turboshaft::WordPtr>)
+    -> BuiltinArgumentsTS<A>;
+
 }  // namespace detail
 
 template <typename Next>
@@ -265,8 +272,8 @@ class FeedbackCollectorReducer : public Next {
         return;
       }
       case SKIP_WRITE_BARRIER_SCOPE:
+      case SKIP_WRITE_BARRIER_FOR_GC:
       case UNSAFE_SKIP_WRITE_BARRIER:
-        UNIMPLEMENTED();
       case UPDATE_WRITE_BARRIER:
         UNIMPLEMENTED();
       case UPDATE_EPHEMERON_KEY_WRITE_BARRIER:
@@ -345,11 +352,6 @@ class FeedbackCollectorReducer : public Next {
   V<Smi> SmiBitwiseAnd(V<Smi> a, V<Smi> b) {
     return __ BitcastWordPtrToSmi(__ WordPtrBitwiseAnd(
         __ BitcastSmiToWordPtr(a), __ BitcastSmiToWordPtr(b)));
-  }
-
-  V<Word32> SmiEqual(V<Smi> a, V<Smi> b) {
-    return __ WordPtrEqual(__ BitcastSmiToWordPtr(a),
-                           __ BitcastSmiToWordPtr(b));
   }
 
   V<WordPtr> ChangePositiveInt32ToIntPtr(V<Word32> input) {
@@ -445,9 +447,8 @@ class BuiltinsReducer : public Next {
         V<Object> exception = __ CatchBlockBegin();
         __ CombineExceptionFeedback();
         __ UpdateFeedback();
-        __ template CallRuntime<
-            compiler::turboshaft::RuntimeCallDescriptor::ReThrow>(
-            __ data()->isolate(), __ NoContextConstant(), {exception});
+        __ template CallRuntime<compiler::turboshaft::runtime::ReThrow>(
+            __ NoContextConstant(), {.exception = exception});
         __ Unreachable();
       }
     }
@@ -614,6 +615,23 @@ class BuiltinsReducer : public Next {
     __ Unreachable();
   }
 
+  template <typename Desc>
+    requires(!Desc::kCanTriggerLazyDeopt)
+  auto CallRuntime(compiler::turboshaft::V<Context> context,
+                   const Desc::Arguments& args) {
+    return Next::template CallRuntime<Desc>(context, args);
+  }
+
+  template <typename Desc>
+    requires(Desc::kCanTriggerLazyDeopt)
+  auto CallRuntime(compiler::turboshaft::V<Context> context,
+                   const Desc::Arguments& args) {
+    return Next::template CallRuntime<Desc>(
+        compiler::turboshaft::OptionalV<
+            compiler::turboshaft::FrameState>::Nullopt(),
+        context, args, compiler::LazyDeoptOnThrow::kNo);
+  }
+
  private:
   compiler::turboshaft::OperationMatcher matcher_{__ data()->graph()};
   Isolate* isolate() { return __ data() -> isolate(); }
@@ -622,12 +640,12 @@ class BuiltinsReducer : public Next {
 template <template <typename> typename Reducer,
           template <typename> typename FeedbackReducer>
 class TurboshaftBuiltinsAssembler
-    : public compiler::turboshaft::TSAssembler<
+    : public compiler::turboshaft::Assembler<
           Reducer, BuiltinsReducer, FeedbackReducer,
           compiler::turboshaft::MachineLoweringReducer,
           compiler::turboshaft::VariableReducer> {
  public:
-  using Base = compiler::turboshaft::TSAssembler<
+  using Base = compiler::turboshaft::Assembler<
       Reducer, BuiltinsReducer, FeedbackReducer,
       compiler::turboshaft::MachineLoweringReducer,
       compiler::turboshaft::VariableReducer>;

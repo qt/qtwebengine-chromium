@@ -28,6 +28,8 @@
 #ifndef SRC_TINT_LANG_HLSL_WRITER_WRITER_H_
 #define SRC_TINT_LANG_HLSL_WRITER_WRITER_H_
 
+#include <string>
+
 #include "src/tint/lang/hlsl/writer/common/options.h"
 #include "src/tint/lang/hlsl/writer/common/output.h"
 #include "src/tint/utils/result.h"

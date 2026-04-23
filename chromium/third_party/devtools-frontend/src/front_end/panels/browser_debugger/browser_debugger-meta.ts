@@ -101,11 +101,13 @@ function maybeRetrieveContextTypes<T = unknown>(
 
 let loadedSourcesModule: (typeof Sources|undefined);
 
-//  The sources module is imported here because the view with id `navigator-network`
-//  is implemented by `NetworkNavigatorView` in sources. It cannot be registered
-//  in the sources module as it belongs to the shell app and thus all apps
-//  that extend from shell will have such view registered. This would cause a
-//  collision with node_app as a separate view with the same id is registered in it.
+/**
+ * The sources module is imported here because the view with id `navigator-network`
+ * is implemented by `NetworkNavigatorView` in sources. It cannot be registered
+ * in the sources module as it belongs to the shell app and thus all apps
+ * that extend from shell will have such view registered. This would cause a
+ * collision with node_app as a separate view with the same id is registered in it.
+ **/
 async function loadSourcesModule(): Promise<typeof Sources> {
   if (!loadedSourcesModule) {
     loadedSourcesModule = await import('../sources/sources.js');
@@ -213,6 +215,7 @@ UI.ViewManager.registerViewExtension({
   commandPrompt: i18nLazyString(UIStrings.showOverrides),
   order: 4,
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
+  condition: () => !Root.Runtime.Runtime.isTraceApp(),
   async loadView() {
     const Sources = await loadSourcesModule();
     return Sources.SourcesNavigator.OverridesNavigatorView.instance();
@@ -226,7 +229,7 @@ UI.ViewManager.registerViewExtension({
   commandPrompt: i18nLazyString(UIStrings.showContentScripts),
   order: 5,
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
-  condition: () => Root.Runtime.getPathName() !== '/bundled/worker_app.html',
+  condition: () => Root.Runtime.getPathName() !== '/bundled/worker_app.html' && !Root.Runtime.Runtime.isTraceApp(),
   async loadView() {
     const Sources = await loadSourcesModule();
     return new Sources.SourcesNavigator.ContentScriptsNavigatorView();

@@ -73,6 +73,9 @@ class IpProtectionProxyDelegate : public net::ProxyDelegate {
       const std::string scheme,
       const std::vector<std::string>& dns_aliases,
       const net::NetworkAnonymizationKey& network_anonymization_key) override;
+  void OnStreamCreationAttempted(const net::ProxyChain& proxy_chain,
+                                 base::TimeDelta duration,
+                                 base::optional_ref<int> net_error) override;
 
  private:
   friend class IpProtectionProxyDelegateTest;
@@ -93,12 +96,6 @@ class IpProtectionProxyDelegate : public net::ProxyDelegate {
   static net::ProxyList MergeProxyRules(
       const net::ProxyList& existing_proxy_list,
       const net::ProxyList& custom_proxy_list);
-
-  // Returns PRT header value (for Sec-Probabilistic-Reveal-Token) if
-  // successful. Returns nullopt in case of failure.
-  std::optional<std::string> GetPRTHeaderValue(
-      const GURL& url,
-      const net::SchemefulSite& top_frame_site) const;
 
   const raw_ref<IpProtectionCore> ip_protection_core_;
 

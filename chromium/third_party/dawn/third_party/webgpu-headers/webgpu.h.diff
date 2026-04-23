@@ -1,0 +1,92 @@
+--- webgpu_header
++++ dawn_header
+@@
+ struct WGPUTexelCopyBufferLayout;
+ struct WGPUTextureBindingLayout;
+ struct WGPUTextureComponentSwizzle;
+-struct WGPUTextureViewDescriptor;
+ struct WGPUVertexAttribute;
+ struct WGPUBindGroupDescriptor;
+ struct WGPUBindGroupLayoutEntry;
+@@
+ struct WGPUColorTargetState;
+ struct WGPUComputePipelineDescriptor;
+ struct WGPURenderPassDescriptor;
++struct WGPUTextureViewDescriptor;
+ struct WGPUVertexState;
+ struct WGPUFragmentState;
+ struct WGPURenderPipelineDescriptor;
+@@
+     WGPUSType_SurfaceSourceXCBWindow = 0x00000009,
+     WGPUSType_SurfaceColorManagement = 0x0000000A,
+     WGPUSType_RequestAdapterWebXROptions = 0x0000000B,
++    WGPUSType_TextureComponentSwizzleDescriptor = 0x0000000C,
+     WGPUSType_Force32 = 0x7FFFFFFF
+ } WGPUSType WGPU_ENUM_ATTRIBUTE;
+ 
+@@
+     /*.a=*/WGPUComponentSwizzle_Undefined _wgpu_COMMA \
+ })
+ 
+-typedef struct WGPUTextureViewDescriptor {
+-    WGPUChainedStruct * nextInChain;
+-    WGPUStringView label;
+-    WGPUTextureFormat format;
+-    WGPUTextureViewDimension dimension;
+-    uint32_t baseMipLevel;
+-    uint32_t mipLevelCount;
+-    uint32_t baseArrayLayer;
+-    uint32_t arrayLayerCount;
+-    WGPUTextureAspect aspect;
+-    WGPUTextureUsage usage;
+-} WGPUTextureViewDescriptor WGPU_STRUCTURE_ATTRIBUTE;
+-
+-#define WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT _wgpu_MAKE_INIT_STRUCT(WGPUTextureViewDescriptor, { \
+-    /*.nextInChain=*/NULL _wgpu_COMMA \
+-    /*.label=*/WGPU_STRING_VIEW_INIT _wgpu_COMMA \
+-    /*.format=*/WGPUTextureFormat_Undefined _wgpu_COMMA \
+-    /*.dimension=*/WGPUTextureViewDimension_Undefined _wgpu_COMMA \
+-    /*.baseMipLevel=*/0 _wgpu_COMMA \
+-    /*.mipLevelCount=*/WGPU_MIP_LEVEL_COUNT_UNDEFINED _wgpu_COMMA \
+-    /*.baseArrayLayer=*/0 _wgpu_COMMA \
+-    /*.arrayLayerCount=*/WGPU_ARRAY_LAYER_COUNT_UNDEFINED _wgpu_COMMA \
+-    /*.aspect=*/WGPUTextureAspect_Undefined _wgpu_COMMA \
+-    /*.usage=*/WGPUTextureUsage_None _wgpu_COMMA \
+-})
+-
+ typedef struct WGPUVertexAttribute {
+     WGPUChainedStruct * nextInChain;
+     WGPUVertexFormat format;
+@@
+     /*.depthStencilAttachment=*/NULL _wgpu_COMMA \
+     /*.occlusionQuerySet=*/NULL _wgpu_COMMA \
+     /*.timestampWrites=*/NULL _wgpu_COMMA \
++})
++
++typedef struct WGPUTextureViewDescriptor {
++    WGPUChainedStruct * nextInChain;
++    WGPUStringView label;
++    WGPUTextureFormat format;
++    WGPUTextureViewDimension dimension;
++    uint32_t baseMipLevel;
++    uint32_t mipLevelCount;
++    uint32_t baseArrayLayer;
++    uint32_t arrayLayerCount;
++    WGPUTextureAspect aspect;
++    WGPUTextureUsage usage;
++} WGPUTextureViewDescriptor WGPU_STRUCTURE_ATTRIBUTE;
++
++#define WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT _wgpu_MAKE_INIT_STRUCT(WGPUTextureViewDescriptor, { \
++    /*.nextInChain=*/NULL _wgpu_COMMA \
++    /*.label=*/WGPU_STRING_VIEW_INIT _wgpu_COMMA \
++    /*.format=*/WGPUTextureFormat_Undefined _wgpu_COMMA \
++    /*.dimension=*/WGPUTextureViewDimension_Undefined _wgpu_COMMA \
++    /*.baseMipLevel=*/0 _wgpu_COMMA \
++    /*.mipLevelCount=*/WGPU_MIP_LEVEL_COUNT_UNDEFINED _wgpu_COMMA \
++    /*.baseArrayLayer=*/0 _wgpu_COMMA \
++    /*.arrayLayerCount=*/WGPU_ARRAY_LAYER_COUNT_UNDEFINED _wgpu_COMMA \
++    /*.aspect=*/WGPUTextureAspect_Undefined _wgpu_COMMA \
++    /*.usage=*/WGPUTextureUsage_None _wgpu_COMMA \
+ })
+ 
+ typedef struct WGPUVertexState {

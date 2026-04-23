@@ -82,6 +82,12 @@ extern const base::FeatureParam<double> kDevToolsAiCodeCompletionTemperature;
 extern const base::FeatureParam<DevToolsFreestylerUserTier>
     kDevToolsAiCodeCompletionUserTier;
 
+BASE_DECLARE_FEATURE(kDevToolsAiCodeGeneration);
+extern const base::FeatureParam<std::string> kDevToolsAiCodeGenerationModelId;
+extern const base::FeatureParam<double> kDevToolsAiCodeGenerationTemperature;
+extern const base::FeatureParam<DevToolsFreestylerUserTier>
+    kDevToolsAiCodeGenerationUserTier;
+
 BASE_DECLARE_FEATURE(kDevToolsSharedProcessInfobar);
 
 BASE_DECLARE_FEATURE(kDevToolsAnimationStylesInStylesTab);
@@ -97,6 +103,8 @@ BASE_DECLARE_FEATURE(kDevToolsVerticalDrawer);
 BASE_DECLARE_FEATURE(kDevToolsAiSubmenuPrompts);
 BASE_DECLARE_FEATURE(kDevToolsAiDebugWithAi);
 
+BASE_DECLARE_FEATURE(kDevToolsGreenDevUi);
+
 BASE_DECLARE_FEATURE(kDevToolsGlobalAiButton);
 extern const base::FeatureParam<bool> kDevToolsGlobalAiButtonPromotionEnabled;
 
@@ -109,8 +117,17 @@ BASE_DECLARE_FEATURE(kDevToolsLiveEdit);
 BASE_DECLARE_FEATURE(kDevToolsIndividualRequestThrottling);
 
 BASE_DECLARE_FEATURE(kDevToolsAiPromptApi);
+extern const base::FeatureParam<bool> kDevToolsAiPromptApiAllowWithoutGpu;
 
 BASE_DECLARE_FEATURE(kDevToolsStartingStyleDebugging);
+
+BASE_DECLARE_FEATURE(kDevToolsEnableDurableMessages);
+
+BASE_DECLARE_FEATURE(kDevToolsAcceptDebuggingConnections);
+
+BASE_DECLARE_FEATURE(kDevToolsShowPolicyDialog);
+
+BASE_DECLARE_FEATURE(kDevToolsAiAssistanceContextSelectionAgent);
 
 }  // namespace features
 

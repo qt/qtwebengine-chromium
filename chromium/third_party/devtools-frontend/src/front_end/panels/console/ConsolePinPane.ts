@@ -1,7 +1,7 @@
 // Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -11,7 +11,7 @@ import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.j
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
-// eslint-disable-next-line rulesdir/es-modules-import
+// eslint-disable-next-line @devtools/es-modules-import
 import objectValueStyles from '../../ui/legacy/components/object_ui/objectValue.css.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -56,13 +56,15 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('panels/console/ConsolePinPane.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
-const elementToConsolePin = new WeakMap<Element, ConsolePin>();
+const elementToConsolePin = new WeakMap<Element, ConsolePinPresenter>();
 
-export class ConsolePinPane extends UI.ThrottledWidget.ThrottledWidget {
-  private pins: Set<ConsolePin>;
+export class ConsolePinPane extends UI.Widget.VBox {
+  private pins: Set<ConsolePinPresenter>;
   private readonly pinsSetting: Common.Settings.Setting<string[]>;
+  private readonly throttler: Common.Throttler.Throttler;
   constructor(private readonly liveExpressionButton: UI.Toolbar.ToolbarButton, private readonly focusOut: () => void) {
-    super(true, 250);
+    super({useShadowDom: true});
+    this.throttler = new Common.Throttler.Throttler(250);
     this.registerRequiredCSS(consolePinPaneStyles, objectValueStyles);
     this.contentElement.classList.add('console-pins', 'monospace');
     this.contentElement.addEventListener('contextmenu', this.contextMenuEventFired.bind(this), false);
@@ -114,7 +116,7 @@ export class ConsolePinPane extends UI.ThrottledWidget.ThrottledWidget {
     }
   }
 
-  removePin(pin: ConsolePin): void {
+  removePin(pin: ConsolePinPresenter): void {
     pin.element().remove();
     const newFocusedPin = this.focusedPinAfterDeletion(pin);
     this.pins.delete(pin);
@@ -127,17 +129,17 @@ export class ConsolePinPane extends UI.ThrottledWidget.ThrottledWidget {
   }
 
   addPin(expression: string, userGesture?: boolean): void {
-    const pin = new ConsolePin(expression, this, this.focusOut);
+    const pin = new ConsolePinPresenter(expression, this, this.focusOut);
     this.contentElement.appendChild(pin.element());
     this.pins.add(pin);
     this.savePins();
     if (userGesture) {
       void pin.focus();
     }
-    this.update();
+    this.requestUpdate();
   }
 
-  private focusedPinAfterDeletion(deletedPin: ConsolePin): ConsolePin|null {
+  private focusedPinAfterDeletion(deletedPin: ConsolePinPresenter): ConsolePinPresenter|null {
     const pinArray = Array.from(this.pins);
     for (let i = 0; i < pinArray.length; i++) {
       if (pinArray[i] === deletedPin) {
@@ -153,23 +155,26 @@ export class ConsolePinPane extends UI.ThrottledWidget.ThrottledWidget {
     return null;
   }
 
-  override async doUpdate(): Promise<void> {
+  override wasShown(): void {
+    super.wasShown();
+    void this.throttler.schedule(this.requestUpdate.bind(this));
+  }
+
+  override async performUpdate(): Promise<void> {
     if (!this.pins.size || !this.isShowing()) {
       return;
-    }
-    if (this.isShowing()) {
-      this.update();
     }
     const updatePromises = Array.from(this.pins, pin => pin.updatePreview());
     await Promise.all(updatePromises);
     this.updatedForTest();
+    void this.throttler.schedule(this.requestUpdate.bind(this));
   }
 
   private updatedForTest(): void {
   }
 }
 
-export class ConsolePin {
+export class ConsolePinPresenter {
   private readonly pinElement: Element;
   private readonly pinPreview: HTMLElement;
   private lastResult: SDK.RuntimeModel.EvaluationResult|null;
@@ -217,7 +222,7 @@ export class ConsolePin {
     this.committedExpression = expression;
     this.hovered = false;
     this.lastNode = null;
-    this.editor = this.createEditor(expression, nameElement);
+    this.editor = this.#createEditor(expression, nameElement);
 
     this.pinPreview.addEventListener('mouseenter', this.setHovered.bind(this, true), false);
     this.pinPreview.addEventListener('mouseleave', this.setHovered.bind(this, false), false);
@@ -236,7 +241,7 @@ export class ConsolePin {
     });
   }
 
-  createEditor(doc: string, parent: HTMLElement): TextEditor.TextEditor.TextEditor {
+  #createInitialEditorState(doc: string): CodeMirror.EditorState {
     const extensions = [
       CodeMirror.EditorView.contentAttributes.of({'aria-label': i18nString(UIStrings.liveExpressionEditor)}),
       CodeMirror.EditorView.lineWrapping,
@@ -292,7 +297,7 @@ export class ConsolePin {
           },
         },
       ]),
-      CodeMirror.EditorView.domEventHandlers({blur: (_e, view) => this.onBlur(view)}),
+      CodeMirror.EditorView.domEventHandlers({blur: (_e, view) => this.#onBlur(view)}),
       TextEditor.Config.baseConfiguration(doc),
       TextEditor.Config.closeBrackets.instance(),
       TextEditor.Config.autocompletion.instance(),
@@ -300,12 +305,16 @@ export class ConsolePin {
     if (Root.Runtime.Runtime.queryParam('noJavaScriptCompletion') !== 'true') {
       extensions.push(TextEditor.JavaScript.completion());
     }
-    const editor = new TextEditor.TextEditor.TextEditor(CodeMirror.EditorState.create({doc, extensions}));
+    return CodeMirror.EditorState.create({doc, extensions});
+  }
+
+  #createEditor(doc: string, parent: HTMLElement): TextEditor.TextEditor.TextEditor {
+    const editor = new TextEditor.TextEditor.TextEditor(this.#createInitialEditorState(doc));
     parent.appendChild(editor);
     return editor;
   }
 
-  onBlur(editor: CodeMirror.EditorView): void {
+  #onBlur(editor: CodeMirror.EditorView): void {
     const text = editor.state.doc.toString();
     const trimmedText = text.trim();
     this.committedExpression = trimmedText;

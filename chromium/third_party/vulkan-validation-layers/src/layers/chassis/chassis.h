@@ -80,6 +80,9 @@ VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevi
                                                                   VkPhysicalDeviceToolPropertiesEXT* pToolProperties);
 VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceToolProperties(VkPhysicalDevice physicalDevice, uint32_t* pToolCount,
                                                                VkPhysicalDeviceToolProperties* pToolProperties);
+VKAPI_ATTR void VKAPI_CALL CmdBindDescriptorBuffersEXT(VkCommandBuffer commandBuffer, uint32_t bufferCount,
+                                                       const VkDescriptorBufferBindingInfoEXT* pBindingInfos);
+
 VKAPI_ATTR VkResult VKAPI_CALL CreateValidationCacheEXT(VkDevice device, const VkValidationCacheCreateInfoEXT* pCreateInfo,
                                                         const VkAllocationCallbacks* pAllocator,
                                                         VkValidationCacheEXT* pValidationCache);

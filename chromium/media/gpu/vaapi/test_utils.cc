@@ -17,7 +17,6 @@
 #include "media/gpu/vaapi/vaapi_utils.h"
 #include "third_party/libdrm/src/include/drm/drm_fourcc.h"
 #include "third_party/libyuv/include/libyuv.h"
-#include "ui/gfx/buffer_format_util.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "media/gpu/test/test_gbm_buffer_manager.h"
@@ -357,23 +356,22 @@ struct NativePixmapDecodedImage : public DecodedImage {
 std::unique_ptr<DecodedImage> NativePixmapToDecodedImage(
     gfx::NativePixmapHandle& handle,
     const gfx::Size& size,
-    const gfx::BufferFormat& format) {
+    const viz::SharedImageFormat& format) {
   uint32_t fourcc;
   uint32_t number_of_planes;
-  viz::SharedImageFormat si_format = viz::GetSharedImageFormat(format);
-  if (si_format == viz::MultiPlaneFormat::kYV12) {
+  if (format == viz::MultiPlaneFormat::kYV12) {
     fourcc = VA_FOURCC_I420;
     number_of_planes = 3;
-  } else if (si_format == viz::MultiPlaneFormat::kNV12) {
+  } else if (format == viz::MultiPlaneFormat::kNV12) {
     fourcc = VA_FOURCC_NV12;
     number_of_planes = 2;
   } else {
-    LOG(ERROR) << "Unsupported format " << si_format.ToString();
+    LOG(ERROR) << "Unsupported format " << format.ToString();
     return nullptr;
   }
 
   std::unique_ptr<NativePixmapMapping> mapping =
-      CreateNativePixmapMapping(handle, size, si_format);
+      CreateNativePixmapMapping(handle, size, format);
 
   if (!mapping) {
     LOG(ERROR) << "Failed to create NativePixmapMapping";

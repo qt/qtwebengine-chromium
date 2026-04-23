@@ -21,7 +21,11 @@
 
 #include <assert.h>
 
+#include "src/utils/bounds_safety.h"
+#include "src/webp/format_constants.h"
 #include "src/webp/types.h"
+
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,10 +54,12 @@ static WEBP_INLINE int CheckSizeOverflow(uint64_t size) {
 // somewhere (like: malloc(num_pixels * sizeof(*something))). That's why this
 // safe malloc() borrows the signature from calloc(), pointing at the dangerous
 // underlying multiply involved.
-WEBP_EXTERN void* WebPSafeMalloc(uint64_t nmemb, size_t size);
+WEBP_EXTERN void* WEBP_SIZED_BY_OR_NULL(nmemb* size)
+    WebPSafeMalloc(uint64_t nmemb, size_t size);
 // Note that WebPSafeCalloc() expects the second argument type to be 'size_t'
 // in order to favor the "calloc(num_foo, sizeof(foo))" pattern.
-WEBP_EXTERN void* WebPSafeCalloc(uint64_t nmemb, size_t size);
+WEBP_EXTERN void* WEBP_SIZED_BY_OR_NULL(nmemb* size)
+    WebPSafeCalloc(uint64_t nmemb, size_t size);
 
 // Companion deallocation function to the above allocations.
 WEBP_EXTERN void WebPSafeFree(void* const ptr);
@@ -69,7 +75,7 @@ WEBP_EXTERN void WebPSafeFree(void* const ptr);
 // memcpy() is the safe way of moving potentially unaligned 32b memory.
 static WEBP_INLINE uint32_t WebPMemToUint32(const uint8_t* const ptr) {
   uint32_t A;
-  memcpy(&A, ptr, sizeof(A));
+  WEBP_UNSAFE_MEMCPY(&A, ptr, sizeof(A));
   return A;
 }
 
@@ -78,7 +84,7 @@ static WEBP_INLINE int32_t WebPMemToInt32(const uint8_t* const ptr) {
 }
 
 static WEBP_INLINE void WebPUint32ToMem(uint8_t* const ptr, uint32_t val) {
-  memcpy(ptr, &val, sizeof(val));
+  WEBP_UNSAFE_MEMCPY(ptr, &val, sizeof(val));
 }
 
 static WEBP_INLINE void WebPInt32ToMem(uint8_t* const ptr, int val) {
@@ -89,32 +95,36 @@ static WEBP_INLINE void WebPInt32ToMem(uint8_t* const ptr, int val) {
 // Reading/writing data.
 
 // Read 16, 24 or 32 bits stored in little-endian order.
-static WEBP_INLINE int GetLE16(const uint8_t* const data) {
+static WEBP_INLINE int GetLE16(const uint8_t* const WEBP_COUNTED_BY(2) data) {
   return (int)(data[0] << 0) | (data[1] << 8);
 }
 
-static WEBP_INLINE int GetLE24(const uint8_t* const data) {
+static WEBP_INLINE int GetLE24(const uint8_t* const WEBP_COUNTED_BY(3) data) {
   return GetLE16(data) | (data[2] << 16);
 }
 
-static WEBP_INLINE uint32_t GetLE32(const uint8_t* const data) {
+static WEBP_INLINE uint32_t GetLE32(const uint8_t* const WEBP_COUNTED_BY(4)
+                                        data) {
   return GetLE16(data) | ((uint32_t)GetLE16(data + 2) << 16);
 }
 
 // Store 16, 24 or 32 bits in little-endian order.
-static WEBP_INLINE void PutLE16(uint8_t* const data, int val) {
+static WEBP_INLINE void PutLE16(uint8_t* const WEBP_COUNTED_BY(2) data,
+                                int val) {
   assert(val < (1 << 16));
   data[0] = (val >> 0) & 0xff;
   data[1] = (val >> 8) & 0xff;
 }
 
-static WEBP_INLINE void PutLE24(uint8_t* const data, int val) {
+static WEBP_INLINE void PutLE24(uint8_t* const WEBP_COUNTED_BY(3) data,
+                                int val) {
   assert(val < (1 << 24));
   PutLE16(data, val & 0xffff);
   data[2] = (val >> 16) & 0xff;
 }
 
-static WEBP_INLINE void PutLE32(uint8_t* const data, uint32_t val) {
+static WEBP_INLINE void PutLE32(uint8_t* const WEBP_COUNTED_BY(4) data,
+                                uint32_t val) {
   PutLE16(data, (int)(val & 0xffff));
   PutLE16(data + 2, (int)(val >> 16));
 }
@@ -196,8 +206,9 @@ WEBP_EXTERN void WebPCopyPixels(const struct WebPPicture* const src,
 // Note: 'palette' is assumed to be an array already allocated with at least
 // MAX_PALETTE_SIZE elements.
 // TODO(vrabaud) remove whenever we can break the ABI.
-WEBP_EXTERN int WebPGetColorPalette(const struct WebPPicture* const pic,
-                                    uint32_t* const palette);
+WEBP_EXTERN int WebPGetColorPalette(
+    const struct WebPPicture* const pic,
+    uint32_t* const WEBP_COUNTED_BY_OR_NULL(MAX_PALETTE_SIZE) palette);
 
 //------------------------------------------------------------------------------
 

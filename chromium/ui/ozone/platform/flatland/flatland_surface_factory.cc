@@ -169,7 +169,7 @@ scoped_refptr<gfx::NativePixmap> FlatlandSurfaceFactory::CreateNativePixmap(
     gfx::AcceleratedWidget widget,
     gpu::VulkanDeviceQueue* device_queue,
     gfx::Size size,
-    gfx::BufferFormat format,
+    viz::SharedImageFormat format,
     gfx::BufferUsage usage,
     std::optional<gfx::Size> framebuffer_size) {
   DCHECK(!framebuffer_size || framebuffer_size == size);
@@ -185,7 +185,7 @@ scoped_refptr<gfx::NativePixmap>
 FlatlandSurfaceFactory::CreateNativePixmapFromHandle(
     gfx::AcceleratedWidget widget,
     gfx::Size size,
-    gfx::BufferFormat format,
+    viz::SharedImageFormat format,
     gfx::NativePixmapHandle handle) {
   auto collection = flatland_sysmem_buffer_manager_.GetCollectionByHandle(
       handle.buffer_collection_handle);

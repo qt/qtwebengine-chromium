@@ -17,6 +17,9 @@ try_.defaults.set(
     pool = try_constants.DEFAULT_POOL,
     builderless = True,
     execution_timeout = try_constants.DEFAULT_EXECUTION_TIMEOUT,
+    experiments = {
+        "chromium_tests.resultdb_module": 100,
+    },
     service_account = try_constants.DEFAULT_SERVICE_ACCOUNT,
     siso_project = siso.project.DEFAULT_UNTRUSTED,
     siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
@@ -56,7 +59,7 @@ updater_linux_builder(
             "ci/linux-updater-builder-dbg",
         ],
     ),
-    contact_team_email = "omaha@google.com",
+    contact_team_email = "omaha-core@google.com",
     main_list_view = "try",
     tryjob = try_.job(
         location_filters = _LOCATION_FILTER,
@@ -76,7 +79,7 @@ updater_linux_builder(
             "release_try_builder",
         ],
     ),
-    contact_team_email = "omaha@google.com",
+    contact_team_email = "omaha-core@google.com",
     main_list_view = "try",
     tryjob = try_.job(
         location_filters = _LOCATION_FILTER,
@@ -97,7 +100,7 @@ updater_mac_builder(
     ),
     cores = None,
     cpu = cpu.ARM64,
-    contact_team_email = "omaha@google.com",
+    contact_team_email = "omaha-core@google.com",
     main_list_view = "try",
     tryjob = try_.job(
         location_filters = _LOCATION_FILTER,
@@ -118,7 +121,7 @@ updater_mac_builder(
         ],
     ),
     cpu = cpu.ARM64,
-    contact_team_email = "omaha@google.com",
+    contact_team_email = "omaha-core@google.com",
     main_list_view = "try",
     tryjob = try_.job(
         location_filters = _LOCATION_FILTER,
@@ -138,7 +141,7 @@ updater_windows_builder(
             "release_try_builder",
         ],
     ),
-    contact_team_email = "omaha@google.com",
+    contact_team_email = "omaha-core@google.com",
     main_list_view = "try",
     tryjob = try_.job(
         location_filters = _LOCATION_FILTER,
@@ -157,7 +160,7 @@ updater_windows_builder(
             "ci/win-updater-builder-dbg",
         ],
     ),
-    contact_team_email = "omaha@google.com",
+    contact_team_email = "omaha-core@google.com",
     main_list_view = "try",
     tryjob = try_.job(
         location_filters = _LOCATION_FILTER,
@@ -177,7 +180,7 @@ updater_windows_builder(
             "release_try_builder",
         ],
     ),
-    contact_team_email = "omaha@google.com",
+    contact_team_email = "omaha-core@google.com",
     main_list_view = "try",
     tryjob = try_.job(
         location_filters = _LOCATION_FILTER,

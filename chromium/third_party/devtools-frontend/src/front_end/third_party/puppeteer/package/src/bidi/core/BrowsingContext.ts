@@ -605,6 +605,19 @@ export class BrowsingContext extends EventEmitter<{
     // SAFETY: Disposal implies this exists.
     return context.#reason!;
   })
+  async setScreenOrientationOverride(
+    screenOrientation: Bidi.Emulation.ScreenOrientation | null,
+  ): Promise<void> {
+    await this.#session.send('emulation.setScreenOrientationOverride', {
+      screenOrientation,
+      contexts: [this.id],
+    });
+  }
+
+  @throwIfDisposed<BrowsingContext>(context => {
+    // SAFETY: Disposal implies this exists.
+    return context.#reason!;
+  })
   async getCookies(
     options: GetCookiesOptions = {},
   ): Promise<Bidi.Network.Cookie[]> {
@@ -725,5 +738,23 @@ export class BrowsingContext extends EventEmitter<{
 
   isJavaScriptEnabled(): boolean {
     return this.#emulationState.javaScriptEnabled;
+  }
+
+  async setUserAgent(userAgent: string | null): Promise<void> {
+    await this.#session.send('emulation.setUserAgentOverride', {
+      userAgent,
+      contexts: [this.id],
+    });
+  }
+
+  async setOfflineMode(enabled: boolean): Promise<void> {
+    await this.#session.send('emulation.setNetworkConditions', {
+      networkConditions: enabled
+        ? {
+            type: 'offline',
+          }
+        : null,
+      contexts: [this.id],
+    });
   }
 }

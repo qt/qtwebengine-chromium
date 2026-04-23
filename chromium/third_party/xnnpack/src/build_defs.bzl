@@ -49,17 +49,37 @@ def xnnpack_configurable_defines():
         ["XNN_ENABLE_RISCV_FP16_VECTOR=1"],
         ["XNN_ENABLE_RISCV_FP16_VECTOR=0"],
     ) + xnnpack_select_if(
-        "//:avx512amx_enabled",
-        ["XNN_ENABLE_AVX512AMX=1"],
-        ["XNN_ENABLE_AVX512AMX=0"],
+        "//:sse_enabled",
+        ["XNN_ENABLE_SSE=1"],
+        ["XNN_ENABLE_SSE=0"],
     ) + xnnpack_select_if(
-        "//:avx512fp16_enabled",
-        ["XNN_ENABLE_AVX512FP16=1"],
-        ["XNN_ENABLE_AVX512FP16=0"],
+        "//:sse2_enabled",
+        ["XNN_ENABLE_SSE2=1"],
+        ["XNN_ENABLE_SSE2=0"],
     ) + xnnpack_select_if(
-        "//:avx512bf16_enabled",
-        ["XNN_ENABLE_AVX512BF16=1"],
-        ["XNN_ENABLE_AVX512BF16=0"],
+        "//:ssse3_enabled",
+        ["XNN_ENABLE_SSSE3=1"],
+        ["XNN_ENABLE_SSSE3=0"],
+    ) + xnnpack_select_if(
+        "//:sse41_enabled",
+        ["XNN_ENABLE_SSE41=1"],
+        ["XNN_ENABLE_SSE41=0"],
+    ) + xnnpack_select_if(
+        "//:avx_enabled",
+        ["XNN_ENABLE_AVX=1"],
+        ["XNN_ENABLE_AVX=0"],
+    ) + xnnpack_select_if(
+        "//:f16c_enabled",
+        ["XNN_ENABLE_F16C=1"],
+        ["XNN_ENABLE_F16C=0"],
+    ) + xnnpack_select_if(
+        "//:fma3_enabled",
+        ["XNN_ENABLE_FMA3=1"],
+        ["XNN_ENABLE_FMA3=0"],
+    ) + xnnpack_select_if(
+        "//:avx2_enabled",
+        ["XNN_ENABLE_AVX2=1"],
+        ["XNN_ENABLE_AVX2=0"],
     ) + xnnpack_select_if(
         "//:avxvnni_enabled",
         ["XNN_ENABLE_AVXVNNI=1"],
@@ -101,6 +121,18 @@ def xnnpack_configurable_defines():
         ["XNN_ENABLE_AVX512VNNIGFNI=1"],
         ["XNN_ENABLE_AVX512VNNIGFNI=0"],
     ) + xnnpack_select_if(
+        "//:avx512amx_enabled",
+        ["XNN_ENABLE_AVX512AMX=1"],
+        ["XNN_ENABLE_AVX512AMX=0"],
+    ) + xnnpack_select_if(
+        "//:avx512fp16_enabled",
+        ["XNN_ENABLE_AVX512FP16=1"],
+        ["XNN_ENABLE_AVX512FP16=0"],
+    ) + xnnpack_select_if(
+        "//:avx512bf16_enabled",
+        ["XNN_ENABLE_AVX512BF16=1"],
+        ["XNN_ENABLE_AVX512BF16=0"],
+    ) + xnnpack_select_if(
         "//:hvx_enabled",
         ["XNN_ENABLE_HVX=1"],
         ["XNN_ENABLE_HVX=0"],
@@ -111,7 +143,7 @@ def xnnpack_configurable_defines():
     ) + xnnpack_select_if(
         "//:arm_sme_enabled",
         ["XNN_ENABLE_ARM_SME=1"],
-        ["XNN_ENABLE_SRM_SME=0"],
+        ["XNN_ENABLE_ARM_SME=0"],
     ) + xnnpack_select_if(
         "//:arm_sme2_enabled",
         ["XNN_ENABLE_ARM_SME2=1"],
@@ -136,7 +168,7 @@ def xnnpack_min_size_copts():
 
 def xnnpack_gcc_std_copts():
     """GCC-like compiler flags to specify language standard for C sources."""
-    return ["-std=c99"]
+    return ["-std=c99", "-Wimplicit-fallthrough"]
 
 def xnnpack_msvc_std_copts():
     """MSVC compiler flags to specify language standard for C sources."""
@@ -214,32 +246,6 @@ def xnnpack_kleidiai_defines():
 
 def xnnpack_slow_benchmark_tags():
     return ["manual"]
-
-def xnnpack_lib_srcs():
-    return [
-        "src/init.c",
-    ]
-
-def xnnpack_lib_deps():
-    return [
-        ":allocator",
-        ":build_identifier",  # build_cleaner: keep
-        ":common",  # build_cleaner: keep
-        ":init_once",
-        ":logging",
-        ":math",  # build_cleaner: keep
-        ":microkernel_hdrs",  # build_cleaner: keep
-        ":microparams_h",  # build_cleaner: keep
-        ":microparams_init",  # build_cleaner: keep
-        ":operators",  # build_cleaner: keep
-        ":params",
-        ":subgraph",  # build_cleaner: keep
-        "//src/configs:hardware_config",
-        "//src/configs:microkernel_configs",  # build_cleaner: keep
-        "@pthreadpool",
-    ] + xnnpack_if_kleidiai_enabled([
-        "@KleidiAI//:common",
-    ])
 
 def xnnpack_cc_library(
         name,
@@ -325,6 +331,7 @@ def xnnpack_cc_library(
       testonly: If True only testonly targets (such as tests) can depend on this.
       **kwargs: Other arguments to pass to the cc_library rule.
     """
+
     # Set the default defines.
     defines = defines or xnnpack_configurable_defines()
 
@@ -399,7 +406,7 @@ def xnnpack_cc_library(
         hdrs = hdrs,
         visibility = visibility,
         testonly = testonly,
-        **kwargs,
+        **kwargs
     )
 
 def xnnpack_cxx_library(name, copts = xnnpack_std_cxxopts(), gcc_copts = [], msvc_copts = [], **kwargs):
@@ -464,7 +471,7 @@ def xnnpack_unit_test(name, srcs, copts = [], mingw_copts = [], msys_copts = [],
         tags = tags,
         timeout = timeout,
         shard_count = shard_count,
-        **kwargs,
+        **kwargs
     )
 
 def xnnpack_binary(name, srcs, copts = [], deps = [], linkopts = []):
@@ -502,6 +509,7 @@ def xnnpack_benchmark(name, srcs, copts = [], deps = [], tags = [], defines = []
       tags: The list of arbitrary text tags.
       defines: The list of arbitrary defines tags.
     """
+
     # Set the default defines.
     defines = defines or xnnpack_configurable_defines()
 

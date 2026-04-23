@@ -63,7 +63,6 @@ install_config("install_headers") {
     "ipp_attribute.h",
     "ipp_enums.h",
     "ipp_export.h",
-    "ipp_log.h",
     "parser.h",
     "validator.h",
   ]
@@ -74,6 +73,9 @@ if (use.test) {
   executable("libipp_test") {
     sources = [
       "attribute_test.cc",
+      "binary_content.cc",
+      "binary_content.h",
+      "builder_test.cc",
       "colls_view_test.cc",
       "errors_test.cc",
       "frame_test.cc",

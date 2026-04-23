@@ -401,7 +401,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
     // Specifies that the system default caption and icon should not be
     // rendered, and that the client area should be equivalent to the window
-    // area. Only used on some platforms (Windows and Linux).
+    // area. Only used on some platforms (Windows, Linux and ChromeOS).
     bool remove_standard_frame = false;
 
     // Whether the widget should be maximized or minimized.
@@ -1315,6 +1315,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Called when the delegate's CanResize or CanMaximize changes.
   void OnSizeConstraintsChanged();
 
+  // Called when a window-modal child's visibility changed.
+  void OnWindowModalVisibilityChanged(bool visible);
+
   // Notification that our owner is closing.
   // NOTE: this is not invoked for aura as it's currently not needed there.
   // Under aura menus close by way of activation getting reset when the owner
@@ -1568,7 +1571,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Notifies the parent that a window-modal child's visibility changed.
   // This function is a no-op if the parent does not exist or if this widget is
   // not a window modal.
-  void MaybeNotifyWindowModalVisibilityChanged(bool visible);
+  void MaybeNotifyParentAboutWindowModalVisibilityChanged(bool visible);
 
   // This holds logic that needs to called synchronously after showing, before
   // the native widget asynchronously invokes OnNativeWidgetVisibilityChanged().
@@ -1587,6 +1590,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // a non_client_view_ present or not. This will *replace* the current client
   // contents view, possibly removing and destroying that view.
   void SetClientContentsViewInternal(std::unique_ptr<View> view);
+
+  ui::ColorId GetBackgroundColorId() const;
 
   static DisableActivationChangeHandlingType
       g_disable_activation_change_handling_;

@@ -7,13 +7,13 @@ import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
-import type * as ProtocolClient from '../protocol_client/protocol_client.js';
 
-import {ParallelConnection} from './Connections.js';
 import {PrimaryPageChangeType, ResourceTreeModel} from './ResourceTreeModel.js';
 import {SDKModel} from './SDKModel.js';
+import {SecurityOriginManager} from './SecurityOriginManager.js';
+import {StorageKeyManager} from './StorageKeyManager.js';
 import {Capability, type Target, Type} from './Target.js';
-import {Events as TargetManagerEvents, TargetManager} from './TargetManager.js';
+import {Events as TargetManagerEvents, type TargetManager} from './TargetManager.js';
 
 const UIStrings = {
   /**
@@ -34,7 +34,6 @@ export class ChildTargetManager extends SDKModel<EventTypes> implements Protocol
   readonly #targetInfos = new Map<Protocol.Target.TargetID, Protocol.Target.TargetInfo>();
   readonly #childTargetsBySessionId = new Map<Protocol.Target.SessionID, Target>();
   readonly #childTargetsById = new Map<Protocol.Target.TargetID|'main', Target>();
-  readonly #parallelConnections = new Map<string, ProtocolClient.InspectorBackend.Connection>();
   #parentTargetId: Protocol.Target.TargetID|null = null;
 
   constructor(parentTarget: Target) {
@@ -127,7 +126,7 @@ export class ChildTargetManager extends SDKModel<EventTypes> implements Protocol
   }
 
   private fireAvailableTargetsChanged(): void {
-    TargetManager.instance().dispatchEventToListeners(
+    this.#targetManager.dispatchEventToListeners(
         TargetManagerEvents.AVAILABLE_TARGETS_CHANGED, [...this.#targetInfos.values()]);
   }
 
@@ -175,6 +174,8 @@ export class ChildTargetManager extends SDKModel<EventTypes> implements Protocol
       type = Type.FRAME;
     } else if (targetInfo.type === 'page') {
       type = Type.FRAME;
+    } else if (targetInfo.type === 'browser_ui') {
+      type = Type.FRAME;
     } else if (targetInfo.type === 'worker') {
       type = Type.Worker;
     } else if (targetInfo.type === 'worklet') {
@@ -204,52 +205,52 @@ export class ChildTargetManager extends SDKModel<EventTypes> implements Protocol
     if (waitingForDebugger) {
       void target.runtimeAgent().invoke_runIfWaitingForDebugger();
     }
+
+    // For top-level workers (those not attached to a frame), we need to
+    // initialize their storage context manually. The `Capability.STORAGE` is
+    // only granted in `Target.ts` to workers that are not parented by a frame,
+    // which makes this check safe. Frame-associated workers have their storage
+    // managed by ResourceTreeModel.
+    if (type !== Type.FRAME && target.hasAllCapabilities(Capability.STORAGE)) {
+      await this.initializeStorage(target);
+    }
+  }
+
+  private async initializeStorage(target: Target): Promise<void> {
+    const storageAgent = target.storageAgent();
+    const response = await storageAgent.invoke_getStorageKey({});
+
+    const storageKey = response.storageKey;
+    if (response.getError() || !storageKey) {
+      console.error(`Failed to get storage key for target ${target.id()}: ${response.getError()}`);
+      return;
+    }
+
+    const storageKeyManager = target.model(StorageKeyManager);
+    if (storageKeyManager) {
+      storageKeyManager.setMainStorageKey(storageKey);
+      storageKeyManager.updateStorageKeys(new Set([storageKey]));
+    }
+
+    const securityOriginManager = target.model(SecurityOriginManager);
+    if (securityOriginManager) {
+      const origin = new URL(storageKey).origin;
+      securityOriginManager.setMainSecurityOrigin(origin, '');
+      securityOriginManager.updateSecurityOrigins(new Set([origin]));
+    }
   }
 
   detachedFromTarget({sessionId}: Protocol.Target.DetachedFromTargetEvent): void {
-    if (this.#parallelConnections.has(sessionId)) {
-      this.#parallelConnections.delete(sessionId);
-    } else {
-      const target = this.#childTargetsBySessionId.get(sessionId);
-      if (target) {
-        target.dispose('target terminated');
-        this.#childTargetsBySessionId.delete(sessionId);
-        this.#childTargetsById.delete(target.id());
-      }
+    const target = this.#childTargetsBySessionId.get(sessionId);
+    if (target) {
+      target.dispose('target terminated');
+      this.#childTargetsBySessionId.delete(sessionId);
+      this.#childTargetsById.delete(target.id());
     }
   }
 
   receivedMessageFromTarget({}: Protocol.Target.ReceivedMessageFromTargetEvent): void {
     // We use flatten protocol.
-  }
-
-  async createParallelConnection(onMessage: (arg0: Object|string) => void):
-      Promise<{connection: ProtocolClient.InspectorBackend.Connection, sessionId: string}> {
-    // The main Target id is actually just `main`, instead of the real targetId.
-    // Get the real id (requires an async operation) so that it can be used synchronously later.
-    const targetId = await this.getParentTargetId();
-    const {connection, sessionId} =
-        await this.createParallelConnectionAndSessionForTarget(this.#parentTarget, targetId);
-    connection.setOnMessage(onMessage);
-    this.#parallelConnections.set(sessionId, connection);
-    return {connection, sessionId};
-  }
-
-  private async createParallelConnectionAndSessionForTarget(target: Target, targetId: Protocol.Target.TargetID):
-      Promise<{
-        connection: ProtocolClient.InspectorBackend.Connection,
-        sessionId: string,
-      }> {
-    const targetAgent = target.targetAgent();
-    const targetRouter = (target.router() as ProtocolClient.InspectorBackend.SessionRouter);
-    const sessionId = (await targetAgent.invoke_attachToTarget({targetId, flatten: true})).sessionId;
-    const connection = new ParallelConnection(targetRouter.connection(), sessionId);
-    targetRouter.registerSession(target, sessionId, connection);
-    connection.setOnDisconnect(() => {
-      targetRouter.unregisterSession(sessionId);
-      void targetAgent.invoke_detachFromTarget({sessionId});
-    });
-    return {connection, sessionId};
   }
 
   targetInfos(): Protocol.Target.TargetInfo[] {

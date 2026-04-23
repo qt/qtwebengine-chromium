@@ -7,13 +7,13 @@ from __future__ import annotations
 import abc
 import contextlib
 import datetime as dt
-from typing import (TYPE_CHECKING, Any, Generic, Iterable, Iterator, Optional,
-                    TypeVar)
+from typing import TYPE_CHECKING, Any, Generic, Iterable, Iterator, Optional, \
+    TypeVar
 
 from typing_extensions import override
 
-from crossbench.probes.results import (BrowserProbeResult, EmptyProbeResult,
-                                       LocalProbeResult, ProbeResult)
+from crossbench.probes.results import BrowserProbeResult, EmptyProbeResult, \
+    LocalProbeResult, ProbeResult
 
 if TYPE_CHECKING:
   from selenium.webdriver.common.options import BaseOptions
@@ -144,17 +144,20 @@ class BaseProbeContext(Generic[ProbeT], metaclass=abc.ABCMeta):
   def browser_result(self,
                      url: Optional[Iterable[str]] = None,
                      file: Optional[Iterable[AnyPath]] = None,
+                     perfetto: Optional[Iterable[AnyPath]] = None,
                      **kwargs: Iterable[AnyPath]) -> BrowserProbeResult:
     """Helper to create BrowserProbeResult that might be stored on a remote
     browser/device and need to be copied over to the local machine."""
-    return BrowserProbeResult(self.result_origin, url=url, file=file, **kwargs)
+    return BrowserProbeResult(
+        self.result_origin, url=url, file=file, perfetto=perfetto, **kwargs)
 
   def local_result(self,
                    url: Optional[Iterable[str]] = None,
                    file: Optional[Iterable[LocalPath]] = None,
+                   perfetto: Optional[Iterable[LocalPath]] = None,
                    **kwargs: Iterable[LocalPath]) -> LocalProbeResult:
     """Helper to create LocalProbeResult."""
-    return LocalProbeResult(url=url, file=file, **kwargs)
+    return LocalProbeResult(url=url, file=file, perfetto=perfetto, **kwargs)
 
   def empty_result(self) -> EmptyProbeResult:
     return EmptyProbeResult()

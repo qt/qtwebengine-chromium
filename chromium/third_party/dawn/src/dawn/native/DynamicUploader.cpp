@@ -27,6 +27,7 @@
 
 #include "dawn/native/DynamicUploader.h"
 
+#include <atomic>
 #include <utility>
 
 #include "dawn/common/Math.h"
@@ -126,24 +127,30 @@ ResultOrError<UploadReservation> DynamicUploader::Reserve(uint64_t allocationSiz
 }
 
 MaybeError DynamicUploader::OnStagingMemoryFreePendingOnSubmit(uint64_t size) {
-    QueueBase* queue = mDevice->GetQueue();
+    UpdateMemoryPendingSubmit();
+    mMemoryPendingSubmit.fetch_add(size, std::memory_order_relaxed);
+    return {};
+}
 
-    // Take into account that submits make the pending memory freed in finite time so we no longer
-    // need to track that memory.
-    ExecutionSerial pendingSerial = queue->GetPendingCommandSerial();
-    if (pendingSerial > mLastPendingSerialSeen) {
-        mMemoryPendingSubmit = 0;
-        mLastPendingSerialSeen = pendingSerial;
+MaybeError DynamicUploader::MaybeSubmitPendingCommands() {
+    constexpr uint64_t kPendingMemorySubmitThreshold = 16 * 1024 * 1024;
+    if (mMemoryPendingSubmit.load(std::memory_order_relaxed) < kPendingMemorySubmitThreshold) {
+        return {};
     }
 
-    constexpr uint64_t kPendingMemorySubmitThreshold = 16 * 1024 * 1024;
-    mMemoryPendingSubmit += size;
-    if (mMemoryPendingSubmit < kPendingMemorySubmitThreshold) {
+    // Only lock the device mutex if a submit is required.
+    auto deviceGuard = mDevice->GetGuard();
+
+    // Check memory pending submit again after acquiring the lock in case a submit happened and
+    // another submit is no longer required.
+    UpdateMemoryPendingSubmit();
+    if (mMemoryPendingSubmit.load(std::memory_order_relaxed) < kPendingMemorySubmitThreshold) {
         return {};
     }
 
     // TODO(crbug.com/42240396): Consider blocking when there is too much memory in flight for
     // freeing, which could cause OOM even if we eagerly flush when too much memory is pending.
+    QueueBase* queue = mDevice->GetQueue();
     queue->ForceEventualFlushOfCommands();
     return queue->SubmitPendingCommands();
 }
@@ -163,6 +170,18 @@ void DynamicUploader::Deallocate(ExecutionSerial lastCompletedSerial, bool freeA
         } else {
             i++;
         }
+    }
+}
+
+void DynamicUploader::UpdateMemoryPendingSubmit() {
+    DAWN_ASSERT(mDevice->IsLockedByCurrentThreadIfNeeded());
+
+    // Take into account that submits make the pending memory freed in finite time so we no longer
+    // need to track that memory.
+    ExecutionSerial pendingSerial = mDevice->GetQueue()->GetPendingCommandSerial();
+    if (pendingSerial > mLastPendingSerialSeen) {
+        mMemoryPendingSubmit.store(0u, std::memory_order_relaxed);
+        mLastPendingSerialSeen = pendingSerial;
     }
 }
 

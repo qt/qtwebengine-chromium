@@ -32,6 +32,7 @@
 #include "base/i18n/icu_util.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
+#include "base/logging/logging_settings.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/statistics_recorder.h"
@@ -96,6 +97,7 @@
 #include <windows.h>
 
 #include "base/debug/handle_hooks_win.h"
+#include "base/win/win_util.h"
 #endif  // BUILDFLAG(IS_WIN)
 
 #if PA_BUILDFLAG(USE_PARTITION_ALLOC)
@@ -609,6 +611,11 @@ void TestSuite::Initialize() {
   // Make sure we run with high resolution timer to minimize differences
   // between production code and test code.
   Time::EnableHighResolutionTimer(true);
+
+  if (!command_line->HasSwitch(
+          ::switches::kDisableStrictHandleCheckingForTesting)) {
+    PCHECK(win::EnableStrictHandleCheckingForCurrentProcess());
+  }
 #endif  // BUILDFLAG(IS_WIN)
 
   // In some cases, we do not want to see standard error dialogs.

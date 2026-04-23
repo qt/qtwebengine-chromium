@@ -44,7 +44,7 @@ ADD_RECOVERY_PHONE_REDIRECT: str = "https://gds.google.com/web/recoveryoptions"
 SKIP_RECOVERY_PHONE: ClickAction = ClickAction.parse({
     "action": "click",
     "pos": {
-        "selector": "[aria-label='Cancel']",
+        "selector": "[aria-label='Skip']",
         "required": True,
         "wait": True,
     },
@@ -119,6 +119,7 @@ class GoogleLogin(PresetLoginBlock):
       return
 
     with run.actions("Login", measure=False) as action:
+      logging.info("Logging into Google with account: %s", secret.username)
       action.show_url(
           GOOGLE_LOGIN_URL,
           ready_state=ReadyState.INTERACTIVE,
@@ -157,7 +158,6 @@ class GoogleLogin(PresetLoginBlock):
                                    ADD_HOME_ADDRESS_REDIRECT, time_left)
 
       self._clear_suspicious_activity(action, runner, run)
-
 
   def _dismiss_login_page(self, action: Actions, runner: ActionRunner, run: Run,
                           click_action: ClickAction, current_url: str,

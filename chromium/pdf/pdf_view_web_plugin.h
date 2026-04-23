@@ -424,7 +424,8 @@ class PdfViewWebPlugin final : public PDFiumEngineClient,
                           const gfx::PointF& extent) override;
   void GetPdfBytes(uint32_t size_limit, GetPdfBytesCallback callback) override;
   void GetPageText(int32_t page_index, GetPageTextCallback callback) override;
-  void GetMostVisiblePageIndex(GetMostVisiblePageIndexCallback callback) override;
+  void GetMostVisiblePageIndex(
+      GetMostVisiblePageIndexCallback callback) override;
 #if BUILDFLAG(ENABLE_PDF_SAVE_TO_DRIVE)
   void GetSaveDataBufferHandlerForDrive(
       pdf::mojom::SaveRequestType request_type,
@@ -856,9 +857,6 @@ class PdfViewWebPlugin final : public PDFiumEngineClient,
   gfx::Rect caret_rect_;
 
   blink::WebString composition_text_;
-
-  // Whether the plugin element currently has focus.
-  bool has_focus_ = false;
 
   blink::WebPluginParams initial_params_;
 

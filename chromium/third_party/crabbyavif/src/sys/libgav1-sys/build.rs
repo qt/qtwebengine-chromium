@@ -85,6 +85,7 @@ fn main() -> Result<(), String> {
         "Libgav1DecoderDestroy",
         "Libgav1DecoderEnqueueFrame",
         "Libgav1DecoderSettingsInitDefault",
+        "Libgav1GetVersionString",
     ];
     for allowlist_item in allowlist_items {
         bindings = bindings.allowlist_item(allowlist_item);

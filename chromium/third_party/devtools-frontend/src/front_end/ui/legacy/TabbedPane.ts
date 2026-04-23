@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import './Toolbar.js';
 
@@ -10,9 +10,10 @@ import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Geometry from '../../models/geometry/geometry.js';
+import * as Annotations from '../../ui/components/annotations/annotations.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
-import * as IconButton from '../components/icon_button/icon_button.js';
+import {createIcon, Icon} from '../kit/kit.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
 import {ContextMenu} from './ContextMenu.js';
@@ -53,6 +54,10 @@ const UIStrings = {
    * @description Indicates that a tab contains a preview feature (i.e., a beta / experimental feature).
    */
   previewFeature: 'Preview feature',
+  /**
+   * @description Indicates that a tab contains annotation(s).
+   */
+  panelContainsAnnotation: 'This panel has one or more annotations',
   /**
    * @description Text to move a tab forwar.
    */
@@ -121,6 +126,15 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
     this.currentDevicePixelRatio = window.devicePixelRatio;
     ZoomManager.instance().addEventListener(ZoomManagerEvents.ZOOM_CHANGED, this.zoomChanged, this);
     this.makeTabSlider();
+
+    if (Annotations.AnnotationRepository.annotationsEnabled()) {
+      Annotations.AnnotationRepository.instance().addEventListener(
+          Annotations.Events.ANNOTATION_ADDED, this.#onUpdateAnnotations, this);
+      Annotations.AnnotationRepository.instance().addEventListener(
+          Annotations.Events.ANNOTATION_DELETED, this.#onUpdateAnnotations, this);
+      Annotations.AnnotationRepository.instance().addEventListener(
+          Annotations.Events.ALL_ANNOTATIONS_DELETED, this.#onUpdateAnnotations, this);
+    }
   }
 
   setAccessibleName(name: string): void {
@@ -261,7 +275,7 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
     if (userGesture && !tab.closeable) {
       return;
     }
-    if (this.currentTab && this.currentTab.id === id) {
+    if (this.currentTab?.id === id) {
       this.hideCurrentTab();
     }
 
@@ -335,7 +349,7 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
       isUserGesture: userGesture,
     };
     this.dispatchEventToListeners(Events.TabInvoked, eventData);
-    if (this.currentTab && this.currentTab.id === id) {
+    if (this.currentTab?.id === id) {
       return true;
     }
 
@@ -392,7 +406,7 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
     return this.tabsHistory.slice(0, tabsCount).map(tabToTabId);
   }
 
-  setTabIcon(id: string, icon: IconButton.Icon.Icon|null): void {
+  setTabIcon(id: string, icon: Icon|null): void {
     const tab = this.tabsById.get(id);
     if (!tab) {
       return;
@@ -401,7 +415,7 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
     this.requestUpdate();
   }
 
-  setTrailingTabIcon(id: string, icon: IconButton.Icon.Icon|null): void {
+  setTrailingTabIcon(id: string, icon: Icon|null): void {
     const tab = this.tabsById.get(id);
     if (!tab) {
       return;
@@ -474,7 +488,7 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
     }
 
     this.suspendInvalidations();
-    const isSelected = this.currentTab && this.currentTab.id === id;
+    const isSelected = this.currentTab?.id === id;
     const shouldFocus = tab.view.hasFocus();
     if (isSelected) {
       this.hideTab(tab);
@@ -503,6 +517,7 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
   }
 
   override wasShown(): void {
+    super.wasShown();
     const effectiveTab = this.currentTab || this.tabsHistory[0];
     if (effectiveTab && this.autoSelectFirstItemOnShow) {
       this.selectTab(effectiveTab.id);
@@ -554,6 +569,36 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
     this.performUpdate();
   }
 
+  updateTabAnnotationIcons(): void {
+    if (!Annotations.AnnotationRepository.annotationsEnabled()) {
+      return;
+    }
+
+    const annotations = Annotations.AnnotationRepository.instance();
+    if (!annotations) {
+      return;
+    }
+
+    for (const tab of this.tabs) {
+      let primaryType = -1;
+      let secondaryType = -1;
+      switch (tab.id) {
+        case 'elements':
+          primaryType = Annotations.AnnotationType.ELEMENT_NODE;
+          secondaryType = Annotations.AnnotationType.STYLE_RULE;
+          break;
+        case 'network':
+          primaryType = Annotations.AnnotationType.NETWORK_REQUEST;
+          secondaryType = Annotations.AnnotationType.NETWORK_REQUEST_SUBPANEL_HEADERS;
+          break;
+      }
+
+      const showTabAnnotationIcon = annotations.getAnnotationDataByType(primaryType).length > 0 ||
+          annotations.getAnnotationDataByType(secondaryType).length > 0;
+      this.setTabAnnotationIcon(tab.id, showTabAnnotationIcon);
+    }
+  }
+
   override performUpdate(): void {
     if (!this.isShowing()) {
       return;
@@ -582,6 +627,7 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
     this.updateWidths();
     this.updateTabsDropDown();
     this.updateTabSlider();
+    this.updateTabAnnotationIcons();
   }
 
   private adjustToolbarWidth(): void {
@@ -620,7 +666,7 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
     const dropDownContainer = document.createElement('div');
     dropDownContainer.classList.add('tabbed-pane-header-tabs-drop-down-container');
     dropDownContainer.setAttribute('jslog', `${VisualLogging.dropDown('more-tabs').track({click: true})}`);
-    const chevronIcon = IconButton.Icon.create('chevron-double-right', 'chevron-icon');
+    const chevronIcon = createIcon('chevron-double-right', 'chevron-icon');
     const moreTabsString = i18nString(UIStrings.moreTabs);
     dropDownContainer.title = moreTabsString;
     ARIAUtils.markAsMenuButton(dropDownContainer);
@@ -938,6 +984,17 @@ export class TabbedPane extends Common.ObjectWrapper.eventMixin<EventTypes, type
     this.automaticReorder = automatic;
   }
 
+  setTabAnnotationIcon(id: string, iconVisible: boolean): void {
+    const tab = this.tabsById.get(id);
+    if (tab) {
+      tab.tabAnnotationIcon = iconVisible;
+    }
+  }
+
+  #onUpdateAnnotations(): void {
+    this.updateTabAnnotationIcons();
+  }
+
   private keyDown(event: KeyboardEvent): void {
     if (!this.currentTab) {
       return;
@@ -1008,6 +1065,7 @@ export interface EventTypes {
 export class TabbedPaneTab {
   closeable: boolean;
   previewFeature = false;
+  #tabAnnotationIcon = false;
   private readonly tabbedPane: TabbedPane;
   #id: string;
   #title: string;
@@ -1016,7 +1074,7 @@ export class TabbedPaneTab {
   shown: boolean;
   measuredWidth!: number|undefined;
   #tabElement!: HTMLElement|undefined;
-  private icon: IconButton.Icon.Icon|null = null;
+  private icon: Icon|null = null;
   private suffixElement: HTMLElement|null = null;
   #width?: number;
   private delegate?: TabbedPaneTabDelegate;
@@ -1063,11 +1121,37 @@ export class TabbedPaneTab {
     return this.#jslogContext ?? (this.#id === 'console-view' ? 'console' : this.#id);
   }
 
+  get tabAnnotationIcon(): boolean {
+    return this.#tabAnnotationIcon;
+  }
+
+  set tabAnnotationIcon(iconVisible: boolean) {
+    if (this.#tabAnnotationIcon === iconVisible) {
+      return;
+    }
+    this.#tabAnnotationIcon = iconVisible;
+    if (!this.#tabElement) {
+      return;
+    }
+    const iconElement = this.#tabElement.querySelector('.ai-icon');
+    if (iconVisible) {
+      if (!iconElement) {
+        const closeButton = this.#tabElement.querySelector('.close-button');
+        this.#tabElement.insertBefore(this.createTabAnnotationIcon(), closeButton);
+      }
+    } else {
+      iconElement?.remove();
+    }
+    this.#tabElement.classList.toggle('ai', iconVisible);
+    delete this.measuredWidth;
+    this.tabbedPane.requestUpdate();
+  }
+
   isCloseable(): boolean {
     return this.closeable;
   }
 
-  setIcon(icon: IconButton.Icon.Icon|null): void {
+  setIcon(icon: Icon|null): void {
     this.icon = icon;
     if (this.#tabElement && this.titleElement) {
       this.createIconElement(this.#tabElement, this.titleElement, false);
@@ -1170,7 +1254,7 @@ export class TabbedPaneTab {
     tabSuffixElements.set(tabElement, suffixElementContainer);
   }
 
-  private createMeasureClone(original: IconButton.Icon.Icon): Element {
+  private createMeasureClone(original: Icon): Element {
     // Cloning doesn't work for the icon component because the shadow
     // root isn't copied, but it is sufficient to create a div styled
     // to be the same size.
@@ -1203,6 +1287,12 @@ export class TabbedPaneTab {
       tabElement.classList.add('preview');
     }
 
+    if (this.tabAnnotationIcon) {
+      const tabAnnotationIcon = this.createTabAnnotationIcon();
+      tabElement.appendChild(tabAnnotationIcon);
+      tabElement.classList.add('ai');
+    }
+
     if (this.closeable) {
       const closeIcon = this.createCloseIconButton();
       tabElement.appendChild(closeIcon);
@@ -1229,6 +1319,19 @@ export class TabbedPaneTab {
     return tabElement as HTMLElement;
   }
 
+  private createTabAnnotationIcon(): HTMLDivElement {
+    // TODO(finnur): Replace the ai-icon with the squiggly svg once it becomes available.
+    const iconContainer = document.createElement('div');
+    iconContainer.classList.add('ai-icon');
+    const tabAnnotationIcon = new Icon();
+    tabAnnotationIcon.name = 'smart-assistant';
+    tabAnnotationIcon.classList.add('small');
+    iconContainer.appendChild(tabAnnotationIcon);
+    iconContainer.setAttribute('title', i18nString(UIStrings.panelContainsAnnotation));
+    iconContainer.setAttribute('aria-label', i18nString(UIStrings.panelContainsAnnotation));
+    return iconContainer;
+  }
+
   private createCloseIconButton(): Buttons.Button.Button {
     const closeButton = new Buttons.Button.Button();
     closeButton.data = {
@@ -1247,7 +1350,7 @@ export class TabbedPaneTab {
   private createPreviewIcon(): HTMLDivElement {
     const iconContainer = document.createElement('div');
     iconContainer.classList.add('preview-icon');
-    const previewIcon = new IconButton.Icon.Icon();
+    const previewIcon = new Icon();
     previewIcon.name = 'experiment';
     previewIcon.classList.add('small');
     iconContainer.appendChild(previewIcon);

@@ -54,6 +54,8 @@
 #include "src/objects/feedback-cell-inl.h"
 #include "src/objects/js-function-inl.h"
 #include "src/objects/js-function.h"
+#include "src/objects/literal-objects-inl.h"
+#include "src/objects/literal-objects.h"
 #include "src/objects/map.h"
 #include "src/objects/object-list-macros.h"
 #include "src/objects/objects-body-descriptors-inl.h"
@@ -957,12 +959,12 @@ bool FinalizeDeferredUnoptimizedCompilationJobs(
 }
 
 // A wrapper to access the optimized code cache slots on the feedback vector.
-class OptimizedCodeCache : public AllStatic {
+class OptimizedOSRCodeCache : public AllStatic {
  public:
   static V8_WARN_UNUSED_RESULT MaybeHandle<Code> Get(
       Isolate* isolate, DirectHandle<JSFunction> function,
       BytecodeOffset osr_offset, CodeKind code_kind) {
-    DCHECK_IMPLIES(V8_ENABLE_LEAPTIERING_BOOL, IsOSR(osr_offset));
+    CHECK(IsOSR(osr_offset));
     if (!CodeKindIsStoredInOptimizedCodeCache(code_kind)) return {};
     if (!function->has_feedback_vector()) return {};
 
@@ -972,38 +974,22 @@ class OptimizedCodeCache : public AllStatic {
 
     Tagged<Code> code;
     Tagged<FeedbackVector> feedback_vector = function->feedback_vector();
-    if (IsOSR(osr_offset)) {
-      Handle<BytecodeArray> bytecode(shared->GetBytecodeArray(isolate),
-                                     isolate);
-      interpreter::BytecodeArrayIterator it(bytecode, osr_offset.ToInt());
-      // Bytecode may be different, so make sure we're at a valid OSR entry.
-      SBXCHECK(it.CurrentBytecodeIsValidOSREntry());
-      std::optional<Tagged<Code>> maybe_code =
-          feedback_vector->GetOptimizedOsrCode(isolate, bytecode,
-                                               it.GetSlotOperand(2));
-      if (maybe_code.has_value()) code = maybe_code.value();
-    } else {
-#ifdef V8_ENABLE_LEAPTIERING
-      UNREACHABLE();
-#else
-      feedback_vector->EvictOptimizedCodeMarkedForDeoptimization(
-          isolate, shared, "OptimizedCodeCache::Get");
-      code = feedback_vector->optimized_code(isolate);
-#endif  // V8_ENABLE_LEAPTIERING
-    }
 
-    // Normal tierup should never request a code-kind we already have. In case
-    // of OSR it can happen that we OSR from ignition to turbofan. This is
-    // explicitly allowed here by reusing any larger-kinded than requested
-    // code.
-    DCHECK_IMPLIES(!code.is_null() && code->kind() > code_kind,
-                   IsOSR(osr_offset));
+    Handle<BytecodeArray> bytecode(shared->GetBytecodeArray(isolate), isolate);
+    interpreter::BytecodeArrayIterator it(bytecode, osr_offset.ToInt());
+    // Bytecode may be different, so make sure we're at a valid OSR entry.
+    SBXCHECK(it.CurrentBytecodeIsValidOSREntry());
+    std::optional<Tagged<Code>> maybe_code =
+        feedback_vector->GetOptimizedOsrCode(isolate, bytecode,
+                                             it.GetSlotOperand(2));
+    if (maybe_code.has_value()) code = maybe_code.value();
+
     if (code.is_null() || code->kind() < code_kind) return {};
 
     DCHECK(!code->marked_for_deoptimization());
     DCHECK(shared->is_compiled());
     DCHECK(CodeKindIsStoredInOptimizedCodeCache(code->kind()));
-    DCHECK_IMPLIES(IsOSR(osr_offset), CodeKindCanOSR(code->kind()));
+    DCHECK(CodeKindCanOSR(code->kind()));
 
     CompilerTracer::TraceOptimizedCodeCacheHit(isolate, function, osr_offset,
                                                code_kind);
@@ -1013,44 +999,20 @@ class OptimizedCodeCache : public AllStatic {
   static void Insert(Isolate* isolate, Tagged<JSFunction> function,
                      BytecodeOffset osr_offset, Tagged<Code> code,
                      bool is_function_context_specializing) {
-    DCHECK_IMPLIES(V8_ENABLE_LEAPTIERING_BOOL, IsOSR(osr_offset));
+    CHECK(IsOSR(osr_offset));
     const CodeKind kind = code->kind();
     if (!CodeKindIsStoredInOptimizedCodeCache(kind)) return;
 
     Tagged<FeedbackVector> feedback_vector = function->feedback_vector();
 
-    if (IsOSR(osr_offset)) {
-      DCHECK(CodeKindCanOSR(kind));
-      DCHECK(!is_function_context_specializing);
-      Tagged<SharedFunctionInfo> shared = function->shared();
-      Handle<BytecodeArray> bytecode(shared->GetBytecodeArray(isolate),
-                                     isolate);
-      interpreter::BytecodeArrayIterator it(bytecode, osr_offset.ToInt());
-      // Bytecode may be different, so make sure we're at a valid OSR entry.
-      SBXCHECK(it.CurrentBytecodeIsValidOSREntry());
-      feedback_vector->SetOptimizedOsrCode(isolate, it.GetSlotOperand(2), code);
-      return;
-    }
-
-#ifdef V8_ENABLE_LEAPTIERING
-    UNREACHABLE();
-#else
-    DCHECK(!IsOSR(osr_offset));
-
-    if (is_function_context_specializing) {
-      // Function context specialization folds-in the function context, so no
-      // sharing can occur. Make sure the optimized code cache is cleared.
-      // Only do so if the specialized code's kind matches the cached code kind.
-      if (feedback_vector->has_optimized_code() &&
-          feedback_vector->optimized_code(isolate)->kind() == code->kind()) {
-        feedback_vector->ClearOptimizedCode();
-      }
-      return;
-    }
-
-    function->shared()->set_function_context_independent_compiled(true);
-    feedback_vector->SetOptimizedCode(isolate, code);
-#endif  // V8_ENABLE_LEAPTIERING
+    DCHECK(CodeKindCanOSR(kind));
+    DCHECK(!is_function_context_specializing);
+    Tagged<SharedFunctionInfo> shared = function->shared();
+    Handle<BytecodeArray> bytecode(shared->GetBytecodeArray(isolate), isolate);
+    interpreter::BytecodeArrayIterator it(bytecode, osr_offset.ToInt());
+    // Bytecode may be different, so make sure we're at a valid OSR entry.
+    SBXCHECK(it.CurrentBytecodeIsValidOSREntry());
+    feedback_vector->SetOptimizedOsrCode(isolate, it.GetSlotOperand(2), code);
   }
 };
 
@@ -1102,8 +1064,8 @@ bool CompileTurbofan_NotConcurrent(Isolate* isolate,
   // Success!
   job->RecordCompilationStats(ConcurrencyMode::kSynchronous, isolate);
   DCHECK(!isolate->has_exception());
-  if (!V8_ENABLE_LEAPTIERING_BOOL || job->compilation_info()->is_osr()) {
-    OptimizedCodeCache::Insert(
+  if (job->compilation_info()->is_osr()) {
+    OptimizedOSRCodeCache::Insert(
         isolate, *compilation_info->closure(), compilation_info->osr_offset(),
         *compilation_info->code(),
         compilation_info->function_context_specializing());
@@ -1353,8 +1315,7 @@ MaybeHandle<Code> GetOrCompileOptimized(
     // Always reset the OSR urgency to ensure we reset it on function entry.
     int invocation_count =
         function->feedback_vector()->invocation_count(kRelaxedLoad);
-    if (!(V8_UNLIKELY(v8_flags.testing_d8_test_runner ||
-                      v8_flags.allow_natives_syntax) &&
+    if (!(V8_UNLIKELY(v8_flags.allow_natives_syntax) &&
           ManualOptimizationTable::IsMarkedForManualOptimization(isolate,
                                                                  *function)) &&
         invocation_count < v8_flags.minimum_invocations_before_optimization) {
@@ -1380,11 +1341,10 @@ MaybeHandle<Code> GetOrCompileOptimized(
   // turbo_filter.
   if (!ShouldOptimize(code_kind, shared)) return {};
 
-  if (!V8_ENABLE_LEAPTIERING_BOOL || IsOSR(osr_offset)) {
+  if (IsOSR(osr_offset)) {
     Handle<Code> cached_code;
-    if (OptimizedCodeCache::Get(isolate, function, osr_offset, code_kind)
+    if (OptimizedOSRCodeCache::Get(isolate, function, osr_offset, code_kind)
             .ToHandle(&cached_code)) {
-      DCHECK_IMPLIES(!IsOSR(osr_offset), cached_code->kind() <= code_kind);
       return cached_code;
     }
 
@@ -1830,10 +1790,11 @@ class MergeAssumptionChecker final : public ObjectVisitor {
       Tagged<HeapObject> obj;
       bool is_weak = maybe_obj.IsWeak();
       if (maybe_obj.GetHeapObject(&obj)) {
-        if (SafeIsAnyHole(obj)) continue;
         if (IsSharedFunctionInfo(obj)) {
           CHECK((current_object_kind_ == kConstantPool && !is_weak) ||
                 (current_object_kind_ == kScriptInfosList && is_weak) ||
+                (current_object_kind_ == kObjectBoilerplateDescription &&
+                 !is_weak) ||
                 (IsScript(host) &&
                  current.address() ==
                      host.address() +
@@ -1850,6 +1811,11 @@ class MergeAssumptionChecker final : public ObjectVisitor {
           // Constant pools can contain nested fixed arrays, which in turn can
           // point to SFIs.
           QueueVisit(obj, kConstantPool);
+        } else if (IsObjectBoilerplateDescription(obj) &&
+                   current_object_kind_ == kConstantPool) {
+          // Constant pools can contain ObjectBoilerplates, which in turn can
+          // point to SFIs.
+          QueueVisit(obj, kObjectBoilerplateDescription);
         }
 
         QueueVisit(obj, kNormalObject);
@@ -1878,6 +1844,7 @@ class MergeAssumptionChecker final : public ObjectVisitor {
     kNormalObject,
     kConstantPool,
     kScriptInfosList,
+    kObjectBoilerplateDescription
   };
 
   // If the object hasn't yet been added to the worklist, add it. Subsequent
@@ -2209,6 +2176,30 @@ class ConstantPoolPointerForwarder {
     } else if (!scope_infos_to_update_.empty() &&
                IsScopeInfo(heap_obj, cage_base_)) {
       VisitScopeInfo(constant_pool, i, Cast<ScopeInfo>(heap_obj));
+    } else if (IsObjectBoilerplateDescription(heap_obj, cage_base_)) {
+      VisitObjectBoilerplateDescription(
+          Cast<ObjectBoilerplateDescription>(heap_obj));
+    }
+  }
+
+  void VisitObjectBoilerplateDescription(
+      Tagged<ObjectBoilerplateDescription> boilerplate) {
+    for (int idx = 0; idx < boilerplate->boilerplate_properties_count();
+         ++idx) {
+      // there is an SFI at entry "idx"
+      Tagged<Object> maybe_sfi = boilerplate->value(idx);
+      if (IsUninitializedHole(maybe_sfi)) continue;
+      if (Tagged<SharedFunctionInfo> new_sfi;
+          TryCast<SharedFunctionInfo>(maybe_sfi, &new_sfi)) {
+        // The same SFI on the old script by function_literal_id
+        Tagged<MaybeObject> maybe_old_sfi = old_script_->infos()->get(
+            new_sfi->function_literal_id(kRelaxedLoad));
+        if (maybe_old_sfi.IsWeak()) {
+          boilerplate->set_value(idx,
+                                 Cast<SharedFunctionInfo>(
+                                     maybe_old_sfi.GetHeapObjectAssumeWeak()));
+        }
+      }
     }
   }
 
@@ -2511,45 +2502,26 @@ Handle<SharedFunctionInfo> BackgroundMergeTask::CompleteMergeInForeground(
   ConstantPoolPointerForwarder forwarder(
       isolate, isolate->main_thread_local_heap(), old_script);
 
-  for (const auto& new_compiled_data : new_compiled_data_for_cached_sfis_) {
-    Tagged<SharedFunctionInfo> sfi = *new_compiled_data.cached_sfi;
-    if (!sfi->is_compiled() && new_compiled_data.new_sfi->is_compiled()) {
-      // Updating existing DebugInfos is not supported, but we don't expect
-      // uncompiled SharedFunctionInfos to contain DebugInfos.
-      DCHECK(!new_compiled_data.cached_sfi->HasDebugInfo(isolate));
-      // The goal here is to copy every field except script from
-      // new_sfi to cached_sfi. The safest way to do so (including a DCHECK that
-      // no fields were skipped) is to first copy the script from
-      // cached_sfi to new_sfi, and then copy every field using CopyFrom.
-      new_compiled_data.new_sfi->set_script(sfi->script(kAcquireLoad),
-                                            kReleaseStore);
-      sfi->CopyFrom(*new_compiled_data.new_sfi, isolate);
-    }
-  }
-
+  // Find infos that didn't exist during the background work, but do now. This
+  // means a re-merge is necessary. Potential references to the new script's SFI
+  // need to be updated to point to the cached script's SFI instead. The cached
+  // script's SFI's outer scope infos need to be used by the new script's outer
+  // SFIs.
   for (int i = 0; i < old_script->infos()->length(); ++i) {
     Tagged<MaybeObject> maybe_old_info = old_script->infos()->get(i);
     Tagged<MaybeObject> maybe_new_info = new_script->infos()->get(i);
     if (maybe_new_info == maybe_old_info) continue;
     DisallowGarbageCollection no_gc;
     if (maybe_old_info.IsWeak()) {
-      // The old script's SFI didn't exist during the background work, but does
-      // now. This means a re-merge is necessary. Potential references to the
-      // new script's SFI need to be updated to point to the cached script's SFI
-      // instead. The cached script's SFI's outer scope infos need to be used by
-      // the new script's outer SFIs.
       if (Is<SharedFunctionInfo>(maybe_old_info.GetHeapObjectAssumeWeak())) {
         forwarder.set_has_shared_function_info_to_forward();
       }
       forwarder.RecordScopeInfos(maybe_old_info);
-    } else {
-      old_script->infos()->set(i, maybe_new_info);
     }
   }
 
-  // Most of the time, the background merge was sufficient. However, if there
-  // are any new pointers that need forwarding, a new traversal of the constant
-  // pools is required.
+  // If we found anything in the pass before, update the new data that we'll
+  // merge in before actually merging it in.
   if (forwarder.HasAnythingToForward()) {
     for (DirectHandle<SharedFunctionInfo> new_sfi : used_new_sfis_) {
       forwarder.UpdateScopeInfo(*new_sfi);
@@ -2558,17 +2530,56 @@ Handle<SharedFunctionInfo> BackgroundMergeTask::CompleteMergeInForeground(
       }
     }
     for (const auto& new_compiled_data : new_compiled_data_for_cached_sfis_) {
-      // It's possible that cached_sfi wasn't compiled, but an inner function
-      // existed that didn't exist when be background merged. In that case, pick
-      // up the relevant scope infos.
-      Tagged<SharedFunctionInfo> sfi = *new_compiled_data.cached_sfi;
+      // Unconditionally track the new_compiled_data for updating, even if we
+      // might not use it because old_sfi is already compiled. It's possible
+      // that the old_sfi bytecode is dropped before we decide whether to
+      // actually copy it.
+      Tagged<SharedFunctionInfo> sfi = *new_compiled_data.new_sfi;
       forwarder.InstallOwnScopeInfo(sfi);
-      if (new_compiled_data.cached_sfi->HasBytecodeArray(isolate)) {
+      if (new_compiled_data.new_sfi->HasBytecodeArray(isolate)) {
         forwarder.AddBytecodeArray(
-            new_compiled_data.cached_sfi->GetBytecodeArray(isolate));
+            new_compiled_data.new_sfi->GetBytecodeArray(isolate));
       }
     }
     forwarder.IterateAndForwardPointers();
+  }
+
+  auto compiled_data_it = new_compiled_data_for_cached_sfis_.rbegin();
+
+  // Release the compiled data backwards to make sure that subtrees are always
+  // consistent. Infos in the table are ordered by nesting, so this ensures that
+  // e.g. by the time we release bytecode, its scope infos and sfis are already
+  // in the table as well.
+  // This is important because other background merge tasks as well as
+  // concurrently running optimizing compile jobs might be looking at what we
+  // release here.
+  for (int i = old_script->infos()->length() - 1; i >= 0; --i) {
+    Tagged<MaybeObject> maybe_old_info = old_script->infos()->get(i);
+    Tagged<MaybeObject> maybe_new_info = new_script->infos()->get(i);
+    if (maybe_new_info == maybe_old_info) {
+      if (compiled_data_it != new_compiled_data_for_cached_sfis_.rend() &&
+          compiled_data_it->cached_sfi->function_literal_id(kRelaxedLoad) >=
+              i) {
+        CHECK_EQ(
+            compiled_data_it->cached_sfi->function_literal_id(kRelaxedLoad), i);
+        Tagged<SharedFunctionInfo> sfi = *compiled_data_it->cached_sfi;
+        if (!sfi->is_compiled() && compiled_data_it->new_sfi->is_compiled()) {
+          // Updating existing DebugInfos is not supported, but we don't expect
+          // uncompiled SharedFunctionInfos to contain DebugInfos.
+          DCHECK(!compiled_data_it->cached_sfi->HasDebugInfo(isolate));
+          // The goal here is to copy every field except script from
+          // new_sfi to cached_sfi. The safest way to do so (including a DCHECK
+          // that no fields were skipped) is to first copy the script from
+          // cached_sfi to new_sfi, and then copy every field using CopyFrom.
+          compiled_data_it->new_sfi->set_script(sfi->script(kAcquireLoad),
+                                                kReleaseStore);
+          sfi->CopyFrom(*compiled_data_it->new_sfi, isolate);
+        }
+        compiled_data_it++;
+      }
+    } else if (!maybe_old_info.IsWeak()) {
+      old_script->infos()->set(i, maybe_new_info);
+    }
   }
 
   Tagged<MaybeObject> maybe_toplevel_sfi =
@@ -2616,6 +2627,33 @@ MaybeHandle<SharedFunctionInfo> BackgroundCompileTask::FinalizeScript(
           &finalize_unoptimized_compilation_data_)) {
     maybe_result = outer_function_sfi_;
   }
+
+#ifdef DEBUG
+  /* Some defensive debug checks to handle race conditions with IIFE and
+     Background Compilation related corner cases.
+  */
+  Tagged<WeakFixedArray> infos = script->infos();
+  int length = infos->length();
+  for (int i = 0; i < length; ++i) {
+    Tagged<MaybeObject> maybe_obj = infos->get(i);
+    Tagged<HeapObject> obj;
+    if (!maybe_obj.GetHeapObject(&obj)) continue;
+    if (Tagged<SharedFunctionInfo> shared; TryCast(obj, &shared)) {
+      // Once all compilation jobs are over, and before merging, we expect that
+      // a function is either compiled (HasBytecodeArray) or is ready for lazy
+      // compilation (HasUncompiledData). Function here are all user defined
+      // functions and should not have a builtin_id.
+      DCHECK(!shared->HasBuiltinId());
+      DCHECK(shared->HasBytecodeArray() ||
+             shared->HasUncompiledData(isolate)
+#if V8_ENABLE_WEBASSEMBLY
+             // compiled data for 'use asm' functions
+             || shared->HasAsmWasmData()
+#endif
+      );
+    }
+  }
+#endif
 
   if (DirectHandle<Script> cached_script;
       maybe_cached_script.ToHandle(&cached_script) && !maybe_result.is_null()) {
@@ -3161,7 +3199,7 @@ void Compiler::CompileOptimized(Isolate* isolate,
   }
 
 #ifdef DEBUG
-  if (V8_ENABLE_LEAPTIERING_BOOL && mode == ConcurrencyMode::kConcurrent) {
+  if (mode == ConcurrencyMode::kConcurrent) {
     DCHECK_IMPLIES(code_kind == CodeKind::MAGLEV,
                    !function->ActiveTierIsMaglev(isolate));
     DCHECK_IMPLIES(code_kind == CodeKind::TURBOFAN_JS,
@@ -3178,7 +3216,6 @@ void Compiler::CompileOptimized(Isolate* isolate,
     DCHECK_IMPLIES(v8_flags.log_function_events,
                    function->IsLoggingRequested(isolate));
   } else {
-#ifdef V8_ENABLE_LEAPTIERING
     // We can get here from CompileLazy when we have requested optimized code
     // which isn't yet ready. Without Leaptiering, we'll already have set the
     // function's code to the bytecode/baseline code on the SFI. However, in the
@@ -3187,7 +3224,6 @@ void Compiler::CompileOptimized(Isolate* isolate,
       function->UpdateCodeKeepTieringRequests(
           isolate, function->shared()->GetCode(isolate));
     }
-#endif  // V8_ENABLE_LEAPTIERING
   }
 
 #ifdef DEBUG
@@ -4413,8 +4449,8 @@ void Compiler::FinalizeTurbofanCompilationJob(TurbofanCompilationJob* job,
       if (V8_LIKELY(use_result)) {
         function->SetTieringInProgress(isolate, false,
                                        job->compilation_info()->osr_offset());
-        if (!V8_ENABLE_LEAPTIERING_BOOL || IsOSR(osr_offset)) {
-          OptimizedCodeCache::Insert(
+        if (IsOSR(osr_offset)) {
+          OptimizedOSRCodeCache::Insert(
               isolate, *compilation_info->closure(),
               compilation_info->osr_offset(), *compilation_info->code(),
               compilation_info->function_context_specializing());
@@ -4469,7 +4505,7 @@ void Compiler::FinalizeMaglevCompilationJob(maglev::MaglevCompilationJob* job,
     return;
   }
   // Discard code compiled for a discarded native context without finalization.
-  if (function->native_context()->global_object()->IsDetached(isolate)) {
+  if (function->native_context()->IsDetached()) {
     CompilerTracer::TraceAbortedMaglevCompile(
         isolate, function, BailoutReason::kDetachedNativeContext);
     return;
@@ -4494,9 +4530,9 @@ void Compiler::FinalizeMaglevCompilationJob(maglev::MaglevCompilationJob* job,
     }
 
     DCHECK(code->is_maglevved());
-    if (!V8_ENABLE_LEAPTIERING_BOOL || IsOSR(osr_offset)) {
-      OptimizedCodeCache::Insert(isolate, *function, osr_offset, *code,
-                                 job->specialize_to_function_context());
+    if (IsOSR(osr_offset)) {
+      OptimizedOSRCodeCache::Insert(isolate, *function, osr_offset, *code,
+                                    job->specialize_to_function_context());
     }
 
     RecordMaglevFunctionCompilation(isolate, function,
@@ -4531,24 +4567,6 @@ void Compiler::PostInstantiation(Isolate* isolate,
     // are just creating a new closure that shares the same feedback cell.
     JSFunction::InitializeFeedbackCell(isolate, function, is_compiled_scope,
                                        false);
-
-#ifndef V8_ENABLE_LEAPTIERING
-    if (function->has_feedback_vector()) {
-      // Evict any deoptimized code on feedback vector. We need to do this after
-      // creating the closure, since any heap allocations could trigger a GC and
-      // deoptimized the code on the feedback vector. So check for any
-      // deoptimized code just before installing it on the function.
-      function->feedback_vector()->EvictOptimizedCodeMarkedForDeoptimization(
-          isolate, *shared, "new function from shared function info");
-      Tagged<Code> code = function->feedback_vector()->optimized_code(isolate);
-      if (!code.is_null()) {
-        // Caching of optimized code enabled and optimized code found.
-        DCHECK(!code->marked_for_deoptimization());
-        DCHECK(function->shared()->is_compiled());
-        function->UpdateOptimizedCode(isolate, code);
-      }
-    }
-#endif  // !V8_ENABLE_LEAPTIERING
   }
 
   if (shared->is_toplevel() || shared->is_wrapped()) {

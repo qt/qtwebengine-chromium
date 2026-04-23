@@ -28,7 +28,6 @@
 #include "src/tint/lang/glsl/writer/raise/raise.h"
 
 #include "src/tint/lang/core/ir/module.h"
-#include "src/tint/lang/core/ir/transform/add_empty_entry_point.h"
 #include "src/tint/lang/core/ir/transform/array_length_from_uniform.h"
 #include "src/tint/lang/core/ir/transform/bgra8unorm_polyfill.h"
 #include "src/tint/lang/core/ir/transform/binary_polyfill.h"
@@ -36,6 +35,7 @@
 #include "src/tint/lang/core/ir/transform/block_decorated_structs.h"
 #include "src/tint/lang/core/ir/transform/builtin_polyfill.h"
 #include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
+#include "src/tint/lang/core/ir/transform/decompose_uniform_access.h"
 #include "src/tint/lang/core/ir/transform/demote_to_helper.h"
 #include "src/tint/lang/core/ir/transform/direct_variable_access.h"
 #include "src/tint/lang/core/ir/transform/multiplanar_external_texture.h"
@@ -44,10 +44,13 @@
 #include "src/tint/lang/core/ir/transform/prevent_infinite_loops.h"
 #include "src/tint/lang/core/ir/transform/remove_continue_in_switch.h"
 #include "src/tint/lang/core/ir/transform/remove_terminator_args.h"
+#include "src/tint/lang/core/ir/transform/remove_uniform_vector_component_loads.h"
 #include "src/tint/lang/core/ir/transform/rename_conflicts.h"
 #include "src/tint/lang/core/ir/transform/robustness.h"
 #include "src/tint/lang/core/ir/transform/signed_integer_polyfill.h"
+#include "src/tint/lang/core/ir/transform/single_entry_point.h"
 #include "src/tint/lang/core/ir/transform/std140.h"
+#include "src/tint/lang/core/ir/transform/substitute_overrides.h"
 #include "src/tint/lang/core/ir/transform/value_to_let.h"
 #include "src/tint/lang/core/ir/transform/vectorize_scalar_matrix_constructors.h"
 #include "src/tint/lang/core/ir/transform/zero_init_workgroup_memory.h"
@@ -72,6 +75,11 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
             return result.Failure();     \
         }                                \
     } while (false)
+
+    RUN_TRANSFORM(core::ir::transform::SingleEntryPoint, module, options.entry_point_name);
+
+    RUN_TRANSFORM(core::ir::transform::SubstituteOverrides, module,
+                  options.substitute_overrides_config);
 
     // Must come before TextureBuiltinsFromUniform as it may add `textureNumLevels` calls.
     if (!options.disable_robustness) {
@@ -114,8 +122,8 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     // _post-remapping_ data.
     if (options.use_array_length_from_uniform) {
         RUN_TRANSFORM(core::ir::transform::ArrayLengthFromUniform, module,
-                      options.bindings.array_length_from_uniform.ubo_binding,
-                      options.bindings.array_length_from_uniform.bindpoint_to_size_index);
+                      options.array_length_from_uniform.ubo_binding,
+                      options.array_length_from_uniform.bindpoint_to_size_index);
     }
 
     tint::transform::multiplanar::BindingsMap multiplanar_map{};
@@ -158,8 +166,6 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 
     RUN_TRANSFORM(core::ir::transform::MultiplanarExternalTexture, module, multiplanar_map);
 
-    RUN_TRANSFORM(core::ir::transform::BlockDecoratedStructs, module);
-
     // `PreservePadding` must run before `DirectVariableAccess`.
     RUN_TRANSFORM(core::ir::transform::PreservePadding, module);
 
@@ -172,11 +178,24 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         RUN_TRANSFORM(core::ir::transform::DirectVariableAccess, module, dva_config);
     }
 
+    if (options.decompose_uniform_buffers) {
+        // DecomposeUniformAccess must come before BlockDecoratedStructs, which will wrap the
+        // uniform variable in a structure. It must come after DirectVariableAccess which removes
+        // uniform buffers passed as function parameters.
+        RUN_TRANSFORM(core::ir::transform::DecomposeUniformAccess, module);
+    } else {
+        RUN_TRANSFORM(core::ir::transform::Std140, module);
+    }
+    RUN_TRANSFORM(core::ir::transform::BlockDecoratedStructs, module);
+
+    // RemoveUniformVectorComponentLoads is used to work around a Qualcomm driver bug.
+    // See crbug.com/452350626.
+    RUN_TRANSFORM(core::ir::transform::RemoveUniformVectorComponentLoads, module);
+
     // Note, this must come after remapping as it uses post-remapping indices for its options.
     // Note, this must come after DirectVariableAccess as it doesn't handle tracing through function
     // calls.
-    RUN_TRANSFORM(raise::TextureBuiltinsFromUniform, module,
-                  options.bindings.texture_builtins_from_uniform);
+    RUN_TRANSFORM(raise::TextureBuiltinsFromUniform, module, options.texture_builtins_from_uniform);
 
     if (!options.disable_workgroup_init) {
         RUN_TRANSFORM(core::ir::transform::ZeroInitWorkgroupMemory, module);
@@ -192,7 +211,7 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     {
         // Must come after DirectVariableAccess
         raise::TexturePolyfillConfig tex_config;
-        tex_config.placeholder_sampler_bind_point = options.bindings.placeholder_sampler_bind_point;
+        tex_config.placeholder_sampler_bind_point = options.placeholder_sampler_bind_point;
         RUN_TRANSFORM(raise::TexturePolyfill, module, tex_config);
     }
 
@@ -207,8 +226,6 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     RUN_TRANSFORM(core::ir::transform::VectorizeScalarMatrixConstructors, module);
     RUN_TRANSFORM(core::ir::transform::RemoveContinueInSwitch, module);
 
-    RUN_TRANSFORM(core::ir::transform::AddEmptyEntryPoint, module);
-
     RUN_TRANSFORM(raise::ShaderIO, module,
                   raise::ShaderIOConfig{immediate_data_layout.Get(), options.depth_range_offsets,
                                         options.bgra_swizzle_locations});
@@ -218,8 +235,6 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         raise::OffsetFirstIndex, module,
         raise::OffsetFirstIndexConfig{immediate_data_layout.Get(), options.first_vertex_offset,
                                       options.first_instance_offset});
-
-    RUN_TRANSFORM(core::ir::transform::Std140, module);
 
     // These transforms need to be run last as various transforms introduce terminator arguments,
     // naming conflicts, and expressions that need to be explicitly not inlined.

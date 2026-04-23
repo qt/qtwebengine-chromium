@@ -60,6 +60,11 @@ BASE_FEATURE(kAndroidDumpForBadCompositedUiState,
 
 #endif  // BUILDFLAG(IS_ANDROID)
 
+// When there is a screenshot request against a surface, issue the copy request
+// into a shared image.
+BASE_FEATURE(kBackForwardTransitionsSameDocSharedImage,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kBackdropFilterMirrorEdgeMode, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kUseDrmBlackFullscreenOptimization,
@@ -97,7 +102,7 @@ const char kDrawQuadSplit[] = "num_of_splits";
 // can be split into during occlusion culling.
 BASE_FEATURE(kDrawQuadSplitLimit, base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kEnableBackdropFiltersCullingOptimization,
+BASE_FEATURE(kEnableRenderPassDrawQuadCullingOptimization,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 constexpr base::FeatureParam<DelegatedCompositingMode>::Option
@@ -218,7 +223,7 @@ BASE_FEATURE(kVSyncAlignedPresent, base::FEATURE_ENABLED_BY_DEFAULT);
 // proceed with navigation. ViewTransition Animate still waits though for
 // CopyOutputRequests to be actually fulfilled.
 BASE_FEATURE(kAckCopyOutputRequestEarlyForViewTransition,
-             base::FEATURE_ENABLED_BY_DEFAULT);
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
 #if BUILDFLAG(IS_MAC)
@@ -286,6 +291,13 @@ BASE_FEATURE(kEnableADPFSeparateRendererMainSession,
 // threads in the session changes.
 BASE_FEATURE(kEnableADPFSetThreads, base::FEATURE_ENABLED_BY_DEFAULT);
 
+// If enabled, Chrome uses notifyWorkloadIncrease ADPF(Android Dynamic
+// Performance Framework) method before CrRendererMain starts running a heavy
+// workload during page load.
+// Supported only on Android >= 16.
+BASE_FEATURE(kEnableADPFWorkloadIncreaseOnPageLoad,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // If enabled, Chrome uses notifyWorkloadReset method on viz wakeup instead of
 // sending a timing report with a fake actual duration > target duration.
 // Supported only on Android >= 16.
@@ -321,14 +333,6 @@ BASE_FEATURE(kEvictionUnlocksResources, base::FEATURE_DISABLED_BY_DEFAULT);
 // perfect cadence.
 BASE_FEATURE(kSingleVideoFrameRateThrottling,
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-// When enabled, ClientResourceProvider will take callbacks intended to be ran
-// on the Main-thread, and will batch them into a single jump to that thread.
-// Rather than each performing its own separate post task.
-//
-// Enabled 03/2024, kept to run a holdback experiment.
-BASE_FEATURE(kBatchMainThreadReleaseCallbacks,
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Remove gpu process reference if gpu context is loss, and gpu channel cannot
 // be established due to said gpu process exiting.
@@ -385,6 +389,7 @@ BASE_FEATURE(kCrosContentAdjustedRefreshRate,
 BASE_FEATURE(kNoCompositorFrameAcks, base::FEATURE_DISABLED_BY_DEFAULT);
 const base::FeatureParam<int> kNumberPendingFramesUntilThrottle{
     &kNoCompositorFrameAcks, "pending_frames", 1};
+BASE_FEATURE(kDisplaySchedulerAsClient, base::FEATURE_DISABLED_BY_DEFAULT);
 
 int DrawQuadSplitLimit() {
   constexpr int kDefaultDrawQuadSplitLimit = 5;
@@ -397,10 +402,15 @@ int DrawQuadSplitLimit() {
                     kMaxDrawQuadSplitLimit);
 }
 
-bool IsBackdropFiltersCullingOptimizationEnabled() {
-  static bool is_enabled =
-      base::FeatureList::IsEnabled(kEnableBackdropFiltersCullingOptimization);
+bool IsRenderPassDrawQuadCullingOptimizationEnabled() {
+  static bool is_enabled = base::FeatureList::IsEnabled(
+      kEnableRenderPassDrawQuadCullingOptimization);
   return is_enabled;
+}
+
+bool IsBackForwardTransitionsSameDocSharedImageEnabled() {
+  return base::FeatureList::IsEnabled(
+      kBackForwardTransitionsSameDocSharedImage);
 }
 
 bool IsDelegatedCompositingEnabled() {

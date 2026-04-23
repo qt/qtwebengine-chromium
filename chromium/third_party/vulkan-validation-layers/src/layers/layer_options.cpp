@@ -119,7 +119,7 @@ const std::vector<std::string> &GetEnableFlagNameHelper() {
         "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_NVIDIA",                      // vendor_specific_nvidia,
         "VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT",                       // debug_printf,
         "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT",         // sync_validation,
-        "VK_VALIDATION_DEPRECATION_DETECTION",                                 // deprecation_detection,
+        "VK_VALIDATION_LEGACY_DETECTION",                                      // legacy_detection,
     };
     return enable_flag_name_helper;
 }
@@ -148,7 +148,7 @@ const char *VK_LAYER_DISABLES = "disables";
 const char *VK_LAYER_CHECK_SHADERS = "check_shaders";
 const char *VK_LAYER_THREAD_SAFETY = "thread_safety";
 const char *VK_LAYER_STATELESS_PARAM = "stateless_param";
-const char *VK_LAYER_DEPRECATION_DETECTION = "deprecation_detection";
+const char *VK_LAYER_LEGACY_DETECTION = "legacy_detection";
 const char *VK_LAYER_OBJECT_LIFETIME = "object_lifetime";
 const char *VK_LAYER_VALIDATE_CORE = "validate_core";
 const char *VK_LAYER_UNIQUE_HANDLES = "unique_handles";
@@ -194,6 +194,7 @@ const char *VK_LAYER_GPUAV_BUFFER_ADDRESS_OOB = "gpuav_buffer_address_oob";
 const char *VK_LAYER_GPUAV_VALIDATE_RAY_QUERY = "gpuav_validate_ray_query";
 const char *VK_LAYER_GPUAV_POST_PROCESS_DESCRIPTOR_INDEXING = "gpuav_post_process_descriptor_indexing";
 const char *VK_LAYER_GPUAV_VERTEX_ATTRIBUTE_FETCH_OOB = "gpuav_vertex_attribute_fetch_oob";
+const char *VK_LAYER_GPUAV_SHADER_SANITIZER = "gpuav_shader_sanitizer";
 const char *VK_LAYER_GPUAV_SELECT_INSTRUMENTED_SHADERS = "gpuav_select_instrumented_shaders";
 const char *VK_LAYER_GPUAV_SHADERS_TO_INSTRUMENT = "gpuav_shaders_to_instrument";
 
@@ -202,13 +203,12 @@ const char *VK_LAYER_GPUAV_INDIRECT_DRAWS_BUFFERS = "gpuav_indirect_draws_buffer
 const char *VK_LAYER_GPUAV_INDIRECT_DISPATCHES_BUFFERS = "gpuav_indirect_dispatches_buffers";
 const char *VK_LAYER_GPUAV_INDIRECT_TRACE_RAYS_BUFFERS = "gpuav_indirect_trace_rays_buffers";
 const char *VK_LAYER_GPUAV_BUFFER_COPIES = "gpuav_buffer_copies";
+const char *VK_LAYER_GPUAV_COPY_MEMORY_INDIRECT = "gpuav_copy_memory_indirect";
 const char *VK_LAYER_GPUAV_INDEX_BUFFERS = "gpuav_index_buffers";
+const char *VK_LAYER_GPUAV_ACCELERATION_STRUCTURES_BUILDS = "gpuav_acceleration_structures_builds";
 
 // A temporary workaround until we get proper Descriptor Buffer support
 const char *VK_LAYER_GPUAV_DESCRIPTOR_BUFFER_OVERRIDE = "gpuav_descriptor_buffer_override";
-
-// Keep removed warning until October 2025 SDK is released
-const char *REMOVED_GPUAV_IMAGE_LAYOUT = "gpuav_image_layout";
 
 const char *VK_LAYER_GPUAV_FORCE_ON_ROBUSTNESS = "gpuav_force_on_robustness";
 
@@ -222,6 +222,7 @@ const char *VK_LAYER_GPUAV_DEBUG_PRINT_INSTRUMENTATION_INFO = "gpuav_debug_print
 // ---
 const char *VK_LAYER_SYNCVAL_SUBMIT_TIME_VALIDATION = "syncval_submit_time_validation";
 const char *VK_LAYER_SYNCVAL_SHADER_ACCESSES_HEURISTIC = "syncval_shader_accesses_heuristic";
+const char *VK_LAYER_SYNCVAL_LOAD_OP_AFTER_STORE_OP_VALIDATION = "syncval_load_op_after_store_op_validation";
 const char *VK_LAYER_SYNCVAL_MESSAGE_EXTRA_PROPERTIES = "syncval_message_extra_properties";
 
 // Message Formatting
@@ -691,9 +692,9 @@ static void ProcessDebugReportSettings(ConfigAndEnvSettings *settings_data, VkuL
         }
     }
 
-    if (settings_data->enabled[deprecation_detection] && ((report_flags & kWarningBit) == 0)) {
+    if (settings_data->enabled[legacy_detection] && ((report_flags & kWarningBit) == 0)) {
         setting_warnings.emplace_back(
-            "Deprecation Detection logs to the Warning message severity, enabling Warning level logging otherwise the message "
+            "Legacy Detection logs to the Warning message severity, enabling Warning level logging otherwise the message "
             "will not be seen.");
         report_flags |= kWarningBit;
     }
@@ -746,12 +747,14 @@ static void ProcessDebugReportSettings(ConfigAndEnvSettings *settings_data, VkuL
                                       " but VK_DBG_LAYER_ACTION_LOG_MSG was not set, so it won't be sent to the file.");
     }
 
+#ifdef VK_USE_PLATFORM_WIN32_KHR
     messenger = VK_NULL_HANDLE;
     if (debug_action & VK_DBG_LAYER_ACTION_DEBUG_OUTPUT) {
         dbg_create_info.pfnUserCallback = MessengerWin32DebugOutputMsg;
         dbg_create_info.pUserData = nullptr;
         LayerCreateMessengerCallback(debug_report, default_layer_callback, &dbg_create_info, &messenger);
     }
+#endif
 
     messenger = VK_NULL_HANDLE;
     if (debug_action & VK_DBG_LAYER_ACTION_BREAK) {
@@ -896,6 +899,11 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
                                     gpuav_settings.shader_instrumentation.ray_query);
         }
 
+        if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_SHADER_SANITIZER)) {
+            vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_SHADER_SANITIZER,
+                                    gpuav_settings.shader_instrumentation.sanitizer);
+        }
+
         if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_SELECT_INSTRUMENTED_SHADERS)) {
             vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_SELECT_INSTRUMENTED_SHADERS,
                                     gpuav_settings.select_instrumented_shaders);
@@ -936,18 +944,23 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
         if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_BUFFER_COPIES)) {
             vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_BUFFER_COPIES, gpuav_settings.validate_buffer_copies);
         }
+        if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_COPY_MEMORY_INDIRECT)) {
+            vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_COPY_MEMORY_INDIRECT,
+                                    gpuav_settings.validate_copy_memory_indirect);
+        }
         if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_INDEX_BUFFERS)) {
             vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_INDEX_BUFFERS, gpuav_settings.validate_index_buffers);
         }
     }
 
+    if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_ACCELERATION_STRUCTURES_BUILDS)) {
+        vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_ACCELERATION_STRUCTURES_BUILDS,
+                                gpuav_settings.validate_acceleration_structures_builds);
+    }
+
     if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_DESCRIPTOR_BUFFER_OVERRIDE)) {
         vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_DESCRIPTOR_BUFFER_OVERRIDE,
                                 gpuav_settings.descriptor_buffer_override);
-    }
-
-    if (vkuHasLayerSetting(layer_setting_set, REMOVED_GPUAV_IMAGE_LAYOUT)) {
-        setting_warnings.emplace_back("Deprecated " + std::string(REMOVED_GPUAV_IMAGE_LAYOUT) + " setting was removed.");
     }
 
     if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_FORCE_ON_ROBUSTNESS)) {
@@ -1016,6 +1029,11 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
                                 syncval_settings.shader_accesses_heuristic);
     }
 
+    if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_SYNCVAL_LOAD_OP_AFTER_STORE_OP_VALIDATION)) {
+        vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_SYNCVAL_LOAD_OP_AFTER_STORE_OP_VALIDATION,
+                                syncval_settings.load_op_after_store_op_validation);
+    }
+
     if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_SYNCVAL_MESSAGE_EXTRA_PROPERTIES)) {
         vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_SYNCVAL_MESSAGE_EXTRA_PROPERTIES,
                                 syncval_settings.message_extra_properties);
@@ -1049,8 +1067,7 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
         SetValidationSetting(layer_setting_set, settings_data->enabled, vendor_specific_nvidia,
                              VK_LAYER_VALIDATE_BEST_PRACTICES_NVIDIA);
         SetValidationSetting(layer_setting_set, settings_data->enabled, sync_validation, VK_LAYER_VALIDATE_SYNC);
-        // This is turned off until WG decides on naming and how this should work
-        // SetValidationSetting(layer_setting_set, settings_data->enabled, deprecation_detection, VK_LAYER_DEPRECATION_DETECTION);
+        SetValidationSetting(layer_setting_set, settings_data->enabled, legacy_detection, VK_LAYER_LEGACY_DETECTION);
     }
 
     // Only read the legacy disables flags when used, not their replacement.

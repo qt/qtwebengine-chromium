@@ -34,6 +34,7 @@
 #include "chrome/browser/privacy_sandbox/tracking_protection_onboarding_factory.h"
 #include "chrome/browser/privacy_sandbox/tracking_protection_settings_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/regional_capabilities/regional_capabilities_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
@@ -72,7 +73,9 @@
 #include "chrome/browser/ui/webui/settings/protocol_handlers_handler.h"
 #include "chrome/browser/ui/webui/settings/reset_settings_handler.h"
 #include "chrome/browser/ui/webui/settings/safety_hub_handler.h"
+#include "chrome/browser/ui/webui/settings/saved_info_handler.h"
 #include "chrome/browser/ui/webui/settings/search_engines_handler.h"
+#include "chrome/browser/ui/webui/settings/security_settings_provider.h"
 #include "chrome/browser/ui/webui/settings/settings_clear_browsing_data_handler.h"
 #include "chrome/browser/ui/webui/settings/settings_localized_strings_provider.h"
 #include "chrome/browser/ui/webui/settings/settings_media_devices_selection_handler.h"
@@ -119,6 +122,7 @@
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/signin/public/base/signin_switches.h"
 #include "components/sync/base/features.h"
+#include "content/public/browser/isolated_web_apps_policy.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -187,7 +191,13 @@
 #if BUILDFLAG(ENABLE_GLIC)
 #include "chrome/browser/glic/public/glic_enabling.h"
 #include "chrome/browser/glic/public/glic_keyed_service.h"
+#include "chrome/browser/subscription_eligibility/subscription_eligibility_service.h"
+#include "chrome/browser/subscription_eligibility/subscription_eligibility_service_factory.h"
 #include "chrome/browser/ui/webui/settings/glic_handler.h"
+#endif
+
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#include "chrome/browser/ui/webui/batch_upload_promo/batch_upload_promo_handler.h"
 #endif
 
 namespace settings {
@@ -258,6 +268,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   AddSettingsPageUIHandler(
       std::make_unique<SecurityKeysBioEnrollmentHandler>());
   AddSettingsPageUIHandler(std::make_unique<PasswordManagerHandler>());
+  AddSettingsPageUIHandler(std::make_unique<SavedInfoHandler>(profile));
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
   AddSettingsPageUIHandler(std::make_unique<PasskeysHandler>());
 #endif
@@ -329,6 +340,10 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
       (!ShouldDisplayManagedUi(profile) && !profile->IsChild());
   html_source->AddBoolean("showPrivacyGuide", show_privacy_guide);
 
+  html_source->AddBoolean(
+      "showResetProfileBannerV2",
+      base::FeatureList::IsEnabled(features::kShowResetProfileBannerV2));
+
   html_source->AddBoolean("enableHandTrackingContentSetting",
 #if BUILDFLAG(ENABLE_VR)
                           device::features::IsHandTrackingEnabled());
@@ -340,16 +355,9 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
                           safe_browsing::hash_realtime_utils::
                               IsHashRealTimeLookupEligibleInSession());
 
-  html_source->AddBoolean("enableHttpsFirstModeNewSettings",
-                          IsBalancedModeAvailable());
-
   html_source->AddBoolean(
       "enableKeyboardLockPrompt",
       base::FeatureList::IsEnabled(permissions::features::kKeyboardLockPrompt));
-
-  html_source->AddBoolean(
-      "enableLinkedServicesSetting",
-      base::FeatureList::IsEnabled(features::kLinkedServicesSetting));
 
 #if BUILDFLAG(ENABLE_COMPOSE)
   const bool compose_enabled = ComposeEnabling::IsEnabledForProfile(profile);
@@ -358,9 +366,6 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   const bool compose_enabled = false;
   const bool compose_visible = false;
 #endif  // BUILDFLAG(ENABLE_COMPOSE)
-  html_source->AddBoolean(
-      "enableBundledSecuritySettings",
-      base::FeatureList::IsEnabled(safe_browsing::kBundledSecuritySettings));
 
   html_source->AddBoolean(
       "enableComposeProactiveNudge",
@@ -368,9 +373,22 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
                              compose::features::kEnableComposeProactiveNudge));
 
 #if BUILDFLAG(ENABLE_GLIC)
+  auto* subscription_service = subscription_eligibility::
+      SubscriptionEligibilityServiceFactory::GetForProfile(profile);
+
+  const bool use_paid_tier =
+      subscription_service && subscription_service->GetAiSubscriptionTier() > 0;
+
   html_source->AddBoolean(
       "showGeminiPersonalContextLink",
-      base::FeatureList::IsEnabled(features::kGlicPersonalContext));
+      base::FeatureList::IsEnabled(features::kGlicPersonalContext) &&
+          use_paid_tier);
+  html_source->AddBoolean(
+      "showInstructionLink",
+      (base::FeatureList::IsEnabled(features::kGlicPersonalContext) &&
+       !use_paid_tier) ||
+          (base::FeatureList::IsEnabled(features::kGlicGeminiInstructions) &&
+           !base::FeatureList::IsEnabled(features::kGlicPersonalContext)));
 #endif  //  BUILDFLAG(ENABLE_GLIC)
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -403,9 +421,19 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
                               content_settings::features::
                                   kBlockV8OptimizerOnUnfamiliarSitesSetting));
 
+  html_source->AddBoolean(
+      "enableLoyaltyCardsFilling",
+      base::FeatureList::IsEnabled(
+          autofill::features::kAutofillEnableLoyaltyCardsFilling));
+
   html_source->AddBoolean("enableYourSavedInfoSettingsPage",
                           base::FeatureList::IsEnabled(
                               autofill::features::kYourSavedInfoSettingsPage));
+
+  html_source->AddBoolean(
+      "enableYourSavedInfoBranding",
+      base::FeatureList::IsEnabled(
+          autofill::features::kYourSavedInfoBrandingInSettings));
 
   AddSettingsPageUIHandler(std::make_unique<AboutHandler>(profile));
   AddSettingsPageUIHandler(std::make_unique<ResetSettingsHandler>(profile));
@@ -438,6 +466,10 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   plural_string_handler->AddLocalizedString(
       "safetyHubNotificationPermissionsSecondaryLabel",
       IDS_SETTINGS_SAFETY_HUB_NOTIFICATION_PERMISSIONS_SECONDARY_LABEL);
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+  plural_string_handler->AddLocalizedString(
+      "batchUploadPromoLabel", IDS_BATCH_UPLOAD_PROMO_SUBTITLE_ITEMS_WITH_LINK);
+#endif
   web_ui->AddMessageHandler(std::move(plural_string_handler));
 
   // Add the metrics handler to write uma stats.
@@ -461,6 +493,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
 #endif
 
   AddLocalizedStrings(html_source, profile, web_ui->GetWebContents());
+  AddSecurityData(html_source);
 
   ManagedUIHandler::Initialize(web_ui, html_source);
 
@@ -488,31 +521,13 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
       TrackingProtectionSettingsFactory::GetForProfile(profile)
           ->IsTrackingProtection3pcdEnabled());
 
-  // ACT UX
-  bool ipp_ux = base::FeatureList::IsEnabled(privacy_sandbox::kIpProtectionUx);
-  bool fpp_ux = base::FeatureList::IsEnabled(
-      privacy_sandbox::kFingerprintingProtectionUx);
-  html_source->AddBoolean("isIpProtectionUxEnabled", ipp_ux);
-  html_source->AddBoolean("isFingerprintingProtectionUxEnabled", fpp_ux);
-  html_source->AddBoolean("enableIncognitoTrackingProtections",
-                          ipp_ux || fpp_ux);
-  html_source->AddBoolean(
-      "isIpProtectionDisabledForEnterprise",
-      TrackingProtectionSettingsFactory::GetForProfile(profile)
-          ->IsIpProtectionDisabledForEnterprise());
-
   // Performance
   AddSettingsPageUIHandler(std::make_unique<PerformanceHandler>());
   html_source->AddBoolean(
       "isBatterySaverModeManagedByOS",
       performance_manager::user_tuning::IsBatterySaverModeManagedByOS());
 
-  html_source->AddBoolean(
-      "autoPictureInPictureEnabled",
-      base::FeatureList::IsEnabled(
-          blink::features::kMediaSessionEnterPictureInPicture));
-
-  html_source->AddBoolean("capturedSurfaceControlEnabled",
+  html_source->AddBoolean("enableCapturedSurfaceControl",
                           base::FeatureList::IsEnabled(
                               features::kCapturedSurfaceControlKillswitch));
 
@@ -524,7 +539,8 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
 #if BUILDFLAG(IS_CHROMEOS)
   html_source->AddBoolean(
       "enableSmartCardReadersContentSetting",
-      base::FeatureList::IsEnabled(blink::features::kSmartCard));
+      base::FeatureList::IsEnabled(blink::features::kSmartCard) &&
+          content::AreIsolatedWebAppsEnabled(profile));
 #endif
 
 #if BUILDFLAG(IS_WIN) && BUILDFLAG(GOOGLE_CHROME_BRANDING)
@@ -611,9 +627,6 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
                           show_glic_section || show_ai_features_section);
   html_source->AddBoolean("showAiPageAiFeatureSection",
                           show_ai_features_section);
-  html_source->AddBoolean(
-      "enableAiSettingsInPrivacyGuide",
-      optimization_guide::features::IsPrivacyGuideAiSettingsEnabled());
 
   // Delete Browsing Data
   html_source->AddBoolean(
@@ -621,8 +634,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
       base::FeatureList::IsEnabled(browsing_data::features::kDbdRevampDesktop));
   html_source->AddBoolean(
       "enableBrowsingHistoryActorIntegrationM1",
-      base::FeatureList::IsEnabled(
-          browsing_data::features::kBrowsingHistoryActorIntegrationM1));
+      browsing_data::features::IsBrowsingHistoryActorIntegrationM1Enabled());
 
   html_source->AddBoolean(
       "enableSupportForHomeAndWork",
@@ -632,6 +644,11 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   html_source->AddBoolean(
       "replaceSyncPromosWithSignInPromos",
       base::FeatureList::IsEnabled(syncer::kReplaceSyncPromosWithSignInPromos));
+
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+  html_source->AddBoolean("unoPhase2FollowUp", base::FeatureList::IsEnabled(
+                                                   syncer::kUnoPhase2FollowUp));
+#endif
 
   TryShowHatsSurveyWithTimeout();
 }
@@ -695,6 +712,17 @@ void SettingsUI::BindInterface(
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+void SettingsUI::BindInterface(
+    mojo::PendingReceiver<batch_upload_promo::mojom::PageHandlerFactory>
+        pending_receiver) {
+  if (batch_upload_promo_factory_receiver_.is_bound()) {
+    batch_upload_promo_factory_receiver_.reset();
+  }
+  batch_upload_promo_factory_receiver_.Bind(std::move(pending_receiver));
+}
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
 void SettingsUI::BindInterface(
     mojo::PendingReceiver<help_bubble::mojom::HelpBubbleHandlerFactory>
         pending_receiver) {
@@ -737,6 +765,17 @@ void SettingsUI::CreateThemeColorPickerHandler(
       web_ui()->GetWebContents());
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS)
+
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+void SettingsUI::CreateBatchUploadPromoHandler(
+    mojo::PendingRemote<batch_upload_promo::mojom::Page> pending_page,
+    mojo::PendingReceiver<batch_upload_promo::mojom::PageHandler>
+        pending_page_handler) {
+  batch_upload_promo_handler_ = std::make_unique<BatchUploadPromoHandler>(
+      std::move(pending_page_handler), std::move(pending_page),
+      Profile::FromWebUI(web_ui()), web_ui()->GetWebContents());
+}
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
 void SettingsUI::CreateHelpBubbleHandler(
     mojo::PendingRemote<help_bubble::mojom::HelpBubbleClient> client,

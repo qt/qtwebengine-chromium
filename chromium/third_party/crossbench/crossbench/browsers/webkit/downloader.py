@@ -7,8 +7,8 @@ from __future__ import annotations
 import os
 import shutil
 import zipfile
-from typing import (TYPE_CHECKING, ClassVar, Final, Iterable, Mapping,
-                    Optional, Type)
+from typing import TYPE_CHECKING, ClassVar, Final, Iterable, Mapping, \
+    Optional, Type
 
 from typing_extensions import override
 

@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import argparse
 import enum
-from typing import (TYPE_CHECKING, ClassVar, Final, FrozenSet, Optional, Self,
-                    Sequence, Set, Type)
+from typing import TYPE_CHECKING, ClassVar, Final, FrozenSet, Optional, Self, \
+    Sequence, Set, Type
 
 from typing_extensions import override
 
@@ -316,10 +316,10 @@ class TracingProbeContext(ProbeContext[TracingProbe]):
     if self._record_format == RecordFormat.JSON:
       return self.browser_result(json=(self.result_path,))
     # Use intermediate browser result to copy over remote files.
-    result = self.browser_result(trace=(self.result_path,))
+    result = self.browser_result(perfetto=(self.result_path,))
     trace_file = result.get("proto")
     if legacy_json_file := cb_traceconv.convert_to_json(self.host_platform,
                                                         self.probe.traceconv,
                                                         trace_file):
-      return self.local_result(trace=(trace_file,), json=(legacy_json_file,))
+      return self.local_result(perfetto=(trace_file,), json=(legacy_json_file,))
     return result

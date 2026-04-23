@@ -1,0 +1,13 @@
+{
+  "probes": {
+    "trace_processor": {
+      "queries": [
+        "wv_startup_uninterruptible_sleep"
+      ]
+    }
+    "perfetto": {
+      "textproto": "syshealth_plus_webview"
+      "config_via_stdin": true
+    }
+  }
+}

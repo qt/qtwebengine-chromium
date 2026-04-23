@@ -23,8 +23,8 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
-from typing import (TYPE_CHECKING, Any, Callable, Final, Generator, Iterable,
-                    Iterator, Mapping, Optional, Sequence, Type)
+from typing import TYPE_CHECKING, Any, Callable, Final, Generator, Iterable, \
+    Iterator, Mapping, Optional, Sequence, Type
 
 import google.cloud.storage as gcloud_storage
 import psutil
@@ -36,8 +36,8 @@ from crossbench.parse import ObjectParser
 from crossbench.plt import proc_helper
 from crossbench.plt.arch import MachineArch
 from crossbench.plt.bin import Binary
-from crossbench.plt.port_manager import (LocalPortManager, PortManager,
-                                         PortScope)
+from crossbench.plt.port_manager import LocalPortManager, PortManager, \
+    PortScope
 from crossbench.plt.remote import RemotePopen
 
 if TYPE_CHECKING:
@@ -113,7 +113,9 @@ def _next_id() -> int:
 
 DEFAULT_CACHE_DIR: Final = pth.LocalPath(__file__).parents[2] / "cache"
 
+
 class Platform(abc.ABC):
+
   def __init__(self) -> None:
     self._id: Final[int] = _next_id()
     self._binary_lookup_override: dict[str, pth.AnyPath] = {}
@@ -286,7 +288,7 @@ class Platform(abc.ABC):
   @property
   def is_battery_powered(self) -> bool:
     self.assert_is_local()
-    if not psutil.sensors_battery: # type: ignore
+    if not psutil.sensors_battery:  # type: ignore
       return False
     status = psutil.sensors_battery()
     if not status:
@@ -319,7 +321,6 @@ class Platform(abc.ABC):
     self.assert_is_local()
     cpu_freq = psutil.cpu_freq()
     return CPUFreqInfo(cpu_freq.min, cpu_freq.max, cpu_freq.current)
-
 
   @functools.lru_cache(maxsize=1)
   def system_details(self) -> dict[str, Any]:
@@ -454,7 +455,6 @@ class Platform(abc.ABC):
     self.assert_is_local()
     # Helper to avoid circular imports.
     return parse.PathParser.local_binary_path(value, self, name)
-
 
   def which(self, binary_name: pth.AnyPathLike) -> Optional[pth.AnyPath]:
     if not binary_name:
@@ -601,6 +601,12 @@ class Platform(abc.ABC):
 
   def foreground_process(self) -> Optional[dict[str, Any]]:
     return None
+
+  def dump_java_heap(self, identifier: str, label: str,
+                     trace_buffer_size_kb: int,
+                     timeout: dt.timedelta) -> pth.AnyPath:
+    del identifier, label, trace_buffer_size_kb, timeout
+    raise NotImplementedError(f"dump_java_heap not implemented for {self}.")
 
   @property
   def default_tmp_dir(self) -> pth.AnyPath:
@@ -861,9 +867,16 @@ class Platform(abc.ABC):
                 encoding: str = "utf-8",
                 stdin: ProcessIo = None,
                 env: Optional[Mapping[str, str]] = None,
+                cwd: Optional[pth.AnyPath] = None,
                 check: bool = True) -> str:
     result = self.sh_stdout_bytes(
-        *args, shell=shell, quiet=quiet, stdin=stdin, env=env, check=check)
+        *args,
+        shell=shell,
+        quiet=quiet,
+        stdin=stdin,
+        env=env,
+        cwd=cwd,
+        check=check)
     return result.decode(encoding)
 
   def sh_stdout_bytes(self,
@@ -872,6 +885,7 @@ class Platform(abc.ABC):
                       quiet: bool = False,
                       stdin: ProcessIo = None,
                       env: Optional[Mapping[str, str]] = None,
+                      cwd: Optional[pth.AnyPath] = None,
                       check: bool = True) -> bytes:
     completed_process = self.sh(
         *args,
@@ -880,6 +894,7 @@ class Platform(abc.ABC):
         quiet=quiet,
         stdin=stdin,
         env=env,
+        cwd=cwd,
         check=check)
     return completed_process.stdout
 
@@ -896,6 +911,7 @@ class Platform(abc.ABC):
             stderr: ProcessIo = None,
             stdin: ProcessIo = None,
             env: Optional[Mapping[str, str]] = None,
+            cwd: Optional[pth.AnyPath] = None,
             quiet: bool = False) -> subprocess.Popen:
     self.assert_is_local()
     self.validate_shell_args(args, shell)
@@ -909,7 +925,8 @@ class Platform(abc.ABC):
         stdin=stdin,
         stderr=stderr,
         stdout=stdout,
-        env=env)
+        env=env,
+        cwd=cwd)
 
   def sh(self,
          *args: CmdArg,
@@ -919,6 +936,7 @@ class Platform(abc.ABC):
          stderr: ProcessIo = None,
          stdin: ProcessIo = None,
          env: Optional[Mapping[str, str]] = None,
+         cwd: Optional[pth.AnyPath] = None,
          quiet: bool = False,
          check: bool = True) -> subprocess.CompletedProcess:
     self.assert_is_local()
@@ -934,7 +952,8 @@ class Platform(abc.ABC):
         stderr=stderr,
         env=env,
         capture_output=capture_output,
-        check=False)
+        check=False,
+        cwd=cwd)
     if check and process.returncode != 0:
       raise SubprocessError(self, process)
     return process
@@ -1033,8 +1052,7 @@ class Platform(abc.ABC):
 
   def screenshot(self, result_path: pth.AnyPath) -> None:
     # TODO: support screen coordinates
-    raise NotImplementedError(
-        "'screenshot' is only available on MacOS for now")
+    raise NotImplementedError("'screenshot' is only available on MacOS for now")
 
   def display_resolution(self) -> tuple[int, int]:
     raise NotImplementedError(
@@ -1044,7 +1062,6 @@ class Platform(abc.ABC):
   @contextlib.contextmanager
   def low_power_mode(self) -> Generator[None, Any, None]:
     raise NotImplementedError("'low_power_mode' is only supported on Android")
-
 
   def user_id(self) -> int:
     self.assert_is_local()

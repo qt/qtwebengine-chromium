@@ -1156,7 +1156,7 @@ int HttpCache::Transaction::DoInitEntry() {
           base::Microseconds(1), base::Seconds(1), 50);
     }
     if ((effective_load_flags_ & LOAD_MAIN_FRAME_DEPRECATED) &&
-        IsGoogleHostWithAlpnH3(request_->url.host_piece())) {
+        IsGoogleHostWithAlpnH3(request_->url.host())) {
       base::UmaHistogramTimes(
           "HttpCache.NoVarySearch.NotUsableLostTime2.GoogleHost.MainFrame",
           elapsed);
@@ -2828,7 +2828,16 @@ int HttpCache::Transaction::BeginCacheValidation() {
     // LOAD_FROM_CACHE_IF_OFFLINE case.
     if (!ConditionalizeRequest()) {
       couldnt_conditionalize_request_ = true;
-      UpdateCacheEntryStatus(CacheEntryStatus::ENTRY_CANT_CONDITIONALIZE);
+      if (cache_entry_status_ != CacheEntryStatus::ENTRY_CANT_CONDITIONALIZE) {
+        // `cache_entry_status_` may already be marked as
+        // `ENTRY_CANT_CONDITIONALIZE`. This can occur if an existed cache entry
+        // was initially deemed unusable (e.g. a "no-cache" header), and then,
+        // another concurrent same URL transactions receives the "no-cache"
+        // response again which leads this transaction's BeginCacheValidation()
+        // to re-evaluate the entry as unusable. This check avoids redundant
+        // status updates.
+        UpdateCacheEntryStatus(CacheEntryStatus::ENTRY_CANT_CONDITIONALIZE);
+      }
       if (partial_) {
         return DoRestartPartialRequest();
       }
@@ -3134,10 +3143,14 @@ HttpCache::Transaction::GetHttpCacheEntryRejectionStatus(
     return HttpCacheEntryRejectionStatus::kNoRejectionLoadOnlyFromCache;
   }
 
-  return (in_memory_info & HINT_UNUSABLE_PER_CACHING_HEADERS) ==
-                 HINT_UNUSABLE_PER_CACHING_HEADERS
+  if ((in_memory_info & HINT_UNUSABLE_PER_CACHING_HEADERS) !=
+      HINT_UNUSABLE_PER_CACHING_HEADERS) {
+    return HttpCacheEntryRejectionStatus::kNoRejectionUsable;
+  }
+
+  return base::FeatureList::IsEnabled(features::kHttpCacheSkipUnusableEntry)
              ? HttpCacheEntryRejectionStatus::kRejection
-             : HttpCacheEntryRejectionStatus::kNoRejectionUsable;
+             : HttpCacheEntryRejectionStatus::kNoRejectionHintDisabled;
 }
 
 bool HttpCache::Transaction::MaybeRejectBasedOnEntryInMemoryData(
@@ -3354,7 +3367,7 @@ int HttpCache::Transaction::DoConnectedCallback() {
 int HttpCache::Transaction::DoConnectedCallbackComplete(int result) {
   if (result != OK) {
     if (result ==
-        ERR_CACHED_IP_ADDRESS_SPACE_BLOCKED_BY_PRIVATE_NETWORK_ACCESS_POLICY) {
+        ERR_CACHED_IP_ADDRESS_SPACE_BLOCKED_BY_LOCAL_NETWORK_ACCESS_POLICY) {
       DoomInconsistentEntry();
       UpdateCacheEntryStatusToOther(OtherStatusReason::kBlockedByIpSpace);
       TransitionToState(reading_ ? STATE_SEND_REQUEST
@@ -3515,8 +3528,7 @@ int HttpCache::Transaction::WriteResponseInfoToEntry(
     if (request_->is_main_frame_navigation) {
       in_memory_data |= HINT_HIGH_PRIORITY;
     }
-    cache_->GetCurrentBackend()->SetEntryInMemoryData(cache_key_,
-                                                      in_memory_data);
+    entry_->GetEntry()->SetEntryInMemoryData(in_memory_data);
   }
 
   BeginDiskCacheAccessTimeCount();
@@ -3910,7 +3922,7 @@ void HttpCache::Transaction::RecordHistograms() {
   UMA_HISTOGRAM_ENUMERATION("HttpCache.NoVarySearch.UseResult2",
                             no_vary_search_use_result_);
   if (is_html && is_main_frame &&
-      IsGoogleHostWithAlpnH3(request_->url.host_piece())) {
+      IsGoogleHostWithAlpnH3(request_->url.host())) {
     base::UmaHistogramEnumeration(
         "HttpCache.NoVarySearch.UseResult2.GoogleHost.MainFrameHTML",
         no_vary_search_use_result_);
@@ -4034,10 +4046,10 @@ void HttpCache::Transaction::SaveNetworkTransactionInfo(
   network_transaction_info_.received_body_bytes =
       transaction.GetReceivedBodyBytes();
 
-  ConnectionAttempts attempts = transaction.GetConnectionAttempts();
-  for (const auto& attempt : attempts) {
-    network_transaction_info_.old_connection_attempts.push_back(attempt);
-  }
+  const auto connection_attempts = transaction.GetConnectionAttempts();
+  network_transaction_info_.old_connection_attempts.insert(
+      network_transaction_info_.old_connection_attempts.end(),
+      connection_attempts.begin(), connection_attempts.end());
   network_transaction_info_.old_remote_endpoint = IPEndPoint();
   transaction.GetRemoteEndpoint(&network_transaction_info_.old_remote_endpoint);
 

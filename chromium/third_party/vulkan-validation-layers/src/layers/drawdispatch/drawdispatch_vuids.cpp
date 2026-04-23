@@ -110,6 +110,7 @@ struct DispatchVuidsCmdDraw : DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDraw-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDraw-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDraw-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDraw-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDraw-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDraw-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDraw-sparseImageInt64Atomics-04474";
@@ -195,6 +196,26 @@ struct DispatchVuidsCmdDraw : DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDraw-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDraw-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDraw-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDraw-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDraw-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDraw-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDraw-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDraw-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDraw-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDraw-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDraw-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDraw-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDraw-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDraw-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDraw-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDraw-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDraw-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDraw-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDraw-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDraw-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDraw-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDraw-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDraw-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDraw-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDraw-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDraw-None-09364";
@@ -220,6 +241,10 @@ struct DispatchVuidsCmdDraw : DrawDispatchVuid {
         shaders_push_constants_08878             = "VUID-vkCmdDraw-None-08878";
         shaders_descriptor_layouts_08879         = "VUID-vkCmdDraw-None-08879";
         draw_shaders_no_task_mesh_08885          = "VUID-vkCmdDraw-None-08885";
+        tessellation_subdivision_12239           = "VUID-vkCmdDraw-OpExecutionMode-12239";
+        tessellation_triangles_12240             = "VUID-vkCmdDraw-OpExecutionMode-12240";
+        tessellation_segment_12241               = "VUID-vkCmdDraw-OpExecutionMode-12241";
+        tessellation_patch_size_12242            = "VUID-vkCmdDraw-OpExecutionMode-12242";
         set_line_width_08617                     = "VUID-vkCmdDraw-None-08617";
         set_viewport_with_count_08642            = "VUID-vkCmdDraw-primitiveFragmentShadingRateWithMultipleViewports-08642";
         alpha_component_word_08920               = "VUID-vkCmdDraw-alphaToCoverageEnable-08920";
@@ -264,9 +289,13 @@ struct DispatchVuidsCmdDraw : DrawDispatchVuid {
         vertex_input_09462                       = "VUID-vkCmdDraw-None-09462";
         color_blend_enable_07627                 = "VUID-vkCmdDraw-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDraw-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDraw-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDraw-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDraw-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDraw-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDraw-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDraw-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDraw-OpTypeTensorARM-09906";
     }
 };
 
@@ -358,6 +387,7 @@ struct DispatchVuidsCmdDrawMultiEXT : DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawMultiEXT-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawMultiEXT-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawMultiEXT-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawMultiEXT-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawMultiEXT-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawMultiEXT-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawMultiEXT-sparseImageInt64Atomics-04474";
@@ -443,6 +473,26 @@ struct DispatchVuidsCmdDrawMultiEXT : DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawMultiEXT-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawMultiEXT-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawMultiEXT-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawMultiEXT-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawMultiEXT-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawMultiEXT-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawMultiEXT-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawMultiEXT-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawMultiEXT-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawMultiEXT-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawMultiEXT-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawMultiEXT-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawMultiEXT-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawMultiEXT-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawMultiEXT-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawMultiEXT-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawMultiEXT-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawMultiEXT-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawMultiEXT-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawMultiEXT-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawMultiEXT-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawMultiEXT-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawMultiEXT-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawMultiEXT-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawMultiEXT-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawMultiEXT-None-09364";
@@ -468,6 +518,10 @@ struct DispatchVuidsCmdDrawMultiEXT : DrawDispatchVuid {
         shaders_push_constants_08878             = "VUID-vkCmdDrawMultiEXT-None-08878";
         shaders_descriptor_layouts_08879         = "VUID-vkCmdDrawMultiEXT-None-08879";
         draw_shaders_no_task_mesh_08885          = "VUID-vkCmdDrawMultiEXT-None-08885";
+        tessellation_subdivision_12239           = "VUID-vkCmdDrawMultiEXT-OpExecutionMode-12239";
+        tessellation_triangles_12240             = "VUID-vkCmdDrawMultiEXT-OpExecutionMode-12240";
+        tessellation_segment_12241               = "VUID-vkCmdDrawMultiEXT-OpExecutionMode-12241";
+        tessellation_patch_size_12242            = "VUID-vkCmdDrawMultiEXT-OpExecutionMode-12242";
         set_line_width_08617                     = "VUID-vkCmdDrawMultiEXT-None-08617";
         set_viewport_with_count_08642            = "VUID-vkCmdDrawMultiEXT-primitiveFragmentShadingRateWithMultipleViewports-08642";
         alpha_component_word_08920               = "VUID-vkCmdDrawMultiEXT-alphaToCoverageEnable-08920";
@@ -512,9 +566,13 @@ struct DispatchVuidsCmdDrawMultiEXT : DrawDispatchVuid {
         vertex_input_09462                       = "VUID-vkCmdDrawMultiEXT-None-09462";
         color_blend_enable_07627                 = "VUID-vkCmdDrawMultiEXT-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawMultiEXT-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawMultiEXT-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawMultiEXT-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawMultiEXT-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawMultiEXT-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawMultiEXT-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawMultiEXT-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawMultiEXT-OpTypeTensorARM-09906";
     }
 };
 
@@ -607,6 +665,7 @@ struct DispatchVuidsCmdDrawIndexed : DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawIndexed-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawIndexed-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawIndexed-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawIndexed-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawIndexed-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawIndexed-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawIndexed-sparseImageInt64Atomics-04474";
@@ -692,6 +751,26 @@ struct DispatchVuidsCmdDrawIndexed : DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawIndexed-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawIndexed-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawIndexed-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawIndexed-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawIndexed-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawIndexed-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawIndexed-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawIndexed-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawIndexed-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawIndexed-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawIndexed-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawIndexed-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawIndexed-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawIndexed-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawIndexed-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawIndexed-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawIndexed-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawIndexed-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawIndexed-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawIndexed-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawIndexed-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawIndexed-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawIndexed-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawIndexed-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawIndexed-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawIndexed-None-09364";
@@ -717,6 +796,10 @@ struct DispatchVuidsCmdDrawIndexed : DrawDispatchVuid {
         shaders_push_constants_08878             = "VUID-vkCmdDrawIndexed-None-08878";
         shaders_descriptor_layouts_08879         = "VUID-vkCmdDrawIndexed-None-08879";
         draw_shaders_no_task_mesh_08885          = "VUID-vkCmdDrawIndexed-None-08885";
+        tessellation_subdivision_12239           = "VUID-vkCmdDrawIndexed-OpExecutionMode-12239";
+        tessellation_triangles_12240             = "VUID-vkCmdDrawIndexed-OpExecutionMode-12240";
+        tessellation_segment_12241               = "VUID-vkCmdDrawIndexed-OpExecutionMode-12241";
+        tessellation_patch_size_12242            = "VUID-vkCmdDrawIndexed-OpExecutionMode-12242";
         set_line_width_08617                     = "VUID-vkCmdDrawIndexed-None-08617";
         set_viewport_with_count_08642            = "VUID-vkCmdDrawIndexed-primitiveFragmentShadingRateWithMultipleViewports-08642";
         alpha_component_word_08920               = "VUID-vkCmdDrawIndexed-alphaToCoverageEnable-08920";
@@ -761,9 +844,13 @@ struct DispatchVuidsCmdDrawIndexed : DrawDispatchVuid {
         vertex_input_09462                       = "VUID-vkCmdDrawIndexed-None-09462";
         color_blend_enable_07627                 = "VUID-vkCmdDrawIndexed-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawIndexed-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawIndexed-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawIndexed-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawIndexed-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawIndexed-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawIndexed-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawIndexed-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawIndexed-OpTypeTensorARM-09906";
     }
 };
 
@@ -856,6 +943,7 @@ struct DispatchVuidsCmdDrawMultiIndexedEXT : DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawMultiIndexedEXT-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawMultiIndexedEXT-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawMultiIndexedEXT-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawMultiIndexedEXT-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawMultiIndexedEXT-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawMultiIndexedEXT-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawMultiIndexedEXT-sparseImageInt64Atomics-04474";
@@ -941,6 +1029,26 @@ struct DispatchVuidsCmdDrawMultiIndexedEXT : DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawMultiIndexedEXT-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawMultiIndexedEXT-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawMultiIndexedEXT-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawMultiIndexedEXT-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawMultiIndexedEXT-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawMultiIndexedEXT-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawMultiIndexedEXT-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawMultiIndexedEXT-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawMultiIndexedEXT-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawMultiIndexedEXT-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawMultiIndexedEXT-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawMultiIndexedEXT-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawMultiIndexedEXT-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawMultiIndexedEXT-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawMultiIndexedEXT-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawMultiIndexedEXT-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawMultiIndexedEXT-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawMultiIndexedEXT-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawMultiIndexedEXT-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawMultiIndexedEXT-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawMultiIndexedEXT-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawMultiIndexedEXT-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawMultiIndexedEXT-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawMultiIndexedEXT-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawMultiIndexedEXT-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawMultiIndexedEXT-None-09364";
@@ -966,6 +1074,10 @@ struct DispatchVuidsCmdDrawMultiIndexedEXT : DrawDispatchVuid {
         shaders_push_constants_08878             = "VUID-vkCmdDrawMultiIndexedEXT-None-08878";
         shaders_descriptor_layouts_08879         = "VUID-vkCmdDrawMultiIndexedEXT-None-08879";
         draw_shaders_no_task_mesh_08885          = "VUID-vkCmdDrawMultiIndexedEXT-None-08885";
+        tessellation_subdivision_12239           = "VUID-vkCmdDrawMultiIndexedEXT-OpExecutionMode-12239";
+        tessellation_triangles_12240             = "VUID-vkCmdDrawMultiIndexedEXT-OpExecutionMode-12240";
+        tessellation_segment_12241               = "VUID-vkCmdDrawMultiIndexedEXT-OpExecutionMode-12241";
+        tessellation_patch_size_12242            = "VUID-vkCmdDrawMultiIndexedEXT-OpExecutionMode-12242";
         set_line_width_08617                     = "VUID-vkCmdDrawMultiIndexedEXT-None-08617";
         set_viewport_with_count_08642            = "VUID-vkCmdDrawMultiIndexedEXT-primitiveFragmentShadingRateWithMultipleViewports-08642";
         alpha_component_word_08920               = "VUID-vkCmdDrawMultiIndexedEXT-alphaToCoverageEnable-08920";
@@ -1010,9 +1122,13 @@ struct DispatchVuidsCmdDrawMultiIndexedEXT : DrawDispatchVuid {
         vertex_input_09462                       = "VUID-vkCmdDrawMultiIndexedEXT-None-09462";
         color_blend_enable_07627                 = "VUID-vkCmdDrawMultiIndexedEXT-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawMultiIndexedEXT-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawMultiIndexedEXT-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawMultiIndexedEXT-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawMultiIndexedEXT-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawMultiIndexedEXT-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawMultiIndexedEXT-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawMultiIndexedEXT-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawMultiIndexedEXT-OpTypeTensorARM-09906";
     }
 };
 
@@ -1105,6 +1221,7 @@ struct DispatchVuidsCmdDrawIndirect : DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawIndirect-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawIndirect-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawIndirect-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawIndirect-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawIndirect-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawIndirect-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawIndirect-sparseImageInt64Atomics-04474";
@@ -1190,6 +1307,26 @@ struct DispatchVuidsCmdDrawIndirect : DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawIndirect-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawIndirect-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawIndirect-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawIndirect-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawIndirect-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawIndirect-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawIndirect-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawIndirect-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawIndirect-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawIndirect-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawIndirect-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawIndirect-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawIndirect-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawIndirect-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawIndirect-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawIndirect-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawIndirect-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawIndirect-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawIndirect-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawIndirect-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawIndirect-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawIndirect-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawIndirect-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawIndirect-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawIndirect-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawIndirect-None-09364";
@@ -1215,6 +1352,10 @@ struct DispatchVuidsCmdDrawIndirect : DrawDispatchVuid {
         shaders_push_constants_08878             = "VUID-vkCmdDrawIndirect-None-08878";
         shaders_descriptor_layouts_08879         = "VUID-vkCmdDrawIndirect-None-08879";
         draw_shaders_no_task_mesh_08885          = "VUID-vkCmdDrawIndirect-None-08885";
+        tessellation_subdivision_12239           = "VUID-vkCmdDrawIndirect-OpExecutionMode-12239";
+        tessellation_triangles_12240             = "VUID-vkCmdDrawIndirect-OpExecutionMode-12240";
+        tessellation_segment_12241               = "VUID-vkCmdDrawIndirect-OpExecutionMode-12241";
+        tessellation_patch_size_12242            = "VUID-vkCmdDrawIndirect-OpExecutionMode-12242";
         set_line_width_08617                     = "VUID-vkCmdDrawIndirect-None-08617";
         set_viewport_with_count_08642            = "VUID-vkCmdDrawIndirect-primitiveFragmentShadingRateWithMultipleViewports-08642";
         alpha_component_word_08920               = "VUID-vkCmdDrawIndirect-alphaToCoverageEnable-08920";
@@ -1257,9 +1398,13 @@ struct DispatchVuidsCmdDrawIndirect : DrawDispatchVuid {
         primitives_generated_query_07481         = "VUID-vkCmdDrawIndirect-primitivesGeneratedQueryWithNonZeroStreams-07481";
         color_blend_enable_07627                 = "VUID-vkCmdDrawIndirect-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawIndirect-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawIndirect-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawIndirect-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawIndirect-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawIndirect-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawIndirect-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawIndirect-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawIndirect-OpTypeTensorARM-09906";
     }
 };
 
@@ -1353,6 +1498,7 @@ struct DispatchVuidsCmdDrawIndexedIndirect : DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawIndexedIndirect-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawIndexedIndirect-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawIndexedIndirect-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawIndexedIndirect-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawIndexedIndirect-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawIndexedIndirect-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawIndexedIndirect-sparseImageInt64Atomics-04474";
@@ -1438,6 +1584,26 @@ struct DispatchVuidsCmdDrawIndexedIndirect : DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawIndexedIndirect-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawIndexedIndirect-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawIndexedIndirect-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawIndexedIndirect-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawIndexedIndirect-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawIndexedIndirect-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawIndexedIndirect-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawIndexedIndirect-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawIndexedIndirect-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawIndexedIndirect-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawIndexedIndirect-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawIndexedIndirect-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawIndexedIndirect-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawIndexedIndirect-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawIndexedIndirect-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawIndexedIndirect-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawIndexedIndirect-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawIndexedIndirect-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawIndexedIndirect-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawIndexedIndirect-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawIndexedIndirect-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawIndexedIndirect-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawIndexedIndirect-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawIndexedIndirect-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawIndexedIndirect-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawIndexedIndirect-None-09364";
@@ -1463,6 +1629,10 @@ struct DispatchVuidsCmdDrawIndexedIndirect : DrawDispatchVuid {
         shaders_push_constants_08878             = "VUID-vkCmdDrawIndexedIndirect-None-08878";
         shaders_descriptor_layouts_08879         = "VUID-vkCmdDrawIndexedIndirect-None-08879";
         draw_shaders_no_task_mesh_08885          = "VUID-vkCmdDrawIndexedIndirect-None-08885";
+        tessellation_subdivision_12239           = "VUID-vkCmdDrawIndexedIndirect-OpExecutionMode-12239";
+        tessellation_triangles_12240             = "VUID-vkCmdDrawIndexedIndirect-OpExecutionMode-12240";
+        tessellation_segment_12241               = "VUID-vkCmdDrawIndexedIndirect-OpExecutionMode-12241";
+        tessellation_patch_size_12242            = "VUID-vkCmdDrawIndexedIndirect-OpExecutionMode-12242";
         set_line_width_08617                     = "VUID-vkCmdDrawIndexedIndirect-None-08617";
         set_viewport_with_count_08642            = "VUID-vkCmdDrawIndexedIndirect-primitiveFragmentShadingRateWithMultipleViewports-08642";
         alpha_component_word_08920               = "VUID-vkCmdDrawIndexedIndirect-alphaToCoverageEnable-08920";
@@ -1505,9 +1675,13 @@ struct DispatchVuidsCmdDrawIndexedIndirect : DrawDispatchVuid {
         primitives_generated_query_07481         = "VUID-vkCmdDrawIndexedIndirect-primitivesGeneratedQueryWithNonZeroStreams-07481";
         color_blend_enable_07627                 = "VUID-vkCmdDrawIndexedIndirect-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawIndexedIndirect-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawIndexedIndirect-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawIndexedIndirect-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawIndexedIndirect-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawIndexedIndirect-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawIndexedIndirect-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawIndexedIndirect-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawIndexedIndirect-OpTypeTensorARM-09906";
     }
 };
 
@@ -1555,7 +1729,11 @@ struct DispatchVuidsCmdDispatch : DrawDispatchVuid {
         descriptor_buffer_set_offset_missing_08117 = "VUID-vkCmdDispatch-None-08117";
         image_view_dim_07752                     = "VUID-vkCmdDispatch-viewType-07752";
         image_view_numeric_format_07753          = "VUID-vkCmdDispatch-format-07753";
+        image_layout_00344                       = "VUID-vkCmdDispatch-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDispatch-None-09600";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDispatch-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDispatch-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDispatch-OpTypeTensorARM-09906";
     }
 };
 
@@ -1604,7 +1782,11 @@ struct DispatchVuidsCmdDispatchIndirect : DrawDispatchVuid {
         descriptor_buffer_set_offset_missing_08117 = "VUID-vkCmdDispatchIndirect-None-08117";
         image_view_dim_07752                     = "VUID-vkCmdDispatchIndirect-viewType-07752";
         image_view_numeric_format_07753          = "VUID-vkCmdDispatchIndirect-format-07753";
+        image_layout_00344                       = "VUID-vkCmdDispatchIndirect-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDispatchIndirect-None-09600";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDispatchIndirect-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDispatchIndirect-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDispatchIndirect-OpTypeTensorARM-09906";
     }
 };
 
@@ -1700,6 +1882,7 @@ struct DispatchVuidsCmdDrawIndirectCount : DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawIndirectCount-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawIndirectCount-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawIndirectCount-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawIndirectCount-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawIndirectCount-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawIndirectCount-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawIndirectCount-sparseImageInt64Atomics-04474";
@@ -1785,6 +1968,26 @@ struct DispatchVuidsCmdDrawIndirectCount : DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawIndirectCount-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawIndirectCount-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawIndirectCount-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawIndirectCount-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawIndirectCount-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawIndirectCount-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawIndirectCount-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawIndirectCount-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawIndirectCount-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawIndirectCount-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawIndirectCount-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawIndirectCount-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawIndirectCount-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawIndirectCount-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawIndirectCount-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawIndirectCount-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawIndirectCount-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawIndirectCount-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawIndirectCount-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawIndirectCount-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawIndirectCount-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawIndirectCount-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawIndirectCount-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawIndirectCount-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawIndirectCount-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawIndirectCount-None-09364";
@@ -1810,6 +2013,10 @@ struct DispatchVuidsCmdDrawIndirectCount : DrawDispatchVuid {
         shaders_push_constants_08878             = "VUID-vkCmdDrawIndirectCount-None-08878";
         shaders_descriptor_layouts_08879         = "VUID-vkCmdDrawIndirectCount-None-08879";
         draw_shaders_no_task_mesh_08885          = "VUID-vkCmdDrawIndirectCount-None-08885";
+        tessellation_subdivision_12239           = "VUID-vkCmdDrawIndirectCount-OpExecutionMode-12239";
+        tessellation_triangles_12240             = "VUID-vkCmdDrawIndirectCount-OpExecutionMode-12240";
+        tessellation_segment_12241               = "VUID-vkCmdDrawIndirectCount-OpExecutionMode-12241";
+        tessellation_patch_size_12242            = "VUID-vkCmdDrawIndirectCount-OpExecutionMode-12242";
         set_line_width_08617                     = "VUID-vkCmdDrawIndirectCount-None-08617";
         set_viewport_with_count_08642            = "VUID-vkCmdDrawIndirectCount-primitiveFragmentShadingRateWithMultipleViewports-08642";
         alpha_component_word_08920               = "VUID-vkCmdDrawIndirectCount-alphaToCoverageEnable-08920";
@@ -1852,9 +2059,13 @@ struct DispatchVuidsCmdDrawIndirectCount : DrawDispatchVuid {
         primitives_generated_query_07481         = "VUID-vkCmdDrawIndirectCount-primitivesGeneratedQueryWithNonZeroStreams-07481";
         color_blend_enable_07627                 = "VUID-vkCmdDrawIndirectCount-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawIndirectCount-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawIndirectCount-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawIndirectCount-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawIndirectCount-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawIndirectCount-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawIndirectCount-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawIndirectCount-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawIndirectCount-OpTypeTensorARM-09906";
     }
 };
 
@@ -1951,6 +2162,7 @@ struct DispatchVuidsCmdDrawIndexedIndirectCount : DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawIndexedIndirectCount-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawIndexedIndirectCount-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawIndexedIndirectCount-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawIndexedIndirectCount-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawIndexedIndirectCount-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawIndexedIndirectCount-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawIndexedIndirectCount-sparseImageInt64Atomics-04474";
@@ -2036,6 +2248,26 @@ struct DispatchVuidsCmdDrawIndexedIndirectCount : DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawIndexedIndirectCount-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawIndexedIndirectCount-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawIndexedIndirectCount-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawIndexedIndirectCount-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawIndexedIndirectCount-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawIndexedIndirectCount-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawIndexedIndirectCount-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawIndexedIndirectCount-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawIndexedIndirectCount-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawIndexedIndirectCount-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawIndexedIndirectCount-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawIndexedIndirectCount-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawIndexedIndirectCount-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawIndexedIndirectCount-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawIndexedIndirectCount-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawIndexedIndirectCount-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawIndexedIndirectCount-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawIndexedIndirectCount-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawIndexedIndirectCount-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawIndexedIndirectCount-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawIndexedIndirectCount-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawIndexedIndirectCount-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawIndexedIndirectCount-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawIndexedIndirectCount-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawIndexedIndirectCount-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawIndexedIndirectCount-None-09364";
@@ -2061,6 +2293,10 @@ struct DispatchVuidsCmdDrawIndexedIndirectCount : DrawDispatchVuid {
         shaders_push_constants_08878             = "VUID-vkCmdDrawIndexedIndirectCount-None-08878";
         shaders_descriptor_layouts_08879         = "VUID-vkCmdDrawIndexedIndirectCount-None-08879";
         draw_shaders_no_task_mesh_08885          = "VUID-vkCmdDrawIndexedIndirectCount-None-08885";
+        tessellation_subdivision_12239           = "VUID-vkCmdDrawIndexedIndirectCount-OpExecutionMode-12239";
+        tessellation_triangles_12240             = "VUID-vkCmdDrawIndexedIndirectCount-OpExecutionMode-12240";
+        tessellation_segment_12241               = "VUID-vkCmdDrawIndexedIndirectCount-OpExecutionMode-12241";
+        tessellation_patch_size_12242            = "VUID-vkCmdDrawIndexedIndirectCount-OpExecutionMode-12242";
         set_line_width_08617                     = "VUID-vkCmdDrawIndexedIndirectCount-None-08617";
         set_viewport_with_count_08642            = "VUID-vkCmdDrawIndexedIndirectCount-primitiveFragmentShadingRateWithMultipleViewports-08642";
         alpha_component_word_08920               = "VUID-vkCmdDrawIndexedIndirectCount-alphaToCoverageEnable-08920";
@@ -2103,9 +2339,13 @@ struct DispatchVuidsCmdDrawIndexedIndirectCount : DrawDispatchVuid {
         primitives_generated_query_07481         = "VUID-vkCmdDrawIndexedIndirectCount-primitivesGeneratedQueryWithNonZeroStreams-07481";
         color_blend_enable_07627                 = "VUID-vkCmdDrawIndexedIndirectCount-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawIndexedIndirectCount-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawIndexedIndirectCount-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawIndexedIndirectCount-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawIndexedIndirectCount-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawIndexedIndirectCount-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawIndexedIndirectCount-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawIndexedIndirectCount-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawIndexedIndirectCount-OpTypeTensorARM-09906";
     }
 };
 
@@ -2151,7 +2391,11 @@ struct DispatchVuidsCmdTraceRaysNV: DrawDispatchVuid {
         image_view_dim_07752                     = "VUID-vkCmdTraceRaysNV-viewType-07752";
         image_view_numeric_format_07753          = "VUID-vkCmdTraceRaysNV-format-07753";
         ray_tracing_pipeline_stack_size_09458    = "VUID-vkCmdTraceRaysNV-None-09458";
+        image_layout_00344                       = "VUID-vkCmdTraceRaysNV-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdTraceRaysNV-None-09600";
+        tensorARM_pDescription_09900             = "VUID-vkCmdTraceRaysNV-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdTraceRaysNV-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdTraceRaysNV-OpTypeTensorARM-09906";
     }
 };
 
@@ -2197,7 +2441,11 @@ struct DispatchVuidsCmdTraceRaysKHR: DrawDispatchVuid {
         image_view_dim_07752                     = "VUID-vkCmdTraceRaysKHR-viewType-07752";
         image_view_numeric_format_07753          = "VUID-vkCmdTraceRaysKHR-format-07753";
         ray_tracing_pipeline_stack_size_09458    = "VUID-vkCmdTraceRaysKHR-None-09458";
+        image_layout_00344                       = "VUID-vkCmdTraceRaysKHR-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdTraceRaysKHR-None-09600";
+        tensorARM_pDescription_09900             = "VUID-vkCmdTraceRaysKHR-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdTraceRaysKHR-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdTraceRaysKHR-OpTypeTensorARM-09906";
     }
 };
 
@@ -2243,7 +2491,11 @@ struct DispatchVuidsCmdTraceRaysIndirectKHR: DrawDispatchVuid {
         image_view_dim_07752                     = "VUID-vkCmdTraceRaysIndirectKHR-viewType-07752";
         image_view_numeric_format_07753          = "VUID-vkCmdTraceRaysIndirectKHR-format-07753";
         ray_tracing_pipeline_stack_size_09458    = "VUID-vkCmdTraceRaysIndirectKHR-None-09458";
+        image_layout_00344                       = "VUID-vkCmdTraceRaysIndirectKHR-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdTraceRaysIndirectKHR-None-09600";
+        tensorARM_pDescription_09900             = "VUID-vkCmdTraceRaysIndirectKHR-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdTraceRaysIndirectKHR-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdTraceRaysIndirectKHR-OpTypeTensorARM-09906";
     }
 };
 
@@ -2289,7 +2541,11 @@ struct DispatchVuidsCmdTraceRaysIndirect2KHR: DrawDispatchVuid {
         image_view_dim_07752                     = "VUID-vkCmdTraceRaysIndirect2KHR-viewType-07752";
         image_view_numeric_format_07753          = "VUID-vkCmdTraceRaysIndirect2KHR-format-07753";
         ray_tracing_pipeline_stack_size_09458    = "VUID-vkCmdTraceRaysIndirect2KHR-None-09458";
+        image_layout_00344                       = "VUID-vkCmdTraceRaysIndirect2KHR-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdTraceRaysIndirect2KHR-None-09600";
+        tensorARM_pDescription_09900             = "VUID-vkCmdTraceRaysIndirect2KHR-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdTraceRaysIndirect2KHR-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdTraceRaysIndirect2KHR-OpTypeTensorARM-09906";
     }
 };
 
@@ -2365,6 +2621,7 @@ struct DispatchVuidsCmdDrawMeshTasksNV: DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawMeshTasksNV-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawMeshTasksNV-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawMeshTasksNV-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawMeshTasksNV-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawMeshTasksNV-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawMeshTasksNV-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawMeshTasksNV-sparseImageInt64Atomics-04474";
@@ -2449,6 +2706,26 @@ struct DispatchVuidsCmdDrawMeshTasksNV: DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawMeshTasksNV-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawMeshTasksNV-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawMeshTasksNV-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawMeshTasksNV-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawMeshTasksNV-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawMeshTasksNV-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawMeshTasksNV-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawMeshTasksNV-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawMeshTasksNV-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawMeshTasksNV-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawMeshTasksNV-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawMeshTasksNV-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawMeshTasksNV-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawMeshTasksNV-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawMeshTasksNV-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawMeshTasksNV-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawMeshTasksNV-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawMeshTasksNV-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawMeshTasksNV-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawMeshTasksNV-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawMeshTasksNV-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawMeshTasksNV-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawMeshTasksNV-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawMeshTasksNV-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawMeshTasksNV-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawMeshTasksNV-None-09364";
@@ -2516,9 +2793,13 @@ struct DispatchVuidsCmdDrawMeshTasksNV: DrawDispatchVuid {
         primitives_generated_query_07481         = "VUID-vkCmdDrawMeshTasksNV-primitivesGeneratedQueryWithNonZeroStreams-07481";
         color_blend_enable_07627                 = "VUID-vkCmdDrawMeshTasksNV-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawMeshTasksNV-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawMeshTasksNV-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawMeshTasksNV-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawMeshTasksNV-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawMeshTasksNV-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawMeshTasksNV-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawMeshTasksNV-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawMeshTasksNV-OpTypeTensorARM-09906";
     }
 };
 
@@ -2597,6 +2878,7 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectNV: DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawMeshTasksIndirectNV-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawMeshTasksIndirectNV-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawMeshTasksIndirectNV-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawMeshTasksIndirectNV-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawMeshTasksIndirectNV-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawMeshTasksIndirectNV-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawMeshTasksIndirectNV-sparseImageInt64Atomics-04474";
@@ -2681,6 +2963,26 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectNV: DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawMeshTasksIndirectNV-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawMeshTasksIndirectNV-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawMeshTasksIndirectNV-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawMeshTasksIndirectNV-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawMeshTasksIndirectNV-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawMeshTasksIndirectNV-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawMeshTasksIndirectNV-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawMeshTasksIndirectNV-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawMeshTasksIndirectNV-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawMeshTasksIndirectNV-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawMeshTasksIndirectNV-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawMeshTasksIndirectNV-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawMeshTasksIndirectNV-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawMeshTasksIndirectNV-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawMeshTasksIndirectNV-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawMeshTasksIndirectNV-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawMeshTasksIndirectNV-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawMeshTasksIndirectNV-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawMeshTasksIndirectNV-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawMeshTasksIndirectNV-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawMeshTasksIndirectNV-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawMeshTasksIndirectNV-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawMeshTasksIndirectNV-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawMeshTasksIndirectNV-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawMeshTasksIndirectNV-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawMeshTasksIndirectNV-None-09364";
@@ -2748,9 +3050,13 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectNV: DrawDispatchVuid {
         primitives_generated_query_07481         = "VUID-vkCmdDrawMeshTasksIndirectNV-primitivesGeneratedQueryWithNonZeroStreams-07481";
         color_blend_enable_07627                 = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawMeshTasksIndirectNV-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawMeshTasksIndirectNV-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawMeshTasksIndirectNV-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawMeshTasksIndirectNV-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawMeshTasksIndirectNV-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawMeshTasksIndirectNV-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawMeshTasksIndirectNV-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawMeshTasksIndirectNV-OpTypeTensorARM-09906";
     }
 };
 
@@ -2832,6 +3138,7 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectCountNV : DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawMeshTasksIndirectCountNV-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawMeshTasksIndirectCountNV-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawMeshTasksIndirectCountNV-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawMeshTasksIndirectCountNV-sparseImageInt64Atomics-04474";
@@ -2916,6 +3223,26 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectCountNV : DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawMeshTasksIndirectCountNV-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawMeshTasksIndirectCountNV-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-09364";
@@ -2983,9 +3310,13 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectCountNV : DrawDispatchVuid {
         primitives_generated_query_07481         = "VUID-vkCmdDrawMeshTasksIndirectCountNV-primitivesGeneratedQueryWithNonZeroStreams-07481";
         color_blend_enable_07627                 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawMeshTasksIndirectCountNV-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawMeshTasksIndirectCountNV-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawMeshTasksIndirectCountNV-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawMeshTasksIndirectCountNV-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawMeshTasksIndirectCountNV-OpTypeTensorARM-09906";
     }
 };
 
@@ -3061,6 +3392,7 @@ struct DispatchVuidsCmdDrawMeshTasksEXT: DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawMeshTasksEXT-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawMeshTasksEXT-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawMeshTasksEXT-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawMeshTasksEXT-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawMeshTasksEXT-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawMeshTasksEXT-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawMeshTasksEXT-sparseImageInt64Atomics-04474";
@@ -3145,6 +3477,26 @@ struct DispatchVuidsCmdDrawMeshTasksEXT: DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawMeshTasksEXT-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawMeshTasksEXT-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawMeshTasksEXT-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawMeshTasksEXT-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawMeshTasksEXT-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawMeshTasksEXT-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawMeshTasksEXT-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawMeshTasksEXT-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawMeshTasksEXT-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawMeshTasksEXT-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawMeshTasksEXT-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawMeshTasksEXT-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawMeshTasksEXT-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawMeshTasksEXT-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawMeshTasksEXT-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawMeshTasksEXT-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawMeshTasksEXT-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawMeshTasksEXT-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawMeshTasksEXT-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawMeshTasksEXT-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawMeshTasksEXT-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawMeshTasksEXT-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawMeshTasksEXT-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawMeshTasksEXT-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawMeshTasksEXT-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawMeshTasksEXT-None-09364";
@@ -3212,9 +3564,13 @@ struct DispatchVuidsCmdDrawMeshTasksEXT: DrawDispatchVuid {
         primitives_generated_query_07481         = "VUID-vkCmdDrawMeshTasksEXT-primitivesGeneratedQueryWithNonZeroStreams-07481";
         color_blend_enable_07627                 = "VUID-vkCmdDrawMeshTasksEXT-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawMeshTasksEXT-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawMeshTasksEXT-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawMeshTasksEXT-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawMeshTasksEXT-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawMeshTasksEXT-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawMeshTasksEXT-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawMeshTasksEXT-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawMeshTasksEXT-OpTypeTensorARM-09906";
     }
 };
 
@@ -3293,6 +3649,7 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectEXT: DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawMeshTasksIndirectEXT-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawMeshTasksIndirectEXT-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawMeshTasksIndirectEXT-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawMeshTasksIndirectEXT-sparseImageInt64Atomics-04474";
@@ -3339,7 +3696,7 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectEXT: DrawDispatchVuid {
         dynamic_shading_rate_image_enable_07647  = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07647";
         dynamic_representative_fragment_test_enable_07648  = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07648";
         dynamic_coverage_reduction_mode_07649    = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07649";
-        dynamic_depth_clamp_control_09650        = "VUID-vkCmdDraw-None-09650";
+        dynamic_depth_clamp_control_09650        = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-09650";
         dynamic_viewport_07831                   = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07831";
         dynamic_scissor_07832                    = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07832";
         dynamic_depth_bias_07834                 = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07834";
@@ -3377,6 +3734,26 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectEXT: DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawMeshTasksIndirectEXT-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawMeshTasksIndirectEXT-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-09364";
@@ -3444,9 +3821,13 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectEXT: DrawDispatchVuid {
         primitives_generated_query_07481         = "VUID-vkCmdDrawMeshTasksIndirectEXT-primitivesGeneratedQueryWithNonZeroStreams-07481";
         color_blend_enable_07627                 = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawMeshTasksIndirectEXT-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawMeshTasksIndirectEXT-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawMeshTasksIndirectEXT-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawMeshTasksIndirectEXT-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawMeshTasksIndirectEXT-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawMeshTasksIndirectEXT-OpTypeTensorARM-09906";
     }
 };
 
@@ -3528,6 +3909,7 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectCountEXT : DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-sparseImageInt64Atomics-04474";
@@ -3574,7 +3956,7 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectCountEXT : DrawDispatchVuid {
         dynamic_shading_rate_image_enable_07647  = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07647";
         dynamic_representative_fragment_test_enable_07648  = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07648";
         dynamic_coverage_reduction_mode_07649    = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07649";
-        dynamic_depth_clamp_control_09650        = "VUID-vkCmdDraw-None-09650";
+        dynamic_depth_clamp_control_09650        = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-09650";
         dynamic_viewport_07831                   = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07831";
         dynamic_scissor_07832                    = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07832";
         dynamic_depth_bias_07834                 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07834";
@@ -3612,6 +3994,26 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectCountEXT : DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-09364";
@@ -3679,9 +4081,13 @@ struct DispatchVuidsCmdDrawMeshTasksIndirectCountEXT : DrawDispatchVuid {
         primitives_generated_query_07481         = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-primitivesGeneratedQueryWithNonZeroStreams-07481";
         color_blend_enable_07627                 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawMeshTasksIndirectCountEXT-OpTypeTensorARM-09906";
     }
 };
 
@@ -3774,6 +4180,7 @@ struct DispatchVuidsCmdDrawIndirectByteCountEXT: DrawDispatchVuid {
         dynamic_rendering_local_index_10928      = "VUID-vkCmdDrawIndirectByteCountEXT-None-10928";
         dynamic_rendering_dithering_09642        = "VUID-vkCmdDrawIndirectByteCountEXT-None-09642";
         dynamic_rendering_dithering_09643        = "VUID-vkCmdDrawIndirectByteCountEXT-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdDrawIndirectByteCountEXT-dynamicRenderingLocalRead-11797";
         image_view_access_64_04470               = "VUID-vkCmdDrawIndirectByteCountEXT-SampledType-04470";
         image_view_access_32_04471               = "VUID-vkCmdDrawIndirectByteCountEXT-SampledType-04471";
         image_view_sparse_64_04474               = "VUID-vkCmdDrawIndirectByteCountEXT-sparseImageInt64Atomics-04474";
@@ -3821,7 +4228,7 @@ struct DispatchVuidsCmdDrawIndirectByteCountEXT: DrawDispatchVuid {
         dynamic_shading_rate_image_enable_07647  = "VUID-vkCmdDrawIndirectByteCountEXT-None-07647";
         dynamic_representative_fragment_test_enable_07648  = "VUID-vkCmdDrawIndirectByteCountEXT-None-07648";
         dynamic_coverage_reduction_mode_07649    = "VUID-vkCmdDrawIndirectByteCountEXT-None-07649";
-        dynamic_depth_clamp_control_09650        = "VUID-vkCmdDraw-None-09650";
+        dynamic_depth_clamp_control_09650        = "VUID-vkCmdDrawIndirectByteCountEXT-None-09650";
         dynamic_viewport_07831                   = "VUID-vkCmdDrawIndirectByteCountEXT-None-07831";
         dynamic_scissor_07832                    = "VUID-vkCmdDrawIndirectByteCountEXT-None-07832";
         dynamic_depth_bias_07834                 = "VUID-vkCmdDrawIndirectByteCountEXT-None-07834";
@@ -3859,6 +4266,26 @@ struct DispatchVuidsCmdDrawIndirectByteCountEXT: DrawDispatchVuid {
         viewport_w_scaling_08636                 = "VUID-vkCmdDrawIndirectByteCountEXT-None-08636";
         shading_rate_palette_08637               = "VUID-vkCmdDrawIndirectByteCountEXT-None-08637";
         shader_object_multiview_10772            = "VUID-vkCmdDrawIndirectByteCountEXT-None-10772";
+        custom_resolve_11521                     = "VUID-vkCmdDrawIndirectByteCountEXT-flags-11521";
+        custom_resolve_11522                     = "VUID-vkCmdDrawIndirectByteCountEXT-None-11522";
+        custom_resolve_11523                     = "VUID-vkCmdDrawIndirectByteCountEXT-None-11523";
+        custom_resolve_11524                     = "VUID-vkCmdDrawIndirectByteCountEXT-customResolve-11524";
+        custom_resolve_11525                     = "VUID-vkCmdDrawIndirectByteCountEXT-customResolve-11525";
+        custom_resolve_11529                     = "VUID-vkCmdDrawIndirectByteCountEXT-customResolve-11529";
+        custom_resolve_11530                     = "VUID-vkCmdDrawIndirectByteCountEXT-customResolve-11530";
+        custom_resolve_11539                     = "VUID-vkCmdDrawIndirectByteCountEXT-pColorAttachments-11539";
+        custom_resolve_11540                     = "VUID-vkCmdDrawIndirectByteCountEXT-pDepthAttachment-11540";
+        custom_resolve_11860                     = "VUID-vkCmdDrawIndirectByteCountEXT-pStencilAttachment-11860";
+        custom_resolve_11861                     = "VUID-vkCmdDrawIndirectByteCountEXT-None-11861";
+        custom_resolve_11862                     = "VUID-vkCmdDrawIndirectByteCountEXT-None-11862";
+        custom_resolve_11863                     = "VUID-vkCmdDrawIndirectByteCountEXT-None-11863";
+        custom_resolve_11864                     = "VUID-vkCmdDrawIndirectByteCountEXT-dynamicRenderingUnusedAttachments-11864";
+        custom_resolve_11865                     = "VUID-vkCmdDrawIndirectByteCountEXT-None-11865";
+        custom_resolve_11866                     = "VUID-vkCmdDrawIndirectByteCountEXT-None-11866";
+        custom_resolve_11867                     = "VUID-vkCmdDrawIndirectByteCountEXT-dynamicRenderingUnusedAttachments-11867";
+        custom_resolve_11868                     = "VUID-vkCmdDrawIndirectByteCountEXT-None-11868";
+        custom_resolve_11869                     = "VUID-vkCmdDrawIndirectByteCountEXT-None-11869";
+        custom_resolve_11870                     = "VUID-vkCmdDrawIndirectByteCountEXT-dynamicRenderingUnusedAttachments-11870";
         external_format_resolve_09362            = "VUID-vkCmdDrawIndirectByteCountEXT-colorAttachmentCount-09362";
         external_format_resolve_09363            = "VUID-vkCmdDrawIndirectByteCountEXT-None-09363";
         external_format_resolve_09364            = "VUID-vkCmdDrawIndirectByteCountEXT-None-09364";
@@ -3884,6 +4311,10 @@ struct DispatchVuidsCmdDrawIndirectByteCountEXT: DrawDispatchVuid {
         shaders_push_constants_08878             = "VUID-vkCmdDrawIndirectByteCountEXT-None-08878";
         shaders_descriptor_layouts_08879         = "VUID-vkCmdDrawIndirectByteCountEXT-None-08879";
         draw_shaders_no_task_mesh_08885          = "VUID-vkCmdDrawIndirectByteCountEXT-None-08885";
+        tessellation_subdivision_12239           = "VUID-vkCmdDrawIndirectByteCountEXT-OpExecutionMode-12239";
+        tessellation_triangles_12240             = "VUID-vkCmdDrawIndirectByteCountEXT-OpExecutionMode-12240";
+        tessellation_segment_12241               = "VUID-vkCmdDrawIndirectByteCountEXT-OpExecutionMode-12241";
+        tessellation_patch_size_12242            = "VUID-vkCmdDrawIndirectByteCountEXT-OpExecutionMode-12242";
         set_line_width_08617                     = "VUID-vkCmdDrawIndirectByteCountEXT-None-08617";
         set_viewport_with_count_08642            = "VUID-vkCmdDrawIndirectByteCountEXT-primitiveFragmentShadingRateWithMultipleViewports-08642";
         alpha_component_word_08920               = "VUID-vkCmdDrawIndirectByteCountEXT-alphaToCoverageEnable-08920";
@@ -3926,9 +4357,13 @@ struct DispatchVuidsCmdDrawIndirectByteCountEXT: DrawDispatchVuid {
         primitives_generated_query_07481         = "VUID-vkCmdDrawIndirectByteCountEXT-primitivesGeneratedQueryWithNonZeroStreams-07481";
         color_blend_enable_07627                 = "VUID-vkCmdDrawIndirectByteCountEXT-None-07627";
         color_write_mask_07629                   = "VUID-vkCmdDrawIndirectByteCountEXT-None-07629";
+        image_layout_00344                       = "VUID-vkCmdDrawIndirectByteCountEXT-imageLayout-00344";
         image_layout_09600                       = "VUID-vkCmdDrawIndirectByteCountEXT-None-09600";
         rendering_contents_10582                 = "VUID-vkCmdDrawIndirectByteCountEXT-flags-10582";
         line_rasterization_10608                 = "VUID-vkCmdDrawIndirectByteCountEXT-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDrawIndirectByteCountEXT-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDrawIndirectByteCountEXT-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDrawIndirectByteCountEXT-OpTypeTensorARM-09906";
     }
 };
 
@@ -3976,6 +4411,235 @@ struct DispatchVuidsCmdDispatchBase: DrawDispatchVuid {
         descriptor_buffer_set_offset_missing_08117 = "VUID-vkCmdDispatchBase-None-08117";
         image_view_dim_07752                     = "VUID-vkCmdDispatchBase-viewType-07752";
         image_view_numeric_format_07753          = "VUID-vkCmdDispatchBase-format-07753";
+        tensorARM_pDescription_09900             = "VUID-vkCmdDispatchBase-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdDispatchBase-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdDispatchBase-OpTypeTensorARM-09906";
+    }
+};
+
+struct DispatchVuidsCmdExecuteGeneratedCommandsEXT : DrawDispatchVuid {
+    DispatchVuidsCmdExecuteGeneratedCommandsEXT() : DrawDispatchVuid(Func::vkCmdExecuteGeneratedCommandsEXT) {
+        compute_inside_rp_10672                  = "VUID-vkCmdExecuteGeneratedCommandsEXT-indirectCommandsLayout-12202";
+        pipeline_bound_08606                     = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08606";
+        compatible_pipeline_08600                = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08600";
+        render_pass_compatible_02684             = "VUID-vkCmdExecuteGeneratedCommandsEXT-renderPass-02684";
+        render_pass_began_08876                  = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08876";
+        subpass_index_02685                      = "VUID-vkCmdExecuteGeneratedCommandsEXT-subpass-02685";
+        sample_location_02689                    = "VUID-vkCmdExecuteGeneratedCommandsEXT-sampleLocationsEnable-02689";
+        linear_filter_sampler_04553              = "VUID-vkCmdExecuteGeneratedCommandsEXT-magFilter-04553";
+        linear_mipmap_sampler_04770              = "VUID-vkCmdExecuteGeneratedCommandsEXT-mipmapMode-04770";
+        linear_filter_sampler_09598              = "VUID-vkCmdExecuteGeneratedCommandsEXT-magFilter-09598";
+        linear_mipmap_sampler_09599              = "VUID-vkCmdExecuteGeneratedCommandsEXT-mipmapMode-09599";
+        unnormalized_coordinates_09635           = "VUID-vkCmdExecuteGeneratedCommandsEXT-unnormalizedCoordinates-09635";
+        cubic_sampler_02692                      = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-02692";
+        viewport_count_03417                     = "VUID-vkCmdExecuteGeneratedCommandsEXT-viewportCount-03417";
+        scissor_count_03418                      = "VUID-vkCmdExecuteGeneratedCommandsEXT-scissorCount-03418";
+        viewport_scissor_count_03419             = "VUID-vkCmdExecuteGeneratedCommandsEXT-viewportCount-03419";
+        corner_sampled_address_mode_02696        = "VUID-vkCmdExecuteGeneratedCommandsEXT-flags-02696";
+        imageview_atomic_02691                   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-02691";
+        bufferview_atomic_07888                  = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07888";
+        image_subresources_render_pass_write_06537 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-06537";
+        image_subresources_subpass_read_09003    = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09003";
+        image_subresources_subpass_write_06539   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-06539";
+        sampler_imageview_type_08609             = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08609";
+        sampler_implicitLod_dref_proj_08610      = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08610";
+        sampler_bias_offset_08611                = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08611";
+        dynamic_state_setting_commands_08608     = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08608";
+        max_multiview_instance_index_02688       = "VUID-vkCmdExecuteGeneratedCommandsEXT-maxMultiviewInstanceIndex-02688";
+        img_filter_cubic_02693                   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-02693";
+        filter_cubic_02694                       = "VUID-vkCmdExecuteGeneratedCommandsEXT-filterCubic-02694";
+        filter_cubic_min_max_02695               = "VUID-vkCmdExecuteGeneratedCommandsEXT-filterCubicMinmax-02695";
+        viewport_count_primitive_shading_rate_04552 = "VUID-vkCmdExecuteGeneratedCommandsEXT-primitiveFragmentShadingRateWithMultipleViewports-04552";
+        rasterizer_discard_enable_04876          = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-04876";
+        depth_bias_enable_04877                  = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-04877";
+        logic_op_04878                           = "VUID-vkCmdExecuteGeneratedCommandsEXT-logicOp-04878";
+        blend_enable_04727                       = "VUID-vkCmdExecuteGeneratedCommandsEXT-blendEnable-04727";
+        blend_dual_source_09239                  = "VUID-vkCmdExecuteGeneratedCommandsEXT-maxFragmentDualSrcAttachments-09239";
+        dynamic_discard_rectangle_07751          = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07751";
+        dynamic_discard_rectangle_enable_07880   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07880";
+        dynamic_discard_rectangle_mode_07881     = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07881";
+        dynamic_exclusive_scissor_enable_07878   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07878";
+        dynamic_exclusive_scissor_07879          = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07879";
+        dynamic_color_write_enable_07749         = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07749";
+        dynamic_color_write_enable_count_07750   = "VUID-vkCmdExecuteGeneratedCommandsEXT-attachmentCount-07750";
+        dynamic_attachment_feedback_loop_08877   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08877";
+        dynamic_rendering_view_mask_06178        = "VUID-vkCmdExecuteGeneratedCommandsEXT-viewMask-06178";
+        dynamic_rendering_color_count_06179      = "VUID-vkCmdExecuteGeneratedCommandsEXT-colorAttachmentCount-06179";
+        dynamic_rendering_color_formats_08910    = "VUID-vkCmdExecuteGeneratedCommandsEXT-dynamicRenderingUnusedAttachments-08910";
+        dynamic_rendering_unused_attachments_08911 = "VUID-vkCmdExecuteGeneratedCommandsEXT-dynamicRenderingUnusedAttachments-08911";
+        dynamic_rendering_undefined_color_formats_08912 = "VUID-vkCmdExecuteGeneratedCommandsEXT-dynamicRenderingUnusedAttachments-08912";
+        dynamic_rendering_undefined_stencil_format_08916 = "VUID-vkCmdExecuteGeneratedCommandsEXT-dynamicRenderingUnusedAttachments-08916";
+        dynamic_rendering_depth_format_08914     = "VUID-vkCmdExecuteGeneratedCommandsEXT-dynamicRenderingUnusedAttachments-08914";
+        dynamic_rendering_unused_attachments_08915 = "VUID-vkCmdExecuteGeneratedCommandsEXT-dynamicRenderingUnusedAttachments-08915";
+        dynamic_rendering_stencil_format_08917   = "VUID-vkCmdExecuteGeneratedCommandsEXT-dynamicRenderingUnusedAttachments-08917";
+        dynamic_rendering_unused_attachments_08918 = "VUID-vkCmdExecuteGeneratedCommandsEXT-dynamicRenderingUnusedAttachments-08918";
+        dynamic_rendering_fsr_06183              = "VUID-vkCmdExecuteGeneratedCommandsEXT-imageView-06183";
+        dynamic_rendering_fdm_06184              = "VUID-vkCmdExecuteGeneratedCommandsEXT-imageView-06184";
+        dynamic_rendering_color_sample_06185     = "VUID-vkCmdExecuteGeneratedCommandsEXT-colorAttachmentCount-06185";
+        dynamic_rendering_depth_sample_06186     = "VUID-vkCmdExecuteGeneratedCommandsEXT-pDepthAttachment-06186";
+        dynamic_rendering_stencil_sample_06187   = "VUID-vkCmdExecuteGeneratedCommandsEXT-pStencilAttachment-06187";
+        dynamic_rendering_06198                  = "VUID-vkCmdExecuteGeneratedCommandsEXT-renderPass-06198";
+        dynamic_rendering_07285                  = "VUID-vkCmdExecuteGeneratedCommandsEXT-multisampledRenderToSingleSampled-07285";
+        dynamic_rendering_07286                  = "VUID-vkCmdExecuteGeneratedCommandsEXT-multisampledRenderToSingleSampled-07286";
+        dynamic_rendering_07287                  = "VUID-vkCmdExecuteGeneratedCommandsEXT-multisampledRenderToSingleSampled-07287";
+        dynamic_rendering_local_location_09548   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09548";
+        dynamic_rendering_local_index_09549      = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09549";
+        dynamic_rendering_local_index_10927      = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-10927";
+        dynamic_rendering_local_index_10928      = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-10928";
+        dynamic_rendering_dithering_09642        = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09642";
+        dynamic_rendering_dithering_09643        = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09643";
+        dynamic_rendering_local_read_11797       = "VUID-vkCmdExecuteGeneratedCommandsEXT-dynamicRenderingLocalRead-11797";
+        image_view_access_64_04470               = "VUID-vkCmdExecuteGeneratedCommandsEXT-SampledType-04470";
+        image_view_access_32_04471               = "VUID-vkCmdExecuteGeneratedCommandsEXT-SampledType-04471";
+        image_view_sparse_64_04474               = "VUID-vkCmdExecuteGeneratedCommandsEXT-sparseImageInt64Atomics-04474";
+        buffer_view_access_64_04472              = "VUID-vkCmdExecuteGeneratedCommandsEXT-SampledType-04472";
+        buffer_view_access_32_04473              = "VUID-vkCmdExecuteGeneratedCommandsEXT-SampledType-04473";
+        storage_image_read_without_format_07028  = "VUID-vkCmdExecuteGeneratedCommandsEXT-OpTypeImage-07028";
+        storage_image_write_without_format_07027 = "VUID-vkCmdExecuteGeneratedCommandsEXT-OpTypeImage-07027";
+        storage_texel_buffer_read_without_format_07030  = "VUID-vkCmdExecuteGeneratedCommandsEXT-OpTypeImage-07030";
+        storage_texel_buffer_write_without_format_07029 = "VUID-vkCmdExecuteGeneratedCommandsEXT-OpTypeImage-07029";
+        storage_image_write_texel_count_08795           = "VUID-vkCmdExecuteGeneratedCommandsEXT-OpImageWrite-08795";
+        storage_image_write_texel_count_08796           = "VUID-vkCmdExecuteGeneratedCommandsEXT-OpImageWrite-08796";
+        storage_texel_buffer_write_texel_count_04469    = "VUID-vkCmdExecuteGeneratedCommandsEXT-OpImageWrite-04469";
+        depth_compare_sample_06479               = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-06479";
+        depth_read_only_06886                    = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-06886";
+        stencil_read_only_06887                  = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-06887";
+        dynamic_sample_locations_06666           = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-06666";
+        dynamic_depth_clamp_enable_07620         = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07620";
+        dynamic_polygon_mode_07621               = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07621";
+        dynamic_rasterization_samples_07622      = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07622";
+        dynamic_sample_mask_07623                = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07623";
+        dynamic_alpha_to_coverage_enable_07624   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07624";
+        dynamic_alpha_to_coverage_component_08919 = "VUID-vkCmdExecuteGeneratedCommandsEXT-alphaToCoverageEnable-08919";
+        dynamic_alpha_to_one_enable_07625        = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07625";
+        dynamic_logic_op_enable_07626            = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07626";
+        dynamic_color_blend_enable_07476         = "VUID-vkCmdExecuteGeneratedCommandsEXT-firstAttachment-07476";
+        dynamic_color_write_mask_07478           = "VUID-vkCmdExecuteGeneratedCommandsEXT-firstAttachment-07478";
+        dynamic_color_blend_equation_10862       = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-10862";
+        dynamic_color_blend_equation_10863       = "VUID-vkCmdExecuteGeneratedCommandsEXT-rasterizerDiscardEnable-10863";
+        dynamic_color_blend_equation_10864       = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-10864";
+        dynamic_rasterization_stream_07630       = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07630";
+        dynamic_conservative_rasterization_mode_07631 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07631";
+        dynamic_extra_primitive_overestimation_size_07632 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07632";
+        dynamic_depth_clip_enable_07633          = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07633";
+        dynamic_sample_locations_enable_07634    = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07634";
+        dynamic_provoking_vertex_mode_07636      = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07636";
+        dynamic_depth_clip_negative_one_to_one_07639 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07639";
+        dynamic_viewport_w_scaling_enable_07640  = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07640";
+        dynamic_viewport_swizzle_07641           = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07641";
+        dynamic_coverage_to_color_enable_07642   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07642";
+        dynamic_coverage_to_color_location_07643 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07643";
+        dynamic_coverage_modulation_mode_07644   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07644";
+        dynamic_coverage_modulation_table_enable_07645 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07645";
+        dynamic_coverage_modulation_table_07646  = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07646";
+        dynamic_shading_rate_image_enable_07647  = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07647";
+        dynamic_representative_fragment_test_enable_07648  = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07648";
+        dynamic_coverage_reduction_mode_07649    = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07649";
+        dynamic_depth_clamp_control_09650        = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09650";
+        dynamic_viewport_07831                   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07831";
+        dynamic_scissor_07832                    = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07832";
+        dynamic_depth_bias_07834                 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07834";
+        dynamic_line_stipple_ext_07849           = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07849";
+        dynamic_blend_constants_07835            = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07835";
+        dynamic_depth_bounds_07836               = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07836";
+        dynamic_depth_enable_08715               = "VUID-vkCmdExecuteGeneratedCommandsEXT-pDynamicStates-08715";
+        dynamic_stencil_compare_mask_07837       = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07837";
+        dynamic_stencil_write_mask_07838         = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07838";
+        dynamic_stencil_write_mask_08716         = "VUID-vkCmdExecuteGeneratedCommandsEXT-pDynamicStates-08716";
+        dynamic_stencil_reference_07839          = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07839";
+        dynamic_state_inherited_07850            = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07850";
+        dynamic_cull_mode_07840                  = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07840";
+        dynamic_front_face_07841                 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07841";
+        dynamic_depth_test_enable_07843          = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07843";
+        dynamic_depth_write_enable_07844         = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07844";
+        dynamic_depth_compare_op_07845           = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07845";
+        dynamic_depth_bound_test_enable_07846    = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07846";
+        dynamic_stencil_test_enable_07847        = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07847";
+        dynamic_stencil_op_07848                 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07848";
+        primitives_generated_06708               = "VUID-vkCmdExecuteGeneratedCommandsEXT-primitivesGeneratedQueryWithRasterizerDiscard-06708";
+        primitives_generated_streams_06709       = "VUID-vkCmdExecuteGeneratedCommandsEXT-primitivesGeneratedQueryWithNonZeroStreams-06709";
+        descriptor_buffer_bit_set_08114          = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08114";
+        descriptor_buffer_bit_not_set_08115      = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08115";
+        descriptor_buffer_set_offset_missing_08117 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08117";
+        image_view_dim_07752                     = "VUID-vkCmdExecuteGeneratedCommandsEXT-viewType-07752";
+        image_view_numeric_format_07753          = "VUID-vkCmdExecuteGeneratedCommandsEXT-format-07753";
+        stippled_rectangular_lines_07495         = "VUID-vkCmdExecuteGeneratedCommandsEXT-stippledLineEnable-07495";
+        stippled_bresenham_lines_07496           = "VUID-vkCmdExecuteGeneratedCommandsEXT-stippledLineEnable-07496";
+        stippled_smooth_lines_07497              = "VUID-vkCmdExecuteGeneratedCommandsEXT-stippledLineEnable-07497";
+        stippled_default_strict_07498            = "VUID-vkCmdExecuteGeneratedCommandsEXT-stippledLineEnable-07498";
+        viewport_and_scissor_with_count_03419    = "VUID-vkCmdExecuteGeneratedCommandsEXT-viewportCount-03419";
+        viewport_w_scaling_08636                 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08636";
+        shading_rate_palette_08637               = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08637";
+        shader_object_multiview_10772            = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-10772";
+        external_format_resolve_09362            = "VUID-vkCmdExecuteGeneratedCommandsEXT-colorAttachmentCount-09362";
+        external_format_resolve_09363            = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09363";
+        external_format_resolve_09364            = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09364";
+        external_format_resolve_09365            = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09365";
+        external_format_resolve_09368            = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09368";
+        external_format_resolve_09369            = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09369";
+        external_format_resolve_09372            = "VUID-vkCmdExecuteGeneratedCommandsEXT-colorAttachmentCount-09372";
+        set_rasterization_samples_08644          = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08644";
+        set_line_rasterization_mode_08666        = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08666";
+        set_line_stipple_enable_08669            = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08669";
+        next_stage_10745                         = "VUID-vkCmdExecuteGeneratedCommandsEXT-nextStage-10745";
+        vertex_shader_08684                      = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08684";
+        tessellation_control_shader_08685        = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08685";
+        tessellation_evaluation_shader_08686     = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08686";
+        geometry_shader_08687                    = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08687";
+        fragment_shader_08688                    = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08688";
+        task_shader_08689                        = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08689";
+        mesh_shader_08690                        = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08690";
+        vert_mesh_shader_08693                   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08693";
+        vert_task_mesh_shader_08696              = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08696";
+        linked_shaders_08698                     = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08698";
+        linked_shaders_08699                     = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08699";
+        shaders_push_constants_08878             = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08878";
+        shaders_descriptor_layouts_08879         = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08879";
+        set_line_width_08617                     = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-08617";
+        set_viewport_with_count_08642            = "VUID-vkCmdExecuteGeneratedCommandsEXT-primitiveFragmentShadingRateWithMultipleViewports-08642";
+        alpha_component_word_08920               = "VUID-vkCmdExecuteGeneratedCommandsEXT-alphaToCoverageEnable-08920";
+        color_write_mask_09116                   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09116";
+        set_clip_space_w_scaling_04138           = "VUID-vkCmdExecuteGeneratedCommandsEXT-viewportCount-04138";
+        set_discard_rectangle_09236              = "VUID-vkCmdExecuteGeneratedCommandsEXT-rasterizerDiscardEnable-09236";
+        set_viewport_coarse_sample_order_09233   = "VUID-vkCmdExecuteGeneratedCommandsEXT-shadingRateImage-09233";
+        set_viewport_shading_rate_palette_09234  = "VUID-vkCmdExecuteGeneratedCommandsEXT-shadingRateImage-09234";
+        set_fragment_shading_rate_09238          = "VUID-vkCmdExecuteGeneratedCommandsEXT-pipelineFragmentShadingRate-09238";
+        rasterization_samples_07935              = "VUID-vkCmdExecuteGeneratedCommandsEXT-pNext-07935";
+        mesh_shader_queries_07073                = "VUID-vkCmdExecuteGeneratedCommandsEXT-stage-07073";
+        fdm_layered_10831                        = "VUID-vkCmdExecuteGeneratedCommandsEXT-layers-10831";
+        blend_advanced_07480                     = "VUID-vkCmdExecuteGeneratedCommandsEXT-advancedBlendMaxColorAttachments-07480";
+        color_attachment_08963                   = "VUID-vkCmdExecuteGeneratedCommandsEXT-pColorAttachments-08963";
+        depth_attachment_08964                   = "VUID-vkCmdExecuteGeneratedCommandsEXT-pDepthAttachment-08964";
+        stencil_attachment_08965                 = "VUID-vkCmdExecuteGeneratedCommandsEXT-pStencilAttachment-08965";
+        sample_locations_07482                   = "VUID-vkCmdExecuteGeneratedCommandsEXT-sampleLocationsPerPixel-07482";
+        sample_locations_07483                   = "VUID-vkCmdExecuteGeneratedCommandsEXT-sampleLocationsPerPixel-07483";
+        sample_locations_07471                   = "VUID-vkCmdExecuteGeneratedCommandsEXT-rasterizationSamples-07471";
+        sample_locations_enable_07936            = "VUID-vkCmdExecuteGeneratedCommandsEXT-sampleLocationsEnable-07936";
+        sample_locations_enable_07937            = "VUID-vkCmdExecuteGeneratedCommandsEXT-sampleLocationsEnable-07937";
+        sample_locations_enable_07938            = "VUID-vkCmdExecuteGeneratedCommandsEXT-sampleLocationsEnable-07938";
+        set_coverage_to_color_location_09420     = "VUID-vkCmdExecuteGeneratedCommandsEXT-rasterizerDiscardEnable-09420";
+        set_coverage_to_color_location_07490     = "VUID-vkCmdExecuteGeneratedCommandsEXT-coverageToColorEnable-07490";
+        set_viewport_swizzle_09421               = "VUID-vkCmdExecuteGeneratedCommandsEXT-viewportCount-09421";
+        set_viewport_swizzle_07493               = "VUID-vkCmdExecuteGeneratedCommandsEXT-viewportCount-07493";
+        convervative_rasterization_07499         = "VUID-vkCmdExecuteGeneratedCommandsEXT-conservativePointAndLineRasterization-07499";
+        sample_mask_07472                        = "VUID-vkCmdExecuteGeneratedCommandsEXT-samples-07472";
+        sample_mask_07473                       = "VUID-vkCmdExecuteGeneratedCommandsEXT-samples-07473";
+        sample_locations_enable_07484            = "VUID-vkCmdExecuteGeneratedCommandsEXT-sampleLocationsEnable-07484";
+        sample_locations_enable_07485            = "VUID-vkCmdExecuteGeneratedCommandsEXT-sampleLocationsEnable-07485";
+        sample_locations_enable_07486            = "VUID-vkCmdExecuteGeneratedCommandsEXT-sampleLocationsEnable-07486";
+        sample_locations_enable_07487            = "VUID-vkCmdExecuteGeneratedCommandsEXT-sampleLocationsEnable-07487";
+        rasterization_samples_09211              = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09211";
+        dynamic_rendering_undefined_depth_format_08913 = "VUID-vkCmdExecuteGeneratedCommandsEXT-dynamicRenderingUnusedAttachments-08913";
+        primitives_generated_query_07481         = "VUID-vkCmdExecuteGeneratedCommandsEXT-primitivesGeneratedQueryWithNonZeroStreams-07481";
+        color_blend_enable_07627                 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07627";
+        color_write_mask_07629                   = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-07629";
+        image_layout_00344                       = "VUID-vkCmdExecuteGeneratedCommandsEXT-imageLayout-00344";
+        image_layout_09600                       = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-09600";
+        rendering_contents_10582                 = "VUID-vkCmdExecuteGeneratedCommandsEXT-flags-10582";
+        line_rasterization_10608                 = "VUID-vkCmdExecuteGeneratedCommandsEXT-None-10608";
+        tensorARM_pDescription_09900             = "VUID-vkCmdExecuteGeneratedCommandsEXT-pDescription-09900";
+        tensorARM_dimensionCount_09905           = "VUID-vkCmdExecuteGeneratedCommandsEXT-dimensionCount-09905";
+        spirv_OpTypeTensorARM_09906              = "VUID-vkCmdExecuteGeneratedCommandsEXT-OpTypeTensorARM-09906";
     }
 };
 
@@ -4017,6 +4681,7 @@ static const std::pair<Func, DrawDispatchVuid> pairs[] = {
     {Func::vkCmdDrawIndirectByteCountEXT, DispatchVuidsCmdDrawIndirectByteCountEXT()},
     {Func::vkCmdDispatchBase, DispatchVuidsCmdDispatchBase()},
     {Func::vkCmdDispatchBaseKHR, DispatchVuidsCmdDispatchBase()},
+    {Func::vkCmdExecuteGeneratedCommandsEXT, DispatchVuidsCmdExecuteGeneratedCommandsEXT()},
     {Func::vkCmdDispatchDataGraphARM, DispatchVuidsCmdDispatchDataGraphARM()},
     // Used if invalid function is used
     {Func::Empty, DrawDispatchVuid(Func::Empty)}

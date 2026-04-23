@@ -38,6 +38,7 @@
 #include "content/public/browser/session_storage_namespace.h"
 #include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents_capability_type.h"
+#include "content/public/common/buildflags.h"
 #include "content/public/common/stop_find_action.h"
 #include "ipc/constants.mojom.h"
 #include "net/base/network_handle.h"
@@ -55,7 +56,6 @@
 #include "ui/accessibility/ax_node_id_forward.h"
 #include "ui/accessibility/platform/inspect/ax_api_type.h"
 #include "ui/color/color_provider_key.h"
-#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_ui_types.h"
 #include "url/gurl.h"
@@ -65,8 +65,6 @@
 #include "content/public/browser/android/selection_popup_delegate.h"
 #include "third_party/jni_zero/jni_zero.h"
 #endif
-
-class StorageAccessGrantPermissionContext;
 
 namespace base {
 class FilePath;
@@ -113,6 +111,7 @@ class ColorProviderSource;
 
 namespace gfx {
 class PointF;
+class Rect;
 }  // namespace gfx
 
 namespace content {
@@ -733,6 +732,22 @@ class WebContents : public PageNavigator, public base::SupportsUserData {
   // Returns whether this WebContents is loading a resource.
   virtual bool IsLoading() = 0;
 
+  // Returns whether this WebContents is loading a resource but excluding
+  // loadings in ad subframes.
+  //
+  // Note: For top-level navigation, this returns true until the top-level
+  // document, all of its subresources, all subframes, and their subresources
+  // have completed loading.
+  //
+  // In other words, for top-level navigation, even if only ad subframes remain
+  // loading, the main frame is still considered loading by this function.
+  //
+  // This function is useful in determining whether an already loaded page
+  // becomes loading due to ad subframes loading.
+  // TODO(crbug.com/461821799): Expand this to work with top-level navigation
+  // like the scenario described in the note.
+  virtual bool IsLoadingExcludingAdSubframes() const = 0;
+
   // Returns the current load progress.
   virtual double GetLoadProgress() = 0;
 
@@ -858,6 +873,13 @@ class WebContents : public PageNavigator, public base::SupportsUserData {
   // and renderers are being told they are always user-visible, as indicated by
   // calls to IncrementCapturerCount().
   virtual bool IsBeingVisiblyCaptured() = 0;
+
+#if BUILDFLAG(IS_MAC) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
+  // Temporarily forbids this WebContents from using external popup menus for
+  // the lifetime of the returned ScopedClosureRunner. Nested calls are allowed.
+  [[nodiscard]] virtual base::ScopedClosureRunner
+  ForbidExternalPopupMenus() = 0;
+#endif  // BUILDFLAG(IS_MAC) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 
   // Indicates/Sets whether all audio output from this WebContents is muted.
   // This does not affect audio capture, just local/system output.
@@ -1559,9 +1581,21 @@ class WebContents : public PageNavigator, public base::SupportsUserData {
   // alives.
   using WebInputEventAuditCallback =
       base::RepeatingCallback<bool(const blink::WebInputEvent&)>;
+  [[nodiscard]] inline ScopedIgnoreInputEvents IgnoreInputEvents(
+      std::optional<WebInputEventAuditCallback> audit_callback) {
+    return IgnoreInputEvents(std::move(audit_callback),
+                             /*should_ignore_a11y_input=*/false);
+  }
+  // If `should_ignore_a11y_input` is true, this also blocks all
+  // accessibility actions from interacting with the WebContents, other than the
+  // hit test.
+  // TODO(crbug.com/452693512): Consider ignoring a11y input events as the
+  // default behavior for ignoring input events in general.
   [[nodiscard]] virtual ScopedIgnoreInputEvents IgnoreInputEvents(
-      std::optional<WebInputEventAuditCallback> audit_callback) = 0;
+      std::optional<WebInputEventAuditCallback> audit_callback,
+      bool should_ignore_a11y_input) = 0;
   virtual bool ShouldIgnoreInputEventsForTesting() = 0;
+  virtual bool ShouldIgnoreA11yInputEventsForTesting() = 0;
 
   // Returns the group id for all audio streams that correspond to a single
   // WebContents. This can be used to determine if a AudioOutputStream was
@@ -1607,6 +1641,10 @@ class WebContents : public PageNavigator, public base::SupportsUserData {
       bool animate,
       const std::optional<cc::BrowserControlsOffsetTagModifications>&
           offset_tag_modifications) = 0;
+
+  // Indicates that the primary main frame should collect draggable regions set
+  // using the app-region CSS property.
+  virtual void SetSupportsDraggableRegions(bool supports_draggable_regions) = 0;
 
   // Transmits data to V8CrowdsourcedCompileHintsConsumer in the renderer. The
   // data is a model describing which JavaScript functions on the page should be
@@ -1756,8 +1794,8 @@ class WebContents : public PageNavigator, public base::SupportsUserData {
       base::OnceCallback<void(std::vector<std::string>)> callback) = 0;
 
   // Returns an animation manager that displays a preview of the history page
-  // during a session history navigation gesture. Only non-null if
-  // `features::kBackForwardTransitions` is enabled for the supported platform.
+  // during a session history navigation gesture. Only non-null if supported for
+  // the platform.
   virtual BackForwardTransitionAnimationManager*
   GetBackForwardTransitionAnimationManager() = 0;
 
@@ -1765,19 +1803,6 @@ class WebContents : public PageNavigator, public base::SupportsUserData {
   // `kInvalidNetworkHandle` indicates that the current default network will
   // be bound.
   virtual net::handles::NetworkHandle GetTargetNetwork() = 0;
-
-  // Returns true if `this` is a partitioned popin. If you are calling this to
-  // check if a `RenderFrameHost` should be partitioned due to being in a popin,
-  // check `ShouldPartitionAsPopin` on that host instead.
-  // See https://explainers-by-googlers.github.io/partitioned-popins/
-  virtual bool IsPartitionedPopin() const = 0;
-
-  // Returns the origin of the popin's opener if this is a partitioned popin.
-  // CHECKS if this is not a partitioned popin, as it should never be called
-  // in that case. This is used in permissions checks.
-  // See https://explainers-by-googlers.github.io/partitioned-popins/
-  virtual GURL GetPartitionedPopinEmbedderOrigin(
-      base::PassKey<StorageAccessGrantPermissionContext>) const = 0;
 
   // Returns the window open disposition that was originally requested
   // when this WebContents was created.

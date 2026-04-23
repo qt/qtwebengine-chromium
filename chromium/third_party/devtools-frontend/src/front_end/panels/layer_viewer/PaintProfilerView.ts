@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -397,7 +397,7 @@ export interface EventTypes {
   [Events.WINDOW_CHANGED]: void;
 }
 
-export class PaintProfilerCommandLogView extends UI.ThrottledWidget.ThrottledWidget {
+export class PaintProfilerCommandLogView extends UI.Widget.VBox {
   private readonly treeOutline: UI.TreeOutline.TreeOutlineInShadow;
   private log: SDK.PaintProfiler.PaintProfilerLogItem[];
   private readonly treeItemCache: Map<SDK.PaintProfiler.PaintProfilerLogItem, LogTreeElement>;
@@ -435,10 +435,10 @@ export class PaintProfilerCommandLogView extends UI.ThrottledWidget.ThrottledWid
 
   updateWindow(selectionWindow: {left: number, right: number}|null): void {
     this.selectionWindow = selectionWindow;
-    this.update();
+    this.requestUpdate();
   }
 
-  override doUpdate(): Promise<void> {
+  override performUpdate(): Promise<void> {
     if (!this.selectionWindow || !this.log.length) {
       this.treeOutline.removeChildren();
       return Promise.resolve();

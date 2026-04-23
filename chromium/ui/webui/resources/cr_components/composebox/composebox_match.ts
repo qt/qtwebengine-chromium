@@ -5,7 +5,6 @@
 import '//resources/cr_elements/cr_icon_button/cr_icon_button.js';
 
 import {loadTimeData} from '//resources/js/load_time_data.js';
-import {mojoString16ToString} from '//resources/js/mojo_type_util.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {AutocompleteMatch, PageHandlerRemote as SearchboxPageHandlerRemote} from '//resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
 
@@ -13,16 +12,20 @@ import {getCss} from './composebox_match.css.js';
 import {getHtml} from './composebox_match.html.js';
 import {ComposeboxProxyImpl, createAutocompleteMatch} from './composebox_proxy.js';
 
+const LINE_HEIGHT_PX = 24;
+const MAX_DEEP_SEARCH_LINES = 2;
+
 export interface ComposeboxMatchElement {
   $: {
     remove: HTMLElement,
+    textContainer: HTMLElement,
   };
 }
 
 // Displays an autocomplete match
 export class ComposeboxMatchElement extends CrLitElement {
   static get is() {
-    return 'ntp-composebox-match';
+    return 'cr-composebox-match';
   }
 
   static override get styles() {
@@ -47,6 +50,8 @@ export class ComposeboxMatchElement extends CrLitElement {
        */
       matchIndex: {type: Number},
 
+      inDeepSearchMode: {type: Boolean},
+
       removeButtonTitle_: {type: String},
     };
   }
@@ -54,9 +59,13 @@ export class ComposeboxMatchElement extends CrLitElement {
   accessor match: AutocompleteMatch = createAutocompleteMatch();
 
   accessor matchIndex: number = -1;
+  accessor inDeepSearchMode: boolean = false;
   private searchboxHandler_: SearchboxPageHandlerRemote;
   protected accessor removeButtonTitle_: string =
       loadTimeData.getString('removeSuggestion');
+
+  // Used for text clamping.
+  private resizeObserver_: ResizeObserver|null = null;
 
   constructor() {
     super();
@@ -65,16 +74,60 @@ export class ComposeboxMatchElement extends CrLitElement {
 
   override connectedCallback() {
     super.connectedCallback();
-    this.addEventListener('click', (event) => this.onMatchClick_(event));
+    // Use mousedown to avoid clicks being swallowed by focusin.
+    this.addEventListener('click', (event) => this.onMouseClick_(event));
     this.addEventListener('focusin', () => this.onMatchFocusin_());
+
+    // Prevent default mousedown behavior (e.g., focus) to avoid layout shifts
+    // that could interfere with click events, especially for ZPS suggestions.
+    this.addEventListener('mousedown', (event) => event.preventDefault());
+
+    // Set up observer for responsive clamping.
+    this.resizeObserver_ =
+        new ResizeObserver(() => this.clampDeepSearchContents_());
+    this.resizeObserver_.observe(this.$.textContainer);
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.resizeObserver_) {
+      this.resizeObserver_.unobserve(this.$.textContainer);
+    }
+  }
+
+  // This is needed since --webkit-box is deprecated and line-clamp does not
+  // work in CSS without it.
+  private clampDeepSearchContents_() {
+    if (!this.inDeepSearchMode) {
+      return;
+    }
+    const textContainer = this.$.textContainer;
+    // Always start with the full text to correctly calculate overflow.
+    textContainer.textContent = this.match.contents;
+
+    const maxHeight = LINE_HEIGHT_PX * MAX_DEEP_SEARCH_LINES;
+    if (textContainer.scrollHeight <= maxHeight) {
+      return;
+    }
+
+    // Text is overflowing, so clamp it by removing words until the contents
+    // fit in 2 lines.
+    const words = this.match.contents.split(' ');
+    while (words.length > 0) {
+      words.pop();
+      textContainer.textContent = words.join(' ') + '...';
+      if (textContainer.scrollHeight <= maxHeight) {
+        break;
+      }
+    }
   }
 
   protected computeContents_(): string {
-    return mojoString16ToString(this.match.contents);
+    return this.match.contents;
   }
 
   protected computeRemoveButtonAriaLabel_(): string {
-    return mojoString16ToString(this.match.removeButtonA11yLabel);
+    return this.match.removeButtonA11yLabel;
   }
 
   protected iconPath_(): string {
@@ -87,7 +140,7 @@ export class ComposeboxMatchElement extends CrLitElement {
     });
   }
 
-  private onMatchClick_(e: MouseEvent) {
+  private onMouseClick_(e: MouseEvent) {
     if (e.button > 1) {
       // Only handle main (generally left) and middle button presses.
       return;
@@ -123,7 +176,7 @@ export class ComposeboxMatchElement extends CrLitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'ntp-composebox-match': ComposeboxMatchElement;
+    'cr-composebox-match': ComposeboxMatchElement;
   }
 }
 

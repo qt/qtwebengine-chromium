@@ -11,6 +11,7 @@ import os
 from typing import (TYPE_CHECKING, Any, Iterable, Optional, Sequence, TextIO,
                     Type)
 
+import requests
 from selenium.webdriver.chromium.options import ChromiumOptions
 from selenium.webdriver.chromium.service import ChromiumService
 from selenium.webdriver.chromium.webdriver import ChromiumDriver
@@ -28,6 +29,7 @@ from crossbench.browsers.chromium_based.devtools_tracer import DevToolsTracer
 from crossbench.browsers.webdriver import WebDriverBrowser
 from crossbench.flags.chrome import ChromeFlags
 from crossbench.helper import wait
+from crossbench.helper.url_helper import get
 
 if TYPE_CHECKING:
   import re
@@ -65,7 +67,7 @@ class ChromiumBasedWebDriver(
     return bool(self.local_build_dir())
 
   def local_build_dir(self) -> pth.LocalPath | None:
-    if path := helper.find_build_dir(self.path, self.host_platform):
+    if path := helper.find_build_dir(self.app_path, self.host_platform):
       return self.host_platform.local_path(path)
     return None
 
@@ -132,7 +134,6 @@ class ChromiumBasedWebDriver(
     adb_port = os.environ.get("ANDROID_ADB_SERVER_PORT")
     if adb_port and adb_port.isdigit():
       service_args += ["--adb-port=" + adb_port]
-
 
     assert self._stdout_log_file is None
     # On desktop platforms service logs contain browser stdout, hence the name.
@@ -343,3 +344,34 @@ class ChromiumBasedWebDriver(
       if self._stdout_log_file:
         self._stdout_log_file.close()
         self._stdout_log_file = None
+
+  @property
+  def debugger_address(self) -> str:
+    capabilities = self._private_driver.capabilities
+    if "goog:chromeOptions" not in capabilities:
+      raise RuntimeError(
+          f"Browser does not support remote debugging. Capabilities: {capabilities}"
+      )
+    if "debuggerAddress" not in capabilities["goog:chromeOptions"]:
+      raise RuntimeError(
+          f"Browser was not started with remote debugging enabled. Capabilities: {capabilities['goog:chromeOptions']}"
+      )
+
+    return self._private_driver.capabilities["goog:chromeOptions"][
+        "debuggerAddress"]
+
+  @property
+  def ws_endpoint(self) -> str:
+    try:
+      json_response = get(
+          f"http://{self.debugger_address}/json/version", retry=3).json()
+      if "webSocketDebuggerUrl" not in json_response:
+        raise RuntimeError(
+            "Could not find webSocketDebuggerUrl in response. Response: %s" %
+            json_response)
+
+      return json_response["webSocketDebuggerUrl"]
+    except requests.exceptions.RequestException as e:
+      raise RuntimeError(
+          f"Could not get target list from http://{self.debugger_address}/json/version"
+      ) from e

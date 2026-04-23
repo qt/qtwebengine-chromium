@@ -20,7 +20,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("perf_ui") {
+devtools_ui_module("perf_ui") {
   sources = [
     "BrickBreaker.ts",
     "CanvasHelper.ts",
@@ -68,11 +68,15 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility = [
+    # IMPORTANT: Be careful when extending visibility of front_end/ui/legacy/*,
+    # as the UI modules should only be used to actually build user interfaces,
+    # and the business logic should never depend on the UI modules.
     ":*",
     "../../../../panels/layer_viewer/*",
     "../../../../panels/media/*",
     "../../../../panels/network/*",
     "../../../../panels/profiler/*",
+    "../../../../panels/sources/*",
     "../../../../panels/timeline/*",
     "../../../../testing/*",
     "../../../components/docs/perf_piechart/*",
@@ -96,13 +100,14 @@ devtools_entrypoint("meta") {
   visibility = [ "../../../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
     "ChartViewport.test.ts",
     "FilmStripView.test.ts",
     "FlameChart.test.ts",
+    "LineLevelProfile.test.ts",
     "PieChart.test.ts",
     "TimelineGrid.test.ts",
     "TimelineOverviewCalculator.test.ts",

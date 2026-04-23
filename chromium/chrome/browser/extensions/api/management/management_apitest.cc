@@ -28,6 +28,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/test_management_policy.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/manifest.h"
 #include "extensions/test/extension_test_message_listener.h"
 #include "extensions/test/result_catcher.h"
@@ -42,6 +43,7 @@
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/web_applications/web_app_dialogs.h"
 #include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
@@ -52,7 +54,10 @@
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
+#include "chrome/test/base/ui_test_utils.h"
 #endif
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using extensions::Extension;
 using extensions::Manifest;
@@ -73,17 +78,6 @@ constexpr char kManifest[] =
           },
           "replacement_web_app": "%s"
         })";
-
-// Find a browser other than |browser|.
-Browser* FindOtherBrowser(Browser* browser) {
-  Browser* found = nullptr;
-  for (Browser* b : *BrowserList::GetInstance()) {
-    if (b == browser)
-      continue;
-    found = b;
-  }
-  return found;
-}
 
 bool ExpectChromeAppsDefaultEnabled() {
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
@@ -486,11 +480,13 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, LaunchPanelApp) {
   // Find the app's browser.  Check that it is a popup.
   ASSERT_EQ(2u, extensions::browsertest_util::GetWindowControllerCountInProfile(
                     profile()));
-  Browser* app_browser = FindOtherBrowser(browser());
-  ASSERT_TRUE(app_browser->is_type_app());
+  BrowserWindowInterface* app_browser_window =
+      ui_test_utils::GetBrowserNotInSet({browser()});
+  ASSERT_TRUE(app_browser_window->GetType() ==
+              BrowserWindowInterface::TYPE_APP);
 
   // Close the app panel.
-  CloseBrowserSynchronously(app_browser);
+  CloseBrowserSynchronously(app_browser_window);
 
   extensions::ExtensionRegistry* registry =
       extensions::ExtensionRegistry::Get(profile());
@@ -503,7 +499,8 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, LaunchPanelApp) {
 
   // Set a pref indicating that the user wants to launch in a regular tab.
   // This should be ignored, because panel apps always load in a popup.
-  extensions::SetLaunchType(profile(), app_id, extensions::LAUNCH_TYPE_REGULAR);
+  extensions::SetLaunchType(profile(), app_id,
+                            extensions::LaunchType::kRegular);
 
   // Load the extension again.
   std::string app_id_new;
@@ -517,8 +514,9 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, LaunchPanelApp) {
   // prefs, so we should still see the launch in a popup.
   ASSERT_EQ(2u, extensions::browsertest_util::GetWindowControllerCountInProfile(
                     profile()));
-  app_browser = FindOtherBrowser(browser());
-  ASSERT_TRUE(app_browser->is_type_app());
+  app_browser_window = ui_test_utils::GetBrowserNotInSet({browser()});
+  ASSERT_TRUE(app_browser_window->GetType() ==
+              BrowserWindowInterface::TYPE_APP);
 }
 
 // Skipped on Android because it does not support Chrome apps.
@@ -556,7 +554,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, LaunchTabApp) {
       app_id, extensions::ExtensionRegistry::EVERYTHING));
 
   // Set a pref indicating that the user wants to launch in a window.
-  extensions::SetLaunchType(profile(), app_id, extensions::LAUNCH_TYPE_WINDOW);
+  extensions::SetLaunchType(profile(), app_id, extensions::LaunchType::kWindow);
 
   std::string app_id_new;
   LoadAndWaitForLaunch("management/launch_app_tab", &app_id_new);
@@ -569,8 +567,10 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, LaunchTabApp) {
   // a new browser.
   ASSERT_EQ(2u, extensions::browsertest_util::GetWindowControllerCountInProfile(
                     profile()));
-  Browser* app_browser = FindOtherBrowser(browser());
-  ASSERT_TRUE(app_browser->is_type_app());
+  BrowserWindowInterface* app_browser_window =
+      ui_test_utils::GetBrowserNotInSet({browser()});
+  ASSERT_TRUE(app_browser_window->GetType() ==
+              BrowserWindowInterface::TYPE_APP);
 }
 
 // Skipped on Android because it does not support Chrome apps.

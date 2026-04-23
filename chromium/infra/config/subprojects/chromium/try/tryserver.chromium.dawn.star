@@ -30,6 +30,9 @@ try_.defaults.set(
     check_for_flakiness_with_resultdb = False,
     contact_team_email = "chrome-gpu-infra@google.com",
     execution_timeout = try_constants.DEFAULT_EXECUTION_TIMEOUT,
+    experiments = {
+        "chromium_tests.resultdb_module": 100,
+    },
     service_account = gpu.try_.SERVICE_ACCOUNT,
     siso_project = siso.project.DEFAULT_UNTRUSTED,
     siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
@@ -589,6 +592,18 @@ try_.builder(
 )
 
 dawn_mac_builder(
+    name = "dawn-try-mac-amd-555x-rel",
+    mirrors = [
+        "ci/Dawn Mac x64 Builder",
+        "ci/Dawn Mac x64 Release (AMD Radeon Pro 555X)",
+    ],
+    gn_args = "ci/Dawn Mac x64 Builder",
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
+)
+
+dawn_mac_builder(
     name = "dawn-try-mac-amd-exp",
     mirrors = [
         "ci/Dawn Mac x64 Builder",
@@ -644,6 +659,20 @@ dawn_mac_builder(
         "ci/Dawn Mac x64 Experimental Release (Intel)",
     ],
     gn_args = "ci/Dawn Mac x64 Builder",
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
+)
+
+# This will be moved into dawn-win11-arm64-deps-rel once the tests have been
+# confirmed to be stable enough.
+dawn_win_builderless_builder(
+    name = "dawn-try-win11-arm64-snapdragon-x-elite-deps-rel",
+    mirrors = [
+        "ci/Dawn Win11 arm64 DEPS Builder",
+        "ci/Dawn Win11 arm64 DEPS Release (Qualcomm Snapdragon X Elite)",
+    ],
+    gn_args = "ci/Dawn Win11 arm64 DEPS Builder",
     test_presentation = resultdb.test_presentation(
         grouping_keys = ["status", "v.test_suite", "v.gpu"],
     ),

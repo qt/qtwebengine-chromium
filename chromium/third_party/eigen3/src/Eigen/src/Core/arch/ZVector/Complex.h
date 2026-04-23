@@ -20,7 +20,7 @@ namespace internal {
 
 #if !defined(__ARCH__) || (defined(__ARCH__) && __ARCH__ >= 12)
 inline Packet4ui p4ui_CONJ_XOR() {
-  return {0x00000000, 0x80000000, 0x00000000, 0x80000000};  // vec_mergeh((Packet4ui)p4i_ZERO, (Packet4ui)p4f_MZERO);
+  return Packet4ui {0x00000000, 0x80000000, 0x00000000, 0x80000000};  // vec_mergeh((Packet4ui)p4i_ZERO, (Packet4ui)p4f_MZERO);
 }
 #endif
 
@@ -72,7 +72,6 @@ struct packet_traits<std::complex<float> > : default_packet_traits {
     HasAbs2 = 0,
     HasMin = 0,
     HasMax = 0,
-    HasBlend = 1,
     HasSetLinear = 0
   };
 };
@@ -178,7 +177,7 @@ EIGEN_STRONG_INLINE Packet1cd pnegate(const Packet1cd& a) {
 }
 template <>
 EIGEN_STRONG_INLINE Packet1cd pconj(const Packet1cd& a) {
-  return Packet1cd((Packet2d)vec_xor((Packet2d)a.v, (Packet2d)p2ul_CONJ_XOR2));
+  return Packet1cd((Packet2d)vec_xor((Packet2d)a.v, (Packet2d)p2ul_CONJ_XOR2()));
 }
 template <>
 EIGEN_STRONG_INLINE Packet1cd pmul<Packet1cd>(const Packet1cd& a, const Packet1cd& b) {
@@ -257,8 +256,27 @@ EIGEN_STRONG_INLINE Packet1cd pdiv<Packet1cd>(const Packet1cd& a, const Packet1c
 }
 
 template <>
-EIGEN_STRONG_INLINE Packet1cd plog<Packet1cd>(const Packet1cd& a, const Packet1cd& b) {
-  return plog_complex(a, b);
+EIGEN_STRONG_INLINE Packet1cd psqrt<Packet1cd>(const Packet1cd& a) {
+  return psqrt_complex<Packet1cd>(a);
+}
+
+template <>
+EIGEN_STRONG_INLINE Packet2cf psqrt<Packet2cf>(const Packet2cf& a) {
+  return psqrt_complex<Packet2cf>(a);
+}
+
+template <>
+EIGEN_STRONG_INLINE Packet1cd plog<Packet1cd>(const Packet1cd& a) {
+  return plog_complex<Packet1cd>(a);
+}
+template <>
+EIGEN_STRONG_INLINE Packet2cf plog<Packet2cf>(const Packet2cf& a) {
+  return plog_complex<Packet2cf>(a);
+}
+
+template <>
+EIGEN_STRONG_INLINE Packet2cf pexp<Packet2cf>(const Packet2cf& a) {
+  return pexp_complex(a);
 }
 
 EIGEN_STRONG_INLINE Packet1cd pcplxflip /*<Packet1cd>*/ (const Packet1cd& x) {
@@ -437,16 +455,6 @@ EIGEN_STRONG_INLINE Packet2cf pdiv<Packet2cf>(const Packet2cf& a, const Packet2c
   return pdiv_complex(a, b);
 }
 
-template <>
-EIGEN_STRONG_INLINE Packet2cf plog<Packet2cf>(const Packet2cf& a, const Packet2cf& b) {
-  return plog_complex(a, b);
-}
-
-template <>
-EIGEN_STRONG_INLINE Packet2cf pexp<Packet2cf>(const Packet2cf& a, const Packet2cf& b) {
-  return pexp_complex(a, b);
-}
-
 EIGEN_STRONG_INLINE Packet2cf pcplxflip /*<Packet2cf>*/ (const Packet2cf& x) {
   Packet2cf res;
   res.cd[0] = pcplxflip(x.cd[0]);
@@ -460,14 +468,6 @@ EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet2cf, 2>& kernel) {
   kernel.packet[1].cd[0] = tmp;
 }
 
-template <>
-EIGEN_STRONG_INLINE Packet2cf pblend(const Selector<2>& ifPacket, const Packet2cf& thenPacket,
-                                     const Packet2cf& elsePacket) {
-  Packet2cf result;
-  const Selector<4> ifPacket4 = {ifPacket.select[0], ifPacket.select[0], ifPacket.select[1], ifPacket.select[1]};
-  result.v = pblend<Packet4f>(ifPacket4, thenPacket.v, elsePacket.v);
-  return result;
-}
 #else
 template <>
 EIGEN_STRONG_INLINE Packet2cf pcmp_eq(const Packet2cf& a, const Packet2cf& b) {
@@ -544,14 +544,6 @@ EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet2cf, 2>& kernel) {
   kernel.packet[0].v = tmp;
 }
 
-template <>
-EIGEN_STRONG_INLINE Packet2cf pblend(const Selector<2>& ifPacket, const Packet2cf& thenPacket,
-                                     const Packet2cf& elsePacket) {
-  Packet2cf result;
-  result.v = reinterpret_cast<Packet4f>(
-      pblend<Packet2d>(ifPacket, reinterpret_cast<Packet2d>(thenPacket.v), reinterpret_cast<Packet2d>(elsePacket.v)));
-  return result;
-}
 #endif
 
 }  // end namespace internal

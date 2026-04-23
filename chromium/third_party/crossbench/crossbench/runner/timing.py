@@ -12,7 +12,6 @@ from typing import Final, TypeAlias
 # chromedriver likely uses an uint32 ms internally, 2**30ms == 12days.
 SAFE_MAX_TIMEOUT_TIMEDELTA: Final = dt.timedelta(milliseconds=2**30)
 
-
 AnyTime: TypeAlias = float | int | dt.timedelta
 AnyTimeUnit: TypeAlias = float | int | dt.timedelta
 

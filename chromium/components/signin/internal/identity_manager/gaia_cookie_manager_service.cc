@@ -11,6 +11,7 @@
 #include <queue>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/containers/contains.h"
@@ -348,7 +349,7 @@ GaiaCookieManagerService::ExternalCcResultFetcher::CreateAndStartLoader(
 
 void GaiaCookieManagerService::ExternalCcResultFetcher::OnURLLoadComplete(
     const network::SimpleURLLoader* source,
-    std::unique_ptr<std::string> body) {
+    std::optional<std::string> body) {
   if (source->NetError() != net::OK || !source->ResponseInfo() ||
       !source->ResponseInfo()->headers ||
       source->ResponseInfo()->headers->response_code() != net::HTTP_OK) {
@@ -360,10 +361,7 @@ void GaiaCookieManagerService::ExternalCcResultFetcher::OnURLLoadComplete(
     return;
   }
 
-  std::string data;
-  if (body) {
-    data = std::move(*body);
-  }
+  std::string data = std::move(body).value_or("");
 
   // Only up to the first 16 characters of the response are important to GAIA.
   // Truncate if needed to keep amount data sent back to GAIA down.
@@ -543,7 +541,7 @@ void GaiaCookieManagerService::ForceOnCookieChangeProcessing() {
   std::unique_ptr<net::CanonicalCookie> cookie =
       net::CanonicalCookie::CreateSanitizedCookie(
           google_url, GaiaConstants::kGaiaSigninCookieName, std::string(),
-          "." + google_url.host(), "/", base::Time(), base::Time(),
+          "." + google_url.GetHost(), "/", base::Time(), base::Time(),
           base::Time(), true /* secure */, false /* httponly */,
           net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT,
           std::nullopt /* cookie_partition_key */, /*status=*/nullptr);
@@ -622,7 +620,7 @@ void GaiaCookieManagerService::MarkListAccountsStale() {
 void GaiaCookieManagerService::OnCookieChange(
     const net::CookieChangeInfo& change) {
   DCHECK(change.cookie.IsDomainMatch(
-      GaiaUrls::GetInstance()->google_url().host()));
+      GaiaUrls::GetInstance()->google_url().GetHost()));
 
   // This function is called for all changes in google.com cookies. It monitors
   // deletions for all cookies, and  non-deletion changes for
@@ -794,6 +792,19 @@ GaiaCookieManagerService::GetCookieManagerForPartition() {
   return signin_client_->GetCookieManager();
 }
 
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+std::unique_ptr<signin::BoundSessionOAuthMultiLoginDelegate>
+GaiaCookieManagerService::
+    CreateBoundSessionOAuthMultiLoginDelegateForPartition() {
+  return signin_client_->CreateBoundSessionOAuthMultiloginDelegate();
+}
+
+network::mojom::DeviceBoundSessionManager*
+GaiaCookieManagerService::GetDeviceBoundSessionManagerForPartition() {
+  return signin_client_->GetDeviceBoundSessionManager();
+}
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
 void GaiaCookieManagerService::InitializeListedAccountsIds() {
   for (gaia::ListedAccount& account : accounts_) {
     DCHECK(account.id.empty());
@@ -832,8 +843,8 @@ void GaiaCookieManagerService::StartSetAccounts() {
 
   oauth_multilogin_helper_ = std::make_unique<signin::OAuthMultiloginHelper>(
       signin_client_, this, token_service_, request.GetMultiloginMode(),
-      request.GetAccounts(), external_cc_result_fetcher_.GetExternalCcResult(),
-      request.source(),
+      /*wait_on_connectivity=*/true, request.GetAccounts(),
+      external_cc_result_fetcher_.GetExternalCcResult(), request.source(),
       base::BindOnce(&GaiaCookieManagerService::OnSetAccountsFinished,
                      weak_ptr_factory_.GetWeakPtr()));
 }

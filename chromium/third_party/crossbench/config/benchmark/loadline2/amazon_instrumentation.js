@@ -8,6 +8,19 @@ if (window.location.href ===
   const menu_selector = '.hmenu';
   const buy_id = 'buy-now-button';
 
+  function onFrameRendered(callback) {
+    // The first rAF requests a frame to be rendered. When it's done, the
+    // second rAF is called. So the callback is invoked when the first frame
+    // has been rendered.
+    // This is a poor approximation of when the frame is actually shown on the
+    // device screen, since it ignores all work beyond Renderer process
+    // (GPU process/surfaceflinger). But it's the best we can do using pure
+    // WebAPI.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(callback);
+    });
+  }
+
   const button_observer = new MutationObserver(mutations => {
     const button = document.querySelector(button_selector);
     const menu = document.querySelector(menu_selector);
@@ -21,6 +34,9 @@ if (window.location.href ===
       if (menu.classList.contains('hmenu-visible')) {
         attribute_observer.disconnect();
         performance.mark('LoadLine2/amazon_product/interactive');
+        onFrameRendered(() => {
+          performance.mark('LoadLine2/amazon_product/interactive_raf');
+        });
       }
     });
     attribute_observer.observe(menu, {attributes: true});
@@ -34,6 +50,9 @@ if (window.location.href ===
     }
     buy_observer.disconnect();
     performance.mark('LoadLine2/amazon_product/visual');
+    onFrameRendered(() => {
+      performance.mark('LoadLine2/amazon_product/visual_raf');
+    });
   });
 
   buy_observer.observe(document, {childList: true, subtree: true});

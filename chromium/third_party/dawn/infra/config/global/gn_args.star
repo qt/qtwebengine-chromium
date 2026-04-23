@@ -30,6 +30,20 @@
 load("@chromium-luci//gn_args.star", "gn_args")
 
 gn_args.config(
+    name = "arm64",
+    args = {
+        "target_cpu": "arm64",
+    },
+)
+
+gn_args.config(
+    name = "asan",
+    args = {
+        "is_asan": True,
+    },
+)
+
+gn_args.config(
     name = "clang",
     args = {
         "is_clang": True,
@@ -47,6 +61,13 @@ gn_args.config(
     name = "dawn_no_d3d12",
     args = {
         "dawn_enable_d3d12": False,
+    },
+)
+
+gn_args.config(
+    name = "dawn_no_swiftshader",
+    args = {
+        "dawn_use_swiftshader": False,
     },
 )
 
@@ -154,6 +175,13 @@ gn_args.config(
         "use_reclient": False,
         "use_remoteexec": True,
         "use_siso": True,
+    },
+)
+
+gn_args.config(
+    name = "tint_build_ir_binary",
+    args = {
+        "tint_build_ir_binary": True,
     },
 )
 

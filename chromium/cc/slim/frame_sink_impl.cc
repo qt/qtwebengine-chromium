@@ -217,8 +217,7 @@ void FrameSinkImpl::UIResourceReleased(cc::UIResourceId ui_resource_id,
                                        bool is_lost) {
   auto itr = uploaded_resources_.find(ui_resource_id);
   CHECK(itr != uploaded_resources_.end());
-  auto* sii = context_provider_->SharedImageInterface();
-  sii->DestroySharedImage(sync_token, std::move(itr->second.shared_image));
+  itr->second.shared_image->UpdateDestructionSyncToken(sync_token);
   uploaded_resources_.erase(itr);
 }
 
@@ -338,7 +337,8 @@ bool FrameSinkImpl::DoBeginFrame(const viz::BeginFrameArgs& begin_frame_args) {
 
     resource_provider_.PrepareSendToParent(
         std::move(viz_resource_ids).extract(), &frame.resource_list,
-        context_provider_.get());
+        context_provider_ ? context_provider_->SharedImageInterface()
+                          : nullptr);
 
     bool send_new_hit_test_region_list = false;
     if (!hit_test_region_list_ ||

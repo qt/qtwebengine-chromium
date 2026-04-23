@@ -15,8 +15,11 @@
  * limitations under the License.
  */
 
+#include <cstdint>
+#include <vulkan/utility/vk_safe_struct.hpp>
 #include "chassis/chassis_modification_state.h"
 #include "gpuav/core/gpuav.h"
+#include "gpuav/core/gpuav_constants.h"
 #include "gpuav/debug_printf/debug_printf.h"
 #include "gpuav/descriptor_validation/gpuav_descriptor_validation.h"
 #include "gpuav/instrumentation/buffer_device_address.h"
@@ -26,9 +29,10 @@
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "gpuav/validation_cmd/gpuav_copy_buffer_to_image.h"
+#include "gpuav/validation_cmd/gpuav_copy_memory_indirect.h"
 #include "gpuav/validation_cmd/gpuav_dispatch.h"
 #include "gpuav/validation_cmd/gpuav_draw.h"
-#include "gpuav/validation_cmd/gpuav_trace_rays.h"
+#include "gpuav/validation_cmd/gpuav_ray_tracing.h"
 #include "utils/math_utils.h"
 
 namespace gpuav {
@@ -36,6 +40,9 @@ namespace gpuav {
 void Validator::PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo *pCreateInfo,
                                           const VkAllocationCallbacks *pAllocator, VkBuffer *pBuffer,
                                           const RecordObject &record_obj, chassis::CreateBuffer &chassis_state) {
+    // init here so if using just CoreCheck we don't waste time
+    chassis_state.modified_create_info.initialize(pCreateInfo);
+
     const auto *flags2 = vku::FindStructInPNextChain<VkBufferUsageFlags2CreateInfo>(chassis_state.modified_create_info.pNext);
     const VkBufferUsageFlags2 in_usage = flags2 ? flags2->usage : chassis_state.modified_create_info.usage;
 
@@ -61,9 +68,80 @@ void Validator::PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateI
     }
 
     // Align index buffer size to 4: validation shader reads DWORDS
-    if (gpuav_settings.IsBufferValidationEnabled()) {
+    if (gpuav_settings.IsBufferValidationEnabled() && (in_usage & (VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT))) {
         chassis_state.modified_create_info.size = Align<VkDeviceSize>(chassis_state.modified_create_info.size, 4);
     }
+
+    chassis_state.create_info_copy = chassis_state.modified_create_info.ptr();
+}
+
+void Validator::PostCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo *pCreateInfo,
+                                           const VkAllocationCallbacks *pAllocator, VkBuffer *pBuffer,
+                                           const RecordObject &record_obj) {
+    const auto *flags2 = vku::FindStructInPNextChain<VkBufferUsageFlags2CreateInfo>(pCreateInfo->pNext);
+    const VkBufferUsageFlags2 in_usage = flags2 ? flags2->usage : pCreateInfo->usage;
+
+    if (in_usage & VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) {
+        resource_descriptor_buffer_handles_.emplace(*pBuffer);
+    }
+}
+
+void Validator::PreCallRecordDestroyBuffer(VkDevice device, VkBuffer buffer, const VkAllocationCallbacks *pAllocator,
+                                           const RecordObject &record_obj) {
+    resource_descriptor_buffer_handles_.erase(buffer);
+}
+
+void Validator::PreCallRecordFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks *pAllocator,
+                                        const RecordObject &record_obj) {
+    if (resource_descriptor_buffer_memory_handles_.find(memory) != resource_descriptor_buffer_memory_handles_.end()) {
+        resource_descriptor_buffer_memory_handles_.erase(memory);
+    }
+}
+
+void Validator::BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset) {
+    if (resource_descriptor_buffer_handles_.find(buffer) != resource_descriptor_buffer_handles_.end()) {
+        resource_descriptor_buffer_memory_handles_.emplace(memory);
+    }
+}
+
+void Validator::PostCallRecordBindBufferMemory(VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset,
+                                               const RecordObject &record_obj) {
+    BindBufferMemory(buffer, memory, memoryOffset);
+}
+
+void Validator::PostCallRecordBindBufferMemory2(VkDevice device, uint32_t bindInfoCount, const VkBindBufferMemoryInfo *pBindInfos,
+                                                const RecordObject &record_obj) {
+    for (uint32_t i = 0; i < bindInfoCount; i++) {
+        BindBufferMemory(pBindInfos->buffer, pBindInfos->memory, pBindInfos->memoryOffset);
+    }
+}
+
+void Validator::PostCallRecordBindBufferMemory2KHR(VkDevice device, uint32_t bindInfoCount,
+                                                   const VkBindBufferMemoryInfo *pBindInfos, const RecordObject &record_obj) {
+    PostCallRecordBindBufferMemory2(device, bindInfoCount, pBindInfos, record_obj);
+}
+
+void Validator::PreCallRecordCmdBindDescriptorBuffersEXT(VkCommandBuffer commandBuffer, uint32_t bufferCount,
+                                                         const VkDescriptorBufferBindingInfoEXT *pBindingInfos,
+                                                         const RecordObject &record_obj,
+                                                         chassis::CmdBindDescriptorBuffers &chassis_state) {
+    // Resize here so if using just CoreCheck we don't waste time allocating this
+    chassis_state.modified_binding_infos.resize(bufferCount + 1);
+    for (uint32_t i = 0; i < bufferCount; ++i) {
+        vku::safe_VkDescriptorBufferBindingInfoEXT &new_bind_info = chassis_state.modified_binding_infos[i];
+        new_bind_info.initialize(&pBindingInfos[i]);
+    }
+
+    vku::safe_VkDescriptorBufferBindingInfoEXT &modified_binding_info = chassis_state.modified_binding_infos[bufferCount];
+    modified_binding_info.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+    modified_binding_info.address = global_resource_descriptor_buffer_.Address();
+
+    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
+    CommandBufferSubState &gpuav_cb_state = SubState(*cb_state);
+    gpuav_cb_state.resource_descriptor_buffer_index_ = bufferCount;
+
+    // Set the pointer the chassis will use
+    chassis_state.pBindInfos = reinterpret_cast<VkDescriptorBufferBindingInfoEXT *>(chassis_state.modified_binding_infos.data());
 }
 
 void Validator::PreCallRecordBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo *pBeginInfo,
@@ -79,6 +157,12 @@ void Validator::PreCallRecordBeginCommandBuffer(VkCommandBuffer commandBuffer, c
     RegisterPostProcessingValidation(*this, gpuav_cb_state);
     RegisterBufferDeviceAddressValidation(*this, gpuav_cb_state);
     debug_printf::RegisterDebugPrintf(*this, gpuav_cb_state);
+}
+
+// Dedicated warning VUID that likely can be ignored. We want to always warn the user when adjusting settings/limits/features/etc on
+// them
+void Instance::AdjustmentWarning(LogObjectList objlist, const Location &loc, const char *const specific_message) const {
+    LogWarning("WARNING-Setting-Limit-Adjusted", objlist, loc, "Internal Warning: %s", specific_message);
 }
 
 void Instance::InternalWarning(LogObjectList objlist, const Location &loc, const char *const specific_message) const {
@@ -122,7 +206,7 @@ void Instance::PostCallRecordGetPhysicalDeviceProperties2(VkPhysicalDevice physi
         std::stringstream ss;
         ss << "Setting VkPhysicalDeviceDescriptorIndexingProperties::maxUpdateAfterBindDescriptorsInAllPools to "
            << glsl::kDebugInputBindlessMaxDescriptors;
-        InternalWarning(physicalDevice, record_obj.location, ss.str().c_str());
+        AdjustmentWarning(physicalDevice, record_obj.location, ss.str().c_str());
         desc_indexing_props->maxUpdateAfterBindDescriptorsInAllPools = glsl::kDebugInputBindlessMaxDescriptors;
     }
 
@@ -131,8 +215,38 @@ void Instance::PostCallRecordGetPhysicalDeviceProperties2(VkPhysicalDevice physi
         std::stringstream ss;
         ss << "Setting VkPhysicalDeviceVulkan12Properties::maxUpdateAfterBindDescriptorsInAllPools to "
            << glsl::kDebugInputBindlessMaxDescriptors;
-        InternalWarning(physicalDevice, record_obj.location, ss.str().c_str());
+        AdjustmentWarning(physicalDevice, record_obj.location, ss.str().c_str());
         vk12_props->maxUpdateAfterBindDescriptorsInAllPools = glsl::kDebugInputBindlessMaxDescriptors;
+    }
+
+    if (auto *desc_buffer_props =
+            vku::FindStructInPNextChain<VkPhysicalDeviceDescriptorBufferPropertiesEXT>(device_props2->pNext)) {
+        if (desc_buffer_props->maxResourceDescriptorBufferBindings > 1) {
+            desc_buffer_props->maxResourceDescriptorBufferBindings -= 1;
+
+            std::stringstream ss;
+            ss << "Setting VkPhysicalDeviceDescriptorBufferPropertiesEXT::maxResourceDescriptorBufferBindings to "
+               << desc_buffer_props->maxResourceDescriptorBufferBindings;
+            AdjustmentWarning(physicalDevice, record_obj.location, ss.str().c_str());
+        }
+
+        // Currently set regardless if we fallback on maxResourceDescriptorBufferBindings only being 1
+        {
+            // This is only a best estimate, we really need to match it up with the value returned from
+            // vkGetDescriptorSetLayoutSizeEXT, but can't at this point. This in practice shouldn't be an issue unless they try to
+            // allocate every possible byte on the GPU and our estimate is too small.
+            //
+            // storageBufferDescriptorSize is almost always 64 bytes
+            const VkDeviceSize bytes_to_reserve = desc_buffer_props->storageBufferDescriptorSize * cst::total_internal_descriptors;
+            desc_buffer_props->resourceDescriptorBufferAddressSpaceSize -= bytes_to_reserve;
+            desc_buffer_props->descriptorBufferAddressSpaceSize -= bytes_to_reserve;
+
+            std::stringstream ss;
+            ss << "Setting VkPhysicalDeviceDescriptorBufferPropertiesEXT::descriptorBufferAddressSpaceSize to "
+               << desc_buffer_props->resourceDescriptorBufferAddressSpaceSize << "and resourceDescriptorBufferAddressSpaceSize to "
+               << desc_buffer_props->descriptorBufferAddressSpaceSize << " (reserving " << bytes_to_reserve << " bytes)";
+            AdjustmentWarning(physicalDevice, record_obj.location, ss.str().c_str());
+        }
     }
 
     ReserveBindingSlot(physicalDevice, device_props2->properties.limits, record_obj.location);
@@ -141,12 +255,13 @@ void Instance::PostCallRecordGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 // Clean up device-related resources
 void Validator::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator,
                                            const RecordObject &record_obj) {
-    // Need to destroy substate before memory backed in things like shared_resources_manager are cleared
+    // Need to destroy substate before memory backed in things like shared_resources_cache are cleared
     DestroySubstate();
 
-    shared_resources_manager.Clear();
+    shared_resources_cache.Clear();
 
-    indices_buffer_.Destroy();
+    global_indices_buffer_.Destroy();
+    global_resource_descriptor_buffer_.Destroy();
 
     BaseClass::PreCallRecordDestroyDevice(device, pAllocator, record_obj);
 
@@ -159,12 +274,9 @@ void Validator::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationCa
 }
 
 // Common logic before any draw/dispatch/traceRays
-void Validator::PreCallActionCommand(Validator &gpuav, CommandBufferSubState &cb_state, VkPipelineBindPoint bind_point,
+void Validator::PreCallActionCommand(Validator &gpuav, CommandBufferSubState &cb_state, const LastBound &last_bound,
                                      const Location &loc) {
-    if (cb_state.max_actions_cmd_validation_reached_) {
-        return;
-    }
-    PreCallSetupShaderInstrumentationResources(gpuav, cb_state, bind_point, loc);
+    PreCallSetupShaderInstrumentationResources(gpuav, cb_state, last_bound, loc);
 }
 
 void Validator::PreCallRecordCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
@@ -175,7 +287,9 @@ void Validator::PreCallRecordCmdDraw(VkCommandBuffer commandBuffer, uint32_t ver
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawMultiEXT(VkCommandBuffer commandBuffer, uint32_t drawCount,
@@ -187,7 +301,8 @@ void Validator::PreCallRecordCmdDrawMultiEXT(VkCommandBuffer commandBuffer, uint
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t instanceCount,
@@ -200,7 +315,8 @@ void Validator::PreCallRecordCmdDrawIndexed(VkCommandBuffer commandBuffer, uint3
     }
 
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawMultiIndexedEXT(VkCommandBuffer commandBuffer, uint32_t drawCount,
@@ -213,7 +329,8 @@ void Validator::PreCallRecordCmdDrawMultiIndexedEXT(VkCommandBuffer commandBuffe
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t count,
@@ -230,9 +347,10 @@ void Validator::PreCallRecordCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBu
     }
     auto &sub_state = SubState(*cb_state);
 
-    valcmd::FirstInstance<VkDrawIndirectCommand>(*this, sub_state, record_obj.location, buffer, offset, count, VK_NULL_HANDLE, 0,
-                                                 "VUID-VkDrawIndirectCommand-firstInstance-00501");
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    valcmd::FirstInstance<VkDrawIndirectCommand>(*this, sub_state, record_obj.location, last_bound, buffer, offset, count,
+                                                 VK_NULL_HANDLE, 0, "VUID-VkDrawIndirectCommand-firstInstance-00501");
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
@@ -244,12 +362,13 @@ void Validator::PreCallRecordCmdDrawIndexedIndirect(VkCommandBuffer commandBuffe
     }
     auto &sub_state = SubState(*cb_state);
 
-    valcmd::DrawIndexedIndirectIndexBuffer(*this, sub_state, record_obj.location, buffer, offset, stride, count, VK_NULL_HANDLE, 0,
-                                           "VUID-VkDrawIndexedIndirectCommand-robustBufferAccess2-08798");
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    valcmd::DrawIndexedIndirectIndexBuffer(*this, sub_state, record_obj.location, last_bound, buffer, offset, stride, count,
+                                           VK_NULL_HANDLE, 0, "VUID-VkDrawIndexedIndirectCommand-robustBufferAccess2-08798");
 
-    valcmd::FirstInstance<VkDrawIndexedIndirectCommand>(*this, sub_state, record_obj.location, buffer, offset, count,
+    valcmd::FirstInstance<VkDrawIndexedIndirectCommand>(*this, sub_state, record_obj.location, last_bound, buffer, offset, count,
                                                         VK_NULL_HANDLE, 0, "VUID-VkDrawIndexedIndirectCommand-firstInstance-00554");
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawIndirectCountKHR(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
@@ -274,12 +393,13 @@ void Validator::PreCallRecordCmdDrawIndirectCount(VkCommandBuffer commandBuffer,
     }
     auto &sub_state = SubState(*cb_state);
 
-    valcmd::CountBuffer(*this, sub_state, record_obj.location, buffer, offset, sizeof(VkDrawIndirectCommand),
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    valcmd::CountBuffer(*this, sub_state, record_obj.location, last_bound, buffer, offset, sizeof(VkDrawIndirectCommand),
                         vvl::Struct::VkDrawIndirectCommand, stride, countBuffer, countBufferOffset,
                         "VUID-vkCmdDrawIndirectCount-countBuffer-02717");
-    valcmd::FirstInstance<VkDrawIndirectCommand>(*this, sub_state, record_obj.location, buffer, offset, maxDrawCount, countBuffer,
-                                                 countBufferOffset, "VUID-VkDrawIndirectCommand-firstInstance-00501");
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    valcmd::FirstInstance<VkDrawIndirectCommand>(*this, sub_state, record_obj.location, last_bound, buffer, offset, maxDrawCount,
+                                                 countBuffer, countBufferOffset, "VUID-VkDrawIndirectCommand-firstInstance-00501");
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawIndirectByteCountEXT(VkCommandBuffer commandBuffer, uint32_t instanceCount,
@@ -292,7 +412,8 @@ void Validator::PreCallRecordCmdDrawIndirectByteCountEXT(VkCommandBuffer command
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawIndexedIndirectCountKHR(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
@@ -312,17 +433,19 @@ void Validator::PreCallRecordCmdDrawIndexedIndirectCount(VkCommandBuffer command
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    valcmd::CountBuffer(*this, sub_state, record_obj.location, buffer, offset, sizeof(VkDrawIndexedIndirectCommand),
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    valcmd::CountBuffer(*this, sub_state, record_obj.location, last_bound, buffer, offset, sizeof(VkDrawIndexedIndirectCommand),
                         vvl::Struct::VkDrawIndexedIndirectCommand, stride, countBuffer, countBufferOffset,
                         "VUID-vkCmdDrawIndexedIndirectCount-countBuffer-02717");
-    valcmd::FirstInstance<VkDrawIndexedIndirectCommand>(*this, sub_state, record_obj.location, buffer, offset, maxDrawCount,
-                                                        countBuffer, countBufferOffset,
+    valcmd::FirstInstance<VkDrawIndexedIndirectCommand>(*this, sub_state, record_obj.location, last_bound, buffer, offset,
+                                                        maxDrawCount, countBuffer, countBufferOffset,
                                                         "VUID-VkDrawIndexedIndirectCommand-firstInstance-00554");
 
-    valcmd::DrawIndexedIndirectIndexBuffer(*this, sub_state, record_obj.location, buffer, offset, stride, maxDrawCount, countBuffer,
-                                           countBufferOffset, "VUID-VkDrawIndexedIndirectCommand-robustBufferAccess2-08798");
+    valcmd::DrawIndexedIndirectIndexBuffer(*this, sub_state, record_obj.location, last_bound, buffer, offset, stride, maxDrawCount,
+                                           countBuffer, countBufferOffset,
+                                           "VUID-VkDrawIndexedIndirectCommand-robustBufferAccess2-08798");
 
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawMeshTasksNV(VkCommandBuffer commandBuffer, uint32_t taskCount, uint32_t firstTask,
@@ -333,7 +456,8 @@ void Validator::PreCallRecordCmdDrawMeshTasksNV(VkCommandBuffer commandBuffer, u
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawMeshTasksIndirectNV(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
@@ -344,7 +468,8 @@ void Validator::PreCallRecordCmdDrawMeshTasksIndirectNV(VkCommandBuffer commandB
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawMeshTasksIndirectCountNV(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
@@ -363,11 +488,12 @@ void Validator::PreCallRecordCmdDrawMeshTasksIndirectCountNV(VkCommandBuffer com
     }
 
     auto &sub_state = SubState(*cb_state);
-    valcmd::CountBuffer(*this, sub_state, record_obj.location, buffer, offset, sizeof(VkDrawMeshTasksIndirectCommandNV),
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    valcmd::CountBuffer(*this, sub_state, record_obj.location, last_bound, buffer, offset, sizeof(VkDrawMeshTasksIndirectCommandNV),
                         vvl::Struct::VkDrawMeshTasksIndirectCommandNV, stride, countBuffer, countBufferOffset,
                         "VUID-vkCmdDrawMeshTasksIndirectCountNV-countBuffer-02717");
 
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawMeshTasksEXT(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY,
@@ -378,7 +504,8 @@ void Validator::PreCallRecordCmdDrawMeshTasksEXT(VkCommandBuffer commandBuffer, 
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawMeshTasksIndirectEXT(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
@@ -389,8 +516,10 @@ void Validator::PreCallRecordCmdDrawMeshTasksIndirectEXT(VkCommandBuffer command
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    valcmd::DrawMeshIndirect(*this, sub_state, record_obj.location, buffer, offset, stride, VK_NULL_HANDLE, 0, drawCount);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    valcmd::DrawMeshIndirect(*this, sub_state, record_obj.location, last_bound, buffer, offset, stride, VK_NULL_HANDLE, 0,
+                             drawCount);
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDrawMeshTasksIndirectCountEXT(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
@@ -409,13 +538,14 @@ void Validator::PreCallRecordCmdDrawMeshTasksIndirectCountEXT(VkCommandBuffer co
     }
 
     auto &sub_state = SubState(*cb_state);
-    valcmd::DrawMeshIndirect(*this, sub_state, record_obj.location, buffer, offset, stride, countBuffer, countBufferOffset,
-                             maxDrawCount);
+    const LastBound &last_bound = cb_state->GetLastBoundGraphics();
+    valcmd::DrawMeshIndirect(*this, sub_state, record_obj.location, last_bound, buffer, offset, stride, countBuffer,
+                             countBufferOffset, maxDrawCount);
 
-    valcmd::CountBuffer(*this, sub_state, record_obj.location, buffer, offset, sizeof(VkDrawMeshTasksIndirectCommandEXT),
-                        vvl::Struct::VkDrawMeshTasksIndirectCommandEXT, stride, countBuffer, countBufferOffset,
-                        "VUID-vkCmdDrawMeshTasksIndirectCountEXT-countBuffer-02717");
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_GRAPHICS, record_obj.location);
+    valcmd::CountBuffer(*this, sub_state, record_obj.location, last_bound, buffer, offset,
+                        sizeof(VkDrawMeshTasksIndirectCommandEXT), vvl::Struct::VkDrawMeshTasksIndirectCommandEXT, stride,
+                        countBuffer, countBufferOffset, "VUID-vkCmdDrawMeshTasksIndirectCountEXT-countBuffer-02717");
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z,
@@ -426,7 +556,8 @@ void Validator::PreCallRecordCmdDispatch(VkCommandBuffer commandBuffer, uint32_t
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_COMPUTE, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundCompute();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 void Validator::PreCallRecordCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                  const RecordObject &record_obj) {
@@ -436,8 +567,9 @@ void Validator::PreCallRecordCmdDispatchIndirect(VkCommandBuffer commandBuffer, 
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    valcmd::DispatchIndirect(*this, record_obj.location, sub_state, buffer, offset);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_COMPUTE, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundCompute();
+    valcmd::DispatchIndirect(*this, record_obj.location, sub_state, last_bound, buffer, offset);
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t baseGroupX, uint32_t baseGroupY,
@@ -449,7 +581,8 @@ void Validator::PreCallRecordCmdDispatchBase(VkCommandBuffer commandBuffer, uint
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_COMPUTE, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundCompute();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdDispatchBaseKHR(VkCommandBuffer commandBuffer, uint32_t baseGroupX, uint32_t baseGroupY,
@@ -457,6 +590,31 @@ void Validator::PreCallRecordCmdDispatchBaseKHR(VkCommandBuffer commandBuffer, u
                                                 uint32_t groupCountZ, const RecordObject &record_obj) {
     PreCallRecordCmdDispatchBase(commandBuffer, baseGroupX, baseGroupY, baseGroupZ, groupCountX, groupCountY, groupCountZ,
                                  record_obj);
+}
+
+void Validator::PreCallRecordDestroyAccelerationStructureKHR(VkDevice device, VkAccelerationStructureKHR accelerationStructure,
+                                                             const VkAllocationCallbacks *pAllocator,
+                                                             const RecordObject &record_obj) {
+    gpuav::valcmd::RemoveAccelerationStrutureDeviceAddress(*this, accelerationStructure);
+}
+
+void Validator::PostCallRecordGetAccelerationStructureDeviceAddressKHR(VkDevice device,
+                                                                       const VkAccelerationStructureDeviceAddressInfoKHR *pInfo,
+                                                                       const RecordObject &record_obj) {
+    gpuav::valcmd::RecordGetAccelerationStructureDeviceAddress(*this, pInfo->accelerationStructure, record_obj.device_address);
+}
+
+void Validator::PreCallRecordCmdBuildAccelerationStructuresKHR(
+    VkCommandBuffer commandBuffer, uint32_t infoCount, const VkAccelerationStructureBuildGeometryInfoKHR *pInfos,
+    const VkAccelerationStructureBuildRangeInfoKHR *const *ppBuildRangeInfos, const RecordObject &record_obj) {
+    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
+    if (!cb_state) {
+        InternalError(commandBuffer, record_obj.location, "Unrecognized command buffer.");
+        return;
+    }
+    auto &cb_sub_state = SubState(*cb_state);
+    const LastBound &last_bound = cb_state->GetLastBoundRayTracing();
+    valcmd::BuildAccelerationStructures(*this, record_obj.location, cb_sub_state, last_bound, infoCount, pInfos, ppBuildRangeInfos);
 }
 
 void Validator::PreCallRecordCmdTraceRaysNV(VkCommandBuffer commandBuffer, VkBuffer raygenShaderBindingTableBuffer,
@@ -472,7 +630,8 @@ void Validator::PreCallRecordCmdTraceRaysNV(VkCommandBuffer commandBuffer, VkBuf
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundRayTracing();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdTraceRaysKHR(VkCommandBuffer commandBuffer,
@@ -487,7 +646,8 @@ void Validator::PreCallRecordCmdTraceRaysKHR(VkCommandBuffer commandBuffer,
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundRayTracing();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdTraceRaysIndirectKHR(VkCommandBuffer commandBuffer,
@@ -502,8 +662,9 @@ void Validator::PreCallRecordCmdTraceRaysIndirectKHR(VkCommandBuffer commandBuff
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    valcmd::TraceRaysIndirect(*this, record_obj.location, sub_state, indirectDeviceAddress);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundRayTracing();
+    valcmd::TraceRaysIndirect(*this, record_obj.location, sub_state, last_bound, indirectDeviceAddress);
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress,
@@ -514,7 +675,8 @@ void Validator::PreCallRecordCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuf
         return;
     }
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, record_obj.location);
+    const LastBound &last_bound = cb_state->GetLastBoundRayTracing();
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
 
 void Validator::PreCallRecordCmdExecuteGeneratedCommandsEXT(VkCommandBuffer commandBuffer, VkBool32 isPreprocessed,
@@ -525,9 +687,12 @@ void Validator::PreCallRecordCmdExecuteGeneratedCommandsEXT(VkCommandBuffer comm
         InternalError(commandBuffer, record_obj.location, "Unrecognized command buffer.");
         return;
     }
-    const VkPipelineBindPoint bind_point = ConvertStageToBindPoint(pGeneratedCommandsInfo->shaderStages);
     auto &sub_state = SubState(*cb_state);
-    PreCallActionCommand(*this, sub_state, bind_point, record_obj.location);
+
+    const VkPipelineBindPoint bind_point = ConvertStageToBindPoint(pGeneratedCommandsInfo->shaderStages);
+    const vvl::BindPoint vvl_bind_point = ConvertToVvlBindPoint(bind_point);
+    const LastBound &last_bound = cb_state->lastBound[vvl_bind_point];
+    PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 };
 
 void Validator::PreCallRecordCmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage,
@@ -566,6 +731,24 @@ void Validator::PreCallRecordCmdCopyBufferToImage2(VkCommandBuffer commandBuffer
                                                    const RecordObject &record_obj) {
     auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
     valcmd::CopyBufferToImage(*this, record_obj.location, SubState(*cb_state), pCopyBufferToImageInfo);
+}
+
+void Validator::PreCallRecordCmdCopyMemoryIndirectKHR(VkCommandBuffer commandBuffer,
+                                                      const VkCopyMemoryIndirectInfoKHR *pCopyMemoryIndirectInfo,
+                                                      const RecordObject &record_obj) {
+    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
+    const valcmd::CopyMemoryIndirectCommon copy_info = {pCopyMemoryIndirectInfo->copyCount,
+                                                        pCopyMemoryIndirectInfo->copyAddressRange};
+    valcmd::CopyMemoryIndirect(*this, record_obj.location, SubState(*cb_state), copy_info);
+}
+
+void Validator::PreCallRecordCmdCopyMemoryToImageIndirectKHR(
+    VkCommandBuffer commandBuffer, const VkCopyMemoryToImageIndirectInfoKHR *pCopyMemoryToImageIndirectInfo,
+    const RecordObject &record_obj) {
+    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
+    const valcmd::CopyMemoryIndirectCommon copy_info = {pCopyMemoryToImageIndirectInfo->copyCount,
+                                                        pCopyMemoryToImageIndirectInfo->copyAddressRange};
+    valcmd::CopyMemoryIndirect(*this, record_obj.location, SubState(*cb_state), copy_info);
 }
 
 // Validates the buffer is allowed to be protected

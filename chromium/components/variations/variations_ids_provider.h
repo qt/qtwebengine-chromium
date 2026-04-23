@@ -16,11 +16,17 @@
 #include "base/gtest_prod_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/synchronization/lock.h"
+#include "base/time/clock.h"
+#include "base/types/pass_key.h"
 #include "components/variations/proto/study.pb.h"
 #include "components/variations/synthetic_trials.h"
 #include "components/variations/variations.mojom.h"
 #include "components/variations/variations_associated_data.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
+
+namespace android_webview {
+class AwBrowserMainParts;
+}  // namespace android_webview
 
 namespace variations {
 namespace internal {
@@ -37,6 +43,7 @@ class ScopedVariationsIdsProvider;
 }  // namespace test
 
 class VariationsClient;
+class VariationsFieldTrialCreator;
 
 // The key for a VariationsIdsProvider's `variations_headers_map_`. A
 // VariationsHeaderKey provides more details about the VariationsIDs included in
@@ -60,8 +67,6 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
     : public base::FieldTrialList::Observer,
       public SyntheticTrialObserver {
  public:
-  using ClockFunction = base::RepeatingCallback<base::Time()>;
-
   class COMPONENT_EXPORT(VARIATIONS) Observer {
    public:
     // Called when variation ids headers are updated.
@@ -88,7 +93,9 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
 
   // Creates the VariationsIdsProvider instance. This must be called before
   // GetInstance(). Only one instance of VariationsIdsProvider may be created.
-  static VariationsIdsProvider* CreateInstance(Mode mode);
+  static VariationsIdsProvider* CreateInstance(
+      Mode mode,
+      std::unique_ptr<base::Clock> clock);
 
   static VariationsIdsProvider* GetInstance();
 
@@ -96,10 +103,6 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
   VariationsIdsProvider& operator=(const VariationsIdsProvider&) = delete;
 
   Mode mode() const { return mode_; }
-
-  // Sets the clock function to be used for getting the current time.
-  // TODO: crbug.com/422445605 - Use this to provide a network time clock.
-  void SetClockFunc(ClockFunction clock_func);
 
   // Returns the X-Client-Data headers corresponding to `is_signed_in`: a header
   // that may be sent in first-party requests and a header that may be sent in
@@ -153,19 +156,25 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
     INVALID_SWITCH_ENTRY,  // Invalid entry in `command_line_variation_ids`.
   };
 
-  // TODO: b/315411418 - Restrict access to approved call sites.
   // Sets *additional* variation ids and trigger variation ids to be encoded in
   // the X-Client-Data request header. This is intended for development use to
   // force a server side experiment id. `variation_ids` should be a list of
   // strings of numeric experiment ids. Ids explicitly passed in `variation_ids`
   // and those in the comma-separated `command_line_variation_ids` are added.
+  //
+  // This function is restricted to be used from only two specific locations for
+  // privacy reasons.
   ForceIdsResult ForceVariationIds(
+      base::PassKey<VariationsFieldTrialCreator> pass_key,
+      const std::vector<std::string>& variation_ids,
+      const std::string& command_line_variation_ids);
+  ForceIdsResult ForceVariationIds(
+      base::PassKey<android_webview::AwBrowserMainParts> pass_key,
       const std::vector<std::string>& variation_ids,
       const std::string& command_line_variation_ids);
 
   // Alias for the above function, but for testing. All test uses should be via
-  // this function. Once that is the case, the above function will be restricted
-  // to call sites that are approved to use it.
+  // this function.
   ForceIdsResult ForceVariationIdsForTesting(
       const std::vector<std::string>& variation_ids,
       const std::string& command_line_variation_ids);
@@ -184,23 +193,29 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
   // Resets any cached state for tests.
   void ResetForTesting();
 
+  // Returns the current time.
+  base::Time GetCurrentTime() const { return clock_->Now(); }
+
  private:
   using VariationIDEntry = std::pair<VariationID, IDCollectionKey>;
   using VariationIDEntrySet = absl::flat_hash_set<VariationIDEntry>;
 
   friend class ::variations::test::ScopedVariationsIdsProvider;
 
-  explicit VariationsIdsProvider(Mode mode);
+  explicit VariationsIdsProvider(Mode mode, std::unique_ptr<base::Clock> clock);
   ~VariationsIdsProvider() override;
 
   // Creates a new instance of `VariationsIdsProvider` for testing, returning
   // the pointer to the previous instance. This should only be called by
   // `ScopedVariationsIdsProvider`.
-  static VariationsIdsProvider* CreateInstanceForTesting(Mode mode);
+  static VariationsIdsProvider* CreateInstanceForTesting(
+      Mode mode,
+      std::unique_ptr<base::Clock> clock);
+
   // Resets the global instance of `VariationsIdsProvider` to the given
   // instance, for testing. This should only be called by
   // `ScopedVariationsIdsProvider`.
-  static void DestroyInstanceForTesting(VariationsIdsProvider* previous_instance);
+  static void ResetInstanceForTesting(VariationsIdsProvider* previous_instance);
 
   // Returns a space-separated string containing the list of current active
   // variations (as would be reported in the `variation_id` repeated field of
@@ -222,6 +237,11 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
   // Updates `active_variation_ids_set_` and `variations_headers_map_` if
   // necessary.
   void MaybeUpdateVariationIDsAndHeaders() EXCLUSIVE_LOCKS_REQUIRED(lock_);
+
+  // Implementation of ForceVariationIds().
+  ForceIdsResult ForceVariationIdsImpl(
+    const std::vector<std::string>& variation_ids,
+    const std::string& command_line_variation_ids);
 
   // Helpers to manage the variation ids in `active_variation_ids_set_`. These
   // are expected to be called from `MaybeUpdateVariationIDsAndHeaders()`.
@@ -295,9 +315,6 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
   // Google Web id.
   bool IsDuplicateId(VariationID id) EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
-  // Returns the current time..
-  base::Time GetCurrentTime() const EXCLUSIVE_LOCKS_REQUIRED(lock_);
-
   // Sets the last update time to the given time.
   void SetLastUpdateTime(base::Time time) EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
@@ -315,6 +332,10 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
       EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   const Mode mode_;
+
+  // The clock function to be used for getting the current time. This is used
+  // to provide a network-based clock, as well as for testing.
+  const std::unique_ptr<base::Clock> clock_;
 
   // Guards access to variables below.
   base::Lock lock_;
@@ -362,10 +383,6 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
   // Whether this instance is subscribed to the field trial list. This is used
   // to ensure that the instance is only subscribed once, on first use.
   bool is_subscribed_to_field_trial_list_ GUARDED_BY(lock_) = false;
-
-  // The clock function to be used for getting the current time. This is used
-  // to provide a network-based clock, as well as for testing.
-  ClockFunction clock_func_ GUARDED_BY(lock_);
 };
 
 }  // namespace variations

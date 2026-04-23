@@ -3,6 +3,7 @@
   "compilerOptions": {
     "allowUmdGlobalAccess": true,
     "outDir": "ignored",
+    "rootDir": ".",
     "target": "ES2023",
     "lib": [
       "ES2023",
@@ -27,5 +28,7 @@
         }
       }
     ]
-  }
+  },
+  "exclude": ["devtools_compatibility.js"],
+  "references": [{ "path": "./tsconfig.compatibility.json" }]
 }

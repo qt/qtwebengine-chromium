@@ -73,6 +73,7 @@ let BrowsingContext = (() => {
     let _removePreloadScript_decorators;
     let _setGeolocationOverride_decorators;
     let _setTimezoneOverride_decorators;
+    let _setScreenOrientationOverride_decorators;
     let _getCookies_decorators;
     let _setCookie_decorators;
     let _setFiles_decorators;
@@ -110,6 +111,7 @@ let BrowsingContext = (() => {
             __esDecorate(this, null, _removePreloadScript_decorators, { kind: "method", name: "removePreloadScript", static: false, private: false, access: { has: obj => "removePreloadScript" in obj, get: obj => obj.removePreloadScript }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _setGeolocationOverride_decorators, { kind: "method", name: "setGeolocationOverride", static: false, private: false, access: { has: obj => "setGeolocationOverride" in obj, get: obj => obj.setGeolocationOverride }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _setTimezoneOverride_decorators, { kind: "method", name: "setTimezoneOverride", static: false, private: false, access: { has: obj => "setTimezoneOverride" in obj, get: obj => obj.setTimezoneOverride }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _setScreenOrientationOverride_decorators, { kind: "method", name: "setScreenOrientationOverride", static: false, private: false, access: { has: obj => "setScreenOrientationOverride" in obj, get: obj => obj.setScreenOrientationOverride }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _getCookies_decorators, { kind: "method", name: "getCookies", static: false, private: false, access: { has: obj => "getCookies" in obj, get: obj => obj.getCookies }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _setCookie_decorators, { kind: "method", name: "setCookie", static: false, private: false, access: { has: obj => "setCookie" in obj, get: obj => obj.setCookie }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _setFiles_decorators, { kind: "method", name: "setFiles", static: false, private: false, access: { has: obj => "setFiles" in obj, get: obj => obj.setFiles }, metadata: _metadata }, null, _instanceExtraInitializers);
@@ -411,6 +413,12 @@ let BrowsingContext = (() => {
                 contexts: [this.id],
             });
         }
+        async setScreenOrientationOverride(screenOrientation) {
+            await this.#session.send('emulation.setScreenOrientationOverride', {
+                screenOrientation,
+                contexts: [this.id],
+            });
+        }
         async getCookies(options = {}) {
             const { result: { cookies }, } = await this.#session.send('storage.getCookies', {
                 ...options,
@@ -497,6 +505,9 @@ let BrowsingContext = (() => {
             })], _setTimezoneOverride_decorators = [(0, decorators_js_1.throwIfDisposed)(context => {
                 // SAFETY: Disposal implies this exists.
                 return context.#reason;
+            })], _setScreenOrientationOverride_decorators = [(0, decorators_js_1.throwIfDisposed)(context => {
+                // SAFETY: Disposal implies this exists.
+                return context.#reason;
             })], _getCookies_decorators = [(0, decorators_js_1.throwIfDisposed)(context => {
                 // SAFETY: Disposal implies this exists.
                 return context.#reason;
@@ -549,6 +560,22 @@ let BrowsingContext = (() => {
         }
         isJavaScriptEnabled() {
             return this.#emulationState.javaScriptEnabled;
+        }
+        async setUserAgent(userAgent) {
+            await this.#session.send('emulation.setUserAgentOverride', {
+                userAgent,
+                contexts: [this.id],
+            });
+        }
+        async setOfflineMode(enabled) {
+            await this.#session.send('emulation.setNetworkConditions', {
+                networkConditions: enabled
+                    ? {
+                        type: 'offline',
+                    }
+                    : null,
+                contexts: [this.id],
+            });
         }
     };
 })();

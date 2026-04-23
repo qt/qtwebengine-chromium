@@ -17,17 +17,32 @@
 #include "ink/geometry/angle.h"
 #include "ink/jni/internal/jni_defines.h"
 
+namespace {
+
+using ::ink::Angle;
+
+}  // namespace
+
 extern "C" {
 
-JNI_METHOD(geometry, Angle, jfloat, nativeNormalized)
-(JNIEnv* env, jobject object, jfloat angle_radians) {
-  ink::Angle angle = ink::Angle::Radians(angle_radians);
-  return angle.Normalized().ValueInRadians();
+JNI_METHOD(geometry, AngleNative, jfloat, normalizedRadians)
+(JNIEnv* env, jobject object, jfloat radians) {
+  return Angle::Radians(radians).Normalized().ValueInRadians();
 }
 
-JNI_METHOD(geometry, Angle, jfloat, nativeNormalizedAboutZero)
-(JNIEnv* env, jobject object, jfloat angle_radians) {
-  ink::Angle angle = ink::Angle::Radians(angle_radians);
-  return angle.NormalizedAboutZero().ValueInRadians();
+JNI_METHOD(geometry, AngleNative, jfloat, normalizedAboutZeroRadians)
+(JNIEnv* env, jobject object, jfloat radians) {
+  return Angle::Radians(radians).NormalizedAboutZero().ValueInRadians();
 }
+
+JNI_METHOD(geometry, AngleNative, jfloat, normalizedDegrees)
+(JNIEnv* env, jobject object, jfloat degrees) {
+  return Angle::Degrees(degrees).Normalized().ValueInDegrees();
 }
+
+JNI_METHOD(geometry, AngleNative, jfloat, normalizedAboutZeroDegrees)
+(JNIEnv* env, jobject object, jfloat degrees) {
+  return Angle::Degrees(degrees).NormalizedAboutZero().ValueInDegrees();
+}
+
+}  // extern "C"

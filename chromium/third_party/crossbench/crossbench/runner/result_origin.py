@@ -18,8 +18,8 @@ from crossbench.runner.probe_result_origin import ProbeResultOrigin
 if TYPE_CHECKING:
   from crossbench import plt
   from crossbench.browsers.browser import Browser
-  from crossbench.exception import (Annotator, ExceptionAnnotationScope,
-                                    TExceptionTypes)
+  from crossbench.exception import Annotator, ExceptionAnnotationScope, \
+      TExceptionTypes
   from crossbench.helper.durations import Durations
   from crossbench.path import AnyPath, LocalPath
   from crossbench.probes.probe import Probe

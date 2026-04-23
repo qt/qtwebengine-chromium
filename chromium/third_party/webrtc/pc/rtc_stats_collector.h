@@ -29,6 +29,7 @@
 #include "api/scoped_refptr.h"
 #include "api/stats/rtc_stats_collector_callback.h"
 #include "api/stats/rtc_stats_report.h"
+#include "api/task_queue/task_queue_base.h"
 #include "api/units/timestamp.h"
 #include "call/call.h"
 #include "pc/peer_connection_internal.h"
@@ -214,11 +215,9 @@ class RTCStatsCollector : public RefCountInterface {
       RTCStatsReport* report) const;
   void ProduceAudioRTPStreamStats_n(Timestamp timestamp,
                                     const RtpTransceiverStatsInfo& stats,
-                                    bool spec_lifetime,
                                     RTCStatsReport* report) const;
   void ProduceVideoRTPStreamStats_n(Timestamp timestamp,
                                     const RtpTransceiverStatsInfo& stats,
-                                    bool spec_lifetime,
                                     RTCStatsReport* report) const;
   // Produces `RTCTransportStats`.
   void ProduceTransportStats_n(
@@ -254,7 +253,7 @@ class RTCStatsCollector : public RefCountInterface {
   const bool is_unified_plan_;
   const Environment env_;
   const bool stats_timestamp_with_environment_clock_;
-  Thread* const signaling_thread_;
+  TaskQueueBase* const signaling_thread_;
   Thread* const worker_thread_;
   Thread* const network_thread_;
 

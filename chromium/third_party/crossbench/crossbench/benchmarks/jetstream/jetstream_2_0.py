@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
-from crossbench.benchmarks.jetstream.jetstream_2 import (
-    JetStream2Benchmark, JetStream2Probe, JetStream2ProbeContext,
-    JetStream2Story, ProbeClsTupleT)
+from crossbench.benchmarks.jetstream.jetstream_2 import JetStream2Benchmark, \
+    JetStream2Probe, JetStream2ProbeContext, JetStream2Story, ProbeClsTupleT
 
 if TYPE_CHECKING:
   from crossbench.benchmarks.base import VersionParts
+
 
 class JetStream20Probe(JetStream2Probe):
   __doc__ = JetStream2Probe.__doc__

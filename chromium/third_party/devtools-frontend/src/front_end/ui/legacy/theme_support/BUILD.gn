@@ -2,11 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("../../../../scripts/build/ninja/component_doc.gni")
 import("../../../../scripts/build/ninja/devtools_entrypoint.gni")
 import("../../../../scripts/build/ninja/devtools_module.gni")
 import("../../../../scripts/build/typescript/typescript.gni")
 
-devtools_module("theme_support") {
+devtools_ui_module("theme_support") {
   sources = [ "ThemeSupport.ts" ]
 
   deps = [
@@ -25,9 +26,12 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility = [
+    # IMPORTANT: Be careful when extending visibility of front_end/ui/legacy/*,
+    # as the UI modules should only be used to actually build user interfaces,
+    # and the business logic should never depend on the UI modules.
     "../*",
+    "../../../../scripts/component_docs/*",
     "../../../entrypoints/main/*",
-    "../../../models/extensions/*",
     "../../../panels/*",
     "../../../testing/*",
     "../../components/docs/*",
@@ -35,7 +39,7 @@ devtools_entrypoint("bundle") {
   ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [ "ThemeSupport.test.ts" ]
@@ -46,4 +50,9 @@ ts_library("unittests") {
     "../../../core/host:bundle",
     "../../../testing",
   ]
+}
+
+component_doc("docs") {
+  sources = [ "ThemeColors.docs.ts" ]
+  deps = [ "../../lit:bundle" ]
 }

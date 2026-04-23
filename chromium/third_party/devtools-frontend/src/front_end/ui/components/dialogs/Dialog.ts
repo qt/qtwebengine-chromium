@@ -1,15 +1,15 @@
 // Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Platform from '../../../core/platform/platform.js';
-import * as WindowBoundsService from '../../../services/window_bounds/window_bounds.js';
 import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import * as RenderCoordinator from '../../../ui/components/render_coordinator/render_coordinator.js';
 import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
+import * as UI from '../../legacy/legacy.js';
 import * as Buttons from '../buttons/buttons.js';
 
 import dialogStyles from './dialog.css.js';
@@ -29,9 +29,11 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 const IS_DIALOG_SUPPORTED = 'HTMLDialogElement' in globalThis;
 
-// Height in pixels of the dialog's connector. The connector is represented as
-// as a diamond and the height corresponds to half the height of the diamond.
-// (the visible height is only half of the diamond).
+/**
+ * Height in pixels of the dialog's connector. The connector is represented as
+ * as a diamond and the height corresponds to half the height of the diamond.
+ * (the visible height is only half of the diamond).
+ **/
 export const CONNECTOR_HEIGHT = 10;
 const CONNECTOR_WIDTH = 2 * CONNECTOR_HEIGHT;
 
@@ -41,12 +43,14 @@ const DIALOG_ANIMATION_OFFSET = 20;
 export const DIALOG_SIDE_PADDING = 5;
 export const DIALOG_VERTICAL_PADDING = 3;
 
-// If the content of the dialog cannot be completely shown because otherwise
-// the dialog would overflow the window, the dialog's max width and height are
-// set such that the dialog remains inside the visible bounds. In this cases
-// some extra, determined by this constant, is added so that the dialog's borders
-// remain clearly visible. This constant accounts for the padding of the dialog's
-// content (20 px) and a 5px gap left on each extreme of the dialog from the viewport.
+/**
+ * If the content of the dialog cannot be completely shown because otherwise
+ * the dialog would overflow the window, the dialog's max width and height are
+ * set such that the dialog remains inside the visible bounds. In this cases
+ * some extra, determined by this constant, is added so that the dialog's borders
+ * remain clearly visible. This constant accounts for the padding of the dialog's
+ * content (20 px) and a 5px gap left on each extreme of the dialog from the viewport.
+ **/
 export const DIALOG_PADDING_FROM_WINDOW = 3 * CONNECTOR_HEIGHT;
 interface DialogData {
   /**
@@ -73,10 +77,6 @@ interface DialogData {
    */
   dialogShownCallback: (() => unknown)|null;
 
-  /**
-   * Optional. Service that provides the window dimensions used for positioning the Dialog.
-   */
-  windowBoundsService: WindowBoundsService.WindowBoundsService.WindowBoundsService;
   /**
    * Whether the dialog is closed when the 'Escape' key is pressed. When true, the event is
    * propagation is stopped.
@@ -128,7 +128,6 @@ export class Dialog extends HTMLElement {
     horizontalAlignment: DialogHorizontalAlignment.CENTER,
     getConnectorCustomXPosition: null,
     dialogShownCallback: null,
-    windowBoundsService: WindowBoundsService.WindowBoundsService.WindowBoundsServiceImpl.instance(),
     closeOnESC: true,
     closeOnScroll: true,
     closeButton: false,
@@ -157,7 +156,7 @@ export class Dialog extends HTMLElement {
     this.#forceDialogCloseInDevToolsBound();
   });
   readonly #dialogResizeObserver = new ResizeObserver(this.#updateDialogBounds.bind(this));
-  #devToolsBoundingElement = this.windowBoundsService.getDevToolsBoundingElement();
+  #devToolsBoundingElement = UI.UIUtils.getDevToolsBoundingElement();
 
   // We bind here because we have to listen to keydowns on the entire window,
   // not on the Dialog element itself. This is because if the user has the
@@ -197,16 +196,6 @@ export class Dialog extends HTMLElement {
 
   set horizontalAlignment(alignment: DialogHorizontalAlignment) {
     this.#props.horizontalAlignment = alignment;
-    this.#onStateChange();
-  }
-
-  get windowBoundsService(): WindowBoundsService.WindowBoundsService.WindowBoundsService {
-    return this.#props.windowBoundsService;
-  }
-
-  set windowBoundsService(windowBoundsService: WindowBoundsService.WindowBoundsService.WindowBoundsService) {
-    this.#props.windowBoundsService = windowBoundsService;
-    this.#devToolsBoundingElement = this.windowBoundsService.getDevToolsBoundingElement();
     this.#onStateChange();
   }
 
@@ -728,6 +717,11 @@ export class Dialog extends HTMLElement {
     `, this.#shadow, { host: this });
     VisualLogging.setMappedParent(this.#getDialog(), this.parentElementOrShadowHost() as HTMLElement);
     // clang-format on
+  }
+
+  setBoundingElementForTesting(element: HTMLElement): void {
+    this.#devToolsBoundingElement = element;
+    this.#onStateChange();
   }
 }
 

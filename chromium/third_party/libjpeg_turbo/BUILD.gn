@@ -269,50 +269,50 @@ libjpeg16_sources = [
 ]
 
 libjpeg12_sources = libjpeg16_sources + [
-  "src/jccoefct.c",
-  "src/jcdctmgr.c",
-  "src/jdcoefct.c",
-  "src/jddctmgr.c",
-  "src/jdmerge.c",
-  "src/jfdctfst.c",
-  "src/jfdctint.c",
-  "src/jidctflt.c",
-  "src/jidctfst.c",
-  "src/jidctint.c",
-  "src/jidctred.c",
-  "src/jquant1.c",
-  "src/jquant2.c",
-]
+                      "src/jccoefct.c",
+                      "src/jcdctmgr.c",
+                      "src/jdcoefct.c",
+                      "src/jddctmgr.c",
+                      "src/jdmerge.c",
+                      "src/jfdctfst.c",
+                      "src/jfdctint.c",
+                      "src/jidctflt.c",
+                      "src/jidctfst.c",
+                      "src/jidctint.c",
+                      "src/jidctred.c",
+                      "src/jquant1.c",
+                      "src/jquant2.c",
+                    ]
 
 libjpeg_sources = libjpeg12_sources + [
-  "src/jcapimin.c",
-  "src/jchuff.c",
-  "src/jcicc.c",
-  "src/jcinit.c",
-  "src/jclhuff.c",
-  "src/jcmarker.c",
-  "src/jcmaster.c",
-  "src/jcomapi.c",
-  "src/jcparam.c",
-  "src/jcphuff.c",
-  "src/jctrans.c",
-  "src/jdapimin.c",
-  "src/jdatadst.c",
-  "src/jdatasrc.c",
-  "src/jdhuff.c",
-  "src/jdicc.c",
-  "src/jdinput.c",
-  "src/jdlhuff.c",
-  "src/jdmarker.c",
-  "src/jdmaster.c",
-  "src/jdphuff.c",
-  "src/jdtrans.c",
-  "src/jerror.c",
-  "src/jfdctflt.c",
-  "src/jmemmgr.c",
-  "src/jmemnobs.c",
-  "src/jpeg_nbits.c",
-]
+                    "src/jcapimin.c",
+                    "src/jchuff.c",
+                    "src/jcicc.c",
+                    "src/jcinit.c",
+                    "src/jclhuff.c",
+                    "src/jcmarker.c",
+                    "src/jcmaster.c",
+                    "src/jcomapi.c",
+                    "src/jcparam.c",
+                    "src/jcphuff.c",
+                    "src/jctrans.c",
+                    "src/jdapimin.c",
+                    "src/jdatadst.c",
+                    "src/jdatasrc.c",
+                    "src/jdhuff.c",
+                    "src/jdicc.c",
+                    "src/jdinput.c",
+                    "src/jdlhuff.c",
+                    "src/jdmarker.c",
+                    "src/jdmaster.c",
+                    "src/jdphuff.c",
+                    "src/jdtrans.c",
+                    "src/jerror.c",
+                    "src/jfdctflt.c",
+                    "src/jmemmgr.c",
+                    "src/jmemnobs.c",
+                    "src/jpeg_nbits.c",
+                  ]
 
 static_library("libjpeg16") {
   sources = libjpeg16_sources
@@ -358,9 +358,7 @@ static_library("libjpeg") {
   ]
 
   public_configs = [ ":libjpeg_config" ]
-  public_deps = [
-    ":libjpeg_headers",
-  ]
+  public_deps = [ ":libjpeg_headers" ]
 
   deps = [
     ":libjpeg12",
@@ -412,13 +410,13 @@ static_library("turbojpeg_ppm12") {
 
 static_library("turbojpeg") {
   sources = turbojpeg_ppm_sources + [
-    "src/jdatadst-tj.c",
-    "src/jdatasrc-tj.c",
-    "src/rdbmp.c",
-    "src/transupp.c",
-    "src/turbojpeg.c",
-    "src/wrbmp.c",
-  ]
+              "src/jdatadst-tj.c",
+              "src/jdatasrc-tj.c",
+              "src/rdbmp.c",
+              "src/transupp.c",
+              "src/turbojpeg.c",
+              "src/wrbmp.c",
+            ]
 
   defines = [
     "BMP_SUPPORTED",
@@ -431,9 +429,7 @@ static_library("turbojpeg") {
   ]
 
   public_configs = [ ":libjpeg_config" ]
-  public_deps = [
-    ":libjpeg",
-  ]
+  public_deps = [ ":libjpeg" ]
   deps = [
     ":turbojpeg_ppm12",
     ":turbojpeg_ppm16",
@@ -488,6 +484,7 @@ if (build_with_chromium) {
       ":rdcolmap12",
       ":turbojpeg",
       "//base",
+      "//crypto",
       "//testing/gtest",
       "//testing/gtest:gtest_main",
     ]

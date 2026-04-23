@@ -35,7 +35,7 @@ body {
 }
 
 :focus {
-  outline-width: 0;
+  outline-style: none;
 }
 
 /* Prevent UA stylesheet from overriding font-family for HTML elements. */
@@ -57,10 +57,6 @@ code, kbd, samp, pre {
   ) !important; /* stylelint-disable-line declaration-no-important */
 
   white-space: pre-wrap;
-
-  &:not(input)::selection {
-    color: var(--sys-color-on-surface);
-  }
 }
 
 .source-code.breakpoint {
@@ -140,11 +136,12 @@ iframe.widget {
   inset: 0;
 }
 
-.hidden {
+[hidden],
+.hidden { /* TODO(crbug.com/458299714): remove the class */
   display: none !important; /* stylelint-disable-line declaration-no-important */
 }
 
-.highlighted-search-result,::highlight(highlighted-search-result) {
+.highlighted-search-result,:host::highlight(highlighted-search-result) {
   border-radius: 1px;
   background-color: var(--sys-color-yellow-container);
   outline: 1px solid var(--sys-color-yellow-container);
@@ -329,7 +326,7 @@ input[type='range']:disabled::-webkit-slider-thumb {
   }
 }
 
-.highlighted-search-result.current-search-result,::highlight(current-search-result) {
+.highlighted-search-result.current-search-result,:host::highlight(current-search-result) {
   /* Note: this value is used in light & dark mode */
   --override-current-search-result-background-color: rgb(255 127 0 / 80%);
 

@@ -5,6 +5,10 @@ romanarora@chromium.org
 rtatum@google.com
 tiborg@chromium.org
 tluk@chromium.org
+mfacey@chromium.org
+
+# For merges only
+jdonnelly@chromium.org
 
 per-file *.mojom=set noparent
 per-file *.mojom=file://ipc/SECURITY_OWNERS

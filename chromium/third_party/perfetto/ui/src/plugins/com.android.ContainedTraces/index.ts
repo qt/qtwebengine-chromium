@@ -15,7 +15,7 @@
 import {Trace} from '../../public/trace';
 import StandardGroupsPlugin from '../dev.perfetto.StandardGroups';
 import {PerfettoPlugin} from '../../public/plugin';
-import {STR, LONG} from '../../trace_processor/query_result';
+import {STR, LONG, LONG_NULL} from '../../trace_processor/query_result';
 import {SourceDataset} from '../../trace_processor/dataset';
 import SupportPlugin from '../com.android.AndroidLongBatterySupport';
 
@@ -36,11 +36,10 @@ export default class implements PerfettoPlugin {
     return ctx.plugins.getPlugin(SupportPlugin);
   }
 
-  async onTraceLoad(ctx: Trace): Promise<void> {
+  async onTraceLoad(ctx: Trace, args: {[key: string]: unknown}): Promise<void> {
     const support = this.support(ctx);
 
-    const containedTraces = (ctx.openerPluginArgs?.containedTraces ??
-      []) as ContainedTrace[];
+    const containedTraces = (args?.containedTraces ?? []) as ContainedTrace[];
 
     const bySubscription = new Map<string, ContainedTrace[]>();
     for (const trace of containedTraces) {
@@ -68,7 +67,7 @@ export default class implements PerfettoPlugin {
             .join(' UNION ALL '),
           schema: {
             ts: LONG,
-            dur: LONG,
+            dur: LONG_NULL,
             name: STR,
             link: STR,
           },

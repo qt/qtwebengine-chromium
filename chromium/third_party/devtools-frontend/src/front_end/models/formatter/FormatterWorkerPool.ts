@@ -2,16 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Common from '../../core/common/common.js';
-import * as FormatterActions from '../../entrypoints/formatter_worker/FormatterActions.js';  // eslint-disable-line rulesdir/es-modules-import
+import type * as PlatformApi from '../../core/platform/api/api.js';
+import * as Platform from '../../core/platform/platform.js';
+import * as FormatterActions from '../../entrypoints/formatter_worker/FormatterActions.js';  // eslint-disable-line @devtools/es-modules-import
 
-export {DefinitionKind, type ScopeTreeNode} from '../../entrypoints/formatter_worker/FormatterActions.js';
+export {DefinitionKind, ScopeKind, type ScopeTreeNode} from '../../entrypoints/formatter_worker/FormatterActions.js';
 
-let formatterWorkerPoolInstance: FormatterWorkerPool;
+let formatterWorkerPoolInstance: FormatterWorkerPool|undefined;
 
 export class FormatterWorkerPool {
   private taskQueue: Task[];
-  private workerTasks: Map<Common.Worker.WorkerWrapper, Task|null>;
+  private workerTasks: Map<PlatformApi.HostRuntime.Worker, Task|null>;
 
   constructor() {
     this.taskQueue = [];
@@ -26,9 +27,25 @@ export class FormatterWorkerPool {
     return formatterWorkerPoolInstance;
   }
 
-  private createWorker(): Common.Worker.WorkerWrapper {
-    const worker = Common.Worker.WorkerWrapper.fromURL(
-        new URL('../../entrypoints/formatter_worker/formatter_worker-entrypoint.js', import.meta.url));
+  dispose(): void {
+    for (const task of this.taskQueue) {
+      console.error('rejecting task');
+      task.errorCallback(new Event('Worker terminated'));
+    }
+    for (const [worker, task] of this.workerTasks.entries()) {
+      task?.errorCallback(new Event('Worker terminated'));
+      worker.terminate(/* immediately=*/ true);
+    }
+  }
+
+  static removeInstance(): void {
+    formatterWorkerPoolInstance?.dispose();
+    formatterWorkerPoolInstance = undefined;
+  }
+
+  private createWorker(): PlatformApi.HostRuntime.Worker {
+    const worker = Platform.HostRuntime.HOST_RUNTIME.createWorker(
+        new URL('../../entrypoints/formatter_worker/formatter_worker-entrypoint.js', import.meta.url).toString());
     worker.onmessage = this.onWorkerMessage.bind(this, worker);
     worker.onerror = this.onWorkerError.bind(this, worker);
     return worker;
@@ -56,7 +73,8 @@ export class FormatterWorkerPool {
     }
   }
 
-  private onWorkerMessage(worker: Common.Worker.WorkerWrapper, event: MessageEvent): void {
+  private onWorkerMessage(worker: PlatformApi.HostRuntime.Worker, event: PlatformApi.HostRuntime.WorkerMessageEvent):
+      void {
     const task = this.workerTasks.get(worker);
     if (!task) {
       return;
@@ -71,7 +89,7 @@ export class FormatterWorkerPool {
     task.callback(event.data ? event.data : null);
   }
 
-  private onWorkerError(worker: Common.Worker.WorkerWrapper, event: Event): void {
+  private onWorkerError(worker: PlatformApi.HostRuntime.Worker, event: Event): void {
     console.error(event);
     const task = this.workerTasks.get(worker);
     worker.terminate();

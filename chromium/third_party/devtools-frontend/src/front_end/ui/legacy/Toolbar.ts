@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -10,20 +10,18 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
-import type * as Adorners from '../components/adorners/adorners.js';
-import * as IconButton from '../components/icon_button/icon_button.js';
+import {createIcon} from '../kit/kit.js';
 
 import {type Action, Events as ActionEvents} from './ActionRegistration.js';
 import {ActionRegistry} from './ActionRegistry.js';
 import * as ARIAUtils from './ARIAUtils.js';
 import {ContextMenu} from './ContextMenu.js';
 import {GlassPane, PointerEventsBehavior} from './GlassPane.js';
-import {bindCheckbox} from './SettingsUI.js';
 import type {Suggestion} from './SuggestBox.js';
 import {Events as TextPromptEvents, TextPrompt} from './TextPrompt.js';
 import toolbarStyles from './toolbar.css.js';
 import {Tooltip} from './Tooltip.js';
-import {CheckboxLabel, LongClickController} from './UIUtils.js';
+import {bindCheckbox, CheckboxLabel, LongClickController} from './UIUtils.js';
 
 const UIStrings = {
   /**
@@ -94,7 +92,7 @@ export class Toolbar extends HTMLElement {
         if (element instanceof Buttons.Button.Button) {
           item = new ToolbarButton('', undefined, undefined, undefined, element);
         } else if (element instanceof ToolbarInputElement) {
-          item = element.item;
+          item = element.item as ToolbarItem;
         } else if (element instanceof HTMLSelectElement) {
           item = new ToolbarComboBox(null, element.title, undefined, undefined, element);
         } else {
@@ -643,7 +641,7 @@ export class ToolbarButton extends ToolbarItem<ToolbarButton.EventTypes, Buttons
     this.text = text;
   }
 
-  setAdorner(adorner: Adorners.Adorner.Adorner): void {
+  setAdorner(adorner: HTMLElement): void {
     if (this.adorner) {
       this.adorner.replaceWith(adorner);
     } else {
@@ -826,18 +824,19 @@ export class ToolbarFilter extends ToolbarInput {
         filterPlaceholder, filterPlaceholder, growFactor, shrinkFactor, tooltip, completions, dynamicCompletions,
         jslogContext || 'filter', element);
 
-    const filterIcon = IconButton.Icon.create('filter');
+    const filterIcon = createIcon('filter');
     this.element.prepend(filterIcon);
     this.element.classList.add('toolbar-filter');
   }
 }
 
 export class ToolbarInputElement extends HTMLElement {
-  static observedAttributes = ['value'];
+  static observedAttributes = ['value', 'disabled'];
 
-  item!: ToolbarInput;
+  item?: ToolbarInput;
   datalist: HTMLDataListElement|null = null;
   value: string|undefined = undefined;
+  #disabled = false;
 
   connectedCallback(): void {
     if (this.item) {
@@ -866,6 +865,9 @@ export class ToolbarInputElement extends HTMLElement {
     if (this.value) {
       this.item.setValue(this.value);
     }
+    if (this.#disabled) {
+      this.item.setEnabled(false);
+    }
     this.item.addEventListener(ToolbarInput.Event.TEXT_CHANGED, event => {
       this.dispatchEvent(new CustomEvent('change', {detail: event.data}));
     });
@@ -875,7 +877,7 @@ export class ToolbarInputElement extends HTMLElement {
   }
 
   override focus(): void {
-    this.item.focus();
+    this.item?.focus();
   }
 
   async #onAutocomplete(expression: string, prefix: string, force?: boolean): Promise<Suggestion[]> {
@@ -894,7 +896,24 @@ export class ToolbarInputElement extends HTMLElement {
       } else {
         this.value = newValue;
       }
+    } else if (name === 'disabled') {
+      this.#disabled = typeof newValue === 'string';
+      if (this.item) {
+        this.item.setEnabled(!this.#disabled);
+      }
     }
+  }
+
+  set disabled(disabled: boolean) {
+    if (disabled) {
+      this.setAttribute('disabled', '');
+    } else {
+      this.removeAttribute('disabled');
+    }
+  }
+
+  get disabled(): boolean {
+    return this.hasAttribute('disabled');
   }
 }
 customElements.define('devtools-toolbar-input', ToolbarInputElement);
@@ -950,7 +969,7 @@ export class ToolbarMenuButton extends ToolbarItem<ToolbarButton.EventTypes> {
   private textElement?: HTMLElement;
   private text?: string;
   private iconName?: string;
-  private adorner?: Adorners.Adorner.Adorner;
+  private adorner?: HTMLElement;
   private readonly contextMenuHandler: (arg0: ContextMenu) => void;
   private readonly useSoftMenu: boolean;
   private readonly keepOpen: boolean;
@@ -978,7 +997,7 @@ export class ToolbarMenuButton extends ToolbarItem<ToolbarButton.EventTypes> {
     this.title = '';
     if (!isIconDropdown) {
       this.element.classList.add('toolbar-has-dropdown');
-      const dropdownArrowIcon = IconButton.Icon.create('triangle-down', 'toolbar-dropdown-arrow');
+      const dropdownArrowIcon = createIcon('triangle-down', 'toolbar-dropdown-arrow');
       this.element.appendChild(dropdownArrowIcon);
     }
     if (jslogContext) {
@@ -1007,7 +1026,7 @@ export class ToolbarMenuButton extends ToolbarItem<ToolbarButton.EventTypes> {
     this.text = text;
   }
 
-  setAdorner(adorner: Adorners.Adorner.Adorner): void {
+  setAdorner(adorner: HTMLElement): void {
     if (this.iconName) {
       return;
     }

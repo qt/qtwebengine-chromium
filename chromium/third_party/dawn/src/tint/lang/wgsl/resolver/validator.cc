@@ -583,7 +583,9 @@ bool Validator::AddressSpaceLayout(const core::type::Type* store_ty,
     auto required_alignment_of = [&](const core::type::Type* ty) {
         uint32_t actual_align = ty->Align();
         uint32_t required_align = actual_align;
-        if (is_uniform_struct_or_array(ty)) {
+        if (is_uniform_struct_or_array(ty) &&
+            !allowed_features_.features.contains(
+                wgsl::LanguageFeature::kUniformBufferStandardLayout)) {
             required_align = tint::RoundUp(16u, actual_align);
         }
         return required_align;
@@ -649,7 +651,9 @@ bool Validator::AddressSpaceLayout(const core::type::Type* store_ty,
             // For uniform buffers, validate that the number of bytes between the previous member of
             // type struct and the current is a multiple of 16 bytes.
             auto* const prev_member = (i == 0) ? nullptr : str->Members()[i - 1];
-            if (prev_member && is_uniform_struct(prev_member->Type())) {
+            if (prev_member && is_uniform_struct(prev_member->Type()) &&
+                !allowed_features_.features.contains(
+                    wgsl::LanguageFeature::kUniformBufferStandardLayout)) {
                 const uint32_t prev_to_curr_offset = m->Offset() - prev_member->Offset();
                 if (prev_to_curr_offset % 16 != 0) {
                     AddError(m->Declaration()->source)
@@ -700,7 +704,9 @@ bool Validator::AddressSpaceLayout(const core::type::Type* store_ty,
             return false;
         }
 
-        if (address_space == core::AddressSpace::kUniform) {
+        if (address_space == core::AddressSpace::kUniform &&
+            !allowed_features_.features.contains(
+                wgsl::LanguageFeature::kUniformBufferStandardLayout)) {
             // We already validated that this array member is itself aligned to 16 bytes above, so
             // we only need to validate that stride is a multiple of 16 bytes.
             if (arr->ImplicitStride() % 16 != 0) {
@@ -735,11 +741,6 @@ bool Validator::AddressSpaceLayout(const core::type::Type* store_ty,
 
 bool Validator::LocalVariable(const sem::Variable* local) const {
     auto* decl = local->Declaration();
-    if (IsArrayWithOverrideCount(local->Type())) {
-        RaiseArrayWithOverrideCountError(decl->type ? decl->type->source
-                                                    : decl->initializer->source);
-        return false;
-    }
     return Switch(
         decl,  //
         [&](const ast::Var* var) {
@@ -760,12 +761,6 @@ bool Validator::GlobalVariable(
     const sem::GlobalVariable* global,
     const Hashmap<OverrideId, const sem::Variable*, 8>& override_ids) const {
     auto* decl = global->Declaration();
-    if (global->AddressSpace() != core::AddressSpace::kWorkgroup &&
-        IsArrayWithOverrideCount(global->Type())) {
-        RaiseArrayWithOverrideCountError(decl->type ? decl->type->source
-                                                    : decl->initializer->source);
-        return false;
-    }
     bool ok = Switch(
         decl,  //
         [&](const ast::Var* var) {
@@ -965,6 +960,7 @@ bool Validator::Parameter(const sem::Variable* var) const {
             case core::AddressSpace::kPrivate:
                 ok = true;
                 break;
+            case core::AddressSpace::kImmediate:
             case core::AddressSpace::kStorage:
             case core::AddressSpace::kUniform:
             case core::AddressSpace::kWorkgroup:
@@ -1007,6 +1003,7 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
     bool is_stage_mismatch = false;
     bool is_output = !is_input;
     auto builtin = attr->builtin;
+    auto depth_mode = attr->depth_mode;
 
     auto err_builtin_type = [&](std::string_view required) {
         AddError(attr->source) << "store type of " << style::Attribute("@builtin")
@@ -1046,6 +1043,15 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
             if (stage != ast::PipelineStage::kNone &&
                 !(stage == ast::PipelineStage::kFragment && !is_input)) {
                 is_stage_mismatch = true;
+            }
+            if (!allowed_features_.features.contains(wgsl::LanguageFeature::kFragmentDepth) &&
+                depth_mode != core::BuiltinDepthMode::kUndefined) {
+                AddError(attr->source)
+                    << "use of " << style::Attribute("@builtin")
+                    << style::Code("(", style::Enum(builtin), ", ", style::Enum(depth_mode), ")")
+                    << " attribute requires the " << style::Code("fragment_depth")
+                    << " language feature";
+                return false;
             }
             if (!type->Is<core::type::F32>()) {
                 err_builtin_type("f32");
@@ -1103,13 +1109,47 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
             }
             break;
         case core::BuiltinValue::kSubgroupId:
-            // TODO(crbug.com/416555787): Move this to the `subgroups` extension.
-            if (!enabled_extensions_.Contains(
-                    wgsl::Extension::kChromiumExperimentalSubgroupMatrix)) {
-                AddError(attr->source) << "use of " << style::Attribute("@builtin")
-                                       << style::Code("(", style::Enum(builtin), ")")
-                                       << " attribute requires enabling extension "
-                                       << style::Code("chromium_experimental_subgroup_matrix");
+            if (!enabled_extensions_.Contains(wgsl::Extension::kSubgroups)) {
+                AddError(attr->source)
+                    << "use of " << style::Attribute("@builtin")
+                    << style::Code("(", style::Enum(builtin), ")")
+                    << " attribute requires enabling extension " << style::Code("subgroups");
+                return false;
+            }
+            // TODO(crbug.com/454654105): Remove this check.
+            if (!allowed_features_.features.contains(wgsl::LanguageFeature::kSubgroupId)) {
+                AddError(attr->source)
+                    << "use of " << style::Attribute("@builtin")
+                    << style::Code("(", style::Enum(builtin), ")") << " attribute requires the "
+                    << style::Code("subgroup_id") << " language feature";
+                return false;
+            }
+            if (!type->Is<core::type::U32>()) {
+                err_builtin_type("u32");
+                return false;
+            }
+            if (stage != ast::PipelineStage::kNone &&
+                !(stage == ast::PipelineStage::kCompute && is_input)) {
+                AddError(attr->source)
+                    << style::Attribute("@builtin") << style::Code("(", style::Enum(builtin), ")")
+                    << " is only valid as a compute shader input";
+                return false;
+            }
+            break;
+        case core::BuiltinValue::kNumSubgroups:
+            if (!enabled_extensions_.Contains(wgsl::Extension::kSubgroups)) {
+                AddError(attr->source)
+                    << "use of " << style::Attribute("@builtin")
+                    << style::Code("(", style::Enum(builtin), ")")
+                    << " attribute requires enabling extension " << style::Code("subgroups");
+                return false;
+            }
+            // TODO(crbug.com/454654105): Remove this check.
+            if (!allowed_features_.features.contains(wgsl::LanguageFeature::kSubgroupId)) {
+                AddError(attr->source)
+                    << "use of " << style::Attribute("@builtin")
+                    << style::Code("(", style::Enum(builtin), ")") << " attribute requires the "
+                    << style::Code("subgroup_id") << " language feature";
                 return false;
             }
             if (!type->Is<core::type::U32>()) {
@@ -1219,6 +1259,15 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
         return false;
     }
 
+    if (allowed_features_.features.contains(wgsl::LanguageFeature::kFragmentDepth) &&
+        depth_mode != core::BuiltinDepthMode::kUndefined &&
+        builtin != core::BuiltinValue::kFragDepth) {
+        AddError(attr->source) << "Builtin depth mode " << style::Code(style::Enum(depth_mode))
+                               << " cannot be used for " << style::Attribute("@builtin")
+                               << style::Code("(", style::Enum(builtin), ")");
+        return false;
+    }
+
     return true;
 }
 
@@ -1319,16 +1368,14 @@ bool Validator::Function(const sem::Function* func, ast::PipelineStage stage) co
             return false;
         }
 
-        if (decl->body) {
-            auto behaviors = sem_.Get(decl->body)->Behaviors();
-            if (behaviors.Contains(sem::Behavior::kNext)) {
-                auto end_source = decl->body->source.End();
-                end_source.range.begin.column--;
-                AddError(end_source) << "missing return at end of function";
-                return false;
-            }
-        } else {
-            TINT_ICE() << "function " << decl->name->symbol.NameView() << " has no body";
+        TINT_ASSERT(decl->body) << "function " << decl->name->symbol.NameView() << " has no body";
+
+        auto behaviors = sem_.Get(decl->body)->Behaviors();
+        if (behaviors.Contains(sem::Behavior::kNext)) {
+            auto end_source = decl->body->source.End();
+            end_source.range.begin.column--;
+            AddError(end_source) << "missing return at end of function";
+            return false;
         }
     }
 
@@ -1424,18 +1471,14 @@ bool Validator::EntryPoint(const sem::Function* func, ast::PipelineStage stage) 
                     }
                     pipeline_io_attribute = attr;
 
-                    if (DAWN_UNLIKELY(!location.has_value())) {
-                        TINT_ICE() << "@location has no value";
-                    }
+                    TINT_ASSERT(location.has_value()) << "@location has no value";
 
                     return LocationAttribute(loc_attr, ty, stage, source);
                 },
                 [&](const ast::BlendSrcAttribute* blend_src_attr) {
                     blend_src_attribute = blend_src_attr;
 
-                    if (DAWN_UNLIKELY(!blend_src.has_value())) {
-                        TINT_ICE() << "@blend_src has no value";
-                    }
+                    TINT_ASSERT(blend_src.has_value()) << "@blend_src has no value";
 
                     bool is_input = param_or_ret == ParamOrRetType::kParameter;
                     return BlendSrcAttribute(blend_src_attr, stage, is_input);
@@ -1453,9 +1496,7 @@ bool Validator::EntryPoint(const sem::Function* func, ast::PipelineStage stage) 
 
                     bool is_input = param_or_ret == ParamOrRetType::kParameter;
 
-                    if (DAWN_UNLIKELY(!color.has_value())) {
-                        TINT_ICE() << "@color has no value";
-                    }
+                    TINT_ASSERT(color.has_value()) << "@color has no value";
 
                     return ColorAttribute(col_attr, ty, stage, source, is_input);
                 },
@@ -2355,9 +2396,7 @@ bool Validator::ArrayConstructor(const ast::CallExpression* ctor,
         return false;
     }
 
-    if (DAWN_UNLIKELY(!c->Is<core::type::ConstantArrayCount>())) {
-        TINT_ICE() << "Invalid ArrayCount found";
-    }
+    TINT_ASSERT(c->Is<core::type::ConstantArrayCount>()) << "Invalid ArrayCount found";
 
     const auto count = c->As<core::type::ConstantArrayCount>()->value;
     if (!values.IsEmpty() && (values.Length() != count)) {
@@ -2369,14 +2408,15 @@ bool Validator::ArrayConstructor(const ast::CallExpression* ctor,
     return true;
 }
 
-bool Validator::SubgroupMatrixConstructor(
-    const ast::CallExpression* ctor,
-    const core::type::SubgroupMatrix* subgroup_matrix_type) const {
+bool Validator::SubgroupMatrixConstructor(const ast::CallExpression* ctor,
+                                          const core::type::SubgroupMatrix* subgroup_matrix_type,
+                                          const sem::CallTarget* signature) const {
     auto& values = ctor->args;
     if (values.Length() == 1) {
         auto* elem_ty = subgroup_matrix_type->Type();
         auto* value_ty = sem_.TypeOf(values[0])->UnwrapRef();
-        if (core::type::Type::ConversionRank(value_ty, elem_ty) ==
+        auto* expected_ty = signature->Parameters()[0]->Type();
+        if (core::type::Type::ConversionRank(value_ty, expected_ty) ==
             core::type::Type::kNoConversion) {
             AddError(values[0]->source) << style::Type(sem_.TypeNameOf(value_ty))
                                         << " cannot be used to construct a subgroup matrix of "
@@ -3183,11 +3223,11 @@ bool Validator::CheckTypeAccessAddressSpace(const core::type::Type* store_ty,
             }
             break;
         case core::AddressSpace::kImmediate:
-            if (DAWN_UNLIKELY(!enabled_extensions_.Contains(
-                    wgsl::Extension::kChromiumExperimentalImmediate))) {
+            if (DAWN_UNLIKELY(allowed_features_.features.count(
+                                  wgsl::LanguageFeature::kImmediateAddressSpace) == 0u)) {
                 AddError(source) << "use of variable address space " << style::Enum("immediate")
-                                 << " requires enabling extension "
-                                 << style::Code("chromium_experimental_immediate");
+                                 << " requires the immediate_address_space language feature, which "
+                                    "is not allowed in the current environment";
                 return false;
             }
             break;

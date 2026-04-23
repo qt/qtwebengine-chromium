@@ -10,6 +10,7 @@
 
 #include "quiche/quic/core/quic_bandwidth.h"
 #include "quiche/quic/core/quic_time.h"
+#include "quiche/quic/moqt/moqt_messages.h"
 #include "quiche/common/platform/api/quiche_bug_tracker.h"
 #include "quiche/common/platform/api/quiche_logging.h"
 #include "quiche/web_transport/web_transport.h"
@@ -34,8 +35,7 @@ void MoqtBitrateAdjuster::Start() {
 }
 
 void MoqtBitrateAdjuster::OnObjectAckReceived(
-    uint64_t /*group_id*/, uint64_t /*object_id*/,
-    QuicTimeDelta delta_from_deadline) {
+    Location /*location*/, QuicTimeDelta delta_from_deadline) {
   if (!start_time_.IsInitialized()) {
     return;
   }
@@ -63,8 +63,7 @@ void MoqtBitrateAdjuster::AttemptAdjustingDown() {
       parameters_.target_bitrate_multiplier_down *
       QuicBandwidth::FromBitsPerSecond(stats.estimated_send_rate_bps);
   QUICHE_DLOG(INFO) << "Adjusting the bitrate down to " << target_bandwidth;
-  adjustable_->ConsiderAdjustingBitrate(target_bandwidth,
-                                        BitrateAdjustmentType::kDown);
+  SuggestNewBitrate(target_bandwidth, BitrateAdjustmentType::kDown);
 }
 
 void MoqtBitrateAdjuster::OnObjectAckSupportKnown(
@@ -102,6 +101,12 @@ bool ShouldIgnoreBitrateAdjustment(quic::QuicBandwidth new_bitrate,
       break;
   }
   return false;
+}
+
+void MoqtBitrateAdjuster::SuggestNewBitrate(quic::QuicBandwidth bitrate,
+                                            BitrateAdjustmentType type) {
+  adjustable_->ConsiderAdjustingBitrate(bitrate, type);
+  trace_recorder_.RecordTargetBitrateSet(bitrate);
 }
 
 }  // namespace moqt

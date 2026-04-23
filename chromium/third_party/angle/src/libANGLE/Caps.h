@@ -46,13 +46,6 @@ struct TextureCaps
 
     // Set of supported sample counts, only guaranteed to be valid in ES3.
     SupportedSampleSet sampleCounts;
-
-    // Get the maximum number of samples supported
-    GLuint getMaxSamples() const;
-
-    // Get the number of supported samples that is at least as many as requested.  Returns 0 if
-    // there are no sample counts available
-    GLuint getNearestSamples(GLuint requestedSamples) const;
 };
 
 TextureCaps GenerateMinimumTextureCaps(GLenum internalFormat,
@@ -717,6 +710,9 @@ struct DisplayExtensions
 
     // EGL_ANGLE_metal_shared_event_sync
     bool mtlSyncSharedEventANGLE = false;
+
+    // EGL_ANGLE_metal_commands_scheduled_sync
+    bool mtlSyncCommandsScheduledANGLE = false;
 
     // EGL_ANGLE_global_fence_sync
     bool globalFenceSyncANGLE = false;

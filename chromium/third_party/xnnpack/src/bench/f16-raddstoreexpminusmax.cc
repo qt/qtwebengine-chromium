@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2022-2025 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
@@ -18,6 +18,7 @@
 #include "src/xnnpack/microparams-init.h"
 #include "src/xnnpack/raddstoreexpminusmax.h"
 #include "src/xnnpack/reduce.h"
+#include "test/replicable_random_device.h"
 #include <benchmark/benchmark.h>
 
 static void f16_raddstoreexpminusmax(
@@ -34,8 +35,7 @@ static void f16_raddstoreexpminusmax(
   const size_t packed_elements = benchmark::utils::RoundUp(
       elements, cache_line_size_max / sizeof(xnn_float16));
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(
       std::uniform_real_distribution<float>(-100.0f, 100.0f), std::ref(rng));
 
@@ -253,7 +253,7 @@ BENCHMARK_CAPTURE(
     ->UseRealTime();
 #endif  // XNN_ENABLE_ARM_FP16_VECTOR && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
 
-#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+#if XNN_ENABLE_AVX2 && XNN_ENABLE_F16C && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 BENCHMARK_CAPTURE(f16_raddstoreexpminusmax, avx2_rr1_p2_u16,
                   xnn_f16_rmax_ukernel__f16c_u32,
                   xnn_f16_raddstoreexpminusmax_ukernel__avx2_rr1_p2_u16,
@@ -415,7 +415,7 @@ BENCHMARK_CAPTURE(f16_raddstoreexpminusmax, avx2_rr1_p2_u96_acc6,
     ->Apply(
         benchmark::utils::UnaryElementwiseParameters<xnn_float16, xnn_float16>)
     ->UseRealTime();
-#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+#endif  // XNN_ENABLE_AVX2 && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 
 #ifndef XNNPACK_BENCHMARK_NO_MAIN
 XNN_BENCHMARK_MAIN();

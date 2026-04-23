@@ -367,7 +367,7 @@ enum WebDXFeature {
   kAppShortcuts = 305,
   kFetchlater = 306,
   kDRAFT_WasmBranchHinting = 307,
-  kDRAFT_ExplicitResourceManagement = 308,
+  kExplicitResourceManagement = 308,
   kAppLaunchHandler = 309,
   kFunction = 310,
   kIf = 311,
@@ -471,6 +471,11 @@ enum WebDXFeature {
   kWebxrLightingEstimation = 409,
   kReporting = 410,
   kFontLanguageOverride = 411,
+  kWebnn = 412,
+  kTextDetect = 413,
+  kTextJustify = 414,
+  kSummarizer = 415,
+  kTranslationApi = 416,
 
   // Add new features immediately above this line. Don't change assigned
   // numbers of any item, and don't reuse removed slots.

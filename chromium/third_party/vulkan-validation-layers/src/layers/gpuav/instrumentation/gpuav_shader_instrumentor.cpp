@@ -23,6 +23,7 @@
 #include "generated/vk_extension_helper.h"
 #include "generated/dispatch_functions.h"
 #include "chassis/chassis_modification_state.h"
+#include "gpuav/core/gpuav_constants.h"
 #include "utils/shader_utils.h"
 
 #include "gpuav/shaders/gpuav_shaders_constants.h"
@@ -36,6 +37,7 @@
 #include "state_tracker/pipeline_state.h"
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/shader_object_state.h"
+#include "state_tracker/descriptor_mode.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
 
 #include "gpuav/spirv/module.h"
@@ -47,7 +49,8 @@
 #include "gpuav/spirv/ray_query_pass.h"
 #include "gpuav/spirv/debug_printf_pass.h"
 #include "gpuav/spirv/post_process_descriptor_indexing_pass.h"
-#include "gpuav/spirv/vertex_attribute_fetch_oob.h"
+#include "gpuav/spirv/vertex_attribute_fetch_oob_pass.h"
+#include "gpuav/spirv/sanitizer_pass.h"
 
 #include <cassert>
 #include <string>
@@ -70,6 +73,120 @@ WriteLockGuard GpuShaderInstrumentor::WriteLock() {
     } else {
         return WriteLockGuard(validation_object_mutex);
     }
+}
+
+void GpuShaderInstrumentor::SetupClassicDescriptor(const Location &loc) {
+    const VkDescriptorSetLayoutCreateInfo debug_desc_layout_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr, 0,
+                                                                    static_cast<uint32_t>(instrumentation_bindings_.size()),
+                                                                    instrumentation_bindings_.data()};
+
+    VkResult result = DispatchCreateDescriptorSetLayout(device, &debug_desc_layout_info, nullptr,
+                                                        &instrumentation_desc_layout_[vvl::DescriptorModeClassic]);
+    if (result != VK_SUCCESS) {
+        InternalError(device, loc, "vkCreateDescriptorSetLayout failed for internal descriptor set");
+        Cleanup();
+        return;
+    }
+
+    const VkDescriptorSetLayoutCreateInfo dummy_desc_layout_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr, 0,
+                                                                    0, nullptr};
+    result = DispatchCreateDescriptorSetLayout(device, &dummy_desc_layout_info, nullptr,
+                                               &dummy_desc_layout_[vvl::DescriptorModeClassic]);
+    if (result != VK_SUCCESS) {
+        InternalError(device, loc, "vkCreateDescriptorSetLayout failed for internal dummy descriptor set");
+        Cleanup();
+        return;
+    }
+
+    std::vector<VkDescriptorSetLayout> debug_layouts;
+    for (uint32_t j = 0; j < instrumentation_desc_set_bind_index_; ++j) {
+        debug_layouts.push_back(dummy_desc_layout_[vvl::DescriptorModeClassic]);
+    }
+    debug_layouts.push_back(instrumentation_desc_layout_[vvl::DescriptorModeClassic]);
+
+    const VkPipelineLayoutCreateInfo debug_pipeline_layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                                                   nullptr,
+                                                                   0u,
+                                                                   static_cast<uint32_t>(debug_layouts.size()),
+                                                                   debug_layouts.data(),
+                                                                   0u,
+                                                                   nullptr};
+    result = DispatchCreatePipelineLayout(device, &debug_pipeline_layout_info, nullptr,
+                                          &instrumentation_pipeline_layout_[vvl::DescriptorModeClassic]);
+    if (result != VK_SUCCESS) {
+        InternalError(device, loc, "vkCreateDescriptorSetLayout failed for internal pipeline layout");
+        Cleanup();
+        return;
+    }
+}
+
+void GpuShaderInstrumentor::SetupDescriptorBuffers(const Location &loc) {
+    if (!IsExtEnabled(extensions.vk_ext_descriptor_buffer)) {
+        return;
+    }
+
+    // We don't use dynamic offset in descriptor buffer, instead we just map the offset each call
+    // This isn't ideal to set like this, will not be a problem when we get Root Node working
+    instrumentation_bindings_[glsl::kBindingInstActionIndex].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    instrumentation_bindings_[glsl::kBindingInstCmdResourceIndex].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+
+    const VkDescriptorSetLayoutCreateInfo descriptor_buffer_dsl_info = {
+        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr, VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT,
+        static_cast<uint32_t>(instrumentation_bindings_.size()), instrumentation_bindings_.data()};
+
+    VkResult result = DispatchCreateDescriptorSetLayout(device, &descriptor_buffer_dsl_info, nullptr,
+                                                        &instrumentation_desc_layout_[vvl::DescriptorModeBuffer]);
+    if (result != VK_SUCCESS) {
+        InternalError(device, loc, "vkCreateDescriptorSetLayout failed for internal descriptor set for descriptor buffer");
+        Cleanup();
+        return;
+    }
+
+    const VkDescriptorSetLayoutCreateInfo descriptor_buffer_dummy_dsl_info = {
+        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr, VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT, 0,
+        nullptr};
+    result = DispatchCreateDescriptorSetLayout(device, &descriptor_buffer_dummy_dsl_info, nullptr,
+                                               &dummy_desc_layout_[vvl::DescriptorModeBuffer]);
+    if (result != VK_SUCCESS) {
+        InternalError(device, loc, "vkCreateDescriptorSetLayout failed for internal dummy descriptor set for descriptor buffer");
+        Cleanup();
+        return;
+    }
+
+    std::vector<VkDescriptorSetLayout> debug_layouts;
+    for (uint32_t j = 0; j < instrumentation_desc_set_bind_index_; ++j) {
+        debug_layouts.push_back(dummy_desc_layout_[vvl::DescriptorModeBuffer]);
+    }
+    debug_layouts.push_back(instrumentation_desc_layout_[vvl::DescriptorModeBuffer]);
+
+    const VkPipelineLayoutCreateInfo debug_pipeline_layout_db_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                                                      nullptr,
+                                                                      0u,
+                                                                      static_cast<uint32_t>(debug_layouts.size()),
+                                                                      debug_layouts.data(),
+                                                                      0u,
+                                                                      nullptr};
+    result = DispatchCreatePipelineLayout(device, &debug_pipeline_layout_db_info, nullptr,
+                                          &instrumentation_pipeline_layout_[vvl::DescriptorModeBuffer]);
+    if (result != VK_SUCCESS) {
+        InternalError(device, loc, "vkCreateDescriptorSetLayout failed for internal pipeline layout for descriptor buffer");
+        Cleanup();
+        return;
+    }
+
+    VkDeviceSize bytes_to_reserve = 0;
+    DispatchGetDescriptorSetLayoutSizeEXT(device, instrumentation_desc_layout_[vvl::DescriptorModeBuffer], &bytes_to_reserve);
+
+    resource_descriptor_buffer_size_ = bytes_to_reserve;
+    resource_descriptor_buffer_offsets_.resize(glsl::kTotalBindings);
+    for (uint32_t i = 0; i < glsl::kTotalBindings; i++) {
+        DispatchGetDescriptorSetLayoutBindingOffsetEXT(device, instrumentation_desc_layout_[vvl::DescriptorModeBuffer], i,
+                                                       &resource_descriptor_buffer_offsets_[i]);
+    }
+
+    // Revert, because classic needs for fixing disturbed pipelines
+    instrumentation_bindings_[glsl::kBindingInstActionIndex].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+    instrumentation_bindings_[glsl::kBindingInstCmdResourceIndex].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
 }
 
 // In charge of getting things for shader instrumentation that both GPU-AV and DebugPrintF will need
@@ -128,60 +245,24 @@ void GpuShaderInstrumentor::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateI
         return;
     }
 
-    const VkDescriptorSetLayoutCreateInfo debug_desc_layout_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr, 0,
-                                                                    static_cast<uint32_t>(instrumentation_bindings_.size()),
-                                                                    instrumentation_bindings_.data()};
-
-    VkResult result = DispatchCreateDescriptorSetLayout(device, &debug_desc_layout_info, nullptr, &instrumentation_desc_layout_);
-    if (result != VK_SUCCESS) {
-        InternalError(device, loc, "vkCreateDescriptorSetLayout failed for internal descriptor set");
-        Cleanup();
-        return;
-    }
-
-    const VkDescriptorSetLayoutCreateInfo dummy_desc_layout_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr, 0,
-                                                                    0, nullptr};
-    result = DispatchCreateDescriptorSetLayout(device, &dummy_desc_layout_info, nullptr, &dummy_desc_layout_);
-    if (result != VK_SUCCESS) {
-        InternalError(device, loc, "vkCreateDescriptorSetLayout failed for internal dummy descriptor set");
-        Cleanup();
-        return;
-    }
-
-    std::vector<VkDescriptorSetLayout> debug_layouts;
-    for (uint32_t j = 0; j < instrumentation_desc_set_bind_index_; ++j) {
-        debug_layouts.push_back(dummy_desc_layout_);
-    }
-    debug_layouts.push_back(instrumentation_desc_layout_);
-
-    const VkPipelineLayoutCreateInfo debug_pipeline_layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-                                                                   nullptr,
-                                                                   0u,
-                                                                   static_cast<uint32_t>(debug_layouts.size()),
-                                                                   debug_layouts.data(),
-                                                                   0u,
-                                                                   nullptr};
-    result = DispatchCreatePipelineLayout(device, &debug_pipeline_layout_info, nullptr, &instrumentation_pipeline_layout_);
-    if (result != VK_SUCCESS) {
-        InternalError(device, loc, "vkCreateDescriptorSetLayout failed for internal pipeline layout");
-        Cleanup();
-        return;
-    }
+    SetupClassicDescriptor(loc);
+    SetupDescriptorBuffers(loc);
 }
 
 void GpuShaderInstrumentor::Cleanup() {
-    if (instrumentation_desc_layout_) {
-        DispatchDestroyDescriptorSetLayout(device, instrumentation_desc_layout_, nullptr);
-        instrumentation_desc_layout_ = VK_NULL_HANDLE;
-    }
-    if (dummy_desc_layout_) {
-        DispatchDestroyDescriptorSetLayout(device, dummy_desc_layout_, nullptr);
-        dummy_desc_layout_ = VK_NULL_HANDLE;
-    }
-
-    if (instrumentation_pipeline_layout_) {
-        DispatchDestroyPipelineLayout(device, instrumentation_pipeline_layout_, nullptr);
-        instrumentation_pipeline_layout_ = VK_NULL_HANDLE;
+    for (uint32_t i = 0; i < vvl::DescriptorModeCount; i++) {
+        if (instrumentation_desc_layout_[i]) {
+            DispatchDestroyDescriptorSetLayout(device, instrumentation_desc_layout_[i], nullptr);
+            instrumentation_desc_layout_[i] = VK_NULL_HANDLE;
+        }
+        if (dummy_desc_layout_[i]) {
+            DispatchDestroyDescriptorSetLayout(device, dummy_desc_layout_[i], nullptr);
+            dummy_desc_layout_[i] = VK_NULL_HANDLE;
+        }
+        if (instrumentation_pipeline_layout_[i]) {
+            DispatchDestroyPipelineLayout(device, instrumentation_pipeline_layout_[i], nullptr);
+            instrumentation_pipeline_layout_[i] = VK_NULL_HANDLE;
+        }
     }
 }
 
@@ -231,6 +312,27 @@ bool GpuShaderInstrumentor::PreCallValidateCmdWaitEvents2(VkCommandBuffer comman
     return ValidateCmdWaitEvents(commandBuffer, src_stage_mask, error_obj.location);
 }
 
+vvl::DescriptorMode GpuShaderInstrumentor::SelectDescriptorModeFromDSL(uint32_t set_layout_count,
+                                                                       const VkDescriptorSetLayout *set_layouts) const {
+    vvl::DescriptorMode mode = vvl::DescriptorModeClassic;
+    if (IsExtEnabled(extensions.vk_ext_descriptor_buffer)) {
+        if (set_layout_count > 0) {
+            // Only need to check the first one because they all have to be or not-be descriptor buffer
+            const auto &dsl_state = Get<vvl::DescriptorSetLayout>(set_layouts[0]);
+            if (dsl_state->GetCreateFlags() & VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) {
+                mode = vvl::DescriptorModeBuffer;
+            }
+        } else if (enabled_features.descriptorBuffer) {
+            // At this point, we have actually zero way to know how this VkPipelineLayout/VkShaderEXT is going to be used because
+            // the extension never added a flag for creation time here.... so assume that if the descriptorBuffer feature is
+            // enabled, app is using it. This is such a rare case it likely is good enough of a solution for now, otherwise we will
+            // have to create 2 versions a modified handle and swap it out later.
+            mode = vvl::DescriptorModeBuffer;
+        }
+    }
+    return mode;
+}
+
 void GpuShaderInstrumentor::PreCallRecordCreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *pCreateInfo,
                                                               const VkAllocationCallbacks *pAllocator,
                                                               VkPipelineLayout *pPipelineLayout, const RecordObject &record_obj,
@@ -244,6 +346,8 @@ void GpuShaderInstrumentor::PreCallRecordCreatePipelineLayout(VkDevice device, c
                     "for pipelines created with it, therefore no validation error will be repored for them by GPU-AV at runtime.";
             InternalWarning(device, record_obj.location, strm.str().c_str());
         } else {
+            vvl::DescriptorMode mode = SelectDescriptorModeFromDSL(pCreateInfo->setLayoutCount, pCreateInfo->pSetLayouts);
+
             // Modify the pipeline layout by:
             // 1. Copying the caller's descriptor set desc_layouts
             // 2. Fill in dummy descriptor layouts up to the max binding
@@ -252,9 +356,9 @@ void GpuShaderInstrumentor::PreCallRecordCreatePipelineLayout(VkDevice device, c
             chassis_state.new_layouts.insert(chassis_state.new_layouts.end(), &pCreateInfo->pSetLayouts[0],
                                              &pCreateInfo->pSetLayouts[pCreateInfo->setLayoutCount]);
             for (uint32_t i = pCreateInfo->setLayoutCount; i < instrumentation_desc_set_bind_index_; ++i) {
-                chassis_state.new_layouts.push_back(dummy_desc_layout_);
+                chassis_state.new_layouts.push_back(dummy_desc_layout_[mode]);
             }
-            chassis_state.new_layouts.push_back(instrumentation_desc_layout_);
+            chassis_state.new_layouts.push_back(instrumentation_desc_layout_[mode]);
             chassis_state.modified_create_info.pSetLayouts = chassis_state.new_layouts.data();
             chassis_state.modified_create_info.setLayoutCount = instrumentation_desc_set_bind_index_ + 1;
         }
@@ -304,10 +408,11 @@ void GpuShaderInstrumentor::PreCallRecordGetShaderBinaryDataEXT(VkDevice device,
 
     // Only warn on the first call to query the size
     if (pData == nullptr) {
-        LogWarning("WARNING-vkGetShaderBinaryDataEXT-GPU-AV", shader, record_obj.location,
-                   "GPU-AV instruments all shaders at vkCreateShadersEXT time, this means there are embedded descriptors bound "
-                   "that we can't detect if needed or not later.\nWe will be calling vkCreateShadersEXT again now to create the "
-                   "original shader to pass down to the drivere.");
+        InternalWarning(
+            shader, record_obj.location,
+            "GPU-AV instruments all shaders at vkCreateShadersEXT time, this means there are embedded descriptors bound "
+            "that we can't detect if needed or not later.\nWe will be calling vkCreateShadersEXT again now to create the "
+            "original shader to pass down to the drivere.");
     }
 
     // vkGetShaderBinaryDataEXT will be called twice, only need to re-created once
@@ -388,6 +493,9 @@ void GpuShaderInstrumentor::PreCallRecordCreateShadersEXT(VkDevice device, uint3
             // 3. Fill in with the debug descriptor layout at the max binding slot
             const VkShaderCreateInfoEXT &original_create_info = pCreateInfos[i];
 
+            vvl::DescriptorMode mode =
+                SelectDescriptorModeFromDSL(original_create_info.setLayoutCount, original_create_info.pSetLayouts);
+
             // We need to remove the old layouts we copied in safe_VkShaderCreateInfoEXT::initialize
             if (new_create_info.pSetLayouts) {
                 delete[] new_create_info.pSetLayouts;
@@ -399,9 +507,9 @@ void GpuShaderInstrumentor::PreCallRecordCreateShadersEXT(VkDevice device, uint3
                 new_create_info.pSetLayouts[k] = original_create_info.pSetLayouts[k];
             }
             for (uint32_t k = original_create_info.setLayoutCount; k < instrumentation_desc_set_bind_index_; ++k) {
-                new_create_info.pSetLayouts[k] = dummy_desc_layout_;
+                new_create_info.pSetLayouts[k] = dummy_desc_layout_[mode];
             }
-            new_create_info.pSetLayouts[instrumentation_desc_set_bind_index_] = instrumentation_desc_layout_;
+            new_create_info.pSetLayouts[instrumentation_desc_set_bind_index_] = instrumentation_desc_layout_[mode];
 
             chassis_state.is_modified |=
                 PreCallRecordShaderObjectInstrumentation(new_create_info, create_info_loc, instrumentation_data);
@@ -499,6 +607,7 @@ void GpuShaderInstrumentor::PreCallRecordCreateGraphicsPipelines(VkDevice device
                                                                             create_info_loc, shader_instrumentation_metadata);
         } else {
             success = PreCallRecordPipelineCreationShaderInstrumentation(pAllocator, *pipeline_state, new_pipeline_ci,
+                                                                         uint32_t(pipeline_state->stage_states.size()),
                                                                          create_info_loc, shader_instrumentation_metadata);
         }
         if (!success) {
@@ -534,7 +643,7 @@ void GpuShaderInstrumentor::PreCallRecordCreateComputePipelines(VkDevice device,
 
         auto &shader_instrumentation_metadata = chassis_state.shader_instrumentations_metadata[i];
 
-        bool success = PreCallRecordPipelineCreationShaderInstrumentation(pAllocator, *pipeline_state, new_pipeline_ci,
+        bool success = PreCallRecordPipelineCreationShaderInstrumentation(pAllocator, *pipeline_state, new_pipeline_ci, 1,
                                                                           create_info_loc, shader_instrumentation_metadata);
         if (!success) {
             return;
@@ -570,8 +679,15 @@ void GpuShaderInstrumentor::PreCallRecordCreateRayTracingPipelinesKHR(
 
         auto &shader_instrumentation_metadata = chassis_state.shader_instrumentations_metadata[i];
 
+        // Ray tracing pipelines can be made of libraries, but contrary to GPL instrumentation is not postponed
+        // to final link time, and done at ray tracing library creation time.
+        // => No need to iterate over shader stages coming from libraries,
+        // stop at VkRayTracingPipelineCreateInfoKHR::stageCount
+        // Note: This code implicitly relies on the fact that in pipeline_state->stage_states,
+        // stages coming from libraries are added last.
         bool success = PreCallRecordPipelineCreationShaderInstrumentation(pAllocator, *pipeline_state, new_pipeline_ci,
-                                                                          create_info_loc, shader_instrumentation_metadata);
+                                                                          new_pipeline_ci.stageCount, create_info_loc,
+                                                                          shader_instrumentation_metadata);
         if (!success) {
             return;
         }
@@ -622,7 +738,8 @@ void GpuShaderInstrumentor::PostCallRecordCreateGraphicsPipelines(VkDevice devic
         if (pipeline_state->linking_shaders != 0) {
             PostCallRecordPipelineCreationShaderInstrumentationGPL(*pipeline_state, shader_instrumentation_metadata);
         } else {
-            PostCallRecordPipelineCreationShaderInstrumentation(*pipeline_state, shader_instrumentation_metadata);
+            PostCallRecordPipelineCreationShaderInstrumentation(*pipeline_state, uint32_t(pipeline_state->stage_states.size()),
+                                                                shader_instrumentation_metadata);
         }
     }
 }
@@ -650,7 +767,7 @@ void GpuShaderInstrumentor::PostCallRecordCreateComputePipelines(VkDevice device
         auto pipeline_state = Get<vvl::Pipeline>(pipeline_handle);
         ASSERT_AND_CONTINUE(pipeline_state);
         auto &shader_instrumentation_metadata = chassis_state.shader_instrumentations_metadata[i];
-        PostCallRecordPipelineCreationShaderInstrumentation(*pipeline_state, shader_instrumentation_metadata);
+        PostCallRecordPipelineCreationShaderInstrumentation(*pipeline_state, 1, shader_instrumentation_metadata);
     }
 }
 
@@ -711,12 +828,19 @@ void GpuShaderInstrumentor::PostCallRecordCreateRayTracingPipelinesKHR(
                                                              pipeline_state->ray_tracing_library_ci->libraryCount)) {
                             auto lib_state = ((GpuShaderInstrumentor *)this)->Get<vvl::Pipeline>(lib);
                             ASSERT_AND_CONTINUE(lib_state);
-                            pipeline_state->instrumentation_data.was_instrumented =
+                            pipeline_state->instrumentation_data.was_instrumented |=
                                 lib_state->instrumentation_data.was_instrumented;
                         }
                     }
                     auto &shader_instrumentation_metadata = held_chassis_state->shader_instrumentations_metadata[i];
-                    PostCallRecordPipelineCreationShaderInstrumentation(*pipeline_state, shader_instrumentation_metadata);
+                    // Ray tracing pipelines can be made of libraries, but contrary to GPL instrumentation is not postponed
+                    // to final link time, and done at ray tracing library creation time.
+                    // => No need to iterate over shader stages coming from libraries,
+                    // stop at VkRayTracingPipelineCreateInfoKHR::stageCount
+                    // Note: This code implicitly relies on the fact that in pipeline_state->stage_states,
+                    // stages coming from libraries are added last.
+                    PostCallRecordPipelineCreationShaderInstrumentation(
+                        *pipeline_state, pipeline_state->RayTracingCreateInfo().stageCount, shader_instrumentation_metadata);
                 }
             });
         dispatch_device_->deferred_operation_post_check.insert(deferredOperation, std::move(deferred_op_post_checks));
@@ -736,12 +860,19 @@ void GpuShaderInstrumentor::PostCallRecordCreateRayTracingPipelinesKHR(
                                                      pipeline_state->ray_tracing_library_ci->libraryCount)) {
                     auto lib_state = Get<vvl::Pipeline>(lib);
                     ASSERT_AND_CONTINUE(lib_state);
-                    pipeline_state->instrumentation_data.was_instrumented = lib_state->instrumentation_data.was_instrumented;
+                    pipeline_state->instrumentation_data.was_instrumented |= lib_state->instrumentation_data.was_instrumented;
                 }
             }
 
             auto &shader_instrumentation_metadata = chassis_state->shader_instrumentations_metadata[i];
-            PostCallRecordPipelineCreationShaderInstrumentation(*pipeline_state, shader_instrumentation_metadata);
+            // Ray tracing pipelines can be made of libraries, but contrary to GPL instrumentation is not postponed
+            // to final link time, and done at ray tracing library creation time.
+            // => No need to iterate over shader stages coming from libraries,
+            // stop at VkRayTracingPipelineCreateInfoKHR::stageCount
+            // Note: This code implicitly relies on the fact that in pipeline_state->stage_states,
+            // stages coming from libraries are added last.
+            PostCallRecordPipelineCreationShaderInstrumentation(*pipeline_state, pipeline_state->RayTracingCreateInfo().stageCount,
+                                                                shader_instrumentation_metadata);
         }
     }
 }
@@ -750,15 +881,11 @@ void GpuShaderInstrumentor::PostCallRecordCreateRayTracingPipelinesKHR(
 void GpuShaderInstrumentor::PreCallRecordDestroyPipeline(VkDevice device, VkPipeline pipeline,
                                                          const VkAllocationCallbacks *pAllocator, const RecordObject &record_obj) {
     if (auto pipeline_state = Get<vvl::Pipeline>(pipeline)) {
-        for (auto [unique_shader_id, shader_module_handle] : pipeline_state->instrumentation_data.instrumented_shader_modules) {
-            instrumented_shaders_map_.pop(unique_shader_id);
+        for (auto shader_module_handle : pipeline_state->instrumentation_data.shader_modules) {
             DispatchDestroyShaderModule(device, shader_module_handle, pAllocator);
         }
-        if (pipeline_state->instrumentation_data.pre_raster_lib != VK_NULL_HANDLE) {
-            DispatchDestroyPipeline(device, pipeline_state->instrumentation_data.pre_raster_lib, pAllocator);
-        }
-        if (pipeline_state->instrumentation_data.frag_out_lib != VK_NULL_HANDLE) {
-            DispatchDestroyPipeline(device, pipeline_state->instrumentation_data.frag_out_lib, pAllocator);
+        if (pipeline_state->instrumentation_data.instrumented_pipeline_lib != VK_NULL_HANDLE) {
+            DispatchDestroyPipeline(device, pipeline_state->instrumentation_data.instrumented_pipeline_lib, pAllocator);
         }
     }
 }
@@ -843,7 +970,7 @@ bool GpuShaderInstrumentor::NeedPipelineCreationShaderInstrumentation(vvl::Pipel
     // For ray tracing pipeline, because shader binding tables can be built from the libraries before
     // linking the exe pipeline, no choice but to always instrument libraries: SBT have to point to instrumented shaders
     if (pipeline_state.pipeline_type != VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR &&
-        pipeline_state.create_flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR) {
+        (pipeline_state.create_flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR) && pipeline_state.linking_shaders == 0) {
         return false;
     }
 
@@ -853,7 +980,7 @@ bool GpuShaderInstrumentor::NeedPipelineCreationShaderInstrumentation(vvl::Pipel
         return false;
     }
     const auto pipeline_layout = pipeline_state.PipelineLayoutState();
-    if (pipeline_layout && pipeline_layout->set_layouts.size() > instrumentation_desc_set_bind_index_) {
+    if (pipeline_layout && pipeline_layout->set_layouts.list.size() > instrumentation_desc_set_bind_index_) {
         return false;
     }
 
@@ -867,9 +994,9 @@ void GpuShaderInstrumentor::BuildDescriptorSetLayoutInfo(const vvl::Pipeline &pi
         return;
     }
 
-    out_instrumentation_dsl.set_index_to_bindings_layout_lut.resize(pipeline_layout->set_layouts.size());
-    for (uint32_t set_layout_index = 0; set_layout_index < pipeline_layout->set_layouts.size(); set_layout_index++) {
-        if (const auto set_layout_state = pipeline_layout->set_layouts[set_layout_index]) {
+    out_instrumentation_dsl.set_index_to_bindings_layout_lut.resize(pipeline_layout->set_layouts.list.size());
+    for (uint32_t set_layout_index = 0; set_layout_index < pipeline_layout->set_layouts.list.size(); set_layout_index++) {
+        if (const auto set_layout_state = pipeline_layout->set_layouts.list[set_layout_index]) {
             BuildDescriptorSetLayoutInfo(*set_layout_state, set_layout_index, out_instrumentation_dsl);
         }
     }
@@ -978,18 +1105,21 @@ bool GpuShaderInstrumentor::IsShaderSelectedForInstrumentation(vku::safe_VkShade
 template <typename SafeCreateInfo>
 bool GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentation(
     const VkAllocationCallbacks *pAllocator, vvl::Pipeline &pipeline_state, SafeCreateInfo &modified_pipeline_ci,
-    const Location &loc, std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata) {
+    uint32_t stages_count, const Location &loc,
+    std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata) {
     // Init here instead of in chassis so we don't pay cost when GPU-AV is not used
-    const size_t total_stages = pipeline_state.stage_states.size();
-    shader_instrumentation_metadata.resize(total_stages);
+    shader_instrumentation_metadata.resize(stages_count);
 
     InstrumentationDescriptorSetLayouts instrumentation_dsl;
     BuildDescriptorSetLayoutInfo(pipeline_state, instrumentation_dsl);
 
-    for (uint32_t stage_state_i = 0; stage_state_i < static_cast<uint32_t>(pipeline_state.stage_states.size()); ++stage_state_i) {
+    for (uint32_t stage_state_i = 0; stage_state_i < stages_count; ++stage_state_i) {
         const auto &stage_state = pipeline_state.stage_states[stage_state_i];
         auto modified_module_state = std::const_pointer_cast<vvl::ShaderModule>(stage_state.module_state);
         ASSERT_AND_CONTINUE(modified_module_state);
+        if (!modified_module_state->spirv) {
+            continue; // Hit when using VK_KHR_pipeline_binary
+        }
         std::unique_lock<std::mutex> module_lock(modified_module_state->module_mutex_);
 
         auto &instrumentation_metadata = shader_instrumentation_metadata[stage_state_i];
@@ -1029,8 +1159,8 @@ bool GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentation(
                     SetShaderModule(modified_pipeline_ci, *stage_state.pipeline_create_info, instrumented_shader_module,
                                     stage_state_i);
 
-                    pipeline_state.instrumentation_data.instrumented_shader_modules.emplace_back(
-                        std::pair<uint32_t, VkShaderModule>{unique_shader_id, instrumented_shader_module});
+                    pipeline_state.instrumentation_data.shader_modules.emplace_back(instrumented_shader_module);
+                    pipeline_state.instrumentation_data.was_instrumented = true;
                 } else {
                     InternalError(device, loc, "Unable to replace non-instrumented shader with instrumented one.");
                     return false;
@@ -1055,11 +1185,12 @@ bool GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentation(
 
 // Now that we have created the pipeline (and have its handle) build up the shader map for each shader we instrumented
 void GpuShaderInstrumentor::PostCallRecordPipelineCreationShaderInstrumentation(
-    vvl::Pipeline &pipeline_state, std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata) {
+    vvl::Pipeline &pipeline_state, uint32_t stages_count,
+    std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata) {
     // if we return early from NeedPipelineCreationShaderInstrumentation, will need to skip at this point in PostCall
     if (shader_instrumentation_metadata.empty()) return;
 
-    for (uint32_t stage_state_i = 0; stage_state_i < static_cast<uint32_t>(pipeline_state.stage_states.size()); ++stage_state_i) {
+    for (uint32_t stage_state_i = 0; stage_state_i < stages_count; ++stage_state_i) {
         auto &instrumentation_metadata = shader_instrumentation_metadata[stage_state_i];
 
         // if the shader for some reason was not instrumented, there is nothing to save
@@ -1093,15 +1224,15 @@ void GpuShaderInstrumentor::PostCallRecordPipelineCreationShaderInstrumentation(
 // Graphics, Compute, and Ray Tracing. GPL is only for graphics, so we end up needing this "side code path" for graphics only and it
 // doesn't fit in the "all pipeline" templated flow.
 bool GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentationGPL(
-    const VkAllocationCallbacks *pAllocator, vvl::Pipeline &pipeline_state,
+    const VkAllocationCallbacks *pAllocator, vvl::Pipeline &linked_pipeline_state,
     vku::safe_VkGraphicsPipelineCreateInfo &modified_pipeline_ci, const Location &loc,
     std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata) {
     // Init here instead of in chassis so we don't pay cost when GPU-AV is not used
-    const size_t total_stages = pipeline_state.stage_states.size();
+    const size_t total_stages = linked_pipeline_state.stage_states.size();
     shader_instrumentation_metadata.resize(total_stages);
 
     InstrumentationDescriptorSetLayouts instrumentation_dsl;
-    BuildDescriptorSetLayoutInfo(pipeline_state, instrumentation_dsl);
+    BuildDescriptorSetLayoutInfo(linked_pipeline_state, instrumentation_dsl);
 
     auto modified_library_ci = const_cast<VkPipelineLibraryCreateInfoKHR *>(
         vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(modified_pipeline_ci.pNext));
@@ -1119,8 +1250,17 @@ bool GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentationGP
             continue;
         }
 
-        // If a library is used to create multiple executable pipelines, we don't want to instrument it again
-        if (modified_lib->instrumentation_data.was_instrumented) {
+        // If a library is used to create multiple executable pipelines, we don't want to instrument it again.
+        // Check that there is indeed an instrumented_pipeline_lib:
+        // The library could be considered instrumented if itself it was made up of instrumented libraries,
+        // but in this case instrumented_pipeline_lib would not have been set.
+        // Note: Well in this case we could use modified_lib->VkHandle()?
+        if (modified_lib->instrumentation_data.was_instrumented &&
+            (modified_lib->instrumentation_data.instrumented_pipeline_lib != VK_NULL_HANDLE)) {
+            assert(modified_lib->instrumentation_data.instrumented_pipeline_lib != VK_NULL_HANDLE);
+            const_cast<VkPipeline *>(modified_library_ci->pLibraries)[modified_lib_i] =
+                modified_lib->instrumentation_data.instrumented_pipeline_lib;
+            linked_pipeline_state.instrumentation_data.was_instrumented = true;
             continue;
         }
 
@@ -1139,6 +1279,9 @@ bool GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentationGP
             const ShaderStageState &modified_stage_state = modified_lib->stage_states[stage_state_i];
             auto modified_module_state = std::const_pointer_cast<vvl::ShaderModule>(modified_stage_state.module_state);
             ASSERT_AND_CONTINUE(modified_module_state);
+            if (!modified_module_state->spirv) {
+                continue;  // Hit when using VK_KHR_pipeline_binary
+            }
             std::unique_lock<std::mutex> module_lock(modified_module_state->module_mutex_);
 
             chassis::ShaderInstrumentationMetadata &instrumentation_metadata = shader_instrumentation_metadata[shader_i++];
@@ -1154,7 +1297,15 @@ bool GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentationGP
                         modified_stage_ci = &new_lib_ci.pStages[i];
                     }
                 }
-                assert(modified_stage_ci);
+
+                // Getting here means that the currently explored stage state comes
+                // from a sub library, one used to composed the currently explored library.
+                // This sub library itself went through the linking process, thus has
+                // already been instrumented.
+                // => Just proceed to the next shader stage.
+                if (!modified_stage_ci) {
+                    continue;
+                }
 
                 modified_shader_module_ci =
                     const_cast<vku::safe_VkShaderModuleCreateInfo *>(reinterpret_cast<const vku::safe_VkShaderModuleCreateInfo *>(
@@ -1201,8 +1352,8 @@ bool GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentationGP
                     new_lib_ci.pStages[stage_state_i] = *modified_stage_state.pipeline_create_info;
                     new_lib_ci.pStages[stage_state_i].module = instrumented_shader_module;
 
-                    modified_lib->instrumentation_data.instrumented_shader_modules.emplace_back(
-                        std::pair<uint32_t, VkShaderModule>{unique_shader_id, instrumented_shader_module});
+                    modified_lib->instrumentation_data.shader_modules.emplace_back(instrumented_shader_module);
+
                 } else {
                     InternalError(device, loc, "Unable to replace non-instrumented shader with instrumented one.");
                     return false;
@@ -1242,12 +1393,9 @@ bool GpuShaderInstrumentor::PreCallRecordPipelineCreationShaderInstrumentationGP
                 return false;
             }
 
-            // Even if active_shaders has both a vertex and fragment, this is ok because as the goal is just to destroy these later
-            if (modified_lib->active_shaders & VK_SHADER_STAGE_FRAGMENT_BIT) {
-                pipeline_state.instrumentation_data.frag_out_lib = instrumented_pipeline_lib;
-            } else {
-                pipeline_state.instrumentation_data.pre_raster_lib = instrumented_pipeline_lib;
-            }
+            modified_lib->instrumentation_data.instrumented_pipeline_lib = instrumented_pipeline_lib;
+            modified_lib->instrumentation_data.was_instrumented = true;
+            linked_pipeline_state.instrumentation_data.was_instrumented = true;
 
             const_cast<VkPipeline *>(modified_library_ci->pLibraries)[modified_lib_i] = instrumented_pipeline_lib;
         }
@@ -1263,7 +1411,8 @@ void GpuShaderInstrumentor::PostCallRecordPipelineCreationShaderInstrumentationG
     }
 
     uint32_t shader_index = 0;
-    // This outer loop is the main difference between the GPL and non-GPL version and why its hard to merge them
+    // Update instrumented_shaders_map_
+    // #ARNO_TODO should be done at instrumentation time, why postpone? We don't need the linked pipeline handle
     for (uint32_t library_i = 0; library_i < pipeline_state.library_create_info->libraryCount; ++library_i) {
         const auto lib = Get<vvl::Pipeline>(pipeline_state.library_create_info->pLibraries[library_i]);
         if (!lib) {
@@ -1283,8 +1432,6 @@ void GpuShaderInstrumentor::PostCallRecordPipelineCreationShaderInstrumentationG
                 continue;
             }
 
-            pipeline_state.instrumentation_data.was_instrumented = true;
-
             const auto &stage_state = lib->stage_states[stage_state_i];
             auto &module_state = stage_state.module_state;
 
@@ -1294,7 +1441,9 @@ void GpuShaderInstrumentor::PostCallRecordPipelineCreationShaderInstrumentationG
             // TODO - in the instrumentation, instead of printing the instruction number only, if we print out debug info, we
             // can remove this copy
             std::vector<uint32_t> code;
-            if (module_state && module_state->spirv) code = module_state->spirv->words_;
+            if (module_state && module_state->spirv) {
+                code = module_state->spirv->words_;
+            }
 
             VkShaderModule shader_module_handle = module_state->VkHandle();
             if (shader_module_handle == VK_NULL_HANDLE && instrumentation_metadata.passed_in_shader_stage_ci) {
@@ -1376,6 +1525,10 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
             // But for what we are checking for, can rely on robustBufferAccess
             spirv::DescriptorClassTexelBufferPass texel_buffer_pass(module);
             modified |= texel_buffer_pass.Run();
+        } else if (modified_features.cooperativeMatrix && !modified_features.cooperativeMatrixRobustBufferAccess) {
+            // Cooperative Matrix OOB rules are unique and have their own robustness feature, so still need to run the pass
+            spirv::DescriptorClassGeneralBufferPass general_buffer_pass(module);
+            modified |= general_buffer_pass.Run();
         }
     }
 
@@ -1398,9 +1551,15 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
 
     if (gpuav_settings.shader_instrumentation.vertex_attribute_fetch_oob) {
         if (!modified_features.robustBufferAccess) {
-            spirv::VertexAttributeFetchOob pass(module);
+            spirv::VertexAttributeFetchOobPass pass(module);
             modified |= pass.Run();
         }
+    }
+
+    // Currently only runs in Safe Mode until have perf numbers how costly it is to enable
+    if (gpuav_settings.shader_instrumentation.sanitizer && gpuav_settings.safe_mode) {
+        spirv::SanitizerPass pass(module);
+        modified |= pass.Run();
     }
 
     // If we have passes that require inject LogError before the shader end we do it now.
@@ -1420,7 +1579,7 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
     // 2. We might want to debug the above passes and want to inject our own debug printf calls
     if (gpuav_settings.debug_printf_enabled) {
         // binding slot allows debug printf to be slotted in the same set as GPU-AV if needed
-        spirv::DebugPrintfPass pass(module, intenral_only_debug_printf_, glsl::kBindingInstDebugPrintf);
+        spirv::DebugPrintfPass pass(module, internal_only_debug_printf_, glsl::kBindingInstDebugPrintf);
         modified |= pass.Run();
     }
 
@@ -1480,6 +1639,13 @@ void GpuShaderInstrumentor::InternalError(LogObjectList objlist, const Location 
     // This prevents need to check "if (aborted)" (which is awful when we easily forget to check somewhere and the user gets spammed
     // with errors making it hard to see the first error with the real source of the problem).
     dispatch_device_->ReleaseValidationObject(LayerObjectTypeGpuAssisted);
+}
+
+// Dedicated warning VUID that likely can be ignored. We want to always warn the user when adjusting settings/limits/features/etc on
+// them
+void GpuShaderInstrumentor::AdjustmentWarning(LogObjectList objlist, const Location &loc,
+                                              const char *const specific_message) const {
+    LogWarning("WARNING-Setting-Limit-Adjusted", objlist, loc, "Internal Warning: %s", specific_message);
 }
 
 void GpuShaderInstrumentor::InternalWarning(LogObjectList objlist, const Location &loc, const char *const specific_message) const {
@@ -1592,7 +1758,7 @@ static void GenerateStageMessage(std::ostringstream &ss, const GpuShaderInstrume
 std::string GpuShaderInstrumentor::GenerateDebugInfoMessage(VkCommandBuffer commandBuffer, const ShaderMessageInfo &shader_info,
                                                             const InstrumentedShader *instrumented_shader,
                                                             VkPipelineBindPoint pipeline_bind_point,
-                                                            uint32_t operation_index) const {
+                                                            uint32_t action_command_index) const {
     std::ostringstream ss;
     if (!instrumented_shader || instrumented_shader->original_spirv.empty()) {
         ss << "[Internal Error] - Can't get instructions from shader_map\n";
@@ -1624,7 +1790,12 @@ std::string GpuShaderInstrumentor::GenerateDebugInfoMessage(VkCommandBuffer comm
             assert(false);
             ss << "Unknown Pipeline Operation ";
         }
-        ss << "Index " << operation_index << '\n';
+
+        if (action_command_index == cst::invalid_index_command) {
+            ss << "Index Unknown (After " << cst::invalid_index_command << " commands, we stop tracking) \n";
+        } else {
+            ss << "Index " << action_command_index << '\n';
+        }
         ss << std::hex << std::noshowbase;
 
         if (instrumented_shader->shader_module == VK_NULL_HANDLE) {

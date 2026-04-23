@@ -6,11 +6,27 @@
 #define COMPONENTS_WALLET_CORE_BROWSER_WALLETABLE_PASS_CLIENT_H_
 
 #include "base/functional/callback.h"
+#include "components/optimization_guide/proto/features/walletable_pass_extraction.pb.h"
+#include "components/wallet/core/browser/data_models/country_type.h"
+#include "components/wallet/core/browser/data_models/walletable_pass.h"
+
+class PrefService;
+
+namespace signin {
+class IdentityManager;
+}  // namespace signin
 
 namespace optimization_guide {
 class OptimizationGuideDecider;
-class OptimizationGuideModelExecutor;
+class RemoteModelExecutor;
+namespace proto {
+class WalletablePass;
+}  // namespace proto
 }  // namespace optimization_guide
+
+namespace strike_database {
+class StrikeDatabaseBase;
+}  // namespace strike_database
 
 namespace wallet {
 
@@ -30,7 +46,8 @@ class WalletablePassClient {
     kClosed = 2,
     kAccepted = 3,
     kDeclined = 4,
-    kMaxValue = kDeclined
+    kDiscarded = 5,
+    kMaxValue = kDiscarded
   };
 
   using WalletablePassBubbleResultCallback =
@@ -41,10 +58,22 @@ class WalletablePassClient {
   virtual optimization_guide::OptimizationGuideDecider*
   GetOptimizationGuideDecider() = 0;
 
-  virtual optimization_guide::OptimizationGuideModelExecutor*
-  GetOptimizationGuideModelExecutor() = 0;
+  virtual optimization_guide::RemoteModelExecutor* GetRemoteModelExecutor() = 0;
+
+  virtual strike_database::StrikeDatabaseBase* GetStrikeDatabase() = 0;
+
+  virtual PrefService* GetPrefService() = 0;
+
+  virtual signin::IdentityManager* GetIdentityManager() = 0;
+
+  virtual GeoIpCountryCode GetGeoIpCountryCode() = 0;
 
   virtual void ShowWalletablePassConsentBubble(
+      optimization_guide::proto::PassCategory pass_category,
+      WalletablePassBubbleResultCallback callback) = 0;
+
+  virtual void ShowWalletablePassSaveBubble(
+      WalletablePass pass,
       WalletablePassBubbleResultCallback callback) = 0;
 };
 

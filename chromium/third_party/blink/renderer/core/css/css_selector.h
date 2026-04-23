@@ -46,6 +46,7 @@ namespace blink {
 class CSSParserContext;
 class CSSSelectorList;
 class Document;
+class RouteLocation;
 class StyleRule;
 
 // This class represents a simple selector for a StyleRule.
@@ -296,8 +297,6 @@ class CORE_EXPORT CSSSelector {
     kPseudoOptional,
     kPseudoParent,  // Written as & (in nested rules).
     kPseudoPart,
-    kPseudoPermissionElementInvalidStyle,
-    kPseudoPermissionElementOccluded,
     kPseudoPermissionGranted,
     kPseudoPermissionIcon,
     kPseudoPlaceholder,
@@ -369,6 +368,8 @@ class CORE_EXPORT CSSSelector {
     kPseudoHostHasNonAutoAppearance,
     kPseudoIsHtml,
     kPseudoListBox,
+    kPseudoMenulistPopoverWithMenubarAnchor,
+    kPseudoMenulistPopoverWithMenulistAnchor,
     kPseudoMultiSelectFocus,
     kPseudoOpen,
     kPseudoPastCue,
@@ -405,6 +406,12 @@ class CORE_EXPORT CSSSelector {
     kPseudoScrollMarkerGroup,
     // Scroll button pseudo for Carousel
     kPseudoScrollButton,
+
+    kPseudoOverscrollAreaParent,
+    kPseudoOverscrollClientArea,
+
+    // :route-match(<route-location>)
+    kPseudoRouteMatch,
   };
 
   enum class AttributeMatchType : int {
@@ -437,7 +444,7 @@ class CORE_EXPORT CSSSelector {
   // Sets this CSSSelector to a :where() class with the specified argument.
   void SetWhere(CSSSelectorList*);
   void UpdatePseudoPage(const AtomicString&, const Document*);
-  static PseudoType NameToPseudoType(const AtomicString&,
+  static PseudoType NameToPseudoType(StringView,
                                      bool has_arguments,
                                      const Document* document);
   static PseudoId GetPseudoId(PseudoType);
@@ -501,6 +508,9 @@ class CORE_EXPORT CSSSelector {
   const CSSSelectorList* SelectorList() const {
     return HasRareData() ? data_.rare_data_->selector_list_.Get() : nullptr;
   }
+  const RouteLocation* GetRouteLocation() const {
+    return HasRareData() ? data_.rare_data_->route_location_.Get() : nullptr;
+  }
   // Similar to SelectorList(), but also works for kPseudoParent
   // (i.e., nested selectors); on &, will give the parent's selector list.
   // Will return nullptr if no such list exists (e.g. if we are not a
@@ -532,6 +542,7 @@ class CORE_EXPORT CSSSelector {
   void SetValue(const AtomicString&, bool match_lower_case);
   void SetArgument(const AtomicString&);
   void SetSelectorList(CSSSelectorList*);
+  void SetRouteLocation(RouteLocation*);
   void SetIdentList(std::unique_ptr<Vector<AtomicString>>);
   void SetContainsPseudoInsideHasPseudoClass();
   void SetContainsComplexLogicalCombinationsInsideHasPseudoClass();
@@ -582,6 +593,9 @@ class CORE_EXPORT CSSSelector {
 
   bool IsLastInSelectorList() const {
     return bits_.get<IsLastInSelectorListField>();
+  }
+  bool IsLastInSelectorListForOilpan() const {
+    return bits_.get_concurrently<IsLastInSelectorListField>();
   }
   void SetLastInSelectorList(bool is_last) {
     bits_.set<IsLastInSelectorListField>(is_last);
@@ -647,6 +661,10 @@ class CORE_EXPORT CSSSelector {
   // Returns true for simple selectors whose evaluation depends on DOM tree
   // position like :first-of-type and :nth-child().
   bool IsChildIndexedSelector() const;
+
+  bool IsPseudoParent() const {
+    return Match() == kPseudoClass && GetPseudoType() == kPseudoParent;
+  }
 
   void Trace(Visitor* visitor) const;
 
@@ -773,6 +791,7 @@ class CORE_EXPORT CSSSelector {
     AtomicString argument_;    // Used for :contains, :lang, :dir, etc.
     Member<CSSSelectorList>
         selector_list_;  // Used :is, :not, :-webkit-any, etc.
+    Member<RouteLocation> route_location_;  // Used for :route-match().
     std::unique_ptr<Vector<AtomicString>>
         ident_list_;  // Used for ::part(), :active-view-transition-type().
 
@@ -869,7 +888,7 @@ inline void CSSSelector::SetValue(const AtomicString& value,
                                   bool match_lower_case = false) {
   DCHECK_NE(Match(), static_cast<unsigned>(kTag));
   DCHECK_NE(Match(), static_cast<unsigned>(kUniversalTag));
-  DCHECK(!(Match() == kPseudoClass && GetPseudoType() == kPseudoParent));
+  DCHECK(!IsPseudoParent());
   if (match_lower_case && !HasRareData() && !IsASCIILower(value)) {
     CreateRareData();
   }
@@ -1004,6 +1023,7 @@ inline const StyleRule* CSSSelector::ParentRule() const {
 inline const AtomicString& CSSSelector::Value() const {
   DCHECK_NE(Match(), static_cast<unsigned>(kTag));
   DCHECK_NE(Match(), static_cast<unsigned>(kUniversalTag));
+  DCHECK(!IsPseudoParent());
   if (HasRareData()) {
     return data_.rare_data_->matching_value_;
   }

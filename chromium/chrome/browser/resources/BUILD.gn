@@ -48,6 +48,7 @@ group("resources") {
       "history:resources",
       "inspect:resources",
       "key_value_pair_viewer_shared:resources",
+      "legion_internals:resources",
       "lens/overlay:resources",
       "lens/shared:resources",
       "management:resources",
@@ -62,6 +63,7 @@ group("resources") {
       "privacy_sandbox:resources",
       "privacy_sandbox/internals:resources",
       "profile_internals:resources",
+      "reload_button:resources",
       "search_engine_choice:resources",
       "settings:resources",
       "settings_shared:resources",
@@ -79,11 +81,11 @@ group("resources") {
       "support_tool:resources",
       "tab_group_home:resources",
       "tab_search:resources",
-      "tab_strip_api:resources",
       "web_app_internals:resources",
       "webui_browser:resources",
       "webui_gallery:resources",
       "whats_new:resources",
+      "//components/browser_apis/tab_strip/resources",
     ]
     if (is_chrome_branded) {
       public_deps += [ "media_router/cast_feedback:resources" ]
@@ -126,6 +128,10 @@ group("resources") {
       "on_device_translation_internals:resources",
       "signin/history_sync_optin:resources",
     ]
+  }
+
+  if (is_mac || is_win) {
+    public_deps += [ "updater:resources" ]
   }
 
   if (!is_android && !is_chromeos) {
@@ -175,6 +181,7 @@ group("resources") {
     public_deps += [
       "glic:resources",
       "glic/fre:resources",
+      "glic/shared:resources",
     ]
   }
 

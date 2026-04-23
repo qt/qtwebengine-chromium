@@ -16,7 +16,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("emulation") {
+devtools_ui_module("emulation") {
   sources = [
     "AdvancedApp.ts",
     "DeviceModeToolbar.ts",
@@ -40,7 +40,7 @@ devtools_module("emulation") {
     "../../models/geometry:bundle",
     "../../models/workspace:bundle",
     "../../panels/mobile_throttling:bundle",
-    "../../ui/components/icon_button:bundle",
+    "../../ui/kit:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/utils:bundle",
     "../../ui/legacy/theme_support:bundle",
@@ -87,7 +87,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

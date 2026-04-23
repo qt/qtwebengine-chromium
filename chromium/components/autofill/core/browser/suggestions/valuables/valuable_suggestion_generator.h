@@ -41,16 +41,14 @@ void ExtendEmailSuggestionsWithLoyaltyCardSuggestions(
 
 class LoyaltyCardSuggestionGenerator : public SuggestionGenerator {
  public:
-  LoyaltyCardSuggestionGenerator(
-      base::WeakPtr<const ValuablesDataManager> valuables_manager,
-      GURL main_frame_url);
+  LoyaltyCardSuggestionGenerator();
   ~LoyaltyCardSuggestionGenerator() override;
 
   void FetchSuggestionData(
-      const FormData& form_data,
-      const FormFieldData& field_data,
-      const FormStructure* form,
-      const AutofillField* field,
+      const FormData& form,
+      const FormFieldData& trigger_field,
+      const FormStructure* form_structure,
+      const AutofillField* trigger_autofill_field,
       const AutofillClient& client,
       base::OnceCallback<
           void(std::pair<SuggestionDataSource,
@@ -58,12 +56,12 @@ class LoyaltyCardSuggestionGenerator : public SuggestionGenerator {
           callback) override;
 
   void GenerateSuggestions(
-      const FormData& form_data,
-      const FormFieldData& field_data,
-      const FormStructure* form,
-      const AutofillField* field,
-      const std::vector<
-          std::pair<SuggestionDataSource, std::vector<SuggestionData>>>&
+      const FormData& form,
+      const FormFieldData& trigger_field,
+      const FormStructure* form_structure,
+      const AutofillField* trigger_autofill_field,
+      const AutofillClient& client,
+      const base::flat_map<SuggestionDataSource, std::vector<SuggestionData>>&
           all_suggestion_data,
       base::OnceCallback<void(ReturnedSuggestions)> callback) override;
 
@@ -71,10 +69,10 @@ class LoyaltyCardSuggestionGenerator : public SuggestionGenerator {
   // a base::OnceCallback. Calls that callback exactly once.
   // TODO(crbug.com/409962888): Clean up after launch.
   void FetchSuggestionData(
-      const FormData& form_data,
-      const FormFieldData& field_data,
-      const FormStructure* form,
-      const AutofillField* field,
+      const FormData& form,
+      const FormFieldData& trigger_field,
+      const FormStructure* form_structure,
+      const AutofillField* trigger_autofill_field,
       const AutofillClient& client,
       base::FunctionRef<
           void(std::pair<SuggestionDataSource,
@@ -85,20 +83,16 @@ class LoyaltyCardSuggestionGenerator : public SuggestionGenerator {
   // a base::OnceCallback. Calls that callback exactly once.
   // TODO(crbug.com/409962888): Clean up after launch.
   void GenerateSuggestions(
-      const FormData& form_data,
-      const FormFieldData& field_data,
-      const FormStructure* form,
-      const AutofillField* field,
-      const std::vector<
-          std::pair<SuggestionDataSource, std::vector<SuggestionData>>>&
+      const FormData& form,
+      const FormFieldData& trigger_field,
+      const FormStructure* form_structure,
+      const AutofillField* trigger_autofill_field,
+      const AutofillClient& client,
+      const base::flat_map<SuggestionDataSource, std::vector<SuggestionData>>&
           all_suggestion_data,
       base::FunctionRef<void(ReturnedSuggestions)> callback);
 
  private:
-  base::WeakPtr<const ValuablesDataManager> valuables_manager_;
-  // The URL of the main frame containing the form.
-  GURL main_frame_url_;
-
   base::WeakPtrFactory<LoyaltyCardSuggestionGenerator> weak_ptr_factory_{this};
 };
 

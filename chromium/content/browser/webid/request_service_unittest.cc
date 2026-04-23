@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
@@ -33,7 +32,6 @@
 #include "content/browser/webid/test/mock_permission_delegate.h"
 #include "content/browser/webid/webid_utils.h"
 #include "content/common/content_navigation_policy.h"
-#include "content/public/browser/login_metrics.h"
 #include "content/public/browser/webid/identity_request_dialog_controller.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/back_forward_cache_util.h"
@@ -62,18 +60,18 @@ using AuthRequestCallbackHelper =
 using DismissReason = content::IdentityRequestDialogController::DismissReason;
 using FedCmEntry = ukm::builders::Blink_FedCm;
 using FedCmIdpEntry = ukm::builders::Blink_FedCmIdp;
-using FetchStatus = content::IdpNetworkRequestManager::FetchStatus;
-using Field = content::IdentityRequestDialogDisclosureField;
-using TokenError = content::IdentityCredentialTokenError;
-using ParseStatus = content::IdpNetworkRequestManager::ParseStatus;
+using FetchStatus = content::webid::FetchStatus;
+using ParseStatus = content::webid::ParseStatus;
 using TokenStatus = content::webid::RequestIdTokenStatus;
 using LoginState = content::IdentityRequestAccount::LoginState;
 using SignInMode = content::IdentityRequestAccount::SignInMode;
 using SignInStateMatchStatus = content::webid::SignInStateMatchStatus;
-using ErrorDialogType = content::IdpNetworkRequestManager::FedCmErrorDialogType;
+using ErrorDialogType =
+    content::webid::IdpNetworkRequestManager::FedCmErrorDialogType;
 using TokenResponseType =
-    content::IdpNetworkRequestManager::FedCmTokenResponseType;
-using ErrorUrlType = content::IdpNetworkRequestManager::FedCmErrorUrlType;
+    content::webid::IdpNetworkRequestManager::FedCmTokenResponseType;
+using ErrorUrlType =
+    content::webid::IdpNetworkRequestManager::FedCmErrorUrlType;
 using ::testing::_;
 using ::testing::ElementsAre;
 using ::testing::Eq;
@@ -415,7 +413,7 @@ class TestIdpNetworkRequestManager : public MockIdpNetworkRequestManager {
                        client_metadata));
   }
 
-  void SendAccountsRequest(const url::Origin& idp_origin,
+  bool SendAccountsRequest(const url::Origin& idp_origin,
                            const GURL& accounts_url,
                            const std::string& client_id,
                            AccountsRequestCallback callback) override {
@@ -434,6 +432,7 @@ class TestIdpNetworkRequestManager : public MockIdpNetworkRequestManager {
         FROM_HERE, base::BindOnce(std::move(callback), info.accounts_response,
                                   accounts_list_.empty() ? info.accounts
                                                          : accounts_list_));
+    return true;
   }
 
   void SendTokenRequest(
@@ -546,14 +545,14 @@ class IdpNetworkRequestManagerParamChecker
         rp_brand_icon_minimum_size, std::move(callback));
   }
 
-  void SendAccountsRequest(const url::Origin& idp_origin,
+  bool SendAccountsRequest(const url::Origin& idp_origin,
                            const GURL& accounts_url,
                            const std::string& client_id,
                            AccountsRequestCallback callback) override {
     if (expected_client_id_) {
       EXPECT_EQ(expected_client_id_, client_id);
     }
-    TestIdpNetworkRequestManager::SendAccountsRequest(
+    return TestIdpNetworkRequestManager::SendAccountsRequest(
         idp_origin, accounts_url, client_id, std::move(callback));
   }
 
@@ -637,7 +636,6 @@ class TestDialogController
       const std::vector<IdentityProviderDataPtr>& idp_list,
       const std::vector<IdentityRequestAccountPtr>& accounts,
       blink::mojom::RpMode rp_mode,
-      const std::vector<IdentityRequestAccountPtr>& new_accounts,
       IdentityRequestDialogController::AccountSelectionCallback on_selected,
       IdentityRequestDialogController::LoginToIdPCallback on_add_account,
       IdentityRequestDialogController::DismissCallback dismiss_callback,
@@ -652,7 +650,13 @@ class TestDialogController
     state_->sign_in_mode = SignInMode::kExplicit;
     state_->rp_context = idp_list[0]->rp_context;
 
-    state_->new_accounts = new_accounts;
+    state_->new_accounts.clear();
+    for (const auto& account : accounts) {
+      if (account->display_priority ==
+          IdentityRequestAccount::DisplayPriority::kNew) {
+        state_->new_accounts.push_back(account);
+      }
+    }
 
     state_->all_accounts_for_display = accounts;
     for (const auto& idp_data : idp_list) {
@@ -1334,6 +1338,19 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
     std::vector<std::string> messages =
         RenderFrameHostTester::For(main_rfh())->GetConsoleMessages();
 
+    // TODO(crbug.com/451219310): Remove when FedCM deprecation warnings
+    // removed. Filter out known deprecation warnings
+    std::vector<std::string> filtered_messages;
+    for (const auto& message : messages) {
+      if (message.find("Top-level nonce support will be removed") ==
+              std::string::npos &&
+          message.find("The FedCM configuration uses client_metadata") ==
+              std::string::npos) {
+        filtered_messages.push_back(message);
+      }
+    }
+    messages = std::move(filtered_messages);
+
     bool did_expect_any_messages = false;
     size_t expected_message_index = messages.size() - 1;
     if (devtools_issue_status != FederatedAuthRequestResult::kSuccess) {
@@ -1480,12 +1497,6 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
                                          status, 1);
     histogram_tester_.ExpectUniqueSample(
         "Blink.FedCm.Status.MediationRequirement", requirement, 1);
-    if (status == RequestIdTokenStatus::kSuccessUsingTokenInHttpResponse ||
-        status == RequestIdTokenStatus::kSuccessUsingIdentityProviderResolve) {
-      histogram_tester_.ExpectUniqueSample(
-          kBrowserAssistedLoginTypeHistogram,
-          BrowserAssistedLoginType::kFedCmPassive, 1);
-    }
     ExpectStatusUKMInternal(status, requirement, FedCmEntry::kEntryName);
     ExpectStatusUKMInternal(status, requirement, FedCmIdpEntry::kEntryName);
   }
@@ -1638,7 +1649,8 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
       bool expected_succeeded,
       bool expected_auto_reauthn_setting_blocked,
       bool expected_auto_reauthn_embargoed,
-      bool expected_prevent_silent_access) {
+      bool expected_prevent_silent_access,
+      bool expected_auto_reauthn_blocked_by_embedder) {
     // UMA checks
     histogram_tester_.ExpectUniqueSample("Blink.FedCm.AutoReauthn.Succeeded",
                                          expected_succeeded, 1);
@@ -1650,6 +1662,9 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
       histogram_tester_.ExpectTotalCount(
           "Blink.FedCm.AutoReauthn.ReturningAccounts", 0);
     }
+    histogram_tester_.ExpectUniqueSample(
+        "Blink.FedCm.AutoReauthn.BlockedByEmbedder",
+        expected_auto_reauthn_blocked_by_embedder, 1);
     histogram_tester_.ExpectUniqueSample(
         "Blink.FedCm.AutoReauthn.BlockedByContentSettings",
         expected_auto_reauthn_setting_blocked, 1);
@@ -1887,10 +1902,6 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
     histogram_tester_.ExpectTotalCount(
         "Blink.FedCm.Timing.ShowAccountsDialogBreakdown.ClientMetadataFetch",
         0);
-
-    histogram_tester_.ExpectUniqueSample(kBrowserAssistedLoginTypeHistogram,
-                                         BrowserAssistedLoginType::kFedCmActive,
-                                         1);
   }
 
  protected:
@@ -2422,7 +2433,47 @@ TEST_F(RequestServiceTest, AutoReauthnEmbargo) {
                            /*expected_succeeded=*/true,
                            /*expected_auto_reauthn_setting_blocked=*/false,
                            /*expected_auto_reauthn_embargoed=*/false,
-                           /*expected_prevent_silent_access=*/false);
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
+}
+
+// Test that sign-in state is enforced when the content embedder blocks the
+// sign-in, for example if there is an ongoing task by an actor.
+TEST_F(RequestServiceTest, ExplicitSigninBlockedByEmbedder) {
+  EXPECT_CALL(
+      *test_permission_delegate_,
+      GetLastUsedTimestamp(OriginFromString(kRpUrl), OriginFromString(kRpUrl),
+                           OriginFromString(kProviderUrlFull), kAccountId))
+      .WillRepeatedly(Return(std::make_optional<base::Time>()));
+
+  // Pretend the auto re-authn permission has been granted.
+  EXPECT_CALL(*test_auto_reauthn_permission_delegate_,
+              IsAutoReauthnSettingEnabled())
+      .WillOnce(Return(true));
+  EXPECT_CALL(*test_auto_reauthn_permission_delegate_,
+              IsAutoReauthnEmbargoed(OriginFromString(kRpUrl)))
+      .WillOnce(Return(false));
+  // Pretend actor task is active.
+  EXPECT_CALL(*test_auto_reauthn_permission_delegate_,
+              IsAutoReauthnDisabledByEmbedder(web_contents()))
+      .WillOnce(Return(true));
+
+  RunAuthTest(kDefaultRequestParameters, kExpectationSuccess,
+              kConfigurationValid);
+
+  ASSERT_EQ(all_accounts_for_display().size(), 1u);
+  EXPECT_EQ(all_accounts_for_display()[0]->browser_trusted_login_state,
+            LoginState::kSignIn);
+  EXPECT_FALSE(test_auto_reauthn_permission_delegate_->embargoed_origins_.count(
+      OriginFromString(kRpUrl)));
+  EXPECT_EQ(dialog_controller_state_.sign_in_mode, SignInMode::kExplicit);
+
+  ExpectAutoReauthnMetrics(Metrics::NumAccounts::kOne,
+                           /*expected_succeeded=*/false,
+                           /*expected_auto_reauthn_setting_blocked=*/false,
+                           /*expected_auto_reauthn_embargoed=*/false,
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/true);
 }
 
 // Test that auto re-authn with a single account where the account is a
@@ -2460,7 +2511,8 @@ TEST_F(RequestServiceTest, AutoReauthnForSingleReturningUserSingleAccount) {
                            /*expected_succeeded=*/true,
                            /*expected_auto_reauthn_setting_blocked=*/false,
                            /*expected_auto_reauthn_embargoed=*/false,
-                           /*expected_prevent_silent_access=*/false);
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test that auto re-authn with multiple accounts and a single returning user
@@ -2511,7 +2563,8 @@ TEST_F(RequestServiceTest, AutoReauthnForSingleReturningUserMultipleAccounts) {
                            /*expected_succeeded=*/true,
                            /*expected_auto_reauthn_setting_blocked=*/false,
                            /*expected_auto_reauthn_embargoed=*/false,
-                           /*expected_prevent_silent_access=*/false);
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test that auto re-authn with multiple accounts and multiple returning users
@@ -2563,7 +2616,8 @@ TEST_F(RequestServiceTest,
                            /*expected_succeeded=*/false,
                            /*expected_auto_reauthn_setting_blocked=*/false,
                            /*expected_auto_reauthn_embargoed=*/false,
-                           /*expected_prevent_silent_access=*/false);
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test that auto re-authn with single non-returning account sets the sign-in
@@ -2599,7 +2653,8 @@ TEST_F(RequestServiceTest, AutoReauthnForZeroReturningUsers) {
                            /*expected_succeeded=*/false,
                            /*expected_auto_reauthn_setting_blocked=*/false,
                            /*expected_auto_reauthn_embargoed=*/false,
-                           /*expected_prevent_silent_access=*/false);
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test that auto re-authn with multiple accounts and a single returning user
@@ -2663,7 +2718,8 @@ TEST_F(RequestServiceTest,
                            /*expected_succeeded=*/false,
                            /*expected_auto_reauthn_setting_blocked=*/false,
                            /*expected_auto_reauthn_embargoed=*/false,
-                           /*expected_prevent_silent_access=*/true);
+                           /*expected_prevent_silent_access=*/true,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test that auto re-authn with multiple accounts and a single returning user
@@ -2827,7 +2883,8 @@ TEST_F(RequestServiceTest, AutoReauthnWithBlockedAutoReauthnPermissions) {
                            /*expected_succeeded=*/false,
                            /*expected_auto_reauthn_setting_blocked=*/true,
                            /*expected_auto_reauthn_embargoed=*/false,
-                           /*expected_prevent_silent_access=*/false);
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test that auto re-authn where the auto re-authn cooldown is on sets
@@ -2865,7 +2922,8 @@ TEST_F(RequestServiceTest, AutoReauthnWithCooldown) {
                            /*expected_succeeded=*/false,
                            /*expected_auto_reauthn_setting_blocked=*/false,
                            /*expected_auto_reauthn_embargoed=*/true,
-                           /*expected_prevent_silent_access=*/false);
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test that no network request is sent if `mediation: silent` is used and user
@@ -2912,7 +2970,8 @@ TEST_F(RequestServiceTest,
                            /*expected_succeeded=*/false,
                            /*expected_auto_reauthn_setting_blocked=*/false,
                            /*expected_auto_reauthn_embargoed=*/false,
-                           /*expected_prevent_silent_access=*/false);
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test that no network request is sent if `mediation: silent` is used and auto
@@ -2929,7 +2988,6 @@ TEST_F(RequestServiceTest, AutoReauthnMediationSilentFailWithEmbargo) {
   EXPECT_CALL(*test_auto_reauthn_permission_delegate_,
               IsAutoReauthnSettingEnabled())
       .WillOnce(Return(true));
-
   EXPECT_CALL(*test_auto_reauthn_permission_delegate_,
               IsAutoReauthnEmbargoed(OriginFromString(kRpUrl)))
       .WillOnce(Return(true));
@@ -2959,7 +3017,8 @@ TEST_F(RequestServiceTest, AutoReauthnMediationSilentFailWithEmbargo) {
                            /*expected_succeeded=*/false,
                            /*expected_auto_reauthn_setting_blocked=*/false,
                            /*expected_auto_reauthn_embargoed=*/true,
-                           /*expected_prevent_silent_access=*/false);
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test that no network request is sent if `mediation: silent` is used and user
@@ -3006,7 +3065,8 @@ TEST_F(RequestServiceTest,
                            /*expected_succeeded=*/false,
                            /*expected_auto_reauthn_setting_blocked=*/false,
                            /*expected_auto_reauthn_embargoed=*/false,
-                           /*expected_prevent_silent_access=*/true);
+                           /*expected_prevent_silent_access=*/true,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test that no network request is sent if `mediation: silent` is used and user
@@ -3052,7 +3112,8 @@ TEST_F(RequestServiceTest,
                            /*expected_succeeded=*/false,
                            /*expected_auto_reauthn_setting_blocked=*/true,
                            /*expected_auto_reauthn_embargoed=*/false,
-                           /*expected_prevent_silent_access=*/false);
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test `mediation: silent` could fail silently after fetching accounts
@@ -3125,7 +3186,8 @@ TEST_F(RequestServiceTest,
                            /*expected_succeeded=*/false,
                            /*expected_auto_reauthn_setting_blocked=*/false,
                            /*expected_auto_reauthn_embargoed=*/false,
-                           /*expected_prevent_silent_access=*/false);
+                           /*expected_prevent_silent_access=*/false,
+                           /*expected_auto_reauthn_blocked_by_embedder=*/false);
 }
 
 // Test `mediation: silent` fails silently after a failed accounts fetch.
@@ -3160,7 +3222,7 @@ TEST_F(RequestServiceTest,
   configuration.mediation_requirement = MediationRequirement::kSilent;
   // Let the first IDP accounts fetch fail.
   configuration.idp_info[kProviderUrlFull].accounts_response.parse_status =
-      IdpNetworkRequestManager::ParseStatus::kNoResponseError;
+      ParseStatus::kNoResponseError;
 
   RunAuthDontWaitForCallback(kDefaultRequestParameters, configuration);
   EXPECT_FALSE(auth_helper_->was_callback_called());
@@ -3454,7 +3516,7 @@ TEST_F(RequestServiceTest,
   EXPECT_FALSE(DidFetchAnyEndpoint());
 
   // Delete the request before DelayTimer kicks in.
-  federated_auth_request_impl_->ResetAndDeleteThis();
+  federated_auth_request_impl_->ResetAndDeleteThisForTesting();
 
   // If double counted, these samples would not be unique so the following
   // checks will fail.
@@ -3713,7 +3775,6 @@ class DisableApiWhenDialogShownDialogController : public TestDialogController {
       const std::vector<IdentityProviderDataPtr>& idp_list,
       const std::vector<IdentityRequestAccountPtr>& accounts,
       blink::mojom::RpMode rp_mode,
-      const std::vector<IdentityRequestAccountPtr>& new_accounts,
       IdentityRequestDialogController::AccountSelectionCallback on_selected,
       IdentityRequestDialogController::LoginToIdPCallback on_add_account,
       IdentityRequestDialogController::DismissCallback dismiss_callback,
@@ -3725,9 +3786,9 @@ class DisableApiWhenDialogShownDialogController : public TestDialogController {
 
     // Call parent class method in order to store callback parameters.
     return TestDialogController::ShowAccountsDialog(
-        std::move(rp_data), idp_list, accounts, rp_mode, new_accounts,
-        std::move(on_selected), std::move(on_add_account),
-        std::move(dismiss_callback), std::move(accounts_displayed_callback));
+        std::move(rp_data), idp_list, accounts, rp_mode, std::move(on_selected),
+        std::move(on_add_account), std::move(dismiss_callback),
+        std::move(accounts_displayed_callback));
   }
 
  private:
@@ -4075,7 +4136,7 @@ TEST_F(RequestServiceTest, NavigateDuringClientMetadataFetchBFCacheDisabled) {
           base::BindOnce(&NavigateToUrl, web_contents(), GURL(kRpOtherUrl))));
 
   RequestExpectations expectations = {
-      /*return_status=*/std::nullopt,
+      RequestTokenStatus::kError,
       // When the RenderFrameHost changes on navigation, no console message is
       // received, so pass FederatedAuthRequestResult::kSuccess.
       main_rfh()->ShouldChangeRenderFrameHostOnSameSiteNavigation()
@@ -4214,7 +4275,7 @@ class ParseStatusOverrideIdpNetworkRequestManager
         idp_brand_icon_minimum_size, std::move(callback));
   }
 
-  void SendAccountsRequest(const url::Origin& idp_origin,
+  bool SendAccountsRequest(const url::Origin& idp_origin,
                            const GURL& accounts_url,
                            const std::string& client_id,
                            AccountsRequestCallback callback) override {
@@ -4225,10 +4286,10 @@ class ParseStatusOverrideIdpNetworkRequestManager
       base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(std::move(callback), fetch_status,
                                     std::vector<IdentityRequestAccountPtr>()));
-      return;
+      return true;
     }
 
-    TestIdpNetworkRequestManager::SendAccountsRequest(
+    return TestIdpNetworkRequestManager::SendAccountsRequest(
         idp_origin, accounts_url, client_id, std::move(callback));
   }
 };
@@ -4534,7 +4595,7 @@ TEST_F(RequestServiceTest, AllSuccessfulMultiIdpRequestWithoutIdpReorder) {
   EXPECT_EQ(2u, NumFetched(FetchedEndpoint::ACCOUNTS));
 
   // Check that the appropriate metrics are recorded upon destruction.
-  federated_auth_request_impl_->ResetAndDeleteThis();
+  federated_auth_request_impl_->ResetAndDeleteThisForTesting();
   ukm_loop.Run();
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.NumRequestsPerDocument", 1,
                                        1);
@@ -4800,9 +4861,9 @@ TEST_F(RequestServiceTest, MultiIdpWithAllIdpsMismatch) {
   // Set the config so that both accounts fetches result in failure.
   MockConfiguration config = kConfigurationMultiIdpValid;
   config.idp_info[kProviderUrlFull].accounts_response.parse_status =
-      IdpNetworkRequestManager::ParseStatus::kEmptyListError;
+      ParseStatus::kEmptyListError;
   config.idp_info[kProviderTwoUrlFull].accounts_response.parse_status =
-      IdpNetworkRequestManager::ParseStatus::kInvalidResponseError;
+      ParseStatus::kInvalidResponseError;
   // Need to change the accounts dialog action since we won't get any accounts.
   config.accounts_dialog_action = AccountsDialogAction::kClose;
 
@@ -4846,7 +4907,7 @@ TEST_F(RequestServiceTest, MultiIdpWithOneIdpMismatch) {
   // Set the config so that both accounts fetches result in failure.
   MockConfiguration config = kConfigurationMultiIdpValid;
   config.idp_info[kProviderTwoUrlFull].accounts_response.parse_status =
-      IdpNetworkRequestManager::ParseStatus::kEmptyListError;
+      ParseStatus::kEmptyListError;
 
   RunAuthTest(kDefaultMultiIdpRequestParameters, kExpectationSuccess, config);
 
@@ -5101,7 +5162,7 @@ TEST_F(RequestServiceTest, MultiIdpWithSilentMediationAndOneIdpFetchFailure) {
   configuration.mediation_requirement = MediationRequirement::kSilent;
   // Let the first IDP accounts fetch fail.
   configuration.idp_info[kProviderUrlFull].accounts_response.parse_status =
-      IdpNetworkRequestManager::ParseStatus::kNoResponseError;
+      ParseStatus::kNoResponseError;
 
   RunAuthDontWaitForCallback(kDefaultMultiIdpRequestParameters, configuration);
   EXPECT_FALSE(auth_helper_->was_callback_called());
@@ -5200,7 +5261,7 @@ TEST_F(RequestServiceTest, TooManyRequests) {
   EXPECT_FALSE(DidFetchAnyEndpoint());
 
   // Check that the appropriate metrics are recorded upon destruction.
-  federated_auth_request_impl_->ResetAndDeleteThis();
+  federated_auth_request_impl_->ResetAndDeleteThisForTesting();
 
   ukm_loop.Run();
 
@@ -5257,7 +5318,7 @@ TEST_F(RequestServiceTest, TooManyRequestsDifferentIdP) {
   EXPECT_FALSE(DidFetchAnyEndpoint());
 
   // Check that the appropriate metrics are recorded upon destruction.
-  federated_auth_request_impl_->ResetAndDeleteThis();
+  federated_auth_request_impl_->ResetAndDeleteThisForTesting();
 
   ukm_loop.Run();
 
@@ -5301,7 +5362,7 @@ TEST_F(RequestServiceTest, ActiveModeTooManyRequestsWithNewPassiveFlow) {
   EXPECT_FALSE(DidFetchAnyEndpoint());
 
   // Check that the appropriate metrics are recorded upon destruction.
-  federated_auth_request_impl_->ResetAndDeleteThis();
+  federated_auth_request_impl_->ResetAndDeleteThisForTesting();
 
   ukm_loop.Run();
 
@@ -5356,7 +5417,7 @@ TEST_F(RequestServiceTest, ActiveModeTooManyRequestsWithNewActiveFlow) {
   EXPECT_FALSE(DidFetchAnyEndpoint());
 
   // Check that the appropriate metrics are recorded upon destruction.
-  federated_auth_request_impl_->ResetAndDeleteThis();
+  federated_auth_request_impl_->ResetAndDeleteThisForTesting();
 
   ukm_loop.Run();
 
@@ -5411,7 +5472,7 @@ TEST_F(RequestServiceTest, PassiveReplacedByActiveFlow) {
   CheckAuthExpectations(configuration, passive_flow_expectations);
 
   // Check that the appropriate metrics are recorded upon destruction.
-  federated_auth_request_impl_->ResetAndDeleteThis();
+  federated_auth_request_impl_->ResetAndDeleteThisForTesting();
 
   ukm_loop.Run();
 
@@ -6225,7 +6286,7 @@ TEST_F(RequestServiceTest, SuccessfulAuthZRequestWithPopUpWindow) {
   EXPECT_CALL(*weak_dialog_controller, ShowModalDialog)
       .WillOnce(::testing::WithArg<0>([&modal, &impl](const GURL& url) {
         impl->OnResolve(GURL(kProviderUrlFull), std::nullopt,
-                        "an-access-token");
+                        base::Value("an-access-token"));
         return modal.get();
       }));
 
@@ -6687,7 +6748,7 @@ TEST_F(RequestServiceTest, DoubleMismatchDialog) {
   base::RunLoop().RunUntilIdle();
 
   // Check that the appropriate metrics are recorded upon destruction.
-  federated_auth_request_impl_->ResetAndDeleteThis();
+  federated_auth_request_impl_->ResetAndDeleteThisForTesting();
   ukm_loop.Run();
 
   // The additional mismatch should be recorded in the metrics.
@@ -6834,7 +6895,7 @@ TEST_F(RequestServiceTest, RecordNumRequestsPerDocumentMetric) {
   EXPECT_FALSE(did_show_idp_signin_status_mismatch_dialog());
 
   // Check that the appropriate metrics are recorded upon destruction.
-  federated_auth_request_impl_->ResetAndDeleteThis();
+  federated_auth_request_impl_->ResetAndDeleteThisForTesting();
 
   ukm_loop.Run();
 
@@ -7746,7 +7807,6 @@ class TestDialogControllerWithImmediateDismiss : public TestDialogController {
       const std::vector<IdentityProviderDataPtr>& idp_list,
       const std::vector<IdentityRequestAccountPtr>& accounts,
       blink::mojom::RpMode rp_mode,
-      const std::vector<IdentityRequestAccountPtr>& new_accounts,
       IdentityRequestDialogController::AccountSelectionCallback on_selected,
       IdentityRequestDialogController::LoginToIdPCallback on_add_account,
       IdentityRequestDialogController::DismissCallback dismiss_callback,
@@ -7830,6 +7890,13 @@ TEST_F(RequestServiceTest, UseOtherAccountAccountOrder) {
         // accounts, kAccountIdNicolas, kAccountIdPeter and kAccountIdZach,
         // in that order.
         test_network_request_manager_->accounts_list_ = kMultipleAccounts;
+        for (const auto& account :
+             test_network_request_manager_->accounts_list_) {
+          if (account->id == kAccountIdPeter) {
+            account->display_priority =
+                IdentityRequestAccount::DisplayPriority::kNew;
+          }
+        }
         federated_auth_request_impl_->OnIdpSigninStatusReceived(
             OriginFromString(kProviderUrlFull), true);
         return modal.get();
@@ -7881,6 +7948,14 @@ TEST_F(RequestServiceTest, UseOtherAccountMultipleNewAccounts) {
         // that order.
         test_network_request_manager_->accounts_list_ = {
             kSingleAccount[0], kTwoAccounts[0], kTwoAccounts[1]};
+        for (const auto& account :
+             test_network_request_manager_->accounts_list_) {
+          if (account->id == kTwoAccounts[0]->id ||
+              account->id == kTwoAccounts[1]->id) {
+            account->display_priority =
+                IdentityRequestAccount::DisplayPriority::kNew;
+          }
+        }
         federated_auth_request_impl_->OnIdpSigninStatusReceived(
             OriginFromString(kProviderUrlFull), true);
         return modal.get();
@@ -8072,7 +8147,7 @@ TEST_F(RequestServiceTest, VerifyingDialogDestroyExplicitMetrics) {
   config.delay_token_response = true;
 
   RunAuthDontWaitForCallback(kDefaultRequestParameters, config);
-  federated_auth_request_impl_->ResetAndDeleteThis();
+  federated_auth_request_impl_->ResetAndDeleteThisForTesting();
 
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.VerifyingDialogResult",
                                        VerifyingDialogResult::kDestroyExplicit,
@@ -8101,7 +8176,7 @@ TEST_F(RequestServiceTest, VerifyingDialogDestroyAutoReauthnMetrics) {
   config.delay_token_response = true;
 
   RunAuthDontWaitForCallback(kDefaultRequestParameters, config);
-  federated_auth_request_impl_->ResetAndDeleteThis();
+  federated_auth_request_impl_->ResetAndDeleteThisForTesting();
 
   histogram_tester_.ExpectUniqueSample(
       "Blink.FedCm.VerifyingDialogResult",
@@ -8388,6 +8463,29 @@ TEST_F(RequestServiceTest, NonPrimaryPageMetrics) {
   histogram_tester_.ExpectUniqueSample(
       "Blink.FedCm.LifecycleStateFailureReason",
       LifecycleStateFailureReason::kInBackForwardCache, 1);
+}
+
+// Test that if there are multiple IdPs, the UI should not be suppressed even if
+// configuration.suppressed_by_segmentation_platform is set to true.
+TEST_F(RequestServiceTest, SuppressedBySegmentationPlatformButMultipleIdps) {
+  // Use IdpNetworkRequestManagerParamChecker to validate passed-in parameters
+  // to IdpNetworkRequestManager methods.
+  std::unique_ptr<IdpNetworkRequestManagerParamChecker> checker =
+      std::make_unique<IdpNetworkRequestManagerParamChecker>();
+  SetNetworkRequestManager(std::move(checker));
+
+  RequestExpectations expectations = kExpectationSuccess;
+  // Since the first IDP does not set the login state of the account but the
+  // second IDP has one with state set to SignIn, selecting the first account
+  // means that the second IDP is the one that is selected.
+  expectations.selected_idp_config_url = kProviderTwoUrlFull;
+  MockConfiguration config = kConfigurationMultiIdpValid;
+  config.suppressed_by_segmentation_platform = true;
+  RunAuthTest(kDefaultMultiIdpRequestParameters, expectations, config);
+
+  EXPECT_TRUE(DidFetch(FetchedEndpoint::ACCOUNTS));
+  histogram_tester_.ExpectUniqueSample("Blink.FedCm.DidShowUI", true, 1);
+  ExpectUkmValueInEntry("DidShowUI", FedCmEntry::kEntryName, true);
 }
 
 }  // namespace content::webid

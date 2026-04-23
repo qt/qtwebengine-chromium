@@ -44,11 +44,13 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_state_observer.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/html/media/media_controls.h"
+#include "third_party/blink/renderer/core/html/track/track_base.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/intersection_observer/intersection_observer.h"
 #include "third_party/blink/renderer/core/speech/speech_synthesis_base.h"
 #include "third_party/blink/renderer/platform/audio/audio_source_provider.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "third_party/blink/renderer/platform/forward_declared_member.h"
 #include "third_party/blink/renderer/platform/heap/disallow_new_wrapper.h"
 #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
 #include "third_party/blink/renderer/platform/media/media_player_client.h"
@@ -58,7 +60,6 @@
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_associated_remote_set.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
-#include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -74,6 +75,7 @@ enum class MediaContentType;
 
 namespace blink {
 
+class AudioOutputDeviceController;
 class AudioSourceProviderClient;
 class AudioTrack;
 class AudioTrackList;
@@ -84,6 +86,7 @@ class Event;
 class EventQueue;
 class ExceptionState;
 class HTMLMediaElementControlsList;
+class HTMLMediaElementEncryptedMedia;
 class HTMLSourceElement;
 class HTMLTrackElement;
 class MediaError;
@@ -92,20 +95,20 @@ class MediaSourceHandle;
 class MediaSourceTracer;
 class MediaStreamDescriptor;
 class RemotePlaybackClient;
+class RemotePlaybackController;
 class ScriptPromiseResolverBase;
 class ScriptState;
 class TextTrack;
 class TextTrackContainer;
 class TextTrackList;
 class TimeRanges;
-class VideoTrack;
-class VideoTrackList;
 class V8CanPlayTypeResult;
 class V8TextTrackKind;
+class VideoTrack;
+class VideoTrackList;
 
 class CORE_EXPORT HTMLMediaElement
     : public HTMLElement,
-      public Supplementable<HTMLMediaElement>,
       public ActiveScriptWrappable<HTMLMediaElement>,
       public ExecutionContextLifecycleStateObserver,
       public media::mojom::blink::MediaPlayer,
@@ -283,10 +286,10 @@ class CORE_EXPORT HTMLMediaElement
   void TogglePlayState();
 
   AudioTrackList& audioTracks();
-  void AudioTrackChanged(AudioTrack*);
+  void AudioTrackChanged(AudioTrack*, TrackBase::ChangeSource);
 
   VideoTrackList& videoTracks();
-  void SelectedVideoTrackChanged(VideoTrack*);
+  void SelectedVideoTrackChanged(VideoTrack*, TrackBase::ChangeSource);
 
   TextTrack* addTextTrack(const V8TextTrackKind& kind,
                           const AtomicString& label,
@@ -384,7 +387,11 @@ class CORE_EXPORT HTMLMediaElement
   void DidAudioOutputSinkChanged(const String& hashed_device_id);
 
   void SetCcLayerForTesting(cc::Layer* layer) { SetCcLayer(layer); }
-  void AddMediaTrackForTesting(const media::MediaTrack& t) { AddMediaTrack(t); }
+  void AddTrackForTesting(const media::MediaTrack& t) { AddTrack(t); }
+  void SetTrackStateForTesting(const media::MediaTrack& t,
+                               media::MediaTrack::State s) {
+    SetTrackState(t, s);
+  }
 
   // This should be called directly after creation.
   void SetMediaPlayerHostForTesting(
@@ -436,6 +443,32 @@ class CORE_EXPORT HTMLMediaElement
   // WebAudio audio destination node is connected. The HTMLMediaElement could
   // stop the sink at this time if it is still playing.
   void ConnectToDestinationReady();
+
+  AudioOutputDeviceController* GetAudioOutputDeviceController() const {
+    return audio_output_device_controller_;
+  }
+  void SetAudioOutputDeviceController(
+      AudioOutputDeviceController* audio_output_device_controller) {
+    audio_output_device_controller_ = audio_output_device_controller;
+  }
+
+  RemotePlaybackController* GetRemotePlaybackController() const {
+    return remote_playback_controller_;
+  }
+  void SetRemotePlaybackController(
+      RemotePlaybackController* remote_playback_controller) {
+    remote_playback_controller_ = remote_playback_controller;
+  }
+
+  ForwardDeclaredMember<HTMLMediaElementEncryptedMedia>
+  GetHTMLMediaElementEncryptedMedia() const {
+    return html_media_element_encrypted_media_;
+  }
+  void SetHTMLMediaElementEncryptedMedia(
+      ForwardDeclaredMember<HTMLMediaElementEncryptedMedia>
+          html_media_element_encrypted_media) {
+    html_media_element_encrypted_media_ = html_media_element_encrypted_media;
+  }
 
  protected:
   // Assert the correct order of the children in shadow dom when DCHECK is on.
@@ -517,7 +550,6 @@ class CORE_EXPORT HTMLMediaElement
   void ResetMediaPlayerAndMediaSource();
 
   bool AlwaysCreateUserAgentShadowRoot() const final { return true; }
-  bool AreAuthorShadowsAllowed() const final { return false; }
 
   FocusableState SupportsFocus(UpdateBehavior update_behavior) const final;
   FocusableState IsFocusableState(UpdateBehavior update_behavior) const final;
@@ -566,8 +598,9 @@ class CORE_EXPORT HTMLMediaElement
 
   void SetCcLayer(cc::Layer*) override;
 
-  void AddMediaTrack(const media::MediaTrack&) final;
-  void RemoveMediaTrack(const media::MediaTrack&) final;
+  void AddTrack(const media::MediaTrack&) final;
+  void RemoveTrack(const media::MediaTrack&) final;
+  void SetTrackState(const media::MediaTrack&, media::MediaTrack::State) final;
 
   void MediaSourceOpened(std::unique_ptr<WebMediaSource>) final;
   void RemotePlaybackCompatibilityChanged(const KURL&,
@@ -708,7 +741,6 @@ class CORE_EXPORT HTMLMediaElement
   void SetOfficialPlaybackPosition(double) const;
   void RequireOfficialPlaybackPositionUpdate() const;
 
-  void EnsureMediaControls();
   void UpdateControlsVisibility();
 
   TextTrackContainer& EnsureTextTrackContainer();
@@ -1045,6 +1077,11 @@ class CORE_EXPORT HTMLMediaElement
       HeapMojoAssociatedReceiverSet<media::mojom::blink::MediaPlayer,
                                     HTMLMediaElement>>>
       media_player_receiver_set_;
+
+  Member<AudioOutputDeviceController> audio_output_device_controller_;
+  Member<RemotePlaybackController> remote_playback_controller_;
+  ForwardDeclaredMember<HTMLMediaElementEncryptedMedia>
+      html_media_element_encrypted_media_;
 };
 
 template <>

@@ -1,8 +1,7 @@
 // Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -11,14 +10,13 @@ import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import {createIcon, type Icon} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {html, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import {CookieControlsView} from './CookieControlsView.js';
 import {CookieReportView} from './CookieReportView.js';
-import {IPProtectionView} from './IPProtectionView.js';
 import lockIconStyles from './lockIcon.css.js';
 import mainViewStyles from './mainView.css.js';
 import {ShowOriginEvent} from './OriginTreeElement.js';
@@ -472,7 +470,7 @@ const WARNING_ICON_NAME = 'warning';
 const UNKNOWN_ICON_NAME = 'indeterminate-question-box';
 
 export function getSecurityStateIconForDetailedView(
-    securityState: Protocol.Security.SecurityState, className: string): IconButton.Icon.Icon {
+    securityState: Protocol.Security.SecurityState, className: string): Icon {
   let iconName: string;
 
   switch (securityState) {
@@ -490,11 +488,11 @@ export function getSecurityStateIconForDetailedView(
       break;
   }
 
-  return IconButton.Icon.create(iconName, className);
+  return createIcon(iconName, className);
 }
 
 export function getSecurityStateIconForOverview(
-    securityState: Protocol.Security.SecurityState, className: string): IconButton.Icon.Icon {
+    securityState: Protocol.Security.SecurityState, className: string): Icon {
   let iconName: string;
   switch (securityState) {
     case Protocol.Security.SecurityState.Unknown:  // fallthrough
@@ -511,7 +509,7 @@ export function getSecurityStateIconForOverview(
     case Protocol.Security.SecurityState.Info:
       throw new Error(`Unexpected security state ${securityState}`);
   }
-  return IconButton.Icon.create(iconName, className);
+  return createIcon(iconName, className);
 }
 
 export function createHighlightedUrl(url: Platform.DevToolsPath.UrlString, securityState: string): Element {
@@ -549,6 +547,23 @@ export interface ViewOutput {
 
 export type View = (input: ViewInput, output: ViewOutput, target: HTMLElement) => void;
 
+const DEFAULT_VIEW: View = (input: ViewInput, output: ViewOutput, target: HTMLElement): void => {
+  // clang-format off
+  render(html`
+    <devtools-split-view direction="column" name="security"
+      ${UI.Widget.widgetRef(UI.SplitWidget.SplitWidget, e => {output.splitWidget = e;})}>
+      <devtools-widget
+        slot="sidebar"
+        .widgetConfig=${widgetConfig(SecurityPanelSidebar)}
+        @showCookieReport=${()=>output.setVisibleView(new CookieReportView())}
+        @showFlagControls=${() => output.setVisibleView(new CookieControlsView())}
+        ${UI.Widget.widgetRef(SecurityPanelSidebar, e => {output.sidebar = e;})}>
+      </devtools-widget>
+  </devtools-split-view>`,
+    target);
+  // clang-format on
+};
+
 export class SecurityPanel extends UI.Panel.Panel implements SDK.TargetManager.SDKModelObserver<SecurityModel> {
   readonly mainView: SecurityMainView;
   readonly sidebar!: SecurityPanelSidebar;
@@ -560,24 +575,7 @@ export class SecurityPanel extends UI.Panel.Panel implements SDK.TargetManager.S
   private securityModel: SecurityModel|null;
   readonly splitWidget!: UI.SplitWidget.SplitWidget;
 
-  constructor(private view: View = (_input, output, target) => {
-    // clang-format off
-    render(
-      html`
-    <devtools-split-view direction="column" name="security"
-      ${UI.Widget.widgetRef(UI.SplitWidget.SplitWidget, e => {output.splitWidget = e;})}>
-        <devtools-widget
-          slot="sidebar"
-          .widgetConfig=${widgetConfig(SecurityPanelSidebar)}
-          @showIPProtection=${() => output.setVisibleView(new IPProtectionView())}
-          @showCookieReport=${()=>output.setVisibleView(new CookieReportView())}
-          @showFlagControls=${() => output.setVisibleView(new CookieControlsView())}
-          ${UI.Widget.widgetRef(SecurityPanelSidebar, e => {output.sidebar = e;})}>
-        </devtools-widget>
-    </devtools-split-view>`,
-      target, {host: this});
-    // clang-format on
-  }) {
+  constructor(private view: View = DEFAULT_VIEW) {
     super('security');
 
     this.update();

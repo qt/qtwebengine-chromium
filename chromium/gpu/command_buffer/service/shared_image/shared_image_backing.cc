@@ -16,7 +16,6 @@
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/shared_context_state.h"
-#include "gpu/command_buffer/service/shared_image/shared_image_factory.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
 
@@ -141,10 +140,6 @@ void SharedImageBacking::ReadbackToMemoryAsync(
     const std::vector<SkPixmap>& pixmaps,
     base::OnceCallback<void(bool)> callback) {
   std::move(callback).Run(ReadbackToMemory(pixmaps));
-}
-
-bool SharedImageBacking::PresentSwapChain() {
-  return false;
 }
 
 base::trace_event::MemoryAllocatorDump* SharedImageBacking::OnMemoryDump(
@@ -379,19 +374,6 @@ const MemoryTracker* SharedImageBacking::GetMemoryTracker() const {
     return nullptr;
 
   return refs_[0]->tracker()->memory_tracker();
-}
-
-void SharedImageBacking::RegisterImageFactory(SharedImageFactory* factory) {
-  DCHECK_CALLED_ON_VALID_THREAD(factory_thread_checker_);
-  DCHECK(!factory_);
-
-  factory_ = factory;
-}
-
-void SharedImageBacking::UnregisterImageFactory() {
-  DCHECK_CALLED_ON_VALID_THREAD(factory_thread_checker_);
-
-  factory_ = nullptr;
 }
 
 void SharedImageBacking::SetSharedImagePoolId(SharedImagePoolId pool_id) {

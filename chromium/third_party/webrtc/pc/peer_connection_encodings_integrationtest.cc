@@ -47,7 +47,6 @@
 #include "api/video_codecs/sdp_video_format.h"
 #include "media/base/codec.h"
 #include "media/engine/fake_webrtc_video_engine.h"
-#include "pc/sdp_utils.h"
 #include "pc/session_description.h"
 #include "pc/simulcast_description.h"
 #include "pc/test/mock_peer_connection_observers.h"
@@ -293,10 +292,16 @@ class PeerConnectionEncodingsIntegrationTest : public ::testing::Test {
   void ExchangeIceCandidates(
       scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper,
       scoped_refptr<PeerConnectionTestWrapper> remote_pc_wrapper) {
-    local_pc_wrapper->SignalOnIceCandidateReady.connect(
-        remote_pc_wrapper.get(), &PeerConnectionTestWrapper::AddIceCandidate);
-    remote_pc_wrapper->SignalOnIceCandidateReady.connect(
-        local_pc_wrapper.get(), &PeerConnectionTestWrapper::AddIceCandidate);
+    local_pc_wrapper->SubscribeOnIceCandidateReady(
+        [remote_pc = remote_pc_wrapper.get()](const std::string& mid, int index,
+                                              const std::string& candidate) {
+          remote_pc->AddIceCandidate(mid, index, candidate);
+        });
+    remote_pc_wrapper->SubscribeOnIceCandidateReady(
+        [local_pc = local_pc_wrapper.get()](const std::string& mid, int index,
+                                            const std::string& candidate) {
+          local_pc->AddIceCandidate(mid, index, candidate);
+        });
   }
 
   // Negotiate without any tweaks (does not work for simulcast loopback).
@@ -392,8 +397,8 @@ class PeerConnectionEncodingsIntegrationTest : public ::testing::Test {
       scoped_refptr<PeerConnectionTestWrapper> pc_wrapper,
       SessionDescriptionInterface* sdp) {
     auto observer = make_ref_counted<MockSetSessionDescriptionObserver>();
-    pc_wrapper->pc()->SetLocalDescription(
-        observer.get(), CloneSessionDescription(sdp).release());
+    pc_wrapper->pc()->SetLocalDescription(observer.get(),
+                                          sdp->Clone().release());
     return observer;
   }
 
@@ -401,8 +406,8 @@ class PeerConnectionEncodingsIntegrationTest : public ::testing::Test {
       scoped_refptr<PeerConnectionTestWrapper> pc_wrapper,
       SessionDescriptionInterface* sdp) {
     auto observer = make_ref_counted<MockSetSessionDescriptionObserver>();
-    pc_wrapper->pc()->SetRemoteDescription(
-        observer.get(), CloneSessionDescription(sdp).release());
+    pc_wrapper->pc()->SetRemoteDescription(observer.get(),
+                                           sdp->Clone().release());
     return observer;
   }
 

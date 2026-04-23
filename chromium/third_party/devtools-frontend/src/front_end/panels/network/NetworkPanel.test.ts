@@ -8,7 +8,7 @@ import * as Logs from '../../models/logs/logs.js';
 import * as Tracing from '../../services/tracing/tracing.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createTarget, registerNoopActions} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {describeWithMockConnection, setMockConnectionResponseHandler} from '../../testing/MockConnection.js';
 import {createNetworkPanelForMockConnection} from '../../testing/NetworkHelpers.js';
 import * as RenderCoordinator from '../../ui/components/render_coordinator/render_coordinator.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -22,6 +22,8 @@ describeWithMockConnection('NetworkPanel', () => {
   beforeEach(async () => {
     target = createTarget();
     networkPanel = await createNetworkPanelForMockConnection();
+    setMockConnectionResponseHandler('Tracing.start', () => ({}));
+    setMockConnectionResponseHandler('Tracing.end', () => ({}));
   });
 
   afterEach(async () => {
@@ -78,6 +80,7 @@ describeWithMockConnection('NetworkPanel', () => {
       syncedStorage: dummyStorage,
       globalStorage: dummyStorage,
       localStorage: dummyStorage,
+      settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
     });
     const actionRegistryInstance = UI.ActionRegistry.ActionRegistry.instance({forceNew: true});
     UI.ShortcutRegistry.ShortcutRegistry.instance({forceNew: true, actionRegistry: actionRegistryInstance});

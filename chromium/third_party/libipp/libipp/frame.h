@@ -14,7 +14,6 @@
 #include "colls_view.h"
 #include "ipp_enums.h"
 #include "ipp_export.h"
-#include "ipp_log.h"
 
 namespace ipp {
 
@@ -49,10 +48,12 @@ enum class Code {
 // The correct values of GroupTag are 0x01, 0x02, 0x04-0x0f. This function
 // checks if given GroupTag is valid.
 constexpr bool IsValid(GroupTag tag) {
-  if (tag > static_cast<GroupTag>(0x0f))
+  if (tag > static_cast<GroupTag>(0x0f)) {
     return false;
-  if (tag < static_cast<GroupTag>(0x01))
+  }
+  if (tag < static_cast<GroupTag>(0x01)) {
     return false;
+  }
   return (tag != static_cast<GroupTag>(0x03));
 }
 // This array contains all valid GroupTag values and may be used in loops like

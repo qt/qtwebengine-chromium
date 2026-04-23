@@ -77,9 +77,6 @@ BASE_FEATURE(kWaitForLateScrollEvents, base::FEATURE_ENABLED_BY_DEFAULT);
 const base::FeatureParam<double> kWaitForLateScrollEventsDeadlineRatio{
     &kWaitForLateScrollEvents, "deadline_ratio", 0.333};
 
-BASE_FEATURE(kDontAlwaysPushPictureLayerImpls,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kPreserveDiscardableImageMapQuality,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -206,6 +203,9 @@ PROGRAMMATIC_SCROLL_ANIMATION_CURVE(0.4, 0.0, 0.0, 1.0, 1500);
 BASE_FEATURE(kSlimDirectReceiverIpc, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kOverscrollBehaviorRespectedOnAllScrollContainers,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kOverscrollEffectOnNonRootScrollers,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kSkipFinishDuringReleaseLayerTreeFrameSink,
@@ -237,11 +237,21 @@ BASE_FEATURE_PARAM(double,
                    "fling_continuity_threshold_pixels",
                    0.2);
 
-BASE_FEATURE(kEmitPerScrollJankV1MetricAtEndOfScroll,
+BASE_FEATURE(kHandleNonDamagingInputsInScrollJankV4Metric,
              base::FEATURE_DISABLED_BY_DEFAULT);
-BASE_FEATURE(kEmitPerScrollJankV4MetricAtEndOfScroll,
-             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE_PARAM(bool,
+                   kCountNonDamagingFramesTowardsHistogramFrameCount,
+                   &kHandleNonDamagingInputsInScrollJankV4Metric,
+                   "count_non_damaging_frames_towards_histogram_frame_count",
+                   false);
 
 BASE_FEATURE(kManualBeginFrame, base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kDropMetricsFromNonProducedFramesOnlyIfTheyHadNoDamage,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kUnlockDuringGpuImageOperations,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace features

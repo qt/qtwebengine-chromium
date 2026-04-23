@@ -527,7 +527,8 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   void QuadsInAncestorInternal(Vector<gfx::QuadF>&,
                                const LayoutBoxModelObject* ancestor,
                                MapCoordinatesFlags) const override;
-  gfx::RectF LocalBoundingBoxRectForAccessibility() const override;
+  gfx::RectF LocalBoundingBoxRectForAccessibility(
+      IncludeDescendants include_descendants) const override;
 
   void LayoutSubtreeRoot();
 
@@ -910,9 +911,9 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
     return Parent() && Parent()->IsLayoutGrid();
   }
 
-  bool IsMasonryItem() const {
+  bool IsGridLanesItem() const {
     NOT_DESTROYED();
-    return Parent() && Parent()->IsLayoutMasonry();
+    return Parent() && Parent()->IsLayoutGridLanes();
   }
 
   bool IsMathItem() const {

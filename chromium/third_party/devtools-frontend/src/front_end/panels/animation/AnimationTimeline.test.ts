@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
@@ -13,7 +12,6 @@ import {
 import {expectCall} from '../../testing/ExpectStubCall.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
 import {createViewFunctionStub, type ViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
-import * as Elements from '../elements/elements.js';
 
 import * as Animation from './animation.js';
 
@@ -88,13 +86,6 @@ class ManualPromise {
   }
 }
 
-const cancelAllPendingRaf = () => {
-  let rafId = window.requestAnimationFrame(() => {});
-  while (rafId--) {
-    window.cancelAnimationFrame(rafId);
-  }
-};
-
 const stubAnimationGroup = () => {
   sinon.stub(SDK.AnimationModel.AnimationGroup.prototype, 'scrollNode')
       .resolves(new SDK.AnimationModel.AnimationDOMNode(null as unknown as SDK.DOMModel.DOMNode));
@@ -146,15 +137,6 @@ describeWithMockConnection('AnimationTimeline', () => {
   let view: Animation.AnimationTimeline.AnimationTimeline;
 
   beforeEach(() => {
-    Common.Linkifier.registerLinkifier({
-      contextTypes() {
-        return [SDK.DOMModel.DOMNode];
-      },
-      async loadLinkifier() {
-        return Elements.DOMLinkifier.Linkifier.instance();
-      },
-    });
-
     stubNoopSettings();
     target = createTarget();
 
@@ -177,7 +159,6 @@ describeWithMockConnection('AnimationTimeline', () => {
   });
 
   afterEach(() => {
-    cancelAllPendingRaf();
     view.detach();
   });
 
@@ -464,7 +445,8 @@ describeWithMockConnection('AnimationTimeline', () => {
     });
 
     describe('animationGroupUpdated', () => {
-      it('should update duration on animationGroupUpdated', async () => {
+      // Flaky test.
+      it.skip('[crbug.com/446903183] should update duration on animationGroupUpdated', async () => {
         const preview = await waitFor('.animation-buffer-preview', view.element.shadowRoot!) as HTMLElement;
         assert.isNotNull(preview);
         preview.click();
@@ -485,7 +467,8 @@ describeWithMockConnection('AnimationTimeline', () => {
         await waitForScrubberOnFinish.wait();
       });
 
-      it('should schedule re-draw on animationGroupUpdated', async () => {
+      // Flaky, skip while we're fixing it
+      it.skip('[crbug.com/450229649] should schedule re-draw on animationGroupUpdated', async () => {
         const preview = await waitFor('.animation-buffer-preview', view.element.shadowRoot!) as HTMLElement;
         assert.isNotNull(preview);
         preview.click();
@@ -587,7 +570,6 @@ describeWithMockConnection('AnimationTimeline', () => {
       const toolbarViewInput = await toolbarViewStub.nextInput;
 
       assert.isTrue(toolbarViewInput.playbackRateButtonsDisabled);
-      cancelAllPendingRaf();
     });
 
     it('should show current time text in pixels', async () => {

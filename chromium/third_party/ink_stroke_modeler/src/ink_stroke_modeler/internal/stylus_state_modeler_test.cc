@@ -24,9 +24,10 @@
 #include "ink_stroke_modeler/params.h"
 #include "ink_stroke_modeler/types.h"
 
-namespace ink {
-namespace stroke_model {
+namespace ink::stroke_model {
 namespace {
+
+using ::testing::FloatNear;
 
 constexpr float kTol = 1e-5;
 constexpr float kAccelTol = 1e-3;
@@ -41,8 +42,6 @@ const Result kUnknownResult{.position = {0, 0},
                             .orientation = -1};
 const StylusStateModelerParams kNormalProjectionParams{
     .use_stroke_normal_projection = true,
-    .min_input_samples = 5,
-    .min_sample_duration = Duration(.3),
 };
 
 TEST(StylusStateModelerTest, ProjectEmpty) {
@@ -496,7 +495,7 @@ TEST(StylusStateModelerTest, StrokeNormalProjectionAvoidsBacktracking) {
                          kTol, kAccelTol));
 
   // If there are intersections on either side of the projection, take the one
-  // in the opposite direction of the acceleration, unless that backtracks from\
+  // in the opposite direction of the acceleration, unless that backtracks from
   // an earlier projection.
   EXPECT_THAT(modeler.Project({.position = {1, 2},
                                .velocity = {0, 0},
@@ -507,7 +506,7 @@ TEST(StylusStateModelerTest, StrokeNormalProjectionAvoidsBacktracking) {
                           .velocity = {10, -20},
                           .acceleration = {0, -400},
                           .time = Time(0.15),
-                          // This would find a projection on the first segement
+                          // This would find a projection on the first segment
                           // as in the previous test, with a pressure of .1.
                           // But that would be backtracking to the first
                           // segment of the input polyline when we're already
@@ -517,6 +516,81 @@ TEST(StylusStateModelerTest, StrokeNormalProjectionAvoidsBacktracking) {
                           .tilt = .5,
                           .orientation = .5},
                          kTol, kAccelTol));
+}
+
+TEST(StylusStateModelerTest,
+     StrokeNormalProjectionAvoidsBacktrackingSameSegment) {
+  StylusStateModeler modeler;
+  modeler.Reset(kNormalProjectionParams);
+  modeler.Update({0, 0}, Time(0), {.pressure = 0, .tilt = 0, .orientation = 0});
+  modeler.Update({0, 4}, Time(0.1),
+                 {.pressure = 0.2, .tilt = 0.2, .orientation = 0.2});
+  modeler.Update({2, 4}, Time(0.2),
+                 {.pressure = 0.4, .tilt = 0.4, .orientation = 0.4});
+  modeler.Update({2, 0}, Time(0.3),
+                 {.pressure = 0.6, .tilt = 0.6, .orientation = 0.6});
+
+  // If there are multiple intersections on the same side of the projection,
+  // take the closest.
+  EXPECT_THAT(modeler.Project({.position = {3, 2},
+                               .velocity = {0, 0},
+                               .acceleration = {0, -0.5},
+                               .time = Time(0.15)},
+                              Vec2{1, 0}),
+              ResultNear({.position = {2, 2},
+                          .velocity = {10, -20},
+                          .acceleration = {0, -400},
+                          .time = Time(0.15),
+                          .pressure = .5,
+                          .tilt = .5,
+                          .orientation = .5},
+                         kTol, kAccelTol));
+
+  // If there are intersections on either side of the projection, take the one
+  // in the opposite direction of the acceleration, unless that backtracks from
+  // an earlier projection.
+  EXPECT_THAT(modeler.Project({.position = {3, 3},
+                               .velocity = {0, 0},
+                               .acceleration = {1, -1},
+                               .time = Time(0.15)},
+                              Vec2{1, 0}),
+              ResultNear({.position = {2, 2},
+                          .velocity = {10, -20},
+                          .acceleration = {0, -400},
+                          .time = Time(0.15),
+                          // This would find a projection earlier on the third
+                          // segment (pressure = 0.45), but since this avoids
+                          // backtracking, it sticks to the existing projection.
+                          .pressure = .5,
+                          .tilt = .5,
+                          .orientation = .5},
+                         kTol, kAccelTol));
+}
+
+TEST(StylusStateModelerTest, StrokeNormalProjectionPrefersDirectIntersection) {
+  StylusStateModeler modeler;
+  modeler.Reset(kNormalProjectionParams);
+  modeler.Update({0, 0}, Time(0), {.pressure = 0, .tilt = 0, .orientation = 0});
+  modeler.Update({0, 4}, Time(0.1),
+                 {.pressure = 0.2, .tilt = 0.2, .orientation = 0.2});
+  modeler.Update({2, 4}, Time(0.2),
+                 {.pressure = 0.4, .tilt = 0.4, .orientation = 0.4});
+  modeler.Update({2, 0}, Time(0.3),
+                 {.pressure = 0.6, .tilt = 0.6, .orientation = 0.6});
+
+  // If there are multiple intersections on the same side of the projection,
+  // take the closest. Previously, this assumed that direct intersections were
+  // always on the left side, so it would prefer a farther away intersection
+  // on the right (away from the acceleration).
+  EXPECT_THAT(modeler
+                  .Project({.position = {0, 2},
+                            .velocity = {0, 0},
+                            .acceleration = {-0.5, 0},
+                            .time = Time(0.15)},
+                           Vec2{-1, 0})
+                  .pressure,
+              // Halfway along the first segment, which this intersects.
+              FloatNear(0.1, kTol));
 }
 
 TEST(StylusStateModelerTest,
@@ -535,66 +609,6 @@ TEST(StylusStateModelerTest,
   // Normal points to the end of the segment.
   EXPECT_THAT(modeler.Project({.position = {1, 1}}, Vec2{0, 1}).position,
               Vec2Near({1, 0}, kTol));
-}
-
-TEST(StylusStateModelerTest, StaleInputsAreDiscardedClosestPointProjection) {
-  StylusStateModeler modeler;
-  modeler.Reset(
-      {.max_input_samples = 3, .use_stroke_normal_projection = false});
-
-  EXPECT_EQ(modeler.InputSampleCount(), 0);
-  modeler.Update({1, 1}, Time(0),
-                 {.pressure = .6, .tilt = .5, .orientation = .4});
-  EXPECT_EQ(modeler.InputSampleCount(), 1);
-  modeler.Update({-1, 2}, Time(0.1),
-                 {.pressure = .3, .tilt = .7, .orientation = .6});
-  EXPECT_EQ(modeler.InputSampleCount(), 2);
-  modeler.Update({-4, 0}, Time(0.2),
-                 {.pressure = .9, .tilt = .7, .orientation = .3});
-  EXPECT_EQ(modeler.InputSampleCount(), 3);
-  modeler.Update({-6, -3}, Time(0.3),
-                 {.pressure = .4, .tilt = .3, .orientation = .5});
-  EXPECT_EQ(modeler.InputSampleCount(), 3);
-  modeler.Update({-5, -5}, Time(0.4),
-                 {.pressure = .3, .tilt = .3, .orientation = .1});
-  EXPECT_EQ(modeler.InputSampleCount(), 3);
-}
-
-TEST(StylusStateModelerTest, StaleInputsAreDiscardedStrokeNormalProjection) {
-  StylusStateModeler modeler;
-  modeler.Reset({
-      .use_stroke_normal_projection = true,
-      .min_input_samples = 3,
-      .min_sample_duration = Duration(.5),
-  });
-
-  EXPECT_EQ(modeler.InputSampleCount(), 0);
-  modeler.Update({1, 1}, Time(0),
-                 {.pressure = .6, .tilt = .5, .orientation = .4});
-  EXPECT_EQ(modeler.InputSampleCount(), 1);
-  modeler.Update({-1, 2}, Time(0.1),
-                 {.pressure = .3, .tilt = .7, .orientation = .6});
-  EXPECT_EQ(modeler.InputSampleCount(), 2);
-  modeler.Update({-4, 0}, Time(0.2),
-                 {.pressure = .9, .tilt = .7, .orientation = .3});
-  EXPECT_EQ(modeler.InputSampleCount(), 3);
-
-  // We've hit the minimum number of samples, but not the minimum duration.
-  modeler.Update({-6, -3}, Time(0.3),
-                 {.pressure = .4, .tilt = .3, .orientation = .5});
-  EXPECT_EQ(modeler.InputSampleCount(), 4);
-
-  // Now we've hit the minimum duration as well, so we can drop the two oldest
-  // inputs.
-  modeler.Update({-5, -5}, Time(1),
-                 {.pressure = .3, .tilt = .3, .orientation = .1});
-  EXPECT_EQ(modeler.InputSampleCount(), 3);
-
-  // Even though we meet the minimum duration with just two inputs, we don't
-  // drop below the minimum number of samples.
-  modeler.Update({-5, -5}, Time(2),
-                 {.pressure = .3, .tilt = .3, .orientation = .1});
-  EXPECT_EQ(modeler.InputSampleCount(), 3);
 }
 
 TEST(StylusStateModelerTest, ProjectCyclicOrientationInterpolation) {
@@ -1125,7 +1139,6 @@ TEST(StylusStateModelerTest, SaveAndRestore) {
 
   modeler.Save();
 
-  // This causes the points at {1, 1} and {-1, 2} to be discarded.
   modeler.Update({-8, 0}, Time(10),
                  {.pressure = .6, .tilt = .8, .orientation = .9});
   modeler.Update({-8, 0}, Time(11),
@@ -1137,13 +1150,13 @@ TEST(StylusStateModelerTest, SaveAndRestore) {
                               Vec2{0, 1}),
               ResultNear(
                   {
-                      .position = {-4, 0},
-                      .velocity = {-3, -2},
-                      .acceleration = {-1, -3},
+                      .position = {1, 1},
+                      .velocity = {0, 0},
+                      .acceleration = {0, 0},
                       .time = Time(0),
-                      .pressure = .9,
-                      .tilt = .7,
-                      .orientation = .3,
+                      .pressure = .6,
+                      .tilt = .5,
+                      .orientation = .4,
                   },
                   kTol, kAccelTol));
 
@@ -1179,13 +1192,13 @@ TEST(StylusStateModelerTest, SaveAndRestore) {
                               Vec2{0, 1}),
               ResultNear(
                   {
-                      .position = {-4, 0},
-                      .velocity = {-3, -2},
-                      .acceleration = {-1, -3},
+                      .position = {1, 1},
+                      .velocity = {0, 0},
+                      .acceleration = {0, 0},
                       .time = Time(0),
-                      .pressure = .9,
-                      .tilt = .7,
-                      .orientation = .3,
+                      .pressure = .6,
+                      .tilt = .5,
+                      .orientation = .4,
                   },
                   kTol, kAccelTol));
   modeler.Restore();
@@ -1247,5 +1260,4 @@ TEST(StylusStateModelerTest, SaveAndRestore) {
 }
 
 }  // namespace
-}  // namespace stroke_model
-}  // namespace ink
+}  // namespace ink::stroke_model

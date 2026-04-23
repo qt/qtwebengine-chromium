@@ -287,16 +287,16 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":f32-vunary_x64",
       ":operators_x64",
       ":qd8-f16-qb4w-gemm_f16c-fma-avx2",
-      ":qd8-f16-qc4w-gemm_avx2-avxvnni-f16c-fma",
+      ":qd8-f16-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni",
       ":qd8-f16-qc4w-gemm_f16c-fma-avx2",
       ":qd8-f16-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
       ":qd8-f16-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
-      ":qd8-f16-qc8w-gemm_avx2-avxvnni-f16c-fma",
+      ":qd8-f16-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni",
       ":qd8-f16-qc8w-gemm_f16c-fma-avx2",
       ":qd8-f16-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
       ":qd8-f16-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
       ":qd8-f16-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni-amx-tile-amx-int8",
-      ":qd8-f16-qc8w-igemm_avx2-avxvnni-f16c-fma",
+      ":qd8-f16-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni",
       ":qd8-f16-qc8w-igemm_f16c-fma-avx2",
       ":qd8-f16-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
       ":qd8-f16-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
@@ -308,7 +308,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qd8-f32-qb4w-gemm_sse2-no-sse3",
       ":qd8-f32-qb4w-gemm_sse4.1-no-sse4.2",
       ":qd8-f32-qb4w-gemm_x64",
-      ":qd8-f32-qc4w-gemm_avx2-avxvnni-f16c-fma",
+      ":qd8-f32-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni",
       ":qd8-f32-qc4w-gemm_f16c-fma-avx2",
       ":qd8-f32-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
       ":qd8-f32-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
@@ -317,7 +317,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qd8-f32-qc4w-gemm_sse2-no-sse3",
       ":qd8-f32-qc4w-gemm_ssse3-no-sse4.1",
       ":qd8-f32-qc4w-gemm_x64",
-      ":qd8-f32-qc8w-gemm_avx2-avxvnni-f16c-fma",
+      ":qd8-f32-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni",
       ":qd8-f32-qc8w-gemm_f16c-fma-avx2",
       ":qd8-f32-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
       ":qd8-f32-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
@@ -325,7 +325,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qd8-f32-qc8w-gemm_sse2-no-sse3",
       ":qd8-f32-qc8w-gemm_sse4.1-no-sse4.2",
       ":qd8-f32-qc8w-gemm_x64",
-      ":qd8-f32-qc8w-igemm_avx2-avxvnni-f16c-fma",
+      ":qd8-f32-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni",
       ":qd8-f32-qc8w-igemm_f16c-fma-avx2",
       ":qd8-f32-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
       ":qd8-f32-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
@@ -346,12 +346,12 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qs8-f32-vcvt_sse2-no-sse3",
       ":qs8-f32-vcvt_sse4.1-no-sse4.2",
       ":qs8-f32-vcvt_x64",
-      ":qs8-packw_avx2-avxvnni-f16c-fma",
+      ":qs8-packw_avx2-avxvnni-f16c-fma-gfni",
       ":qs8-packw_f16c-fma-avx2",
       ":qs8-packw_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
       ":qs8-packw_x64",
       ":qs8-qc4w-gemm_avx-no-avx2-no-f16c-no-fma",
-      ":qs8-qc4w-gemm_avx2-avxvnni-f16c-fma",
+      ":qs8-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni",
       ":qs8-qc4w-gemm_f16c-fma-avx2",
       ":qs8-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
       ":qs8-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
@@ -364,8 +364,8 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qs8-qc8w-dwconv_sse4.1-no-sse4.2",
       ":qs8-qc8w-dwconv_x64",
       ":qs8-qc8w-gemm_avx-no-avx2-no-f16c-no-fma",
-      ":qs8-qc8w-gemm_avx2-avxvnni-f16c-fma",
-      ":qs8-qc8w-gemm_avx2-avxvnniint8-f16c-fma",
+      ":qs8-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni",
+      ":qs8-qc8w-gemm_avx2-avxvnniint8-f16c-fma-gfni",
       ":qs8-qc8w-gemm_f16c-fma-avx2",
       ":qs8-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
       ":qs8-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
@@ -374,8 +374,8 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qs8-qc8w-gemm_sse4.1-no-sse4.2",
       ":qs8-qc8w-gemm_x64",
       ":qs8-qc8w-igemm_avx-no-avx2-no-f16c-no-fma",
-      ":qs8-qc8w-igemm_avx2-avxvnni-f16c-fma",
-      ":qs8-qc8w-igemm_avx2-avxvnniint8-f16c-fma",
+      ":qs8-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni",
+      ":qs8-qc8w-igemm_avx2-avxvnniint8-f16c-fma-gfni",
       ":qs8-qc8w-igemm_f16c-fma-avx2",
       ":qs8-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
       ":qs8-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
@@ -383,14 +383,14 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qs8-qc8w-igemm_sse2-no-sse3",
       ":qs8-qc8w-igemm_sse4.1-no-sse4.2",
       ":qs8-qc8w-igemm_x64",
-      ":qs8-qu8-packw_avx2-avxvnni-f16c-fma",
+      ":qs8-qu8-packw_avx2-avxvnni-f16c-fma-gfni",
       ":qs8-qu8-packw_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
       ":qs8-qu8-packw_x64",
       ":qs8-rdsum_f16c-fma-avx2",
       ":qs8-rdsum_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
       ":qs8-rdsum_sse4.1-no-sse4.2",
       ":qs8-rdsum_x64",
-      ":qs8-rsum_avx2-avxvnni-f16c-fma",
+      ":qs8-rsum_avx2-avxvnni-f16c-fma-gfni",
       ":qs8-rsum_f16c-fma-avx2",
       ":qs8-rsum_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
       ":qs8-rsum_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni",
@@ -808,16 +808,16 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":f32-vunary_x64_standalone",
       ":operators_x64_standalone",
       ":qd8-f16-qb4w-gemm_f16c-fma-avx2_standalone",
-      ":qd8-f16-qc4w-gemm_avx2-avxvnni-f16c-fma_standalone",
+      ":qd8-f16-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone",
       ":qd8-f16-qc4w-gemm_f16c-fma-avx2_standalone",
       ":qd8-f16-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni_standalone",
       ":qd8-f16-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl_standalone",
-      ":qd8-f16-qc8w-gemm_avx2-avxvnni-f16c-fma_standalone",
+      ":qd8-f16-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone",
       ":qd8-f16-qc8w-gemm_f16c-fma-avx2_standalone",
       ":qd8-f16-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni-amx-tile-amx-int8_standalone",
       ":qd8-f16-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni_standalone",
       ":qd8-f16-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl_standalone",
-      ":qd8-f16-qc8w-igemm_avx2-avxvnni-f16c-fma_standalone",
+      ":qd8-f16-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni_standalone",
       ":qd8-f16-qc8w-igemm_f16c-fma-avx2_standalone",
       ":qd8-f16-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni-amx-tile-amx-int8_standalone",
       ":qd8-f16-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni_standalone",
@@ -829,7 +829,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qd8-f32-qb4w-gemm_sse2-no-sse3_standalone",
       ":qd8-f32-qb4w-gemm_sse4.1-no-sse4.2_standalone",
       ":qd8-f32-qb4w-gemm_x64_standalone",
-      ":qd8-f32-qc4w-gemm_avx2-avxvnni-f16c-fma_standalone",
+      ":qd8-f32-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone",
       ":qd8-f32-qc4w-gemm_f16c-fma-avx2_standalone",
       ":qd8-f32-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni-amx-tile-amx-int8_standalone",
       ":qd8-f32-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni_standalone",
@@ -838,7 +838,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qd8-f32-qc4w-gemm_sse2-no-sse3_standalone",
       ":qd8-f32-qc4w-gemm_ssse3-no-sse4.1_standalone",
       ":qd8-f32-qc4w-gemm_x64_standalone",
-      ":qd8-f32-qc8w-gemm_avx2-avxvnni-f16c-fma_standalone",
+      ":qd8-f32-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone",
       ":qd8-f32-qc8w-gemm_f16c-fma-avx2_standalone",
       ":qd8-f32-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni-amx-tile-amx-int8_standalone",
       ":qd8-f32-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni_standalone",
@@ -846,7 +846,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qd8-f32-qc8w-gemm_sse2-no-sse3_standalone",
       ":qd8-f32-qc8w-gemm_sse4.1-no-sse4.2_standalone",
       ":qd8-f32-qc8w-gemm_x64_standalone",
-      ":qd8-f32-qc8w-igemm_avx2-avxvnni-f16c-fma_standalone",
+      ":qd8-f32-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni_standalone",
       ":qd8-f32-qc8w-igemm_f16c-fma-avx2_standalone",
       ":qd8-f32-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni-amx-tile-amx-int8_standalone",
       ":qd8-f32-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni_standalone",
@@ -867,12 +867,12 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qs8-f32-vcvt_sse2-no-sse3_standalone",
       ":qs8-f32-vcvt_sse4.1-no-sse4.2_standalone",
       ":qs8-f32-vcvt_x64_standalone",
-      ":qs8-packw_avx2-avxvnni-f16c-fma_standalone",
+      ":qs8-packw_avx2-avxvnni-f16c-fma-gfni_standalone",
       ":qs8-packw_f16c-fma-avx2_standalone",
       ":qs8-packw_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni_standalone",
       ":qs8-packw_x64_standalone",
       ":qs8-qc4w-gemm_avx-no-avx2-no-f16c-no-fma_standalone",
-      ":qs8-qc4w-gemm_avx2-avxvnni-f16c-fma_standalone",
+      ":qs8-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone",
       ":qs8-qc4w-gemm_f16c-fma-avx2_standalone",
       ":qs8-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni_standalone",
       ":qs8-qc4w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl_standalone",
@@ -885,8 +885,8 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qs8-qc8w-dwconv_sse4.1-no-sse4.2_standalone",
       ":qs8-qc8w-dwconv_x64_standalone",
       ":qs8-qc8w-gemm_avx-no-avx2-no-f16c-no-fma_standalone",
-      ":qs8-qc8w-gemm_avx2-avxvnni-f16c-fma_standalone",
-      ":qs8-qc8w-gemm_avx2-avxvnniint8-f16c-fma_standalone",
+      ":qs8-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone",
+      ":qs8-qc8w-gemm_avx2-avxvnniint8-f16c-fma-gfni_standalone",
       ":qs8-qc8w-gemm_f16c-fma-avx2_standalone",
       ":qs8-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni-amx-tile-amx-int8_standalone",
       ":qs8-qc8w-gemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni_standalone",
@@ -895,8 +895,8 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qs8-qc8w-gemm_sse4.1-no-sse4.2_standalone",
       ":qs8-qc8w-gemm_x64_standalone",
       ":qs8-qc8w-igemm_avx-no-avx2-no-f16c-no-fma_standalone",
-      ":qs8-qc8w-igemm_avx2-avxvnni-f16c-fma_standalone",
-      ":qs8-qc8w-igemm_avx2-avxvnniint8-f16c-fma_standalone",
+      ":qs8-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni_standalone",
+      ":qs8-qc8w-igemm_avx2-avxvnniint8-f16c-fma-gfni_standalone",
       ":qs8-qc8w-igemm_f16c-fma-avx2_standalone",
       ":qs8-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni-amx-tile-amx-int8_standalone",
       ":qs8-qc8w-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni_standalone",
@@ -904,14 +904,14 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qs8-qc8w-igemm_sse2-no-sse3_standalone",
       ":qs8-qc8w-igemm_sse4.1-no-sse4.2_standalone",
       ":qs8-qc8w-igemm_x64_standalone",
-      ":qs8-qu8-packw_avx2-avxvnni-f16c-fma_standalone",
+      ":qs8-qu8-packw_avx2-avxvnni-f16c-fma-gfni_standalone",
       ":qs8-qu8-packw_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni_standalone",
       ":qs8-qu8-packw_x64_standalone",
       ":qs8-rdsum_f16c-fma-avx2_standalone",
       ":qs8-rdsum_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl_standalone",
       ":qs8-rdsum_sse4.1-no-sse4.2_standalone",
       ":qs8-rdsum_x64_standalone",
-      ":qs8-rsum_avx2-avxvnni-f16c-fma_standalone",
+      ":qs8-rsum_avx2-avxvnni-f16c-fma-gfni_standalone",
       ":qs8-rsum_f16c-fma-avx2_standalone",
       ":qs8-rsum_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni_standalone",
       ":qs8-rsum_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl_standalone",
@@ -1191,6 +1191,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":f32-vtanh_arm64",
       ":f32-vunary_arm64",
       ":operators_arm64",
+      ":pf16-f16-f16-igemm_arch=armv8.2-a+sve+sve2",
       ":pf16-gemm_arch=armv8.2-a+sve+sve2",
       ":pf32-gemm_arch=armv8.2-a+sve+sve2",
       ":pqs8-f32-qc8w-igemm_arch=armv8.2-a+sve+sve2",
@@ -1213,6 +1214,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qd8-f32-qb4w-gemm_arch=armv8.2-a+dotprod",
       ":qd8-f32-qb4w-gemm_arch=armv8.2-a+i8mm+fp16",
       ":qd8-f32-qb4w-gemm_arm64",
+      ":qd8-f32-qc2w-gemm_arch=armv8.2-a+dotprod",
       ":qd8-f32-qc4w-gemm_arch=armv8.2-a+dotprod",
       ":qd8-f32-qc4w-gemm_arch=armv8.2-a+i8mm+fp16",
       ":qd8-f32-qc4w-gemm_arm64",
@@ -1413,6 +1415,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":f32-vtanh_arm64_standalone",
       ":f32-vunary_arm64_standalone",
       ":operators_arm64_standalone",
+      ":pf16-f16-f16-igemm_arch=armv8.2-a+sve+sve2_standalone",
       ":pf16-gemm_arch=armv8.2-a+sve+sve2_standalone",
       ":pf32-gemm_arch=armv8.2-a+sve+sve2_standalone",
       ":pqs8-f32-qc8w-igemm_arch=armv8.2-a+sve+sve2_standalone",
@@ -1435,6 +1438,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
       ":qd8-f32-qb4w-gemm_arch=armv8.2-a+dotprod_standalone",
       ":qd8-f32-qb4w-gemm_arch=armv8.2-a+i8mm+fp16_standalone",
       ":qd8-f32-qb4w-gemm_arm64_standalone",
+      ":qd8-f32-qc2w-gemm_arch=armv8.2-a+dotprod_standalone",
       ":qd8-f32-qc4w-gemm_arch=armv8.2-a+dotprod_standalone",
       ":qd8-f32-qc4w-gemm_arch=armv8.2-a+i8mm+fp16_standalone",
       ":qd8-f32-qc4w-gemm_arm64_standalone",
@@ -1924,6 +1928,7 @@ if (build_with_chromium) {
       "src/src/sanitizers.c",
       "src/src/subgraph.c",
       "src/src/tensor.c",
+      "src/src/xnnpack/fingerprint_check.c",
     ]
 
     deps = xnnpack_deps + [
@@ -1971,6 +1976,7 @@ if (build_with_internal_optimization_guide) {
       "src/src/sanitizers.c",
       "src/src/subgraph.c",
       "src/src/tensor.c",
+      "src/src/xnnpack/fingerprint_check.c",
     ]
 
     deps = xnnpack_standalone_deps + [
@@ -2944,7 +2950,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
       sources = [
         "src/include/xnnpack.h",
-        "src/src/f16-f32acc-rdsum/gen/f16-f32acc-rdsum-7p7x-avx512skx-u64.c",
+        "src/src/f16-f32acc-rdsum/gen/f16-f32acc-rdsum-7p7x-minmax-avx512skx-u64.c",
       ]
 
       configs -= [ "//build/config/compiler:chromium_code" ]
@@ -2979,7 +2985,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
       sources = [
         "src/include/xnnpack.h",
-        "src/src/f16-f32acc-rdsum/gen/f16-f32acc-rdsum-7p7x-avx512skx-u64.c",
+        "src/src/f16-f32acc-rdsum/gen/f16-f32acc-rdsum-7p7x-minmax-avx512skx-u64.c",
       ]
 
       configs -= [ "//build/config/compiler:chromium_code" ]
@@ -3012,7 +3018,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
       sources = [
         "src/include/xnnpack.h",
-        "src/src/f16-f32acc-rdsum/gen/f16-f32acc-rdsum-7p7x-f16c-u32.c",
+        "src/src/f16-f32acc-rdsum/gen/f16-f32acc-rdsum-7p7x-minmax-f16c-u32.c",
       ]
 
       configs -= [ "//build/config/compiler:chromium_code" ]
@@ -3042,7 +3048,7 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
       sources = [
         "src/include/xnnpack.h",
-        "src/src/f16-f32acc-rdsum/gen/f16-f32acc-rdsum-7p7x-f16c-u32.c",
+        "src/src/f16-f32acc-rdsum/gen/f16-f32acc-rdsum-7p7x-minmax-f16c-u32.c",
       ]
 
       configs -= [ "//build/config/compiler:chromium_code" ]
@@ -16766,6 +16772,8 @@ if (current_cpu == "x64" || current_cpu == "x86") {
         "src/src/operators/convolution-nhwc.c",
         "src/src/operators/deconvolution-nhwc.c",
         "src/src/operators/dynamic-fully-connected-nc.c",
+        "src/src/operators/fingerprint_cache.c",
+        "src/src/operators/fingerprint_id.c",
         "src/src/operators/fully-connected-nc.c",
         "src/src/operators/max-pooling-nhwc.c",
         "src/src/operators/pack-lh.c",
@@ -16812,6 +16820,8 @@ if (current_cpu == "x64" || current_cpu == "x86") {
         "src/src/operators/convolution-nhwc.c",
         "src/src/operators/deconvolution-nhwc.c",
         "src/src/operators/dynamic-fully-connected-nc.c",
+        "src/src/operators/fingerprint_cache.c",
+        "src/src/operators/fingerprint_id.c",
         "src/src/operators/fully-connected-nc.c",
         "src/src/operators/max-pooling-nhwc.c",
         "src/src/operators/pack-lh.c",
@@ -16912,12 +16922,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qd8-f16-qc4w-gemm_avx2-avxvnni-f16c-fma") {
+    source_set("qd8-f16-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -16944,12 +16955,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qd8-f16-qc4w-gemm_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qd8-f16-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -17196,12 +17208,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qd8-f16-qc8w-gemm_avx2-avxvnni-f16c-fma") {
+    source_set("qd8-f16-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -17228,12 +17241,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qd8-f16-qc8w-gemm_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qd8-f16-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -17563,12 +17577,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qd8-f16-qc8w-igemm_avx2-avxvnni-f16c-fma") {
+    source_set("qd8-f16-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -17595,12 +17610,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qd8-f16-qc8w-igemm_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qd8-f16-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -18401,12 +18417,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qd8-f32-qc4w-gemm_avx2-avxvnni-f16c-fma") {
+    source_set("qd8-f32-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -18433,12 +18450,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qd8-f32-qc4w-gemm_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qd8-f32-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -19034,12 +19052,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qd8-f32-qc8w-gemm_avx2-avxvnni-f16c-fma") {
+    source_set("qd8-f32-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -19066,12 +19085,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qd8-f32-qc8w-gemm_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qd8-f32-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -19590,12 +19610,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qd8-f32-qc8w-igemm_avx2-avxvnni-f16c-fma") {
+    source_set("qd8-f32-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -19622,12 +19643,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qd8-f32-qc8w-igemm_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qd8-f32-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -20981,12 +21003,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qs8-packw_avx2-avxvnni-f16c-fma") {
+    source_set("qs8-packw_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -21013,12 +21036,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qs8-packw_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qs8-packw_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -21318,12 +21342,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qs8-qc4w-gemm_avx2-avxvnni-f16c-fma") {
+    source_set("qs8-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -21350,12 +21375,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qs8-qc4w-gemm_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qs8-qc4w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -22201,12 +22227,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qs8-qc8w-gemm_avx2-avxvnni-f16c-fma") {
+    source_set("qs8-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -22233,12 +22260,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qs8-qc8w-gemm_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qs8-qc8w-gemm_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -22268,12 +22296,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qs8-qc8w-gemm_avx2-avxvnniint8-f16c-fma") {
+    source_set("qs8-qc8w-gemm_avx2-avxvnniint8-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnniint8",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -22300,12 +22329,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qs8-qc8w-gemm_avx2-avxvnniint8-f16c-fma_standalone") {
+    source_set("qs8-qc8w-gemm_avx2-avxvnniint8-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnniint8",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -22889,12 +22919,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qs8-qc8w-igemm_avx2-avxvnni-f16c-fma") {
+    source_set("qs8-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -22921,12 +22952,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qs8-qc8w-igemm_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qs8-qc8w-igemm_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -22956,12 +22988,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qs8-qc8w-igemm_avx2-avxvnniint8-f16c-fma") {
+    source_set("qs8-qc8w-igemm_avx2-avxvnniint8-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnniint8",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -22988,12 +23021,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qs8-qc8w-igemm_avx2-avxvnniint8-f16c-fma_standalone") {
+    source_set("qs8-qc8w-igemm_avx2-avxvnniint8-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnniint8",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -23510,12 +23544,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qs8-qu8-packw_avx2-avxvnni-f16c-fma") {
+    source_set("qs8-qu8-packw_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -23541,12 +23576,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qs8-qu8-packw_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qs8-qu8-packw_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -23957,12 +23993,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
   }
 
   if (build_with_chromium) {
-    source_set("qs8-rsum_avx2-avxvnni-f16c-fma") {
+    source_set("qs8-rsum_avx2-avxvnni-f16c-fma-gfni") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -23988,12 +24025,13 @@ if (current_cpu == "x64" || current_cpu == "x86") {
 
   # This is a target that cannot depend on //base.
   if (build_with_internal_optimization_guide) {
-    source_set("qs8-rsum_avx2-avxvnni-f16c-fma_standalone") {
+    source_set("qs8-rsum_avx2-avxvnni-f16c-fma-gfni_standalone") {
       cflags = [
         "-mavx2",
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
       ]
 
       sources = [
@@ -40932,6 +40970,8 @@ if (current_cpu == "arm64") {
         "src/src/operators/convolution-nhwc.c",
         "src/src/operators/deconvolution-nhwc.c",
         "src/src/operators/dynamic-fully-connected-nc.c",
+        "src/src/operators/fingerprint_cache.c",
+        "src/src/operators/fingerprint_id.c",
         "src/src/operators/fully-connected-nc.c",
         "src/src/operators/max-pooling-nhwc.c",
         "src/src/operators/pack-lh.c",
@@ -40978,6 +41018,8 @@ if (current_cpu == "arm64") {
         "src/src/operators/convolution-nhwc.c",
         "src/src/operators/deconvolution-nhwc.c",
         "src/src/operators/dynamic-fully-connected-nc.c",
+        "src/src/operators/fingerprint_cache.c",
+        "src/src/operators/fingerprint_id.c",
         "src/src/operators/fully-connected-nc.c",
         "src/src/operators/max-pooling-nhwc.c",
         "src/src/operators/pack-lh.c",
@@ -40990,6 +41032,61 @@ if (current_cpu == "arm64") {
         "src/src/operators/transpose-nd.c",
         "src/src/operators/unary-elementwise-nc.c",
         "src/src/operators/unpooling-nhwc.c",
+      ]
+
+      configs -= [ "//build/config/compiler:chromium_code" ]
+      configs += [ "//build/config/compiler:no_chromium_code" ]
+      configs += [ "//build/config/sanitizers:cfi_icall_generalize_pointers" ]
+      configs += [ ":xnnpack_private_config" ]
+
+      deps = [
+        "//third_party/cpuinfo",
+        "//third_party/fp16",
+        "//third_party/fxdiv",
+        "//third_party/pthreadpool:pthreadpool_standalone",
+      ]
+
+      public_configs = [ ":xnnpack_public_config" ]
+
+      if (!(is_android && use_order_profiling)) {
+        assert_no_deps = [ "//base" ]
+      }
+    }
+  }
+
+  if (build_with_chromium) {
+    source_set("pf16-f16-f16-igemm_arch=armv8.2-a+sve+sve2") {
+      cflags = [ "-march=armv8.2-a+sve+sve2" ]
+
+      sources = [
+        "src/include/xnnpack.h",
+        "src/src/pf16-f16-f16-igemm/pf16-f16-f16-igemm-32x32c2-minmax-neonsme2.c",
+      ]
+
+      configs -= [ "//build/config/compiler:chromium_code" ]
+      configs += [ "//build/config/compiler:no_chromium_code" ]
+      configs += [ "//build/config/sanitizers:cfi_icall_generalize_pointers" ]
+      configs += [ ":xnnpack_private_config" ]
+
+      deps = [
+        "//third_party/cpuinfo",
+        "//third_party/fp16",
+        "//third_party/fxdiv",
+        "//third_party/pthreadpool",
+      ]
+
+      public_configs = [ ":xnnpack_public_config" ]
+    }
+  }
+
+  # This is a target that cannot depend on //base.
+  if (build_with_internal_optimization_guide) {
+    source_set("pf16-f16-f16-igemm_arch=armv8.2-a+sve+sve2_standalone") {
+      cflags = [ "-march=armv8.2-a+sve+sve2" ]
+
+      sources = [
+        "src/include/xnnpack.h",
+        "src/src/pf16-f16-f16-igemm/pf16-f16-f16-igemm-32x32c2-minmax-neonsme2.c",
       ]
 
       configs -= [ "//build/config/compiler:chromium_code" ]
@@ -42266,6 +42363,63 @@ if (current_cpu == "arm64") {
         "src/src/qd8-f32-qb4w-gemm/gen/qd8-f32-qb4w-gemm-1x4-minmax-scalar.c",
         "src/src/qd8-f32-qb4w-gemm/gen/qd8-f32-qb4w-gemm-4x4-minmax-scalar.c",
         "src/src/qd8-f32-qb4w-gemm/gen/qd8-f32-qb4w-gemm-6x16-minmax-neon-mlal-lane.c",
+      ]
+
+      configs -= [ "//build/config/compiler:chromium_code" ]
+      configs += [ "//build/config/compiler:no_chromium_code" ]
+      configs += [ "//build/config/sanitizers:cfi_icall_generalize_pointers" ]
+      configs += [ ":xnnpack_private_config" ]
+
+      deps = [
+        "//third_party/cpuinfo",
+        "//third_party/fp16",
+        "//third_party/fxdiv",
+        "//third_party/pthreadpool:pthreadpool_standalone",
+      ]
+
+      public_configs = [ ":xnnpack_public_config" ]
+
+      if (!(is_android && use_order_profiling)) {
+        assert_no_deps = [ "//base" ]
+      }
+    }
+  }
+
+  if (build_with_chromium) {
+    source_set("qd8-f32-qc2w-gemm_arch=armv8.2-a+dotprod") {
+      cflags = [ "-march=armv8.2-a+dotprod" ]
+
+      sources = [
+        "src/include/xnnpack.h",
+        "src/src/qd8-f32-qc2w-gemm/qd8-f32-qc2w-gemm-1x16c4-minmax-neondot.c",
+        "src/src/qd8-f32-qc2w-gemm/qd8-f32-qc2w-gemm-4x16c4-minmax-neondot.c",
+      ]
+
+      configs -= [ "//build/config/compiler:chromium_code" ]
+      configs += [ "//build/config/compiler:no_chromium_code" ]
+      configs += [ "//build/config/sanitizers:cfi_icall_generalize_pointers" ]
+      configs += [ ":xnnpack_private_config" ]
+
+      deps = [
+        "//third_party/cpuinfo",
+        "//third_party/fp16",
+        "//third_party/fxdiv",
+        "//third_party/pthreadpool",
+      ]
+
+      public_configs = [ ":xnnpack_public_config" ]
+    }
+  }
+
+  # This is a target that cannot depend on //base.
+  if (build_with_internal_optimization_guide) {
+    source_set("qd8-f32-qc2w-gemm_arch=armv8.2-a+dotprod_standalone") {
+      cflags = [ "-march=armv8.2-a+dotprod" ]
+
+      sources = [
+        "src/include/xnnpack.h",
+        "src/src/qd8-f32-qc2w-gemm/qd8-f32-qc2w-gemm-1x16c4-minmax-neondot.c",
+        "src/src/qd8-f32-qc2w-gemm/qd8-f32-qc2w-gemm-4x16c4-minmax-neondot.c",
       ]
 
       configs -= [ "//build/config/compiler:chromium_code" ]
@@ -47034,6 +47188,9 @@ if (current_cpu == "arm64") {
 
       sources = [
         "src/include/xnnpack.h",
+        "src/src/x16-pack-lh/x16-packlh-igemm-neonsme.c",
+        "src/src/x16-pack-lh/x16-packlh-igemm-neonsme2.c",
+        "src/src/x16-pack-lh/x16-packlh-neonsme.c",
         "src/src/x16-pack-lh/x16-packlh-neonsme2.c",
       ]
 
@@ -47060,6 +47217,9 @@ if (current_cpu == "arm64") {
 
       sources = [
         "src/include/xnnpack.h",
+        "src/src/x16-pack-lh/x16-packlh-igemm-neonsme.c",
+        "src/src/x16-pack-lh/x16-packlh-igemm-neonsme2.c",
+        "src/src/x16-pack-lh/x16-packlh-neonsme.c",
         "src/src/x16-pack-lh/x16-packlh-neonsme2.c",
       ]
 
@@ -47320,6 +47480,7 @@ if (current_cpu == "arm64") {
       sources = [
         "src/include/xnnpack.h",
         "src/src/x32-pack-lh/x32-packlh-neonsme.c",
+        "src/src/x32-pack-lh/x32-packlh-neonsme2.c",
       ]
 
       configs -= [ "//build/config/compiler:chromium_code" ]
@@ -47346,6 +47507,7 @@ if (current_cpu == "arm64") {
       sources = [
         "src/include/xnnpack.h",
         "src/src/x32-pack-lh/x32-packlh-neonsme.c",
+        "src/src/x32-pack-lh/x32-packlh-neonsme2.c",
       ]
 
       configs -= [ "//build/config/compiler:chromium_code" ]
@@ -52586,6 +52748,8 @@ if (current_cpu == "riscv64") {
         "src/src/operators/convolution-nhwc.c",
         "src/src/operators/deconvolution-nhwc.c",
         "src/src/operators/dynamic-fully-connected-nc.c",
+        "src/src/operators/fingerprint_cache.c",
+        "src/src/operators/fingerprint_id.c",
         "src/src/operators/fully-connected-nc.c",
         "src/src/operators/max-pooling-nhwc.c",
         "src/src/operators/pack-lh.c",
@@ -52632,6 +52796,8 @@ if (current_cpu == "riscv64") {
         "src/src/operators/convolution-nhwc.c",
         "src/src/operators/deconvolution-nhwc.c",
         "src/src/operators/dynamic-fully-connected-nc.c",
+        "src/src/operators/fingerprint_cache.c",
+        "src/src/operators/fingerprint_id.c",
         "src/src/operators/fully-connected-nc.c",
         "src/src/operators/max-pooling-nhwc.c",
         "src/src/operators/pack-lh.c",

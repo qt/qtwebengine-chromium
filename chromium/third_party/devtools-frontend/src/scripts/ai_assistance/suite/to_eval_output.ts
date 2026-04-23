@@ -9,9 +9,9 @@ import * as path from 'node:path';
 import {hideBin} from 'yargs/helpers';
 import yargs from 'yargs/yargs';
 
-import type {Conversation, EvalFileOutput, ProcessedQuery} from './types';
+import type {Conversation, EvalFileOutput, ProcessedQuery} from './types.js';
 
-// Note: non-exhaustive.
+/** Note: non-exhaustive. **/
 export interface RawOutput {
   metadata: Array<{exampleId: string, explanation: string}>;
   examples: Array<{

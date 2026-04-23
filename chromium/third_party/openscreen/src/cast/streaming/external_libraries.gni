@@ -6,6 +6,9 @@
 # non-standard locations. See the [documentation](external_libraries.md) for
 # more details.
 declare_args() {
+  # Common path for external libraries, e.g., Homebrew's /opt/homebrew/lib.
+  external_lib_dirs = []
+
   have_ffmpeg = false
   ffmpeg_libs = [
     "avcodec",

@@ -101,6 +101,9 @@ void DecorationSet::Add(uint32_t decoration, uint32_t value) {
             flags |= input_attachment_bit;
             input_attachment_index_start = value;
             break;
+        case spv::DecorationSample:
+            flags |= sample_bit;
+            break;
         default:
             DecorationBase::Add(decoration, value);
     }
@@ -287,6 +290,9 @@ void ExecutionModeSet::Add(const Instruction& insn) {
             break;
         case spv::ExecutionModeDerivativeGroupQuadsKHR:
             flags |= derivative_group_quads;
+            break;
+        case spv::ExecutionModeShader64BitIndexingEXT:
+            flags |= shader_64bit_indexing;
             break;
         default:
             break;
@@ -504,9 +510,31 @@ static void FindPointersAndObjects(const Instruction& insn, vvl::unordered_set<u
     }
 }
 
+// Mapping of < variable ID, AccessBit >
+using VariableAccessMap = vvl::unordered_map<uint32_t, uint32_t>;
+// <Image OpVariable Result ID, [StaticImageAccess, StaticImageAccess, etc] > - used for faster lookup
+// Many StaticImageAccess can point to a single Image Variable
+using StaticImageAccessMap = vvl::unordered_map<uint32_t, std::vector<std::shared_ptr<const StaticImageAccess>>>;
+// < Variable ID, [ OpAccessChain ] >
+// Allows for grouping the access chains by which variables they are actually accessing
+using AccessChainVariableMap = vvl::unordered_map<uint32_t, std::vector<const Instruction*>>;
+// Mapping of OpName instructions
+using DebugNameMap = vvl::unordered_map<uint32_t, const Instruction*>;
+
+// This is a way to pass a single struct along the various places that need all the information while parsing data.
+// These are all data structures we build up on the stack, then release when done parsing the SPIR-V
+struct ParsedInfo {
+    std::vector<std::shared_ptr<StaticImageAccess>> image_accesses;
+    StaticImageAccessMap image_access_map;
+
+    VariableAccessMap variable_access_map;
+    AccessChainVariableMap access_chain_map;
+    DebugNameMap debug_name_map;
+};
+
 // Built-in can be both on the OpVariable or a inside a OpTypeStruct for Block built-in.
 bool EntryPoint::IsBuiltInWritten(spv::BuiltIn built_in, const Module& module_state, const StageInterfaceVariable& variable,
-                                  const AccessChainVariableMap& access_chain_map) {
+                                  const ParsedInfo& parsed) {
     if (!variable.IsWrittenTo()) {
         return false;
     }
@@ -522,8 +550,8 @@ bool EntryPoint::IsBuiltInWritten(spv::BuiltIn built_in, const Module& module_st
         // We have confirmed the Block variable was written to, now need to confirm an access to.
         // Because Built-in can't both be the input and output at the same time, we can confirm all accesses are either all
         // loads or all stores.
-        const auto it = access_chain_map.find(variable.id);
-        if (it == access_chain_map.end()) {
+        const auto it = parsed.access_chain_map.find(variable.id);
+        if (it == parsed.access_chain_map.end()) {
             return false;
         }
         const uint32_t member_index = member.first;
@@ -532,8 +560,9 @@ bool EntryPoint::IsBuiltInWritten(spv::BuiltIn built_in, const Module& module_st
 
             // We know for sure any built-in inside a block are only 1-element deep so can just check the "Indexes 0" operand
             // Also no built-in we are dealing with are inside array-of-structs
-            const Instruction* value_def = module_state.GetConstantDef(access_chain_insn->Word(4));
-            if (value_def) {
+            const Instruction* value_def = module_state.GetAnyConstantDef(access_chain_insn->Word(4));
+            // Very very low chance using a spec constant to dynamically pick which built-in member of a struct to access
+            if (value_def && value_def->Opcode() == spv::OpConstant) {
                 const uint32_t value = value_def->GetConstantValue();
                 if (value == member_index) {
                     return true;
@@ -611,8 +640,7 @@ vvl::unordered_set<uint32_t> EntryPoint::GetAccessibleIds(const Module& module_s
 }
 
 std::vector<StageInterfaceVariable> EntryPoint::GetStageInterfaceVariables(const Module& module_state, EntryPoint& entrypoint,
-                                                                           const VariableAccessMap& variable_access_map,
-                                                                           const DebugNameMap& debug_name_map) {
+                                                                           const ParsedInfo& parsed) {
     std::vector<StageInterfaceVariable> variables;
 
     // spirv-val validates that any Input/Output used in the entrypoint is listed in as interface IDs
@@ -636,21 +664,17 @@ std::vector<StageInterfaceVariable> EntryPoint::GetStageInterfaceVariables(const
         const spv::StorageClass storage_class = (spv::StorageClass)insn.Word(3);
 
         if (storage_class == spv::StorageClassInput || storage_class == spv::StorageClassOutput) {
-            variables.emplace_back(module_state, insn, entrypoint.stage, variable_access_map, debug_name_map);
+            variables.emplace_back(module_state, insn, entrypoint.stage, parsed);
         } else if (storage_class == spv::StorageClassTaskPayloadWorkgroupEXT) {
             // Payload are not quite "stage interface" as they have enough different rules how they work
-            entrypoint.task_payload_variable =
-                std::make_shared<TaskPayloadVariable>(module_state, insn, entrypoint.stage, variable_access_map, debug_name_map);
+            entrypoint.task_payload_variable = std::make_shared<TaskPayloadVariable>(module_state, insn, entrypoint.stage, parsed);
         }
     }
     return variables;
 }
 
 std::vector<ResourceInterfaceVariable> EntryPoint::GetResourceInterfaceVariables(const Module& module_state, EntryPoint& entrypoint,
-                                                                                 const StaticImageAccessMap& image_access_map,
-                                                                                 const AccessChainVariableMap& access_chain_map,
-                                                                                 const VariableAccessMap& variable_access_map,
-                                                                                 const DebugNameMap& debug_name_map) {
+                                                                                 const ParsedInfo& parsed) {
     std::vector<ResourceInterfaceVariable> variables;
 
     // Now that the accessible_ids list is known, fill in any information that can be statically known per EntryPoint
@@ -664,11 +688,10 @@ std::vector<ResourceInterfaceVariable> EntryPoint::GetResourceInterfaceVariables
         // see vkspec.html#interfaces-resources-descset
         if (storage_class == spv::StorageClassUniform || storage_class == spv::StorageClassUniformConstant ||
             storage_class == spv::StorageClassStorageBuffer) {
-            variables.emplace_back(module_state, entrypoint, insn, image_access_map, access_chain_map, variable_access_map,
-                                   debug_name_map);
+            variables.emplace_back(module_state, entrypoint, insn, parsed);
         } else if (storage_class == spv::StorageClassPushConstant) {
             entrypoint.push_constant_variable =
-                std::make_shared<PushConstantVariable>(module_state, insn, entrypoint.stage, variable_access_map, debug_name_map);
+                std::make_shared<PushConstantVariable>(module_state, insn, entrypoint.stage, parsed);
         }
     }
     return variables;
@@ -741,13 +764,14 @@ StaticImageAccess::StaticImageAccess(const Module& module_state, const Instructi
                 case spv::OpInBoundsAccessChain:
                 case spv::OpPtrAccessChain:
                 case spv::OpInBoundsPtrAccessChain: {
-                    // If Image is an array (but not descriptor indexing), then need to get the index.
-                    const Instruction* const_def = module_state.GetConstantDef(find_insn->Word(4));
-                    if (const_def) {
+                    // If Image is an array (but not descriptor indexing), then need to get the index if possible.
+                    const Instruction* const_def = module_state.GetAnyConstantDef(find_insn->Word(4));
+                    if (const_def->IsConstant()) {
+                        const bool spec_const = const_def->IsSpecConstant();
                         if (sampler) {
-                            sampler_access_chain_index = const_def->GetConstantValue();
+                            sampler_access_chain_index = spec_const ? kSpecConstant : const_def->GetConstantValue();
                         } else {
-                            image_access_chain_index = const_def->GetConstantValue();
+                            image_access_chain_index = spec_const ? kSpecConstant : const_def->GetConstantValue();
                         }
                     }
                     find_insn = module_state.FindDef(find_insn->Word(3));
@@ -793,9 +817,7 @@ StaticImageAccess::StaticImageAccess(const Module& module_state, const Instructi
     }
 }
 
-EntryPoint::EntryPoint(const Module& module_state, const Instruction& entrypoint_insn, const StaticImageAccessMap& image_access_map,
-                       const AccessChainVariableMap& access_chain_map, const VariableAccessMap& variable_access_map,
-                       const DebugNameMap& debug_name_map)
+EntryPoint::EntryPoint(const Module& module_state, const Instruction& entrypoint_insn, const ParsedInfo& parsed)
     : entrypoint_insn(entrypoint_insn),
       is_data_graph(entrypoint_insn.Opcode() == spv::OpGraphEntryPointARM),
       execution_model(is_data_graph ? spv::ExecutionModelGLCompute : spv::ExecutionModel(entrypoint_insn.Word(1))),
@@ -806,9 +828,8 @@ EntryPoint::EntryPoint(const Module& module_state, const Instruction& entrypoint
       execution_mode(module_state.GetExecutionModeSet(id)),
       emit_vertex_geometry(false),
       accessible_ids(GetAccessibleIds(module_state, *this)),
-      resource_interface_variables(GetResourceInterfaceVariables(module_state, *this, image_access_map, access_chain_map,
-                                                                 variable_access_map, debug_name_map)),
-      stage_interface_variables(GetStageInterfaceVariables(module_state, *this, variable_access_map, debug_name_map)) {
+      resource_interface_variables(GetResourceInterfaceVariables(module_state, *this, parsed)),
+      stage_interface_variables(GetStageInterfaceVariables(module_state, *this, parsed)) {
     // Tried to just create this map in GetResourceInterfaceVariables() but ran into errors because the function is static
     for (const auto& variable : resource_interface_variables) {
         resource_interface_variable_map[variable.id] = &variable;
@@ -831,19 +852,19 @@ EntryPoint::EntryPoint(const Module& module_state, const Instruction& entrypoint
                 builtin_output_components += variable.total_builtin_components;
             }
 
-            if (IsBuiltInWritten(spv::BuiltInPrimitiveShadingRateKHR, module_state, variable, access_chain_map)) {
+            if (IsBuiltInWritten(spv::BuiltInPrimitiveShadingRateKHR, module_state, variable, parsed)) {
                 written_builtin_primitive_shading_rate_khr = true;
             }
-            if (IsBuiltInWritten(spv::BuiltInViewportIndex, module_state, variable, access_chain_map)) {
+            if (IsBuiltInWritten(spv::BuiltInViewportIndex, module_state, variable, parsed)) {
                 written_builtin_viewport_index = true;
             }
-            if (IsBuiltInWritten(spv::BuiltInPointSize, module_state, variable, access_chain_map)) {
+            if (IsBuiltInWritten(spv::BuiltInPointSize, module_state, variable, parsed)) {
                 written_builtin_point_size = true;
             }
-            if (IsBuiltInWritten(spv::BuiltInLayer, module_state, variable, access_chain_map)) {
+            if (IsBuiltInWritten(spv::BuiltInLayer, module_state, variable, parsed)) {
                 written_builtin_layer = true;
             }
-            if (IsBuiltInWritten(spv::BuiltInViewportMaskNV, module_state, variable, access_chain_map)) {
+            if (IsBuiltInWritten(spv::BuiltInViewportMaskNV, module_state, variable, parsed)) {
                 written_builtin_viewport_mask_nv = true;
             }
         } else {
@@ -909,6 +930,9 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
         instructions.shrink_to_fit();
     }
 
+    // We build up a lot of information in an initial pass of the SPIR-V so we can build up data structures around it
+    ParsedInfo parsed;
+
     // These have their own object class, but need entire module parsed first
     std::vector<const Instruction*> entry_point_instructions;
     std::vector<const Instruction*> type_struct_instructions;
@@ -917,14 +941,10 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
     // both OpDecorate and OpMemberDecorate builtin instructions
     std::vector<const Instruction*> builtin_decoration_instructions;
 
-    DebugNameMap debug_name_map;
-
     std::vector<uint32_t> store_pointer_ids;
     std::vector<uint32_t> load_pointer_ids;
     std::vector<uint32_t> atomic_store_pointer_ids;
     std::vector<uint32_t> atomic_load_pointer_ids;
-
-    AccessChainVariableMap access_chain_map;
 
     uint32_t last_func_id = 0;
     // < Function ID, OpFunctionParameter Ids >
@@ -1085,10 +1105,21 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
                 load_pointer_ids.emplace_back(insn.Word(3));  // object id or AccessChain id
                 break;
             }
+
             case spv::OpAccessChain:
-            case spv::OpInBoundsAccessChain: {
+            case spv::OpInBoundsAccessChain:
+            case spv::OpPtrAccessChain:
+            case spv::OpInBoundsPtrAccessChain: {
                 const uint32_t base_id = insn.Word(3);
-                access_chain_map[base_id].push_back(&insn);
+                parsed.access_chain_map[base_id].push_back(&insn);
+
+                // some builtins, like Position, can have empty access chains
+                if (insn.Length() > 4) {
+                    const Instruction* const_def = module_state.GetAnyConstantDef(insn.Word(4));
+                    if (const_def && const_def->Opcode() == spv::OpSpecConstant) {
+                        descriptor_indexing_spec_const_ac_inst.emplace_back(&insn);
+                    }
+                }
                 break;
             }
             case spv::OpImageTexelPointer: {
@@ -1104,6 +1135,12 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
             case spv::OpReadClockKHR: {
                 if (stateless_data) {
                     stateless_data->read_clock_inst.push_back(&insn);
+                }
+                break;
+            }
+            case spv::OpFmaKHR: {
+                if (stateless_data) {
+                    stateless_data->fma_inst.push_back(&insn);
                 }
                 break;
             }
@@ -1141,7 +1178,7 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
             }
 
             case spv::OpName: {
-                debug_name_map[insn.Word(1)] = &insn;
+                parsed.debug_name_map[insn.Word(1)] = &insn;
                 break;
             }
 
@@ -1169,6 +1206,19 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
                 func_call_instructions.push_back(&insn);
                 break;
 
+            case spv::OpArrayLength:
+            case spv::OpUntypedArrayLengthKHR:
+                array_length_inst.push_back(&insn);
+                break;
+
+            case spv::OpTypeTensorARM:
+            case spv::OpTensorReadARM:
+            case spv::OpTensorWriteARM:
+            case spv::OpTensorQuerySizeARM:
+                if (stateless_data) {
+                    stateless_data->tensor_inst.push_back(&insn);
+                }
+                break;
             default:
                 if (AtomicOperation(opcode)) {
                     if (stateless_data) {
@@ -1215,8 +1265,7 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
 
     // parsing, take every load/store find the variable it touches
     // (image access are done later)
-    VariableAccessMap variable_access_map;
-    auto mark_variable_access = [&module_state, &variable_access_map](const std::vector<uint32_t>& ids, uint32_t access) {
+    auto mark_variable_access = [&module_state, &parsed](const std::vector<uint32_t>& ids, uint32_t access) {
         for (const auto& object_id : ids) {
             uint32_t variable_id = object_id;
             const Instruction* insn = module_state.FindDef(object_id);
@@ -1231,7 +1280,7 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
                         break;
                     case spv::OpVariable:
                     case spv::OpUntypedVariableKHR:
-                        variable_access_map[variable_id] |= access;
+                        parsed.variable_access_map[variable_id] |= access;
                         insn = nullptr;
                         break;
                     default:
@@ -1270,22 +1319,19 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
     }
 
     // Need to get ImageAccesses as EntryPoint's variables depend on it
-    std::vector<std::shared_ptr<StaticImageAccess>> image_accesses;
-    StaticImageAccessMap image_access_map;
-
     for (const auto& insn : image_instructions) {
-        auto new_access = image_accesses.emplace_back(std::make_shared<StaticImageAccess>(module_state, *insn, func_parameter_map));
+        auto new_access =
+            parsed.image_accesses.emplace_back(std::make_shared<StaticImageAccess>(module_state, *insn, func_parameter_map));
         if (!new_access->variable_image_insn.empty() && new_access->valid_access) {
             for (const Instruction* image_insn : new_access->variable_image_insn) {
-                image_access_map[image_insn->ResultId()].push_back(new_access);
+                parsed.image_access_map[image_insn->ResultId()].push_back(new_access);
             }
         }
     }
 
     // Need to build the definitions table for FindDef before looking for which instructions each entry point uses
     for (const auto& insn : entry_point_instructions) {
-        entry_points.emplace_back(std::make_shared<EntryPoint>(module_state, *insn, image_access_map, access_chain_map,
-                                                               variable_access_map, debug_name_map));
+        entry_points.emplace_back(std::make_shared<EntryPoint>(module_state, *insn, parsed));
     }
 }
 
@@ -1552,7 +1598,8 @@ uint32_t Module::CalculateWorkgroupSharedMemory() const {
 
 // If the instruction at |id| is a OpConstant or copy of a constant, returns the instruction
 // Cases such as runtime arrays, will not find a constant and return NULL
-const Instruction* Module::GetConstantDef(uint32_t id) const {
+// Might return a OpSpecConstant
+const Instruction* Module::GetAnyConstantDef(uint32_t id) const {
     const Instruction* value = FindDef(id);
 
     // If id is a copy, see where it was copied from
@@ -1560,28 +1607,64 @@ const Instruction* Module::GetConstantDef(uint32_t id) const {
         id = value->Word(3);
         value = FindDef(id);
     }
-
-    if (value && (value->Opcode() == spv::OpConstant)) {
-        return value;
-    }
-    return nullptr;
+    return value;
 }
 
 // Returns the constant value described by the instruction at |id|
 // Caller ensures there can't be a runtime array or specialization constants
 uint32_t Module::GetConstantValueById(uint32_t id) const {
-    const Instruction* value = GetConstantDef(id);
+    const Instruction* value = GetAnyConstantDef(id);
 
     // If this hit, most likley a runtime array (probably from VK_EXT_descriptor_indexing)
     // or unhandled specialization constants
-    // Caller needs to call GetConstantDef() and check if null
-    if (!value) {
+    if (!value || value->Opcode() != spv::OpConstant) {
         // TODO - still not fixed
         // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/6293
         return 1;
     }
 
     return value->GetConstantValue();
+}
+
+bool Module::GetBoolIfConstant(const spirv::Instruction& insn, bool* value) const {
+    const spirv::Instruction* type_id = FindDef(insn.Word(1));
+    if (type_id->Opcode() != spv::OpTypeBool) {
+        return false;
+    }
+    // Spec constants should be frozen/folded before calling this
+    assert(insn.Opcode() != spv::OpSpecConstantTrue && insn.Opcode() != spv::OpSpecConstantFalse);
+
+    if (insn.Opcode() == spv::OpConstantFalse || insn.Opcode() == spv::OpConstantNull) {
+        *value = false;
+        return true;
+    } else if (insn.Opcode() == spv::OpConstantTrue) {
+        *value = true;
+        return true;
+    }
+
+    // This means the value is not known until runtime and will need to be checked in GPU-AV
+    return false;
+}
+
+bool Module::GetInt32IfConstant(const spirv::Instruction& insn, uint32_t* value) const {
+    const spirv::Instruction* type_id = FindDef(insn.Word(1));
+    // TODO - Need to handle 64-bit ints
+    if (type_id->Opcode() != spv::OpTypeInt || type_id->Word(2) > 32) {
+        return false;
+    }
+    // Spec constants should be frozen/folded before calling this
+    assert(insn.Opcode() != spv::OpSpecConstant && insn.Opcode() != spv::OpSpecConstantComposite);
+
+    if (insn.Opcode() == spv::OpConstant) {
+        *value = insn.Word(3);
+        return true;
+    } else if (insn.Opcode() == spv::OpConstantNull) {
+        *value = 0;
+        return true;
+    }
+
+    // This means the value is not known until runtime and will need to be checked in GPU-AV
+    return false;
 }
 
 // Returns the number of Location slots used for a given ID reference to a OpType*
@@ -1674,6 +1757,8 @@ NumericType Module::GetNumericType(uint32_t type) const {
     const Instruction* insn = FindDef(type);
 
     switch (insn->Opcode()) {
+        case spv::OpTypeBool:
+            return NumericTypeBool;
         case spv::OpTypeInt:
             return insn->Word(3) ? NumericTypeSint : NumericTypeUint;
         case spv::OpTypeFloat:
@@ -1716,6 +1801,7 @@ std::string InterfaceSlot::Describe() const {
 uint32_t GetFormatType(VkFormat format) {
     if (vkuFormatIsSINT(format)) return NumericTypeSint;
     if (vkuFormatIsUINT(format)) return NumericTypeUint;
+    if (vkuFormatIsBOOL(format)) return NumericTypeBool;
     // Formats such as VK_FORMAT_D16_UNORM_S8_UINT are both
     if (vkuFormatIsDepthAndStencil(format)) return NumericTypeFloat | NumericTypeUint;
     if (format == VK_FORMAT_UNDEFINED) return NumericTypeUnknown;
@@ -1726,23 +1812,47 @@ uint32_t GetFormatType(VkFormat format) {
 const char* string_NumericType(uint32_t type) {
     if (type == NumericTypeSint) return "SINT";
     if (type == NumericTypeUint) return "UINT";
+    if (type == NumericTypeBool) return "BOOL";
     if (type == NumericTypeFloat) return "FLOAT";
     return "(none)";
 }
 
-const char* VariableBase::FindDebugName(const VariableBase& variable, const DebugNameMap& debug_name_map) {
+VkFormat GetTensorFormat(NumericType numeric_type, uint32_t bit_width) {
+    if (numeric_type == NumericTypeBool) {
+        return VK_FORMAT_R8_BOOL_ARM;
+    } else if (numeric_type == NumericTypeFloat) {
+        if (bit_width == 16) return VK_FORMAT_R16_SFLOAT;
+        if (bit_width == 32) return VK_FORMAT_R32_SFLOAT;
+        if (bit_width == 64) return VK_FORMAT_R64_SFLOAT;
+    } else if (numeric_type == NumericTypeSint) {
+        if (bit_width == 8) return VK_FORMAT_R8_SINT;
+        if (bit_width == 16) return VK_FORMAT_R16_SINT;
+        if (bit_width == 32) return VK_FORMAT_R32_SINT;
+        if (bit_width == 64) return VK_FORMAT_R64_SINT;
+    } else if (numeric_type == NumericTypeUint) {
+        if (bit_width == 8) return VK_FORMAT_R8_UINT;
+        if (bit_width == 16) return VK_FORMAT_R16_UINT;
+        if (bit_width == 32) return VK_FORMAT_R32_UINT;
+        if (bit_width == 64) return VK_FORMAT_R64_UINT;
+    }
+    // invalid type, width combination
+    assert(false);
+    return VK_FORMAT_UNDEFINED;
+}
+
+const char* VariableBase::FindDebugName(const VariableBase& variable, const ParsedInfo& parsed) {
     const char* name = "";
     // We prefer to always get the variable name if it has it
-    auto name_it = debug_name_map.find(variable.id);
-    if (name_it != debug_name_map.end()) {
+    auto name_it = parsed.debug_name_map.find(variable.id);
+    if (name_it != parsed.debug_name_map.end()) {
         name = name_it->second->GetAsString(2);
     }
     // if the shader looks like
     //     layout(binding=0) uniform StructName { vec4 x };
     // The variable name will be an empty string, for this, grab the struct name instead
     if (!name[0] && variable.type_struct_info) {
-        name_it = debug_name_map.find(variable.type_struct_info->id);
-        if (name_it != debug_name_map.end()) {
+        name_it = parsed.debug_name_map.find(variable.type_struct_info->id);
+        if (name_it != parsed.debug_name_map.end()) {
             name = name_it->second->GetAsString(2);
         }
     }
@@ -1750,7 +1860,7 @@ const char* VariableBase::FindDebugName(const VariableBase& variable, const Debu
 }
 
 VariableBase::VariableBase(const Module& module_state, const Instruction& insn, VkShaderStageFlagBits stage,
-                           const VariableAccessMap& variable_access_map, const DebugNameMap& debug_name_map)
+                           const ParsedInfo& parsed)
     : id(insn.ResultId()),
       type_id(insn.TypeId()),
       data_type_id(insn.Opcode() == spv::OpUntypedVariableKHR ? insn.Word(4) : 0),
@@ -1759,13 +1869,13 @@ VariableBase::VariableBase(const Module& module_state, const Instruction& insn, 
       type_struct_info(module_state.GetTypeStructInfo(&insn)),
       access_mask(AccessBit::empty),
       stage(stage),
-      debug_name(FindDebugName(*this, debug_name_map)) {
+      debug_name(FindDebugName(*this, parsed)) {
     assert(insn.Opcode() == spv::OpVariable || insn.Opcode() == spv::OpUntypedVariableKHR);
 
     // Finding the access of an image is more complex we will set that using the StaticImageAccessMap later
     // (Also there are no images for push constant or stage interface variables)
-    auto access_it = variable_access_map.find(id);
-    if (access_it != variable_access_map.end()) {
+    auto access_it = parsed.variable_access_map.find(id);
+    if (access_it != parsed.variable_access_map.end()) {
         access_mask = access_it->second;
     }
 }
@@ -2003,8 +2113,8 @@ uint32_t StageInterfaceVariable::GetBuiltinComponents(const StageInterfaceVariab
 }
 
 StageInterfaceVariable::StageInterfaceVariable(const Module& module_state, const Instruction& insn, VkShaderStageFlagBits stage,
-                                               const VariableAccessMap& variable_access_map, const DebugNameMap& debug_name_map)
-    : VariableBase(module_state, insn, stage, variable_access_map, debug_name_map),
+                                               const ParsedInfo& parsed)
+    : VariableBase(module_state, insn, stage, parsed),
       is_patch(decorations.Has(DecorationSet::patch_bit)),
       is_per_vertex(decorations.Has(DecorationSet::per_vertex_bit)),
       is_per_task_nv(IsPerTaskNV(*this)),
@@ -2055,17 +2165,20 @@ bool ResourceInterfaceVariable::IsStorageBuffer(const ResourceInterfaceVariable&
     return ((uniform && buffer_block) || ((storage_buffer || physical_storage_buffer) && block));
 }
 
+bool ResourceInterfaceVariable::IsUniformBuffer(const ResourceInterfaceVariable& variable) {
+    const bool uniform = variable.storage_class == spv::StorageClassUniform;
+    const bool block = variable.type_struct_info && variable.type_struct_info->decorations.Has(DecorationSet::block_bit);
+    return (uniform && block);
+}
+
 ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state, const EntryPoint& entrypoint,
-                                                     const Instruction& insn, const StaticImageAccessMap& image_access_map,
-                                                     const AccessChainVariableMap& access_chain_map,
-                                                     const VariableAccessMap& variable_access_map,
-                                                     const DebugNameMap& debug_name_map)
-    : VariableBase(module_state, insn, entrypoint.stage, variable_access_map, debug_name_map),
-      array_length(0),  // updated in FindBaseType (if array is found)
+                                                     const Instruction& insn, const ParsedInfo& parsed)
+    : VariableBase(module_state, insn, entrypoint.stage, parsed),
       is_type_sampled_image(false),
       base_type(FindBaseType(*this, module_state)),
       is_runtime_descriptor_array(module_state.HasRuntimeArray(type_id)),
-      is_storage_buffer(IsStorageBuffer(*this)) {
+      is_storage_buffer(IsStorageBuffer(*this)),
+      is_uniform_buffer(IsUniformBuffer(*this)) {
     // to make sure no padding in-between the struct produce noise and force same data to become a different hash
     info = {};  // will be cleared with c++11 initialization
     info.image_dim = base_type.FindImageDim();
@@ -2074,18 +2187,15 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
 
     // Handle anything specific to the base type
     if (base_type.Opcode() == spv::OpTypeImage) {
-        info.image_format = CompatibleSpirvImageFormat(base_type.Word(8));
-        info.image_sampled_type_numeric = module_state.GetNumericType(base_type.Word(2));
-        info.image_sampled_type_width = (uint8_t)module_state.GetTypeBitsSize(&base_type);
+        info.vk_format = CompatibleSpirvImageFormat(base_type.Word(8));
+        info.numeric_type = module_state.GetNumericType(base_type.Word(2));
+        info.bit_width = (uint8_t)module_state.GetTypeBitsSize(&base_type);
 
         // Things marked regardless of the image being accessed or not
         const bool is_sampled_without_sampler = base_type.Word(7) == 2;  // Word(7) == Sampled
         if (is_sampled_without_sampler) {
             if (info.image_dim == spv::DimSubpassData) {
                 is_input_attachment = true;
-                if (array_length != spirv::kRuntimeArray) {
-                    input_attachment_index_read.resize(array_length);
-                }
             } else if (info.image_dim == spv::DimBuffer) {
                 is_storage_texel_buffer = true;
             } else {
@@ -2093,8 +2203,8 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
             }
         }
 
-        const auto image_access_it = image_access_map.find(id);
-        if (image_access_it != image_access_map.end()) {
+        const auto image_access_it = parsed.image_access_map.find(id);
+        if (image_access_it != parsed.image_access_map.end()) {
             for (const auto& image_access_ptr : image_access_it->second) {
                 const auto& image_access = *image_access_ptr;
 
@@ -2126,25 +2236,36 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
                         info.is_read_without_format |= true;
                     }
 
-                    // If accessed in an array, track which indexes were read, if not runtime array
-                    if (is_input_attachment && !module_state.HasRuntimeArray(type_id)) {
-                        if (image_access.image_access_chain_index != kInvalidValue) {
-                            input_attachment_index_read[image_access.image_access_chain_index] = true;
-                        } else {
-                            // if InputAttachment is accessed from load, just a single, non-array, index
-                            input_attachment_index_read.resize(1);
-                            input_attachment_index_read[0] = true;
+                    // Track all array index statically known being accessed
+                    if (is_input_attachment) {
+                        if (!IsArray()) {
+                            input_attachment_index_read.emplace(0);
+                        } else if (image_access.image_access_chain_index != kInvalidValue &&
+                                   image_access.image_access_chain_index != kSpecConstant) {
+                            // Non-constant index requires GPU-AV
+                            // Spec Constants are handled after constant folding
+                            input_attachment_index_read.emplace(image_access.image_access_chain_index);
                         }
                     }
+                }
+
+                // Only tied to the image (not the sampler when using non-COMBINED_IMAGE_SAMPLER)
+                if (IsArray() && image_access.image_access_chain_index == kInvalidValue) {
+                    all_constant_integral_expressions = false;
                 }
 
                 // if not CombinedImageSampler, need to find all Samplers that were accessed with the image
                 if (!image_access.variable_sampler_insn.empty() && !is_type_sampled_image) {
                     // if no AccessChain, it is same conceptually as being zero
-                    const uint32_t image_index =
-                        image_access.image_access_chain_index != kInvalidValue ? image_access.image_access_chain_index : 0;
-                    const uint32_t sampler_index =
-                        image_access.sampler_access_chain_index != kInvalidValue ? image_access.sampler_access_chain_index : 0;
+                    // TODO - Handle Spec Constants
+                    const uint32_t image_index = (image_access.image_access_chain_index != kInvalidValue &&
+                                                  image_access.image_access_chain_index != kSpecConstant)
+                                                     ? image_access.image_access_chain_index
+                                                     : 0;
+                    const uint32_t sampler_index = (image_access.sampler_access_chain_index != kInvalidValue &&
+                                                    image_access.sampler_access_chain_index != kSpecConstant)
+                                                       ? image_access.sampler_access_chain_index
+                                                       : 0;
 
                     if (image_index >= samplers_used_by_image.size()) {
                         samplers_used_by_image.resize(image_index + 1);
@@ -2153,7 +2274,6 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
                     for (const Instruction* sampler_insn : image_access.variable_sampler_insn) {
                         const uint32_t sampler_variable_id = sampler_insn->ResultId();
 
-                        sampled_image_sampler_variable_ids.insert(sampler_variable_id);
                         const auto& decoration_set = module_state.GetDecorationSet(sampler_variable_id);
                         samplers_used_by_image[image_index].emplace(
                             SamplerUsedByImage{DescriptorSlot{decoration_set.set, decoration_set.binding}, sampler_index});
@@ -2164,6 +2284,10 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
     }
     if (base_type.Opcode() == spv::OpTypeTensorARM) {
         is_storage_tensor = true;
+        info.numeric_type = module_state.GetNumericType(base_type.Word(2));
+        info.bit_width = (uint8_t)module_state.GetTypeBitsSize(&base_type);
+        info.vk_format = GetTensorFormat(info.numeric_type, info.bit_width);
+        info.tensor_rank = module_state.GetConstantValueById(base_type.Word(3));
     }
 
     info.access_mask = access_mask;
@@ -2171,8 +2295,8 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
 }
 
 PushConstantVariable::PushConstantVariable(const Module& module_state, const Instruction& insn, VkShaderStageFlagBits stage,
-                                           const VariableAccessMap& variable_access_map, const DebugNameMap& debug_name_map)
-    : VariableBase(module_state, insn, stage, variable_access_map, debug_name_map), offset(vvl::kU32Max), size(0) {
+                                           const ParsedInfo& parsed)
+    : VariableBase(module_state, insn, stage, parsed), offset(vvl::kNoIndex32), size(0) {
     assert(type_struct_info != nullptr);  // Push Constants need to be structs
 
     auto struct_size = type_struct_info->GetSize(module_state);
@@ -2181,8 +2305,8 @@ PushConstantVariable::PushConstantVariable(const Module& module_state, const Ins
 }
 
 TaskPayloadVariable::TaskPayloadVariable(const Module& module_state, const Instruction& insn, VkShaderStageFlagBits stage,
-                                         const VariableAccessMap& variable_access_map, const DebugNameMap& debug_name_map)
-    : VariableBase(module_state, insn, stage, variable_access_map, debug_name_map), size(0) {
+                                         const ParsedInfo& parsed)
+    : VariableBase(module_state, insn, stage, parsed), size(0) {
     if (module_state.static_data_.has_specialization_constants) {
         size = kInvalidValue;
     } else {
@@ -2192,7 +2316,10 @@ TaskPayloadVariable::TaskPayloadVariable(const Module& module_state, const Instr
 }
 
 TypeStructInfo::TypeStructInfo(const Module& module_state, const Instruction& struct_insn)
-    : id(struct_insn.Word(1)), length(struct_insn.Length() - 2), decorations(module_state.GetDecorationSet(id)) {
+    : id(struct_insn.Word(1)),
+      length(struct_insn.Length() - 2),
+      decorations(module_state.GetDecorationSet(id)),
+      has_runtime_array(false) {
     members.resize(length);
     for (uint32_t i = 0; i < length; i++) {
         Member& member = members[i];
@@ -2204,11 +2331,14 @@ TypeStructInfo::TypeStructInfo(const Module& module_state, const Instruction& st
         if (it != decorations.member_decorations.end()) {
             member.decorations = &it->second;
         }
+        if (member.insn->Opcode() == spv::OpTypeRuntimeArray) {
+            has_runtime_array = true;
+        }
     }
 }
 
 TypeStructSize TypeStructInfo::GetSize(const Module& module_state) const {
-    uint32_t offset = vvl::kU32Max;
+    uint32_t offset = vvl::kNoIndex32;
     uint32_t size = 0;
 
     // Non-Blocks don't have offset so can get packed size
@@ -2242,17 +2372,7 @@ TypeStructSize TypeStructInfo::GetSize(const Module& module_state) const {
     }
 
     const auto& highest_member = members[highest_element_index];
-    uint32_t highest_element_size = 0;
-    if (highest_member.insn->Opcode() == spv::OpTypeArray &&
-        module_state.FindDef(highest_member.insn->Word(3))->Opcode() == spv::OpSpecConstant) {
-        // TODO - This is a work-around because currently we only apply SpecConstant for workgroup size
-        // The shader validation needs to be fixed so we handle all cases when spec constant are applied, while still being catious
-        // of the fact that information is not known until pipeline creation (not at shader module creation time)
-        // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5911
-        highest_element_size = module_state.FindDef(highest_member.insn->Word(3))->Word(3);
-    } else {
-        highest_element_size = module_state.GetTypeBytesSize(highest_member.insn);
-    }
+    const uint32_t highest_element_size = module_state.GetTypeBytesSize(highest_member.insn);
     size = (highest_element_size + highest_element_offset) - offset;
 
     return {offset, size};
@@ -2301,7 +2421,8 @@ uint32_t Module::GetTypeBitsSize(const Instruction* insn) const {
         const Instruction* element_type = FindDef(insn->Word(2));
         const uint32_t element_width = GetTypeBitsSize(element_type);
         const Instruction* length_type = FindDef(insn->Word(3));
-        const uint32_t length = length_type->GetConstantValue();
+        // If a spec constant is used to size the array, use a safe value, it will get reevaluated later
+        const uint32_t length = length_type->Opcode() == spv::OpConstant ? length_type->GetConstantValue() : 1;
 
         // ArrayStride is only between element, not applied on the end of last element
         // Things like Private variable don't have explicit layout and can use element size
@@ -2337,6 +2458,9 @@ uint32_t Module::GetTypeBitsSize(const Instruction* insn) const {
     } else if (opcode == spv::OpTypeImage) {
         const Instruction* type = FindDef(insn->Word(2));
         bit_size = GetTypeBitsSize(type);
+    } else if (opcode == spv::OpTypeTensorARM) {
+        const Instruction* type = FindDef(insn->Word(2));
+        bit_size = type->GetBitWidth();
     } else if (opcode == spv::OpTypeVoid) {
         // Sampled Type of OpTypeImage can be a void
         bit_size = 0;

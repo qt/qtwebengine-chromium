@@ -37,7 +37,6 @@ namespace blink {
 class LayoutObject;
 class LocalFrameView;
 class PropertyTreeStateOrAlias;
-class TracedValue;
 class Image;
 class PaintTimingCallbackManager;
 class StyleImage;
@@ -75,6 +74,7 @@ class CORE_EXPORT ImageRecordsManager {
       if (largest_pending_image_ && (largest_pending_image_ == it->value)) {
         largest_pending_image_ = nullptr;
       }
+      it->value->OnImageOrTextRemovedWhilePending();
       pending_images_.erase(it);
       // Leave out |images_queued_for_paint_time_| intentionally because the
       // null record can be removed in
@@ -131,7 +131,11 @@ class CORE_EXPORT ImageRecordsManager {
                                       const gfx::RectF& root_visual_rect,
                                       double entropy_for_lcp,
                                       bool is_recording_lcp);
-  void ReportLargestIgnoredImage(uint32_t current_frame_index,
+  // If `largest_ignored_image_` is non-null and the corresponding node is still
+  // attached to the DOM, this marks first image paint (always) and reports the
+  // image as an LCP candidate (if `is_recording_lcp` is true). Returns true iff
+  // the image record is considered an LCP candidate.
+  bool ReportLargestIgnoredImage(uint32_t current_frame_index,
                                  bool is_recording_lcp);
 
   void AssignPaintTimeToRegisteredQueuedRecords(
@@ -270,10 +274,7 @@ class CORE_EXPORT ImagePaintTimingDetector final
   FRIEND_TEST_ALL_PREFIXES(ImagePaintTimingDetectorTest,
                            LargestImagePaint_Detached_Frame);
 
-  void PopulateTraceValue(TracedValue&, const ImageRecord& first_image_paint);
   void RegisterNotifyPresentationTime();
-  void ReportCandidateToTrace(ImageRecord&, base::TimeTicks);
-  void ReportNoCandidateToTrace();
   // Computes the size of an image for the purpose of LargestContentfulPaint,
   // downsizing the size of images with low intrinsic size. Images that occupy
   // the full viewport are special-cased and this method returns 0 for them so
@@ -285,12 +286,8 @@ class CORE_EXPORT ImagePaintTimingDetector final
                                 const LayoutObject&,
                                 const MediaTiming&);
 
-  // Used to find the last candidate.
-  unsigned count_candidates_ = 0;
-
   // Used to decide which frame a record belongs to, monotonically increasing.
   uint32_t frame_index_ = 1;
-  uint32_t last_registered_frame_index_ = 0;
   bool added_entry_in_latest_frame_ = false;
 
   bool contains_full_viewport_image_ = false;

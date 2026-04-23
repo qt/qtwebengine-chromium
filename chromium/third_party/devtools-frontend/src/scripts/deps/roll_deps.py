@@ -183,8 +183,7 @@ def run_eslint(options):
         if line.endswith(b'.js') or line.endswith(b'.ts'):
             generated_source_files.append(line)
     subprocess.check_call([
-        node_path(options), "--experimental-strip-types",
-        "--no-warnings=ExperimentalWarning",
+        node_path(options),
         os.path.join(options.devtools_dir, 'scripts', 'test',
                      'run_lint_check.mjs')
     ] + generated_source_files,
@@ -261,7 +260,8 @@ if __name__ == '__main__':
     generate_signatures(OPTIONS)
     generate_protocol_resources(OPTIONS)
     if files_changed(OPTIONS):
-        run_git_cl_format(OPTIONS)
+        # EsLint needs before git cl format
         run_eslint(OPTIONS)
+        run_git_cl_format(OPTIONS)
         update_deps_revision(OPTIONS)
         update_readme_revision(OPTIONS)

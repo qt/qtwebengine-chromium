@@ -1,8 +1,8 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-imperative-dom-api */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 /*
  * Copyright (C) 2006, 2007, 2008 Apple Inc.  All rights reserved.
@@ -41,20 +41,20 @@ import * as Platform from '../../core/platform/platform.js';
 import * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as Foundation from '../../foundation/foundation.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import * as AutofillManager from '../../models/autofill_manager/autofill_manager.js';
 import * as Badges from '../../models/badges/badges.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
 import * as CrUXManager from '../../models/crux-manager/crux-manager.js';
-import * as Extensions from '../../models/extensions/extensions.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as LiveMetrics from '../../models/live-metrics/live-metrics.js';
 import * as Logs from '../../models/logs/logs.js';
 import * as Persistence from '../../models/persistence/persistence.js';
 import * as ProjectSettings from '../../models/project_settings/project_settings.js';
 import * as Workspace from '../../models/workspace/workspace.js';
-import type * as PanelCommon from '../../panels/common/common.js';
+import * as PanelCommon from '../../panels/common/common.js';
 import * as Snippets from '../../panels/snippets/snippets.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as Snackbar from '../../ui/components/snackbars/snackbars.js';
@@ -120,6 +120,14 @@ const UIStrings = {
    * @description Text describing how to navigate the dock side menu
    */
   dockSideNavigation: 'Use left and right arrow keys to navigate the options',
+  /**
+   * @description Notification shown to the user whenever DevTools receives an external request.
+   */
+  externalRequestReceived: '`DevTools` received an external request',
+  /**
+   * @description Notification shown to the user whenever DevTools has finished downloading a local AI model.
+   */
+  aiModelDownloaded: 'AI model downloaded',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('entrypoints/main/MainImpl.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -128,6 +136,7 @@ let loadedPanelCommonModule: typeof PanelCommon|undefined;
 export class MainImpl {
   #readyForTestPromise = Promise.withResolvers<void>();
   #veStartPromise!: Promise<void>;
+  #universe!: Foundation.Universe.Universe;
 
   constructor() {
     MainImpl.instanceForTest = this;
@@ -162,13 +171,24 @@ export class MainImpl {
     console.timeStamp('Main._gotPreferences');
     this.#initializeGlobalsForLayoutTests();
     Object.assign(Root.Runtime.hostConfig, config);
-    this.createSettings(prefs);
+
+    const creationOptions: Foundation.Universe.CreationOptions = {
+      settingsCreationOptions: {
+        ...this.createSettingsStorage(prefs),
+        settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
+        logSettingAccess: VisualLogging.logSettingAccess,
+        runSettingsMigration: !Host.InspectorFrontendHost.isUnderTest(),
+      },
+    };
+    this.#universe = new Foundation.Universe.Universe(creationOptions);
+    Root.DevToolsContext.setGlobalInstance(this.#universe.context);
+
     await this.requestAndRegisterLocaleData();
 
     Host.userMetrics.syncSetting(Common.Settings.Settings.instance().moduleSetting<boolean>('sync-preferences').get());
     const veLogging = config.devToolsVeLogging;
 
-    // Used by e2e_non_hosted to put VE Logs into "test mode".
+    // Used by e2e to put VE Logs into "test mode".
     const veLogsTestMode = Common.Settings.Settings.instance().createSetting('veLogsTestMode', false).get();
 
     if (veLogging?.enabled) {
@@ -240,7 +260,11 @@ export class MainImpl {
     }
   }
 
-  createSettings(prefs: Record<string, string>): void {
+  createSettingsStorage(prefs: Record<string, string>): {
+    syncedStorage: Common.Settings.SettingsStorage,
+    globalStorage: Common.Settings.SettingsStorage,
+    localStorage: Common.Settings.SettingsStorage,
+  } {
     this.#initializeExperiments();
     let storagePrefix = '';
     if (Host.Platform.isCustomDevtoolsFrontend()) {
@@ -284,12 +308,8 @@ export class MainImpl {
     // setting can't change storage buckets during a single DevTools session.
     const syncedStorage = new Common.Settings.SettingsStorage(prefs, hostSyncedStorage, storagePrefix);
     const globalStorage = new Common.Settings.SettingsStorage(prefs, hostUnsyncedStorage, storagePrefix);
-    Common.Settings.Settings.instance(
-        {forceNew: true, syncedStorage, globalStorage, localStorage, logSettingAccess: VisualLogging.logSettingAccess});
 
-    if (!Host.InspectorFrontendHost.isUnderTest()) {
-      new Common.Settings.VersionController().updateVersion();
-    }
+    return {syncedStorage, globalStorage, localStorage};
   }
 
   #initializeExperiments(): void {
@@ -308,10 +328,6 @@ export class MainImpl {
     Root.Runtime.experiments.register('timeline-show-all-events', 'Performance panel: show all events', true);
     Root.Runtime.experiments.register(
         'timeline-v8-runtime-call-stats', 'Performance panel: V8 runtime call stats', true);
-    Root.Runtime.experiments.register(
-        'timeline-enhanced-traces', 'Performance panel: Enable collecting enhanced traces', true);
-    Root.Runtime.experiments.register(
-        'timeline-compiled-sources', 'Performance panel: Enable collecting source text for compiled script', true);
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.TIMELINE_DEBUG_MODE,
         'Performance panel: Enable debug mode (trace event details, etc)', true);
@@ -414,6 +430,7 @@ export class MainImpl {
         {forceNew: true, win: window, frontendHost: Host.InspectorFrontendHost.InspectorFrontendHostInstance});
     UI.ContextMenu.ContextMenu.initialize();
     UI.ContextMenu.ContextMenu.installHandler(document);
+    UI.ViewManager.ViewManager.instance({forceNew: true, universe: this.#universe});
 
     // These instances need to be created early so they don't miss any events about requests/issues/etc.
     Logs.NetworkLog.NetworkLog.instance();
@@ -428,35 +445,15 @@ export class MainImpl {
     IssuesManager.ContrastCheckTrigger.ContrastCheckTrigger.instance();
 
     UI.DockController.DockController.instance({forceNew: true, canDock});
-    SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
     SDK.DOMDebuggerModel.DOMDebuggerManager.instance({forceNew: true});
     const targetManager = SDK.TargetManager.TargetManager.instance();
     targetManager.addEventListener(
         SDK.TargetManager.Events.SUSPEND_STATE_CHANGED, this.#onSuspendStateChanged.bind(this));
 
     Workspace.FileManager.FileManager.instance({forceNew: true});
-    Workspace.Workspace.WorkspaceImpl.instance();
 
     Bindings.NetworkProject.NetworkProjectManager.instance();
-    const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(
-        targetManager,
-        Workspace.Workspace.WorkspaceImpl.instance(),
-    );
     new Bindings.PresentationConsoleMessageHelper.PresentationConsoleMessageManager();
-    Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.instance({
-      forceNew: true,
-      resourceMapping,
-      targetManager,
-    });
-    Workspace.IgnoreListManager.IgnoreListManager.instance({
-      forceNew: true,
-    });
-    Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
-      forceNew: true,
-      resourceMapping,
-      targetManager,
-      ignoreListManager: Workspace.IgnoreListManager.IgnoreListManager.instance(),
-    });
     targetManager.setScopeTarget(targetManager.primaryPageTarget());
     UI.Context.Context.instance().addFlavorChangeListener(SDK.Target.Target, ({data}) => {
       const outermostTarget = data?.outermostTarget();
@@ -469,18 +466,20 @@ export class MainImpl {
       debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(),
     });
     // @ts-expect-error e2e test global
-    self.Extensions.extensionServer = Extensions.ExtensionServer.ExtensionServer.instance({forceNew: true});
+    self.Extensions.extensionServer = PanelCommon.ExtensionServer.ExtensionServer.instance({forceNew: true});
 
     new Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding(
         isolatedFileSystemManager, Workspace.Workspace.WorkspaceImpl.instance());
     isolatedFileSystemManager.addPlatformFileSystem(
         'snippet://' as Platform.DevToolsPath.UrlString, new Snippets.ScriptSnippetFileSystem.SnippetFileSystem());
 
-    Persistence.Persistence.PersistenceImpl.instance({
+    const persistenceImpl = Persistence.Persistence.PersistenceImpl.instance({
       forceNew: true,
       workspace: Workspace.Workspace.WorkspaceImpl.instance(),
       breakpointManager: Breakpoints.BreakpointManager.BreakpointManager.instance(),
     });
+    const linkDecorator = new PanelCommon.PersistenceUtils.LinkDecorator(persistenceImpl);
+    Components.Linkifier.Linkifier.setLinkDecorator(linkDecorator);
     Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance(
         {forceNew: true, workspace: Workspace.Workspace.WorkspaceImpl.instance()});
 
@@ -509,6 +508,11 @@ export class MainImpl {
 
     LiveMetrics.LiveMetrics.instance();
     CrUXManager.CrUXManager.instance();
+
+    const builtInAi = AiAssistanceModel.BuiltInAi.BuiltInAi.instance();
+    builtInAi.addEventListener(
+        AiAssistanceModel.BuiltInAi.Events.DOWNLOADED_AND_SESSION_CREATED,
+        () => Snackbar.Snackbar.Snackbar.show({message: i18nString(UIStrings.aiModelDownloaded)}));
 
     new PauseListener();
 
@@ -539,6 +543,14 @@ export class MainImpl {
       });
     }
 
+    const conversationHandler = AiAssistanceModel.ConversationHandler.ConversationHandler.instance();
+    conversationHandler.addEventListener(
+        AiAssistanceModel.ConversationHandler.ConversationHandlerEvents.EXTERNAL_REQUEST_RECEIVED,
+        () => Snackbar.Snackbar.Snackbar.show({message: i18nString(UIStrings.externalRequestReceived)}));
+    conversationHandler.addEventListener(
+        AiAssistanceModel.ConversationHandler.ConversationHandlerEvents.EXTERNAL_CONVERSATION_STARTED,
+        event => void VisualLogging.logFunctionCall(`start-conversation-${event.data}`, 'external'));
+
     MainImpl.timeEnd('Main._createAppUI');
 
     const appProvider = Common.AppProvider.getRegisteredAppProviders()[0];
@@ -568,16 +580,13 @@ export class MainImpl {
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.events.addEventListener(
         Host.InspectorFrontendHostAPI.Events.RevealSourceLine, this.#revealSourceLine, this);
 
-    await UI.InspectorView.InspectorView.instance().createToolbars();
+    const inspectorView = UI.InspectorView.InspectorView.instance();
+    Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance().addEventListener(
+        Persistence.NetworkPersistenceManager.Events.LOCAL_OVERRIDES_REQUESTED, event => {
+          inspectorView.displaySelectOverrideFolderInfobar(event.data);
+        });
+    await inspectorView.createToolbars();
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.loadCompleted();
-
-    const value = Root.Runtime.Runtime.queryParam('loadTimelineFromURL');
-    if (value !== null) {
-      // Only import Timeline if needed. If this was a static import, every load of devtools
-      // would request and evaluate the Timeline panel dep tree, slowing down the UI's load.
-      const Timeline = await import('../../panels/timeline/timeline.js');
-      Timeline.TimelinePanel.LoadTimelineHandler.instance().handleQueryParam(value);
-    }
 
     // Initialize elements for the live announcer functionality for a11y.
     UI.ARIAUtils.LiveAnnouncer.initializeAnnouncerElements();
@@ -643,7 +652,7 @@ export class MainImpl {
 
   async #lateInitialization(): Promise<void> {
     MainImpl.time('Main._lateInitialization');
-    Extensions.ExtensionServer.ExtensionServer.instance().initializeExtensions();
+    PanelCommon.ExtensionServer.ExtensionServer.instance().initializeExtensions();
     const promises: Array<Promise<void>> =
         Common.Runnable.lateInitializationRunnables().map(async lateInitializationLoader => {
           const runnable = await lateInitializationLoader();
@@ -716,7 +725,7 @@ export class MainImpl {
     // @ts-expect-error Used in ElementsTreeOutline
     eventCopy['original'] = event;
     const document = event.target && (event.target as HTMLElement).ownerDocument;
-    const target = document ? Platform.DOMUtilities.deepActiveElement(document) : null;
+    const target = document ? UI.DOMUtilities.deepActiveElement(document) : null;
     if (target) {
       target.dispatchEvent(eventCopy);
     }
@@ -777,7 +786,7 @@ export class ZoomActionDelegate implements UI.ActionRegistration.ActionDelegate 
 export class SearchActionDelegate implements UI.ActionRegistration.ActionDelegate {
   handleAction(_context: UI.Context.Context, actionId: string): boolean {
     let searchableView = UI.SearchableView.SearchableView.fromElement(
-        Platform.DOMUtilities.deepActiveElement(document),
+        UI.DOMUtilities.deepActiveElement(document),
     );
     if (!searchableView) {
       const currentPanel = (UI.InspectorView.InspectorView.instance().currentPanelDeprecated() as UI.Panel.Panel);
@@ -807,8 +816,8 @@ export class MainMenuItem implements UI.Toolbar.Provider {
   readonly #item: UI.Toolbar.ToolbarMenuButton;
   constructor() {
     this.#item = new UI.Toolbar.ToolbarMenuButton(
-        this.#handleContextMenu.bind(this), /* isIconDropdown */ true, /* useSoftMenu */ true, 'main-menu',
-        'dots-vertical');
+        this.#handleContextMenu.bind(this), /* isIconDropdown */ true,
+        /* useSoftMenu */ true, 'main-menu', 'dots-vertical');
     this.#item.element.classList.add('main-menu');
     this.#item.setTitle(i18nString(UIStrings.customizeAndControlDevtools));
   }
@@ -938,7 +947,7 @@ export class MainMenuItem implements UI.Toolbar.Provider {
     contextMenu.appendItemsAtLocation('mainMenu');
     const moreTools =
         contextMenu.defaultSection().appendSubMenuItem(i18nString(UIStrings.moreTools), false, 'more-tools');
-    const viewExtensions = UI.ViewManager.getRegisteredViewExtensions();
+    const viewExtensions = UI.ViewManager.ViewManager.instance().getRegisteredViewExtensions();
     viewExtensions.sort((extension1, extension2) => {
       const title1 = extension1.title();
       const title2 = extension2.title();
@@ -1022,7 +1031,7 @@ export class PauseListener {
   }
 }
 
-// Unused but mentioned at https://chromedevtools.github.io/devtools-protocol/#:~:text=use%20Main.MainImpl.-,sendOverProtocol,-()%20in%20the
+/** Unused but mentioned at https://chromedevtools.github.io/devtools-protocol/#:~:text=use%20Main.MainImpl.-,sendOverProtocol,-()%20in%20the **/
 export function sendOverProtocol(
     method: ProtocolClient.InspectorBackend.QualifiedName, params: Object|null): Promise<unknown[]|null> {
   return new Promise((resolve, reject) => {
@@ -1064,21 +1073,24 @@ type ExternalRequestInput = {
   args: {requestUrl: string, prompt: string},
 };
 
-// For backwards-compatibility we iterate over the generator and drop the
-// intermediate results. The final response is transformed to its legacy type.
-// Instead of sending responses of type error, errors are throws.
+/**
+ * For backwards-compatibility we iterate over the generator and drop the
+ * intermediate results. The final response is transformed to its legacy type.
+ * Instead of sending responses of type error, errors are throws.
+ **/
 export async function handleExternalRequest(input: ExternalRequestInput):
     Promise<{response: string, devToolsLogs: object[]}> {
   const generator = await handleExternalRequestGenerator(input);
-  let result: IteratorResult<AiAssistanceModel.ExternalRequestResponse, AiAssistanceModel.ExternalRequestResponse>;
+  let result: IteratorResult<
+      AiAssistanceModel.AiAgent.ExternalRequestResponse, AiAssistanceModel.AiAgent.ExternalRequestResponse>;
   do {
     result = await generator.next();
   } while (!result.done);
   const response = result.value;
-  if (response.type === AiAssistanceModel.ExternalRequestResponseType.ERROR) {
+  if (response.type === AiAssistanceModel.AiAgent.ExternalRequestResponseType.ERROR) {
     throw new Error(response.message);
   }
-  if (response.type === AiAssistanceModel.ExternalRequestResponseType.ANSWER) {
+  if (response.type === AiAssistanceModel.AiAgent.ExternalRequestResponseType.ANSWER) {
     return {
       response: response.message,
       devToolsLogs: response.devToolsLogs,
@@ -1090,8 +1102,8 @@ export async function handleExternalRequest(input: ExternalRequestInput):
 // @ts-expect-error
 globalThis.handleExternalRequest = handleExternalRequest;
 
-export async function handleExternalRequestGenerator(input: ExternalRequestInput):
-    Promise<AsyncGenerator<AiAssistanceModel.ExternalRequestResponse, AiAssistanceModel.ExternalRequestResponse>> {
+export async function handleExternalRequestGenerator(input: ExternalRequestInput): Promise<AsyncGenerator<
+    AiAssistanceModel.AiAgent.ExternalRequestResponse, AiAssistanceModel.AiAgent.ExternalRequestResponse>> {
   switch (input.kind) {
     case 'PERFORMANCE_RELOAD_GATHER_INSIGHTS': {
       const TimelinePanel = await import('../../panels/timeline/timeline.js');
@@ -1103,32 +1115,32 @@ export async function handleExternalRequestGenerator(input: ExternalRequestInput
     }
     case 'NETWORK_DEBUGGER': {
       const AiAssistanceModel = await import('../../models/ai_assistance/ai_assistance.js');
-      const conversationHandler = await AiAssistanceModel.ConversationHandler.instance();
+      const conversationHandler = AiAssistanceModel.ConversationHandler.ConversationHandler.instance();
       return await conversationHandler.handleExternalRequest({
-        conversationType: AiAssistanceModel.ConversationType.NETWORK,
+        conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType.NETWORK,
         prompt: input.args.prompt,
         requestUrl: input.args.requestUrl,
       });
     }
     case 'LIVE_STYLE_DEBUGGER': {
       const AiAssistanceModel = await import('../../models/ai_assistance/ai_assistance.js');
-      const conversationHandler = AiAssistanceModel.ConversationHandler.instance();
+      const conversationHandler = AiAssistanceModel.ConversationHandler.ConversationHandler.instance();
       return await conversationHandler.handleExternalRequest({
-        conversationType: AiAssistanceModel.ConversationType.STYLING,
+        conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType.STYLING,
         prompt: input.args.prompt,
         selector: input.args.selector,
       });
     }
   }
   // eslint-disable-next-line require-yield
-  return (async function*
-          (): AsyncGenerator<AiAssistanceModel.ExternalRequestResponse, AiAssistanceModel.ExternalRequestResponse> {
-            return {
-              type: AiAssistanceModel.ExternalRequestResponseType.ERROR,
-              // @ts-expect-error
-              message: `Debugging with an agent of type '${input.kind}' is not implemented yet.`,
-            };
-          })();
+  return (async function*(): AsyncGenerator<
+          AiAssistanceModel.AiAgent.ExternalRequestResponse, AiAssistanceModel.AiAgent.ExternalRequestResponse> {
+    return {
+      type: AiAssistanceModel.AiAgent.ExternalRequestResponseType.ERROR,
+      // @ts-expect-error
+      message: `Debugging with an agent of type '${input.kind}' is not implemented yet.`,
+    };
+  })();
 }
 
 // @ts-expect-error

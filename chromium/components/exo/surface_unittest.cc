@@ -164,7 +164,8 @@ class SurfaceTest : public test::ExoTestBase,
       ShellSurface* shell_surface,
       Transform transform,
       const gfx::RectF& expected_rect,
-      bool has_viewport);
+      bool has_viewport,
+      const gfx::Size& buffer_size);
 
  private:
   base::test::ScopedFeatureList feature_list_;
@@ -925,10 +926,12 @@ TEST_P(SurfaceTest, SubpixelCoordinate) {
         // a uv rect.
         auto* tex_draw_quad =
             viz::TextureDrawQuad::MaterialCast(quad_list.front());
-        EXPECT_POINTF_NEAR(tex_draw_quad->uv_top_left, gfx::PointF(0, 0),
+        const gfx::RectF tex_draw_quad_tex_coords(
+            tex_draw_quad->GetNormalizedTexCoords(child_buffer_size));
+        EXPECT_POINTF_NEAR(tex_draw_quad_tex_coords.origin(), gfx::PointF(0, 0),
                            0.001f);
-        EXPECT_POINTF_NEAR(tex_draw_quad->uv_bottom_right, gfx::PointF(1, 1),
-                           0.001f);
+        EXPECT_POINTF_NEAR(tex_draw_quad_tex_coords.bottom_right(),
+                           gfx::PointF(1, 1), 0.001f);
         EXPECT_EQ(gfx::Transform(), transform);
         EXPECT_EQ(kTestRects[i], rect);
       } else {
@@ -976,7 +979,8 @@ void SurfaceTest::SetCropAndBufferTransformHelperTransformAndTest(
     ShellSurface* shell_surface,
     Transform transform,
     const gfx::RectF& expected_rect,
-    bool has_viewport) {
+    bool has_viewport,
+    const gfx::Size& buffer_size) {
   const gfx::Rect target_with_no_viewport(ToPixel(gfx::Rect(gfx::Size(52, 4))));
   const gfx::Rect target_with_viewport(ToPixel(gfx::Rect(gfx::Size(128, 64))));
 
@@ -999,8 +1003,7 @@ void SurfaceTest::SetCropAndBufferTransformHelperTransformAndTest(
     ASSERT_EQ(1u, quad_list.size());
     const viz::TextureDrawQuad* quad =
         viz::TextureDrawQuad::MaterialCast(quad_list.front());
-    EXPECT_EQ(expected_rect.origin(), quad->uv_top_left);
-    EXPECT_EQ(expected_rect.bottom_right(), quad->uv_bottom_right);
+    EXPECT_EQ(expected_rect, quad->GetNormalizedTexCoords(buffer_size));
     EXPECT_EQ(
         (has_viewport) ? target_with_viewport : target_with_no_viewport,
         cc::MathUtil::MapEnclosingClippedRect(
@@ -1069,7 +1072,7 @@ TEST_P(SurfaceTest, MAYBE_SetCropAndBufferTransform) {
   for (const auto& tc : testcases) {
     SetCropAndBufferTransformHelperTransformAndTest(
         surface.get(), shell_surface.get(), tc.transform,
-        gfx::SkRectToRectF(*tc.expected_rect), false);
+        gfx::SkRectToRectF(*tc.expected_rect), false, buffer_size);
   }
 
   surface->SetViewport(gfx::SizeF(128, 64));
@@ -1077,7 +1080,7 @@ TEST_P(SurfaceTest, MAYBE_SetCropAndBufferTransform) {
   for (const auto& tc : testcases) {
     SetCropAndBufferTransformHelperTransformAndTest(
         surface.get(), shell_surface.get(), tc.transform,
-        gfx::SkRectToRectF(*tc.expected_rect), true);
+        gfx::SkRectToRectF(*tc.expected_rect), true, buffer_size);
   }
 }
 
@@ -1448,132 +1451,6 @@ TEST_P(SurfaceTest, OcclusionNotRecomputedOnWidgetCommit) {
   surface->Commit();
   EXPECT_EQ(num_times_occlusion_recomputed + 1,
             window_occlusion_tracker_test_api.GetNumTimesOcclusionRecomputed());
-}
-
-TEST_P(SurfaceTest, HasPendingPerCommitBufferReleaseCallback) {
-  auto buffer = test::ExoTestHelper::CreateBuffer(gfx::Size(1, 1));
-  auto surface = std::make_unique<Surface>();
-
-  // We can only commit a buffer release callback if a buffer is attached.
-  surface->Attach(buffer.get());
-
-  EXPECT_FALSE(surface->HasPendingPerCommitBufferReleaseCallback());
-  surface->SetPerCommitBufferReleaseCallback(
-      base::BindOnce([](gfx::GpuFenceHandle) {}));
-  EXPECT_TRUE(surface->HasPendingPerCommitBufferReleaseCallback());
-  surface->Commit();
-  EXPECT_FALSE(surface->HasPendingPerCommitBufferReleaseCallback());
-}
-
-TEST_P(SurfaceTest, PerCommitBufferReleaseCallbackForSameSurface) {
-  gfx::Size buffer_size(64, 64);
-  auto buffer1 = test::ExoTestHelper::CreateBuffer(buffer_size);
-  auto buffer2 = test::ExoTestHelper::CreateBuffer(buffer_size);
-  auto surface = std::make_unique<Surface>();
-  auto shell_surface = std::make_unique<ShellSurface>(surface.get());
-  int per_commit_release_count = 0;
-
-  // Set the release callback that will be run when buffer is no longer in use.
-  int buffer_release_count = 0;
-  base::RunLoop run_loop1;
-  buffer1->set_release_callback(test::CreateReleaseBufferClosure(
-      &buffer_release_count, run_loop1.QuitClosure()));
-
-  base::RunLoop run_loop2;
-  surface->SetPerCommitBufferReleaseCallback(
-      test::CreateExplicitReleaseCallback(&per_commit_release_count,
-                                          run_loop2.QuitClosure()));
-  surface->Attach(buffer1.get());
-  surface->Damage(gfx::Rect(buffer_size));
-  surface->Commit();
-  test::WaitForLastFramePresentation(shell_surface.get());
-  EXPECT_EQ(per_commit_release_count, 0);
-  EXPECT_EQ(buffer_release_count, 0);
-
-  // Attaching the same buffer causes the per-commit callback to be emitted.
-  surface->SetPerCommitBufferReleaseCallback(
-      test::CreateExplicitReleaseCallback(&per_commit_release_count,
-                                          base::DoNothing()));
-  surface->Attach(buffer1.get());
-  surface->Damage(gfx::Rect(buffer_size));
-  surface->Commit();
-  test::WaitForLastFramePresentation(shell_surface.get());
-
-  run_loop2.Run();
-  EXPECT_EQ(per_commit_release_count, 1);
-  EXPECT_EQ(buffer_release_count, 0);
-
-  // Attaching a different buffer causes the per-commit callback to be emitted.
-  surface->Attach(buffer2.get());
-  surface->Damage(gfx::Rect(buffer_size));
-  surface->Commit();
-  test::WaitForLastFramePresentation(shell_surface.get());
-
-  run_loop1.Run();
-  EXPECT_EQ(per_commit_release_count, 2);
-  // The buffer should now be completely released.
-  EXPECT_EQ(buffer_release_count, 1);
-}
-
-TEST_P(SurfaceTest, PerCommitBufferReleaseCallbackForDifferentSurfaces) {
-  gfx::Size buffer_size(64, 64);
-  auto buffer1 = test::ExoTestHelper::CreateBuffer(buffer_size);
-  auto buffer2 = test::ExoTestHelper::CreateBuffer(buffer_size);
-  auto surface1 = std::make_unique<Surface>();
-  auto shell_surface1 = std::make_unique<ShellSurface>(surface1.get());
-  auto surface2 = std::make_unique<Surface>();
-  auto shell_surface2 = std::make_unique<ShellSurface>(surface2.get());
-  int per_commit_release_count1 = 0;
-  int per_commit_release_count2 = 0;
-
-  // Set the release callback that will be run when buffer is no longer in use.
-  int buffer_release_count = 0;
-  base::RunLoop run_loop1;
-  buffer1->set_release_callback(test::CreateReleaseBufferClosure(
-      &buffer_release_count, run_loop1.QuitClosure()));
-
-  // Attach buffer1 to both surface1 and surface2.
-  base::RunLoop run_loop2;
-  surface1->SetPerCommitBufferReleaseCallback(
-      test::CreateExplicitReleaseCallback(&per_commit_release_count1,
-                                          run_loop2.QuitClosure()));
-  surface1->Attach(buffer1.get());
-  surface1->Damage(gfx::Rect(buffer_size));
-  surface1->Commit();
-  surface2->SetPerCommitBufferReleaseCallback(
-      test::CreateExplicitReleaseCallback(&per_commit_release_count2,
-                                          base::DoNothing()));
-  surface2->Attach(buffer1.get());
-  surface2->Damage(gfx::Rect(buffer_size));
-  surface2->Commit();
-  test::WaitForLastFramePresentation(shell_surface2.get());
-
-  EXPECT_EQ(per_commit_release_count1, 0);
-  EXPECT_EQ(per_commit_release_count2, 0);
-  EXPECT_EQ(buffer_release_count, 0);
-
-  // Attach buffer2 to surface1, only the surface1 callback should be emitted.
-  surface1->Attach(buffer2.get());
-  surface1->Damage(gfx::Rect(buffer_size));
-  surface1->Commit();
-  test::WaitForLastFramePresentation(shell_surface1.get());
-
-  run_loop2.Run();
-  EXPECT_EQ(per_commit_release_count1, 1);
-  EXPECT_EQ(per_commit_release_count2, 0);
-  EXPECT_EQ(buffer_release_count, 0);
-
-  // Attach buffer2 to surface2, only the surface2 callback should be emitted.
-  surface2->Attach(buffer2.get());
-  surface2->Damage(gfx::Rect(buffer_size));
-  surface2->Commit();
-  test::WaitForLastFramePresentation(shell_surface2.get());
-
-  run_loop1.Run();
-  EXPECT_EQ(per_commit_release_count1, 1);
-  EXPECT_EQ(per_commit_release_count2, 1);
-  // The buffer should now be completely released.
-  EXPECT_EQ(buffer_release_count, 1);
 }
 
 TEST_P(SurfaceTest, SimpleSurfaceGraphicsOcclusion) {

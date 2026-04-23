@@ -72,6 +72,7 @@
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/frame/web_frame_widget_impl.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
+#include "third_party/blink/renderer/core/html/anchor_element_utils.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
@@ -432,6 +433,12 @@ bool ContextMenuController::ShouldShowContextMenuFromTouch(
 
 bool ContextMenuController::ShowContextMenu(LocalFrame* frame,
                                             const PhysicalOffset& point,
+                                            WebMenuSourceType source_type) {
+  return ShowContextMenu(frame, point, source_type, nullptr);
+}
+
+bool ContextMenuController::ShowContextMenu(LocalFrame* frame,
+                                            const PhysicalOffset& point,
                                             WebMenuSourceType source_type,
                                             const MouseEvent* mouse_event) {
   // Displaying the context menu in this function is a big hack as we don't
@@ -515,7 +522,7 @@ bool ContextMenuController::ShowContextMenu(LocalFrame* frame,
           element && element->InterestForElement()) {
         CHECK(RuntimeEnabledFeatures::HTMLInterestForAttributeEnabled());
         data.opened_from_interest_for = true;
-        data.interest_for_node_id = element->NodeID();
+        data.interest_for_node_id = element->GetDomNodeId();
         break;
       }
     }
@@ -792,8 +799,10 @@ bool ContextMenuController::ShowContextMenu(LocalFrame* frame,
 
     // If the anchor wants to suppress the referrer, update the referrerPolicy
     // accordingly.
-    if (anchor->HasRel(kRelationNoReferrer))
+    if (AnchorElementUtils::HasRel(anchor->GetLinkRelations(),
+                                   kRelationNoReferrer)) {
       data.referrer_policy = network::mojom::ReferrerPolicy::kNever;
+    }
 
     data.link_text = anchor->innerText().Utf8();
   }
@@ -823,10 +832,9 @@ bool ContextMenuController::ShowContextMenu(LocalFrame* frame,
 
     // If the anchor wants to suppress the referrer, update the referrerPolicy
     // accordingly.
-    if (RuntimeEnabledFeatures::SvgAnchorElementRelAttributesEnabled()) {
-      if (anchor->HasRel(kRelationNoReferrer)) {
-        data.referrer_policy = network::mojom::ReferrerPolicy::kNever;
-      }
+    if (AnchorElementUtils::HasRel(anchor->GetLinkRelations(),
+                                   kRelationNoReferrer)) {
+      data.referrer_policy = network::mojom::ReferrerPolicy::kNever;
     }
     data.link_text = anchor->innerText().Utf8();
   }

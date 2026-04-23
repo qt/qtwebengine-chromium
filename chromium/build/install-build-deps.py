@@ -214,6 +214,7 @@ def apt_update(options):
 # Packages needed for development
 def dev_list():
   packages = [
+      "autoconf",
       "binutils",
       "bison",
       "bzip2",
@@ -376,7 +377,6 @@ def lib_list():
       "libpango-1.0-0",
       "libpangocairo-1.0-0",
       "libpci3",
-      "libpcre3",
       "libpixman-1-0",
       "libspeechd2",
       "libstdc++6",
@@ -582,6 +582,7 @@ def backwards_compatible_list(options):
       "libgtk2.0-0",
       "libgtk2.0-0:i386",
       "libgtk2.0-dev",
+      "libpcre3",
       "mesa-common-dev",
       "mesa-common-dev-lts-trusty",
       "mesa-common-dev-lts-xenial",
@@ -626,7 +627,6 @@ def backwards_compatible_list(options):
 
       # Packages to build NaCl, its toolchains, and its ports.
       "ant",
-      "autoconf",
       "bison",
       "cmake",
       "gawk",

@@ -28,11 +28,22 @@
 
 import functools
 import os
+import platform
 import sys
 
 THIS_DIR = os.path.dirname(__file__)
 DAWN_ROOT = os.path.realpath(os.path.join(THIS_DIR, '..', '..'))
-NODE_DIR = os.path.join(DAWN_ROOT, 'third_party', 'node')
+
+sys.path.insert(0, DAWN_ROOT)
+
+from tools.python import cipd_deps
+
+
+@functools.cache
+def get_node_dir() -> str:
+    """Retrieves the directory that NodeJS should be available in."""
+    cipd_platform = cipd_deps.get_cipd_platform()
+    return os.path.join(DAWN_ROOT, 'third_party', 'node', cipd_platform)
 
 
 @functools.cache
@@ -42,12 +53,12 @@ def get_node_path() -> str:
     Returns:
         A filepath to the standalone node executable.
     """
-    path = os.path.join(NODE_DIR, 'bin', 'node')
+    path = os.path.join(get_node_dir(), 'bin', 'node')
     if sys.platform == 'win32':
-        path = os.path.join(NODE_DIR, 'node.exe')
+        path = os.path.join(get_node_dir(), 'node.exe')
     if not os.path.exists(path):
         raise RuntimeError(
-            f'Unable to find the node binary under {NODE_DIR}. Is the '
+            f'Unable to find the node binary under {get_node_dir()}. Is the '
             f'dawn_node gclient variable set?')
     return path
 
@@ -60,18 +71,18 @@ def get_npm_command() -> list[str]:
         A list of strings that will run "npm" when run as a command for a
         subprocess.
     """
-    path = os.path.join(NODE_DIR, 'lib', 'node_modules', 'npm', 'bin',
+    path = os.path.join(get_node_dir(), 'lib', 'node_modules', 'npm', 'bin',
                         'npm-cli.js')
     if sys.platform == 'win32':
-        path = os.path.join(NODE_DIR, 'node_modules', 'npm', 'bin',
+        path = os.path.join(get_node_dir(), 'node_modules', 'npm', 'bin',
                             'npm-cli.js')
     if not os.path.exists(path):
         raise RuntimeError(
-            f'Unable to find the npm-cli.js file under {NODE_DIR}. Is the '
+            f'Unable to find the npm-cli.js file under {get_node_dir()}. Is the '
             f'dawn_node gclient variable set?')
     cmd = [
         get_node_path(),
-        os.path.join(NODE_DIR, path),
+        os.path.join(get_node_dir(), path),
     ]
     return cmd
 

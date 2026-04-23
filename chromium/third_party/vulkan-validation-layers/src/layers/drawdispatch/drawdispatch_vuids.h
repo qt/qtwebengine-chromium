@@ -128,6 +128,7 @@ struct DrawDispatchVuid {
     const char* dynamic_rendering_local_index_10928 = kVUIDUndefined;
     const char* dynamic_rendering_dithering_09642 = kVUIDUndefined;
     const char* dynamic_rendering_dithering_09643 = kVUIDUndefined;
+    const char* dynamic_rendering_local_read_11797 = kVUIDUndefined;
     const char* image_view_access_64_04470 = kVUIDUndefined;
     const char* image_view_access_32_04471 = kVUIDUndefined;
     const char* image_view_sparse_64_04474 = kVUIDUndefined;
@@ -215,6 +216,26 @@ struct DrawDispatchVuid {
     const char* viewport_w_scaling_08636 = kVUIDUndefined;
     const char* shading_rate_palette_08637 = kVUIDUndefined;
     const char* shader_object_multiview_10772 = kVUIDUndefined;
+    const char* custom_resolve_11521 = kVUIDUndefined;
+    const char* custom_resolve_11522 = kVUIDUndefined;
+    const char* custom_resolve_11523 = kVUIDUndefined;
+    const char* custom_resolve_11524 = kVUIDUndefined;
+    const char* custom_resolve_11525 = kVUIDUndefined;
+    const char* custom_resolve_11529 = kVUIDUndefined;
+    const char* custom_resolve_11530 = kVUIDUndefined;
+    const char* custom_resolve_11539 = kVUIDUndefined;
+    const char* custom_resolve_11540 = kVUIDUndefined;
+    const char* custom_resolve_11860 = kVUIDUndefined;
+    const char* custom_resolve_11861 = kVUIDUndefined;
+    const char* custom_resolve_11862 = kVUIDUndefined;
+    const char* custom_resolve_11863 = kVUIDUndefined;
+    const char* custom_resolve_11864 = kVUIDUndefined;
+    const char* custom_resolve_11865 = kVUIDUndefined;
+    const char* custom_resolve_11866 = kVUIDUndefined;
+    const char* custom_resolve_11867 = kVUIDUndefined;
+    const char* custom_resolve_11868 = kVUIDUndefined;
+    const char* custom_resolve_11869 = kVUIDUndefined;
+    const char* custom_resolve_11870 = kVUIDUndefined;
     const char* external_format_resolve_09362 = kVUIDUndefined;
     const char* external_format_resolve_09363 = kVUIDUndefined;
     const char* external_format_resolve_09364 = kVUIDUndefined;
@@ -243,6 +264,10 @@ struct DrawDispatchVuid {
     const char* shaders_push_constants_08878 = kVUIDUndefined;
     const char* shaders_descriptor_layouts_08879 = kVUIDUndefined;
     const char* draw_shaders_no_task_mesh_08885 = kVUIDUndefined;
+    const char* tessellation_subdivision_12239 = kVUIDUndefined;
+    const char* tessellation_triangles_12240 = kVUIDUndefined;
+    const char* tessellation_segment_12241 = kVUIDUndefined;
+    const char* tessellation_patch_size_12242 = kVUIDUndefined;
     const char* set_line_width_08617 = kVUIDUndefined;
     const char* set_viewport_with_count_08642 = kVUIDUndefined;
     const char* alpha_component_word_08920 = kVUIDUndefined;
@@ -289,11 +314,16 @@ struct DrawDispatchVuid {
     const char* vertex_input_09462 = kVUIDUndefined;
     const char* color_blend_enable_07627 = kVUIDUndefined;
     const char* color_write_mask_07629 = kVUIDUndefined;
+    const char* image_layout_00344 = kVUIDUndefined;
     const char* image_layout_09600 = kVUIDUndefined;
     const char* rendering_contents_10582 = kVUIDUndefined;
     const char* line_rasterization_10608 = kVUIDUndefined;
     // Ray tracing
     const char* ray_tracing_pipeline_stack_size_09458 = kVUIDUndefined;
+    // TensorARM
+    const char* tensorARM_pDescription_09900 = kVUIDUndefined;
+    const char* tensorARM_dimensionCount_09905 = kVUIDUndefined;
+    const char* spirv_OpTypeTensorARM_09906 = kVUIDUndefined;
 };
 
 const DrawDispatchVuid& GetDrawDispatchVuid(vvl::Func function);

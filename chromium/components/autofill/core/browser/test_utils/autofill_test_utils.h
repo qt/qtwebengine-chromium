@@ -7,12 +7,12 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/time/time.h"
-#include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/data_model/payments/autofill_offer_data.h"
@@ -34,6 +34,7 @@
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
 #include "components/autofill/core/browser/test_utils/autofill_testing_pref_service.h"
 #include "components/autofill/core/common/autofill_test_utils.h"
+#include "components/signin/public/identity_manager/account_info.h"
 #include "components/sync/protocol/autofill_specifics.pb.h"
 
 class PrefService;
@@ -107,6 +108,9 @@ std::unique_ptr<PrefService> PrefServiceForTesting(
 // to ensure that the form has its own signature.
 [[nodiscard]] FormData CreateTestAddressFormData(
     const char* unique_id = nullptr);
+
+// Returns a `FormData` corresponding to a simple one-time-password form.
+[[nodiscard]] FormData CreateTestOtpFormData(const char* unique_id = nullptr);
 
 // Returns a `FormData` corresponding to a simple sign-up form that also
 // accepts a passkey.
@@ -190,6 +194,12 @@ CreditCard GetRandomCreditCard(CreditCard::RecordType record_Type);
 // Returns a copy of `credit_card` with `cvc` set as specified.
 CreditCard WithCvc(CreditCard credit_card, std::u16string cvc = u"123");
 
+// Returns a `credit_card` with its record type set to full server card.
+CreditCard AsFullServerCard(CreditCard credit_card);
+
+// Returns a `credit_card` with its record type set to virtual card.
+CreditCard AsVirtualCard(CreditCard credit_card);
+
 // Returns a credit card cloud token data full of dummy info.
 CreditCardCloudTokenData GetCreditCardCloudTokenData1();
 
@@ -236,6 +246,9 @@ CreditCardMerchantBenefit GetActiveCreditCardMerchantBenefit();
 // Returns a set of merchant origin webpages used for a merchant credit card
 // benefit.
 base::flat_set<url::Origin> GetOriginsForMerchantBenefit();
+
+// Prevents kAccountNameEmail profile from being created.
+void HideAccountNameEmailProfile(PrefService* pref_service, AccountInfo info);
 
 // Adds `card` with a set `issuer_id`, `benefit` and `benefit_source` to
 // `personal_data`. Also configures a category benefit with the
@@ -345,6 +358,7 @@ struct PassportEntityOptionsT {
   std::string_view guid = "00000000-0000-4000-8000-000000000000";
   std::string_view nickname = "Passie";
   base::Time date_modified = kJune2017;
+  base::Time use_date = kJune2017;
   std::string_view app_locale = "en-US";
   EntityInstance::RecordType record_type = EntityInstance::RecordType::kLocal;
   EntityInstance::AreAttributesReadOnly are_attributes_read_only =
@@ -373,6 +387,7 @@ struct DriversLicenseOptionsT {
   std::string_view guid = "00000000-0000-4000-8000-100000000000";
   std::string_view nickname = "License";
   base::Time date_modified = kJune2017;
+  base::Time use_date = kJune2017;
   std::string_view app_locale = "en-US";
   EntityInstance::RecordType record_type = EntityInstance::RecordType::kLocal;
   EntityInstance::AreAttributesReadOnly are_attributes_read_only =
@@ -399,6 +414,7 @@ struct VehicleOptionsT {
   std::string_view guid = "00000000-0000-4000-8000-200000000000";
   std::string_view nickname = "Vehicle";
   base::Time date_modified = kJune2017;
+  base::Time use_date = kJune2017;
   std::string_view app_locale = "en-US";
   EntityInstance::RecordType record_type = EntityInstance::RecordType::kLocal;
   EntityInstance::AreAttributesReadOnly are_attributes_read_only =
@@ -421,6 +437,7 @@ struct NationalIdCardOptionsT {
   std::string_view guid = "00000000-0000-4000-8000-300000000000";
   std::string_view nickname = "IdCard";
   std::string_view app_locale = "en-US";
+  base::Time use_date = kJune2017;
   EntityInstance::RecordType record_type = EntityInstance::RecordType::kLocal;
   EntityInstance::AreAttributesReadOnly are_attributes_read_only =
       EntityInstance::AreAttributesReadOnly(false);
@@ -438,6 +455,7 @@ struct KnownTravelerNumberOptionsT {
   std::string_view guid = "00000000-0000-4000-8000-400000000000";
   std::string_view nickname = "Known Traveler Number";
   std::string_view app_locale = "en-US";
+  base::Time use_date = kJune2017;
   EntityInstance::RecordType record_type = EntityInstance::RecordType::kLocal;
   EntityInstance::AreAttributesReadOnly are_attributes_read_only =
       EntityInstance::AreAttributesReadOnly(false);
@@ -454,6 +472,7 @@ struct RedressNumberOptionsT {
   std::string_view guid = "00000000-0000-4000-8000-500000000000";
   std::string_view nickname = "RedressNumber";
   std::string_view app_locale = "en-US";
+  base::Time use_date = kJune2017;
   EntityInstance::RecordType record_type = EntityInstance::RecordType::kLocal;
   EntityInstance::AreAttributesReadOnly are_attributes_read_only =
       EntityInstance::AreAttributesReadOnly(false);
@@ -472,10 +491,13 @@ struct FlightReservationOptionsT {
   const char16_t* name = u"John Doe";
   const char16_t* departure_airport = u"MUC";
   const char16_t* arrival_airport = u"BEY";
+  std::optional<base::Time> departure_time = std::nullopt;
+  base::TimeDelta departure_time_zone_offset = base::TimeDelta();
   std::string_view guid = "00000000-0000-4000-8000-500000000000";
   std::string_view nickname = "FlightReservation";
   std::string_view app_locale = "en-US";
   base::Time date_modified = kJune2017;
+  base::Time use_date = kJune2017;
   EntityInstance::RecordType record_type = EntityInstance::RecordType::kLocal;
   EntityInstance::AreAttributesReadOnly are_attributes_read_only =
       EntityInstance::AreAttributesReadOnly(false);
@@ -624,7 +646,7 @@ struct SingleSubmissionKeyMetricExpectations {
 
 void VerifySingleSubmissionKeyMetricExpectations(
     const base::HistogramTester& histogram_tester,
-    absl::string_view form_type_name,
+    std::string_view form_type_name,
     const SingleSubmissionKeyMetricExpectations& expectations);
 
 }  // namespace test

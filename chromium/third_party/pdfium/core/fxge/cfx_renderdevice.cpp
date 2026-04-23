@@ -505,6 +505,12 @@ FXDIB_Format GetCreateCompatibleBitmapFormat(int render_caps,
   return CFX_DIBBase::kPlatformRGBFormat;
 }
 
+bool IsModeNonLCD(FontAntiAliasingMode mode) {
+  return mode == FontAntiAliasingMode::kNormal ||
+         mode == FontAntiAliasingMode::kLight ||
+         mode == FontAntiAliasingMode::kMono;
+}
+
 }  // namespace
 
 CFX_RenderDevice::CFX_RenderDevice() = default;
@@ -1086,7 +1092,7 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
                                       uint32_t fill_color,
                                       const CFX_TextRenderOptions& options) {
   // `anti_alias` and `normalize` don't affect Skia rendering.
-  int anti_alias = FT_RENDER_MODE_MONO;
+  FontAntiAliasingMode anti_alias = FontAntiAliasingMode::kMono;
   bool normalize = false;
   const bool is_text_smooth = options.IsSmooth();
   // |text_options| has the potential to affect all derived classes of
@@ -1100,7 +1106,7 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
         // 6225973, 6243070, 6393145, 6421054, 6282327, and 6624828; the latest
         // one expires 10/7/19.  This makes LCD anti-aliasing very ugly, so we
         // instead fall back on NORMAL anti-aliasing.
-        anti_alias = FT_RENDER_MODE_NORMAL;
+        anti_alias = FontAntiAliasingMode::kNormal;
         if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
           // Since |anti_alias| doesn't affect Skia rendering, and Skia only
           // follows strictly to the options provided by |text_options|, we need
@@ -1112,16 +1118,16 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
         // Whether Skia uses LCD optimization should strictly follow the
         // rendering options provided by |text_options|. No change needs to be
         // done for |text_options| here.
-        anti_alias = FT_RENDER_MODE_LCD;
+        anti_alias = FontAntiAliasingMode::kLcd;
         normalize = true;
       } else if (bpp_ < 16) {
         // This case doesn't apply to Skia since Skia always have |bpp_| = 32.
-        anti_alias = FT_RENDER_MODE_NORMAL;
+        anti_alias = FontAntiAliasingMode::kNormal;
       } else {
         // Whether Skia uses LCD optimization should strictly follow the
         // rendering options provided by |text_options|. No change needs to be
         // done for |text_options| here.
-        anti_alias = FT_RENDER_MODE_LCD;
+        anti_alias = FontAntiAliasingMode::kLcd;
         normalize = !font->HasFaceRec() ||
                     options.aliasing_type != CFX_TextRenderOptions::kLcd;
       }
@@ -1173,7 +1179,7 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
   std::vector<TextGlyphPos> glyphs(pCharPos.size());
   for (auto [charpos, glyph] : fxcrt::Zip(pCharPos, pdfium::span(glyphs))) {
     glyph.device_origin_ = text2Device.Transform(charpos.origin_);
-    glyph.origin_.x = anti_alias < FT_RENDER_MODE_LCD
+    glyph.origin_.x = IsModeNonLCD(anti_alias)
                           ? FXSYS_roundf(glyph.device_origin_.x)
                           : static_cast<int>(floor(glyph.device_origin_.x));
     glyph.origin_.y = FXSYS_roundf(glyph.device_origin_.y);
@@ -1183,7 +1189,7 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
         charpos.glyph_index_, charpos.font_style_, matrix,
         charpos.font_char_width_, anti_alias, &text_options);
   }
-  if (anti_alias < FT_RENDER_MODE_LCD && glyphs.size() > 1) {
+  if (IsModeNonLCD(anti_alias) && glyphs.size() > 1) {
     AdjustGlyphSpace(&glyphs);
   }
 
@@ -1197,7 +1203,7 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
   int pixel_height = bmp_rect.Height();
   int pixel_left = bmp_rect.left;
   int pixel_top = bmp_rect.top;
-  if (anti_alias == FT_RENDER_MODE_MONO) {
+  if (anti_alias == FontAntiAliasingMode::kMono) {
     auto bitmap = pdfium::MakeRetain<CFX_DIBitmap>();
     if (!bitmap->Create(pixel_width, pixel_height, FXDIB_Format::k1bppMask)) {
       return false;
@@ -1242,7 +1248,7 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
   }
   int dest_width = pixel_width;
   FX_BGRA_STRUCT<uint8_t> bgra;
-  if (anti_alias == FT_RENDER_MODE_LCD) {
+  if (anti_alias == FontAntiAliasingMode::kLcd) {
     bgra = ArgbToBGRAStruct(fill_color);
   }
 
@@ -1259,7 +1265,7 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
     const RetainPtr<CFX_DIBitmap>& pGlyph = glyph.glyph_->GetBitmap();
     int ncols = pGlyph->GetWidth();
     int nrows = pGlyph->GetHeight();
-    if (anti_alias == FT_RENDER_MODE_NORMAL) {
+    if (anti_alias == FontAntiAliasingMode::kNormal) {
       if (!bitmap->CompositeMask(point.value().x, point.value().y, ncols, nrows,
                                  pGlyph, fill_color, 0, 0, BlendMode::kNormal,
                                  nullptr, false)) {

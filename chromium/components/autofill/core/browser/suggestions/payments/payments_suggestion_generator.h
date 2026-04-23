@@ -74,6 +74,10 @@ std::vector<const CreditCard*> GetCreditCardsToSuggest(
 // of a card number that will be used for suggestion filtering. This is used to
 // avoid showing suggestions that is unrelated to the cards that have already
 // been autofilled in the form. Can be empty if no filtering should happen.
+// `is_card_number_field_empty` indicates whether the card number field is empty
+// after the value inside of it is sanitized. This is used to decide whether the
+// BNPL suggestion should be appended together with the credit card suggestions.
+// TODO(crbug.com/448688721): Consolidate the input parameters.
 std::vector<Suggestion> GetSuggestionsForCreditCards(
     AutofillClient& client,
     const FormFieldData& trigger_field,
@@ -82,7 +86,8 @@ std::vector<Suggestion> GetSuggestionsForCreditCards(
     bool is_complete_form,
     bool should_show_scan_credit_card,
     const std::vector<std::string>& four_digit_combinations_in_dom,
-    const std::u16string& autofilled_last_four_digits_in_form_for_filtering);
+    const std::u16string& autofilled_last_four_digits_in_form_for_filtering,
+    bool is_card_number_field_empty);
 
 // Generates suggestions for all available credit cards based on the
 // `trigger_field_type` and `trigger_field`. `summary` contains metadata about
@@ -90,7 +95,11 @@ std::vector<Suggestion> GetSuggestionsForCreditCards(
 // set of card number last four that will be used for suggestion filtering. This
 // is used to avoid showing suggestions that is unrelated to the cards that have
 // already been autofilled in the form.
+// `is_card_number_field_empty` indicates whether the card number field is empty
+// after the value inside of it is sanitized. This is used to decide whether the
+// BNPL suggestion should be appended together with the credit card suggestions.
 // TODO(crbug.com/40916587): Implement last four extraction from the DOM.
+// TODO(crbug.com/448688721): Consolidate the input parameters.
 std::vector<Suggestion> GetCreditCardOrCvcFieldSuggestions(
     const AutofillClient& client,
     const FormFieldData& trigger_field,
@@ -98,7 +107,8 @@ std::vector<Suggestion> GetCreditCardOrCvcFieldSuggestions(
     const std::u16string& autofilled_last_four_digits_in_form_for_filtering,
     FieldType trigger_field_type,
     bool should_show_scan_credit_card,
-    CreditCardSuggestionSummary& summary);
+    CreditCardSuggestionSummary& summary,
+    bool is_card_number_field_empty);
 
 // Generates suggestions for standalone CVC fields. These only apply to
 // virtual cards that are saved on file to a merchant. In these cases,
@@ -124,7 +134,7 @@ std::vector<CreditCard> GetTouchToFillCardsToSuggest(
 BnplSuggestionUpdateResult MaybeUpdateDesktopSuggestionsWithBnpl(
     const base::span<const Suggestion>& current_suggestions,
     std::vector<BnplIssuer> bnpl_issuers,
-    uint64_t extracted_amount_in_micros);
+    int64_t extracted_amount_in_micros);
 
 // Creates a suggestion for the BNPL issuer selection. `bnpl_issuers` is used to
 // set various properties of the suggestion including but not limited to the
@@ -133,7 +143,7 @@ BnplSuggestionUpdateResult MaybeUpdateDesktopSuggestionsWithBnpl(
 // suggestion to be used where necessary for the BNPL flow.
 Suggestion CreateBnplSuggestion(
     std::vector<BnplIssuer> bnpl_issuers,
-    std::optional<uint64_t> extracted_amount_in_micros);
+    std::optional<int64_t> extracted_amount_in_micros);
 
 // Generates touch-to-fill suggestions for all available credit cards to be
 // used in the bottom sheet. Benefits information, containing instrument IDs and
@@ -176,10 +186,6 @@ std::vector<Suggestion> GetSuggestionsForIbans(const std::vector<Iban>& ibans);
 std::vector<Suggestion> GetPromoCodeSuggestionsFromPromoCodeOffers(
     const std::vector<const AutofillOfferData*>& promo_code_offers);
 
-//  Returns true if all the conditions for enabling the upload of credit card
-//  are satisfied.
-bool IsCreditCardUploadEnabled(const AutofillClient& client);
-
 // Returns true if the suggestion created from the card can be accepted by the
 // user. Returns false when merchant does not accept the given card for example
 // when merchants opt-out of VCNs.
@@ -214,6 +220,8 @@ Suggestion CreateCreditCardSuggestionForTest(
 
 // Exposes `GetCreditCardFooterSuggestions` in tests.
 std::vector<Suggestion> GetCreditCardFooterSuggestionsForTest(
+    const AutofillClient& client,
+    bool should_show_bnpl_suggestion,
     bool should_show_scan_credit_card,
     bool is_autofilled,
     bool with_gpay_logo);
@@ -253,6 +261,36 @@ std::vector<CreditCard> GetOrderedCardsToSuggest(
     bool require_non_empty_value_on_trigger_field,
     bool include_virtual_cards);
 
+// Set the URL for the card art image to be shown in the `suggestion`.
+void SetCardArtURL(Suggestion& suggestion,
+                   const CreditCard& credit_card,
+                   const AutofillClient& client,
+                   bool virtual_card_option);
+
+// Return a nickname for the |card| to display. This is generally the nickname
+// stored in |card|, unless |card| exists as a local and a server copy. In
+// this case, we prefer the nickname of the local if it is defined. If only
+// one copy has a nickname, take that.
+std::u16string GetDisplayNicknameForCreditCard(
+    const CreditCard& card,
+    const PaymentsDataManager& payments_data);
+
+// Returns the benefit text to display in credit card suggestions if it is
+// available.
+std::optional<Suggestion::Text> GetCreditCardBenefitSuggestionLabel(
+    const CreditCard& credit_card,
+    const AutofillClient& client);
+
+Suggestion CreateManagePaymentMethodsEntry(SuggestionType suggestion_type,
+                                           bool with_gpay_logo);
+
+// Returns true if the new FOP (form-of-payment) display is enabled.
+bool ShouldUseNewFopDisplay();
+
+// Returns the card-linked offers map with credit card guid as the key and the
+// pointer to the linked AutofillOfferData as the value.
+std::map<std::string, const AutofillOfferData*> GetCardLinkedOffers(
+    const AutofillClient& autofill_client);
 }  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_CORE_BROWSER_SUGGESTIONS_PAYMENTS_PAYMENTS_SUGGESTION_GENERATOR_H_

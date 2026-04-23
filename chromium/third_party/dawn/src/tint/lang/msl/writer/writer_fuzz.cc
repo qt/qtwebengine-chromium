@@ -27,11 +27,10 @@
 
 #include <iostream>
 
+#include "src/tint/api/helpers/generate_bindings.h"
 #include "src/tint/cmd/fuzz/ir/fuzz.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/var.h"
-#include "src/tint/lang/core/type/pointer.h"
-#include "src/tint/lang/msl/writer/helpers/generate_bindings.h"
 #include "src/tint/lang/msl/writer/printer/printer.h"
 #include "src/tint/lang/msl/writer/writer.h"
 
@@ -41,7 +40,28 @@ namespace {
 Result<SuccessType> IRFuzzer(core::ir::Module& module,
                              const fuzz::ir::Context& context,
                              Options options) {
-    options.bindings = GenerateBindings(module, false);
+    // TODO(375388101): We cannot run the backend for every entry point in the module unless we
+    // clone the whole module each time, so for now we just generate the first entry point.
+
+    // Strip the module down to a single entry point.
+    core::ir::Function* entry_point = nullptr;
+    for (auto& func : module.functions) {
+        if (func->IsEntryPoint()) {
+            entry_point = func;
+            break;
+        }
+    }
+    std::string ep_name;
+    if (entry_point) {
+        ep_name = module.NameOf(entry_point).NameView();
+    }
+    if (ep_name.empty()) {
+        // No entry point, just return success
+        return Success;
+    }
+
+    options.entry_point_name = ep_name;
+    options.bindings = GenerateBindings(module, ep_name, true, true);
     options.array_length_from_constants.ubo_binding = 30;
 
     // Add array_length_from_constants entries for all storage buffers with runtime sized arrays.
@@ -64,10 +84,8 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     }
 
     auto output = Generate(module, options);
-    if (output != Success) {
-        TINT_ICE() << "Generate() failed after CanGenerate() succeeded: "
-                   << output.Failure().reason;
-    }
+    TINT_ASSERT(output == Success)
+        << "Generate() failed after CanGenerate() succeeded: " << output.Failure().reason;
 
     if (output == Success && context.options.dump) {
         std::cout << "Dumping generated MSL:\n" << output->msl << "\n";

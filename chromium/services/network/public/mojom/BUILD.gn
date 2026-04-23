@@ -410,6 +410,7 @@ mojom("mojom_proxy_config") {
   public_deps = [
     ":mojom_network_param",
     "//mojo/public/mojom/base",
+    "//url/mojom:url_mojom_scheme_host_port",
   ]
 
   shared_cpp_typemaps = [
@@ -445,8 +446,8 @@ mojom("mojom_proxy_config") {
     {
       types = [
         {
-          mojom = "network.mojom.ProxyBypassRules"
-          cpp = "::net::ProxyBypassRules"
+          mojom = "network.mojom.ProxyHostMatchingRules"
+          cpp = "::net::ProxyHostMatchingRules"
         },
         {
           mojom = "network.mojom.ProxyList"
@@ -502,6 +503,38 @@ mojom("mojom_attribution") {
   generate_legacy_js_bindings = true
 
   sources = [ "attribution.mojom" ]
+}
+
+mojom("mojom_connection_allowlist") {
+  generate_java = true
+  sources = [ "connection_allowlist.mojom" ]
+  if (!is_ios) {
+    export_class_attribute_blink = "BLINK_PLATFORM_EXPORT"
+    export_define_blink = "BLINK_PLATFORM_IMPLEMENTATION=1"
+    export_header_blink = "third_party/blink/public/platform/web_common.h"
+  }
+
+  shared_cpp_typemaps = [
+    {
+      types = [
+        {
+          mojom = "network.mojom.ConnectionAllowlist"
+          cpp = "::network::ConnectionAllowlist"
+        },
+        {
+          mojom = "network.mojom.ConnectionAllowlists"
+          cpp = "::network::ConnectionAllowlists"
+        },
+      ]
+      traits_headers = [
+        "//services/network/public/cpp/connection_allowlist_mojom_traits.h",
+      ]
+      traits_public_deps =
+          [ "//services/network/public/cpp:connection_allowlist" ]
+    },
+  ]
+  cpp_typemaps = shared_cpp_typemaps
+  blink_cpp_typemaps = shared_cpp_typemaps
 }
 
 mojom("mojom_cors_origin_pattern") {
@@ -664,6 +697,7 @@ mojom("url_loader_base") {
     ":cookies_mojom",
     ":mojom_ad_auction",
     ":mojom_attribution",
+    ":mojom_connection_allowlist",
     ":mojom_content_security_policy",
     ":mojom_integrity_algorithm",
     ":mojom_integrity_policy",
@@ -684,10 +718,6 @@ mojom("url_loader_base") {
     "//url/mojom:url_mojom_gurl",
     "//url/mojom:url_mojom_origin",
   ]
-
-  if (is_win) {
-    public_deps += [ "//services/proxy_resolver_win/public/mojom" ]
-  }
 
   enabled_features = []
   if (is_android || is_chromeos || is_linux) {
@@ -982,6 +1012,15 @@ mojom("url_loader_base") {
           mojom = "network.mojom.DeviceBoundSessionDeletionReason"
           cpp = "::net::device_bound_sessions::DeletionReason"
         },
+        {
+          mojom = "network.mojom.DeviceBoundSessionParams"
+          cpp = "::net::device_bound_sessions::SessionParams"
+          move_only = true
+        },
+        {
+          mojom = "network.mojom.DeviceBoundSessionError"
+          cpp = "::net::device_bound_sessions::SessionError::ErrorType"
+        },
       ]
       traits_headers = [
         "//services/network/public/cpp/device_bound_sessions_mojom_traits.h",
@@ -989,7 +1028,10 @@ mojom("url_loader_base") {
       traits_sources = [
         "//services/network/public/cpp/device_bound_sessions_mojom_traits.cc",
       ]
-      traits_public_deps = [ "//net" ]
+      traits_public_deps = [
+        "//components/unexportable_keys",
+        "//net",
+      ]
     },
     {
       types = [
@@ -1694,10 +1736,12 @@ mojom("mojom_permissions_policy") {
 mojom("mojom") {
   generate_java = true
   sources = [
+    "cache_encryption_provider.mojom",
     "cert_verifier_service.mojom",
     "cert_verifier_service_updater.mojom",
     "connection_change_observer_client.mojom",
     "cookie_encryption_provider.mojom",
+    "ct_policy.mojom",
     "default_credentials.mojom",
     "dhcp_wpad_url_client.mojom",
     "digitally_signed.mojom",
@@ -1749,8 +1793,8 @@ mojom("mojom") {
     ":url_loader_base",
     ":websocket_mojom",
     "//components/content_settings/core/common:mojo_bindings",
-    "//components/ip_protection/mojom",
     "//components/os_crypt/async/common:common_mojom",
+    "//components/unexportable_keys/mojom",
     "//mojo/public/mojom/base",
     "//mojo/public/mojom/base:protobuf_support",
     "//sandbox/policy/mojom",
@@ -1759,10 +1803,6 @@ mojom("mojom") {
     "//url/mojom:url_mojom_origin",
     "//url/mojom:url_mojom_scheme_host_port",
   ]
-
-  if (is_win) {
-    public_deps += [ "//services/proxy_resolver_win/public/mojom" ]
-  }
 
   enabled_features = []
 

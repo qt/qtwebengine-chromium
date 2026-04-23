@@ -5,9 +5,9 @@
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
+import type * as Foundation from '../../foundation/foundation.js';
 
 import type {ViewLocationResolver} from './View.js';
-import {PreRegisteredView} from './ViewManager.js';
 import type {Widget} from './Widget.js';
 
 const UIStrings = {
@@ -42,8 +42,6 @@ const UIStrings = {
 } as const;
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/ViewRegistration.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-
-const registeredViewExtensions: PreRegisteredView[] = [];
 
 export const enum ViewPersistence {
   CLOSEABLE = 'closeable',
@@ -115,7 +113,11 @@ export interface ViewRegistration {
   /**
    * Returns an instance of the class that wraps the view.
    * The common pattern for implementing this function is loading the module with the wrapping 'Widget'
-   * lazily loaded. As an example:
+   * lazily loaded.
+   * The DevTools universe is passed along, allowing `loadView` to retrieve necessary dependencies.
+   * Prefer passing individual dependencies one by one instead of forwarding the full universe. This
+   * makes testing easier.
+   * As an example:
    *
    * ```js
    * let loadedElementsModule;
@@ -129,15 +131,16 @@ export interface ViewRegistration {
    * }
    * UI.ViewManager.registerViewExtension({
    *   <...>
-   *   async loadView() {
+   *   async loadView(universe) {
    *      const Elements = await loadElementsModule();
-   *      return Elements.ElementsPanel.ElementsPanel.instance();
+   *      const pageResourceLoader = universe.context.get(SDK.PageResourceLoader.PageResourceLoader);
+   *      return new Elements.ElementsPanel.ElementsPanel(pageResourceLoader);
    *   },
    *   <...>
    * });
    * ```
    */
-  loadView: () => Promise<Widget>;
+  loadView: (universe: Foundation.Universe.Universe) => Promise<Widget>;
   /**
    * Used to sort the views that appear in a shared location.
    */
@@ -160,28 +163,25 @@ export interface ViewRegistration {
   featurePromotionId?: string;
 }
 
-const viewIdSet = new Set<string>();
+const registeredViewExtensions = new Map<string, ViewRegistration>();
+
 export function registerViewExtension(registration: ViewRegistration): void {
   const viewId = registration.id;
-  if (viewIdSet.has(viewId)) {
+  if (registeredViewExtensions.has(viewId)) {
     throw new Error(`Duplicate view id '${viewId}'`);
   }
-  viewIdSet.add(viewId);
-  registeredViewExtensions.push(new PreRegisteredView(registration));
+  registeredViewExtensions.set(viewId, registration);
 }
 
-export function getRegisteredViewExtensions(): PreRegisteredView[] {
-  return registeredViewExtensions.filter(
-      view => Root.Runtime.Runtime.isDescriptorEnabled({experiment: view.experiment(), condition: view.condition()}));
+export function getRegisteredViewExtensions(): ViewRegistration[] {
+  return registeredViewExtensions.values()
+      .filter(
+          view => Root.Runtime.Runtime.isDescriptorEnabled({experiment: view.experiment, condition: view.condition}))
+      .toArray();
 }
 
 export function maybeRemoveViewExtension(viewId: string): boolean {
-  const viewIndex = registeredViewExtensions.findIndex(view => view.viewId() === viewId);
-  if (viewIndex < 0 || !viewIdSet.delete(viewId)) {
-    return false;
-  }
-  registeredViewExtensions.splice(viewIndex, 1);
-  return true;
+  return registeredViewExtensions.delete(viewId);
 }
 
 const registeredLocationResolvers: LocationResolverRegistration[] = [];
@@ -202,10 +202,9 @@ export function getRegisteredLocationResolvers(): LocationResolverRegistration[]
 }
 
 export function resetViewRegistration(): void {
-  registeredViewExtensions.length = 0;
+  registeredViewExtensions.clear();
   registeredLocationResolvers.length = 0;
   viewLocationNameSet.clear();
-  viewIdSet.clear();
 }
 
 export const enum ViewLocationCategory {

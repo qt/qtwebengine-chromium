@@ -46,6 +46,12 @@ pub struct avifEncoder {
     pub ioStats: crate::decoder::IOStats,
     pub diag: avifDiagnostics,
     pub qualityGainMap: i32,
+    /// Used when encoding an image sequence. Specified in seconds since midnight, Jan. 1, 1970 UTC
+    /// (the Unix epoch) If set to 0 (the default), now() is used.
+    pub creationTime: u64,
+    /// Used when encoding an image sequence. Specified in seconds since midnight, Jan. 1, 1970 UTC
+    /// (the Unix epoch) If set to 0 (the default), now() is used.
+    pub modificationTime: u64,
     rust_encoder: Box<Encoder>,
     rust_encoder_initialized: bool,
     codec_specific_options: Box<CodecSpecificOptions>,
@@ -76,6 +82,8 @@ impl Default for avifEncoder {
             diag: Default::default(),
             qualityGainMap: AVIF_QUALITY_DEFAULT,
             rust_encoder: Default::default(),
+            creationTime: 0,
+            modificationTime: 0,
             rust_encoder_initialized: false,
             codec_specific_options: Default::default(),
         }
@@ -93,17 +101,17 @@ impl From<&avifEncoder> for MutableSettings {
                 quality_from_quantizers(encoder.minQuantizer, encoder.maxQuantizer)
             } else {
                 encoder.quality
-            },
+            } as f32,
             quality_alpha: if encoder.qualityAlpha == -1 {
                 quality_from_quantizers(encoder.minQuantizerAlpha, encoder.maxQuantizerAlpha)
             } else {
                 encoder.qualityAlpha
-            },
+            } as f32,
             quality_gainmap: if encoder.qualityGainMap == -1 {
                 quality_from_quantizers(encoder.minQuantizer, encoder.maxQuantizer)
             } else {
                 encoder.qualityGainMap
-            },
+            } as f32,
             tiling_mode: if encoder.autoTiling == AVIF_TRUE {
                 TilingMode::Auto
             } else {
@@ -117,6 +125,12 @@ impl From<&avifEncoder> for MutableSettings {
 impl From<&avifEncoder> for Settings {
     fn from(encoder: &avifEncoder) -> Self {
         Self {
+            codec_choice: match encoder.codecChoice {
+                avifCodecChoice::Auto => CodecChoice::Auto,
+                avifCodecChoice::Aom => CodecChoice::Aom,
+                // Silently treat all other choices the same as Auto.
+                _ => CodecChoice::Auto,
+            },
             threads: encoder.maxThreads as u32,
             speed: if encoder.speed >= 0 && encoder.speed <= 10 {
                 Some(encoder.speed as u32)
@@ -128,7 +142,18 @@ impl From<&avifEncoder> for Settings {
             timescale: if encoder.timescale == 0 { 1 } else { encoder.timescale },
             repetition_count: RepetitionCount::create_from(encoder.repetitionCount),
             extra_layer_count: encoder.extraLayerCount,
-            sample_transform_recipe: SampleTransformRecipe::None,
+            recipe: Recipe::None,
+            force_write_extended_pixi: false,
+            creation_time: if encoder.creationTime == 0 {
+                None
+            } else {
+                Some(encoder.creationTime)
+            },
+            modification_time: if encoder.modificationTime == 0 {
+                None
+            } else {
+                Some(encoder.modificationTime)
+            },
             mutable: encoder.into(),
         }
     }

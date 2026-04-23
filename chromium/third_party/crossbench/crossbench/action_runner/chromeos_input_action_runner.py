@@ -17,8 +17,8 @@ from crossbench.action_runner.default_action_runner import DefaultActionRunner
 from crossbench.action_runner.display_rectangle import DisplayRectangle
 from crossbench.action_runner.element_not_found_error import \
     ElementNotFoundError
-from crossbench.action_runner.screenshot_annotation import (
-    ScreenshotPointAnnotation, ScreenshotRectAnnotation)
+from crossbench.action_runner.screenshot_annotation import \
+    ScreenshotPointAnnotation, ScreenshotRectAnnotation
 from crossbench.benchmarks.loading.point import Point
 from crossbench.parse import NumberParser
 

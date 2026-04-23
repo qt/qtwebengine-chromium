@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, ClassVar, Optional, Type
 
 from typing_extensions import override
 
-from crossbench.action_runner.action.action import (ACTION_TIMEOUT, Action,
-                                                    ActionT)
+from crossbench.action_runner.action.action import ACTION_TIMEOUT, Action, \
+    ActionT
 from crossbench.action_runner.action.action_type import ActionType
 from crossbench.parse import ObjectParser, PathParser
 from crossbench.replacements import Replacements
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
   from crossbench.config import ConfigParser
   from crossbench.runner.run import Run
   from crossbench.types import JsonDict
+
 
 class JsAction(Action):
   TYPE: ClassVar[ActionType] = ActionType.JS

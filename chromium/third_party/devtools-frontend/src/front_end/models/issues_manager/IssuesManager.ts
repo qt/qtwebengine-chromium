@@ -25,6 +25,7 @@ import {Events} from './IssuesManagerEvents.js';
 import {LowTextContrastIssue} from './LowTextContrastIssue.js';
 import {MixedContentIssue} from './MixedContentIssue.js';
 import {PartitioningBlobURLIssue} from './PartitioningBlobURLIssue.js';
+import {PermissionElementIssue} from './PermissionElementIssue.js';
 import {PropertyRuleIssue} from './PropertyRuleIssue.js';
 import {QuirksModeIssue} from './QuirksModeIssue.js';
 import {SharedArrayBufferIssue} from './SharedArrayBufferIssue.js';
@@ -33,14 +34,13 @@ import {SourceFrameIssuesManager} from './SourceFrameIssuesManager.js';
 import {SRIMessageSignatureIssue} from './SRIMessageSignatureIssue.js';
 import {StylesheetLoadingIssue} from './StylesheetLoadingIssue.js';
 import {UnencodedDigestIssue} from './UnencodedDigestIssue.js';
-import {UserReidentificationIssue} from './UserReidentificationIssue.js';
 
 export {Events} from './IssuesManagerEvents.js';
 
 let issuesManagerInstance: IssuesManager|null = null;
 
 function createIssuesForBlockedByResponseIssue(
-    issuesModel: SDK.IssuesModel.IssuesModel,
+    issuesModel: SDK.IssuesModel.IssuesModel|null,
     inspectorIssue: Protocol.Audits.InspectorIssue): CrossOriginEmbedderPolicyIssue[] {
   const blockedByResponseIssueDetails = inspectorIssue.details.blockedByResponseIssueDetails;
   if (!blockedByResponseIssueDetails) {
@@ -55,7 +55,7 @@ function createIssuesForBlockedByResponseIssue(
 
 const issueCodeHandlers = new Map<
     Protocol.Audits.InspectorIssueCode,
-    (model: SDK.IssuesModel.IssuesModel, inspectorIssue: Protocol.Audits.InspectorIssue) => Issue[]>([
+    (model: SDK.IssuesModel.IssuesModel|null, inspectorIssue: Protocol.Audits.InspectorIssue) => Issue[]>([
   [
     Protocol.Audits.InspectorIssueCode.CookieIssue,
     CookieIssue.fromInspectorIssue,
@@ -146,8 +146,8 @@ const issueCodeHandlers = new Map<
     UnencodedDigestIssue.fromInspectorIssue,
   ],
   [
-    Protocol.Audits.InspectorIssueCode.UserReidentificationIssue,
-    UserReidentificationIssue.fromInspectorIssue,
+    Protocol.Audits.InspectorIssueCode.PermissionElementIssue,
+    PermissionElementIssue.fromInspectorIssue,
   ],
 ]);
 
@@ -156,7 +156,7 @@ const issueCodeHandlers = new Map<
  * Handlers are simple functions hard-coded into a map.
  */
 export function createIssuesFromProtocolIssue(
-    issuesModel: SDK.IssuesModel.IssuesModel, inspectorIssue: Protocol.Audits.InspectorIssue): Issue[] {
+    issuesModel: SDK.IssuesModel.IssuesModel|null, inspectorIssue: Protocol.Audits.InspectorIssue): Issue[] {
   const handler = issueCodeHandlers.get(inspectorIssue.code);
   if (handler) {
     return handler(issuesModel, inspectorIssue);

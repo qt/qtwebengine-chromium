@@ -58,6 +58,7 @@ _BLANK_PAGE_HTML: Final = "<html></html>"
 _BLANK_PAGE_DATA_URL: Final = (
     f"data:text/html;charset=utf-8,{url_helper.quote(_BLANK_PAGE_HTML)}")
 
+
 class BaseURLSplashScreen(SplashScreen, metaclass=abc.ABCMeta):
 
   def __init__(self, timeout: float = 2) -> None:

@@ -74,6 +74,14 @@ class VariationsSafeSeedStore {
   // Side-effect: If the read fails, clears the prefs associated with the seed.
   virtual void ReadSeedData(
       SeedReaderWriter::ReadSeedDataCallback done_callback) = 0;
+
+  // Allows the safe seed to be purged from memory after being persisted. This
+  // will cause next reads to potentially have to read from disk.
+  virtual void AllowToPurgeSeedDataFromMemory() = 0;
+
+  // Calls `done_callback` with the stored seed info for debugging.
+  virtual void GetStoredSeedInfoForDebugging(
+      base::OnceCallback<void(StoredSeedInfo)> done_callback) = 0;
 };
 
 }  // namespace variations

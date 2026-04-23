@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#include "base/feature_list.h"
 #include "base/values.h"
 #include "components/prefs/pref_member.h"
 #include "components/safe_browsing/core/common/features.h"
@@ -154,6 +153,11 @@ inline constexpr char kSafeBrowsingHashRealTimeOhttpExpirationTime[] =
 inline constexpr char kSafeBrowsingHashRealTimeOhttpKey[] =
     "safebrowsing.hash_real_time_ohttp_key";
 
+// The URL that was used to fetch the Oblivious HTTP key. This is only used to
+// determine if the key needs to be refetched because the URL changed.
+inline constexpr char kSafeBrowsingHashRealTimeOhttpKeyFetchUrl[] =
+    "safebrowsing.hash_real_time_ohttp_key_fetch_url";
+
 // Boolean indicating whether users can receive surveys.
 inline constexpr char kSafeBrowsingSurveysEnabled[] =
     "safebrowsing.surveys_enabled";
@@ -200,7 +204,8 @@ inline constexpr char kAccountTailoredSecurityShownNotification[] =
     "safebrowsing.aesb_shown_notification";
 
 // A boolean indicating if Enhanced Protection was enabled in sync with
-// account tailored security.
+// account tailored security. This value will only ever be true if Enhanced
+// Protection is enabled and it was enabled through the Tailored Security flow.
 inline constexpr char kEnhancedProtectionEnabledViaTailoredSecurity[] =
     "safebrowsing.esb_enabled_via_tailored_security";
 
@@ -373,6 +378,11 @@ enum PasswordProtectionTrigger {
 // numeric values should never be reused.
 // A Java counterpart will be generated for this enum.
 // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser.safe_browsing
+//
+// Must be kept in sync with the SafeBrowsingSetting enum located in
+// chrome/browser/resources/settings/privacy_page/security/security_page.ts
+// and chrome/browser/resources/settings/privacy_page/safe_browsing_types.ts
+// LINT.IfChange(SafeBrowsingState)
 enum class SafeBrowsingState {
   // The user is not opted into Safe Browsing.
   NO_SAFE_BROWSING = 0,
@@ -383,6 +393,19 @@ enum class SafeBrowsingState {
 
   kMaxValue = ENHANCED_PROTECTION,
 };
+
+// LINT.ThenChange(/chrome/browser/resources/settings/privacy_page/safe_browsing_types.ts:SafeBrowsingSetting)
+
+// Must be kept in sync with the SecuritySettingsBundle enum located in
+// chrome/browser/resources/settings/privacy_page/security/security_page_v2.js.
+// LINT.IfChange(SecuritySettingsBundleSetting)
+enum class SecuritySettingsBundleSetting {
+  // Standard bundle with default settings.
+  STANDARD = 0,
+  // Enhanced bundle with most secure settings selected.
+  ENHANCED = 1,
+};
+// LINT.ThenChange(/chrome/browser/resources/settings/privacy_page/security/security_page_v2.ts:SecuritySettingsBundleSetting)
 
 SafeBrowsingState GetSafeBrowsingState(const PrefService& prefs);
 
@@ -410,13 +433,6 @@ bool IsExtendedReportingOptInAllowed(const PrefService& prefs);
 // regardless of which specific one is set.
 bool IsExtendedReportingEnabled(const PrefService& prefs);
 
-// Returns whether Safe Browsing Extended Reporting is currently enabled.
-// This function does not check the Safe Browsing Extended Reporting deprecation
-// flag, kExtendedReportingRemovePrefDependency, so that the ping manager will
-// keep sending CSBRR pings.
-// TODO(crbug.com/336547987): Remove this temporary function when the mitigation
-// is implemented and the deprecation flag is removed.
-bool IsExtendedReportingEnabledBypassDeprecationFlag(const PrefService& prefs);
 
 // Returns whether the active Extended Reporting pref is currently managed by
 // enterprise policy, meaning the user can't change it.

@@ -1,0 +1,24 @@
+# Copyright 2020 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("../../../scripts/build/typescript/typescript.gni")
+
+ts_e2e_library("performance") {
+  sources = [
+    "landing-page.test.ts",
+    "multiple-traces.test.ts",
+    "recording.test.ts",
+    "revealing-insights.test.ts",
+    "selector-stats-tracing.test.ts",
+    "settings-throttle-change.test.ts",
+    "timeline-js-line-level-profile.test.ts",
+    "timeline/treeview.test.ts",
+    "trace-app.test.ts",
+    "wasm/performance_profiling.test.ts",
+  ]
+  deps = [
+    "../helpers",
+    "../shared",
+  ]
+}

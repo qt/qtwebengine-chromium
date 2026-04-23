@@ -110,6 +110,9 @@ TF_BUILTIN(DebugBreakTrampoline, CodeStubAssembler) {
 
   BIND(&tailcall_to_shared);
   // Tail call into code object on the SharedFunctionInfo.
+  // TODO(https://crbug.com/451355210, ishell): consider removing this
+  // duplicate implementation in favour of returning code object from above
+  // runtime calls once non-leaptering code is removed.
   TNode<Code> code = GetSharedFunctionInfoCode(shared);
 
   // TailCallJSCode will take care of parameter count validation between the
@@ -1452,23 +1455,10 @@ void Builtins::Generate_BaselineLeaveFrame(MacroAssembler* masm) {
 #endif  // V8_ENABLE_SPARKPLUG
 }
 
-#if defined(V8_ENABLE_MAGLEV) && !defined(V8_ENABLE_LEAPTIERING)
-void Builtins::Generate_MaglevOptimizeCodeOrTailCallOptimizedCodeSlot(
-    MacroAssembler* masm) {
-  using D = MaglevOptimizeCodeOrTailCallOptimizedCodeSlotDescriptor;
-  Register flags = D::GetRegisterParameter(D::kFlags);
-  Register feedback_vector = D::GetRegisterParameter(D::kFeedbackVector);
-  Register temporary = D::GetRegisterParameter(D::kTemporary);
-  masm->AssertFeedbackVector(feedback_vector, temporary);
-  masm->OptimizeCodeOrTailCallOptimizedCodeSlot(flags, feedback_vector);
-  masm->Trap();
-}
-#else
 void Builtins::Generate_MaglevOptimizeCodeOrTailCallOptimizedCodeSlot(
     MacroAssembler* masm) {
   masm->Trap();
 }
-#endif  // V8_ENABLE_MAGLEV && !V8_ENABLE_LEAPTIERING
 
 #ifndef V8_ENABLE_MAGLEV
 // static
@@ -1651,11 +1641,9 @@ TF_BUILTIN(InstantiateAsmJs, JSTrampolineAssembler) {
 #ifdef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
   auto dispatch_handle =
       UncheckedParameter<JSDispatchHandleT>(Descriptor::kDispatchHandle);
-#elif defined(V8_ENABLE_LEAPTIERING)
+#else
   TNode<JSDispatchHandleT> dispatch_handle = ReinterpretCast<JSDispatchHandleT>(
       LoadJSFunctionDispatchHandle(function));
-#else
-  auto dispatch_handle = InvalidDispatchHandleConstant();
 #endif
 
   // This builtin is used on functions with different parameter counts.

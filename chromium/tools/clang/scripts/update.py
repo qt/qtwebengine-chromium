@@ -39,8 +39,8 @@ import zlib
 # These fields are written by //tools/clang/scripts/upload_revision.py, and
 # should not be changed manually.
 # They are also read by build/config/compiler/BUILD.gn.
-CLANG_REVISION = 'llvmorg-22-init-8940-g4d4cb757'
-CLANG_SUB_REVISION = 4
+CLANG_REVISION = 'llvmorg-22-init-14273-gea10026b'
+CLANG_SUB_REVISION = 2
 
 PACKAGE_VERSION = '%s-%s' % (CLANG_REVISION, CLANG_SUB_REVISION)
 RELEASE_VERSION = '22'
@@ -191,11 +191,21 @@ def DownloadAndUnpack(url, output_dir, path_prefixes=None, is_known_zip=False):
       zipfile.ZipFile(f).extractall(path=output_dir)
     else:
       t = tarfile.open(mode='r:*', fileobj=f)
-      members = None
+      members = t.getmembers()
       if path_prefixes is not None:
         members = [m for m in t.getmembers()
                    if any(m.name.startswith(p) for p in path_prefixes)]
       t.extractall(path=output_dir, members=members)
+
+      # Don't set mtime based on the archive metadata; see crbug.com/450551220
+      # The nicest way to do this would be by passing a filter to extractall,
+      # but that functionality is not available in macOS system Python (3.9.6).
+      for m in members:
+        # Confusingly, this checks if you're allowed to _not_ follow symlinks.
+        if os.utime in os.supports_follow_symlinks:
+          os.utime(os.path.join(output_dir, m.name), follow_symlinks=False)
+        else:
+          os.utime(os.path.join(output_dir, m.name))
 
 
 def GetPlatformUrlPrefix(host_os):
@@ -278,13 +288,20 @@ def UpdatePackage(package_name,
   # TODO(hans): Create a clang-win-runtime package and use separate DEPS hook.
   target_os = []
   if package_name == 'clang':
-    try:
-      GCLIENT_CONFIG = os.path.join(os.path.dirname(CHROMIUM_DIR), '.gclient')
-      env = {}
-      exec (open(GCLIENT_CONFIG).read(), env, env)
-      target_os = env.get('target_os', target_os)
-    except:
-      pass
+    # Probe for .gclient in the src dir or its parent (crbug.com/462493895).
+    # Some projects (ANGLE) keep it in the src dir, others (Chromium) in its
+    # parent.
+    for gclient_config in [
+        os.path.join(CHROMIUM_DIR, '.gclient'),
+        os.path.join(CHROMIUM_DIR, '..', '.gclient')
+    ]:
+      try:
+        env = {}
+        exec(open(gclient_config).read(), env, env)
+        target_os = env.get('target_os', target_os)
+        break
+      except:
+        pass
 
   if os.path.exists(OLD_STAMP_FILE):
     # Delete the old stamp file so it doesn't look like an old version of clang

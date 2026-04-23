@@ -20,7 +20,6 @@ if TYPE_CHECKING:
   from crossbench.path import AnyPathLike, LocalPath
   from crossbench.plt.base import Platform
 
-
 _PLATFORM_NAME_LOOKUP: Final[dict[tuple[str, str], str]] = {
     ("win", "ia32"): "win32",
     ("win", "x64"): "win64",

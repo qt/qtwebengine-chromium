@@ -44,6 +44,7 @@ if (has_nasm_deps) {
 
     inputs = [
       "$platform_config_root/config.asm",
+      "$platform_config_root/config_components.asm",
 
       # Sets visibility hidden for cglobal functions. Explicitly included
       # to avoid overlooking changes to this file in incremental builds.
@@ -179,6 +180,10 @@ config("ffmpeg_warnings") {
 
       # codec_internal.h forward declares some enums.
       "-Wno-microsoft-enum-forward-reference",
+
+      # libavutil/arm/cpu.c now defines some kernel header values without
+      # checking if they are already defined, such as HWCAP_ARM_VFP.
+      "-Wno-macro-redefined",
     ]
 
     if (target_cpu == "arm" || target_cpu == "arm64" ||

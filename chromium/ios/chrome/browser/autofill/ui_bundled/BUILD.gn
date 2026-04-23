@@ -137,8 +137,8 @@ source_set("util") {
 source_set("ui_type") {
   sources = [
     "autofill_credit_card_ui_type.h",
-    "autofill_ui_type_util.h",
-    "autofill_ui_type_util.mm",
+    "autofill_credit_card_ui_type_util.h",
+    "autofill_credit_card_ui_type_util.mm",
   ]
   deps = [
     "//base",
@@ -197,7 +197,6 @@ source_set("eg2_tests") {
     "//ios/chrome/browser/infobars/ui_bundled/modals:public",
     "//ios/chrome/browser/metrics/model:eg_test_support+eg2",
     "//ios/chrome/browser/signin/model:fake_system_identity",
-    "//ios/chrome/common/ui/confirmation_alert:constants",
     "//ios/chrome/test:eg_test_support+eg2",
     "//ios/chrome/test/earl_grey:eg_test_support+eg2",
     "//ios/testing/earl_grey:eg_test_support+eg2",
@@ -220,6 +219,7 @@ source_set("eg_app_support+eg2") {
   ]
   deps = [
     ":common",
+    ":coordinator",
     "//base",
     "//base/test:test_support",
     "//components/application_locale_storage",
@@ -234,6 +234,7 @@ source_set("eg_app_support+eg2") {
     "//ios/chrome/browser/shared/model/application_context",
     "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/common/ui/reauthentication",
+    "//ios/chrome/common/ui/reauthentication:mock_reauthentication_module",
     "//ios/chrome/test/app:test_support",
     "//ios/public/provider/chrome/browser/risk_data:risk_data_api",
     "//ios/web/public",

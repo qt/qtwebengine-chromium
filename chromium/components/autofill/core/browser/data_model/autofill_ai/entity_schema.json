@@ -1,3 +1,14 @@
+// Copyright 2025 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// CAUTION: EntityTypes and AttributeTypes are encoded as C++ enums.
+// At least the numeric EntityType values are emitted in metrics.
+//
+// Please:
+// - Add new EntityTypes only at the bottom.
+// - Run `tools/metrics/histograms/update_autofill_enums.py` after adding
+//   a new EntityType.
 [
   {
     "name": "Passport",
@@ -14,7 +25,6 @@
     "merge constraints": "import constraints",
     "strike keys": "import constraints",
     "disambiguation order": [ "Name", "Country" ],
-    "syncable": false,
     "read only": false
   },
   {
@@ -28,7 +38,6 @@
     "merge constraints": "import constraints",
     "strike keys": "import constraints",
     "disambiguation order": [ "Name", "State" ],
-    "syncable": false,
     "read only": false
   },
   {
@@ -43,7 +52,6 @@
     "merge constraints": "import constraints",
     "strike keys": "import constraints",
     "disambiguation order": [ "Make", "Model", "Year", "Owner" ],
-    "syncable": false,
     "read only": false
   },
   {
@@ -57,7 +65,6 @@
     "merge constraints": "import constraints",
     "strike keys": "import constraints",
     "disambiguation order": [ "Name", "Country" ],
-    "syncable": false,
     "experiment feature": "AutofillAiNationalIdCard",
     "excluded geo-ips": [ "IN" ],
     "read only": false
@@ -73,7 +80,6 @@
     "merge constraints": "import constraints",
     "strike keys": "import constraints",
     "disambiguation order": [ "Name" ],
-    "syncable": false,
     "experiment feature": "AutofillAiKnownTravelerNumber",
     "read only": false
   },
@@ -88,20 +94,22 @@
     "merge constraints": "import constraints",
     "strike keys": "import constraints",
     "disambiguation order": [ "Name" ],
-    "syncable": false,
     "experiment feature": "AutofillAiRedressNumber",
     "read only": false
   },
   {
     "name": "Flight Reservation",
-    "attributes": [ "Flight number", "Ticket number", "Confirmation code", "Passenger name", "Departure airport", "Arrival airport"],
+    "attributes": [ "Flight number", "Ticket number", "Confirmation code", "Passenger name", "Departure airport", "Arrival airport", "Departure date"],
     "obfuscated attributes": [],
-    "required fields": "any",
+    "required fields": [
+      [ "Flight number" ],
+      [ "Ticket number" ],
+      [ "Confirmation code" ]
+    ],
     "import constraints": [],
     "merge constraints": [],
     "strike keys": [],
-    "disambiguation order": [ "Departure airport", "Arrival airport" ],
-    "syncable": true,
+    "disambiguation order": [ "Departure airport", "Arrival airport", "Departure date", "Passenger name", "Flight number" ],
     "experiment feature": "AutofillAiWalletFlightReservation",
     "read only": true
   }

@@ -121,3 +121,53 @@ meson msys2:
     - C:\msys64\usr\bin\bash -c "meson build $env:MESON_ARGS &&
       ninja -C build &&
       ninja -C build test"
+
+MinGW dllexport static:
+  stage: test
+  image: "docker.io/mstorsjo/llvm-mingw:latest"
+  needs:
+    - job: build-meson static expat
+      artifacts: false
+  script:
+    - export PATH="/root/.local/bin:$PATH"
+    - export PKG_CONFIG_PATH="/packaging/lib/pkgconfig"
+    - export ARCH=x86_64
+    - apt-get update -qq
+    - apt-get install -qqy --no-install-recommends git pkgconf ninja-build pipx
+    - pipx install meson
+    - |-
+      cat <<_E_> mingw64-cross.ini
+      [binaries]
+      c = '$ARCH-w64-mingw32-clang'
+      cpp = '$ARCH-w64-mingw32-clang++'
+      ar = '$ARCH-w64-mingw32-ar'
+      ld = '$ARCH-w64-mingw32-ld'
+      strip = '$ARCH-w64-mingw32-strip'
+      pkg-config = 'pkg-config'
+      windres = '$ARCH-w64-mingw32-windres'
+      
+      [host_machine]
+      system = 'windows'
+      cpu_family = '$ARCH'
+      cpu = '$ARCH'
+      endian = 'little'
+      _E_
+    - cat mingw64-cross.ini
+    - meson setup build
+        --cross-file=mingw64-cross.ini
+        --prefix=/packaging
+        --default-library=static
+        -Ddoc=disabled
+        -Dnls=disabled
+        -Dtests=disabled
+        -Dtools=disabled &&
+      meson compile -C build &&
+      meson install -C build
+    - cd /packaging
+    - |-
+      cat <<_E_> test.c
+      #include <fontconfig/fontconfig.h>
+      __declspec(dllexport) int foo(){return FcInit();}
+      _E_
+    - $ARCH-w64-mingw32-clang -shared test.c -obin/libfoo.dll $(pkg-config fontconfig --cflags --libs) -Wl,--output-def,lib/libfoo.def
+    - grep -zqv "FcPatternAdd" lib/libfoo.def && echo "Success!" || (cat lib/libfoo.def && exit 1)

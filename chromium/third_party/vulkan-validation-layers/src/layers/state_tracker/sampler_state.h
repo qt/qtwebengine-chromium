@@ -18,8 +18,8 @@
  */
 #pragma once
 #include "state_tracker/state_object.h"
+#include <string>
 #include <vulkan/utility/vk_safe_struct.hpp>
-#include "utils/image_utils.h"
 
 // Note: some of the types in this header are needed by both the DescriptorSet and Pipeline
 // state objects. It is helpful to have a separate header to avoid circular #include madness.
@@ -28,31 +28,27 @@ struct DescriptorSlot {
     uint32_t binding;
 
     DescriptorSlot(uint32_t s, uint32_t b) : set(s), binding(b) {}
-};
 
-inline bool operator==(const DescriptorSlot &lhs, const DescriptorSlot &rhs) noexcept {
-    return lhs.set == rhs.set && lhs.binding == rhs.binding;
-}
+    bool operator==(const DescriptorSlot &other) const;
+    size_t Hash() const;
+};
 
 struct SamplerUsedByImage {
     DescriptorSlot sampler_slot;
     uint32_t sampler_index;
-};
 
-inline bool operator==(const SamplerUsedByImage &a, const SamplerUsedByImage &b) noexcept {
-    return a.sampler_slot == b.sampler_slot && a.sampler_index == b.sampler_index;
-}
+    bool operator==(const SamplerUsedByImage &other) const;
+    size_t Hash() const;
+};
 
 namespace std {
 template <>
 struct hash<DescriptorSlot> {
-    size_t operator()(DescriptorSlot slot) const noexcept { return hash<uint32_t>()(slot.set) ^ hash<uint32_t>()(slot.binding); }
+    size_t operator()(DescriptorSlot slot) const noexcept { return slot.Hash(); }
 };
 template <>
 struct hash<SamplerUsedByImage> {
-    size_t operator()(SamplerUsedByImage s) const noexcept {
-        return hash<DescriptorSlot>()(s.sampler_slot) ^ hash<uint32_t>()(s.sampler_index);
-    }
+    size_t operator()(SamplerUsedByImage s) const noexcept { return s.Hash(); }
 };
 }  // namespace std
 
@@ -64,15 +60,11 @@ class Sampler : public StateObject, public SubStateManager<SamplerSubState> {
     const vku::safe_VkSamplerCreateInfo safe_create_info;
     const VkSamplerCreateInfo &create_info;
 
-    const VkSamplerYcbcrConversion samplerConversion;
+    // VK_NULL_HANDLE if it doesn't have one chained in the pNext at creation time
+    const VkSamplerYcbcrConversion sampler_conversion;
     const VkSamplerCustomBorderColorCreateInfoEXT customCreateInfo;
 
-    Sampler(const VkSampler handle, const VkSamplerCreateInfo *pCreateInfo)
-        : StateObject(handle, kVulkanObjectTypeSampler),
-          safe_create_info(pCreateInfo),
-          create_info(*safe_create_info.ptr()),
-          samplerConversion(GetConversion(pCreateInfo)),
-          customCreateInfo(GetCustomCreateInfo(pCreateInfo)) {}
+    Sampler(const VkSampler handle, const VkSamplerCreateInfo *pCreateInfo);
 
     void Destroy() override;
     void NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) override;
@@ -119,20 +111,19 @@ inline void Sampler::NotifyInvalidate(const StateObject::NodeList &invalid_nodes
 
 class SamplerYcbcrConversion : public StateObject {
   public:
+    const vku::safe_VkSamplerYcbcrConversionCreateInfo safe_create_info;
+    const VkSamplerYcbcrConversionCreateInfo &create_info;
+
     const VkFormatFeatureFlags2 format_features;
-    const VkFormat format;
-    const VkFilter chromaFilter;
     const uint64_t external_format;
 
-    SamplerYcbcrConversion(VkSamplerYcbcrConversion handle, const VkSamplerYcbcrConversionCreateInfo *info,
-                           VkFormatFeatureFlags2 features)
-        : StateObject(handle, kVulkanObjectTypeSamplerYcbcrConversion),
-          format_features(features),
-          format(info->format),
-          chromaFilter(info->chromaFilter),
-          external_format(GetExternalFormat(info->pNext)) {}
+    SamplerYcbcrConversion(VkSamplerYcbcrConversion handle, const VkSamplerYcbcrConversionCreateInfo *pCreateInfo,
+                           VkFormatFeatureFlags2 features);
 
     VkSamplerYcbcrConversion VkHandle() const { return handle_.Cast<VkSamplerYcbcrConversion>(); }
+
+    bool operator!=(const SamplerYcbcrConversion &rhs) const;
+    std::string Describe() const;
 };
 
 }  // namespace vvl

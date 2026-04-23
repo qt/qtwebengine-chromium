@@ -31,11 +31,13 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_INSPECTOR_INSPECTOR_NETWORK_AGENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_INSPECTOR_INSPECTOR_NETWORK_AGENT_H_
 
+#include <memory>
 #include <optional>
 
 #include "base/containers/span.h"
 #include "base/containers/span_or_size.h"
 #include "base/unguessable_token.h"
+#include "components/url_pattern/simple_url_pattern_matcher.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/inspector/inspected_frames.h"
 #include "third_party/blink/renderer/core/inspector/inspector_base_agent.h"
@@ -58,6 +60,10 @@ class WebSocketHandshakeRequest;
 }  // namespace blink
 }  // namespace mojom
 }  // namespace network
+
+namespace url_pattern {
+class SimpleUrlPatternMatcher;
+}
 
 namespace blink {
 
@@ -259,6 +265,12 @@ class CORE_EXPORT InspectorNetworkAgent final
                                     std::optional<String> remote_addr,
                                     std::optional<uint16_t> remote_port);
 
+  void DirectUDPSocketJoinedMulticastGroup(uint64_t identifier,
+                                           const String& ip_address);
+
+  void DirectUDPSocketLeftMulticastGroup(uint64_t identifier,
+                                         const String& ip_address);
+
   void SetDevToolsIds(ResourceRequest& request, const FetchInitiatorInfo&);
   void IsCacheDisabled(bool* is_cache_disabled) const;
   void ShouldApplyDevtoolsCookieSettingOverrides(
@@ -287,6 +299,8 @@ class CORE_EXPORT InspectorNetworkAgent final
           matches) override;
 
   protocol::Response setBlockedURLs(
+      std::unique_ptr<protocol::Array<protocol::Network::BlockPattern>>
+          url_patterns,
       std::unique_ptr<protocol::Array<String>> urls) override;
   protocol::Response replayXHR(const String& request_id) override;
   protocol::Response streamResourceContent(
@@ -384,11 +398,21 @@ class CORE_EXPORT InspectorNetworkAgent final
 
   HashSet<String> streaming_request_ids_;
 
+  struct URLPatternMatcher {
+    std::unique_ptr<::url_pattern::SimpleUrlPatternMatcher> matcher;
+    bool block;
+
+    static URLPatternMatcher Create(const String& pattern, bool block);
+  };
+
+  Vector<URLPatternMatcher> blocked_pattern_matchers_;
+
   HeapHashSet<Member<XMLHttpRequest>> replay_xhrs_;
   InspectorAgentState::Boolean enabled_;
   InspectorAgentState::Boolean cache_disabled_;
   InspectorAgentState::Boolean bypass_service_worker_;
   InspectorAgentState::BooleanMap blocked_urls_;
+  InspectorAgentState::Bytes blocked_patterns_cbor_;
   InspectorAgentState::StringMap extra_request_headers_;
   InspectorAgentState::Boolean attach_debug_stack_enabled_;
   InspectorAgentState::Integer total_buffer_size_;

@@ -5,15 +5,16 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as Root from '../../core/root/root.js';
-import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 
 import {debugLog} from './debug.js';
 
 export const DELAY_BEFORE_SHOWING_RESPONSE_MS = 500;
 export const AIDA_REQUEST_DEBOUNCE_TIMEOUT_MS = 200;
 
-// TODO(b/404796739): Remove these definitions of AgentOptions and RequestOptions and
-// use the existing ones which are used for AI assistance panel agents.
+/**
+ * TODO(b/404796739): Remove these definitions of AgentOptions and RequestOptions and
+ * use the existing ones which are used for AI assistance panel agents.
+ **/
 interface AgentOptions {
   aidaClient: Host.AidaClient.AidaClient;
   serverSideLoggingEnabled?: boolean;
@@ -30,8 +31,22 @@ interface CachedRequest {
   response: Host.AidaClient.CompletionResponse;
 }
 
+export interface Callbacks {
+  getSelectionHead: () => number;
+  getCompletionHint: () => string | undefined | null;
+  setAiAutoCompletion: (args: {
+    text: string,
+    from: number,
+    startTime: number,
+    onImpression: (rpcGlobalId: Host.AidaClient.RpcGlobalId, latency: number, sampleId?: number) => void,
+    clearCachedRequest: () => void,
+    rpcGlobalId?: Host.AidaClient.RpcGlobalId,
+    sampleId?: number,
+  }|null) => void;
+}
+
 /* clang-format off */
-const consoleAdditionalContextFileContent = `/**
+export const consoleAdditionalContextFileContent = `/**
  * This file describes the execution environment of the Chrome DevTools Console.
  * The code is JavaScript, but with special global functions and variables.
  * Top-level await is available.
@@ -139,24 +154,24 @@ const console = {
  *    the suggestion is displayed.
  */
 export class AiCodeCompletion extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
-  #editor: TextEditor.TextEditor.TextEditor;
   #stopSequences: string[];
   #renderingTimeout?: number;
   #aidaRequestCache?: CachedRequest;
+  // TODO(b/445394511): Remove panel from the class
   #panel: ContextFlavor;
+  #callbacks?: Callbacks;
 
   readonly #sessionId: string = crypto.randomUUID();
   readonly #aidaClient: Host.AidaClient.AidaClient;
   readonly #serverSideLoggingEnabled: boolean;
 
-  constructor(
-      opts: AgentOptions, editor: TextEditor.TextEditor.TextEditor, panel: ContextFlavor, stopSequences?: string[]) {
+  constructor(opts: AgentOptions, panel: ContextFlavor, callbacks?: Callbacks, stopSequences?: string[]) {
     super();
     this.#aidaClient = opts.aidaClient;
     this.#serverSideLoggingEnabled = opts.serverSideLoggingEnabled ?? false;
-    this.#editor = editor;
     this.#panel = panel;
     this.#stopSequences = stopSequences ?? [];
+    this.#callbacks = callbacks;
   }
 
   #debouncedRequestAidaSuggestion = Common.Debouncer.debounce(
@@ -169,8 +184,8 @@ export class AiCodeCompletion extends Common.ObjectWrapper.ObjectWrapper<EventTy
 
   #buildRequest(
       prefix: string, suffix: string,
-      inferenceLanguage: Host.AidaClient.AidaInferenceLanguage = Host.AidaClient.AidaInferenceLanguage.JAVASCRIPT):
-      Host.AidaClient.CompletionRequest {
+      inferenceLanguage: Host.AidaClient.AidaInferenceLanguage = Host.AidaClient.AidaInferenceLanguage.JAVASCRIPT,
+      additionalFiles?: Host.AidaClient.AdditionalFile[]): Host.AidaClient.CompletionRequest {
     const userTier = Host.AidaClient.convertToUserTierEnum(this.#userTier);
     function validTemperature(temperature: number|undefined): number|undefined {
       return typeof temperature === 'number' && temperature >= 0 ? temperature : undefined;
@@ -178,13 +193,15 @@ export class AiCodeCompletion extends Common.ObjectWrapper.ObjectWrapper<EventTy
     // As a temporary fix for b/441221870 we are prepending a newline for each prefix.
     prefix = '\n' + prefix;
 
-    const additionalFiles = this.#panel === ContextFlavor.CONSOLE ? [{
-      path: 'devtools-console-context.js',
-      content: consoleAdditionalContextFileContent,
-      included_reason: Host.AidaClient.Reason.RELATED_FILE,
-    }] :
-                                                                    undefined;
-
+    let additionalContextFiles = additionalFiles ?? undefined;
+    if (!additionalContextFiles) {
+      additionalContextFiles = this.#panel === ContextFlavor.CONSOLE ? [{
+        path: 'devtools-console-context.js',
+        content: consoleAdditionalContextFileContent,
+        included_reason: Host.AidaClient.Reason.RELATED_FILE,
+      }] :
+                                                                       undefined;
+    }
     return {
       client: Host.AidaClient.CLIENT_NAME,
       prefix,
@@ -201,7 +218,7 @@ export class AiCodeCompletion extends Common.ObjectWrapper.ObjectWrapper<EventTy
         user_tier: userTier,
         client_version: Root.Runtime.getChromeVersion(),
       },
-      additional_files: additionalFiles,
+      additional_files: additionalContextFiles,
     };
   }
 
@@ -237,7 +254,7 @@ export class AiCodeCompletion extends Common.ObjectWrapper.ObjectWrapper<EventTy
     // `currentHint` is the portion of a standard autocomplete suggestion that the user has not yet typed.
     // For example, if the user types `document.queryS` and the autocomplete suggests `document.querySelector`,
     // the `currentHint` is `elector`.
-    const currentHintInMenu = this.#editor.editor.plugin(TextEditor.Config.showCompletionHint)?.currentHint;
+    const currentHintInMenu = this.#callbacks?.getCompletionHint();
     // TODO(ergunsh): We should not do this check here. Instead, the AI code suggestions should be provided
     // as it is to the view plugin. The view plugin should choose which one to use based on the completion hint
     // and selected completion.
@@ -255,10 +272,10 @@ export class AiCodeCompletion extends Common.ObjectWrapper.ObjectWrapper<EventTy
 
   async #generateSampleForRequest(request: Host.AidaClient.CompletionRequest, cursor: number): Promise<{
     suggestionText: string,
-    sampleId: number,
     fromCache: boolean,
     citations: Host.AidaClient.Citation[],
     rpcGlobalId?: Host.AidaClient.RpcGlobalId,
+    sampleId?: number,
   }|null> {
     const {response, fromCache} = await this.#completeCodeCached(request);
     debugLog('At cursor position', cursor, {request, response, fromCache});
@@ -319,21 +336,19 @@ export class AiCodeCompletion extends Common.ObjectWrapper.ObjectWrapper<EventTy
       } = sampleResponse;
       const remainingDelay = Math.max(DELAY_BEFORE_SHOWING_RESPONSE_MS - (performance.now() - startTime), 0);
       this.#renderingTimeout = window.setTimeout(() => {
-        const currentCursorPosition = this.#editor.editor.state.selection.main.head;
+        const currentCursorPosition = this.#callbacks?.getSelectionHead();
         if (currentCursorPosition !== cursorPositionAtRequest) {
           this.dispatchEventToListeners(Events.RESPONSE_RECEIVED, {});
           return;
         }
-        this.#editor.dispatch({
-          effects: TextEditor.Config.setAiAutoCompleteSuggestion.of({
-            text: suggestionText,
-            from: cursorPositionAtRequest,
-            rpcGlobalId,
-            sampleId,
-            startTime,
-            onImpression: this.#registerUserImpression.bind(this),
-            clearCachedRequest: this.clearCachedRequest.bind(this),
-          })
+        this.#callbacks?.setAiAutoCompletion({
+          text: suggestionText,
+          from: cursorPositionAtRequest,
+          rpcGlobalId,
+          sampleId,
+          startTime,
+          onImpression: this.registerUserImpression.bind(this),
+          clearCachedRequest: this.clearCachedRequest.bind(this),
         });
 
         if (fromCache) {
@@ -415,7 +430,7 @@ export class AiCodeCompletion extends Common.ObjectWrapper.ObjectWrapper<EventTy
     this.#aidaRequestCache = {request, response};
   }
 
-  #registerUserImpression(rpcGlobalId: Host.AidaClient.RpcGlobalId, sampleId: number, latency: number): void {
+  registerUserImpression(rpcGlobalId: Host.AidaClient.RpcGlobalId, latency: number, sampleId?: number): void {
     const seconds = Math.floor(latency / 1_000);
     const remainingMs = latency % 1_000;
     const nanos = Math.floor(remainingMs * 1_000_000);
@@ -441,7 +456,7 @@ export class AiCodeCompletion extends Common.ObjectWrapper.ObjectWrapper<EventTy
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiCodeCompletionSuggestionDisplayed);
   }
 
-  registerUserAcceptance(rpcGlobalId: Host.AidaClient.RpcGlobalId, sampleId: number): void {
+  registerUserAcceptance(rpcGlobalId: Host.AidaClient.RpcGlobalId, sampleId?: number): void {
     void this.#aidaClient.registerClientEvent({
       corresponding_aida_rpc_global_id: rpcGlobalId,
       disable_user_content_logging: true,
@@ -467,14 +482,42 @@ export class AiCodeCompletion extends Common.ObjectWrapper.ObjectWrapper<EventTy
     this.#debouncedRequestAidaSuggestion(prefix, suffix, cursorPositionAtRequest, inferenceLanguage);
   }
 
+  async completeCode(
+      prefix: string, suffix: string, cursorPositionAtRequest: number,
+      inferenceLanguage?: Host.AidaClient.AidaInferenceLanguage,
+      additionalFiles?: Host.AidaClient.AdditionalFile[]): Promise<{
+    response: Host.AidaClient.CompletionResponse | null,
+    fromCache: boolean,
+  }> {
+    const request = this.#buildRequest(prefix, suffix, inferenceLanguage, additionalFiles);
+    const {response, fromCache} = await this.#completeCodeCached(request);
+
+    debugLog('At cursor position', cursorPositionAtRequest, {request, response, fromCache});
+    if (!response) {
+      return {response: null, fromCache: false};
+    }
+
+    return {response, fromCache};
+  }
+
   remove(): void {
     if (this.#renderingTimeout) {
       clearTimeout(this.#renderingTimeout);
       this.#renderingTimeout = undefined;
     }
-    this.#editor.dispatch({
-      effects: TextEditor.Config.setAiAutoCompleteSuggestion.of(null),
-    });
+    this.#callbacks?.setAiAutoCompletion(null);
+  }
+
+  static isAiCodeCompletionEnabled(locale: string): boolean {
+    if (!locale.startsWith('en-')) {
+      return false;
+    }
+    const aidaAvailability = Root.Runtime.hostConfig.aidaAvailability;
+    if (!aidaAvailability || aidaAvailability.blockedByGeo || aidaAvailability.blockedByAge ||
+        aidaAvailability.blockedByEnterprisePolicy) {
+      return false;
+    }
+    return Boolean(aidaAvailability.enabled && Root.Runtime.hostConfig.devToolsAiCodeCompletion?.enabled);
   }
 }
 

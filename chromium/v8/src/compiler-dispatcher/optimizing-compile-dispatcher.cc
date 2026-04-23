@@ -220,6 +220,13 @@ bool OptimizingCompileTaskExecutor::TryQueueForOptimization(
     job_handle_->NotifyConcurrencyIncrease();
     return true;
   } else {
+    if (v8_flags.trace_concurrent_recompilation) {
+      OptimizedCompilationInfo* info = job->compilation_info();
+      DirectHandle<JSFunction> function(*info->closure(), isolate);
+      PrintF("  ** Failed to enqueue a job for");
+      ShortPrint(*function);
+      PrintF("\n");
+    }
     return false;
   }
 }
@@ -342,7 +349,7 @@ void OptimizingCompileDispatcher::InstallOptimizedFunctions() {
     }
     // Discard code compiled for a discarded native context without
     // finalization.
-    if (function->native_context()->global_object()->IsDetached(isolate_)) {
+    if (function->native_context()->IsDetached()) {
       Compiler::DisposeTurbofanCompilationJob(isolate_, job.get());
       continue;
     }

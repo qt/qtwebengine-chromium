@@ -10,7 +10,7 @@ import("//build/config/python.gni")
 import("//build/config/ui.gni")
 import("//build/nocompile.gni")
 import("//build/toolchain/toolchain.gni")
-import("//content/common/features.gni")
+import("//content/public/common/features.gni")
 import("//media/media_options.gni")
 import("//printing/buildflags/buildflags.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
@@ -57,6 +57,7 @@ import("//third_party/blink/renderer/core/mojo/build.gni")
 import("//third_party/blink/renderer/core/navigation_api/build.gni")
 import("//third_party/blink/renderer/core/offscreencanvas/build.gni")
 import("//third_party/blink/renderer/core/origin_trials/build.gni")
+import("//third_party/blink/renderer/core/overscroll/build.gni")
 import("//third_party/blink/renderer/core/page/build.gni")
 import("//third_party/blink/renderer/core/paint/build.gni")
 import("//third_party/blink/renderer/core/patching/build.gni")
@@ -240,6 +241,20 @@ blink_python_runner("make_deprecation_info") {
   ]
 }
 
+rust_static_library("xml_ffi") {
+  allow_unsafe = true  # Needed for FFI that underpins the `cxx` crate.
+  crate_root = "xml/parser/xml_ffi.rs"
+  sources = [
+    "xml/parser/entities.rs",
+    crate_root,
+  ]
+  cxx_bindings = [ crate_root ]
+  deps = [
+    "//third_party/rust/cxx/v1:lib",
+    "//third_party/rust/xml/v1:lib",
+  ]
+}
+
 component("core") {
   output_name = "blink_core"
 
@@ -317,6 +332,7 @@ component("core") {
   sources +=
       rebase_path(blink_core_sources_offscreencanvas, "", "offscreencanvas")
   sources += rebase_path(blink_core_sources_origin_trials, "", "origin_trials")
+  sources += rebase_path(blink_core_sources_overscroll, "", "overscroll")
   sources += rebase_path(blink_core_sources_page, "", "page")
   sources += rebase_path(blink_core_sources_paint, "", "paint")
   sources +=
@@ -389,6 +405,7 @@ component("core") {
   deps = [
     ":generate_eventhandler_names",
     ":make_deprecation_info",
+    ":xml_ffi",
     "//base",
     "//components/attribution_reporting",
     "//components/attribution_reporting:mojom_blink",
@@ -420,6 +437,7 @@ component("core") {
     "//third_party/blink/public/strings:generate_permission_element_strings_mono_grd",
     "//third_party/blink/public/strings:permission_element_generated_strings",
     "//third_party/blink/public/strings:permission_element_strings_grit",
+    "//third_party/rust/xml/v1:lib",
     "//tools/v8_context_snapshot:buildflags",
     "//ui/base/cursor/mojom:cursor_type_blink",
     "//ui/base/dragdrop/mojom:mojom_blink",
@@ -491,7 +509,7 @@ blink_core_sources("core_hot") {
 
   deps = [
     ":buildflags",
-    "//components/miracle_parameter/common",
+    ":xml_ffi",
     "//services/metrics/public/cpp:ukm_builders",
     "//third_party/blink/public:image_resources_grit",
     "//third_party/blink/public/strings",
@@ -1100,6 +1118,24 @@ make_names("make_core_generated_shadow_element_names") {
   output_dir = "$blink_core_output_dir/html/shadow"
 }
 
+code_generator("make_core_generated_ax_utilities") {
+  script = "../build/scripts/make_ax_utilities.py"
+  json_inputs = [ "html/aria_properties.json5" ]
+  templates = [
+    "../build/scripts/templates/ax_utilities_generated.h.tmpl",
+    "../build/scripts/templates/ax_utilities_generated_attributes.cc.tmpl",
+    "../build/scripts/templates/ax_utilities_generated_roles.cc.tmpl",
+    "../build/scripts/templates/ax_utilities_generated_naming.cc.tmpl",
+  ]
+  other_inputs = [ "../build/scripts/aria_properties.py" ]
+  outputs = [
+    "$blink_core_output_dir/accessibility/ax_utilities_generated.h",
+    "$blink_core_output_dir/accessibility/ax_utilities_generated_attributes.cc",
+    "$blink_core_output_dir/accessibility/ax_utilities_generated_roles.cc",
+    "$blink_core_output_dir/accessibility/ax_utilities_generated_naming.cc",
+  ]
+}
+
 # make_qualified_names ---------------------------------------------------------
 
 make_qualified_names("make_core_generated_xlink_names") {
@@ -1262,6 +1298,7 @@ blink_python_runner("make_core_generated_web_origin_trials") {
 # target.
 targets_generating_sources = [
   ":make_core_generated_atrule_names",
+  ":make_core_generated_ax_utilities",
   ":make_core_generated_computed_style_base",
   ":make_core_generated_computed_style_initial_values",
   ":make_core_generated_css_primitive_value_unit_trie",
@@ -1469,6 +1506,7 @@ source_set("unit_tests") {
       rebase_path(blink_core_tests_permissions_policy, "", "permissions_policy")
   sources +=
       rebase_path(blink_core_tests_resize_observer, "", "resize_observer")
+  sources += rebase_path(blink_core_tests_overscroll, "", "overscroll")
   sources += rebase_path(blink_core_tests_route_matching, "", "route_matching")
   sources += rebase_path(blink_core_tests_sanitizer, "", "sanitizer")
   sources += rebase_path(blink_core_tests_scheduler, "", "scheduler")
@@ -1500,6 +1538,7 @@ source_set("unit_tests") {
   deps = [
     ":core",
     ":element_locator_proto",
+    ":fuzztest_utils",
     ":unit_test_support",
     "//cc",
     "//components/autofill/core/common:features",
@@ -1701,6 +1740,43 @@ source_set("unit_test_support") {
     "//third_party/blink/renderer/platform/testing/data/third_party/Noto/NotoNaskhArabic-regular.woff2",
     "//third_party/blink/web_tests/external/wpt/fonts/mplus-1p-regular.woff",
   ]
+}
+
+source_set("fuzztest_utils") {
+  testonly = true
+
+  sources = [
+    "testing/fuzztest_utils/aria_domains.cc",
+    "testing/fuzztest_utils/aria_domains.h",
+    "testing/fuzztest_utils/common_domains.cc",
+    "testing/fuzztest_utils/common_domains.h",
+    "testing/fuzztest_utils/css_domains.cc",
+    "testing/fuzztest_utils/css_domains.h",
+    "testing/fuzztest_utils/dom_scenario.cc",
+    "testing/fuzztest_utils/dom_scenario.h",
+    "testing/fuzztest_utils/dom_scenario_runner.cc",
+    "testing/fuzztest_utils/dom_scenario_runner.h",
+    "testing/fuzztest_utils/html_domains.cc",
+    "testing/fuzztest_utils/html_domains.h",
+    "testing/fuzztest_utils/mathml_domains.cc",
+    "testing/fuzztest_utils/mathml_domains.h",
+    "testing/fuzztest_utils/svg_domains.cc",
+    "testing/fuzztest_utils/svg_domains.h",
+  ]
+
+  configs += [
+    ":blink_core_pch",
+    "//third_party/blink/renderer:config",
+    "//third_party/blink/renderer:inside_blink",
+  ]
+
+  deps = [
+    ":core",
+    ":unit_test_support",
+    "//testing/gtest",
+  ]
+
+  public_deps = [ "//third_party/fuzztest" ]
 }
 
 # Fuzzer for blink::StyleSheetContents

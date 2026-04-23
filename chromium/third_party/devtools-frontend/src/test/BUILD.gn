@@ -10,7 +10,6 @@ group("test") {
     ":run",
     ":unittests",
     "e2e",
-    "e2e_non_hosted",
     "perf",
     "shared",
   ]
@@ -21,6 +20,7 @@ group("unittests") {
     "../front_end:test_inputs",
     "../front_end:unittests",
     "../inspector_overlay:unittests",
+    "../mcp:foundation_unittests",
     "shared",
     "unit:karma",
   ]

@@ -391,18 +391,18 @@ std::pair<bool, CXFA_LocaleValue::ValueType> PatternStringType(
   wsPattern.MakeLower();
   const wchar_t* pData = wsPattern.c_str();
   int32_t iLength = wsPattern.GetLength();
-  int32_t iIndex = 0;
+  int32_t index = 0;
   bool bSingleQuotation = false;
   UNSAFE_TODO({
-    while (iIndex < iLength) {
-      wchar_t wsPatternChar = pData[iIndex];
+    while (index < iLength) {
+      wchar_t wsPatternChar = pData[index];
       if (wsPatternChar == 0x27) {
         bSingleQuotation = !bSingleQuotation;
-        iIndex++;
+        index++;
         continue;
       }
       if (bSingleQuotation) {
-        iIndex++;
+        index++;
         continue;
       }
 
@@ -418,19 +418,19 @@ std::pair<bool, CXFA_LocaleValue::ValueType> PatternStringType(
         return {false, CXFA_LocaleValue::ValueType::kFloat};
       }
       if (wsPatternChar == 'y' || wsPatternChar == 'j') {
-        iIndex++;
+        index++;
         wchar_t timePatternChar;
-        while (iIndex < iLength) {
-          timePatternChar = pData[iIndex];
+        while (index < iLength) {
+          timePatternChar = pData[index];
           if (timePatternChar == 0x27) {
             bSingleQuotation = !bSingleQuotation;
-            iIndex++;
+            index++;
             continue;
           }
           if (!bSingleQuotation && timePatternChar == 't') {
             return {false, CXFA_LocaleValue::ValueType::kDateTime};
           }
-          iIndex++;
+          index++;
         }
         return {false, CXFA_LocaleValue::ValueType::kDate};
       }
@@ -442,7 +442,7 @@ std::pair<bool, CXFA_LocaleValue::ValueType> PatternStringType(
                  wsPatternChar == '.') {
         type = CXFA_LocaleValue::ValueType::kFloat;
       }
-      iIndex++;
+      index++;
     }
     return {false, type};
   });
@@ -718,9 +718,9 @@ WideString EncodeURL(const ByteString& bsURL) {
     if (ch <= 0x1f || (ch >= 0x7f && ch <= 0xff) ||
         pdfium::Contains(kStrUnsafe, ch) ||
         pdfium::Contains(kStrReserved, ch)) {
-      int32_t iIndex = ch / 16;
-      encode_buffer[1] = kStrCode[iIndex];
-      encode_buffer[2] = kStrCode[ch - iIndex * 16];
+      int32_t index = ch / 16;
+      encode_buffer[1] = kStrCode[index];
+      encode_buffer[2] = kStrCode[ch - index * 16];
       wsResultBuf << WideStringView(encode_buffer);
       continue;
     }
@@ -741,21 +741,21 @@ WideString EncodeURL(const ByteString& bsURL) {
       break;
     }
 
-    int32_t iIndex = 0;
+    int32_t index = 0;
     if (iLen % 2 != 0) {
       encode_buffer[1] = '0';
       encode_buffer[2] = wsBuffer[iLen - 1];
-      iIndex = iLen - 2;
+      index = iLen - 2;
     } else {
       encode_buffer[1] = wsBuffer[iLen - 1];
       encode_buffer[2] = wsBuffer[iLen - 2];
-      iIndex = iLen - 3;
+      index = iLen - 3;
     }
     wsResultBuf << WideStringView(encode_buffer);
-    while (iIndex > 0) {
-      encode_buffer[1] = wsBuffer[iIndex];
-      encode_buffer[2] = wsBuffer[iIndex - 1];
-      iIndex -= 2;
+    while (index > 0) {
+      encode_buffer[1] = wsBuffer[index];
+      encode_buffer[2] = wsBuffer[index - 1];
+      index -= 2;
       wsResultBuf << WideStringView(encode_buffer);
     }
   }
@@ -778,9 +778,9 @@ WideString EncodeHTML(const ByteString& bsHTML) {
     } else if (ch >= 32 && ch <= 126) {
       wsResultBuf.AppendChar(static_cast<wchar_t>(ch));
     } else if (ch < 256) {
-      int32_t iIndex = ch / 16;
-      encode_buffer[3] = kStrCode[iIndex];
-      encode_buffer[4] = kStrCode[ch - iIndex * 16];
+      int32_t index = ch / 16;
+      encode_buffer[3] = kStrCode[index];
+      encode_buffer[4] = kStrCode[ch - index * 16];
       encode_buffer[5] = ';';
       wsResultBuf << WideStringView(encode_buffer).First(6);
     } else if (ch < 65536) {
@@ -837,9 +837,9 @@ WideString EncodeXML(const ByteString& bsXML) {
         if (ch >= 32 && ch <= 126) {
           wsResultBuf.AppendChar(static_cast<wchar_t>(ch));
         } else if (ch < 256) {
-          int32_t iIndex = ch / 16;
-          encode_buffer[3] = kStrCode[iIndex];
-          encode_buffer[4] = kStrCode[ch - iIndex * 16];
+          int32_t index = ch / 16;
+          encode_buffer[3] = kStrCode[index];
+          encode_buffer[4] = kStrCode[ch - index * 16];
           encode_buffer[5] = ';';
           wsResultBuf << WideStringView(encode_buffer).First(6);
         } else if (ch < 65536) {
@@ -892,73 +892,73 @@ ByteString TrillionUS(ByteStringView bsData) {
   }
 
   ByteString strBuf;
-  int32_t iIndex = 0;
+  int32_t index = 0;
   UNSAFE_TODO({
     if (iFirstCount == 3) {
-      if (pData[iIndex] != '0') {
-        strBuf += kCapUnits[pData[iIndex] - '0'];
+      if (pData[index] != '0') {
+        strBuf += kCapUnits[pData[index] - '0'];
         strBuf += kComm[0];
       }
-      if (pData[iIndex + 1] == '0') {
-        strBuf += kCapUnits[pData[iIndex + 2] - '0'];
+      if (pData[index + 1] == '0') {
+        strBuf += kCapUnits[pData[index + 2] - '0'];
       } else {
-        if (pData[iIndex + 1] > '1') {
-          strBuf += kLastTens[pData[iIndex + 1] - '2'];
+        if (pData[index + 1] > '1') {
+          strBuf += kLastTens[pData[index + 1] - '2'];
           strBuf += "-";
-          strBuf += kUnits[pData[iIndex + 2] - '0'];
-        } else if (pData[iIndex + 1] == '1') {
-          strBuf += kTens[pData[iIndex + 2] - '0'];
-        } else if (pData[iIndex + 1] == '0') {
-          strBuf += kCapUnits[pData[iIndex + 2] - '0'];
+          strBuf += kUnits[pData[index + 2] - '0'];
+        } else if (pData[index + 1] == '1') {
+          strBuf += kTens[pData[index + 2] - '0'];
+        } else if (pData[index + 1] == '0') {
+          strBuf += kCapUnits[pData[index + 2] - '0'];
         }
       }
-      iIndex += 3;
+      index += 3;
     } else if (iFirstCount == 2) {
-      if (pData[iIndex] == '0') {
-        strBuf += kCapUnits[pData[iIndex + 1] - '0'];
+      if (pData[index] == '0') {
+        strBuf += kCapUnits[pData[index + 1] - '0'];
       } else {
-        if (pData[iIndex] > '1') {
-          strBuf += kLastTens[pData[iIndex] - '2'];
+        if (pData[index] > '1') {
+          strBuf += kLastTens[pData[index] - '2'];
           strBuf += "-";
-          strBuf += kUnits[pData[iIndex + 1] - '0'];
-        } else if (pData[iIndex] == '1') {
-          strBuf += kTens[pData[iIndex + 1] - '0'];
-        } else if (pData[iIndex] == '0') {
-          strBuf += kCapUnits[pData[iIndex + 1] - '0'];
+          strBuf += kUnits[pData[index + 1] - '0'];
+        } else if (pData[index] == '1') {
+          strBuf += kTens[pData[index + 1] - '0'];
+        } else if (pData[index] == '0') {
+          strBuf += kCapUnits[pData[index + 1] - '0'];
         }
       }
-      iIndex += 2;
+      index += 2;
     } else if (iFirstCount == 1) {
-      strBuf += kCapUnits[pData[iIndex] - '0'];
-      ++iIndex;
+      strBuf += kCapUnits[pData[index] - '0'];
+      ++index;
     }
     if (iLength > 3 && iFirstCount > 0) {
       strBuf += kComm[iComm];
       --iComm;
     }
-    while (iIndex < iLength) {
-      if (pData[iIndex] != '0') {
-        strBuf += kCapUnits[pData[iIndex] - '0'];
+    while (index < iLength) {
+      if (pData[index] != '0') {
+        strBuf += kCapUnits[pData[index] - '0'];
         strBuf += kComm[0];
       }
-      if (pData[iIndex + 1] == '0') {
-        strBuf += kCapUnits[pData[iIndex + 2] - '0'];
+      if (pData[index + 1] == '0') {
+        strBuf += kCapUnits[pData[index + 2] - '0'];
       } else {
-        if (pData[iIndex + 1] > '1') {
-          strBuf += kLastTens[pData[iIndex + 1] - '2'];
+        if (pData[index + 1] > '1') {
+          strBuf += kLastTens[pData[index + 1] - '2'];
           strBuf += "-";
-          strBuf += kUnits[pData[iIndex + 2] - '0'];
-        } else if (pData[iIndex + 1] == '1') {
-          strBuf += kTens[pData[iIndex + 2] - '0'];
-        } else if (pData[iIndex + 1] == '0') {
-          strBuf += kCapUnits[pData[iIndex + 2] - '0'];
+          strBuf += kUnits[pData[index + 2] - '0'];
+        } else if (pData[index + 1] == '1') {
+          strBuf += kTens[pData[index + 2] - '0'];
+        } else if (pData[index + 1] == '0') {
+          strBuf += kCapUnits[pData[index + 2] - '0'];
         }
       }
-      if (iIndex < iLength - 3) {
+      if (index < iLength - 3) {
         strBuf += kComm[iComm];
         --iComm;
       }
-      iIndex += 3;
+      index += 3;
     }
     return strBuf;
   });
@@ -971,24 +971,24 @@ ByteString WordUS(ByteStringView bsData, int32_t iStyle) {
 
   int32_t iLength = bsData.GetLength();
   ByteString strBuf;
-  int32_t iIndex = 0;
-  while (iIndex < iLength) {
-    if (bsData[iIndex] == '.') {
+  int32_t index = 0;
+  while (index < iLength) {
+    if (bsData[index] == '.') {
       break;
     }
-    ++iIndex;
+    ++index;
   }
-  int32_t iInteger = iIndex;
-  iIndex = 0;
-  while (iIndex < iInteger) {
-    int32_t iCount = (iInteger - iIndex) % 12;
-    if (!iCount && iInteger - iIndex > 0) {
+  int32_t iInteger = index;
+  index = 0;
+  while (index < iInteger) {
+    int32_t iCount = (iInteger - index) % 12;
+    if (!iCount && iInteger - index > 0) {
       iCount = 12;
     }
 
-    strBuf += TrillionUS(bsData.Substr(iIndex, iCount));
-    iIndex += iCount;
-    if (iIndex < iInteger) {
+    strBuf += TrillionUS(bsData.Substr(index, iCount));
+    index += iCount;
+    if (index < iInteger) {
       strBuf += " Trillion ";
     }
   }
@@ -999,16 +999,16 @@ ByteString WordUS(ByteStringView bsData, int32_t iStyle) {
 
   if (iStyle > 1 && iInteger < iLength) {
     strBuf += " And ";
-    iIndex = iInteger + 1;
-    while (iIndex < iLength) {
-      int32_t iCount = (iLength - iIndex) % 12;
-      if (!iCount && iLength - iIndex > 0) {
+    index = iInteger + 1;
+    while (index < iLength) {
+      int32_t iCount = (iLength - index) % 12;
+      if (!iCount && iLength - index > 0) {
         iCount = 12;
       }
 
-      strBuf += TrillionUS(bsData.Substr(iIndex, iCount));
-      iIndex += iCount;
-      if (iIndex < iLength) {
+      strBuf += TrillionUS(bsData.Substr(index, iCount));
+      index += iCount;
+      if (index < iLength) {
         strBuf += " Trillion ";
       }
     }
@@ -1356,13 +1356,13 @@ v8::LocalVector<v8::Value> ParseResolveResult(
     const CFXJSE_Engine::ResolveResult& resolveNodeRS,
     v8::Local<v8::Value> pParentValue,
     bool* bAttribute) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pHostObject);
-  v8::Isolate* pIsolate = pContext->GetIsolate();
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pHostObject);
+  v8::Isolate* pIsolate = context->GetIsolate();
   v8::LocalVector<v8::Value> resultValues(pIsolate);
 
   if (resolveNodeRS.type == CFXJSE_Engine::ResolveResult::Type::kNodes) {
     *bAttribute = false;
-    CFXJSE_Engine* pScriptContext = pContext->GetDocument()->GetScriptContext();
+    CFXJSE_Engine* pScriptContext = context->GetDocument()->GetScriptContext();
     for (auto& pObject : resolveNodeRS.objects) {
       resultValues.push_back(
           pScriptContext->GetOrCreateJSBindingFromMap(pObject.Get()));
@@ -1558,9 +1558,9 @@ void CFXJSE_FormCalcContext::Min(
 void CFXJSE_FormCalcContext::Mod(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 2) {
-    pContext->ThrowParamCountMismatchException("Mod");
+    context->ThrowParamCountMismatchException("Mod");
     return;
   }
 
@@ -1574,14 +1574,14 @@ void CFXJSE_FormCalcContext::Mod(
   std::optional<double> maybe_divisor =
       ExtractDouble(info.GetIsolate(), info[1]);
   if (!maybe_dividend.has_value() || !maybe_divisor.has_value()) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
   double dividend = maybe_dividend.value();
   double divisor = maybe_divisor.value();
   if (divisor == 0.0) {
-    pContext->ThrowDivideByZeroException();
+    context->ThrowDivideByZeroException();
     return;
   }
 
@@ -1593,10 +1593,10 @@ void CFXJSE_FormCalcContext::Mod(
 void CFXJSE_FormCalcContext::Round(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   int32_t argc = info.Length();
   if (argc < 1 || argc > 2) {
-    pContext->ThrowParamCountMismatchException("Round");
+    context->ThrowParamCountMismatchException("Round");
     return;
   }
 
@@ -1607,7 +1607,7 @@ void CFXJSE_FormCalcContext::Round(
 
   std::optional<double> maybe_value = ExtractDouble(info.GetIsolate(), info[0]);
   if (!maybe_value.has_value()) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -1621,7 +1621,7 @@ void CFXJSE_FormCalcContext::Round(
     std::optional<double> maybe_precision =
         ExtractDouble(info.GetIsolate(), info[1]);
     if (!maybe_precision.has_value()) {
-      pContext->ThrowArgumentMismatchException();
+      context->ThrowArgumentMismatchException();
       return;
     }
     double dPrecision = maybe_precision.value();
@@ -1777,9 +1777,9 @@ void CFXJSE_FormCalcContext::IsoDate2Num(
 void CFXJSE_FormCalcContext::IsoTime2Num(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowParamCountMismatchException("IsoTime2Num");
+    context->ThrowParamCountMismatchException("IsoTime2Num");
     return;
   }
 
@@ -1789,7 +1789,7 @@ void CFXJSE_FormCalcContext::IsoTime2Num(
     return;
   }
 
-  CXFA_Document* doc = pContext->GetDocument();
+  CXFA_Document* doc = context->GetDocument();
   CXFA_LocaleMgr* pMgr = doc->GetLocaleMgr();
   ByteString bsArg = ValueToUTF8String(info.GetIsolate(), argOne);
   auto pos = bsArg.Find('T', 0);
@@ -2441,9 +2441,9 @@ ByteString CFXJSE_FormCalcContext::Num2AllTime(CFXJSE_HostObject* pThis,
 void CFXJSE_FormCalcContext::Apr(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException("Apr");
+    context->ThrowParamCountMismatchException("Apr");
     return;
   }
 
@@ -2461,7 +2461,7 @@ void CFXJSE_FormCalcContext::Apr(
   double nPayment = ValueToDouble(info.GetIsolate(), argTwo);
   int nPeriods = GetValidatedPaymentPeriods(info.GetIsolate(), argThree);
   if (nPrincipal <= 0 || nPayment <= 0 || nPeriods == 0) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -2496,9 +2496,9 @@ void CFXJSE_FormCalcContext::Apr(
 void CFXJSE_FormCalcContext::CTerm(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException("CTerm");
+    context->ThrowParamCountMismatchException("CTerm");
     return;
   }
 
@@ -2516,7 +2516,7 @@ void CFXJSE_FormCalcContext::CTerm(
   float nFutureValue = ValueToFloat(info.GetIsolate(), argTwo);
   float nInitAmount = ValueToFloat(info.GetIsolate(), argThree);
   if ((nRate <= 0) || (nFutureValue <= 0) || (nInitAmount <= 0)) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -2528,9 +2528,9 @@ void CFXJSE_FormCalcContext::CTerm(
 void CFXJSE_FormCalcContext::FV(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException("FV");
+    context->ThrowParamCountMismatchException("FV");
     return;
   }
 
@@ -2548,7 +2548,7 @@ void CFXJSE_FormCalcContext::FV(
   double nRate = ValueToDouble(info.GetIsolate(), argTwo);
   int nPeriods = GetValidatedPaymentPeriods(info.GetIsolate(), argThree);
   if (nAmount <= 0 || nRate < 0 || nPeriods == 0) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -2570,9 +2570,9 @@ void CFXJSE_FormCalcContext::FV(
 void CFXJSE_FormCalcContext::IPmt(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 5) {
-    pContext->ThrowParamCountMismatchException("IPmt");
+    context->ThrowParamCountMismatchException("IPmt");
     return;
   }
 
@@ -2597,7 +2597,7 @@ void CFXJSE_FormCalcContext::IPmt(
   float nNumberOfMonths = ValueToFloat(info.GetIsolate(), argFive);
   if ((nPrincipalAmount <= 0) || (nRate <= 0) || (nPayment <= 0) ||
       (nFirstMonth < 0) || (nNumberOfMonths < 0)) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -2631,10 +2631,10 @@ void CFXJSE_FormCalcContext::IPmt(
 void CFXJSE_FormCalcContext::NPV(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   int32_t argc = info.Length();
   if (argc < 2) {
-    pContext->ThrowParamCountMismatchException("NPV");
+    context->ThrowParamCountMismatchException("NPV");
     return;
   }
 
@@ -2646,7 +2646,7 @@ void CFXJSE_FormCalcContext::NPV(
 
   double nRate = ValueToDouble(info.GetIsolate(), argValue);
   if (nRate <= 0) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -2674,9 +2674,9 @@ void CFXJSE_FormCalcContext::NPV(
 void CFXJSE_FormCalcContext::Pmt(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException("Pmt");
+    context->ThrowParamCountMismatchException("Pmt");
     return;
   }
 
@@ -2694,7 +2694,7 @@ void CFXJSE_FormCalcContext::Pmt(
   double nRate = ValueToDouble(info.GetIsolate(), argTwo);
   int nPeriods = GetValidatedPaymentPeriods(info.GetIsolate(), argThree);
   if (nPrincipal <= 0 || nRate <= 0 || nPeriods == 0) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -2706,9 +2706,9 @@ void CFXJSE_FormCalcContext::Pmt(
 void CFXJSE_FormCalcContext::PPmt(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 5) {
-    pContext->ThrowParamCountMismatchException("PPmt");
+    context->ThrowParamCountMismatchException("PPmt");
     return;
   }
 
@@ -2733,7 +2733,7 @@ void CFXJSE_FormCalcContext::PPmt(
   float nNumberOfMonths = ValueToFloat(info.GetIsolate(), argFive);
   if ((nPrincipalAmount <= 0) || (nRate <= 0) || (nPayment <= 0) ||
       (nFirstMonth < 0) || (nNumberOfMonths < 0)) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -2745,7 +2745,7 @@ void CFXJSE_FormCalcContext::PPmt(
   int32_t iEnd =
       std::min(static_cast<int32_t>(nFirstMonth + nNumberOfMonths - 1), iNums);
   if (nPayment < nPrincipalAmount * nRateOfMonth) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -2768,9 +2768,9 @@ void CFXJSE_FormCalcContext::PPmt(
 void CFXJSE_FormCalcContext::PV(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException("PV");
+    context->ThrowParamCountMismatchException("PV");
     return;
   }
 
@@ -2788,7 +2788,7 @@ void CFXJSE_FormCalcContext::PV(
   double nRate = ValueToDouble(info.GetIsolate(), argTwo);
   int nPeriods = GetValidatedPaymentPeriods(info.GetIsolate(), argThree);
   if (nAmount <= 0 || nRate < 0 || nPeriods == 0) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -2800,9 +2800,9 @@ void CFXJSE_FormCalcContext::PV(
 void CFXJSE_FormCalcContext::Rate(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException("Rate");
+    context->ThrowParamCountMismatchException("Rate");
     return;
   }
 
@@ -2820,7 +2820,7 @@ void CFXJSE_FormCalcContext::Rate(
   float nPresent = ValueToFloat(info.GetIsolate(), argTwo);
   int nPeriods = GetValidatedPaymentPeriods(info.GetIsolate(), argThree);
   if (nFuture <= 0 || nPresent < 0 || nPeriods == 0) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -2831,9 +2831,9 @@ void CFXJSE_FormCalcContext::Rate(
 void CFXJSE_FormCalcContext::Term(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException("Term");
+    context->ThrowParamCountMismatchException("Term");
     return;
   }
 
@@ -2851,7 +2851,7 @@ void CFXJSE_FormCalcContext::Term(
   float nRate = ValueToFloat(info.GetIsolate(), argTwo);
   float nFuture = ValueToFloat(info.GetIsolate(), argThree);
   if ((nMount <= 0) || (nRate <= 0) || (nFuture <= 0)) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -2863,10 +2863,10 @@ void CFXJSE_FormCalcContext::Term(
 void CFXJSE_FormCalcContext::Choose(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   int32_t argc = info.Length();
   if (argc < 2) {
-    pContext->ThrowParamCountMismatchException("Choose");
+    context->ThrowParamCountMismatchException("Choose");
     return;
   }
 
@@ -2875,9 +2875,9 @@ void CFXJSE_FormCalcContext::Choose(
     return;
   }
 
-  int32_t iIndex =
+  int32_t index =
       static_cast<int32_t>(ValueToFloat(info.GetIsolate(), info[0]));
-  if (iIndex < 1) {
+  if (index < 1) {
     info.GetReturnValue().SetEmptyString();
     return;
   }
@@ -2896,11 +2896,11 @@ void CFXJSE_FormCalcContext::Choose(
       }
 
       iValueIndex += (iLength - 2);
-      if (iValueIndex >= iIndex) {
+      if (iValueIndex >= index) {
         v8::Local<v8::Value> propertyValue =
             fxv8::ReentrantGetArrayElementHelper(info.GetIsolate(), arr, 1);
         v8::Local<v8::Value> jsValue = fxv8::ReentrantGetArrayElementHelper(
-            info.GetIsolate(), arr, (iLength - 1) - (iValueIndex - iIndex));
+            info.GetIsolate(), arr, (iLength - 1) - (iValueIndex - index));
         v8::Local<v8::Value> newPropertyValue;
         if (fxv8::IsObject(jsValue)) {
           v8::Local<v8::Object> jsObjectValue = jsValue.As<v8::Object>();
@@ -2922,7 +2922,7 @@ void CFXJSE_FormCalcContext::Choose(
       }
     } else {
       iValueIndex++;
-      if (iValueIndex == iIndex) {
+      if (iValueIndex == index) {
         ByteString bsChosen =
             ValueToUTF8String(info.GetIsolate(), argIndexValue);
         info.GetReturnValue().Set(
@@ -3042,13 +3042,13 @@ void CFXJSE_FormCalcContext::If(
 void CFXJSE_FormCalcContext::Eval(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowParamCountMismatchException("Eval");
+    context->ThrowParamCountMismatchException("Eval");
     return;
   }
 
-  v8::Isolate* pIsolate = pContext->GetIsolate();
+  v8::Isolate* pIsolate = context->GetIsolate();
   v8::Local<v8::Value> scriptValue = GetSimpleValue(info, 0);
   ByteString bsUtf8Script = ValueToUTF8String(info.GetIsolate(), scriptValue);
   if (bsUtf8Script.IsEmpty()) {
@@ -3058,10 +3058,10 @@ void CFXJSE_FormCalcContext::Eval(
 
   WideString wsCalcScript = WideString::FromUTF8(bsUtf8Script.AsStringView());
   std::optional<WideTextBuffer> wsJavaScriptBuf =
-      CFXJSE_FormCalcContext::Translate(pContext->GetDocument()->GetHeap(),
+      CFXJSE_FormCalcContext::Translate(context->GetDocument()->GetHeap(),
                                         wsCalcScript.AsStringView());
   if (!wsJavaScriptBuf.has_value()) {
-    pContext->ThrowCompilerErrorException();
+    context->ThrowCompilerErrorException();
     return;
   }
   std::unique_ptr<CFXJSE_Context> pNewContext =
@@ -3078,9 +3078,9 @@ void CFXJSE_FormCalcContext::Eval(
 void CFXJSE_FormCalcContext::Ref(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowParamCountMismatchException("Ref");
+    context->ThrowParamCountMismatchException("Ref");
     return;
   }
 
@@ -3104,14 +3104,14 @@ void CFXJSE_FormCalcContext::Ref(
     v8::Local<v8::Value> jsObjectValue =
         fxv8::ReentrantGetArrayElementHelper(info.GetIsolate(), arr, 2);
     if (!fxv8::IsNull(propertyValue) || fxv8::IsNull(jsObjectValue)) {
-      pContext->ThrowArgumentMismatchException();
+      context->ThrowArgumentMismatchException();
       return;
     }
     values[2] = jsObjectValue;
   } else if (fxv8::IsObject(argOne)) {
     values[2] = argOne;
   } else {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
@@ -3552,9 +3552,9 @@ void CFXJSE_FormCalcContext::Encode(
 void CFXJSE_FormCalcContext::Format(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() < 2) {
-    pContext->ThrowParamCountMismatchException("Format");
+    context->ThrowParamCountMismatchException("Format");
     return;
   }
 
@@ -3564,7 +3564,7 @@ void CFXJSE_FormCalcContext::Format(
   v8::Local<v8::Value> argTwo = GetSimpleValue(info, 1);
   ByteString bsValue = ValueToUTF8String(info.GetIsolate(), argTwo);
 
-  CXFA_Document* doc = pContext->GetDocument();
+  CXFA_Document* doc = context->GetDocument();
   CXFA_LocaleMgr* pMgr = doc->GetLocaleMgr();
   CXFA_Node* pThisNode = ToNode(doc->GetScriptContext()->GetThisObject());
   GCedLocaleIface* pLocale = pThisNode->GetLocale();
@@ -3725,9 +3725,9 @@ void CFXJSE_FormCalcContext::Ltrim(
 void CFXJSE_FormCalcContext::Parse(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 2) {
-    pContext->ThrowParamCountMismatchException("Parse");
+    context->ThrowParamCountMismatchException("Parse");
     return;
   }
 
@@ -3740,7 +3740,7 @@ void CFXJSE_FormCalcContext::Parse(
 
   ByteString bsPattern = ValueToUTF8String(info.GetIsolate(), argOne);
   ByteString bsValue = ValueToUTF8String(info.GetIsolate(), argTwo);
-  CXFA_Document* doc = pContext->GetDocument();
+  CXFA_Document* doc = context->GetDocument();
   CXFA_LocaleMgr* pMgr = doc->GetLocaleMgr();
   CXFA_Node* pThisNode = ToNode(doc->GetScriptContext()->GetThisObject());
   GCedLocaleIface* pLocale = pThisNode->GetLocale();
@@ -4281,13 +4281,13 @@ void CFXJSE_FormCalcContext::WordNum(
 void CFXJSE_FormCalcContext::Get(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowParamCountMismatchException("Get");
+    context->ThrowParamCountMismatchException("Get");
     return;
   }
 
-  CXFA_Document* doc = pContext->GetDocument();
+  CXFA_Document* doc = context->GetDocument();
   if (!doc) {
     return;
   }
@@ -4318,14 +4318,14 @@ void CFXJSE_FormCalcContext::Get(
 void CFXJSE_FormCalcContext::Post(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   int32_t argc = info.Length();
   if (argc < 2 || argc > 5) {
-    pContext->ThrowParamCountMismatchException("Post");
+    context->ThrowParamCountMismatchException("Post");
     return;
   }
 
-  CXFA_Document* doc = pContext->GetDocument();
+  CXFA_Document* doc = context->GetDocument();
   if (!doc) {
     return;
   }
@@ -4366,7 +4366,7 @@ void CFXJSE_FormCalcContext::Post(
           WideString::FromUTF8(bsContentType.AsStringView()),
           WideString::FromUTF8(bsEncode.AsStringView()),
           WideString::FromUTF8(bsHeader.AsStringView()), decodedResponse)) {
-    pContext->ThrowServerDeniedException();
+    context->ThrowServerDeniedException();
     return;
   }
   info.GetReturnValue().Set(fxv8::NewStringHelper(
@@ -4377,14 +4377,14 @@ void CFXJSE_FormCalcContext::Post(
 void CFXJSE_FormCalcContext::Put(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   int32_t argc = info.Length();
   if (argc < 2 || argc > 3) {
-    pContext->ThrowParamCountMismatchException("Put");
+    context->ThrowParamCountMismatchException("Put");
     return;
   }
 
-  CXFA_Document* doc = pContext->GetDocument();
+  CXFA_Document* doc = context->GetDocument();
   if (!doc) {
     return;
   }
@@ -4409,7 +4409,7 @@ void CFXJSE_FormCalcContext::Put(
           WideString::FromUTF8(bsURL.AsStringView()),
           WideString::FromUTF8(bsData.AsStringView()),
           WideString::FromUTF8(bsEncode.AsStringView()))) {
-    pContext->ThrowServerDeniedException();
+    context->ThrowServerDeniedException();
     return;
   }
   info.GetReturnValue().SetEmptyString();
@@ -4420,9 +4420,9 @@ void CFXJSE_FormCalcContext::assign_value_operator(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   v8::Isolate* pIsolate = info.GetIsolate();
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 2) {
-    pContext->ThrowCompilerErrorException();
+    context->ThrowCompilerErrorException();
     return;
   }
   ByteStringView bsFuncName("asgn_val_op");
@@ -4437,13 +4437,13 @@ void CFXJSE_FormCalcContext::assign_value_operator(
       v8::Local<v8::Value> jsValue =
           fxv8::ReentrantGetArrayElementHelper(pIsolate, arr, i);
       if (!fxv8::IsObject(jsValue)) {
-        pContext->ThrowNoDefaultPropertyException(bsFuncName);
+        context->ThrowNoDefaultPropertyException(bsFuncName);
         return;
       }
       v8::Local<v8::Object> jsObjectValue = jsValue.As<v8::Object>();
       if (fxv8::IsNull(propertyValue)) {
         if (!SetObjectDefaultValue(pIsolate, jsObjectValue, rValue)) {
-          pContext->ThrowNoDefaultPropertyException(bsFuncName);
+          context->ThrowNoDefaultPropertyException(bsFuncName);
           return;
         }
       } else {
@@ -4456,7 +4456,7 @@ void CFXJSE_FormCalcContext::assign_value_operator(
     }
   } else if (fxv8::IsObject(lValue)) {
     if (!SetObjectDefaultValue(pIsolate, lValue.As<v8::Object>(), rValue)) {
-      pContext->ThrowNoDefaultPropertyException(bsFuncName);
+      context->ThrowNoDefaultPropertyException(bsFuncName);
       return;
     }
   }
@@ -4789,9 +4789,9 @@ void CFXJSE_FormCalcContext::multiple_operator(
 void CFXJSE_FormCalcContext::divide_operator(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 2) {
-    pContext->ThrowCompilerErrorException();
+    context->ThrowCompilerErrorException();
     return;
   }
 
@@ -4804,7 +4804,7 @@ void CFXJSE_FormCalcContext::divide_operator(
 
   double second = ValueToDouble(info.GetIsolate(), argSecond);
   if (second == 0.0) {
-    pContext->ThrowDivideByZeroException();
+    context->ThrowDivideByZeroException();
     return;
   }
 
@@ -4883,25 +4883,25 @@ void CFXJSE_FormCalcContext::dotdot_accessor(
 void CFXJSE_FormCalcContext::eval_translation(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowParamCountMismatchException("Eval");
+    context->ThrowParamCountMismatchException("Eval");
     return;
   }
 
   v8::Local<v8::Value> argOne = GetSimpleValue(info, 0);
   ByteString bsArg = ValueToUTF8String(info.GetIsolate(), argOne);
   if (bsArg.IsEmpty()) {
-    pContext->ThrowArgumentMismatchException();
+    context->ThrowArgumentMismatchException();
     return;
   }
 
   WideString wsCalcScript = WideString::FromUTF8(bsArg.AsStringView());
   std::optional<WideTextBuffer> wsJavaScriptBuf =
-      CFXJSE_FormCalcContext::Translate(pContext->GetDocument()->GetHeap(),
+      CFXJSE_FormCalcContext::Translate(context->GetDocument()->GetHeap(),
                                         wsCalcScript.AsStringView());
   if (!wsJavaScriptBuf.has_value()) {
-    pContext->ThrowCompilerErrorException();
+    context->ThrowCompilerErrorException();
     return;
   }
   info.GetReturnValue().Set(fxv8::NewStringHelper(
@@ -4929,9 +4929,9 @@ void CFXJSE_FormCalcContext::is_fm_array(
 void CFXJSE_FormCalcContext::get_fm_value(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowCompilerErrorException();
+    context->ThrowCompilerErrorException();
     return;
   }
 
@@ -4992,9 +4992,9 @@ void CFXJSE_FormCalcContext::get_fm_jsobj(
 void CFXJSE_FormCalcContext::fm_var_filter(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowCompilerErrorException();
+    context->ThrowCompilerErrorException();
     return;
   }
 
@@ -5025,7 +5025,7 @@ void CFXJSE_FormCalcContext::fm_var_filter(
   v8::Local<v8::Value> objectValue =
       fxv8::ReentrantGetArrayElementHelper(info.GetIsolate(), arr, 2);
   if (fxv8::IsNull(objectValue)) {
-    pContext->ThrowCompilerErrorException();
+    context->ThrowCompilerErrorException();
     return;
   }
   info.GetReturnValue().Set(argOne);
@@ -5053,34 +5053,34 @@ void CFXJSE_FormCalcContext::concat_fm_object(
 
 // static
 ByteString CFXJSE_FormCalcContext::GenerateSomExpression(ByteStringView bsName,
-                                                         int32_t iIndexFlags,
-                                                         int32_t iIndexValue,
+                                                         int32_t index_flags,
+                                                         int32_t index_value,
                                                          bool bIsStar) {
   if (bIsStar) {
     return ByteString(bsName, "[*]");
   }
 
-  // `iIndexFlags` values are the same as enum class
+  // `index_flags` values are the same as enum class
   // `CXFA_FMIndexExpression::AccessorIndex` values.
-  if (iIndexFlags == 0) {
+  if (index_flags == 0) {
     return ByteString(bsName);
   }
 
-  if (iIndexFlags == 1 || iIndexValue == 0) {
-    return ByteString(bsName, "[") + ByteString::FormatInteger(iIndexValue) +
+  if (index_flags == 1 || index_value == 0) {
+    return ByteString(bsName, "[") + ByteString::FormatInteger(index_value) +
            "]";
   }
 
-  const bool bNegative = iIndexValue < 0;
+  const bool bNegative = index_value < 0;
   ByteString bsSomExp(bsName);
-  if (iIndexFlags == 2) {
+  if (index_flags == 2) {
     bsSomExp += bNegative ? "[-" : "[+";
   } else {
-    DCHECK_EQ(iIndexFlags, 3);
+    DCHECK_EQ(index_flags, 3);
     bsSomExp += bNegative ? "[" : "[-";
   }
 
-  FX_SAFE_INT32 safe_index = iIndexValue;
+  FX_SAFE_INT32 safe_index = index_value;
   if (bNegative) {
     safe_index = -safe_index;
   }
@@ -5142,19 +5142,19 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info,
     bool bDotAccessor) {
-  CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
-  v8::Isolate* pIsolate = pContext->GetIsolate();
+  CFXJSE_FormCalcContext* context = ToFormCalcContext(pThis);
+  v8::Isolate* pIsolate = context->GetIsolate();
   int32_t argc = info.Length();
   if (argc < 4 || argc > 5) {
-    pContext->ThrowCompilerErrorException();
+    context->ThrowCompilerErrorException();
     return;
   }
 
   bool bIsStar = true;
-  int32_t iIndexValue = 0;
+  int32_t index_value = 0;
   if (argc > 4) {
     bIsStar = false;
-    iIndexValue = ValueToInteger(info.GetIsolate(), info[4]);
+    index_value = ValueToInteger(info.GetIsolate(), info[4]);
   }
 
   const ByteString bsName =
@@ -5162,7 +5162,7 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
   const bool bHasNoResolveName = bDotAccessor && bsName.IsEmpty();
   ByteString bsSomExp = GenerateSomExpression(
       bsName.AsStringView(),
-      fxv8::ReentrantToInt32Helper(info.GetIsolate(), info[3]), iIndexValue,
+      fxv8::ReentrantToInt32Helper(info.GetIsolate(), info[3]), index_value,
       bIsStar);
 
   v8::Local<v8::Value> argAccessor = info[0];
@@ -5170,7 +5170,7 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
     v8::Local<v8::Array> arr = argAccessor.As<v8::Array>();
     uint32_t iLength = fxv8::GetArrayLengthHelper(arr);
     if (iLength < 3) {
-      pContext->ThrowArgumentMismatchException();
+      context->ThrowArgumentMismatchException();
       return;
     }
 
@@ -5193,8 +5193,8 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
       }
     }
     if (bAllEmpty) {
-      pContext->ThrowPropertyNotInObjectException(bsName.AsStringView(),
-                                                  bsSomExp.AsStringView());
+      context->ThrowPropertyNotInObjectException(bsName.AsStringView(),
+                                                 bsSomExp.AsStringView());
       return;
     }
 
@@ -5230,8 +5230,8 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
     }
   }
   if (!maybeResult.has_value()) {
-    pContext->ThrowPropertyNotInObjectException(bsName.AsStringView(),
-                                                bsSomExp.AsStringView());
+    context->ThrowPropertyNotInObjectException(bsName.AsStringView(),
+                                               bsSomExp.AsStringView());
     return;
   }
 
@@ -5357,10 +5357,10 @@ bool CFXJSE_FormCalcContext::IsIsoTimeFormat(ByteStringView bsData) {
 
   char szBuffer[3] = {};  // Last char always stays NUL for termination.
   State state = kHour;
-  size_t iIndex = 0;
-  while (iIndex + 1 < iZone) {
-    szBuffer[0] = pData[iIndex];
-    szBuffer[1] = pData[iIndex + 1];
+  size_t index = 0;
+  while (index + 1 < iZone) {
+    szBuffer[0] = pData[index];
+    szBuffer[1] = pData[index + 1];
     if (!FXSYS_IsDecimalDigit(szBuffer[0]) ||
         !FXSYS_IsDecimalDigit(szBuffer[1])) {
       return false;
@@ -5385,22 +5385,22 @@ bool CFXJSE_FormCalcContext::IsIsoTimeFormat(ByteStringView bsData) {
     } else {
       return false;
     }
-    iIndex += 2;
-    if (iIndex < iZone && pData[iIndex] == ':') {
-      ++iIndex;
+    index += 2;
+    if (index < iZone && pData[index] == ':') {
+      ++index;
     }
   }
 
-  if (iIndex < pData.size() && pData[iIndex] == '.') {
+  if (index < pData.size() && pData[index] == '.') {
     static constexpr int kSubSecondLength = 3;
-    if (iIndex + kSubSecondLength >= pData.size()) {
+    if (index + kSubSecondLength >= pData.size()) {
       return false;
     }
 
-    ++iIndex;
+    ++index;
     std::array<char, kSubSecondLength + 1> szMilliSeconds = {};
     for (int j = 0; j < kSubSecondLength; ++j) {
-      char c = pData[iIndex + j];
+      char c = pData[index + j];
       if (!FXSYS_IsDecimalDigit(c)) {
         return false;
       }
@@ -5409,24 +5409,24 @@ bool CFXJSE_FormCalcContext::IsIsoTimeFormat(ByteStringView bsData) {
     if (FXSYS_atoi(szMilliSeconds.data()) >= 1000) {
       return false;
     }
-    iIndex += kSubSecondLength;
+    index += kSubSecondLength;
   }
 
-  if (iIndex < pData.size() && FXSYS_towlower(pData[iIndex]) == 'z') {
+  if (index < pData.size() && FXSYS_towlower(pData[index]) == 'z') {
     return true;
   }
 
-  if (iIndex < pData.size()) {
-    if (pData[iIndex] == '+') {
-      ++iIndex;
-    } else if (pData[iIndex] == '-') {
-      ++iIndex;
+  if (index < pData.size()) {
+    if (pData[index] == '+') {
+      ++index;
+    } else if (pData[index] == '-') {
+      ++index;
     }
   }
   state = kZoneHour;
-  while (iIndex + 1 < pData.size()) {
-    szBuffer[0] = pData[iIndex];
-    szBuffer[1] = pData[iIndex + 1];
+  while (index + 1 < pData.size()) {
+    szBuffer[0] = pData[index];
+    szBuffer[1] = pData[index + 1];
     if (!FXSYS_IsDecimalDigit(szBuffer[0]) ||
         !FXSYS_IsDecimalDigit(szBuffer[1])) {
       return false;
@@ -5445,14 +5445,14 @@ bool CFXJSE_FormCalcContext::IsIsoTimeFormat(ByteStringView bsData) {
     } else {
       return false;
     }
-    iIndex += 2;
-    if (iIndex < pData.size() && pData[iIndex] == ':') {
-      ++iIndex;
+    index += 2;
+    if (index < pData.size() && pData[index] == ':') {
+      ++index;
     }
   }
 
   // Success if all input was processed.
-  return iIndex == pData.size();
+  return index == pData.size();
 }
 
 bool CFXJSE_FormCalcContext::IsIsoDateTimeFormat(ByteStringView bsData,
@@ -5463,19 +5463,19 @@ bool CFXJSE_FormCalcContext::IsIsoDateTimeFormat(ByteStringView bsData,
   *pMonth = 0;
   *pDay = 0;
 
-  size_t iIndex = 0;
-  while (iIndex < bsData.GetLength()) {
-    if (bsData[iIndex] == 'T' || bsData[iIndex] == 't') {
+  size_t index = 0;
+  while (index < bsData.GetLength()) {
+    if (bsData[index] == 'T' || bsData[index] == 't') {
       break;
     }
-    ++iIndex;
+    ++index;
   }
-  if (iIndex == bsData.GetLength() || (iIndex != 8 && iIndex != 10)) {
+  if (index == bsData.GetLength() || (index != 8 && index != 10)) {
     return false;
   }
 
-  ByteStringView date_part = bsData.First(iIndex);
-  ByteStringView time_part = bsData.Substr(iIndex + 1);
+  ByteStringView date_part = bsData.First(index);
+  ByteStringView time_part = bsData.Substr(index + 1);
   return IsIsoDateFormat(date_part, pYear, pMonth, pDay) &&
          IsIsoTimeFormat(time_part);
 }

@@ -36,6 +36,29 @@ namespace device {
 // default-enabled for long enough, based on the removal milestone in their
 // comment.
 
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS)
+// Not yet enabled by default.
+BASE_FEATURE(kPasskeyUnlockManager, base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Not yet enabled by default.
+BASE_FEATURE(kPasskeyUnlockErrorUi, base::FEATURE_DISABLED_BY_DEFAULT);
+
+constexpr base::FeatureParam<PasskeyUnlockErrorUiExperimentArm>::Option
+    kPasskeyUnlockErrorUiExperimentArms[] = {
+        {PasskeyUnlockErrorUiExperimentArm::kUnlock,
+         "text_with_unlock_wording"},
+        {PasskeyUnlockErrorUiExperimentArm::kGet, "text_with_get_wording"},
+        {PasskeyUnlockErrorUiExperimentArm::kVerify,
+         "text_with_verify_wording"},
+};
+constexpr base::FeatureParam<PasskeyUnlockErrorUiExperimentArm>
+    kPasskeyUnlockErrorUiExperimentArm{
+        &kPasskeyUnlockErrorUi, "passkey_unlock_ui_experiment_arm",
+        PasskeyUnlockErrorUiExperimentArm::kVerify,
+        &kPasskeyUnlockErrorUiExperimentArms};
+#endif
+
 #if BUILDFLAG(IS_WIN)
 // Permanent flag
 BASE_FEATURE(kWebAuthUseNativeWinApi,
@@ -47,6 +70,10 @@ BASE_FEATURE(kWebAuthUseNativeWinApi,
 BASE_FEATURE(kWebAuthCableExtensionAnywhere,
              "WebAuthenticationCableExtensionAnywhere",
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+// This is used to enable an experiment to reject WebAuthn requests
+// when actor mode is on.
+BASE_FEATURE(kWebAuthnActorCheck, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enabled in M118. Remove in or after M121.
 BASE_FEATURE(kWebAuthnICloudKeychainForGoogle,
@@ -102,6 +129,13 @@ BASE_FEATURE(kWebAuthnHelloSignal,
              "WebAuthenticationHelloSignal",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_ANDROID)
+// Enabled by default in M144 Remove in or after M146.
+BASE_FEATURE(kWebAuthnAndroidSignal,
+             "WebAuthenticationAndroidSignal",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_ANDROID)
+
 // Disabled by default.
 BASE_FEATURE(kDigitalCredentialsHybridLinking,
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -123,10 +157,10 @@ BASE_FEATURE(kWebAuthnMicrosoftSoftwareUnexportableKeyProvider,
              "WebAuthenticationMicrosoftSoftwareUnexportableKeyProvider",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-// Not yet enabled by default.
+// Default enabled in M144. Remove in or after M147.
 BASE_FEATURE(kWebAuthnSignalApiHidePasskeys,
              "WebAuthenticationSignalApiHidePasskeys",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enabled by default as part of the WebAuthenticationImmediateGet feature. Do
 // not remove before WebAuthenticationImmediateGet is removed.
@@ -197,6 +231,16 @@ BASE_FEATURE(kWebAuthenticationFixWindowsHelloRdp,
 
 // Enabled by default in M142. Remove in or after M145.
 BASE_FEATURE(kWebAuthenticationHashClientDataJsonForEnclave,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enabled by default in M143. Remove in or after M146.
+BASE_FEATURE(kWebAuthnOpportunisticRetrieval, base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enabled by default in M143. Remove in or after M146.
+BASE_FEATURE(kWebAuthenticationWindowsHints, base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enabled by default in M144. Remove in or after M147.
+BASE_FEATURE(kWebAuthnEnableRefreshingStateOfGpmEnclaveController,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 }  // namespace device

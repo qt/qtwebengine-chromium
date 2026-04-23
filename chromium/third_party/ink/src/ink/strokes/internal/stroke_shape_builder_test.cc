@@ -30,6 +30,7 @@
 #include "ink/geometry/mutable_mesh.h"
 #include "ink/geometry/type_matchers.h"
 #include "ink/strokes/input/stroke_input_batch.h"
+#include "ink/strokes/internal/stroke_input_modeler.h"
 #include "ink/strokes/internal/stroke_shape_update.h"
 #include "ink/strokes/internal/stroke_vertex.h"
 #include "ink/types/duration.h"
@@ -55,8 +56,8 @@ TEST(StrokeShapeBuilderTest, DefaultConstructedIsEmpty) {
 
 TEST(StrokeShapeBuilderTest, FirstStartStrokeHasEmptyMeshAndOutline) {
   StrokeShapeBuilder builder;
-  BrushCoat brush_coat{.tip = BrushTip(), .paint = {}};
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat, 10, 0.1);
+  BrushCoat brush_coat;
+  builder.StartStroke(brush_coat, 10, 0.1);
 
   EXPECT_EQ(builder.GetMesh().VertexCount(), 0);
   EXPECT_EQ(builder.GetMesh().TriangleCount(), 0);
@@ -65,11 +66,15 @@ TEST(StrokeShapeBuilderTest, FirstStartStrokeHasEmptyMeshAndOutline) {
 }
 
 TEST(StrokeShapeBuilderTest, EmptyExtendHasEmptyUpdateMeshAndOutline) {
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BrushCoat brush_coat{.tip = BrushTip(), .paint = {}};
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat, 10, 0.1);
+  BrushCoat brush_coat;
+  float brush_epsilon = 0.1;
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(), brush_epsilon);
+  builder.StartStroke(brush_coat, /* brush_size = */ 10, brush_epsilon);
 
-  StrokeShapeUpdate update = builder.ExtendStroke({}, {}, Duration32::Zero());
+  input_modeler.ExtendStroke({}, {}, Duration32::Zero());
+  StrokeShapeUpdate update = builder.ExtendStroke(input_modeler);
 
   EXPECT_EQ(builder.GetMesh().VertexCount(), 0);
   EXPECT_EQ(builder.GetMesh().TriangleCount(), 0);
@@ -82,9 +87,12 @@ TEST(StrokeShapeBuilderTest, EmptyExtendHasEmptyUpdateMeshAndOutline) {
 }
 
 TEST(StrokeShapeBuilderTest, NonEmptyExtend) {
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BrushCoat brush_coat{.tip = BrushTip(), .paint = {}};
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat, 10, 0.1);
+  BrushCoat brush_coat;
+  float brush_epsilon = 0.1;
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(), brush_epsilon);
+  builder.StartStroke(brush_coat, /* brush_size = */ 10, brush_epsilon);
 
   absl::StatusOr<StrokeInputBatch> real_inputs = StrokeInputBatch::Create({
       {.position = {5, 7}, .elapsed_time = Duration32::Zero()},
@@ -98,8 +106,9 @@ TEST(StrokeShapeBuilderTest, NonEmptyExtend) {
   });
   ASSERT_EQ(predicted_inputs.status(), absl::OkStatus());
 
-  StrokeShapeUpdate update =
-      builder.ExtendStroke(*real_inputs, *predicted_inputs, Duration32::Zero());
+  input_modeler.ExtendStroke(*real_inputs, *predicted_inputs,
+                             Duration32::Zero());
+  StrokeShapeUpdate update = builder.ExtendStroke(input_modeler);
 
   EXPECT_NE(builder.GetMesh().VertexCount(), 0);
   EXPECT_NE(builder.GetMesh().TriangleCount(), 0);
@@ -116,7 +125,8 @@ TEST(StrokeShapeBuilderTest, NonEmptyExtend) {
       {.position = {7, 8}, .elapsed_time = Duration32::Seconds(3. / 60)},
   });
   ASSERT_EQ(real_inputs.status(), absl::OkStatus());
-  update = builder.ExtendStroke(*real_inputs, {}, Duration32::Zero());
+  input_modeler.ExtendStroke(*real_inputs, {}, Duration32::Zero());
+  update = builder.ExtendStroke(input_modeler);
 
   EXPECT_NE(builder.GetMesh().VertexCount(), 0);
   EXPECT_NE(builder.GetMesh().TriangleCount(), 0);
@@ -132,15 +142,19 @@ TEST(StrokeShapeBuilderTest, NonEmptyExtend) {
 }
 
 TEST(StrokeShapeBuilderTest, StartAfterExtendEmptiesMeshAndOutline) {
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BrushCoat brush_coat{.tip = BrushTip(), .paint = {}};
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat, 10, 0.1);
+  BrushCoat brush_coat;
+  float brush_epsilon = 0.1;
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(), brush_epsilon);
+  builder.StartStroke(brush_coat, /* brush_size = */ 10, brush_epsilon);
 
   absl::StatusOr<StrokeInputBatch> inputs =
       StrokeInputBatch::Create({{.position = {5, 7}}});
   ASSERT_EQ(inputs.status(), absl::OkStatus());
 
-  builder.ExtendStroke(*inputs, {}, Duration32::Zero());
+  input_modeler.ExtendStroke(*inputs, {}, Duration32::Zero());
+  builder.ExtendStroke(input_modeler);
   ASSERT_NE(builder.GetMesh().VertexCount(), 0);
   ASSERT_NE(builder.GetMesh().TriangleCount(), 0);
   ASSERT_THAT(builder.GetMeshBounds().AsRect(),
@@ -148,7 +162,7 @@ TEST(StrokeShapeBuilderTest, StartAfterExtendEmptiesMeshAndOutline) {
                                 0.0001)));
   ASSERT_THAT(builder.GetOutlines(), ElementsAre(Not(IsEmpty())));
 
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat, 10, 0.1);
+  builder.StartStroke(brush_coat, 10, 0.1);
 
   EXPECT_EQ(builder.GetMesh().VertexCount(), 0);
   EXPECT_EQ(builder.GetMesh().TriangleCount(), 0);
@@ -157,16 +171,19 @@ TEST(StrokeShapeBuilderTest, StartAfterExtendEmptiesMeshAndOutline) {
 }
 
 TEST(StrokeShapeBuilderTest, NonTexturedNonParticleBrushDoesNotHaveSurfaceUvs) {
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BrushCoat brush_coat{.tip = BrushTip{}, .paint = {}};
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat,
-                      /* brush_size = */ 10, /* brush_epsilon = */ 0.1);
+  BrushCoat brush_coat;
+  float brush_epsilon = 0.1;
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(), brush_epsilon);
+  builder.StartStroke(brush_coat, /* brush_size = */ 10, brush_epsilon);
 
   absl::StatusOr<StrokeInputBatch> inputs =
       StrokeInputBatch::Create({{.position = {5, 7}}});
   ASSERT_EQ(inputs.status(), absl::OkStatus());
 
-  builder.ExtendStroke(*inputs, {}, Duration32::Zero());
+  input_modeler.ExtendStroke(*inputs, {}, Duration32::Zero());
+  builder.ExtendStroke(input_modeler);
 
   for (uint32_t i = 0; i < builder.GetMesh().VertexCount(); ++i) {
     EXPECT_THAT(StrokeVertex::GetSurfaceUvFromMesh(builder.GetMesh(), i),
@@ -174,20 +191,24 @@ TEST(StrokeShapeBuilderTest, NonTexturedNonParticleBrushDoesNotHaveSurfaceUvs) {
   }
 }
 
-TEST(StrokeShapeBuilderTest, WindingNonParticleBrushDoesNotHaveSurfaceUvs) {
+TEST(StrokeShapeBuilderTest, StampingNonParticleBrushDoesNotHaveSurfaceUvs) {
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
   BrushCoat brush_coat{
       .tip = BrushTip{},
-      .paint = {.texture_layers = {
-                    {.mapping = BrushPaint::TextureMapping::kWinding}}}};
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat,
-                      /* brush_size = */ 10, /* brush_epsilon = */ 0.1);
+      .paint_preferences = {
+          {.texture_layers = {
+               {.mapping = BrushPaint::TextureMapping::kStamping}}}}};
+  float brush_epsilon = 0.1;
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(), brush_epsilon);
+  builder.StartStroke(brush_coat, /* brush_size = */ 10, brush_epsilon);
 
   absl::StatusOr<StrokeInputBatch> inputs =
       StrokeInputBatch::Create({{.position = {5, 7}}});
   ASSERT_EQ(inputs.status(), absl::OkStatus());
 
-  builder.ExtendStroke(*inputs, {}, Duration32::Zero());
+  input_modeler.ExtendStroke(*inputs, {}, Duration32::Zero());
+  builder.ExtendStroke(input_modeler);
 
   for (uint32_t i = 0; i < builder.GetMesh().VertexCount(); ++i) {
     EXPECT_THAT(StrokeVertex::GetSurfaceUvFromMesh(builder.GetMesh(), i),
@@ -195,83 +216,20 @@ TEST(StrokeShapeBuilderTest, WindingNonParticleBrushDoesNotHaveSurfaceUvs) {
   }
 }
 
-TEST(StrokeShapeBuilderTest,
-     NonTexturedParticleDistanceBrushDoesNotHaveSurfaceUvs) {
+TEST(StrokeShapeBuilderTest, NonTexturedParticleDistanceBrushHasSurfaceUvs) {
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BrushCoat brush_coat{.tip = BrushTip{.particle_gap_distance_scale = 0.05},
-                       .paint = {}};
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat,
-                      /* brush_size = */ 10, /* brush_epsilon = */ 0.1);
+  BrushCoat brush_coat{.tip = BrushTip{.particle_gap_distance_scale = 0.05}};
+  float brush_epsilon = 0.1;
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(), brush_epsilon);
+  builder.StartStroke(brush_coat, /* brush_size = */ 10, brush_epsilon);
 
   absl::StatusOr<StrokeInputBatch> inputs =
       StrokeInputBatch::Create({{.position = {5, 7}}});
   ASSERT_EQ(inputs.status(), absl::OkStatus());
 
-  builder.ExtendStroke(*inputs, {}, Duration32::Zero());
-
-  for (uint32_t i = 0; i < builder.GetMesh().VertexCount(); ++i) {
-    EXPECT_THAT(StrokeVertex::GetSurfaceUvFromMesh(builder.GetMesh(), i),
-                PointEq({0, 0}));
-  }
-}
-
-TEST(StrokeShapeBuilderTest,
-     TiledTextureParticleDistanceBrushDoesNotHaveSurfaceUvs) {
-  StrokeShapeBuilder builder;
-  BrushCoat brush_coat{
-      .tip = BrushTip{.particle_gap_distance_scale = 0.05},
-      .paint = {.texture_layers = {
-                    {.mapping = BrushPaint::TextureMapping::kTiling}}}};
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat,
-                      /* brush_size = */ 10, /* brush_epsilon = */ 0.1);
-
-  absl::StatusOr<StrokeInputBatch> inputs =
-      StrokeInputBatch::Create({{.position = {5, 7}}});
-  ASSERT_EQ(inputs.status(), absl::OkStatus());
-
-  builder.ExtendStroke(*inputs, {}, Duration32::Zero());
-
-  for (uint32_t i = 0; i < builder.GetMesh().VertexCount(); ++i) {
-    EXPECT_THAT(StrokeVertex::GetSurfaceUvFromMesh(builder.GetMesh(), i),
-                PointEq({0, 0}));
-  }
-}
-
-TEST(StrokeShapeBuilderTest,
-     NonWindingParticleDurationBrushDoesNotHaveSurfaceUvs) {
-  StrokeShapeBuilder builder;
-  BrushCoat brush_coat{
-      .tip = BrushTip{.particle_gap_duration = Duration32::Seconds(0.05)},
-      .paint = {}};
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat,
-                      /* brush_size = */ 10, /* brush_epsilon = */ 0.1);
-
-  absl::StatusOr<StrokeInputBatch> inputs =
-      StrokeInputBatch::Create({{.position = {5, 7}}});
-  ASSERT_EQ(inputs.status(), absl::OkStatus());
-
-  builder.ExtendStroke(*inputs, {}, Duration32::Zero());
-
-  for (uint32_t i = 0; i < builder.GetMesh().VertexCount(); ++i) {
-    EXPECT_THAT(StrokeVertex::GetSurfaceUvFromMesh(builder.GetMesh(), i),
-                PointEq({0, 0}));
-  }
-}
-
-TEST(StrokeShapeBuilderTest, WindingParticleDistanceBrushHasSurfaceUvs) {
-  StrokeShapeBuilder builder;
-  BrushCoat brush_coat{
-      .tip = BrushTip{.particle_gap_distance_scale = 0.05},
-      .paint = {.texture_layers = {
-                    {.mapping = BrushPaint::TextureMapping::kWinding}}}};
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat,
-                      /* brush_size = */ 10, /* brush_epsilon = */ 0.1);
-
-  absl::StatusOr<StrokeInputBatch> inputs =
-      StrokeInputBatch::Create({{.position = {5, 7}}});
-  ASSERT_EQ(inputs.status(), absl::OkStatus());
-
-  builder.ExtendStroke(*inputs, {}, Duration32::Zero());
+  input_modeler.ExtendStroke(*inputs, {}, Duration32::Zero());
+  builder.ExtendStroke(input_modeler);
 
   // For strokes that don't use the surface UV, all UV values are set to (0, 0).
   // We test that this isn't the case by finding the envelope; if its width and
@@ -285,20 +243,114 @@ TEST(StrokeShapeBuilderTest, WindingParticleDistanceBrushHasSurfaceUvs) {
   EXPECT_GT(uv_envelope.AsRect()->Height(), 0);
 }
 
-TEST(StrokeShapeBuilderTest, WindingParticleDurationBrushHasSurfaceUvs) {
+TEST(StrokeShapeBuilderTest, TiledTextureParticleDistanceBrushHasSurfaceUvs) {
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
   BrushCoat brush_coat{
-      .tip = BrushTip{.particle_gap_duration = Duration32::Seconds(0.05)},
-      .paint = {.texture_layers = {
-                    {.mapping = BrushPaint::TextureMapping::kWinding}}}};
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat,
-                      /* brush_size = */ 10, /* brush_epsilon = */ 0.1);
+      .tip = BrushTip{.particle_gap_distance_scale = 0.05},
+      .paint_preferences = {
+          {.texture_layers = {
+               {.mapping = BrushPaint::TextureMapping::kTiling}}}}};
+  float brush_epsilon = 0.1;
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(), brush_epsilon);
+  builder.StartStroke(brush_coat, /* brush_size = */ 10, brush_epsilon);
 
   absl::StatusOr<StrokeInputBatch> inputs =
       StrokeInputBatch::Create({{.position = {5, 7}}});
   ASSERT_EQ(inputs.status(), absl::OkStatus());
 
-  builder.ExtendStroke(*inputs, {}, Duration32::Zero());
+  input_modeler.ExtendStroke(*inputs, {}, Duration32::Zero());
+  builder.ExtendStroke(input_modeler);
+
+  // For strokes that don't use the surface UV, all UV values are set to (0, 0).
+  // We test that this isn't the case by finding the envelope; if its width and
+  // height are both greater than zero, than surface UVs must have been set.
+  Envelope uv_envelope;
+  for (uint32_t i = 0; i < builder.GetMesh().VertexCount(); ++i) {
+    uv_envelope.Add(StrokeVertex::GetSurfaceUvFromMesh(builder.GetMesh(), i));
+  }
+  ASSERT_FALSE(uv_envelope.IsEmpty());
+  EXPECT_GT(uv_envelope.AsRect()->Width(), 0);
+  EXPECT_GT(uv_envelope.AsRect()->Height(), 0);
+}
+
+TEST(StrokeShapeBuilderTest, NonStampingParticleDurationBrushHasSurfaceUvs) {
+  StrokeInputModeler input_modeler;
+  StrokeShapeBuilder builder;
+  BrushCoat brush_coat{
+      .tip = BrushTip{.particle_gap_duration = Duration32::Seconds(0.05)}};
+  float brush_epsilon = 0.1;
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(), brush_epsilon);
+  builder.StartStroke(brush_coat, /* brush_size = */ 10, brush_epsilon);
+
+  absl::StatusOr<StrokeInputBatch> inputs =
+      StrokeInputBatch::Create({{.position = {5, 7}}});
+  ASSERT_EQ(inputs.status(), absl::OkStatus());
+
+  input_modeler.ExtendStroke(*inputs, {}, Duration32::Zero());
+  builder.ExtendStroke(input_modeler);
+
+  // For strokes that don't use the surface UV, all UV values are set to (0, 0).
+  // We test that this isn't the case by finding the envelope; if its width and
+  // height are both greater than zero, than surface UVs must have been set.
+  Envelope uv_envelope;
+  for (uint32_t i = 0; i < builder.GetMesh().VertexCount(); ++i) {
+    uv_envelope.Add(StrokeVertex::GetSurfaceUvFromMesh(builder.GetMesh(), i));
+  }
+  ASSERT_FALSE(uv_envelope.IsEmpty());
+  EXPECT_GT(uv_envelope.AsRect()->Width(), 0);
+  EXPECT_GT(uv_envelope.AsRect()->Height(), 0);
+}
+
+TEST(StrokeShapeBuilderTest, StampingParticleDistanceBrushHasSurfaceUvs) {
+  StrokeInputModeler input_modeler;
+  StrokeShapeBuilder builder;
+  BrushCoat brush_coat{
+      .tip = BrushTip{.particle_gap_distance_scale = 0.05},
+      .paint_preferences = {
+          {.texture_layers = {
+               {.mapping = BrushPaint::TextureMapping::kStamping}}}}};
+  float brush_epsilon = 0.1;
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(), brush_epsilon);
+  builder.StartStroke(brush_coat, /* brush_size = */ 10, brush_epsilon);
+
+  absl::StatusOr<StrokeInputBatch> inputs =
+      StrokeInputBatch::Create({{.position = {5, 7}}});
+  ASSERT_EQ(inputs.status(), absl::OkStatus());
+
+  input_modeler.ExtendStroke(*inputs, {}, Duration32::Zero());
+  builder.ExtendStroke(input_modeler);
+
+  // For strokes that don't use the surface UV, all UV values are set to (0, 0).
+  // We test that this isn't the case by finding the envelope; if its width and
+  // height are both greater than zero, than surface UVs must have been set.
+  Envelope uv_envelope;
+  for (uint32_t i = 0; i < builder.GetMesh().VertexCount(); ++i) {
+    uv_envelope.Add(StrokeVertex::GetSurfaceUvFromMesh(builder.GetMesh(), i));
+  }
+  ASSERT_FALSE(uv_envelope.IsEmpty());
+  EXPECT_GT(uv_envelope.AsRect()->Width(), 0);
+  EXPECT_GT(uv_envelope.AsRect()->Height(), 0);
+}
+
+TEST(StrokeShapeBuilderTest, StampingParticleDurationBrushHasSurfaceUvs) {
+  StrokeInputModeler input_modeler;
+  StrokeShapeBuilder builder;
+  BrushCoat brush_coat{
+      .tip = BrushTip{.particle_gap_duration = Duration32::Seconds(0.05)},
+      .paint_preferences = {
+          {.texture_layers = {
+               {.mapping = BrushPaint::TextureMapping::kStamping}}}}};
+  float brush_epsilon = 0.1;
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(), brush_epsilon);
+  builder.StartStroke(brush_coat, /* brush_size = */ 10, brush_epsilon);
+
+  absl::StatusOr<StrokeInputBatch> inputs =
+      StrokeInputBatch::Create({{.position = {5, 7}}});
+  ASSERT_EQ(inputs.status(), absl::OkStatus());
+
+  input_modeler.ExtendStroke(*inputs, {}, Duration32::Zero());
+  builder.ExtendStroke(input_modeler);
 
   // For strokes that don't use the surface UV, all UV values are set to (0, 0).
   // We test that this isn't the case by finding the envelope; if its width and
@@ -314,24 +366,20 @@ TEST(StrokeShapeBuilderTest, WindingParticleDurationBrushHasSurfaceUvs) {
 
 TEST(StrokeShapeBuilderDeathTest, StartWithZeroBrushSize) {
   StrokeShapeBuilder builder;
-  BrushCoat brush_coat{.tip = BrushTip(), .paint = {}};
-  EXPECT_DEATH_IF_SUPPORTED(
-      builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat, 0, 0.1),
-      "");
+  BrushCoat brush_coat{.tip = BrushTip()};
+  EXPECT_DEATH_IF_SUPPORTED(builder.StartStroke(brush_coat, 0, 0.1), "");
 }
 
 TEST(StrokeShapeBuilderDeathTest, StartWithZeroBrushEpsilon) {
   StrokeShapeBuilder builder;
-  BrushCoat brush_coat{.tip = BrushTip(), .paint = {}};
-  EXPECT_DEATH_IF_SUPPORTED(
-      builder.StartStroke(BrushFamily::DefaultInputModel(), brush_coat, 1, 0),
-      "");
+  BrushCoat brush_coat{.tip = BrushTip()};
+  EXPECT_DEATH_IF_SUPPORTED(builder.StartStroke(brush_coat, 1, 0), "");
 }
 
 TEST(StrokeShapeBuilderDeathTest, ExtendWithoutStart) {
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  EXPECT_DEATH_IF_SUPPORTED(builder.ExtendStroke({}, {}, Duration32::Zero()),
-                            "");
+  EXPECT_DEATH_IF_SUPPORTED(builder.ExtendStroke(input_modeler), "");
 }
 
 }  // namespace

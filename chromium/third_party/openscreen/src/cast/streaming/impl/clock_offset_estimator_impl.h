@@ -13,9 +13,10 @@
 #include <utility>
 
 #include "cast/streaming/impl/clock_offset_estimator.h"
-#include "cast/streaming/impl/statistics_defines.h"
+#include "cast/streaming/impl/statistics_common.h"
 #include "cast/streaming/rtp_time.h"
 #include "platform/base/trivial_clock_traits.h"
+#include "util/chrono_helpers.h"
 
 namespace openscreen::cast {
 
@@ -41,11 +42,47 @@ class ClockOffsetEstimatorImpl final : public ClockOffsetEstimator {
   bool GetReceiverOffsetBounds(Clock::duration& frame_bound,
                                Clock::duration& packet_bound) const;
 
-  // Returns the average of the offset bounds for frame and packet events.
-  // Returns nullopt if not enough data is in yet to produce an estimate.
+  // ClockOffsetEstimator overrides.
   std::optional<Clock::duration> GetEstimatedOffset() const final;
+  std::optional<Clock::duration> GetEstimatedLatency() const final;
 
  private:
+  // These values are chosen based on common network conditions.
+  //
+  // Q (process_noise): We expect latency to drift by up to 5ms between
+  // measurements.
+  static constexpr Clock::duration kProcessNoise = milliseconds(5);
+  //
+  // R (measurement_noise): We expect jitter of up to 30ms.
+  static constexpr Clock::duration kMeasurementNoise = milliseconds(30);
+
+  // Simplified 1D Kalman Filter for latency estimation.
+  class KalmanFilter {
+   public:
+    // Q: process_noise - Represents the expected variance of the latency
+    //    itself between time steps. A higher value makes the filter adapt
+    //    more quickly to real changes in latency.
+    // R: measurement_noise - Represents the variance of the measurement
+    //    noise (jitter). A higher value makes the filter trust its own
+    //    prediction more and smooth out noisy measurements.
+    KalmanFilter(Clock::duration process_noise,
+                 Clock::duration measurement_noise);
+    KalmanFilter(KalmanFilter&&) noexcept = default;
+    KalmanFilter& operator=(KalmanFilter&&) = default;
+
+    Clock::duration GetEstimate() const { return estimated_latency_; }
+    bool HasEstimate() const { return has_estimate_; }
+    void Update(Clock::duration measurement);
+
+   private:
+    double q_nanos_squared_;
+    double r_nanos_squared_;
+
+    bool has_estimate_ = false;
+    Clock::duration estimated_latency_{};
+    double error_covariance_nanos_squared_ = 0.0;
+  };
+
   // This helper uses the difference between sent and received event
   // to calculate an upper bound on the difference between the clocks
   // on the sender and receiver. Note that this difference can take
@@ -67,8 +104,8 @@ class ClockOffsetEstimatorImpl final : public ClockOffsetEstimator {
     BoundCalculator& operator=(BoundCalculator&&);
     BoundCalculator& operator=(const BoundCalculator&) = delete;
     ~BoundCalculator();
-    bool has_bound() const { return has_bound_; }
-    Clock::duration bound() const { return bound_; }
+    bool has_bound() const { return filter_.HasEstimate(); }
+    Clock::duration bound() const { return filter_.GetEstimate(); }
 
     void SetSent(RtpTimeTicks rtp,
                  uint16_t packet_id,
@@ -86,8 +123,7 @@ class ClockOffsetEstimatorImpl final : public ClockOffsetEstimator {
 
    private:
     EventMap events_;
-    bool has_bound_ = false;
-    Clock::duration bound_{};
+    KalmanFilter filter_;
   };
 
   // Fixed size storage to store event times for recent frames and packets.

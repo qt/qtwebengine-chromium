@@ -4,16 +4,8 @@
 
 import {SnapshotTester} from './SnapshotTester.js';
 
-describe('SnapshotTester', () => {
-  let snapshotTester: SnapshotTester;
-  before(async () => {
-    snapshotTester = new SnapshotTester(import.meta);
-    await snapshotTester.load();
-  });
-
-  after(async () => {
-    await snapshotTester.finish();
-  });
+describe('SnapshotTester', function() {
+  const snapshotTester = new SnapshotTester(this, import.meta);
 
   it('example snapshot', function() {
     snapshotTester.assert(this, 'hello world');

@@ -140,6 +140,7 @@ class P2PSocketManager::DnsRequest {
       return;
     }
 
+    list.reserve(addresses.size());
     for (const auto& endpoint : addresses) {
       list.push_back(endpoint.address());
     }
@@ -221,11 +222,6 @@ void P2PSocketManager::ResumeNetworkChangeNotifications() {
     pending_network_change_notification_ = false;
     OnNetworkChanged(net::NetworkChangeNotifier::CONNECTION_NONE);
   }
-}
-
-void P2PSocketManager::AddAcceptedConnection(
-    std::unique_ptr<P2PSocket> accepted_connection) {
-  sockets_[accepted_connection.get()] = std::move(accepted_connection);
 }
 
 void P2PSocketManager::DestroySocket(P2PSocket* socket) {

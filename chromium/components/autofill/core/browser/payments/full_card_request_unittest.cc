@@ -43,6 +43,7 @@ using PaymentsRpcCardType = PaymentsAutofillClient::PaymentsRpcCardType;
 using PaymentsRpcResult = PaymentsAutofillClient::PaymentsRpcResult;
 using UnmaskCardReason = payments::PaymentsAutofillClient::UnmaskCardReason;
 
+namespace {
 // The consumer of the full card request API.
 class MockResultDelegate : public FullCardRequest::ResultDelegate {
  public:
@@ -102,6 +103,7 @@ class MockPaymentsDataManager : public TestPaymentsDataManager {
               (const CreditCard& credit_card),
               (override));
 };
+}  // namespace
 
 // TODO(crbug.com/41412501): Simplify this test setup.
 // The test fixture for full card request.
@@ -126,10 +128,10 @@ class FullCardRequestTest : public testing::Test {
       : test_shared_loader_factory_(
             base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
                 &test_url_loader_factory_)) {
-    autofill_client().SetPrefs(test::PrefServiceForTesting());
     personal_data().set_payments_data_manager(
         std::make_unique<MockPaymentsDataManager>());
-    personal_data().SetPrefService(autofill_client().GetPrefs());
+    personal_data().test_payments_data_manager().SetPrefService(
+        autofill_client().GetPrefs());
     personal_data().SetSyncServiceForTest(&sync_service_);
     autofill_client()
         .GetPaymentsAutofillClient()

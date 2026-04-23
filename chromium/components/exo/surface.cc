@@ -59,7 +59,6 @@
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/events/event.h"
-#include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/dip_util.h"
@@ -312,12 +311,6 @@ const std::string& GetApplicationId(aura::Window* window) {
 
 int surface_id = 0;
 
-void ImmediateExplicitRelease(
-    Buffer::PerCommitExplicitReleaseCallback callback) {
-  if (callback)
-    std::move(callback).Run(/*release_fence=*/gfx::GpuFenceHandle());
-}
-
 }  // namespace
 
 DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(std::string, kClientSurfaceIdKey)
@@ -370,13 +363,6 @@ Surface::~Surface() {
                                        pending_state_.presentation_callbacks);
   for (const auto& presentation_callback : state_.presentation_callbacks)
     presentation_callback.Run(gfx::PresentationFeedback());
-
-  // Call explicit release on all explicit release callbacks that have been
-  // committed.
-  ImmediateExplicitRelease(
-      std::move(state_.per_commit_explicit_release_callback_));
-  ImmediateExplicitRelease(
-      std::move(cached_state_.per_commit_explicit_release_callback_));
 
   // Do not reset the DragDropDelegate in order to handle exit upon deletion.
 }
@@ -960,17 +946,6 @@ bool Surface::HasAcquireFence() const {
   return !!state_.acquire_fence;
 }
 
-void Surface::SetPerCommitBufferReleaseCallback(
-    Buffer::PerCommitExplicitReleaseCallback callback) {
-  TRACE_EVENT0("exo", "Surface::SetPerCommitBufferReleaseCallback");
-
-  pending_state_.per_commit_explicit_release_callback_ = std::move(callback);
-}
-
-bool Surface::HasPendingPerCommitBufferReleaseCallback() const {
-  return !!pending_state_.per_commit_explicit_release_callback_;
-}
-
 void Surface::Commit() {
   TRACE_EVENT1(
       "exo", "Surface::Commit", "buffer_id",
@@ -1010,8 +985,6 @@ void Surface::Commit() {
   cached_state_.clip_rect = pending_state_.clip_rect;
   cached_state_.surface_transform = pending_state_.surface_transform;
   cached_state_.acquire_fence = std::move(pending_state_.acquire_fence);
-  cached_state_.per_commit_explicit_release_callback_ =
-      std::move(pending_state_.per_commit_explicit_release_callback_);
   cached_state_.frame_callbacks.splice(cached_state_.frame_callbacks.end(),
                                        pending_state_.frame_callbacks);
   cached_state_.damage.Union(pending_state_.damage);
@@ -1180,8 +1153,6 @@ void Surface::CommitSurfaceHierarchy(bool synchronized) {
       state_.clip_rect = cached_state_.clip_rect;
       state_.surface_transform = cached_state_.surface_transform;
       state_.acquire_fence = std::move(cached_state_.acquire_fence);
-      state_.per_commit_explicit_release_callback_ =
-          std::move(cached_state_.per_commit_explicit_release_callback_);
       if (state_.basic_state.alpha)
         needs_update_resource_ = true;
     }
@@ -1195,8 +1166,6 @@ void Surface::CommitSurfaceHierarchy(bool synchronized) {
     // a new buffer, and it was already moved to state_.acquire_fence. Note that
     // it is a commit-time client error to commit a fence without a buffer.
     DCHECK(!cached_state_.acquire_fence);
-    // Similarly for the per commit buffer release callback.
-    DCHECK(!cached_state_.per_commit_explicit_release_callback_);
 
     if (needs_update_buffer_transform)
       UpdateBufferTransform(cached_invert_y);
@@ -1353,9 +1322,6 @@ void Surface::AppendSurfaceHierarchyContentsToFrame(
   // callback, since the buffer will not be used for this commit.
   if (needs_update_resource_) {
     UpdateResource(resource_manager);
-  } else {
-    ImmediateExplicitRelease(
-        std::move(state_.per_commit_explicit_release_callback_));
   }
 
   AppendContentsToFrame(parent_to_root_px, to_parent_dp, needs_full_damage,
@@ -1523,36 +1489,16 @@ void Surface::UpdateResource(FrameSinkResourceManager* resource_manager) {
   needs_update_resource_ = false;
   if (state_.buffer.has_value() && state_.buffer->buffer()) {
     gfx::ColorSpace buffer_color_space = state_.basic_state.color_space;
-    // Invalid color spaces cause issues went sent to the buffer. In these cases
-    // revert to passing SRGB as before.
-    if (!buffer_color_space.IsValid()) {
-      buffer_color_space = gfx::ColorSpace::CreateSRGB();
-    }
-    if (legacy_buffer_release_skippable_ &&
-        state_.per_commit_explicit_release_callback_) {
-      state_.buffer->buffer()->SkipLegacyRelease();
-    }
-    // TODO(crbug.com/421207623): These only two fields that might be preserved
-    // across calls. Preserving synchronization type is likely bug and we should
-    // move sync token inside.
-    auto prev_sync_token =
-        current_resource_.value_or(viz::TransferableResource()).sync_token();
-    auto prev_synchronization_type =
-        current_resource_.value_or(viz::TransferableResource())
-            .synchronization_type;
 
     current_resource_ = state_.buffer->buffer()->ProduceTransferableResource(
         resource_manager, std::move(state_.acquire_fence),
         state_.basic_state.only_visible_on_secure_output, buffer_color_space,
         window_->GetToplevelWindow()->GetProperty(
-            kProtectedNativePixmapQueryDelegate),
-        std::move(state_.per_commit_explicit_release_callback_),
-        prev_sync_token, prev_synchronization_type);
+            kProtectedNativePixmapQueryDelegate));
 
     if (current_resource_) {
       current_resource_has_alpha_ =
           state_.buffer->buffer()->GetFormat().HasAlpha();
-      current_resource_->color_space = state_.basic_state.color_space;
     } else {
       SkColor4f color = state_.buffer->buffer()->GetColor();
       current_resource_has_alpha_ = !color.isOpaque();
@@ -1560,8 +1506,6 @@ void Surface::UpdateResource(FrameSinkResourceManager* resource_manager) {
   } else {
     current_resource_.reset();
     current_resource_has_alpha_ = false;
-    ImmediateExplicitRelease(
-        std::move(state_.per_commit_explicit_release_callback_));
   }
 }
 
@@ -1776,7 +1720,7 @@ void Surface::AppendContentsToFrame(const gfx::PointF& parent_to_root_px,
       // pass them through the inverse of the buffer transformation.
       uv_crop = gfx::RectF(state_.basic_state.crop);
       gfx::Size transformed_buffer_size(ToTransformedSize(
-          current_resource_->size, state_.basic_state.buffer_transform));
+          current_resource_->GetSize(), state_.basic_state.buffer_transform));
       if (!transformed_buffer_size.IsEmpty()) {
         uv_crop.InvScale(transformed_buffer_size.width(),
                          transformed_buffer_size.height());

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Root from '../../../core/root/root.js';
 import {
   renderElementIntoDOM,
 } from '../../../testing/DOMHelpers.js';
@@ -13,7 +12,7 @@ import * as TimelineComponents from './components.js';
 
 describeWithEnvironment('Export Trace Options ', () => {
   interface CallbackArgsType {
-    includeScriptContent: boolean;
+    includeResourceContent: boolean;
     includeSourceMaps: boolean;
     addModifications: boolean;
   }
@@ -48,20 +47,12 @@ describeWithEnvironment('Export Trace Options ', () => {
     return element;
   };
 
-  beforeEach(() => {
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_ENHANCED_TRACES, false);
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_COMPILED_SOURCES, false);
-  });
-
   it('should render dialog button', async () => {
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_COMPILED_SOURCES, true);
     const component = await renderExportTraceOptionsDialog();
     assert.isNotNull(component.shadowRoot);
   });
 
   it('should render all checkbox options when experiments are enabled', async () => {
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_ENHANCED_TRACES, true);
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_COMPILED_SOURCES, true);
     const component = await renderExportTraceOptionsDialog();
 
     assert.isNotNull(component.shadowRoot);
@@ -85,8 +76,6 @@ describeWithEnvironment('Export Trace Options ', () => {
   });
 
   it('should show include annotations checkbox only when annotations are present', async () => {
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_ENHANCED_TRACES, true);
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_COMPILED_SOURCES, false);
     const component = await renderExportTraceOptionsDialog();
     (component as TimelineComponents.ExportTraceOptions.ExportTraceOptions).updateContentVisibility({
       annotationsExist: false
@@ -105,13 +94,11 @@ describeWithEnvironment('Export Trace Options ', () => {
     buttonFromDialog.click();
     const dialogContent = await waitFor('.export-trace-options-content', component.shadowRoot) as HTMLElement;
     const resultElement =
-        await waitFor('devtools-checkbox[title="Include script content"]', dialogContent) as HTMLElement;
+        await waitFor('devtools-checkbox[title="Include resource content"]', dialogContent) as HTMLElement;
     assert.isNotNull(resultElement);
   });
 
-  it('should show script content checkbox only when experiment is enabled', async () => {
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_ENHANCED_TRACES, false);
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_COMPILED_SOURCES, false);
+  it('should show sourcemaps checkbox', async () => {
     const component = await renderExportTraceOptionsDialog();
 
     assert.isNotNull(component.shadowRoot);
@@ -128,34 +115,10 @@ describeWithEnvironment('Export Trace Options ', () => {
     const dialogContent = await waitFor('.export-trace-options-content', component.shadowRoot) as HTMLElement;
     assert.isNotNull(dialogContent);
     const regexRows = dialogContent.querySelectorAll('devtools-checkbox') || [];
-    assert.lengthOf(regexRows, 2);
+    assert.lengthOf(regexRows, 4);
   });
 
-  it('should show sourcemaps checkbox only when experiment is enabled', async () => {
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_ENHANCED_TRACES, true);
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_COMPILED_SOURCES, false);
-    const component = await renderExportTraceOptionsDialog();
-
-    assert.isNotNull(component.shadowRoot);
-    await waitFor('devtools-button-dialog', component.shadowRoot) as HTMLElement;
-    const buttonDialog = component.shadowRoot.querySelector('devtools-button-dialog');
-    assert.isNotNull(buttonDialog);
-    assert.isNotNull(buttonDialog.shadowRoot);
-    const buttonFromDialog = buttonDialog.shadowRoot.querySelector('devtools-button');
-
-    assert.isNotNull(buttonFromDialog);
-    assert.isTrue(buttonFromDialog.disabled);
-    buttonFromDialog.disabled = false;
-    buttonFromDialog.click();
-    const dialogContent = await waitFor('.export-trace-options-content', component.shadowRoot) as HTMLElement;
-    assert.isNotNull(dialogContent);
-    const regexRows = dialogContent.querySelectorAll('devtools-checkbox') || [];
-    assert.lengthOf(regexRows, 3);
-  });
-
-  it('should disable sourcemaps checkbox when script content is disabled', async () => {
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_ENHANCED_TRACES, true);
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_COMPILED_SOURCES, true);
+  it('should disable sourcemaps checkbox when resource content is disabled', async () => {
     const component = await renderExportTraceOptionsDialog();
 
     assert.isNotNull(component.shadowRoot);
@@ -178,7 +141,7 @@ describeWithEnvironment('Export Trace Options ', () => {
     assert.isFalse(regexRows[2].checked);
     assert.isTrue(regexRows[2].disabled);
     regexRows[1].click();
-    await waitFor('devtools-checkbox[title="Include script content"][checked]', dialogContent) as HTMLElement;
+    await waitFor('devtools-checkbox[title="Include resource content"][checked]', dialogContent) as HTMLElement;
     regexRows = dialogContent.querySelectorAll('devtools-checkbox') || [];
     assert.isTrue(regexRows[0].checked);
     assert.isTrue(regexRows[1].checked);
@@ -190,8 +153,6 @@ describeWithEnvironment('Export Trace Options ', () => {
   });
 
   it('should execute callback with correct parameters when save button is clicked', async () => {
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_ENHANCED_TRACES, true);
-    Root.Runtime.experiments.setEnabled(Root.Runtime.ExperimentName.TIMELINE_COMPILED_SOURCES, true);
     let callbackExecuted = false;
 
     let passedArgs = null;
@@ -222,13 +183,13 @@ describeWithEnvironment('Export Trace Options ', () => {
     const saveButton = dialogContent.querySelector<HTMLElement>('devtools-button[data-export-button]');
     let regexRows = dialogContent.querySelectorAll('devtools-checkbox') || [];
     assert.lengthOf(regexRows, 4);
-    // Initial checkbox states: annotations=true, script=false, sourcemaps=false
+    // Initial checkbox states: annotations=true, resource=false, sourcemaps=false
     assert.isTrue(regexRows[0].checked);
     assert.isFalse(regexRows[1].checked);
     assert.isFalse(regexRows[2].checked);
     assert.isTrue(regexRows[2].disabled);
-    regexRows[1].click();  // Enable script content checkbox
-    await waitFor('devtools-checkbox[title="Include script content"][checked]', dialogContent) as HTMLElement;
+    regexRows[1].click();  // Enable resource content checkbox
+    await waitFor('devtools-checkbox[title="Include resource content"][checked]', dialogContent) as HTMLElement;
     regexRows = dialogContent.querySelectorAll('devtools-checkbox') || [];
     assert.isTrue(regexRows[0].checked);
     assert.isTrue(regexRows[1].checked);
@@ -241,7 +202,7 @@ describeWithEnvironment('Export Trace Options ', () => {
     assert.isNotNull(passedArgs);
     // Verify callback receives correct checkbox states
     assert.isTrue((passedArgs as CallbackArgsType).addModifications);
-    assert.isTrue((passedArgs as CallbackArgsType).includeScriptContent);
+    assert.isTrue((passedArgs as CallbackArgsType).includeResourceContent);
     assert.isFalse((passedArgs as CallbackArgsType).includeSourceMaps);
 
     regexRows[1].click();  // Clean-up

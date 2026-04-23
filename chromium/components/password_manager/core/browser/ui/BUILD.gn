@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 
 source_set("credential_ui_entry") {
@@ -85,6 +84,7 @@ source_set("ui") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "affiliated_group_unittest.cc",
     "credential_ui_entry_unittest.cc",
     "credential_utils_unittest.cc",
     "password_undo_helper_unittest.cc",

@@ -686,16 +686,13 @@ void ImplementationVisitor::Visit(Builtin* builtin) {
                        << " = "
                           "UncheckedParameter<JSDispatchHandleT>(Descriptor::"
                           "kJSDispatchHandle);\n";
-        } else if (V8_ENABLE_LEAPTIERING_BOOL) {
+        } else {
           csa_ccfile() << "  TNode<JSDispatchHandleT> " << generated_name
                        << " = "
                           "ReinterpretCast<JSDispatchHandleT>("
                           "LoadJSFunctionDispatchHandle("
                           "UncheckedParameter<JSFunction>("
                        << "Descriptor::kJSTarget)));\n";
-        } else {
-          csa_ccfile() << "  TNode<JSDispatchHandleT> " << generated_name
-                       << " = InvalidDispatchHandleConstant();\n";
         }
         csa_ccfile() << "  USE(" << generated_name << ");\n";
         expected_types = {TypeOracle::GetDispatchHandleType()};
@@ -4462,13 +4459,7 @@ std::string GenerateRuntimeTypeCheck(const Type* type,
     type_check << value << ".IsCleared()";
     at_start = false;
   }
-  std::vector<TypeChecker> type_checkers = type->GetTypeCheckers();
-  std::partition(type_checkers.begin(), type_checkers.end(),
-                 [](const TypeChecker& runtime_type) {
-                   return runtime_type.type == "Hole" ||
-                          runtime_type.type == "TheHole";
-                 });
-  for (const TypeChecker& runtime_type : type_checkers) {
+  for (const TypeChecker& runtime_type : type->GetTypeCheckers()) {
     if (!at_start) type_check << " || ";
     at_start = false;
     if (maybe_object) {

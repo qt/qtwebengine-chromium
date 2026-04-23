@@ -224,52 +224,19 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(//services/network/public/mojom/device_bound_sessions.mojom:DeviceBoundSessionDeletionReason) -->
 
-<!-- LINT.IfChange(DeviceBoundSessionError) -->
+<!-- LINT.IfChange(DeviceBoundSessionProactiveRefreshAttempt) -->
 
-<enum name="DeviceBoundSessionError">
-  <int value="0" label="Success"/>
-  <int value="1" label="Key error"/>
-  <int value="2" label="Signing error"/>
-  <int value="3" label="Network error"/>
-  <int value="4" label="HTTP error"/>
-  <int value="5" label="Server requested termination"/>
-  <int value="6" label="Invalid configuration JSON"/>
-  <int value="7" label="Invalid session ID"/>
-  <int value="8" label="Invalid credentials"/>
-  <int value="9" label="Invalid challenge"/>
-  <int value="10" label="Too many challenges"/>
-  <int value="11" label="Invalid fetcher URL"/>
-  <int value="12" label="Invalid refresh URL"/>
-  <int value="13" label="Transient HTTP error"/>
-  <int value="14" label="Persistent HTTP error"/>
-  <int value="15" label="Same-site mismatch scope origin"/>
-  <int value="16" label="Same-site mismatch refresh URL"/>
-  <int value="17" label="Invalid scope origin"/>
-  <int value="18" label="Mismatched session id"/>
-  <int value="19" label="Invalid refresh initiators"/>
-  <int value="20" label="Invalid scope rule"/>
-  <int value="21" label="Missing scope"/>
-  <int value="22" label="No credentials"/>
-  <int value="23" label="Invalid include_site in scope"/>
-  <int value="24" label="Subdomain registration .well-known unavailable"/>
-  <int value="25"
-      label=".well-known did not authorize registration by subdomain"/>
-  <int value="26" label="Subdomain registration .well-known content malformed"/>
-  <int value="27" label="Federated session not authorized by .well-known"/>
-  <int value="28" label="Session provider .well-known unavailable"/>
-  <int value="29" label="Session provider .well-known content malformed"/>
-  <int value="30" label="Relying party .well-known unavailable"/>
-  <int value="31" label="Relying party .well-known content malformed"/>
-  <int value="32" label="Federated key had incorrect thumbprint"/>
-  <int value="33" label="Federated provider URL not valid"/>
-  <int value="34" label="Federated session invalid"/>
-  <int value="35" label="Federated key invalid"/>
-  <int value="36" label="Too many relying origin labels in .well-known"/>
-  <int value="37"
-      label="Registration in a context that cannot set bound cookies"/>
+<enum name="DeviceBoundSessionProactiveRefreshAttempt">
+  <int value="0" label="Existing deferring refresh"/>
+  <int value="1" label="Existing proactive refresh"/>
+  <int value="2" label="Session key not restored"/>
+  <int value="3" label="Attempted"/>
+  <int value="4" label="Previous failed proactive refresh"/>
+  <int value="5" label="Signing quota exceeded"/>
+  <int value="6" label="Session in backoff"/>
 </enum>
 
-<!-- LINT.ThenChange(//net/device_bound_sessions/session_error.h:DeviceBoundSessionError) -->
+<!-- LINT.ThenChange(//net/device_bound_sessions/session_service_impl.h:ProactiveRefreshAttempt) -->
 
 <!-- LINT.IfChange(DeviceBoundSessionRefreshResult) -->
 
@@ -278,8 +245,9 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="Service initialized"/>
   <int value="2" label="Endpoint unreachable"/>
   <int value="3" label="Endpoint transient error"/>
-  <int value="4" label="Quota exceeded"/>
+  <int value="4" label="Refresh quota exceeded"/>
   <int value="5" label="Fatal error"/>
+  <int value="6" label="Signing exceeded"/>
 </enum>
 
 <!-- LINT.ThenChange(//net/device_bound_sessions/session_service.h:DeviceBoundSessionRefreshResult) -->
@@ -373,6 +341,14 @@ chromium-metrics-reviews@google.com.
   <int value="9" label="ReadPrimaryDnsSuffixPathFailed"/>
   <int value="10" label="GetNameServersFailed"/>
   <int value="11" label="NoNameServerFound"/>
+</enum>
+
+<enum name="DnsConfigLocalNameserverState">
+  <int value="0" label="DNS Config without local nameservers"/>
+  <int value="1" label="DNS Config with loopback local nameservers"/>
+  <int value="2" label="DNS Config with non-loopback local nameservers"/>
+  <int value="3"
+      label="DNS Config with local nameservers (including loopback)"/>
 </enum>
 
 <enum name="DohServerAutoupgradeStatus">
@@ -504,6 +480,7 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="No Rejection Non-Read-Write-Mode"/>
   <int value="4" label="No Rejection Skip Cache Validation"/>
   <int value="5" label="No Rejection Load Only From Cache"/>
+  <int value="6" label="No Rejection Hint disabled"/>
 </enum>
 
 <!-- LINT.ThenChange(//net/http/http_cache_transaction.h:HttpCacheEntryRejectionStatus) -->
@@ -2859,6 +2836,8 @@ Called by update_net_trust_anchors.py.-->
   <int value="5" label="Automatic, by enterprise policy"/>
   <int value="6" label="Secure, by user choice"/>
   <int value="7" label="Secure, by enterprise policy"/>
+  <int value="8" label="Automatic with DoH fallback, by user choice"/>
+  <int value="9" label="Automatic with DoH fallback, by enterprise policy"/>
 </enum>
 
 <enum name="SharedDictionaryStoreError">
@@ -2881,6 +2860,20 @@ Called by update_net_trust_anchors.py.-->
   <int value="1" label="SetFileCompletionNotificationModes failed"/>
   <int value="2" label="Succeeded"/>
 </enum>
+
+<!-- LINT.IfChange(SocketPoolAdditionalCapacityError) -->
+
+<enum name="SocketPoolAdditionalCapacityError">
+  <int value="0" label="InvalidBase"/>
+  <int value="1" label="InvalidCapacity"/>
+  <int value="2" label="InvalidMinimum"/>
+  <int value="3" label="InvalidNoise"/>
+  <int value="4" label="InvalidSocketSoftCap"/>
+  <int value="5" label="InvalidSocketInUse"/>
+  <int value="6" label="InvalidSocketAllocation"/>
+</enum>
+
+<!-- LINT.ThenChange(//net/socket/socket_pool_additional_capacity.cc:SocketPoolAdditionalCapacityError) -->
 
 <enum name="SpdyFrameFlowControlState">
   <int value="0" label="Send not stalled"/>
@@ -3014,7 +3007,7 @@ Called by update_net_trust_anchors.py.-->
   <int value="5" label="DeleteLiveEntriesBetween"/>
 </enum>
 
-<!-- LINT.ThenChange(//net/disk_cache/sql/sql_persistent_store.cc:IndexMismatchLocation) -->
+<!-- LINT.ThenChange(//net/disk_cache/sql/sql_persistent_store_backend_shard.cc:IndexMismatchLocation) -->
 
 <!-- LINT.IfChange(SqlDiskCacheStoreError) -->
 
@@ -3036,6 +3029,11 @@ Called by update_net_trust_anchors.py.-->
   <int value="14" label="InvalidArgument"/>
   <int value="15" label="BodyEndMismatch"/>
   <int value="16" label="FailedForTesting"/>
+  <int value="17" label="Aborted"/>
+  <int value="18" label="NotInitialized"/>
+  <int value="19" label="CheckSumError"/>
+  <int value="20" label="DatabaseClosed"/>
+  <int value="21" label="AbortedDueToBrowserActivity"/>
 </enum>
 
 <!-- LINT.ThenChange(//net/disk_cache/sql/sql_persistent_store.h:SqlDiskCacheStoreError) -->
@@ -3155,28 +3153,6 @@ Called by update_net_trust_anchors.py.-->
              with fresh Trust Anchor IDs"/>
 </enum>
 
-<enum name="StorageAccessNetRequestKind">
-  <int value="0" label="Same-origin request with storage access override"/>
-  <int value="1"
-      label="Deprecated: Cross-origin, same-site request with storage access
-             override"/>
-  <int value="2" label="Cross-site request with storage access override"/>
-  <int value="3"
-      label="Cross-origin, same-site request with storage access override
-             with credentials mode == 'include'"/>
-  <int value="4"
-      label="Cross-origin, same-site request with storage access override
-             with credentials mode != 'include'"/>
-</enum>
-
-<enum name="StorageAccessRedirectKind">
-  <int value="0" label="No Storage Access override"/>
-  <int value="1" label="Same-origin redirect with storage access override"/>
-  <int value="2"
-      label="Cross-origin, same-site redirect with storage access override"/>
-  <int value="3" label="Cross-site redirect with storage access override"/>
-</enum>
-
 <!-- LINT.IfChange(StreamSocketCloseReason) -->
 
 <enum name="StreamSocketCloseReason">
@@ -3234,6 +3210,17 @@ Called by update_net_trust_anchors.py.-->
 
 <!-- LINT.ThenChange(//services/network/public/mojom/trust_tokens.mojom:TrustTokenOperationStatus) -->
 
+<!-- LINT.IfChange(TrustTokenProtocolVersion) -->
+
+<enum name="TrustTokenProtocolVersion">
+  <int value="0" label="TrustTokenV3Pmb"/>
+  <int value="1" label="TrustTokenV3Voprf"/>
+  <int value="2" label="PrivateStateTokenV1Pmb"/>
+  <int value="3" label="PrivateStateTokenV1Voprf"/>
+</enum>
+
+<!-- LINT.ThenChange(//services/network/public/mojom/trust_tokens.mojom:TrustTokenProtocolVersion) -->
+
 <enum name="TrustTokenRequestHelperFactoryOutcome">
   <int value="0" label="Successfully created an issuance helper"/>
   <int value="1" label="Successfully created a redemption helper"/>
@@ -3246,6 +3233,8 @@ Called by update_net_trust_anchors.py.-->
   <int value="7" label="Rejected by authorizer (check cookie settings?)"/>
 </enum>
 
+<!-- LINT.IfChange(UnexportableKeyServiceResult) -->
+
 <enum name="UnexportableKeyServiceResult">
   <int value="0" label="Success"/>
   <int value="1" label="Crypto API failed"/>
@@ -3254,7 +3243,14 @@ Called by update_net_trust_anchors.py.-->
   <int value="4" label="No key provider"/>
   <int value="5" label="Algorithm not supported"/>
   <int value="6" label="Key not ready"/>
+  <int value="7" label="Verify signature failed"/>
+  <int value="8" label="Operation not supported"/>
 </enum>
+
+<!-- LINT.ThenChange(
+    /components/unexportable_keys/mojom/unexportable_key_service.mojom:ServiceError,
+    /components/unexportable_keys/service_error.h:ServiceError
+) -->
 
 <enum name="UnsolicitedHttpsRecordStatus">
   <int value="0" label="Malformed"/>
@@ -3999,7 +3995,7 @@ Called by update_net_trust_anchors.py.-->
   <int value="10" label="EmptyProxyList"/>
 </enum>
 
-<!-- LINT.ThenChange(//services/proxy_resolver_win/public/mojom/proxy_resolver_win.mojom:WinHttpStatus) -->
+<!-- LINT.ThenChange(//services/proxy_resolver/public/mojom/proxy_resolver.mojom:WinHttpStatus) -->
 
 <enum name="ZeroRttState">
   <int value="0" label="Attempted and succeeded"/>

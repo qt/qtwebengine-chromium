@@ -81,6 +81,7 @@ source_set("fxcodec") {
     "../fxge",
     "//third_party:jpeg",
   ]
+  defines = []
   if (pdf_enable_xfa) {
     sources += [
       "cfx_codec_memory.cpp",
@@ -89,14 +90,12 @@ source_set("fxcodec") {
       "jpeg/jpeg_progressive_decoder.h",
       "progressive_decoder.cpp",
       "progressive_decoder.h",
-      "progressive_decoder_iface.h",
+      "progressive_decoder_context.h",
     ]
     if (pdf_enable_xfa_bmp) {
       sources += [
         "bmp/bmp_decoder.cpp",
         "bmp/bmp_decoder.h",
-        "bmp/bmp_progressive_decoder.cpp",
-        "bmp/bmp_progressive_decoder.h",
         "bmp/cfx_bmpcontext.cpp",
         "bmp/cfx_bmpcontext.h",
         "bmp/cfx_bmpdecompressor.cpp",
@@ -112,20 +111,30 @@ source_set("fxcodec") {
         "gif/cfx_gifcontext.h",
         "gif/gif_decoder.cpp",
         "gif/gif_decoder.h",
-        "gif/gif_progressive_decoder.cpp",
-        "gif/gif_progressive_decoder.h",
         "gif/lzw_decompressor.cpp",
         "gif/lzw_decompressor.h",
       ]
     }
     if (pdf_enable_xfa_png) {
-      sources += [
-        "png/png_decoder.cpp",
-        "png/png_decoder.h",
-        "png/png_decoder_delegate.cpp",
-        "png/png_decoder_delegate.h",
-      ]
-      deps += [ "../../third_party:png" ]
+      sources += [ "png/png_decoder_delegate.h" ]
+
+      # TODO(https://crbug.com/444045690): Remove `pdf_enable_rust_png` from the
+      # condition below once this build mode has been tested and stabilized.
+      # (Chromium already sets `pdf_use_skia_override = true` so having an extra
+      # condition avoids affecting the Chromium behavior.)
+      if (pdf_use_skia && pdf_enable_rust_png) {
+        sources += [
+          "png/skia_png_decoder.cpp",
+          "png/skia_png_decoder.h",
+        ]
+        deps += [ "//skia" ]
+      } else {
+        sources += [
+          "png/libpng_png_decoder.cpp",
+          "png/libpng_png_decoder.h",
+        ]
+        deps += [ "../../third_party:png" ]
+      }
     }
     if (pdf_enable_xfa_tiff) {
       sources += [

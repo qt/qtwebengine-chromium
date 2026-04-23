@@ -108,8 +108,8 @@ class Firefox(Browser):
                              Viewport.HEADLESS)
 
     if self.viewport.has_size and not self.viewport.is_default:
-      if not isinstance(self,
-                        WebDriverBrowser) and self.viewport.size != (0, 0):
+      if not isinstance(self, WebDriverBrowser) and self.viewport.size != (0,
+                                                                           0):
         raise ValueError(f"Browser {self} cannot handle viewport position: "
                          f"{self.viewport.position}")
     elif not isinstance(self, WebDriverBrowser):

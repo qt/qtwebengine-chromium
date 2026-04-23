@@ -73,7 +73,7 @@ struct State {
             if (!type) {
                 continue;
             }
-            TINT_ASSERT(var->BindingPoint().has_value());
+            TINT_IR_ASSERT(ir, var->BindingPoint().has_value());
 
             resource_bindings.push_back(var);
         }
@@ -81,7 +81,7 @@ struct State {
         std::vector<core::ir::Instruction*> to_delete;
         for (auto* var : resource_bindings) {
             auto iter = config.bindings.find(var->BindingPoint().value());
-            TINT_ASSERT(iter != config.bindings.end());
+            TINT_IR_ASSERT(ir, iter != config.bindings.end());
 
             auto alias_for_type =
                 helper->GenerateAliases(b, var, iter->second.default_binding_type_order);
@@ -138,7 +138,7 @@ struct State {
                                         break;
                                     }
                                     default:
-                                        TINT_UNREACHABLE();
+                                        TINT_IR_UNREACHABLE(ir);
                                 }
                                 to_delete.push_back(call);
                             });
@@ -163,7 +163,7 @@ struct State {
                        core::ir::Value* idx,
                        core::ir::Var* storage_buffer) {
         auto* length = b.Access(ty.ptr<storage, u32, read>(), storage_buffer, 0_u);
-        auto* len_check = b.LessThan(ty.bool_(), idx, b.Load(length));
+        auto* len_check = b.LessThan(idx, b.Load(length));
 
         auto* has_check = b.If(len_check);
         has_check->SetResult(result);
@@ -172,8 +172,7 @@ struct State {
             auto* type_val = b.Access(ty.ptr<storage, u32, read>(), storage_buffer, 1_u, idx);
 
             auto* v = b.Load(type_val);
-            auto* eq = b.Equal(ty.bool_(), v,
-                               u32(static_cast<uint32_t>(core::type::TypeToResourceType(type))));
+            auto* eq = b.Equal(v, u32(static_cast<uint32_t>(core::type::TypeToResourceType(type))));
             b.ExitIf(has_check, eq);
         });
 
@@ -195,14 +194,14 @@ struct State {
         get_check->SetResult(res);
 
         auto alias = alias_for_type.Get(type);
-        TINT_ASSERT(alias);
+        TINT_IR_ASSERT(ir, alias);
 
         b.Append(get_check->True(), [&] { b.ExitIf(get_check, idx); });
 
         b.Append(get_check->False(), [&] {
             auto res_type = core::type::TypeToResourceType(type);
             auto idx_iter = resource_type_to_idx.find(res_type);
-            TINT_ASSERT(idx_iter != resource_type_to_idx.end());
+            TINT_IR_ASSERT(ir, idx_iter != resource_type_to_idx.end());
 
             auto* len_access = b.Access(ty.ptr<storage, u32, read>(), storage_buffer, 0_u);
             auto* num_elements = b.Load(len_access);

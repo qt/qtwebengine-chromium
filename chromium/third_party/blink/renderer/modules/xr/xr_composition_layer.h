@@ -7,7 +7,6 @@
 
 #include <optional>
 
-#include "device/vr/public/mojom/vr_service.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_layer_layout.h"
 #include "third_party/blink/renderer/modules/xr/xr_layer.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -37,7 +36,6 @@ class XRCompositionLayer : public XRLayer {
   float opacity() const;
   void setOpacity(float value);
   uint16_t mipLevels() const;
-  bool needsRedraw() const;
   void destroy() const;
 
   uint16_t textureWidth() const;
@@ -50,23 +48,34 @@ class XRCompositionLayer : public XRLayer {
 
   XRLayerDrawingContext* drawing_context() { return drawing_context_; }
 
+  XrLayerClient* LayerClient() override;
+
   void Trace(Visitor*) const override;
 
  protected:
-  void SetNeedsRedraw(bool needsRedraw);
   void SetLayout(V8XRLayerLayout layout);
   void SetMipLevels(uint16_t mipLevels);
+  virtual bool isStatic() const;
+
+  device::mojom::blink::XRCompositionLayerDataPtr CreateLayerData()
+      const override;
+  // Used to create the layer data.
+  virtual device::mojom::blink::XRLayerSpecificDataPtr CreateLayerSpecificData()
+      const = 0;
+  virtual device::mojom::blink::XRNativeOriginInformationPtr NativeOrigin()
+      const = 0;
+  // Used to sync layer-specific data to the backend.
+  virtual void UpdateLayerBackend() = 0;
 
  private:
   V8XRLayerLayout::Enum layout_ = V8XRLayerLayout::Enum::kDefault;
 
   const Member<XRGraphicsBinding> binding_;
-  bool blend_texture_source_alpha_{false};
+  bool blend_texture_source_alpha_{true};
   std::optional<bool> chromatic_aberration_correction_{std::nullopt};
   bool force_mono_presentation_{false};
   float opacity_{1.0};
   uint16_t mip_levels_{1};
-  bool needs_redraw_{false};
 
   Member<XRLayerDrawingContext> drawing_context_;
 };

@@ -659,7 +659,7 @@ VkImageUsageFlags VulkanImageUsage(const DeviceBase* device,
         // If the sampled texture is a depth/stencil texture, its image layout will be set
         // to DEPTH_STENCIL_READ_ONLY_OPTIMAL in order to support readonly depth/stencil
         // attachment. That layout requires DEPTH_STENCIL_ATTACHMENT_BIT image usage.
-        if (format.HasDepthOrStencil() && format.isRenderable) {
+        if (format.HasDepthOrStencil() && format.IsRenderable()) {
             flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
         }
     }
@@ -727,7 +727,7 @@ VkImageLayout VulkanImageLayout(const Format& format, wgpu::TextureUsage usage) 
             // The sampled image can be used as a readonly depth/stencil attachment at the same
             // time if it is a depth/stencil renderable format, so the image layout need to be
             // VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL.
-            if (format.HasDepthOrStencil() && format.isRenderable) {
+            if (format.HasDepthOrStencil() && format.IsRenderable()) {
                 return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             }
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -962,14 +962,6 @@ void Texture::TransitionUsageForPassImpl(
                                                               TextureSyncInfo* lastSyncInfo,
                                                               const TextureSyncInfo& newSyncInfo) {
         wgpu::TextureUsage newUsage = newSyncInfo.usage;
-
-        // This is an ASSERT in lieu of validation that pinned resources are only used with their
-        // pinned usage. A resource being pinned means that it should stay as a single usage until
-        // it is unpinned / repinned.
-        // TODO(https://crbug.com/435317394): When the validation is implemented, consider removing
-        // this ASSERT.
-        DAWN_ASSERT(!HasPinnedUsage() || IsSubset(newUsage, GetPinnedUsage()));
-
         if (newSyncInfo.shaderStages == wgpu::ShaderStage::None) {
             // If the image isn't used in any shader stages, ignore shader usages. Eg. ignore a
             // texture binding that isn't actually sampled in any shader.
@@ -1076,13 +1068,6 @@ void Texture::TransitionUsageAndGetResourceBarrierImpl(
     DAWN_ASSERT(imageBarriers != nullptr);
     const Format& format = GetFormat();
 
-    // This is an ASSERT in lieu of validation that pinned resources are only used with their pinned
-    // usage. A resource being pinned means that it should stay as a single usage until it is
-    // unpinned / repinned.
-    // TODO(https://crbug.com/435317394): When the validation is implemented, consider removing this
-    // ASSERT.
-    DAWN_ASSERT(!HasPinnedUsage() || IsSubset(usage, GetPinnedUsage()));
-
     if (shaderStages == wgpu::ShaderStage::None) {
         // If the image isn't used in any shader stages, ignore shader usages. Eg. ignore a texture
         // binding that isn't actually sampled in any shader.
@@ -1162,8 +1147,25 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                 beginCmd.height = mipSize.height;
 
                 TextureViewDescriptor viewDesc = {};
+                viewDesc.label = "Dawn_ClearTexture_View";
                 viewDesc.format = GetFormat().format;
-                viewDesc.dimension = wgpu::TextureViewDimension::e2D;
+
+                uint32_t depthSliceCount = 1;
+                switch (GetDimension()) {
+                    case wgpu::TextureDimension::e2D:
+                        viewDesc.dimension = wgpu::TextureViewDimension::e2D;
+                        break;
+                    case wgpu::TextureDimension::e3D:
+                        viewDesc.dimension = wgpu::TextureViewDimension::e3D;
+                        depthSliceCount = mipSize.depthOrArrayLayers;
+                        DAWN_ASSERT(layer == 0);
+                        break;
+                    case wgpu::TextureDimension::e1D:
+                    case wgpu::TextureDimension::Undefined:
+                        DAWN_UNREACHABLE();
+                        break;
+                }
+
                 viewDesc.baseMipLevel = level;
                 viewDesc.mipLevelCount = 1u;
                 viewDesc.baseArrayLayer = layer;
@@ -1177,6 +1179,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
 
                 RenderPassColorAttachment colorAttachment{};
                 colorAttachment.view = beginCmd.colorAttachments[ca0].view.Get();
+
                 beginCmd.colorAttachments[ca0].clearColor = colorAttachment.clearValue = {
                     fClearColor, fClearColor, fClearColor, fClearColor};
                 beginCmd.colorAttachments[ca0].loadOp = colorAttachment.loadOp =
@@ -1187,11 +1190,18 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                 RenderPassDescriptor passDesc{};
                 passDesc.colorAttachmentCount = 1u;
                 passDesc.colorAttachments = &colorAttachment;
-                beginCmd.attachmentState = device->GetOrCreateAttachmentState(Unpack(&passDesc));
 
-                DAWN_TRY(
-                    RecordBeginRenderPass(recordingContext, ToBackend(GetDevice()), &beginCmd));
-                ToBackend(GetDevice())->fn.CmdEndRenderPass(recordingContext->commandBuffer);
+                for (uint32_t depthSlice = 0; depthSlice < depthSliceCount; ++depthSlice) {
+                    beginCmd.colorAttachments[ca0].depthSlice = colorAttachment.depthSlice =
+                        depthSlice;
+
+                    beginCmd.attachmentState =
+                        device->GetOrCreateAttachmentState(Unpack(&passDesc));
+
+                    DAWN_TRY(
+                        RecordBeginRenderPass(recordingContext, ToBackend(GetDevice()), &beginCmd));
+                    ToBackend(GetDevice())->fn.CmdEndRenderPass(recordingContext->commandBuffer);
+                }
             }
         }
     } else if (GetFormat().HasDepthOrStencil()) {
@@ -1241,15 +1251,17 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
         // need to clear the texture with a copy from buffer
         DAWN_ASSERT(range.aspects == Aspect::Color || range.aspects == Aspect::Plane0 ||
                     range.aspects == Aspect::Plane1 || range.aspects == Aspect::Plane2);
-        const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(range.aspects).block;
+        const TypedTexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(range.aspects).block;
 
-        Extent3D largestMipSize =
-            GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel, range.aspects);
+        BlockExtent3D largestMipSize = blockInfo.ToBlock(
+            GetMipLevelSingleSubresourcePhysicalSize(range.baseMipLevel, range.aspects));
 
-        uint32_t bytesPerRow = Align((largestMipSize.width / blockInfo.width) * blockInfo.byteSize,
+        uint64_t bytesPerRow = Align(blockInfo.ToBytes(largestMipSize.width),
                                      device->GetOptimalBytesPerRowAlignment());
-        uint64_t uploadSize = bytesPerRow * (largestMipSize.height / blockInfo.height) *
-                              largestMipSize.depthOrArrayLayers;
+        BlockCount blocksPerRow = blockInfo.BytesToBlocks(bytesPerRow);
+        BlockCount uploadBlocks =
+            blocksPerRow * largestMipSize.height * largestMipSize.depthOrArrayLayers;
+        uint64_t uploadSize = blockInfo.ToBytes(uploadBlocks);
 
         DAWN_TRY(device->GetDynamicUploader()->WithUploadReservation(
             uploadSize, blockInfo.byteSize, [&](UploadReservation reservation) -> MaybeError {
@@ -1258,8 +1270,8 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                 std::vector<VkBufferImageCopy> regions;
                 for (uint32_t level = range.baseMipLevel;
                      level < range.baseMipLevel + range.levelCount; ++level) {
-                    Extent3D copySize =
-                        GetMipLevelSingleSubresourcePhysicalSize(level, range.aspects);
+                    BlockExtent3D copySize = blockInfo.ToBlock(
+                        GetMipLevelSingleSubresourcePhysicalSize(level, range.aspects));
                     imageRange.baseMipLevel = level;
                     for (uint32_t layer = range.baseArrayLayer;
                          layer < range.baseArrayLayer + range.layerCount; ++layer) {
@@ -1270,18 +1282,19 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                             continue;
                         }
 
-                        TexelCopyBufferLayout dataLayout;
-                        dataLayout.offset = reservation.offsetInBuffer;
-                        dataLayout.rowsPerImage = copySize.height / blockInfo.height;
-                        dataLayout.bytesPerRow = bytesPerRow;
+                        BufferCopy bufferCopy;
+                        bufferCopy.offset = reservation.offsetInBuffer;
+                        bufferCopy.blocksPerRow = blocksPerRow;
+                        bufferCopy.rowsPerImage = copySize.height;
+
                         TextureCopy textureCopy;
                         textureCopy.aspect = range.aspects;
                         textureCopy.mipLevel = level;
-                        textureCopy.origin = {0, 0, layer};
+                        textureCopy.origin = {TexelCount{0}, TexelCount{0}, TexelCount{layer}};
                         textureCopy.texture = this;
 
                         regions.push_back(
-                            ComputeBufferImageCopyRegion(dataLayout, textureCopy, copySize));
+                            ComputeBufferImageCopyRegion(bufferCopy, textureCopy, copySize));
                     }
                 }
 
@@ -2150,7 +2163,7 @@ VkImageViewCreateInfo TextureView::GetCreateInfo(wgpu::TextureFormat format,
         isDepthOrStencilFormat ? kR001Swizzle : kRGBASwizzle;
 
     auto swizzle = ComposeSwizzle(kDefaultSwizzle, GetSwizzle());
-    if (AreSwizzleEquivalent(swizzle, kDefaultSwizzle)) {
+    if (swizzle == kDefaultSwizzle) {
         // We must use identity swizzle for render views.
         // https://docs.vulkan.org/spec/latest/chapters/renderpass.html#VUID-VkFramebufferCreateInfo-pAttachments-00884
         createInfo.components = VkComponentMapping{VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G,

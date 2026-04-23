@@ -53,22 +53,52 @@ cmake_dependent_option(INK_STROKE_MODELER_FIND_FUZZTEST
 
 set(ABSL_PROPAGATE_CXX_STD ON)
 
-# Used by Fuzztest to fetch Abseil and Googletest deps
+# Used by Fuzztest to fetch Abseil and Googletest deps, use the same
+# version for Ink (unfortunately, Fuzztest doesn't provide a way to
+# skip fetching the dependency again).
 set(gtest_URL https://github.com/google/googletest.git)
-set(gtest_TAG f8d7d77c06936315286eb55f8de22cd23c188571)  # v1.14.0
+set(gtest_TAG 52eb8108c5bdec04579160ae17225d66034bd723)  # v1.17.0
 set(absl_URL https://github.com/abseil/abseil-cpp.git)
-set(absl_TAG 2f9e432cce407ce0ae50676696666f33a77d42ac)  # 20240116.1
+set(absl_TAG bc257a88f7c1939f24e0379f14a3589e926c950c)  # 20250512.0
 
 if(INK_STROKE_MODELER_ENABLE_INSTALL)
   set(ABSL_ENABLE_INSTALL ON)
 endif()
 
 if(INK_STROKE_MODELER_BUILD_TESTING)
-  enable_testing()
+  set(ABSL_BUILD_TEST_HELPERS ON)
+endif()
 
-  # No reason to get two different versions of Googletest.
-  # gtest and absl fetched indirectly by fuzztest
-  set(ABSL_USE_EXTERNAL_GOOGLETEST ON)
+if(INK_STROKE_MODELER_FIND_GTEST)
+  find_package(googletest REQUIRED)
+else()
+  FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY ${gtest_URL}
+    GIT_TAG        ${gtest_TAG}
+    GIT_PROGRESS   TRUE
+  )
+  FetchContent_MakeAvailable(googletest)
+  set(GTEST_LIBRARY GOOGLETEST_LIBRARY)
+  set(GTEST_INCLUDE_DIR GOOGLETEST_INCLUDE_DIR)
+  set(GTEST_MAIN_LIBRARY GOOGLETEST_MAIN_LIBRARY)
+endif()
+
+set(ABSL_USE_EXTERNAL_GOOGLETEST ON)
+if(INK_STROKE_MODELER_FIND_ABSL)
+  find_package(absl REQUIRED)
+else()
+  FetchContent_Declare(
+    abseil-cpp
+    GIT_REPOSITORY ${absl_URL}
+    GIT_TAG        ${absl_TAG}
+    GIT_PROGRESS   TRUE
+  )
+  FetchContent_MakeAvailable(abseil-cpp)
+endif()
+
+if(INK_STROKE_MODELER_BUILD_TESTING)
+  enable_testing()
 
   if(INK_STROKE_MODELER_FIND_FUZZTEST)
     find_package(fuzztest REQUIRED)
@@ -77,25 +107,12 @@ if(INK_STROKE_MODELER_BUILD_TESTING)
     FetchContent_Declare(
       fuzztest
       GIT_REPOSITORY https://github.com/google/fuzztest.git
-      GIT_TAG        529b2bfd547281a9829548d7293ea47fb81e30aa  # head at 2024-02-14
+      GIT_TAG        cc35c77e079518d249d34784ad80ab247e973f73  # 20250214.0
       GIT_PROGRESS   TRUE
     )
     FetchContent_MakeAvailable(fuzztest)
   endif()
   fuzztest_setup_fuzzing_flags()
-else()
-  if(INK_STROKE_MODELER_FIND_ABSL)
-    find_package(absl REQUIRED)
-  else()
-    set(ABSL_BUILD_TESTING OFF)
-    FetchContent_Declare(
-      abseil-cpp
-      GIT_REPOSITORY ${absl_URL}
-      GIT_TAG        ${absl_TAG}
-      GIT_PROGRESS   TRUE
-    )
-    FetchContent_MakeAvailable(abseil-cpp)
-  endif()
 endif()
 
 if(CMAKE_CXX_STANDARD LESS 20)

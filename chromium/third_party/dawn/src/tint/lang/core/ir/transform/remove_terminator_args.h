@@ -47,13 +47,14 @@ const core::ir::Capabilities kRemoveTerminatorArgsCapabilities{
     core::ir::Capability::kAllowPointersAndHandlesInStructures,
     core::ir::Capability::kAllowVectorElementPointer,
     core::ir::Capability::kAllowHandleVarsWithoutBindings,
-    core::ir::Capability::kAllowClipDistancesOnF32,
+    core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
     core::ir::Capability::kAllowPrivateVarsInFunctions,
     core::ir::Capability::kAllowAnyLetType,
     core::ir::Capability::kAllowModuleScopeLets,
     core::ir::Capability::kAllowWorkspacePointerInputToEntryPoint,
     core::ir::Capability::kAllowDuplicateBindings,
     core::ir::Capability::kAllowNonCoreTypes,
+    core::ir::Capability::kLoosenValidationForShaderIO,
 };
 
 /// RemoveTerminatorArgs is a transform that removes all arguments from terminator instructions and

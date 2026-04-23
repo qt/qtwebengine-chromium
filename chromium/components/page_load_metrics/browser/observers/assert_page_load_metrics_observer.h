@@ -116,6 +116,10 @@ class AssertPageLoadMetricsObserver final
       const page_load_metrics::mojom::PageLoadTiming& timing) override;
   void OnFirstContentfulPaintInPage(
       const page_load_metrics::mojom::PageLoadTiming& timing) override;
+  void OnMonotonicFirstPaintInPage(
+      const page_load_metrics::mojom::PageLoadTiming& timing) override;
+  void OnMonotonicFirstContentfulPaintInPage(
+      const page_load_metrics::mojom::PageLoadTiming& timing) override;
   void OnFirstPaintAfterBackForwardCacheRestoreInPage(
       const page_load_metrics::mojom::BackForwardCacheTiming& timing,
       size_t index) override;
@@ -218,8 +222,6 @@ class AssertPageLoadMetricsObserver final
                          bool blocked_by_policy,
                          page_load_metrics::StorageType access_type) override {}
   void OnPrefetchLikely() override {}
-  void OnV8MemoryChanged(const std::vector<page_load_metrics::MemoryUpdate>&
-                             memory_updates) override {}
   void OnSharedStorageWorkletHostCreated() override {}
   void OnSharedStorageSelectURLCalled() override {}
   void OnCustomUserTimingMarkObserved(

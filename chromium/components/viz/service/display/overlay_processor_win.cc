@@ -182,14 +182,6 @@ gfx::Rect OverlayProcessorWin::GetAndResetOverlayDamage() {
   return std::exchange(overlay_damage_rect_, gfx::Rect());
 }
 
-void OverlayProcessorWin::AdjustOutputSurfaceOverlay(
-    std::optional<OutputSurfaceOverlayPlane>* output_surface_plane) {
-  if (pending_remove_primary_plane_) {
-    output_surface_plane->reset();
-    pending_remove_primary_plane_ = false;
-  }
-}
-
 void OverlayProcessorWin::ProcessForOverlays(
     DisplayResourceProvider* resource_provider,
     AggregatedRenderPassList* render_passes,
@@ -198,7 +190,7 @@ void OverlayProcessorWin::ProcessForOverlays(
     const OverlayProcessorInterface::FilterOperationsMap&
         render_pass_backdrop_filters,
     SurfaceDamageRectList surface_damage_rect_list_in_root_space,
-    OutputSurfaceOverlayPlane* output_surface_plane,
+    std::optional<OverlayCandidate>& primary_plane,
     CandidateList* candidates,
     gfx::Rect* root_damage_rect,
     std::vector<gfx::Rect>* content_bounds) {
@@ -217,15 +209,36 @@ void OverlayProcessorWin::ProcessForOverlays(
     ProcessOverlaysFromOutputSurfacePlane(
         resource_provider, render_passes, output_color_matrix,
         render_pass_filters, render_pass_backdrop_filters,
-        surface_damage_rect_list_in_root_space, output_surface_plane,
-        candidates, root_damage_rect);
+        surface_damage_rect_list_in_root_space, candidates, root_damage_rect);
+
+    CHECK(primary_plane);
+    primary_plane->is_opaque =
+        !render_passes->back()->has_transparent_background;
+    primary_plane->layer_id = gfx::OverlayLayerId::MakeVizInternalRenderPass(
+        render_passes->back()->id);
   }
+
+  // Sort back-to-front to make the subsequent operations easier.
+  std::ranges::sort(*candidates, {}, &OverlayCandidate::plane_z_order);
 
   if (is_page_fullscreen_mode_ &&
       base::FeatureList::IsEnabled(
           features::kEarlyFullScreenVideoOptimization)) {
     TryPromoteFullScreenVideo(*render_passes->back(), *candidates,
                               *root_damage_rect);
+  }
+
+  if (pending_remove_primary_plane_) {
+    primary_plane.reset();
+    pending_remove_primary_plane_ = false;
+  }
+  if (primary_plane) {
+    // Insert the primary plane above all underlays.
+    const auto insert_positon = std::ranges::find_if(
+        *candidates, [](const auto& z_order) { return z_order > 0; },
+        &OverlayCandidate::plane_z_order);
+    candidates->insert(insert_positon, std::move(primary_plane).value());
+    primary_plane.reset();
   }
 
   DebugLogAfterDelegation(status, *candidates, *root_damage_rect);
@@ -351,7 +364,6 @@ void OverlayProcessorWin::ProcessOverlaysFromOutputSurfacePlane(
     const OverlayProcessorInterface::FilterOperationsMap&
         render_pass_backdrop_filters,
     const SurfaceDamageRectList& surface_damage_rect_list_in_root_space,
-    OutputSurfaceOverlayPlane* output_surface_plane,
     CandidateList* candidates,
     gfx::Rect* root_damage_rect) {
   auto* root_render_pass = render_passes->back().get();
@@ -387,12 +399,6 @@ void OverlayProcessorWin::ProcessOverlaysFromOutputSurfacePlane(
     // there are e.g. copy output requests present.
     CHECK(!root_render_pass->needs_synchronous_dcomp_commit);
   }
-
-  // |root_render_pass| will be promoted to overlay only if
-  // |output_surface_plane| is present.
-  DCHECK_NE(output_surface_plane, nullptr);
-  output_surface_plane->enable_blending =
-      root_render_pass->has_transparent_background;
 
   if (debug_settings_->show_dc_layer_debug_borders) {
     InsertDebugBorderDrawQuadsForOverlayCandidates(
@@ -659,8 +665,11 @@ void OverlayProcessorWin::TryPromoteFullScreenVideo(
     return;
   }
 
-  // Sort back-to-front to make the subsequent operations easier.
-  std::ranges::sort(candidates, {}, &OverlayCandidate::plane_z_order);
+#if EXPENSIVE_DCHECKS_ARE_ON()
+  // This function assumes the candidates list is sorted.
+  CHECK(
+      std::ranges::is_sorted(candidates, {}, &OverlayCandidate::plane_z_order));
+#endif
 
   // Find the front-most full screen video candidate by searching from the back.
   auto frontmost_candidate_it = std::ranges::find_if(

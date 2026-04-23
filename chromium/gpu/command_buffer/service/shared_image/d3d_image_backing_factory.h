@@ -15,6 +15,8 @@
 #include <memory>
 #include <optional>
 
+#include "base/memory/scoped_refptr.h"
+#include "base/task/single_thread_task_runner.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_backing_factory.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
@@ -48,6 +50,21 @@ class GPU_GLES2_EXPORT D3DImageBackingFactory
 
   ~D3DImageBackingFactory() override;
 
+  // `io_runner` is needed in order to create GpuMemoryBufferHandles on the
+  // correct thread. GpuServiceImpl calls into this class on the IO thread when
+  // processing IPC requests, so we need to ensure that other callers are able
+  // to thread-hop to that runner when creating GMBHandles (so far, the other
+  // caller for whom it matters is `FrameSinkVideoCapturerImpl` on Windows).
+  static gfx::GpuMemoryBufferHandle CreateGpuMemoryBufferHandle(
+      scoped_refptr<base::SingleThreadTaskRunner> io_runner,
+      const gfx::Size& size,
+      viz::SharedImageFormat format,
+      gfx::BufferUsage usage);
+
+  static bool CopyNativeBufferToSharedMemoryAsync(
+      gfx::GpuMemoryBufferHandle buffer_handle,
+      base::UnsafeSharedMemoryRegion shared_memory);
+
   // Returns true if D3D shared images are supported and this factory should be
   // used. Generally this means Skia-GL, passthrough decoder, and ANGLE-D3D11.
   static bool IsD3DSharedImageSupported(ID3D11Device* d3d11_device,
@@ -76,17 +93,6 @@ class GPU_GLES2_EXPORT D3DImageBackingFactory
     std::unique_ptr<SharedImageBacking> front_buffer;
     std::unique_ptr<SharedImageBacking> back_buffer;
   };
-
-  // Creates IDXGI Swap Chain and exposes front and back buffers as Shared Image
-  // mailboxes.
-  SwapChainBackings CreateSwapChain(const Mailbox& front_buffer_mailbox,
-                                    const Mailbox& back_buffer_mailbox,
-                                    viz::SharedImageFormat format,
-                                    const gfx::Size& size,
-                                    const gfx::ColorSpace& color_space,
-                                    GrSurfaceOrigin surface_origin,
-                                    SkAlphaType alpha_type,
-                                    gpu::SharedImageUsageSet usage);
 
   std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
@@ -135,6 +141,12 @@ class GPU_GLES2_EXPORT D3DImageBackingFactory
   }
 
  private:
+  static gfx::GpuMemoryBufferHandle CreateGpuMemoryBufferHandleOnIO(
+      scoped_refptr<base::SingleThreadTaskRunner> io_runner,
+      const gfx::Size& size,
+      viz::SharedImageFormat format,
+      gfx::BufferUsage usage);
+
   std::unique_ptr<SharedImageBacking> CreateSharedBufferD3D12(
       const Mailbox& mailbox,
       const gfx::Size& size,

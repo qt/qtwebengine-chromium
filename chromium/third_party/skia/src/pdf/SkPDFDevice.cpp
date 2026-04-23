@@ -109,7 +109,7 @@ SkPDFDevice::MarkedContentManager::MarkedContentManager(SkPDFDocument* document,
 SkPDFDevice::MarkedContentManager::~MarkedContentManager() {
     // This does not close the last open mark, that is done in SkPDFDevice::content.
     SkASSERT(fNextMarksElemId == 0);
-};
+}
 
 void SkPDFDevice::MarkedContentManager::setNextMarksElemId(int nextMarksElemId) {
     fNextMarksElemId = nextMarksElemId;
@@ -588,8 +588,8 @@ void SkPDFDevice::drawOval(const SkRect& oval, const SkPaint& paint) {
     this->internalDrawPath(this->cs(), this->localToDevice(), SkPath::Oval(oval), paint, true);
 }
 
-void SkPDFDevice::drawPath(const SkPath& path, const SkPaint& paint, bool pathIsMutable) {
-    this->internalDrawPath(this->cs(), this->localToDevice(), path, paint, pathIsMutable);
+void SkPDFDevice::drawPath(const SkPath& path, const SkPaint& paint) {
+    this->internalDrawPath(this->cs(), this->localToDevice(), path, paint, false);
 }
 
 void SkPDFDevice::internalDrawPathWithFilter(const SkClipStack& clipStack,
@@ -604,11 +604,14 @@ void SkPDFDevice::internalDrawPathWithFilter(const SkClipStack& clipStack,
                                      ? SkStrokeRec::kFill_InitStyle
                                      : SkStrokeRec::kHairline_InitStyle;
     builder.transform(ctm);
-    SkPathRaw pathRaw = SkPathPriv::Raw(builder);
+    const auto pathRaw = SkPathPriv::Raw(builder, SkResolveConvexity::kYes);
+    if (!pathRaw) {
+        return;
+    }
 
     SkIRect bounds = clipStack.bounds(this->bounds()).roundOut();
     SkMaskBuilder sourceMask;
-    if (!skcpu::DrawToMask(pathRaw,
+    if (!skcpu::DrawToMask(*pathRaw,
                            bounds,
                            paint->getMaskFilter(),
                            &SkMatrix::I(),
@@ -643,7 +646,7 @@ void SkPDFDevice::internalDrawPathWithFilter(const SkClipStack& clipStack,
             maskDevice->makeFormXObjectFromDevice(dstMaskBounds, true), false,
             SkPDFGraphicState::kLuminosity_SMaskMode, fDocument), content.stream());
     SkPDFUtils::AppendRectangle(SkRect::Make(dstMaskBounds), content.stream());
-    SkPDFUtils::PaintPath(SkPaint::kFill_Style, pathRaw.fillType(), content.stream());
+    SkPDFUtils::PaintPath(SkPaint::kFill_Style, pathRaw->fillType(), content.stream());
     this->clearMaskOnGraphicState(content.stream());
 }
 
@@ -735,13 +738,17 @@ void SkPDFDevice::internalDrawPath(const SkClipStack& clipStack,
     constexpr SkScalar kToleranceScale = 0.0625f;  // smaller = better conics (circles).
     SkScalar matrixScale = matrix.mapRadius(1.0f);
     SkScalar tolerance = matrixScale > 0.0f ? kToleranceScale / matrixScale : kToleranceScale;
-    bool consumeDegeratePathSegments =
+    bool discardEmptyVerbs =
            paint->getStyle() == SkPaint::kFill_Style ||
            (paint->getStrokeCap() != SkPaint::kRound_Cap &&
             paint->getStrokeCap() != SkPaint::kSquare_Cap);
-    SkPDFUtils::EmitPath(*pathPtr, paint->getStyle(), consumeDegeratePathSegments, content.stream(),
-                         tolerance);
-    SkPDFUtils::PaintPath(paint->getStyle(), pathPtr->getFillType(), content.stream());
+    using SkPDFUtils::EmptyPath, SkPDFUtils::EmptyVerb;
+    if (SkPDFUtils::EmitPath(*pathPtr, paint->getStyle(), EmptyPath::Discard,
+                             discardEmptyVerbs ? EmptyVerb::Discard : EmptyVerb::Preserve,
+                             content.stream(), tolerance))
+    {
+        SkPDFUtils::PaintPath(paint->getStyle(), pathPtr->getFillType(), content.stream());
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -26,7 +26,6 @@
 #include "build/build_config.h"
 #include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
-#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/shared_remote.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
@@ -244,6 +243,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   void SetActiveURL(const blink::WebURL& url,
                     const blink::WebString& top_url) override;
   SkBitmap* GetSadPageBitmap() override;
+  blink::mojom::PerformanceTier GetCpuPerformanceTier() override;
   std::unique_ptr<blink::WebV8ValueConverter> CreateWebV8ValueConverter()
       override;
   bool DisallowV8FeatureFlagOverrides() const override;
@@ -262,6 +262,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   std::pair<base::TimeDelta, base::TimeDelta>
   InertAndMinimumIntervalOfUserLevelMemoryPressureSignal() override;
 #endif  // BUILDFLAG(IS_ANDROID)
+  void OnV8HeapLastResortGC() override;
 
   // Tells this platform that the renderer is locked to a site (i.e., a scheme
   // plus eTLD+1, such as https://google.com), or to a more specific origin.

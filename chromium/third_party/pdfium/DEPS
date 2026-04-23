@@ -26,12 +26,6 @@ vars = {
   # support libraries.
   'checkout_android_native_support': 'checkout_android',
 
-  'checkout_clang_coverage_tools': 'False',
-
-  'checkout_clang_tidy': 'False',
-
-  'checkout_clangd': 'False',
-
   'checkout_instrumented_libraries': 'checkout_linux and checkout_configuration != "small" and checkout_configuration != "minimal"',
 
   # Fetch the rust toolchain.
@@ -61,7 +55,7 @@ vars = {
   # reclient CIPD package
   'reclient_package': 'infra/rbe/client/',
   # reclient CIPD package version
-  'reclient_version': 're_client_version:0.179.0.28341fc7-gomaip',
+  'reclient_version': 're_client_version:0.185.0.db415f21-gomaip',
 
   'chromium_git': 'https://chromium.googlesource.com',
   'pdfium_git': 'https://pdfium.googlesource.com',
@@ -70,7 +64,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling abseil
   # and whatever else without interference from each other.
-  'abseil_revision': '7dadc942bd16c3488945895661ae1684214a99a1',
+  'abseil_revision': '14a5b78f39684f85a19690e63c722d6bb680f2cd',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling android_toolchain
   # and whatever else without interference from each other.
@@ -78,27 +72,27 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling build
   # and whatever else without interference from each other.
-  'build_revision': '8c1fe266c710800c97509d90a4b4931ad9ab6bec',
+  'build_revision': '371ecb089d96d60e5208ec2d25c9b4f0860e556c',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling buildtools
   # and whatever else without interference from each other.
-  'buildtools_revision': '10b037a661ecbc8b2e8c4f85c653d36d1d82cc36',
+  'buildtools_revision': '24b075a4d7ea447126ff322e3e8bfecb78012b75',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling catapult
   # and whatever else without interference from each other.
-  'catapult_revision': '06b834fb176d09207dd98ab3cc3b994fa0a5c8e3',
+  'catapult_revision': '5b6dfc90097d0138fc4c86928e3680bc18eae772',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling clang format
   # and whatever else without interference from each other.
-  'clang_format_revision': '1549a8dba21b6c022c6f5ccee4edf18e5ceb2109',
+  'clang_format_revision': 'c2725e0622e1a86d55f14514f2177a39efea4a0e',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling clang
   # and whatever else without interference from each other.
-  'clang_revision': '969098a0e4489f341a27c3b11d5b2b68b001bb38',
+  'clang_revision': 'f0aeeca2d4eea4ade7308a31bc4023fc52614332',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling code_coverage
   # and whatever else without interference from each other.
-  'code_coverage_revision': 'ef6864ec11f191c3f30d3dc4f5a3cc97135069e5',
+  'code_coverage_revision': '9e4876df273e2b637b56d5e35815d27fed1dfce7',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling cpu_features
   # and whatever else without interference from each other.
@@ -106,7 +100,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling depot_tools
   # and whatever else without interference from each other.
-  'depot_tools_revision': '150db331780e685bf1c6a0000a0e98cfe4eb6344',
+  'depot_tools_revision': '6f83fce8652bbde3873c6f486179a93c9b6f9421',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling dragonbox
   # and whatever else without interference from each other.
@@ -118,31 +112,31 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling fp16
   # and whatever else without interference from each other.
-  'fp16_revision': 'b3720617faf1a4581ed7e6787cc51722ec7751f0',
+  'fp16_revision': '3d2de1816307bac63c16a297e8c4dc501b4076df',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling freetype
   # and whatever else without interference from each other.
-  'freetype_revision': 'c6cf32de3b3582d0eea9f6372121f0f07d22ae68',
+  'freetype_revision': 'fc9cc5038e05edceec3d0f605415540ac76163e9',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling GN CIPD package version
   # and whatever else without interference from each other.
-  'gn_version': 'git_revision:5d0a4153b0bcc86c5a23310d5b648a587be3c56d',
+  'gn_version': 'git_revision:07d3c6f4dc290fae5ca6152ebcb37d6815c411ab',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling goldctl CIPD package version
   # and whatever else without interference from each other.
-  'goldctl_version': 'git_revision:c932d6f9ed71f408fda4f9986f8ba47f490c3eaf',
+  'goldctl_version': 'git_revision:68c457e302c11fee68a2f59393f46a224e20fa10',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling gtest
   # and whatever else without interference from each other.
-  'gtest_revision': '9df216cc9d6fd2f27e00e5ba1e88a502d7f278c7',
+  'gtest_revision': 'b2b9072ecbe874f5937054653ef8f2731eb0f010',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling highway
   # and whatever else without interference from each other.
-  'highway_revision': '00fe003dac355b979f36157f9407c7c46448958e',
+  'highway_revision': '84379d1c73de9681b54fbe1c035a23c7bd5d272d',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling icu
   # and whatever else without interference from each other.
-  'icu_revision': '1b2e3e8a421efae36141a7b932b41e315b089af8',
+  'icu_revision': 'f27805b7d7d8618fa73ce89e9d28e0a8b2216fec',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling instrumented_lib
   # and whatever else without interference from each other.
@@ -160,23 +154,23 @@ vars = {
   # and whatever else without interference from each other.
   # If you change this, also update the libc++ revision in
   # //buildtools/deps_revisions.gni.
-  'libcxx_revision': '954086abf1216d110534fb3e21d8e86d6703cefb',
+  'libcxx_revision': 'e586acfc743b471da9bb3989246f77eafd356476',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling libc++abi
   # and whatever else without interference from each other.
-  'libcxxabi_revision': 'f7f5a32b3e9582092d8a4511acec036a09ae8524',
+  'libcxxabi_revision': 'a02fa0058d8d52aca049868d229808a3e5dadbad',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling libpng
   # and whatever else without interference from each other.
-  'libpng_revision': 'dc2507e99733e9e3bfa7b4387a3755fd8ee77542',
+  'libpng_revision': '84d676669166912cb76f8636526c77c2ac1cd069',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling libunwind
   # and whatever else without interference from each other.
-  'libunwind_revision': 'cf32009cc6080d61a09027c194f04be46d6aa236',
+  'libunwind_revision': '14b9dee79c12dd8cdd3d662ee0be49200c6d9b71',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling llvm-libc
   # and whatever else without interference from each other.
-  'llvm_libc_revision': '91a16614cd8b9f6715907d2c3e45eb55436cdef0',
+  'llvm_libc_revision': '006672b9b6481bae04b9428100ed0486ab99f452',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling markupsafe
   # and whatever else without interference from each other.
@@ -192,11 +186,11 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling partition_allocator
   # and whatever else without interference from each other.
-  'partition_allocator_revision': '51d0a558ecdf5cac58509d08263c36764c270ca6',
+  'partition_allocator_revision': '2f4069fb8d7afbd9e3c078a14a5bab8280a68cf6',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling pdfium_tests
   # and whatever else without interference from each other.
-  'pdfium_tests_revision': '96eff75d5335bc025e9ac6d9495cd329dc485759',
+  'pdfium_tests_revision': '9cd54e6b4c6cfec64c64cef538ffd5734009864e',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling result_adapter_revision
   # and whatever else without interference from each other.
@@ -204,7 +198,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling rust
   # and whatever else without interference from each other.
-  'rust_revision': 'ea2d1926aaa51543b41df196cf7f56f32a49d123',
+  'rust_revision': '84c4bbe80381e6f098b793784ae291a24d981b56',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling simdutf
   # and whatever else without interference from each other.
@@ -212,11 +206,11 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling siso
   # and whatever else without interference from each other.
-  'siso_version': 'git_revision:8863265a67843154872be2be1fc0c37339691405',
+  'siso_version': 'git_revision:0915813c4c786240e12d03aa3018c02bab4df14f',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling skia
   # and whatever else without interference from each other.
-  'skia_revision': 'a7f8bd1d297acee53fbd6ddae1b5974faca98bad',
+  'skia_revision': 'a9e9573a3f1b6afcd7a323bd663482a9834f5fb5',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling test_fonts
   # and whatever else without interference from each other.
@@ -228,23 +222,23 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling tools_memory
   # and whatever else without interference from each other.
-  'tools_memory_revision': '3c7b1f4daab1520239cb172059e2e16684fd3128',
+  'tools_memory_revision': '27e942fcc0c46109be1cf02d1257784115974c9f',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling tools_rust
   # and whatever else without interference from each other.
-  'tools_rust_revision': '9dbbc10b2a2e2bac2fe2a86c17e0cc9f51b0813b',
+  'tools_rust_revision': '59ea51c9c56c2f1b9554d3d0dc5666ee50333fbd',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling tools_win_revision
   # and whatever else without interference from each other.
-  'tools_win_revision': '89d58ebe78f02706d414154f923f759a05a887b6',
+  'tools_win_revision': '24494b071e019a2baea4355d9870ffc5fc0bbafe',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling v8
   # and whatever else without interference from each other.
-  'v8_revision': '6ed01c3e37ded6a462a518239981e0f1cdc3ea88',
+  'v8_revision': 'dd1717b9d27b2c78f45848bc953fdf0f0ccebc40',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling zlib
   # and whatever else without interference from each other.
-  'zlib_revision': '85f05b0835f934e52772efc308baa80cdd491838',
+  'zlib_revision': '63d7e16739d83e3a16c673692a348e52db1a3a11',
 }
 
 # Only these hosts are allowed for dependencies in this DEPS file.
@@ -432,74 +426,74 @@ deps = {
     'bucket': 'chromium-browser-clang',
     'objects': [
       {
-        'object_name': 'Linux_x64/clang-llvmorg-22-init-6852-g2384a6a2-1.tar.xz',
-        'sha256sum': '50e91dcfe35b3c2bd1b16c03a17d6d144bcde9d0936d3c54c5a3b9ccedce2583',
-        'size_bytes': 55581368,
-        'generation': 1757353529940089,
+        'object_name': 'Linux_x64/clang-llvmorg-22-init-14273-gea10026b-1.tar.xz',
+        'sha256sum': '1ef7b1d60fb433100c27b4552b44577ab86ef5394531d1fbebc237db64a893fd',
+        'size_bytes': 56552908,
+        'generation': 1762971374100697,
         'condition': '(host_os == "linux" or checkout_android) and non_git_source',
       },
       {
-        'object_name': 'Linux_x64/llvmobjdump-llvmorg-22-init-6852-g2384a6a2-1.tar.xz',
-        'sha256sum': '9a8a6802dcdcae11f3b2d26ab7058a93d31e83e682369f8c4f847c61cb05b0aa',
-        'size_bytes': 5652312,
-        'generation': 1757353531682288,
-        'condition': '(host_os == "linux" or checkout_android) and non_git_source',
+        'object_name': 'Linux_x64/llvmobjdump-llvmorg-22-init-14273-gea10026b-1.tar.xz',
+        'sha256sum': 'ec1d88867045b8348659f7a8f677d12aa91d7d61a68603a82bad1926bf57c3b0',
+        'size_bytes': 5723188,
+        'generation': 1762971374436694,
+        'condition': '((checkout_linux or checkout_mac or checkout_android) and host_os == "linux") and non_git_source',
       },
       {
-        'object_name': 'Mac/clang-llvmorg-22-init-6852-g2384a6a2-1.tar.xz',
-        'sha256sum': 'bc7aa2349d509908289a169d1a37c76324cb7a51c1f8fe976c5e73d22918fdb1',
-        'size_bytes': 53466988,
-        'generation': 1757353534766274,
+        'object_name': 'Mac/clang-llvmorg-22-init-14273-gea10026b-1.tar.xz',
+        'sha256sum': 'f266b79576d4fc0075e9380b68b8879ec2bc9617c973e7bdea694ec006f43636',
+        'size_bytes': 54056416,
+        'generation': 1762971376161293,
         'condition': 'host_os == "mac" and host_cpu == "x64"',
       },
       {
-        'object_name': 'Mac/llvmobjdump-llvmorg-22-init-6852-g2384a6a2-1.tar.xz',
-        'sha256sum': 'd019a5b28910bd5460fc0864784da9ffb0dfd8ba6978c77b2a6257db57900a02',
-        'size_bytes': 5556524,
-        'generation': 1757353535500187,
-        'condition': 'host_os == "mac" and host_cpu == "x64"',
-      },
-      {
-        'object_name': 'Mac/clang-mac-runtime-library-llvmorg-22-init-6852-g2384a6a2-1.tar.xz',
-        'sha256sum': 'af563ba6c703fc840e1d85f7e401edf2e5c41d3a8fc5797c78501b8e9e931592',
-        'size_bytes': 1003140,
-        'generation': 1757353559376264,
+        'object_name': 'Mac/clang-mac-runtime-library-llvmorg-22-init-14273-gea10026b-1.tar.xz',
+        'sha256sum': '6f2d61383a3c0ab28286e5a57b7e755eb14726bb9a73a7737b685488eae18b90',
+        'size_bytes': 1010052,
+        'generation': 1762971385382392,
         'condition': 'checkout_mac and not host_os == "mac"',
       },
       {
-        'object_name': 'Mac_arm64/clang-llvmorg-22-init-6852-g2384a6a2-1.tar.xz',
-        'sha256sum': '900aa383847a6a354644f625c757d89a1f6ebaede280183961466d5109163920',
-        'size_bytes': 44488104,
-        'generation': 1757353561365952,
+        'object_name': 'Mac/llvmobjdump-llvmorg-22-init-14273-gea10026b-1.tar.xz',
+        'sha256sum': '9a282bf252e0c7ac88152844f347428e02970aa22941fb583439ce72134f0161',
+        'size_bytes': 5607404,
+        'generation': 1762971376526568,
+        'condition': 'host_os == "mac" and host_cpu == "x64"',
+      },
+      {
+        'object_name': 'Mac_arm64/clang-llvmorg-22-init-14273-gea10026b-1.tar.xz',
+        'sha256sum': 'a7b7caf53f4e722234e85aecfdbb3eeb94608c37394672bebd074d6b2f300362',
+        'size_bytes': 45184380,
+        'generation': 1762971386895625,
         'condition': 'host_os == "mac" and host_cpu == "arm64"',
       },
       {
-        'object_name': 'Mac_arm64/llvmobjdump-llvmorg-22-init-6852-g2384a6a2-1.tar.xz',
-        'sha256sum': '9c2933968c9d9592767abcaed8e1b1e686c1fbdaf1562fe863939b4e612a2363',
-        'size_bytes': 5285128,
-        'generation': 1757353562542221,
+        'object_name': 'Mac_arm64/llvmobjdump-llvmorg-22-init-14273-gea10026b-1.tar.xz',
+        'sha256sum': 'c5ee70e78ae5aa7a0d9b613ea5a8e21629438f12acb50bca0f7e18fae6abfe0a',
+        'size_bytes': 5353832,
+        'generation': 1762971387217357,
         'condition': 'host_os == "mac" and host_cpu == "arm64"',
       },
       {
-        'object_name': 'Win/clang-llvmorg-22-init-6852-g2384a6a2-1.tar.xz',
-        'sha256sum': '76498ebd284b82f01b695be878183db45a9fd371a984945cd87fa2d1435f3e28',
-        'size_bytes': 47553980,
-        'generation': 1757353589971217,
+        'object_name': 'Win/clang-llvmorg-22-init-14273-gea10026b-1.tar.xz',
+        'sha256sum': '483b9b2809c3f53b9640e77d83ca6ab3017a0974979d242198abf23d99639e62',
+        'size_bytes': 48337640,
+        'generation': 1762971401378315,
         'condition': 'host_os == "win"',
       },
       {
-        'object_name': 'Win/clang-win-runtime-library-llvmorg-22-init-6852-g2384a6a2-1.tar.xz',
-        'sha256sum': '4ffbb3d3b6f3230f0c76e7ab973bcf01dd35160526e67ee3589061b26cfc247e',
-        'size_bytes': 2500276,
-        'generation': 1757353612355557,
+        'object_name': 'Win/clang-win-runtime-library-llvmorg-22-init-14273-gea10026b-1.tar.xz',
+        'sha256sum': 'd8b3310760c3a8f5dac4801583f7872601f4ba312742b0bf530f043ce6b6f36f',
+        'size_bytes': 2520664,
+        'generation': 1762971410370409,
         'condition': 'checkout_win and not host_os == "win"',
       },
       {
-        'object_name': 'Win/clangd-llvmorg-22-init-6852-g2384a6a2-1.tar.xz',
-        'sha256sum': 'e04cd73dfea9098e4ee1ba0ea07982f9c9f56fa66733c12dd266e83a38ed532a',
-        'size_bytes': 14327372,
-        'generation': 1757353590359652,
-        'condition': 'host_os == "win"',
+        'object_name': 'Win/llvmobjdump-llvmorg-22-init-14273-gea10026b-1.tar.xz',
+        'sha256sum': '00c4dab7747534548e2111b3adbdbf9ef561887e18c7d6de4c7e273af799c190',
+        'size_bytes': 5742908,
+        'generation': 1762971401692156,
+        'condition': '(checkout_linux or checkout_mac or checkout_android) and host_os == "win"',
       },
     ]
   },
@@ -538,31 +532,31 @@ deps = {
     'bucket': 'chromium-browser-clang',
     'objects': [
       {
-        'object_name': 'Linux_x64/rust-toolchain-99317ef14d0be42fa4039eea7c5ce50cb4e9aee7-1-llvmorg-22-init-6852-g2384a6a2.tar.xz',
-        'sha256sum': 'cd34d62e7e09b1204ec16fb06a3e2741aa5dafd7aa0a28ccd6daf1b93d28e8ee',
-        'size_bytes': 141616320,
-        'generation': 1757353521719021,
+        'object_name': 'Linux_x64/rust-toolchain-11339a0ef5ed586bb7ea4f85a9b7287880caac3a-1-llvmorg-22-init-14273-gea10026b.tar.xz',
+        'sha256sum': '15cf3019dd864ea64d63e5cf33de1ded76ace4f70cbb224812fccbf03b342096',
+        'size_bytes': 140380848,
+        'generation': 1762971367461755,
         'condition': 'host_os == "linux" and non_git_source',
       },
       {
-        'object_name': 'Mac/rust-toolchain-99317ef14d0be42fa4039eea7c5ce50cb4e9aee7-1-llvmorg-22-init-6852-g2384a6a2.tar.xz',
-        'sha256sum': '304e0e9e40ea4424e1aa047a80c83ca6b4b98134030248e4c07623d7eeb5c8d2',
-        'size_bytes': 135467656,
-        'generation': 1757353523545803,
+        'object_name': 'Mac/rust-toolchain-11339a0ef5ed586bb7ea4f85a9b7287880caac3a-1-llvmorg-22-init-14273-gea10026b.tar.xz',
+        'sha256sum': 'bb8be97e327b72f03f9caadae5557c7ce0ddac66e6dcc37cd3b8e65fca074e4b',
+        'size_bytes': 134345832,
+        'generation': 1762971369029231,
         'condition': 'host_os == "mac" and host_cpu == "x64"',
       },
       {
-        'object_name': 'Mac_arm64/rust-toolchain-99317ef14d0be42fa4039eea7c5ce50cb4e9aee7-1-llvmorg-22-init-6852-g2384a6a2.tar.xz',
-        'sha256sum': '850e81624619ced0583b171c0e6a0e052c9544f8be3c525e9636327e28851a1f',
-        'size_bytes': 122922752,
-        'generation': 1757353525349226,
+        'object_name': 'Mac_arm64/rust-toolchain-11339a0ef5ed586bb7ea4f85a9b7287880caac3a-1-llvmorg-22-init-14273-gea10026b.tar.xz',
+        'sha256sum': '72b4421aa531822ba4b32533e6efae4e7c06eb15dcc32d1fb361023dd937c63c',
+        'size_bytes': 121923464,
+        'generation': 1762971370566007,
         'condition': 'host_os == "mac" and host_cpu == "arm64"',
       },
       {
-        'object_name': 'Win/rust-toolchain-99317ef14d0be42fa4039eea7c5ce50cb4e9aee7-1-llvmorg-22-init-6852-g2384a6a2.tar.xz',
-        'sha256sum': '7a419e23bea4ef3c5c79f2b8e4297d69ab0301d7e56935b98c5f718f771c4c43',
-        'size_bytes': 198944336,
-        'generation': 1757353527492800,
+        'object_name': 'Win/rust-toolchain-11339a0ef5ed586bb7ea4f85a9b7287880caac3a-1-llvmorg-22-init-14273-gea10026b.tar.xz',
+        'sha256sum': '8cd2f0c4d312c0a7c127a8e6adf0a73ceecad316997e925fbebc1d855e95f6ba',
+        'size_bytes': 197809928,
+        'generation': 1762971372158285,
         'condition': 'host_os == "win"',
       },
     ],

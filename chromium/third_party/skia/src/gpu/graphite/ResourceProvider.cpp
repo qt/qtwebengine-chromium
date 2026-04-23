@@ -33,7 +33,7 @@
 
 namespace skgpu::graphite {
 
-ResourceProvider::ResourceProvider(SharedContext* sharedContext,\
+ResourceProvider::ResourceProvider(SharedContext* sharedContext,
                                    SingleOwner* singleOwner,
                                    uint32_t recorderID,
                                    size_t resourceBudget)
@@ -62,7 +62,6 @@ void ResourceProvider::startPipelineCreationTask(sk_sp<const RuntimeEffectDictio
     PipelineManager* pipelineManager = fSharedContext->pipelineManager();
 
     pipelineManager->startPipelineCreationTask(fSharedContext,
-                                               this,
                                                std::move(runtimeDict),
                                                handle);
 }
@@ -148,7 +147,12 @@ sk_sp<Texture> ResourceProvider::findOrCreateTexture(
 
     if (Resource* resource =
                 fResourceCache->findAndRefResource(key, budgeted, shareable, unavailable)) {
-        resource->setLabel(std::move(label));
+        // Shareable resource labels should only be set upon creation.
+        if (shareable == Shareable::kYes) {
+            SkASSERT(resource->getLabel() == label);
+        } else {
+            resource->setLabel(std::move(label));
+        }
         return sk_sp<Texture>(static_cast<Texture*>(resource));
     }
 
@@ -205,12 +209,33 @@ sk_sp<Sampler> ResourceProvider::findOrCreateCompatibleSampler(const SamplerDesc
     return sampler;
 }
 
-sk_sp<Buffer> ResourceProvider::findOrCreateBuffer(size_t size,
-                                                   BufferType type,
-                                                   AccessPattern accessPattern,
-                                                   std::string_view label) {
+sk_sp<Buffer> ResourceProvider::findOrCreateNonShareableBuffer(size_t size,
+                                                               BufferType type,
+                                                               AccessPattern accessPattern,
+                                                               std::string_view label) {
+    return this->findOrCreateBuffer(size, type, accessPattern, label, Shareable::kNo);
+}
+
+sk_sp<Buffer> ResourceProvider::findOrCreateScratchBuffer(
+        size_t size,
+        BufferType type,
+        AccessPattern access,
+        std::string_view label,
+        const ResourceCache::ScratchResourceSet& unvailable) {
+    // Scratch buffers must be GPU only, mapped access makes it too difficult to scope their
+    // reads and writes within the actual command buffer execution.
+    SkASSERT(access != AccessPattern::kHostVisible);
+    return this->findOrCreateBuffer(size, type, access, label, Shareable::kScratch, &unvailable);
+}
+
+sk_sp<Buffer> ResourceProvider::findOrCreateBuffer(
+        size_t size,
+        BufferType type,
+        AccessPattern accessPattern,
+        std::string_view label,
+        Shareable shareable,
+        const ResourceCache::ScratchResourceSet* unavailable) {
     static constexpr Budgeted kBudgeted = Budgeted::kYes;
-    static constexpr Shareable kShareable = Shareable::kNo;
     static const ResourceType kType = GraphiteResourceKey::GenerateResourceType();
 
     GraphiteResourceKey key;
@@ -239,8 +264,14 @@ sk_sp<Buffer> ResourceProvider::findOrCreateBuffer(size_t size,
         }
     }
 
-    if (Resource* resource = fResourceCache->findAndRefResource(key, kBudgeted, kShareable)) {
-        resource->setLabel(std::move(label));
+    if (Resource* resource =
+            fResourceCache->findAndRefResource(key, kBudgeted, shareable, unavailable)) {
+        // Shareable resource labels should only be set upon creation.
+        if (shareable == Shareable::kYes) {
+            SkASSERT(resource->getLabel() == label);
+        } else {
+            resource->setLabel(std::move(label));
+        }
         return sk_sp<Buffer>(static_cast<Buffer*>(resource));
     }
     auto buffer = this->createBuffer(size, type, accessPattern);
@@ -249,7 +280,7 @@ sk_sp<Buffer> ResourceProvider::findOrCreateBuffer(size_t size,
     }
 
     buffer->setLabel(std::move(label));
-    fResourceCache->insertResource(buffer.get(), key, kBudgeted, kShareable);
+    fResourceCache->insertResource(buffer.get(), key, kBudgeted, shareable);
     return buffer;
 }
 

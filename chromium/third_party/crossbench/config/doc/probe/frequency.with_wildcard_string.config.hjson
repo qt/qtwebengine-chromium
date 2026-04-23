@@ -1,7 +1,7 @@
 {
-  probes: {
-    frequency: {
-      cpus: "max"
+  "probes": {
+    "frequency": {
+      "cpus": "max"
     }
   }
 }

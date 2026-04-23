@@ -1,7 +1,7 @@
 Name: libvpx
 URL: https://chromium.googlesource.com/webm/libvpx
 Version: N/A
-Revision: 8d00aca60b951444582b1373e4e47f0ca6e0871c
+Revision: 14cd170a941f88e6fb145ebb873a3c8f87645834
 Update Mechanism: Manual
 CPEPrefix: cpe:/a:webmproject:libvpx:1.15.2
 License: BSD-3-Clause, Patent
@@ -39,7 +39,7 @@ Please follow these steps to update libvpx source code:
 
      git commit -a --amend
 
-   Add `Bug: b:308446709` to the commit message.
+   Add `Bug: 308446709` to the commit message.
 
 4. Upload the change to Gerrit:
 

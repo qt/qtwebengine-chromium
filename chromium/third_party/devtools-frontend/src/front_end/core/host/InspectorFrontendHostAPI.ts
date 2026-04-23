@@ -6,6 +6,9 @@ import type * as Platform from '../../core/platform/platform.js';
 import type * as Common from '../common/common.js';
 import type * as Root from '../root/root.js';
 
+/**
+ * This values should match the one getting called from Chromium
+ */
 export enum Events {
   /* eslint-disable @typescript-eslint/naming-convention -- Accessed from web_tests */
   AppendedToURL = 'appendedToURL',
@@ -24,7 +27,7 @@ export enum Events {
   FileSystemsLoaded = 'fileSystemsLoaded',
   FileSystemRemoved = 'fileSystemRemoved',
   FileSystemAdded = 'fileSystemAdded',
-  FileSystemFilesChangedAddedRemoved = 'FileSystemFilesChangedAddedRemoved',
+  FileSystemFilesChangedAddedRemoved = 'fileSystemFilesChangedAddedRemoved',
   IndexingTotalWorkCalculated = 'indexingTotalWorkCalculated',
   IndexingWorked = 'indexingWorked',
   IndexingDone = 'indexingDone',
@@ -40,34 +43,34 @@ export enum Events {
 }
 
 export const EventDescriptors = [
-  [Events.AppendedToURL, 'appendedToURL', ['url']],
-  [Events.CanceledSaveURL, 'canceledSaveURL', ['url']],
-  [Events.ColorThemeChanged, 'colorThemeChanged', []],
-  [Events.ContextMenuCleared, 'contextMenuCleared', []],
-  [Events.ContextMenuItemSelected, 'contextMenuItemSelected', ['id']],
-  [Events.DeviceCountUpdated, 'deviceCountUpdated', ['count']],
-  [Events.DevicesDiscoveryConfigChanged, 'devicesDiscoveryConfigChanged', ['config']],
-  [Events.DevicesPortForwardingStatusChanged, 'devicesPortForwardingStatusChanged', ['status']],
-  [Events.DevicesUpdated, 'devicesUpdated', ['devices']],
-  [Events.DispatchMessage, 'dispatchMessage', ['messageObject']],
-  [Events.DispatchMessageChunk, 'dispatchMessageChunk', ['messageChunk', 'messageSize']],
-  [Events.EnterInspectElementMode, 'enterInspectElementMode', []],
-  [Events.EyeDropperPickedColor, 'eyeDropperPickedColor', ['color']],
-  [Events.FileSystemsLoaded, 'fileSystemsLoaded', ['fileSystems']],
-  [Events.FileSystemRemoved, 'fileSystemRemoved', ['fileSystemPath']],
-  [Events.FileSystemAdded, 'fileSystemAdded', ['errorMessage', 'fileSystem']],
-  [Events.FileSystemFilesChangedAddedRemoved, 'fileSystemFilesChangedAddedRemoved', ['changed', 'added', 'removed']],
-  [Events.IndexingTotalWorkCalculated, 'indexingTotalWorkCalculated', ['requestId', 'fileSystemPath', 'totalWork']],
-  [Events.IndexingWorked, 'indexingWorked', ['requestId', 'fileSystemPath', 'worked']],
-  [Events.IndexingDone, 'indexingDone', ['requestId', 'fileSystemPath']],
-  [Events.KeyEventUnhandled, 'keyEventUnhandled', ['event']],
-  [Events.ReloadInspectedPage, 'reloadInspectedPage', ['hard']],
-  [Events.RevealSourceLine, 'revealSourceLine', ['url', 'lineNumber', 'columnNumber']],
-  [Events.SavedURL, 'savedURL', ['url', 'fileSystemPath']],
-  [Events.SearchCompleted, 'searchCompleted', ['requestId', 'fileSystemPath', 'files']],
-  [Events.SetInspectedTabId, 'setInspectedTabId', ['tabId']],
-  [Events.SetUseSoftMenu, 'setUseSoftMenu', ['useSoftMenu']],
-  [Events.ShowPanel, 'showPanel', ['panelName']],
+  [Events.AppendedToURL, ['url']],
+  [Events.CanceledSaveURL, ['url']],
+  [Events.ColorThemeChanged, []],
+  [Events.ContextMenuCleared, []],
+  [Events.ContextMenuItemSelected, ['id']],
+  [Events.DeviceCountUpdated, ['count']],
+  [Events.DevicesDiscoveryConfigChanged, ['config']],
+  [Events.DevicesPortForwardingStatusChanged, ['status']],
+  [Events.DevicesUpdated, ['devices']],
+  [Events.DispatchMessage, ['messageObject']],
+  [Events.DispatchMessageChunk, ['messageChunk', 'messageSize']],
+  [Events.EnterInspectElementMode, []],
+  [Events.EyeDropperPickedColor, ['color']],
+  [Events.FileSystemsLoaded, ['fileSystems']],
+  [Events.FileSystemRemoved, ['fileSystemPath']],
+  [Events.FileSystemAdded, ['errorMessage', 'fileSystem']],
+  [Events.FileSystemFilesChangedAddedRemoved, ['changed', 'added', 'removed']],
+  [Events.IndexingTotalWorkCalculated, , ['requestId', 'fileSystemPath', 'totalWork']],
+  [Events.IndexingWorked, ['requestId', 'fileSystemPath', 'worked']],
+  [Events.IndexingDone, ['requestId', 'fileSystemPath']],
+  [Events.KeyEventUnhandled, ['event']],
+  [Events.ReloadInspectedPage, ['hard']],
+  [Events.RevealSourceLine, ['url', 'lineNumber', 'columnNumber']],
+  [Events.SavedURL, ['url', 'fileSystemPath']],
+  [Events.SearchCompleted, ['requestId', 'fileSystemPath', 'files']],
+  [Events.SetInspectedTabId, ['tabId']],
+  [Events.SetUseSoftMenu, ['useSoftMenu']],
+  [Events.ShowPanel, ['panelName']],
 ] as const;
 
 export interface DispatchMessageChunkEvent {
@@ -217,11 +220,13 @@ export interface FunctionCallEvent {
   context?: number;
 }
 
-// While `EventDescriptors` are used to dynamically dispatch host binding events,
-// the `EventTypes` "type map" is used for type-checking said events by TypeScript.
-// `EventTypes` is not used at runtime.
-// Please note that the "dispatch" side can't be type-checked as the dispatch is
-// done dynamically.
+/**
+ * While `EventDescriptors` are used to dynamically dispatch host binding events,
+ * the `EventTypes` "type map" is used for type-checking said events by TypeScript.
+ * `EventTypes` is not used at runtime.
+ * Please note that the "dispatch" side can't be type-checked as the dispatch is
+ * done dynamically.
+ **/
 export interface EventTypes {
   [Events.AppendedToURL]: Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString;
   [Events.CanceledSaveURL]: Platform.DevToolsPath.UrlString;
@@ -329,11 +334,13 @@ export interface InspectorFrontendHostAPI {
 
   requestFileSystems(): void;
 
-  save(url: Platform.DevToolsPath.UrlString, content: string, forceSaveAs: boolean, isBase64: boolean): void;
+  save(
+      url: Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString, content: string, forceSaveAs: boolean,
+      isBase64: boolean): void;
 
-  append(url: Platform.DevToolsPath.UrlString, content: string): void;
+  append(url: Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString, content: string): void;
 
-  close(url: Platform.DevToolsPath.UrlString): void;
+  close(url: Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString): void;
 
   searchInPath(requestId: number, fileSystemPath: Platform.DevToolsPath.RawPathString, query: string): void;
 
@@ -344,8 +351,7 @@ export interface InspectorFrontendHostAPI {
   closeWindow(): void;
 
   /**
-   * Don't use directly - use {@link CopyToClipboard.copyTextToClipboard} instead.
-   * @deprecated Marked to restrict usage.
+   * If you need to alert to the user after copying use {@link UIUtils.copyTextToClipboard}.
    */
   copyText(text: string|null|undefined): void;
 
@@ -435,6 +441,7 @@ export interface InspectorFrontendHostAPI {
   dispatchHttpRequest: (request: DispatchHttpRequestRequest, cb: (result: DispatchHttpRequestResult) => void) => void;
 
   recordImpression(event: ImpressionEvent): void;
+  recordResize(event: ResizeEvent): void;
   recordClick(event: ClickEvent): void;
   recordHover(event: HoverEvent): void;
   recordDrag(event: DragEvent): void;
@@ -545,6 +552,6 @@ export const enum EnumeratedHistogram {
   LighthouseModeRun = 'DevTools.LighthouseModeRun',
   LighthouseCategoryUsed = 'DevTools.LighthouseCategoryUsed',
   SwatchActivated = 'DevTools.SwatchActivated',
-  AnimationPlaybackRateChanged = 'DevTools.AnimationPlaybackRateChanged',
+  BuiltInAiAvailability = 'DevTools.BuiltInAiAvailability',
   // LINT.ThenChange(/front_end/devtools_compatibility.js:EnumeratedHistogram)
 }

@@ -39,9 +39,10 @@
 
 #endif  // VVL_ENABLE_SYNCVAL_STATS != 0
 
+namespace syncval {
+
 class SyncValidator;
 
-namespace syncval_stats {
 #if VVL_ENABLE_SYNCVAL_STATS != 0
 
 struct Value32 {
@@ -82,15 +83,17 @@ struct AccessContextStats {
     uint32_t access_states = 0;
     uint32_t read_states = 0;
     uint32_t write_states = 0;
+    uint32_t first_accesses = 0;
 
     uint32_t access_states_with_multiple_reads = 0;
+    uint32_t access_states_with_multiple_firsts = 0;
     uint32_t access_states_with_dynamic_allocations = 0;
     uint64_t access_states_dynamic_allocation_size = 0;
 
-    // We are not interested in collecting the total number of first access objects
-    // per context, but rather want to get intuition how large ResourceAccessState's
-    // first accesses array can be
+    // The largest first accesses array
     uint32_t max_first_accesses_size = 0;
+    // The largest last reads array
+    uint32_t max_last_reads_count = 0;
 
     void UpdateMax(const AccessContextStats& cur_stats);
 };
@@ -165,5 +168,6 @@ struct Stats {
     void ReportOnDestruction() {}
     std::string CreateReport() { return "SyncVal stats are disabled in the current build configuration\n"; }
 };
+
+}  // namespace syncval
 #endif  // VVL_ENABLE_SYNCVAL_STATS != 0
-}  // namespace syncval_stats

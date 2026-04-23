@@ -185,7 +185,6 @@ void JSGenericLowering::LowerJSStrictEqual(Node* node) {
   NodeProperties::ReplaceContextInput(node, jsgraph()->NoContextConstant());
   DCHECK_EQ(node->op()->ControlInputCount(), 1);
   node->RemoveInput(NodeProperties::FirstControlIndex(node));
-  node->RemoveInput(JSStrictEqualNode::FeedbackVectorIndex());
 
   Callable callable = Builtins::CallableFor(isolate(), Builtin::kStrictEqual);
   ReplaceWithBuiltinCall(node, callable, CallDescriptor::kNoFlags,
@@ -1125,7 +1124,14 @@ void JSGenericLowering::LowerJSForInNext(Node* node) {
 }
 
 void JSGenericLowering::LowerJSForOfNext(Node* node) {
-  ReplaceWithBuiltinCall(node, Builtin::kForOfNextBaseline);
+  JSForOfNextNode n(node);
+  ForOfNextParameters const& p = n.Parameters();
+
+  Node* call_slot = jsgraph()->SmiConstant(p.callFeedback().slot.ToInt());
+  static_assert(n.FeedbackVectorIndex() == 2);
+
+  node->InsertInput(zone(), 3, call_slot);
+  ReplaceWithBuiltinCall(node, Builtin::kForOfNext);
 }
 
 void JSGenericLowering::LowerJSLoadMessage(Node* node) {

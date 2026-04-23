@@ -7,7 +7,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
-#include "components/optimization_guide/core/mock_optimization_guide_model_executor.h"
+#include "components/optimization_guide/core/model_execution/test/mock_on_device_capability.h"
 #include "components/optimization_guide/core/model_quality/test_model_quality_logs_uploader_service.h"
 #include "components/optimization_guide/core/optimization_guide_proto_util.h"
 #include "components/optimization_guide/proto/features/history_answer.pb.h"
@@ -31,8 +31,7 @@ using ::testing::StrictMock;
 
 }  // namespace
 
-class MockModelExecutor
-    : public optimization_guide::MockOptimizationGuideModelExecutor {
+class MockModelExecutor : public optimization_guide::MockOnDeviceCapability {
  public:
   size_t GetCounter() { return counter_; }
 
@@ -96,7 +95,7 @@ class HistoryEmbeddingsMlAnswererTest : public testing::Test {
 };
 
 TEST_F(HistoryEmbeddingsMlAnswererTest, ComputeAnswerNoSession) {
-  ON_CALL(model_executor_, StartSession(_, _)).WillByDefault([&] {
+  ON_CALL(model_executor_, StartSession(_, _, _)).WillByDefault([&] {
     return nullptr;
   });
 
@@ -116,7 +115,7 @@ TEST_F(HistoryEmbeddingsMlAnswererTest, ComputeAnswerNoSession) {
 
 #if !BUILDFLAG(IS_FUCHSIA)
 TEST_F(HistoryEmbeddingsMlAnswererTest, ComputeAnswerExecutionFailure) {
-  ON_CALL(model_executor_, StartSession(_, _)).WillByDefault([&] {
+  ON_CALL(model_executor_, StartSession(_, _, _)).WillByDefault([&] {
     return std::make_unique<NiceMock<MockSession>>(&session_1_);
   });
 
@@ -159,7 +158,7 @@ TEST_F(HistoryEmbeddingsMlAnswererTest, ComputeAnswerExecutionFailure) {
 #endif
 
 TEST_F(HistoryEmbeddingsMlAnswererTest, ComputeAnswerSingleUrl) {
-  ON_CALL(model_executor_, StartSession(_, _)).WillByDefault([&] {
+  ON_CALL(model_executor_, StartSession(_, _, _)).WillByDefault([&] {
     return std::make_unique<NiceMock<MockSession>>(&session_1_);
   });
 
@@ -198,7 +197,7 @@ TEST_F(HistoryEmbeddingsMlAnswererTest, ComputeAnswerSingleUrl) {
 }
 
 TEST_F(HistoryEmbeddingsMlAnswererTest, ComputeAnswerMultipleUrls) {
-  ON_CALL(model_executor_, StartSession(_, _))
+  ON_CALL(model_executor_, StartSession(_, _, _))
       .WillByDefault([&]() -> std::unique_ptr<MockSession> {
         if (model_executor_.GetCounter() == 0) {
           model_executor_.IncrementCounter();
@@ -266,7 +265,7 @@ TEST_F(HistoryEmbeddingsMlAnswererTest, ComputeAnswerMultipleUrls) {
 }
 
 TEST_F(HistoryEmbeddingsMlAnswererTest, ComputeAnswerUnanswerable) {
-  ON_CALL(model_executor_, StartSession(_, _)).WillByDefault([&] {
+  ON_CALL(model_executor_, StartSession(_, _, _)).WillByDefault([&] {
     return std::make_unique<NiceMock<MockSession>>(&session_1_);
   });
 
@@ -291,7 +290,7 @@ TEST_F(HistoryEmbeddingsMlAnswererTest, ComputeAnswerUnanswerable) {
 }
 
 TEST_F(HistoryEmbeddingsMlAnswererTest, ComputeAnswerNullScores) {
-  ON_CALL(model_executor_, StartSession(_, _)).WillByDefault([&] {
+  ON_CALL(model_executor_, StartSession(_, _, _)).WillByDefault([&] {
     return std::make_unique<NiceMock<MockSession>>(&session_1_);
   });
 

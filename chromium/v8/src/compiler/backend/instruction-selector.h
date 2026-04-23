@@ -463,9 +463,8 @@ class V8_EXPORT_PRIVATE InstructionSelector final
   std::optional<BailoutReason> SelectInstructions();
 
   void StartBlock(RpoNumber rpo);
-  void EndBlock(RpoNumber rpo);
+  void EndBlock(RpoNumber rpo, Instruction* terminator);
   void AddInstruction(Instruction* instr);
-  void AddTerminator(Instruction* instr);
 
   // ===========================================================================
   // ============= Architecture-independent code emission methods. =============
@@ -1315,6 +1314,7 @@ class V8_EXPORT_PRIVATE InstructionSelector final
   DECLARE_GENERATOR_T(StackSlot)
   DECLARE_GENERATOR_T(LoadRootRegister)
   DECLARE_GENERATOR_T(DebugBreak)
+  IF_HARDWARE_SANDBOX(DECLARE_GENERATOR_T, SwitchSandboxMode)
   DECLARE_GENERATOR_T(TryTruncateFloat32ToInt64)
   DECLARE_GENERATOR_T(TryTruncateFloat64ToInt64)
   DECLARE_GENERATOR_T(TryTruncateFloat32ToUint64)
@@ -1379,6 +1379,7 @@ class V8_EXPORT_PRIVATE InstructionSelector final
   MACHINE_SIMD256_OP_LIST(DECLARE_GENERATOR_T)
   IF_WASM(DECLARE_GENERATOR_T, LoadStackPointer)
   IF_WASM(DECLARE_GENERATOR_T, SetStackPointer)
+  IF_WASM(DECLARE_GENERATOR_T, WasmFXArgBuffer)
 #undef DECLARE_GENERATOR_T
 
   // Visit the load node with a value and opcode to replace with.
@@ -1390,7 +1391,9 @@ class V8_EXPORT_PRIVATE InstructionSelector final
   void VisitPhi(turboshaft::OpIndex node);
   void VisitProjection(turboshaft::OpIndex node);
   void VisitConstant(turboshaft::OpIndex node);
-  void VisitCall(turboshaft::OpIndex call, turboshaft::Block* handler = {});
+  void VisitCall(
+      turboshaft::OpIndex call, turboshaft::Block* exception_handler = {},
+      base::Vector<turboshaft::EffectHandler> wasm_effect_handlers = {});
   void VisitDeoptimizeIf(turboshaft::OpIndex node);
   void VisitTrapIf(turboshaft::OpIndex node);
   void VisitTailCall(turboshaft::OpIndex call);

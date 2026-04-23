@@ -4,18 +4,18 @@
 
 import {loadTimeData} from '//resources/js/load_time_data.js';
 
-import {getWordCount, playFromSelectionTimeout} from '../common.js';
-import {NodeStore} from '../node_store.js';
-import {ReadAnythingLogger} from '../read_anything_logger.js';
-import {SelectionController} from '../selection_controller.js';
-import type {SpeechBrowserProxy} from '../speech_browser_proxy.js';
-import {SpeechBrowserProxyImpl} from '../speech_browser_proxy.js';
+import {NodeStore} from '../content/node_store.js';
+import {SelectionController} from '../content/selection_controller.js';
+import {getWordCount, playFromSelectionTimeout} from '../shared/common.js';
+import {ReadAnythingLogger} from '../shared/read_anything_logger.js';
 
 import {ReadAloudHighlighter} from './highlighter.js';
 import {getReadAloudModel} from './read_aloud_model_browser_proxy.js';
 import type {ReadAloudModelBrowserProxy} from './read_aloud_model_browser_proxy.js';
 import {ReadAloudNode} from './read_aloud_types.js';
 import type {Segment} from './read_aloud_types.js';
+import type {SpeechBrowserProxy} from './speech_browser_proxy.js';
+import {SpeechBrowserProxyImpl} from './speech_browser_proxy.js';
 import {PauseActionSource, SpeechEngineState, SpeechModel} from './speech_model.js';
 import type {SpeechPlayingState} from './speech_model.js';
 import {getCurrentSpeechRate, isInvalidHighlightForWordHighlighting} from './speech_presentation_rules.js';
@@ -329,9 +329,16 @@ export class SpeechController {
     this.setHasSpeechBeenTriggered(true);
     this.model_.setIsSpeechBeingRepositioned(false);
 
-    const playedFromSelection = this.playFromSelection_();
-    if (playedFromSelection) {
-      return;
+    // When the TS segmentation flag is enabled, playFromSelection_ needs to
+    // called after initializeSpeechTree. While this change is probably okay
+    // to introduce for the non-TS segmentation flag case, the original
+    // order is maintained when the flag is disabled to reduce the risk of
+    // introducing unexpected bugs to the V8 segmentation method.
+    if (!chrome.readingMode.isTsTextSegmentationEnabled) {
+      const playedFromSelection = this.playFromSelection_();
+      if (playedFromSelection) {
+        return;
+      }
     }
 
     if (chrome.readingMode.isTsTextSegmentationEnabled) {
@@ -340,6 +347,13 @@ export class SpeechController {
       this.initializeSpeechTree(context);
     } else {
       this.initializeSpeechTree();
+    }
+
+    if (chrome.readingMode.isTsTextSegmentationEnabled) {
+      const playedFromSelection = this.playFromSelection_();
+      if (playedFromSelection) {
+        return;
+      }
     }
     if (this.isSpeechTreeInitialized() && !this.highlightAndPlayMessage_()) {
       // Ensure we're updating Read Aloud state if there's no text to speak.
@@ -839,9 +853,36 @@ export class SpeechController {
   private findSegment_(
       segments: Segment[], node: ReadAloudNode, offset: number): Segment
       |undefined {
-    return segments.find(
-        segment => segment.node.equals(node) &&
-            (segment.start + segment.length > offset));
+    // When the TsTextSegmentation flag is enabled, findSegment_ should count a
+    // match if the selection node contains the read aloud node (i.e. the read
+    // aloud node is a child of the selection node) - otherwise there
+    // won't be a match on the first run of playFromSelection()
+    if (!chrome.readingMode.isTsTextSegmentationEnabled) {
+      return segments.find(
+          segment => segment.node.equals(node) &&
+              (segment.start + segment.length > offset));
+    }
+
+    const selectedDomNode = node.domNode();
+    if (!selectedDomNode) {
+      return undefined;
+    }
+    return segments.find(segment => {
+      const segmentDomNode = segment.node.domNode();
+      if (!segmentDomNode) {
+        return false;
+      }
+
+      if (segment.node.equals(node)) {
+        return (segment.start + segment.length > offset);
+      }
+
+      if (selectedDomNode.contains(segmentDomNode)) {
+        return true;
+      }
+
+      return false;
+    });
   }
 
   // Highlights or rehighlights the current granularity, sentence or word.

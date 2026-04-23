@@ -3,7 +3,7 @@
 #
 
 
-# Copyright (C) 1996-2024 by
+# Copyright (C) 1996-2025 by
 # David Turner, Robert Wilhelm, and Werner Lemberg.
 #
 # This file is part of the FreeType project, and may only be used, modified,
@@ -235,23 +235,19 @@ dist:
 	rm -f freetype-$(version).tar.xz
 	rm -f ft$(winversion).zip
 
-	for d in `find . -wholename '*/.git' -prune \
-	                 -o -type f \
-	                 -o -print` ; do \
-	  mkdir -p tmp/$$d ; \
-	done ;
+	find .    -name .git -prune \
+	       -o -name  tmp -prune \
+	       -o -type d -exec mkdir -p tmp/{} \;
 
 	currdir=`pwd` ; \
-	for f in `find . -wholename '*/.git' -prune \
-	                 -o -name .gitattributes \
-	                 -o -name .gitignore \
-	                 -o -name .gitlab-ci.yml \
-	                 -o -name .gitmodules \
-	                 -o -name .mailmap \
-	                 -o -type d \
-	                 -o -print` ; do \
-	  ln -s $$currdir/$$f tmp/$$f ; \
-	done
+	find .    -name .git -prune \
+	       -o -name  tmp -prune \
+	       -o -name .gitattributes \
+	       -o -name .gitignore \
+	       -o -name .gitlab-ci.yml \
+	       -o -name .gitmodules \
+	       -o -name .mailmap \
+	       -o -type f -exec ln -s $$currdir/{} tmp/{} \;
 
 	cd tmp ; \
 	$(MAKE) devel ; \
@@ -259,9 +255,9 @@ dist:
 
 	mv tmp freetype-$(version)
 
-	tar -H ustar -chf - freetype-$(version) \
+	tar --format=ustar -chf - freetype-$(version) \
 	| gzip -9 -c > freetype-$(version).tar.gz
-	tar -H ustar -chf - freetype-$(version) \
+	tar --format=ustar -chf - freetype-$(version) \
 	| xz -c > freetype-$(version).tar.xz
 
 	@# Use CR/LF for zip files.
@@ -300,7 +296,7 @@ do-dist: distclean refdoc
 	rm -rf $(TOP_DIR)/builds/unix/autom4te.cache
 
 	rm -rf $(GNU_CONFIG_DESTDIR)
-	git clone https://git.savannah.gnu.org/git/config.git $(GNU_CONFIG_DESTDIR)
+	git clone --depth=1 $(GNU_CONFIG_GIT_URL) $(GNU_CONFIG_DESTDIR)
 	cp $(CONFIG_GUESS) $(TOP_DIR)/builds/unix
 	cp $(CONFIG_SUB) $(TOP_DIR)/builds/unix
 

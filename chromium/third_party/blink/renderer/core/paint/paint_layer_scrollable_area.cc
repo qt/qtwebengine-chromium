@@ -438,7 +438,7 @@ void PaintLayerScrollableArea::UpdateScrollOffset(
   LocalFrameView* frame_view = GetLayoutBox()->GetFrameView();
   CHECK(frame_view);
 
-  UpdateLastScrollDirection(scroll_offset_, new_offset, source_type);
+  UpdateLastScrolled(scroll_offset_, new_offset, source_type);
 
   // The ScrollOffsetTranslation paint property depends on the scroll offset.
   // (see: PaintPropertyTreeBuilder::UpdateScrollAndScrollTranslation).
@@ -541,7 +541,7 @@ void PaintLayerScrollableArea::UpdateScrollOffset(
     cache->HandleScrollPositionChanged(GetLayoutBox());
 }
 
-void PaintLayerScrollableArea::UpdateLastScrollDirection(
+void PaintLayerScrollableArea::UpdateLastScrolled(
     const ScrollOffset& previous_offset,
     const ScrollOffset& new_offset,
     cc::ScrollSourceType source_type) {
@@ -549,16 +549,16 @@ void PaintLayerScrollableArea::UpdateLastScrollDirection(
     return;
   }
   if (previous_offset.x() > new_offset.x()) {
-    last_scroll_direction_horizontal_ = ContainerScrollDirection::kStart;
+    last_scrolled_horizontal_ = ContainerScrolled::kStart;
   }
   if (previous_offset.x() < new_offset.x()) {
-    last_scroll_direction_horizontal_ = ContainerScrollDirection::kEnd;
+    last_scrolled_horizontal_ = ContainerScrolled::kEnd;
   }
   if (previous_offset.y() > new_offset.y()) {
-    last_scroll_direction_vertical_ = ContainerScrollDirection::kStart;
+    last_scrolled_vertical_ = ContainerScrolled::kStart;
   }
   if (previous_offset.y() < new_offset.y()) {
-    last_scroll_direction_vertical_ = ContainerScrollDirection::kEnd;
+    last_scrolled_vertical_ = ContainerScrolled::kEnd;
   }
 }
 
@@ -1020,8 +1020,25 @@ void PaintLayerScrollableArea::SetScrollOffsetUnconditionally(
     const ScrollOffset& offset,
     mojom::blink::ScrollType scroll_type) {
   CancelScrollAnimation();
-  // TODO(crbug.com/414556050): Pass the correct `ScrollSourceType`.
-  ScrollOffsetChanged(offset, scroll_type, cc::ScrollSourceType::kNone);
+  ScrollOffsetChanged(offset, scroll_type,
+                      cc::ScrollSourceType::kAbsoluteScroll);
+}
+
+bool PaintLayerScrollableArea::ScrollByPageWithSnap(
+    ScrollDirectionPhysical direction,
+    mojom::blink::ScrollBehavior scroll_behavior) {
+  gfx::Vector2dF displacement = ToScrollDelta(direction, 1);
+  displacement.Scale(
+      ScrollStep(ui::ScrollGranularity::kScrollByPage, kHorizontalScrollbar),
+      ScrollStep(ui::ScrollGranularity::kScrollByPage, kVerticalScrollbar));
+
+  gfx::PointF current_position = ScrollPosition();
+  std::unique_ptr<cc::SnapSelectionStrategy> strategy =
+      PageScrollSnapStrategy(direction);
+  gfx::PointF new_position = GetSnapPositionAndSetTarget(*strategy).value_or(
+      current_position + displacement);
+
+  return ScrollToAbsolutePosition(new_position, scroll_behavior);
 }
 
 void PaintLayerScrollableArea::UpdateAfterLayout() {
@@ -1188,8 +1205,6 @@ bool PaintLayerScrollableArea::IsApplyingScrollStart() const {
         GetScrollInitialTarget()) {
       return true;
     }
-    return RuntimeEnabledFeatures::CSSScrollStartEnabled() &&
-           !ScrollStartIsDefault();
   }
   return false;
 }
@@ -1704,6 +1719,41 @@ bool PaintLayerScrollableArea::NeedsScrollbarReconstruction() const {
     }
   }
   return false;
+}
+
+gfx::Size PaintLayerScrollableArea::ComputeScrollbarWidthsForViewportUnits(
+    StyleBasedScrollbarData scrollbar_properties) const {
+  DCHECK(GetLayoutBox()->GetFrame()->GetSettings());
+  // TODO(crbug.com/354751900): Check IsFieldset() || IsFrameSet(). They can't
+  // have scrollbars.
+  if (VisualViewportSuppliesScrollbars() ||
+      GetLayoutBox()->GetFrame()->GetSettings()->GetHideScrollbars() ||
+      GetPageScrollbarTheme().UsesOverlayScrollbars() ||
+      scrollbar_properties.width == EScrollbarWidth::kNone) {
+    return gfx::Size();
+  }
+
+  auto* layout_view = To<LayoutView>(GetLayoutBox());
+  mojom::blink::ScrollbarMode h_mode = mojom::blink::ScrollbarMode::kAuto;
+  mojom::blink::ScrollbarMode v_mode = mojom::blink::ScrollbarMode::kAuto;
+  layout_view->CalculateScrollbarModes(h_mode, v_mode,
+                                       scrollbar_properties.overflow_x,
+                                       scrollbar_properties.overflow_y);
+
+  const Page* page = GetDocument()->GetFrame()->GetPage();
+  const ScrollbarTheme& theme = page->GetScrollbarTheme();
+  const int scrollbar_thickness =
+      theme.ScrollbarThickness(1.f, scrollbar_properties.width);
+  gfx::Size scrollbar_thicknesses;
+  if (h_mode == mojom::blink::ScrollbarMode::kAlwaysOn) {
+    scrollbar_thicknesses.set_height(scrollbar_thickness);
+  }
+  if (v_mode == mojom::blink::ScrollbarMode::kAlwaysOn) {
+    scrollbar_thicknesses.set_width(scrollbar_thickness);
+  }
+  // TODO(crbug.com/354751900): Check scrollbar gutter.
+
+  return scrollbar_thicknesses;
 }
 
 void PaintLayerScrollableArea::ComputeScrollbarExistence(
@@ -2288,8 +2338,10 @@ void PaintLayerScrollableArea::UpdateResizerStyle(
   // z-order lists to refresh overflow control painting order.
   bool had_resizer = old_style && old_style->HasResize();
   bool needs_resizer = GetLayoutBox()->CanResize();
-  if (had_resizer != needs_resizer)
+  if (had_resizer != needs_resizer) {
     layer_->DirtyStackingContextZOrderLists();
+    PositionOverflowControls();
+  }
 
   if (!resizer_ && !needs_resizer)
     return;

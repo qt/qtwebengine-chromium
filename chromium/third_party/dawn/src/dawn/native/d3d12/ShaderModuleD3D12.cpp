@@ -100,21 +100,16 @@ void DumpDXCCompiledShader(Device* device,
 ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     Device* device,
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-    const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult) {
-    Ref<ShaderModule> module = AcquireRef(new ShaderModule(device, descriptor, internalExtensions));
-    DAWN_TRY(module->Initialize(parseResult));
-    return module;
+    const std::vector<tint::wgsl::Extension>& internalExtensions) {
+    Ref<ShaderModule> shader = AcquireRef(new ShaderModule(device, descriptor, internalExtensions));
+    shader->Initialize();
+    return shader;
 }
 
 ShaderModule::ShaderModule(Device* device,
                            const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
                            std::vector<tint::wgsl::Extension> internalExtensions)
     : ShaderModuleBase(device, descriptor, std::move(internalExtensions)) {}
-
-MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult) {
-    return InitializeBase(parseResult);
-}
 
 ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     const ProgrammableStage& programmableStage,
@@ -136,6 +131,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.disableSymbolRenaming = device->IsToggleEnabled(Toggle::DisableSymbolRenaming);
     req.hlsl.dumpShaders = device->IsToggleEnabled(Toggle::DumpShaders);
     req.hlsl.dumpShadersOnFailure = device->IsToggleEnabled(Toggle::DumpShadersOnFailure);
+    req.hlsl.tintOptions.entry_point_name = programmableStage.entryPoint;
     req.hlsl.tintOptions.remapped_entry_point_name = device->GetIsolatedEntryPointName();
 
     req.bytecode.hasShaderF16Feature = device->HasFeature(Feature::ShaderF16);
@@ -163,95 +159,41 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         }
     }
 
-    using tint::BindingPoint;
-
     tint::hlsl::writer::ArrayLengthFromUniformOptions arrayLengthFromUniform;
     arrayLengthFromUniform.ubo_binding = {layout->GetDynamicStorageBufferLengthsRegisterSpace(),
                                           layout->GetDynamicStorageBufferLengthsShaderRegister()};
 
-    tint::Bindings bindings;
-    std::vector<BindingPoint> ignored_by_robustness;
+    tint::hlsl::writer::ArrayOffsetFromUniformOptions arrayOffsetFromUniform;
+    arrayOffsetFromUniform.ubo_binding = {layout->GetDynamicStorageBufferOffsetsRegisterSpace(),
+                                          layout->GetDynamicStorageBufferOffsetsShaderRegister()};
 
-    const BindingInfoArray& moduleBindingInfo = entryPoint.bindings;
+    tint::Bindings bindings =
+        GenerateBindingRemapping(layout, stage, [&](BindGroupIndex group, BindingIndex index) {
+            const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
+            return tint::BindingPoint{
+                .group = uint32_t(group),
+                .binding = bgl->GetShaderRegister(index),
+            };
+        });
+
+    std::vector<tint::BindingPoint> ignored_by_robustness;
     for (BindGroupIndex group : layout->GetBindGroupLayoutsMask()) {
         const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
-        const BindingGroupInfoMap& moduleGroupBindingInfo = moduleBindingInfo[group];
 
-        for (const auto& [binding, shaderBindingInfo] : moduleGroupBindingInfo) {
-            BindingIndex bindingIndex = bgl->GetBindingIndex(binding);
-            BindingPoint srcBindingPoint{static_cast<uint32_t>(group),
-                                         static_cast<uint32_t>(binding)};
-
-            // Remap the WGSL bindings to the register numbers computed in the
-            // d3d12::BindGroupLayout that packs them per register type. The group decoration stays
-            // the same as HLSL supports register spaces that are a similar concept of a second
-            // dimension of binding indices.
-            BindingPoint dstBindingPoint{static_cast<uint32_t>(group),
-                                         bgl->GetShaderRegister(bindingIndex)};
-
-            MatchVariant(
-                shaderBindingInfo.bindingInfo,
-                [&](const BufferBindingInfo& bindingInfo) {
-                    switch (bindingInfo.type) {
-                        case wgpu::BufferBindingType::Uniform:
-                            bindings.uniform.emplace(srcBindingPoint, dstBindingPoint);
-                            break;
-                        case kInternalStorageBufferBinding:
-                        case wgpu::BufferBindingType::Storage:
-                        case wgpu::BufferBindingType::ReadOnlyStorage:
-                        case kInternalReadOnlyStorageBufferBinding:
-                            bindings.storage.emplace(srcBindingPoint, dstBindingPoint);
-                            break;
-                        case wgpu::BufferBindingType::BindingNotUsed:
-                        case wgpu::BufferBindingType::Undefined:
-                            DAWN_UNREACHABLE();
-                            break;
-                    }
-                },
-                [&](const SamplerBindingInfo& bindingInfo) {
-                    bindings.sampler.emplace(srcBindingPoint, dstBindingPoint);
-                },
-                [&](const TextureBindingInfo& bindingInfo) {
-                    bindings.texture.emplace(srcBindingPoint, dstBindingPoint);
-                },
-                [&](const StorageTextureBindingInfo& bindingInfo) {
-                    bindings.storage_texture.emplace(srcBindingPoint, dstBindingPoint);
-                },
-                [&](const TexelBufferBindingInfo& bindingInfo) {
-                    // TODO(crbug/382544164): Prototype texel buffer feature
-                    DAWN_UNREACHABLE();
-                },
-                [&](const ExternalTextureBindingInfo& bindingInfo) {
-                    const auto& bindingMap = bgl->GetExternalTextureBindingExpansionMap();
-                    const auto& expansion = bindingMap.find(binding);
-                    DAWN_ASSERT(expansion != bindingMap.end());
-
-                    const auto& bindingExpansion = expansion->second;
-                    tint::BindingPoint plane0{
-                        static_cast<uint32_t>(group),
-                        bgl->GetShaderRegister(bgl->GetBindingIndex(bindingExpansion.plane0))};
-                    tint::BindingPoint plane1{
-                        static_cast<uint32_t>(group),
-                        bgl->GetShaderRegister(bgl->GetBindingIndex(bindingExpansion.plane1))};
-                    tint::BindingPoint metadata{
-                        static_cast<uint32_t>(group),
-                        bgl->GetShaderRegister(bgl->GetBindingIndex(bindingExpansion.params))};
-
-                    bindings.external_texture.emplace(
-                        srcBindingPoint, tint::ExternalTexture{metadata, plane0, plane1});
-                },
-
-                [](const InputAttachmentBindingInfo&) { DAWN_UNREACHABLE(); });
-        }
-
-        // On D3D12 backend all storage buffers without Dynamic Buffer Offset will always be bound
-        // to root descriptor tables, where D3D12 runtime can guarantee that OOB-read will always
-        // return 0 and OOB-write will always take no action, so we don't need to do robustness
-        // transform on them. Note that we still need to do robustness transform on uniform buffers
-        // because only sized array is allowed in uniform buffers, so FXC will report compilation
-        // error when the indexing to the array in a cBuffer is out of bound and can be checked at
-        // compilation time. Storage buffers are OK because they are always translated with
-        // RWByteAddressBuffers, which has no such sized arrays.
+        // On D3D12 backend all storage buffers, including dynamic ones, are bound to root
+        // descriptor tables. D3D12 runtime guarantees that OOB-read returns 0 and
+        // OOB-write is a no-op, so we should be able to disable robustness on these bindings.
+        // However, for dynamic storage buffers, we bind the buffer from the base offset to the
+        // end of the buffer, allowing dynamic indexing at shader-time, so we must enable
+        // robustness to ensure we don't perform reads/writes outside the base offset + dynamic
+        // offset + binding.size.
+        //
+        // Note that we need to enable robustness on uniform buffers despite the fact that only
+        // fixed-size arrays are allowed for them. This is because FXC will fail compilation when
+        // detecting an OOB access on a fixed-size array in a cBuffer; but for WebGPU, OOB access is
+        // well defined so we want it to compile and run correctly. Storage buffers don't have this
+        // issue because they are always compiled to RWByteAddressBuffers which has no fixed-size
+        // array.
         //
         // For example below WGSL shader will cause compilation error when we skip robustness
         // transform on uniform buffers:
@@ -263,8 +205,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         //
         // fn test() -> u32 {
         //     let index = 1000000u;
-        //     if (s.data[index][0] != 0u) {    // error X3504: array index out of
-        //     bounds
+        //     if (s.data[index][0] != 0u) { // error X3504: array index out of bounds
         //         return 0x1004u;
         //     }
         //     return 0u;
@@ -272,7 +213,6 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         for (BindingIndex index : bgl->GetBufferIndices()) {
             const auto& bindingInfo = bgl->GetBindingInfo(index);
             const auto& bufferInfo = std::get<BufferBindingInfo>(bindingInfo.bindingLayout);
-
             if ((bufferInfo.type == wgpu::BufferBindingType::Storage ||
                  bufferInfo.type == wgpu::BufferBindingType::ReadOnlyStorage) &&
                 !bufferInfo.hasDynamicOffset) {
@@ -281,22 +221,27 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
             }
         }
 
-        // Add arrayLengthFromUniform options
+        // Add per-group arrayLengthFromUniform and arrayOffsetFromUniform options
         for (const auto& bindingAndRegisterOffset :
-             layout->GetDynamicStorageBufferLengthInfo()[group].bindingAndRegisterOffsets) {
+             layout->GetDynamicStorageBufferInfo()[group].bindingAndRegisterOffsets) {
+            // The bindpoint to index mapping is the same for both lengths and offsets,
+            // the difference is the uniform buffer object binding
+            // (arrayLengthFromUniform.ubo_binding and arrayOffsetFromUniform.ubo_binding).
             BindingNumber bindingNum = bindingAndRegisterOffset.binding;
             uint32_t registerOffset = bindingAndRegisterOffset.registerOffset;
-            BindingPoint bindingPoint{static_cast<uint32_t>(group),
-                                      static_cast<uint32_t>(bindingNum)};
+            tint::BindingPoint bindingPoint{static_cast<uint32_t>(group),
+                                            static_cast<uint32_t>(bindingNum)};
             arrayLengthFromUniform.bindpoint_to_size_index.emplace(bindingPoint, registerOffset);
+            arrayOffsetFromUniform.bindpoint_to_offset_index.emplace(bindingPoint, registerOffset);
         }
     }
 
     req.hlsl.shaderModuleHash = GetHash();
     req.hlsl.inputProgram = UnsafeUnserializedValue(UseTintProgram());
-    req.hlsl.entryPointName = programmableStage.entryPoint.c_str();
     req.hlsl.stage = stage;
-    req.hlsl.substituteOverrideConfig = BuildSubstituteOverridesTransformConfig(programmableStage);
+    req.hlsl.tintOptions.substitute_overrides_config = {
+        .map = BuildSubstituteOverridesTransformConfig(programmableStage),
+    };
     req.hlsl.tintOptions.disable_robustness = !device->IsRobustnessEnabled();
     req.hlsl.tintOptions.disable_workgroup_init =
         device->IsToggleEnabled(Toggle::DisableWorkgroupInit);
@@ -324,6 +269,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     // them as well. This would allow us to only upload root constants that are actually
     // read by the shader.
     req.hlsl.tintOptions.array_length_from_uniform = std::move(arrayLengthFromUniform);
+    req.hlsl.tintOptions.array_offset_from_uniform = std::move(arrayOffsetFromUniform);
 
     req.hlsl.tintOptions.immediate_binding_point = tint::BindingPoint{
         layout->GetImmediatesRegisterSpace(), layout->GetImmediatesShaderRegister()};

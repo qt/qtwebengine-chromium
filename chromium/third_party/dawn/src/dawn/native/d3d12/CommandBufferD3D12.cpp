@@ -83,14 +83,16 @@ D3D12_QUERY_TYPE D3D12QueryType(wgpu::QueryType type) {
     }
 }
 
-bool CanUseCopyResource(const TextureCopy& src, const TextureCopy& dst, const Extent3D& copySize) {
+bool CanUseCopyResource(const TextureCopy& src,
+                        const TextureCopy& dst,
+                        const TexelExtent3D& copySize) {
     // Checked by validation
     DAWN_ASSERT(src.texture->GetSampleCount() == dst.texture->GetSampleCount());
     DAWN_ASSERT(src.texture->GetFormat().CopyCompatibleWith(dst.texture->GetFormat()));
     DAWN_ASSERT(src.aspect == dst.aspect);
 
-    const Extent3D& srcSize = src.texture->GetSize(src.aspect);
-    const Extent3D& dstSize = dst.texture->GetSize(dst.aspect);
+    const TexelExtent3D& srcSize = src.texture->GetSize(src.aspect);
+    const TexelExtent3D& dstSize = dst.texture->GetSize(dst.aspect);
 
     // https://docs.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12graphicscommandlist-copyresource
     // In order to use D3D12's copy resource, the textures must be the same dimensions, and
@@ -208,28 +210,24 @@ bool ShouldCopyUsingTemporaryBuffer(DeviceBase* device,
 MaybeError RecordCopyTextureWithTemporaryBuffer(CommandRecordingContext* recordingContext,
                                                 const TextureCopy& srcCopy,
                                                 const TextureCopy& dstCopy,
-                                                const Extent3D& copySize) {
+                                                const BlockExtent3D& copySize) {
     DAWN_ASSERT(srcCopy.texture->GetFormat().format == dstCopy.texture->GetFormat().format);
     DAWN_ASSERT(srcCopy.aspect == dstCopy.aspect);
-    dawn::native::Format format = srcCopy.texture->GetFormat();
-    const TexelBlockInfo& blockInfo = format.GetAspectInfo(srcCopy.aspect).block;
-    DAWN_ASSERT(copySize.width % blockInfo.width == 0);
-    uint32_t widthInBlocks = copySize.width / blockInfo.width;
-    DAWN_ASSERT(copySize.height % blockInfo.height == 0);
-    uint32_t heightInBlocks = copySize.height / blockInfo.height;
+    const TypedTexelBlockInfo& blockInfo = GetBlockInfo(srcCopy);
 
     // Create tempBuffer
-    uint32_t bytesPerRow = Align(blockInfo.byteSize * widthInBlocks, kTextureBytesPerRowAlignment);
-    uint32_t rowsPerImage = heightInBlocks;
+    uint32_t bytesPerRow = Align(blockInfo.ToBytes(copySize.width), kTextureBytesPerRowAlignment);
+    BlockCount blocksPerRow = blockInfo.BytesToBlocks(bytesPerRow);
+    BlockCount rowsPerImage = copySize.height;
 
     // The size of temporary buffer isn't needed to be a multiple of 4 because we don't
     // need to set mappedAtCreation to be true.
-    auto tempBufferSize =
-        ComputeRequiredBytesInCopy(blockInfo, copySize, bytesPerRow, rowsPerImage);
+    uint64_t tempBufferSize =
+        ComputeRequiredBytesInCopy(blockInfo, copySize, blocksPerRow, rowsPerImage);
 
     BufferDescriptor tempBufferDescriptor;
     tempBufferDescriptor.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
-    tempBufferDescriptor.size = tempBufferSize.AcquireSuccess();
+    tempBufferDescriptor.size = tempBufferSize;
     Device* device = ToBackend(srcCopy.texture->GetDevice());
     Ref<BufferBase> tempBufferBase;
     DAWN_TRY_ASSIGN(tempBufferBase, device->CreateBuffer(&tempBufferDescriptor));
@@ -238,7 +236,7 @@ MaybeError RecordCopyTextureWithTemporaryBuffer(CommandRecordingContext* recordi
     BufferCopy bufferCopy;
     bufferCopy.buffer = tempBuffer;
     bufferCopy.offset = 0;
-    bufferCopy.bytesPerRow = bytesPerRow;
+    bufferCopy.blocksPerRow = blockInfo.BytesToBlocks(bytesPerRow);
     bufferCopy.rowsPerImage = rowsPerImage;
 
     // Copy from source texture into tempBuffer
@@ -276,19 +274,18 @@ MaybeError RecordBufferTextureCopyWithTemporaryBuffer(CommandRecordingContext* r
                                                       BufferTextureCopyDirection copyDirection,
                                                       const BufferCopy& bufferCopy,
                                                       const TextureCopy& textureCopy,
-                                                      const Extent3D& copySize) {
-    dawn::native::Format format = textureCopy.texture->GetFormat();
-    const TexelBlockInfo& blockInfo = format.GetAspectInfo(textureCopy.aspect).block;
+                                                      const BlockExtent3D& copySize) {
+    const TypedTexelBlockInfo& blockInfo = GetBlockInfo(textureCopy);
 
     // Create tempBuffer
     // The size of temporary buffer isn't needed to be a multiple of 4 because we don't
     // need to set mappedAtCreation to be true.
-    auto tempBufferSize = ComputeRequiredBytesInCopy(blockInfo, copySize, bufferCopy.bytesPerRow,
-                                                     bufferCopy.rowsPerImage);
+    uint64_t tempBufferSize = ComputeRequiredBytesInCopy(
+        blockInfo, copySize, bufferCopy.blocksPerRow, bufferCopy.rowsPerImage);
 
     BufferDescriptor tempBufferDescriptor;
     tempBufferDescriptor.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
-    tempBufferDescriptor.size = tempBufferSize.AcquireSuccess();
+    tempBufferDescriptor.size = tempBufferSize;
     Device* device = ToBackend(textureCopy.texture->GetDevice());
     Ref<BufferBase> tempBufferBase;
     DAWN_TRY_ASSIGN(tempBufferBase, device->CreateBuffer(&tempBufferDescriptor));
@@ -300,7 +297,7 @@ MaybeError RecordBufferTextureCopyWithTemporaryBuffer(CommandRecordingContext* r
     BufferCopy tempBufferCopy;
     tempBufferCopy.buffer = tempBuffer;
     tempBufferCopy.offset = 0;
-    tempBufferCopy.bytesPerRow = bufferCopy.bytesPerRow;
+    tempBufferCopy.blocksPerRow = bufferCopy.blocksPerRow;
     tempBufferCopy.rowsPerImage = bufferCopy.rowsPerImage;
 
     tempBuffer->TrackUsageAndTransitionNow(recordingContext, wgpu::BufferUsage::CopyDst);
@@ -632,21 +629,30 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
         DAWN_ASSERT(dynamicOffsets.size() == group->GetLayout()->GetDynamicBufferCount());
 
         // Usually, the application won't set the same offsets many times,
-        // so always try to apply dynamic offsets even if the offsets stay the same
-        if (dynamicOffsets.size() != BindingIndex(0)) {
-            // Update dynamic offsets.
-            // Dynamic buffer bindings are packed at the beginning of the layout.
-            for (BindingIndex bindingIndex{0}; bindingIndex < dynamicOffsets.size();
-                 ++bindingIndex) {
-                const BindingInfo& bindingInfo = group->GetLayout()->GetBindingInfo(bindingIndex);
-                if (bindingInfo.visibility == wgpu::ShaderStage::None) {
-                    // Skip dynamic buffers that are not visible. D3D12 does not have None
-                    // visibility.
-                    continue;
-                }
+        // so always try to apply dynamic offsets even if the offsets stay the same.
+        BindGroupLayout* bgl = ToBackend(group->GetLayout());
+        std::vector<uint32_t> storageBufferDynamicOffsets;
+        for (BindingIndex bindingIndex{0}; bindingIndex < dynamicOffsets.size(); ++bindingIndex) {
+            // Note that the order of indices in dynamicOffsets corresponds to the order of
+            // dynamic resource bindings in the BGL by binding number. Because the BGL packs
+            // (uniform and storage) dynamic buffers at the front, and are sorted by binding
+            // number, we can retrieve them in the right order via the dynamicOffsets index.
+            const BindingInfo& bindingInfo = group->GetLayout()->GetBindingInfo(bindingIndex);
+            if (bindingInfo.visibility == wgpu::ShaderStage::None) {
+                // Skip dynamic buffers that are not visible. D3D12 does not have None
+                // visibility.
+                continue;
+            }
 
+            if (bgl->IsStorageBufferBinding(bindingIndex)) {
+                // Dynamic storage buffers are already bound to the root descriptor table, and
+                // only need the dynamic offsets updated in root constants.
+                // Collect the offsets so we can set the root constants after the loop.
+                storageBufferDynamicOffsets.push_back(dynamicOffsets[bindingIndex]);
+            } else {
+                // Set dynamic uniform buffer root descriptor
                 uint32_t parameterIndex =
-                    pipelineLayout->GetDynamicRootParameterIndex(index, bindingIndex);
+                    pipelineLayout->GetDynamicUniformRootParameterIndex(index, bindingIndex);
                 BufferBinding binding = group->GetBindingAsBufferBinding(bindingIndex);
 
                 // Calculate buffer locations that root descriptors links to. The location
@@ -659,6 +665,16 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
                 SetRootBufferView(commandList,
                                   std::get<BufferBindingInfo>(bindingInfo.bindingLayout).type,
                                   parameterIndex, bufferLocation);
+            }
+
+            if (!storageBufferDynamicOffsets.empty()) {
+                uint32_t firstRegisterOffset =
+                    pipelineLayout->GetDynamicStorageBufferInfo()[index].firstRegisterOffset;
+                uint32_t offsetsParameterIndex =
+                    pipelineLayout->GetDynamicStorageBufferOffsetsParameterIndex();
+                SetRootConstant(commandList, offsetsParameterIndex,
+                                storageBufferDynamicOffsets.size(),
+                                storageBufferDynamicOffsets.data(), firstRegisterOffset);
             }
         }
 
@@ -688,14 +704,16 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
             }
         }
 
+        // Update dynamic storage buffer root constants: lengths and offsets
         const auto& dynamicStorageBufferLengths = group->GetDynamicStorageBufferLengths();
-        if (dynamicStorageBufferLengths.size() != 0) {
-            uint32_t parameterIndex =
-                pipelineLayout->GetDynamicStorageBufferLengthsParameterIndex();
+        if (!dynamicStorageBufferLengths.empty()) {
+            // Both lengths and offsets use the same register offsets
             uint32_t firstRegisterOffset =
-                pipelineLayout->GetDynamicStorageBufferLengthInfo()[index].firstRegisterOffset;
+                pipelineLayout->GetDynamicStorageBufferInfo()[index].firstRegisterOffset;
 
-            SetRootConstant(commandList, parameterIndex, dynamicStorageBufferLengths.size(),
+            uint32_t lengthsParameterIndex =
+                pipelineLayout->GetDynamicStorageBufferLengthsParameterIndex();
+            SetRootConstant(commandList, lengthsParameterIndex, dynamicStorageBufferLengths.size(),
                             dynamicStorageBufferLengths.data(), firstRegisterOffset);
         }
     }
@@ -967,8 +985,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
 
             case Command::CopyBufferToTexture: {
                 CopyBufferToTextureCmd* copy = mCommands.NextCommand<CopyBufferToTextureCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -978,9 +995,9 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                 DAWN_TRY(buffer->EnsureDataInitialized(commandContext));
 
                 SubresourceRange subresources =
-                    GetSubresourcesAffectedByCopy(copy->destination, copy->copySize);
+                    GetSubresourcesAffectedByCopy(copy->destination, copy->copySize.ToExtent3D());
 
-                if (IsCompleteSubresourceCopiedTo(texture, copy->copySize,
+                if (IsCompleteSubresourceCopiedTo(texture, copy->copySize.ToExtent3D(),
                                                   copy->destination.mipLevel,
                                                   copy->destination.aspect)) {
                     texture->SetIsSubresourceContentInitialized(true, subresources);
@@ -993,22 +1010,22 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                 texture->TrackUsageAndTransitionNow(commandContext, wgpu::TextureUsage::CopyDst,
                                                     subresources);
 
+                const TypedTexelBlockInfo& blockInfo = GetBlockInfo(copy->destination);
                 if (ShouldCopyUsingTemporaryBuffer(GetDevice(), copy->source, copy->destination)) {
                     DAWN_TRY(RecordBufferTextureCopyWithTemporaryBuffer(
                         commandContext, BufferTextureCopyDirection::B2T, copy->source,
-                        copy->destination, copy->copySize));
+                        copy->destination, blockInfo.ToBlock(copy->copySize)));
                     break;
                 }
                 RecordBufferTextureCopy(BufferTextureCopyDirection::B2T, commandList, copy->source,
-                                        copy->destination, copy->copySize);
+                                        copy->destination, blockInfo.ToBlock(copy->copySize));
 
                 break;
             }
 
             case Command::CopyTextureToBuffer: {
                 CopyTextureToBufferCmd* copy = mCommands.NextCommand<CopyTextureToBufferCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -1018,7 +1035,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                 DAWN_TRY(buffer->EnsureDataInitializedAsDestination(commandContext, copy));
 
                 SubresourceRange subresources =
-                    GetSubresourcesAffectedByCopy(copy->source, copy->copySize);
+                    GetSubresourcesAffectedByCopy(copy->source, copy->copySize.ToExtent3D());
 
                 DAWN_TRY(
                     texture->EnsureSubresourceContentInitialized(commandContext, subresources));
@@ -1027,22 +1044,23 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                                                     subresources);
                 buffer->TrackUsageAndTransitionNow(commandContext, wgpu::BufferUsage::CopyDst);
 
+                const TypedTexelBlockInfo& blockInfo = GetBlockInfo(copy->source);
                 if (ShouldCopyUsingTemporaryBuffer(GetDevice(), copy->destination, copy->source)) {
                     DAWN_TRY(RecordBufferTextureCopyWithTemporaryBuffer(
                         commandContext, BufferTextureCopyDirection::T2B, copy->destination,
-                        copy->source, copy->copySize));
+                        copy->source, blockInfo.ToBlock(copy->copySize)));
                     break;
                 }
                 RecordBufferTextureCopy(BufferTextureCopyDirection::T2B, commandList,
-                                        copy->destination, copy->source, copy->copySize);
+                                        copy->destination, copy->source,
+                                        blockInfo.ToBlock(copy->copySize));
 
                 break;
             }
 
             case Command::CopyTextureToTexture: {
                 CopyTextureToTextureCmd* copy = mCommands.NextCommand<CopyTextureToTextureCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -1050,12 +1068,12 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                 Texture* destination = ToBackend(copy->destination.texture.Get());
 
                 SubresourceRange srcRange =
-                    GetSubresourcesAffectedByCopy(copy->source, copy->copySize);
+                    GetSubresourcesAffectedByCopy(copy->source, copy->copySize.ToExtent3D());
                 SubresourceRange dstRange =
-                    GetSubresourcesAffectedByCopy(copy->destination, copy->copySize);
+                    GetSubresourcesAffectedByCopy(copy->destination, copy->copySize.ToExtent3D());
 
                 DAWN_TRY(source->EnsureSubresourceContentInitialized(commandContext, srcRange));
-                if (IsCompleteSubresourceCopiedTo(destination, copy->copySize,
+                if (IsCompleteSubresourceCopiedTo(destination, copy->copySize.ToExtent3D(),
                                                   copy->destination.mipLevel,
                                                   copy->destination.aspect)) {
                     destination->SetIsSubresourceContentInitialized(true, dstRange);
@@ -1081,8 +1099,10 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
 
                 DAWN_ASSERT(srcRange.aspects == dstRange.aspects);
                 if (ShouldCopyUsingTemporaryBuffer(GetDevice(), copy->source, copy->destination)) {
+                    const TypedTexelBlockInfo& blockInfo = GetBlockInfo(copy->destination);
                     DAWN_TRY(RecordCopyTextureWithTemporaryBuffer(
-                        commandContext, copy->source, copy->destination, copy->copySize));
+                        commandContext, copy->source, copy->destination,
+                        blockInfo.ToBlock(copy->copySize)));
                     break;
                 }
 
@@ -1103,25 +1123,27 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                             ComputeD3D12BoxFromOffsetAndSize(copy->source.origin, copy->copySize);
 
                         commandList->CopyTextureRegion(
-                            &dstLocation, copy->destination.origin.x, copy->destination.origin.y,
-                            copy->destination.origin.z, &srcLocation, &sourceRegion);
+                            &dstLocation, static_cast<uint32_t>(copy->destination.origin.x),
+                            static_cast<uint32_t>(copy->destination.origin.y),
+                            static_cast<uint32_t>(copy->destination.origin.z), &srcLocation,
+                            &sourceRegion);
                     }
                 } else {
-                    const dawn::native::Extent3D copyExtentOneSlice = {copy->copySize.width,
-                                                                       copy->copySize.height, 1u};
+                    const TexelExtent3D copyExtentOneSlice = {copy->copySize.width,
+                                                              copy->copySize.height, TexelCount{1}};
 
                     for (Aspect aspect : IterateEnumMask(srcRange.aspects)) {
-                        for (uint32_t z = 0; z < copy->copySize.depthOrArrayLayers; ++z) {
+                        for (TexelCount z{0}; z < copy->copySize.depthOrArrayLayers; ++z) {
                             uint32_t sourceLayer = 0;
-                            uint32_t sourceZ = 0;
+                            TexelCount sourceZ{0};
                             switch (source->GetDimension()) {
                                 case wgpu::TextureDimension::Undefined:
                                     DAWN_UNREACHABLE();
                                 case wgpu::TextureDimension::e1D:
-                                    DAWN_ASSERT(copy->source.origin.z == 0);
+                                    DAWN_ASSERT(copy->source.origin.z == TexelCount{0});
                                     break;
                                 case wgpu::TextureDimension::e2D:
-                                    sourceLayer = copy->source.origin.z + z;
+                                    sourceLayer = static_cast<uint32_t>(copy->source.origin.z + z);
                                     break;
                                 case wgpu::TextureDimension::e3D:
                                     sourceZ = copy->source.origin.z + z;
@@ -1129,15 +1151,16 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                             }
 
                             uint32_t destinationLayer = 0;
-                            uint32_t destinationZ = 0;
+                            TexelCount destinationZ{0};
                             switch (destination->GetDimension()) {
                                 case wgpu::TextureDimension::Undefined:
                                     DAWN_UNREACHABLE();
                                 case wgpu::TextureDimension::e1D:
-                                    DAWN_ASSERT(copy->destination.origin.z == 0);
+                                    DAWN_ASSERT(copy->destination.origin.z == TexelCount{0});
                                     break;
                                 case wgpu::TextureDimension::e2D:
-                                    destinationLayer = copy->destination.origin.z + z;
+                                    destinationLayer =
+                                        static_cast<uint32_t>(copy->destination.origin.z + z);
                                     break;
                                 case wgpu::TextureDimension::e3D:
                                     destinationZ = copy->destination.origin.z + z;
@@ -1152,14 +1175,15 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                                                                      copy->destination.mipLevel,
                                                                      destinationLayer, aspect);
 
-                            Origin3D sourceOriginInSubresource = copy->source.origin;
+                            TexelOrigin3D sourceOriginInSubresource = copy->source.origin;
                             sourceOriginInSubresource.z = sourceZ;
                             D3D12_BOX sourceRegion = ComputeD3D12BoxFromOffsetAndSize(
                                 sourceOriginInSubresource, copyExtentOneSlice);
 
-                            commandList->CopyTextureRegion(&dstLocation, copy->destination.origin.x,
-                                                           copy->destination.origin.y, destinationZ,
-                                                           &srcLocation, &sourceRegion);
+                            commandList->CopyTextureRegion(
+                                &dstLocation, static_cast<uint32_t>(copy->destination.origin.x),
+                                static_cast<uint32_t>(copy->destination.origin.y),
+                                static_cast<uint32_t>(destinationZ), &srcLocation, &sourceRegion);
                         }
                     }
                 }
@@ -1292,7 +1316,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                                                               wgpu::BufferUsage::CopyDst);
                         commandList->CopyBufferRegion(
                             dstBuffer->GetD3D12Resource(), offset,
-                            ToBackend(reservation.buffer)->GetD3D12Resource(),
+                            ToBackend(reservation.buffer.Get())->GetD3D12Resource(),
                             reservation.offsetInBuffer, size);
                         return {};
                     }));
@@ -1356,7 +1380,8 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
                 ComPtr<ID3D12CommandSignature> signature =
                     lastPipeline->GetDispatchIndirectCommandSignature();
                 commandList->ExecuteIndirect(
-                    signature.Get(), 1, ToBackend(dispatch->indirectBuffer)->GetD3D12Resource(),
+                    signature.Get(), 1,
+                    ToBackend(dispatch->indirectBuffer.Get())->GetD3D12Resource(),
                     dispatch->indirectOffset, nullptr, 0);
                 currentDispatch++;
                 break;
@@ -1377,7 +1402,7 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
 
             case Command::SetComputePipeline: {
                 SetComputePipelineCmd* cmd = mCommands.NextCommand<SetComputePipelineCmd>();
-                ComputePipeline* pipeline = ToBackend(cmd->pipeline).Get();
+                ComputePipeline* pipeline = ToBackend(cmd->pipeline.Get());
 
                 commandList->SetPipelineState(pipeline->GetPipelineState());
 
@@ -1401,12 +1426,12 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
                 break;
             }
 
-            case Command::SetImmediateData: {
-                SetImmediateDataCmd* cmd = mCommands.NextCommand<SetImmediateDataCmd>();
+            case Command::SetImmediates: {
+                SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
                 uint8_t* value = nullptr;
                 value = mCommands.NextData<uint8_t>(cmd->size);
-                immediates.SetImmediateData(cmd->offset, value, cmd->size);
+                immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }
 
@@ -1827,7 +1852,7 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
 
             case Command::SetRenderPipeline: {
                 SetRenderPipelineCmd* cmd = iter->NextCommand<SetRenderPipelineCmd>();
-                RenderPipeline* pipeline = ToBackend(cmd->pipeline).Get();
+                RenderPipeline* pipeline = ToBackend(cmd->pipeline.Get());
 
                 commandList->SetPipelineState(pipeline->GetPipelineState());
                 commandList->IASetPrimitiveTopology(pipeline->GetD3D12PrimitiveTopology());
@@ -1853,12 +1878,12 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
                 break;
             }
 
-            case Command::SetImmediateData: {
-                SetImmediateDataCmd* cmd = mCommands.NextCommand<SetImmediateDataCmd>();
+            case Command::SetImmediates: {
+                SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
                 uint8_t* value = nullptr;
                 value = mCommands.NextData<uint8_t>(cmd->size);
-                immediates.SetImmediateData(cmd->offset, value, cmd->size);
+                immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }
 
@@ -1867,7 +1892,7 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* commandConte
 
                 D3D12_INDEX_BUFFER_VIEW bufferView;
                 bufferView.Format = DXGIIndexFormat(cmd->format);
-                bufferView.BufferLocation = ToBackend(cmd->buffer)->GetVA() + cmd->offset;
+                bufferView.BufferLocation = ToBackend(cmd->buffer.Get())->GetVA() + cmd->offset;
                 bufferView.SizeInBytes = static_cast<uint32_t>(cmd->size);
 
                 commandList->IASetIndexBuffer(&bufferView);

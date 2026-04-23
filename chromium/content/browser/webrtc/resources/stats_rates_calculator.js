@@ -222,8 +222,8 @@ class DifferenceCalculator {
 
   calculate(id, previousReport, currentReport) {
     const currentStats = currentReport.get(id);
-    return parseInt(currentStats[this.metricA], 10)
-        - this.otherMetrics.map(metric => parseInt(currentStats[metric], 10))
+    return currentStats[this.metricA]
+        - this.otherMetrics.map(metric => currentStats[metric])
             .reduce((a, b) => a + b, 0);
   }
 }
@@ -371,6 +371,8 @@ export class StatsRatesCalculator {
             'retransmittedBytesSent', 'timestamp',
             CalculatorModifier.kBytesToBits),
         packetsSent: new RateCalculator('packetsSent', 'timestamp'),
+        packetsSentWithEct1:
+            new RateCalculator('packetsSentWithEct1', 'timestamp'),
         retransmittedPacketsSent:
             new RateCalculator('retransmittedPacketsSent', 'timestamp'),
         totalPacketSendDelay: new RateCalculator(
@@ -405,6 +407,14 @@ export class StatsRatesCalculator {
             'fecBytesReceived', 'timestamp',
             CalculatorModifier.kBytesToBits),
         packetsReceived: new RateCalculator('packetsReceived', 'timestamp'),
+        packetsReceivedWithEct1:
+          new RateCalculator('packetsReceivedWithEct1', 'timestamp'),
+        packetsReceivedWithCe:
+          new RateCalculator('packetsReceivedWithCe', 'timestamp'),
+        packetsReportedAsLost:
+          new RateCalculator('packetsReportedAsLost', 'timestamp'),
+        packetsReportedAsLostButRecovered:
+          new RateCalculator('packetsReportedAsLostButRecovered', 'timestamp'),
         packetsDiscarded: new RateCalculator('packetsDiscarded', 'timestamp'),
         retransmittedPacketsReceived:
           new RateCalculator('retransmittedPacketsReceived', 'timestamp'),
@@ -470,6 +480,21 @@ export class StatsRatesCalculator {
         totalRoundTripTime:
             new RateCalculator('totalRoundTripTime',
                                'roundTripTimeMeasurements'),
+        packetsReceivedWithEct1:
+            new RateCalculator('packetsReceivedWithEct1',
+                               'timestamp'),
+        packetsReceivedWithCe:
+            new RateCalculator('packetsReceivedWithCe',
+                               'timestamp'),
+        packetsReportedAsLost:
+            new RateCalculator('packetsReportedAsLost',
+                               'timestamp'),
+        packetsReportedAsLostButRecovered:
+            new RateCalculator('packetsReportedAsLostButRecovered',
+                               'timestamp'),
+        packetsWithBleachedEct1Marking:
+            new RateCalculator('packetsWithBleachedEct1Marking',
+                               'timestamp'),
       },
       'remote-outbound-rtp': {
         remoteTimestamp: new DateCalculator('remoteTimestamp'),
@@ -486,6 +511,10 @@ export class StatsRatesCalculator {
             'packetsSent', 'timestamp'),
         packetsReceived: new RateCalculator(
             'packetsReceived', 'timestamp'),
+        ccfbMessagesSent: new RateCalculator(
+            'ccfbMessagesSent', 'timestamp'),
+        ccfbMessagesReceived: new RateCalculator(
+            'ccfbMessagesReceived', 'timestamp'),
       },
       'candidate-pair': {
         bytesSent: new RateCalculator(
@@ -531,7 +560,8 @@ export class StatsRatesCalculator {
                 const result = metricCalculator.calculate(stats.id,
                                                this.previousReport,
                                                this.currentReport);
-                if (!isNaN(result)) {
+                if (result !== undefined &&
+                    (typeof(result) !== 'number' || !isNaN(result))) {
                   this.currentReport.get(stats.id)[name] = result;
                 }
               });

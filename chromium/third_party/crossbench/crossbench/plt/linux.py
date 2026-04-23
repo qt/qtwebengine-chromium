@@ -9,8 +9,8 @@ import datetime as dt
 import functools
 import os
 import re
-from typing import (TYPE_CHECKING, Any, ClassVar, Final, Iterator, Optional,
-                    Type)
+from typing import TYPE_CHECKING, Any, ClassVar, Final, Iterator, Optional, \
+    Type
 
 from typing_extensions import override
 
@@ -25,8 +25,8 @@ from crossbench.plt.signals import LinuxSignals
 if TYPE_CHECKING:
   from crossbench.plt.display_info import DisplayInfo
 
-
 SCRIPTS_DIR: Final = pth.LocalPath(__file__).parent / "remote_scripts"
+
 
 @dataclasses.dataclass
 class XrandrDisplayInfo:

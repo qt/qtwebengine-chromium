@@ -296,7 +296,7 @@ void TransitionsAccessor::ForEachTransitionTo(
           Cast<Map>(raw_transitions_.GetHeapObjectAssumeWeak());
       InternalIndex descriptor = target->LastAdded();
       Tagged<DescriptorArray> descriptors =
-          target->instance_descriptors(kRelaxedLoad);
+          target->instance_descriptors(kAcquireLoad);
       Tagged<Name> key = descriptors->GetKey(descriptor);
       if (key == name) {
         callback(target);
@@ -331,7 +331,7 @@ bool TransitionsAccessor::IsMatchingMap(Tagged<Map> target, Tagged<Name> name,
                                         PropertyAttributes attributes) {
   InternalIndex descriptor = target->LastAdded();
   Tagged<DescriptorArray> descriptors =
-      target->instance_descriptors(kRelaxedLoad);
+      target->instance_descriptors(kAcquireLoad);
   Tagged<Name> key = descriptors->GetKey(descriptor);
   if (key != name) return false;
   return descriptors->GetDetails(descriptor)
@@ -779,6 +779,9 @@ void TransitionArray::Sort() {
   DisallowGarbageCollection no_gc;
   // In-place insertion sort.
   int length = number_of_transitions();
+  // Sorting matters only for binary search.
+  if (length <= kMaxElementsForLinearSearch) return;
+
   ReadOnlyRoots roots = GetReadOnlyRoots();
   for (int i = 1; i < length; i++) {
     Tagged<Name> key = GetKey(i);

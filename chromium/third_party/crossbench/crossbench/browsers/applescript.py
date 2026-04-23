@@ -15,7 +15,7 @@ from typing_extensions import override
 
 from crossbench import plt
 from crossbench.browsers.browser import Browser
-from crossbench.env.runner_env import ValidationError
+from crossbench.env.base import ValidationError
 
 if TYPE_CHECKING:
   import datetime as dt
@@ -105,6 +105,7 @@ def try_get_parent_app_name(platform: plt.Platform) -> str:
 
 SYSTEM_EVENTS_CHECK: Final[str] = (
     'tell application "System Events" to log (count of windows)')
+
 
 class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
   APPLE_SCRIPT_ALLOW_JS_MENU: ClassVar[str] = ""

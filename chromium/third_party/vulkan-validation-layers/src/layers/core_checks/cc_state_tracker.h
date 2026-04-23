@@ -23,6 +23,7 @@
 #include "state_tracker/cmd_buffer_state.h"
 #include "state_tracker/queue_state.h"
 #include "state_tracker/event_map.h"
+#include "state_tracker/shader_stage_state.h"
 
 class CoreChecks;
 
@@ -45,12 +46,14 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     void RecordSetScissor(uint32_t first_scissor, uint32_t scissor_count) final;
     void RecordSetScissorWithCount(uint32_t scissor_count) final;
 
+    void RecordBeginRendering(const VkRenderingInfo &rendering_info, const Location &loc) final;
     void RecordBeginRenderPass(const VkRenderPassBeginInfo &render_pass_begin, const VkSubpassBeginInfo &subpass_begin_info,
                                const Location &loc) final;
     void RecordNextSubpass(const VkSubpassBeginInfo &subpass_begin_info, const VkSubpassEndInfo *subpass_end_info,
                            const Location &loc) final;
     void RecordEndRendering(const VkRenderingEndInfoEXT *pRenderingEndInfo) final;
     void RecordEndRenderPass(const VkSubpassEndInfo *subpass_end_info, const Location &loc) final;
+    void RecordBeginCustomResolve() final;
 
     void RecordCopyBuffer(vvl::Buffer &src_buffer_state, vvl::Buffer &dst_buffer_state, uint32_t region_count,
                           const VkBufferCopy *regions, const Location &loc) final;
@@ -130,6 +133,19 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
 
     uint32_t nesting_level;  // VK_EXT_nested_command_buffer
 
+    // VK_EXT_custom_resolve
+    struct CustomResolve {
+        bool started;  // vkBeginCustomResolve was called in the render pass, resets when renderpass ends
+        bool used;     // An action command has used it
+        // The fact we care about the struct just being in the pNext chain and sometimes caring about customResolve being TRUE is
+        // really a flaw of the spec IMO, so we have to save both values
+        bool inherited_struct;   // VkCommandBufferInheritanceInfo has a VkCustomResolveCreateInfoEXT
+        bool inherited_resolve;  // VkCommandBufferInheritanceInfo has a VkCustomResolveCreateInfoEXT with customResolve to VK_TRUE
+        std::vector<VkFormat> color_formats;
+        VkFormat depth_format;
+        VkFormat stencil_format;
+    } custom_resolve;
+
     struct Viewport {
         uint32_t mask;
         uint32_t count_mask;
@@ -168,7 +184,7 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     }
 
     // used for VK_EXT_fragment_density_map_offset
-    // currently need to hold in Command buffer because it can be a suspended renderpassss
+    // currently need to hold in Command buffer because it can be a suspended renderpass
     std::vector<VkOffset2D> fragment_density_offsets;
 
     // Validation functions run at primary CB queue submit time
@@ -195,6 +211,9 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
   private:
     void ResetCBState();
     void UpdateActionPipelineState(LastBound &last_bound, const vvl::Pipeline &pipeline_state);
+    void UpdateActionShaderObjectState(LastBound &last_bound);
+    void UpdateActiveSlotsState(LastBound &last_bound, const ActiveSlotMap &active_slots);
+    void UpdateCustomResolve(LastBound &last_bound);
 
     // Funnel because Image/Buffer copies have 2 variations for the regions
     template <typename RegionType>

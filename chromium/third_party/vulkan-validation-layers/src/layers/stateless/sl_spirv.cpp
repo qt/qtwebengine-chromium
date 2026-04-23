@@ -84,6 +84,7 @@ bool SpirvValidator::Validate(const spirv::Module &module_state, const spirv::St
 
     skip |= ValidateShaderClock(module_state, stateless_data, loc);
     skip |= ValidateAtomicsTypes(module_state, stateless_data, loc);
+    skip |= ValidateFma(module_state, stateless_data, loc);
     skip |= ValidateVariables(module_state, loc);
 
     skip |= ValidateTransformFeedbackDecorations(module_state, loc);
@@ -105,7 +106,9 @@ bool SpirvValidator::Validate(const spirv::Module &module_state, const spirv::St
         skip |= ValidateExecutionModes(module_state, *entry_point, stateless_data, loc);
         skip |= ValidateConservativeRasterization(module_state, *entry_point, stateless_data, loc);
         skip |= ValidateTransformFeedbackEmitStreams(module_state, *entry_point, stateless_data, loc);
+        skip |= ValidateShaderTensor(module_state, *entry_point, stateless_data, loc);
     }
+
     return skip;
 }
 
@@ -361,6 +364,32 @@ bool SpirvValidator::ValidateAtomicsTypes(const spirv::Module &module_state, con
     return skip;
 }
 
+bool SpirvValidator::ValidateFma(const spirv::Module &module_state, const spirv::StatelessData &stateless_data,
+                                 const Location &loc) const {
+    bool skip = false;
+
+    // spirv-val enforces the Result Type must be a scalar or vector of floats
+    for (const spirv::Instruction *fma_inst : stateless_data.fma_inst) {
+        const spirv::Instruction &insn = *fma_inst;
+        const uint32_t bit_width = module_state.GetBaseTypeInstruction(insn.TypeId())->GetBitWidth();
+        if (bit_width == 16 && !enabled_features.shaderFmaFloat16) {
+            skip |= LogError("VUID-RuntimeSpirv-shaderFmaFloat16-10977", module_state.handle(), loc,
+                             "SPIR-V uses OpFmaKHR with 16-bit floats but shaderFmaFloat16 was not enabled.\n%s\n",
+                             module_state.DescribeInstruction(insn).c_str());
+        } else if (bit_width == 32 && !enabled_features.shaderFmaFloat32) {
+            skip |= LogError("VUID-RuntimeSpirv-shaderFmaFloat32-10978", module_state.handle(), loc,
+                             "SPIR-V uses OpFmaKHR with 32-bit floats but shaderFmaFloat32 was not enabled. (shaderFmaFloat32 is "
+                             "required to be supported if VK_KHR_shader_fma is supported)\n%s\n",
+                             module_state.DescribeInstruction(insn).c_str());
+        } else if (bit_width == 64 && !enabled_features.shaderFmaFloat64) {
+            skip |= LogError("VUID-RuntimeSpirv-shaderFmaFloat64-10979", module_state.handle(), loc,
+                             "SPIR-V uses OpFmaKHR with 64-bit floats but shaderFmaFloat64 was not enabled.\n%s\n",
+                             module_state.DescribeInstruction(insn).c_str());
+        }
+    }
+    return skip;
+}
+
 bool SpirvValidator::ValidateVariables(const spirv::Module &module_state, const Location &loc) const {
     bool skip = false;
 
@@ -524,7 +553,12 @@ bool SpirvValidator::Validate8And16BitStorage(const spirv::Module &module_state,
                              untyped_access ? "access" : "OpVariable", insn.Describe().c_str());
         }
 
-        // Input and Output are disallowed to have 8-bit storage, but there is a missing VU.
+        if (storage_class == spv::StorageClassInput || storage_class == spv::StorageClassOutput) {
+            skip |= LogError(
+                "VUID-RuntimeSpirv-None-10980", module_state.handle(), loc,
+                "SPIR-V contains a 8-bit %s with %s Storage Class, but 8-bit Input/Output are not allowed in Vulkan.\n%s\n",
+                untyped_access ? "access" : "OpVariable", string_SpvStorageClass(storage_class), insn.Describe().c_str());
+        }
     }
 
     if (info.has_16bit) {
@@ -880,8 +914,9 @@ bool SpirvValidator::ValidateMemoryScope(const spirv::Module &module_state, cons
     const auto &entry = OpcodeMemoryScopePosition(insn.Opcode());
     if (entry > 0) {
         const uint32_t scope_id = insn.Word(entry);
-        const spirv::Instruction *scope_def = module_state.GetConstantDef(scope_id);
-        if (scope_def) {
+        const spirv::Instruction *scope_def = module_state.GetAnyConstantDef(scope_id);
+        // Very very low chance using spec constant to set memory scope
+        if (scope_def && scope_def->Opcode() == spv::OpConstant) {
             const spv::Scope scope_type = spv::Scope(scope_def->GetConstantValue());
             if (enabled_features.vulkanMemoryModel && !enabled_features.vulkanMemoryModelDeviceScope &&
                 scope_type == spv::Scope::ScopeDevice) {
@@ -1451,6 +1486,69 @@ bool SpirvValidator::ValidateConservativeRasterization(const spirv::Module &modu
         skip |= LogError("VUID-FullyCoveredEXT-conservativeRasterizationPostDepthCoverage-04235", module_state.handle(), loc,
                          "SPIR-V (Fragment stage) has a\nOpExecutionMode EarlyFragmentTests\nOpDecorate BuiltIn "
                          "FullyCoveredEXT\nbut conservativeRasterizationPostDepthCoverage was not enabled.");
+    }
+
+    return skip;
+}
+
+bool SpirvValidator::ValidateShaderTensor(const spirv::Module &module_state, const spirv::EntryPoint &entrypoint, const spirv::StatelessData &stateless_data, const Location &loc) const {
+    bool skip = false;
+
+    // check only shaders
+    if (entrypoint.is_data_graph) {
+        return skip;
+    }
+
+    if (module_state.HasCapability(spv::CapabilityGraphARM)) {
+        skip |= LogError("VUID-RuntimeSpirv-GraphARM-09922", module_state.handle(), loc,
+                         "%s, stage %s, includes 'OpCapability GraphARM'.", FormatHandle(module_state.handle()).c_str(),
+                         string_VkShaderStageFlagBits(entrypoint.stage));
+    }
+
+    for (auto &instruction : stateless_data.tensor_inst) {
+        if ((entrypoint.stage & phys_dev_ext_props.tensor_properties.shaderTensorSupportedStages) == 0) {
+            skip |= LogError("VUID-RuntimeSpirv-shaderTensorSupportedStages-09901", module_state.handle(), loc,
+                             "'%s' is a tensor instruction but not supported in %s; supported stages are %s.",
+                             instruction->Describe().c_str(), string_VkShaderStageFlagBits(entrypoint.stage),
+                             string_VkShaderStageFlags(phys_dev_ext_props.tensor_properties.shaderTensorSupportedStages).c_str());
+        }
+
+        if (instruction->Opcode() == spv::OpTypeTensorARM) {
+            // to be legal in a shader, a tensor must have rank and no shape, i.e. exactly 4 words
+            auto nWords = instruction->Length();
+            if (nWords > 4) {
+                skip |= LogError("VUID-RuntimeSpirv-OpTypeTensorARM-09902", module_state.handle(), loc,
+                                 "'%s' defines a tensor with a shape.", instruction->Describe().c_str());
+            } else if (nWords < 4) {
+                skip |= LogError("VUID-RuntimeSpirv-OpTypeTensorARM-09907", module_state.handle(), loc,
+                                 "'%s' defines a tensor with no rank.", instruction->Describe().c_str());
+            }
+        }
+
+        if (instruction->Opcode() == spv::OpTensorReadARM || instruction->Opcode() == spv::OpTensorWriteARM) {
+            // for read, the size to copy is defined as a type in the OpTensorReadARM instruction itself;
+            // for write it's defined with an object, whose type is defined in a previous instruction
+            const spirv::Instruction *copy_definition_instr =
+                (instruction->Opcode() == spv::OpTensorReadARM) ? instruction : module_state.FindDef(instruction->Word(3));
+            const spirv::Instruction *copy_object_type = module_state.FindDef(copy_definition_instr->Word(1));
+            const spirv::Instruction *element_type = module_state.FindDef(module_state.GetBaseType(copy_object_type));
+            // the type can be an OpTypeArray or a scalar type: computing array_elements this way works for both cases
+            uint32_t copy_object_type_bytes = module_state.GetTypeBytesSize(copy_object_type);
+            uint32_t element_bytes = module_state.GetTypeBytesSize(element_type);
+            uint32_t array_elements = copy_object_type_bytes / element_bytes;
+            if (array_elements > phys_dev_ext_props.tensor_properties.maxTensorShaderAccessArrayLength) {
+                skip |= LogError("VUID-RuntimeSpirv-maxTensorShaderAccessArrayLength-09903", module_state.handle(), loc,
+                                 "'%s' accesses %" PRIu32 " elements, more than maxTensorShaderAccessArrayLength (%" PRIu32 ").",
+                                 instruction->Describe().c_str(), array_elements,
+                                 phys_dev_ext_props.tensor_properties.maxTensorShaderAccessArrayLength);
+            }
+            if (copy_object_type_bytes > phys_dev_ext_props.tensor_properties.maxTensorShaderAccessSize) {
+                skip |= LogError("VUID-RuntimeSpirv-maxTensorShaderAccessSize-09904", module_state.handle(), loc,
+                                 "'%s' accesses %" PRIu32 " bytes, more than maxTensorShaderAccessSize (%" PRIu32 ").",
+                                 instruction->Describe().c_str(), copy_object_type_bytes,
+                                 phys_dev_ext_props.tensor_properties.maxTensorShaderAccessSize);
+            }
+        }
     }
 
     return skip;

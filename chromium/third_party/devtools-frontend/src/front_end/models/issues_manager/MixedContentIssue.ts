@@ -18,23 +18,17 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('models/issues_manager/MixedContentIssue.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
-export class MixedContentIssue extends Issue {
-  #issueDetails: Protocol.Audits.MixedContentIssueDetails;
-
-  constructor(issueDetails: Protocol.Audits.MixedContentIssueDetails, issuesModel: SDK.IssuesModel.IssuesModel) {
-    super(Protocol.Audits.InspectorIssueCode.MixedContentIssue, issuesModel);
-    this.#issueDetails = issueDetails;
+export class MixedContentIssue extends Issue<Protocol.Audits.MixedContentIssueDetails> {
+  constructor(issueDetails: Protocol.Audits.MixedContentIssueDetails, issuesModel: SDK.IssuesModel.IssuesModel|null) {
+    super(Protocol.Audits.InspectorIssueCode.MixedContentIssue, issueDetails, issuesModel);
   }
 
   override requests(): Iterable<Protocol.Audits.AffectedRequest> {
-    if (this.#issueDetails.request) {
-      return [this.#issueDetails.request];
+    const details = this.details();
+    if (details.request) {
+      return [details.request];
     }
     return [];
-  }
-
-  getDetails(): Protocol.Audits.MixedContentIssueDetails {
-    return this.#issueDetails;
   }
 
   getCategory(): IssueCategory {
@@ -50,11 +44,11 @@ export class MixedContentIssue extends Issue {
   }
 
   primaryKey(): string {
-    return JSON.stringify(this.#issueDetails);
+    return JSON.stringify(this.details());
   }
 
   getKind(): IssueKind {
-    switch (this.#issueDetails.resolutionStatus) {
+    switch (this.details().resolutionStatus) {
       case Protocol.Audits.MixedContentResolutionStatus.MixedContentAutomaticallyUpgraded:
         return IssueKind.IMPROVEMENT;
       case Protocol.Audits.MixedContentResolutionStatus.MixedContentBlocked:
@@ -64,8 +58,9 @@ export class MixedContentIssue extends Issue {
     }
   }
 
-  static fromInspectorIssue(issuesModel: SDK.IssuesModel.IssuesModel, inspectorIssue: Protocol.Audits.InspectorIssue):
-      MixedContentIssue[] {
+  static fromInspectorIssue(
+      issuesModel: SDK.IssuesModel.IssuesModel|null,
+      inspectorIssue: Protocol.Audits.InspectorIssue): MixedContentIssue[] {
     const mixedContentDetails = inspectorIssue.details.mixedContentIssueDetails;
     if (!mixedContentDetails) {
       console.warn('Mixed content issue without details received.');

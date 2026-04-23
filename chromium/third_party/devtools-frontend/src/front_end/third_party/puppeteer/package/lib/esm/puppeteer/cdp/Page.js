@@ -342,6 +342,12 @@ export class CdpPage extends Page {
     isJavaScriptEnabled() {
         return this.#emulationManager.javascriptEnabled;
     }
+    async openDevTools() {
+        const pageTargetId = this.target()._targetId;
+        const browser = this.browser();
+        const devtoolsPage = await browser._createDevToolsPage(pageTargetId);
+        return devtoolsPage;
+    }
     async waitForFileChooser(options = {}) {
         const needsEnable = this.#fileChooserDeferreds.size === 0;
         const { timeout = this._timeoutSettings.timeout() } = options;
@@ -389,14 +395,14 @@ export class CdpPage extends Page {
         this.emit("error" /* PageEvent.Error */, new Error('Page crashed!'));
     }
     #onLogEntryAdded(event) {
-        const { level, text, args, source, url, lineNumber } = event.entry;
+        const { level, text, args, source, url, lineNumber, stackTrace } = event.entry;
         if (args) {
             args.map(arg => {
                 void releaseObject(this.#primaryTargetClient, arg);
             });
         }
         if (source !== 'worker') {
-            this.emit("console" /* PageEvent.Console */, new ConsoleMessage(convertConsoleMessageLevel(level), text, [], [{ url, lineNumber }]));
+            this.emit("console" /* PageEvent.Console */, new ConsoleMessage(convertConsoleMessageLevel(level), text, [], [{ url, lineNumber }], undefined, stackTrace));
         }
     }
     mainFrame() {
@@ -641,7 +647,7 @@ export class CdpPage extends Page {
         }
         const textTokens = [];
         // eslint-disable-next-line max-len -- The comment is long.
-        // eslint-disable-next-line rulesdir/use-using -- These are not owned by this function.
+        // eslint-disable-next-line @puppeteer/use-using -- These are not owned by this function.
         for (const arg of args) {
             const remoteObject = arg.remoteObject();
             if (remoteObject.objectId) {
@@ -661,7 +667,7 @@ export class CdpPage extends Page {
                 });
             }
         }
-        const message = new ConsoleMessage(convertConsoleMessageLevel(eventType), textTokens.join(' '), args, stackTraceLocations);
+        const message = new ConsoleMessage(convertConsoleMessageLevel(eventType), textTokens.join(' '), args, stackTraceLocations, undefined, stackTrace);
         this.emit("console" /* PageEvent.Console */, message);
     }
     #onDialog(event) {
@@ -675,7 +681,9 @@ export class CdpPage extends Page {
                 ...options,
                 ignoreSameDocumentNavigation: true,
             }),
-            this.#primaryTargetClient.send('Page.reload'),
+            this.#primaryTargetClient.send('Page.reload', {
+                ignoreCache: options?.ignoreCache ?? false,
+            }),
         ]);
         return result;
     }

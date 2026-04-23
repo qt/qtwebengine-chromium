@@ -64,7 +64,6 @@
 #include "third_party/blink/public/mojom/page/draggable_region.mojom-blink.h"
 #include "third_party/blink/public/mojom/page/prerender_page_param.mojom.h"
 #include "third_party/blink/public/mojom/page/widget.mojom-blink.h"
-#include "third_party/blink/public/mojom/partitioned_popins/partitioned_popin_params.mojom.h"
 #include "third_party/blink/public/mojom/window_features/window_features.mojom-blink.h"
 #include "third_party/blink/public/platform/interface_registry.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -83,6 +82,7 @@
 #include "third_party/blink/public/web/web_meaningful_layout.h"
 #include "third_party/blink/public/web/web_navigation_type.h"
 #include "third_party/blink/public/web/web_node.h"
+#include "third_party/blink/public/web/web_performance_metrics_for_reporting.h"
 #include "third_party/blink/public/web/web_plugin.h"
 #include "third_party/blink/public/web/web_range.h"
 #include "third_party/blink/public/web/web_render_theme.h"
@@ -501,10 +501,8 @@ WebView* WebView::Create(
     std::optional<SkColor> page_base_background_color,
     const base::UnguessableToken& browsing_context_group_token,
     const ColorProviderColorMaps* color_provider_colors,
-    blink::mojom::PartitionedPopinParamsPtr partitioned_popin_params,
     int32_t history_index,
-    int32_t history_length,
-    const std::optional<NoiseToken>& canvas_noise_token) {
+    int32_t history_length) {
   return WebViewImpl::Create(
       client,
       is_hidden ? mojom::blink::PageVisibilityState::kHidden
@@ -513,8 +511,7 @@ WebView* WebView::Create(
       widgets_never_composited, To<WebViewImpl>(opener), std::move(page_handle),
       agent_group_scheduler, session_storage_namespace_id,
       std::move(page_base_background_color), browsing_context_group_token,
-      color_provider_colors, std::move(partitioned_popin_params), history_index,
-      history_length, canvas_noise_token);
+      color_provider_colors, history_index, history_length);
 }
 
 WebViewImpl* WebViewImpl::Create(
@@ -532,18 +529,15 @@ WebViewImpl* WebViewImpl::Create(
     std::optional<SkColor> page_base_background_color,
     const base::UnguessableToken& browsing_context_group_token,
     const ColorProviderColorMaps* color_provider_colors,
-    blink::mojom::PartitionedPopinParamsPtr partitioned_popin_params,
     int32_t history_index,
-    int32_t history_length,
-    const std::optional<NoiseToken>& canvas_noise_token) {
+    int32_t history_length) {
   return new WebViewImpl(
       client, visibility, std::move(prerender_param), fenced_frame_mode,
       compositing_enabled, widgets_never_composited, opener,
       std::move(page_handle), agent_group_scheduler,
       session_storage_namespace_id, std::move(page_base_background_color),
-      browsing_context_group_token, color_provider_colors,
-      std::move(partitioned_popin_params), history_index, history_length,
-      canvas_noise_token);
+      browsing_context_group_token, color_provider_colors, history_index,
+      history_length);
 }
 
 size_t WebView::GetWebViewCount() {
@@ -561,9 +555,9 @@ void WebView::ResetVisitedLinkState(bool invalidate_visited_link_hashes) {
 void WebViewImpl::SetNoStatePrefetchClient(
     WebNoStatePrefetchClient* no_state_prefetch_client) {
   DCHECK(page_);
-  ProvideNoStatePrefetchClientTo(*page_,
-                                 MakeGarbageCollected<NoStatePrefetchClient>(
-                                     *page_, no_state_prefetch_client));
+  ProvideNoStatePrefetchClientTo(
+      *page_,
+      MakeGarbageCollected<NoStatePrefetchClient>(no_state_prefetch_client));
 }
 
 void WebViewImpl::CloseWindow() {
@@ -608,10 +602,8 @@ WebViewImpl::WebViewImpl(
     std::optional<SkColor> page_base_background_color,
     const base::UnguessableToken& browsing_context_group_token,
     const ColorProviderColorMaps* color_provider_colors,
-    blink::mojom::PartitionedPopinParamsPtr partitioned_popin_params,
     int32_t history_index,
-    int32_t history_length,
-    const std::optional<NoiseToken>& canvas_noise_token)
+    int32_t history_length)
     : widgets_never_composited_(widgets_never_composited),
       web_view_client_(client),
       chrome_client_(MakeGarbageCollected<ChromeClientImpl>(this)),
@@ -644,8 +636,7 @@ WebViewImpl::WebViewImpl(
   page_ = Page::CreateOrdinary(
       *chrome_client_, opener ? opener->GetPage() : nullptr,
       agent_group_scheduler.GetAgentGroupScheduler(),
-      browsing_context_group_token, color_provider_colors,
-      std::move(partitioned_popin_params), canvas_noise_token);
+      browsing_context_group_token, color_provider_colors);
   CoreInitializer::GetInstance().ProvideModulesToPage(
       *page_, session_storage_namespace_id_);
 
@@ -721,11 +712,10 @@ bool WebViewImpl::StartPageScaleAnimation(const gfx::Point& target_position,
 
       LocalFrameView* view = MainFrameImpl()->GetFrameView();
       if (view && view->GetScrollableArea()) {
-        // TODO(crbug.com/414556050): Pass the correct `ScrollSourceType`.
         view->GetScrollableArea()->SetScrollOffset(
             ScrollOffset(gfx::Vector2dF(clamped_point.OffsetFromOrigin())),
             mojom::blink::ScrollType::kProgrammatic,
-            cc::ScrollSourceType::kNone);
+            cc::ScrollSourceType::kAbsoluteScroll);
       }
 
       return false;
@@ -1252,8 +1242,8 @@ void WebViewImpl::DidFirstVisuallyNonEmptyPaint() {
   local_main_frame_host_remote_->DidFirstVisuallyNonEmptyPaint();
 }
 
-void WebViewImpl::OnFirstContentfulPaint() {
-  local_main_frame_host_remote_->OnFirstContentfulPaint();
+void WebViewImpl::OnFirstContentfulPaint(const base::TimeDelta& duration) {
+  local_main_frame_host_remote_->OnFirstContentfulPaint(duration);
 }
 
 void WebViewImpl::UpdateICBAndResizeViewport(
@@ -1627,6 +1617,8 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
   settings->SetDOMPasteAllowed(prefs.dom_paste_enabled);
   settings->SetTextAreasAreResizable(prefs.text_areas_are_resizable);
   settings->SetAllowScriptsToCloseWindows(prefs.allow_scripts_to_close_windows);
+  settings->SetAllowWindowFocusWithoutUserGesture(
+      prefs.allow_window_focus_without_user_gesture);
   settings->SetDownloadableBinaryFontsEnabled(prefs.remote_fonts_enabled);
   settings->SetJavaScriptCanAccessClipboard(
       prefs.javascript_can_access_clipboard);
@@ -1700,7 +1692,9 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
       prefs.strict_powerful_feature_restrictions);
   settings->SetAllowGeolocationOnInsecureOrigins(
       prefs.allow_geolocation_on_insecure_origins);
-  settings->SetPasswordEchoEnabled(prefs.password_echo_enabled);
+  settings->SetPasswordEchoEnabledPhysical(
+      prefs.password_echo_enabled_physical);
+  settings->SetPasswordEchoEnabledTouch(prefs.password_echo_enabled_touch);
   settings->SetShouldPrintBackgrounds(prefs.should_print_backgrounds);
   settings->SetShouldClearDocumentBackground(
       prefs.should_clear_document_background);
@@ -1838,6 +1832,8 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
       !prefs.disable_accelerated_small_canvases);
   RuntimeEnabledFeatures::SetLongPressLinkSelectTextEnabled(
       prefs.long_press_link_select_text);
+  settings->SetDynamicSafeAreaInsetsEnabled(
+      prefs.dynamic_safe_area_insets_enabled);
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA)
@@ -1895,10 +1891,6 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
   settings->SetModalContextMenu(prefs.modal_context_menu);
   settings->SetRequireTransientActivationAndAuthorizationForSubAppsAPIs(
       prefs.subapps_apis_require_user_gesture_and_authorization);
-  if (RuntimeEnabledFeatures::DynamicSafeAreaInsetsEnabled()) {
-    settings->SetDynamicSafeAreaInsetsEnabled(
-        prefs.dynamic_safe_area_insets_enabled);
-  }
 
 #if BUILDFLAG(IS_MAC)
   web_view_impl->SetMaximumLegibleScale(
@@ -1934,15 +1926,21 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
   RuntimeEnabledFeatures::SetPaymentRequestEnabled(
       prefs.payment_request_enabled);
 
-  if (prefs.api_based_fingerprinting_interventions_enabled) {
-    RuntimeEnabledFeatures::SetReduceDeviceMemoryEnabled(true);
-    RuntimeEnabledFeatures::SetReduceHardwareConcurrencyEnabled(true);
-    RuntimeEnabledFeatures::SetReduceScreenSizeEnabled(true);
-  }
-
   if (prefs.ai_prompt_api_enabled) {
     RuntimeEnabledFeatures::SetAIPromptAPIEnabled(true);
   }
+
+#if BUILDFLAG(IS_MAC) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
+  const bool use_external_popups = !prefs.should_disable_external_popups;
+  if (web_view_impl->GetChromeClient().UseExternalPopupMenus() !=
+      use_external_popups) {
+    // Switching between internal and external popups -- first, cancel any
+    // popups that are open.
+    web_view_impl->CancelPagePopup();
+  }
+  web_view_impl->GetChromeClient().SetUseExternalPopupMenus(
+      use_external_popups);
+#endif  // BUILDFLAG(IS_MAC) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 }
 
 void WebViewImpl::ThemeChanged() {
@@ -2462,6 +2460,8 @@ void WebViewImpl::SetPageLifecycleStateFromNewPageCommit(
     mojom::blink::PagehideDispatch pagehide_dispatch) {
   TRACE_EVENT0("navigation",
                "WebViewImpl::SetPageLifecycleStateFromNewPageCommit");
+  base::ScopedUmaHistogramTimer timer(
+      "Navigation.PageLifecycleStateFromNewPageCommit.Duration");
   mojom::blink::PageLifecycleStatePtr state =
       GetPage()->GetPageLifecycleState().Clone();
   state->visibility = visibility;
@@ -2626,10 +2626,16 @@ void WebViewImpl::SetPageLifecycleStateInternal(
   GetPage()->SetPageLifecycleState(std::move(new_state));
 
   // Notify all local frames that we've updated the page lifecycle state.
+  BFCacheStateChange bfcache_change = BFCacheStateChange::kNoChange;
+  if (restoring_from_bfcache) {
+    bfcache_change = BFCacheStateChange::kRestoredFromBFCache;
+  } else if (storing_in_bfcache) {
+    bfcache_change = BFCacheStateChange::kStoredToBFCache;
+  }
   for (WebFrame* frame = MainFrame(); frame; frame = frame->TraverseNext()) {
     if (frame->IsWebLocalFrame()) {
       frame->ToWebLocalFrame()->Client()->DidSetPageLifecycleState(
-          restoring_from_bfcache);
+          bfcache_change);
     }
   }
 
@@ -3128,8 +3134,6 @@ void WebViewImpl::Show(const LocalFrameToken& opener_frame_token,
   window_features->has_width = web_window_features.width_set;
   window_features->has_height = web_window_features.height_set;
   window_features->is_popup = web_window_features.is_popup;
-  window_features->is_partitioned_popin =
-      web_window_features.is_partitioned_popin;
   local_main_frame_host_remote_->ShowCreatedWindow(
       opener_frame_token, NavigationPolicyToDisposition(policy),
       std::move(window_features), opened_by_user_gesture,
@@ -3152,6 +3156,7 @@ void WebViewImpl::DidAccessInitialMainDocument() {
   local_main_frame_host_remote_->DidAccessInitialMainDocument();
 }
 
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 void WebViewImpl::Minimize() {
   DCHECK(local_main_frame_host_remote_);
   local_main_frame_host_remote_->Minimize();
@@ -3171,6 +3176,7 @@ void WebViewImpl::SetResizable(bool resizable) {
   DCHECK(local_main_frame_host_remote_);
   local_main_frame_host_remote_->SetResizable(resizable);
 }
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
 void WebViewImpl::UpdateTargetURL(const WebURL& url,
                                   const WebURL& fallback_url) {
@@ -3252,10 +3258,9 @@ void WebViewImpl::ResetScrollAndScaleState() {
     ScrollableArea* scrollable_area = frame_view->LayoutViewport();
 
     if (!scrollable_area->GetScrollOffset().IsZero()) {
-      // TODO(crbug.com/414556050): Pass the correct `ScrollSourceType`.
       scrollable_area->SetScrollOffset(ScrollOffset(),
                                        mojom::blink::ScrollType::kProgrammatic,
-                                       cc::ScrollSourceType::kNone);
+                                       cc::ScrollSourceType::kAbsoluteScroll);
     }
   }
 
@@ -3487,15 +3492,6 @@ void WebViewImpl::UpdateUseOverlayScrollbar(bool use_overlay_scrollbar) {
 }
 #endif
 
-void WebViewImpl::UpdateCanvasNoiseToken(
-    std::optional<NoiseToken> canvas_noise_token) {
-  GetPage()->SetCanvasNoiseToken(canvas_noise_token);
-}
-
-std::optional<NoiseToken> WebViewImpl::CanvasNoiseTokenForTesting() {
-  return GetPage()->CanvasNoiseToken();
-}
-
 void WebViewImpl::ActivatePrerenderedPage(
     mojom::blink::PrerenderPageActivationParamsPtr
         prerender_page_activation_params,
@@ -3613,6 +3609,11 @@ void WebViewImpl::UpdateRendererPreferences(
   GetSettings()->SetSelectionClipboardBufferAvailable(
       renderer_preferences_.selection_clipboard_buffer_available);
 #endif  // BUILDFLAG(IS_OZONE)
+
+#if BUILDFLAG(IS_LINUX)
+  GetSettings()->SetMiddleClickPasteAllowed(
+      renderer_preferences_.middle_click_paste_allowed);
+#endif  // BUILDFLAG(IS_LINUX)
 
   SetExplicitlyAllowedPorts(
       renderer_preferences_.explicitly_allowed_network_ports);
@@ -4109,6 +4110,10 @@ void WebViewImpl::SetSupportsDraggableRegions(bool supports_draggable_regions) {
   if (supports_draggable_regions_) {
     local_frame->View()->UpdateDocumentDraggableRegions();
   } else {
+    if (!local_frame->GetDocument()->HasDraggableRegions()) {
+      return;
+    }
+
     local_frame->GetDocument()->SetDraggableRegions(
         Vector<DraggableRegionValue>());
     chrome_client_->DraggableRegionsChanged();

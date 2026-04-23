@@ -55,14 +55,13 @@ float GetSimplificationThreshold(float brush_epsilon) { return brush_epsilon; }
 
 }  // namespace
 
-void BrushTipExtruder::StartStroke(float brush_epsilon,
-                                   bool is_winding_texture_particle_brush,
+void BrushTipExtruder::StartStroke(float brush_epsilon, bool is_particle_brush,
                                    MutableMesh& mesh) {
   ABSL_CHECK_GT(brush_epsilon, 0);
   brush_epsilon_ = brush_epsilon;
   max_chord_height_ = GetMaxChordHeight(brush_epsilon);
   simplification_threshold_ = GetSimplificationThreshold(brush_epsilon);
-  is_winding_texture_particle_brush_ = is_winding_texture_particle_brush;
+  is_particle_brush_ = is_particle_brush;
   extrusions_.clear();
   saved_extrusion_data_count_ = 0;
   deleted_save_point_extrusions_.clear();
@@ -403,8 +402,7 @@ AffineTransform ComputeParticleSurfaceUvTransform(
          AffineTransform::Scale(1.0f / tip_state.width,
                                 1.0f / tip_state.height) *
          AffineTransform::Rotate(-tip_state.rotation) *
-         AffineTransform::Translate(
-             {-tip_state.position.x, -tip_state.position.y});
+         AffineTransform::Translate(-tip_state.position.Offset());
 }
 
 // Appends and processes new "left" and "right" vertices in `geometry`.
@@ -471,7 +469,8 @@ void BrushTipExtruder::Extrude(const BrushTipState& tip_state,
     return;
 
   auto end_iter = extrusions_.end();
-  if (extrusions_.size() < 2 || (end_iter - 2)->IsBreakPoint()) {
+  if (extrusions_.size() < 2 || (end_iter - 1)->IsBreakPoint() ||
+      (end_iter - 2)->IsBreakPoint()) {
     // There is nothing for this function to do with fewer than two
     // non-break-point extrusion data.
     return;
@@ -497,8 +496,7 @@ void BrushTipExtruder::Extrude(const BrushTipState& tip_state,
 
   const BrushTipState& extruded_state = (end_iter - 2)->GetState();
   ExtrudeGeometry(current_extrusion_points_, extruded_state,
-                  simplification_threshold_, is_winding_texture_particle_brush_,
-                  geometry_);
+                  simplification_threshold_, is_particle_brush_, geometry_);
 }
 
 void BrushTipExtruder::ExtrudeBreakPoint() {
@@ -525,16 +523,26 @@ void BrushTipExtruder::ExtrudeBreakPoint() {
   }
 
   ExtrudeGeometry(current_extrusion_points_, extrusions_.back().GetState(),
-                  simplification_threshold_, is_winding_texture_particle_brush_,
-                  geometry_);
+                  simplification_threshold_, is_particle_brush_, geometry_);
 
   // If no new geometry was added after the last breakpoint, we don't need to
   // do anything.
   Geometry::IndexCounts counts_at_last_break =
       geometry_.IndexCountsAtLastExtrusionBreak();
-
-  if (geometry_.LeftSide().indices.size() <= counts_at_last_break.left &&
-      geometry_.RightSide().indices.size() <= counts_at_last_break.right) {
+  ABSL_DCHECK_GE(geometry_.LeftSide().indices.size(),
+                 counts_at_last_break.left);
+  ABSL_DCHECK_GE(geometry_.RightSide().indices.size(),
+                 counts_at_last_break.right);
+  int new_vertex_count =
+      geometry_.LeftSide().indices.size() - counts_at_last_break.left +
+      geometry_.RightSide().indices.size() - counts_at_last_break.right;
+  if (new_vertex_count == 0) {
+    // There's nothing since the last extrusion break, so we're done.
+    return;
+  } else if (new_vertex_count < 3) {
+    // We added fewer than three vertices, so there's not enough since the
+    // last extrusion break to actually draw anything. Discard it.
+    geometry_.ClearSinceLastExtrusionBreak();
     return;
   }
 
@@ -566,6 +574,7 @@ void BrushTipExtruder::ExtrudeBreakPoint() {
       absl::MakeSpan(geometry_.RightSide().indices)
           .subspan(counts_at_last_break.right + outline_counts.right);
   outline.AppendNewIndices(new_left_indices, new_right_indices);
+  ABSL_DCHECK_GE(outline.GetIndices().size(), 3);
 }
 
 }  // namespace ink::strokes_internal

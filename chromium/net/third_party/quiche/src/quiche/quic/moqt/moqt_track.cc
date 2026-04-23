@@ -49,16 +49,25 @@ bool RemoteTrack::CheckDataStreamType(MoqtDataStreamType type) {
 
 void SubscribeRemoteTrack::OnStreamOpened() {
   ++currently_open_streams_;
-  if (subscribe_done_alarm_ != nullptr && subscribe_done_alarm_->IsSet()) {
-    subscribe_done_alarm_->Cancel();
+  if (publish_done_alarm_ != nullptr && publish_done_alarm_->IsSet()) {
+    publish_done_alarm_->Cancel();
   }
 }
 
-void SubscribeRemoteTrack::OnStreamClosed() {
+void SubscribeRemoteTrack::OnStreamClosed(
+    bool fin_received, std::optional<DataStreamIndex> index) {
   ++streams_closed_;
   --currently_open_streams_;
   QUICHE_DCHECK_GE(currently_open_streams_, -1);
-  if (subscribe_done_alarm_ == nullptr) {
+  if (index.has_value()) {
+    // If index is nullopt, there was not an object received on the stream.
+    if (fin_received) {
+      visitor_->OnStreamFin(full_track_name(), *index);
+    } else {
+      visitor_->OnStreamReset(full_track_name(), *index);
+    }
+  }
+  if (publish_done_alarm_ == nullptr) {
     return;
   }
   MaybeSetPublishDoneAlarm();
@@ -66,10 +75,10 @@ void SubscribeRemoteTrack::OnStreamClosed() {
 
 void SubscribeRemoteTrack::OnPublishDone(
     uint64_t stream_count, const quic::QuicClock* clock,
-    std::unique_ptr<quic::QuicAlarm> subscribe_done_alarm) {
+    std::unique_ptr<quic::QuicAlarm> publish_done_alarm) {
   total_streams_ = stream_count;
   clock_ = clock;
-  subscribe_done_alarm_ = std::move(subscribe_done_alarm);
+  publish_done_alarm_ = std::move(publish_done_alarm);
   MaybeSetPublishDoneAlarm();
 }
 
@@ -79,7 +88,7 @@ void SubscribeRemoteTrack::MaybeSetPublishDoneAlarm() {
     quic::QuicTimeDelta timeout =
         std::min(delivery_timeout_, kMaxPublishDoneTimeout);
     timeout = std::max(timeout, kMinPublishDoneTimeout);
-    subscribe_done_alarm_->Set(clock_->ApproximateNow() + timeout);
+    publish_done_alarm_->Set(clock_->ApproximateNow() + timeout);
   }
 }
 

@@ -4,11 +4,13 @@
 
 import type * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import {describeWithLocale} from '../../testing/EnvironmentHelpers.js';
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
 import {MockIssuesModel} from '../../testing/MockIssuesModel.js';
 import * as IssuesManager from '../issues_manager/issues_manager.js';
 
-describeWithLocale('GenericIssue', () => {
+describe('GenericIssue', () => {
+  setupLocaleHooks();
+
   const mockModel = new MockIssuesModel([]) as unknown as SDK.IssuesModel.IssuesModel;
 
   function createProtocolIssueWithoutDetails(): Protocol.Audits.InspectorIssue {
@@ -25,12 +27,6 @@ describeWithLocale('GenericIssue', () => {
       details: {genericIssueDetails},
     };
   }
-
-  beforeEach(() => {
-    // The component warns if not provided with an issue that has details, but
-    // we don't need that noise in the test output.
-    sinon.stub(console, 'warn');
-  });
 
   it('adds an incorrect form label use issue with valid details', () => {
     const issueDetails = {
@@ -78,5 +74,27 @@ describeWithLocale('GenericIssue', () => {
         'GenericIssue::ResponseWasBlockedByORB-(undefined)-(undefined)-(undefined)-(blabla)');
     assert.strictEqual(genericIssue.getKind(), IssuesManager.Issue.IssueKind.IMPROVEMENT);
     assert.isNotNull(genericIssue.getDescription());
+  });
+
+  it('adds a skippable navigation entry issue with valid details', () => {
+    const issueDetails = {
+      errorType: Protocol.Audits.GenericIssueErrorType.NavigationEntryMarkedSkippable,
+      request: {requestId: 'blabla', url: 'https://skippablePage.com'} as Protocol.Audits.AffectedRequest,
+    };
+
+    const issue = createProtocolIssueWithDetails(issueDetails);
+    const genericIssues = IssuesManager.GenericIssue.GenericIssue.fromInspectorIssue(mockModel, issue);
+    assert.lengthOf(genericIssues, 1);
+    const genericIssue = genericIssues[0];
+
+    assert.strictEqual(genericIssue.getCategory(), IssuesManager.Issue.IssueCategory.GENERIC);
+    assert.strictEqual(
+        genericIssue.primaryKey(),
+        'GenericIssue::NavigationEntryMarkedSkippable-(undefined)-(undefined)-(undefined)-(blabla)');
+    assert.strictEqual(genericIssue.getKind(), IssuesManager.Issue.IssueKind.IMPROVEMENT);
+    assert.isNotNull(genericIssue.getDescription());
+
+    const requests = Array.from(genericIssue.requests());
+    assert.strictEqual(requests[0].url, 'https://skippablePage.com');
   });
 });

@@ -21,6 +21,7 @@
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/unowned_ptr.h"
+#include "core/fxge/cfx_face.h"
 #include "core/fxge/cfx_fontcache.h"
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/cfx_fontmgr.h"
@@ -49,49 +50,6 @@ const CFX_Font::CharsetFontMap kDefaultTTFMap[] = {
     // TODO(crbug.com/348468114): Remove sentinel value when
     // FPDF_GetDefaultTTFMap() gets removed.
     {-1, nullptr}};
-
-FX_RECT FXRectFromFTPos(FT_Pos left, FT_Pos top, FT_Pos right, FT_Pos bottom) {
-  return FX_RECT(pdfium::checked_cast<int32_t>(left),
-                 pdfium::checked_cast<int32_t>(top),
-                 pdfium::checked_cast<int32_t>(right),
-                 pdfium::checked_cast<int32_t>(bottom));
-}
-
-FX_RECT ScaledFXRectFromFTPos(FT_Pos left,
-                              FT_Pos top,
-                              FT_Pos right,
-                              FT_Pos bottom,
-                              int x_scale,
-                              int y_scale) {
-  if (x_scale == 0 || y_scale == 0) {
-    return FXRectFromFTPos(left, top, right, bottom);
-  }
-
-  return FXRectFromFTPos(left * 1000 / x_scale, top * 1000 / y_scale,
-                         right * 1000 / x_scale, bottom * 1000 / y_scale);
-}
-
-#ifdef PDF_ENABLE_XFA
-unsigned long FTStreamRead(FXFT_StreamRec* stream,
-                           unsigned long offset,
-                           unsigned char* buffer,
-                           unsigned long count) {
-  if (count == 0) {
-    return 0;
-  }
-
-  IFX_SeekableReadStream* pFile =
-      static_cast<IFX_SeekableReadStream*>(stream->descriptor.pointer);
-
-  // SAFETY: caller ensures `buffer` points to at least `count` bytes.
-  return pFile && pFile->ReadBlockAtOffset(
-                      UNSAFE_BUFFERS(pdfium::span(buffer, count)), offset)
-             ? count
-             : 0;
-}
-
-void FTStreamClose(FXFT_StreamRec* stream) {}
-#endif  // PDF_ENABLE_XFA
 
 bool ShouldAppendStyle(const ByteString& style) {
   return !style.IsEmpty() && style != "Regular";
@@ -196,29 +154,9 @@ int CFX_Font::GetSubstFontItalicAngle() const {
 bool CFX_Font::LoadFile(RetainPtr<IFX_SeekableReadStream> pFile,
                         int nFaceIndex) {
   object_tag_ = 0;
-
-  auto pStreamRec = std::make_unique<FXFT_StreamRec>();
-  pStreamRec->base = nullptr;
-  pStreamRec->size = static_cast<unsigned long>(pFile->GetSize());
-  pStreamRec->pos = 0;
-  pStreamRec->descriptor.pointer = static_cast<void*>(pFile.Get());
-  pStreamRec->close = FTStreamClose;
-  pStreamRec->read = FTStreamRead;
-
-  FT_Open_Args args;
-  args.flags = FT_OPEN_STREAM;
-  args.stream = pStreamRec.get();
-
-  face_ = CFX_Face::Open(CFX_GEModule::Get()->GetFontMgr()->GetFTLibrary(),
-                         &args, nFaceIndex);
-  if (!face_) {
-    return false;
-  }
-
-  owned_file_ = std::move(pFile);
-  owned_stream_rec_ = std::move(pStreamRec);
-  face_->SetPixelSize(0, 64);
-  return true;
+  face_ = CFX_Face::OpenFromStream(
+      CFX_GEModule::Get()->GetFontMgr()->GetFTLibrary(), pFile, nFaceIndex);
+  return !!face_;
 }
 
 #if !BUILDFLAG(IS_WIN)
@@ -317,53 +255,7 @@ std::optional<FX_RECT> CFX_Font::GetGlyphBBox(uint32_t glyph_index) {
   if (!face_) {
     return std::nullopt;
   }
-
-  if (face_->IsTricky()) {
-    int error = FT_Set_Char_Size(face_->GetRec(), 0, 1000 * 64, 72, 72);
-    if (error) {
-      return std::nullopt;
-    }
-
-    error = FT_Load_Glyph(face_->GetRec(), glyph_index,
-                          FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH);
-    if (error) {
-      return std::nullopt;
-    }
-
-    FT_Glyph glyph;
-    error = FT_Get_Glyph(face_->GetRec()->glyph, &glyph);
-    if (error) {
-      return std::nullopt;
-    }
-
-    FT_BBox cbox;
-    FT_Glyph_Get_CBox(glyph, FT_GLYPH_BBOX_PIXELS, &cbox);
-    int pixel_size_x = face_->GetRec()->size->metrics.x_ppem;
-    int pixel_size_y = face_->GetRec()->size->metrics.y_ppem;
-    FX_RECT result = ScaledFXRectFromFTPos(
-        cbox.xMin, cbox.yMax, cbox.xMax, cbox.yMin, pixel_size_x, pixel_size_y);
-    result.top = std::min(result.top, static_cast<int>(face_->GetAscender()));
-    result.bottom =
-        std::max(result.bottom, static_cast<int>(face_->GetDescender()));
-    FT_Done_Glyph(glyph);
-    if (!face_->SetPixelSize(0, 64)) {
-      return std::nullopt;
-    }
-    return result;
-  }
-  static constexpr int kFlag =
-      FT_LOAD_NO_SCALE | FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH;
-  if (FT_Load_Glyph(face_->GetRec(), glyph_index, kFlag) != 0) {
-    return std::nullopt;
-  }
-  int em = face_->GetUnitsPerEm();
-  return ScaledFXRectFromFTPos(FXFT_Get_Glyph_HoriBearingX(face_->GetRec()),
-                               FXFT_Get_Glyph_HoriBearingY(face_->GetRec()) -
-                                   FXFT_Get_Glyph_Height(face_->GetRec()),
-                               FXFT_Get_Glyph_HoriBearingX(face_->GetRec()) +
-                                   FXFT_Get_Glyph_Width(face_->GetRec()),
-                               FXFT_Get_Glyph_HoriBearingY(face_->GetRec()), em,
-                               em);
+  return face_->GetFontGlyphBBox(glyph_index);
 }
 
 bool CFX_Font::IsItalic() const {
@@ -400,7 +292,7 @@ ByteString CFX_Font::GetPsName() const {
     return ByteString();
   }
 
-  ByteString psName = FT_Get_Postscript_Name(face_->GetRec());
+  ByteString psName = face_->GetPostscriptName();
   if (psName.IsEmpty()) {
     psName = kUntitledFontName;
   }
@@ -494,7 +386,7 @@ const CFX_GlyphBitmap* CFX_Font::LoadGlyphBitmap(
     bool bFontStyle,
     const CFX_Matrix& matrix,
     int dest_width,
-    int anti_alias,
+    FontAntiAliasingMode anti_alias,
     CFX_TextRenderOptions* text_options) const {
   return GetOrCreateGlyphCache()->LoadGlyphBitmap(this, glyph_index, bFontStyle,
                                                   matrix, dest_width,

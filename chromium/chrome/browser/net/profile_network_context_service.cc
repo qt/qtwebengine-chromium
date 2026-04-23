@@ -40,8 +40,6 @@
 #include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/first_party_sets/first_party_sets_policy_service.h"
 #include "chrome/browser/first_party_sets/first_party_sets_policy_service_factory.h"
-#include "chrome/browser/ip_protection/ip_protection_core_host.h"
-#include "chrome/browser/ip_protection/ip_protection_core_host_factory.h"
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/privacy_sandbox/privacy_sandbox_settings_factory.h"
 #include "chrome/browser/privacy_sandbox/tracking_protection_settings_factory.h"
@@ -65,6 +63,7 @@
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/embedder_support/pref_names.h"
 #include "components/embedder_support/switches.h"
+#include "components/enterprise/buildflags/buildflags.h"
 #include "components/language/core/browser/language_prefs.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/metrics/metrics_pref_names.h"
@@ -95,7 +94,6 @@
 #include "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.h"
 #include "services/network/public/cpp/cors/origin_access_list.h"
 #include "services/network/public/cpp/features.h"
-#include "services/network/public/cpp/network_switches.h"
 #include "services/network/public/mojom/cert_verifier_service.mojom.h"
 #include "services/network/public/mojom/first_party_sets_access_delegate.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
@@ -105,15 +103,18 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_switches.h"
+#include "chrome/browser/ash/certificate_provider/certificate_provider_service.h"
+#include "chrome/browser/ash/certificate_provider/certificate_provider_service_factory.h"
 #include "chrome/browser/ash/kcer/kcer_factory_ash.h"
 #include "chrome/browser/ash/net/client_cert_store_kcer.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
-#include "chrome/browser/certificate_provider/certificate_provider.h"
-#include "chrome/browser/certificate_provider/certificate_provider_service.h"
-#include "chrome/browser/certificate_provider/certificate_provider_service_factory.h"
 #include "chrome/browser/policy/networking/policy_cert_service.h"
 #include "chrome/browser/policy/networking/policy_cert_service_factory.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/ssl/ssl_config_overlay.h"
+#include "chrome/browser/ssl/ssl_config_service_manager.h"
+#include "chromeos/ash/components/browser_context_helper/browser_context_types.h"
+#include "chromeos/components/certificate_provider/certificate_provider.h"
 #include "chromeos/components/kiosk/kiosk_utils.h"
 #include "chromeos/constants/chromeos_features.h"
 #include "components/user_manager/user.h"
@@ -158,6 +159,16 @@
 #include "components/server_certificate_database/server_certificate_database.h"  // nogncheck
 #include "components/server_certificate_database/server_certificate_database.pb.h"  // nogncheck
 #include "components/server_certificate_database/server_certificate_database_service.h"  // nogncheck
+#endif
+
+#if BUILDFLAG(ENTERPRISE_CACHE_ENCRYPTION)
+#include "components/enterprise/encryption/cache/utils.h"
+#endif
+
+#if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+#include "chrome/browser/signin/bound_session_credentials/unexportable_key_service_factory.h"  // nogncheck
+#include "components/unexportable_keys/mojom/unexportable_key_service.mojom.h"  // nogncheck
+#include "components/unexportable_keys/mojom/unexportable_key_service_proxy_impl.h"  // nogncheck
 #endif
 
 namespace {
@@ -241,17 +252,6 @@ bool IsContentSettingsTypeEnabled(ContentSettingsType type) {
       return content_settings::CookieSettings::GetContentSettingsTypes()
           .contains(type);
   }
-}
-
-void UpdateTrackingProtectionSettings(Profile* profile) {
-  auto settings =
-      HostContentSettingsMapFactory::GetForProfile(profile)
-          ->GetSettingsForOneType(ContentSettingsType::TRACKING_PROTECTION);
-  profile->ForEachLoadedStoragePartition(
-      [&](content::StoragePartition* storage_partition) {
-        storage_partition->GetNetworkContext()
-            ->SetTrackingProtectionContentSetting(settings);
-      });
 }
 
 void UpdateCookieSettings(Profile* profile, ContentSettingsType type) {
@@ -406,17 +406,6 @@ bool MaybeAddCertWithConstraints(
 }
 #endif
 
-// Returns true if IP Protection is needed.
-// Returns false if any of the following:
-//   1. ipp_core_host == nullptr. A nullptr implies the profile does not
-//      participate in IPP.
-//   2. kIpPrivacyIncognitoMode is enabled and the profile in not incognito.
-bool NeedsIpProtection(const IpProtectionCoreHost* ipp_core_host,
-                       const Profile& profile) {
-  return ipp_core_host && (profile.IsIncognitoProfile() ||
-                           !net::features::kIpPrivacyOnlyInIncognito.Get());
-}
-
 constexpr std::string_view kDiskCacheExperimentNameSeparator = " ";
 constexpr std::string_view kDiskCacheExperimentNameNone = "None";
 
@@ -489,6 +478,18 @@ ProfileNetworkContextService::ProfileNetworkContextService(Profile* profile)
   cookie_settings_observation_.Observe(cookie_settings_.get());
 
   DisableQuicIfNotAllowed();
+
+#if BUILDFLAG(IS_CHROMEOS)
+  base::RepeatingClosure ssl_compliance_changed_callback = base::BindRepeating(
+      &ProfileNetworkContextService::UpdateSSLComplianceConfig,
+      base::Unretained(this));
+  profile_key_exchange_compliance_.Init(prefs::kPreferSlowKexAlgorithms,
+                                        profile_prefs,
+                                        ssl_compliance_changed_callback);
+  profile_tls13_cipher_compliance_.Init(prefs::kPreferSlowCiphers,
+                                        profile_prefs,
+                                        ssl_compliance_changed_callback);
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
   // Observe content settings so they can be synced to the network service.
   HostContentSettingsMapFactory::GetForProfile(profile_)->AddObserver(this);
@@ -614,6 +615,11 @@ void ProfileNetworkContextService::RegisterProfilePrefs(
 #endif
 #if BUILDFLAG(IS_CHROMEOS)
   net::ServerCertificateDatabaseService::RegisterProfilePrefs(registry);
+  // The following two prefs are primarily used (elsewhere) as local_state
+  // prefs, but they are also used here as Profile prefs, for the login screen
+  // Profile on ChromeOS. Their value is only used if managed.
+  registry->RegisterStringPref(prefs::kPreferSlowKexAlgorithms, std::string());
+  registry->RegisterStringPref(prefs::kPreferSlowCiphers, std::string());
 #endif
 }
 
@@ -1062,6 +1068,26 @@ void ProfileNetworkContextService::
       });
 }
 
+#if BUILDFLAG(IS_CHROMEOS)
+void ProfileNetworkContextService::ConfigureSSLComplianceSettings(
+    network::mojom::SSLConfig* config) const {
+  SSLConfigServiceManager::ConfigureSSLComplianceSettings(
+      profile_key_exchange_compliance_, profile_tls13_cipher_compliance_,
+      config);
+}
+
+void ProfileNetworkContextService::UpdateSSLComplianceConfig() {
+  for (auto& overlay : ssl_config_overlays_) {
+    // Clean up a bit while we're iterating.
+    if (!overlay || !overlay->IsBound()) {
+      overlay.reset();
+      continue;
+    }
+    overlay->Update();
+  }
+}
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
 #if BUILDFLAG(ENABLE_REPORTING)
 base::flat_map<std::string, GURL>
 ProfileNetworkContextService::GetEnterpriseReportingEndpoints() const {
@@ -1253,7 +1279,8 @@ ProfileNetworkContextService::CreateClientCertStore() {
   chromeos::CertificateProviderService* cert_provider_service =
       chromeos::CertificateProviderServiceFactory::GetForBrowserContext(
           profile_);
-  std::unique_ptr<chromeos::CertificateProvider> certificate_provider;
+  std::unique_ptr<chromeos::certificate_provider::CertificateProvider>
+      certificate_provider;
   if (cert_provider_service) {
     certificate_provider = cert_provider_service->CreateCertificateProvider();
   }
@@ -1509,6 +1536,12 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
   network_context_params->reset_http_cache_backend =
       GetHttpCacheBackendResetParam(g_browser_process->local_state());
 
+#if BUILDFLAG(ENTERPRISE_CACHE_ENCRYPTION)
+  // Enable encrypted HTTP cache if the enterprise policy is set.
+  network_context_params->enable_encrypted_http_cache =
+      enterprise_encryption::ShouldEncryptHttpCache(profile_->GetPrefs());
+#endif  // BUILDFLAG(ENTERPRISE_CACHE_ENCRYPTION)
+
   network_context_params->split_auth_cache_by_network_anonymization_key =
       ShouldSplitAuthCacheByNetworkIsolationKey();
 
@@ -1544,38 +1577,43 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
       profile_->GetPrefs()->GetBoolean(
           prefs::kAccessControlAllowMethodsInCORSPreflightSpecConformant);
 
-  IpProtectionCoreHost* ipp_core_host =
-      IpProtectionCoreHostFactory::GetForProfile(profile_);
-  if (NeedsIpProtection(ipp_core_host, *profile_)) {
-    ipp_core_host->AddNetworkService(
-        network_context_params->ip_protection_core_host
-            .InitWithNewPipeAndPassReceiver(),
-        network_context_params->ip_protection_control
-            .InitWithNewPipeAndPassRemote());
-    network_context_params->enable_ip_protection =
-        ipp_core_host->IsIpProtectionEnabled();
-    network_context_params->ip_protection_incognito =
-        profile_->IsIncognitoProfile();
-    if (profile_->IsIncognitoProfile()) {
-      network_context_params->initial_ip_protection_tokens =
-          ipp_core_host->TakeRecycledTokens();
-    }
-    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-            network::switches::kStoreProbabilisticRevealTokens)) {
-      network_context_params->ip_protection_data_directory =
-          profile_->GetPath();
-    }
-
-    ContentSettingsForOneType tracking_protection_content_settings =
-        HostContentSettingsMapFactory::GetForProfile(profile_)
-            ->GetSettingsForOneType(ContentSettingsType::TRACKING_PROTECTION);
-
-    network_context_params->tracking_protection_content_settings =
-        std::move(tracking_protection_content_settings);
-  }
-
   network_context_params->device_bound_sessions_enabled =
       base::FeatureList::IsEnabled(net::features::kDeviceBoundSessions);
+
+#if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+  if (base::FeatureList::IsEnabled(net::features::kDeviceBoundSessions) &&
+      base::FeatureList::IsEnabled(
+          network::features::kUseUnexportableKeyServiceInBrowserProcess)) {
+    mojo::PendingRemote<unexportable_keys::mojom::UnexportableKeyService>
+        uks_remote;
+    mojo::PendingReceiver<unexportable_keys::mojom::UnexportableKeyService>
+        receiver = uks_remote.InitWithNewPipeAndPassReceiver();
+    unexportable_keys::UnexportableKeyServiceProxyImpl* uks =
+        UnexportableKeyServiceFactory::
+            RecreateMojoProxyForProfileAndPurposeWithReceiver(
+                profile_,
+                UnexportableKeyServiceFactory::KeyPurpose::
+                    kDeviceBoundSessionCredentials,
+                std::move(receiver));
+    if (uks) {
+      network_context_params->bound_sessions_unexportable_key_service =
+          std::move(uks_remote);
+    }
+  }
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS)
+  if (ash::IsSigninBrowserContext(profile_)) {
+    // base::Unretained is safe because the overlay is owned by `this`.
+    auto& overlay = ssl_config_overlays_.emplace_back(
+        std::make_unique<SSLConfigOverlay>(base::BindRepeating(
+            &ProfileNetworkContextService::ConfigureSSLComplianceSettings,
+            base::Unretained(this))));
+    if (!overlay->Init(network_context_params)) {
+      ssl_config_overlays_.pop_back();
+    }
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS)
 }
 
 base::FilePath ProfileNetworkContextService::GetPartitionPath(
@@ -1594,9 +1632,6 @@ void ProfileNetworkContextService::OnContentSettingChanged(
   switch (content_type) {
     case ContentSettingsType::ANTI_ABUSE:
       UpdateAntiAbuseSettings(profile_);
-      break;
-    case ContentSettingsType::TRACKING_PROTECTION:
-      UpdateTrackingProtectionSettings(profile_);
       break;
     case ContentSettingsType::DEFAULT:
       UpdateAntiAbuseSettings(profile_);

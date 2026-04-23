@@ -73,6 +73,7 @@ function(tint_core_compile_options TARGET)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_SPV_WRITER=$<BOOL:${TINT_BUILD_SPV_WRITER}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_WGSL_READER=$<BOOL:${TINT_BUILD_WGSL_READER}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_WGSL_WRITER=$<BOOL:${TINT_BUILD_WGSL_WRITER}>)
+  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_NULL_WRITER=$<BOOL:${TINT_BUILD_NULL_WRITER}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_TINTD=$<BOOL:${TINT_BUILD_TINTD}>)
   target_compile_definitions(${TARGET} PUBLIC -DTINT_ENABLE_IR_VALIDATION=$<BOOL:${TINT_ENABLE_IR_VALIDATION}>)
 
@@ -114,6 +115,7 @@ function(tint_default_compile_options TARGET)
     -Wunsafe-buffer-usage
     -Wno-unsafe-buffer-usage-in-libc-call
     -Wno-covered-switch-default
+    -Wno-c2y-extensions
   )
 
   if(COMPILER_IS_GNU)
@@ -523,7 +525,7 @@ function(tint_target_add_external_dependencies TARGET KIND)
     elseif(${DEPENDENCY} STREQUAL "dxc-include")
       target_include_directories(${TARGET} PRIVATE "${DAWN_THIRD_PARTY_DIR}/dxc/include")
     elseif(${DEPENDENCY} STREQUAL "dxcompiler-for-fuzzer")
-      if(TINT_BUILD_FUZZERS) # TODO: and target arch is not x86
+      if(TINT_BUILD_FUZZERS AND DAWN_USE_BUILT_DXC) # TODO: and target arch is not x86
         target_link_libraries(${TARGET} PRIVATE dxcompiler)
       endif()
     elseif(${DEPENDENCY} STREQUAL "jsoncpp")

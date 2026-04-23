@@ -198,6 +198,12 @@ LanguageFeature ParseLanguageFeature(std::string_view str) {
     if (str == "chromium_testing_unsafe_experimental") {
         return LanguageFeature::kChromiumTestingUnsafeExperimental;
     }
+    if (str == "fragment_depth") {
+        return LanguageFeature::kFragmentDepth;
+    }
+    if (str == "immediate_address_space") {
+        return LanguageFeature::kImmediateAddressSpace;
+    }
     if (str == "packed_4x8_integer_dot_product") {
         return LanguageFeature::kPacked4X8IntegerDotProduct;
     }
@@ -210,8 +216,14 @@ LanguageFeature ParseLanguageFeature(std::string_view str) {
     if (str == "sized_binding_array") {
         return LanguageFeature::kSizedBindingArray;
     }
+    if (str == "subgroup_id") {
+        return LanguageFeature::kSubgroupId;
+    }
     if (str == "texel_buffers") {
         return LanguageFeature::kTexelBuffers;
+    }
+    if (str == "uniform_buffer_standard_layout") {
+        return LanguageFeature::kUniformBufferStandardLayout;
     }
     if (str == "unrestricted_pointer_parameters") {
         return LanguageFeature::kUnrestrictedPointerParameters;
@@ -234,6 +246,10 @@ std::string_view ToString(LanguageFeature value) {
             return "chromium_testing_unimplemented";
         case LanguageFeature::kChromiumTestingUnsafeExperimental:
             return "chromium_testing_unsafe_experimental";
+        case LanguageFeature::kFragmentDepth:
+            return "fragment_depth";
+        case LanguageFeature::kImmediateAddressSpace:
+            return "immediate_address_space";
         case LanguageFeature::kPacked4X8IntegerDotProduct:
             return "packed_4x8_integer_dot_product";
         case LanguageFeature::kPointerCompositeAccess:
@@ -242,8 +258,12 @@ std::string_view ToString(LanguageFeature value) {
             return "readonly_and_readwrite_storage_textures";
         case LanguageFeature::kSizedBindingArray:
             return "sized_binding_array";
+        case LanguageFeature::kSubgroupId:
+            return "subgroup_id";
         case LanguageFeature::kTexelBuffers:
             return "texel_buffers";
+        case LanguageFeature::kUniformBufferStandardLayout:
+            return "uniform_buffer_standard_layout";
         case LanguageFeature::kUnrestrictedPointerParameters:
             return "unrestricted_pointer_parameters";
     }
@@ -752,6 +772,15 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     if (name == "subgroupMatrixMultiplyAccumulate") {
         return BuiltinFn::kSubgroupMatrixMultiplyAccumulate;
     }
+    if (name == "subgroupMatrixScalarAdd") {
+        return BuiltinFn::kSubgroupMatrixScalarAdd;
+    }
+    if (name == "subgroupMatrixScalarSubtract") {
+        return BuiltinFn::kSubgroupMatrixScalarSubtract;
+    }
+    if (name == "subgroupMatrixScalarMultiply") {
+        return BuiltinFn::kSubgroupMatrixScalarMultiply;
+    }
     if (name == "print") {
         return BuiltinFn::kPrint;
     }
@@ -763,6 +792,12 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     }
     if (name == "getBinding") {
         return BuiltinFn::kGetBinding;
+    }
+    if (name == "hasResource") {
+        return BuiltinFn::kHasResource;
+    }
+    if (name == "getResource") {
+        return BuiltinFn::kGetResource;
     }
     return BuiltinFn::kNone;
 }
@@ -1073,6 +1108,12 @@ const char* str(BuiltinFn i) {
             return "subgroupMatrixMultiply";
         case BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
             return "subgroupMatrixMultiplyAccumulate";
+        case BuiltinFn::kSubgroupMatrixScalarAdd:
+            return "subgroupMatrixScalarAdd";
+        case BuiltinFn::kSubgroupMatrixScalarSubtract:
+            return "subgroupMatrixScalarSubtract";
+        case BuiltinFn::kSubgroupMatrixScalarMultiply:
+            return "subgroupMatrixScalarMultiply";
         case BuiltinFn::kPrint:
             return "print";
         case BuiltinFn::kTintMaterialize:
@@ -1081,6 +1122,10 @@ const char* str(BuiltinFn i) {
             return "hasBinding";
         case BuiltinFn::kGetBinding:
             return "getBinding";
+        case BuiltinFn::kHasResource:
+            return "hasResource";
+        case BuiltinFn::kGetResource:
+            return "getResource";
     }
     return "<unknown>";
 }
@@ -1171,6 +1216,9 @@ bool IsSubgroupMatrix(BuiltinFn f) {
         case BuiltinFn::kSubgroupMatrixStore:
         case BuiltinFn::kSubgroupMatrixMultiply:
         case BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
+        case BuiltinFn::kSubgroupMatrixScalarAdd:
+        case BuiltinFn::kSubgroupMatrixScalarSubtract:
+        case BuiltinFn::kSubgroupMatrixScalarMultiply:
             return true;
         default:
             return false;

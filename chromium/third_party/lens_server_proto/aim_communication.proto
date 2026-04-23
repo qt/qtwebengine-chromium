@@ -17,10 +17,19 @@ enum FeatureCapability {
   // Default value. The only supported feature is sending a query from the
   // client to AIM.
   DEFAULT = 0;
+
+  // AiModeOpenThreadsView event
+  OPEN_THREADS_VIEW = 15;
+
+  // SetCobrowsingDisplayMode event
+  COBROWSING_DISPLAY_CONTROL = 17;
+
+  // AiModeUpdateThreadContextLibrary() method
+  THREAD_CONTEXT_LIBRARY = 18;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//  Client -> AIM messages
+// Client -> AIM messages
 ////////////////////////////////////////////////////////////////////////////////
 
 // Message clients send to AIM to initiate a handshake. Sent continuously on
@@ -38,8 +47,31 @@ message SubmitQuery {
   QueryPayload payload = 1;
 }
 
+// Payload for SetCobrowsingDisplayMode event.
+message CobrowsingDisplayModeParams {
+  enum DisplayMode {
+    UNKNOWN = 0;
+    COBROWSING_TAB = 1;
+    COBROWSING_SIDEPANEL = 2;
+  }
+  DisplayMode display_mode = 1;
+}
+
+// Message from client to AIM to update the display mode for cobrowsing.
+message SetCobrowsingDisplayMode {
+  CobrowsingDisplayModeParams payload = 1;
+}
+
+// Payload for the AiModeOpenThreadsView event.
+message OpenThreadsViewPayload {}
+
+// Message from client to AIM to open the threads view.
+message OpenThreadsView {
+  OpenThreadsViewPayload payload = 1;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
-//  AIM -> Client messages
+// AIM -> Client messages
 ////////////////////////////////////////////////////////////////////////////////
 
 // Message AIM sends to clients to confirm a handshake, at which point the
@@ -54,6 +86,8 @@ message ClientToAimMessage {
   oneof event_message {
     HandshakePing handshake_ping = 1;
     SubmitQuery submit_query = 2;
+    OpenThreadsView open_threads_view = 3;
+    SetCobrowsingDisplayMode set_cobrowsing_display_mode = 4;
   }
 }
 
@@ -61,5 +95,54 @@ message ClientToAimMessage {
 message AimToClientMessage {
   oneof event_message {
     HandshakeResponse handshake_response = 1;
+    HideInput hide_input = 2;
+    RestoreInput restore_input = 3;
+    EnterBasicMode enter_basic_mode = 4;
+    ExitBasicMode exit_basic_mode = 5;
+    UpdateThreadContextLibrary update_thread_context_library = 7;
   }
+}
+
+// Message AIM sends to clients to hide the input plate.
+message HideInput {}
+
+// Message AIM sends to clients to restore the input plate.
+message RestoreInput {}
+
+// Message AIM sends to clients to enter basic mode.
+message EnterBasicMode {}
+
+// Message AIM sends to clients to exit basic mode.
+message ExitBasicMode {}
+
+// Message AIM sends to clients to update the thread context library.
+message UpdateThreadContextLibrary {
+  repeated Context contexts = 1;
+}
+
+// Context input for AIM threads.
+message Context {
+  // Unique identifier for the user uploaded context (e.g. PDF). This is created
+  // during context upload.
+  int64 context_id = 1;
+  oneof context_input {
+    Image image = 2;
+    Pdf pdf = 3;
+    Webpage webpage = 4;
+  }
+}
+
+message Image {
+  string title = 1;
+  string url = 2;
+}
+
+message Pdf {
+  string title = 1;
+  string url = 2;
+}
+
+message Webpage {
+  string title = 1;
+  string url = 2;
 }

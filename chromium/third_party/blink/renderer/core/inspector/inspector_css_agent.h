@@ -26,7 +26,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_INSPECTOR_INSPECTOR_CSS_AGENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_INSPECTOR_INSPECTOR_CSS_AGENT_H_
 
-#include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/core/animation/keyframe_effect.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/css_condition_rule.h"
@@ -57,6 +56,7 @@ namespace probe {
 class RecalculateStyle;
 }  // namespace probe
 
+class CascadeLayer;
 class CSSConditionRule;
 class CSSContainerRule;
 class CSSFunctionRule;
@@ -193,7 +193,7 @@ class CORE_EXPORT InspectorCSSAgent final
       std::optional<int>*,
       std::unique_ptr<protocol::Array<protocol::CSS::CSSPropertyRule>>*,
       std::unique_ptr<protocol::Array<protocol::CSS::CSSPropertyRegistration>>*,
-      std::unique_ptr<protocol::CSS::CSSFontPaletteValuesRule>*,
+      std::unique_ptr<protocol::Array<protocol::CSS::CSSAtRule>>*,
       std::optional<int>* parent_layout_node_id,
       std::unique_ptr<protocol::Array<protocol::CSS::CSSFunctionRule>>*)
       override;
@@ -403,8 +403,8 @@ class CORE_EXPORT InspectorCSSAgent final
       std::unique_ptr<protocol::Array<protocol::CSS::CSSPropertyRule>>,
       std::unique_ptr<protocol::Array<protocol::CSS::CSSPropertyRegistration>>>
   CustomPropertiesForNode(Element* element);
-  std::unique_ptr<protocol::CSS::CSSFontPaletteValuesRule> FontPalettesForNode(
-      Element& element);
+  std::unique_ptr<protocol::Array<protocol::CSS::CSSAtRule>>
+  FontAtRulesForNodes(HeapVector<Member<Element>>& elements);
 
   // If the |animating_element| is a pseudo-element, then |element| is a
   // reference to its originating DOM element.
@@ -477,7 +477,7 @@ class CORE_EXPORT InspectorCSSAgent final
 
   std::unique_ptr<protocol::CSS::CSSLayerData> BuildLayerDataObject(
       const CascadeLayer* layer,
-      unsigned& max_order);
+      unsigned& order);
 
   // Layers at-rule implementation
   std::unique_ptr<protocol::CSS::CSSLayer> BuildLayerObject(

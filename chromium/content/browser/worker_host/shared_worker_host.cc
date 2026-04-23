@@ -40,7 +40,6 @@
 #include "content/public/browser/permission_controller.h"
 #include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/service_worker_context.h"
-#include "content/public/browser/worker_type.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "net/base/isolation_info.h"
@@ -57,8 +56,6 @@
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/loader/url_loader_factory_bundle.h"
 #include "third_party/blink/public/common/messaging/message_port_channel.h"
-#include "third_party/blink/public/common/privacy_budget/identifiability_study_settings.h"
-#include "third_party/blink/public/common/privacy_budget/identifiability_study_worker_client_added.h"
 #include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
 #include "third_party/blink/public/mojom/devtools/console_message.mojom.h"
 #include "third_party/blink/public/mojom/renderer_preference_watcher.mojom.h"
@@ -265,18 +262,14 @@ void SharedWorkerHost::Start(
           DeriveClientSecurityState(creator_policy_container_host_->policies(),
                                     PrivateNetworkRequestContext::kWorker);
     } else {
-      auto policy = base::FeatureList::IsEnabled(
-                        features::kPrivateNetworkAccessForWorkers)
-                        ? network::mojom::PrivateNetworkRequestPolicy::kBlock
-                        : network::mojom::PrivateNetworkRequestPolicy::kAllow;
-
       // Create a maximally restricted client security state if the policy
       // container is missing.
       worker_client_security_state_ = network::mojom::ClientSecurityState::New(
           network::CrossOriginEmbedderPolicy(
               network::mojom::CrossOriginEmbedderPolicyValue::kRequireCorp),
           /*is_web_secure_context=*/false,
-          network::mojom::IPAddressSpace::kUnknown, policy,
+          network::mojom::IPAddressSpace::kUnknown,
+          network::mojom::PrivateNetworkRequestPolicy::kBlock,
           network::DocumentIsolationPolicy(
               network::mojom::DocumentIsolationPolicyValue::
                   kIsolateAndRequireCorp));
@@ -621,7 +614,7 @@ void SharedWorkerHost::CreateWebTransportConnector(
   mojo::MakeSelfOwnedReceiver(
       std::make_unique<WebTransportConnectorImpl>(
           GetProcessHost()->GetDeprecatedID(), /*frame=*/nullptr, origin,
-          GetNetworkAnonymizationKey()),
+          GetNetworkAnonymizationKey(), worker_client_security_state_->Clone()),
       std::move(receiver));
 }
 
@@ -896,8 +889,7 @@ void SharedWorkerHost::ReportNoBinderForInterface(const std::string& error) {
 void SharedWorkerHost::AddClient(
     mojo::PendingRemote<blink::mojom::SharedWorkerClient> client,
     GlobalRenderFrameHostId client_render_frame_host_id,
-    const blink::MessagePortChannel& port,
-    ukm::SourceId client_ukm_source_id) {
+    const blink::MessagePortChannel& port) {
   mojo::Remote<blink::mojom::SharedWorkerClient> remote_client(
       std::move(client));
 
@@ -947,21 +939,6 @@ void SharedWorkerHost::AddClient(
   info.client.set_disconnect_handler(base::BindOnce(
       &SharedWorkerHost::OnClientConnectionLost, weak_factory_.GetWeakPtr()));
 
-  ukm::DelegatingUkmRecorder* ukm_recorder = ukm::DelegatingUkmRecorder::Get();
-  if (ukm_recorder) {
-    ukm::builders::Worker_ClientAdded(ukm_source_id_)
-        .SetClientSourceId(client_ukm_source_id)
-        .SetWorkerType(static_cast<int64_t>(WorkerType::kSharedWorker))
-        .Record(ukm_recorder);
-
-    if (blink::IdentifiabilityStudySettings::Get()->IsActive()) {
-      blink::IdentifiabilityStudyWorkerClientAdded(ukm_source_id_)
-          .SetClientSourceId(client_ukm_source_id)
-          .SetWorkerType(blink::IdentifiableSurface::WorkerType::kSharedWorker)
-          .Record(ukm_recorder);
-    }
-  }
-
   worker_->Connect(info.connection_request_id, port.ReleaseHandle());
 
   // Notify that a new client was added now.
@@ -991,6 +968,42 @@ void SharedWorkerHost::PruneNonExistentClients() {
 
 bool SharedWorkerHost::HasClients() const {
   return !clients_.empty();
+}
+
+bool SharedWorkerHost::ContainsClient(
+    const RenderFrameHostImpl* render_frame_host) const {
+  const GlobalRenderFrameHostId& client_render_frame_host_id =
+      render_frame_host->GetGlobalId();
+  return std::any_of(
+      clients_.begin(), clients_.end(), [&](const ClientInfo& info) {
+        return info.render_frame_host_id == client_render_frame_host_id;
+      });
+}
+
+bool SharedWorkerHost::EvictBFCachedClientsIfLastActive(
+    RenderFrameHostImpl* render_frame_host) {
+  std::vector<RenderFrameHostImpl*> bf_cached_clients;
+
+  for (const ClientInfo& info : clients_) {
+    RenderFrameHostImpl* const other_rfh =
+        RenderFrameHostImpl::FromID(info.render_frame_host_id);
+    if (!other_rfh || other_rfh->GetOutermostMainFrame() == render_frame_host) {
+      // Skip frames on the same page (e.g., self, iframes) and destroyed ones,
+      continue;
+    }
+    if (other_rfh->IsActive()) {
+      // If any other client is still active, then this is not the last active
+      // client.
+      return false;
+    }
+    bf_cached_clients.push_back(other_rfh);
+  }
+  for (RenderFrameHostImpl* rfh_to_evict : bf_cached_clients) {
+    rfh_to_evict->EvictFromBackForwardCacheWithReason(
+        BackForwardCacheMetrics::NotRestoredReason::
+            kSharedWorkerWithNoActiveClient);
+  }
+  return true;
 }
 
 const base::UnguessableToken& SharedWorkerHost::GetDevToolsToken() const {

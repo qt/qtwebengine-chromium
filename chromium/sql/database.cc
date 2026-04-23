@@ -28,6 +28,7 @@
 #include "base/check_op.h"
 #include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
+#include "base/files/drive_info.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/format_macros.h"
@@ -38,7 +39,6 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/no_destructor.h"
 #include "base/not_fatal_until.h"
 #include "base/notimplemented.h"
 #include "base/notreached.h"
@@ -49,8 +49,6 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/strings/utf_string_conversions.h"
-#include "base/synchronization/lock.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/time/time.h"
@@ -75,11 +73,51 @@
 
 #if BUILDFLAG(IS_WIN)
 #include "base/containers/contains.h"
+#include "base/strings/utf_string_conversions.h"
 #endif
 
 namespace sql {
 
 namespace {
+
+// Features to evaluate the hypothesis that preloading sql::Database causes
+// memory contention (using Browser.MainThreadsCongestion as a proxy) for
+// minimal gains.
+//
+// Context: We previously validated that preloading the main DLL causes memory
+// contention, and the benefits don't outweigh this downside on fixed SSDs.
+//
+// When enabled, the "preload" option is ignored unconditionally.
+BASE_FEATURE(kInhibitSQLPreload, base::FEATURE_DISABLED_BY_DEFAULT);
+//
+// When enabled, the "preload" option is ignored *only if the database is on a
+// fixed SSD*.
+BASE_FEATURE(kInhibitSQLPreloadOnFixedSSD, base::FEATURE_DISABLED_BY_DEFAULT);
+
+// When enabled, the call to ReleaseCacheMemoryIfNeeded are ignored.
+BASE_FEATURE(kInhibitSQLReleaseCacheMemoryIfNeeded,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Returns true if `path` is on a drive that has no seek penalty and isn't
+// removable, or if that information cannot be obtained (most drives are fixed
+// and have no seek penalty, so `true` is the result that is most likely to be
+// correct).
+bool FilePathIsFixedSSD(const base::FilePath& path) {
+  std::optional<base::DriveInfo> drive_info = base::GetFileDriveInfo(path);
+  if (!drive_info) {
+    return true;
+  }
+
+  return !drive_info->has_seek_penalty.value_or(false)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS)
+         && !drive_info->is_removable.value_or(false)
+#endif
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+         && !drive_info->is_usb.value_or(false)
+#endif
+      ;
+}
 
 // The name of the main database associated with a sqlite3* connection.
 //
@@ -628,6 +666,10 @@ void Database::Close() {
 // false.  The downside then is that it allows open-ended use of memory for
 // large transactions.
 void Database::ReleaseCacheMemoryIfNeeded(bool implicit_change_performed) {
+  if (base::FeatureList::IsEnabled(kInhibitSQLReleaseCacheMemoryIfNeeded)) {
+    return;
+  }
+
   TRACE_EVENT0("sql", "Database::ReleaseCacheMemoryIfNeeded");
   // The database could have been closed during a transaction as part of error
   // recovery.
@@ -972,7 +1014,6 @@ bool Database::RazeInternal() {
 
   DCHECK_GE(transaction_nesting_, 0);
   if (transaction_nesting_ > 0) {
-    DLOG(FATAL) << "Cannot raze within a transaction";
     RecordRazeDatabaseFailureReason(
         histogram_tag_, RazeDatabaseFailedReason::kPendingTransaction);
     return false;
@@ -1105,6 +1146,10 @@ bool Database::RazeInternal() {
                      << sqlite_result_code;
     RecordRazeDatabaseFailureReason(histogram_tag_,
                                     RazeDatabaseFailedReason::kUnknownError);
+    base::UmaHistogramSparse(
+        base::StrCat(
+            {"Sql.Database.Raze.UnhandledErrorCode.", histogram_tag()}),
+        static_cast<int>(sqlite_result_code));
     return false;
   }
 
@@ -1289,8 +1334,25 @@ bool Database::CommitTransaction(InternalApiToken) {
 
   bool succeeded = commit.Run();
 
+  // The commit can fail with error code like SQLITE_BUSY or SQLITE_ERROR. In
+  // these cases, the transaction is not rollback and is kept alive. The call
+  // to sqlite3_get_autocommit(...) can be used to know if there is still a
+  // pending transaction or if the connection is back to normal with the
+  // autocommit mode (no pending transaction).
+  if (!succeeded && is_open() && sqlite3_get_autocommit(db_) == 0) {
+    // In modern SQLite (post 3.7.11), rollback is design to be robust and
+    // reliable and it will bring back the connection in a clean state.
+    DoRollback();
+    return false;
+  }
+
   // Release dirty cache pages after the transaction closes.
   ReleaseCacheMemoryIfNeeded(false);
+
+  // There should be no pending transactions.
+  if (is_open()) {
+    CHECK_NE(sqlite3_get_autocommit(db_), 0);
+  }
 
   return succeeded;
 }
@@ -2091,13 +2153,28 @@ bool Database::OpenInternal(const std::string& db_file_path) {
     // Needs to be performed after setting exclusive locking mode. Otherwise can
     // fail if underlying VFS doesn't support shared memory.
     if (UseWALMode()) {
-      // Set the synchronous flag to NORMAL. This means that writers don't flush
-      // the WAL file after every write. The WAL file is only flushed on a
-      // checkpoint. In this case, transactions might lose durability on a power
-      // loss (but still durable after an application crash).
+      // Set the synchronous flag, which controls how aggressively SQLite writes
+      // data to disk.
+      //
+      // If `no_sync_on_wal_mode_` is true, this is set to OFF. With
+      // synchronous=OFF, SQLite hands data to the OS for writing but doesn't
+      // wait for it to complete. This is very fast, but an OS crash or power
+      // failure can lead to database corruption. Data is safe from an
+      // application crash.
+      //
+      // Otherwise, this is set to NORMAL. In WAL mode, synchronous=NORMAL means
+      // SQLite syncs at critical moments (like checkpoints), but not for every
+      // individual transaction. An OS crash or power failure may cause the loss
+      // of transactions that occurred since the last checkpoint, but the
+      // database file itself will not be corrupted.
+      // See https://www.sqlite.org/pragma.html#pragma_synchronous for more
+      // details.
+      //
       // TODO(shuagga@microsoft.com): Evaluate if this loss of durability is a
       // concern.
-      if (!Execute("PRAGMA synchronous=NORMAL")) {
+      if (!Execute(options_.no_sync_on_wal_mode_
+                       ? base::cstring_view("PRAGMA synchronous=OFF")
+                       : base::cstring_view("PRAGMA synchronous=NORMAL"))) {
         RecordOpenDatabaseFailureReason(
             histogram_tag_, OpenDatabaseFailedReason::kPragmaSynchronousFailed);
         return false;
@@ -2235,12 +2312,21 @@ void Database::PreloadInternal(const base::FilePath& path) {
 
   // TODO(crbug.com/40904059): Consider moving this to a DCHECK after fixing
   // or migrating callsites that call Preload(...) on in-memory databases.
-  if (!in_memory_) {
+  if (in_memory_) {
+    return;
+  }
+
+  if (base::FeatureList::IsEnabled(kInhibitSQLPreload)) {
     return;
   }
 
   base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
                                                 base::BlockingType::MAY_BLOCK);
+
+  if (base::FeatureList::IsEnabled(kInhibitSQLPreloadOnFixedSSD) &&
+      FilePathIsFixedSSD(path)) {
+    return;
+  }
 
   // Maximum number of bytes that will be prefetched from the database.
   //

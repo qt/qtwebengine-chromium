@@ -4,12 +4,11 @@
 
 import * as Platform from '../platform/platform.js';
 
-const queryParamsObject = new URLSearchParams(location.search);
-
 let runtimePlatform = '';
 
 let runtimeInstance: Runtime|undefined;
 let isNode: boolean|undefined;
+let isTraceAppEntry: boolean|undefined;
 
 /**
  * Returns the base URL (similar to `<base>`).
@@ -71,12 +70,22 @@ export class Runtime {
     runtimeInstance = undefined;
   }
 
+  static #queryParamsObject: URLSearchParams;
+
+  static #getSearchParams(): URLSearchParams|null {
+    // TODO(crbug.com/451502260): Find a more explicit way to support running in Node.js
+    if (!Runtime.#queryParamsObject && 'location' in globalThis) {
+      Runtime.#queryParamsObject = new URLSearchParams(location.search);
+    }
+    return Runtime.#queryParamsObject;
+  }
+
   static queryParam(name: string): string|null {
-    return queryParamsObject.get(name);
+    return Runtime.#getSearchParams()?.get(name) ?? null;
   }
 
   static setQueryParamForTesting(name: string, value: string): void {
-    queryParamsObject.set(name, value);
+    Runtime.#getSearchParams()?.set(name, value);
   }
 
   static isNode(): boolean {
@@ -84,6 +93,17 @@ export class Runtime {
       isNode = isNodeEntry(getPathName());
     }
     return isNode;
+  }
+
+  /**
+   * Returns true if viewing the slimmed-down devtools meant for just viewing a
+   * performance trace, e.g. devtools://devtools/bundled/trace_app.html?traceURL=http://...
+   */
+  static isTraceApp(): boolean {
+    if (isTraceAppEntry === undefined) {
+      isTraceAppEntry = getPathName().includes('trace_app');
+    }
+    return isTraceAppEntry;
   }
 
   static setPlatform(platform: string): void {
@@ -303,7 +323,7 @@ export class Experiment {
   }
 }
 
-// This must be constructed after the query parameters have been parsed.
+/** This must be constructed after the query parameters have been parsed. **/
 export const experiments = new ExperimentsSupport();
 
 /**
@@ -324,8 +344,6 @@ export const enum ExperimentName {
   USE_SOURCE_MAP_SCOPES = 'use-source-map-scopes',
   TIMELINE_SHOW_POST_MESSAGE_EVENTS = 'timeline-show-postmessage-events',
   TIMELINE_DEBUG_MODE = 'timeline-debug-mode',
-  TIMELINE_ENHANCED_TRACES = 'timeline-enhanced-traces',
-  TIMELINE_COMPILED_SOURCES = 'timeline-compiled-sources',
   // Adding or removing an entry from this enum?
   // You will need to update:
   // 1. REGISTERED_EXPERIMENTS in EnvironmentHelpers.ts (to create this experiment in the test env)
@@ -387,8 +405,6 @@ export interface HostConfigAiAssistancePerformanceAgent {
   temperature: number;
   enabled: boolean;
   userTier: string;
-  // Introduced in crrev.com/c/6243415
-  insightsEnabled?: boolean;
   featureName?: string;
 }
 
@@ -407,7 +423,18 @@ export interface HostConfigAiCodeCompletion {
   userTier: string;
 }
 
+export interface HostConfigAiCodeGeneration {
+  modelId: string;
+  temperature: number;
+  enabled: boolean;
+  userTier: string;
+}
+
 export interface HostConfigDeepLinksViaExtensibilityApi {
+  enabled: boolean;
+}
+
+export interface HostConfigGreenDevUi {
   enabled: boolean;
 }
 
@@ -443,10 +470,6 @@ export interface HostConfigThirdPartyCookieControls {
   managedBlockThirdPartyCookies: string|boolean;
 }
 
-export interface HostConfigIPProtection {
-  enabled: boolean;
-}
-
 interface AiGeneratedTimelineLabels {
   enabled: boolean;
 }
@@ -458,10 +481,6 @@ interface AllowPopoverForcing {
 interface AiSubmenuPrompts {
   enabled: boolean;
   featureName?: string;
-}
-
-interface IpProtectionInDevTools {
-  enabled: boolean;
 }
 
 interface AiDebugWithAi {
@@ -504,6 +523,23 @@ interface DevToolsStartingStyleDebugging {
   enabled: boolean;
 }
 
+interface AiPromptApi {
+  enabled: boolean;
+  allowWithoutGpu: boolean;
+}
+
+interface DevToolsIndividualRequestThrottling {
+  enabled: boolean;
+}
+
+export interface DevToolsEnableDurableMessages {
+  enabled: boolean;
+}
+
+interface HostConfigAiAssistanceContextSelectionAgent {
+  enabled: boolean;
+}
+
 /**
  * The host configuration that we expect from the DevTools back-end.
  *
@@ -523,15 +559,17 @@ export type HostConfig = Platform.TypeScriptUtilities.RecursivePartial<{
   devToolsConsoleInsights: HostConfigConsoleInsights,
   devToolsDeepLinksViaExtensibilityApi: HostConfigDeepLinksViaExtensibilityApi,
   devToolsFreestyler: HostConfigFreestyler,
+  devToolsGreenDevUi: HostConfigGreenDevUi,
   devToolsAiAssistanceNetworkAgent: HostConfigAiAssistanceNetworkAgent,
   devToolsAiDebugWithAi: AiDebugWithAi,
   devToolsAiAssistanceFileAgent: HostConfigAiAssistanceFileAgent,
   devToolsAiAssistancePerformanceAgent: HostConfigAiAssistancePerformanceAgent,
   devToolsAiCodeCompletion: HostConfigAiCodeCompletion,
+  devToolsAiCodeGeneration: HostConfigAiCodeGeneration,
   devToolsVeLogging: HostConfigVeLogging,
   devToolsWellKnown: HostConfigWellKnown,
   devToolsPrivacyUI: HostConfigPrivacyUI,
-  devToolsIpProtectionPanelInDevTools: HostConfigIPProtection,
+  devToolsIndividualRequestThrottling: DevToolsIndividualRequestThrottling,
   /**
    * OffTheRecord here indicates that the user's profile is either incognito,
    * or guest mode, rather than a "normal" profile.
@@ -543,13 +581,15 @@ export type HostConfig = Platform.TypeScriptUtilities.RecursivePartial<{
   devToolsAiGeneratedTimelineLabels: AiGeneratedTimelineLabels,
   devToolsAllowPopoverForcing: AllowPopoverForcing,
   devToolsAiSubmenuPrompts: AiSubmenuPrompts,
-  devToolsIpProtectionInDevTools: IpProtectionInDevTools,
   devToolsGlobalAiButton: GlobalAiButton,
   devToolsGdpProfiles: GdpProfiles,
   devToolsGdpProfilesAvailability: GdpProfilesAvailability,
   devToolsLiveEdit: LiveEdit,
   devToolsFlexibleLayout: DevToolsFlexibleLayout,
   devToolsStartingStyleDebugging: DevToolsStartingStyleDebugging,
+  devToolsAiPromptApi: AiPromptApi,
+  devToolsEnableDurableMessages: DevToolsEnableDurableMessages,
+  devToolsAiAssistanceContextSelectionAgent: HostConfigAiAssistanceContextSelectionAgent,
 }>;
 
 /**

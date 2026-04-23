@@ -52,10 +52,10 @@ class FormJsTest : public web::JavascriptTest {
     web::JavascriptTest::SetUp();
     AddGCrWebScript();
     AddCommonScript();
-    AddMessageScript();
     AddUserScript(@"autofill_form_features");
     AddUserScript(@"fill");
     AddUserScript(@"form");
+    AddUserScript(@"form_util_tests");
   }
 
   FakeScriptMessageHandlerForFormTesting* handler_;
@@ -70,10 +70,11 @@ TEST_F(FormJsTest, GetIframeElements) {
 
   EXPECT_NSEQ(
       @"frame1,frame2",
-      ExecuteJavaScript(
-          web_view(),
-          @"const frames = __gCrWeb.form.getIframeElements(document.body);"
-          @"frames.map((f) => { return f.id; }).join();"));
+      ExecuteJavaScript(web_view(),
+                        @"const frames = "
+                        @"__gCrWeb.getRegisteredApi('form_test_api')."
+                        @"getFunction('getIframeElements')(document.body);"
+                        @"frames.map((f) => { return f.id; }).join();"));
 
   // Check that the return objects have a truthy contentWindow property.
   EXPECT_NSEQ(@YES,

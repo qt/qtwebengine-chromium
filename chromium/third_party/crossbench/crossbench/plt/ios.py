@@ -136,7 +136,6 @@ class IOSPlatform(RemotePlatformMixin, Platform):
   def path(self, path: pth.AnyPathLike) -> pth.AnyPath:
     return pth.AnyPosixPath(path)
 
-
   @property
   @override
   def signals(self) -> Type[AnySignals]:

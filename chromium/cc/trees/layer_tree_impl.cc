@@ -50,6 +50,7 @@
 #include "cc/trees/draw_property_utils.h"
 #include "cc/trees/effect_node.h"
 #include "cc/trees/layer_tree_frame_sink.h"
+#include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/mutator_host.h"
 #include "cc/trees/occlusion_tracker.h"
@@ -62,6 +63,7 @@
 #include "components/viz/common/traced_value.h"
 #include "components/viz/common/view_transition_element_resource_id.h"
 #include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/geometry/quad_f.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
@@ -165,8 +167,6 @@ LayerTreeImpl::LayerTreeImpl(
       external_page_scale_factor_(1.f),
       device_scale_factor_(1.f),
       painted_device_scale_factor_(1.f),
-      always_push_properties_on_picture_layers_(!base::FeatureList::IsEnabled(
-          features::kDontAlwaysPushPictureLayerImpls)),
       event_listener_properties_(),
       top_controls_shown_ratio_(std::move(top_controls_shown_ratio)),
       bottom_controls_shown_ratio_(std::move(bottom_controls_shown_ratio)) {
@@ -576,6 +576,18 @@ gfx::PointF LayerTreeImpl::TotalScrollOffset() const {
   return gfx::PointAtOffsetFromOrigin(offset);
 }
 
+gfx::PointF LayerTreeImpl::TotalScrollOffset(ElementId element_id) const {
+  gfx::Vector2dF offset;
+  const auto& scroll_tree = property_trees()->scroll_tree();
+  const ScrollNode* scroll_node = scroll_tree.FindNodeFromElementId(element_id);
+  if (scroll_node) {
+    offset = scroll_tree.current_scroll_offset(scroll_node->element_id)
+                 .OffsetFromOrigin();
+  }
+
+  return gfx::PointAtOffsetFromOrigin(offset);
+}
+
 gfx::PointF LayerTreeImpl::TotalMaxScrollOffset() const {
   gfx::Vector2dF offset;
   const auto& scroll_tree = property_trees()->scroll_tree();
@@ -588,6 +600,18 @@ gfx::PointF LayerTreeImpl::TotalMaxScrollOffset() const {
   if (viewport_property_ids_.outer_scroll != kInvalidPropertyNodeId) {
     offset += scroll_tree.MaxScrollOffset(viewport_property_ids_.outer_scroll)
                   .OffsetFromOrigin();
+  }
+
+  return gfx::PointAtOffsetFromOrigin(offset);
+}
+
+gfx::PointF LayerTreeImpl::TotalMaxScrollOffset(ElementId element_id) const {
+  gfx::Vector2dF offset;
+  const auto& scroll_tree = property_trees()->scroll_tree();
+  const ScrollNode* scroll_node = scroll_tree.FindNodeFromElementId(element_id);
+
+  if (scroll_node) {
+    offset = scroll_tree.MaxScrollOffset(scroll_node->id).OffsetFromOrigin();
   }
 
   return gfx::PointAtOffsetFromOrigin(offset);
@@ -810,6 +834,8 @@ void LayerTreeImpl::PullLayerTreePropertiesFrom(CommitState& commit_state) {
   set_event_listener_properties(EventListenerClass::kTouchEndOrCancel,
                                 commit_state.GetEventListenerProperties(
                                     EventListenerClass::kTouchEndOrCancel));
+  property_change_forces_commit_criteria_ =
+      commit_state.property_change_forces_commit_criteria;
 
   SetViewportPropertyIds(commit_state.viewport_property_ids);
 
@@ -868,19 +894,34 @@ void LayerTreeImpl::PullLayerTreePropertiesFrom(CommitState& commit_state) {
 
 void LayerTreeImpl::PushPropertyTreesTo(LayerTreeImpl* target_tree) {
   TRACE_EVENT0("cc", "LayerTreeImpl::PushPropertyTreesTo");
-  // Property trees may store damage status. We preserve the active tree
-  // damage status by pushing the damage status from active tree property
-  // trees to pending tree property trees or by moving it onto the layers.
   bool preserve_change_tracking = false;
+
+  // If there is no change in the active tree's property tree, pending tree's
+  // property tree is directly overwritten on active tree via
+  // |target_tree->SetPropertyTrees()|.
   if (target_tree->property_trees()->changed()) {
     if (property_trees()->sequence_number() ==
         target_tree->property_trees()->sequence_number()) {
+      // If active tree's property tree have changed, and both active tree and
+      // pending tree's property tree have same sequence number/structure,
+      // i.e., no new nodes were added or removed, both property trees can
+      // be merged. This is done by setting |preserve_change_tracking| here so
+      // that |target_tree->SetPropertyTrees()| can merge it.
       preserve_change_tracking = true;
     } else {
+      // If active tree's property tree have changed in a way that a new node
+      // was added or removed and the property trees of both pending and active
+      // tree can not be merged, all active tree changes are first moved to
+      // layers to preserve those changes before
+      // |target_tree->SetPropertyTrees()| overwrites the active tree's
+      // property tree with pending tree's property tree.
       target_tree->MoveChangeTrackingToLayers();
     }
   }
 
+  // This either overwrites active tree's property tree completely with pending
+  // tree's property tree OR merge pending tree's property tree on active tree's
+  // property tree depending upon |preserve_change_tracking| flag.
   target_tree->SetPropertyTrees(property_trees_, preserve_change_tracking);
 
   EventMetrics::List events_metrics, raster_event_metrics;
@@ -1011,9 +1052,28 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
     target_tree->AddViewTransitionRequest(std::move(request));
   }
 
-  // Make sure that property tree based changes are moved to layers
-  // and draw properties are invalidated.
-  target_tree->MoveChangeTrackingToLayers();
+  // With TreesInViz, the Viz process is responsible for calling
+  // MoveChangeTrackingToLayers. Calling it here is redundant because the
+  // renderer's active tree is not used for drawing. Also calling it here
+  // causes fanout of property tree to all layers which increases serialization
+  // overhead with TreesInViz. However, it does need to update the top-level
+  // "changed" status of its property trees so that HasDamage() will do damage
+  // calculations as expected. This is achieved by calling
+  // |UpdateChangeTracking()| on property tree.
+  if (!target_tree->settings().TreesInVizInClientProcess()) {
+    target_tree->MoveChangeTrackingToLayers();
+  } else {
+    // Note that both UpdateChangeTracking() and UpdateDrawProperties()
+    // performs property change propagation but there is some difference.
+    // UpdateChangeTracking() is a lightweight operation that updates property
+    // tree damage flags. This is crucial because the Scheduler calls
+    // LayerTreeHostImpl::WillBeginImplFrame(), which in turn calls
+    // HasDamage(). HasDamage() relies on these flags to determine if there is
+    // damage. If there is, the Scheduler proceeds with the frame and
+    // eventually calls the heavyweight UpdateDrawProperties() to perform the
+    // full calculations required for drawing.
+    target_tree->property_trees()->UpdateChangeTracking();
+  }
   target_tree->SetCreatedBeginFrameArgs(std::move(created_begin_frame_args_));
 }
 
@@ -1093,8 +1153,8 @@ ElementListType LayerTreeImpl::GetElementTypeForAnimation() const {
   return IsActiveTree() ? ElementListType::ACTIVE : ElementListType::PENDING;
 }
 
-void LayerTreeImpl::ValidateEffectTreeeMapping(ElementId element_id,
-                                               PropertyMutation mutation) {
+void LayerTreeImpl::ValidateEffectTreeMapping(ElementId element_id,
+                                              PropertyMutation mutation) {
   auto count = property_trees()->effect_tree().element_id_to_node_index().count(
       element_id);
 
@@ -1104,36 +1164,71 @@ void LayerTreeImpl::ValidateEffectTreeeMapping(ElementId element_id,
   }
 }
 
+void LayerTreeImpl::RequestCommitForPropertyMutationIfNeeded(
+    PropertyMutation mutation) {
+  // If the animation isn't active on the sync tree then it has been invalidated
+  // on the main thread and the main thread doesn't need to react to it.
+  if (!IsPendingTree() && !IsRecycleTree()) {
+    return;
+  }
+  bool needs_commit = false;
+  switch (mutation) {
+    case PropertyMutation::kTransform:
+      needs_commit = property_change_forces_commit_criteria_ !=
+                     PropertyChangeForcesCommitCriteria::kNone;
+      break;
+    case PropertyMutation::kOpacity:
+    case PropertyMutation::kFilter:
+    case PropertyMutation::kBackdropFilter:
+      needs_commit = property_change_forces_commit_criteria_ ==
+                     PropertyChangeForcesCommitCriteria::kAny;
+      break;
+    default:
+      NOTREACHED();
+  }
+  if (needs_commit) {
+    host_impl_->SetNeedsCommit();
+  }
+}
+
 void LayerTreeImpl::SetTransformMutated(ElementId element_id,
                                         const gfx::Transform& transform) {
-  ValidateEffectTreeeMapping(element_id, PropertyMutation::kTransform);
-  if (property_trees()->transform_tree_mutable().OnTransformAnimated(element_id,
-                                                                     transform))
+  ValidateEffectTreeMapping(element_id, PropertyMutation::kTransform);
+  if (property_trees()->transform_tree_mutable().OnTransformAnimated(
+          element_id, transform)) {
     set_needs_update_draw_properties();
+    RequestCommitForPropertyMutationIfNeeded(PropertyMutation::kTransform);
+  }
 }
 
 void LayerTreeImpl::SetOpacityMutated(ElementId element_id, float opacity) {
-  ValidateEffectTreeeMapping(element_id, PropertyMutation::kOpacity);
+  ValidateEffectTreeMapping(element_id, PropertyMutation::kOpacity);
   if (property_trees()->effect_tree_mutable().OnOpacityAnimated(element_id,
-                                                                opacity))
+                                                                opacity)) {
     set_needs_update_draw_properties();
+    RequestCommitForPropertyMutationIfNeeded(PropertyMutation::kOpacity);
+  }
 }
 
 void LayerTreeImpl::SetFilterMutated(ElementId element_id,
                                      const FilterOperations& filters) {
-  ValidateEffectTreeeMapping(element_id, PropertyMutation::kFilter);
+  ValidateEffectTreeMapping(element_id, PropertyMutation::kFilter);
   if (property_trees()->effect_tree_mutable().OnFilterAnimated(element_id,
-                                                               filters))
+                                                               filters)) {
     set_needs_update_draw_properties();
+    RequestCommitForPropertyMutationIfNeeded(PropertyMutation::kFilter);
+  }
 }
 
 void LayerTreeImpl::SetBackdropFilterMutated(
     ElementId element_id,
     const FilterOperations& backdrop_filters) {
-  ValidateEffectTreeeMapping(element_id, PropertyMutation::kBackdropFilter);
+  ValidateEffectTreeMapping(element_id, PropertyMutation::kBackdropFilter);
   if (property_trees()->effect_tree_mutable().OnBackdropFilterAnimated(
-          element_id, backdrop_filters))
+          element_id, backdrop_filters)) {
     set_needs_update_draw_properties();
+    RequestCommitForPropertyMutationIfNeeded(PropertyMutation::kBackdropFilter);
+  }
 }
 
 void LayerTreeImpl::AddPresentationCallbacks(
@@ -1876,11 +1971,6 @@ void LayerTreeImpl::ClearSurfaceRanges() {
 }
 
 void LayerTreeImpl::AddLayerShouldPushProperties(LayerImpl* layer) {
-  // When pushing from pending to active tree, PictureLayerImpls should only go
-  // into this set when always_push_properties_on_picture_layers() is disabled.
-  DCHECK(!always_push_properties_on_picture_layers() ||
-         !base::Contains(picture_layers_, layer) ||
-         (IsActiveTree() && settings().TreesInVizInClientProcess()));
   layers_that_should_push_properties_.insert(layer);
 }
 
@@ -2080,8 +2170,8 @@ void LayerTreeImpl::DidAnimateScrollOffset() {
   host_impl_->DidAnimateScrollOffset();
 }
 
-bool LayerTreeImpl::use_gpu_rasterization() const {
-  return host_impl_->use_gpu_rasterization();
+const RasterCapabilities& LayerTreeImpl::raster_caps() const {
+  return host_impl_->raster_caps();
 }
 
 void LayerTreeImpl::SetNeedsRedraw() {

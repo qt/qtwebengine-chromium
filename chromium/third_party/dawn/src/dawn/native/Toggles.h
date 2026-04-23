@@ -103,6 +103,9 @@ enum class Toggle {
     MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats,
     MetalKeepMultisubresourceDepthStencilTexturesInitialized,
     MetalPolyfillUnpack2x16snorm,
+    MetalPolyfillUnpack2x16unorm,
+    VulkanPolyfillF32Negation,
+    VulkanPolyfillF32Abs,
     MetalFillEmptyOcclusionQueriesWithZero,
     UseBlitForBufferToDepthTextureCopy,
     UseBlitForBufferToStencilTextureCopy,
@@ -155,6 +158,7 @@ enum class Toggle {
     GLDepthBiasModifier,
     GLForceES31AndNoExtensions,
     VulkanMonolithicPipelineCache,
+    VulkanIncompletePipelineCacheWorkaround,
     MetalSerializeTimestampGenerationAndResolution,
     D3D12RelaxMinSubgroupSizeTo8,
     D3D12RelaxBufferTextureCopyPitchAndOffsetAlignment,
@@ -166,6 +170,9 @@ enum class Toggle {
     MetalUseArgumentBuffers,
     EnableShaderPrint,
     BlobCacheHashValidation,
+    DecomposeUniformBuffers,
+    VulkanEnableF16OnNvidia,
+    EnableRenderDocProcessInjection,
 
     // Once all backends have been updated to be thread safe for waiting, we can remove this toggle.
     WaitIsThreadSafe,
@@ -182,6 +189,7 @@ enum class Toggle {
     D3D11DisableFence,
     D3D11DelayFlushToGPU,
     IgnoreImportedAHardwareBufferVulkanImageSize,
+    GLAllowContextOnMultiThreads,
 
     EnumCount,
     InvalidEnum = EnumCount,

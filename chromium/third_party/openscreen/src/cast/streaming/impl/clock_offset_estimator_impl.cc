@@ -5,18 +5,15 @@
 #include "cast/streaming/impl/clock_offset_estimator_impl.h"
 
 #include <algorithm>
+#include <chrono>
 #include <memory>
 #include <utility>
 
 #include "platform/base/trivial_clock_traits.h"
+#include "util/chrono_helpers.h"
 
 namespace openscreen::cast {
 namespace {
-
-// The lower this is, the faster we adjust to clock drift (but with more
-// jitter). Each successful call to BoundCalculator::UpdateBound() uses this as
-// the weight of the bound upte.
-constexpr size_t kBoundUpdateWeight = 500;
 
 // This should be large enough so that we can collect all 3 events before
 // the entry gets removed from the map.
@@ -53,16 +50,16 @@ ClockOffsetEstimatorImpl::~ClockOffsetEstimatorImpl() = default;
 
 void ClockOffsetEstimatorImpl::OnFrameEvent(const FrameEvent& frame_event) {
   switch (frame_event.type) {
-    case StatisticsEventType::kFrameAckSent:
+    case StatisticsEvent::Type::kFrameAckSent:
       frame_bound_.SetSent(
           frame_event.rtp_timestamp, 0,
-          frame_event.media_type == StatisticsEventMediaType::kAudio,
+          frame_event.media_type == StatisticsEvent::MediaType::kAudio,
           frame_event.timestamp);
       break;
-    case StatisticsEventType::kFrameAckReceived:
+    case StatisticsEvent::Type::kFrameAckReceived:
       frame_bound_.SetReceived(
           frame_event.rtp_timestamp, 0,
-          frame_event.media_type == StatisticsEventMediaType::kAudio,
+          frame_event.media_type == StatisticsEvent::MediaType::kAudio,
           frame_event.timestamp);
       break;
     default:
@@ -73,16 +70,16 @@ void ClockOffsetEstimatorImpl::OnFrameEvent(const FrameEvent& frame_event) {
 
 void ClockOffsetEstimatorImpl::OnPacketEvent(const PacketEvent& packet_event) {
   switch (packet_event.type) {
-    case StatisticsEventType::kPacketSentToNetwork:
+    case StatisticsEvent::Type::kPacketSentToNetwork:
       packet_bound_.SetSent(
           packet_event.rtp_timestamp, packet_event.packet_id,
-          packet_event.media_type == StatisticsEventMediaType::kAudio,
+          packet_event.media_type == StatisticsEvent::MediaType::kAudio,
           packet_event.timestamp);
       break;
-    case StatisticsEventType::kPacketReceived:
+    case StatisticsEvent::Type::kPacketReceived:
       packet_bound_.SetReceived(
           packet_event.rtp_timestamp, packet_event.packet_id,
-          packet_event.media_type == StatisticsEventMediaType::kAudio,
+          packet_event.media_type == StatisticsEvent::MediaType::kAudio,
           packet_event.timestamp);
       break;
     default:
@@ -114,7 +111,67 @@ std::optional<Clock::duration> ClockOffsetEstimatorImpl::GetEstimatedOffset()
   return (packet_bound + frame_bound) / 2;
 }
 
-ClockOffsetEstimatorImpl::BoundCalculator::BoundCalculator() = default;
+std::optional<Clock::duration> ClockOffsetEstimatorImpl::GetEstimatedLatency()
+    const {
+  Clock::duration frame_bound;
+  Clock::duration packet_bound;
+  if (!GetReceiverOffsetBounds(frame_bound, packet_bound)) {
+    return {};
+  }
+  return (packet_bound - frame_bound) / 2;
+}
+
+ClockOffsetEstimatorImpl::KalmanFilter::KalmanFilter(
+    Clock::duration process_noise,
+    Clock::duration measurement_noise)
+    : q_nanos_squared_(
+          static_cast<double>(std::chrono::nanoseconds(process_noise).count()) *
+          std::chrono::nanoseconds(process_noise).count()),
+      r_nanos_squared_(
+          static_cast<double>(
+              std::chrono::nanoseconds(measurement_noise).count()) *
+          std::chrono::nanoseconds(measurement_noise).count()) {}
+
+void ClockOffsetEstimatorImpl::KalmanFilter::Update(
+    Clock::duration measurement) {
+  if (!has_estimate_) {
+    // First measurement, initialize the state.
+    estimated_latency_ = measurement;
+    error_covariance_nanos_squared_ = r_nanos_squared_;
+    has_estimate_ = true;
+    return;
+  }
+
+  // --- 1. PREDICT ---
+  // The predicted state is the same as the previous state.
+  // The uncertainty (covariance) increases by the process noise.
+  const double predicted_error_covariance =
+      error_covariance_nanos_squared_ + q_nanos_squared_;
+
+  // --- 2. UPDATE ---
+  // Calculate Kalman Gain.
+  const double kalman_gain = predicted_error_covariance /
+                             (predicted_error_covariance + r_nanos_squared_);
+
+  // Update the estimate with the new measurement.
+  const double measurement_nanos =
+      static_cast<double>(std::chrono::nanoseconds(measurement).count());
+  const double estimate_nanos =
+      static_cast<double>(std::chrono::nanoseconds(estimated_latency_).count());
+  const double new_estimate_nanos =
+      estimate_nanos + kalman_gain * (measurement_nanos - estimate_nanos);
+  estimated_latency_ =
+      std::chrono::duration_cast<Clock::duration>(std::chrono::nanoseconds(
+          static_cast<Clock::duration::rep>(new_estimate_nanos)));
+
+  // Update the error covariance.
+  error_covariance_nanos_squared_ =
+      (1.0 - kalman_gain) * predicted_error_covariance;
+}
+
+ClockOffsetEstimatorImpl::BoundCalculator::BoundCalculator()
+    : filter_(kProcessNoise, kMeasurementNoise) {}
+
 ClockOffsetEstimatorImpl::BoundCalculator::BoundCalculator(
     BoundCalculator&&) noexcept = default;
 ClockOffsetEstimatorImpl::BoundCalculator&
@@ -144,17 +201,7 @@ void ClockOffsetEstimatorImpl::BoundCalculator::SetReceived(
 void ClockOffsetEstimatorImpl::BoundCalculator::UpdateBound(
     Clock::time_point sent,
     Clock::time_point received) {
-  Clock::duration delta = received - sent;
-  if (has_bound_) {
-    if (delta < bound_) {
-      bound_ = delta;
-    } else {
-      bound_ += (delta - bound_) / kBoundUpdateWeight;
-    }
-  } else {
-    bound_ = delta;
-  }
-  has_bound_ = true;
+  filter_.Update(received - sent);
 }
 
 void ClockOffsetEstimatorImpl::BoundCalculator::CheckUpdate(uint64_t key) {

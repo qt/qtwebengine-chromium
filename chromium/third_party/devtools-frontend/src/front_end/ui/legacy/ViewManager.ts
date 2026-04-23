@@ -1,7 +1,7 @@
 // Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import './Toolbar.js';
 
@@ -10,7 +10,8 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
-import * as IconButton from '../components/icon_button/icon_button.js';
+import type * as Foundation from '../../foundation/foundation.js';
+import {createIcon, type Icon} from '../kit/kit.js';
 import * as VisualLogging from '../visual_logging/visual_logging.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
@@ -52,10 +53,12 @@ export const defaultOptionsForTabs = {
 
 export class PreRegisteredView implements View {
   private readonly viewRegistration: ViewRegistration;
+  private readonly universe?: Foundation.Universe.Universe;
   private widgetPromise: Promise<Widget>|null;
 
-  constructor(viewRegistration: ViewRegistration) {
+  constructor(viewRegistration: ViewRegistration, universe?: Foundation.Universe.Universe) {
     this.viewRegistration = viewRegistration;
+    this.universe = universe;
     this.widgetPromise = null;
   }
 
@@ -124,7 +127,10 @@ export class PreRegisteredView implements View {
 
   widget(): Promise<Widget> {
     if (this.widgetPromise === null) {
-      this.widgetPromise = this.viewRegistration.loadView();
+      if (!this.universe) {
+        throw new Error('Creating views via ViewManager requires a Foundation.Universe');
+      }
+      this.widgetPromise = this.viewRegistration.loadView(this.universe);
     }
     return this.widgetPromise;
   }
@@ -164,14 +170,16 @@ export interface EventTypes {
 }
 
 export class ViewManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
-  readonly views: Map<string, View>;
-  private readonly locationNameByViewId: Map<string, string>;
+  readonly views = new Map<string, View>();
+  private readonly locationNameByViewId = new Map<string, string>();
   private readonly locationOverrideSetting: Common.Settings.Setting<Record<string, string>>;
 
-  private constructor() {
+  private readonly preRegisteredViews: PreRegisteredView[] = [];
+
+  // TODO(crbug.com/458180550): Pass the universe unconditionally once tests no longer rely
+  //   on `instance()` to create ViewManagers lazily in after/afterEach blocks.
+  private constructor(universe?: Foundation.Universe.Universe) {
     super();
-    this.views = new Map();
-    this.locationNameByViewId = new Map();
 
     // Read override setting for location
     this.locationOverrideSetting = Common.Settings.Settings.instance().createSetting('views-location-override', {});
@@ -182,9 +190,9 @@ export class ViewManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
 
     const viewsByLocation = new Map<ViewLocationValues|'none', PreRegisteredView[]>();
     for (const view of getRegisteredViewExtensions()) {
-      const location = view.location() || 'none';
+      const location = view.location || 'none';
       const views = viewsByLocation.get(location) || [];
-      views.push(view);
+      views.push(new PreRegisteredView(view, universe));
       viewsByLocation.set(location, views);
     }
 
@@ -211,6 +219,7 @@ export class ViewManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
         throw new Error(`Invalid view ID '${viewId}'`);
       }
       this.views.set(viewId, view);
+      this.preRegisteredViews.push(view);
       // Use the preferred user location if available
       const locationName = preferredExtensionLocations[viewId] || location;
       this.locationNameByViewId.set(viewId, locationName as string);
@@ -219,10 +228,11 @@ export class ViewManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
 
   static instance(opts: {
     forceNew: boolean|null,
+    universe?: Foundation.Universe.Universe,
   } = {forceNew: null}): ViewManager {
-    const {forceNew} = opts;
+    const {forceNew, universe} = opts;
     if (!viewManagerInstance || forceNew) {
-      viewManagerInstance = new ViewManager();
+      viewManagerInstance = new ViewManager(universe);
     }
 
     return viewManagerInstance;
@@ -241,6 +251,10 @@ export class ViewManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
       toolbar.appendToolbarItem(item);
     }
     return toolbar;
+  }
+
+  getRegisteredViewExtensions(): PreRegisteredView[] {
+    return this.preRegisteredViews;
   }
 
   locationNameForViewId(viewId: string): string {
@@ -441,6 +455,7 @@ export class ContainerWidget extends VBox {
   }
 
   override wasShown(): void {
+    super.wasShown();
     void this.materialize().then(() => {
       const widget = widgetForView.get(this.view);
       if (widget) {
@@ -457,7 +472,7 @@ export class ContainerWidget extends VBox {
 
 class ExpandableContainerWidget extends VBox {
   private titleElement: HTMLDivElement;
-  private readonly titleExpandIcon: IconButton.Icon.Icon;
+  private readonly titleExpandIcon: Icon;
   private readonly view: View;
   private widget?: Widget;
   private materializePromise?: Promise<void>;
@@ -474,7 +489,7 @@ class ExpandableContainerWidget extends VBox {
                                      keydown: 'Enter|Space|ArrowLeft|ArrowRight',
                                    })}`);
     ARIAUtils.markAsTreeitem(this.titleElement);
-    this.titleExpandIcon = IconButton.Icon.create('triangle-right', 'title-expand-icon');
+    this.titleExpandIcon = createIcon('triangle-right', 'title-expand-icon');
     this.titleElement.appendChild(this.titleExpandIcon);
     const titleText = view.title();
     createTextChild(this.titleElement, titleText);
@@ -794,7 +809,7 @@ class TabbedLocation extends Location implements TabbedViewLocation {
         view.isCloseable() || view.isTransient(), view.isPreviewFeature(), index);
     const iconName = view.iconName();
     if (iconName) {
-      const icon = IconButton.Icon.create(iconName);
+      const icon = createIcon(iconName);
       this.#tabbedPane.setTabIcon(view.viewId(), icon);
     }
   }
@@ -1005,7 +1020,6 @@ class StackLocation extends Location implements ViewLocation {
 export {
   getLocalizedViewLocationCategory,
   getRegisteredLocationResolvers,
-  getRegisteredViewExtensions,
   maybeRemoveViewExtension,
   registerLocationResolver,
   registerViewExtension,

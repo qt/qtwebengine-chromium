@@ -254,13 +254,6 @@ static XNN_INLINE xnn_simd_f32_t xnn_set1_f32(float v) {
 }
 
 // Tail load/store operations.
-static XNN_INLINE xnn_simd_f32_t
-xnn_load_tail_f32(const float* input, size_t num_elements) XNN_OOB_READS {
-  assert(num_elements > 0);
-  assert(num_elements < xnn_simd_size_f32);
-  return vld1q_f32(input);
-}
-
 // TODO: Use direct load of 1,2 or 3 floats
 // Consider clearing pad values to 0
 static XNN_INLINE xnn_simd_f32_t xnn_load_tail_safe_f32(const float* input,
@@ -272,16 +265,31 @@ static XNN_INLINE xnn_simd_f32_t xnn_load_tail_safe_f32(const float* input,
   switch (num_elements) {
     case 4:
       *dst++ = *input++;
+      XNN_FALLTHROUGH
     case 3:
       *dst++ = *input++;
+      XNN_FALLTHROUGH
     case 2:
       *dst++ = *input++;
+      XNN_FALLTHROUGH
     case 1:
       *dst++ = *input++;
-    default: {
-    }
+      XNN_FALLTHROUGH
+    default:
+      break;
   }
   return vld1q_f32(padded);
+}
+
+static XNN_INLINE xnn_simd_f32_t
+xnn_load_tail_f32(const float* input, size_t num_elements) XNN_OOB_READS {
+  assert(num_elements > 0);
+  assert(num_elements < xnn_simd_size_f32);
+#if XNN_COMPILER_HAS_FEATURE(thread_sanitizer)
+  return xnn_load_tail_safe_f32(input, num_elements);
+#else
+  return vld1q_f32(input);
+#endif
 }
 
 static XNN_INLINE void xnn_store_tail_f32(float* output, xnn_simd_f32_t v,

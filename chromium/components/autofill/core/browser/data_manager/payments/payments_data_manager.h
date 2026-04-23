@@ -262,7 +262,7 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   base::span<const BnplIssuer> GetUnlinkedBnplIssuers() const;
 
   // Returns all BNPL issuers, both linked and unlinked.
-  std::vector<BnplIssuer> GetBnplIssuers() const;
+  virtual std::vector<BnplIssuer> GetBnplIssuers() const;
 
   // Adds `iban` to the web database as a local IBAN. Returns the guid of
   // `iban` if the add is successful, or an empty string otherwise.
@@ -310,8 +310,9 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // Method to clear all local CVCs from the local web database.
   virtual void ClearLocalCvcs();
 
-  // Method to clean up for crbug.com/411681430.
-  virtual void CleanupForCrbug411681430();
+  // Method to clear all local CVCs created before mid-May 2025. For more
+  // information, see crbug.com/411681430.
+  virtual void ClearLocalCvcsUpToMay2025();
 
 #if BUILDFLAG(IS_IOS)
   // Method to clean up for crbug.com/445879524.
@@ -376,15 +377,22 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // Sets the value of the kAutofillHasSeenIban pref to true.
   void SetAutofillHasSeenIban();
 
+  // TODO(crbug.com/430575808): Remove build flags.
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
   // Returns the value of the kAutofillHasSeenBnpl pref.
-  bool IsAutofillHasSeenBnplPrefEnabled() const;
+  virtual bool IsAutofillHasSeenBnplPrefEnabled() const;
 
   // Sets the value of the kAutofillHasSeenBnpl pref to true.
   void SetAutofillHasSeenBnpl();
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
         // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+
+  // Returns the value of the kAutofillAmountExtractionAiTermsSeen pref.
+  virtual bool IsAutofillAmountExtractionAiTermsSeenPrefEnabled() const;
+
+  // Sets the value of the kAutofillAmountExtractionAiTermsSeen pref to true.
+  void SetAutofillAmountExtractionAiTermsSeen();
 
   // Returns if the user has seen a BNPL suggestion before and if the BNPL
   // feature is enabled. Does not check for user's locale.
@@ -456,6 +464,9 @@ class PaymentsDataManager : public AutofillWebDataServiceObserverOnUISequence,
   // been shown, and this counter is used very similarly to a strike database
   // when it comes time to check whether we should show the promo.
   virtual void SetPaymentMethodsMandatoryReauthEnabled(bool enabled);
+  // Only checks if the user has enabled the feature. For the purposes of
+  // checking if Mandatory Reauth is enabled, use
+  // PaymentsAutofillClient::IsMandatoryReauthEnabled().
   virtual bool IsPaymentMethodsMandatoryReauthEnabled();
   bool ShouldShowPaymentMethodsMandatoryReauthPromo();
   void IncrementPaymentMethodsMandatoryReauthPromoShownCounter();

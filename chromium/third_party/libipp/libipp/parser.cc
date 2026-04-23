@@ -17,8 +17,6 @@ namespace ipp {
 
 std::string_view ToStrView(ParserCode code) {
   switch (code) {
-    case ParserCode::kOK:
-      return "OK";
     case ParserCode::kBooleanValueOutOfRange:
       return "BooleanValueOutOfRange";
     case ParserCode::kValueMismatchTagConverted:
@@ -89,11 +87,10 @@ Frame Parse(const uint8_t* buffer, size_t size, ParserLog& log) {
   if (buffer == nullptr) {
     size = 0;
   }
-  std::vector<Log> log_temp;
   FrameData frame_data;
-  Parser parser(&frame_data, &log_temp, log);
+  Parser parser(&frame_data, log);
   parser.ReadFrameFromBuffer(buffer, buffer + size);
-  parser.SaveFrameToPackage(false, &frame);
+  parser.SaveFrameToPackage(&frame);
   frame.VersionNumber() = static_cast<Version>(frame_data.version_);
   frame.OperationIdOrStatusCode() = frame_data.operation_id_or_status_code_;
   frame.RequestId() = frame_data.request_id_;

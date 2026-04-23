@@ -265,6 +265,8 @@ message AttestationCertificateRequest {
   optional CertificateProfile profile = 11;
   // Information about the origin of the request which may be used depending on
   // the certificate profile.
+  // Used for `ANDROID_PRODUCT_IDENTITY_CERTIFICATE` where the expected value
+  // is an Android build fingerprint (property ro.build.fingerprint).
   optional string origin = 12;
   // The index of a temporal value.  This may be used or ignored depending on
   // the certificate profile.

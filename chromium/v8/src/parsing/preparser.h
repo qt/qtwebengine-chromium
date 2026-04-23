@@ -1005,7 +1005,8 @@ class PreParser : public ParserBase<PreParser> {
 
   void DeclareAndBindVariable(const VariableProxy* proxy, VariableKind kind,
                               VariableMode mode, Scope* scope, bool* was_added,
-                              int initializer_position) {
+                              int initializer_position,
+                              VariableProxy::BindingMode binding_mode) {
     Variable* var = DeclareVariableName(proxy->raw_name(), mode, scope,
                                         was_added, proxy->position(), kind);
     var->set_initializer_position(initializer_position);
@@ -1471,10 +1472,10 @@ class PreParser : public ParserBase<PreParser> {
 
   V8_INLINE PreParserExpression NewSuperCallReference(int pos) {
     scope()->NewUnresolved(factory()->ast_node_factory(),
-                           ast_value_factory()->this_function_string(), pos,
+                           ast_value_factory()->dot_this_function_string(), pos,
                            NORMAL_VARIABLE);
     scope()->NewUnresolved(factory()->ast_node_factory(),
-                           ast_value_factory()->new_target_string(), pos,
+                           ast_value_factory()->dot_new_target_string(), pos,
                            NORMAL_VARIABLE);
     return PreParserExpression::SuperCallReference();
   }

@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING, ClassVar, Optional, Self, Sequence
+from typing import TYPE_CHECKING, ClassVar, Final, Optional, Self, Sequence
 
 from typing_extensions import override
 
@@ -79,14 +79,14 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
     self._verify_url(self.URL_OFFICIAL, "URL_OFFICIAL")
     self._verify_url(self.URL_LOCAL, "URL_LOCAL")
     assert substories, f"No substories provided for {cls}"
-    self._substories: tuple[str, ...] = tuple(substories)
+    self._substories: Final[tuple[str, ...]] = tuple(substories)
     self._verify_substories()
     kwargs["name"] = self._get_unique_name()
     kwargs["duration"] = duration or self._get_initial_duration()
     super().__init__(*args, **kwargs)
     # If the _custom_url is empty, we generate a matching URL when the
     # local file server is used.
-    self._custom_url: str | None = url
+    self._custom_url: Final[str | None] = url
 
   def _get_unique_name(self) -> str:
     substories_set = set(self._substories)
@@ -159,10 +159,10 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
     assert url is not None, f"{cls}.{property_name} is not set."
 
   def _verify_substories(self) -> None:
-    ObjectParser.unique_sequence(self._substories, "substories", ValueError)
-    if self._substories == self.SUBSTORIES:
+    ObjectParser.unique_sequence(self.substories, "substories", ValueError)
+    if self.substories == self.SUBSTORIES:
       return
-    for substory in self._substories:
+    for substory in self.substories:
       if substory not in self.SUBSTORIES:
         raise ValueError(f"Unknown {self.NAME} substory %s" % substory)
 

@@ -7,10 +7,13 @@
 
 #include <limits.h>
 
-#include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/signin/public/base/consent_level.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+
+namespace base {
+class TimeDelta;
+}  // namespace base
 
 namespace signin_metrics {
 
@@ -88,7 +91,7 @@ enum class ProfileSignout {
   // sign out.
   kUserDeletedAccountCookies = 25,
   // User tapped 'Undo' in a snackbar that is shown right after sign-in through
-  // promo in bookmarks and reading list page. (iOS only).
+  // promo in bookmarks and reading list page.
   kUserTappedUndoRightAfterSignIn = 26,
   // User has signed-in previously for the sole purpose of enabling history sync
   // (eg. using history sync promo in recent tabs), but declined history sync
@@ -245,13 +248,13 @@ enum class AccessPoint : int {
   // Signin button from the profile menu that is labelled as a "Signin" button,
   // but is followed by a Sync confirmation screen as a promo.
   kAvatarBubbleSignInWithSyncPromo = 66,
-  // Signin using the account menu.
-  kAccountMenu = 67,
+  // Signin as part of switching accounts via the account menu.
+  kAccountMenuSwitchAccount = 67,
   // Signin via Product Specifications.
   kProductSpecifications = 68,
   // The user is signed-back into their previous account after failing to switch
   // to a new one.
-  kAccountMenuFailedSwitch = 69,
+  kAccountMenuSwitchAccountFailed = 69,
   // The user signs in from a sign in promo after an address save.
   kAddressBubble = 70,
   // A message notification displayed on CCTs embedded in 1P apps when there is
@@ -302,10 +305,15 @@ enum class AccessPoint : int {
   kEnterpriseManagementDisclaimerAfterSignin = 88,
   // New Tab Page sign-in feature promotion.
   kNtpFeaturePromo = 89,
+  // Access point for the enterprise interception that result in profile
+  // separation.
+  kEnterpriseDialogAfterSigninInterception = 90,
+  // "Your saved info" settings page.
+  kSettingsYourSavedInfo = 91,
   // Add values above this line with a corresponding label to the
   // "SigninAccessPoint" enum in
   // tools/metrics/histograms/metadata/signin/enums.xml.
-  kMaxValue = kNtpFeaturePromo,  // This must be last.
+  kMaxValue = kSettingsYourSavedInfo,  // This must be last.
 };
 // LINT.ThenChange(/tools/metrics/histograms/metadata/signin/enums.xml)
 
@@ -578,25 +586,6 @@ enum class SyncButtonsType : int {
   kMaxValue = kHistorySyncEqualWeightedFromCapability,
 };
 
-// Tracks type of the button that was clicked by the user.
-// GENERATED_JAVA_ENUM_PACKAGE: org.chromium.components.signin.metrics
-enum class SyncButtonClicked : int {
-  // These values are persisted to logs. Entries should not be renumbered and
-  // numeric values should never be reused.
-  kSyncOptInEqualWeighted = 0,
-  kSyncCancelEqualWeighted = 1,
-  kSyncSettingsEqualWeighted = 2,
-  kSyncOptInNotEqualWeighted = 3,
-  kSyncCancelNotEqualWeighted = 4,
-  kSyncSettingsNotEqualWeighted = 5,
-  kHistorySyncOptInEqualWeighted = 6,
-  kHistorySyncCancelEqualWeighted = 7,
-  kHistorySyncOptInNotEqualWeighted = 8,
-  kHistorySyncCancelNotEqualWeighted = 9,
-  kSyncSettingsUnknownWeighted = 10,
-  kMaxValue = kSyncSettingsUnknownWeighted,
-};
-
 #if BUILDFLAG(IS_IOS)
 // The reason an alert dialog is shown when the user is about to sign out.
 enum class SignoutDataLossAlertReason : int {
@@ -672,6 +661,9 @@ void LogSignInOffered(AccessPoint access_point, PromoAction promo_action);
 // completion events are automatically logged when the primary account state
 // changes, see `signin::PrimaryAccountMutator`.
 void LogSignInStarted(AccessPoint access_point);
+
+// Logs that sign in was offered when the user is in SigninPending state.
+void LogSigninPendingOffered(AccessPoint access_point);
 
 #if BUILDFLAG(IS_IOS)
 // Records the account type when the user signs in.

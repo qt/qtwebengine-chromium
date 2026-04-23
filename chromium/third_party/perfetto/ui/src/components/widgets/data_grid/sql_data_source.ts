@@ -19,7 +19,7 @@ import {runQueryForQueryTable} from '../../query_table/queries';
 import {
   DataGridDataSource,
   DataSourceResult,
-  FilterDefinition,
+  DataGridFilter,
   Sorting,
   SortByColumn,
   DataGridModel,
@@ -63,6 +63,7 @@ export class SQLDataSource implements DataGridDataSource {
     filters = [],
     pagination,
     aggregates,
+    distinctValuesColumns,
   }: DataGridModel): void {
     this.limiter.schedule(async () => {
       this.isLoadingFlag = true;
@@ -86,6 +87,7 @@ export class SQLDataSource implements DataGridDataSource {
             totalRows: rowCount,
             rows: [],
             aggregates: {},
+            distinctValues: new Map<string, ReadonlyArray<SqlValue>>(),
           };
         }
 
@@ -113,10 +115,50 @@ export class SQLDataSource implements DataGridDataSource {
             rows,
           };
         }
+
+        // Handle distinct values requests
+        if (distinctValuesColumns) {
+          for (const column of distinctValuesColumns) {
+            if (!this.cachedResult?.distinctValues?.has(column)) {
+              // Schedule query to fetch distinct values
+              const query = `
+                SELECT DISTINCT ${column} AS value
+                FROM (${this.baseQuery})
+                ORDER BY ${column} IS NULL, ${column}
+              `;
+              const result = await runQueryForQueryTable(query, this.engine);
+              const values = result.rows.map((r) => r['value']);
+              this.cachedResult = {
+                ...this.cachedResult!,
+                // Subsume the old distinct values map and add the new entry
+                distinctValues: new Map<string, ReadonlyArray<SqlValue>>([
+                  ...this.cachedResult!.distinctValues!,
+                  [column, values],
+                ]),
+              };
+            }
+          }
+        }
       } finally {
         this.isLoadingFlag = false;
       }
     });
+  }
+
+  /**
+   * Export all data with current filters/sorting applied.
+   */
+  async exportData(): Promise<Row[]> {
+    if (!this.workingQuery) {
+      // If no working query exists yet, we can't export anything
+      return [];
+    }
+
+    const query = `SELECT * FROM (${this.workingQuery})`;
+    const result = await runQueryForQueryTable(query, this.engine);
+
+    // Return all rows
+    return result.rows;
   }
 
   /**
@@ -125,7 +167,7 @@ export class SQLDataSource implements DataGridDataSource {
    */
   private buildWorkingQuery(
     columns: ReadonlyArray<string> | undefined,
-    filters: ReadonlyArray<FilterDefinition>,
+    filters: ReadonlyArray<DataGridFilter>,
     sorting: Sorting,
   ): string {
     const colDefs = columns ?? ['*'];
@@ -195,7 +237,7 @@ export class SQLDataSource implements DataGridDataSource {
   }
 }
 
-function filter2Sql(filter: FilterDefinition): string {
+function filter2Sql(filter: DataGridFilter): string {
   switch (filter.op) {
     case '=':
     case '!=':
@@ -210,6 +252,10 @@ function filter2Sql(filter: FilterDefinition): string {
       return `${filter.column} IS NULL`;
     case 'is not null':
       return `${filter.column} IS NOT NULL`;
+    case 'in':
+      return `${filter.column} IN (${filter.value.map(sqlValue).join(', ')})`;
+    case 'not in':
+      return `${filter.column} NOT IN (${filter.value.map(sqlValue).join(', ')})`;
     default:
       return '1=1'; // Default to true if unknown operator
   }

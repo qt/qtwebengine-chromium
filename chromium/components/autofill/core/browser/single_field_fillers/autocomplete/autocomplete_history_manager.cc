@@ -40,14 +40,16 @@ AutocompleteHistoryManager::~AutocompleteHistoryManager() = default;
 
 void AutocompleteHistoryManager::OnGetSingleFieldSuggestions(
     const FormData& form,
-    const FormFieldData& field,
+    const FormStructure* form_structure,
+    const FormFieldData& trigger_field,
+    const AutofillField* trigger_autofill_field,
     const AutofillClient& client,
     SingleFieldFillRouter::OnSuggestionsReturnedCallback
         on_suggestions_returned) {
   // Cancel the pending query if there is one.
   suggestion_generator_ = nullptr;
   if (!profile_database_) {
-    std::move(on_suggestions_returned).Run(field.global_id(), {});
+    std::move(on_suggestions_returned).Run(trigger_field.global_id(), {});
     return;
   }
   suggestion_generator_ =
@@ -60,12 +62,12 @@ void AutocompleteHistoryManager::OnGetSingleFieldSuggestions(
         std::move(callback).Run(field_id,
                                 std::move(returned_suggestions.second));
       },
-      std::move(on_suggestions_returned), field.global_id());
+      std::move(on_suggestions_returned), trigger_field.global_id());
 
   auto on_suggestion_data_returned = base::BindOnce(
       [](base::OnceCallback<void(SuggestionGenerator::ReturnedSuggestions)>
              callback,
-         FormData form, FormFieldData field,
+         FormData form, FormFieldData field, const AutofillClient& client,
          base::WeakPtr<AutocompleteSuggestionGenerator>
              autocomplete_suggestion_generator,
          std::pair<SuggestionGenerator::SuggestionDataSource,
@@ -73,16 +75,16 @@ void AutocompleteHistoryManager::OnGetSingleFieldSuggestions(
              suggestion_data) {
         if (autocomplete_suggestion_generator) {
           autocomplete_suggestion_generator->GenerateSuggestions(
-              std::move(form), std::move(field), /*form=*/nullptr,
-              /*field=*/nullptr, {std::move(suggestion_data)},
-              std::move(callback));
+              std::move(form), std::move(field), /*form_structure=*/nullptr,
+              /*trigger_autofill_field=*/nullptr, client,
+              {std::move(suggestion_data)}, std::move(callback));
         }
       },
-      std::move(on_suggestions_generated), form, field,
-      suggestion_generator_->GetWeakPtr());
+      std::move(on_suggestions_generated), form, trigger_field,
+      std::cref(client), suggestion_generator_->GetWeakPtr());
 
   suggestion_generator_->FetchSuggestionData(
-      form, field, /*form=*/nullptr, /*field=*/nullptr, client,
+      form, trigger_field, form_structure, trigger_autofill_field, client,
       std::move(on_suggestion_data_returned));
 }
 

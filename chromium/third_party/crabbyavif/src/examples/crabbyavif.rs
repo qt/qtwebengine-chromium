@@ -52,6 +52,7 @@ use std::io::Read;
 #[cfg(feature = "encoder")]
 use std::io::Write;
 use std::num::NonZero;
+use std::path::Path;
 
 fn depth_parser(s: &str) -> Result<u8, String> {
     match s.parse::<u8>() {
@@ -156,6 +157,17 @@ fn yuv_format_parser(s: &str) -> Result<PixelFormat, String> {
     }
 }
 
+fn codec_choice_parser(s: &str) -> Result<CodecChoice, String> {
+    match s {
+        "auto" | "default" => Ok(CodecChoice::default()),
+        "aom" | "libaom" => Ok(CodecChoice::Aom),
+        "mediacodec" => Ok(CodecChoice::MediaCodec),
+        "dav1d" => Ok(CodecChoice::Dav1d),
+        "gav1" | "libgav1" => Ok(CodecChoice::Libgav1),
+        _ => Err(format!("Invalid codec choice: {s}")),
+    }
+}
+
 fn header_format_parser(s: &str) -> Result<HeaderFormat, String> {
     match s {
         "meta" | "default" => Ok(HeaderFormat::Default),
@@ -166,6 +178,14 @@ fn header_format_parser(s: &str) -> Result<HeaderFormat, String> {
 
 #[derive(Parser)]
 struct CommandLineArgs {
+    /// Prints the version of this crate and the version of each available codec
+    #[arg(long, default_value = "false")]
+    version: bool,
+
+    /// Codec to use for encoding/decoding
+    #[arg(short = 'c', long, value_parser = codec_choice_parser, default_value = "auto")]
+    codec: CodecChoice,
+
     /// AVIF Decode only: Disable strict decoding, which disables strict validation checks and
     /// errors
     #[arg(long, default_value = "false")]
@@ -191,8 +211,8 @@ struct CommandLineArgs {
     depth: Option<u8>,
 
     /// Output quality in 0..100. (JPEG/AVIF only, default: 90).
-    #[arg(long, short = 'q', value_parser = value_parser!(u8).range(0..=100))]
-    quality: Option<u8>,
+    #[arg(long, short = 'q', value_parser = value_parser!(f32))]
+    quality: Option<f32>,
 
     /// AVIF Encode only: Speed used for encoding.
     #[arg(long, short = 's', value_parser = value_parser!(u32).range(0..=10))]
@@ -201,6 +221,10 @@ struct CommandLineArgs {
     /// AVIF Encode only: MetaBox- or MinimizedImageBox-flavored HEIF file.
     #[arg(long, value_parser = header_format_parser, default_value = "meta")]
     header: HeaderFormat,
+
+    /// AVIF Encode only: Write more metadata in the PixelInformationBox. Backward-compatible.
+    #[arg(long, default_value = "false")]
+    force_write_extended_pixi: bool,
 
     /// When decoding AVIF: Enable progressive AVIF processing. If a progressive image is
     /// encountered and --progressive is passed, --index will be used to choose which layer to
@@ -299,7 +323,7 @@ struct CommandLineArgs {
 
     /// Input AVIF file
     #[arg(allow_hyphen_values = false)]
-    input_file: String,
+    input_file: Option<String>,
 
     /// Output file
     #[arg(allow_hyphen_values = false)]
@@ -509,10 +533,11 @@ fn max_threads(jobs: &Option<u32>) -> u32 {
     }
 }
 
-fn create_decoder_and_parse(args: &CommandLineArgs) -> AvifResult<Decoder> {
+fn create_decoder_and_parse(args: &CommandLineArgs, input_file: &String) -> AvifResult<Decoder> {
     let mut settings = decoder::Settings {
         strictness: if args.no_strict { Strictness::None } else { Strictness::All },
         image_content_to_decode: ImageContentType::All,
+        codec_choice: args.codec,
         max_threads: max_threads(&args.jobs),
         allow_progressive: args.progressive,
         ignore_exif: args.ignore_exif,
@@ -530,7 +555,7 @@ fn create_decoder_and_parse(args: &CommandLineArgs) -> AvifResult<Decoder> {
     let mut decoder = Decoder::default();
     decoder.settings = settings;
     decoder
-        .set_io_file(&args.input_file)
+        .set_io_file(input_file)
         .or(Err(AvifError::UnknownError(
             "Cannot open input file".into(),
         )))?;
@@ -538,9 +563,9 @@ fn create_decoder_and_parse(args: &CommandLineArgs) -> AvifResult<Decoder> {
     Ok(decoder)
 }
 
-fn info(args: &CommandLineArgs) -> AvifResult<()> {
-    let mut decoder = create_decoder_and_parse(args)?;
-    println!("Image decoded: {}", args.input_file);
+fn info(args: &CommandLineArgs, input_file: &String) -> AvifResult<()> {
+    let mut decoder = create_decoder_and_parse(args, input_file)?;
+    println!("Image decoded: {}", input_file);
     print_image_info(&decoder);
     println!(
         " * {} timescales per second, {} seconds ({} timescales), {} frame{}",
@@ -597,15 +622,15 @@ fn get_extension(filename: &str) -> String {
         .to_lowercase()
 }
 
-fn decode(args: &CommandLineArgs) -> AvifResult<()> {
+fn decode(args: &CommandLineArgs, input_file: &String) -> AvifResult<()> {
     let max_threads = max_threads(&args.jobs);
     println!(
         "Decoding with {max_threads} worker thread{}, please wait...",
         if max_threads == 1 { "" } else { "s" }
     );
-    let mut decoder = create_decoder_and_parse(args)?;
+    let mut decoder = create_decoder_and_parse(args, input_file)?;
     decoder.nth_image(args.index.unwrap_or(0))?;
-    println!("Image Decoded: {}", args.input_file);
+    println!("Image Decoded: {}", input_file);
     println!("Image details:");
     print_image_info(&decoder);
 
@@ -623,7 +648,7 @@ fn decode(args: &CommandLineArgs) -> AvifResult<()> {
         "png" => Box::new(PngWriter { depth: args.depth }),
         #[cfg(feature = "jpeg")]
         "jpg" | "jpeg" => Box::new(JpegWriter {
-            quality: args.quality,
+            quality: args.quality.map(|quality| quality as u8),
         }),
         _ => {
             return Err(AvifError::UnknownError(format!(
@@ -652,17 +677,17 @@ fn read_file(filepath: &String) -> io::Result<Vec<u8>> {
 }
 
 #[cfg(feature = "encoder")]
-fn encode(args: &CommandLineArgs) -> AvifResult<()> {
-    const DEFAULT_ENCODE_QUALITY: u8 = 90;
-    let extension = get_extension(&args.input_file);
+fn encode(args: &CommandLineArgs, input_file: &str) -> AvifResult<()> {
+    const DEFAULT_ENCODE_QUALITY: f32 = 90.0;
+    let extension = get_extension(input_file);
     let mut reader: Box<dyn Reader> = match extension.as_str() {
-        "y4m" => Box::new(Y4MReader::create(&args.input_file)?),
+        "y4m" => Box::new(Y4MReader::create(input_file)?),
         #[cfg(feature = "jpeg")]
-        "jpg" | "jpeg" => Box::new(JpegReader::create(&args.input_file)?),
+        "jpg" | "jpeg" => Box::new(JpegReader::create(input_file)?),
         #[cfg(feature = "png")]
-        "png" => Box::new(PngReader::create(&args.input_file)?),
+        "png" => Box::new(PngReader::create(input_file)?),
         #[cfg(feature = "gif")]
-        "gif" => Box::new(GifReader::create(&args.input_file)?),
+        "gif" => Box::new(GifReader::create(input_file)?),
         _ => {
             return Err(AvifError::UnknownError(format!(
                 "Unknown input file extension ({extension})"
@@ -706,12 +731,14 @@ fn encode(args: &CommandLineArgs) -> AvifResult<()> {
     }
     let mut settings = encoder::Settings {
         extra_layer_count: if args.progressive { 1 } else { 0 },
+        codec_choice: args.codec,
         speed: args.speed,
         header_format: args.header,
+        force_write_extended_pixi: args.force_write_extended_pixi,
         timescale: 1000, // ms.
         repetition_count: args.repetition_count,
         mutable: MutableSettings {
-            quality: args.quality.unwrap_or(DEFAULT_ENCODE_QUALITY) as i32,
+            quality: args.quality.unwrap_or(DEFAULT_ENCODE_QUALITY),
             tiling_mode: if args.autotiling {
                 TilingMode::Auto
             } else {
@@ -745,11 +772,11 @@ fn encode(args: &CommandLineArgs) -> AvifResult<()> {
         }
     } else if args.progressive {
         // Encode the base layer with very low quality.
-        settings.mutable.quality = 2;
+        settings.mutable.quality = 2.0;
         encoder.update_settings(&settings.mutable)?;
         encoder.add_image(&image)?;
         // Encode the second layer with the requested quality.
-        settings.mutable.quality = args.quality.unwrap_or(DEFAULT_ENCODE_QUALITY) as i32;
+        settings.mutable.quality = args.quality.unwrap_or(DEFAULT_ENCODE_QUALITY);
         encoder.update_settings(&settings.mutable)?;
         encoder.add_image(&image)?;
     } else {
@@ -765,7 +792,7 @@ fn encode(args: &CommandLineArgs) -> AvifResult<()> {
 }
 
 #[cfg(not(feature = "encoder"))]
-fn encode(_args: &CommandLineArgs) -> AvifResult<()> {
+fn encode(_args: &CommandLineArgs, _input_file: &str) -> AvifResult<()> {
     Err(AvifError::InvalidArgument)
 }
 
@@ -783,65 +810,110 @@ fn can_encode(filename: &str) -> bool {
 }
 
 fn validate_args(args: &CommandLineArgs) -> AvifResult<()> {
-    if can_decode(&args.input_file) {
-        if args.info {
-            if args.output_file.is_some()
-                || args.quality.is_some()
-                || args.depth.is_some()
-                || args.index.is_some()
-            {
-                return Err(AvifError::UnknownError(
-                    "--info contains unsupported extra arguments".into(),
-                ));
+    if let Some(input_file) = &args.input_file {
+        if can_decode(input_file) {
+            if args.info {
+                if args.output_file.is_some()
+                    || args.quality.is_some()
+                    || args.depth.is_some()
+                    || args.index.is_some()
+                {
+                    return Err(AvifError::UnknownError(
+                        "--info contains unsupported extra arguments".into(),
+                    ));
+                }
+            } else {
+                if args.output_file.is_none() {
+                    return Err(AvifError::UnknownError("output_file is required".into()));
+                }
+                let output_filename = &args.output_file.as_ref().unwrap().as_str();
+                let extension = get_extension(output_filename);
+                if let Some(quality) = args.quality {
+                    if extension != "jpg" && extension != "jpeg" {
+                        return Err(AvifError::UnknownError(
+                            "quality is only supported for jpeg output".into(),
+                        ));
+                    }
+                    if !(0.0..=100.0).contains(&quality) {
+                        return Err(AvifError::UnknownError(
+                            "quality must be between 0 and 100 inclusive".into(),
+                        ));
+                    }
+                }
+                if args.depth.is_some() && extension != "png" {
+                    return Err(AvifError::UnknownError(
+                        "depth is only supported for png output".into(),
+                    ));
+                }
             }
         } else {
-            if args.output_file.is_none() {
-                return Err(AvifError::UnknownError("output_file is required".into()));
-            }
-            let output_filename = &args.output_file.as_ref().unwrap().as_str();
-            let extension = get_extension(output_filename);
-            if args.quality.is_some() && extension != "jpg" && extension != "jpeg" {
-                return Err(AvifError::UnknownError(
-                    "quality is only supported for jpeg output".into(),
-                ));
-            }
-            if args.depth.is_some() && extension != "png" {
-                return Err(AvifError::UnknownError(
-                    "depth is only supported for png output".into(),
-                ));
+            // TODO: b/403090413 - validate encoding args.
+            if let Some(quality) = args.quality {
+                if !(0.0..=100.0).contains(&quality) {
+                    return Err(AvifError::UnknownError(
+                        "quality must be between 0 and 100 inclusive".into(),
+                    ));
+                }
             }
         }
-    } else {
-        // TODO: b/403090413 - validate encoding args.
+    } else if !args.version {
+        return Err(AvifError::UnknownError("input_file is required".into()));
     }
     Ok(())
 }
 
+fn binary_name() -> String {
+    match std::env::args_os().next() {
+        Some(binary_path) => {
+            let path: &Path = binary_path.as_ref();
+            match path.file_name() {
+                Some(binary_name) => binary_name.to_string_lossy().into_owned(),
+                None => "crabbyavif".into(),
+            }
+        }
+        None => "crabbyavif".into(),
+    }
+}
+
 fn main() {
     let args = CommandLineArgs::parse();
+    if args.version {
+        println!(
+            "{} (crate {} {})",
+            binary_name(),
+            env!("CARGO_PKG_NAME"),    // Same as clap::crate_name!().
+            env!("CARGO_PKG_VERSION"), // Same as clap::crate_version!().
+        );
+        println!("Available codecs:");
+        println!("  {}", codec_versions());
+    }
     if let Err(err) = validate_args(&args) {
         eprintln!("ERROR: {err:#?}");
         std::process::exit(1);
     }
-    let res = if can_decode(&args.input_file) {
-        if args.info {
-            info(&args)
+    let res = if let Some(input_file) = &args.input_file {
+        if can_decode(input_file) {
+            if args.info {
+                info(&args, input_file)
+            } else {
+                decode(&args, input_file)
+            }
+        } else if let Some(output_file) = &args.output_file {
+            if can_encode(output_file) {
+                encode(&args, input_file)
+            } else {
+                eprintln!("Input/output file extensions not supported");
+                std::process::exit(1);
+            }
         } else {
-            decode(&args)
-        }
-    } else if let Some(output_file) = &args.output_file {
-        if can_encode(output_file) {
-            encode(&args)
-        } else {
-            eprintln!("Input/output file extensions not supported");
+            eprintln!(
+                "Input file extension not supported: {}",
+                get_extension(input_file)
+            );
             std::process::exit(1);
         }
     } else {
-        eprintln!(
-            "Input file extension not supported: {}",
-            get_extension(&args.input_file)
-        );
-        std::process::exit(1);
+        Ok(())
     };
     match res {
         Ok(_) => std::process::exit(0),

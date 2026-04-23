@@ -4,10 +4,6 @@
 
 #include "ui/views/accessibility/tree/widget_ax_manager.h"
 
-#if BUILDFLAG(IS_WIN)
-#include <oleacc.h>
-#endif  // BUILDFLAG(IS_WIN)
-
 #include <utility>
 
 #include "base/task/single_thread_task_runner.h"
@@ -19,6 +15,8 @@
 #include "ui/views/accessibility/view_accessibility.h"
 
 #if BUILDFLAG(IS_WIN)
+#include <oleacc.h>
+
 #include "ui/views/win/hwnd_util.h"
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -37,10 +35,6 @@ WidgetAXManager::WidgetAXManager(Widget* widget)
          "accessibility tree feature is enabled.";
 
   ui::AXPlatform::GetInstance().AddModeObserver(this);
-
-  if (ui::AXPlatform::GetInstance().GetMode() == ui::AXMode::kNativeAPIs) {
-    Enable();
-  }
 }
 
 WidgetAXManager::~WidgetAXManager() {
@@ -48,28 +42,15 @@ WidgetAXManager::~WidgetAXManager() {
   ax_tree_manager_.reset();
 }
 
-void WidgetAXManager::Enable() {
-  is_enabled_ = true;
-  tree_source_ = std::make_unique<ViewAccessibilityAXTreeSource>(
-      widget_->GetRootView()->GetViewAccessibility().GetUniqueId(), ax_tree_id_,
-      cache_.get());
-  tree_serializer_ =
-      std::make_unique<ViewAccessibilityAXTreeSerializer>(tree_source_.get());
-
-  ui::AXNodeData root_data;
-  widget_->GetRootView()->GetViewAccessibility().GetAccessibleNodeData(
-      &root_data);
-  ui::AXTreeUpdate update;
-  update.root_id = root_data.id;
-  update.nodes.push_back(root_data);
-
-  // TODO(crbug.com/40672441): Do we probably don't need to seed the `cache_`
-  // with the root view. It should be done automatically upon the initial
-  // serialization.
-  cache_->Insert(&widget_->GetRootView()->GetViewAccessibility());
-
-  ax_tree_manager_.reset(
-      ui::BrowserAccessibilityManager::Create(update, *this, this));
+void WidgetAXManager::Init() {
+  CHECK(widget_->GetRootView());
+  if (ui::AXPlatform::GetInstance().GetMode() == ui::AXMode::kNativeAPIs) {
+    Enable();
+  } else {
+    if (widget_->is_top_level()) {
+      InitAXTreeManager();
+    }
+  }
 }
 
 void WidgetAXManager::OnEvent(ViewAccessibility& view_ax,
@@ -100,8 +81,8 @@ void WidgetAXManager::OnChildAdded(ViewAccessibility& child,
     return;
   }
 
+  cache_->Insert(&child);
   pending_data_updates_.insert(parent.GetUniqueId());
-  // TODO(https://crbug.com/40672441): Add child to the cache.
 
   SchedulePendingUpdate();
 }
@@ -112,8 +93,8 @@ void WidgetAXManager::OnChildRemoved(ViewAccessibility& child,
     return;
   }
 
+  cache_->Remove(child.GetUniqueId());
   pending_data_updates_.insert(parent.GetUniqueId());
-  // TODO(https://crbug.com/40672441): Remove child from the cache.
 
   SchedulePendingUpdate();
 }
@@ -202,19 +183,17 @@ WidgetAXManager::AccessibilityGetNativeViewAccessible() {
     return native_widget->GetNativeViewAccessibleForNSView();
   }
 #elif BUILDFLAG(IS_WIN)
-  // On Windows, we get the IAccessible for the HWND of the widget through an
-  // OS API call.
-  // TODO(accessibility): Consider caching the IAccessible object.
-  HWND hwnd = HWNDForView(widget_->GetRootView());
-  if (!hwnd) {
-    return nullptr;
-  }
-
-  IAccessible* parent;
-  if (SUCCEEDED(
-          ::AccessibleObjectFromWindow(hwnd, OBJID_WINDOW, IID_IAccessible,
-                                       reinterpret_cast<void**>(&parent)))) {
-    return parent;
+  // Hold a reference to the parent in this instance to ensure that it lives
+  // long enough for the caller to take its own reference, if needed.
+  if (!parent_accessible_) {
+    HWND hwnd = HWNDForView(widget_->GetRootView());
+    if (!hwnd) {
+      return nullptr;
+    }
+    if (SUCCEEDED(::AccessibleObjectFromWindow(
+            hwnd, OBJID_WINDOW, IID_PPV_ARGS(&parent_accessible_)))) {
+      return parent_accessible_.Get();
+    }
   }
 #endif
   return gfx::NativeViewAccessible();
@@ -294,6 +273,44 @@ void WidgetAXManager::SchedulePendingUpdate() {
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&WidgetAXManager::SendPendingUpdate,
                                 weak_factory_.GetWeakPtr()));
+}
+
+void WidgetAXManager::InitAXTreeManager() {
+  CHECK(!ax_tree_manager_);
+  ui::AXNodeData root_data;
+  widget_->GetRootView()->GetViewAccessibility().GetAccessibleNodeData(
+      &root_data);
+  ui::AXTreeUpdate update;
+  update.root_id = root_data.id;
+  update.nodes.push_back(root_data);
+
+  cache_->Init(widget_->GetRootView()->GetViewAccessibility(),
+               false /* full_tree */);
+
+  ax_tree_manager_.reset(
+      ui::BrowserAccessibilityManager::Create(update, *this, this));
+}
+
+void WidgetAXManager::Enable() {
+  is_enabled_ = true;
+  tree_source_ = std::make_unique<ViewAccessibilityAXTreeSource>(
+      widget_->GetRootView()->GetViewAccessibility().GetUniqueId(), ax_tree_id_,
+      cache_.get());
+  tree_serializer_ =
+      std::make_unique<ViewAccessibilityAXTreeSerializer>(tree_source_.get());
+
+  // It's possible the AXTreeManager was already created if this widget is
+  // top-level and accessibility wasn't enabled before. Ensure it is created
+  // now.
+  if (!ax_tree_manager_) {
+    InitAXTreeManager();
+  }
+  cache_->Init(widget_->GetRootView()->GetViewAccessibility());
+
+  // Fully serialize the tree starting from the root immediately.
+  pending_data_updates_.insert(
+      widget_->GetRootView()->GetViewAccessibility().GetUniqueId());
+  SendPendingUpdate();
 }
 
 void WidgetAXManager::SendPendingUpdate() {
@@ -397,6 +414,16 @@ void WidgetAXManager::SendPendingUpdate() {
     // Nothing to do, no updates or events.
     return;
   }
+
+#if DCHECK_IS_ON()
+  for (const auto& update : tree_updates) {
+    for (const auto& node : update.nodes) {
+      DCHECK(cache_->Get(node.id))
+          << "Unknown serialized node. All nodes we serialize should be known "
+             "to the WidgetAXManager.";
+    }
+  }
+#endif  // DCHECK_IS_ON()
 
   maybe_updates_and_events.emplace();
   maybe_updates_and_events->ax_tree_id = ax_tree_id_;

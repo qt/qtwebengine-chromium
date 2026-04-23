@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "base/files/file_path.h"
-#include "base/files/file_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
@@ -496,7 +495,7 @@ scoped_refptr<Extension> CreateExtensionWithPermissions(
     manifest.Set("permissions", std::move(permissions_list));
   }
 
-  std::string error;
+  std::u16string error;
   scoped_refptr<Extension> extension(
       Extension::Create(base::FilePath(), mojom::ManifestLocation::kUnpacked,
                         manifest, Extension::NO_FLAGS, &error));
@@ -582,7 +581,7 @@ scoped_refptr<Extension> CreateHostedApp() {
                          base::Value(base::Value::Type::LIST));
   values.SetByDottedPath(manifest_keys::kLaunchWebURL,
                          "http://www.example.com");
-  std::string error;
+  std::u16string error;
   scoped_refptr<Extension> extension(
       Extension::Create(base::FilePath(), mojom::ManifestLocation::kInternal,
                         values, Extension::NO_FLAGS, &error));
@@ -610,7 +609,7 @@ scoped_refptr<Extension> CreatePackagedAppWithPermissions(
     manifest.Set("permissions", std::move(permissions_list));
   }
 
-  std::string error;
+  std::u16string error;
   scoped_refptr<Extension> extension(
       Extension::Create(base::FilePath(), mojom::ManifestLocation::kInternal,
                         manifest, Extension::NO_FLAGS, &error));

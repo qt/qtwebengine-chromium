@@ -10,6 +10,7 @@
 #ifndef __PTHREADPOOL_INCLUDE_PTHREADPOOL_H_
 #define __PTHREADPOOL_INCLUDE_PTHREADPOOL_H_
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -134,8 +135,18 @@ typedef void (*pthreadpool_task_3d_tile_1d_dynamic_with_id_with_thread_t)(
  * new commands after this command is processed. This flag affects only the
  * immediate next operation on this thread pool. To make the thread pool always
  * use kernel wait, pass this flag to all parallelization functions.
+ *
+ * Note: This flag is currently ignored as yielding the worker threads after a
+ * fixed number of spin-wait iterations is currently the default behaviour.
  */
 #define PTHREADPOOL_FLAG_YIELD_WORKERS 0x00000002
+
+/**
+ * If worker threads are provided by an external @a pthreadpool_executor,
+ * release them back to the executor instead of spinning for a fixed number of
+ * iterations first.
+ */
+#define PTHREADPOOL_FLAG_DONT_SPIN_WORKERS 0x00000004
 
 #ifdef __cplusplus
 extern "C" {
@@ -239,6 +250,26 @@ size_t pthreadpool_set_threads_count(pthreadpool_t threadpool,
 void pthreadpool_release_executor_threads(struct pthreadpool* threadpool);
 
 /**
+ * Updates a thread pool with a given @a pthreadpool_executor.
+ *
+ * @param threadpool        The thread pool in which to replace the executor.
+ * @param executor          A pointer to a @a pthreadpool_executor object that
+ *                          will be used to determine the number of extra
+ *                          threads (plus the calling thread), and provide the
+ *                          threads itself, for each call to a
+ *                          `pthreadpool_parallelize_*` function.
+ * @param executor_context  A pointer to the context that will be passed to the
+ *                          functions in the @a executor object.
+ *
+ * @return  @c true if the @a executor was successfully swapped, and @c false if
+ * it was not, e.g. because the current and nex @a executor and @a
+ * executor_context are identical.
+ */
+bool pthreadpool_update_executor(pthreadpool_t threadpool,
+                                 struct pthreadpool_executor* executor,
+                                 void* executor_context);
+
+/**
  * Process items on a 1D grid.
  *
  * The function implements a parallel version of the following snippet:
@@ -259,7 +290,7 @@ void pthreadpool_release_executor_threads(struct pthreadpool* threadpool);
  * @param range       the number of items on the 1D grid to process. The
  *    specified function will be called once for each item.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_1d(pthreadpool_t threadpool,
                                 pthreadpool_task_1d_t function, void* context,
@@ -286,7 +317,7 @@ void pthreadpool_parallelize_1d(pthreadpool_t threadpool,
  * @param range       the number of items on the 1D grid to process. The
  *    specified function will be called once for each item.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_1d_with_thread(
     pthreadpool_t threadpool, pthreadpool_task_1d_with_thread_t function,
@@ -327,7 +358,7 @@ void pthreadpool_parallelize_1d_with_thread(
  *    The specified function will be called once for each item.
  * @param flags                a bitwise combination of zero or more optional
  *    flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *    PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_1d_with_uarch(
     pthreadpool_t threadpool, pthreadpool_task_1d_with_id_t function,
@@ -356,7 +387,7 @@ void pthreadpool_parallelize_1d_with_uarch(
  * @param tile        the maximum number of items on the 1D grid to process in
  *    one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_1d_tile_1d(pthreadpool_t threadpool,
                                         pthreadpool_task_1d_tile_1d_t function,
@@ -391,7 +422,7 @@ void pthreadpool_parallelize_1d_tile_1d(pthreadpool_t threadpool,
  * @param tile        the preferred multiple number of items on the 1D grid to
  *     process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_1d_tile_1d_dynamic(
     pthreadpool_t threadpool, pthreadpool_task_1d_tile_1d_dynamic_t function,
@@ -426,7 +457,7 @@ void pthreadpool_parallelize_1d_tile_1d_dynamic(
  * @param tile        the preferred multiple number of items on the 1D grid to
  *     process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_1d_tile_1d_dynamic_with_thread(
     pthreadpool_t threadpool,
@@ -462,7 +493,7 @@ void pthreadpool_parallelize_1d_tile_1d_dynamic_with_thread(
  * @param tile        the preferred multiple number of items on the 1D grid to
  *     process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_1d_tile_1d_dynamic_with_uarch_with_thread(
     pthreadpool_t threadpool,
@@ -494,7 +525,7 @@ void pthreadpool_parallelize_1d_tile_1d_dynamic_with_uarch_with_thread(
  * @param range_j     the number of items to process along the second dimension
  *    of the 2D grid.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d(pthreadpool_t threadpool,
                                 pthreadpool_task_2d_t function, void* context,
@@ -524,7 +555,7 @@ void pthreadpool_parallelize_2d(pthreadpool_t threadpool,
  * @param range_j     the number of items to process along the second dimension
  *    of the 2D grid.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_with_thread(
     pthreadpool_t threadpool, pthreadpool_task_2d_with_thread_t function,
@@ -557,7 +588,7 @@ void pthreadpool_parallelize_2d_with_thread(
  * @param tile_j      the maximum number of items along the second dimension of
  *    the 2D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_tile_1d(pthreadpool_t threadpool,
                                         pthreadpool_task_2d_tile_1d_t function,
@@ -603,7 +634,7 @@ void pthreadpool_parallelize_2d_tile_1d(pthreadpool_t threadpool,
  * @param tile_j      the maximum number of items along the second dimension of
  *    the 2D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_tile_1d_with_uarch(
     pthreadpool_t threadpool, pthreadpool_task_2d_tile_1d_with_id_t function,
@@ -650,7 +681,7 @@ void pthreadpool_parallelize_2d_tile_1d_with_uarch(
  * @param tile_j      the maximum number of items along the second dimension of
  *    the 2D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_tile_1d_with_uarch_with_thread(
     pthreadpool_t threadpool,
@@ -690,7 +721,7 @@ void pthreadpool_parallelize_2d_tile_1d_with_uarch_with_thread(
  * @param tile_j        the preferred multiple number of items on the second
  *     dimension of the 2D grid to process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_tile_1d_dynamic(
     pthreadpool_t threadpool, pthreadpool_task_2d_tile_1d_dynamic_t function,
@@ -729,7 +760,7 @@ void pthreadpool_parallelize_2d_tile_1d_dynamic(
  * @param tile_j        the preferred multiple number of items on the second
  *     dimension of the 2D grid to process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_tile_1d_dynamic_with_thread(
     pthreadpool_t threadpool,
@@ -768,7 +799,7 @@ void pthreadpool_parallelize_2d_tile_1d_dynamic_with_thread(
  * @param tile_j        the preferred multiple number of items on the second
  *     dimension of the 2D grid to process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_tile_1d_dynamic_with_uarch_with_thread(
     pthreadpool_t threadpool,
@@ -806,7 +837,7 @@ void pthreadpool_parallelize_2d_tile_1d_dynamic_with_uarch_with_thread(
  * @param tile_j      the maximum number of items along the second dimension of
  *    the 2D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_tile_2d(pthreadpool_t threadpool,
                                         pthreadpool_task_2d_tile_2d_t function,
@@ -852,7 +883,7 @@ void pthreadpool_parallelize_2d_tile_2d(pthreadpool_t threadpool,
  *                    dimension of the 2D grid to process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
  *                    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                    PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                    PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_tile_2d_dynamic(
     pthreadpool_t threadpool, pthreadpool_task_2d_tile_2d_dynamic_t function,
@@ -911,7 +942,7 @@ void pthreadpool_parallelize_2d_tile_2d_dynamic(
  *                             each function call.
  * @param flags                a bitwise combination of zero or more optional
  *                             flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                             PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                             PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_tile_2d_dynamic_with_uarch(
     pthreadpool_t threadpool,
@@ -961,7 +992,7 @@ void pthreadpool_parallelize_2d_tile_2d_dynamic_with_uarch(
  *                             each function call.
  * @param flags                a bitwise combination of zero or more optional
  *                             flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                             PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                             PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_tile_2d_dynamic_with_thread(
     pthreadpool_t threadpool,
@@ -1015,7 +1046,7 @@ void pthreadpool_parallelize_2d_tile_2d_dynamic_with_thread(
  *    dimension of the 2D grid to process in one function call.
  * @param flags                a bitwise combination of zero or more optional
  *    flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *    PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_2d_tile_2d_with_uarch(
     pthreadpool_t threadpool, pthreadpool_task_2d_tile_2d_with_id_t function,
@@ -1050,7 +1081,7 @@ void pthreadpool_parallelize_2d_tile_2d_with_uarch(
  * @param range_k     the number of items to process along the third dimension
  *    of the 3D grid.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d(pthreadpool_t threadpool,
                                 pthreadpool_task_3d_t function, void* context,
@@ -1087,7 +1118,7 @@ void pthreadpool_parallelize_3d(pthreadpool_t threadpool,
  * @param tile_k      the maximum number of items along the third dimension of
  *    the 3D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_1d(pthreadpool_t threadpool,
                                         pthreadpool_task_3d_tile_1d_t function,
@@ -1125,7 +1156,7 @@ void pthreadpool_parallelize_3d_tile_1d(pthreadpool_t threadpool,
  * @param tile_k      the maximum number of items along the third dimension of
  *    the 3D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_1d_with_thread(
     pthreadpool_t threadpool,
@@ -1177,7 +1208,7 @@ void pthreadpool_parallelize_3d_tile_1d_with_thread(
  *    dimension of the 3D grid to process in one function call.
  * @param flags                a bitwise combination of zero or more optional
  *    flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *    PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_1d_with_uarch(
     pthreadpool_t threadpool, pthreadpool_task_3d_tile_1d_with_id_t function,
@@ -1231,7 +1262,7 @@ void pthreadpool_parallelize_3d_tile_1d_with_uarch(
  *    dimension of the 3D grid to process in one function call.
  * @param flags                a bitwise combination of zero or more optional
  *    flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *    PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_1d_with_uarch_with_thread(
     pthreadpool_t threadpool,
@@ -1282,7 +1313,7 @@ void pthreadpool_parallelize_3d_tile_1d_with_uarch_with_thread(
  *                             function call.
  * @param flags                a bitwise combination of zero or more optional
  *                             flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                             PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                             PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_1d_dynamic(
     pthreadpool_t threadpool,
@@ -1333,7 +1364,7 @@ void pthreadpool_parallelize_3d_tile_1d_dynamic(
  *                             function call.
  * @param flags                a bitwise combination of zero or more optional
  *                             flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                             PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                             PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_1d_dynamic_with_thread(
     pthreadpool_t threadpool,
@@ -1394,7 +1425,7 @@ void pthreadpool_parallelize_3d_tile_1d_dynamic_with_thread(
  *                             function call.
  * @param flags                a bitwise combination of zero or more optional
  *                             flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                             PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                             PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_1d_dynamic_with_uarch_with_thread(
     pthreadpool_t threadpool,
@@ -1436,7 +1467,7 @@ void pthreadpool_parallelize_3d_tile_1d_dynamic_with_uarch_with_thread(
  * @param tile_k      the maximum number of items along the third dimension of
  *    the 3D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_2d(pthreadpool_t threadpool,
                                         pthreadpool_task_3d_tile_2d_t function,
@@ -1488,7 +1519,7 @@ void pthreadpool_parallelize_3d_tile_2d(pthreadpool_t threadpool,
  *                    dimension of the 3D grid to process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
  *                    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                    PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                    PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_2d_dynamic(
     pthreadpool_t threadpool, pthreadpool_task_3d_tile_2d_dynamic_t function,
@@ -1552,7 +1583,7 @@ void pthreadpool_parallelize_3d_tile_2d_dynamic(
  *                             function call.
  * @param flags                a bitwise combination of zero or more optional
  *                             flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                             PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                             PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_2d_dynamic_with_uarch(
     pthreadpool_t threadpool,
@@ -1608,7 +1639,7 @@ void pthreadpool_parallelize_3d_tile_2d_dynamic_with_uarch(
  *                             function call.
  * @param flags                a bitwise combination of zero or more optional
  *                             flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                             PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                             PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_2d_dynamic_with_thread(
     pthreadpool_t threadpool,
@@ -1663,7 +1694,7 @@ void pthreadpool_parallelize_3d_tile_2d_dynamic_with_thread(
  *    dimension of the 3D grid to process in one function call.
  * @param flags                a bitwise combination of zero or more optional
  *    flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *    PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_3d_tile_2d_with_uarch(
     pthreadpool_t threadpool, pthreadpool_task_3d_tile_2d_with_id_t function,
@@ -1701,7 +1732,7 @@ void pthreadpool_parallelize_3d_tile_2d_with_uarch(
  * @param range_l     the number of items to process along the fourth dimension
  *    of the 4D grid.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_4d(pthreadpool_t threadpool,
                                 pthreadpool_task_4d_t function, void* context,
@@ -1741,7 +1772,7 @@ void pthreadpool_parallelize_4d(pthreadpool_t threadpool,
  * @param tile_l      the maximum number of items along the fourth dimension of
  *    the 4D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_4d_tile_1d(pthreadpool_t threadpool,
                                         pthreadpool_task_4d_tile_1d_t function,
@@ -1786,7 +1817,7 @@ void pthreadpool_parallelize_4d_tile_1d(pthreadpool_t threadpool,
  * @param tile_l      the maximum number of items along the fourth dimension of
  *    the 4D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_4d_tile_2d(pthreadpool_t threadpool,
                                         pthreadpool_task_4d_tile_2d_t function,
@@ -1845,7 +1876,7 @@ void pthreadpool_parallelize_4d_tile_2d(pthreadpool_t threadpool,
  *    dimension of the 4D grid to process in one function call.
  * @param flags                a bitwise combination of zero or more optional
  *    flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *    PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_4d_tile_2d_with_uarch(
     pthreadpool_t threadpool, pthreadpool_task_4d_tile_2d_with_id_t function,
@@ -1899,7 +1930,7 @@ void pthreadpool_parallelize_4d_tile_2d_with_uarch(
  *                    dimension of the 4D grid to process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
  *                    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                    PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                    PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_4d_tile_2d_dynamic(
     pthreadpool_t threadpool, pthreadpool_task_4d_tile_2d_dynamic_t function,
@@ -1966,7 +1997,7 @@ void pthreadpool_parallelize_4d_tile_2d_dynamic(
  *                             each function call.
  * @param flags                a bitwise combination of zero or more optional
  *                             flags (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                             PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                             PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_4d_tile_2d_dynamic_with_uarch(
     pthreadpool_t threadpool,
@@ -2008,7 +2039,7 @@ void pthreadpool_parallelize_4d_tile_2d_dynamic_with_uarch(
  * @param range_m     the number of items to process along the fifth dimension
  *    of the 5D grid.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_5d(pthreadpool_t threadpool,
                                 pthreadpool_task_5d_t function, void* context,
@@ -2051,7 +2082,7 @@ void pthreadpool_parallelize_5d(pthreadpool_t threadpool,
  * @param tile_m      the maximum number of items along the fifth dimension of
  *    the 5D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_5d_tile_1d(pthreadpool_t threadpool,
                                         pthreadpool_task_5d_tile_1d_t function,
@@ -2099,7 +2130,7 @@ void pthreadpool_parallelize_5d_tile_1d(pthreadpool_t threadpool,
  * @param tile_m      the maximum number of items along the fifth dimension of
  *    the 5D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_5d_tile_2d(pthreadpool_t threadpool,
                                         pthreadpool_task_5d_tile_2d_t function,
@@ -2147,7 +2178,7 @@ void pthreadpool_parallelize_5d_tile_2d(pthreadpool_t threadpool,
  * @param tile_n      the maximum number of items along the sixth dimension of
  *    the 6D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_6d(pthreadpool_t threadpool,
                                 pthreadpool_task_6d_t function, void* context,
@@ -2194,7 +2225,7 @@ void pthreadpool_parallelize_6d(pthreadpool_t threadpool,
  * @param tile_n      the maximum number of items along the sixth dimension of
  *    the 6D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_6d_tile_1d(pthreadpool_t threadpool,
                                         pthreadpool_task_6d_tile_1d_t function,
@@ -2246,7 +2277,7 @@ void pthreadpool_parallelize_6d_tile_1d(pthreadpool_t threadpool,
  * @param tile_n      the maximum number of items along the sixth dimension of
  *    the 6D grid to process in one function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 void pthreadpool_parallelize_6d_tile_2d(pthreadpool_t threadpool,
                                         pthreadpool_task_6d_tile_2d_t function,
@@ -2526,7 +2557,7 @@ class PthreadpoolExecutor : public pthreadpool_executor {
  * @param range       the number of items on the 1D grid to process. The
  *    specified functor will be called once for each item.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_1d(pthreadpool_t threadpool,
@@ -2558,7 +2589,7 @@ inline void pthreadpool_parallelize_1d(pthreadpool_t threadpool,
  * @param tile        the maximum number of items on the 1D grid to process in
  *    one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_1d_tile_1d(pthreadpool_t threadpool,
@@ -2599,7 +2630,7 @@ inline void pthreadpool_parallelize_1d_tile_1d(pthreadpool_t threadpool,
  * @param tile        the preferred multiple number of items on the 1D grid to
  *     process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_1d_tile_1d_dynamic(pthreadpool_t threadpool,
@@ -2637,7 +2668,7 @@ inline void pthreadpool_parallelize_1d_tile_1d_dynamic(pthreadpool_t threadpool,
  * @param range_j     the number of items to process along the second dimension
  *    of the 2D grid.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_2d(pthreadpool_t threadpool,
@@ -2675,7 +2706,7 @@ inline void pthreadpool_parallelize_2d(pthreadpool_t threadpool,
  * @param tile_j      the maximum number of items along the second dimension of
  *    the 2D grid to process in one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_2d_tile_1d(pthreadpool_t threadpool,
@@ -2720,7 +2751,7 @@ inline void pthreadpool_parallelize_2d_tile_1d(pthreadpool_t threadpool,
  * @param tile_j        the preferred multiple number of items on the second
  *     dimension of the 2D grid to process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_2d_tile_1d_dynamic(
@@ -2762,7 +2793,7 @@ inline void pthreadpool_parallelize_2d_tile_1d_dynamic(
  * @param tile_j      the maximum number of items along the second dimension of
  *    the 2D grid to process in one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_2d_tile_2d(pthreadpool_t threadpool,
@@ -2812,7 +2843,7 @@ inline void pthreadpool_parallelize_2d_tile_2d(pthreadpool_t threadpool,
  * @param tile_j        the preferred multiple number of items on the second
  *     dimension of the 2D grid to process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_2d_tile_2d_dynamic(
@@ -2851,7 +2882,7 @@ inline void pthreadpool_parallelize_2d_tile_2d_dynamic(
  * @param range_k     the number of items to process along the third dimension
  *    of the 3D grid.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_3d(pthreadpool_t threadpool,
@@ -2893,7 +2924,7 @@ inline void pthreadpool_parallelize_3d(pthreadpool_t threadpool,
  * @param tile_k      the maximum number of items along the third dimension of
  *    the 3D grid to process in one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_3d_tile_1d(pthreadpool_t threadpool,
@@ -2939,7 +2970,7 @@ inline void pthreadpool_parallelize_3d_tile_1d(pthreadpool_t threadpool,
  * @param tile_k      the maximum number of items along the third dimension of
  *    the 3D grid to process in one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_3d_tile_2d(pthreadpool_t threadpool,
@@ -2994,7 +3025,7 @@ inline void pthreadpool_parallelize_3d_tile_2d(pthreadpool_t threadpool,
  * @param tile_k        the preferred multiple number of items on the third
  *     dimension of the 3D grid to process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_3d_tile_2d_dynamic(
@@ -3036,7 +3067,7 @@ inline void pthreadpool_parallelize_3d_tile_2d_dynamic(
  * @param range_l     the number of items to process along the fourth dimension
  *    of the 4D grid.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_4d(pthreadpool_t threadpool,
@@ -3081,7 +3112,7 @@ inline void pthreadpool_parallelize_4d(pthreadpool_t threadpool,
  * @param tile_l      the maximum number of items along the fourth dimension of
  *    the 4D grid to process in one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_4d_tile_1d(pthreadpool_t threadpool,
@@ -3130,7 +3161,7 @@ inline void pthreadpool_parallelize_4d_tile_1d(pthreadpool_t threadpool,
  * @param tile_l      the maximum number of items along the fourth dimension of
  *    the 4D grid to process in one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_4d_tile_2d(pthreadpool_t threadpool,
@@ -3191,7 +3222,7 @@ inline void pthreadpool_parallelize_4d_tile_2d(pthreadpool_t threadpool,
  *                    dimension of the 4D grid to process in each function call.
  * @param flags       a bitwise combination of zero or more optional flags
  *                    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or
- *                    PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *                    PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_4d_tile_2d_dynamic(
@@ -3237,7 +3268,7 @@ inline void pthreadpool_parallelize_4d_tile_2d_dynamic(
  * @param range_m     the number of items to process along the fifth dimension
  *    of the 5D grid.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_5d(pthreadpool_t threadpool,
@@ -3286,7 +3317,7 @@ inline void pthreadpool_parallelize_5d(pthreadpool_t threadpool,
  * @param tile_m      the maximum number of items along the fifth dimension of
  *    the 5D grid to process in one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_5d_tile_1d(pthreadpool_t threadpool,
@@ -3339,7 +3370,7 @@ inline void pthreadpool_parallelize_5d_tile_1d(pthreadpool_t threadpool,
  * @param tile_m      the maximum number of items along the fifth dimension of
  *    the 5D grid to process in one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_5d_tile_2d(pthreadpool_t threadpool,
@@ -3391,7 +3422,7 @@ inline void pthreadpool_parallelize_5d_tile_2d(pthreadpool_t threadpool,
  * @param tile_n      the maximum number of items along the sixth dimension of
  *    the 6D grid to process in one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_6d(pthreadpool_t threadpool,
@@ -3443,7 +3474,7 @@ inline void pthreadpool_parallelize_6d(pthreadpool_t threadpool,
  * @param tile_n      the maximum number of items along the sixth dimension of
  *    the 6D grid to process in one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_6d_tile_1d(pthreadpool_t threadpool,
@@ -3499,7 +3530,7 @@ inline void pthreadpool_parallelize_6d_tile_1d(pthreadpool_t threadpool,
  * @param tile_n      the maximum number of items along the sixth dimension of
  *    the 6D grid to process in one functor call.
  * @param flags       a bitwise combination of zero or more optional flags
- *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_YIELD_WORKERS)
+ *    (PTHREADPOOL_FLAG_DISABLE_DENORMALS or PTHREADPOOL_FLAG_DONT_SPIN_WORKERS)
  */
 template <class T>
 inline void pthreadpool_parallelize_6d_tile_2d(

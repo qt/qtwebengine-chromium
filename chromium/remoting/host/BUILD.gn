@@ -109,6 +109,7 @@ source_set("common_headers") {
     "audio_volume_filter.h",
     "basic_desktop_environment.h",
     "create_desktop_interaction_strategy_factory.h",
+    "delegating_desktop_display_info_monitor.h",
     "desktop_and_cursor_conditional_composer.h",
     "desktop_display_info_monitor.h",
     "desktop_environment.h",
@@ -371,10 +372,11 @@ static_library("common") {
     "crash_process.cc",
     "crash_process.h",
     "create_desktop_interaction_strategy_factory.cc",
+    "cursor_visibility_notifier.cc",
+    "cursor_visibility_notifier.h",
     "daemon_process.cc",
     "daemon_process.h",
-    "desktop_and_cursor_composer_notifier.cc",
-    "desktop_and_cursor_composer_notifier.h",
+    "delegating_desktop_display_info_monitor.cc",
     "desktop_and_cursor_conditional_composer.cc",
     "desktop_process.cc",
     "desktop_process.h",
@@ -401,8 +403,6 @@ static_library("common") {
     "host_attributes.h",
     "host_config.cc",
     "host_config.h",
-    "host_details.cc",
-    "host_details.h",
     "host_event_logger.h",
     "host_event_reporter.h",
     "host_experiment_session_plugin.cc",
@@ -482,6 +482,8 @@ static_library("common") {
     "test_echo_extension_session.h",
     "video_memory_utils.cc",
     "video_memory_utils.h",
+    "webrtc_mouse_cursor_monitor_adaptor.cc",
+    "webrtc_mouse_cursor_monitor_adaptor.h",
     "xsession_chooser_ui.inc",
     "zombie_host_detector.cc",
     "zombie_host_detector.h",
@@ -638,6 +640,7 @@ static_library("common") {
   if (is_chromeos) {
     sources += [
       "audio_capturer_chromeos.cc",
+      "audio_capturer_chromeos.h",
       "continue_window_chromeos.cc",
       "curtain_mode_chromeos.cc",
       "curtain_mode_chromeos.h",
@@ -650,6 +653,7 @@ static_library("common") {
     ]
     deps += [
       "//ash",
+      "//media/mojo/common",
       "//remoting/host/chromeos",
       "//remoting/host/chromeos:features",
       "//ui/base/ime/ash",
@@ -719,10 +723,6 @@ static_library("common") {
     ]
     libs += [ "crypt32.lib" ]
     deps += [
-      # On Windows, we use //media/gpu/MediaFoundationVideoEncodeAcceleratorWin
-      # to detect whether HW encoder is supported by the system.
-      "//media",
-      "//media/gpu",
       "//mojo/core/embedder",
       "//remoting/base/crash",
       "//remoting/host/crash:crash_uploader",
@@ -806,6 +806,7 @@ source_set("unit_tests") {
     "config_file_watcher_unittest.cc",
     "corp_host_status_logger_unittest.cc",
     "daemon_process_unittest.cc",
+    "delegating_desktop_display_info_monitor_unittest.cc",
     "desktop_display_info_unittest.cc",
     "desktop_process_unittest.cc",
     "desktop_session_agent_unittest.cc",
@@ -839,6 +840,7 @@ source_set("unit_tests") {
     "setup/host_starter_oauth_helper_unittest.cc",
     "setup/me2me_native_messaging_host_unittest.cc",
     "setup/pin_validator_unittest.cc",
+    "webrtc_mouse_cursor_monitor_adaptor_unittest.cc",
     "zombie_host_detector_unittest.cc",
   ]
 
@@ -940,6 +942,7 @@ source_set("unit_tests") {
 
   if (is_chromeos) {
     sources += [
+      "audio_capturer_chromeos_unittest.cc",
       "desktop_display_info_loader_chromeos_unittest.cc",
       "input_injector_chromeos_unittest.cc",
       "it2me/it2me_confirmation_dialog_chromeos_unittest.cc",
@@ -948,6 +951,7 @@ source_set("unit_tests") {
       "//ash:test_support",
       "//chromeos/ash/components:test_support",
       "//components/user_manager:test_support",
+      "//media:test_support",
       "//remoting/host/chromeos",
       "//remoting/host/chromeos:features",
       "//remoting/host/chromeos:reporter_unit_tests",
@@ -1059,7 +1063,7 @@ if (enable_me2me_host) {
       ]
     }
 
-    # LINT.ThenChange(/remoting/host/it2me/it2me_native_messaging_host_allowed_origins.h:it2me_origins, /remoting/host/webauthn/remote_webauthn_extension_notifier.cc:extension_ids)
+    # LINT.ThenChange(/remoting/host/it2me/it2me_native_messaging_host_allowed_origins.h:it2me_origins, /remoting/host/webauthn/remote_webauthn_extension_notifier.cc:extension_ids, /remoting/tools/register_local_nm_hosts.sh:extension_ids)
 
     companion_extension_ids_joined = string_join(",", companion_extension_ids)
     security_key_extension_ids_joined =

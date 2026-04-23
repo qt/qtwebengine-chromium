@@ -12,6 +12,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "net/base/load_states.h"
 #include "net/base/load_timing_internal_info.h"
@@ -71,6 +72,7 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
   NextProtoSet allowed_alpns() const override;
   const ProxyInfo& proxy_info() const override;
   const NetLogWithSource& net_log() const override;
+  const perfetto::Flow& flow() const override;
   void OnStreamReady(Job* job,
                      std::unique_ptr<HttpStream> stream,
                      NextProto negotiated_protocol,
@@ -96,11 +98,24 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
  private:
   // Represents an alternative endpoint for the request.
   struct Alternative {
+    Alternative(HttpStreamKey stream_key,
+                NextProto protocol,
+                quic::ParsedQuicVersion quic_version,
+                std::optional<QuicSessionAliasKey> quic_key);
+    Alternative(Alternative&&);
+    ~Alternative();
+
+    Alternative& operator=(Alternative&&);
+
+    Alternative(const Alternative&) = delete;
+    Alternative& operator=(const Alternative&) = delete;
+
     HttpStreamKey stream_key;
-    NextProto protocol = NextProto::kProtoUnknown;
-    quic::ParsedQuicVersion quic_version =
-        quic::ParsedQuicVersion::Unsupported();
-    QuicSessionAliasKey quic_key;
+    NextProto protocol;
+
+    // Only set when this alternative is QUIC.
+    quic::ParsedQuicVersion quic_version;
+    std::optional<QuicSessionAliasKey> quic_key;
   };
 
   // Stream that is ready to be used, along with some associated metadata.
@@ -204,6 +219,7 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
   const std::optional<Alternative> alternative_;
 
   const NetLogWithSource net_log_;
+  const perfetto::Flow flow_;
 
   const base::TimeTicks created_time_;
 

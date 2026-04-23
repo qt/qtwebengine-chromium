@@ -73,6 +73,7 @@ TEST(ReformatTest, YUVToRGBConversion) {
     memcpy(image->yuvPlanes[2], kYuv[p] + kVOffset, kPlaneSize);
     avifRGBImage rgb;
     avifRGBImageSetDefaults(&rgb, image.get());
+    rgb.format = AVIF_RGB_FORMAT_RGBA;
     std::vector<uint8_t> rgb_pixels(kWidth * kHeight * 4);
     rgb.pixels = rgb_pixels.data();
     rgb.rowBytes = kWidth * 4;

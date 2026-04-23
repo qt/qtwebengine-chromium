@@ -14,7 +14,6 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
-#include "base/functional/callback_forward.h"
 #include "base/location.h"
 #include "base/run_loop.h"
 #include "base/strings/strcat.h"
@@ -2176,7 +2175,7 @@ class SharedStorageSelectURLLimitBrowserTestBase
       WebContentsConsoleObserver* console_observer,
       const std::u16string& saved_query_name = u"") {
     std::string host_str =
-        iframe_node->current_frame_host()->GetLastCommittedURL().host();
+        iframe_node->current_frame_host()->GetLastCommittedURL().GetHost();
     EXPECT_TRUE(ExecJs(iframe_node, R"(
       sharedStorage.worklet.addModule('shared_storage/simple_module.js');
     )"));
@@ -2946,7 +2945,7 @@ class SharedStorageSelectURLSavedQueryBrowserTest
     size_t num_previous_messages = console_observer->messages().size();
 
     std::string host_str =
-        iframe_node->current_frame_host()->GetLastCommittedURL().host();
+        iframe_node->current_frame_host()->GetLastCommittedURL().GetHost();
     EXPECT_TRUE(ExecJs(iframe_node, R"(
       sharedStorage.worklet.addModule('shared_storage/simple_module.js');
     )"));

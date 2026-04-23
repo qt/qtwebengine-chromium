@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, ClassVar, Iterable, Self, Type
 from typing_extensions import override
 
 from crossbench.parse import DurationParser, ObjectParser
-from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
-                                     ProbeKeyT)
+from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext, \
+    ProbeKeyT
 from crossbench.probes.results import LocalProbeResult, ProbeResult
 
 if TYPE_CHECKING:

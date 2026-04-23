@@ -13,6 +13,7 @@ module(
 
 # Bazel rule definitions
 bazel_dep(name = "rules_cc", version = "0.0.15")
+bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "rules_python", version = "1.0.0")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
@@ -71,9 +72,9 @@ http_archive(
 # pthreadpool library, used for parallelization
 http_archive(
     name = "pthreadpool",
-    sha256 = "8b1d13195842c9b7e8ef5aa7d9b44ca4168a41b8ae97b4e50db4fcc562211f5b",
-    strip_prefix = "pthreadpool-d561aae9dfeab38ff595a0ae3e6bbd90b862c5f8",
-    urls = ["https://github.com/google/pthreadpool/archive/d561aae9dfeab38ff595a0ae3e6bbd90b862c5f8.zip"],
+    sha256 = "f602ab141bdc5d5872a79d6551e9063b5bfa7ad6ad60cceaa641de5c45c86d70",
+    strip_prefix = "pthreadpool-0e6ca13779b57d397a5ba6bfdcaa8a275bc8ea2e",
+    urls = ["https://github.com/google/pthreadpool/archive/0e6ca13779b57d397a5ba6bfdcaa8a275bc8ea2e.zip"],
 )
 # LINT.ThenChange(cmake/DownloadPThreadPool.cmake,WORKSPACE:pthreadpool)
 
@@ -93,10 +94,10 @@ http_archive(
 # KleidiAI library, used for ARM microkernels.
 http_archive(
     name = "KleidiAI",
-    sha256 = "42155cfc084bf1f80e9ef486470f949502ea8d1b845b2f1bebd58978a1b540aa",
-    strip_prefix = "kleidiai-8ca226712975f24f13f71d04cda039a0ee9f9e2f",
+    sha256 = "fb4f8180171d035a08432b086194121f627d00a76d58cebaad57d7a87ad40dbd",
+    strip_prefix = "kleidiai-7a3a609a3278106df7157bdd27b8f0e75ab00b60",
     urls = [
-        "https://github.com/ARM-software/kleidiai/archive/8ca226712975f24f13f71d04cda039a0ee9f9e2f.zip",
+        "https://github.com/ARM-software/kleidiai/archive/7a3a609a3278106df7157bdd27b8f0e75ab00b60.zip",
     ],
 )
 # LINT.ThenChange(cmake/DownloadKleidiAI.cmake,WORKSPACE:kleidiai)
@@ -108,5 +109,14 @@ http_archive(
     strip_prefix = "ruy-9f53ba413e6fc879236dcaa3e008915973d67a4f",
     urls = [
         "https://github.com/google/ruy/archive/9f53ba413e6fc879236dcaa3e008915973d67a4f.zip",
+    ],
+)
+
+http_archive(
+    name = "slinky",
+    sha256 = "1cf72ab8135680bcefc676eef5acfa59dc68bf7fc5a20e174394edfc85074d08",
+    strip_prefix = "slinky-395643708e97085cff91ac5f9d7afc5b4a02f2c5",
+    urls = [
+        "https://github.com/dsharlet/slinky/archive/395643708e97085cff91ac5f9d7afc5b4a02f2c5.zip",
     ],
 )

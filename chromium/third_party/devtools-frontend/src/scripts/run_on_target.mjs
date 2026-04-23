@@ -2,18 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as childProcess from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as childProcess from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import yargs from 'yargs';
 import unparse from 'yargs-unparser';
+
+import { ENV, getEnvString } from './env-utils.mjs';
 
 const argv = yargs(process.argv.slice(2))
   .parserConfiguration({
     'strip-aliased': true,
   })
   .command('$0 [script]')
-  .option('target', { alias: 't', type: 'string', default: 'Default' })
+  .option('target', {
+    alias: 't',
+    type: 'string',
+    default: getEnvString(ENV.TARGET, 'Default')
+  })
   .help(false)
   .version(false)
   .parseSync();

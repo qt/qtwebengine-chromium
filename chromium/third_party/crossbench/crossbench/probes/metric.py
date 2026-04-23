@@ -18,7 +18,6 @@ if TYPE_CHECKING:
   from crossbench.types import Json, JsonDict
 
 
-
 def is_number(value: Any) -> bool:
   return isinstance(value, (int, float))
 
@@ -177,9 +176,7 @@ class MetricsMerger:
                       merge_duplicate_paths: bool = False) -> MetricsMerger:
     merger = cls(key_fn=key_fn)
     for file in files:
-      with file.open(encoding="utf-8") as f:
-        merger.merge_values(
-            json.load(f), merge_duplicate_paths=merge_duplicate_paths)
+      merger.merge_json_file(file, merge_duplicate_paths=merge_duplicate_paths)
     return merger
 
   def __init__(self,
@@ -201,6 +198,16 @@ class MetricsMerger:
   @property
   def data(self) -> dict[str, Metric]:
     return self._data
+
+  def merge_json_file(self,
+                      file: LocalPath,
+                      prefix_path: tuple[str, ...] = (),
+                      merge_duplicate_paths: bool = False) -> None:
+    with file.open(encoding="utf-8") as f:
+      self.merge_values(
+          json.load(f),
+          prefix_path=prefix_path,
+          merge_duplicate_paths=merge_duplicate_paths)
 
   def merge_values(self,
                    data: dict[str, dict],

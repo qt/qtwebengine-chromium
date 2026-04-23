@@ -1473,15 +1473,13 @@ TEST_F(FPDFEditEmbedderTest, RemoveMarkedObjectsPrime) {
         return "efc2206b313fff03be8e701907322b06";
 #endif
       }
-#if BUILDFLAG(IS_APPLE)
-#ifdef ARCH_CPU_ARM64
-      return "401858d37db450bfd3f9458ac490eb08";
-#else
+#if BUILDFLAG(IS_APPLE) && defined(ARCH_CPU_ARM64)
+      return "bbd7a06a6a2661b6be7558aa40b5303b";
+#elif BUILDFLAG(IS_APPLE) && !defined(ARCH_CPU_ARM64)
       return "7c898d207b5f9bc7843d4ef93349bf71";
-#endif  // ARCH_CPU_ARM64
 #else
       return "3d5a3de53d5866044c2b6bf339742c97";
-#endif  // BUILDFLAG(IS_APPLE)
+#endif
     }();
     ScopedFPDFBitmap page_bitmap = RenderPage(page.get());
     CompareBitmap(page_bitmap.get(), 200, 200, original_checksum);
@@ -1529,15 +1527,13 @@ TEST_F(FPDFEditEmbedderTest, RemoveMarkedObjectsPrime) {
       return "10a6558c9e40ea837922e6f2882a2d57";
 #endif
     }
-#if BUILDFLAG(IS_APPLE)
-#ifdef ARCH_CPU_ARM64
-    return "6a1e31ffe451997946e449250b97d5b2";
-#else
+#if BUILDFLAG(IS_APPLE) && defined(ARCH_CPU_ARM64)
+    return "24c32fef9f1a40d7850d08cfd2dc1abe";
+#elif BUILDFLAG(IS_APPLE) && !defined(ARCH_CPU_ARM64)
     return "727b1ea388b2374270f21d35d1fae70e";
-#endif  // ARCH_CPU_ARM64
 #else
     return "bc8623c052f12376c3d8dd09a6cd27df";
-#endif  // BUILDFLAG(IS_APPLE)
+#endif
   }();
   // TODO(thestig): Should `non_primes_checksum` and
   // `non_primes_after_save_checksum` be merged together?
@@ -1551,15 +1547,13 @@ TEST_F(FPDFEditEmbedderTest, RemoveMarkedObjectsPrime) {
       return "10a6558c9e40ea837922e6f2882a2d57";
 #endif
     }
-#if BUILDFLAG(IS_APPLE)
-#ifdef ARCH_CPU_ARM64
-    return "d250bee3658c74e5d74729a09cbd80cd";
-#else
+#if BUILDFLAG(IS_APPLE) && defined(ARCH_CPU_ARM64)
+    return "24c32fef9f1a40d7850d08cfd2dc1abe";
+#elif BUILDFLAG(IS_APPLE) && !defined(ARCH_CPU_ARM64)
     return "727b1ea388b2374270f21d35d1fae70e";
-#endif  // ARCH_CPU_ARM64
 #else
     return "bc8623c052f12376c3d8dd09a6cd27df";
-#endif  // BUILDFLAG(IS_APPLE)
+#endif
   }();
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page.get());
@@ -1999,15 +1993,13 @@ TEST_F(FPDFEditEmbedderTest, RemoveAllFromStream) {
       return "0b3ef335b8d86a3f9d609368b9d075e0";
 #endif
     }
-#if BUILDFLAG(IS_APPLE)
-#if ARCH_CPU_ARM64
-    return "a47297bbcfa01e27891eeb52375b6f9e";
-#else
+#if BUILDFLAG(IS_APPLE) && defined(ARCH_CPU_ARM64)
+    return "bc1a520d8598f1de473ae22883e7abdc";
+#elif BUILDFLAG(IS_APPLE) && !defined(ARCH_CPU_ARM64)
     return "1c1d478b59e3e63813f0f56124564f48";
-#endif  // ARCH_CPU_ARM64
 #else
     return "b474826df1acedb05c7b82e1e49e64a6";
-#endif  // BUILDFLAG(IS_APPLE)
+#endif
   }();
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page.get());
@@ -2705,7 +2697,11 @@ TEST_F(FPDFEditEmbedderTest, AddStrokedPaths) {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
     const char* checksum_3 = []() {
       if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-        return "a5de6ddefcbae60924bebc99347e460b";
+#if BUILDFLAG(IS_APPLE) && defined(ARCH_CPU_ARM64)
+        return "a4b4b739462a471cad72656e7e8c2af8";
+#else
+        return "037f5b38d8b612abf0833eb9ac8adf69";
+#endif
       }
       return "ff3e6a22326754944cc6e56609acd73b";
     }();
@@ -3951,7 +3947,11 @@ TEST_F(FPDFEditEmbedderTest, LoadCidType2FontWithBadParameters) {
 TEST_F(FPDFEditEmbedderTest, SaveAndRender) {
   const char* checksum = []() {
     if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-      return "edd4aed776c0eaf8c79dd24d9654af95";
+#if BUILDFLAG(IS_APPLE) && defined(ARCH_CPU_ARM64)
+      return "0b8b84f8da13bf8a5bbaff3087685bed";
+#else
+      return "a6e8827e9fda09151765130e2f5531eb";
+#endif
     }
     return "3c20472b0552c0c22b88ab1ed8c6202b";
   }();
@@ -4234,6 +4234,76 @@ TEST_F(FPDFEditEmbedderTest, AddMarkedText) {
   CloseSavedDocument();
 }
 
+TEST_F(FPDFEditEmbedderTest, AddMarkedTextWithFloat) {
+  // Start with a blank page.
+  ScopedFPDFPage page(FPDFPage_New(CreateNewDocument(), 0, 612, 792));
+
+  RetainPtr<CPDF_Font> stock_font =
+      CPDF_Font::GetStockFont(cpdf_doc(), "Arial");
+  pdfium::span<const uint8_t> span = stock_font->GetFont()->GetFontSpan();
+  ScopedFPDFFont font(FPDFText_LoadFont(document(), span.data(), span.size(),
+                                        FPDF_FONT_TRUETYPE, 0));
+  ASSERT_TRUE(font.get());
+
+  // Add some text to the page.
+  FPDF_PAGEOBJECT text_object =
+      FPDFPageObj_CreateTextObj(document(), font.get(), 12.0f);
+
+  EXPECT_TRUE(text_object);
+  ScopedFPDFWideString text1 = GetFPDFWideString(kLoadedFontText);
+  EXPECT_TRUE(FPDFText_SetText(text_object, text1.get()));
+  FPDFPageObj_Transform(text_object, 1, 0, 0, 1, 400, 400);
+  FPDFPage_InsertObject(page.get(), text_object);
+
+  // Add a mark with the tag "TestMark" to that text.
+  EXPECT_EQ(0, FPDFPageObj_CountMarks(text_object));
+  FPDF_PAGEOBJECTMARK mark = FPDFPageObj_AddMark(text_object, "TestMark");
+  EXPECT_TRUE(mark);
+  EXPECT_EQ(1, FPDFPageObj_CountMarks(text_object));
+
+  // Add a float parameter "Pi" with value 3.14159.
+  EXPECT_EQ(0, FPDFPageObjMark_CountParams(mark));
+  EXPECT_TRUE(FPDFPageObjMark_SetFloatParam(document(), text_object, mark, "Pi",
+                                            3.14159f));
+  EXPECT_EQ(1, FPDFPageObjMark_CountParams(mark));
+
+  // Check the parameter can be retrieved.
+  EXPECT_EQ(FPDF_OBJECT_NUMBER, FPDFPageObjMark_GetParamValueType(mark, "Pi"));
+  float float_value;
+  EXPECT_TRUE(FPDFPageObjMark_GetParamFloatValue(mark, "Pi", &float_value));
+  EXPECT_FLOAT_EQ(3.14159f, float_value);
+
+  // Render and check the bitmap is the expected one.
+  {
+    ScopedFPDFBitmap page_bitmap = RenderPage(page.get());
+    CompareBitmap(page_bitmap.get(), 612, 792, LoadedFontTextChecksum());
+  }
+
+  // Now save the result.
+  EXPECT_EQ(1, FPDFPage_CountObjects(page.get()));
+  EXPECT_TRUE(FPDFPage_GenerateContent(page.get()));
+  EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
+
+  // Re-open the file and check the changes were kept in the saved .pdf.
+  ASSERT_TRUE(OpenSavedDocument());
+  {
+    ScopedSavedPage saved_page = LoadScopedSavedPage(0);
+    ASSERT_TRUE(saved_page);
+    EXPECT_EQ(1, FPDFPage_CountObjects(saved_page.get()));
+
+    text_object = FPDFPage_GetObject(saved_page.get(), 0);
+    EXPECT_TRUE(text_object);
+    EXPECT_EQ(1, FPDFPageObj_CountMarks(text_object));
+    mark = FPDFPageObj_GetMark(text_object, 0);
+    EXPECT_TRUE(mark);
+
+    EXPECT_EQ(1, FPDFPageObjMark_CountParams(mark));
+    EXPECT_TRUE(FPDFPageObjMark_GetParamFloatValue(mark, "Pi", &float_value));
+    EXPECT_FLOAT_EQ(3.14159f, float_value);
+  }
+  CloseSavedDocument();
+}
+
 TEST_F(FPDFEditEmbedderTest, MarkGetName) {
   ASSERT_TRUE(OpenDocument("text_in_page_marked.pdf"));
   ScopedPage page = LoadScopedPage(0);
@@ -4333,6 +4403,40 @@ TEST_F(FPDFEditEmbedderTest, MarkGetIntParam) {
   out_value = 999;
   EXPECT_FALSE(FPDFPageObjMark_GetParamIntValue(mark, "Position", &out_value));
   EXPECT_EQ(999, out_value);
+}
+
+TEST_F(FPDFEditEmbedderTest, MarkGetFloatParam) {
+  ASSERT_TRUE(OpenDocument("text_in_page_marked.pdf"));
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+  FPDF_PAGEOBJECT page_object = FPDFPage_GetObject(page.get(), 8);
+  FPDF_PAGEOBJECTMARK mark = FPDFPageObj_GetMark(page_object, 0);
+  ASSERT_TRUE(mark);
+
+  // Show the positive cases of FPDFPageObjMark_GetParamFloatValue.
+  float out_value = 999.0f;
+  EXPECT_TRUE(FPDFPageObjMark_GetParamFloatValue(mark, "Factor", &out_value));
+  EXPECT_FLOAT_EQ(3.0f, out_value);
+
+  // Show the negative cases of FPDFPageObjMark_GetParamFloatValue.
+  out_value = 999.0f;
+  EXPECT_FALSE(
+      FPDFPageObjMark_GetParamFloatValue(nullptr, "Factor", &out_value));
+  EXPECT_FLOAT_EQ(999.0f, out_value);
+
+  out_value = 999.0f;
+  EXPECT_FALSE(FPDFPageObjMark_GetParamFloatValue(mark, "ParamThatDoesNotExist",
+                                                  &out_value));
+  EXPECT_FLOAT_EQ(999.0f, out_value);
+
+  EXPECT_FALSE(FPDFPageObjMark_GetParamFloatValue(mark, "Factor", nullptr));
+
+  page_object = FPDFPage_GetObject(page.get(), 18);
+  mark = FPDFPageObj_GetMark(page_object, 1);
+  out_value = 999.0f;
+  EXPECT_FALSE(
+      FPDFPageObjMark_GetParamFloatValue(mark, "Position", &out_value));
+  EXPECT_FLOAT_EQ(999.0f, out_value);
 }
 
 TEST_F(FPDFEditEmbedderTest, MarkGetStringParam) {

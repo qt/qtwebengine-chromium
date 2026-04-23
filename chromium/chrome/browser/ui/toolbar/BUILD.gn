@@ -21,6 +21,7 @@ source_set("toolbar") {
     "//chrome/browser/ui/login",
     "//chrome/common",
     "//chrome/common:constants",
+    "//components/contextual_tasks/public:feature_list",
     "//components/google/core/common",
     "//components/offline_pages/buildflags",
     "//components/omnibox/browser",
@@ -48,8 +49,7 @@ source_set("toolbar") {
       "bookmark_sub_menu_model.h",
       "reading_list_sub_menu_model.h",
       "toolbar_action_hover_card_types.h",
-      "toolbar_action_view_controller.h",
-      "toolbar_action_view_delegate.h",
+      "toolbar_action_view_model.h",
       "toolbar_pref_names.cc",
       "toolbar_pref_names.h",
     ]
@@ -60,6 +60,7 @@ source_set("toolbar") {
       "//chrome/browser/ui/global_error",
       "//chrome/browser/ui/safety_hub",
       "//chrome/browser/upgrade_detector",
+      "//components/contextual_tasks/public:feature_list",
       "//components/favicon/core",
       "//components/prefs",
       "//components/tabs:public",
@@ -163,6 +164,7 @@ source_set("impl") {
       "//components/bookmarks/common",
       "//components/commerce/core:feature_list",
       "//components/commerce/core:feature_utils",
+      "//components/contextual_tasks/public:feature_list",
       "//components/dom_distiller/content/browser",
       "//components/dom_distiller/core",
       "//components/favicon_base",
@@ -242,8 +244,8 @@ source_set("test_support") {
 
   if (enable_extensions) {
     sources += [
-      "test_toolbar_action_view_controller.cc",
-      "test_toolbar_action_view_controller.h",
+      "test_toolbar_action_view_model.cc",
+      "test_toolbar_action_view_model.h",
     ]
     deps += [
       ":toolbar",

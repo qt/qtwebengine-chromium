@@ -36,6 +36,7 @@
 #include "src/api/api-inl.h"
 #include "src/base/cpu.h"
 #include "src/base/fpu.h"
+#include "src/base/hashing.h"
 #include "src/base/logging.h"
 #include "src/base/platform/memory.h"
 #include "src/base/platform/platform.h"
@@ -71,6 +72,7 @@
 #include "src/profiler/profile-generator.h"
 #include "src/snapshot/snapshot.h"
 #include "src/tasks/cancelable-task.h"
+#include "src/tracing/perfetto-sdk.h"
 #include "src/utils/ostreams.h"
 #include "src/utils/utils.h"
 
@@ -96,11 +98,6 @@
 #include "src/fuzzilli/fuzzilli.h"
 #endif  // V8_FUZZILLI
 
-#ifdef V8_USE_PERFETTO
-#include "perfetto/tracing/track_event.h"
-#include "perfetto/tracing/track_event_legacy.h"
-#endif  // V8_USE_PERFETTO
-
 #ifdef V8_INTL_SUPPORT
 #include "unicode/locid.h"
 #endif  // V8_INTL_SUPPORT
@@ -118,6 +115,9 @@
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/trap-handler/trap-handler.h"
 #include "src/wasm/wasm-code-manager.h"
+#include "src/wasm/wasm-engine.h"
+#include "src/wasm/wasm-js.h"
+#include "src/wasm/wasm-result.h"
 #include "src/wasm/wasm-serialization.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
 
@@ -143,6 +143,15 @@ bool fuzzilli_reprl = true;
 #else
 bool fuzzilli_reprl = false;
 #endif  // V8_FUZZILLI
+
+Isolate::CreateParams GetDefaultIsolateCreateParams() {
+  Isolate::CreateParams create_params;
+  create_params.constraints.ConfigureDefaults(
+      base::SysInfo::AmountOfPhysicalMemory(),
+      base::SysInfo::AmountOfVirtualMemory());
+  create_params.array_buffer_allocator = Shell::array_buffer_allocator;
+  return create_params;
+}
 
 // Base class for shell ArrayBuffer allocators. It forwards all operations to
 // the default v8 allocator.
@@ -559,6 +568,11 @@ std::map<std::string, std::unique_ptr<ScriptCompiler::CachedData>>
     Shell::cached_code_map_;
 std::atomic<int> Shell::unhandled_promise_rejections_{0};
 
+#if V8_ENABLE_WEBASSEMBLY
+base::LazyMutex Shell::wasm_serialized_bytes_mutex_;
+std::unordered_set<size_t> Shell::wasm_serialized_bytes_hashes_;
+#endif  // V8_ENABLE_WEBASSEMBLY
+
 Global<Context> Shell::evaluation_context_;
 ArrayBuffer::Allocator* Shell::array_buffer_allocator;
 bool check_d8_flag_contradictions = true;
@@ -789,19 +803,19 @@ class ModuleEmbedderData {
   }
 
   static ModuleType ModuleTypeFromImportSpecifierAndAttributes(
-      Local<Context> context, const std::string& specifier,
-      Local<FixedArray> import_attributes, bool hasPositions) {
+      const std::string& specifier, Local<FixedArray> import_attributes,
+      bool hasPositions) {
     Isolate* isolate = Isolate::GetCurrent();
     const int kV8AssertionEntrySize = hasPositions ? 3 : 2;
     for (int i = 0; i < import_attributes->Length();
          i += kV8AssertionEntrySize) {
       Local<String> v8_assertion_key =
-          import_attributes->Get(context, i).As<v8::String>();
+          import_attributes->Get(i).As<v8::String>();
       std::string assertion_key = ToSTLString(isolate, v8_assertion_key);
 
       if (assertion_key == "type") {
         Local<String> v8_assertion_value =
-            import_attributes->Get(context, i + 1).As<String>();
+            import_attributes->Get(i + 1).As<String>();
         std::string assertion_value = ToSTLString(isolate, v8_assertion_value);
         if (assertion_value == "json") {
           return ModuleType::kJSON;
@@ -848,18 +862,18 @@ std::shared_ptr<ModuleEmbedderData> InitializeModuleEmbedderData(
           i_isolate, kModuleEmbedderDataEstimate,
           std::make_shared<ModuleEmbedderData>(
               reinterpret_cast<v8::Isolate*>(i_isolate)));
-  v8::Local<v8::Value> module_data = Utils::ToLocal(module_data_managed);
-  context->SetEmbedderData(kModuleEmbedderDataIndex, module_data);
+  v8::Local<v8::Data> module_data = Utils::ToLocal(module_data_managed);
+  context->SetEmbedderDataV2(kModuleEmbedderDataIndex, module_data);
   return module_data_managed->get();
 }
 
 std::shared_ptr<ModuleEmbedderData> GetModuleDataFromContext(
     Local<Context> context) {
-  v8::Local<v8::Value> module_data =
-      context->GetEmbedderData(kModuleEmbedderDataIndex);
+  v8::Local<v8::Data> module_data =
+      context->GetEmbedderDataV2(kModuleEmbedderDataIndex);
   i::DirectHandle<i::Managed<ModuleEmbedderData>> module_data_managed =
       i::Cast<i::Managed<ModuleEmbedderData>>(
-          Utils::OpenDirectHandle<Value, i::Object>(module_data));
+          Utils::OpenDirectHandle<Data, i::Object>(module_data));
   return module_data_managed->get();
 }
 
@@ -880,11 +894,11 @@ bool IsValidHostDefinedOptions(Local<Context> context, Local<Data> options,
   Local<FixedArray> array = options.As<FixedArray>();
   if (array->Length() != kHostDefinedOptionsLength) return false;
   uint32_t magic = 0;
-  if (!array->Get(context, 0).As<Value>()->Uint32Value(context).To(&magic)) {
+  if (!array->Get(0).As<Value>()->Uint32Value(context).To(&magic)) {
     return false;
   }
   if (magic != kHostDefinedOptionsMagicConstant) return false;
-  return array->Get(context, 1).As<String>()->StrictEquals(resource_name);
+  return array->Get(1).As<String>()->StrictEquals(resource_name);
 }
 
 class D8WasmAsyncResolvePromiseTask : public v8::Task {
@@ -1197,7 +1211,7 @@ MaybeLocal<Module> ResolveModuleCallback(Local<Context> context,
       NormalizeModuleSpecifier(stl_specifier, DirName(referrer_specifier));
   ModuleType module_type =
       ModuleEmbedderData::ModuleTypeFromImportSpecifierAndAttributes(
-          context, stl_specifier, import_attributes, true);
+          stl_specifier, import_attributes, true);
   return module_data->GetModule(std::make_pair(absolute_path, module_type));
 }
 
@@ -1214,7 +1228,7 @@ MaybeLocal<Object> ResolveModuleSourceCallback(
       NormalizeModuleSpecifier(stl_specifier, DirName(referrer_specifier));
   ModuleType module_type =
       ModuleEmbedderData::ModuleTypeFromImportSpecifierAndAttributes(
-          context, stl_specifier, import_attributes, true);
+          stl_specifier, import_attributes, true);
   return module_data->GetModuleSource(
       std::make_pair(absolute_path, module_type));
 }
@@ -1388,7 +1402,7 @@ MaybeLocal<Module> Shell::FetchModuleTree(Local<Module> referrer,
   Local<FixedArray> module_requests = module->GetModuleRequests();
   for (int i = 0, length = module_requests->Length(); i < length; ++i) {
     Local<ModuleRequest> module_request =
-        module_requests->Get(context, i).As<ModuleRequest>();
+        module_requests->Get(i).As<ModuleRequest>();
     std::string specifier =
         ToSTLString(isolate, module_request->GetSpecifier());
     std::string normalized_specifier =
@@ -1396,7 +1410,7 @@ MaybeLocal<Module> Shell::FetchModuleTree(Local<Module> referrer,
     Local<FixedArray> import_attributes = module_request->GetImportAttributes();
     ModuleType request_module_type =
         ModuleEmbedderData::ModuleTypeFromImportSpecifierAndAttributes(
-            context, normalized_specifier, import_attributes, true);
+            normalized_specifier, import_attributes, true);
 
     if (request_module_type == ModuleType::kInvalid) {
       ThrowError(isolate, "Invalid module type was asserted");
@@ -1703,7 +1717,7 @@ void Shell::DoHostImportModuleDynamically(void* data) {
 
     ModuleType module_type =
         ModuleEmbedderData::ModuleTypeFromImportSpecifierAndAttributes(
-            realm, specifier, import_attributes, false);
+            specifier, import_attributes, false);
 
     if (module_type == ModuleType::kInvalid) {
       ThrowError(isolate, "Invalid module type was asserted");
@@ -2529,7 +2543,7 @@ void Shell::RealmCreateAllowCrossRealmAccess(
 }
 
 // Realm.navigate(i) creates a new realm with a distinct security token
-// in place of realm i.
+// in place of realm i. The old context is disposed.
 void Shell::RealmNavigate(const v8::FunctionCallbackInfo<v8::Value>& info) {
   DCHECK(i::ValidateCallbackInfo(info));
   Isolate* isolate = info.GetIsolate();
@@ -2543,20 +2557,39 @@ void Shell::RealmNavigate(const v8::FunctionCallbackInfo<v8::Value>& info) {
   }
 
   Local<Context> context = Local<Context>::New(isolate, data->realms_[index]);
-  v8::MaybeLocal<Value> global_object = context->Global();
-
-  // Context::Global doesn't return JSGlobalProxy if DetachGlobal is called in
-  // advance.
-  if (!global_object.IsEmpty()) {
-    HandleScope scope(isolate);
-    if (!IsJSGlobalProxy(
-            *Utils::OpenDirectHandle(*global_object.ToLocalChecked()))) {
-      global_object = v8::MaybeLocal<Value>();
-    }
-  }
+  v8::Local<Value> global = context->Global();
+  CHECK(!global.IsEmpty());
 
   DisposeRealm(info, index);
-  CreateRealm(info, index, global_object);
+  CreateRealm(info, index, global);
+}
+
+// Realm.navigateSameOrigin(i) creates a new realm with the same security token
+// in place of realm i. The old realm's context is left around in detached
+// state.
+void Shell::RealmNavigateSameOrigin(
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
+  PerIsolateData* data = PerIsolateData::Get(isolate);
+  int index = data->RealmIndexOrThrow(info, 0);
+  if (index == -1) return;
+  if (index == 0 || index == data->realm_current_ ||
+      index == data->realm_switch_) {
+    ThrowError(isolate, "Invalid realm index");
+    return;
+  }
+
+  Local<Context> context = Local<Context>::New(isolate, data->realms_[index]);
+  v8::Local<Value> global = context->Global();
+  context->DetachGlobal();
+  CHECK(!global.IsEmpty());
+
+  Local<Value> old_security_token = context->GetSecurityToken();
+  Local<Context> new_context;
+  if (CreateRealm(info, index, global).ToLocal(&new_context)) {
+    new_context->SetSecurityToken(old_security_token);
+  }
 }
 
 // Realm.detachGlobal(i) detaches the global objects of realm i from realm i.
@@ -2942,20 +2975,12 @@ void Shell::SerializerDeserialize(
 void Shell::WasmSerializeModule(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   Isolate* isolate = info.GetIsolate();
-  if (i::v8_flags.fuzzing) {
-    // Serializing modules is "safe", but differential fuzzing will observe
-    // differences in the serialized bytes depending on compiler flags.
-    // Strictly speaking, guarding this block on
-    // v8_flags.correctness_fuzzer_suppressions would be enough; for symmetry
-    // with deserialization we use the more general --fuzzing flag.
-    info.GetReturnValue().Set(Undefined(isolate));
-    return;
-  }
   HandleScope handle_scope(isolate);
   if (!info[0]->IsWasmModuleObject()) {
     ThrowError(isolate, "First argument must be a WasmModuleObject");
     return;
   }
+
   i::DirectHandle<i::WasmModuleObject> module_obj =
       i::Cast<i::WasmModuleObject>(Utils::OpenHandle(*info[0]));
 
@@ -2963,26 +2988,47 @@ void Shell::WasmSerializeModule(
   DCHECK(!native_module->compilation_state()->failed());
 
   i::wasm::WasmSerializer wasm_serializer(native_module);
-  size_t byte_length = wasm_serializer.GetSerializedNativeModuleSize();
+
+  // The content of the serialized byte buffer is nondeterministic (depends
+  // e.g. on timing, but also on the platform and on enabled features).
+  // Thus, return an empty array for correctness fuzzing.
+  size_t byte_length = i::v8_flags.correctness_fuzzer_suppressions
+                           ? 0
+                           : wasm_serializer.GetSerializedNativeModuleSize();
 
   Local<ArrayBuffer> array_buffer = ArrayBuffer::New(isolate, byte_length);
 
-  bool serialized_successfully = wasm_serializer.SerializeNativeModule(
-      {static_cast<uint8_t*>(array_buffer->GetBackingStore()->Data()),
-       byte_length});
-  CHECK(serialized_successfully || i::v8_flags.fuzzing);
+  base::Vector<uint8_t> byte_buffer{
+      static_cast<uint8_t*>(array_buffer->GetBackingStore()->Data()),
+      byte_length};
+  if (!i::v8_flags.correctness_fuzzer_suppressions &&
+      !wasm_serializer.SerializeNativeModule(byte_buffer)) {
+    CHECK(i::v8_flags.fuzzing);
+    return;
+  }
+
+  // Remember a hash of the serialized bytes. This will be used to check that
+  // only serialized bytes are accepted when deserializing.
+  {
+    size_t hash = base::Hasher{}
+                      .AddRange(native_module->wire_bytes())
+                      .AddRange(byte_buffer)
+                      .hash();
+    base::MutexGuard mutex_guard(Shell::wasm_serialized_bytes_mutex_.Pointer());
+    Shell::wasm_serialized_bytes_hashes_.insert(hash);
+  }
+
   info.GetReturnValue().Set(array_buffer);
 }
 
 void Shell::WasmDeserializeModule(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   Isolate* isolate = info.GetIsolate();
-  i::PrintF("NOTE: d8.wasm.deserializeModule() is not VRP eligible.\n");
-  if (i::v8_flags.fuzzing) {
-    // Deserializing random bytes could violate arbitrary invariants. This
-    // function is not fuzzer-safe, so just do nothing.
-    info.GetReturnValue().Set(Undefined(isolate));
-    return;
+  static std::atomic<bool> print_warning{true};
+  if (print_warning.exchange(false, std::memory_order_relaxed)) {
+    i::PrintF(
+        "NOTE: d8.wasm.deserializeModule() is not safe against manipulated "
+        "input. It's not VRP eligible.\n");
   }
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   HandleScope handle_scope(isolate);
@@ -2994,40 +3040,89 @@ void Shell::WasmDeserializeModule(
     ThrowError(isolate, "Second argument must be a TypedArray");
     return;
   }
-  i::DirectHandle<i::JSArrayBuffer> buffer =
-      i::Cast<i::JSArrayBuffer>(Utils::OpenHandle(*info[0]));
-  i::DirectHandle<i::JSTypedArray> wire_bytes =
-      i::Cast<i::JSTypedArray>(Utils::OpenHandle(*info[1]));
-  if (buffer->was_detached()) {
+
+  i::wasm::WasmEnabledFeatures enabled_features =
+      i::wasm::WasmEnabledFeatures::FromIsolate(i_isolate);
+  i::wasm::CompileTimeImports compile_time_imports =
+      i::WasmJs::CompileTimeImportsFromArgument(
+          Utils::OpenDirectHandle(*info[2]), i_isolate, enabled_features);
+
+  Local<ArrayBuffer> serialized_bytes_buffer = info[0].As<ArrayBuffer>();
+  Local<ArrayBufferView> wire_bytes_view = info[1].As<ArrayBufferView>();
+
+  // Note: These checks must be executed *after* evaluating compile time
+  // imports, as that calls back into JS and can detach buffers.
+  if (serialized_bytes_buffer->WasDetached()) {
     ThrowError(isolate, "First argument is detached");
     return;
   }
-  if (wire_bytes->WasDetached()) {
+  if (wire_bytes_view->Buffer()->WasDetached()) {
     ThrowError(isolate, "Second argument's buffer is detached");
     return;
   }
 
-  i::DirectHandle<i::JSArrayBuffer> wire_bytes_buffer =
-      wire_bytes->GetBuffer(i_isolate);
-  base::Vector<const uint8_t> wire_bytes_vec{
-      reinterpret_cast<const uint8_t*>(wire_bytes_buffer->backing_store()) +
-          wire_bytes->byte_offset(),
-      wire_bytes->byte_length()};
-  base::Vector<uint8_t> buffer_vec{
-      reinterpret_cast<uint8_t*>(buffer->backing_store()),
-      buffer->byte_length()};
+  // Make copies of the provided buffers, to avoid manipulation during
+  // deserialization.
+  // For the wire bytes, we need a new copy anyway for storing in the new
+  // NativeModule (if it does not come from the cache).
+  base::OwnedVector<const uint8_t> wire_bytes_vec = ([&] {
+    size_t length = wire_bytes_view->ByteLength();
+    auto vec = base::OwnedVector<uint8_t>::NewForOverwrite(length);
+    CHECK_EQ(length, wire_bytes_view->CopyContents(vec.data(), length));
+    return vec;  // `OwnedVector<uint8_t>` to `OwnedVector<const uint8_t>`.
+  })();
+  base::OwnedVector<uint8_t> serialized_bytes_vec = base::OwnedCopyOf(
+      reinterpret_cast<uint8_t*>(serialized_bytes_buffer->Data()),
+      serialized_bytes_buffer->ByteLength());
 
-  // Note that {wasm::DeserializeNativeModule} will allocate. We assume the
-  // JSArrayBuffer backing store doesn't get relocated.
-  i::wasm::CompileTimeImports compile_imports{};
-  i::MaybeDirectHandle<i::WasmModuleObject> maybe_module_object =
-      i::wasm::DeserializeNativeModule(i_isolate, buffer_vec, wire_bytes_vec,
-                                       compile_imports, {});
-  i::DirectHandle<i::WasmModuleObject> module_object;
-  if (!maybe_module_object.ToHandle(&module_object)) {
-    info.GetReturnValue().Set(Undefined(isolate));
-    return;
+  // Check that we only try to deserialize bytes that we previously produced via
+  // serialization.
+  // This is prone to hash collisions, but this check sufficiently prevents
+  // fuzzers from passing manipulated bytes (or bytes that do not match the wire
+  // bytes) in regular fuzzing.
+  {
+    size_t hash = base::Hasher{}
+                      .AddRange(wire_bytes_vec.as_vector())
+                      .AddRange(serialized_bytes_vec.as_vector())
+                      .hash();
+    base::MutexGuard mutex_guard(Shell::wasm_serialized_bytes_mutex_.Pointer());
+    if (!Shell::wasm_serialized_bytes_hashes_.count(hash)) {
+      ThrowError(isolate, "Trying to deserialize manipulated bytes");
+      return;
+    }
   }
+
+  i::DirectHandle<i::WasmModuleObject> module_object;
+
+  // For correctness fuzzing, the `serializeModule` function always returns an
+  // empty buffer. We thus have to accept this empty buffer again here, and
+  // produce a valid module.
+  if (i::v8_flags.correctness_fuzzer_suppressions) {
+    CHECK(serialized_bytes_vec.empty());
+    i::wasm::ErrorThrower thrower{i_isolate, "d8.wasm.deserializeModule"};
+    module_object =
+        i::wasm::GetWasmEngine()
+            ->SyncCompile(i_isolate, enabled_features, compile_time_imports,
+                          &thrower, std::move(wire_bytes_vec))
+            .ToHandleChecked();
+    DCHECK(!thrower.error());
+  } else {
+    // Note that {wasm::DeserializeNativeModule} will allocate. We assume the
+    // JSArrayBuffer backing store doesn't get relocated.
+    if (!i::wasm::DeserializeNativeModule(
+             i_isolate, enabled_features, serialized_bytes_vec.as_vector(),
+             wire_bytes_vec, compile_time_imports, {})
+             .ToHandle(&module_object)) {
+      // Deserialization failed, probably because of mismatched compile time
+      // imports. Invalid wire bytes are unlikely because of the hash check
+      // above.
+      ThrowError(isolate,
+                 "Deserialization failed, probably because of mismatched "
+                 "compile time imports");
+      return;
+    }
+  }
+
   info.GetReturnValue().Set(Utils::ToLocal(module_object));
 }
 
@@ -3261,7 +3356,7 @@ MaybeLocal<String> Shell::ReadFromStdin(Isolate* isolate) {
       if (accumulator->Length() == 0) return {};
       return accumulator;
     }
-    int length = static_cast<int>(strlen(buffer));
+    int length = base::checked_cast<int>(strlen(buffer));
     if (length == 0) {
       return accumulator;
     } else if (buffer[length - 1] != '\n') {
@@ -4293,6 +4388,8 @@ Local<ObjectTemplate> Shell::CreateRealmTemplate(Isolate* isolate) {
       FunctionTemplate::New(isolate, RealmCreateAllowCrossRealmAccess));
   realm_template->Set(isolate, "navigate",
                       FunctionTemplate::New(isolate, RealmNavigate));
+  realm_template->Set(isolate, "navigateSameOrigin",
+                      FunctionTemplate::New(isolate, RealmNavigateSameOrigin));
   realm_template->Set(isolate, "detachGlobal",
                       FunctionTemplate::New(isolate, RealmDetachGlobal));
   realm_template->Set(isolate, "dispose",
@@ -5057,7 +5154,7 @@ char* Shell::ReadChars(const char* name, int* size_out) {
     }
   }
   base::Fclose(file);
-  *size_out = static_cast<int>(size);
+  *size_out = base::checked_cast<int>(size);
   return chars;
 }
 
@@ -5076,7 +5173,7 @@ MaybeLocal<PrimitiveArray> Shell::ReadLines(Isolate* isolate,
     lines.emplace_back(line);
   }
   // Create a Local<PrimitiveArray> off the read lines.
-  int size = static_cast<int>(lines.size());
+  int size = base::checked_cast<int>(lines.size());
   Local<PrimitiveArray> exports = PrimitiveArray::New(isolate, size);
   for (int i = 0; i < size; ++i) {
     MaybeLocal<String> maybe_str = v8::String::NewFromUtf8(
@@ -5105,7 +5202,12 @@ void Shell::ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
   uint8_t* data = reinterpret_cast<uint8_t*>(ReadChars(*filename, &length));
   if (data == nullptr) {
-    ThrowError(isolate, "Error reading file");
+    std::ostringstream error_msg;
+    error_msg << "Error reading file \""
+              << std::string_view{*filename,
+                                  std::min(size_t{50}, filename.length())}
+              << (filename.length() > 50 ? "[...]" : "") << "\"";
+    ThrowError(isolate, error_msg.str());
     return;
   }
   Local<v8::ArrayBuffer> buffer = ArrayBuffer::New(isolate, length);
@@ -5150,7 +5252,11 @@ MaybeLocal<String> Shell::ReadFile(Isolate* isolate, const char* name,
   if (!file) {
     return MaybeLocal<String>();
   }
-  int size = static_cast<int>(file->size());
+  size_t full_file_size = file->size();
+  if (full_file_size > size_t{i::kMaxInt}) {
+    FATAL("Input file too large (%zu bytes)", full_file_size);
+  }
+  int size = static_cast<int>(full_file_size);
   char* chars = static_cast<char*>(file->memory());
   if (i::v8_flags.use_external_strings && i::String::IsAscii(chars, size)) {
     String::ExternalOneByteStringResource* resource =
@@ -5500,8 +5606,7 @@ SourceGroup::IsolateThread::IsolateThread(SourceGroup* group)
 void SourceGroup::ExecuteInThread() {
   base::FlushDenormalsScope denormals_scope(Shell::options.flush_denormals);
 
-  Isolate::CreateParams create_params;
-  create_params.array_buffer_allocator = Shell::array_buffer_allocator;
+  Isolate::CreateParams create_params = GetDefaultIsolateCreateParams();
   Isolate* isolate = Isolate::New(create_params);
 
   {
@@ -5797,15 +5902,27 @@ void Worker::SetCurrentWorker(Worker* worker) {
   current_worker_ = worker;
 }
 
+namespace {
+// This tag value has been picked arbitrarily between 0 and
+// V8_EXTERNAL_POINTER_TAG_COUNT.
+constexpr v8::ExternalPointerTypeTag kWorkerTag = 8;
+}  // namespace
+
 // static
 Worker* Worker::GetCurrentWorker() { return current_worker_; }
 
 void Worker::ExecuteInThread() {
   base::FlushDenormalsScope denormals_scope(flush_denormals_);
 
-  Isolate::CreateParams create_params;
-  create_params.array_buffer_allocator = Shell::array_buffer_allocator;
+  Isolate::CreateParams create_params = GetDefaultIsolateCreateParams();
   isolate_ = Isolate::New(create_params);
+
+  // TODO(mdanylo): can we omit dump disable here?
+#ifdef V8_DUMPLING
+  v8::internal::Isolate* internal_isolate =
+      reinterpret_cast<v8::internal::Isolate*>(isolate_);
+  internal_isolate->dumpling_manager()->SetIsolateDumpDisabled();
+#endif  // V8_DUMPLING
 
   // Make the Worker instance available to the whole thread.
   SetCurrentWorker(this);
@@ -5847,7 +5964,7 @@ void Worker::ExecuteInThread() {
           Context::Scope context_scope(context);
 
           Local<Object> global = context->Global();
-          Local<Value> this_value = External::New(isolate_, this);
+          Local<Value> this_value = External::New(isolate_, this, kWorkerTag);
 
           Local<FunctionTemplate> postmessage_fun_template =
               FunctionTemplate::New(isolate_, Worker::PostMessageOut,
@@ -5962,7 +6079,7 @@ void Worker::PostMessageOut(const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (data) {
     DCHECK(info.Data()->IsExternal());
     Local<External> this_value = info.Data().As<External>();
-    Worker* worker = static_cast<Worker*>(this_value->Value());
+    Worker* worker = static_cast<Worker*>(this_value->Value(kWorkerTag));
 
     worker->out_queue_.Enqueue(std::move(data));
     worker->out_semaphore_.Signal();
@@ -5982,7 +6099,7 @@ void Worker::Close(const v8::FunctionCallbackInfo<v8::Value>& info) {
   HandleScope handle_scope(isolate);
   DCHECK(info.Data()->IsExternal());
   Local<External> this_value = info.Data().As<External>();
-  Worker* worker = static_cast<Worker*>(this_value->Value());
+  Worker* worker = static_cast<Worker*>(this_value->Value(kWorkerTag));
   worker->Terminate();
 }
 
@@ -6065,8 +6182,9 @@ bool FlagWithArgMatches(const char (&flag)[N], char** flag_value, int argc,
 }  // namespace
 
 bool Shell::SetOptions(int argc, char* argv[]) {
-  bool logfile_per_isolate = false;
   options.d8_path = argv[0];
+  bool disallow_unsafe_flags = false;
+  bool exit_on_flag_contradictions = false;
   for (int i = 0; i < argc; i++) {
     char* flag_value = nullptr;
     if (FlagMatches("--", &argv[i])) {
@@ -6089,8 +6207,13 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     } else if (FlagMatches("--abort-on-contradictory-flags", &argv[i],
                            /*keep_flag=*/true)) {
       check_d8_flag_contradictions = true;
-    } else if (FlagMatches("--logfile-per-isolate", &argv[i])) {
-      logfile_per_isolate = true;
+    } else if (FlagMatches("--exit-on-contradictory-flags", &argv[i],
+                           /*keep_flag=*/true)) {
+      check_d8_flag_contradictions = true;
+      exit_on_flag_contradictions = true;
+    } else if (FlagMatches("--disallow-unsafe-flags", &argv[i],
+                           /*keep_flag=*/true)) {
+      disallow_unsafe_flags = true;
     } else if (FlagMatches("--shell", &argv[i])) {
       options.interactive_shell = true;
     } else if (FlagMatches("--test", &argv[i])) {
@@ -6267,6 +6390,42 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     }
   }
 
+  DCHECK(options.num_isolates);
+
+  if (disallow_unsafe_flags) {
+    const auto check_flag_is_not_specified =
+        [&]<typename T>(const ShellOptions::DisallowReassignment<T>& flag) {
+          if (!flag.WasSpecified()) {
+            return;
+          }
+          base::OS::PrintError(
+              "Command-line provided flag --%s is prohibited by "
+              "--disallow-unsafe-flags.\n",
+              flag.name());
+          if (exit_on_flag_contradictions) {
+            base::OS::ExitProcess(-1);
+          } else {
+            base::OS::Abort();
+          }
+        };  // NOLINT(readability/braces)
+    // The --disallow-unsafe-flags is meant to block known unsafe configurations
+    // and mitigate spurious reports due invalid flag combinations/values. To
+    // prevent AI agents and/or fuzzers from using a new unsafe flag, add it to
+    // the list below.
+    check_flag_is_not_specified(options.trace_enabled);
+    check_flag_is_not_specified(options.trace_config);
+    check_flag_is_not_specified(options.trace_path);
+    check_flag_is_not_specified(options.enable_inspector);
+    check_flag_is_not_specified(options.lcov_file);
+    check_flag_is_not_specified(options.simulate_errors);
+    check_flag_is_not_specified(options.enable_os_system);
+    check_flag_is_not_specified(options.snapshot_blob);
+    check_flag_is_not_specified(options.thread_pool_size);
+    check_flag_is_not_specified(options.thread_pool_size);
+    check_flag_is_not_specified(options.dump_counters);
+    check_flag_is_not_specified(options.dump_counters_nvp);
+  }
+
 #ifdef V8_OS_LINUX
   if (options.scope_linux_perf_to_mark_measure) {
     if (options.perf_ctl_fd == -1 || options.perf_ack_fd == -1) {
@@ -6289,6 +6448,9 @@ bool Shell::SetOptions(int argc, char* argv[]) {
       "  --module  execute a file as a JavaScript module\n";
   using HelpOptions = i::FlagList::HelpOptions;
   i::v8_flags.abort_on_contradictory_flags = true;
+  static constexpr char kStandaloneD8ShellFlag[] = "--is_standalone_d8_shell";
+  i::FlagList::SetFlagsFromString(kStandaloneD8ShellFlag,
+                                  strlen(kStandaloneD8ShellFlag));
   i::FlagList::SetFlagsFromCommandLine(&argc, argv, true,
                                        HelpOptions(HelpOptions::kExit, usage));
   i::FlagList::ResolveContradictionsWhenFuzzing();
@@ -6330,10 +6492,6 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     }
   }
   current->End(argc);
-
-  if (!logfile_per_isolate && options.num_isolates) {
-    V8::SetFlagsFromString("--no-logfile-per-isolate");
-  }
 
   return true;
 }
@@ -6956,8 +7114,14 @@ int Shell::Main(int argc, char* argv[]) {
     tracing = std::make_unique<platform::tracing::TracingController>();
 
     if (!options.enable_etw_stack_walking) {
-      const char* trace_path =
-          options.trace_path ? options.trace_path : "v8_trace.json";
+      const char* trace_path = options.trace_path ? options.trace_path :
+      // Default to protobuf format when Perfetto is used and without json
+      // export.
+#if defined(V8_USE_PERFETTO) && !defined(V8_USE_PERFETTO_JSON_EXPORT)
+                                                  "v8_trace.pb";
+#else
+                                                  "v8_trace.json";
+#endif  // defined(V8_USE_PERFETTO) && !defined(V8_USE_PERFETTO_JSON_EXPORT)
       trace_file.open(trace_path);
       if (!trace_file.good()) {
         printf("Cannot open trace file '%s' for writing: %s.\n", trace_path,
@@ -7022,12 +7186,6 @@ int Shell::Main(int argc, char* argv[]) {
     g_platform = MakeDelayedTasksPlatform(std::move(g_platform), random_seed);
   }
 
-  if (i::v8_flags.trace_turbo_cfg_file == nullptr) {
-    V8::SetFlagsFromString("--trace-turbo-cfg-file=turbo.cfg");
-  }
-  if (i::v8_flags.redirect_code_traces_to == nullptr) {
-    V8::SetFlagsFromString("--redirect-code-traces-to=code.asm");
-  }
   v8::V8::InitializePlatform(g_platform.get());
 
   // Disable flag freezing if we are producing a code cache, because for that we
@@ -7043,7 +7201,7 @@ int Shell::Main(int argc, char* argv[]) {
     v8::V8::InitializeExternalStartupData(argv[0]);
   }
   int result = 0;
-  Isolate::CreateParams create_params;
+  Isolate::CreateParams create_params = GetDefaultIsolateCreateParams();
   ShellArrayBufferAllocator shell_array_buffer_allocator;
   MockArrayBufferAllocator mock_arraybuffer_allocator;
   const size_t memory_limit =
@@ -7074,9 +7232,6 @@ int Shell::Main(int argc, char* argv[]) {
     create_params.code_event_handler = vTune::GetVtuneCodeEventHandler();
   }
 #endif  // ENABLE_VTUNE_JIT_INTERFACE
-  create_params.constraints.ConfigureDefaults(
-      base::SysInfo::AmountOfPhysicalMemory(),
-      base::SysInfo::AmountOfVirtualMemory());
 
   Shell::counter_map_ = new CounterMap();
   if (options.dump_counters || options.dump_counters_nvp ||
@@ -7110,6 +7265,13 @@ int Shell::Main(int argc, char* argv[]) {
     fprintf(stderr,
             "V8 is running with experimental features enabled. Stability and "
             "security will suffer.\n");
+  }
+
+  if (i::v8_flags.test_only_unsafe) {
+    fprintf(stderr,
+            "V8 is running with an unsupported configuration. Important "
+            "subsystems are mocked or disabled. Bugs reported under this "
+            "configuration will be considered invalid.\n");
   }
 
   Isolate* isolate = Isolate::New(create_params);
@@ -7199,9 +7361,8 @@ int Shell::Main(int argc, char* argv[]) {
             ->ExecuteMainThreadWhileParked([&result]() {
               printf("============ Run: Produce code cache ============\n");
               // First run to produce the cache
-              Isolate::CreateParams create_params2;
-              create_params2.array_buffer_allocator =
-                  Shell::array_buffer_allocator;
+              Isolate::CreateParams create_params2 =
+                  GetDefaultIsolateCreateParams();
               // Use a different hash seed.
               i::v8_flags.hash_seed = i::v8_flags.hash_seed ^ 1337;
               Isolate* isolate2 = Isolate::New(create_params2);

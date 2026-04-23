@@ -1,7 +1,7 @@
 // Copyright (c) Facebook, Inc. and its affiliates.
 // All rights reserved.
 //
-// Copyright 2019 Google LLC
+// Copyright 2019-2025 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "src/operators/fingerprint_id.h"
 #include <pthreadpool.h>
 
 #ifdef __cplusplus
@@ -87,6 +88,9 @@ extern "C" {
 #define XNN_FLAG_ALIGN_CORNERS 0x00000008
 
 /// Yield worker threads of the thread pool to the system scheduler after the inference.
+#define XNN_FLAG_DONT_SPIN_WORKERS 0x00000010
+
+/// Deprecated, use `XNN_FLAG_DONT_SPIN_WORKERS` instead.
 #define XNN_FLAG_YIELD_WORKERS 0x00000010
 
 /// Use transient indirection buffer to reduce memory footprint
@@ -303,6 +307,9 @@ enum xnn_datatype {
   /// Packed quantized 8-bit unsigned integer with shared per-Value quantization
   /// parameters.
   xnn_datatype_pqint8 = 17,
+  /// Quantized 2-bit signed integer with shared per-channel quantization
+  /// parameters, but packed into 8-bit integers.
+  xnn_datatype_qcint2 = 18,
 };
 
 /// Define a tensor-type Value and add it to a Subgraph.
@@ -433,6 +440,21 @@ enum xnn_status xnn_validate_channelwise_quantized_tensor(
 ///                and XNN_VALUE_FLAG_EXTERNAL_OUTPUT.
 /// @param id_out - pointer to the variable that will be initialized with the Value ID upon successful return. If a
 ///                 valid @a external_id was provided, the variable will be initialized with the @a external_id value.
+/// @param channelwise_zero_point - per-channel offset from zero to subtract from the quantized elements in the Value.
+enum xnn_status xnn_define_channelwise_quantized_tensor_value_v3(
+  xnn_subgraph_t subgraph,
+  enum xnn_datatype datatype,
+  int32_t zero_point,
+  const float* scale,
+  size_t num_dims,
+  size_t channel_dim,
+  const size_t* dims,
+  const void* data,
+  uint32_t external_id,
+  uint32_t flags,
+  uint32_t* id_out,
+  const float* channelwise_zero_point);
+
 enum xnn_status xnn_define_channelwise_quantized_tensor_value_v2(
   xnn_subgraph_t subgraph,
   enum xnn_datatype datatype,
@@ -2294,6 +2316,12 @@ struct xnn_weights_cache_look_up_key {
   const void* kernel;
   /// Pointer to the original bias, could be NULL.
   const void* bias;
+  /// Fingerprint of the packing algorithm used for the data associated to this
+  /// key.
+  ///
+  /// Note: this should be the same size as the internal `xnn_fingerprint_id`
+  /// enum.
+  uint32_t fingerprint_id;
 };
 
 /// A group of function pointers to manage weights cache. All functions may be
@@ -2419,7 +2447,7 @@ enum xnn_status xnn_get_runtime_profiling_info(xnn_runtime_t runtime,
 ///                     pool is NULL, the computation would run on the caller thread without parallelization.
 /// @param flags - binary features of the runtime. The only currently supported values are
 ///                XNN_FLAG_HINT_SPARSE_INFERENCE, XNN_FLAG_HINT_FP16_INFERENCE, XNN_FLAG_FORCE_FP16_INFERENCE,
-///                XNN_FLAG_YIELD_WORKERS, and XNN_FLAG_TRANSIENT_INDIRECTION_BUFFER. If XNN_FLAG_YIELD_WORKERS is
+///                XNN_FLAG_DONT_SPIN_WORKERS, and XNN_FLAG_TRANSIENT_INDIRECTION_BUFFER. If XNN_FLAG_DONT_SPIN_WORKERS is
 ///                specified, worker threads would be yielded to the system scheduler after processing the last operator
 ///                in the Runtime. If XNN_FLAG_TRANSIENT_INDIRECTION_BUFFER is specified, convolution operators will
 ///                initialize indirection buffers on each inference run using temporary memory in the workspace, instead
@@ -2934,6 +2962,7 @@ enum xnn_status xnn_setup_convert_nc_f32_qd8(
   xnn_operator_t convert_op,
   const float* input,
   int8_t* output,
+  float* row_sum,
   struct xnn_quantization_params* quantization_params);
 
 XNN_DEPRECATED enum xnn_status xnn_run_convert_nc_f32_f16(
@@ -3045,6 +3074,46 @@ enum xnn_status xnn_create_convolution2d_nhwc_f16(
   uint32_t flags,
   xnn_weights_cache_t weights_cache,
   xnn_operator_t* convolution_op_out);
+
+enum xnn_status xnn_create_convolution2d_nhwc_pf16(
+  uint32_t input_padding_top,
+  uint32_t input_padding_right,
+  uint32_t input_padding_bottom,
+  uint32_t input_padding_left,
+  uint32_t kernel_height,
+  uint32_t kernel_width,
+  uint32_t subsampling_height,
+  uint32_t subsampling_width,
+  uint32_t dilation_height,
+  uint32_t dilation_width,
+  uint32_t groups,
+  size_t group_input_channels,
+  size_t group_output_channels,
+  size_t input_channel_stride,
+  size_t output_channel_stride,
+  const void* kernel,
+  const void* bias,
+  float output_min,
+  float output_max,
+  uint32_t flags,
+  xnn_weights_cache_t weights_cache,
+  xnn_operator_t* convolution_op_out);
+
+enum xnn_status xnn_reshape_convolution2d_nhwc_pf16(
+  xnn_operator_t convolution_op,
+  size_t batch_size,
+  size_t input_height,
+  size_t input_width,
+  size_t* workspace_size,
+  size_t* output_height_out,
+  size_t* output_width_out,
+  pthreadpool_t threadpool);
+
+enum xnn_status xnn_setup_convolution2d_nhwc_pf16(
+  xnn_operator_t convolution_op,
+  void* workspace,
+  const void* input,
+  void* output);
 
 enum xnn_status xnn_reshape_convolution2d_nhwc_f16(
   xnn_operator_t convolution_op,
@@ -4001,6 +4070,21 @@ enum xnn_status xnn_reshape_fully_connected_nc_qd8_f16_qc4w(
   size_t* workspace_size,
   pthreadpool_t threadpool);
 
+enum xnn_status xnn_create_fully_connected_nc_qd8_f32_qc2w(
+  size_t input_channels,
+  size_t output_channels,
+  size_t input_stride,
+  size_t output_stride,
+  const float* kernel_zero_point,
+  const float* kernel_scale,
+  const void* kernel,
+  const float* bias,
+  float output_min,
+  float output_max,
+  uint32_t flags,
+  xnn_weights_cache_t weights_cache,
+  xnn_operator_t* fully_connected_op_out);
+
 enum xnn_status xnn_create_fully_connected_nc_qd8_f16_qb4w(
     size_t input_channels,
     size_t output_channels,
@@ -4061,6 +4145,14 @@ enum xnn_status xnn_create_fully_connected_nc_qd8_f32_qc4w(
   xnn_weights_cache_t weights_cache,
   xnn_operator_t* fully_connected_op_out);
 
+enum xnn_status xnn_setup_fully_connected_nc_qd8_f32_qc2w(
+  xnn_operator_t fully_connected_op,
+  const int8_t* input,
+  float* output,
+  void* workspace,
+  const float* row_sum,
+  const struct xnn_quantization_params* quantization_params);
+
 enum xnn_status xnn_setup_fully_connected_nc_qd8_f32_qc4w(
   xnn_operator_t fully_connected_op,
   const int8_t* input,
@@ -4089,6 +4181,12 @@ enum xnn_status xnn_create_fully_connected_nc_qd8_f32_qb4w(
   uint32_t flags,
   xnn_weights_cache_t weights_cache,
   xnn_operator_t* fully_connected_op_out);
+
+enum xnn_status xnn_reshape_fully_connected_nc_qd8_f32_qc2w(
+  xnn_operator_t fully_connected_op,
+  size_t batch_size,
+  size_t* workspace,
+  pthreadpool_t threadpool);
 
 enum xnn_status xnn_reshape_fully_connected_nc_qd8_f32_qb4w(
   xnn_operator_t fully_connected_op,

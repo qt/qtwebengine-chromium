@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC
+// Copyright 2019-2025 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
@@ -16,6 +16,7 @@
 #include "src/xnnpack/hardware-config.h"
 #include "src/xnnpack/microfnptr.h"
 #include "src/xnnpack/raddextexp.h"
+#include "test/replicable_random_device.h"
 #include <benchmark/benchmark.h>
 
 static void f32_raddextexp(
@@ -30,8 +31,7 @@ static void f32_raddextexp(
   const size_t packed_elements =
       benchmark::utils::RoundUp(elements, cache_line_size_max / sizeof(float));
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(
       std::uniform_real_distribution<float>(-1000.0f, 1000.0f), std::ref(rng));
 
@@ -136,7 +136,7 @@ BENCHMARK_CAPTURE(f32_raddextexp, avx512f_p5_scalef_u192_acc6,
     ->UseRealTime();
 #endif  // XNN_ENABLE_AVX512F && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 
-#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+#if XNN_ENABLE_AVX2 && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 BENCHMARK_CAPTURE(f32_raddextexp, avx2_p5_u64,
                   xnn_f32_raddextexp_ukernel__avx2_p5_u64,
                   xnn_arch_x86_avx2)
@@ -200,7 +200,7 @@ BENCHMARK_CAPTURE(f32_raddextexp, avx2_p5_u96_acc6,
                   xnn_arch_x86_avx2)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+#endif  // XNN_ENABLE_AVX2 && (XNN_ARCH_X86 || XNN_ARCH_X86_64)
 
 #ifndef XNNPACK_BENCHMARK_NO_MAIN
 XNN_BENCHMARK_MAIN();

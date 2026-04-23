@@ -25,6 +25,7 @@
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
@@ -33,10 +34,14 @@
 #include "base/metrics/histogram.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/path_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/system/sys_info.h"
 #include "base/task/common/task_annotator.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/trace_event/traced_value.h"
 #include "base/trace_event/typed_macros.h"
@@ -68,6 +73,7 @@
 #include "cc/metrics/frame_sequence_metrics.h"
 #include "cc/metrics/frame_sequence_tracker.h"
 #include "cc/metrics/lcd_text_metrics_reporter.h"
+#include "cc/metrics/stub_compositor_frame_reporting_controller.h"
 #include "cc/metrics/submit_info.h"
 #include "cc/metrics/ukm_dropped_frames_data.h"
 #include "cc/paint/display_item_list.h"
@@ -112,6 +118,7 @@
 #include "components/viz/client/client_resource_provider.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_timing_details.h"
+#include "components/viz/common/gpu/raster_context_provider.h"
 #include "components/viz/common/hit_test/hit_test_region_list.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/quads/compositor_frame_metadata.h"
@@ -139,7 +146,6 @@
 #include "third_party/perfetto/protos/perfetto/trace/track_event/chrome_latency_info.pbzero.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/gpu/ganesh/GrDirectContext.h"
-#include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/display_color_spaces.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -212,9 +218,8 @@ void DidVisibilityChange(LayerTreeHostImpl* id, bool visible) {
                   perfetto::Track::FromPointer(id));
 }
 
-void PopulateMetadataContentColorUsage(
-    const LayerTreeHostImpl::FrameData* frame,
-    viz::CompositorFrameMetadata* metadata) {
+void PopulateMetadataContentColorUsage(const FrameData* frame,
+                                       viz::CompositorFrameMetadata* metadata) {
   metadata->content_color_usage = gfx::ContentColorUsage::kSRGB;
   for (const LayerImpl* layer : frame->will_draw_layers) {
     metadata->content_color_usage =
@@ -237,6 +242,48 @@ bool VerboseLogEnabled() {
 const char* ClientNameForVerboseLog() {
   const char* client_name = GetClientNameForMetrics();
   return client_name ? client_name : "<unknown client>";
+}
+
+bool ShouldDumpCompositorFrame(uint32_t& begin, uint32_t& end) {
+  base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
+  if (!cmd_line->HasSwitch(switches::kDumpCompositorFrame)) {
+    begin = 0;
+    end = 0;
+    return false;
+  }
+  begin = 1;
+  end = 10;
+  std::string param =
+      cmd_line->GetSwitchValueASCII(switches::kDumpCompositorFrame);
+  if (!param.empty()) {
+    std::vector<std::string> tokens = base::SplitString(
+        param, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+    unsigned num0, num1;
+    if (tokens.size() == 2 && base::StringToUint(tokens[0], &num0) &&
+        base::StringToUint(tokens[1], &num1) && num0 < num1) {
+      begin = num0;
+      end = num1;
+    }
+  }
+  return true;
+}
+
+void DoDumpCompositorFrame(const std::string& data,
+                           bool client,
+                           bool viz,
+                           uint32_t frame_token) {
+  base::FilePath path = base::PathService::CheckedGet(base::DIR_CURRENT);
+  std::string filename;
+  if (client) {
+    filename = "compositor_frame_client_";
+  } else if (viz) {
+    filename = "compositor_frame_viz_";
+  } else {
+    return;
+  }
+  filename += base::NumberToString(frame_token) + ".txt";
+  bool rt = base::WriteFile(path.AppendASCII(filename), data);
+  CHECK(rt);
 }
 
 #define VERBOSE_LOG() \
@@ -305,7 +352,7 @@ void LayerTreeHostImpl::DidUpdateScrollAnimationCurve() {
 }
 
 void LayerTreeHostImpl::DidStartPinchZoom() {
-  client_->RenewTreePriority();
+  RenewTreePriority();
   frame_trackers_.StartSequence(FrameSequenceTrackerType::kPinchZoom);
 }
 
@@ -320,7 +367,7 @@ void LayerTreeHostImpl::DidEndPinchZoom() {
 
 void LayerTreeHostImpl::DidUpdatePinchZoom() {
   SetNeedsRedraw(/*animation_only=*/false, /*skip_if_inside_draw=*/false);
-  client_->RenewTreePriority();
+  RenewTreePriority();
 }
 
 void LayerTreeHostImpl::DidStartScroll() {
@@ -328,7 +375,7 @@ void LayerTreeHostImpl::DidStartScroll() {
   if (!settings().single_thread_proxy_scheduler) {
     client_->SetHasActiveThreadedScroll(true);
   }
-  client_->RenewTreePriority();
+  RenewTreePriority();
 }
 
 void LayerTreeHostImpl::DidEndScroll() {
@@ -407,8 +454,6 @@ const LayerTreeHostImpl& LayerTreeHostImpl::GetImplDeprecated() const {
   return *this;
 }
 
-LayerTreeHostImpl::FrameData::FrameData() = default;
-LayerTreeHostImpl::FrameData::~FrameData() = default;
 LayerTreeHostImpl::UIResourceData::UIResourceData() = default;
 LayerTreeHostImpl::UIResourceData::~UIResourceData() = default;
 LayerTreeHostImpl::UIResourceData::UIResourceData(UIResourceData&&) noexcept =
@@ -449,8 +494,6 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       task_runner_provider_(task_runner_provider),
       current_begin_frame_tracker_(FROM_HERE),
       settings_(settings),
-      use_layer_context_for_animations_(
-          settings_.UseLayerContextForAnimations()),
       is_synchronous_single_threaded_(!task_runner_provider->HasImplThread() &&
                                       !settings_.single_thread_proxy_scheduler),
       cached_managed_memory_policy_(settings.memory_policy),
@@ -478,14 +521,6 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       image_animation_controller_(GetTaskRunner(),
                                   this,
                                   settings_.enable_image_animation_resync),
-      compositor_frame_reporting_controller_(
-          std::make_unique<CompositorFrameReportingController>(
-              /*should_report_histograms=*/!settings
-                  .single_thread_proxy_scheduler,
-              /*should_report_ukm=*/!settings.single_thread_proxy_scheduler,
-              id,
-              /*is_trees_in_viz_client=*/
-              settings_.TreesInVizInClientProcess())),
       frame_trackers_(settings.single_thread_proxy_scheduler),
       lcd_text_metrics_reporter_(LCDTextMetricsReporter::CreateIfNeeded(this)),
       has_input_resetter_(
@@ -501,6 +536,30 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       << "or "
       << "scrollbar_flash_after_any_scroll_update "
       << "can be enabled";
+
+  if (settings.trees_in_viz_in_viz_process) {
+    compositor_frame_reporting_controller_ =
+        std::make_unique<StubCompositorFrameReportingController>();
+
+    // TreesInViz server side usually has frame tokens set by the client.
+    // Initialize a default value here, which is expected in many tree
+    // tests.
+    set_next_frame_token_from_client(1u);
+  } else {
+    compositor_frame_reporting_controller_ =
+        std::make_unique<CompositorFrameReportingController>(
+            /*should_report_histograms=*/!settings
+                .single_thread_proxy_scheduler,
+            /*should_report_ukm=*/!settings.single_thread_proxy_scheduler, id,
+            /*is_trees_in_viz_client=*/
+            settings_.TreesInVizInClientProcess());
+  }
+
+  if (base::FeatureList::IsEnabled(features::kTreesInViz) ||
+      base::FeatureList::IsEnabled(features::kTreeAnimationsInViz)) {
+    dump_compositor_frame_ = ShouldDumpCompositorFrame(
+        dump_compositor_frame_begin_, dump_compositor_frame_end_);
+  }
 
   resource_provider_ = std::make_unique<viz::ClientResourceProvider>(
       task_runner_provider_->MainThreadTaskRunner(),
@@ -535,11 +594,10 @@ LayerTreeHostImpl::LayerTreeHostImpl(
 
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableLayerTreeHostMemoryPressure)) {
-    memory_pressure_listener_ =
-        std::make_unique<base::AsyncMemoryPressureListener>(
+    memory_pressure_listener_registration_ =
+        std::make_unique<base::AsyncMemoryPressureListenerRegistration>(
             FROM_HERE, base::MemoryPressureListenerTag::kLayerTreeHostImpl,
-            base::BindRepeating(&LayerTreeHostImpl::OnMemoryPressure,
-                                base::Unretained(this)));
+            this);
   }
 
   SetDebugState(settings.initial_debug_state);
@@ -607,8 +665,8 @@ LayerTreeHostImpl::~LayerTreeHostImpl() {
   // first, we need to clar the pointer that
   // `compositor_frame_reporting_controller_` holds.
   compositor_frame_reporting_controller_->set_event_latency_tracker(nullptr);
-  // CFRC needs to unregister the frame trackers from the frame_sorter observer
-  // set before being cleaned up.
+  // CFRC needs to unregister the frame trackers from the frame_sorter
+  // observer set before being cleaned up.
   compositor_frame_reporting_controller_->ClearFrameSequenceTrackerCollection();
 }
 
@@ -804,6 +862,16 @@ void LayerTreeHostImpl::CommitComplete() {
   }
 
   UpdateSyncTreeAfterCommitOrImplSideInvalidation();
+
+  // Normally, we wait until tile tasks are updated (and draw images ref'ed)
+  // before incrementing DecodedImageTracker's frame number (which may evict
+  // decoded image data for un-ref'ed images). But if tile tasks are not dirty
+  // then we won't update them, so do it now.
+  if (!tile_priorities_dirty_) {
+    tile_manager_.decoded_image_tracker().SetSyncTreeFrameNumber(
+        sync_tree()->source_frame_number());
+  }
+
   micro_benchmark_controller_.DidCompleteCommit();
 
   if (mutator_host_->CurrentFrameHadRAF())
@@ -877,6 +945,10 @@ void LayerTreeHostImpl::UpdateSyncTreeAfterCommitOrImplSideInvalidation() {
   if (paint_worklet_tracker_.InvalidatePaintWorkletsOnPendingTree()) {
     client_->SetNeedsImplSideInvalidation(
         true /* needs_first_draw_on_activation */);
+    if (sync_tree()->property_change_forces_commit_criteria() ==
+        PropertyChangeForcesCommitCriteria::kAny) {
+      SetNeedsCommit();
+    }
   }
   PaintImageIdFlatSet dirty_paint_worklet_ids;
   PaintWorkletJobMap dirty_paint_worklets =
@@ -1134,6 +1206,10 @@ bool LayerTreeHostImpl::PrepareTiles() {
   bool did_prepare_tiles = tile_manager_.PrepareTiles(global_tile_state_);
   if (did_prepare_tiles)
     tile_priorities_dirty_ = false;
+  if (sync_tree()) {
+    tile_manager_.decoded_image_tracker().SetSyncTreeFrameNumber(
+        sync_tree()->source_frame_number());
+  }
   client_->DidPrepareTiles();
   return did_prepare_tiles;
 }
@@ -1171,8 +1247,8 @@ void LayerTreeHostImpl::StartPageScaleAnimation(const gfx::Point& target_offset,
   }
 
   SetNeedsOneBeginImplFrame();
-  client_->SetNeedsCommitOnImplThread();
-  client_->RenewTreePriority();
+  SetNeedsCommit();
+  RenewTreePriority();
 }
 
 void LayerTreeHostImpl::SetNeedsAnimateInput() {
@@ -1205,38 +1281,6 @@ void LayerTreeHostImpl::QueueSwapPromiseForMainThreadScrollUpdate(
     std::unique_ptr<SwapPromise> swap_promise) {
   swap_promises_for_main_thread_scroll_update_.push_back(
       std::move(swap_promise));
-}
-
-void LayerTreeHostImpl::FrameData::AsValueInto(
-    base::trace_event::TracedValue* value) const {
-  value->SetBoolean("has_no_damage", has_no_damage);
-
-  // Quad data can be quite large, so only dump render passes if we are
-  // logging verbosely or viz.quads tracing category is enabled.
-  bool quads_enabled = VerboseLogEnabled();
-  if (!quads_enabled) {
-    TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("viz.quads"),
-                                       &quads_enabled);
-  }
-  if (quads_enabled) {
-    value->BeginArray("render_passes");
-    for (const auto& render_pass : render_passes) {
-      value->BeginDictionary();
-      render_pass->AsValueInto(value);
-      value->EndDictionary();
-    }
-    value->EndArray();
-  }
-}
-
-std::string LayerTreeHostImpl::FrameData::ToString() const {
-  base::trace_event::TracedValueJSON value;
-  AsValueInto(&value);
-  return value.ToFormattedJSON();
-}
-void LayerTreeHostImpl::FrameData::set_trees_in_viz_timestamps(
-    const viz::TreesInVizTiming& timing_details) {
-  trees_in_viz_timing_details = timing_details;
 }
 
 DrawMode LayerTreeHostImpl::GetDrawMode() const {
@@ -1343,10 +1387,12 @@ bool LayerTreeHostImpl::HasDamage() const {
          hud_wants_to_draw_ || active_tree_->HasViewTransitionRequests();
 }
 
-DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
+DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame,
+                                                    bool expects_to_draw) {
   DCHECK(frame->render_passes.empty());
   DCHECK(CanDraw());
   DCHECK(!active_tree_->LayerListIsEmpty());
+  DCHECK(!expects_to_draw || settings_.trees_in_viz_in_viz_process);
 
   // For now, we use damage tracking to compute a global scissor. To do this, we
   // must compute all damage tracking before drawing anything, so that we know
@@ -1356,7 +1402,16 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
   frame->damage_reasons =
       active_tree_->RootRenderSurface()->damage_tracker()->GetDamageReasons();
 
-  if (HasDamage()) {
+  bool has_damage = HasDamage();
+
+  if (expects_to_draw) {
+    // Force drawing, but assert in DCHECK builds.
+    DUMP_WILL_BE_CHECK(has_damage)
+        << "crbug.com/454680865: Has no damage while expects_to_draw is set";
+    has_damage = true;
+  }
+
+  if (has_damage) {
     consecutive_frame_with_damage_count_++;
   } else {
     TRACE_EVENT0("cc",
@@ -1465,7 +1520,8 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
 
   // In TreesInViz mode, FrameData built in the renderer side is abandoned
   // and later rebuilt in viz side. Therefore, certain steps can be skipped.
-  bool output_frame_data = !settings_.TreesInVizInClientProcess();
+  bool output_frame_data =
+      !settings_.TreesInVizInClientProcess() || dump_compositor_frame_;
 
   for (EffectTreeLayerListIterator it(active_tree());
        it.state() != EffectTreeLayerListIterator::State::kEnd; ++it) {
@@ -1601,16 +1657,28 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
   // so there's no reason to stop the draw now (and this is not supported by
   // SingleThreadProxy).
   if (have_missing_animated_tiles && !CommitsToActiveTree()) {
-    draw_result = DrawResult::kAbortedCheckerboardAnimations;
+    if (expects_to_draw) {
+      // Force drawing, but assert in DCHECK builds.
+      DCHECK(false) << "crbug.com/454680865: Has checkerboarded animations "
+                       "while expects_to_draw is set";
+    } else {
+      draw_result = DrawResult::kAbortedCheckerboardAnimations;
+    }
   }
 
   // When we require high res to draw, abort the draw (almost) always. This does
   // not cause the scheduler to do a main frame, instead it will continue to try
   // drawing until we finally complete, so the copy request will not be lost.
-  // TODO(weiliangc): Remove RequiresHighResToDraw. crbug.com/469175
   if (frame->checkerboarded_needs_raster) {
-    if (RequiresHighResToDraw())
-      draw_result = DrawResult::kAbortedMissingHighResContent;
+    if (RequiresHighResToDraw()) {
+      if (expects_to_draw) {
+        // Force drawing, but assert in DCHECK builds.
+        DCHECK(false) << "crbug.com/454680865: Is missing high res content "
+                         "while expects_to_draw is set";
+      } else {
+        draw_result = DrawResult::kAbortedMissingHighResContent;
+      }
+    }
   }
 
   // When doing a resourceless software draw, we don't have control over the
@@ -1619,6 +1687,15 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
   // incomplete frame is better than nothing, so this takes highest precedence.
   if (resourceless_software_draw_)
     draw_result = DrawResult::kSuccess;
+
+  // We can't abort a save directive because that will stall a pending view
+  // transition.
+  // TODO(vmpstr): We might want to revisit this, and punt the save directive to
+  // the next frame (which we can force). This is non-trivial to do, and may not
+  // be worth it for rare cases like this.
+  if (frame->has_view_transition_save_directive) {
+    draw_result = DrawResult::kSuccess;
+  }
 
 #if DCHECK_IS_ON()
   for (const auto& render_pass : frame->render_passes) {
@@ -1661,14 +1738,16 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
   // destroyed.
   // TODO(weiliangc): Test copy request w/ LayerTreeFrameSink recreation. Would
   // trigger this DCHECK.
-  DCHECK(!frame->has_copy_requests || draw_result == DrawResult::kSuccess);
+  DCHECK((!frame->has_copy_requests &&
+          !frame->has_view_transition_save_directive) ||
+         draw_result == DrawResult::kSuccess);
 
   return draw_result;
 }
 
 void LayerTreeHostImpl::DidAnimateScrollOffset() {
-  client_->SetNeedsCommitOnImplThread();
-  client_->RenewTreePriority();
+  SetNeedsCommit();
+  RenewTreePriority();
 }
 
 void LayerTreeHostImpl::SetViewportDamage(const gfx::Rect& damage_rect) {
@@ -1705,7 +1784,10 @@ void LayerTreeHostImpl::InvalidateLayerTreeFrameSink(bool needs_redraw) {
   layer_tree_frame_sink()->Invalidate(needs_redraw);
 }
 
-DrawResult LayerTreeHostImpl::PrepareToDraw(FrameData* frame) {
+DrawResult LayerTreeHostImpl::PrepareToDraw(FrameData* frame,
+                                            bool expects_to_draw) {
+  DCHECK(!expects_to_draw || settings_.trees_in_viz_in_viz_process);
+
   TRACE_EVENT1("cc", "LayerTreeHostImpl::PrepareToDraw", "SourceFrameNumber",
                active_tree_->source_frame_number());
   if (input_delegate_)
@@ -1756,13 +1838,20 @@ DrawResult LayerTreeHostImpl::PrepareToDraw(FrameData* frame) {
         viewport_damage_rect_);
   }
 
-  DrawResult draw_result = CalculateRenderPasses(frame);
+  DrawResult draw_result = CalculateRenderPasses(frame, expects_to_draw);
 
   // Dump render passes and draw quads if VerboseLogEnabled().
   VERBOSE_LOG() << "Prepare to draw\n" << frame->ToString();
 
   if (draw_result != DrawResult::kSuccess) {
     DCHECK(!resourceless_software_draw_);
+    if (expects_to_draw) {
+      // Force drawing, but assert in DCHECK builds.
+      DUMP_WILL_BE_CHECK(false)
+          << "crbug.com/454680865: Draw result is not success while "
+             "expects_to_draw is set";
+      return DrawResult::kSuccess;
+    }
     return draw_result;
   }
 
@@ -2188,8 +2277,8 @@ void LayerTreeHostImpl::NotifyTileStateChanged(const Tile* tile,
     // successfully sent to Viz via UpdateDisplayTree().
     layer_context_->UpdateDisplayTile(
         static_cast<PictureLayerImpl&>(*layer_impl), *tile,
-        *resource_provider(), *layer_tree_frame_sink_->context_provider(),
-        update_damage);
+        *resource_provider(),
+        layer_tree_frame_sink_->shared_image_interface().get(), update_damage);
   }
 
   if (set_needs_redraw && !client_->IsInsideDraw() &&
@@ -2256,7 +2345,7 @@ void LayerTreeHostImpl::SetMemoryPolicyImpl(const ManagedMemoryPolicy& policy) {
   }
 
   if (needs_commit)
-    client_->SetNeedsCommitOnImplThread();
+    SetNeedsCommit();
 }
 
 void LayerTreeHostImpl::SetExternalTilePriorityConstraints(
@@ -2832,6 +2921,12 @@ std::optional<SubmitInfo> LayerTreeHostImpl::DrawLayers(FrameData* frame) {
     DCHECK(!resourceless_software_draw_);
     TRACE_EVENT_INSTANT0("cc", "EarlyOut_NoDamage", TRACE_EVENT_SCOPE_THREAD);
     active_tree()->BreakSwapPromises(SwapPromise::SWAP_FAILS);
+
+    // Send updates to Viz even for no damage case when TreesInViz is enabled.
+    if (settings_.TreesInVizInClientProcess()) {
+      UpdateDisplayTree(*frame);
+    }
+
     active_tree()->ResetAllChangeTracking();
 
     // Drop pending event metrics for UI when the frame has no damage because
@@ -2864,6 +2959,17 @@ std::optional<SubmitInfo> LayerTreeHostImpl::DrawLayers(FrameData* frame) {
   auto compositor_frame = GenerateCompositorFrame(frame);
   const auto frame_token = compositor_frame.metadata.frame_token;
   frame->frame_token = frame_token;
+  if (dump_compositor_frame_ && frame_token >= dump_compositor_frame_begin_ &&
+      frame_token <= dump_compositor_frame_end_) {
+    // This is purely for debugging TreesInViz and TreeAnimationInViz purposes.
+    std::string data = compositor_frame.ToString();
+    base::ThreadPool::PostTask(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&DoDumpCompositorFrame, data,
+                       settings_.TreesInVizInClientProcess(),
+                       settings_.trees_in_viz_in_viz_process, frame_token));
+  }
+
   bool top_controls_moved = false;
   float current_top_controls =
       compositor_frame.metadata.top_controls_visible_height.value_or(0.f);
@@ -2899,8 +3005,8 @@ std::optional<SubmitInfo> LayerTreeHostImpl::DrawLayers(FrameData* frame) {
 
   // Dump property trees and layers if VerboseLogEnabled().
   VERBOSE_LOG() << "Submitting a frame:\n"
-                << viz::TransitionUtils::RenderPassListToString(
-                       compositor_frame.render_pass_list);
+                << viz::TransitionUtils::CompositorFrameToString(
+                       compositor_frame);
 
   base::TimeTicks submit_time = base::TimeTicks::Now();
   base::TimeTicks trees_in_viz_submit_time;
@@ -2911,15 +3017,6 @@ std::optional<SubmitInfo> LayerTreeHostImpl::DrawLayers(FrameData* frame) {
     trees_in_viz_submit_time = UpdateDisplayTree(*frame);
 
     layer_tree_frame_sink_->ExportFrameTiming();
-
-    if (!base::FeatureList::IsEnabled(features::kNoCompositorFrameAcks)) {
-      // For the display compositor we should have already submitted at display
-      // Immediately queue a DidReceiveCompositorFrameAck.
-      GetTaskRunner()->PostTask(
-          FROM_HERE,
-          base::BindOnce(&LayerTreeHostImpl::DidReceiveCompositorFrameAck,
-                         weak_factory_.GetWeakPtr()));
-    }
   } else {
     TRACE_EVENT(
         "viz,benchmark,graphics.pipeline", "Graphics.Pipeline",
@@ -2936,6 +3033,10 @@ std::optional<SubmitInfo> LayerTreeHostImpl::DrawLayers(FrameData* frame) {
             data->add_latency_ids(latency.trace_id());
           }
         });
+    if (settings_.trees_in_viz_in_viz_process) {
+      compositor_frame.metadata.trees_in_viz_timing_details
+          .submit_compositor_frame = submit_time;
+    }
     layer_tree_frame_sink_->SubmitCompositorFrame(
         std::move(compositor_frame),
         /*hit_test_data_changed=*/false);
@@ -3007,7 +3108,7 @@ std::optional<SubmitInfo> LayerTreeHostImpl::DrawLayers(FrameData* frame) {
     // may force a separate render pass for the layer, which will persist until
     // a new commit removes it. Force a commit after copy requests, to remove
     // extra render passes.
-    client_->SetNeedsCommitOnImplThread();
+    SetNeedsCommit();
   }
 
   // The next frame should start by assuming nothing has changed, and changes
@@ -3118,6 +3219,7 @@ viz::CompositorFrame LayerTreeHostImpl::GenerateCompositorFrame(
   }
 
   viz::CompositorFrameMetadata metadata = MakeCompositorFrameMetadata();
+  bool has_view_transition_with_animate = false;
 
   // Don't compute transition directives in TreesInViz mode because
   // the requests will be sent over to viz to compute them.
@@ -3155,6 +3257,9 @@ viz::CompositorFrame LayerTreeHostImpl::GenerateCompositorFrame(
     }
 
     auto display_color_spaces = GetDisplayColorSpaces();
+    // TODO(vmpstr): If the frame we would produce has animated checkerboarded
+    // content, we should wait until an actual frame is produced before
+    // destructively taking view transition requests.
     for (auto& request : active_tree_->TakeViewTransitionRequests(
              /*should_set_needs_update_draw_properties=*/true)) {
       if (resourceless_software_draw_) {
@@ -3162,6 +3267,14 @@ viz::CompositorFrame LayerTreeHostImpl::GenerateCompositorFrame(
       } else {
         metadata.transition_directives.push_back(request->ConstructDirective(
             view_transition_element_map, display_color_spaces));
+        if (request->maybe_cross_frame_sink() &&
+            features::ShouldAckCOREarlyForViewTransition()) {
+          OnCompositorFrameTransitionDirectiveProcessed(request->sequence_id());
+          if (request->type() ==
+              ViewTransitionRequest::Type::kAnimateRenderer) {
+            has_view_transition_with_animate = true;
+          }
+        }
       }
     }
   } else {
@@ -3173,14 +3286,34 @@ viz::CompositorFrame LayerTreeHostImpl::GenerateCompositorFrame(
     if (active_tree_->HasViewTransitionRequests()) {
       active_tree_->set_needs_update_draw_properties();
     }
+    if (features::ShouldAckCOREarlyForViewTransition()) {
+      for (auto& request : active_tree_->view_transition_requests()) {
+        if (request->maybe_cross_frame_sink()) {
+          OnCompositorFrameTransitionDirectiveProcessed(request->sequence_id());
+          if (request->type() ==
+              ViewTransitionRequest::Type::kAnimateRenderer) {
+            has_view_transition_with_animate = true;
+          }
+        }
+      }
+    }
   }
 
   PopulateMetadataContentColorUsage(frame, &metadata);
   metadata.has_shared_element_resources = frame->has_shared_element_resources;
-  metadata.deadline = viz::FrameDeadline(
-      CurrentBeginFrameArgs().frame_time,
-      frame->deadline_in_frames.value_or(0u), CurrentBeginFrameArgs().interval,
-      frame->use_default_lower_bound_deadline);
+  uint32_t frame_deadline = frame->deadline_in_frames.value_or(0u);
+  // Set a higher frame deadline for ViewTransitions with `kAnimateRenderer` to
+  // wait for animations from old RenderFrame, in case there are issues with old
+  // RenderFrame being stuck, and we send CopyOutputRequest Ack early for
+  // fast-path ViewTransition navigations.
+  if (features::ShouldAckCOREarlyForViewTransition() &&
+      has_view_transition_with_animate) {
+    frame_deadline = 240;
+  }
+  metadata.deadline =
+      viz::FrameDeadline(CurrentBeginFrameArgs().frame_time, frame_deadline,
+                         CurrentBeginFrameArgs().interval,
+                         frame->use_default_lower_bound_deadline);
   metadata.frame_interval_inputs.frame_time =
       CurrentBeginFrameArgs().frame_time;
   metadata.frame_interval_inputs.has_input = has_input_for_frame_interval_;
@@ -3315,9 +3448,11 @@ viz::CompositorFrame LayerTreeHostImpl::GenerateCompositorFrame(
 
   viz::CompositorFrame compositor_frame;
   compositor_frame.metadata = std::move(metadata);
-    resource_provider_->PrepareSendToParent(
-        resources, &compositor_frame.resource_list,
-        layer_tree_frame_sink_->context_provider());
+
+  resource_provider_->PrepareSendToParent(
+      resources, &compositor_frame.resource_list,
+      layer_tree_frame_sink_->shared_image_interface().get());
+
   compositor_frame.render_pass_list = std::move(frame->render_passes);
 
   // We should always have a valid LocalSurfaceId in LayerTreeImpl unless we
@@ -3367,8 +3502,8 @@ base::TimeTicks LayerTreeHostImpl::UpdateDisplayTree(FrameData& frame) {
 
   return layer_context_->UpdateDisplayTreeFrom(
       *active_tree(), *resource_provider(),
-      *layer_tree_frame_sink_->context_provider(), viewport_damage_rect_,
-      target_local_surface_id_);
+      layer_tree_frame_sink_->shared_image_interface().get(),
+      viewport_damage_rect_, target_local_surface_id_, !frame.has_no_damage);
 }
 
 int LayerTreeHostImpl::RequestedMSAASampleCount() const {
@@ -3409,10 +3544,7 @@ void LayerTreeHostImpl::UpdateRasterCapabilities() {
 
     // Software compositor always uses BGRA 8888 format for tiles.
     raster_caps_.tile_format = viz::SinglePlaneFormat::kBGRA_8888;
-    raster_caps_.ui_rgba_format =
-        layer_tree_frame_sink_->shared_image_interface()
-            ? viz::SinglePlaneFormat::kBGRA_8888
-            : viz::SinglePlaneFormat::kRGBA_8888;
+    raster_caps_.ui_rgba_format = viz::SinglePlaneFormat::kBGRA_8888;
     return;
   }
 
@@ -3558,7 +3690,8 @@ bool LayerTreeHostImpl::WillBeginImplFrame(const viz::BeginFrameArgs& args) {
     input_delegate_->WillBeginImplFrame(args);
 
   // TODO(zmo): Revisit if this is needed for TreeAnimationsInViz mode.
-  if (!settings().trees_in_viz_in_viz_process) {
+  if (!settings().trees_in_viz_in_viz_process ||
+      settings().TreeAnimationsInVizInVizProcess()) {
     Animate();
   }
 
@@ -3604,7 +3737,7 @@ void LayerTreeHostImpl::DidNotProduceFrame(const viz::BeginFrameAck& ack,
   TRACE_EVENT2(
       "cc,benchmark", "LayerTreeHostImpl::DidNotProduceFrame",
       "FrameSkippedReason",
-      [](FrameSkippedReason reason) {
+      [&reason] {
         switch (reason) {
           case FrameSkippedReason::kRecoverLatency:
             return "kRecoverLatency";
@@ -3616,19 +3749,25 @@ void LayerTreeHostImpl::DidNotProduceFrame(const viz::BeginFrameAck& ack,
             return "kDrawThrottled";
         }
         return "";
-      }(reason),
+      }(),
       "Frame Sequence Number", ack.frame_id.sequence_number);
   if (layer_tree_frame_sink_) {
     layer_tree_frame_sink_->DidNotProduceFrame(ack, reason);
   }
-  // While scrolling, we save all event metrics. It is possible that this
-  // results in a 0 delta scroll, which has no damage. We drop the metrics here
-  // so that they are terminated now. This prevents them from being incorrectly
-  // associated with a future produced frame. So that jank measurements have
-  // accurate deltas. The only exception are scroll end metrics, which we keep
-  // around to  ensure `ScrollJankDroppedFrameReporter` emits per-scroll
-  // metrics.
-  events_metrics_manager_.DropSavedEventMetricsExceptScrollEnds();
+  if (reason == FrameSkippedReason::kNoDamage ||
+      !base::FeatureList::IsEnabled(
+          features::kDropMetricsFromNonProducedFramesOnlyIfTheyHadNoDamage)) {
+    // While scrolling, we save all event metrics. It is possible that this
+    // results in a 0 delta scroll, which has no damage. We drop the metrics
+    // here so that they are terminated now. This prevents them from being
+    // incorrectly associated with a future produced frame. So that jank
+    // measurements have accurate deltas.
+    events_metrics_manager_.DropSavedEventMetricsForNoFrameUpdate();
+  }
+}
+
+void LayerTreeHostImpl::DidChangeBeginFrameSourcePaused(bool paused) {
+  client_->DidChangeBeginFrameSourcePaused(paused);
 }
 
 void LayerTreeHostImpl::OnBeginImplFrameDeadline() {
@@ -4001,7 +4140,7 @@ void LayerTreeHostImpl::ActivateSyncTree() {
   }
 
   active_tree_->DidBecomeActive();
-  client_->RenewTreePriority();
+  RenewTreePriority();
 
   // If we have any picture layers, then by activating we also modified tile
   // priorities.
@@ -4054,8 +4193,11 @@ void LayerTreeHostImpl::ActivateStateForImages() {
   tile_manager_.DidActivateSyncTree();
 }
 
-void LayerTreeHostImpl::OnMemoryPressure(
-    base::MemoryPressureListener::MemoryPressureLevel level) {
+void LayerTreeHostImpl::OnMemoryPressure(base::MemoryPressureLevel level) {
+  if (level == base::MEMORY_PRESSURE_LEVEL_NONE) {
+    return;
+  }
+
   if (settings_.trees_in_viz_in_viz_process) {
     return;
   }
@@ -4128,7 +4270,6 @@ void LayerTreeHostImpl::SetVisible(bool visible) {
   // If we just became visible, we have to ensure that we draw high res tiles,
   // to prevent checkerboard flashes.
   if (visible_) {
-    // TODO(crbug.com/40410467): Replace with RequiresHighResToDraw.
     SetRequiresHighResToDraw();
     // Prior CompositorFrame may have been discarded and thus we need to ensure
     // that we submit a new one, even if there are no tiles. Therefore, force a
@@ -4168,7 +4309,7 @@ void LayerTreeHostImpl::SetNeedsRedraw(bool animation_only,
   events_metrics_manager_.SaveActiveEventMetrics();
 
   if (settings_.TreesInVizInClientProcess()) {
-    if (!animation_only || !use_layer_context_for_animations_) {
+    if (!animation_only || !settings_.TreeAnimationsInVizInClientProcess()) {
       client_->SetNeedsRedrawOnImplThread();
     }
   } else {
@@ -4277,8 +4418,6 @@ LayerTreeHostImpl::CreateRasterBufferProvider() {
         /*is_software=*/true);
   }
 
-  const gpu::Capabilities& caps =
-      compositor_context_provider->ContextCapabilities();
   viz::RasterContextProvider* worker_context_provider =
       layer_tree_frame_sink_->worker_context_provider();
 
@@ -4307,13 +4446,10 @@ LayerTreeHostImpl::CreateRasterBufferProvider() {
         /*is_software=*/false);
   }
 
-  const int max_copy_texture_chromium_size =
-      caps.max_copy_texture_chromium_size;
   return std::make_unique<OneCopyRasterBufferProvider>(
       worker_context_provider->SharedImageInterface(), GetTaskRunner(),
       compositor_context_provider, worker_context_provider,
-      max_copy_texture_chromium_size, settings_.use_partial_raster,
-      settings_.max_staging_buffer_usage_in_bytes,
+      settings_.use_partial_raster, settings_.max_staging_buffer_usage_in_bytes,
       raster_caps_.tile_overlay_candidate);
 }
 
@@ -4419,7 +4555,7 @@ void LayerTreeHostImpl::DidChangeScrollbarVisibility() {
   // Need a commit since input handling for scrollbars is handled in Blink so
   // we need to communicate to Blink when the compositor shows/hides the
   // scrollbars.
-  client_->SetNeedsCommitOnImplThread();
+  SetNeedsCommit();
 }
 
 void LayerTreeHostImpl::CleanUpTileManagerResources() {
@@ -4579,7 +4715,6 @@ bool LayerTreeHostImpl::InitializeFrameSink(
   // There will not be anything to draw here, so set high res
   // to avoid checkerboards, typically when we are recovering
   // from lost context.
-  // TODO(crbug.com/40410467): Replace with RequiresHighResToDraw.
   SetRequiresHighResToDraw();
 
   // Always allocate a new viz::LocalSurfaceId when we get a new
@@ -4720,7 +4855,7 @@ void LayerTreeHostImpl::UpdateImageDecodingHints(
       std::move(decoding_mode_map));
 }
 
-void LayerTreeHostImpl::RenewTreePriorityForTesting() {
+void LayerTreeHostImpl::RenewTreePriority() {
   client_->RenewTreePriority();
 }
 
@@ -4789,8 +4924,12 @@ void LayerTreeHostImpl::DidScrollContent(ElementId element_id,
       const auto& scroll_tree = active_tree_->property_trees()->scroll_tree();
       if (const gfx::Rect* cull_rect =
               scroll_tree.ScrollingContentsCullRect(element_id)) {
-        if (const auto* scroll_node =
-                scroll_tree.FindNodeFromElementId(element_id)) {
+        const auto* scroll_node = scroll_tree.FindNodeFromElementId(element_id);
+        // The `transform_id` can be invalid when the scroll is starting. By
+        // definition there can be no checkerboarding yet, so we can skip
+        // this calculation.
+        if (scroll_node &&
+            scroll_node->transform_id != kInvalidPropertyNodeId) {
           gfx::RectF visible_rect(
               gfx::Rect(scroll_node->container_origin,
                         scroll_tree.container_bounds(scroll_node->id)));
@@ -4836,7 +4975,7 @@ void LayerTreeHostImpl::DidScrollContent(ElementId element_id,
         }
       }
     }
-    client_->RenewTreePriority();
+    RenewTreePriority();
   }
 
   if (!animated) {
@@ -5127,8 +5266,8 @@ bool LayerTreeHostImpl::AnimatePageScale(base::TimeTicks monotonic_time) {
 
   if (page_scale_animation_->IsAnimationCompleteAtTime(monotonic_time)) {
     page_scale_animation_ = nullptr;
-    client_->SetNeedsCommitOnImplThread();
-    client_->RenewTreePriority();
+    SetNeedsCommit();
+    RenewTreePriority();
     client_->DidCompletePageScaleAnimationOnImplThread();
   } else {
     SetNeedsOneBeginImplFrame();
@@ -5166,8 +5305,8 @@ bool LayerTreeHostImpl::AnimateBrowserControls(base::TimeTicks time) {
   // it is too late for InputHandler to do the snapping.
   viewport().SnapIfNeeded();
 
-  client_->SetNeedsCommitOnImplThread();
-  client_->RenewTreePriority();
+  SetNeedsCommit();
+  RenewTreePriority();
   return true;
 }
 
@@ -5190,9 +5329,6 @@ bool LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time,
   // TODO(crbug.com/40443202): Only do this if the animations are on the active
   // tree, or if they are on the pending tree waiting for some future time to
   // start.
-  // TODO(crbug.com/40443205): We currently have a single signal from the
-  // animation_host, so on the last frame of an animation we will
-  // still request an extra SetNeedsAnimate here.
   if (animated) {
     // TODO(crbug.com/40667010): If only scroll animations present, schedule a
     // frame only if scroll changes.
@@ -5230,9 +5366,6 @@ bool LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time,
         FrameSequenceTrackerType::kSETCompositorAnimation);
   }
 
-  // TODO(crbug.com/40443205): We could return true only if the animations are
-  // on the active tree. There's no need to cause a draw to take place from
-  // animations starting/ticking on the pending tree.
   return animated;
 }
 
@@ -5534,10 +5667,8 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
   std::unique_ptr<gpu::ClientSharedImage::ScopedMapping> shared_mapping;
 
   if (layer_tree_frame_sink_->context_provider()) {
-    viz::RasterContextProvider* context_provider =
-        layer_tree_frame_sink_->context_provider();
     const auto& shared_image_caps =
-        context_provider->SharedImageInterface()->GetCapabilities();
+        layer_tree_frame_sink_->shared_image_interface()->GetCapabilities();
     const bool overlay_candidate =
         settings_.use_gpu_memory_buffer_resources &&
         shared_image_caps.supports_scanout_shared_images &&
@@ -5565,9 +5696,7 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
     // If not scaled, we can copy the pixels 1:1 from the source bitmap to our
     // destination backing of a texture or shared bitmap.
     if (layer_tree_frame_sink_->context_provider()) {
-      viz::RasterContextProvider* context_provider =
-          layer_tree_frame_sink_->context_provider();
-      auto* sii = context_provider->SharedImageInterface();
+      auto sii = layer_tree_frame_sink_->shared_image_interface();
       client_shared_image = sii->CreateSharedImage(
           {format, upload_size, color_space, shared_image_usage,
            "LayerTreeHostUIResourceBitmap"},
@@ -5633,9 +5762,7 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
     if (layer_tree_frame_sink_->context_provider()) {
       SkPixmap pixmap;
       scaled_surface->peekPixels(&pixmap);
-      viz::RasterContextProvider* context_provider =
-          layer_tree_frame_sink_->context_provider();
-      auto* sii = context_provider->SharedImageInterface();
+      auto sii = layer_tree_frame_sink_->shared_image_interface();
       client_shared_image = sii->CreateSharedImage(
           {format, upload_size, color_space, shared_image_usage,
            "LayerTreeHostUIResourceScaledBitmap"},
@@ -5649,22 +5776,13 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
   // Mailbox+SyncToken as well. The OnUIResourceReleased() method will be called
   // once the resource is deleted and the display compositor is no longer using
   // it, to free the memory allocated in this method above.
-  viz::TransferableResource transferable;
-  if (layer_tree_frame_sink_->context_provider()) {
-    gpu::SyncToken sync_token = layer_tree_frame_sink_->context_provider()
-                                    ->SharedImageInterface()
-                                    ->GenUnverifiedSyncToken();
+  gpu::SyncToken sync_token = layer_tree_frame_sink_->shared_image_interface()
+                                  ->GenUnverifiedSyncToken();
 
-    transferable = viz::TransferableResource::Make(
-        client_shared_image, viz::TransferableResource::ResourceSource::kUI,
-        sync_token);
-  } else {
-    auto sii = layer_tree_frame_sink_->shared_image_interface();
-    gpu::SyncToken sync_token = sii->GenVerifiedSyncToken();
-    transferable = viz::TransferableResource::Make(
-        client_shared_image, viz::TransferableResource::ResourceSource::kUI,
-        sync_token);
-  }
+  viz::TransferableResource transferable = viz::TransferableResource::Make(
+      client_shared_image, viz::TransferableResource::ResourceSource::kUI,
+      sync_token);
+
   id = resource_provider_->ImportResource(
       transferable,
       // The OnUIResourceReleased method is bound with a WeakPtr, but the
@@ -5813,9 +5931,9 @@ void LayerTreeHostImpl::EvictAllUIResources() {
     DeleteUIResource(uid);
     evicted_ui_resources_.insert(uid);
   }
-  client_->SetNeedsCommitOnImplThread();
+  SetNeedsCommit();
   client_->OnCanDrawStateChanged(CanDraw());
-  client_->RenewTreePriority();
+  RenewTreePriority();
 }
 
 viz::ResourceId LayerTreeHostImpl::ResourceIdForUIResource(
@@ -6036,9 +6154,10 @@ void LayerTreeHostImpl::ScrollOffsetAnimationFinished(ElementId element_id) {
     input_delegate_->ScrollOffsetAnimationFinished(element_id);
 }
 
-void LayerTreeHostImpl::ElasticOverscrollAnimationFinished() {
+void LayerTreeHostImpl::ElasticOverscrollAnimationFinished(
+    ElementId finished_id) {
   if (input_delegate_) {
-    input_delegate_->ElasticOverscrollAnimationFinished();
+    input_delegate_->ElasticOverscrollAnimationFinished(finished_id);
   }
 }
 

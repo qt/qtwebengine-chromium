@@ -32,7 +32,6 @@
 #include <variant>
 
 #include "base/auto_reset.h"
-#include "base/debug/crash_logging.h"
 #include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
@@ -45,9 +44,6 @@
 #include "media/base/media_track.h"
 #include "services/media_session/public/mojom/media_session.mojom-blink.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
-#include "third_party/blink/public/common/privacy_budget/identifiability_metric_builder.h"
-#include "third_party/blink/public/common/privacy_budget/identifiability_study_settings.h"
-#include "third_party/blink/public/common/privacy_budget/identifiable_surface.h"
 #include "third_party/blink/public/mojom/frame/user_activation_notification_type.mojom-shared.h"
 #include "third_party/blink/public/platform/modules/mediastream/web_media_stream.h"
 #include "third_party/blink/public/platform/task_type.h"
@@ -85,6 +81,7 @@
 #include "third_party/blink/renderer/core/html/media/media_source_attachment.h"
 #include "third_party/blink/renderer/core/html/media/media_source_handle.h"
 #include "third_party/blink/renderer/core/html/media/media_source_tracer.h"
+#include "third_party/blink/renderer/core/html/media/remote_playback_controller.h"
 #include "third_party/blink/renderer/core/html/time_ranges.h"
 #include "third_party/blink/renderer/core/html/track/audio_track.h"
 #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
@@ -118,7 +115,6 @@
 #include "third_party/blink/renderer/platform/network/mime/content_type.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_from_url.h"
 #include "third_party/blink/renderer/platform/network/network_state_notifier.h"
-#include "third_party/blink/renderer/platform/privacy_budget/identifiability_digest_helpers.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/event_loop.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
@@ -274,11 +270,9 @@ class AudioSourceProviderClientLockScope {
 };
 
 bool CanLoadURL(const KURL& url, const String& content_type_str) {
-  DEFINE_STATIC_LOCAL(const String, codecs, ("codecs"));
-
   ContentType content_type(content_type_str);
   String content_mime_type = content_type.GetType().DeprecatedLower();
-  String content_type_codecs = content_type.Parameter(codecs);
+  String content_type_codecs = content_type.Parameter("codecs");
 
   // If the MIME type is missing or is not meaningful, try to figure it out from
   // the URL.
@@ -369,13 +363,6 @@ std::ostream& operator<<(std::ostream& stream,
 // static
 MIMETypeRegistry::SupportsType HTMLMediaElement::GetSupportsType(
     const ContentType& content_type) {
-  // TODO(https://crbug.com/809912): Finding source of mime parsing crash.
-  static base::debug::CrashKeyString* content_type_crash_key =
-      base::debug::AllocateCrashKeyString("media_content_type",
-                                          base::debug::CrashKeySize::Size256);
-  base::debug::ScopedCrashKeyString scoped_crash_key(
-      content_type_crash_key, content_type.Raw().Utf8().c_str());
-
   String type = content_type.GetType().DeprecatedLower();
   // The codecs string is not lower-cased because MP4 values are case sensitive
   // per http://tools.ietf.org/html/rfc4281#page-7.
@@ -991,16 +978,6 @@ V8CanPlayTypeResult HTMLMediaElement::canPlayType(
   MIMETypeRegistry::SupportsType support =
       GetSupportsType(ContentType(mime_type));
 
-  if (IdentifiabilityStudySettings::Get()->ShouldSampleType(
-          blink::IdentifiableSurface::Type::kHTMLMediaElement_CanPlayType)) {
-    blink::IdentifiabilityMetricBuilder(GetDocument().UkmSourceID())
-        .Add(
-            blink::IdentifiableSurface::FromTypeAndToken(
-                blink::IdentifiableSurface::Type::kHTMLMediaElement_CanPlayType,
-                IdentifiabilityBenignStringToken(mime_type)),
-            static_cast<uint64_t>(support))
-        .Record(GetDocument().UkmRecorder());
-  }
   V8CanPlayTypeResult can_play =
       V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
 
@@ -1515,8 +1492,9 @@ bool HTMLMediaElement::IsValidBuiltinCommand(HTMLElement& invoker,
 
 bool HTMLMediaElement::HandleCommandInternal(HTMLElement& invoker,
                                              CommandEventType command) {
-  CHECK(IsValidBuiltinCommand(invoker, command));
-
+  if (!IsValidBuiltinCommand(invoker, command)) {
+    return false;
+  }
   if (HTMLElement::HandleCommandInternal(invoker, command)) {
     return true;
   }
@@ -2305,10 +2283,12 @@ void HTMLMediaElement::SetReadyState(ReadyState state) {
           }
         }
         if (default_audio_track) {
-          default_audio_track->setEnabled(true);
+          default_audio_track->setEnabled(true,
+                                          TrackBase::ChangeSource::kInitial);
         }
         if (default_video_track) {
-          default_video_track->setSelected(true);
+          default_video_track->setSelected(true,
+                                           TrackBase::ChangeSource::kInitial);
         }
       }
     }
@@ -3329,7 +3309,8 @@ AudioTrackList& HTMLMediaElement::audioTracks() {
   return *audio_tracks_;
 }
 
-void HTMLMediaElement::AudioTrackChanged(AudioTrack* track) {
+void HTMLMediaElement::AudioTrackChanged(AudioTrack* track,
+                                         TrackBase::ChangeSource source) {
   DVLOG(3) << "audioTrackChanged(" << *this
            << ") trackId= " << String(track->id())
            << " enabled=" << base::ToString(track->enabled())
@@ -3344,8 +3325,10 @@ void HTMLMediaElement::AudioTrackChanged(AudioTrack* track) {
   if (media_source_attachment_)
     media_source_attachment_->OnTrackChanged(media_source_tracer_, track);
 
-  if (!audio_tracks_timer_.IsActive())
+  if (source != TrackBase::ChangeSource::kDemuxer &&
+      !audio_tracks_timer_.IsActive()) {
     audio_tracks_timer_.StartOneShot(base::TimeDelta(), FROM_HERE);
+  }
 }
 
 void HTMLMediaElement::AudioTracksTimerFired(TimerBase*) {
@@ -3363,7 +3346,9 @@ VideoTrackList& HTMLMediaElement::videoTracks() {
   return *video_tracks_;
 }
 
-void HTMLMediaElement::SelectedVideoTrackChanged(VideoTrack* track) {
+void HTMLMediaElement::SelectedVideoTrackChanged(
+    VideoTrack* track,
+    TrackBase::ChangeSource source) {
   DVLOG(3) << "selectedVideoTrackChanged(" << *this << ") selectedTrackId="
            << (track->selected() ? String(track->id()) : "none");
 
@@ -3372,40 +3357,43 @@ void HTMLMediaElement::SelectedVideoTrackChanged(VideoTrack* track) {
 
   videoTracks().ScheduleChangeEvent();
 
-  if (media_source_attachment_)
+  if (media_source_attachment_) {
     media_source_attachment_->OnTrackChanged(media_source_tracer_, track);
+  }
 
-  if (track->selected()) {
-    web_media_player_->SelectedVideoTrackChanged(track->id());
-  } else {
-    web_media_player_->SelectedVideoTrackChanged(std::nullopt);
+  if (source != TrackBase::ChangeSource::kDemuxer) {
+    if (track->selected()) {
+      web_media_player_->SelectedVideoTrackChanged(track->id());
+    } else {
+      web_media_player_->SelectedVideoTrackChanged(std::nullopt);
+    }
   }
 }
 
-void HTMLMediaElement::AddMediaTrack(const media::MediaTrack& track) {
+void HTMLMediaElement::AddTrack(const media::MediaTrack& track) {
   switch (track.type()) {
     case media::MediaTrack::Type::kVideo: {
       bool enabled = track.enabled() && videoTracks().selectedIndex() == -1;
       videoTracks().Add(MakeGarbageCollected<VideoTrack>(
           String::FromUTF8(track.track_id().value()),
-          WebString::FromUTF8(track.kind().value()),
-          WebString::FromUTF8(track.label().value()),
-          WebString::FromUTF8(track.language().value()), enabled));
+          AtomicString(String::FromUTF8(track.kind().value())),
+          AtomicString(String::FromUTF8(track.label().value())),
+          AtomicString(String::FromUTF8(track.language().value())), enabled));
       break;
     }
     case media::MediaTrack::Type::kAudio: {
       audioTracks().Add(MakeGarbageCollected<AudioTrack>(
           String::FromUTF8(track.track_id().value()),
-          WebString::FromUTF8(track.kind().value()),
-          WebString::FromUTF8(track.label().value()),
-          WebString::FromUTF8(track.language().value()), track.enabled(),
-          track.exclusive()));
+          AtomicString(String::FromUTF8(track.kind().value())),
+          AtomicString(String::FromUTF8(track.label().value())),
+          AtomicString(String::FromUTF8(track.language().value())),
+          track.enabled(), track.exclusive()));
       break;
     }
   }
 }
 
-void HTMLMediaElement::RemoveMediaTrack(const media::MediaTrack& track) {
+void HTMLMediaElement::RemoveTrack(const media::MediaTrack& track) {
   switch (track.type()) {
     case media::MediaTrack::Type::kVideo: {
       videoTracks().Remove(String::FromUTF8(track.track_id().value()));
@@ -3413,6 +3401,26 @@ void HTMLMediaElement::RemoveMediaTrack(const media::MediaTrack& track) {
     }
     case media::MediaTrack::Type::kAudio: {
       audioTracks().Remove(String::FromUTF8(track.track_id().value()));
+      break;
+    }
+  }
+}
+
+void HTMLMediaElement::SetTrackState(const media::MediaTrack& track,
+                                     media::MediaTrack::State state) {
+  auto id = String::FromUTF8(track.track_id().value());
+  bool active = state == media::MediaTrack::State::kActive;
+  switch (track.type()) {
+    case media::MediaTrack::Type::kVideo: {
+      if (auto* impl = videoTracks().getTrackById(id)) {
+        impl->setSelected(active, TrackBase::ChangeSource::kDemuxer);
+      }
+      break;
+    }
+    case media::MediaTrack::Type::kAudio: {
+      if (auto* impl = audioTracks().getTrackById(id)) {
+        impl->setEnabled(active, TrackBase::ChangeSource::kDemuxer);
+      }
       break;
     }
   }
@@ -4398,47 +4406,38 @@ MediaControls* HTMLMediaElement::GetMediaControls() const {
   return media_controls_.Get();
 }
 
-void HTMLMediaElement::EnsureMediaControls() {
-  if (GetMediaControls())
-    return;
-
-  ShadowRoot& shadow_root = EnsureUserAgentShadowRoot();
-  UseCounterMuteScope scope(*this);
-  media_controls_ =
-      CoreInitializer::GetInstance().CreateMediaControls(*this, shadow_root);
-
-  // The media controls should be inserted after the text track container,
-  // so that they are rendered in front of captions and subtitles. This check
-  // is verifying the contract.
-  AssertShadowRootChildren(shadow_root);
-}
-
 void HTMLMediaElement::UpdateControlsVisibility() {
   if (!isConnected())
     return;
 
-  bool native_controls = ShouldShowControls();
+  // It might be nice to lazily initialize only the controls we need when they
+  // are actually visible, but cursory tests don't show any memory improvements.
+  if (!media_controls_) {
+    ShadowRoot& shadow_root = EnsureUserAgentShadowRoot();
+    UseCounterMuteScope scope(*this);
+    media_controls_ =
+        CoreInitializer::GetInstance().CreateMediaControls(*this, shadow_root);
 
-  // When LazyInitializeMediaControls is enabled, initialize the controls only
-  // if native controls should be used or if using the cast overlay.
-  if (!RuntimeEnabledFeatures::LazyInitializeMediaControlsEnabled() ||
-      RuntimeEnabledFeatures::MediaCastOverlayButtonEnabled() ||
-      native_controls) {
-    EnsureMediaControls();
-
-    // TODO(mlamouri): this doesn't sound needed but the following tests, on
-    // Android fails when removed:
-    // fullscreen/compositor-touch-hit-rects-fullscreen-video-controls.html
-    GetMediaControls()->Reset();
+    // The media controls should be inserted after the text track container,
+    // so that they are rendered in front of captions and subtitles. This check
+    // is verifying the contract.
+    AssertShadowRootChildren(shadow_root);
+  } else {
+    // This is necessary if controls change visibility because many of the state
+    // computations within MediaControlsImpl key off the visibility state.
+    media_controls_->Reset();
   }
 
-  if (native_controls)
-    GetMediaControls()->MaybeShow();
-  else if (GetMediaControls())
-    GetMediaControls()->Hide();
+  bool native_controls = ShouldShowControls();
+  if (native_controls) {
+    media_controls_->MaybeShow();
+  } else if (media_controls_) {
+    media_controls_->Hide();
+  }
 
-  if (web_media_player_)
+  if (web_media_player_) {
     web_media_player_->OnHasNativeControlsChanged(native_controls);
+  }
 }
 
 CueTimeline& HTMLMediaElement::GetCueTimeline() {
@@ -4567,7 +4566,9 @@ void HTMLMediaElement::Trace(Visitor* visitor) const {
   visitor->Trace(media_player_receiver_set_);
   visitor->Trace(opener_document_);
   visitor->Trace(opener_context_observer_);
-  Supplementable<HTMLMediaElement>::Trace(visitor);
+  visitor->Trace(audio_output_device_controller_);
+  visitor->Trace(html_media_element_encrypted_media_);
+  visitor->Trace(remote_playback_controller_);
   HTMLElement::Trace(visitor);
   ExecutionContextLifecycleStateObserver::Trace(visitor);
 }
@@ -4576,14 +4577,14 @@ void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
   // Create a placeholder audio track if the player says it has audio but it
   // didn't explicitly announce the tracks.
   if (HasAudio() && !audioTracks().length()) {
-    AddMediaTrack(media::MediaTrack::CreateAudioTrack(
+    AddTrack(media::MediaTrack::CreateAudioTrack(
         "audio", media::MediaTrack::AudioKind::kMain, "Audio Track", "", true));
   }
 
   // Create a placeholder video track if the player says it has video but it
   // didn't explicitly announce the tracks.
   if (HasVideo() && !videoTracks().length()) {
-    AddMediaTrack(media::MediaTrack::CreateVideoTrack(
+    AddTrack(media::MediaTrack::CreateVideoTrack(
         "video", media::MediaTrack::VideoKind::kMain, "Video Track", "", true));
   }
 }

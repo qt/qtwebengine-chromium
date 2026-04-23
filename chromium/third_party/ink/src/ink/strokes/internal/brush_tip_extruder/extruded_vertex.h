@@ -41,10 +41,10 @@ struct ExtrudedVertex {
   static ExtrudedVertex FromLegacy(
       const strokes_internal::LegacyVertex& vertex);
   strokes_internal::LegacyVertex ToLegacy() const;
-};
 
-bool operator==(const ExtrudedVertex& a, const ExtrudedVertex& b);
-bool operator!=(const ExtrudedVertex& a, const ExtrudedVertex& b);
+  friend bool operator==(const ExtrudedVertex&,
+                         const ExtrudedVertex&) = default;
+};
 
 // Computes the linear interpolation between `a` and `b` when `t` is in the
 // range [0, 1], and the linear extrapolation otherwise.
@@ -89,19 +89,6 @@ inline strokes_internal::LegacyVertex ExtrudedVertex::ToLegacy() const {
           .color = {color.r, color.g, color.b, color.a},
           .texture_coords = texture_coords,
           .secondary_texture_coords = secondary_texture_coords};
-}
-
-inline bool operator==(const ExtrudedVertex& a, const ExtrudedVertex& b) {
-  return a.position == b.position &&
-         a.new_non_position_attributes == b.new_non_position_attributes &&
-         a.color.r == b.color.r && a.color.g == b.color.g &&
-         a.color.b == b.color.b && a.color.a == b.color.a &&
-         a.texture_coords == b.texture_coords &&
-         a.secondary_texture_coords == b.secondary_texture_coords;
-}
-
-inline bool operator!=(const ExtrudedVertex& a, const ExtrudedVertex& b) {
-  return !(a == b);
 }
 
 }  // namespace ink::brush_tip_extruder_internal

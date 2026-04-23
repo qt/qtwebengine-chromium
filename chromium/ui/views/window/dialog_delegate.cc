@@ -22,6 +22,7 @@
 #include "ui/base/mojom/ui_base_types.mojom-shared.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/color_palette.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/rounded_corners_f.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/bubble/bubble_border.h"
@@ -71,6 +72,17 @@ bool HasCallback(
       [](const auto& variant) { return static_cast<bool>(variant); }, callback);
 }
 
+#if !BUILDFLAG(IS_APPLE)
+bool UseDesktopWidgetOverride(WidgetDelegate* delegate) {
+#if BUILDFLAG(IS_CHROMEOS)
+  return false;
+#else
+  return delegate->use_desktop_widget_override();
+#endif
+}
+
+#endif  // !BUILDFLAG(IS_APPLE)
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -82,6 +94,15 @@ DialogDelegate::Params::~Params() = default;
 // DialogDelegate:
 
 DialogDelegate::DialogDelegate() {
+  LayoutProvider* const layout_provider = LayoutProvider::Get();
+  if (layout_provider) {
+    set_frame_margins({
+        .contents = gfx::Insets(),
+        .title = layout_provider->GetInsetsMetric(INSETS_DIALOG_TITLE),
+        .footnote = gfx::Insets(),
+    });
+  }
+
   RegisterWindowWillCloseCallback(
       RegisterWillCloseCallbackPassKey(),
       base::BindOnce(&DialogDelegate::WindowWillClose, base::Unretained(this)));
@@ -157,7 +178,7 @@ Widget::InitParams DialogDelegate::GetDialogWidgetInitParams(
   // simultaneously.
   params.child = parent &&
                  (delegate->GetModalType() == ui::mojom::ModalType::kChild) &&
-                 !delegate->use_desktop_widget_override();
+                 !UseDesktopWidgetOverride(delegate);
 #endif
 
   if (BubbleDialogDelegate* bubble = delegate->AsBubbleDialogDelegate()) {
@@ -352,20 +373,27 @@ bool DialogDelegate::EscShouldCancelDialog() const {
 // static
 std::unique_ptr<FrameView> DialogDelegate::CreateDialogFrameView(
     Widget* widget) {
-  LayoutProvider* provider = LayoutProvider::Get();
-  auto frame = std::make_unique<BubbleFrameView>(
-      provider->GetInsetsMetric(INSETS_DIALOG_TITLE), gfx::Insets());
-
   const BubbleBorder::Shadow kShadow = BubbleBorder::DIALOG_SHADOW;
   std::unique_ptr<BubbleBorder> border =
       std::make_unique<BubbleBorder>(BubbleBorder::FLOAT, kShadow);
+
   DialogDelegate* delegate = widget->widget_delegate()->AsDialogDelegate();
+  std::unique_ptr<views::BubbleFrameView> frame;
+
   if (delegate) {
+    const FrameMargins& margin = delegate->frame_margins();
+    frame =
+        std::make_unique<BubbleFrameView>(margin.title.value(), gfx::Insets());
     if (delegate->GetParams().round_corners) {
       border->set_rounded_corners(
           gfx::RoundedCornersF(delegate->GetCornerRadius()));
     }
+    frame->SetFootnoteMargins(margin.footnote.value());
     frame->SetFootnoteView(delegate->DisownFootnoteView());
+  } else {
+    LayoutProvider* provider = LayoutProvider::Get();
+    frame = std::make_unique<BubbleFrameView>(
+        provider->GetInsetsMetric(INSETS_DIALOG_TITLE), gfx::Insets());
   }
   frame->SetBubbleBorder(std::move(border));
   return frame;
@@ -615,6 +643,18 @@ int DialogDelegate::GetCornerRadius() const {
 
 std::unique_ptr<View> DialogDelegate::DisownFootnoteView() {
   return std::move(footnote_view_);
+}
+
+void DialogDelegate::set_frame_margins(const FrameMargins& margins) {
+  if (margins.contents) {
+    margins_.contents = margins.contents.value();
+  }
+  if (margins.title) {
+    margins_.title = margins.title.value();
+  }
+  if (margins.footnote) {
+    margins_.footnote = margins.footnote.value();
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

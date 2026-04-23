@@ -1421,7 +1421,8 @@ Local<EphemeronTable> EphemeronTable::Set(v8::Isolate* isolate,
   DCHECK(IsJSReceiver(*internal_key));
 
   i::DirectHandle<i::EphemeronHashTable> result(
-      i::EphemeronHashTable::Put(self, internal_key, internal_value));
+      i::EphemeronHashTable::Put(reinterpret_cast<i::Isolate*>(isolate), self,
+                                 internal_key, internal_value));
 
   return ToApiHandle<EphemeronTable>(result);
 }
@@ -1461,7 +1462,6 @@ MaybeLocal<Message> GetMessageFromPromise(Local<Promise> p) {
   i::DirectHandle<i::Object> maybeMessage =
       i::JSReceiver::GetDataProperty(isolate, promise, key);
 
-  if (IsAnyHole(*maybeMessage)) return MaybeLocal<Message>();
   if (!IsJSMessageObject(*maybeMessage, isolate)) return MaybeLocal<Message>();
   return ToApiHandle<Message>(i::Cast<i::JSMessageObject>(maybeMessage));
 }

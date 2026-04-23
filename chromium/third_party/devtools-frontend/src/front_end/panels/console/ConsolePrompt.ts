@@ -1,7 +1,7 @@
 // Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -13,8 +13,8 @@ import * as Badges from '../../models/badges/badges.js';
 import * as Formatter from '../../models/formatter/formatter.js';
 import * as SourceMapScopes from '../../models/source_map_scopes/source_map_scopes.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
+import {Icon} from '../../ui/kit/kit.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -57,7 +57,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
   private requestPreviewBound: () => Promise<void>;
   private requestPreviewCurrent = 0;
   private readonly innerPreviewElement: HTMLElement;
-  private readonly promptIcon: IconButton.Icon.Icon;
+  private readonly promptIcon: Icon;
   private readonly iconThrottler: Common.Throttler.Throttler;
   private readonly eagerEvalSetting: Common.Settings.Setting<boolean>;
   protected previewRequestForTest: Promise<void>|null;
@@ -119,7 +119,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
     this.textChangeThrottler = new Common.Throttler.Throttler(150);
     this.requestPreviewBound = this.requestPreview.bind(this);
     this.innerPreviewElement = this.eagerPreviewElement.createChild('div', 'console-eager-inner-preview');
-    const previewIcon = new IconButton.Icon.Icon();
+    const previewIcon = new Icon();
     previewIcon.name = 'chevron-left-dot';
     previewIcon.classList.add('preview-result-icon', 'medium');
     this.eagerPreviewElement.appendChild(previewIcon);
@@ -127,7 +127,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
     const editorContainerElement = this.element.createChild('div', 'console-prompt-editor-container');
     this.element.appendChild(this.eagerPreviewElement);
 
-    this.promptIcon = new IconButton.Icon.Icon();
+    this.promptIcon = new Icon();
     this.promptIcon.name = 'chevron-right';
     this.promptIcon.style.color = 'var(--icon-action)';
     this.promptIcon.classList.add('console-prompt-icon', 'medium');
@@ -285,7 +285,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
     if (preview.deepTextContent() !== TextEditor.Config.contentIncludingHint(this.editor.editor).trim()) {
       this.innerPreviewElement.appendChild(preview);
     }
-    if (result && 'object' in result && result.object && result.object.subtype === 'node') {
+    if (result && 'object' in result && result.object?.subtype === 'node') {
       this.highlightingNode = true;
       SDK.OverlayModel.OverlayModel.highlightObjectAsDOMNode(result.object);
     } else if (this.highlightingNode) {
@@ -342,9 +342,29 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
   }
 
   private editorKeymap(): readonly CodeMirror.KeyBinding[] {
-    const keymap = [
-      {key: 'ArrowUp', run: () => this.#editorHistory.moveHistory(Direction.BACKWARD)},
-      {key: 'ArrowDown', run: () => this.#editorHistory.moveHistory(Direction.FORWARD)},
+    const keymap: CodeMirror.KeyBinding[] = [
+      {
+        // Handle the KeyboardEvent manually.
+        any: (_view, event) => {
+          // Events with `repeat=true` are excluded from altering the history state because
+          // they are often not intended as such. Example:
+          // Scrolling through long snippets.
+          if (event.repeat) {
+            return false;
+          }
+
+          if (event.key === 'ArrowUp') {
+            return this.#editorHistory.moveHistory(Direction.BACKWARD);
+          }
+
+          if (event.key === 'ArrowDown') {
+            return this.#editorHistory.moveHistory(Direction.FORWARD);
+          }
+
+          return false;
+        },
+      },
+
       {mac: 'Ctrl-p', run: () => this.#editorHistory.moveHistory(Direction.BACKWARD, true)},
       {mac: 'Ctrl-n', run: () => this.#editorHistory.moveHistory(Direction.FORWARD, true)},
       {
@@ -371,12 +391,12 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
     if (this.isAiCodeCompletionEnabled()) {
       keymap.push({
         key: 'Tab',
-        run: (): boolean => {
+        run: () => {
           const {accepted, suggestion} = TextEditor.Config.acceptAiAutoCompleteSuggestion(this.editor.editor);
           if (accepted) {
             this.dispatchEventToListeners(
                 Events.AI_CODE_COMPLETION_SUGGESTION_ACCEPTED, {citations: this.aiCodeCompletionCitations});
-            if (suggestion?.rpcGlobalId && suggestion?.sampleId) {
+            if (suggestion?.rpcGlobalId) {
               this.aiCodeCompletion?.registerUserAcceptance(suggestion.rpcGlobalId, suggestion.sampleId);
             }
           }
@@ -428,7 +448,9 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
   }
 
   private async handleEnter(forceEvaluate?: boolean): Promise<void> {
-    if (this.#selfXssWarningShown && this.text() === i18nString(UIStrings.allowPasting)) {
+    if (this.#selfXssWarningShown &&
+        (this.text() === i18nString(UIStrings.allowPasting) ||
+         this.text() === `'${i18nString(UIStrings.allowPasting)}'`)) {
       Common.Console.Console.instance().log(this.text());
       this.editor.dispatch({
         changes: {from: 0, to: this.editor.state.doc.length},
@@ -534,7 +556,14 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
       this.teaser = undefined;
     }
     this.aiCodeCompletion = new AiCodeCompletion.AiCodeCompletion.AiCodeCompletion(
-        {aidaClient: this.aidaClient}, this.editor, AiCodeCompletion.AiCodeCompletion.ContextFlavor.CONSOLE, ['\n\n']);
+        {aidaClient: this.aidaClient}, AiCodeCompletion.AiCodeCompletion.ContextFlavor.CONSOLE, {
+          getSelectionHead: () => this.editor.editor.state.selection.main.head,
+          getCompletionHint: () => this.editor.editor.plugin(TextEditor.Config.showCompletionHint)?.currentHint,
+          setAiAutoCompletion: (suggestion: TextEditor.Config.ActiveSuggestion|null) => {
+            this.editor.dispatch({effects: TextEditor.Config.setAiAutoCompleteSuggestion.of(suggestion)});
+          }
+        },
+        ['\n\n']);
     this.aiCodeCompletion.addEventListener(AiCodeCompletion.AiCodeCompletion.Events.RESPONSE_RECEIVED, event => {
       this.aiCodeCompletionCitations = event.data.citations;
       this.dispatchEventToListeners(Events.AI_CODE_COMPLETION_RESPONSE_RECEIVED, event.data);

@@ -108,8 +108,9 @@ struct Converter<int32_t, std::string> {
     } else if (def.ipp_type == ValueTag::enum_ ||
                def.ipp_type == ValueTag::keyword) {
       AttrName attr_name;
-      if (!FromString(name, &attr_name))
+      if (!FromString(name, &attr_name)) {
         return false;
+      }
       *out_val = ToString(attr_name, in_val);
     } else if (def.ipp_type == ValueTag::integer) {
       *out_val = ToString(in_val);
@@ -138,22 +139,26 @@ struct Converter<std::string, int32_t> {
     if (def.ipp_type == ValueTag::boolean) {
       bool out;
       result = FromString(in_val, &out);
-      if (result)
+      if (result) {
         *out_val = out;
+      }
     } else if (def.ipp_type == ValueTag::enum_ ||
                def.ipp_type == ValueTag::keyword) {
       AttrName attr_name;
-      if (!FromString(name, &attr_name))
+      if (!FromString(name, &attr_name)) {
         return false;
+      }
       int out;
       result = FromString(in_val, attr_name, &out);
-      if (result)
+      if (result) {
         *out_val = out;
+      }
     } else if (def.ipp_type == ValueTag::integer) {
       int out;
       result = FromString(in_val, &out);
-      if (result)
+      if (result) {
         *out_val = out;
+      }
     }
     return result;
   }
@@ -173,32 +178,36 @@ struct Converter<std::string, StringWithLanguage> {
 // Creates new value for attribute |def| and saves it as void*.
 template <typename Type>
 void* CreateValue(const AttrDef& def) {
-  if (sizeof(Type) <= sizeof(void*) && alignof(Type) <= alignof(void*))
+  if (sizeof(Type) <= sizeof(void*) && alignof(Type) <= alignof(void*)) {
     return 0;
+  }
   return new Type();
 }
 
 // Deletes value saved as void*.
 template <typename Type>
 void DeleteValue(void* value) {
-  if (sizeof(Type) <= sizeof(void*) && alignof(Type) <= alignof(void*))
+  if (sizeof(Type) <= sizeof(void*) && alignof(Type) <= alignof(void*)) {
     return;
+  }
   delete reinterpret_cast<Type*>(value);
 }
 
 // Returns pointer to a value stored as void*.
 template <typename Type>
 Type* ReadValuePtr(void** value) {
-  if (sizeof(Type) <= sizeof(void*) && alignof(Type) <= alignof(void*))
+  if (sizeof(Type) <= sizeof(void*) && alignof(Type) <= alignof(void*)) {
     return reinterpret_cast<Type*>(value);
+  }
   return reinterpret_cast<Type*>(*value);
 }
 
 // Const version of the template function above.
 template <typename Type>
 const Type* ReadValueConstPtr(void* const* value) {
-  if (sizeof(Type) <= sizeof(void*) && alignof(Type) <= alignof(void*))
+  if (sizeof(Type) <= sizeof(void*) && alignof(Type) <= alignof(void*)) {
     return reinterpret_cast<const Type*>(value);
+  }
   return reinterpret_cast<Type* const>(*value);
 }
 
@@ -212,18 +221,21 @@ void ResizeVector<Collection*>(const AttrDef& def,
                                std::vector<Collection*>* v,
                                size_t new_size) {
   const size_t old_size = v->size();
-  for (size_t i = new_size; i < old_size; ++i)
+  for (size_t i = new_size; i < old_size; ++i) {
     delete v->at(i);
+  }
   v->resize(new_size);
-  for (size_t i = old_size; i < new_size; ++i)
+  for (size_t i = old_size; i < new_size; ++i) {
     (*v)[i] = new Collection;
+  }
 }
 
 // Deletes the whole attribute's |values|.
 template <typename Type>
 void DeleteAttrTyped(void*& values, const AttrDef& def) {
-  if (values == nullptr)
+  if (values == nullptr) {
     return;
+  }
   auto pv = reinterpret_cast<std::vector<Type>*>(values);
   ResizeVector<Type>(def, pv, 0);
   delete pv;
@@ -273,8 +285,9 @@ Type* ResizeAttrGetValuePtr(void*& values,
   }
   // Returns the pointer, resize the attribute when needed.
   std::vector<Type>* v = reinterpret_cast<std::vector<Type>*>(values);
-  if (cut_if_longer || v->size() <= index)
+  if (cut_if_longer || v->size() <= index) {
     ResizeVector<Type>(def, v, index + 1);
+  }
   return (v->data() + index);
 }
 
@@ -330,13 +343,15 @@ bool ReadConvertValueTyped(void* const& values,
                            const AttrDef& def,
                            size_t index,
                            ApiType* value) {
-  if (value == nullptr)
+  if (value == nullptr) {
     return false;
+  }
 
   const InternalType* internal_value = nullptr;
   auto v = ReadValueConstPtr<std::vector<InternalType>>(&values);
-  if (v->size() <= index)
+  if (v->size() <= index) {
     return false;
+  }
   internal_value = v->data() + index;
   return Converter<InternalType, ApiType>::Convert(name, def, *internal_value,
                                                    value);
@@ -386,8 +401,9 @@ bool SaveValueTyped(void*& values,
                     const ApiType& value) {
   InternalType internal_value;
   if (!Converter<ApiType, InternalType>::Convert(name, def, value,
-                                                 &internal_value))
+                                                 &internal_value)) {
     return false;
+  }
   InternalType* internal_ptr =
       ResizeAttrGetValuePtr<InternalType>(values, def, index, false);
   *internal_ptr = internal_value;
@@ -468,10 +484,11 @@ std::string ToString(int v) {
 
 std::string ToString(const Resolution& v) {
   std::string s = ToString(v.xres) + "x" + ToString(v.yres);
-  if (v.units == Resolution::kDotsPerInch)
+  if (v.units == Resolution::kDotsPerInch) {
     s += "dpi";
-  else
+  } else {
     s += "dpc";
+  }
   return s;
 }
 
@@ -492,8 +509,9 @@ std::string ToString(const StringWithLanguage& value) {
 }
 
 bool FromString(const std::string& s, bool* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   if (s == "false") {
     *v = false;
     return true;
@@ -508,39 +526,48 @@ bool FromString(const std::string& s, bool* v) {
 // JSON-like integer format: first character may be '-', the rest must be
 // digits. Leading zeroes allowed.
 bool FromString(const std::string& s, int* out) {
-  if (out == nullptr)
+  if (out == nullptr) {
     return false;
-  if (s.empty())
+  }
+  if (s.empty()) {
     return false;
+  }
   auto it = s.begin();
   int vv = 0;
   if (*it == '-') {
     ++it;
-    if (it == s.end())
+    if (it == s.end()) {
       return false;
+    }
     // negative number
     for (; it != s.end(); ++it) {
-      if (std::numeric_limits<int>::min() / 10 > vv)
+      if (std::numeric_limits<int>::min() / 10 > vv) {
         return false;
+      }
       vv *= 10;
-      if (*it < '0' || *it > '9')
+      if (*it < '0' || *it > '9') {
         return false;
+      }
       const int d = (*it - '0');
-      if (std::numeric_limits<int>::min() + d > vv)
+      if (std::numeric_limits<int>::min() + d > vv) {
         return false;
+      }
       vv -= d;
     }
   } else {
     // positive number
     for (; it != s.end(); ++it) {
-      if (std::numeric_limits<int>::max() / 10 < vv)
+      if (std::numeric_limits<int>::max() / 10 < vv) {
         return false;
+      }
       vv *= 10;
-      if (*it < '0' || *it > '9')
+      if (*it < '0' || *it > '9') {
         return false;
+      }
       const int d = (*it - '0');
-      if (std::numeric_limits<int>::max() - d < vv)
+      if (std::numeric_limits<int>::max() - d < vv) {
         return false;
+      }
       vv += d;
     }
   }
@@ -569,8 +596,9 @@ std::string_view Attribute::Name() const {
 }
 
 size_t Attribute::GetSize() const {
-  if (values_ == nullptr)
+  if (values_ == nullptr) {
     return 0;
+  }
   switch (def_.cc_type) {
     case InternalType::kInteger:
       return ReadValueConstPtr<std::vector<int32_t>>(&values_)->size();
@@ -596,37 +624,44 @@ size_t Attribute::Size() const {
 }
 
 void Attribute::Resize(size_t new_size) {
-  if (IsOutOfBand(def_.ipp_type) || new_size == 0)
+  if (IsOutOfBand(def_.ipp_type) || new_size == 0) {
     return;
+  }
   ResizeAttr(values_, def_, new_size, true);
 }
 
 Code Attribute::GetValue(size_t index, bool& val) const {
-  if (def_.ipp_type != ValueTag::boolean)
+  if (def_.ipp_type != ValueTag::boolean) {
     return Code::kIncompatibleType;
+  }
   auto values = ReadValueConstPtr<std::vector<int32_t>>(&values_);
-  if (index >= values->size())
+  if (index >= values->size()) {
     return Code::kIndexOutOfRange;
+  }
   val = values->at(index);
   return Code::kOK;
 }
 
 Code Attribute::GetValue(size_t index, int32_t& val) const {
-  if (!IsInteger(def_.ipp_type))
+  if (!IsInteger(def_.ipp_type)) {
     return Code::kIncompatibleType;
+  }
   auto values = ReadValueConstPtr<std::vector<int32_t>>(&values_);
-  if (index >= values->size())
+  if (index >= values->size()) {
     return Code::kIndexOutOfRange;
+  }
   val = values->at(index);
   return Code::kOK;
 }
 
 Code Attribute::GetValue(size_t index, std::string& val) const {
-  if (!IsString(def_.ipp_type) && def_.ipp_type != ValueTag::octetString)
+  if (!IsString(def_.ipp_type) && def_.ipp_type != ValueTag::octetString) {
     return Code::kIncompatibleType;
+  }
   auto values = ReadValueConstPtr<std::vector<std::string>>(&values_);
-  if (index >= values->size())
+  if (index >= values->size()) {
     return Code::kIndexOutOfRange;
+  }
   val = values->at(index);
   return Code::kOK;
 }
@@ -635,16 +670,18 @@ Code Attribute::GetValue(size_t index, StringWithLanguage& val) const {
   if (def_.ipp_type == ValueTag::nameWithLanguage ||
       def_.ipp_type == ValueTag::textWithLanguage) {
     auto values = ReadValueConstPtr<std::vector<StringWithLanguage>>(&values_);
-    if (index >= values->size())
+    if (index >= values->size()) {
       return Code::kIndexOutOfRange;
+    }
     val = values->at(index);
     return Code::kOK;
   }
   if (def_.ipp_type == ValueTag::nameWithoutLanguage ||
       def_.ipp_type == ValueTag::textWithoutLanguage) {
     auto values = ReadValueConstPtr<std::vector<std::string>>(&values_);
-    if (index >= values->size())
+    if (index >= values->size()) {
       return Code::kIndexOutOfRange;
+    }
     val.value = values->at(index);
     val.language = "";
     return Code::kOK;
@@ -653,21 +690,25 @@ Code Attribute::GetValue(size_t index, StringWithLanguage& val) const {
 }
 
 Code Attribute::GetValue(size_t index, DateTime& val) const {
-  if (def_.ipp_type != ValueTag::dateTime)
+  if (def_.ipp_type != ValueTag::dateTime) {
     return Code::kIncompatibleType;
+  }
   auto values = ReadValueConstPtr<std::vector<DateTime>>(&values_);
-  if (index >= values->size())
+  if (index >= values->size()) {
     return Code::kIndexOutOfRange;
+  }
   val = values->at(index);
   return Code::kOK;
 }
 
 Code Attribute::GetValue(size_t index, Resolution& val) const {
-  if (def_.ipp_type != ValueTag::resolution)
+  if (def_.ipp_type != ValueTag::resolution) {
     return Code::kIncompatibleType;
+  }
   auto values = ReadValueConstPtr<std::vector<Resolution>>(&values_);
-  if (index >= values->size())
+  if (index >= values->size()) {
     return Code::kIndexOutOfRange;
+  }
   val = values->at(index);
   return Code::kOK;
 }
@@ -675,15 +716,17 @@ Code Attribute::GetValue(size_t index, Resolution& val) const {
 Code Attribute::GetValue(size_t index, RangeOfInteger& val) const {
   if (def_.ipp_type == ValueTag::rangeOfInteger) {
     auto values = ReadValueConstPtr<std::vector<RangeOfInteger>>(&values_);
-    if (index >= values->size())
+    if (index >= values->size()) {
       return Code::kIndexOutOfRange;
+    }
     val = values->at(index);
     return Code::kOK;
   }
   if (def_.ipp_type == ValueTag::integer) {
     auto values = ReadValueConstPtr<std::vector<int32_t>>(&values_);
-    if (index >= values->size())
+    if (index >= values->size()) {
       return Code::kIndexOutOfRange;
+    }
     val.min_value = val.max_value = values->at(index);
     return Code::kOK;
   }
@@ -698,8 +741,9 @@ CollsView Attribute::Colls() {
 }
 
 Code Attribute::GetValues(std::vector<bool>& values) const {
-  if (def_.ipp_type != ValueTag::boolean)
+  if (def_.ipp_type != ValueTag::boolean) {
     return Code::kIncompatibleType;
+  }
   const std::vector<int32_t>* vints =
       ReadValueConstPtr<std::vector<int32_t>>(&values_);
   values.assign(vints->begin(), vints->end());
@@ -707,15 +751,17 @@ Code Attribute::GetValues(std::vector<bool>& values) const {
 }
 
 Code Attribute::GetValues(std::vector<int32_t>& values) const {
-  if (!IsInteger(def_.ipp_type))
+  if (!IsInteger(def_.ipp_type)) {
     return Code::kIncompatibleType;
+  }
   values = *ReadValueConstPtr<std::vector<int32_t>>(&values_);
   return Code::kOK;
 }
 
 Code Attribute::GetValues(std::vector<std::string>& values) const {
-  if (!IsString(def_.ipp_type) && def_.ipp_type != ValueTag::octetString)
+  if (!IsString(def_.ipp_type) && def_.ipp_type != ValueTag::octetString) {
     return Code::kIncompatibleType;
+  }
   values = *ReadValueConstPtr<std::vector<std::string>>(&values_);
   return Code::kOK;
 }
@@ -740,15 +786,17 @@ Code Attribute::GetValues(std::vector<StringWithLanguage>& values) const {
 }
 
 Code Attribute::GetValues(std::vector<DateTime>& values) const {
-  if (def_.ipp_type != ValueTag::dateTime)
+  if (def_.ipp_type != ValueTag::dateTime) {
     return Code::kIncompatibleType;
+  }
   values = *ReadValueConstPtr<std::vector<DateTime>>(&values_);
   return Code::kOK;
 }
 
 Code Attribute::GetValues(std::vector<Resolution>& values) const {
-  if (def_.ipp_type != ValueTag::resolution)
+  if (def_.ipp_type != ValueTag::resolution) {
     return Code::kIncompatibleType;
+  }
   values = *ReadValueConstPtr<std::vector<Resolution>>(&values_);
   return Code::kOK;
 }
@@ -798,8 +846,9 @@ Code Attribute::SetValues(RangeOfInteger value) {
 }
 
 Code Attribute::SetValues(const std::vector<bool>& values) {
-  if (def_.ipp_type != ValueTag::boolean)
+  if (def_.ipp_type != ValueTag::boolean) {
     return Code::kIncompatibleType;
+  }
   std::vector<int32_t>* vints = ReadValuePtr<std::vector<int32_t>>(&values_);
   vints->assign(values.begin(), values.end());
   return Code::kOK;
@@ -808,9 +857,11 @@ Code Attribute::SetValues(const std::vector<bool>& values) {
 Code Attribute::SetValues(const std::vector<int32_t>& values) {
   switch (def_.ipp_type) {
     case ValueTag::boolean:
-      for (int32_t v : values)
-        if (v < 0 || v > 1)
+      for (int32_t v : values) {
+        if (v < 0 || v > 1) {
           return Code::kValueOutOfRange;
+        }
+      }
       [[fallthrough]];
     case ValueTag::enum_:
     case ValueTag::integer:
@@ -822,11 +873,13 @@ Code Attribute::SetValues(const std::vector<int32_t>& values) {
 }
 
 Code Attribute::SetValues(const std::vector<std::string>& values) {
-  if (!IsString(def_.ipp_type) && def_.ipp_type != ValueTag::octetString)
+  if (!IsString(def_.ipp_type) && def_.ipp_type != ValueTag::octetString) {
     return Code::kIncompatibleType;
+  }
   for (const std::string& v : values) {
-    if (v.size() > kMaxSizeOfNameOrValue)
+    if (v.size() > kMaxSizeOfNameOrValue) {
       return Code::kValueOutOfRange;
+    }
   }
   *ReadValuePtr<std::vector<std::string>>(&values_) = values;
   return Code::kOK;
@@ -845,30 +898,34 @@ Code Attribute::SetValues(const std::vector<StringWithLanguage>& values) {
     // * int16_t (2 bytes) - length of the value field = V
     // * string (V bytes) - content of the value field
     // The total size (2 + L + 2 + V) cannot exceed the threshold.
-    if (v.value.size() + v.language.size() + 4 > kMaxSizeOfNameOrValue)
+    if (v.value.size() + v.language.size() + 4 > kMaxSizeOfNameOrValue) {
       return Code::kValueOutOfRange;
+    }
   }
   *ReadValuePtr<std::vector<StringWithLanguage>>(&values_) = values;
   return Code::kOK;
 }
 
 Code Attribute::SetValues(const std::vector<DateTime>& values) {
-  if (def_.ipp_type != ValueTag::dateTime)
+  if (def_.ipp_type != ValueTag::dateTime) {
     return Code::kIncompatibleType;
+  }
   *ReadValuePtr<std::vector<DateTime>>(&values_) = values;
   return Code::kOK;
 }
 
 Code Attribute::SetValues(const std::vector<Resolution>& values) {
-  if (def_.ipp_type != ValueTag::resolution)
+  if (def_.ipp_type != ValueTag::resolution) {
     return Code::kIncompatibleType;
+  }
   *ReadValuePtr<std::vector<Resolution>>(&values_) = values;
   return Code::kOK;
 }
 
 Code Attribute::SetValues(const std::vector<RangeOfInteger>& values) {
-  if (def_.ipp_type != ValueTag::rangeOfInteger)
+  if (def_.ipp_type != ValueTag::rangeOfInteger) {
     return Code::kIncompatibleType;
+  }
   *ReadValuePtr<std::vector<RangeOfInteger>>(&values_) = values;
   return Code::kOK;
 }
@@ -886,8 +943,9 @@ Collection::~Collection() = default;
 
 Collection::iterator Collection::GetAttr(std::string_view name) {
   auto it = attributes_index_.find(name);
-  if (it == attributes_index_.end())
+  if (it == attributes_index_.end()) {
     return iterator(attributes_.end());
+  }
   auto it2 = attributes_.begin();
   std::advance(it2, it->second);
   return iterator(it2);
@@ -895,8 +953,9 @@ Collection::iterator Collection::GetAttr(std::string_view name) {
 
 Collection::const_iterator Collection::GetAttr(std::string_view name) const {
   auto it = attributes_index_.find(name);
-  if (it == attributes_index_.end())
+  if (it == attributes_index_.end()) {
     return const_iterator(attributes_.end());
+  }
   auto it2 = attributes_.begin();
   std::advance(it2, it->second);
   return const_iterator(it2);
@@ -912,8 +971,9 @@ Code Collection::CreateNewAttribute(const std::string& name,
   if (attributes_index_.count(name)) {
     return Code::kNameConflict;
   }
-  if (!IsValid(type))
+  if (!IsValid(type)) {
     return Code::kInvalidValueTag;
+  }
   // Create new attribute.
   AttrDef def;
   def.ipp_type = type;
@@ -1035,8 +1095,9 @@ Code Collection::AddAttr(const std::string& name,
                          const std::vector<std::string>& values) {
   if (tag == ValueTag::octetString || IsString(tag)) {
     for (const std::string& value : values) {
-      if (value.size() > kMaxSizeOfNameOrValue)
+      if (value.size() > kMaxSizeOfNameOrValue) {
         return Code::kValueOutOfRange;
+      }
     }
     return AddAttributeToCollection(name, tag, values);
   }
@@ -1056,8 +1117,9 @@ Code Collection::AddAttr(const std::string& name,
       // * string (V bytes) - content of the value field
       // The total size (2 + L + 2 + V) cannot exceed the threshold.
       if (value.value.size() + value.language.size() + 4 >
-          kMaxSizeOfNameOrValue)
+          kMaxSizeOfNameOrValue) {
         return Code::kValueOutOfRange;
+      }
     }
     return AddAttributeToCollection(name, tag, values);
   }
@@ -1119,8 +1181,9 @@ Code Collection::AddAttr(const std::string& name,
 Code Collection::AddAttr(const std::string& name, CollsView::iterator& coll) {
   CollsView colls;
   Code code = AddAttr(name, 1, colls);
-  if (code == Code::kOK)
+  if (code == Code::kOK) {
     coll = colls.begin();
+  }
   return code;
 }
 
@@ -1148,8 +1211,9 @@ Code Collection::AddAttr(const std::string& name,
 // conversion is not possible (|value| is incorrect).
 template <typename ApiType>
 bool Attribute::SaveValue(size_t index, const ApiType& value) {
-  if (IsOutOfBand(def_.ipp_type))
+  if (IsOutOfBand(def_.ipp_type)) {
     return false;
+  }
   bool result = false;
   switch (def_.cc_type) {
     case InternalType::kInteger:

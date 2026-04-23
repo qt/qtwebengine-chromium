@@ -7,9 +7,9 @@
  * test file in cases where file A makes B fail due to improper
  * clean up.
  */
-import * as child_process from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as child_process from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import yargs from 'yargs';
 import {hideBin} from 'yargs/helpers';
 
@@ -38,8 +38,8 @@ const options =
         })
         .option('fileExtension', {
           type: 'string',
-          description: 'The extension for testing. Defaults to `.test.ts` for front_end and `_test.ts` for E2E.',
-          alias: 'e'
+          description: 'The extension for testing. Defaults to `.test.ts`.',
+          alias: 'e',
         })
         .check(args => {
           if (!args.folder) {
@@ -49,11 +49,8 @@ const options =
               args.folder = 'test/';
             }
           }
-          if (args.folder.includes('front_end')) {
-            args.fileExtension = '.test.ts';
-          } else {
-            args.fileExtension = '_test.ts';
-          }
+
+          args.fileExtension = '.test.ts';
 
           return true;
         })

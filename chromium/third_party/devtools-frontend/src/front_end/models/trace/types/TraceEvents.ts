@@ -8,7 +8,7 @@ import type * as Protocol from '../../../generated/protocol.js';
 
 import type {Micro, Milli, Seconds, TraceWindowMicro} from './Timing.js';
 
-// Trace Events.
+/** Trace Events. **/
 export const enum Phase {
   // Standard
   BEGIN = 'B',
@@ -85,6 +85,9 @@ export interface Event {
   tdur?: Micro;
   dur?: Micro;
 }
+export function objectIsEvent(obj: object): obj is Event {
+  return 'cat' in obj && 'name' in obj && 'ts' in obj;
+}
 
 export interface Args {
   data?: ArgsData;
@@ -124,10 +127,10 @@ export interface TraceFrame {
   processId: ProcessID;
   url: string;
   parent?: string;
-  // Added to Chromium in April 2024:
+  // Added to Chrome in April 2024:
   // crrev.com/c/5424783
   isOutermostMainFrame?: boolean;
-  // Added to Chromium in June 2024:
+  // Added to Chrome in June 2024:
   // crrev.com/c/5595033
   isInPrimaryMainFrame?: boolean;
 }
@@ -161,6 +164,7 @@ export interface Profile extends Sample {
   args: Args&{
     data: ArgsData & {
       startTime: Micro,
+      source?: ProfileSource,
     },
   };
 }
@@ -173,7 +177,9 @@ export interface ProfileChunk extends Sample {
     data?: ArgsData & {
       cpuProfile?: PartialProfile,
       timeDeltas?: Micro[],
-      lines?: Micro[],
+      lines?: number[],
+      source?: ProfileSource,
+      columns?: number[],
     },
   };
 }
@@ -190,6 +196,20 @@ export interface PartialProfile {
   trace_ids?: Record<string, number>;
   /* eslint-enable @typescript-eslint/naming-convention */
 }
+
+/**
+ * Source of profile data, used to select the most relevant profile when
+ * multiple profiles exist for the same thread.
+ *
+ * - 'Inspector': User-initiated via console.profile()/profileEnd().
+ * - 'Internal': Browser-initiated during performance traces.
+ * - 'SelfProfiling': Page-initiated via JS Self-Profiling API.
+ *
+ * Selection priority (see PROFILE_SOURCES_BY_PRIORITY in SamplesHandler.ts).
+ */
+export type ProfileSource = 'Inspector'|'SelfProfiling'|'Internal';
+
+export const VALID_PROFILE_SOURCES: readonly ProfileSource[] = ['Inspector', 'SelfProfiling', 'Internal'] as const;
 
 export interface PartialNode {
   callFrame: CallFrame;
@@ -282,8 +302,10 @@ export interface End extends Event {
  */
 export type SyntheticComplete = Complete;
 
-// TODO(paulirish): Migrate to the new (Sept 2024) EventTiming trace events.
-// See https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/timing/window_performance.cc;l=900-901;drc=b503c262e425eae59ced4a80d59d176ed07152c7
+/**
+ * TODO(paulirish): Migrate to the new (Sept 2024) EventTiming trace events.
+ * See https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/timing/window_performance.cc;l=900-901;drc=b503c262e425eae59ced4a80d59d176ed07152c7
+ **/
 export type EventTimingBeginOrEnd = EventTimingBegin|EventTimingEnd;
 
 export interface EventTimingBegin extends Event {
@@ -336,9 +358,11 @@ export interface SyntheticNetworkRedirect {
   dur: Micro;
 }
 
-// ProcessedArgsData is used to store the processed data of a network
-// request. Which is used to distinguish from the date we extract from the
-// trace event directly.
+/**
+ * ProcessedArgsData is used to store the processed data of a network
+ * request. Which is used to distinguish from the date we extract from the
+ * trace event directly.
+ **/
 interface SyntheticArgsData {
   dnsLookup: Micro;
   download: Micro;
@@ -359,8 +383,10 @@ interface SyntheticArgsData {
   ssl: Micro;
   stalled: Micro;
   totalTime: Micro;
-  /** Server response time (receiveHeadersEnd - sendEnd) */
+  /** receiveHeadersEnd - sendEnd */
   waiting: Micro;
+  /** receiveHeadersStart - sendEnd */
+  serverResponseTime: Micro;
 }
 
 export interface SyntheticNetworkRequest extends Complete, SyntheticBased<Phase.COMPLETE> {
@@ -415,6 +441,8 @@ export interface SyntheticNetworkRequest extends Complete, SyntheticBased<Phase.
       initiator?: Initiator,
       requestMethod?: string,
       timing?: ResourceReceiveResponseTimingData,
+      /** Server response time according to Lightrider. */
+      lrServerResponseTime?: Milli,
     },
   };
   cat: 'loading';
@@ -549,7 +577,6 @@ export function isAuctionWorkletDoneWithProcess(event: Event): event is AuctionW
  *    consuming screenshot events from the ScreenshotHandler, you must make sure
  *    to have your code deal with the two different formats.
  */
-// These are nullable because in January 2025 a CL in Chromium
 export interface LegacyScreenshot extends Event {
   /**
    * @deprecated This value is incorrect. Use ScreenshotHandler.getPresentationTimestamp()
@@ -745,7 +772,7 @@ export interface LargestContentfulPaintCandidate extends Mark {
       nodeId: Protocol.DOM.BackendNodeId,
       loadingAttr: string,
       type?: string,
-      // Landed in Chromium M140: crrev.com/c/6702010
+      // Landed in Chrome M140: crrev.com/c/6702010
       nodeName?: string,
     },
   };
@@ -930,7 +957,7 @@ export interface TraceImpactedNode {
   /* eslint-enable @typescript-eslint/naming-convention */
 }
 
-type LayoutShiftData = ArgsData&{
+export type LayoutShiftData = ArgsData&{
   // These keys come from the trace data, so we have to use underscores.
   /* eslint-disable @typescript-eslint/naming-convention */
   cumulative_score: number,
@@ -990,11 +1017,11 @@ export interface SyntheticLayoutShift extends Omit<LayoutShift, 'name'>, Synthet
 export const NO_NAVIGATION = 'NO_NAVIGATION';
 
 /**
- * This maybe be a navigation id string from Chromium, or `NO_NAVIGATION`, which represents the
+ * This maybe be a navigation id string from Chrome, or `NO_NAVIGATION`, which represents the
  * portion of the trace for which we don't have any navigation event for (as it happeneded prior
  * to the trace start).
  */
-export type NavigationId = string|typeof NO_NAVIGATION;
+export type NavigationId = string;
 
 /**
  * This is a synthetic Layout shift cluster. The rawSourceEvent is the worst layout shift event
@@ -1617,8 +1644,10 @@ const enum FrameType {
   BACKFILL = 'BACKFILL',
 }
 
-// TODO(crbug.com/409484302): Remove once Chrome migrates from
-// ChromeTrackEvent.chrome_frame_reporter to ChromeTrackEvent.frame_reporter.
+/**
+ * TODO(crbug.com/409484302): Remove once Chrome migrates from
+ * ChromeTrackEvent.chrome_frame_reporter to ChromeTrackEvent.frame_reporter.
+ **/
 export interface OldChromeFrameReporterArgs {
   chrome_frame_reporter: ChromeFrameReporter;
 }
@@ -1639,13 +1668,15 @@ export function isPipelineReporter(event: Event): event is PipelineReporter {
   return event.name === Name.PIPELINE_REPORTER;
 }
 
-// A type used for synthetic events created based on a raw trace event.
-// A branded type is used to ensure not all events can be typed as
-// SyntheticBased and prevent places different to the
-// SyntheticEventsManager from creating synthetic events. This is
-// because synthetic events need to be registered in order to resolve
-// serialized event keys into event objects, so we ensure events are
-// registered at the time they are created by the SyntheticEventsManager.
+/**
+ * A type used for synthetic events created based on a raw trace event.
+ * A branded type is used to ensure not all events can be typed as
+ * SyntheticBased and prevent places different to the
+ * SyntheticEventsManager from creating synthetic events. This is
+ * because synthetic events need to be registered in order to resolve
+ * serialized event keys into event objects, so we ensure events are
+ * registered at the time they are created by the SyntheticEventsManager.
+ **/
 export interface SyntheticBased<Ph extends Phase = Phase, T extends Event = Event> extends Event {
   ph: Ph;
   rawSourceEvent: T;
@@ -1656,9 +1687,11 @@ export function isSyntheticBased(event: Event): event is SyntheticBased {
   return 'rawSourceEvent' in event;
 }
 
-// Nestable async events with a duration are made up of two distinct
-// events: the begin, and the end. We need both of them to be able to
-// display the right information, so we create these synthetic events.
+/**
+ * Nestable async events with a duration are made up of two distinct
+ * events: the begin, and the end. We need both of them to be able to
+ * display the right information, so we create these synthetic events.
+ **/
 export interface SyntheticEventPair<T extends PairableAsync = PairableAsync> extends SyntheticBased<Phase, T> {
   rawSourceEvent: T;
   name: T['name'];
@@ -1855,7 +1888,7 @@ export function isRasterTask(event: Event): event is RasterTask {
   return event.name === Name.RASTER_TASK;
 }
 
-// CompositeLayers has been replaced by "Commit", but we support both to not break old traces being imported.
+/** CompositeLayers has been replaced by "Commit", but we support both to not break old traces being imported. **/
 export interface CompositeLayers extends Instant {
   name: Name.COMPOSITE_LAYERS;
   args: Args&{
@@ -2272,7 +2305,7 @@ export function isResourceReceivedData(
   return event.name === 'ResourceReceivedData';
 }
 
-// Any event where we receive data (and get an encodedDataLength)
+/** Any event where we receive data (and get an encodedDataLength) **/
 export function isReceivedDataEvent(
     event: Event,
     ): event is ResourceReceivedData|ResourceFinish|ResourceReceiveResponse {
@@ -2791,7 +2824,7 @@ export interface FunctionCall extends Complete {
   args: Args&{
     data?: Partial<CallFrame>& {
       frame?: string,
-      isolate?: number,
+      isolate?: string,
     },
   };
 }
@@ -3129,10 +3162,14 @@ export const enum Name {
   USER_TIMING_MEASURE = 'UserTiming::Measure',
 
   LINK_PRECONNECT = 'LinkPreconnect',
+
+  PRELOAD_RENDER_BLOCKING_STATUS_CHANGE = 'PreloadRenderBlockingStatusChange',
 }
 
-// NOT AN EXHAUSTIVE LIST: just some categories we use and refer
-// to in multiple places.
+/**
+ * NOT AN EXHAUSTIVE LIST: just some categories we use and refer
+ * to in multiple places.
+ **/
 export const Categories = {
   Console: 'blink.console',
   UserTiming: 'blink.user_timing',
@@ -3259,4 +3296,21 @@ export interface RundownScriptStub extends Event {
 export function isAnyScriptSourceEvent(event: Event): event is RundownScriptSource|RundownScriptSourceLarge|
     RundownScriptStub {
   return event.cat === 'disabled-by-default-devtools.v8-source-rundown-sources';
+}
+
+export interface PreloadRenderBlockingStatusChangeEvent extends Instant {
+  name: Name.PRELOAD_RENDER_BLOCKING_STATUS_CHANGE;
+  cat: 'devtools.timeline';
+  args: Args&{
+    data: {
+      requestId: string,
+      url: string,
+      renderBlocking?: RenderBlocking,
+    },
+  };
+}
+
+export function isPreloadRenderBlockingStatusChangeEvent(event: Event):
+    event is PreloadRenderBlockingStatusChangeEvent {
+  return event.name === Name.PRELOAD_RENDER_BLOCKING_STATUS_CHANGE;
 }

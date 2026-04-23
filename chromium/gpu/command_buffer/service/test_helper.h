@@ -19,7 +19,6 @@
 namespace gpu {
 namespace gles2 {
 
-struct DisallowedFeatures;
 class Buffer;
 class BufferManager;
 class FeatureInfo;
@@ -105,7 +104,6 @@ class TestHelper {
 
   static void SetupContextGroupInitExpectations(
       ::gl::MockGLInterface* gl,
-      const DisallowedFeatures& disallowed_features,
       const char* extensions,
       const char* gl_version,
       ContextType context_type);
@@ -147,7 +145,6 @@ class TestHelper {
       VaryingInfo* varyings,
       size_t num_varyings,
       base::span<ProgramOutputInfo> program_outputs,
-      size_t spanification_suspected_redundant_num_program_outputs,
       GLuint service_id);
 
   static void SetupProgramSuccessExpectations(
@@ -160,7 +157,6 @@ class TestHelper {
       VaryingInfo* varyings,
       size_t num_varyings,
       base::span<ProgramOutputInfo> program_outputs,
-      size_t spanification_suspected_redundant_num_program_outputs,
       GLuint service_id);
 
   static void DoBufferData(::gl::MockGLInterface* gl,

@@ -332,11 +332,19 @@ class Printer : public tint::TextGenerator {
 
             switch (func->Stage()) {
                 case core::ir::Function::PipelineStage::kCompute: {
-                    out << "kernel ";
-
                     auto const_wg_size = func->WorkgroupSizeAsConst();
                     TINT_IR_ASSERT(ir_, const_wg_size);
                     auto wg_size = *const_wg_size;
+
+                    // Tell the MSL compiler how large the threadgroup is going to be.
+                    // Without this, the MSL compiler will decide on a maximum threadgroup size
+                    // based on its own heuristics. This can result in a pipeline that cannot
+                    // support the workgroup size that was specified in the WGSL shader.
+                    // See crbug.com/443794633
+                    auto total_threads = wg_size[0] * wg_size[1] * wg_size[2];
+                    out << "[[max_total_threads_per_threadgroup(" << total_threads << ")]]\n";
+
+                    out << "kernel ";
 
                     // Store the workgroup information away to return from the generator.
                     result_.workgroup_info.x = wg_size[0];
@@ -962,6 +970,13 @@ class Printer : public tint::TextGenerator {
             return;
         }
         if (c->Func() == msl::BuiltinFn::kConvert) {
+            // Subgroup matrix types don't convert, they're the same type as there is no concept of
+            // left/right/result in MSL. So, just no-op the actual conversion.
+            if (c->Result()->Type()->Is<core::type::SubgroupMatrix>()) {
+                EmitValue(out, c->Operand(0));
+                return;
+            }
+
             EmitType(out, c->Result()->Type());
             out << "(";
             EmitValue(out, c->Operand(0));
@@ -975,6 +990,22 @@ class Printer : public tint::TextGenerator {
             EmitValue(out, c->Operand(0));
             out << ") + ";
             EmitValue(out, c->Operand(1));
+            out << ")";
+            return;
+        }
+        if (c->Func() == msl::BuiltinFn::kMakeDiagonalSimdgroupMatrix) {
+            EmitType(out, c->Result()->Type());
+            out << "(";
+            EmitValue(out, c->Args()[0]);
+            out << ")";
+            return;
+        }
+        if (c->Func() == msl::BuiltinFn::kMakeFilledSimdgroupMatrix) {
+            auto* sm = c->Result()->Type()->As<core::type::SubgroupMatrix>();
+            out << "make_filled_simdgroup_matrix<";
+            EmitType(out, sm->Type());
+            out << ", " << sm->Columns() << ", " << sm->Rows() << ">(";
+            EmitValue(out, c->Args()[0]);
             out << ")";
             return;
         }
@@ -1610,7 +1641,7 @@ class Printer : public tint::TextGenerator {
             auto& attributes = mem->Attributes();
 
             if (auto builtin = attributes.builtin) {
-                auto name = BuiltinToAttribute(builtin.value());
+                auto name = BuiltinToAttribute(builtin.value(), attributes.depth_mode);
                 if (name.empty()) {
                     TINT_IR_ICE(ir_) << "unknown builtin";
                 }

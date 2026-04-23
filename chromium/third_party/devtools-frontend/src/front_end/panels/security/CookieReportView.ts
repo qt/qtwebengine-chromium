@@ -1,7 +1,7 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import '../../ui/legacy/components/data_grid/data_grid.js';
 
@@ -12,6 +12,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import type * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as uiI18n from '../../ui/i18n/i18n.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Lit from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -168,9 +169,24 @@ const UIStrings = {
    * @description String that shows up in the context menu when right clicking one of the entries in the cookie report.
    */
   showRequestsWithThisCookie: 'Show requests with this cookie',
+  /**
+   * @description First part of the deprecation warning message.
+   * @example {maintaining its current approach to user choice for third-party cookies} PH1
+   */
+  upperDeprecationWarning: 'Chrome is {PH1} and third-party cookie exceptions are being phased out.',
+  /**
+   * @description Text for the blog post link inside the deprecation warning.
+   */
+  blogPostLink: 'maintaining its current approach to user choice for third-party cookies',
+  /**
+   * @description Second part of the deprecation warning message.
+   */
+  lowerDeprecationWarning:
+      'The Controls and Third-Party cookie sections will be removed and the Privacy and Security panel will revert to its former name, the Security panel. As always, third-party cookies can be inspected from the Cookies pane in the Application panel.',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/security/CookieReportView.ts', UIStrings);
 export const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+export const i18nFormatString = uiI18n.getFormatLocalizedString.bind(undefined, str_);
 
 export interface ViewInput {
   cookieRows: IssuesManager.CookieIssue.CookieReportInfo[];
@@ -196,17 +212,29 @@ export interface CookieReportNodeData {
 }
 
 export type View = (input: ViewInput, output: ViewOutput, target: HTMLElement) => void;
+const DEFAULT_VIEW: View = (input, output, target) => {
+  const deprecationMessage = html`
+    <div class="deprecation-warning">
+      <div class="body">
+        <devtools-icon
+          name="warning"
+          class="medium"
+          style="color: var(--icon-warning); margin-right: var(--sys-size-2);">
+        </devtools-icon>
+        ${i18nFormatString(UIStrings.upperDeprecationWarning, {
+    PH1: UI.Fragment
+             .html`<x-link class="devtools-link" href="https://privacysandbox.com/news/privacy-sandbox-update/" jslog=${
+                 VisualLogging.link('privacy-sandbox-update').track({click: true})}>${
+                 i18nString(UIStrings.blogPostLink)}</x-link>`,
+  })}
+      </div>
+      <div class="body">
+        ${i18nString(UIStrings.lowerDeprecationWarning)}
+      </div>
+    </div>
+  `;
 
-export class CookieReportView extends UI.Widget.VBox {
-  #issuesManager?: IssuesManager.IssuesManager.IssuesManager;
-  namedBitSetFilterUI?: UI.FilterBar.NamedBitSetFilterUI;
-  #cookieRows = new Map<string, IssuesManager.CookieIssue.CookieReportInfo>();
-  #view: View;
-  filterItems: UI.FilterBar.Item[] = [];
-  searchText: string;
-
-  constructor(element?: HTMLElement, view: View = (input, output, target) => {
-    // clang-format off
+  // clang-format off
     render(html `
         <div class="report overflow-auto">
             <div class="header">
@@ -279,13 +307,26 @@ export class CookieReportView extends UI.Widget.VBox {
                     ${i18nString(UIStrings.emptyReportExplanation)}
                   </div>
                 </div>
+                <div class="deprecation-divider"></div>
               `
             }
 
+            ${deprecationMessage}
+
         </div>
-    `, target, {host: this});
-    // clang-format on
-  }) {
+    `, target);
+  // clang-format on
+};
+
+export class CookieReportView extends UI.Widget.VBox {
+  #issuesManager?: IssuesManager.IssuesManager.IssuesManager;
+  namedBitSetFilterUI?: UI.FilterBar.NamedBitSetFilterUI;
+  #cookieRows = new Map<string, IssuesManager.CookieIssue.CookieReportInfo>();
+  #view: View;
+  filterItems: UI.FilterBar.Item[] = [];
+  searchText: string;
+
+  constructor(element?: HTMLElement, view: View = DEFAULT_VIEW) {
     super(element, {useShadowDom: true});
     this.#view = view;
     this.registerRequiredCSS(cookieReportViewStyles);
@@ -447,7 +488,7 @@ export class CookieReportView extends UI.Widget.VBox {
                 'https://github.com/privacysandbox/privacy-sandbox-dev-support/blob/main/3pc-migration-readiness.md',
             i18nString(UIStrings.guidance), undefined, undefined, 'readiness-list-link');
 
-        return html`${i18n.i18n.getFormatLocalizedString(str_, UIStrings.gitHubResource, {
+        return html`${uiI18n.getFormatLocalizedString(str_, UIStrings.gitHubResource, {
           PH1: githubLink,
         })}`;
       }
@@ -460,7 +501,7 @@ export class CookieReportView extends UI.Widget.VBox {
                 (domain.charAt(0) === '.' ? domain.substring(1) : domain),
             i18nString(UIStrings.reportedIssues), undefined, undefined, 'compatibility-lookup-link');
 
-        return html`${i18n.i18n.getFormatLocalizedString(str_, UIStrings.gracePeriod, {
+        return html`${uiI18n.getFormatLocalizedString(str_, UIStrings.gracePeriod, {
           PH1: gracePeriodLink,
         })}`;
       }

@@ -8,8 +8,11 @@
 #ifndef PDF_PDF_FEATURES_H_
 #define PDF_PDF_FEATURES_H_
 
+#include <string>
+
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
+#include "build/build_config.h"
 #include "pdf/buildflags.h"
 
 static_assert(BUILDFLAG(ENABLE_PDF), "ENABLE_PDF not set to true");
@@ -28,6 +31,10 @@ BASE_DECLARE_FEATURE(kPdfUseShowSaveFilePicker);
 BASE_DECLARE_FEATURE(kPdfUseSkiaRenderer);
 BASE_DECLARE_FEATURE(kPdfXfaSupport);
 
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+BASE_DECLARE_FEATURE(kPdfiumPerRequestFontMatching);
+#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+
 #if BUILDFLAG(ENABLE_PDF_INK2)
 BASE_DECLARE_FEATURE(kPdfInk2);
 extern const base::FeatureParam<bool> kPdfInk2TextAnnotations;
@@ -36,6 +43,12 @@ extern const base::FeatureParam<bool> kPdfInk2TextHighlighting;
 
 #if BUILDFLAG(ENABLE_PDF_SAVE_TO_DRIVE)
 BASE_DECLARE_FEATURE(kPdfSaveToDrive);
+
+BASE_DECLARE_FEATURE(kPdfSaveToDriveSurvey);
+extern const base::FeatureParam<std::string>
+    kPdfSaveToDriveSurveyConsumerTriggerId;
+extern const base::FeatureParam<std::string>
+    kPdfSaveToDriveSurveyEnterpriseTriggerId;
 #endif  // BUILDFLAG(ENABLE_PDF_SAVE_TO_DRIVE)
 
 // Sets whether the OOPIF PDF policy enables the OOPIF PDF viewer. Otherwise,

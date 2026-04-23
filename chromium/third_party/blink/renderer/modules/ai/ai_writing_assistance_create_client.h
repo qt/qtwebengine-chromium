@@ -12,6 +12,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/modules/ai/ai_context_observer.h"
+#include "third_party/blink/renderer/modules/ai/ai_features.h"
 #include "third_party/blink/renderer/modules/ai/ai_interface_proxy.h"
 #include "third_party/blink/renderer/modules/ai/ai_utils.h"
 #include "third_party/blink/renderer/modules/ai/create_monitor.h"
@@ -185,13 +186,13 @@ class AIWritingAssistanceCreateClient
       return;
     }
 
-    LocalDOMWindow* const window = LocalDOMWindow::From(this->GetScriptState());
+    LocalDOMWindow* window = LocalDOMWindow::From(this->GetScriptState());
 
     // Writing Assistance APIs are only available within window and extension
     // worker contexts by default. User activation is not consumed by workers,
     // as they lack the ability to do so.
     if (window && RequiresUserActivation(availability) &&
-        !LocalFrame::ConsumeTransientUserActivation(window->GetFrame())) {
+        !MeetsUserActivationRequirements(window)) {
       this->GetResolver()->RejectWithDOMException(
           DOMExceptionCode::kNotAllowedError,
           kExceptionMessageUserActivationRequired);

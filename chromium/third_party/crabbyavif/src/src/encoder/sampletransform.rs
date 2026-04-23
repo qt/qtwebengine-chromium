@@ -16,6 +16,20 @@ use crate::encoder::*;
 use crate::internal_utils::sampletransform::*;
 use crate::*;
 
+impl Recipe {
+    pub(crate) fn self_or_auto_choose_depending_on(self, image: &Image) -> Recipe {
+        match self {
+            Recipe::Auto => match image.depth {
+                8 | 10 | 12 => Recipe::None,
+                16 => Recipe::BitDepthExtension8b8b,
+                // This is unsupported and will lead to an error later.
+                _ => Recipe::None,
+            },
+            Recipe::None | Recipe::BitDepthExtension8b8b => self,
+        }
+    }
+}
+
 // Mapping used in the coding of Sample Transform metadata.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
@@ -68,12 +82,13 @@ impl SampleTransformToken {
     }
 }
 
-fn recipe_to_expression(recipe: SampleTransformRecipe) -> Result<SampleTransform, AvifError> {
+fn recipe_to_expression(recipe: Recipe) -> Result<SampleTransform, AvifError> {
     // Postfix (or Reverse Polish) notation.
 
     match recipe {
-        SampleTransformRecipe::None => unreachable!(),
-        SampleTransformRecipe::BitDepthExtension8b8b => {
+        Recipe::Auto => unreachable!(),
+        Recipe::None => unreachable!(),
+        Recipe::BitDepthExtension8b8b => {
             // reference_count is two: two 8-bit input images.
             //   (base_sample << 8) | hidden_sample
             // Note: base_sample is encoded losslessly. hidden_sample is encoded lossily or losslessly.
@@ -99,7 +114,7 @@ fn recipe_to_expression(recipe: SampleTransformRecipe) -> Result<SampleTransform
     }
 }
 
-fn write_sato(recipe: SampleTransformRecipe) -> AvifResult<Vec<u8>> {
+fn write_sato(recipe: Recipe) -> AvifResult<Vec<u8>> {
     let expression = recipe_to_expression(recipe)?;
     let bit_depth = SampleTransformBitDepth::from_bits(expression.bit_depth);
 
@@ -140,7 +155,7 @@ impl Encoder {
             id: u16_from_usize(self.items.len() + 1)?,
             item_type: "sato".into(),
             category: Category::Color,
-            metadata_payload: write_sato(self.settings.sample_transform_recipe)?,
+            metadata_payload: write_sato(self.final_recipe.unwrap())?,
             hidden_image: false,
             ..Default::default()
         };

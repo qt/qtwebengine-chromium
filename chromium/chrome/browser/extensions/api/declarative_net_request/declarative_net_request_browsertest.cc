@@ -48,8 +48,6 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/load_error_reporter.h"
-#include "chrome/browser/extensions/permissions/active_tab_permission_granter.h"
-#include "chrome/browser/extensions/permissions/scripting_permissions_modifier.h"
 #include "chrome/browser/extensions/test_extension_action_dispatcher_observer.h"
 #include "chrome/browser/net/profile_network_context_service.h"
 #include "chrome/browser/net/profile_network_context_service_factory.h"
@@ -107,6 +105,8 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/install_prefs_helper.h"
+#include "extensions/browser/permissions/active_tab_permission_granter.h"
+#include "extensions/browser/permissions/scripting_permissions_modifier.h"
 #include "extensions/browser/test_extension_registry_observer.h"
 #include "extensions/browser/warning_service.h"
 #include "extensions/browser/warning_set.h"
@@ -2505,8 +2505,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest, MAYBE_ChromeURLS) {
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 // Test that a packed extension with a DNR ruleset behaves correctly after
 // browser restart.
-// TODO(crbug.com/40200835): Port to desktop Android once it supports PRE_
-// tests.
+// TODO(crbug.com/40200835): Fails with no logs and no stack on desktop Android.
 IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest_Packed,
                        PRE_BrowserRestart) {
   // This is not tested for unpacked extensions since the unpacked extension
@@ -4281,10 +4280,10 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
 
 // Test that the action matched badge text for an extension is visible in an
 // incognito context if the extension is incognito enabled.
-// Test is disabled on Mac. See https://crbug.com/1280116
+// Test is disabled on Mac/Linux/CrOS. See https://crbug.com/1280116
 // TODO(crbug.com/393191910): Port to desktop Android. The test fails with
 // no stack and no logs.
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #define MAYBE_ActionsMatchedCountAsBadgeTextIncognito \
   DISABLED_ActionsMatchedCountAsBadgeTextIncognito
 #else
@@ -6596,11 +6595,8 @@ class DeclarativeNetRequestGlobalRulesBrowserTest
 using DeclarativeNetRequestGlobalRulesBrowserTest_Packed =
     DeclarativeNetRequestGlobalRulesBrowserTest;
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
 // Test that extensions with allocated global rules keep their allocations after
 // the browser restarts.
-// TODO(crbug.com/40200835): Port to desktop Android once it supports PRE_
-// tests.
 IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestGlobalRulesBrowserTest_Packed,
                        PRE_GlobalRulesBrowserRestart) {
   // This is not tested for unpacked extensions since the unpacked extension
@@ -6646,8 +6642,6 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestGlobalRulesBrowserTest_Packed,
   VerifyExtensionAllocationInPrefs(third_extension->id(), std::nullopt);
 }
 
-// TODO(crbug.com/391924202): Port to desktop Android once packed extensions
-// are supported.
 IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestGlobalRulesBrowserTest_Packed,
                        GlobalRulesBrowserRestart) {
   // This is not tested for unpacked extensions since the unpacked extension
@@ -6684,7 +6678,6 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestGlobalRulesBrowserTest_Packed,
               UnorderedElementsAre(std::make_pair("extension_1", 1),
                                    std::make_pair("extension_2", 1)));
 }
-#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 // Test that an extension will not have its allocation reclaimed on load if it
 // is the first load after a packed update.
@@ -8902,11 +8895,10 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestAllowChromeURLsBrowserTest,
             GetMatchedRuleCount(extension_1->id(), std::nullopt /* tab_id */,
                                 start_time));
 }
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 // A derivative of DeclarativeNetRequestBrowserTest which allows the test to
 // wait for ruleset loads to start, and throttle/resume them as needed.
-// TODO(crbug.com/40200835): Port to desktop Android once it supports PRE_
-// tests.
 class DeclarativeNetRequestThrottledRulesetLoadBrowserTest
     : public DeclarativeNetRequestBrowserTest {
  public:
@@ -9086,7 +9078,6 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestThrottledRulesetLoadBrowserTest,
   // Attempt to enable the other ruleset from `extension` v1. It should succeed.
   UpdateEnabledRulesets(kUpdateFlowExtensionId, {}, {"forgotten_ruleset"});
 }
-#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 const auto kExtensionLoadTypes =
     ::testing::Values(ExtensionLoadType::PACKED, ExtensionLoadType::UNPACKED);
@@ -9173,13 +9164,11 @@ INSTANTIATE_TEST_SUITE_P(All,
                          ::testing::Combine(kExtensionLoadTypes,
                                             ::testing::Bool()));
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
 INSTANTIATE_TEST_SUITE_P(
     All,
     DeclarativeNetRequestThrottledRulesetLoadBrowserTest,
     ::testing::Combine(::testing::Values(ExtensionLoadType::PACKED),
                        ::testing::Values(false)));
-#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 }  // namespace
 }  // namespace extensions::declarative_net_request

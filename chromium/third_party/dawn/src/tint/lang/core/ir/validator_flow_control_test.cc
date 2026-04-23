@@ -419,6 +419,24 @@ TEST_F(IR_ValidatorTest, Loop_NullResult) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Loop_VoidResult) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        loop->SetResults(b.InstructionResult(ty.void_()));
+        b.Append(loop->Body(), [&] { b.ExitLoop(loop); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:3:5 error: loop: result type cannot be void
+    %2:void = loop [b: $B2] {  # loop_1
+    ^^^^^^^
+)")) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, Loop_TooManyOperands) {
     auto* f = b.Function("my_func", ty.void_());
 
@@ -1347,6 +1365,24 @@ TEST_F(IR_ValidatorTest, BreakIf_UndefCondition) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, BreakIf_NonBoolCondition) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        b.Append(loop->Body(), [&] { b.Continue(loop); });
+        b.Append(loop->Continuing(), [&] { b.BreakIf(loop, 1_i); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
+                                          R"(:8:9 error: break_if: condition must be a 'bool'
+        break_if 1i  # -> [t: exit_loop loop_1, f: $B2]
+        ^^^^^^^^^^^
+)")) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, BreakIf_NextIterUnexpectedValues) {
     auto* f = b.Function("my_func", ty.void_());
     b.Append(f->Block(), [&] {
@@ -2144,6 +2180,24 @@ TEST_F(IR_ValidatorTest, Unreachable_MissingResult) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Switch_ExternalTextureResult) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    b.Append(f->Block(), [&] {
+        auto* s = b.Switch(true);
+        s->AddResult(b.InstructionResult(ty.external_texture()));
+
+        b.Append(b.DefaultCase(s), [&] { b.ExitSwitch(s, nullptr); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr("error: switch: result type must be constructable"))
+        << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, Switch_ConditionPointer) {
     auto* f = b.Function("my_func", ty.void_());
 
@@ -2195,6 +2249,23 @@ TEST_F(IR_ValidatorTest, Switch_NoDefaultCase) {
     switch 1i [c: (0i, $B2)] {  # switch_1
     ^^^^^^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Switch_MultipleDefaultCases) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* s = b.Switch(1_i);
+        auto* case1 = b.DefaultCase(s);
+        b.Append(case1, [&] { b.ExitSwitch(s); });
+        auto* case2 = b.DefaultCase(s);
+        b.Append(case2, [&] { b.ExitSwitch(s); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr("error: switch: multiple default selectors in switch"));
 }
 
 TEST_F(IR_ValidatorTest, Switch_NoCondition) {
@@ -2250,6 +2321,51 @@ TEST_F(IR_ValidatorTest, Switch_CaseMultiBlock) {
                 testing::HasSubstr(R"(:3:5 error: switch: case block must be a block
     switch 1i [c: (, $B2)] {  # switch_1
     ^^^^^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Switch_CaseNoSelectors) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    b.Append(f->Block(), [&] {
+        auto* s = b.Switch(1_i);
+        b.Append(b.DefaultCase(s), [&] { b.ExitSwitch(s); });
+
+        s->Cases().Push({});
+
+        auto* blk = b.Block();
+        blk->SetParent(s);
+        b.Append(blk, [&] { b.ExitSwitch(s); });
+
+        s->Cases().Back().block = blk;
+
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:3:5 error: switch: case does not have any selectors
+    switch 1i [c: (default, $B2), c: (, $B3)] {  # switch_1
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Loop_PtrResult) {
+    auto* f = b.Function("my_func", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* loop = b.Loop();
+        loop->SetResults(b.InstructionResult(ty.ptr(function, ty.f32())));
+        b.Append(loop->Body(), [&] { b.ExitLoop(loop); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:3:5 error: loop: result type cannot be a pointer
+    %2:ptr<function, f32, read_write> = loop [b: $B2] {  # loop_1
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
 }
 

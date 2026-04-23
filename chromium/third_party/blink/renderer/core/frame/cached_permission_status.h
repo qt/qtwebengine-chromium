@@ -20,7 +20,7 @@
 
 namespace blink {
 
-class LocalDOMWindow;
+class ExecutionContext;
 
 // This cache keeps track of permission statuses, restricted to the permission
 // element. These permission statuses are not canonical and should not be used
@@ -33,13 +33,10 @@ class LocalDOMWindow;
 //   permission elements, it unregisters itself from permission updates.
 class CORE_EXPORT CachedPermissionStatus final
     : public GarbageCollected<CachedPermissionStatus>,
-      public mojom::blink::PermissionObserver,
-      public Supplement<LocalDOMWindow> {
+      public mojom::blink::PermissionObserver {
  public:
-  static const char kSupplementName[];
-
   // Returns the supplement, creating one as needed.
-  static CachedPermissionStatus* From(LocalDOMWindow* window);
+  static CachedPermissionStatus* From(ExecutionContext* context);
 
   using PermissionStatusMap =
       HashMap<mojom::blink::PermissionName, mojom::blink::PermissionStatus>;
@@ -59,11 +56,11 @@ class CORE_EXPORT CachedPermissionStatus final
         PermissionStatusMap initilized_map) = 0;
   };
 
-  explicit CachedPermissionStatus(LocalDOMWindow* local_dom_window);
+  explicit CachedPermissionStatus(ExecutionContext* context);
 
   ~CachedPermissionStatus() override = default;
 
-  void Trace(Visitor* visitor) const override;
+  void Trace(Visitor* visitor) const;
 
   void SetPermissionStatusMap(PermissionStatusMap map) {
     permission_status_map_ = std::move(map);
@@ -71,7 +68,6 @@ class CORE_EXPORT CachedPermissionStatus final
 
  private:
   friend class HTMLPermissionElement;
-  friend class Screen;
   friend class DocumentLoader;
   friend class CachedPermissionStatusTest;
 
@@ -124,6 +120,8 @@ class CORE_EXPORT CachedPermissionStatus final
   PermissionObserverReceiverSet& GetPermissionObserverReceiversForTesting() {
     return permission_observer_receivers_;
   }
+
+  Member<ExecutionContext> execution_context_;
 
   HeapMojoRemote<mojom::blink::PermissionService> permission_service_;
 

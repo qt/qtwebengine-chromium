@@ -21,6 +21,10 @@
 #include "extensions/test/extension_test_message_listener.h"
 #include "extensions/test/test_extension_dir.h"
 
+#if BUILDFLAG(IS_MAC)
+#include "components/custom_handlers/simple_protocol_handler_registry_factory.h"
+#endif
+
 namespace {
 
 static constexpr const char kExtensionPath[] =
@@ -64,6 +68,20 @@ class ProtocolHandlersManagerBrowserTest : public ExtensionBrowserTest {
     return browser()->tab_strip_model()->GetActiveWebContents();
   }
 
+  // TODO(crbug.com/40482153): Figure out why we need to add a Testing Factory
+  // only for Mac and eventually solve it so that we can get rid of this
+  // mac-specific code.
+#if BUILDFLAG(IS_MAC)
+  void SetUpBrowserContextKeyedServices(
+      content::BrowserContext* context) override {
+    InProcessBrowserTest::SetUpBrowserContextKeyedServices(context);
+    Profile* profile = Profile::FromBrowserContext(context);
+    ProtocolHandlerRegistryFactory::GetInstance()->SetTestingFactory(
+        profile, custom_handlers::SimpleProtocolHandlerRegistryFactory::
+                     GetDefaultFactory());
+  }
+#endif
+
  private:
   base::test::ScopedFeatureList feature_list_;
 };
@@ -78,8 +96,8 @@ IN_PROC_BROWSER_TEST_F(ProtocolHandlersManagerBrowserTest, RegisterHandlers) {
   content::WebContents* web_contents = GetWebContents();
 
   // Check the registry.
-  ASSERT_EQ(1u, registry->GetHandlersFor(url1.scheme()).size());
-  ASSERT_EQ(1u, registry->GetHandlersFor(url2.scheme()).size());
+  ASSERT_EQ(1u, registry->GetHandlersFor(url1.GetScheme()).size());
+  ASSERT_EQ(1u, registry->GetHandlersFor(url2.GetScheme()).size());
 
   // Test the handlers.
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url1));
@@ -100,15 +118,15 @@ IN_PROC_BROWSER_TEST_F(ProtocolHandlersManagerBrowserTest, UnregisterHandlers) {
   content::WebContents* web_contents = GetWebContents();
 
   // Check the registry.
-  ASSERT_EQ(1u, registry->GetHandlersFor(url1.scheme()).size());
-  ASSERT_EQ(1u, registry->GetHandlersFor(url2.scheme()).size());
+  ASSERT_EQ(1u, registry->GetHandlersFor(url1.GetScheme()).size());
+  ASSERT_EQ(1u, registry->GetHandlersFor(url2.GetScheme()).size());
 
   // Check handlers are removed when uninstalling.
   UninstallExtension(last_loaded_extension_id());
 
   // Ensure the custom handler has been removed.
-  ASSERT_FALSE(registry->IsHandledProtocol(url1.scheme()));
-  ASSERT_FALSE(registry->IsHandledProtocol(url2.scheme()));
+  ASSERT_FALSE(registry->IsHandledProtocol(url1.GetScheme()));
+  ASSERT_FALSE(registry->IsHandledProtocol(url2.GetScheme()));
 
   // Test the navigation without the handlers.
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url1));
@@ -130,15 +148,15 @@ IN_PROC_BROWSER_TEST_F(ProtocolHandlersManagerBrowserTest,
   content::WebContents* web_contents = GetWebContents();
 
   // Check the registry.
-  ASSERT_EQ(1u, registry->GetHandlersFor(url1.scheme()).size());
-  ASSERT_EQ(1u, registry->GetHandlersFor(url2.scheme()).size());
+  ASSERT_EQ(1u, registry->GetHandlersFor(url1.GetScheme()).size());
+  ASSERT_EQ(1u, registry->GetHandlersFor(url2.GetScheme()).size());
 
   // Check handlers are removed when disabling.
   DisableExtension(extension_id);
 
   // Ensure the custom handler has been removed.
-  ASSERT_FALSE(registry->IsHandledProtocol(url1.scheme()));
-  ASSERT_FALSE(registry->IsHandledProtocol(url2.scheme()));
+  ASSERT_FALSE(registry->IsHandledProtocol(url1.GetScheme()));
+  ASSERT_FALSE(registry->IsHandledProtocol(url2.GetScheme()));
 
   // Test the navigation without the handlers.
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url1));
@@ -196,8 +214,8 @@ IN_PROC_BROWSER_TEST_F(ProtocolHandlersManagerBrowserTest, UpdateExtension) {
   ASSERT_TRUE(extension);
 
   // Check the initial handlers are in the registry.
-  ASSERT_EQ(1u, registry->GetHandlersFor(url1.scheme()).size());
-  ASSERT_EQ(1u, registry->GetHandlersFor(url2.scheme()).size());
+  ASSERT_EQ(1u, registry->GetHandlersFor(url1.GetScheme()).size());
+  ASSERT_EQ(1u, registry->GetHandlersFor(url2.GetScheme()).size());
 
   constexpr const char kManifestV2[] =
       R"({
@@ -219,9 +237,9 @@ IN_PROC_BROWSER_TEST_F(ProtocolHandlersManagerBrowserTest, UpdateExtension) {
   UpdateExtension(extension->id(), crx_v2_path, /*expected_change=*/0);
 
   // Check the registry after the update.
-  ASSERT_FALSE(registry->IsHandledProtocol(url1.scheme()));
-  ASSERT_FALSE(registry->IsHandledProtocol(url2.scheme()));
-  ASSERT_TRUE(registry->IsHandledProtocol(url3.scheme()));
+  ASSERT_FALSE(registry->IsHandledProtocol(url1.GetScheme()));
+  ASSERT_FALSE(registry->IsHandledProtocol(url2.GetScheme()));
+  ASSERT_TRUE(registry->IsHandledProtocol(url3.GetScheme()));
 
   // Test the old handlers are not used.
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url1));

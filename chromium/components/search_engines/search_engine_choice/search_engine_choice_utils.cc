@@ -4,6 +4,7 @@
 
 #include "components/search_engines/search_engine_choice/search_engine_choice_utils.h"
 
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -11,10 +12,12 @@
 #include "base/check_is_test.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/metrics/puma_histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "base/not_fatal_until.h"
 #include "base/strings/stringprintf.h"
@@ -34,6 +37,7 @@
 #include "components/search_engines/search_engines_pref_names.h"
 #include "components/search_engines/search_engines_switches.h"
 #include "components/search_engines/search_terms_data.h"
+#include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_data.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
 #include "components/search_engines/template_url_service.h"
@@ -76,10 +80,14 @@ std::optional<int> SerializedProgramFromPreference(
 ChoiceScreenDisplayState::ChoiceScreenDisplayState(
     std::vector<SearchEngineType> search_engines,
     CountryId country_id,
+    bool is_current_default_search_presented,
+    bool includes_non_regional_set_engine,
     std::optional<int> selected_engine_index)
     : search_engines(std::move(search_engines)),
       selected_engine_index(selected_engine_index),
-      country_id(country_id) {}
+      country_id(country_id),
+      is_current_default_search_presented(is_current_default_search_presented),
+      includes_non_regional_set_engine(includes_non_regional_set_engine) {}
 
 ChoiceScreenDisplayState::ChoiceScreenDisplayState(
     const ChoiceScreenDisplayState& other) = default;
@@ -87,6 +95,10 @@ ChoiceScreenDisplayState::ChoiceScreenDisplayState(
 ChoiceScreenDisplayState::~ChoiceScreenDisplayState() = default;
 
 base::Value::Dict ChoiceScreenDisplayState::ToDict() const {
+  // TODO(crbug.com/454023518): Non-regional set engine support is not currently
+  // expected to result in uploading nor locally caching display metrics.
+  CHECK(!includes_non_regional_set_engine);
+
   auto dict = base::Value::Dict();
 
   dict.Set(kDisplayStateCountryIdKey, country_id.Serialize());
@@ -133,6 +145,12 @@ std::optional<ChoiceScreenDisplayState> ChoiceScreenDisplayState::FromDict(
     return std::nullopt;
   }
 
+  if (!parsed_country_id->IsValid()) {
+    // Should never happen if a choice screen was shown. The triggering logic
+    // ensures this is not possible.
+    return std::nullopt;
+  }
+
   std::vector<SearchEngineType> search_engines;
   for (const base::Value& search_engine_type : *parsed_search_engines) {
     search_engines.push_back(
@@ -140,11 +158,14 @@ std::optional<ChoiceScreenDisplayState> ChoiceScreenDisplayState::FromDict(
   }
 
   return ChoiceScreenDisplayState(search_engines, parsed_country_id.value(),
+                                  /*is_current_default_search_presented=*/false,
+                                  /*includes_non_regional_set_engine=*/false,
                                   parsed_selected_engine_index);
 }
 
 ChoiceScreenData::ChoiceScreenData(
     TemplateURL::OwnedTemplateURLVector owned_template_urls,
+    const TemplateURL* current_default_to_highlight,
     CountryId country_id,
     const SearchTermsData& search_terms_data)
     : search_engines_(std::move(owned_template_urls)),
@@ -154,7 +175,15 @@ ChoiceScreenData::ChoiceScreenData(
               [&search_terms_data](const std::unique_ptr<TemplateURL>& t_url) {
                 return t_url->GetEngineType(search_terms_data);
               }),
-          country_id)) {}
+          country_id,
+          /*is_current_default_search_presented=*/
+          current_default_to_highlight != nullptr,
+          /*includes_non_regional_set_engine=*/
+          current_default_to_highlight != nullptr &&
+              !base::Contains(search_engines_,
+                              current_default_to_highlight,
+                              &std::unique_ptr<TemplateURL>::get))),
+      current_default_to_highlight_(current_default_to_highlight) {}
 
 ChoiceScreenData::~ChoiceScreenData() = default;
 
@@ -164,16 +193,28 @@ void RecordChoiceScreenDefaultSearchProviderType(
   base::UmaHistogramEnumeration(
       kSearchEngineChoiceScreenDefaultSearchEngineTypeHistogram, engine_type,
       SEARCH_ENGINE_MAX);
+  base::PumaHistogramEnumeration(
+      base::PumaType::kRc,
+      kPumaSearchEngineChoiceScreenDefaultSearchEngineTypeHistogram,
+      engine_type, SEARCH_ENGINE_MAX);
   if (choice_location == ChoiceMadeLocation::kChoiceScreen) {
     base::UmaHistogramEnumeration(
         kSearchEngineChoiceScreenDefaultSearchEngineType2Histogram, engine_type,
         SEARCH_ENGINE_MAX);
+    base::PumaHistogramEnumeration(
+        base::PumaType::kRc,
+        kPumaSearchEngineChoiceScreenDefaultSearchEngineType2Histogram,
+        engine_type, SEARCH_ENGINE_MAX);
   }
 }
 
 void RecordChoiceScreenSelectedIndex(int selected_engine_index) {
   base::UmaHistogramExactLinear(
       kSearchEngineChoiceScreenSelectedEngineIndexHistogram,
+      selected_engine_index,
+      TemplateURLPrepopulateData::kMaxEeaPrepopulatedEngines);
+  base::PumaHistogramExactLinear(
+      base::PumaType::kRc, kPumaSearchChoiceScreenSelectedEngineIndexHistogram,
       selected_engine_index,
       TemplateURLPrepopulateData::kMaxEeaPrepopulatedEngines);
 }

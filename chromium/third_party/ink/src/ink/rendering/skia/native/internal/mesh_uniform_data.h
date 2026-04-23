@@ -15,6 +15,7 @@
 #ifndef INK_RENDERING_SKIA_NATIVE_INTERNAL_MESH_UNIFORM_DATA_H_
 #define INK_RENDERING_SKIA_NATIVE_INTERNAL_MESH_UNIFORM_DATA_H_
 
+#include <cstddef>
 #include <cstdint>
 
 #include "absl/functional/function_ref.h"
@@ -44,6 +45,9 @@ namespace ink::skia_native_internal {
 // information on each uniform.
 class MeshUniformData {
  public:
+  // Constructs an empty uniform data.
+  MeshUniformData();
+
   // Constructs the data to hold the uniforms in `spec`.
   //
   // This allocates the data necessary to hold uniform values, but does not set
@@ -68,26 +72,21 @@ class MeshUniformData {
       absl::FunctionRef<const MeshAttributeCodingParams&(int)>
           get_attribute_unpacking_transform);
 
-  MeshUniformData() = default;
   MeshUniformData(const MeshUniformData&) = default;
   MeshUniformData(MeshUniformData&&) = default;
   MeshUniformData& operator=(const MeshUniformData&) = default;
   MeshUniformData& operator=(MeshUniformData&&) = default;
   ~MeshUniformData() = default;
 
-  // The following getters return whether the data has specific uniforms:
-  bool HasObjectToCanvasLinearComponent() const;
-  bool HasBrushColor() const;
-  bool HasTextureMapping() const;
-
-  // The following setters update the values for each uniform.
-  //
-  // A call to set a value CHECK-validates that the uniform is present, which
-  // can be verified by calling the appropriate "Has" function above.
-
+  // The following setters update the values for each uniform if present, they
+  // do nothing if the uniform is not in the mesh specification.
   void SetObjectToCanvasLinearComponent(const AffineTransform& transform);
   void SetBrushColor(const Color& color);
   void SetTextureMapping(BrushPaint::TextureMapping mapping);
+  void SetTextureAnimationProgress(float progress);
+  void SetNumTextureAnimationFrames(int num_frames);
+  void SetNumTextureAnimationRows(int num_rows);
+  void SetNumTextureAnimationColumns(int num_columns);
 
   // Returns the data for `SkMesh` creation. This function returns `nullptr` if
   // this uniform data was either default-constructed, or constructed from a
@@ -98,30 +97,25 @@ class MeshUniformData {
   sk_sp<const SkData> Get() const { return data_; }
 
  private:
+  // Returns a pointer to the writable data in `data_`, first copying that
+  // to an unshared copy if the original is shared.
+  std::byte* WritableData();
+
   // TODO: b/284117747 - Make `data_` "double or triple buffered" to increase
   // the likelihood of finding a unique one and not reallocating every frame.
+  //
+  // Use this via WritableData() above to ensure copy-on-write behavior.
   sk_sp<SkData> data_;
 
   // Offsets in bytes into `data_` for where to copy uniform values.
   int16_t object_to_canvas_linear_component_offset_ = -1;
   int16_t brush_color_offset_ = -1;
   int16_t texture_mapping_offset_ = -1;
+  int16_t texture_animation_progress_offset_ = -1;
+  int16_t num_texture_animation_frames_offset_ = -1;
+  int16_t num_texture_animation_rows_offset_ = -1;
+  int16_t num_texture_animation_columns_offset_ = -1;
 };
-
-// ---------------------------------------------------------------------------
-//                     Implementation details below
-
-inline bool MeshUniformData::HasObjectToCanvasLinearComponent() const {
-  return object_to_canvas_linear_component_offset_ != -1;
-}
-
-inline bool MeshUniformData::HasBrushColor() const {
-  return brush_color_offset_ != -1;
-}
-
-inline bool MeshUniformData::HasTextureMapping() const {
-  return texture_mapping_offset_ != -1;
-}
 
 }  // namespace ink::skia_native_internal
 

@@ -26,7 +26,6 @@
 #include "gpu/ipc/common/surface_handle.h"
 #include "mojo/public/cpp/bindings/associated_receiver.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
-#include "mojo/public/cpp/bindings/pending_associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -154,6 +153,7 @@ class ArCoreGl : public mojom::XRFrameDataProvider,
                    const gpu::MailboxHolder& mailbox,
                    base::TimeDelta time_waited) override;
   void SubmitFrameDrawnIntoTexture(int16_t frame_index,
+                                   const std::vector<LayerId>& layer_ids,
                                    const gpu::SyncToken&,
                                    base::TimeDelta time_waited) override;
   void UpdateLayerBounds(int16_t frame_index,

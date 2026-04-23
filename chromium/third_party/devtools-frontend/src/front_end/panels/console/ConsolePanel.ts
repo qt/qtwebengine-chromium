@@ -1,7 +1,7 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2009 Joseph Pecoraro
@@ -106,6 +106,7 @@ export class WrapperView extends UI.Widget.VBox {
   }
 
   override wasShown(): void {
+    super.wasShown();
     if (!ConsolePanel.instance().isShowing()) {
       this.showViewInWrapper();
     } else {
@@ -115,6 +116,7 @@ export class WrapperView extends UI.Widget.VBox {
   }
 
   override willHide(): void {
+    super.willHide();
     UI.InspectorView.InspectorView.instance().setDrawerMinimized(false);
     ConsolePanel.updateContextFlavor();
   }

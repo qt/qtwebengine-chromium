@@ -41,7 +41,6 @@
 #include "dawn/native/ErrorData.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/IntegerTypes.h"
-#include "dawn/native/SystemHandle.h"
 #include "dawn/native/VulkanBackend.h"
 #include "dawn/native/vulkan/BackendVk.h"
 #include "dawn/native/vulkan/BindGroupLayoutVk.h"
@@ -232,9 +231,8 @@ ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescripto
 }
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-    const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult) {
-    return ShaderModule::Create(this, descriptor, internalExtensions, parseResult);
+    const std::vector<tint::wgsl::Extension>& internalExtensions) {
+    return ShaderModule::Create(this, descriptor, internalExtensions);
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
                                                               SwapChainBase* previousSwapChain,
@@ -449,15 +447,6 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
     usedKnobs.features.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
     usedKnobs.features.shaderStorageImageArrayDynamicIndexing = VK_TRUE;
 
-    // Always enable pipeline robustness if available as it allows both better control of robustness
-    // when we want it, and to give hints to not do any robustness when we don't need it.
-    if (mDeviceInfo.HasExt(DeviceExt::PipelineRobustness)) {
-        DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::PipelineRobustness));
-
-        usedKnobs.pipelineRobustnessFeatures = mDeviceInfo.pipelineRobustnessFeatures;
-        featuresChain.Add(&usedKnobs.pipelineRobustnessFeatures);
-    }
-
     if (IsRobustnessEnabled()) {
         usedKnobs.features.robustBufferAccess = VK_TRUE;
 
@@ -469,6 +458,14 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
 
             usedKnobs.robustness2Features = mDeviceInfo.robustness2Features;
             featuresChain.Add(&usedKnobs.robustness2Features);
+        }
+
+        // Enable pipelineRobustness to better control where robustness happens.
+        if (mDeviceInfo.HasExt(DeviceExt::PipelineRobustness)) {
+            DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::PipelineRobustness));
+
+            usedKnobs.pipelineRobustnessFeatures = mDeviceInfo.pipelineRobustnessFeatures;
+            featuresChain.Add(&usedKnobs.pipelineRobustnessFeatures);
         }
 
         // robustBufferAccess requires robustBufferAccessUpdateAfterBind to be used with bindless
@@ -556,13 +553,17 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
         DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::ShaderFloat16Int8) &&
                     mDeviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
                     usedKnobs.HasExt(DeviceExt::_16BitStorage) &&
-                    mDeviceInfo._16BitStorageFeatures.storageBuffer16BitAccess == VK_TRUE &&
-                    mDeviceInfo._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess ==
+                    mDeviceInfo._16BitStorageFeatures.storageBuffer16BitAccess == VK_TRUE);
+        if (!IsToggleEnabled(Toggle::DecomposeUniformBuffers)) {
+            DAWN_ASSERT(mDeviceInfo._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess ==
                         VK_TRUE);
+        }
 
         usedKnobs.shaderFloat16Int8Features.shaderFloat16 = VK_TRUE;
         usedKnobs._16BitStorageFeatures.storageBuffer16BitAccess = VK_TRUE;
-        usedKnobs._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess = VK_TRUE;
+        if (!IsToggleEnabled(Toggle::DecomposeUniformBuffers)) {
+            usedKnobs._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess = VK_TRUE;
+        }
         if (mDeviceInfo._16BitStorageFeatures.storageInputOutput16 == VK_TRUE) {
             usedKnobs._16BitStorageFeatures.storageInputOutput16 = VK_TRUE;
         }
@@ -730,7 +731,7 @@ MaybeError Device::CopyFromStagingToBuffer(BufferBase* source,
     return {};
 }
 
-MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
+MaybeError Device::CopyFromStagingToTextureImpl(BufferBase* source,
                                                 const TexelCopyBufferLayout& src,
                                                 const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
@@ -741,7 +742,10 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
     CommandRecordingContext* recordingContext =
         ToBackend(GetQueue())->GetPendingRecordingContext(Queue::SubmitMode::Passive);
 
-    VkBufferImageCopy region = ComputeBufferImageCopyRegion(src, dst, copySizePixels);
+    const TypedTexelBlockInfo& blockInfo = GetBlockInfo(dst);
+
+    VkBufferImageCopy region =
+        ComputeBufferImageCopyRegion(src, dst, blockInfo.ToBlock(copySizePixels));
     VkImageSubresourceLayers subresource = region.imageSubresource;
 
     SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copySizePixels);
@@ -810,7 +814,7 @@ MaybeError Device::ImportExternalImage(const ExternalImageDescriptorVk* descript
         // Therefore, on success, because ImportSemaphore has dup'ed the handle,
         // we need to close the old handle by acquiring and dropping it.
         // TODO(dawn:1745): This entire code path will be deprecated and removed.
-        SystemHandle::Acquire(handle);
+        utils::SystemHandle::Acquire(handle);
         outWaitSemaphores->push_back(semaphore);
     }
 

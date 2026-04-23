@@ -22,11 +22,9 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('models/issues_manager/FederatedAuthRequestIssue.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
 
-export class FederatedAuthRequestIssue extends Issue {
-  readonly #issueDetails: Protocol.Audits.FederatedAuthRequestIssueDetails;
-
+export class FederatedAuthRequestIssue extends Issue<Protocol.Audits.FederatedAuthRequestIssueDetails> {
   constructor(
-      issueDetails: Protocol.Audits.FederatedAuthRequestIssueDetails, issuesModel: SDK.IssuesModel.IssuesModel) {
+      issueDetails: Protocol.Audits.FederatedAuthRequestIssueDetails, issuesModel: SDK.IssuesModel.IssuesModel|null) {
     super(
         {
           code: Protocol.Audits.InspectorIssueCode.FederatedAuthRequestIssue,
@@ -35,20 +33,15 @@ export class FederatedAuthRequestIssue extends Issue {
             issueDetails.federatedAuthRequestIssueReason,
           ].join('::'),
         },
-        issuesModel);
-    this.#issueDetails = issueDetails;
+        issueDetails, issuesModel);
   }
 
   getCategory(): IssueCategory {
     return IssueCategory.OTHER;
   }
 
-  details(): Protocol.Audits.FederatedAuthRequestIssueDetails {
-    return this.#issueDetails;
-  }
-
   getDescription(): MarkdownIssueDescription|null {
-    const description = issueDescriptions.get(this.#issueDetails.federatedAuthRequestIssueReason);
+    const description = issueDescriptions.get(this.details().federatedAuthRequestIssueReason);
     if (!description) {
       return null;
     }
@@ -56,15 +49,16 @@ export class FederatedAuthRequestIssue extends Issue {
   }
 
   primaryKey(): string {
-    return JSON.stringify(this.#issueDetails);
+    return JSON.stringify(this.details());
   }
 
   getKind(): IssueKind {
     return IssueKind.PAGE_ERROR;
   }
 
-  static fromInspectorIssue(issuesModel: SDK.IssuesModel.IssuesModel, inspectorIssue: Protocol.Audits.InspectorIssue):
-      FederatedAuthRequestIssue[] {
+  static fromInspectorIssue(
+      issuesModel: SDK.IssuesModel.IssuesModel|null,
+      inspectorIssue: Protocol.Audits.InspectorIssue): FederatedAuthRequestIssue[] {
     const details = inspectorIssue.details.federatedAuthRequestIssueDetails;
     if (!details) {
       console.warn('Federated auth request issue without details received.');

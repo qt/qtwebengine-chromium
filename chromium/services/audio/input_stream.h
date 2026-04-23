@@ -9,7 +9,9 @@
 #include <string>
 #include <string_view>
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/sequence_checker.h"
 #include "base/sync_socket.h"
 #include "base/unguessable_token.h"
 #include "media/mojo/mojom/audio_data_pipe.mojom.h"
@@ -31,6 +33,7 @@ class AudioParameters;
 
 namespace audio {
 class InputSyncWriter;
+class MlModelManager;
 
 class InputStream final : public media::mojom::AudioInputStream,
                           public InputController::EventHandler {
@@ -50,6 +53,7 @@ class InputStream final : public media::mojom::AudioInputStream,
       mojo::SharedRemote<media::mojom::AudioLog> log,
       media::AudioManager* manager,
       media::AecdumpRecordingManager* aecdump_recording_manager,
+      raw_ptr<MlModelManager> ml_model_manager,
       std::unique_ptr<ReferenceSignalProvider> reference_signal_provider,
       media::mojom::AudioProcessingConfigPtr processing_config,
       LoopbackMixin::MaybeCreateCallback maybe_create_loopback_mixin_cb,

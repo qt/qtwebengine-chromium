@@ -241,8 +241,8 @@ SharedWorker* SharedWorker::CreateImpl(
 
   SharedWorkerClientHolder::From(*window)->Connect(
       worker, std::move(remote_port), script_url, std::move(blob_url_token),
-      std::move(options), same_site_cookies, context->UkmSourceID(),
-      connector_override, extended_lifetime);
+      std::move(options), same_site_cookies, connector_override,
+      extended_lifetime);
 
   return worker;
 }
@@ -263,7 +263,6 @@ void SharedWorker::ContextLifecycleStateChanged(
 void SharedWorker::Trace(Visitor* visitor) const {
   visitor->Trace(port_);
   AbstractWorker::Trace(visitor);
-  Supplementable<SharedWorker>::Trace(visitor);
 }
 
 }  // namespace blink

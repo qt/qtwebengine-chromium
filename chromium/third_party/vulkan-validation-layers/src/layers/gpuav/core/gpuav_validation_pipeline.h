@@ -38,7 +38,7 @@ class CommandBufferSubState;
 namespace valpipe {
 
 struct BoundStorageBuffer {
-    uint32_t binding = vvl::kU32Max;
+    uint32_t binding = vvl::kNoIndex32;
     VkDescriptorBufferInfo info{VK_NULL_HANDLE, vvl::kU64Max, 0};
 };
 
@@ -69,9 +69,9 @@ void BindShaderResourcesHelper(Validator& gpuav, CommandBufferSubState& cb_state
 template <typename ShaderResources>
 class ComputePipeline {
   public:
-    ComputePipeline(Validator& gpuav, const Location& loc, VkDescriptorSetLayout additional_desc_set_layout = VK_NULL_HANDLE) {
+    ComputePipeline(Validator& gpuav, const Location& loc, VkDescriptorSetLayout error_logging_desc_set = VK_NULL_HANDLE) {
         std::vector<VkDescriptorSetLayoutBinding> specific_bindings = ShaderResources::GetDescriptorSetLayoutBindings();
-        valid = internal::CreateComputePipelineHelper(gpuav, loc, specific_bindings, additional_desc_set_layout,
+        valid = internal::CreateComputePipelineHelper(gpuav, loc, specific_bindings, error_logging_desc_set,
                                                       sizeof(ShaderResources::push_constants),
                                                       uint32_t(ShaderResources::GetSpirvSize()), ShaderResources::GetSpirv(),
                                                       device, specific_desc_set_layout, pipeline_layout, shader_module, pipeline);
@@ -83,11 +83,18 @@ class ComputePipeline {
 
     [[nodiscard]] bool BindShaderResources(Validator& gpuav, CommandBufferSubState& cb_state,
                                            const ShaderResources& shader_resources) {
-        const VkDescriptorSet desc_set = internal::GetDescriptorSetHelper(cb_state, specific_desc_set_layout);
-        if (!desc_set) {
-            return false;
+        std::vector<VkWriteDescriptorSet> desc_writes = shader_resources.GetDescriptorWrites();
+        VkDescriptorSet desc_set = VK_NULL_HANDLE;
+        if (!desc_writes.empty()) {
+            desc_set = internal::GetDescriptorSetHelper(cb_state, specific_desc_set_layout);
+            if (!desc_set) {
+                return false;
+            }
         }
-        const std::vector<VkWriteDescriptorSet> desc_writes = shader_resources.GetDescriptorWrites(desc_set);
+        for (VkWriteDescriptorSet& wds : desc_writes) {
+            wds.dstSet = desc_set;
+        }
+
         internal::BindShaderResourcesHelper(gpuav, cb_state, pipeline_layout, desc_set, desc_writes,
                                             sizeof(shader_resources.push_constants), &shader_resources.push_constants);
         return true;

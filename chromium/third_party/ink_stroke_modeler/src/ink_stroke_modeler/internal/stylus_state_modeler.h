@@ -27,7 +27,7 @@
 namespace ink {
 namespace stroke_model {
 
-// The location of the projection point along the raw input polyline.
+// The location of the projection point along the first segment of h
 struct RawInputProjection {
   int segment_index = 0;
   float ratio_along_segment = 0;
@@ -55,24 +55,22 @@ class StylusStateModeler {
  public:
   // Adds a state to the model, calculating the velocity and acceleration from
   // the current and previous positions and times.
-  void Update(Vec2 position, Time time, const StylusState &state);
+  void Update(Vec2 position, Time time, const StylusState& state);
 
   // Clear the model and reset.
-  void Reset(const StylusStateModelerParams &params);
+  void Reset(const StylusStateModelerParams& params);
 
   // Projects the next modelled tip state onto the raw input polyline,
   // returning the interpolated input state. Must be called after at least one
   // call to Update() since the last call to Reset(). (If that is not the case,
   // it will return a default-constructed Result, which is not meaningful.)
   //
+  // Discards earlier segments of the raw input polyline, since the projection
+  // is not allowed to backtrack.
+  //
   // `stroke_normal` is only used if
   // `StylusStateModelerParams::use_stroke_normal_projection` is true.
-  Result Project(const TipState &tip, const std::optional<Vec2> &stroke_normal);
-
-  // The number of input samples currently held. Exposed for testing.
-  int InputSampleCount() const {
-    return state_.raw_input_and_stylus_states.size();
-  }
+  Result Project(const TipState& tip, const std::optional<Vec2>& stroke_normal);
 
   // Saves the current state of the stylus state modeler. See comment on
   // StrokeModeler::Save() for more details.

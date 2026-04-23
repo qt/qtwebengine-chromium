@@ -7,13 +7,30 @@
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 
+#include <array>
+
 #include "base/check_op.h"
 #include "base/logging.h"
 #include "base/notreached.h"
+#include "components/viz/common/resources/shared_image_format.h"
 #include "third_party/skia/include/core/SkColorType.h"
 #include "ui/gfx/buffer_types.h"
 
 namespace viz {
+namespace {
+
+constexpr auto kMappableSharedImageFormats = std::to_array<SharedImageFormat>(
+    {SinglePlaneFormat::kR_8, SinglePlaneFormat::kR_16,
+     SinglePlaneFormat::kRG_88, SinglePlaneFormat::kRG_1616,
+     SinglePlaneFormat::kBGR_565, SinglePlaneFormat::kRGBA_4444,
+     SinglePlaneFormat::kRGBX_8888, SinglePlaneFormat::kRGBA_8888,
+     SinglePlaneFormat::kBGRX_8888, SinglePlaneFormat::kBGRA_1010102,
+     SinglePlaneFormat::kRGBA_1010102, SinglePlaneFormat::kBGRA_8888,
+     SinglePlaneFormat::kRGBA_F16, MultiPlaneFormat::kNV12,
+     MultiPlaneFormat::kYV12, MultiPlaneFormat::kNV12A,
+     MultiPlaneFormat::kP010});
+
+}  // namespace
 
 SkColorType ToClosestSkColorType(SharedImageFormat format) {
   CHECK(format.is_single_plane());
@@ -270,13 +287,10 @@ std::optional<size_t> SharedMemoryRowSizeForSharedImageFormat(
   }
 
   if (format.is_single_plane()) {
+    CHECK_NE(format, SinglePlaneFormat::kETC1);
     DCHECK_EQ(plane_index, 0);
 
-    auto bits_per_row = format.BitsPerPixel();
-    // This should work as this code should not be called for ETC1 formats.
-    CHECK_EQ(bits_per_row % 8, 0);
-
-    base::CheckedNumeric<size_t> bytes_per_row = bits_per_row / 8;
+    base::CheckedNumeric<size_t> bytes_per_row = format.BytesPerPixel();
     bytes_per_row *= width;
 
     // Row size must be aligned to 4 bytes.
@@ -342,52 +356,19 @@ std::optional<size_t> SharedMemorySizeForSharedImageFormat(
   return buffer_size.ValueOrDie();
 }
 
-// static
-unsigned int
-SharedImageFormatRestrictedSinglePlaneUtils::ToGLTextureStorageFormat(
-    SharedImageFormat format,
-    bool use_angle_rgbx_format) {
-  CHECK(format.is_single_plane());
-  if (format == SinglePlaneFormat::kRGBA_8888) {
-    return GL_RGBA8_OES;
-  } else if (format == SinglePlaneFormat::kBGRA_8888) {
-    return GL_BGRA8_EXT;
-  } else if (format == SinglePlaneFormat::kRGBA_F16) {
-    return GL_RGBA16F_EXT;
-  } else if (format == SinglePlaneFormat::kRGBA_4444) {
-    return GL_RGBA4;
-  } else if (format == SinglePlaneFormat::kALPHA_8) {
-    return GL_ALPHA8_EXT;
-  } else if (format == SinglePlaneFormat::kBGR_565) {
-    return GL_RGB565;
-  } else if (format == SinglePlaneFormat::kR_8) {
-    return GL_R8_EXT;
-  } else if (format == SinglePlaneFormat::kRG_88) {
-    return GL_RG8_EXT;
-  } else if (format == SinglePlaneFormat::kLUMINANCE_F16) {
-    return GL_LUMINANCE16F_EXT;
-  } else if (format == SinglePlaneFormat::kR_F16) {
-    return GL_R16F_EXT;
-  } else if (format == SinglePlaneFormat::kR_16) {
-    return GL_R16_EXT;
-  } else if (format == SinglePlaneFormat::kRG_1616) {
-    return GL_RG16_EXT;
-  } else if (format == SinglePlaneFormat::kRGBX_8888 ||
-             format == SinglePlaneFormat::kBGRX_8888) {
-    return use_angle_rgbx_format ? GL_RGBX8_ANGLE : GL_RGB8_OES;
-  } else if (format == SinglePlaneFormat::kETC1) {
-    return GL_ETC1_RGB8_OES;
-  } else if (format == SinglePlaneFormat::kRGBA_1010102 ||
-             format == SinglePlaneFormat::kBGRA_1010102) {
-    return GL_RGB10_A2_EXT;
-  }
-  NOTREACHED();
+bool IsOddSizeMultiPlanarBuffersAllowed() {
+#if BUILDFLAG(IS_APPLE)
+  return true;
+#else
+  return false;
+#endif
 }
 
-// static
-gfx::BufferFormat
-SharedImageFormatToBufferFormatRestrictedUtils::ToBufferFormat(
-    SharedImageFormat format) {
+base::span<const SharedImageFormat> GetMappableSharedImageFormatForTesting() {
+  return kMappableSharedImageFormats;
+}
+
+gfx::BufferFormat SharedImageFormatToBufferFormat(SharedImageFormat format) {
   if (!HasEquivalentBufferFormat(format)) {
     DUMP_WILL_BE_NOTREACHED() << "format=" << format.ToString();
     return gfx::BufferFormat::RGBA_8888;

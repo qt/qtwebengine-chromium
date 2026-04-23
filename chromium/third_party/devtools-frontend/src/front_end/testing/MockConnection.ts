@@ -7,15 +7,18 @@ import type * as SDK from '../core/sdk/sdk.js';
 import type {ProtocolMapping} from '../generated/protocol-mapping.js';
 import type * as ProtocolProxyApi from '../generated/protocol-proxy-api.js';
 
+import {raf} from './DOMHelpers.js';
 import {cleanTestDOM} from './DOMHooks.js';
 import {deinitializeGlobalVars, initializeGlobalVars} from './EnvironmentHelpers.js';
 import {setMockResourceTree} from './ResourceTreeHelpers.js';
 
-export type ProtocolCommand = keyof ProtocolMapping.Commands;
-export type ProtocolCommandParams<C extends ProtocolCommand> = ProtocolMapping.Commands[C]['paramsType'];
-export type ProtocolResponse<C extends ProtocolCommand> = ProtocolMapping.Commands[C]['returnType'];
-export type ProtocolCommandHandler<C extends ProtocolCommand> = (...params: ProtocolCommandParams<C>) =>
-    Omit<ProtocolResponse<C>, 'getError'>|{getError(): string};
+type ProtocolCommand = keyof ProtocolMapping.Commands;
+type CommandParams<C extends keyof ProtocolMapping.Commands> = ProtocolClient.CDPConnection.CommandParams<C>;
+type CommandResult<C extends keyof ProtocolMapping.Commands> = ProtocolClient.CDPConnection.CommandResult<C>;
+
+export type ProtocolCommandHandler<C extends keyof ProtocolMapping.Commands> = (param: CommandParams<C>) =>
+    Omit<CommandResult<C>, 'getError'>|{getError(): string}|
+    PromiseLike<Omit<CommandResult<C>, 'getError'>|{getError(): string}>;
 export type MessageCallback = (result: string|Object) => void;
 interface Message {
   id: number;
@@ -88,10 +91,10 @@ async function enable({reset = true} = {}) {
   await initializeGlobalVars({reset});
   setMockResourceTree(true);
 
-  ProtocolClient.InspectorBackend.Connection.setFactory(() => new MockConnection());
+  ProtocolClient.ConnectionTransport.ConnectionTransport.setFactory(() => new MockTransport());
 }
 
-class MockConnection extends ProtocolClient.InspectorBackend.Connection {
+class MockTransport extends ProtocolClient.ConnectionTransport.ConnectionTransport {
   messageCallback?: MessageCallback;
   override setOnMessage(callback: MessageCallback) {
     this.messageCallback = callback;
@@ -108,15 +111,24 @@ class MockConnection extends ProtocolClient.InspectorBackend.Connection {
       }
       const handler = responseMap.get(outgoingMessage.method);
       if (!handler) {
+        this.messageCallback?.call(undefined, {
+          id: outgoingMessage.id,
+          sessionId: outgoingMessage.sessionId,
+          error: {
+            message: `Method ${outgoingMessage.method} is not stubbed in MockConnection`,
+            code: ProtocolClient.CDPConnection.CDPErrorStatus.DEVTOOLS_STUB_ERROR,
+          }
+        });
         return;
       }
 
-      let result = handler.call(undefined, outgoingMessage.params) || {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let result = handler.call(undefined, outgoingMessage.params as any) || {};
       if ('then' in result) {
         result = await result;
       }
 
-      const errorMessage: string = ('getError' in result) ? result.getError() : undefined;
+      const errorMessage: string|undefined = ('getError' in result) ? result.getError() : undefined;
       const error = errorMessage ? {message: errorMessage, code: -32000} : undefined;
 
       this.messageCallback?.call(undefined, {
@@ -128,6 +140,14 @@ class MockConnection extends ProtocolClient.InspectorBackend.Connection {
       });
     })();
   }
+
+  override setOnDisconnect(): void {
+    // Do nothing
+  }
+
+  override async disconnect(): Promise<void> {
+    // Do nothing
+  }
 }
 
 async function disable() {
@@ -136,10 +156,11 @@ async function disable() {
   }
   // Some Widgets rely on Global vars to be there so they
   // can properly remove state once they detach.
-  await cleanTestDOM();
+  cleanTestDOM();
+  await raf();
   await deinitializeGlobalVars();
   // @ts-expect-error Setting back to undefined as a hard reset.
-  ProtocolClient.InspectorBackend.Connection.setFactory(undefined);
+  ProtocolClient.ConnectionTransport.ConnectionTransport.setFactory(undefined);
 }
 
 export function describeWithMockConnection(title: string, fn: (this: Mocha.Suite) => void, opts: {reset: boolean} = {

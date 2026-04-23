@@ -45,6 +45,7 @@
 #include "components/autofill/content/renderer/synchronous_form_cache.h"
 #include "components/autofill/core/common/aliases.h"
 #include "components/autofill/core/common/autofill_constants.h"
+#include "components/autofill/core/common/autofill_debug_features.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_regexes.h"
 #include "components/autofill/core/common/autofill_util.h"
@@ -279,8 +280,8 @@ bool IsPublicSuffixDomainMatch(const std::string& url1,
   if (domain1.empty() || domain2.empty())
     return false;
 
-  return gurl1.scheme() == gurl2.scheme() && domain1 == domain2 &&
-         gurl1.port() == gurl2.port();
+  return gurl1.GetScheme() == gurl2.GetScheme() && domain1 == domain2 &&
+         gurl1.GetPort() == gurl2.GetPort();
 }
 
 // Helper function that calculates form signature for `form_data` and returns it
@@ -438,7 +439,7 @@ void AnnotateFieldWithParsingResult(
       WebString::FromASCII(password_managers_annotation));
 
   if (!base::FeatureList::IsEnabled(
-          features::test::kAutofillShowTypePredictions)) {
+          features::debug::kAutofillShowTypePredictions)) {
     return;
   }
 
@@ -527,13 +528,6 @@ FieldPropertiesFlags GetFieldFlags(AutofillSuggestionTriggerSource source) {
              ? FieldPropertiesFlags::
                    kAutofilledPasswordFormFilledViaManualFallback
              : FieldPropertiesFlags::kAutofilledOnUserTrigger;
-}
-
-bool IsSubmitElement(WebFormControlElement element) {
-  return element.FormControlTypeForAutofill() ==
-             blink::mojom::FormControlType::kButtonSubmit ||
-         element.FormControlTypeForAutofill() ==
-             blink::mojom::FormControlType::kInputSubmit;
 }
 
 }  // namespace
@@ -999,6 +993,11 @@ void PasswordAutofillAgent::FillField(
     return;
   }
   DoFillField(input_element, value, field_properties);
+  if (base::FeatureList::IsEnabled(
+          password_manager::features::kActorLoginTreatFillingAsUserInput)) {
+    InformBrowserAboutUserInput(input_element.GetOwningFormForAutofill(),
+                                input_element, /*form_cache=*/{});
+  }
   std::move(success_callback).Run(true);
 }
 
@@ -1043,46 +1042,6 @@ void PasswordAutofillAgent::FillChangePasswordForm(
   }
 
   std::move(callback).Run(*form_data);
-}
-
-void PasswordAutofillAgent::SubmitFormWithEnter(
-    FieldRendererId field,
-    SubmitFormWithEnterCallback callback) {
-  WebFormControlElement form_control =
-      form_util::GetFormControlByRendererId(field);
-  WebInputElement input_element = form_control.DynamicTo<WebInputElement>();
-
-  if (!input_element) {
-    std::move(callback).Run(false);
-    return;
-  }
-
-  WebFormElement form = input_element.GetOwningFormForAutofill();
-  // If there is no <form> element with an action attribute owning the input, we
-  // can't guarantee Enter will work.
-  if (!form || form.Action().IsNull() || form.Action().IsEmpty()) {
-    std::move(callback).Run(false);
-    return;
-  }
-
-  auto form_elements = form.GetFormControlElements();  // nocheck
-  auto submit_element_iter =
-      std::ranges::find_if(form_elements, &IsSubmitElement);
-  // If there is no submit element in the form, we can't guarantee Enter will
-  // work.
-  if (submit_element_iter == form_elements.end()) {
-    std::move(callback).Run(false);
-    return;
-  }
-
-  // Fail immediately if the element is disabled.
-  if (submit_element_iter->HasAttribute("disabled")) {
-    std::move(callback).Run(false);
-    return;
-  }
-
-  input_element.DispatchSimulatedEnter();
-  std::move(callback).Run(true);
 }
 
 void PasswordAutofillAgent::DoPreviewField(WebInputElement input,
@@ -1722,6 +1681,21 @@ void PasswordAutofillAgent::InformNoSavedCredentials(
   all_autofilled_elements_.clear();
 
   field_data_manager().ClearData();
+}
+
+void PasswordAutofillAgent::CheckViewAreaVisible(
+    FieldRendererId field_id,
+    CheckViewAreaVisibleCallback callback) {
+  WebFormControlElement element =
+      form_util::GetFormControlByRendererId(field_id);
+  if (!element) {
+    std::move(callback).Run(false);
+    return;
+  }
+
+  element.ScrollIntoViewIfNeeded();
+
+  std::move(callback).Run(!element.VisibleBoundsInWidget().IsEmpty());
 }
 
 #if BUILDFLAG(IS_ANDROID)

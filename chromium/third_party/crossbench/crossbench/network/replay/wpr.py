@@ -8,10 +8,11 @@ import abc
 import contextlib
 import json
 import logging
-from typing import TYPE_CHECKING, Final, Iterator, Optional, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Final, Iterator, Optional, Self, TypeVar
 
 from typing_extensions import override
 
+from crossbench.flags.base import Flags
 from crossbench.helper.path_finder import WprCloudBinary, WprGoFinder
 from crossbench.network.replay.base import GS_PREFIX, ReplayNetwork
 from crossbench.network.replay.web_page_replay import WprReplayServer
@@ -19,7 +20,6 @@ from crossbench.path import check_hash
 
 if TYPE_CHECKING:
   from crossbench.browsers.attributes import BrowserAttributes
-  from crossbench.flags.base import Flags
   from crossbench.network.base import TrafficShaper
   from crossbench.path import AnyPath, LocalPath
   from crossbench.plt import Platform
@@ -27,9 +27,9 @@ if TYPE_CHECKING:
 
   WprReplayNetworkT = TypeVar("WprReplayNetworkT", bound="WprReplayNetwork")
 
-
 # use value for pylint
 assert GS_PREFIX
+
 
 class WprReplayNetwork(ReplayNetwork):
 
@@ -37,18 +37,26 @@ class WprReplayNetwork(ReplayNetwork):
                traffic_shaper: Optional[TrafficShaper],
                wpr_go_bin: Optional[LocalPath], browser_platform: Platform,
                persist_server: bool, inject_deterministic_script: bool,
-               response_transformations_file: LocalPath | None) -> None:
+               no_archive_certificates: bool,
+               response_transformations_file: LocalPath | None,
+               cross_platform_mode: bool, host: str | None) -> None:
     super().__init__(archive, traffic_shaper, browser_platform)
     self._server: WprReplayServer | None = None
     self._tmp_dir: AnyPath | None = None
     self._persist_server: Final[bool] = persist_server
     self._inject_deterministic_script: Final[bool] = inject_deterministic_script
+    self._no_archive_certificates: Final[bool] = no_archive_certificates
     self._response_transformations_file: Final[
         LocalPath | None] = response_transformations_file
+    self._cross_platform_mode: Final[bool] = cross_platform_mode
     self._wpr_go_bin: Final[LocalPath] = self._ensure_wpr_go(wpr_go_bin)
+    self._host: Final[str | None] = host
 
   @override
   def extra_flags(self, browser_attributes: BrowserAttributes) -> Flags:
+    if self._cross_platform_mode:
+      return Flags()
+
     assert self.is_running, "Extra network flags are not valid"
     assert self._server
     if not browser_attributes.is_chromium_based:
@@ -154,7 +162,10 @@ class LocalWprReplayNetwork(WprReplayNetwork):
   @contextlib.contextmanager
   def _forward_ports(self, session: BrowserSessionRunGroup) -> Iterator:
     browser_platform = session.browser_platform
-    if not self._traffic_shaper.is_live or not browser_platform.is_remote:
+    need_forward_ports = (
+        self._traffic_shaper.is_live and browser_platform.is_remote and
+        not self._cross_platform_mode)
+    if not need_forward_ports:
       yield
       return
     http_port: int = self.http_port
@@ -170,19 +181,46 @@ class LocalWprReplayNetwork(WprReplayNetwork):
 
   @override
   def _create_server(self, log_dir: LocalPath) -> WprReplayServer:
-    inject_scripts: list[AnyPath] | None = []
-    if self._inject_deterministic_script:
-      inject_scripts = None
+    extra_kwargs: dict[str, Any] = {}
+    if not self._inject_deterministic_script:
+      extra_kwargs["inject_scripts"] = []
+    if self._cross_platform_mode:
+      extra_kwargs["http_port"] = 80
+      extra_kwargs["https_port"] = 443
+      extra_kwargs["run_as_root"] = True
+    if self._host:
+      extra_kwargs["host"] = self._host
+
     return WprReplayServer(
         self.archive_path,
         self._wpr_go_bin,
-        inject_scripts=inject_scripts,
         log_path=log_dir / "network.wpr.log",
+        no_archive_certificates=self._no_archive_certificates,
         rules_file=self._response_transformations_file,
-        platform=self.host_platform)
+        platform=self.host_platform,
+        **extra_kwargs)
 
 
 class RemoteWprReplayNetwork(WprReplayNetwork):
+
+  def __init__(self, archive: LocalPath | str,
+               traffic_shaper: Optional[TrafficShaper],
+               wpr_go_bin: Optional[LocalPath], browser_platform: Platform,
+               persist_server: bool, inject_deterministic_script: bool,
+               no_archive_certificates: bool,
+               response_transformations_file: LocalPath | None,
+               host: str | None) -> None:
+    super().__init__(
+        archive=archive,
+        traffic_shaper=traffic_shaper,
+        wpr_go_bin=wpr_go_bin,
+        browser_platform=browser_platform,
+        persist_server=persist_server,
+        inject_deterministic_script=inject_deterministic_script,
+        no_archive_certificates=no_archive_certificates,
+        response_transformations_file=response_transformations_file,
+        cross_platform_mode=False,
+        host=host)
 
   @classmethod
   def is_compatible(cls, platform: Platform) -> bool:
@@ -236,6 +274,8 @@ class RemoteWprReplayNetwork(WprReplayNetwork):
 
   @override
   def _create_server(self, log_dir: LocalPath) -> WprReplayServer:
+    assert not self._cross_platform_mode
+
     host_platform = self.host_platform
     if local_wpr_go := WprGoFinder(host_platform).local_path:
       wpr_root = local_wpr_go.parents[1]

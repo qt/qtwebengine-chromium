@@ -13,8 +13,8 @@ from typing_extensions import override
 from crossbench import path as pth
 from crossbench.flags.base import Flags, FlagsData
 from crossbench.flags.chrome_extensions import ChromeExtensions
-from crossbench.flags.chrome_features import (ChromeBlinkFeatures,
-                                              ChromeFeatures)
+from crossbench.flags.chrome_features import ChromeBlinkFeatures, \
+    ChromeFeatures
 from crossbench.flags.js_flags import JSFlags
 from crossbench.flags.known_js_flags import KNOWN_JS_FLAGS
 

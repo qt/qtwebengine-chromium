@@ -1,0 +1,72 @@
+{
+  "cujs": {
+    "gma-test-app-init-and-load-interstitial": [
+      {
+        "action": "wait"
+        "duration": "2s"
+      }
+      {
+        "action": "click"
+        "source": "touch"
+        "position": {
+          "res": "com.google.android.libraries.ads.mobile.maitier.testapps.webview:id/init_and_load_interstitial"
+        }
+      }
+      {
+        "action": "wait"
+        "duration": "2s"
+      }
+    ]
+    "gma-test-app-init-and-load-rewarded": [
+      {
+        "action": "wait"
+        "duration": "2s"
+      }
+      {
+        "action": "click"
+        "source": "touch"
+        "position": {
+          "res": "com.google.android.libraries.ads.mobile.maitier.testapps.webview:id/init_and_load_rewarded"
+        }
+      }
+      {
+        "action": "wait"
+        "duration": "2s"
+      }
+    ]
+    "gma-test-app-show-interstitial": [
+      {
+        "action": "wait"
+        "duration": "2s"
+      }
+      {
+        "action": "click"
+        "source": "touch"
+        "position": {
+          "res": "com.google.android.libraries.ads.mobile.maitier.testapps.webview:id/show_interstitial"
+        }
+      }
+      {
+        "action": "wait"
+        "duration": "2s"
+      }
+    ]
+    "gma-test-app-show-rewarded": [
+      {
+        "action": "wait"
+        "duration": "2s"
+      }
+      {
+        "action": "click"
+        "source": "touch"
+        "position": {
+          "res": "com.google.android.libraries.ads.mobile.maitier.testapps.webview:id/show_rewarded"
+        }
+      }
+      {
+        "action": "wait"
+        "duration": "2s"
+      }
+    ]
+  }
+}

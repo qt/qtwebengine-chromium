@@ -33,6 +33,7 @@ static_library("safe_browsing") {
     "//chrome/browser/password_manager/factories",
     "//chrome/browser/profiles",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/profiles:profile_io_data",
     "//chrome/browser/signin",
     "//chrome/browser/sync",
     "//chrome/browser/ui/autofill",
@@ -244,7 +245,6 @@ static_library("safe_browsing") {
       "//chrome/browser:browser_process",
       "//chrome/browser/content_settings:content_settings_factory",
       "//chrome/browser/download",
-      "//chrome/browser/enterprise/connectors/analysis:features",
       "//chrome/browser/permissions:permissions_proto",
       "//chrome/browser/profiles",
       "//chrome/browser/profiles:profile",
@@ -253,7 +253,6 @@ static_library("safe_browsing") {
       "//chrome/common/safe_browsing:archive_analyzer_results",
       "//chrome/common/safe_browsing:binary_feature_extractor",
       "//chrome/common/safe_browsing:download_type_util",
-      "//chrome/common/safe_browsing:proto",
       "//components/autofill/core/browser",
       "//components/content_extraction/content/browser",
       "//components/content_settings/core/browser",
@@ -291,6 +290,7 @@ static_library("safe_browsing") {
       "//components/safe_browsing/core/browser/tailored_security_service",
       "//components/safe_browsing/core/common",
       "//components/safe_browsing/core/common:safe_browsing_prefs",
+      "//components/safe_browsing/core/common/proto:crx_info_proto",
       "//components/safe_browsing/core/common/proto:csd_proto",
       "//components/safe_browsing/core/common/proto:realtimeapi_proto",
       "//components/signin/public/identity_manager",
@@ -317,10 +317,6 @@ static_library("safe_browsing") {
         "cloud_content_scanning/cloud_binary_upload_service.h",
         "cloud_content_scanning/cloud_binary_upload_service_factory.cc",
         "cloud_content_scanning/cloud_binary_upload_service_factory.h",
-        "cloud_content_scanning/connector_data_pipe_getter.cc",
-        "cloud_content_scanning/connector_data_pipe_getter.h",
-        "cloud_content_scanning/connector_upload_request.cc",
-        "cloud_content_scanning/connector_upload_request.h",
         "cloud_content_scanning/deep_scanning_utils.cc",
         "cloud_content_scanning/deep_scanning_utils.h",
         "cloud_content_scanning/file_analysis_request.cc",
@@ -469,6 +465,7 @@ static_library("safe_browsing") {
         "//chrome/common",
         "//chrome/services/file_util/public/cpp",
         "//components/content_settings/core/browser",
+        "//components/enterprise/connectors/core:cloud_content_scanning",
         "//components/file_access",
         "//components/gcm_driver",
         "//components/gcm_driver/instance_id",
@@ -580,6 +577,8 @@ static_library("advanced_protection") {
     "advanced_protection_status_manager.h",
     "advanced_protection_status_manager_factory.cc",
     "advanced_protection_status_manager_factory.h",
+    "application_advanced_protection_status_detector.cc",
+    "application_advanced_protection_status_detector.h",
   ]
 
   if (is_android) {
@@ -597,6 +596,7 @@ static_library("advanced_protection") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 
   deps = [
+    "//chrome/browser:browser_process",
     "//chrome/browser/profiles",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/signin",
@@ -640,6 +640,7 @@ source_set("unit_tests") {
   sources = [
     "advanced_protection_status_manager_factory_unittest.cc",
     "advanced_protection_status_manager_unittest.cc",
+    "application_advanced_protection_status_detector_unittest.cc",
   ]
 
   deps = [
@@ -660,6 +661,7 @@ source_set("unit_tests") {
     sources += [ "safe_browsing_pref_change_handler_unittest.cc" ]
 
     deps += [
+      "//chrome/browser/sync",
       "//chrome/browser/ui",
       "//chrome/browser/ui/toasts",
       "//testing/gmock",
@@ -691,7 +693,6 @@ source_set("test_support") {
       "//chrome/browser/profiles:profile",
       "//chrome/browser/ui",
       "//chrome/common",
-      "//chrome/common/safe_browsing:proto",
       "//components/enterprise/common/proto:connectors_proto",
       "//components/safe_browsing:buildflags",
       "//components/safe_browsing/content/browser",
@@ -700,6 +701,7 @@ source_set("test_support") {
       "//components/safe_browsing/core/browser/db:database_manager",
       "//components/safe_browsing/core/browser/db:test_database_manager",
       "//components/safe_browsing/core/browser/db:v4_protocol_manager_util",
+      "//components/safe_browsing/core/common/proto:crx_info_proto",
       "//content/public/browser",
       "//services/network:test_support",
       "//testing/gtest",
@@ -711,6 +713,7 @@ source_set("test_support") {
       "cloud_content_scanning/test_binary_upload_service.cc",
       "cloud_content_scanning/test_binary_upload_service.h",
     ]
+    deps += [ "//components/enterprise/connectors/core:cloud_content_scanning" ]
   }
 
   if (is_android) {

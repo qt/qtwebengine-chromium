@@ -27,7 +27,9 @@ class ProfilingContext(ProbeContext, metaclass=abc.ABCMeta):
   def __init__(self, probe: ProfilingProbe, run: Run) -> None:
     super().__init__(probe, run)
     self._profiling_process: subprocess.Popen | None = None
-    self._story_ready = False
+    self._story_ready: bool = False
+    self._renderer_pid: int | None = None
+    self._renderer_tid: int | None = None
 
   def setup_v8_log_path(self) -> None:
     if any(isinstance(probe, V8LogProbe) for probe in self.run.probes):
@@ -50,10 +52,15 @@ class ProfilingContext(ProbeContext, metaclass=abc.ABCMeta):
     renderer_pid: int | None = None
     renderer_main_tid: int | None = None
     with self.run.actions("Get Renderer PID/TID") as actions:
-      renderer_pid = actions.js(
-          "return chrome?.benchmarking?.getRendererPid?.();")
-      renderer_main_tid = actions.js(
-          "return chrome?.benchmarking?.getRendererMainTid?.();")
+      renderer_pid_tid = actions.js(
+          "return ["
+          "chrome?.benchmarking?.getRendererPid?.(),"
+          "chrome?.benchmarking?.getRendererMainTid?.()"
+          "];")
+    if len(renderer_pid_tid) != 2:
+      error_message = f"Invalid result: {renderer_pid_tid}"
+    else:
+      (renderer_pid, renderer_main_tid) = renderer_pid_tid
     if renderer_pid is None or renderer_main_tid is None:
       error_message = (
           "Unable to get Renderer PID/TID from browser. "

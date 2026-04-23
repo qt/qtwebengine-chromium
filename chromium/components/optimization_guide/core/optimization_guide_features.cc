@@ -5,6 +5,7 @@
 #include "components/optimization_guide/core/optimization_guide_features.h"
 
 #include <cstring>
+#include <optional>
 
 #include "base/byte_count.h"
 #include "base/command_line.h"
@@ -20,6 +21,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/to_string.h"
 #include "base/system/sys_info.h"
+#include "base/time/time.h"
 #include "components/optimization_guide/core/feature_registry/mqls_feature_registry.h"
 #include "components/optimization_guide/core/model_execution/feature_keys.h"
 #include "components/optimization_guide/core/optimization_guide_constants.h"
@@ -54,11 +56,6 @@ BASE_FEATURE(kOptimizationHints, base::FEATURE_ENABLED_BY_DEFAULT);
 // Enables the prediction of optimization targets.
 BASE_FEATURE(kOptimizationTargetPrediction, base::FEATURE_ENABLED_BY_DEFAULT);
 
-// Enables push notification of hints.
-BASE_FEATURE(kPushNotifications,
-             "OptimizationGuidePushNotifications",
-             enabled_by_default_mobile_only);
-
 // This feature flag does not turn off any behavior, it is only used for
 // experiment parameters.
 BASE_FEATURE(kPageTextExtraction,
@@ -84,12 +81,6 @@ BASE_FEATURE(kOptimizationGuideFetchingForSRP,
 // Kill switch for disabling model quality logging.
 BASE_FEATURE(kModelQualityLogging, base::FEATURE_ENABLED_BY_DEFAULT);
 
-// Enables fetching personalized metadata from the Optimization Guide Service
-// (on-demand fetching).
-BASE_FEATURE(kOptimizationGuidePersonalizedFetching,
-             "OptimizationPersonalizedHintsFetching",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // An emergency kill switch feature to stop serving certain model versions per
 // optimization target. This is useful in exceptional situations when a bad
 // model version got served that lead to crashes or critical failures, and an
@@ -109,11 +100,6 @@ BASE_FEATURE(kOptimizationGuideOnDeviceModel,
 #else
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-
-// Whether to allow on device model evaluation for Compose. This has no effect
-// if OptimizationGuideOnDeviceModel is off.
-BASE_FEATURE(kOptimizationGuideComposeOnDeviceEval,
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Whether the on device service is launched after a delay on startup to log
 // metrics.
@@ -136,9 +122,6 @@ BASE_FEATURE(kOnDeviceModelFetchPerformanceClassEveryStartup,
 // would be unavailable otherwise. This is meant for development and test
 // purposes only.
 BASE_FEATURE(kAiSettingsPageForceAvailable, base::FEATURE_DISABLED_BY_DEFAULT);
-
-// Enable AI settings page integration with Privacy Guide.
-BASE_FEATURE(kPrivacyGuideAiSettings, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kOnDeviceModelPerformanceParams, base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -177,6 +160,24 @@ BASE_FEATURE(kOptimizationGuideProactivePersonalizedHintsFetching,
 
 BASE_FEATURE(kOptimizationGuideBypassFormsClassificationAuth,
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Controls whether to enforce a timeout for subframe page content extraction.
+// If enabled, defaults to 1 second. If disabled, wait indefinitely for all
+// subframes to respond.
+BASE_FEATURE(kGetAIPageContentSubframeTimeoutEnabled,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+const base::FeatureParam<base::TimeDelta> kGetAIPageContentSubframeTimeoutParam{
+    &kGetAIPageContentSubframeTimeoutEnabled, "timeout", base::Seconds(1)};
+
+// Controls whether to enforce a timeout for main frame page content extraction.
+// If enabled, defaults to 10 seconds. If disabled, wait indefinitely for the
+// main frame to respond.
+BASE_FEATURE(kGetAIPageContentMainFrameTimeoutEnabled,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+const base::FeatureParam<base::TimeDelta>
+    kGetAIPageContentMainFrameTimeoutParam{
+        &kGetAIPageContentMainFrameTimeoutEnabled, "timeout",
+        base::Seconds(10)};
 
 // The default value here is a bit of a guess.
 // TODO(crbug.com/40163041): This should be tuned once metrics are available.
@@ -243,7 +244,7 @@ bool IsSRPFetchingEnabled() {
 }
 
 bool IsPushNotificationsEnabled() {
-  return base::FeatureList::IsEnabled(kPushNotifications);
+  return enabled_by_default_mobile_only;
 }
 
 size_t MaxHostKeyedHintCacheSize() {
@@ -259,25 +260,7 @@ bool ShouldPersistHintsToDisk() {
 
 RequestContextSet GetAllowedContextsForPersonalizedMetadata() {
   RequestContextSet allowed_contexts;
-  if (!base::FeatureList::IsEnabled(kOptimizationGuidePersonalizedFetching)) {
-    return allowed_contexts;
-  }
-  base::FieldTrialParams params;
-  if (base::GetFieldTrialParamsByFeature(kOptimizationGuidePersonalizedFetching,
-                                         &params) &&
-      params.contains("allowed_contexts")) {
-    for (const auto& context_str : base::SplitString(
-             base::GetFieldTrialParamValueByFeature(
-                 kOptimizationGuidePersonalizedFetching, "allowed_contexts"),
-             ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
-      proto::RequestContext context;
-      if (proto::RequestContext_Parse(context_str, &context)) {
-        allowed_contexts.Put(context);
-      }
-    }
-  } else {
-    allowed_contexts.Put(proto::RequestContext::CONTEXT_PAGE_INSIGHTS_HUB);
-  }
+  allowed_contexts.Put(proto::RequestContext::CONTEXT_PAGE_INSIGHTS_HUB);
   return allowed_contexts;
 }
 
@@ -446,47 +429,6 @@ base::TimeDelta GetOnDeviceModelExecutionValidationStartupDelay() {
   return kOnDeviceModelExecutionValidationStartupDelay.Get();
 }
 
-int GetOnDeviceModelMinTokensForContext() {
-  static const base::FeatureParam<int> kOnDeviceModelMinTokensForContext{
-      &kOptimizationGuideOnDeviceModel,
-      "on_device_model_min_tokens_for_context", 1024};
-  return kOnDeviceModelMinTokensForContext.Get();
-}
-
-int GetOnDeviceModelMaxTokensForContext() {
-  static const base::FeatureParam<int> kOnDeviceModelMaxTokensForContext{
-      &kOptimizationGuideOnDeviceModel,
-      "on_device_model_max_tokens_for_context", 8192};
-  return kOnDeviceModelMaxTokensForContext.Get();
-}
-
-int GetOnDeviceModelContextTokenChunkSize() {
-  static const base::FeatureParam<int> kOnDeviceModelContextTokenChunkSize{
-      &kOptimizationGuideOnDeviceModel,
-      "on_device_model_context_token_chunk_size", 512};
-  return kOnDeviceModelContextTokenChunkSize.Get();
-}
-
-int GetOnDeviceModelMaxTokensForExecute() {
-  static const base::FeatureParam<int> kOnDeviceModelMaxTokensForExecute{
-      &kOptimizationGuideOnDeviceModel,
-      "on_device_model_max_tokens_for_execute", 1024};
-  return kOnDeviceModelMaxTokensForExecute.Get();
-}
-
-int GetOnDeviceModelMaxTokensForOutput() {
-  static const base::FeatureParam<int> kOnDeviceModelMaxTokensForOutput{
-      &kOptimizationGuideOnDeviceModel, "on_device_model_max_tokens_for_output",
-      1024};
-  return kOnDeviceModelMaxTokensForOutput.Get();
-}
-
-uint32_t GetOnDeviceModelMaxTokens() {
-  return static_cast<uint32_t>(GetOnDeviceModelMaxTokensForContext() +
-                               GetOnDeviceModelMaxTokensForExecute() +
-                               GetOnDeviceModelMaxTokensForOutput());
-}
-
 int GetOnDeviceModelCrashCountBeforeDisable() {
   static const base::FeatureParam<int> kOnDeviceModelDisableCrashCount{
       &kOptimizationGuideOnDeviceModel, "on_device_model_disable_crash_count",
@@ -515,14 +457,6 @@ base::TimeDelta GetOnDeviceStartupMetricDelay() {
       &kLogOnDeviceMetricsOnStartup, "on_device_startup_metric_delay",
       base::Minutes(3)};
   return kOnDeviceStartupMetricDelay.Get();
-}
-
-bool GetOnDeviceFallbackToServerOnDisconnect() {
-  static const base::FeatureParam<bool>
-      kOnDeviceModelFallbackToServerOnDisconnect{
-          &kOptimizationGuideOnDeviceModel,
-          "on_device_fallback_to_server_on_disconnect", true};
-  return kOnDeviceModelFallbackToServerOnDisconnect.Get();
 }
 
 bool CanLaunchOnDeviceModelService() {
@@ -565,7 +499,7 @@ bool IsFreeDiskSpaceTooLowForOnDeviceModelInstall(
   return base::MiB(base::GetFieldTrialParamByFeatureAsInt(
              kOptimizationGuideOnDeviceModel,
              "on_device_model_free_space_mb_required_to_retain",
-             base::GiB(10).InMiB())) >= free_disk_space_bytes;
+             base::GiB(5).InMiB())) >= free_disk_space_bytes;
 }
 
 bool GetOnDeviceModelRetractUnsafeContent() {
@@ -655,8 +589,18 @@ bool ShouldEnableOptimizationGuideIconView() {
   return base::FeatureList::IsEnabled(kOptimizationGuideIconView);
 }
 
-bool IsPrivacyGuideAiSettingsEnabled() {
-  return base::FeatureList::IsEnabled(kPrivacyGuideAiSettings);
+std::optional<base::TimeDelta> GetSubframeGetAIPageContentTimeout() {
+  if (!base::FeatureList::IsEnabled(kGetAIPageContentSubframeTimeoutEnabled)) {
+    return std::nullopt;
+  }
+  return kGetAIPageContentSubframeTimeoutParam.Get();
+}
+
+std::optional<base::TimeDelta> GetMainFrameGetAIPageContentTimeout() {
+  if (!base::FeatureList::IsEnabled(kGetAIPageContentMainFrameTimeoutEnabled)) {
+    return std::nullopt;
+  }
+  return kGetAIPageContentMainFrameTimeoutParam.Get();
 }
 
 }  // namespace features

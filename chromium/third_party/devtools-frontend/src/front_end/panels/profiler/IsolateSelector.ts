@@ -1,7 +1,7 @@
 // Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -102,6 +102,7 @@ export class IsolateSelector extends UI.Widget.VBox implements UI.ListControl.Li
   }
 
   override willHide(): void {
+    super.willHide();
     SDK.IsolateManager.IsolateManager.instance().removeEventListener(
         SDK.IsolateManager.Events.MEMORY_CHANGED, this.heapStatsChanged, this);
   }

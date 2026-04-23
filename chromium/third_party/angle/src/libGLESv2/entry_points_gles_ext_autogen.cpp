@@ -20157,6 +20157,7 @@ void GL_APIENTRY GL_GenVertexArraysOES(GLsizei n, GLuint *arrays)
     if (ANGLE_LIKELY(context != nullptr))
     {
         VertexArrayID *arraysPacked = PackParam<VertexArrayID *>(arrays);
+        SCOPED_SHARE_CONTEXT_LOCK(context);
         bool isCallValid = context->skipValidation();
         if (!isCallValid)
         {
@@ -20166,10 +20167,9 @@ void GL_APIENTRY GL_GenVertexArraysOES(GLsizei n, GLuint *arrays)
                 const uint32_t errorCount = context->getPushedErrorCount();
 #endif
                 isCallValid = ValidateGenVertexArraysOES(
-                    context->getPrivateState(), context->getMutableErrorSetForValidation(),
-                    angle::EntryPoint::GLGenVertexArraysOES, n, arraysPacked);
+                    context, angle::EntryPoint::GLGenVertexArraysOES, n, arraysPacked);
 #if defined(ANGLE_ENABLE_ASSERTS)
-                ASSERT(isCallValid || context->getPushedErrorCount() != errorCount);
+                ASSERT(context->getPushedErrorCount() - errorCount == (isCallValid ? 0 : 1));
 #endif
             }
             else
@@ -20179,8 +20179,7 @@ void GL_APIENTRY GL_GenVertexArraysOES(GLsizei n, GLuint *arrays)
         }
         if (ANGLE_LIKELY(isCallValid))
         {
-            ContextPrivateGenVertexArrays(context->getMutablePrivateState(),
-                                          context->getMutablePrivateStateCache(), n, arraysPacked);
+            context->genVertexArrays(n, arraysPacked);
         }
         ANGLE_CAPTURE_GL(GenVertexArraysOES, isCallValid, context, n, arraysPacked);
     }
@@ -20309,6 +20308,69 @@ void GL_APIENTRY GL_FramebufferTextureMultiviewOVR(GLenum target,
 }
 
 // GL_OVR_multiview2
+
+// GL_OVR_multiview_multisampled_render_to_texture
+void GL_APIENTRY GL_FramebufferTextureMultisampleMultiviewOVR(GLenum target,
+                                                              GLenum attachment,
+                                                              GLuint texture,
+                                                              GLint level,
+                                                              GLsizei samples,
+                                                              GLint baseViewIndex,
+                                                              GLsizei numViews)
+{
+    ASSERT(!egl::Display::GetCurrentThreadUnlockedTailCall()->any());
+    Context *context = GetValidGlobalContext();
+    EVENT(context, GLFramebufferTextureMultisampleMultiviewOVR,
+          "context = %d, target = %s, attachment = %s, texture = %u, level = %d, samples = %d, "
+          "baseViewIndex = %d, numViews = %d",
+          CID(context), GLenumToString(GLESEnum::FramebufferTarget, target),
+          GLenumToString(GLESEnum::FramebufferAttachment, attachment), texture, level, samples,
+          baseViewIndex, numViews);
+
+    if (ANGLE_LIKELY(context != nullptr))
+    {
+        TextureID texturePacked = PackParam<TextureID>(texture);
+        SCOPED_SHARE_CONTEXT_LOCK(context);
+        if (context->getState().getPixelLocalStorageActivePlanes() != 0)
+        {
+            context->endPixelLocalStorageImplicit();
+        }
+        bool isCallValid = context->skipValidation();
+        if (!isCallValid)
+        {
+            if (ANGLE_LIKELY(context->getExtensions().multiviewMultisampledRenderToTextureOVR))
+            {
+#if defined(ANGLE_ENABLE_ASSERTS)
+                const uint32_t errorCount = context->getPushedErrorCount();
+#endif
+                isCallValid = ValidateFramebufferTextureMultisampleMultiviewOVR(
+                    context, angle::EntryPoint::GLFramebufferTextureMultisampleMultiviewOVR, target,
+                    attachment, texturePacked, level, samples, baseViewIndex, numViews);
+#if defined(ANGLE_ENABLE_ASSERTS)
+                ASSERT(context->getPushedErrorCount() - errorCount == (isCallValid ? 0 : 1));
+#endif
+            }
+            else
+            {
+                RecordVersionErrorESEXT(
+                    context, angle::EntryPoint::GLFramebufferTextureMultisampleMultiviewOVR);
+            }
+        }
+        if (ANGLE_LIKELY(isCallValid))
+        {
+            context->framebufferTextureMultisampleMultiview(
+                target, attachment, texturePacked, level, samples, baseViewIndex, numViews);
+        }
+        ANGLE_CAPTURE_GL(FramebufferTextureMultisampleMultiviewOVR, isCallValid, context, target,
+                         attachment, texturePacked, level, samples, baseViewIndex, numViews);
+    }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext(
+            angle::EntryPoint::GLFramebufferTextureMultisampleMultiviewOVR);
+    }
+    ASSERT(!egl::Display::GetCurrentThreadUnlockedTailCall()->any());
+}
 
 // GL_QCOM_framebuffer_foveated
 void GL_APIENTRY GL_FramebufferFoveationConfigQCOM(GLuint framebuffer,

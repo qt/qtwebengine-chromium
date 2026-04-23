@@ -11,6 +11,7 @@ import("../visibility.gni")
 generate_css("css_files") {
   sources = [
     "aiSettingsTab.css",
+    "editFileSystemView.css",
     "frameworkIgnoreListSettingsTab.css",
     "keybindsSettingsTab.css",
     "settingsScreen.css",
@@ -18,9 +19,10 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("settings") {
+devtools_ui_module("settings") {
   sources = [
     "AISettingsTab.ts",
+    "EditFileSystemView.ts",
     "FrameworkIgnoreListSettingsTab.ts",
     "KeybindsSettingsTab.ts",
     "SettingsScreen.ts",
@@ -42,12 +44,14 @@ devtools_module("settings") {
     "../../models/project_settings:bundle",
     "../../models/text_utils:bundle",
     "../../models/workspace:bundle",
-    "../../ui/components/cards:bundle",
-    "../../ui/components/icon_button:bundle",
     "../../ui/components/legacy_wrapper:bundle",
     "../../ui/components/switch:bundle",
+    "../../ui/helpers:bundle",
+    "../../ui/i18n:bundle",
+    "../../ui/kit:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/data_grid:bundle",
+    "../../ui/legacy/components/settings_ui:bundle",
     "../../ui/legacy/components/utils:bundle",
     "../../ui/lit:bundle",
     "../utils:bundle",
@@ -87,11 +91,12 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
     "AISettingsTab.test.ts",
+    "EditFileSystemView.test.ts",
     "WorkspaceSettingsTab.test.ts",
   ]
 

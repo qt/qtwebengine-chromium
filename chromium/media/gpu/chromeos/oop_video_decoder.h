@@ -9,6 +9,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/sequence_checker.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "media/base/media_log.h"
@@ -17,6 +18,7 @@
 #include "media/mojo/mojom/media_log.mojom.h"
 #include "media/mojo/mojom/video_decoder.mojom.h"
 #include "mojo/public/cpp/bindings/associated_receiver.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 
 #if BUILDFLAG(IS_CHROMEOS)

@@ -18,7 +18,7 @@ generate_css("css_files") {
 
 import("../visibility.gni")
 
-devtools_module("css_overview") {
+devtools_ui_module("css_overview") {
   sources = [
     "CSSOverviewCompletedView.ts",
     "CSSOverviewModel.ts",
@@ -41,14 +41,15 @@ devtools_module("css_overview") {
     "../../models/text_utils:bundle",
     "../../ui/components/buttons:bundle",
     "../../ui/components/helpers:bundle",
-    "../../ui/components/icon_button:bundle",
     "../../ui/components/panel_feedback:bundle",
     "../../ui/components/panel_introduction_steps:bundle",
+    "../../ui/kit:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/color_picker:bundle",
     "../../ui/legacy/components/data_grid:bundle",
     "../../ui/legacy/components/utils:bundle",
     "../../ui/lit:bundle",
+    "../common:bundle",
   ]
 }
 
@@ -81,7 +82,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [ "CSSOverviewPanel.test.ts" ]

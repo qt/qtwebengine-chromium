@@ -39,10 +39,10 @@
 #include <type_traits>
 
 #include "absl/base/attributes.h"
-#include "absl/base/nullability.h"
 #include "absl/base/config.h"
 #include "absl/base/internal/throw_delegate.h"
 #include "absl/base/macros.h"
+#include "absl/base/nullability.h"
 #include "absl/base/optimization.h"
 #include "absl/base/port.h"
 
@@ -65,6 +65,32 @@ ABSL_NAMESPACE_END
 #else  // ABSL_HAVE_BUILTIN(__builtin_memcmp)
 #define ABSL_INTERNAL_STRING_VIEW_MEMCMP memcmp
 #endif  // ABSL_HAVE_BUILTIN(__builtin_memcmp)
+
+// If `std::ranges` is available, mark `string_view` as satisfying the
+// `view` and `borrowed_range` concepts, just like `std::string_view`.
+#ifdef __has_include
+#if __has_include(<version>)
+#include <version>
+#endif
+#endif
+
+#if defined(__cpp_lib_ranges) && __cpp_lib_ranges >= 201911L
+#include <ranges>  // NOLINT(build/c++20)
+
+namespace absl {
+ABSL_NAMESPACE_BEGIN
+class string_view;
+ABSL_NAMESPACE_END
+}  // namespace absl
+
+template <>
+// NOLINTNEXTLINE(build/c++20)
+inline constexpr bool std::ranges::enable_view<absl::string_view> = true;
+template <>
+// NOLINTNEXTLINE(build/c++20)
+inline constexpr bool std::ranges::enable_borrowed_range<absl::string_view> =
+    true;
+#endif
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -201,7 +227,7 @@ class ABSL_ATTRIBUTE_VIEW string_view {
   constexpr string_view(  // NOLINT(runtime/explicit)
       const char* absl_nonnull str)
       : ptr_(str), length_(str ? StrlenInternal(str) : 0) {
-    assert(str != nullptr);
+    ABSL_HARDENING_ASSERT(str != nullptr);
   }
 
   // Constructor of a `string_view` from a `const char*` and length.
@@ -219,6 +245,9 @@ class ABSL_ATTRIBUTE_VIEW string_view {
     ABSL_HARDENING_ASSERT(end >= begin);
   }
 #endif  // ABSL_INTERNAL_CPLUSPLUS_LANG >= 202002L
+
+  // Deleted constructor from std::nullptr_t from C++23.
+  string_view(std::nullptr_t) = delete;
 
   constexpr string_view(const string_view&) noexcept = default;
   string_view& operator=(const string_view&) noexcept = default;

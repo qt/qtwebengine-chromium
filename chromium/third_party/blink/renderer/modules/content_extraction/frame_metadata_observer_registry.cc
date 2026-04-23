@@ -21,6 +21,7 @@
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/html/html_meta_element.h"
 #include "third_party/blink/renderer/core/html/html_script_element.h"
+#include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/modules/content_extraction/paid_content.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
@@ -28,7 +29,6 @@
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/key_value_pair.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
-#include "third_party/blink/renderer/core/html_names.h"
 
 namespace blink {
 
@@ -61,21 +61,6 @@ void DeliverMutation(const HeapVector<Member<MutationRecord>>& records,
   }
 }
 
-void ObserveDocument(WeakMember<Node>& observing,
-                     MutationObserver* observer,
-                     Element* document_element) {
-  if (observing.Get() == document_element) {
-    return;
-  }
-  observer->disconnect();
-  MutationObserverInit* init = MutationObserverInit::Create();
-  init->setChildList(true);
-  DummyExceptionStateForTesting exception_state;
-  observer->observe(document_element, init, exception_state);
-  DCHECK(!exception_state.HadException());
-  observing = document_element;
-}
-
 template <typename ObserverSet, typename MutationObserver>
 bool UpdateObserver(Document* document,
                     ObserverSet& observer_set,
@@ -90,7 +75,7 @@ class FrameMetadataObserverRegistry::PaidContentAttributeObserver final
       FrameMetadataObserverRegistry* registry);
 
   ExecutionContext* GetExecutionContext() const override {
-    return registry_->GetSupplementable()->GetExecutionContext();
+    return registry_->document_->GetExecutionContext();
   }
 
   void Deliver(const HeapVector<Member<MutationRecord>>& /*records*/,
@@ -107,77 +92,13 @@ class FrameMetadataObserverRegistry::PaidContentAttributeObserver final
   Member<FrameMetadataObserverRegistry> registry_;
 };
 
-class FrameMetadataObserverRegistry::PaidContentMutationObserver final
-    : public MutationObserver::Delegate {
- public:
-  explicit PaidContentMutationObserver(FrameMetadataObserverRegistry* registry);
-
-  void ObserveHead(HTMLHeadElement* head);
-  void ObserveDocument(Element* document_element);
-
-  void Disconnect() {
-    observer_->disconnect();
-    observing_ = nullptr;
-    registry_->DisconnectAllPaidContentAttributeObservers();
-  }
-
-  ExecutionContext* GetExecutionContext() const override {
-    return registry_->GetSupplementable()->GetExecutionContext();
-  }
-
-  void Deliver(const HeapVector<Member<MutationRecord>>& records,
-               MutationObserver&) override {
-    bool needs_update = false;
-    for (const auto& record : records) {
-      if (record->type() == "childList") {
-        for (unsigned i = 0; i < record->addedNodes()->length(); ++i) {
-          if (IsA<HTMLHeadElement>(record->addedNodes()->item(i))) {
-            registry_->OnPaidContentMetadataChanged();
-            return;
-          }
-        }
-        for (unsigned i = 0; i < record->addedNodes()->length(); ++i) {
-          if (auto* script =
-                  DynamicTo<HTMLScriptElement>(record->addedNodes()->item(i))) {
-            registry_->ObservePaidContentScriptAttributes(script);
-            needs_update = true;
-          }
-        }
-        for (unsigned i = 0; i < record->removedNodes()->length(); ++i) {
-          if (auto* script = DynamicTo<HTMLScriptElement>(
-                  record->removedNodes()->item(i))) {
-            registry_->StopObservingPaidContentScriptAttributes(script);
-            needs_update = true;
-          }
-        }
-      }
-    }
-
-    if (needs_update) {
-      registry_->OnPaidContentMetadataChanged();
-    }
-  }
-
-  void Trace(Visitor* visitor) const override {
-    visitor->Trace(registry_);
-    visitor->Trace(observer_);
-    visitor->Trace(observing_);
-    MutationObserver::Delegate::Trace(visitor);
-  }
-
- private:
-  Member<FrameMetadataObserverRegistry> registry_;
-  Member<MutationObserver> observer_;
-  WeakMember<Node> observing_;
-};
-
 class FrameMetadataObserverRegistry::MetaTagAttributeObserver final
     : public MutationObserver::Delegate {
  public:
   explicit MetaTagAttributeObserver(FrameMetadataObserverRegistry* registry);
 
   ExecutionContext* GetExecutionContext() const override {
-    return registry_->GetSupplementable()->GetExecutionContext();
+    return registry_->document_->GetExecutionContext();
   }
 
   void Deliver(const HeapVector<Member<MutationRecord>>& /*records*/,
@@ -193,165 +114,18 @@ class FrameMetadataObserverRegistry::MetaTagAttributeObserver final
  private:
   Member<FrameMetadataObserverRegistry> registry_;
 };
-
-// TODO(gklassen): Use templated class to avoid duplication between this and
-// PaidContentMutationObserver.
-class FrameMetadataObserverRegistry::MetaTagsMutationObserver final
-    : public MutationObserver::Delegate {
- public:
-  explicit MetaTagsMutationObserver(FrameMetadataObserverRegistry* registry);
-
-  void ObserveHead(HTMLHeadElement* head);
-  void ObserveDocument(Element* document_element);
-
-  void Disconnect() {
-    observer_->disconnect();
-    observing_ = nullptr;
-    registry_->DisconnectAllAttributeObservers();
-  }
-
-  ExecutionContext* GetExecutionContext() const override {
-    return registry_->GetSupplementable()->GetExecutionContext();
-  }
-
-  void Deliver(const HeapVector<Member<MutationRecord>>& records,
-               MutationObserver&) override {
-    bool needs_update = false;
-    for (const auto& record : records) {
-      if (record->type() == "childList") {
-        // This handles the case where the <head> element itself is added to the
-        // doc.
-        for (unsigned i = 0; i < record->addedNodes()->length(); ++i) {
-          if (IsA<HTMLHeadElement>(record->addedNodes()->item(i))) {
-            registry_->OnMetaTagsChanged();
-            return;
-          }
-        }
-
-        // This handles meta tags added/removed inside the head.
-        for (unsigned i = 0; i < record->addedNodes()->length(); ++i) {
-          if (auto* meta =
-                  DynamicTo<HTMLMetaElement>(record->addedNodes()->item(i))) {
-            registry_->ObserveMetaTagAttributes(meta);
-            needs_update = true;
-          }
-        }
-        for (unsigned i = 0; i < record->removedNodes()->length(); ++i) {
-          if (auto* meta =
-                  DynamicTo<HTMLMetaElement>(record->removedNodes()->item(i))) {
-            registry_->StopObservingMetaTagAttributes(meta);
-            needs_update = true;
-          }
-        }
-      }
-    }
-
-    if (needs_update) {
-      registry_->OnMetaTagsChanged();
-    }
-  }
-
-  void Trace(Visitor* visitor) const override {
-    visitor->Trace(registry_);
-    visitor->Trace(observer_);
-    visitor->Trace(observing_);
-    MutationObserver::Delegate::Trace(visitor);
-  }
-
- private:
-  Member<FrameMetadataObserverRegistry> registry_;
-  Member<MutationObserver> observer_;
-  WeakMember<Node> observing_;
-};
-
 FrameMetadataObserverRegistry::PaidContentAttributeObserver::
     PaidContentAttributeObserver(FrameMetadataObserverRegistry* registry)
     : registry_(registry) {}
-
-FrameMetadataObserverRegistry::PaidContentMutationObserver::
-    PaidContentMutationObserver(FrameMetadataObserverRegistry* registry)
-    : registry_(registry), observer_(MutationObserver::Create(this)) {}
-
-void FrameMetadataObserverRegistry::PaidContentMutationObserver::ObserveHead(
-    HTMLHeadElement* head) {
-  if (observing_.Get() == head) {
-    return;
-  }
-  Disconnect();
-
-  observing_ = head;
-  if (!head) {
-    return;
-  }
-
-  // Start observing childList changes in the head.
-  MutationObserverInit* init = MutationObserverInit::Create();
-  init->setChildList(true);
-  init->setSubtree(true);
-  DummyExceptionStateForTesting exception_state;
-  observer_->observe(head, init, exception_state);
-  DCHECK(!exception_state.HadException());
-
-  // For all existing script tags, set up attribute observers.
-  for (HTMLScriptElement& script :
-       Traversal<HTMLScriptElement>::ChildrenOf(*head)) {
-    registry_->ObservePaidContentScriptAttributes(&script);
-  }
-}
-
-void FrameMetadataObserverRegistry::PaidContentMutationObserver::
-    ObserveDocument(Element* document_element) {
-  ::blink::ObserveDocument(observing_, observer_.Get(), document_element);
-}
-
-FrameMetadataObserverRegistry::MetaTagsMutationObserver::
-    MetaTagsMutationObserver(FrameMetadataObserverRegistry* registry)
-    : registry_(registry),
-      observer_(MutationObserver::Create(this)) {}  // NO LINT
 
 FrameMetadataObserverRegistry::MetaTagAttributeObserver::
     MetaTagAttributeObserver(FrameMetadataObserverRegistry* registry)
     : registry_(registry) {}
 
-void FrameMetadataObserverRegistry::MetaTagsMutationObserver::ObserveHead(
-    HTMLHeadElement* head) {
-  if (observing_.Get() == head) {
-    return;
-  }
-  Disconnect();
-
-  observing_ = head;
-  if (!head) {
-    return;
-  }
-
-  // Start observing childList changes in the head.
-  MutationObserverInit* init = MutationObserverInit::Create();
-  init->setChildList(true);
-  init->setSubtree(true);
-  DummyExceptionStateForTesting exception_state;
-  observer_->observe(head, init, exception_state);
-  DCHECK(!exception_state.HadException());
-
-  // For all existing meta tags, set up attribute observers.
-  for (HTMLMetaElement& meta : Traversal<HTMLMetaElement>::ChildrenOf(*head)) {
-    registry_->ObserveMetaTagAttributes(&meta);
-  }
-}
-
-void FrameMetadataObserverRegistry::MetaTagsMutationObserver::ObserveDocument(
-    Element* document_element) {
-  ::blink::ObserveDocument(observing_, observer_.Get(), document_element);
-}
-
-// static
-const char FrameMetadataObserverRegistry::kSupplementName[] =
-    "FrameMetadataObserverRegistry";
-
 // static
 FrameMetadataObserverRegistry* FrameMetadataObserverRegistry::From(
     Document& document) {
-  return Supplement<Document>::From<FrameMetadataObserverRegistry>(document);
+  return document.GetFrameMetadataObserverRegistry();
 }
 
 // static
@@ -366,7 +140,7 @@ void FrameMetadataObserverRegistry::BindReceiver(
   if (!registry) {
     registry = MakeGarbageCollected<FrameMetadataObserverRegistry>(
         base::PassKey<FrameMetadataObserverRegistry>(), *frame);
-    Supplement<Document>::ProvideTo(document, registry);
+    document.SetFrameMetadataObserverRegistry(registry);
   }
   registry->Bind(std::move(receiver));
 }
@@ -374,14 +148,17 @@ void FrameMetadataObserverRegistry::BindReceiver(
 FrameMetadataObserverRegistry::FrameMetadataObserverRegistry(
     base::PassKey<FrameMetadataObserverRegistry>,
     LocalFrame& frame)
-    : Supplement<Document>(*frame.GetDocument()),
+    : document_(*frame.GetDocument()),
       receiver_set_(this, frame.DomWindow()),
       paid_content_metadata_observers_(frame.DomWindow()),
       metatags_observers_(frame.DomWindow()),
       meta_tags_mutation_observer_(
-          MakeGarbageCollected<MetaTagsMutationObserver>(this)),
+          MakeGarbageCollected<FrameMetadataMutationObserver<
+              FrameMetadataObserverRegistry::MetaTagsObserverTraits>>(this)),
       paid_content_mutation_observer_(
-          MakeGarbageCollected<PaidContentMutationObserver>(this)) {
+          MakeGarbageCollected<FrameMetadataMutationObserver<
+              FrameMetadataObserverRegistry::PaidContentObserverTraits>>(
+              this)) {
   // Observer endpoints are explicitly closed when the other side is no
   // longer interested, so clean up the meta tags requested by that
   // observer at disconnect time.
@@ -400,11 +177,11 @@ void FrameMetadataObserverRegistry::Bind(
         receiver) {
   receiver_set_.Add(
       std::move(receiver),
-      GetSupplementable()->GetTaskRunner(TaskType::kInternalUserInteraction));
+      document_->GetTaskRunner(TaskType::kInternalUserInteraction));
 }
 
 void FrameMetadataObserverRegistry::Trace(Visitor* visitor) const {
-  Supplement<Document>::Trace(visitor);
+  visitor->Trace(document_);
   visitor->Trace(receiver_set_);
   visitor->Trace(dom_content_loaded_observer_);
   visitor->Trace(paid_content_metadata_observers_);
@@ -429,8 +206,8 @@ class FrameMetadataObserverRegistry::DomContentLoadedListener final
 
     Document& document = *window.document();
 
-    auto* registry =
-        Supplement<Document>::From<FrameMetadataObserverRegistry>(document);
+    FrameMetadataObserverRegistry* registry =
+        document.GetFrameMetadataObserverRegistry();
     if (registry) {
       registry->OnDomContentLoaded();
     }
@@ -438,15 +215,14 @@ class FrameMetadataObserverRegistry::DomContentLoadedListener final
 };
 
 void FrameMetadataObserverRegistry::ListenForDomContentLoaded() {
-  if (GetSupplementable()->HasFinishedParsing()) {
+  if (document_->HasFinishedParsing()) {
     OnDomContentLoaded();
   } else {
     if (!dom_content_loaded_observer_) {
       dom_content_loaded_observer_ =
           MakeGarbageCollected<DomContentLoadedListener>();
-      GetSupplementable()->addEventListener(event_type_names::kDOMContentLoaded,
-                                            dom_content_loaded_observer_.Get(),
-                                            false);
+      document_->addEventListener(event_type_names::kDOMContentLoaded,
+                                  dom_content_loaded_observer_.Get(), false);
     }
   }
 }
@@ -455,7 +231,7 @@ void FrameMetadataObserverRegistry::AddPaidContentMetadataObserver(
     mojo::PendingRemote<mojom::blink::PaidContentMetadataObserver> observer) {
   paid_content_metadata_observers_.Add(
       std::move(observer),
-      GetSupplementable()->GetTaskRunner(TaskType::kInternalUserInteraction));
+      document_->GetTaskRunner(TaskType::kInternalUserInteraction));
   ListenForDomContentLoaded();
 }
 
@@ -465,7 +241,7 @@ void FrameMetadataObserverRegistry::AddMetaTagsObserver(
   DCHECK(!names.empty());
   const mojo::RemoteSetElementId& remote_id = metatags_observers_.Add(
       std::move(observer),
-      GetSupplementable()->GetTaskRunner(TaskType::kInternalUserInteraction));
+      document_->GetTaskRunner(TaskType::kInternalUserInteraction));
 
   auto* observer_data = MakeGarbageCollected<MetaTagsObserverData>();
   observer_data->names_to_observe = HeapVector<String>(names);
@@ -508,8 +284,8 @@ void FrameMetadataObserverRegistry::ObserveMetaTagAttributes(
 
   MutationObserverInit* init = MutationObserverInit::Create();
   init->setAttributes(true);
-  init->setAttributeFilter(
-      {html_names::kNameAttr.LocalName(), html_names::kContentAttr.LocalName()});
+  init->setAttributeFilter({html_names::kNameAttr.LocalName(),
+                            html_names::kContentAttr.LocalName()});
   DummyExceptionStateForTesting exception_state;
   attribute_observer->observe(meta, init, exception_state);
   DCHECK(!exception_state.HadException());
@@ -563,9 +339,8 @@ void FrameMetadataObserverRegistry::OnDomContentLoaded() {
   OnMetaTagsChanged();
 
   if (dom_content_loaded_observer_) {
-    GetSupplementable()->removeEventListener(
-        event_type_names::kDOMContentLoaded, dom_content_loaded_observer_.Get(),
-        false);
+    document_->removeEventListener(event_type_names::kDOMContentLoaded,
+                                   dom_content_loaded_observer_.Get(), false);
     dom_content_loaded_observer_ = nullptr;
   }
 }
@@ -575,8 +350,7 @@ void FrameMetadataObserverRegistry::OnPaidContentMetadataChanged() {
     return;
   }
   PaidContent paid_content;
-  bool paid_content_exists =
-      paid_content.QueryPaidElements(*GetSupplementable());
+  bool paid_content_exists = paid_content.QueryPaidElements(*document_);
 
   if (!paid_content_exists) {
     return;
@@ -591,7 +365,7 @@ void FrameMetadataObserverRegistry::OnMetaTagsChanged() {
   if (!UpdateMetaTagsObserver()) {
     return;
   }
-  Document* document = GetSupplementable();
+  Document* document = document_;
   HTMLHeadElement* head = document->head();
   HashMap<String, String> name_to_content_map;
   if (head) {
@@ -622,23 +396,25 @@ void FrameMetadataObserverRegistry::OnMetaTagsChanged() {
     }
 
     auto& last_sent_meta_tags = it.value->last_sent_meta_tags;
-    if (mojo::Equals(last_sent_meta_tags, current_meta_tags)) {
+    if (it.value->sent_initial_update &&
+        mojo::Equals(last_sent_meta_tags, current_meta_tags)) {
       continue;
     }
 
     auto* observer = metatags_observers_.Get(remote_id);
     observer->OnMetaTagsChanged(mojo::Clone(current_meta_tags));
     last_sent_meta_tags = std::move(current_meta_tags);
+    it.value->sent_initial_update = true;
   }
 }
 
 bool FrameMetadataObserverRegistry::UpdateMetaTagsObserver() {
-  return UpdateObserver(GetSupplementable(), metatags_observers_,
+  return UpdateObserver(document_, metatags_observers_,
                         meta_tags_mutation_observer_);
 }
 
 bool FrameMetadataObserverRegistry::UpdatePaidContentObserver() {
-  return UpdateObserver(GetSupplementable(), paid_content_metadata_observers_,
+  return UpdateObserver(document_, paid_content_metadata_observers_,
                         paid_content_mutation_observer_);
 }
 

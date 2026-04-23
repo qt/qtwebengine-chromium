@@ -9,8 +9,8 @@ import dataclasses
 from typing_extensions import override
 
 from crossbench.benchmarks.loading.config.login.base import BaseLoginBlock
-from crossbench.benchmarks.loading.config.login.login_type import (LOGIN_LOOKUP,
-                                                                   LoginType)
+from crossbench.benchmarks.loading.config.login.login_type import \
+    LOGIN_LOOKUP, LoginType
 
 
 @dataclasses.dataclass(frozen=True)

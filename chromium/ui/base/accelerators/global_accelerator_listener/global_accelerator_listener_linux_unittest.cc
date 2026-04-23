@@ -11,7 +11,10 @@
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "components/dbus/properties/types.h"
+#include "components/dbus/utils/read_value.h"
+#include "components/dbus/utils/variant.h"
+#include "components/dbus/utils/write_value.h"
+#include "components/dbus/xdg/portal.h"
 #include "content/public/test/browser_task_environment.h"
 #include "crypto/sha2.h"
 #include "dbus/message.h"
@@ -22,6 +25,8 @@
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/accelerators/command.h"
 #include "ui/base/accelerators/global_accelerator_listener/global_accelerator_listener.h"
+#include "ui/gfx/native_ui_types.h"
+#include "ui/linux/linux_ui_delegate.h"
 
 using ::testing::_;
 using ::testing::AtLeast;
@@ -46,14 +51,30 @@ MATCHER_P2(MatchMethod, interface, member, "") {
   return arg->GetInterface() == interface && arg->GetMember() == member;
 }
 
+class MockLinuxUiDelegate : public LinuxUiDelegate {
+ public:
+  MockLinuxUiDelegate() = default;
+  ~MockLinuxUiDelegate() override = default;
+
+  LinuxUiBackend GetBackend() const override { return LinuxUiBackend::kStub; }
+
+  void SetTransientWindowForParent(gfx::AcceleratedWidget parent,
+                                   gfx::AcceleratedWidget transient) override {}
+
+  MOCK_METHOD(void,
+              ExportWindowHandle,
+              (gfx::AcceleratedWidget window_id,
+               base::OnceCallback<void(std::string)> callback),
+              (override));
+};
+
 }  // namespace
 
-using DbusShortcuts = DbusArray<DbusStruct<DbusString, DbusDictionary>>;
+using DbusDictionary = std::map<std::string, dbus_utils::Variant>;
+using DbusShortcuts = std::vector<std::tuple<std::string, DbusDictionary>>;
 
 class MockObserver final : public GlobalAcceleratorListener::Observer {
  public:
-  ~MockObserver() = default;
-
   void OnKeyPressed(const ui::Accelerator& accelerator) override {
     // GlobalAcceleratorListenerLinux uses ExecuteCommand() instead.
     NOTREACHED();
@@ -65,6 +86,8 @@ class MockObserver final : public GlobalAcceleratorListener::Observer {
 };
 
 TEST(GlobalAcceleratorListenerLinuxTest, OnCommandsChanged) {
+  dbus_xdg::SetPortalStateForTesting(dbus_xdg::PortalRegistrarState::kSuccess);
+
   // A UI environment is required since GlobalShortcutListener (base class of
   // GlobalAcceleratorListenerLinux) CHECKs that it's running on a UI thread.
   content::BrowserTaskEnvironment task_environment;
@@ -78,21 +101,6 @@ TEST(GlobalAcceleratorListenerLinuxTest, OnCommandsChanged) {
       base::MakeRefCounted<dbus::MockObjectProxy>(
           mock_bus.get(), GlobalAcceleratorListenerLinux::kPortalServiceName,
           dbus::ObjectPath(GlobalAcceleratorListenerLinux::kPortalObjectPath));
-
-  auto mock_systemd_proxy = base::MakeRefCounted<dbus::MockObjectProxy>(
-      mock_bus.get(), "org.freedesktop.systemd1",
-      dbus::ObjectPath("/org/freedesktop/systemd1"));
-  EXPECT_CALL(*mock_bus,
-              GetObjectProxy("org.freedesktop.systemd1",
-                             dbus::ObjectPath("/org/freedesktop/systemd1")))
-      .Times(AtLeast(0))
-      .WillRepeatedly(Return(mock_systemd_proxy.get()));
-  EXPECT_CALL(*mock_systemd_proxy, DoCallMethod(_, _, _))
-      .Times(AtLeast(0))
-      .WillRepeatedly([](dbus::MethodCall*, int,
-                         dbus::ObjectProxy::ResponseCallback* callback) {
-        std::move(*callback).Run(nullptr);
-      });
 
   EXPECT_CALL(*mock_bus, AssertOnOriginThread()).WillRepeatedly([] {});
 
@@ -109,48 +117,18 @@ TEST(GlobalAcceleratorListenerLinuxTest, OnCommandsChanged) {
 
   EXPECT_CALL(*mock_bus, GetConnectionName()).WillRepeatedly(Return(kBusName));
 
-  // CheckForServiceAndStart
-  EXPECT_CALL(
-      *mock_dbus_proxy,
-      DoCallMethod(MatchMethod(DBUS_INTERFACE_DBUS, "NameHasOwner"), _, _))
-      .WillOnce([](dbus::MethodCall* method_call, int timeout_ms,
-                   dbus::ObjectProxy::ResponseCallback* callback) {
-        dbus::MessageReader reader(method_call);
-        std::string service_name;
-        EXPECT_TRUE(reader.PopString(&service_name));
-        EXPECT_EQ(service_name, "org.freedesktop.systemd1");
-
-        auto response = dbus::Response::CreateEmpty();
-        dbus::MessageWriter writer(response.get());
-        writer.AppendBool(true);
-        std::move(*callback).Run(response.get());
-      })
-      .WillOnce([](dbus::MethodCall* method_call, int timeout_ms,
-                   dbus::ObjectProxy::ResponseCallback* callback) {
-        dbus::MessageReader reader(method_call);
-        std::string service_name;
-        EXPECT_TRUE(reader.PopString(&service_name));
-        EXPECT_EQ(service_name,
-                  GlobalAcceleratorListenerLinux::kPortalServiceName);
-
-        auto response = dbus::Response::CreateEmpty();
-        dbus::MessageWriter writer(response.get());
-        writer.AppendBool(true);
-        std::move(*callback).Run(response.get());
-      });
-
   // Activated signal
   dbus::ObjectProxy::SignalCallback activated_callback;
-  EXPECT_CALL(*mock_global_shortcuts_proxy,
-              DoConnectToSignal(
-                  GlobalAcceleratorListenerLinux::kGlobalShortcutsInterface,
-                  GlobalAcceleratorListenerLinux::kSignalActivated, _, _))
+  EXPECT_CALL(
+      *mock_global_shortcuts_proxy,
+      ConnectToSignal(GlobalAcceleratorListenerLinux::kGlobalShortcutsInterface,
+                      GlobalAcceleratorListenerLinux::kSignalActivated, _, _))
       .WillOnce(
           [&](const std::string& interface_name, const std::string& signal_name,
               dbus::ObjectProxy::SignalCallback signal_callback,
-              dbus::ObjectProxy::OnConnectedCallback* on_connected_callback) {
+              dbus::ObjectProxy::OnConnectedCallback on_connected_callback) {
             // Simulate successful connection
-            std::move(*on_connected_callback)
+            std::move(on_connected_callback)
                 .Run(interface_name, signal_name, true);
 
             // Save the signal callback for later use
@@ -162,6 +140,10 @@ TEST(GlobalAcceleratorListenerLinuxTest, OnCommandsChanged) {
   auto observer = std::make_unique<MockObserver>();
   scoped_refptr<dbus::MockObjectProxy> session_proxy;
   ui::CommandMap commands;
+
+  // MockLinuxUiDelegate subclasses from LinuxUiDelegate which installs itself
+  // as the singleton instance on construction.
+  MockLinuxUiDelegate linux_ui_delegate;
 
   auto update_commands = [&]() {
     // These object proxies have unique generated names, so are initialized when
@@ -188,26 +170,27 @@ TEST(GlobalAcceleratorListenerLinuxTest, OnCommandsChanged) {
           base::MakeRefCounted<dbus::MockObjectProxy>(
               mock_bus.get(),
               GlobalAcceleratorListenerLinux::kPortalServiceName, object_path);
-      EXPECT_CALL(*create_session_request_proxy, DoConnectToSignal(_, _, _, _))
+      EXPECT_CALL(*create_session_request_proxy, ConnectToSignal(_, _, _, _))
           .WillOnce(
               [&](const std::string& interface_name,
                   const std::string& signal_name,
                   dbus::ObjectProxy::SignalCallback signal_callback,
-                  dbus::ObjectProxy::OnConnectedCallback*
+                  dbus::ObjectProxy::OnConnectedCallback
                       on_connected_callback) {
                 EXPECT_EQ(interface_name, "org.freedesktop.portal.Request");
                 EXPECT_EQ(signal_name, "Response");
 
-                std::move(*on_connected_callback)
+                std::move(on_connected_callback)
                     .Run(interface_name, signal_name, true);
 
                 dbus::Signal signal(interface_name, signal_name);
                 dbus::MessageWriter writer(&signal);
                 writer.AppendUint32(kResponseSuccess);
-                MakeDbusDictionary(
-                    "session_handle",
-                    DbusString(session_proxy->object_path().value()))
-                    .Write(&writer);
+                DbusDictionary dict;
+                dict.emplace("session_handle",
+                             dbus_utils::Variant::Wrap<"s">(
+                                 session_proxy->object_path().value()));
+                dbus_utils::WriteValue(writer, dict);
                 signal_callback.Run(&signal);
               });
       return create_session_request_proxy.get();
@@ -221,24 +204,28 @@ TEST(GlobalAcceleratorListenerLinuxTest, OnCommandsChanged) {
           base::MakeRefCounted<dbus::MockObjectProxy>(
               mock_bus.get(),
               GlobalAcceleratorListenerLinux::kPortalServiceName, object_path);
-      EXPECT_CALL(*list_shortcuts_request_proxy, DoConnectToSignal(_, _, _, _))
+      EXPECT_CALL(*list_shortcuts_request_proxy, ConnectToSignal(_, _, _, _))
           .WillOnce(
               [&](const std::string& interface_name,
                   const std::string& signal_name,
                   dbus::ObjectProxy::SignalCallback signal_callback,
-                  dbus::ObjectProxy::OnConnectedCallback*
+                  dbus::ObjectProxy::OnConnectedCallback
                       on_connected_callback) {
                 EXPECT_EQ(interface_name, "org.freedesktop.portal.Request");
                 EXPECT_EQ(signal_name, "Response");
 
-                std::move(*on_connected_callback)
+                std::move(on_connected_callback)
                     .Run(interface_name, signal_name, true);
 
                 dbus::Signal signal(interface_name, signal_name);
                 dbus::MessageWriter writer(&signal);
                 writer.AppendUint32(kResponseSuccess);
                 // Simulate empty list of shortcuts
-                MakeDbusDictionary("shortcuts", DbusShortcuts()).Write(&writer);
+                DbusDictionary dict;
+                dict.emplace(
+                    "shortcuts",
+                    dbus_utils::Variant::Wrap<"a(sa{sv})">(DbusShortcuts()));
+                dbus_utils::WriteValue(writer, dict);
                 signal_callback.Run(&signal);
               });
       return list_shortcuts_request_proxy.get();
@@ -252,25 +239,24 @@ TEST(GlobalAcceleratorListenerLinuxTest, OnCommandsChanged) {
           base::MakeRefCounted<dbus::MockObjectProxy>(
               mock_bus.get(),
               GlobalAcceleratorListenerLinux::kPortalServiceName, object_path);
-      EXPECT_CALL(*bind_shortcuts_request_proxy, DoConnectToSignal(_, _, _, _))
-          .WillOnce(
-              [&](const std::string& interface_name,
-                  const std::string& signal_name,
-                  dbus::ObjectProxy::SignalCallback signal_callback,
-                  dbus::ObjectProxy::OnConnectedCallback*
-                      on_connected_callback) {
-                EXPECT_EQ(interface_name, "org.freedesktop.portal.Request");
-                EXPECT_EQ(signal_name, "Response");
+      EXPECT_CALL(*bind_shortcuts_request_proxy, ConnectToSignal(_, _, _, _))
+          .WillOnce([&](const std::string& interface_name,
+                        const std::string& signal_name,
+                        dbus::ObjectProxy::SignalCallback signal_callback,
+                        dbus::ObjectProxy::OnConnectedCallback
+                            on_connected_callback) {
+            EXPECT_EQ(interface_name, "org.freedesktop.portal.Request");
+            EXPECT_EQ(signal_name, "Response");
 
-                std::move(*on_connected_callback)
-                    .Run(interface_name, signal_name, true);
+            std::move(on_connected_callback)
+                .Run(interface_name, signal_name, true);
 
-                dbus::Signal signal(interface_name, signal_name);
-                dbus::MessageWriter writer(&signal);
-                writer.AppendUint32(kResponseSuccess);
-                DbusDictionary().Write(&writer);
-                signal_callback.Run(&signal);
-              });
+            dbus::Signal signal(interface_name, signal_name);
+            dbus::MessageWriter writer(&signal);
+            writer.AppendUint32(kResponseSuccess);
+            dbus_utils::WriteValue(writer, DbusDictionary());
+            signal_callback.Run(&signal);
+          });
       return bind_shortcuts_request_proxy.get();
     };
 
@@ -285,22 +271,23 @@ TEST(GlobalAcceleratorListenerLinuxTest, OnCommandsChanged) {
     // CreateSession request
     EXPECT_CALL(
         *mock_global_shortcuts_proxy,
-        DoCallMethodWithErrorResponse(
+        CallMethodWithErrorResponse(
             MatchMethod(
                 GlobalAcceleratorListenerLinux::kGlobalShortcutsInterface,
                 GlobalAcceleratorListenerLinux::kMethodCreateSession),
             _, _))
         .WillOnce(
             [&](dbus::MethodCall* method_call, int timeout_ms,
-                dbus::ObjectProxy::ResponseOrErrorCallback* callback) {
+                dbus::ObjectProxy::ResponseOrErrorCallback callback) {
               dbus::MessageReader reader(method_call);
-              DbusDictionary options;
-              EXPECT_TRUE(options.Read(&reader));
-              auto* token = options.GetAs<DbusString>("session_handle_token");
+              auto options = dbus_utils::ReadValue<DbusDictionary>(reader);
+              ASSERT_TRUE(options);
+              auto it = options->find("session_handle_token");
+              ASSERT_NE(it, options->end());
+              auto token = std::move(it->second).Take<std::string>();
               ASSERT_TRUE(token);
               std::string session_path_str =
-                  base::nix::XdgDesktopPortalSessionPath(kBusName,
-                                                         token->value());
+                  base::nix::XdgDesktopPortalSessionPath(kBusName, *token);
               EXPECT_EQ(dbus::ObjectPath(session_path_str),
                         session_proxy->object_path());
 
@@ -308,57 +295,65 @@ TEST(GlobalAcceleratorListenerLinuxTest, OnCommandsChanged) {
               dbus::MessageWriter writer(response.get());
               writer.AppendObjectPath(
                   create_session_request_proxy->object_path());
-              std::move(*callback).Run(response.get(), nullptr);
+              std::move(callback).Run(response.get(), nullptr);
             });
 
     // ListShortcuts request
     EXPECT_CALL(
         *mock_global_shortcuts_proxy,
-        DoCallMethodWithErrorResponse(
+        CallMethodWithErrorResponse(
             MatchMethod(
                 GlobalAcceleratorListenerLinux::kGlobalShortcutsInterface,
                 GlobalAcceleratorListenerLinux::kMethodListShortcuts),
             _, _))
         .WillOnce([&](dbus::MethodCall* method_call, int timeout_ms,
-                      dbus::ObjectProxy::ResponseOrErrorCallback* callback) {
+                      dbus::ObjectProxy::ResponseOrErrorCallback callback) {
           dbus::MessageReader reader(method_call);
           dbus::ObjectPath session_path;
           EXPECT_TRUE(reader.PopObjectPath(&session_path));
-          DbusDictionary options;
-          EXPECT_TRUE(options.Read(&reader));
+          auto options = dbus_utils::ReadValue<DbusDictionary>(reader);
+          EXPECT_TRUE(options);
 
           auto response = dbus::Response::CreateEmpty();
           dbus::MessageWriter writer(response.get());
           writer.AppendObjectPath(list_shortcuts_request_proxy->object_path());
-          std::move(*callback).Run(response.get(), nullptr);
+          std::move(callback).Run(response.get(), nullptr);
+        });
+
+    gfx::AcceleratedWidget widget = static_cast<gfx::AcceleratedWidget>(12345);
+    EXPECT_CALL(linux_ui_delegate, ExportWindowHandle(widget, _))
+        .WillOnce([](gfx::AcceleratedWidget window_id,
+                     base::OnceCallback<void(std::string)> callback) {
+          std::move(callback).Run("test_handle");
         });
 
     // BindShortcuts request
     EXPECT_CALL(
         *mock_global_shortcuts_proxy,
-        DoCallMethodWithErrorResponse(
+        CallMethodWithErrorResponse(
             MatchMethod(
                 GlobalAcceleratorListenerLinux::kGlobalShortcutsInterface,
                 GlobalAcceleratorListenerLinux::kMethodBindShortcuts),
             _, _))
         .WillOnce([&](dbus::MethodCall* method_call, int timeout_ms,
-                      dbus::ObjectProxy::ResponseOrErrorCallback* callback) {
+                      dbus::ObjectProxy::ResponseOrErrorCallback callback) {
           dbus::MessageReader reader(method_call);
           dbus::ObjectPath session_path;
           EXPECT_TRUE(reader.PopObjectPath(&session_path));
-          DbusShortcuts shortcuts;
-          EXPECT_TRUE(shortcuts.Read(&reader));
-          DbusString parent_window;
-          EXPECT_TRUE(parent_window.Read(&reader));
+          auto shortcuts = dbus_utils::ReadValue<DbusShortcuts>(reader);
+          EXPECT_TRUE(shortcuts);
+          std::string parent_window;
+          EXPECT_TRUE(reader.PopString(&parent_window));
+          EXPECT_EQ(parent_window, "test_handle");
 
           auto response = dbus::Response::CreateEmpty();
           dbus::MessageWriter writer(response.get());
           writer.AppendObjectPath(bind_shortcuts_request_proxy->object_path());
-          std::move(*callback).Run(response.get(), nullptr);
+          std::move(callback).Run(response.get(), nullptr);
         });
 
-    global_shortcut_listener->OnCommandsChanged(kExtensionId, kProfileId,
-                                                commands, observer.get());
+    global_shortcut_listener->OnCommandsChanged(
+        kExtensionId, kProfileId, commands, widget, observer.get());
   };
 
   commands[kCommandName] = ui::Command(kCommandName, kShortcutDescription,
@@ -370,7 +365,7 @@ TEST(GlobalAcceleratorListenerLinuxTest, OnCommandsChanged) {
 
   EXPECT_CALL(
       *session_proxy,
-      DoCallMethod(
+      CallMethod(
           MatchMethod(GlobalAcceleratorListenerLinux::kSessionInterface,
                       GlobalAcceleratorListenerLinux::kMethodCloseSession),
           _, _));
@@ -396,11 +391,12 @@ TEST(GlobalAcceleratorListenerLinuxTest, OnCommandsChanged) {
   // Cleanup
   EXPECT_CALL(
       *session_proxy,
-      DoCallMethod(
+      CallMethod(
           MatchMethod(GlobalAcceleratorListenerLinux::kSessionInterface,
                       GlobalAcceleratorListenerLinux::kMethodCloseSession),
           _, _));
   global_shortcut_listener.reset();
+  dbus_xdg::SetPortalStateForTesting(dbus_xdg::PortalRegistrarState::kIdle);
 }
 
 }  // namespace ui

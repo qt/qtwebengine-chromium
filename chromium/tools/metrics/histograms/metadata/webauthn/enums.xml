@@ -124,6 +124,16 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="Failure - Error dialog shown"/>
 </enum>
 
+<!-- LINT.IfChange(GpmPinAvailability) -->
+
+<enum name="GpmPinAvailability">
+  <int value="0" label="The PIN is set but not usable."/>
+  <int value="1" label="The PIN is set and usable."/>
+  <int value="2" label="The PIN is unset."/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/webauthn/enclave_manager_interface.h:GpmPinAvailability) -->
+
 <enum name="OnboardingEvents">
   <int value="0" label="Started (Create GPM passkey dialog shown)"/>
   <int value="1" label="Succeeded (GPM passkey created)"/>
@@ -240,6 +250,8 @@ chromium-metrics-reviews@google.com.
   <int value="8" label="Canceled"/>
 </enum>
 
+<!-- LINT.IfChange(WebAuthenticationCredentialRequestResult) -->
+
 <enum name="WebAuthenticationCredentialRequestResult">
   <int value="0" label="Timeout"/>
   <int value="1" label="User cancelled"/>
@@ -258,6 +270,19 @@ chromium-metrics-reviews@google.com.
   <int value="14" label="Other device success"/>
   <int value="15" label="Other device error"/>
 </enum>
+
+<!-- LINT.ThenChange(//content/browser/webauth/authenticator_request_outcome_enums.h:CredentialRequestResult) -->
+
+<!-- LINT.IfChange(WebAuthenticationDeduplicatedType) -->
+
+<enum name="WebAuthenticationDeduplicatedType">
+  <int value="0" label="Google Password Manager Passkey"/>
+  <int value="1" label="Platform Passkey"/>
+  <int value="2" label="Password"/>
+  <int value="3" label="Other"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/webauthn/credential_sorter.h:WebAuthnDeduplicatedType) -->
 
 <enum name="WebAuthenticationEnclaveEvent">
   <int value="0" label="Onboarding sheet was shown to the user"/>
@@ -334,7 +359,32 @@ chromium-metrics-reviews@google.com.
   <int value="12" label="Enclave Authenticator Error"/>
   <int value="13" label="Timeout Occurred"/>
   <int value="14" label="Other Failure"/>
+  <int value="15" label="Blocked by actor task"/>
 </enum>
+
+<!-- LINT.IfChange(WebAuthenticationGPMRecoveryEvent) -->
+
+<enum name="WebAuthenticationGPMRecoveryEvent">
+  <int value="0"
+      label="Storing key from explicit key retrieval flow (started)"/>
+  <int value="1"
+      label="Storing key from explicit key retrieval flow (succeeded)"/>
+  <int value="2"
+      label="Storing key from opportunistic key retrieval flow (started)"/>
+  <int value="3"
+      label="Storing key from opportunistic key retrieval flow (succeeded)"/>
+  <int value="4"
+      label="Storing key from opportunistic key retrieval flow (key ignored
+             because it is redundant)"/>
+  <int value="5"
+      label="Storing key from opportunistic key retrieval flow (key ignored
+             because no UV available)"/>
+  <int value="6"
+      label="Storing key from opportunistic key retrieval flow (failed when
+             adding device to account)"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/webauthn/webauthn_metrics_util.h:WebAuthenticationGPMRecoveryEvent) -->
 
 <!-- LINT.IfChange(WebAuthenticationImmediateMediationRejectionReason) -->
 
@@ -376,7 +426,7 @@ chromium-metrics-reviews@google.com.
   </int>
 </enum>
 
-<!-- LINT.ThenChange(//components/webauthn/ios/passkey_tab_helper.mm) -->
+<!-- LINT.ThenChange(//components/webauthn/ios/passkey_tab_helper.h) -->
 
 <enum name="WebAuthenticationMacOSPasskeysPermission">
   <int value="0" label="Requested permission during a create() call"/>
@@ -442,18 +492,18 @@ chromium-metrics-reviews@google.com.
   <int value="16" label="Timeout Occurred"/>
   <int value="17" label="Other Failure"/>
   <int value="18" label="Conditional Create (Passkey Upgrade) Failure"/>
+  <int value="19" label="Blocked by actor task"/>
 </enum>
 
-<!-- LINT.IfChange(WebAuthenticationMechanismDeduplicatedType) -->
+<!-- LINT.IfChange(ErrorUIEventType) -->
 
-<enum name="WebAuthenticationMechanismDeduplicatedType">
-  <int value="0" label="Enclave Passkey"/>
-  <int value="1" label="Platform Passkey"/>
-  <int value="2" label="Password"/>
-  <int value="3" label="Other"/>
+<enum name="WebAuthenticationPasskeyUnlockErrorUiEvent">
+  <int value="0" label="Avatar Error UI Displayed"/>
+  <int value="1" label="Avatar Error UI Hidden"/>
+  <int value="2" label="Avatar Button with Error UI Pressed"/>
 </enum>
 
-<!-- LINT.ThenChange(//chrome/browser/webauthn/mechanism_sorter.h:WebAuthnMechanismDeduplicatedType) -->
+<!-- LINT.ThenChange(//chrome/browser/webauthn/passkey_unlock_manager.h:ErrorUIEventType) -->
 
 <enum name="WebAuthenticationPinRenewalEvent">
   <int value="0" label="Considered renewing the PIN"/>

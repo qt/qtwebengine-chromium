@@ -15,7 +15,6 @@
 #include "base/containers/flat_map.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process_handle.h"
@@ -32,7 +31,6 @@
 #include "gpu/ipc/service/shared_image_stub.h"
 #include "ipc/ipc_sync_channel.h"
 #include "mojo/public/cpp/bindings/generic_pending_associated_receiver.h"
-#include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_extra_info.h"
 #include "ui/gfx/native_ui_types.h"
@@ -48,7 +46,6 @@ class DCOMPTexture;
 class FenceSyncReleaseDelegate;
 class GpuChannelManager;
 class GpuChannelMessageFilter;
-class ImageDecodeAcceleratorWorker;
 class Scheduler;
 class SharedImageStub;
 class SyncPointManager;
@@ -73,7 +70,7 @@ class GPU_IPC_SERVICE_EXPORT GpuChannel : public IPC::Listener,
       int32_t client_id,
       uint64_t client_tracing_id,
       bool is_gpu_host,
-      ImageDecodeAcceleratorWorker* image_decode_accelerator_worker,
+      bool enable_extra_handles_validation,
       const gfx::GpuExtraInfo& gpu_extra_info);
 
   // Init() sets up the underlying IPC channel.  Use a separate method because
@@ -108,6 +105,9 @@ class GPU_IPC_SERVICE_EXPORT GpuChannel : public IPC::Listener,
   }
 
   bool is_gpu_host() const { return is_gpu_host_; }
+  bool enable_extra_handles_validation() const {
+    return enable_extra_handles_validation_;
+  }
 
   // IPC::Listener implementation:
   void OnChannelError() override;
@@ -214,7 +214,7 @@ class GPU_IPC_SERVICE_EXPORT GpuChannel : public IPC::Listener,
              int32_t client_id,
              uint64_t client_tracing_id,
              bool is_gpu_host,
-             ImageDecodeAcceleratorWorker* image_decode_accelerator_worker,
+             bool enable_extra_handles_validation,
              const gfx::GpuExtraInfo& gpu_extra_info);
 
   void OnDestroyCommandBuffer(int32_t route_id);
@@ -263,6 +263,7 @@ class GPU_IPC_SERVICE_EXPORT GpuChannel : public IPC::Listener,
   std::unique_ptr<SharedImageStub> shared_image_stub_;
 
   const bool is_gpu_host_;
+  const bool enable_extra_handles_validation_;
 
 #if BUILDFLAG(IS_WIN)
   // Set of active DCOMPTextures.

@@ -38,7 +38,6 @@ build_webui("build") {
     "history_list.ts",
     "history_toolbar.html.ts",
     "history_toolbar.ts",
-    "lazy_load.ts",
     "query_manager.ts",
     "router.ts",
     "searched_label.ts",
@@ -49,6 +48,12 @@ build_webui("build") {
     "synced_device_manager.html.ts",
     "synced_device_manager.ts",
   ]
+  if (!is_chromeos) {
+    ts_files += [
+      "history_sync_promo.html.ts",
+      "history_sync_promo.ts",
+    ]
+  }
 
   # Files that are passed as input to css_to_wrapper().
   css_files = [
@@ -63,8 +68,15 @@ build_webui("build") {
     "synced_device_card.css",
     "synced_device_manager.css",
   ]
+  if (!is_chromeos) {
+    css_files += [ "history_sync_promo.css" ]
+  }
 
   icons_html_files = [ "shared_icons.html" ]
+
+  if (is_chrome_branded) {
+    icons_html_files += [ "internal/icons.html" ]
+  }
 
   ts_composite = true
   ts_definitions = [
@@ -89,9 +101,6 @@ build_webui("build") {
   optimize = optimize_webui
   if (optimize) {
     optimize_webui_host = "history"
-    optimize_webui_in_files = [
-      "history.js",
-      "lazy_load.js",
-    ]
+    optimize_webui_in_files = [ "history.js" ]
   }
 }

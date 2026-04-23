@@ -2,21 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
-import * as Root from '../../core/root/root.js';
-import * as FormatterActions from '../../entrypoints/formatter_worker/FormatterActions.js';  // eslint-disable-line rulesdir/es-modules-import
+import * as FormatterActions from '../../entrypoints/formatter_worker/FormatterActions.js';  // eslint-disable-line @devtools/es-modules-import
+import * as AiCodeCompletion from '../../models/ai_code_completion/ai_code_completion.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Persistence from '../../models/persistence/persistence.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.js';
 import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
+import {Icon, type IconWithName} from '../../ui/kit/kit.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -321,7 +321,8 @@ export class UISourceCodeFrame extends Common.ObjectWrapper
       AiWarningInfobarPlugin,
     ];
 
-    if (this.#isAiCodeCompletionEnabled()) {
+    const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance();
+    if (AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionEnabled(devtoolsLocale.locale)) {
       sourceFramePluginsList.push(AiCodeCompletionPlugin);
     }
     return sourceFramePluginsList;
@@ -423,7 +424,7 @@ export class UISourceCodeFrame extends Common.ObjectWrapper
 
   private onDecorationChanged(event: Common.EventTarget.EventTargetEvent<string>): void {
     for (const plugin of this.plugins) {
-      plugin.decorationChanged(event.data as SourceFrame.SourceFrame.DecoratorType, this.textEditor);
+      plugin.decorationChanged(event.data as Workspace.UISourceCode.DecoratorType, this.textEditor);
     }
   }
 
@@ -511,24 +512,9 @@ export class UISourceCodeFrame extends Common.ObjectWrapper
         this.#uiSourceCode.url().startsWith('debugger://'));
     Host.userMetrics.sourcesPanelFileOpened(mediaType);
   }
-
-  static #isAiCodeCompletionEnabled(): boolean {
-    const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance();
-    const aidaAvailability = Root.Runtime.hostConfig.aidaAvailability;
-    if (!devtoolsLocale.locale.startsWith('en-')) {
-      return false;
-    }
-    if (aidaAvailability?.blockedByGeo) {
-      return false;
-    }
-    if (aidaAvailability?.blockedByAge) {
-      return false;
-    }
-    return Boolean(aidaAvailability?.enabled && Root.Runtime.hostConfig.devToolsAiCodeCompletion?.enabled);
-  }
 }
 
-function getIconDataForLevel(level: Workspace.UISourceCode.Message.Level): IconButton.Icon.IconWithName {
+function getIconDataForLevel(level: Workspace.UISourceCode.Message.Level): IconWithName {
   if (level === Workspace.UISourceCode.Message.Level.ERROR) {
     return {color: 'var(--icon-error)', width: '16px', height: '14px', iconName: 'cross-circle-filled'};
   }
@@ -561,7 +547,7 @@ function messageLevelComparator(a: RowMessage, b: RowMessage): number {
   return messageLevelPriority[a.level()] - messageLevelPriority[b.level()];
 }
 
-function getIconDataForMessage(message: RowMessage): IconButton.Icon.IconWithName {
+function getIconDataForMessage(message: RowMessage): IconWithName {
   if (message.origin instanceof IssuesManager.SourceFrameIssuesManager.IssueMessage) {
     return {iconName: IssueCounter.IssueCounter.getIssueKindIconName(message.origin.getIssueKind())};
   }
@@ -678,7 +664,7 @@ const setRowMessages = CodeMirror.StateEffect.define<RowMessages>();
 
 const underlineMark = CodeMirror.Decoration.mark({class: 'cm-waveUnderline'});
 
-// The widget shown at the end of a message annotation.
+/** The widget shown at the end of a message annotation. **/
 class MessageWidget extends CodeMirror.WidgetType {
   constructor(readonly messages: RowMessage[]) {
     super();
@@ -742,8 +728,8 @@ class RowMessageDecorations {
   }
 }
 
-function createIconFromIconData(data: IconButton.Icon.IconWithName): IconButton.Icon.Icon {
-  const icon = new IconButton.Icon.Icon();
+function createIconFromIconData(data: IconWithName): Icon {
+  const icon = new Icon();
   icon.name = data.iconName;
   if (data.width) {
     icon.style.width = data.width;

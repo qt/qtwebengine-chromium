@@ -11,9 +11,12 @@ import '/strings.m.js';
 import './tab_strip.js';
 import './webview.js';
 import 'chrome://resources/cr_components/searchbox/searchbox.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
+import 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
 
 import {ColorChangeUpdater} from '//resources/cr_components/color_change_listener/colors_css_updater.js';
-import {assert} from '//resources/js/assert.js';
+import {assert, assertNotReachedCase} from '//resources/js/assert.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
 import type {Tab} from '/tab_strip_api/tab_strip_api_data_model.mojom-webui.js';
 import type {SearchboxElement} from 'chrome://resources/cr_components/searchbox/searchbox.js';
@@ -22,9 +25,7 @@ import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {getCss} from './app.css.js';
 import {getHtml} from './app.html.js';
-import type {BookmarkBar} from './bookmark_bar.js';
-import {BookmarkBarController} from './bookmark_bar_controller.js';
-import {SecurityIcon} from './browser.mojom-webui.js';
+import {FullscreenContext, PageHandlerFactory, SecurityIcon} from './browser.mojom-webui.js';
 import {BrowserProxy} from './browser_proxy.js';
 import type {ContentRegion} from './content_region.js';
 import type {SidePanel} from './side_panel.js';
@@ -38,7 +39,6 @@ export interface WebuiBrowserAppElement {
     appMenuButton: HTMLElement,
     avatarButton: HTMLElement,
     locationIconButton: HTMLElement,
-    bookmarkBar: BookmarkBar,
     contentRegion: ContentRegion,
     sidePanel: SidePanel,
     tabstrip: TabStrip,
@@ -63,28 +63,31 @@ export class WebuiBrowserAppElement extends CrLitElement implements
     return {
       backButtonDisabled_: {state: true, type: Boolean},
       forwardButtonDisabled_: {state: true, type: Boolean},
+      fullscreenMode_:
+          {type: String, reflect: true, attribute: 'fullscreen-mode'},
       showingSidePanel_: {state: true, type: Boolean},
       reloadOrStopIcon_: {state: true, type: String},
       showLocationIconButton_: {type: Boolean, reflect: true},
       locationIcon_: {state: true, type: String},
+      tabStripInset_: {state: true, type: Number},
     };
   }
 
-  private bookmarkBarController_: BookmarkBarController;
   private tabStripController_: TabStripController;
   private trackedElementManager_: TrackedElementManager;
   protected accessor backButtonDisabled_: boolean = true;
   protected accessor forwardButtonDisabled_: boolean = true;
+  protected accessor fullscreenMode_: string = '';
   protected accessor reloadOrStopIcon_: string = 'icon-refresh';
   protected accessor showingSidePanel_: boolean = false;
   protected accessor showLocationIconButton_: boolean = false;
   protected accessor locationIcon_: string = 'NoEncryption';
+  protected accessor tabStripInset_: number = 0;
 
   constructor() {
     super();
     ColorChangeUpdater.forDocument().start();
 
-    this.bookmarkBarController_ = new BookmarkBarController();
     this.tabStripController_ =
         new TabStripController(this, this.$.tabstrip, this.$.contentRegion);
     this.trackedElementManager_ = TrackedElementManager.getInstance();
@@ -92,9 +95,11 @@ export class WebuiBrowserAppElement extends CrLitElement implements
     const callbackRouter = BrowserProxy.getCallbackRouter();
     callbackRouter.showSidePanel.addListener(this.showSidePanel_.bind(this));
     callbackRouter.closeSidePanel.addListener(this.closeSidePanel_.bind(this));
+    callbackRouter.onFullscreenModeChanged.addListener(
+        this.onFullscreenModeChanged_.bind(this));
   }
 
-  override connectedCallback() {
+  override async connectedCallback() {
     // Important. Properties are not reactive without calling
     // super.connectedCallback().
     super.connectedCallback();
@@ -108,6 +113,8 @@ export class WebuiBrowserAppElement extends CrLitElement implements
         this.$.locationIconButton, 'kLocationIconElementId');
     this.trackedElementManager_.startTracking(
         this.$.contentRegion, 'kContentsContainerViewElementId');
+    const {width} = await PageHandlerFactory.getRemote().getTabStripInset();
+    this.tabStripInset_ = width;
   }
 
   // TabStripControllerDelegate:
@@ -249,24 +256,10 @@ export class WebuiBrowserAppElement extends CrLitElement implements
   }
 
   protected override firstUpdated() {
-    this.bookmarkBarController_.init(this.$.bookmarkBar);
     BrowserProxy.getCallbackRouter().setFocusToLocationBar.addListener(
         this.setFocusToLocationBar.bind(this));
     BrowserProxy.getCallbackRouter().setReloadStopState.addListener(
         this.setReloadStopState.bind(this));
-  }
-
-  protected onShowBookmarkBar_() {
-    this.$.bookmarkBar.style.display = 'flex';
-  }
-
-  protected onHideBookmarkBar_() {
-    this.$.bookmarkBar.style.display = 'none';
-  }
-
-  protected onBookmarkButtonClick_(e: CustomEvent) {
-    const bookmarkId = e.detail.bookmarkId;
-    this.bookmarkBarController_.launchBookmark(bookmarkId);
   }
 
   protected onTabDragMouseDown_(e: MouseEvent) {
@@ -320,6 +313,29 @@ export class WebuiBrowserAppElement extends CrLitElement implements
   // when user clicks the close "x" button.
   protected onSidePanelClosed_() {
     this.showingSidePanel_ = false;
+  }
+
+  protected onFullscreenModeChanged_(
+      isFullscreen: boolean, context?: FullscreenContext) {
+    if (!isFullscreen) {
+      this.fullscreenMode_ = '';
+    } else {
+      // When fullscreen is true, we should always have a context
+      assert(
+          context !== undefined,
+          'Context must be provided when isFullscreen is true');
+
+      switch (context) {
+        case FullscreenContext.kTab:
+          this.fullscreenMode_ = 'tab';
+          break;
+        case FullscreenContext.kBrowser:
+          this.fullscreenMode_ = 'browser';
+          break;
+        default:
+          assertNotReachedCase(context);
+      }
+    }
   }
 
   protected onLocationIconClick_(_: Event) {

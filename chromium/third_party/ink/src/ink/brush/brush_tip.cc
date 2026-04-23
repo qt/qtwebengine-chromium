@@ -16,34 +16,43 @@
 
 #include <cmath>
 #include <string>
+#include <variant>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
 #include "ink/brush/brush_behavior.h"
 #include "ink/geometry/angle.h"
+#include "ink/geometry/mesh_format.h"
 #include "ink/geometry/vec.h"
 #include "ink/types/duration.h"
 
-namespace ink {
+namespace ink::brush_internal {
 
-bool BrushTip::operator==(const BrushTip& other) const {
-  return scale == other.scale && corner_rounding == other.corner_rounding &&
-         slant == other.slant && pinch == other.pinch &&
-         rotation == other.rotation &&
-         opacity_multiplier == other.opacity_multiplier &&
-         particle_gap_distance_scale == other.particle_gap_distance_scale &&
-         particle_gap_duration == other.particle_gap_duration &&
-         behaviors == other.behaviors;
+namespace {
+
+bool BrushTipUsesColorShift(const BrushTip& tip) {
+  for (const BrushBehavior& behavior : tip.behaviors) {
+    for (const BrushBehavior::Node& node : behavior.nodes) {
+      if (const auto* output = std::get_if<BrushBehavior::TargetNode>(&node)) {
+        switch (output->target) {
+          case BrushBehavior::Target::kHueOffsetInRadians:
+          case BrushBehavior::Target::kSaturationMultiplier:
+          case BrushBehavior::Target::kLuminosity:
+            return true;
+          default:
+            break;
+        }
+      }
+    }
+  }
+  return false;
 }
 
-bool BrushTip::operator!=(const BrushTip& other) const {
-  return !(*this == other);
-}
-
-namespace brush_internal {
+}  // namespace
 
 absl::Status ValidateBrushTipTopLevel(const BrushTip& tip) {
   if (!std::isfinite(tip.scale.x) || !std::isfinite(tip.scale.y) ||
@@ -64,7 +73,8 @@ absl::Status ValidateBrushTipTopLevel(const BrushTip& tip) {
       !(tip.slant >= -kQuarterTurn && tip.slant <= kQuarterTurn)) {
     return absl::InvalidArgumentError(
         absl::StrFormat("`BrushTip::slant` must be a finite value in the "
-                        "interval [-π/2, π/2] radians. Got %v",
+                        "interval [-π/2, π/2] radians ([-90, 90] degrees). "
+                        "Got %v",
                         tip.slant));
   }
   if (!(tip.pinch >= 0 && tip.pinch <= 1)) {
@@ -75,12 +85,6 @@ absl::Status ValidateBrushTipTopLevel(const BrushTip& tip) {
   if (!std::isfinite(tip.rotation.ValueInRadians())) {
     return absl::InvalidArgumentError(absl::StrFormat(
         "`BrushTip::rotation` must be finite. Got %v", tip.rotation));
-  }
-  if (!(tip.opacity_multiplier >= 0 && tip.opacity_multiplier <= 2)) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("`BrushTip::opacity_multiplier` must be a value in the "
-                        "interval [0, 2]. Got %f",
-                        tip.opacity_multiplier));
   }
   if (!std::isfinite(tip.particle_gap_distance_scale) ||
       tip.particle_gap_distance_scale < 0) {
@@ -111,6 +115,14 @@ absl::Status ValidateBrushTip(const BrushTip& tip) {
   return absl::OkStatus();
 }
 
+void AddAttributeIdsRequiredByTip(
+    const BrushTip& tip,
+    absl::flat_hash_set<MeshFormat::AttributeId>& attribute_ids) {
+  if (BrushTipUsesColorShift(tip)) {
+    attribute_ids.insert(MeshFormat::AttributeId::kColorShiftHsl);
+  }
+}
+
 std::string ToFormattedString(const BrushTip& tip) {
   std::string formatted = absl::StrCat(
       "BrushTip{scale=", tip.scale, ", corner_rounding=", tip.corner_rounding);
@@ -122,10 +134,6 @@ std::string ToFormattedString(const BrushTip& tip) {
   }
   if (tip.rotation != Angle()) {
     absl::StrAppend(&formatted, ", rotation=", tip.rotation);
-  }
-  if (tip.opacity_multiplier != 1.f) {
-    absl::StrAppend(&formatted,
-                    ", opacity_multiplier=", tip.opacity_multiplier);
   }
   if (tip.particle_gap_distance_scale != 0) {
     absl::StrAppend(&formatted, ", particle_gap_distance_scale=",
@@ -143,5 +151,4 @@ std::string ToFormattedString(const BrushTip& tip) {
   return formatted;
 }
 
-}  // namespace brush_internal
-}  // namespace ink
+}  // namespace ink::brush_internal

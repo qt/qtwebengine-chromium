@@ -32,6 +32,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/* eslint-disable @devtools/no-adopted-style-sheets */
 
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
@@ -49,7 +50,7 @@ import {SDKModel} from './SDKModel.js';
 import {Capability, type Target} from './Target.js';
 import {TargetManager} from './TargetManager.js';
 
-// Keep this list in sync with https://w3c.github.io/aria/#state_prop_def
+/** Keep this list in sync with https://w3c.github.io/aria/#state_prop_def **/
 export const ARIA_ATTRIBUTES = new Set<string>([
   'role',
   'aria-activedescendant',
@@ -160,6 +161,7 @@ export class DOMNode {
    */
   detached = false;
   #retainedNodes?: Set<Protocol.DOM.BackendNodeId>;
+  #adoptedStyleSheets: AdoptedStyleSheet[] = [];
 
   constructor(domModel: DOMModel) {
     this.#domModel = domModel;
@@ -204,6 +206,10 @@ export class DOMNode {
 
     if (payload.attributes) {
       this.setAttributesPayload(payload.attributes);
+    }
+
+    if (payload.adoptedStyleSheets) {
+      this.#adoptedStyleSheets = this.toAdoptedStyleSheets(payload.adoptedStyleSheets);
     }
 
     this.childNodeCountInternal = payload.childNodeCount || 0;
@@ -480,6 +486,10 @@ export class DOMNode {
     return this.#isInShadowTree;
   }
 
+  getTreeRoot(): DOMNode {
+    return this.isShadowRoot() ? this : (this.ancestorShadowRoot() ?? this.ownerDocument ?? this);
+  }
+
   ancestorShadowHost(): DOMNode|null {
     const ancestorShadowRoot = this.ancestorShadowRoot();
     return ancestorShadowRoot ? ancestorShadowRoot.parentNode : null;
@@ -628,6 +638,7 @@ export class DOMNode {
   }
 
   async getSubtree(depth: number, pierce: boolean): Promise<DOMNode[]|null> {
+    console.assert(depth > 0, 'Do not fetch an infinite subtree to avoid crashing the renderer for large documents');
     const response = await this.#agent.invoke_requestChildNodes({nodeId: this.id, depth, pierce});
     return response.getError() ? null : this.childrenInternal;
   }
@@ -741,7 +752,7 @@ export class DOMNode {
       }
 
       const oldAttribute = oldAttributesMap.get(name);
-      if (!oldAttribute || oldAttribute.value !== value) {
+      if (oldAttribute?.value !== value) {
         attributesChanged = true;
       }
     }
@@ -820,6 +831,19 @@ export class DOMNode {
         this.#pseudoElements.set(pseudoType, [node]);
       }
     }
+  }
+
+  private toAdoptedStyleSheets(ids: Protocol.DOM.StyleSheetId[]): AdoptedStyleSheet[] {
+    return ids.map(id => (new AdoptedStyleSheet(id, this.#domModel.cssModel())));
+  }
+
+  setAdoptedStyleSheets(ids: Protocol.DOM.StyleSheetId[]): void {
+    this.#adoptedStyleSheets = this.toAdoptedStyleSheets(ids);
+    this.#domModel.dispatchEventToListeners(Events.AdoptedStyleSheetsModified, this);
+  }
+
+  get adoptedStyleSheetsForNode(): AdoptedStyleSheet[] {
+    return this.#adoptedStyleSheets;
   }
 
   setDistributedNodePayloads(payloads: Protocol.DOM.BackendNode[]): void {
@@ -1201,6 +1225,11 @@ export class DOMDocument extends DOMNode {
   }
 }
 
+export class AdoptedStyleSheet {
+  constructor(readonly id: Protocol.DOM.StyleSheetId, readonly cssModel: CSSModel) {
+  }
+}
+
 export class DOMModel extends SDKModel<EventTypes> {
   agent: ProtocolProxyApi.DOMApi;
   idToDOMNode = new Map<Protocol.DOM.NodeId, DOMNode>();
@@ -1566,6 +1595,14 @@ export class DOMModel extends SDKModel<EventTypes> {
     this.scheduleMutationEvent(node);
   }
 
+  adoptedStyleSheetsModified(parentId: Protocol.DOM.NodeId, styleSheets: Protocol.DOM.StyleSheetId[]): void {
+    const parent = this.idToDOMNode.get(parentId);
+    if (!parent) {
+      return;
+    }
+    parent.setAdoptedStyleSheets(styleSheets);
+  }
+
   scrollableFlagUpdated(nodeId: Protocol.DOM.NodeId, isScrollable: boolean): void {
     const node = this.nodeForId(nodeId);
     if (!node || node.isScrollable() === isScrollable) {
@@ -1666,7 +1703,7 @@ export class DOMModel extends SDKModel<EventTypes> {
     }
     const {nodeIds} =
         await this.agent.invoke_getSearchResults({searchId: this.#searchId, fromIndex: index, toIndex: index + 1});
-    return nodeIds && nodeIds.length === 1 ? this.nodeForId(nodeIds[0]) : null;
+    return nodeIds?.length === 1 ? this.nodeForId(nodeIds[0]) : null;
   }
 
   private cancelSearch(): void {
@@ -1771,6 +1808,7 @@ export enum Events {
   TopLayerElementsChanged = 'TopLayerElementsChanged',
   ScrollableFlagUpdated = 'ScrollableFlagUpdated',
   AffectedByStartingStylesFlagUpdated = 'AffectedByStartingStylesFlagUpdated',
+  AdoptedStyleSheetsModified = 'AdoptedStyleSheetsModified',
   /* eslint-enable @typescript-eslint/naming-convention */
 }
 
@@ -1788,6 +1826,7 @@ export interface EventTypes {
   [Events.TopLayerElementsChanged]: void;
   [Events.ScrollableFlagUpdated]: {node: DOMNode};
   [Events.AffectedByStartingStylesFlagUpdated]: {node: DOMNode};
+  [Events.AdoptedStyleSheetsModified]: DOMNode;
 }
 
 class DOMDispatcher implements ProtocolProxyApi.DOMDispatcher {
@@ -1806,6 +1845,10 @@ class DOMDispatcher implements ProtocolProxyApi.DOMDispatcher {
 
   attributeRemoved({nodeId, name}: Protocol.DOM.AttributeRemovedEvent): void {
     this.#domModel.attributeRemoved(nodeId, name);
+  }
+
+  adoptedStyleSheetsModified({nodeId, adoptedStyleSheets}: Protocol.DOM.AdoptedStyleSheetsModifiedEvent): void {
+    this.#domModel.adoptedStyleSheetsModified(nodeId, adoptedStyleSheets);
   }
 
   inlineStyleInvalidated({nodeIds}: Protocol.DOM.InlineStyleInvalidatedEvent): void {

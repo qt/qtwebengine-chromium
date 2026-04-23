@@ -19,7 +19,6 @@
 
 use crate::codecs::Decoder;
 use crate::codecs::DecoderConfig;
-use crate::decoder::CodecChoice;
 use crate::decoder::GridImageHelper;
 use crate::image::Image;
 use crate::image::YuvRange;
@@ -155,7 +154,9 @@ impl Dav1d {
         if low_latency {
             settings.max_frame_delay = 1;
         }
-        settings.n_threads = i32::try_from(config.max_threads).unwrap_or(1);
+        settings.n_threads = i32::try_from(config.max_threads)
+            .unwrap_or(1)
+            .clamp(1, DAV1D_MAX_THREADS as _);
         settings.operating_point = config.operating_point as i32;
         settings.all_layers = if config.all_layers { 1 } else { 0 };
         let frame_size_limit = match config.image_size_limit {

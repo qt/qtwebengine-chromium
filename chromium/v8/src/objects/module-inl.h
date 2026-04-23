@@ -24,7 +24,22 @@ namespace internal {
 
 TQ_OBJECT_CONSTRUCTORS_IMPL(Module)
 TQ_OBJECT_CONSTRUCTORS_IMPL(JSModuleNamespace)
-TQ_OBJECT_CONSTRUCTORS_IMPL(ScriptOrModule)
+
+Tagged<Object> ScriptOrModule::resource_name() const {
+  return resource_name_.load();
+}
+void ScriptOrModule::set_resource_name(Tagged<Object> value,
+                                       WriteBarrierMode mode) {
+  resource_name_.store(this, value, mode);
+}
+
+Tagged<FixedArray> ScriptOrModule::host_defined_options() const {
+  return host_defined_options_.load();
+}
+void ScriptOrModule::set_host_defined_options(Tagged<FixedArray> value,
+                                              WriteBarrierMode mode) {
+  host_defined_options_.store(this, value, mode);
+}
 
 BOOL_ACCESSORS(SourceTextModule, flags, has_toplevel_await,
                HasToplevelAwaitBit::kShift)
@@ -36,14 +51,16 @@ ACCESSORS(SourceTextModule, async_parent_modules, Tagged<ArrayList>,
 BIT_FIELD_ACCESSORS(ModuleRequest, flags, position, ModuleRequest::PositionBits)
 
 inline void ModuleRequest::set_phase(ModuleImportPhase phase) {
-  DCHECK(PhaseBit::is_valid(phase));
+  DCHECK(PhaseBits::is_valid(phase));
   int hints = flags();
-  hints = PhaseBit::update(hints, phase);
+  hints = PhaseBits::update(hints, phase);
   set_flags(hints);
 }
 
 inline ModuleImportPhase ModuleRequest::phase() const {
-  return PhaseBit::decode(flags());
+  int value = flags() & PhaseBits::kMask;
+  DCHECK(value == 0 || value == 1 || value == 2);
+  return static_cast<ModuleImportPhase>(value);
 }
 
 struct Module::Hash {

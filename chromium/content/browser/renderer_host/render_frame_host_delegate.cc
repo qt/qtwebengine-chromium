@@ -15,7 +15,6 @@
 #include "build/build_config.h"
 #include "content/public/browser/cookie_access_details.h"
 #include "content/public/browser/trust_token_access_details.h"
-#include "ipc/ipc_message.h"
 #include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
 #include "third_party/blink/public/mojom/frame/fullscreen.mojom.h"
 #include "third_party/blink/public/mojom/frame/text_autosizer_page_info.mojom.h"
@@ -27,18 +26,6 @@
 #include "url/origin.h"
 
 namespace content {
-
-blink::mojom::PartitionedPopinParamsPtr
-PartitionedPopinOpenerProperties::AsMojom() const {
-  return blink::mojom::PartitionedPopinParams::New(top_frame_origin,
-                                                   site_for_cookies);
-}
-
-bool RenderFrameHostDelegate::OnMessageReceived(
-    RenderFrameHostImpl* render_frame_host,
-    const IPC::Message& message) {
-  return false;
-}
 
 bool RenderFrameHostDelegate::DidAddMessageToConsole(
     RenderFrameHostImpl* source_frame,
@@ -83,6 +70,10 @@ ui::AXMode RenderFrameHostDelegate::GetAccessibilityMode() {
   return ui::AXMode();
 }
 
+bool RenderFrameHostDelegate::ShouldIgnoreA11yInputEvents() {
+  return false;
+}
+
 device::mojom::GeolocationContext*
 RenderFrameHostDelegate::GetGeolocationContext() {
   return nullptr;
@@ -104,9 +95,11 @@ void RenderFrameHostDelegate::FullscreenStateChanged(
     bool is_fullscreen,
     blink::mojom::FullscreenOptionsPtr options) {}
 
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 bool RenderFrameHostDelegate::CanUseWindowingControls(RenderFrameHostImpl*) {
   return false;
 }
+#endif
 
 bool RenderFrameHostDelegate::IsInnerWebContentsForGuest() {
   return false;
@@ -220,19 +213,6 @@ RenderFrameHostDelegate::GetPermissionsPolicyForIsolatedWebApp(
 
 bool RenderFrameHostDelegate::IsPopup() const {
   return false;
-}
-
-bool RenderFrameHostDelegate::IsPartitionedPopin() const {
-  return false;
-}
-
-const PartitionedPopinOpenerProperties&
-RenderFrameHostDelegate::GetPartitionedPopinOpenerProperties() const {
-  NOTREACHED();
-}
-
-WebContents* RenderFrameHostDelegate::GetOpenedPartitionedPopin() const {
-  return nullptr;
 }
 
 gfx::NativeWindow RenderFrameHostDelegate::GetOwnerNativeWindow() {

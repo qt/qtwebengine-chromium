@@ -149,11 +149,11 @@ class SyncValidationOutputGenerator(BaseGenerator):
             #pragma once
 
             #include <array>
-            #include <bitset>
             #include <map>
             #include <stdint.h>
             #include <vulkan/vulkan.h>
             #include "containers/custom_containers.h"
+            #include "sync/sync_access_flags.h"
             ''')
         out.append('// clang-format off\n')
 
@@ -184,8 +184,8 @@ static const VkAccessFlagBits2 VK_ACCESS_2_PRESENT_PRESENTED_BIT_SYNCVAL = 0x{(s
 
         out.append('\n')
 
+        out.append('using syncval::SyncAccessFlags;\n');
         syncStageAccessFlagsSize = 192
-        out.append(f'using SyncAccessFlags = std::bitset<{syncStageAccessFlagsSize}>;\n')
         out.append('// Unique bit for each stage/access combination\n')
         for access in [x for x in self.stageAccessCombo if x['access_bit'] is not None]:
             out.append(f'static const SyncAccessFlags {access["access_bit"]} = (SyncAccessFlags(1) << {access["stage_access"]});\n')
@@ -332,13 +332,13 @@ const vvl::unordered_map<VkPipelineStageFlagBits2, VkPipelineStageFlags2>& syncL
             'VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT',
             'VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT',
         ]
-        for queue in [x for x in self.vk.queueBits.keys()]:
-            stages = [x.flag.name for x in self.vk.syncStage if x.support.queues is not None and (x.support.queues & queue) and x.flag.name not in ignoreQueueFlag and x.equivalent.max]
+        for queue in [x.name for x in self.vk.bitmasks['VkQueueFlagBits'].flags]:
+            stages = [x.flag.name for x in self.vk.syncStage if x.support.queues is not None and (queue in x.support.queues) and x.flag.name not in ignoreQueueFlag and x.equivalent.max]
             # These are possible for every queue
             for s in ['VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT', 'VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT']:
                 if s not in stages:
                     stages.append(s)
-            out.append(f'    {{ {self.vk.queueBits[queue]}, (\n        {separator.join(stages)}\n    )}},\n')
+            out.append(f'    {{ {queue}, (\n        {separator.join(stages)}\n    )}},\n')
         out.append('    };\n')
         out.append('    return variable;\n')
         out.append('}\n\n')

@@ -17,8 +17,8 @@ if TYPE_CHECKING:
   from crossbench.network.traffic_shaping.base import TrafficShaper
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
-
 NetworkT = TypeVar("NetworkT", bound="Network")
+
 
 class Network(abc.ABC):
 

@@ -154,6 +154,13 @@ inline ReduceResult MaybeReduceResult::Checked() { return ReduceResult(*this); }
     variable = res.value()->Cast<T>();                                 \
   } while (false)
 
+#define RETURN_VALUE(result)          \
+  do {                                \
+    MaybeReduceResult res = (result); \
+    CHECK(res.IsDoneWithValue());     \
+    return res.value();               \
+  } while (false)
+
 #define GET_VALUE_OR_ABORT(variable, result)                           \
   do {                                                                 \
     MaybeReduceResult res = (result);                                  \
@@ -165,6 +172,8 @@ inline ReduceResult MaybeReduceResult::Checked() { return ReduceResult(*this); }
     variable = res.value()->Cast<T>();                                 \
   } while (false)
 
+// TODO(dmercadier): .Cast the result to the type of variable to avoid requiring
+// callers to use a generic `Node*` type for {variable}.
 #define GET_NODE_OR_ABORT(variable, result) \
   do {                                      \
     MaybeReduceResult res = (result);       \
@@ -260,12 +269,6 @@ class MaglevReducer {
   template <typename NodeT, typename... Args>
   ReduceResult AddNewNode(std::initializer_list<ValueNode*> inputs,
                           Args&&... args);
-  // Temporary version while we transition to the AddNewNode returning a
-  // ReduceResult.
-  // TODO(marja): Remove this.
-  template <typename NodeT, typename... Args>
-  NodeT* AddNewNodeNoAbort(std::initializer_list<ValueNode*> inputs,
-                           Args&&... args);
   template <typename NodeT, typename... Args>
   NodeT* AddUnbufferedNewNodeNoInputConversion(
       BasicBlock* block, std::initializer_list<ValueNode*> inputs,
@@ -280,35 +283,70 @@ class MaglevReducer {
 
   void AddInitializedNodeToGraph(Node* node);
 
+  // TODO(marja): When we have C++26, `inputs` can be std::span<ValueNode*>,
+  // since std::intializer_list can be converted to std::span.
+  template <typename NodeT, typename InputsT>
+  ReduceResult SetNodeInputs(NodeT* node, InputsT inputs);
+
   ReduceResult EmitUnconditionalDeopt(DeoptimizeReason reason);
 
-  compiler::OptionalHeapObjectRef TryGetConstant(
-      ValueNode* node, ValueNode** constant_node = nullptr);
+  template <class T>
+  compiler::OptionalRef<typename compiler::ref_traits<T>::ref_type>
+  TryGetConstant(ValueNode* node, ValueNode** constant_node = nullptr) {
+    compiler::OptionalHeapObjectRef ref =
+        TryGetHeapObjectConstant(node, constant_node);
+    if constexpr (std::is_same_v<T, HeapObject>) {
+      return ref;
+    }
+    if (!ref.has_value() || !ref->Is<T>()) return {};
+    return ref->As<T>();
+  }
+  compiler::OptionalHeapObjectRef TryGetHeapObjectConstant(
+      ValueNode* node, ValueNode** constant_node);
+
   std::optional<int32_t> TryGetInt32Constant(ValueNode* value);
   std::optional<uint32_t> TryGetUint32Constant(ValueNode* value);
-  std::optional<double> TryGetFloat64Constant(
-      ValueNode* value, TaggedToFloat64ConversionType conversion_type);
+  std::optional<ShiftedInt53> TryGetShiftedInt53Constant(ValueNode* value);
+  std::optional<Float64> TryGetFloat64OrHoleyFloat64Constant(
+      UseRepresentation use_repr, ValueNode* value,
+      TaggedToFloat64ConversionType conversion_type);
 
   template <typename MapContainer>
-  MaybeReduceResult TryFoldCheckMaps(ValueNode* object,
-                                     const MapContainer& maps);
+  MaybeReduceResult TryFoldCheckConstantMaps(ValueNode* object,
+                                             const MapContainer& maps);
+  template <typename MapContainer>
+  MaybeReduceResult TryFoldCheckConstantMaps(compiler::MapRef map,
+                                             const MapContainer& maps);
+  template <typename MapContainer>
+  MaybeReduceResult TryFoldCheckMaps(ValueNode* object, ValueNode* object_map,
+                                     const MapContainer& maps,
+                                     KnownMapsMerger<MapContainer>& merger);
 
   ValueNode* BuildSmiUntag(ValueNode* node);
 
-  ValueNode* BuildNumberOrOddballToFloat64(ValueNode* node,
-                                           NodeType allowed_input_type);
+  ReduceResult BuildNumberOrOddballToFloat64OrHoleyFloat64(
+      ValueNode* node, UseRepresentation use_rep, NodeType allowed_input_type);
 
   // Get a tagged representation node whose value is equivalent to the given
   // node.
-  ValueNode* GetTaggedValue(ValueNode* value,
-                            UseReprHintRecording record_use_repr_hint =
-                                UseReprHintRecording::kRecord);
+  ReduceResult GetTaggedValue(ValueNode* value,
+                              UseReprHintRecording record_use_repr_hint =
+                                  UseReprHintRecording::kRecord);
 
   // Get an Int32 representation node whose value is equivalent to the given
   // node.
   //
   // Deopts if the value is not exactly representable as an Int32.
   ValueNode* GetInt32(ValueNode* value, bool can_be_heap_number = false);
+
+  // This does not emit any conversion.
+  ValueNode* TryGetInt32(ValueNode* value);
+
+  // Get a ShiftInt53 representation node whose value is equivalent to the given
+  // node.
+  //
+  // Deopts if the value is not exactly representable as an Int32.
+  ValueNode* GetShiftedInt53(ValueNode* value);
 
   // Get an Int32 representation node whose value is equivalent to the ToInt32
   // truncation of the given node (including a ToNumber call). Only trivial
@@ -319,17 +357,30 @@ class MaglevReducer {
   ValueNode* GetTruncatedInt32ForToNumber(ValueNode* value,
                                           NodeType allowed_input_type);
 
+  ReduceResult GetFloat64OrHoleyFloat64Impl(ValueNode* value,
+                                            UseRepresentation use_rep,
+                                            NodeType allowed_input_type);
+
   // Get a Float64 representation node whose value is equivalent to the given
   // node.
   //
   // Deopts if the value is not exactly representable as a Float64.
-  ValueNode* GetFloat64(ValueNode* value);
+  ReduceResult GetFloat64(ValueNode* value);
 
-  ValueNode* GetFloat64ForToNumber(ValueNode* value,
-                                   NodeType allowed_input_type);
+  // This does not emit any conversion.
+  ValueNode* TryGetFloat64(ValueNode* value);
 
-  ValueNode* GetHoleyFloat64ForToNumber(ValueNode* value,
-                                        NodeType allowed_input_type);
+  ReduceResult GetFloat64ForToNumber(ValueNode* value,
+                                     NodeType allowed_input_type);
+
+  // This does not emit any conversion.
+  ValueNode* TryGetFloat64ForToNumber(ValueNode* value,
+                                      NodeType allowed_input_type);
+
+  ReduceResult GetHoleyFloat64(ValueNode* value);
+
+  ReduceResult GetHoleyFloat64ForToNumber(ValueNode* value,
+                                          NodeType allowed_input_type);
 
   void EnsureInt32(ValueNode* value, bool can_be_heap_number = false);
 
@@ -394,7 +445,7 @@ class MaglevReducer {
   }
 
   template <UseReprHintRecording hint = UseReprHintRecording::kRecord>
-  ValueNode* ConvertInputTo(ValueNode* input, ValueRepresentation expected);
+  ReduceResult ConvertInputTo(ValueNode* input, ValueRepresentation expected);
 
 #ifdef DEBUG
   // TODO(victorgomes): Investigate if we can create a better API for this!
@@ -429,6 +480,9 @@ class MaglevReducer {
   Int32Constant* GetInt32Constant(int32_t constant) {
     return graph()->GetInt32Constant(constant);
   }
+  ShiftedInt53Constant* GetShiftedInt53Constant(ShiftedInt53 constant) {
+    return graph()->GetShiftedInt53Constant(constant);
+  }
   IntPtrConstant* GetIntPtrConstant(intptr_t constant) {
     return graph()->GetIntPtrConstant(constant);
   }
@@ -440,6 +494,9 @@ class MaglevReducer {
   }
   Float64Constant* GetFloat64Constant(Float64 constant) {
     return graph()->GetFloat64Constant(constant);
+  }
+  HoleyFloat64Constant* GetHoleyFloat64Constant(Float64 constant) {
+    return graph()->GetHoleyFloat64Constant(constant);
   }
   RootConstant* GetRootConstant(RootIndex index) {
     return graph()->GetRootConstant(index);
@@ -478,6 +535,8 @@ class MaglevReducer {
                                                    int32_t cst_right);
   bool TryFoldInt32CompareOperation(Operation op, int32_t left, int32_t right);
 
+  MaybeReduceResult TryFoldShiftedInt53Add(ValueNode* left, ValueNode* right);
+
   template <Operation kOperation>
   MaybeReduceResult TryFoldFloat64UnaryOperationForToNumber(
       TaggedToFloat64ConversionType conversion_type, ValueNode* value);
@@ -489,6 +548,11 @@ class MaglevReducer {
   MaybeReduceResult TryFoldFloat64BinaryOperationForToNumber(
       TaggedToFloat64ConversionType conversion_type, ValueNode* left,
       double cst_right);
+
+  MaybeReduceResult TryFoldFloat64Min(ValueNode* left, ValueNode* right);
+  MaybeReduceResult TryFoldFloat64Max(ValueNode* left, ValueNode* right);
+
+  MaybeReduceResult TryFoldLogicalNot(ValueNode* input);
 
   bool CheckType(ValueNode* node, NodeType type, NodeType* old = nullptr) {
     return known_node_aspects().CheckType(broker(), node, type, old);
@@ -528,9 +592,9 @@ class MaglevReducer {
   };
 
   template <typename NodeT, typename... Args>
-  NodeT* AddNewNodeOrGetEquivalent(bool convert_inputs,
-                                   std::initializer_list<ValueNode*> raw_inputs,
-                                   Args&&... args);
+  ReduceResult AddNewNodeOrGetEquivalent(
+      bool convert_inputs, std::initializer_list<ValueNode*> raw_inputs,
+      Args&&... args);
 
   template <typename NodeT>
   static constexpr UseReprHintRecording ShouldRecordUseReprHint() {
@@ -544,14 +608,6 @@ class MaglevReducer {
       return UseReprHintRecording::kRecord;
     }
   }
-
-  // TODO(marja): When we have C++26, `inputs` can be std::span<ValueNode*>,
-  // since std::intializer_list can be converted to std::span.
-  template <typename NodeT, typename InputsT>
-  ReduceResult SetNodeInputs(NodeT* node, InputsT inputs);
-
-  template <typename NodeT, typename InputsT>
-  void SetNodeInputsOld(NodeT* node, InputsT inputs);
 
   // TODO(marja): When we have C++26, `inputs` can be std::span<ValueNode*>,
   // since std::intializer_list can be converted to std::span.

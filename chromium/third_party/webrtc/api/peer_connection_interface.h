@@ -134,6 +134,7 @@
 #include "api/units/time_delta.h"
 #include "p2p/base/port.h"
 #include "p2p/base/port_allocator.h"
+#include "p2p/dtls/dtls_transport_factory.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/network.h"
 #include "rtc_base/network_constants.h"
@@ -226,10 +227,6 @@ class RTC_EXPORT PeerConnectionInterface : public RefCountInterface {
     kIceConnectionMax,
   };
   static constexpr absl::string_view AsString(IceConnectionState state);
-  template <typename Sink>
-  void AbslStringify(Sink& sink, IceConnectionState state) {
-    sink.Append(AsString(state));
-  }
 
   // TLS certificate policy.
   enum TlsCertPolicy {
@@ -644,14 +641,6 @@ class RTC_EXPORT PeerConnectionInterface : public RefCountInterface {
     // process).
     SdpSemantics sdp_semantics = SdpSemantics::kUnifiedPlan;
 
-    // TODO(bugs.webrtc.org/9891) - Move to crypto_options or remove.
-    // Actively reset the SRTP parameters whenever the DTLS transports
-    // underneath are reset for every offer/answer negotiation.
-    // This is only intended to be a workaround for crbug.com/835958
-    // WARNING: This would cause RTP/RTCP packets decryption failure if not used
-    // correctly. This flag will be deprecated soon. Do not rely on it.
-    bool active_reset_srtp_params = false;
-
     // Defines advanced optional cryptographic settings related to SRTP and
     // frame encryption for native WebRTC.
     CryptoOptions crypto_options;
@@ -692,6 +681,11 @@ class RTC_EXPORT PeerConnectionInterface : public RefCountInterface {
 
     // The burst interval of the pacer, see TaskQueuePacedSender constructor.
     std::optional<TimeDelta> pacer_burst_interval;
+
+    // Always negotiate datachannels as the first m-line in the SDP even if
+    // no datachannel have been created yet.
+    // https://github.com/w3c/webrtc-pc/issues/3072
+    bool always_negotiate_data_channels = false;
 
     //
     // Don't forget to update operator== if adding something.
@@ -1231,6 +1225,29 @@ class RTC_EXPORT PeerConnectionInterface : public RefCountInterface {
   ~PeerConnectionInterface() override = default;
 };
 
+template <typename Sink>
+void AbslStringify(Sink& sink, PeerConnectionInterface::SignalingState state) {
+  sink.Append(PeerConnectionInterface::AsString(state));
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink,
+                   PeerConnectionInterface::IceGatheringState state) {
+  sink.Append(PeerConnectionInterface::AsString(state));
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink,
+                   PeerConnectionInterface::PeerConnectionState state) {
+  sink.Append(PeerConnectionInterface::AsString(state));
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink,
+                   PeerConnectionInterface::IceConnectionState state) {
+  sink.Append(PeerConnectionInterface::AsString(state));
+}
+
 // PeerConnection callback interface, used for RTCPeerConnection events.
 // Application should implement these methods.
 class PeerConnectionObserver {
@@ -1379,6 +1396,7 @@ struct RTC_EXPORT PeerConnectionDependencies final {
   // Factory for creating resolvers that look up hostnames in DNS
   std::unique_ptr<AsyncDnsResolverFactoryInterface> async_dns_resolver_factory;
   std::unique_ptr<IceTransportFactory> ice_transport_factory;
+  std::unique_ptr<DtlsTransportFactory> dtls_transport_factory;
   std::unique_ptr<RTCCertificateGeneratorInterface> cert_generator;
   std::unique_ptr<SSLCertificateVerifier> tls_cert_verifier;
   std::unique_ptr<VideoBitrateAllocatorFactory> video_bitrate_allocator_factory;

@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/view_transition/view_transition_style_builder.h"
 
+#include "third_party/blink/renderer/core/css/dom_window_css.h"
 #include "third_party/blink/renderer/core/css/properties/computed_style_utils.h"
 #include "third_party/blink/renderer/platform/text/writing_mode.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -74,7 +75,7 @@ void ViewTransitionStyleBuilder::AddSelector(const String& name,
                                              const String& tag) {
   builder_.Append(name);
   builder_.Append("(");
-  builder_.Append(tag);
+  builder_.Append(DOMWindowCSS::escape(tag));
   builder_.Append(")");
 }
 
@@ -171,7 +172,7 @@ String ViewTransitionStyleBuilder::AddKeyframes(
   String keyframe_name = [&tag]() {
     StringBuilder builder;
     builder.Append(kKeyframeNamePrefix);
-    builder.Append(tag);
+    builder.Append(DOMWindowCSS::escape(tag));
     return builder.ReleaseString();
   }();
 
@@ -204,7 +205,7 @@ String ViewTransitionStyleBuilder::AddGroupChildrenKeyframes(
   String keyframe_name = [&tag]() {
     StringBuilder builder;
     builder.Append(kGroupChildrenKeyframeNamePrefix);
-    builder.Append(tag);
+    builder.Append(DOMWindowCSS::escape(tag));
     return builder.ReleaseString();
   }();
 
@@ -262,29 +263,6 @@ void ViewTransitionStyleBuilder::AddGroupChildrenStyles(
     builder.Append(";\n");
   }
   AddRules(GroupChildrenTagName(), name, builder.ReleaseString());
-}
-
-void ViewTransitionStyleBuilder::AddFlagGuardedDefaultAnimationStyles() {
-  if (RuntimeEnabledFeatures::ViewTransitionAnimationDelayInheritEnabled()) {
-    AddRules(ImagePairTagName(), "*", "animation-delay: inherit;");
-    AddRules(NewImageTagName(), "*", "animation-delay: inherit;");
-    AddRules(OldImageTagName(), "*", "animation-delay: inherit;");
-    AddRules(GroupChildrenTagName(), "*", "animation-delay: inherit;");
-  }
-  if (RuntimeEnabledFeatures::
-          ViewTransitionInheritAnimationPropertiesEnabled()) {
-    String animation_inherit = R"CSS(
-      animation-timing-function: inherit;
-      animation-iteration-count: inherit;
-      animation-direction: inherit;
-      animation-play-state: inherit;
-    )CSS";
-
-    AddRules(ImagePairTagName(), "*", animation_inherit);
-    AddRules(NewImageTagName(), "*", animation_inherit);
-    AddRules(OldImageTagName(), "*", animation_inherit);
-    AddRules(GroupChildrenTagName(), "*", animation_inherit);
-  }
 }
 
 }  // namespace blink

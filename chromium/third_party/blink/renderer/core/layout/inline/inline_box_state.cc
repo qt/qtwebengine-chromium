@@ -23,23 +23,6 @@
 
 namespace blink {
 
-namespace {
-
-FontHeight ComputeEmphasisMarkOutsets(const ComputedStyle& style,
-                                      const Font& font) {
-  if (style.GetTextEmphasisMark() == TextEmphasisMark::kNone)
-    return FontHeight::Empty();
-
-  LayoutUnit emphasis_mark_height =
-      LayoutUnit(font.EmphasisMarkHeight(style.TextEmphasisMarkString()));
-  DCHECK_GE(emphasis_mark_height, LayoutUnit());
-  return style.GetTextEmphasisLineLogicalSide() == LineLogicalSide::kOver
-             ? FontHeight(emphasis_mark_height, LayoutUnit())
-             : FontHeight(LayoutUnit(), emphasis_mark_height);
-}
-
-}  // namespace
-
 void LogicalRubyColumn::Trace(Visitor* visitor) const {
   visitor->Trace(annotation_items);
   visitor->Trace(state_stack);
@@ -232,6 +215,21 @@ void InlineBoxState::AdjustEdges(const ComputedStyle& style,
   }
 }
 
+FontHeight InlineBoxState::ComputeEmphasisMarkOutsets(
+    const ComputedStyle& style,
+    const Font& font) {
+  if (style.GetTextEmphasisMark() == TextEmphasisMark::kNone) {
+    return FontHeight::Empty();
+  }
+
+  LayoutUnit emphasis_mark_height =
+      LayoutUnit(font.EmphasisMarkHeight(style.TextEmphasisMarkString()));
+  DCHECK_GE(emphasis_mark_height, LayoutUnit());
+  return style.GetTextEmphasisLineLogicalSide() == LineLogicalSide::kOver
+             ? FontHeight(emphasis_mark_height, LayoutUnit())
+             : FontHeight(LayoutUnit(), emphasis_mark_height);
+}
+
 void InlineBoxState::ResetTextMetrics() {
   metrics = text_metrics = FontHeight::Empty();
   text_top = text_height = LayoutUnit();
@@ -275,7 +273,8 @@ bool InlineBoxState::CanAddTextOfStyle(const ComputedStyle& text_style) const {
   if (text_style.VerticalAlign() != EVerticalAlign::kBaseline)
     return false;
   DCHECK(style);
-  if (style == &text_style || style->GetFont() == text_style.GetFont() ||
+  if (style == &text_style ||
+      base::ValuesEquivalent(style->GetFont(), text_style.GetFont()) ||
       style->GetFont()->PrimaryFont() == text_style.GetFont()->PrimaryFont()) {
     return true;
   }

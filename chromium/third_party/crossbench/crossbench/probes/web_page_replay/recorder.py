@@ -18,8 +18,8 @@ from crossbench.helper.path_finder import WprGoFinder
 from crossbench.network.replay.web_page_replay import WprRecorder
 from crossbench.parse import PathParser
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
-from crossbench.probes.results import (EmptyProbeResult, LocalProbeResult,
-                                       ProbeResult, ProbeResultDict)
+from crossbench.probes.results import EmptyProbeResult, LocalProbeResult, \
+    ProbeResult, ProbeResultDict
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
@@ -30,7 +30,6 @@ if TYPE_CHECKING:
   from crossbench.runner.groups.repetitions import RepetitionsRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
   from crossbench.runner.run import Run
-
 
 
 class WebPageReplayProbe(Probe):

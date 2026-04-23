@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC
+// Copyright 2019-2025 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
@@ -24,8 +24,8 @@
 #include "src/xnnpack/microfnptr.h"
 #include "src/xnnpack/microkernel-utils.h"
 #include "src/xnnpack/microparams-init.h"
-#include "src/xnnpack/microparams.h"
 #include "src/xnnpack/pack.h"
+#include "test/replicable_random_device.h"
 #include <benchmark/benchmark.h>
 
 static void bench_impl(uint64_t arch_flags, benchmark::State& state,
@@ -52,8 +52,7 @@ static void bench_impl(uint64_t arch_flags, benchmark::State& state,
     return;
   }
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(std::uniform_real_distribution<float>(0.0f, 1.0f),
                           std::ref(rng));
 
@@ -113,7 +112,7 @@ static void bench_impl(uint64_t arch_flags, benchmark::State& state,
   xnn_indirection_init_dwconv2d(
       /*output_y_start=*/0, /*output_y_end=*/output_height,
       reinterpret_cast<const void**>(i.data()), a.data(),
-      channels << XNN_LOG2_SIZEOF_HALF, z.data(), input_height, input_width,
+      channels << XNN_LOG2_SIZEOF_FLOAT16, z.data(), input_height, input_width,
       output_height, output_width, kernel_height, kernel_width, subsampling,
       subsampling, dilation, dilation, padding_top, padding_left, step_height,
       step_width, primary_tile);

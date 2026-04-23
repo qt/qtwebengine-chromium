@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import '../../ui/components/icon_button/icon_button.js';
+import '../../ui/kit/kit.js';
 import '../../ui/components/menus/menus.js';
 
 import * as Common from '../../core/common/common.js';
@@ -1072,7 +1072,7 @@ function renderParameters(
                         ${hasNoKeys ?
                           html`<devtools-suggestion-input
                             data-paramId=${parameterId}
-                            isKey=${true}
+                            .isKey=${true}
                             .isCorrectInput=${live(parameter.isCorrectType)}
                             .options=${hasOptions ? input.computeDropdownValues(parameter) : []}
                             .autocomplete=${false}
@@ -1258,7 +1258,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
           <div class=toolbar-spacer></div>
         <devtools-button title=${Host.Platform.isMac() ? i18nString(UIStrings.sendCommandCmdEnter) : i18nString(UIStrings.sendCommandCtrlEnter)}
                         .iconName=${'send'}
-                        jslogContext=${'protocol-monitor.send-command'}
+                        jslogContext="protocol-monitor.send-command"
                         .variant=${Buttons.Button.Variant.PRIMARY_TOOLBAR}
                         @click=${input.onCommandSend}></devtools-button>
       </devtools-toolbar>

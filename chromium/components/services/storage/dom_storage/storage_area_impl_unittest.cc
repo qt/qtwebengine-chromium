@@ -29,6 +29,7 @@
 #include "base/trace_event/memory_allocator_dump_guid.h"
 #include "components/services/storage/dom_storage/async_dom_storage_database.h"
 #include "components/services/storage/dom_storage/dom_storage_database.h"
+#include "components/services/storage/dom_storage/leveldb/dom_storage_batch_operation_leveldb.h"
 #include "components/services/storage/dom_storage/storage_area_test_util.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "storage/common/database/db_status.h"
@@ -95,7 +96,7 @@ class MockDelegate : public StorageAreaImpl::Delegate {
     if (committed_)
       std::move(committed_).Run();
   }
-  void OnMapLoaded(DbStatus) override { map_load_count_++; }
+  void OnMapLoaded() override { ++map_load_count_; }
 
   int map_load_count() const { return map_load_count_; }
 
@@ -151,9 +152,12 @@ class StorageAreaImplTest : public testing::Test,
   };
 
   StorageAreaImplTest() {
+    // Create an in-memory LevelDB.
     base::RunLoop loop;
-    db_ = AsyncDomStorageDatabase::OpenInMemory(
-        std::nullopt, "StorageAreaImplTest",
+    db_ = AsyncDomStorageDatabase::Open(
+        StorageType::kSessionStorage,
+        /*directory=*/base::FilePath(), "StorageAreaImplTest",
+        /*memory_dump_id=*/std::nullopt,
         base::ThreadPool::CreateSequencedTaskRunner({base::MayBlock()}),
         base::BindLambdaForTesting([&](DbStatus status) { loop.Quit(); }));
     loop.Run();
@@ -177,8 +181,9 @@ class StorageAreaImplTest : public testing::Test,
   void SetDatabaseEntry(const std::vector<uint8_t>& key,
                         const std::vector<uint8_t>& value) {
     base::RunLoop loop;
-    db_->database().PostTaskWithThisObject(
-        base::BindLambdaForTesting([&](DomStorageDatabase* db) {
+    db_->database().PostTaskWithThisObject(base::BindLambdaForTesting(
+        [&](DomStorageDatabase* dom_storage_database) {
+          DomStorageDatabaseLevelDB* db = &dom_storage_database->GetLevelDB();
           ASSERT_TRUE(db->Put(key, value).ok());
           loop.Quit();
         }));
@@ -190,35 +195,40 @@ class StorageAreaImplTest : public testing::Test,
   }
 
   std::string GetDatabaseEntry(std::string_view key) {
-    std::vector<uint8_t> value;
+    StatusOr<DomStorageDatabase::Value> value;
     base::RunLoop loop;
-    db_->database().PostTaskWithThisObject(
-        base::BindLambdaForTesting([&](const DomStorageDatabase& db) {
-          ASSERT_TRUE(db.Get(ToBytes(key), &value).ok());
+    db_->database().PostTaskWithThisObject(base::BindLambdaForTesting(
+        [&](DomStorageDatabase* dom_storage_database) {
+          DomStorageDatabaseLevelDB& db = dom_storage_database->GetLevelDB();
+          value = db.Get(ToBytes(key));
           loop.Quit();
         }));
     loop.Run();
-    return std::string(value.begin(), value.end());
+    if (!value.has_value()) {
+      return std::string();
+    }
+    return std::string(value->begin(), value->end());
   }
 
   bool HasDatabaseEntry(std::string_view key) {
     base::RunLoop loop;
-    DbStatus status;
-    db_->database().PostTaskWithThisObject(
-        base::BindLambdaForTesting([&](const DomStorageDatabase& db) {
-          std::vector<uint8_t> value;
-          status = db.Get(ToBytes(key), &value);
+    bool has_entry = false;
+    db_->database().PostTaskWithThisObject(base::BindLambdaForTesting(
+        [&](DomStorageDatabase* dom_storage_database) {
+          DomStorageDatabaseLevelDB& db = dom_storage_database->GetLevelDB();
+          has_entry = db.Get(ToBytes(key)).has_value();
           loop.Quit();
         }));
     loop.Run();
-    return status.ok();
+    return has_entry;
   }
 
   void ClearDatabase() {
     base::RunLoop loop;
-    db_->database().PostTaskWithThisObject(
-        base::BindLambdaForTesting([&](DomStorageDatabase* db) {
-          std::unique_ptr<DomStorageBatchOperation> batch =
+    db_->database().PostTaskWithThisObject(base::BindLambdaForTesting(
+        [&](DomStorageDatabase* dom_storage_database) {
+          DomStorageDatabaseLevelDB* db = &dom_storage_database->GetLevelDB();
+          std::unique_ptr<DomStorageBatchOperationLevelDB> batch =
               db->CreateBatchOperation();
           ASSERT_TRUE(batch->DeletePrefixed({}).ok());
           ASSERT_TRUE(batch->Commit().ok());
@@ -1215,24 +1225,7 @@ struct FuzzState {
 
 }  // namespace
 
-class StorageAreaImplCrossAreaCommitsTest
-    : public StorageAreaImplTest,
-      public testing::WithParamInterface<bool> {
- public:
-  StorageAreaImplCrossAreaCommitsTest() {
-    features_.InitWithFeatureState(kCoalesceStorageAreaCommits, GetParam());
-  }
-  ~StorageAreaImplCrossAreaCommitsTest() override = default;
-
- private:
-  base::test::ScopedFeatureList features_;
-};
-
-INSTANTIATE_TEST_SUITE_P(StorageAreaImplTest,
-                         StorageAreaImplCrossAreaCommitsTest,
-                         testing::Bool());
-
-TEST_P(StorageAreaImplCrossAreaCommitsTest, PrefixForkingPsuedoFuzzer) {
+TEST_F(StorageAreaImplTest, PrefixForkingPsuedoFuzzer) {
   const std::string kKey1 = "key1";
   const std::vector<uint8_t> kKey1Vec = ToBytes(kKey1);
   const std::string kKey2 = "key2";
@@ -1343,25 +1336,15 @@ TEST_P(StorageAreaImplCrossAreaCommitsTest, PrefixForkingPsuedoFuzzer) {
   // This section verifies that all areas have committed their changes to
   // the database.
   ASSERT_EQ(areas.size(), delegates.size());
-  if (base::FeatureList::IsEnabled(kCoalesceStorageAreaCommits)) {
-    // Committing just one should commit all.
-    for (size_t i = 0; i < areas.size(); i++) {
-      if (BlockingCommit(&delegates[i], areas[i].get())) {
-        break;
-      }
-    }
-    for (const auto& area : areas) {
-      EXPECT_FALSE(area->has_changes_to_commit());
-    }
-  } else {
-    size_t half = kTotalAreas / 2;
-    for (size_t i = 0; i < half; i++) {
-      BlockingCommit(&delegates[i], areas[i].get());
-    }
 
-    for (size_t i = kTotalAreas - 1; i >= half; i--) {
-      BlockingCommit(&delegates[i], areas[i].get());
+  // Committing just one should commit all.
+  for (size_t i = 0; i < areas.size(); i++) {
+    if (BlockingCommit(&delegates[i], areas[i].get())) {
+      break;
     }
+  }
+  for (const auto& area : areas) {
+    EXPECT_FALSE(area->has_changes_to_commit());
   }
 
   // This section checks the data in the database itself to verify all areas

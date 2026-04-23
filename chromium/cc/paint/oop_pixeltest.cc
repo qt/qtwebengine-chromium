@@ -211,8 +211,7 @@ class OopPixelTest : public testing::Test,
     auto* ri = raster_context_provider_->RasterInterface();
     auto* sii = raster_context_provider_->SharedImageInterface();
     gpu::SharedImageUsageSet flags = gpu::SHARED_IMAGE_USAGE_RASTER_READ |
-                                     gpu::SHARED_IMAGE_USAGE_RASTER_WRITE |
-                                     gpu::SHARED_IMAGE_USAGE_OOP_RASTERIZATION;
+                                     gpu::SHARED_IMAGE_USAGE_RASTER_WRITE;
     auto client_shared_image = sii->CreateSharedImage(
         {viz::SinglePlaneFormat::kRGBA_8888, gfx::Size(width, height),
          options.target_color_params.color_space, flags, "TestLabel"},
@@ -300,8 +299,7 @@ class OopPixelTest : public testing::Test,
     // These SharedImages serve as both the source of reads and destination of
     // writes via the raster interface in these tests.
     gpu::SharedImageUsageSet flags = gpu::SHARED_IMAGE_USAGE_RASTER_READ |
-                                     gpu::SHARED_IMAGE_USAGE_RASTER_WRITE |
-                                     gpu::SHARED_IMAGE_USAGE_OOP_RASTERIZATION;
+                                     gpu::SHARED_IMAGE_USAGE_RASTER_WRITE;
     auto client_shared_image = sii->CreateSharedImage(
         {format, options.resource_size,
          color_space.value_or(options.target_color_params.color_space), flags,
@@ -312,10 +310,11 @@ class OopPixelTest : public testing::Test,
     return client_shared_image;
   }
 
-  void UploadPixels(gpu::raster::RasterInterface* ri,
-                    const scoped_refptr<gpu::ClientSharedImage>& shared_image,
-                    const SkImageInfo& info,
-                    const SkBitmap& bitmap) {
+  gpu::SyncToken UploadPixels(
+      gpu::raster::RasterInterface* ri,
+      const scoped_refptr<gpu::ClientSharedImage>& shared_image,
+      const SkImageInfo& info,
+      const SkBitmap& bitmap) {
     auto ri_access = shared_image->BeginRasterAccess(
         ri, shared_image->creation_sync_token(), /*readonly=*/false);
     ri->WritePixels(shared_image->mailbox(), /*dst_x_offset=*/0,
@@ -323,7 +322,7 @@ class OopPixelTest : public testing::Test,
                     /*texture_target=*/0,
                     SkPixmap(info, bitmap.getPixels(), info.minRowBytes()));
     EXPECT_EQ(ri->GetError(), static_cast<unsigned>(GL_NO_ERROR));
-    gpu::RasterScopedAccess::EndAccess(std::move(ri_access));
+    return gpu::RasterScopedAccess::EndAccess(std::move(ri_access));
   }
 
   void UploadPixelsYUV(
@@ -1339,7 +1338,6 @@ class TestMailboxBacking : public TextureBacking {
 
   const SkImageInfo& GetSkImageInfo() override { return info_; }
   gpu::Mailbox GetMailbox() const override { return mailbox_; }
-  sk_sp<SkImage> GetAcceleratedSkImage() override { return nullptr; }
   sk_sp<SkImage> GetSkImageViaReadback() override { return nullptr; }
   bool readPixels(const SkImageInfo& dstInfo,
                   void* dstPixels,
@@ -1348,7 +1346,6 @@ class TestMailboxBacking : public TextureBacking {
                   int srcY) override {
     return false;
   }
-  void FlushPendingSkiaOps() override {}
 
  private:
   gpu::Mailbox mailbox_;
@@ -2691,12 +2688,15 @@ TEST_F(OopPixelTest, WritePixels) {
       SkImageInfo::MakeN32Premul(dest_size.width(), dest_size.height()),
       expected_pixels.data(), dest_size.width() * sizeof(SkColor));
 
-  UploadPixels(ri, dest_client_si, expected.info(), expected);
+  gpu::SyncToken sync_token =
+      UploadPixels(ri, dest_client_si, expected.info(), expected);
 
+  auto ri_access =
+      dest_client_si->BeginRasterAccess(ri, sync_token, /*readonly=*/true);
   SkBitmap actual =
       ReadbackMailbox(ri, dest_client_si->mailbox(), options.resource_size);
-  gpu::SyncToken sync_token;
-  ri->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
+  sync_token = gpu::RasterScopedAccess::EndAccess(std::move(ri_access));
+
   sii->DestroySharedImage(sync_token, std::move(dest_client_si));
   ExpectEquals(actual, expected);
 }
@@ -2969,9 +2969,7 @@ class OopPathPixelTest : public OopPixelTest,
     PaintFlags flags;
     flags.setStyle(PaintFlags::kFill_Style);
     flags.setColor(SkColors::kGreen);
-    SkPath path;
-    path.addCircle(20, 20, 10);
-    display_item_list->push<DrawPathOp>(path, flags);
+    display_item_list->push<DrawPathOp>(SkPath::Circle(20, 20, 10), flags);
     flags.setColor(SkColors::kBlue);
     display_item_list->push<DrawRectOp>(SkRect::MakeWH(10, 10), flags);
     display_item_list->EndPaintOfUnpaired(options.full_raster_rect);

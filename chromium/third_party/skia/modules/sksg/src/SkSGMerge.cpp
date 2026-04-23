@@ -9,11 +9,11 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkClipOp.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPoint.h"
 #include "include/pathops/SkPathOps.h"
 #include "include/private/base/SkAssert.h"
 #include "modules/sksg/include/SkSGNode.h"
-#include "src/core/SkPathPriv.h"
 
 class SkMatrix;
 
@@ -101,21 +101,16 @@ SkRect Merge::onRevalidate(InvalidationController* ic, const SkMatrix& ctm) {
         }
 
         if (!in_builder) {
-            builder.add(merger.snapshot(), kUnion_SkPathOp);
+            builder.add(merger.detach(), kUnion_SkPathOp);
             in_builder = true;
         }
 
         builder.add(rec.fGeo->asPath(), mode_to_op(rec.fMode));
     }
 
-    if (in_builder) {
-        if (auto result = builder.resolve()) {
-            merger = *result;
-        }
-    }
-
-    fMerged = merger.detach();
-    SkPathPriv::ShrinkToFit(&fMerged);
+    fMerged = in_builder
+        ? builder.resolve().value_or(SkPath())
+        : merger.detach();
 
     return fMerged.computeTightBounds();
 }

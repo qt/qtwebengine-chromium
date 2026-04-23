@@ -204,7 +204,8 @@ void AppendInputToFloatVector(const StrokeInput& input,
 
 }  // namespace
 
-absl::Status StrokeInputBatch::Set(size_t i, const StrokeInput& input) {
+absl::Status StrokeInputBatch::Set(int i, const StrokeInput& input) {
+  ABSL_CHECK_GE(i, 0);
   ABSL_CHECK_LT(i, Size());
   absl::Status status = ValidateSingleInput(input);
   if (!status.ok()) {
@@ -244,7 +245,8 @@ absl::Status StrokeInputBatch::Set(size_t i, const StrokeInput& input) {
   return absl::OkStatus();
 }
 
-StrokeInput StrokeInputBatch::Get(size_t i) const {
+StrokeInput StrokeInputBatch::Get(int i) const {
+  ABSL_CHECK_GE(i, 0);
   ABSL_CHECK_LT(i, Size());
 
   auto data = absl::MakeSpan(data_.Value()).subspan(i * FloatsPerInput());
@@ -266,8 +268,7 @@ absl::Status StrokeInputBatch::Append(const StrokeInput& input) {
   }
 
   if (!IsEmpty()) {
-    if (status = ValidateConsecutiveInputs(Get(Size() - 1), input);
-        !status.ok()) {
+    if (status = ValidateConsecutiveInputs(Last(), input); !status.ok()) {
       return status;
     }
   } else {
@@ -291,7 +292,7 @@ absl::Status StrokeInputBatch::Append(absl::Span<const StrokeInput> inputs) {
     return status;
   }
   if (!IsEmpty()) {
-    if (status = ValidateConsecutiveInputs(Get(Size() - 1), inputs.front());
+    if (status = ValidateConsecutiveInputs(Last(), inputs.front());
         !status.ok()) {
       return status;
     }
@@ -338,8 +339,7 @@ absl::Status StrokeInputBatch::Append(const StrokeInputBatch& inputs) {
     return absl::OkStatus();
   }
 
-  if (absl::Status status =
-          ValidateConsecutiveInputs(Get(Size() - 1), inputs.Get(0));
+  if (absl::Status status = ValidateConsecutiveInputs(Last(), inputs.First());
       !status.ok()) {
     return status;
   }
@@ -357,7 +357,8 @@ absl::Status StrokeInputBatch::Append(const StrokeInputBatch& inputs) {
   return absl::OkStatus();
 }
 
-void StrokeInputBatch::Erase(size_t start, size_t count) {
+void StrokeInputBatch::Erase(int start, int count) {
+  ABSL_DCHECK_GE(start, 0);
   ABSL_CHECK_LE(start, Size());
 
   count = std::min(count, Size() - start);
@@ -376,7 +377,7 @@ void StrokeInputBatch::Erase(size_t start, size_t count) {
 
 Duration32 StrokeInputBatch::GetDuration() const {
   if (IsEmpty()) return Duration32::Zero();
-  return Get(Size() - 1).elapsed_time - Get(0).elapsed_time;
+  return Last().elapsed_time - First().elapsed_time;
 }
 
 void StrokeInputBatch::Transform(const AffineTransform& transform,

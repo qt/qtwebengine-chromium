@@ -207,6 +207,10 @@ String DOMSelection::direction() const {
       DocumentUpdateReason::kSelection);
 
   if (!Selection().IsDirectional() ||
+      (RuntimeEnabledFeatures::SelectionCollapsedDirectionNoneEnabled() &&
+       // Use IsCaret() instead of isCollapsed() so that directionality is still
+       // reported for selections that cross shadow boundaries.
+       Selection().GetSelectionInDOMTree().IsCaret()) ||
       Selection().ComputeVisibleSelectionInDOMTree().IsNone()) {
     return "none";
   }
@@ -718,11 +722,18 @@ void DOMSelection::ClearCachedRangeIfSelectionOfDocument() {
     Selection().ClearDocumentCachedRange();
 }
 
-void DOMSelection::removeRange(Range* range) {
+void DOMSelection::removeRange(Range* range, ExceptionState& exception_state) {
   DCHECK(range);
   TemporaryRange temp_range(this, PrimaryRangeOrNull());
   if (IsAvailable() && range == temp_range.GetRange()) {
     Selection().Clear();
+  } else {
+    UseCounter::Count(DomWindow(),
+                      WebFeature::kSelectionRemoveRangeNotFoundWouldThrow);
+    if (RuntimeEnabledFeatures::SelectionRemoveRangeNotFoundErrorEnabled()) {
+      exception_state.ThrowDOMException(DOMExceptionCode::kNotFoundError,
+                                        "Range not found.");
+    }
   }
 }
 
@@ -874,9 +885,15 @@ String DOMSelection::toString() {
   const EphemeralRange range = Selection()
                                    .ComputeVisibleSelectionInDOMTree()
                                    .ToNormalizedEphemeralRange();
-  return PlainText(
-      range,
-      TextIteratorBehavior::Builder().SetForSelectionToString(true).Build());
+
+  TextIteratorBehavior::Builder behavior_builder;
+  behavior_builder.SetForSelectionToString(true);
+
+  if (RuntimeEnabledFeatures::SelectionToStringSkipsUserSelectNoneEnabled()) {
+    behavior_builder.SetSkipsUnselectableContent(true);
+  }
+
+  return PlainText(range, behavior_builder.Build());
 }
 
 Node* DOMSelection::ShadowAdjustedNode(const Position& position) const {

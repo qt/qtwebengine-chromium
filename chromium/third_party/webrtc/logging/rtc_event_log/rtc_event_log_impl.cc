@@ -181,6 +181,7 @@ RtcEventLogImpl::EventHistories RtcEventLogImpl::ExtractRecentHistories() {
 void RtcEventLogImpl::Log(std::unique_ptr<RtcEvent> event) {
   RTC_CHECK(event);
   MutexLock lock(&mutex_);
+  event->SetTimestamp(env_.clock().CurrentTime());
 
   LogToMemory(std::move(event));
   if (logging_state_started_) {

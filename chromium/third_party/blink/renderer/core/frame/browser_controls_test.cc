@@ -38,6 +38,7 @@
 #include "third_party/blink/public/web/web_settings.h"
 #include "third_party/blink/renderer/core/css/css_variable_data.h"
 #include "third_party/blink/renderer/core/css/document_style_environment_variables.h"
+#include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/qualified_name.h"
 #include "third_party/blink/renderer/core/frame/frame_test_helpers.h"
@@ -367,8 +368,6 @@ TEST_F(BrowserControlsTest, MAYBE(HideBottomControlsOnScrollDown)) {
 }
 
 TEST_F(BrowserControlsTest, MAYBE(DynamicSafeAreaInsetBottomScrollDown)) {
-  ScopedDynamicSafeAreaInsetsForTest dynamic_safe_area_insets(true);
-
   WebViewImpl* web_view = Initialize();
   web_view->GetSettings()->SetDynamicSafeAreaInsetsEnabled(true);
   SetMaxSafeAreaInsets(GetFrame(), gfx::Insets().set_bottom(30));
@@ -402,8 +401,6 @@ TEST_F(BrowserControlsTest, MAYBE(DynamicSafeAreaInsetBottomScrollDown)) {
 }
 
 TEST_F(BrowserControlsTest, SafeAreaInsetAccountsForBrowserZoom) {
-  ScopedDynamicSafeAreaInsetsForTest dynamic_safe_area_insets(true);
-
   WebViewImpl* web_view = Initialize();
   web_view->GetSettings()->SetDynamicSafeAreaInsetsEnabled(true);
   web_view->MainFrameViewWidget()->SetZoomLevel(ZoomFactorToZoomLevel(1.6));
@@ -416,8 +413,6 @@ TEST_F(BrowserControlsTest, SafeAreaInsetAccountsForBrowserZoom) {
 }
 
 TEST_F(BrowserControlsTest, SafeAreaInsetAccountsForDSF) {
-  ScopedDynamicSafeAreaInsetsForTest dynamic_safe_area_insets(true);
-
   WebViewImpl* web_view = Initialize();
   web_view->GetSettings()->SetDynamicSafeAreaInsetsEnabled(true);
   web_view->MainFrameViewWidget()->SetDeviceScaleFactorForTesting(2.5);
@@ -497,8 +492,6 @@ TEST_F(BrowserControlsTest, MAYBE(ShowBottomControlsOnScrollUp)) {
 }
 
 TEST_F(BrowserControlsTest, MAYBE(DynamicSafeAreaInsetBottomScrollUp)) {
-  ScopedDynamicSafeAreaInsetsForTest dynamic_safe_area_insets(true);
-
   WebViewImpl* web_view = Initialize();
   web_view->GetSettings()->SetDynamicSafeAreaInsetsEnabled(true);
   SetMaxSafeAreaInsets(GetFrame(), gfx::Insets().set_bottom(30));
@@ -864,8 +857,6 @@ TEST_F(BrowserControlsTest, MAYBE(ScrollableIframeScrollFirst)) {
 
 TEST_F(BrowserControlsTest,
        MAYBE(SetMaxSafeAreaInsetWithDynamicSafeAreaInsets)) {
-  ScopedDynamicSafeAreaInsetsForTest dynamic_safe_area_insets(true);
-
   WebViewImpl* web_view = Initialize();
   web_view->GetSettings()->SetDynamicSafeAreaInsetsEnabled(true);
   SetMaxSafeAreaInsets(GetFrame(), gfx::Insets().set_bottom(30));
@@ -917,8 +908,6 @@ TEST_F(BrowserControlsTest, MAYBE(SetMaxSafeAreaInsetWithSubFrames)) {
 
 TEST_F(BrowserControlsTest,
        MAYBE(SetMaxSafeAreaInsetWithSubFramesWithDynamicSafeAreaInsets)) {
-  ScopedDynamicSafeAreaInsetsForTest dynamic_safe_area_insets(true);
-
   WebViewImpl* web_view = Initialize("fullscreen_iframe.html");
   web_view->GetSettings()->SetDynamicSafeAreaInsetsEnabled(true);
   SetMaxSafeAreaInsets(GetFrame(), gfx::Insets().set_bottom(30));
@@ -954,8 +943,6 @@ TEST_F(BrowserControlsTest,
 }
 
 TEST_F(BrowserControlsTest, MAYBE(SafeAreaMaxInsetVars)) {
-  ScopedDynamicSafeAreaInsetsForTest dynamic_safe_area_insets(true);
-
   WebViewImpl* web_view = Initialize();
   web_view->GetSettings()->SetDynamicSafeAreaInsetsEnabled(true);
   gfx::Size widget_size = web_view->MainFrameViewWidget()->Size();

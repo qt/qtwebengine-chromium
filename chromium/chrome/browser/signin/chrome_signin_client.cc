@@ -81,6 +81,7 @@
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/profiles/profile_picker.h"
 #endif
 
@@ -185,6 +186,16 @@ std::string HatsSurveyTriggerForAccessPoint(
   }
 }
 
+class ChromeOAuthConsumerRegistry : public signin::OAuthConsumerRegistry {
+ protected:
+  signin::OAuthConsumer GetOAuthConsumerFromIdInternal(
+      signin::OAuthConsumerId oauth_consumer_id) const override {
+    // TODO(crbug.com/425896213): Temporarily notreached until consumers are
+    // added.
+    NOTREACHED();
+  }
+};
+
 }  // namespace
 
 ChromeSigninClient::ChromeSigninClient(Profile* profile)
@@ -195,7 +206,9 @@ ChromeSigninClient::ChromeSigninClient(Profile* profile)
           std::make_unique<WaitForNetworkCallbackHelperChrome>()
 #endif
               ),
-      profile_(profile) {
+      profile_(profile),
+      oauth_consumer_registry_(
+          std::make_unique<ChromeOAuthConsumerRegistry>()) {
   // Makes sure to register groups on Startup if previously set.
   RegisterSyntheticTrialsFromPrefs();
 }
@@ -285,6 +298,11 @@ ChromeSigninClient::GetURLLoaderFactory() {
 network::mojom::CookieManager* ChromeSigninClient::GetCookieManager() {
   return profile_->GetDefaultStoragePartition()
       ->GetCookieManagerForBrowserProcess();
+}
+
+network::mojom::DeviceBoundSessionManager*
+ChromeSigninClient::GetDeviceBoundSessionManager() const {
+  return profile_->GetDefaultStoragePartition()->GetDeviceBoundSessionManager();
 }
 
 network::mojom::NetworkContext* ChromeSigninClient::GetNetworkContext() {
@@ -447,10 +465,6 @@ void ChromeSigninClient::OnPrimaryAccountChanged(
 std::unique_ptr<signin::BoundSessionOAuthMultiLoginDelegate>
 ChromeSigninClient::CreateBoundSessionOAuthMultiloginDelegate() const {
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-  if (!base::FeatureList::IsEnabled(
-          switches::kEnableOAuthMultiloginCookiesBinding)) {
-    return nullptr;
-  }
   BoundSessionCookieRefreshService* bound_session_cookie_refresh_service =
       BoundSessionCookieRefreshServiceFactory::GetForProfile(profile_);
   if (bound_session_cookie_refresh_service) {
@@ -460,6 +474,11 @@ ChromeSigninClient::CreateBoundSessionOAuthMultiloginDelegate() const {
   }
 #endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
   return nullptr;
+}
+
+signin::OAuthConsumer ChromeSigninClient::GetOAuthConsumerFromId(
+    signin::OAuthConsumerId oauth_consumer_id) const {
+  return oauth_consumer_registry_->GetOAuthConsumerFromId(oauth_consumer_id);
 }
 
 SigninClient::SignoutDecision ChromeSigninClient::GetSignoutDecision(
@@ -553,14 +572,17 @@ void ChromeSigninClient::RecordOpenTabCount(
     tabs_count += model->GetTabCount();
   }
 #else   // !BUILDFLAG(IS_ANDROID)
-  for (Browser* browser : *BrowserList::GetInstance()) {
-    if (browser->profile() != profile_) {
-      continue;
-    }
-    if (TabStripModel* tab_strip_model = browser->tab_strip_model()) {
-      tabs_count += tab_strip_model->count();
-    }
-  }
+  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
+      [this, &tabs_count](BrowserWindowInterface* browser) {
+        if (browser->GetProfile() != profile_) {
+          return true;
+        }
+        if (TabStripModel* const tab_strip_model =
+                browser->GetTabStripModel()) {
+          tabs_count += tab_strip_model->count();
+        }
+        return true;
+      });
 #endif  // !BUILDFLAG(IS_ANDROID)
 
   signin_metrics::RecordOpenTabCountOnSignin(consent_level, tabs_count);

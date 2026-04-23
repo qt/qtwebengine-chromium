@@ -1,4 +1,4 @@
-# Copyright 2023 Google LLC
+# Copyright 2023-2025 Google LLC
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,7 +12,7 @@ load(
 
 BENCHMARKS_SLOW_LARGE = {
     "attention": (True, False),
-    "binary": (False, False),
+    "binary": (False, True),
     "depthwise_separable": (False, False),
     "convolution": (True, False),
     "elementwise": (False, False),
@@ -21,22 +21,46 @@ BENCHMARKS_SLOW_LARGE = {
     "layer_norm": (False, False),
     "mobilenet": (False, False),
     "softmax": (False, False),
+    "static_reduce": (False, False),
     "transformer": (True, False),
-    "unary": (False, False),
+    "unary": (False, True),
 }
+
+# Enables usage of WASM SIMD AVX-256 revectorization kernels.
+config_setting(
+    name = "xnn_benchmark_use_xnn_threadpool",
+    define_values = {"xnn_benchmark_use_xnn_threadpool": "true"},
+)
+
+# Disables usage of WASM SIMD AVX-256 revectorization kernels.
+xnnpack_cxx_library(
+    name = "simple_scheduler",
+    testonly = 1,
+    hdrs = ["simple_scheduler.h"],
+    deps = ["//:xnnpack_h"],
+)
 
 xnnpack_cxx_library(
     name = "benchmark",
+    testonly = True,
     srcs = [
         "benchmark.cc",
     ],
     hdrs = [
         "benchmark.h",
     ],
+    local_defines = select({
+        ":xnn_benchmark_use_xnn_threadpool": ["XNN_BENCHMARK_USE_THREADPOOL=1"],
+        "//conditions:default": [],
+    }),
     deps = [
+        ":simple_scheduler",
         "//:XNNPACK",
+        "//:datatype",
+        "//:math",
         "//:subgraph_h",
         "//bench:bench_utils",
+        "//test:replicable_random_device",
         "@com_google_benchmark//:benchmark",
         "@pthreadpool",
     ],
@@ -60,6 +84,7 @@ xnnpack_cxx_library(
     ],
     deps = [
         "//:XNNPACK",
+        "//test:replicable_random_device",
     ],
 )
 
@@ -76,6 +101,7 @@ xnnpack_cxx_library(
             "//:operator_utils",
             "//:xnnpack_h",
             "//bench:bench_utils",
+            "//test:replicable_random_device",
             "@com_google_benchmark//:benchmark",
         ],
         alwayslink = True,

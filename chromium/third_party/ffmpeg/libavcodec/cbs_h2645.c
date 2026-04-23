@@ -1086,6 +1086,7 @@ static int cbs_h266_read_nal_unit(CodedBitstreamContext *ctx,
 {
     GetBitContext gbc;
     int err;
+    CodedBitstreamH266Context *h266 = ctx->priv_data;
 
     err = init_get_bits8(&gbc, unit->data, unit->data_size);
     if (err < 0)
@@ -1201,7 +1202,13 @@ static int cbs_h266_read_nal_unit(CodedBitstreamContext *ctx,
                 err = cbs_h266_replace_ph(ctx, unit, &slice->header.sh_picture_header);
                 if (err < 0)
                     return err;
+                slice->ph_ref = NULL;
+            } else {
+                slice->ph_ref = av_refstruct_ref(h266->ph_ref);
             }
+            slice->ph     = h266->ph;
+            slice->pps    = av_refstruct_ref(h266->pps[slice->ph->ph_pic_parameter_set_id]);
+            slice->sps    = av_refstruct_ref(h266->sps[slice->pps->pps_seq_parameter_set_id]);
 
             slice->header_size = pos / 8;
             slice->data_size = len - pos / 8;
@@ -1905,7 +1912,7 @@ static int cbs_h2645_assemble_fragment(CodedBitstreamContext *ctx,
     return 0;
 }
 
-static void cbs_h264_flush(CodedBitstreamContext *ctx)
+static av_cold void cbs_h264_flush(CodedBitstreamContext *ctx)
 {
     CodedBitstreamH264Context *h264 = ctx->priv_data;
 
@@ -1919,7 +1926,7 @@ static void cbs_h264_flush(CodedBitstreamContext *ctx)
     h264->last_slice_nal_unit_type = 0;
 }
 
-static void cbs_h264_close(CodedBitstreamContext *ctx)
+static av_cold void cbs_h264_close(CodedBitstreamContext *ctx)
 {
     CodedBitstreamH264Context *h264 = ctx->priv_data;
     int i;
@@ -1932,7 +1939,7 @@ static void cbs_h264_close(CodedBitstreamContext *ctx)
         av_refstruct_unref(&h264->pps[i]);
 }
 
-static void cbs_h265_flush(CodedBitstreamContext *ctx)
+static av_cold void cbs_h265_flush(CodedBitstreamContext *ctx)
 {
     CodedBitstreamH265Context *h265 = ctx->priv_data;
 
@@ -1948,7 +1955,7 @@ static void cbs_h265_flush(CodedBitstreamContext *ctx)
     h265->active_pps = NULL;
 }
 
-static void cbs_h265_close(CodedBitstreamContext *ctx)
+static av_cold void cbs_h265_close(CodedBitstreamContext *ctx)
 {
     CodedBitstreamH265Context *h265 = ctx->priv_data;
     int i;
@@ -1963,7 +1970,7 @@ static void cbs_h265_close(CodedBitstreamContext *ctx)
         av_refstruct_unref(&h265->pps[i]);
 }
 
-static void cbs_h266_flush(CodedBitstreamContext *ctx)
+static av_cold void cbs_h266_flush(CodedBitstreamContext *ctx)
 {
     CodedBitstreamH266Context *h266 = ctx->priv_data;
 
@@ -1976,7 +1983,7 @@ static void cbs_h266_flush(CodedBitstreamContext *ctx)
     av_refstruct_unref(&h266->ph_ref);
 }
 
-static void cbs_h266_close(CodedBitstreamContext *ctx)
+static av_cold void cbs_h266_close(CodedBitstreamContext *ctx)
 {
     CodedBitstreamH266Context *h266 = ctx->priv_data;
 
@@ -1990,7 +1997,7 @@ static void cbs_h264_free_sei(AVRefStructOpaque unused, void *content)
     ff_cbs_sei_free_message_list(&sei->message_list);
 }
 
-static const CodedBitstreamUnitTypeDescriptor cbs_h264_unit_types[] = {
+static CodedBitstreamUnitTypeDescriptor cbs_h264_unit_types[] = {
     CBS_UNIT_TYPE_POD(H264_NAL_SPS,     H264RawSPS),
     CBS_UNIT_TYPE_POD(H264_NAL_SPS_EXT, H264RawSPSExtension),
 
@@ -2016,7 +2023,7 @@ static void cbs_h265_free_sei(AVRefStructOpaque unused, void *content)
     ff_cbs_sei_free_message_list(&sei->message_list);
 }
 
-static const CodedBitstreamUnitTypeDescriptor cbs_h265_unit_types[] = {
+static CodedBitstreamUnitTypeDescriptor cbs_h265_unit_types[] = {
     CBS_UNIT_TYPE_INTERNAL_REF(HEVC_NAL_VPS, H265RawVPS, extension_data.data),
     CBS_UNIT_TYPE_INTERNAL_REF(HEVC_NAL_SPS, H265RawSPS, extension_data.data),
     CBS_UNIT_TYPE_INTERNAL_REF(HEVC_NAL_PPS, H265RawPPS, extension_data.data),
@@ -2037,13 +2044,23 @@ static const CodedBitstreamUnitTypeDescriptor cbs_h265_unit_types[] = {
     CBS_UNIT_TYPE_END_OF_LIST
 };
 
+static void cbs_h266_free_slice(AVRefStructOpaque unused, void *content)
+{
+    H266RawSlice *slice = content;
+    av_buffer_unref(&slice->data_ref);
+    av_refstruct_unref(&slice->sps);
+    av_refstruct_unref(&slice->pps);
+    av_refstruct_unref(&slice->ph_ref);
+}
+
+
 static void cbs_h266_free_sei(AVRefStructOpaque unused, void *content)
 {
     H266RawSEI *sei = content;
     ff_cbs_sei_free_message_list(&sei->message_list);
 }
 
-static const CodedBitstreamUnitTypeDescriptor cbs_h266_unit_types[] = {
+static CodedBitstreamUnitTypeDescriptor cbs_h266_unit_types[] = {
     CBS_UNIT_TYPE_INTERNAL_REF(VVC_DCI_NUT, H266RawDCI, extension_data.data),
     CBS_UNIT_TYPE_INTERNAL_REF(VVC_OPI_NUT, H266RawOPI, extension_data.data),
     CBS_UNIT_TYPE_INTERNAL_REF(VVC_VPS_NUT, H266RawVPS, extension_data.data),
@@ -2065,11 +2082,12 @@ static const CodedBitstreamUnitTypeDescriptor cbs_h266_unit_types[] = {
     CBS_UNIT_TYPE_POD(VVC_PH_NUT , H266RawPH),
     CBS_UNIT_TYPE_POD(VVC_AUD_NUT, H266RawAUD),
 
-    CBS_UNIT_RANGE_INTERNAL_REF(VVC_TRAIL_NUT, VVC_RASL_NUT,
-                                H266RawSlice, data),
-
-    CBS_UNIT_RANGE_INTERNAL_REF(VVC_IDR_W_RADL, VVC_GDR_NUT,
-                                H266RawSlice, data),
+    CBS_UNIT_TYPES_COMPLEX((VVC_TRAIL_NUT, VVC_STSA_NUT, VVC_RADL_NUT),
+                           H266RawSlice, cbs_h266_free_slice),
+    CBS_UNIT_TYPES_COMPLEX((VVC_RASL_NUT, VVC_IDR_W_RADL, VVC_IDR_N_LP),
+                           H266RawSlice, cbs_h266_free_slice),
+    CBS_UNIT_TYPES_COMPLEX((VVC_CRA_NUT, VVC_GDR_NUT),
+                           H266RawSlice, cbs_h266_free_slice),
 
     CBS_UNIT_TYPES_COMPLEX((VVC_PREFIX_SEI_NUT, VVC_SUFFIX_SEI_NUT),
                            H266RawSEI, cbs_h266_free_sei),

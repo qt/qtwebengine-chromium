@@ -86,7 +86,6 @@ ASSERT_SIZE(ShapeResultCharacterData, SameSizeAsShapeResultCharacterData);
 struct SameSizeAsShapeResult {
   Vector<int> character_position_;
   Vector<UntracedMember<void*>, 1> runs_;
-  UntracedMember<void*> deprecated_ink_bounds_;
   float width;
   unsigned start_index_;
   unsigned bitfields;
@@ -429,7 +428,6 @@ ShapeResult::ShapeResult(const ShapeResult& other)
 ShapeResult::~ShapeResult() = default;
 
 void ShapeResult::Trace(Visitor* visitor) const {
-  visitor->Trace(deprecated_ink_bounds_);
   visitor->Trace(runs_);
   visitor->Trace(character_position_);
 }
@@ -950,6 +948,20 @@ float ShapeResult::ForEachGraphemeClusters(const StringView& text,
   return advance_so_far;
 }
 
+GlyphData ShapeResult::EmphasisMarkGlyphData(
+    const FontDescription& font_description) const {
+  for (const auto& run : runs_) {
+    DCHECK(run->font_data_);
+    if (run->glyph_data_.IsEmpty()) {
+      continue;
+    }
+    return GlyphData(run->glyph_data_[0].glyph,
+                     run->font_data_->EmphasisMarkFontData(font_description),
+                     run->CanvasRotation());
+  }
+  return GlyphData();
+}
+
 namespace {
 
 // Checks if the given script is a cursive script.
@@ -971,12 +983,9 @@ inline bool IsCursiveScript(hb_script_t script) {
 }
 }  // anonymous namespace
 
-// TODO(kojii): VC2015 fails to explicit instantiation of a member function.
-// Typed functions + this private function are to instantiate instances.
-template <typename TextContainerType>
-float ShapeResult::ApplySpacingImpl(
-    ShapeResultSpacing<TextContainerType>& spacing,
-    int text_start_offset) {
+float ShapeResult::ApplySpacingOrExpansion(ShapeResultSpacing& spacing,
+                                           bool is_expansion,
+                                           int text_start_offset) {
   float offset = 0;
   float total_advance = 0;
   TextRunLayoutUnit space;
@@ -996,11 +1005,18 @@ float ShapeResult::ApplySpacingImpl(
         continue;
       }
 
-      typename ShapeResultSpacing<TextContainerType>::ComputeSpacingParameters
-          parameters{.index = run_start_index + glyph_data.character_index,
-                     .original_advance = glyph_data.advance};
-      space = spacing.ComputeSpacing(parameters, offset,
-                                     IsCursiveScript(run->script_));
+      ShapeResultSpacing::ComputeSpacingParameters parameters{
+          .index = run_start_index + glyph_data.character_index,
+          .original_advance = glyph_data.advance};
+      if (is_expansion) {
+        auto result = spacing.ComputeExpansion(parameters.index,
+                                               IsCursiveScript(run->script_));
+        offset = result.first;
+        space = result.second;
+      } else {
+        space = spacing.ComputeSpacing(parameters, offset,
+                                       IsCursiveScript(run->script_));
+      }
       glyph_data.AddAdvance(space);
       total_advance_for_run += glyph_data.advance;
 
@@ -1023,24 +1039,24 @@ float ShapeResult::ApplySpacingImpl(
   return space;
 }
 
-float ShapeResult::ApplySpacing(ShapeResultSpacing<String>& spacing,
+float ShapeResult::ApplySpacing(ShapeResultSpacing& spacing,
                                 int text_start_offset) {
   // For simplicity, we apply spacing once only. If you want to do multiple
   // time, please get rid of below |DCHECK()|.
   DCHECK(!is_applied_spacing_) << this;
   is_applied_spacing_ = true;
-  return ApplySpacingImpl(spacing, text_start_offset);
+  return ApplySpacingOrExpansion(spacing, /* is_expansion */ false,
+                                 text_start_offset);
 }
 
-ShapeResult* ShapeResult::ApplySpacingToCopy(
-    ShapeResultSpacing<TextRun>& spacing,
-    const TextRun& run) const {
-  unsigned index_of_sub_run = spacing.Text().IndexOfSubRun(run);
-  DCHECK_NE(std::numeric_limits<unsigned>::max(), index_of_sub_run);
-  ShapeResult* result = MakeGarbageCollected<ShapeResult>(*this);
-  if (index_of_sub_run != std::numeric_limits<unsigned>::max())
-    result->ApplySpacingImpl(spacing, index_of_sub_run);
-  return result;
+float ShapeResult::ApplyExpansion(ShapeResultSpacing& spacing,
+                                  int text_start_offset) {
+  // For simplicity, we apply spacing once only. If you want to do multiple
+  // time, please get rid of below |DCHECK()|.
+  DCHECK(!is_applied_spacing_) << this;
+  is_applied_spacing_ = true;
+  return ApplySpacingOrExpansion(spacing, /* is_expansion */ true,
+                                 text_start_offset);
 }
 
 void ShapeResult::ApplyLeadingExpansion(LayoutUnit expansion) {
@@ -2278,10 +2294,7 @@ unsigned ShapeResult::CachedPreviousSafeToBreakOffset(unsigned offset) const {
   }
 
   // Previous safe break is at the start of the run.
-  return RuntimeEnabledFeatures::
-                 ShapeResultCachedPreviousSafeToBreakOffsetEnabled()
-             ? start_index_
-             : 0;
+  return start_index_;
 }
 
 void ShapeResult::AddRunInfoRanges(const ShapeResultRun& run_info,

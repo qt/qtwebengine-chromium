@@ -27,8 +27,10 @@ ClockDriftSmoother::ClockDriftSmoother(Clock::duration time_constant)
 
 ClockDriftSmoother::~ClockDriftSmoother() = default;
 
-Clock::duration ClockDriftSmoother::Current() const {
-  OSP_CHECK_NE(last_update_time_, kNullTime);
+std::optional<Clock::duration> ClockDriftSmoother::Current() const {
+  if (last_update_time_ == kNullTime) {
+    return std::nullopt;
+  }
   return Clock::duration(
       rounded_saturate_cast<Clock::duration::rep>(estimated_tick_offset_));
 }
@@ -45,32 +47,30 @@ void ClockDriftSmoother::Update(Clock::time_point now,
   OSP_CHECK_NE(now, kNullTime);
   if (last_update_time_ == kNullTime) {
     Reset(now, measured_offset);
-  } else if (now < last_update_time_) {
+    return;
+  }
+
+  if (now < last_update_time_) {
     // `now` is not monotonically non-decreasing.
     OSP_NOTREACHED();
-  } else {
-    const double elapsed_ticks =
-        static_cast<double>((now - last_update_time_).count());
-    last_update_time_ = now;
-    // Compute a weighted-average between the last estimate and
-    // `measured_offset`. The more time that has elasped since the last call to
-    // Update(), the more-heavily `measured_offset` will be weighed.
-    const double weight =
-        elapsed_ticks / (elapsed_ticks + time_constant_.count());
-    estimated_tick_offset_ =
-        weight * static_cast<double>(measured_offset.count()) +
-        (1.0 - weight) * estimated_tick_offset_;
-
-    // If after calculation the current offset is lower than the weighted
-    // average, we can simply use it and eliminate some of the error due to
-    // transmission time.
-    if (measured_offset < Current()) {
-      Reset(now, measured_offset);
-    }
-
-    OSP_VLOG << "Local clock is ahead of the remote clock by: measured = "
-             << measured_offset << ", " << "filtered = " << Current() << ".";
   }
+
+  const double elapsed_ticks =
+      static_cast<double>((now - last_update_time_).count());
+  last_update_time_ = now;
+
+  // This is a standard exponential moving average (EMA) filter.
+  // The alpha value is calculated such that the filter has the desired time
+  // constant.
+  const double alpha = 1.0 - std::exp(-elapsed_ticks / time_constant_.count());
+  estimated_tick_offset_ =
+      alpha * static_cast<double>(measured_offset.count()) +
+      (1.0 - alpha) * estimated_tick_offset_;
+
+  const auto current = Current();
+  OSP_VLOG << "Local clock is ahead of the remote clock by: measured = "
+           << measured_offset << ", "
+           << "filtered = " << (current ? ToString(*current) : "null") << ".";
 }
 
 // static

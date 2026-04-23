@@ -15,7 +15,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("dialogs") {
+devtools_ui_module("dialogs") {
   sources = [
     "ButtonDialog.ts",
     "Dialog.ts",
@@ -23,7 +23,7 @@ devtools_module("dialogs") {
   ]
   deps = [
     "../../../core/platform:bundle",
-    "../../../services/window_bounds:bundle",
+    "../../legacy:bundle",
     "../buttons:bundle",
     "../helpers:bundle",
     "../render_coordinator:bundle",
@@ -41,7 +41,7 @@ devtools_entrypoint("bundle") {
   visibility = [ "*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
@@ -53,8 +53,8 @@ ts_library("unittests") {
   deps = [
     ":bundle",
     "../../../core/platform:bundle",
-    "../../../services/window_bounds:bundle",
     "../../../testing",
+    "../../legacy:bundle",
     "../render_coordinator:bundle",
   ]
 }

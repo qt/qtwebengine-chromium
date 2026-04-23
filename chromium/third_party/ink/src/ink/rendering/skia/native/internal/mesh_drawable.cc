@@ -24,6 +24,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "ink/brush/color_function.h"
 #include "ink/rendering/skia/native/internal/mesh_uniform_data.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkBlender.h"
@@ -81,20 +82,22 @@ absl::Status ValidatePartitions(
 
 absl::StatusOr<MeshDrawable> MeshDrawable::Create(
     sk_sp<SkMeshSpecification> specification, sk_sp<SkBlender> blender,
-    sk_sp<SkShader> shader, absl::InlinedVector<Partition, 1> partitions,
-    std::optional<MeshUniformData> starting_uniforms) {
+    sk_sp<SkShader> shader, absl::Span<const ColorFunction> color_functions,
+    absl::InlinedVector<Partition, 1> partitions,
+    std::optional<MeshUniformData> uniform_data) {
   ABSL_CHECK_NE(specification, nullptr);
-
-  MeshUniformData uniform_data = starting_uniforms.has_value()
-                                     ? *std::move(starting_uniforms)
-                                     : MeshUniformData(*specification);
+  if (!uniform_data.has_value()) {
+    uniform_data.emplace(*specification);
+  }
   absl::Status status =
-      ValidatePartitions(specification, partitions, uniform_data.Get());
+      ValidatePartitions(specification, partitions, uniform_data->Get());
   if (!status.ok()) return status;
 
   return MeshDrawable(std::move(specification), std::move(blender),
-                      std::move(shader), std::move(partitions),
-                      std::move(uniform_data));
+                      std::move(shader),
+                      absl::InlinedVector<ColorFunction, 1>(
+                          color_functions.begin(), color_functions.end()),
+                      std::move(partitions), *std::move(uniform_data));
 }
 
 void MeshDrawable::Draw(SkCanvas& canvas) const {
@@ -129,13 +132,15 @@ void MeshDrawable::Draw(SkCanvas& canvas) const {
   }
 }
 
-MeshDrawable::MeshDrawable(sk_sp<SkMeshSpecification> specification,
-                           sk_sp<SkBlender> blender, sk_sp<SkShader> shader,
-                           absl::InlinedVector<Partition, 1> partitions,
-                           MeshUniformData uniform_data)
+MeshDrawable::MeshDrawable(
+    sk_sp<SkMeshSpecification> specification, sk_sp<SkBlender> blender,
+    sk_sp<SkShader> shader,
+    absl::InlinedVector<ColorFunction, 1> color_functions,
+    absl::InlinedVector<Partition, 1> partitions, MeshUniformData uniform_data)
     : specification_(std::move(specification)),
       blender_(std::move(blender)),
       shader_(std::move(shader)),
+      color_functions_(std::move(color_functions)),
       partitions_(std::move(partitions)),
       uniform_data_(std::move(uniform_data)) {}
 

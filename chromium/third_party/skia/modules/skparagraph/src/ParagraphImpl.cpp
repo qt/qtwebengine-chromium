@@ -355,8 +355,9 @@ Cluster::Cluster(ParagraphImpl* owner,
     size_t whiteSpacesBreakLen = 0;
     size_t intraWordBreakLen = 0;
 
-    const char* ch = text.begin();
-    if (text.end() - ch == 1 && *(const unsigned char*)ch <= 0x7F) {
+    const char* ch = text.data();
+    const char* chEnd = ch + text.size();
+    if (chEnd - ch == 1 && *(const unsigned char*)ch <= 0x7F) {
         // I am not even sure it's worth it if we do not save a unicode call
         if (is_ascii_7bit_space(*ch)) {
             ++whiteSpacesBreakLen;
@@ -422,12 +423,15 @@ void ParagraphImpl::applySpacingAndBuildClusterTable() {
         // We have to letter space the entire paragraph (second most common case)
         auto& run = fRuns[0];
         auto& style = fTextStyles[0].fStyle;
-        run.addSpacesEvenly(style.getLetterSpacing());
+        run.addLetterSpacesEvenly(style.getLetterSpacing());
+
         this->buildClusterTable();
+
         // This is something Flutter requires
         for (auto& cluster : fClusters) {
-            cluster.setHalfLetterSpacing(style.getLetterSpacing()/2);
+            cluster.setHalfLetterSpacing(style.getLetterSpacing() / 2);
         }
+
         return;
     }
 
@@ -484,9 +488,10 @@ void ParagraphImpl::applySpacingAndBuildClusterTable() {
                     wordSpacingPending = false;
                 }
             }
-            // Process letter spacing
-            if (currentStyle->fStyle.getLetterSpacing() != 0) {
-                shift += run.addSpacesEvenly(currentStyle->fStyle.getLetterSpacing(), cluster);
+            // Process letter spacing (it will be cancelled out for Script languages
+            if ((currentStyle->fStyle.getLetterSpacing() != 0)) {
+                shift +=
+                        run.addLetterSpacesEvenly(currentStyle->fStyle.getLetterSpacing(), cluster);
             }
 
             if (soFarWhitespacesOnly && !cluster->isWhitespaceBreak()) {

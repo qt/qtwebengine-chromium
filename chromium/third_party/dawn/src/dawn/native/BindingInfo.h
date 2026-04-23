@@ -122,8 +122,11 @@ DAWN_SERIALIZABLE(struct, SamplerBindingInfo, SAMPLER_BINDING_INFO_MEMBER) {
 };
 #undef SAMPLER_BINDING_INFO_MEMBER
 
-// A mirror of wgpu::ExternalTextureBindingLayout for use inside dawn::native.
-#define EXTERNAL_TEXTURE_BINDING_INFO_MEMBER(X)  // ExternalTextureBindingInfo has no member
+// The binding layout for ExternalTexture contains the indices of the expanded entries for it.
+#define EXTERNAL_TEXTURE_BINDING_INFO_MEMBER(X) \
+    X(BindingIndex, metadata)                   \
+    X(BindingIndex, plane0)                     \
+    X(BindingIndex, plane1)
 DAWN_SERIALIZABLE(struct, ExternalTextureBindingInfo, EXTERNAL_TEXTURE_BINDING_INFO_MEMBER){};
 #undef EXTERNAL_TEXTURE_BINDING_INFO_MEMBER
 
@@ -134,15 +137,17 @@ DAWN_SERIALIZABLE(struct, InputAttachmentBindingInfo, INPUT_ATTACHMENT_BINDING_I
 
 // A mirror of wgpu::StaticSamplerBindingLayout for use inside dawn::native.
 struct StaticSamplerBindingInfo {
+    // Note that this doesn't initialize the BindingIndex member as it is computed after sorting the
+    // entries in the BindGroupLayout.
     static StaticSamplerBindingInfo From(const StaticSamplerBindingLayout& layout);
 
-    // Holds a ref instead of an unowned pointer.
+    // Hold a ref as the sampler to keep it alive even if it is freed after BGL creation.
     Ref<SamplerBase> sampler;
-    // Holds the BindingNumber of the single texture with which this sampler is
-    // statically paired, if any.
-    BindingNumber sampledTextureBinding;
+    // Holds the BindingIndex of the single texture with which this sampler is statically paired, if
+    // any.
+    BindingIndex sampledTextureIndex = BindingIndex(0);
     // Whether this instance is statically paired with a single texture.
-    bool isUsedForSingleTextureBinding = false;
+    bool isUsedForSingleTexture = false;
 
     bool operator==(const StaticSamplerBindingInfo& other) const = default;
 };

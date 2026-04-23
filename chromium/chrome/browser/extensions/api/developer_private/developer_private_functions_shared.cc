@@ -7,6 +7,7 @@
 #include "base/barrier_closure.h"
 #include "base/files/file_util.h"
 #include "base/memory/ref_counted.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
@@ -22,11 +23,8 @@
 #include "chrome/browser/extensions/extension_management.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/install_verifier.h"
+#include "chrome/browser/extensions/install_verifier_factory.h"
 #include "chrome/browser/extensions/manifest_v2_experiment_manager.h"
-#include "chrome/browser/extensions/permissions/permissions_updater.h"
-#include "chrome/browser/extensions/permissions/scripting_permissions_modifier.h"
-#include "chrome/browser/extensions/permissions/site_permissions_helper.h"
 #include "chrome/browser/extensions/sync/account_extension_tracker.h"
 #include "chrome/browser/extensions/sync/extension_sync_util.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
@@ -36,6 +34,7 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/supervised_user/supervised_user_browser_utils.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
+#include "chrome/browser/ui/extensions/extensions_dialogs.h"
 #include "chrome/browser/ui/safety_hub/menu_notification_service_factory.h"
 #include "chrome/browser/ui/toolbar/toolbar_actions_model.h"
 #include "chrome/common/pref_names.h"
@@ -49,8 +48,12 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/file_highlighter.h"
+#include "extensions/browser/install_verifier.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/path_util.h"
+#include "extensions/browser/permissions/permissions_updater.h"
+#include "extensions/browser/permissions/scripting_permissions_modifier.h"
+#include "extensions/browser/permissions/site_permissions_helper.h"
 #include "extensions/browser/permissions_manager.h"
 #include "extensions/browser/ui_util.h"
 #include "extensions/browser/user_script_manager.h"
@@ -68,7 +71,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/extensions/extensions_dialogs.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "extensions/browser/ui_util.h"
 #include "ui/base/base_window.h"
@@ -139,7 +141,8 @@ void PerformVerificationCheck(content::BrowserContext* context) {
   }
 
   if (should_do_verification_check) {
-    InstallVerifier::Get(context)->VerifyAllExtensions();
+    InstallVerifierFactory::GetForBrowserContext(context)
+        ->VerifyAllExtensions();
   }
 }
 
@@ -148,7 +151,7 @@ std::string GetETldPlusOne(const GURL& site) {
   std::string etld_plus_one =
       net::registry_controlled_domains::GetDomainAndRegistry(
           site, net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
-  return etld_plus_one.empty() ? site.host() : etld_plus_one;
+  return etld_plus_one.empty() ? site.GetHost() : etld_plus_one;
 }
 
 developer::SiteInfo CreateSiteInfo(const std::string& site,
@@ -293,7 +296,7 @@ bool MatchesExtension(ui::FileInfo& file_info,
 namespace api {
 
 void DeveloperPrivateAPIFunction::GetManifestError(
-    const std::string& error,
+    const std::u16string& error,
     const base::FilePath& extension_path,
     GetManifestErrorCallback callback) {
   size_t line = 0u;
@@ -306,7 +309,7 @@ void DeveloperPrivateAPIFunction::GetManifestError(
   // it's ready).
   //
   // This regex call can fail, but if it does, we just don't highlight anything.
-  re2::RE2::FullMatch(error, regex, &line, &column);
+  re2::RE2::FullMatch(base::UTF16ToUTF8(error), regex, &line, &column);
 
   // This will read the manifest and call AddFailure with the read manifest
   // contents.
@@ -319,7 +322,7 @@ void DeveloperPrivateAPIFunction::GetManifestError(
 
 developer::LoadError DeveloperPrivateAPIFunction::CreateLoadError(
     const base::FilePath& file_path,
-    const std::string& error,
+    const std::u16string& error,
     size_t line_number,
     const std::string& manifest,
     const DeveloperPrivateAPI::UnpackedRetryId& retry_guid) {
@@ -327,7 +330,7 @@ developer::LoadError DeveloperPrivateAPIFunction::CreateLoadError(
 
   SourceHighlighter highlighter(manifest, line_number);
   developer::LoadError response;
-  response.error = error;
+  response.error = base::UTF16ToUTF8(error);
   response.path = base::UTF16ToUTF8(prettified_path.LossyDisplayName());
   response.retry_guid = retry_guid;
 
@@ -352,6 +355,14 @@ const Extension* DeveloperPrivateAPIFunction::GetEnabledExtensionById(
   return ExtensionRegistry::Get(browser_context())
       ->enabled_extensions()
       .GetByID(id);
+}
+
+DeveloperPrivateAPIFunction::ResponseValue
+DeveloperPrivateAPIFunction::LogNoSuchExtensionFoundAndReturn() {
+  base::UmaHistogramSparse(
+      "Extensions.Functions.DeveloperPrivate.NoSuchExtensionErrorThrown",
+      histogram_value());
+  return Error(ErrorUtils::FormatErrorMessage(kNoSuchExtensionError, name()));
 }
 
 DeveloperPrivateAutoUpdateFunction::~DeveloperPrivateAutoUpdateFunction() =
@@ -436,7 +447,7 @@ DeveloperPrivateGetExtensionInfoFunction::Run() {
 void DeveloperPrivateGetExtensionInfoFunction::OnInfosGenerated(
     ExtensionInfoGenerator::ExtensionInfoList list) {
   DCHECK_LE(1u, list.size());
-  Respond(list.empty() ? Error(kNoSuchExtensionError)
+  Respond(list.empty() ? LogNoSuchExtensionFoundAndReturn()
                        : WithArguments(list[0].ToValue()));
 }
 
@@ -454,7 +465,7 @@ DeveloperPrivateGetExtensionSizeFunction::Run() {
 
   const Extension* extension = GetExtensionById(params->id);
   if (!extension) {
-    return RespondNow(Error(kNoSuchExtensionError));
+    return RespondNow(LogNoSuchExtensionFoundAndReturn());
   }
 
   extensions::path_util::CalculateAndFormatExtensionDirectorySize(
@@ -530,7 +541,7 @@ DeveloperPrivateUpdateExtensionConfigurationFunction::Run() {
 
   const Extension* extension = GetExtensionById(update.extension_id);
   if (!extension) {
-    return RespondNow(Error(kNoSuchExtensionError));
+    return RespondNow(LogNoSuchExtensionFoundAndReturn());
   }
 
   // The chrome://extensions page uses toggles which, when dragged, do not
@@ -633,7 +644,7 @@ ExtensionFunction::ResponseAction DeveloperPrivateReloadFunction::Run() {
 
   const Extension* extension = GetExtensionById(params->extension_id);
   if (!extension) {
-    return RespondNow(Error(kNoSuchExtensionError));
+    return RespondNow(LogNoSuchExtensionFoundAndReturn());
   }
 
   reloading_extension_path_ = extension->path();
@@ -688,7 +699,7 @@ void DeveloperPrivateReloadFunction::OnShutdown(ExtensionRegistry* registry) {
 void DeveloperPrivateReloadFunction::OnLoadFailure(
     content::BrowserContext* browser_context,
     const base::FilePath& file_path,
-    const std::string& error) {
+    const std::u16string& error) {
   if (file_path == reloading_extension_path_) {
     // Reload failed - create an error to pass back to the extension.
     GetManifestError(
@@ -701,7 +712,7 @@ void DeveloperPrivateReloadFunction::OnLoadFailure(
 
 void DeveloperPrivateReloadFunction::OnGotManifestError(
     const base::FilePath& file_path,
-    const std::string& error,
+    const std::u16string& error,
     size_t line_number,
     const std::string& manifest) {
   DeveloperPrivateAPI::UnpackedRetryId retry_guid =
@@ -851,17 +862,6 @@ void DeveloperPrivateLoadUnpackedFunction::FileSelectionCanceled() {
 
 void DeveloperPrivateLoadUnpackedFunction::StartFileLoad(
     base::FilePath file_path) {
-#if BUILDFLAG(IS_ANDROID)
-  // TODO(b/433416481): Make SelectFileDialog return a virtual document path and
-  // remove this code.
-  std::optional<base::FilePath> vp =
-      base::ResolveToVirtualDocumentPath(file_path);
-  if (!vp) {
-    OnLoadComplete(nullptr, file_path, "Failed to resolve (removed?)");
-    return;
-  }
-  file_path = *vp;
-#endif  // BUILDFLAG(IS_ANDROID)
   scoped_refptr<UnpackedInstaller> installer(
       UnpackedInstaller::Create(browser_context()));
   installer->set_be_noisy_on_failure(!fail_quietly_);
@@ -876,14 +876,14 @@ void DeveloperPrivateLoadUnpackedFunction::StartFileLoad(
 void DeveloperPrivateLoadUnpackedFunction::OnLoadComplete(
     const Extension* extension,
     const base::FilePath& file_path,
-    const std::string& error) {
+    const std::u16string& error) {
   if (extension) {
     Finish(NoArguments());
     return;
   }
 
   if (!populate_error_) {
-    Finish(Error(error));
+    Finish(Error(base::UTF16ToUTF8(error)));
     return;
   }
 
@@ -895,7 +895,7 @@ void DeveloperPrivateLoadUnpackedFunction::OnLoadComplete(
 
 void DeveloperPrivateLoadUnpackedFunction::OnGotManifestError(
     const base::FilePath& file_path,
-    const std::string& error,
+    const std::u16string& error,
     size_t line_number,
     const std::string& manifest) {
   DCHECK(!retry_guid_.empty());
@@ -1036,7 +1036,7 @@ ExtensionFunction::ResponseAction DeveloperPrivateShowOptionsFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(params);
   const Extension* extension = GetEnabledExtensionById(params->extension_id);
   if (!extension) {
-    return RespondNow(Error(kNoSuchExtensionError));
+    return RespondNow(LogNoSuchExtensionFoundAndReturn());
   }
 
   if (OptionsPageInfo::GetOptionsPage(extension).is_empty()) {
@@ -1060,7 +1060,7 @@ ExtensionFunction::ResponseAction DeveloperPrivateShowPathFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(params);
   const Extension* extension = GetExtensionById(params->extension_id);
   if (!extension) {
-    return RespondNow(Error(kNoSuchExtensionError));
+    return RespondNow(LogNoSuchExtensionFoundAndReturn());
   }
 
   // We explicitly show manifest.json in order to work around an issue in OSX
@@ -1128,7 +1128,7 @@ DeveloperPrivateAddHostPermissionFunction::Run() {
 
   const Extension* extension = GetExtensionById(params->extension_id);
   if (!extension) {
-    return RespondNow(Error(kNoSuchExtensionError));
+    return RespondNow(LogNoSuchExtensionFoundAndReturn());
   }
 
   if (!PermissionsManager::Get(browser_context())
@@ -1173,7 +1173,7 @@ DeveloperPrivateRemoveHostPermissionFunction::Run() {
 
   const Extension* extension = GetExtensionById(params->extension_id);
   if (!extension) {
-    return RespondNow(Error(kNoSuchExtensionError));
+    return RespondNow(LogNoSuchExtensionFoundAndReturn());
   }
 
   PermissionsManager* manager = PermissionsManager::Get(browser_context());
@@ -1502,7 +1502,7 @@ DeveloperPrivateUpdateSiteAccessFunction::Run() {
   for (const auto& update : params->updates) {
     const Extension* extension = GetExtensionById(update.id);
     if (!extension) {
-      return RespondNow(Error(kNoSuchExtensionError));
+      return RespondNow(LogNoSuchExtensionFoundAndReturn());
     }
     if (!permissions_manager->CanAffectExtension(*extension)) {
       return RespondNow(Error(kCannotChangeHostPermissions));
@@ -1598,16 +1598,13 @@ DeveloperPrivateRemoveMultipleExtensionsFunction::Run() {
     return AlreadyResponded();
   }
 
-// TODO(crbug.com/424013333): Enable on desktop android.
-#if BUILDFLAG(ENABLE_EXTENSIONS)
   gfx::NativeWindow parent;
   if (!GetSenderWebContents()) {
     CHECK_IS_TEST();
     parent = gfx::NativeWindow();
   } else {
-    parent = chrome::FindBrowserWithTab(GetSenderWebContents())
-                 ->window()
-                 ->GetNativeWindow();
+    parent =
+        platform_util::GetTopLevel(GetSenderWebContents()->GetNativeView());
   }
 
   ShowExtensionMultipleUninstallDialog(
@@ -1619,10 +1616,6 @@ DeveloperPrivateRemoveMultipleExtensionsFunction::Run() {
           &DeveloperPrivateRemoveMultipleExtensionsFunction::OnDialogCancelled,
           this));
   return RespondLater();
-#else
-  DeveloperPrivateRemoveMultipleExtensionsFunction::OnDialogAccepted();
-  return AlreadyResponded();
-#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 }
 
 void DeveloperPrivateRemoveMultipleExtensionsFunction::OnDialogCancelled() {
@@ -1718,19 +1711,6 @@ ExtensionFunction::ResponseAction DeveloperPrivatePackDirectoryFunction::Run() {
   base::FilePath key_file = base::FilePath::FromUTF8Unsafe(key_path_str_);
 
   developer::PackDirectoryResponse response;
-
-#if BUILDFLAG(IS_ANDROID)
-  // TODO(b/433416481): Make SelectFileDialog return a virtual document path and
-  // remove this code.
-  std::optional<base::FilePath> virtual_path =
-      base::ResolveToVirtualDocumentPath(root_directory);
-  if (!virtual_path) {
-    response.message = "Failed to resolve (removed?)";
-    response.status = developer::PackStatus::kError;
-    return RespondNow(WithArguments(response.ToValue()));
-  }
-  root_directory = *virtual_path;
-#endif  // BUILDFLAG(IS_ANDROID)
 
   if (root_directory.empty()) {
     if (item_path_str_.empty()) {
@@ -1869,7 +1849,7 @@ DeveloperPrivateRequestFileSourceFunction::Run() {
       params_->properties;
   const Extension* extension = GetExtensionById(properties.extension_id);
   if (!extension) {
-    return RespondNow(Error(kNoSuchExtensionError));
+    return RespondNow(LogNoSuchExtensionFoundAndReturn());
   }
 
   // Under no circumstances should we ever need to reference a file outside of
@@ -1898,7 +1878,7 @@ void DeveloperPrivateRequestFileSourceFunction::Finish(
       params_->properties;
   const Extension* extension = GetExtensionById(properties.extension_id);
   if (!extension) {
-    Respond(Error(kNoSuchExtensionError));
+    Respond(LogNoSuchExtensionFoundAndReturn());
     return;
   }
 
@@ -1953,7 +1933,7 @@ ExtensionFunction::ResponseAction DeveloperPrivateOpenDevToolsFunction::Run() {
       properties.is_service_worker && *properties.is_service_worker;
   if (is_service_worker) {
     if (!extension) {
-      return RespondNow(Error(kNoSuchExtensionError));
+      return RespondNow(LogNoSuchExtensionFoundAndReturn());
     }
     if (!BackgroundInfo::IsServiceWorkerBased(extension)) {
       return RespondNow(Error(kInvalidLazyBackgroundPageParameter));
@@ -1972,7 +1952,7 @@ ExtensionFunction::ResponseAction DeveloperPrivateOpenDevToolsFunction::Run() {
   if (properties.render_process_id == -1) {
     // This is for a lazy background page.
     if (!extension) {
-      return RespondNow(Error(kNoSuchExtensionError));
+      return RespondNow(LogNoSuchExtensionFoundAndReturn());
     }
     if (!BackgroundInfo::HasLazyBackgroundPage(extension)) {
       return RespondNow(Error(kInvalidRenderProcessId));
@@ -2044,7 +2024,7 @@ DeveloperPrivateRepairExtensionFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(params);
   const Extension* extension = GetExtensionById(params->extension_id);
   if (!extension) {
-    return RespondNow(Error(kNoSuchExtensionError));
+    return RespondNow(LogNoSuchExtensionFoundAndReturn());
   }
 
   if (!ExtensionPrefs::Get(browser_context())

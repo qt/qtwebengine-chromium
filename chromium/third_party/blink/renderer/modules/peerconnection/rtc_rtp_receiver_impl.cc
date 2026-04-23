@@ -20,9 +20,6 @@
 
 namespace blink {
 
-BASE_FEATURE(kRTCAlignReceivedEncodedVideoTransforms,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 RtpReceiverState::RtpReceiverState(
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> signaling_task_runner,
@@ -162,10 +159,7 @@ class RTCRtpReceiverImpl::RTCRtpReceiverInternal
       CHECK(webrtc_receiver_->media_type() == webrtc::MediaType::VIDEO);
       encoded_video_transformer_ =
           std::make_unique<RTCEncodedVideoStreamTransformer>(
-              main_task_runner_, base::FeatureList::IsEnabled(
-                                     kRTCAlignReceivedEncodedVideoTransforms)
-                                     ? std::move(decode_metronome)
-                                     : nullptr);
+              main_task_runner_, std::move(decode_metronome));
       webrtc_receiver_->SetFrameTransformer(
           encoded_video_transformer_->Delegate());
     }
@@ -228,14 +222,17 @@ class RTCRtpReceiverImpl::RTCRtpReceiverInternal
   }
 
   // RtpReceiverObserverInterface implementation.
-  // Note: unregistering from the event is not necessary.
   void OnFirstPacketReceived(webrtc::MediaType media_type) override {
+    // No-op.
+  }
+  void OnFirstPacketReceivedAfterReceptiveChange(
+      webrtc::MediaType media_type) override {
     DCHECK(webrtc_receiver_);
     if (!main_task_runner_->BelongsToCurrentThread()) {
       main_task_runner_->PostTask(
           FROM_HERE,
           base::BindOnce(&RTCRtpReceiverImpl::RTCRtpReceiverInternal::
-                             OnFirstPacketReceived,
+                             OnFirstPacketReceivedAfterReceptiveChange,
                          this, media_type));
       return;
     }

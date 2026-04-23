@@ -10,6 +10,7 @@
 #include "base/files/file.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_forward.h"
+#include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_functions.h"
@@ -101,6 +102,7 @@ class TFLiteModelExecutor : public ModelExecutor<OutputType, InputType> {
   void InitializeAndMoveToExecutionThread(
       std::optional<base::TimeDelta> model_inference_timeout,
       proto::OptimizationTarget optimization_target,
+      scoped_refptr<base::SequencedTaskRunner> model_loading_task_runner,
       scoped_refptr<base::SequencedTaskRunner> execution_task_runner,
       scoped_refptr<base::SequencedTaskRunner> reply_task_runner) override {
     DCHECK(!execution_task_runner_);
@@ -112,8 +114,7 @@ class TFLiteModelExecutor : public ModelExecutor<OutputType, InputType> {
     optimization_target_ = optimization_target;
     execution_task_runner_ = execution_task_runner;
     reply_task_runner_ = reply_task_runner;
-    model_loading_task_runner_ = base::ThreadPool::CreateSequencedTaskRunner(
-        {base::MayBlock(), GetModelLoadingTaskPriority()});
+    model_loading_task_runner_ = model_loading_task_runner;
 
     if (features::IsModelExecutionWatchdogEnabled()) {
       // The sequence |watchdog_sequence| is used to run watchdog's task. The

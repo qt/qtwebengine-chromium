@@ -24,7 +24,9 @@ namespace internal {
 
 namespace maglev {
 class MaglevGraphBuilder;
-class MaglevAssembler;
+class StoreSmiContextCell;
+class StoreInt32ContextCell;
+class StoreFloat64ContextCell;
 }  // namespace maglev
 class JSGlobalObject;
 class JSGlobalProxy;
@@ -164,6 +166,7 @@ enum ContextLookupFlags {
     initial_disposable_stack_prototype)                                        \
   V(INITIAL_MAP_ITERATOR_PROTOTYPE_INDEX, JSObject,                            \
     initial_map_iterator_prototype)                                            \
+  V(INITIAL_MAP_PROTOTYPE_INDEX, JSObject, initial_map_prototype)              \
   V(INITIAL_MAP_PROTOTYPE_MAP_INDEX, Map, initial_map_prototype_map)           \
   V(INITIAL_OBJECT_PROTOTYPE_INDEX, JSObject, initial_object_prototype)        \
   V(INITIAL_SET_ITERATOR_PROTOTYPE_INDEX, JSObject,                            \
@@ -174,6 +177,7 @@ enum ContextLookupFlags {
   V(INITIAL_STRING_ITERATOR_PROTOTYPE_INDEX, JSObject,                         \
     initial_string_iterator_prototype)                                         \
   V(INITIAL_STRING_PROTOTYPE_INDEX, JSObject, initial_string_prototype)        \
+  V(INITIAL_WEAKMAP_PROTOTYPE_INDEX, JSObject, initial_weakmap_prototype)      \
   V(INITIAL_WEAKMAP_PROTOTYPE_MAP_INDEX, Map, initial_weakmap_prototype_map)   \
   V(INITIAL_WEAKSET_PROTOTYPE_MAP_INDEX, Map, initial_weakset_prototype_map)   \
   V(INTL_COLLATOR_FUNCTION_INDEX, JSFunction, intl_collator_function)          \
@@ -590,6 +594,8 @@ class Context : public TorqueGeneratedContext<Context, HeapObject> {
   inline Tagged<Context> previous() const;
 
   inline Tagged<Object> next_context_link() const;
+  inline void set_next_context_link(
+      Tagged<Object> object, WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
   inline bool has_extension() const;
   inline Tagged<HeapObject> extension() const;
@@ -611,17 +617,16 @@ class Context : public TorqueGeneratedContext<Context, HeapObject> {
   Tagged<Context> closure_context() const;
 
   // Returns a JSGlobalProxy object or null.
-  V8_EXPORT_PRIVATE Tagged<JSGlobalProxy> global_proxy() const;
+  V8_EXPORT_PRIVATE inline Tagged<JSGlobalProxy> global_proxy() const;
 
   // Get the JSGlobalObject object.
-  V8_EXPORT_PRIVATE Tagged<JSGlobalObject> global_object() const;
+  V8_EXPORT_PRIVATE inline Tagged<JSGlobalObject> global_object() const;
 
   // Get the script context by traversing the context chain.
   Tagged<Context> script_context() const;
 
   // Compute the native context.
   inline Tagged<NativeContext> native_context() const;
-  inline bool IsDetached(Isolate* isolate) const;
 
   // Predicates for context types.  IsNativeContext is already defined on
   // Object.
@@ -760,16 +765,23 @@ class NativeContext : public Context {
       Tagged<ScriptContextTable> script_context_table);
   inline Tagged<ScriptContextTable> synchronized_script_context_table() const;
 
+  // Returns whether the context is detached or not.
+  inline bool IsDetached() const;
+
+  // Returns a JSGlobalProxy object or null.
+  V8_EXPORT_PRIVATE inline Tagged<JSGlobalProxy> global_proxy() const;
+
+  // Get the JSGlobalObject object.
+  V8_EXPORT_PRIVATE inline Tagged<JSGlobalObject> global_object() const;
+
   // Caution, hack: this getter ignores the AcquireLoadTag. The global_object
   // slot is safe to read concurrently since it is immutable after
   // initialization.  This function should *not* be used from anywhere other
   // than heap-refs.cc.
   // TODO(jgruber): Remove this function after NativeContextRef is actually
   // never serialized and BROKER_NATIVE_CONTEXT_FIELDS is removed.
-  Tagged<JSGlobalObject> global_object() { return Context::global_object(); }
-  Tagged<JSGlobalObject> global_object(AcquireLoadTag) {
-    return Context::global_object();
-  }
+  V8_EXPORT_PRIVATE inline Tagged<JSGlobalObject> global_object(
+      AcquireLoadTag) const;
 
   inline Tagged<Map> TypedArrayElementsKindToCtorMap(
       ElementsKind element_kind) const;
@@ -918,6 +930,9 @@ V8_OBJECT class ContextCell : public HeapObjectLayout {
   friend class CodeStubAssembler;
   friend struct ObjectTraits<ContextCell>;
   friend class TorqueGeneratedContextCellAsserts;
+  friend class maglev::StoreSmiContextCell;
+  friend class maglev::StoreInt32ContextCell;
+  friend class maglev::StoreFloat64ContextCell;
   friend class maglev::MaglevGraphBuilder;
   friend class maglev::MaglevAssembler;
   friend class compiler::AccessBuilder;

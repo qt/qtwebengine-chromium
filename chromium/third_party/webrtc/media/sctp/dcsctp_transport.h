@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
@@ -42,15 +43,13 @@
 #include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/network/received_packet.h"
 #include "rtc_base/random.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
 class DcSctpTransport : public SctpTransportInternal,
-                        public dcsctp::DcSctpSocketCallbacks,
-                        public sigslot::has_slots<> {
+                        public dcsctp::DcSctpSocketCallbacks {
  public:
   DcSctpTransport(const Environment& env,
                   Thread* network_thread,
@@ -79,6 +78,8 @@ class DcSctpTransport : public SctpTransportInternal,
   size_t buffered_amount_low_threshold(int sid) const override;
   void SetBufferedAmountLowThreshold(int sid, size_t bytes) override;
   void set_debug_name_for_testing(const char* debug_name) override;
+
+  static std::vector<uint8_t> GenerateConnectionToken(const Environment& env);
 
  private:
   // dcsctp::DcSctpSocketCallbacks
@@ -148,6 +149,9 @@ class DcSctpTransport : public SctpTransportInternal,
   bool ready_to_send_data_ RTC_GUARDED_BY(network_thread_) = false;
   std::function<void()> on_connected_callback_ RTC_GUARDED_BY(network_thread_);
   DataChannelSink* data_channel_sink_ RTC_GUARDED_BY(network_thread_) = nullptr;
+
+  std::optional<std::vector<uint8_t>> local_init_;
+  std::optional<std::vector<uint8_t>> remote_init_;
 
   static dcsctp::DcSctpOptions CreateDcSctpOptions(
       const SctpOptions& options,

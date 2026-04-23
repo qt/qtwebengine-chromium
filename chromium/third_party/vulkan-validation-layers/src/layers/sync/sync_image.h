@@ -20,11 +20,13 @@
 #include "state_tracker/image_state.h"
 #include "state_tracker/wsi_state.h"
 
-namespace syncval_state {
+namespace syncval {
 
 class ImageSubState : public vvl::ImageSubState {
   public:
     ImageSubState(vvl::Image &image);
+
+    void SetSwapchain(vvl::Swapchain& swapchain) override;
 
     bool IsLinear() const { return fragment_encoder.IsLinearImage(); }
     bool IsTiled() const { return !IsLinear(); }
@@ -32,8 +34,6 @@ class ImageSubState : public vvl::ImageSubState {
 
     void SetOpaqueBaseAddress(vvl::DeviceState &dev_data);
 
-    VkDeviceSize GetOpaqueBaseAddress() const { return opaque_base_address_; }
-    bool HasOpaqueMapping() const { return 0U != opaque_base_address_; }
     VkDeviceSize GetResourceBaseAddress() const;
     ImageRangeGen MakeImageRangeGen(const VkImageSubresourceRange &subresource_range, bool is_depth_sliced) const;
     ImageRangeGen MakeImageRangeGen(const VkImageSubresourceRange &subresource_range, const VkOffset3D &offset,
@@ -76,4 +76,4 @@ static inline const SwapchainSubState &SubState(const vvl::Swapchain &sc) {
     return *static_cast<const SwapchainSubState *>(sc.SubState(LayerObjectTypeSyncValidation));
 }
 
-}  // namespace syncval_state
+}  // namespace syncval

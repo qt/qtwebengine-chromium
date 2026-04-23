@@ -1,4 +1,30 @@
-CHANGES BETWEEN 2.13.3 and 2.14.0 (2025-Mmm-DD)
+CHANGES BETWEEN 2.14.1 and 2.14.2 (2025-Mmm-DD)
+
+  I. IMPORTANT BUG FIXES
+
+  - The italic angle in `PS_FontInfo`  is now stored  as a fixed-point
+    value  in degrees  for  all  Type 1 fonts  and  their derivatives,
+    consistent  with  CFF  fonts  and  common  practices.  The  broken
+    underline position and thickness values are fixed for CFF fonts.
+
+
+======================================================================
+
+CHANGES BETWEEN 2.14.0 and 2.14.1 (2025-Sep-11)
+
+  I. IMPORTANT BUG FIXES
+
+  - This is  an emergency release that  fixes a couple of  severe bugs
+    introduced  in  version  2.14.0  and discovered  right  after  the
+    release; see issues  #1349, #1353, #1354, #1355, and  #1356 in our
+    bug tracker at
+
+      https://gitlab.freedesktop.org/freetype/freetype/-/issues
+
+
+======================================================================
+
+CHANGES BETWEEN 2.13.3 and 2.14.0 (2025-Sep-06)
 
   I. IMPORTANT CHANGES
 
@@ -5804,7 +5830,7 @@ Extensions support:
 
 ------------------------------------------------------------------------
 
-Copyright (C) 2000-2024 by
+Copyright (C) 2000-2025 by
 David Turner, Robert Wilhelm, and Werner Lemberg.
 
 This  file  is  part  of the  FreeType  project, and may  only be  used,

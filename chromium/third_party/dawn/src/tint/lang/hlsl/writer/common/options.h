@@ -36,6 +36,7 @@
 
 #include "src/tint/api/common/binding_point.h"
 #include "src/tint/api/common/bindings.h"
+#include "src/tint/api/common/substitute_overrides_config.h"
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/reflection.h"
@@ -47,10 +48,13 @@ namespace tint::hlsl::writer {
 constexpr uint32_t kMaxInterStageLocations = 30;
 
 /// Options used to specify a mapping of binding points to indices into a UBO
-/// from which to load buffer sizes.
+/// from which to load buffer sizes, or to load them from immediate blocks.
+/// TODO(crbug.com/366291600): Remove ubo_binding after switch to immediates.
 struct ArrayLengthFromUniformOptions {
     /// The HLSL binding point to use to generate a uniform buffer from which to read buffer sizes.
     BindingPoint ubo_binding;
+    /// The offset in immediate block for buffer sizes.
+    std::optional<uint32_t> buffer_sizes_offset{};
     /// The mapping from the storage buffer binding points in WGSL binding-point space to the index
     /// into the uniform buffer where the length of the buffer is stored.
     std::unordered_map<BindingPoint, uint32_t> bindpoint_to_size_index;
@@ -58,7 +62,32 @@ struct ArrayLengthFromUniformOptions {
     bool operator==(const ArrayLengthFromUniformOptions& other) const = default;
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
-    TINT_REFLECT(ArrayLengthFromUniformOptions, ubo_binding, bindpoint_to_size_index);
+    TINT_REFLECT(ArrayLengthFromUniformOptions,
+                 ubo_binding,
+                 buffer_sizes_offset,
+                 bindpoint_to_size_index);
+};
+
+/// Options used to specify a mapping of binding points to indices into a UBO
+/// from which to load buffer offsets, or to load them from immediate blocks.
+/// TODO(crbug.com/366291600): Remove ubo_binding after switch to immediates.
+struct ArrayOffsetFromUniformOptions {
+    /// The HLSL binding point to use to generate a uniform buffer from which to read buffer
+    /// offsets.
+    BindingPoint ubo_binding;
+    /// The offset in immediate block for buffer offsets.
+    std::optional<uint32_t> buffer_offsets_offset{};
+    /// The mapping from the storage buffer binding points in WGSL binding-point space to the index
+    /// into the uniform buffer where the offset into the buffer is stored.
+    std::unordered_map<BindingPoint, uint32_t> bindpoint_to_offset_index;
+
+    bool operator==(const ArrayOffsetFromUniformOptions& other) const = default;
+
+    /// Reflect the fields of this class so that it can be used by tint::ForeachField()
+    TINT_REFLECT(ArrayOffsetFromUniformOptions,
+                 ubo_binding,
+                 buffer_offsets_offset,
+                 bindpoint_to_offset_index);
 };
 
 /// Data for a single pixel local attachment
@@ -113,6 +142,9 @@ struct Options {
     /// @returns this Options
     Options& operator=(const Options&);
 
+    /// The entry point to emit
+    std::string entry_point_name = {};
+
     /// An optional remapped name to use when emitting the entry point.
     std::string remapped_entry_point_name = {};
 
@@ -123,7 +155,7 @@ struct Options {
     bool disable_robustness = false;
 
     /// Set to `true` to enable integer range analysis in robustness transform.
-    bool enable_integer_range_analysis = false;
+    bool enable_integer_range_analysis = true;
 
     /// Set to `true` to disable workgroup memory zero initialization
     bool disable_workgroup_init = false;
@@ -157,6 +189,10 @@ struct Options {
     /// from which to load buffer sizes.
     ArrayLengthFromUniformOptions array_length_from_uniform = {};
 
+    /// Options used to specify a mapping of binding points to indices into a UBO
+    /// from which to load buffer offsets.
+    ArrayOffsetFromUniformOptions array_offset_from_uniform = {};
+
     /// Interstage locations actually used as inputs in the next stage of the pipeline.
     /// This is potentially used for truncating unused interstage outputs at current shader stage.
     std::bitset<kMaxInterStageLocations> interstage_locations;
@@ -185,10 +221,14 @@ struct Options {
     /// Pixel local configuration
     PixelLocalOptions pixel_local;
 
+    // Configuration for substitute overrides
+    SubstituteOverridesConfig substitute_overrides_config = {};
+
     bool operator==(const Options& other) const = default;
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(Options,
+                 entry_point_name,
                  remapped_entry_point_name,
                  strip_all_names,
                  disable_robustness,
@@ -203,6 +243,7 @@ struct Options {
                  polyfill_subgroup_broadcast_f16,
                  compiler,
                  array_length_from_uniform,
+                 array_offset_from_uniform,
                  interstage_locations,
                  root_constant_binding_point,
                  immediate_binding_point,
@@ -211,7 +252,8 @@ struct Options {
                  num_workgroups_start_offset,
                  bindings,
                  ignored_by_robustness_transform,
-                 pixel_local);
+                 pixel_local,
+                 substitute_overrides_config);
 };
 
 }  // namespace tint::hlsl::writer

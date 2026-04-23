@@ -78,9 +78,9 @@ void CPDFSDK_PageView::PageView_OnDraw(CFX_RenderDevice* pDevice,
 
 #ifdef PDF_ENABLE_XFA
   IPDF_Page* pPage = GetXFAPage();
-  CPDF_Document::Extension* pContext =
+  CPDF_Document::Extension* context =
       pPage ? pPage->GetDocument()->GetExtension() : nullptr;
-  if (pContext && pContext->ContainsExtensionFullForm()) {
+  if (context && context->ContainsExtensionFullForm()) {
     static_cast<CPDFXFA_Page*>(pPage)->DrawFocusAnnot(pDevice, GetFocusAnnot(),
                                                       mtUser2Device, pClip);
     return;
@@ -171,8 +171,8 @@ void CPDFSDK_PageView::DeleteAnnotForFFWidget(CXFA_FFWidget* pWidget) {
   if (!pPage) {
     return;
   }
-  CPDF_Document::Extension* pContext = pPage->GetDocument()->GetExtension();
-  if (pContext && !pContext->ContainsExtensionForm()) {
+  CPDF_Document::Extension* context = pPage->GetDocument()->GetExtension();
+  if (context && !context->ContainsExtensionForm()) {
     return;
   }
   if (GetFocusAnnot() == pAnnot) {
@@ -530,50 +530,43 @@ bool CPDFSDK_PageView::OnChar(uint32_t nChar, Mask<FWL_EVENTFLAG> nFlags) {
   return pAnnot && CPDFSDK_Annot::OnChar(pAnnot, nChar, nFlags);
 }
 
-bool CPDFSDK_PageView::OnKeyDown(FWL_VKEYCODE nKeyCode,
-                                 Mask<FWL_EVENTFLAG> nFlags) {
-  ObservedPtr<CPDFSDK_Annot> pAnnot(GetFocusAnnot());
-  if (!pAnnot) {
-    // If pressed key is not tab then no action is needed.
-    if (nKeyCode != FWL_VKEY_Tab) {
+bool CPDFSDK_PageView::OnKeyDown(FWL_VKEYCODE key_code,
+                                 Mask<FWL_EVENTFLAG> flags) {
+  ObservedPtr<CPDFSDK_Annot> annot(GetFocusAnnot());
+  // Handle tab and shift+tab to change field focus
+  if (key_code == FWL_VKEY_Tab) {
+    // Ctrl, Alt, or Meta plus tab are system shortcuts PDFium should not handle
+    if (CPWL_Wnd::IsCTRLKeyDown(flags) || CPWL_Wnd::IsALTKeyDown(flags) ||
+        CPWL_Wnd::IsMETAKeyDown(flags)) {
       return false;
     }
 
-    // If ctrl key or alt key is pressed, then no action is needed.
-    if (CPWL_Wnd::IsCTRLKeyDown(nFlags) || CPWL_Wnd::IsALTKeyDown(nFlags)) {
-      return false;
+    if (!annot) {
+      ObservedPtr<CPDFSDK_Annot> end_annot(CPWL_Wnd::IsSHIFTKeyDown(flags)
+                                               ? GetLastFocusableAnnot()
+                                               : GetFirstFocusableAnnot());
+      return end_annot && form_fill_env_->SetFocusAnnot(end_annot);
     }
 
-    ObservedPtr<CPDFSDK_Annot> end_annot(CPWL_Wnd::IsSHIFTKeyDown(nFlags)
-                                             ? GetLastFocusableAnnot()
-                                             : GetFirstFocusableAnnot());
-    return end_annot && form_fill_env_->SetFocusAnnot(end_annot);
-  }
-
-  if (CPWL_Wnd::IsCTRLKeyDown(nFlags) || CPWL_Wnd::IsALTKeyDown(nFlags)) {
-    return CPDFSDK_Annot::OnKeyDown(pAnnot, nKeyCode, nFlags);
-  }
-
-  CPDFSDK_Annot* pFocusAnnot = GetFocusAnnot();
-  if (pFocusAnnot && (nKeyCode == FWL_VKEY_Tab)) {
-    ObservedPtr<CPDFSDK_Annot> pNext(CPWL_Wnd::IsSHIFTKeyDown(nFlags)
-                                         ? GetPrevAnnot(pFocusAnnot)
-                                         : GetNextAnnot(pFocusAnnot));
-    if (!pNext) {
+    CPDFSDK_Annot* focus_annot = GetFocusAnnot();
+    CHECK(focus_annot);  // The same as `annot`, which was checked not null
+    ObservedPtr<CPDFSDK_Annot> next(CPWL_Wnd::IsSHIFTKeyDown(flags)
+                                        ? GetPrevAnnot(focus_annot)
+                                        : GetNextAnnot(focus_annot));
+    if (!next) {
       return false;
     }
-    if (pNext.Get() != pFocusAnnot) {
-      GetFormFillEnv()->SetFocusAnnot(pNext);
+    if (next.Get() != focus_annot) {
+      GetFormFillEnv()->SetFocusAnnot(next);
       return true;
     }
   }
 
-  // Check |pAnnot| again because JS may have destroyed it in GetNextAnnot().
-  if (!pAnnot) {
+  // Check `annot` again because JS may have destroyed it in GetNextAnnot().
+  if (!annot) {
     return false;
   }
-
-  return CPDFSDK_Annot::OnKeyDown(pAnnot, nKeyCode, nFlags);
+  return CPDFSDK_Annot::OnKeyDown(annot, key_code, flags);
 }
 
 void CPDFSDK_PageView::LoadFXAnnots() {
@@ -582,8 +575,8 @@ void CPDFSDK_PageView::LoadFXAnnots() {
 
 #ifdef PDF_ENABLE_XFA
   RetainPtr<CPDFXFA_Page> protector(ToXFAPage(page_));
-  CPDF_Document::Extension* pContext = form_fill_env_->GetDocExtension();
-  if (pContext && pContext->ContainsExtensionFullForm()) {
+  CPDF_Document::Extension* context = form_fill_env_->GetDocExtension();
+  if (context && context->ContainsExtensionFullForm()) {
     CXFA_FFPageView* pageView = protector->GetXFAPageView();
     CXFA_FFPageWidgetIterator pWidgetHandler(
         pageView, Mask<XFA_WidgetStatus>{XFA_WidgetStatus::kVisible,
@@ -632,8 +625,8 @@ void CPDFSDK_PageView::UpdateView(CPDFSDK_Annot* pAnnot) {
 
 int CPDFSDK_PageView::GetPageIndex() const {
 #ifdef PDF_ENABLE_XFA
-  CPDF_Document::Extension* pContext = page_->GetDocument()->GetExtension();
-  if (pContext && pContext->ContainsExtensionFullForm()) {
+  CPDF_Document::Extension* context = page_->GetDocument()->GetExtension();
+  if (context && context->ContainsExtensionFullForm()) {
     CXFA_FFPageView* pPageView = page_->AsXFAPage()->GetXFAPageView();
     return pPageView ? pPageView->GetLayoutItem()->GetPageIndex() : -1;
   }

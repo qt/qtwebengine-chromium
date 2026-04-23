@@ -62,6 +62,9 @@ struct Type {
     bool IsArray() const;
     bool IsSignedInt() const;
     bool IsIVec3(const TypeManager& type_manager) const;
+    uint32_t VectorSize() const;
+    // 64-bit floats/int take up 2 dwords
+    bool Is64Bit() const;
 
     const SpvType spv_type_;
     const Instruction& inst_;
@@ -147,9 +150,11 @@ class TypeManager {
     const Constant& CreateConstantUInt32(uint32_t value);
     const Constant& GetConstantUInt32(uint32_t value);
     const Constant& GetConstantZeroUint32();
+    const Constant& GetConstantOneUint32();
     const Constant& GetConstantZeroFloat32();
     const Constant& GetConstantZeroVec3();
     const Constant& GetConstantZeroUvec4();
+    const Constant& GetConstantZeroVector(const Type& vector_type);
     const Constant& GetConstantNull(const Type& type);
 
     const Variable& AddVariable(std::unique_ptr<Instruction> new_inst, const Type& type);
@@ -183,6 +188,7 @@ class TypeManager {
     std::vector<const Type*> sampled_image_types_;
     std::vector<const Type*> array_types_;
     std::vector<const Type*> runtime_array_types_;
+    std::vector<const Type*> coop_mat_types_;
     std::vector<const Type*> pointer_types_;
     std::vector<const Type*> forward_pointer_types_;
     std::vector<const Type*> function_types_;
@@ -192,6 +198,7 @@ class TypeManager {
     std::vector<const Constant*> int_32bit_constants_;
     std::vector<const Constant*> float_32bit_constants_;
     const Constant* uint_32bit_zero_constants_ = nullptr;
+    const Constant* uint_32bit_one_constants_ = nullptr;
     const Constant* float_32bit_zero_constants_ = nullptr;
     const Constant* vec3_zero_constants_ = nullptr;
     const Constant* uvec4_zero_constants_ = nullptr;

@@ -1972,7 +1972,7 @@ bool CXFA_Node::IsNeedSavingXMLNode() const {
                        GetElementType() == XFA_Element::Xfa);
 }
 
-CXFA_Node* CXFA_Node::GetItemIfExists(int32_t iIndex) {
+CXFA_Node* CXFA_Node::GetItemIfExists(int32_t index) {
   int32_t iCount = 0;
   uint32_t dwNameHash = 0;
   for (CXFA_Node* pNode = GetNextSibling(); pNode;
@@ -1999,7 +1999,7 @@ CXFA_Node* CXFA_Node::GetItemIfExists(int32_t iIndex) {
     }
 
     iCount++;
-    if (iCount > iIndex) {
+    if (iCount > index) {
       return pNode;
     }
   }
@@ -2951,15 +2951,15 @@ CXFA_Node::BoolScriptResult CXFA_Node::ExecuteBoolScript(
   }
 
   CXFA_FFDoc* doc = pDocView->GetDoc();
-  CFXJSE_Engine* pContext = doc->GetXFADoc()->GetScriptContext();
+  CFXJSE_Engine* context = doc->GetXFADoc()->GetScriptContext();
   CFXJSE_Engine::EventParamScope paramScope(
-      pContext, pEventParam->targeted_ ? this : nullptr, pEventParam);
-  pContext->SetRunAtType(script->GetRunAt());
+      context, pEventParam->targeted_ ? this : nullptr, pEventParam);
+  context->SetRunAtType(script->GetRunAt());
 
   std::vector<cppgc::Persistent<CXFA_Node>> refNodes;
   if (pEventParam->type_ == XFA_EVENT_InitCalculate ||
       pEventParam->type_ == XFA_EVENT_Calculate) {
-    pContext->SetNodesOfRunScript(&refNodes);
+    context->SetNodesOfRunScript(&refNodes);
   }
 
   CFXJSE_Context::ExecutionResult exec_result;
@@ -2967,7 +2967,7 @@ CXFA_Node::BoolScriptResult CXFA_Node::ExecuteBoolScript(
     AutoRestorer<uint8_t> restorer(&execute_recursion_depth_);
     ++execute_recursion_depth_;
     exec_result =
-        pContext->RunScript(eScriptType, wsExpression.AsStringView(), this);
+        context->RunScript(eScriptType, wsExpression.AsStringView(), this);
   }
 
   XFA_EventError iRet = XFA_EventError::kError;
@@ -2975,10 +2975,10 @@ CXFA_Node::BoolScriptResult CXFA_Node::ExecuteBoolScript(
     iRet = XFA_EventError::kSuccess;
     if (pEventParam->type_ == XFA_EVENT_Calculate ||
         pEventParam->type_ == XFA_EVENT_InitCalculate) {
-      if (!exec_result.value->IsUndefined(pContext->GetIsolate())) {
-        if (!exec_result.value->IsNull(pContext->GetIsolate())) {
+      if (!exec_result.value->IsUndefined(context->GetIsolate())) {
+        if (!exec_result.value->IsNull(context->GetIsolate())) {
           pEventParam->result_ =
-              exec_result.value->ToWideString(pContext->GetIsolate());
+              exec_result.value->ToWideString(context->GetIsolate());
         }
 
         iRet = XFA_EventError::kSuccess;
@@ -3005,10 +3005,10 @@ CXFA_Node::BoolScriptResult CXFA_Node::ExecuteBoolScript(
       }
     }
   }
-  pContext->SetNodesOfRunScript(nullptr);
+  context->SetNodesOfRunScript(nullptr);
 
-  return {iRet, exec_result.value->IsBoolean(pContext->GetIsolate()) &&
-                    exec_result.value->ToBoolean(pContext->GetIsolate())};
+  return {iRet, exec_result.value->IsBoolean(context->GetIsolate()) &&
+                    exec_result.value->ToBoolean(context->GetIsolate())};
 }
 
 std::pair<XFA_FFWidgetType, CXFA_Ui*>

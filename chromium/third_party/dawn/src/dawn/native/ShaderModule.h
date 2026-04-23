@@ -321,6 +321,8 @@ using OverridesMap = absl::flat_hash_map<std::string, Override>;
     X(size_t, pixelLocalBlockSize)                                                                \
     X(std::vector<PixelLocalMemberType>, pixelLocalMembers)                                       \
     X(bool, usesFragDepth)                                                                        \
+    X(bool, usesFragPosition)                                                                     \
+    X(bool, isFragMultiSampled)                                                                   \
     X(bool, usesInstanceIndex)                                                                    \
     X(bool, usesNumWorkgroups)                                                                    \
     X(bool, usesSampleMaskOutput)                                                                 \
@@ -329,6 +331,7 @@ using OverridesMap = absl::flat_hash_map<std::string, Override>;
     X(bool, usesTextureLoadWithDepthTexture)                                                      \
     X(bool, usesDepthTextureWithNonComparisonSampler)                                             \
     X(bool, usesSubgroupMatrix)                                                                   \
+    X(bool, usesFineDerivativeBuiltin)                                                            \
     /* Immediate Data block byte size */                                                          \
     X(uint32_t, immediateDataRangeByteSize)
 DAWN_SERIALIZABLE(struct, EntryPointMetadata, ENTRY_POINT_METADATA_MEMBER) {
@@ -373,13 +376,18 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
                                            StringView label,
                                            ParsedCompilationMessages&& compilationMessages);
 
+    void Initialize();
+    std::unique_ptr<ErrorData> GetInitializationError();
+
     ObjectType GetType() const override;
 
     // Return true iff the program has an entrypoint called `entryPoint`.
     bool HasEntryPoint(absl::string_view entryPoint) const;
 
     // Return the number of entry points for a stage.
-    size_t GetEntryPointCount(SingleShaderStage stage) const { return mEntryPointCounts[stage]; }
+    size_t GetEntryPointCount(SingleShaderStage stage) const {
+        return mCompiledState.entryPointCounts[stage];
+    }
 
     // Return the entry point for a stage. If no entry point name, returns the default one.
     ShaderModuleEntryPoint ReifyEntryPointName(StringView entryPointName,
@@ -398,7 +406,7 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
 
     std::optional<bool> GetStrictMath() const;
 
-    using ShaderModuleHasher = Sha3_512;
+    using ShaderModuleHasher = Sha3_256;
     using ShaderModuleHash = ShaderModuleHasher::Output;
     const ShaderModuleHash& GetHash() const;
 
@@ -423,8 +431,6 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
   protected:
     void DestroyImpl() override;
 
-    MaybeError InitializeBase(ShaderModuleParseResult* parseResult);
-
   private:
     ShaderModuleBase(DeviceBase* device,
                      ObjectBase::ErrorTag tag,
@@ -432,6 +438,8 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
                      ParsedCompilationMessages&& compilationMessages);
 
     void WillDropLastExternalRef() override;
+
+    ShaderModuleParseRequest GenerateShaderModuleParseRequest(bool needReflection) const;
 
     // The original data in the descriptor for caching.
     enum class Type : uint8_t { Undefined, Spirv, Wgsl };
@@ -448,20 +456,33 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
     // Right now D3D uses strictness by default, and Vulkan/Metal use fast math by default.
     std::optional<bool> mStrictMath;
 
-    EntryPointMetadataTable mEntryPoints;
-    PerStage<std::string> mDefaultEntryPointNames;
-    PerStage<size_t> mEntryPointCounts;
+    const std::vector<tint::wgsl::Extension> mInternalExtensions;
 
     struct TintData {
         // tintProgram is nullable so that it can be lazily (re)generated right before actual using.
         Ref<TintProgram> tintProgram = nullptr;
         int tintProgramRecreateCount = 0;
     };
-    MutexProtected<TintData> mTintData;
 
-    std::unique_ptr<const OwnedCompilationMessages> mCompilationMessages;
+    // Encapsulation of all state that is written during (async) initialization.
+    struct CompiledState {
+        EntryPointMetadataTable entryPoints;
+        PerStage<std::string> defaultEntryPointNames;
+        PerStage<size_t> entryPointCounts;
 
-    const std::vector<tint::wgsl::Extension> mInternalExtensions;
+        MutexProtected<TintData> tintData;
+
+        std::unique_ptr<const OwnedCompilationMessages> compilationMessages;
+
+        // Explicit move operator to copy the mutex protected tintData instead of moving it.
+        CompiledState& operator=(CompiledState&& source);
+    };
+    CompiledState mCompiledState;
+
+    // Storage of any error generated during initialization. When initialization is fully
+    // asynchronous, this will be removed and inserted into a stored error scope during
+    // initialization.
+    std::optional<CachedValidationError> mInitializationError;
 };
 
 }  // namespace dawn::native

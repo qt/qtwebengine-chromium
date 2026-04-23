@@ -27,8 +27,9 @@ std::string UnsignedToString(size_t x) {
 // Converts the least significant 4 bits to hexadecimal digit (ASCII char).
 char ToHexDigit(uint8_t v) {
   v &= 0x0f;
-  if (v < 10)
+  if (v < 10) {
     return ('0' + v);
+  }
   return ('a' + (v - 10));
 }
 

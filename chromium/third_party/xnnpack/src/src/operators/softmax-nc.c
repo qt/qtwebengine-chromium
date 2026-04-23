@@ -153,17 +153,19 @@ enum xnn_status xnn_reshape_softmax_nc_qu8(
 
   if (input_stride < channels) {
     xnn_log_error(
-      "failed to create %s operator with input element stride of %zu: "
-      "stride must be at least as large as the number of channels (%zu)",
-      xnn_operator_type_to_string(xnn_operator_type_softmax_nc_qu8), input_stride, channels);
+        "failed to create %s operator with input element stride of %zu: stride "
+        "must be at least as large as the number of channels (%zu)",
+        xnn_operator_type_to_string(xnn_operator_type_softmax_nc_qu8),
+        input_stride, channels);
     return xnn_status_invalid_parameter;
   }
 
   if (output_stride < channels) {
     xnn_log_error(
-      "failed to create %s operator with output element stride of %zu: "
-      "stride must be at least as large as the number of channels (%zu)",
-      xnn_operator_type_to_string(xnn_operator_type_softmax_nc_qu8), output_stride, channels);
+        "failed to create %s operator with output element stride of %zu: "
+        "stride must be at least as large as the number of channels (%zu)",
+        xnn_operator_type_to_string(xnn_operator_type_softmax_nc_qu8),
+        output_stride, channels);
     return xnn_status_invalid_parameter;
   }
 
@@ -333,7 +335,7 @@ enum xnn_status xnn_create_softmax_nc_f32(
     xnn_operator_t* softmax_op_out)
 {
   const struct xnn_raddstoreexpminusmax_config* raddstoreexpminusmax_config =
-    xnn_init_f32_raddstoreexpminusmax_config();
+    xnn_init_f32_raddstoreexpminusmax_config(flags);
   if (raddstoreexpminusmax_config == NULL) {
     xnn_log_error(
       "failed to create %s operator: unsupported hardware configuration",
@@ -409,17 +411,19 @@ static enum xnn_status reshape_softmax_nc_floating_point(
 
   if (input_stride < channels) {
     xnn_log_error(
-      "failed to create %s operator with input element stride of %zu: "
-      "stride must be at least as large as the number of channels (%zu)",
-      xnn_operator_type_to_string(expected_operator_type), input_stride, channels);
+        "failed to create %s operator with input element stride of %zu: stride "
+        "must be at least as large as the number of channels (%zu)",
+        xnn_operator_type_to_string(expected_operator_type), input_stride,
+        channels);
     return xnn_status_invalid_parameter;
   }
 
   if (output_stride < channels) {
     xnn_log_error(
-      "failed to create %s operator with output element stride of %zu: "
-      "stride must be at least as large as the number of channels (%zu)",
-      xnn_operator_type_to_string(expected_operator_type), output_stride, channels);
+        "failed to create %s operator with output element stride of %zu: "
+        "stride must be at least as large as the number of channels (%zu)",
+        xnn_operator_type_to_string(expected_operator_type), output_stride,
+        channels);
     return xnn_status_invalid_parameter;
   }
 
@@ -560,7 +564,7 @@ enum xnn_status xnn_reshape_softmax_nc_f16(
     softmax_op, xnn_operator_type_softmax_nc_f16,
     channels, input_stride, output_stride,
     batch_size,
-    /*log2_element_size=*/XNN_LOG2_SIZEOF_HALF,
+    /*log2_element_size=*/XNN_LOG2_SIZEOF_FLOAT16,
     softmax_op->reduce_config->ukernel,
     softmax_op->raddstoreexpminusmax_config, f16_vmul_config,
     (xnn_compute_reciprocal_fn) compute_reciprocal_f16,

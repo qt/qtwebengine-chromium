@@ -1,11 +1,10 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 // TODO: move to ui/components/node_link?
 
-import * as Common from '../../../../core/common/common.js';
 import type * as Platform from '../../../../core/platform/platform.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
 import type * as Protocol from '../../../../generated/protocol.js';
@@ -13,13 +12,14 @@ import * as Buttons from '../../../../ui/components/buttons/buttons.js';
 import * as ComponentHelpers from '../../../../ui/components/helpers/helpers.js';
 import * as LegacyComponents from '../../../../ui/legacy/components/utils/utils.js';
 import * as Lit from '../../../../ui/lit/lit.js';
+import * as PanelsCommon from '../../../common/common.js';
 
 const {html} = Lit;
 
 export interface NodeLinkData {
   backendNodeId: Protocol.DOM.BackendNodeId;
   frame: string;
-  options?: Common.Linkifier.Options;
+  options?: PanelsCommon.DOMLinkifier.Options;
   /**
    * URL to display if backendNodeId cannot be resolved (ie for traces loaded from disk).
    * Will be given to linkifyURL. Use this or one of the other fallback fields.
@@ -41,7 +41,7 @@ export class NodeLink extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
   #backendNodeId?: Protocol.DOM.BackendNodeId;
   #frame?: string;
-  #options?: Common.Linkifier.Options;
+  #options?: PanelsCommon.DOMLinkifier.Options;
   #fallbackUrl?: Platform.DevToolsPath.UrlString;
   #fallbackHtmlSnippet?: string;
   #fallbackText?: string;
@@ -92,7 +92,7 @@ export class NodeLink extends HTMLElement {
 
     // TODO: it'd be nice if we could specify what attributes to render,
     // ex for the Viewport insight: <meta content="..."> (instead of just <meta>)
-    const linkedNode = await Common.Linkifier.Linkifier.linkify(node, this.#options);
+    const linkedNode = PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(node, this.#options);
     this.#linkifiedNodeForBackendId.set(this.#backendNodeId, linkedNode);
     return linkedNode;
   }

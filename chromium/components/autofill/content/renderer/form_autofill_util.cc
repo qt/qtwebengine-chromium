@@ -24,6 +24,7 @@
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/debug/crash_logging.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
 #include "base/i18n/case_conversion.h"
 #include "base/metrics/field_trial.h"
@@ -222,8 +223,7 @@ bool IsAdmissibleUrl(const blink::WebURL& url) {
   if (url.ProtocolIs("about") && GURL(url).IsAboutSrcdoc()) {
     return true;
   }
-  return !base::FeatureList::IsEnabled(
-      features::kAutofillExtractOnlyOnAdmissibleUrls);
+  return false;
 }
 
 // Returns the form's |name| attribute if non-empty; otherwise the form's |id|
@@ -1126,7 +1126,8 @@ void RemoveDuplicatesAndLimitTotalLength(ButtonTitleList* result) {
   std::set<ButtonTitleInfo> already_added;
   ButtonTitleList unique_titles;
   int total_length = 0;
-  for (auto title : *result) {
+  for (const auto& immutable_title : *result) {
+    auto title = immutable_title;
     if (already_added.find(title) != already_added.end())
       continue;
     already_added.insert(title);
@@ -1952,9 +1953,6 @@ void WebFormControlElementToFormField(
     field->set_nonce(GetAttribute<kNonce>(element).Utf16());
   }
 
-  const bool kAutofillDetectFieldVisibilityEnabled =
-      base::FeatureList::IsEnabled(features::kAutofillDetectFieldVisibility);
-
   // Traverse up through shadow hosts to see if we can gather missing
   // attributes.
   // TODO(crbug.com/40204601): Make sure this works for all shadow DOM cases,
@@ -2006,9 +2004,7 @@ void WebFormControlElementToFormField(
   field->set_is_autofilled(element.IsAutofilled());
   field->set_is_user_edited(element.UserHasEditedTheField());
   field->set_is_focusable(element.IsFocusable());
-  field->set_is_visible(kAutofillDetectFieldVisibilityEnabled
-                            ? IsWebElementVisible(element)
-                            : field->is_focusable());
+  field->set_is_visible(IsWebElementVisible(element));
   field->set_should_autocomplete(
       element.AutoComplete() &&
       !(field->parsed_autocomplete().has_value() &&
@@ -2074,8 +2070,8 @@ std::optional<FormData> ExtractFormDataWithFieldsAndFrames(
     const WebFormElement& form_element,
     const FieldDataManager& field_data_manager,
     ButtonTitlesCache* button_titles_cache) {
-  CHECK(!form_element || form_element.GetDocument() == document,
-        base::NotFatalUntil::M147);
+  LOG_IF(ERROR, form_element && form_element.GetDocument() != document)
+      << "<form> belongs to a different document";
 
   if (form_element && !IsAccessible(form_element)) {
     return std::nullopt;
@@ -2286,7 +2282,7 @@ bool IsTextAreaElementOrTextInput(const WebFormControlElement& element) {
   return IsTextAreaElement(element) || IsTextInput(element);
 }
 
-bool IsAccessible(const blink::WebNode& node) {
+bool IsAccessible(const WebNode& node) {
   return node.IsConnected() && !node.IsInUserAgentShadowRoot();  // nocheck
 }
 
@@ -2510,6 +2506,7 @@ FindFormAndFieldForFormControlElement(
   WebFormElement assoc_form_element = element.Form();  // nocheck
 
   // clang-format off
+  SCOPED_CRASH_KEY_BOOL("Autofill", "invariant", base::Contains(GetOwnedFormControls(element.GetDocument(), element.GetOwningFormForAutofill()), element));
   SCOPED_CRASH_KEY_STRING256("Autofill", "url", url.spec());
   SCOPED_CRASH_KEY_BOOL("Autofill", "ExtractFormData_succeeded", extract_form_data_succeeded);
   SCOPED_CRASH_KEY_NUMBER("Autofill", "extracted_form_size", form->fields().size());
@@ -2538,11 +2535,7 @@ FindFormAndFieldForFormControlElement(
   SCOPED_CRASH_KEYS_FOR_FORM(owng, owning_form);
 #undef FORM_CRASH_KEYS
   // clang-format on
-  CHECK(base::Contains(GetOwnedFormControls(element.GetDocument(),
-                                            element.GetOwningFormForAutofill()),
-                       element),
-        base::NotFatalUntil::M147);
-  NOTREACHED(base::NotFatalUntil::M147);
+  base::debug::DumpWithoutCrashing();
   return std::nullopt;
 }
 
@@ -2906,7 +2899,7 @@ void TraverseDomForFourDigitCombinations(
 }
 
 std::string ExtractFinalCheckoutAmountFromDom(
-    const blink::WebDocument& document,
+    const WebDocument& document,
     std::string_view price_regex,
     std::string_view label_regex,
     size_t number_of_ancestor_levels_to_search) {
@@ -3036,15 +3029,14 @@ std::u16string GetAriaDescriptionForTesting(  // IN-TEST
 }
 
 void InferLabelForElementsForTesting(  // IN-TEST
-    base::span<const blink::WebFormControlElement> control_elements,
+    base::span<const WebFormControlElement> control_elements,
     std::vector<FormFieldData>& fields) {
   InferLabelForElements(control_elements, fields);
 }
 
-std::vector<blink::WebFormControlElement>
-GetOwnedFormControlsForTesting(  // IN-TEST
-    const blink::WebDocument& document,
-    const blink::WebFormElement& form_element) {
+std::vector<WebFormControlElement> GetOwnedFormControlsForTesting(  // IN-TEST
+    const WebDocument& document,
+    const WebFormElement& form_element) {
   return GetOwnedFormControls(document, form_element);
 }
 

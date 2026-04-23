@@ -370,11 +370,12 @@ Register LiftoffAssembler::LoadOldFramePointer() {
   if (!v8_flags.experimental_wasm_growable_stacks) {
     return rbp;
   }
+  LiftoffRegister old_fp = GetUnusedRegister(RegClass::kGpReg, {});
+  FreezeCacheState frozen(*this);
   Label done, call_runtime;
   cmpq(MemOperand(rbp, TypedFrameConstants::kFrameTypeOffset),
        Immediate(StackFrame::TypeToMarker(StackFrame::WASM_SEGMENT_START)));
   j(equal, &call_runtime);
-  LiftoffRegister old_fp = GetUnusedRegister(RegClass::kGpReg, {});
   movq(old_fp.gp(), rbp);
   jmp(&done);
 
@@ -5050,42 +5051,6 @@ void LiftoffAssembler::MaybeOSR() {
   cmpq(liftoff::kOSRTargetSlot, Immediate(0));
   j(not_equal, static_cast<Address>(Builtin::kWasmOnStackReplace),
     RelocInfo::WASM_STUB_CALL);
-}
-
-void LiftoffAssembler::emit_store_nonzero_if_nan(Register dst,
-                                                 DoubleRegister src,
-                                                 ValueKind kind) {
-  if (kind == kF32) {
-    Ucomiss(src, src);
-  } else {
-    DCHECK_EQ(kind, kF64);
-    Ucomisd(src, src);
-  }
-  Label ret;
-  j(parity_odd, &ret);
-  movl(Operand(dst, 0), Immediate(1));
-  bind(&ret);
-}
-
-void LiftoffAssembler::emit_s128_store_nonzero_if_nan(Register dst,
-                                                      LiftoffRegister src,
-                                                      Register tmp_gp,
-                                                      LiftoffRegister tmp_s128,
-                                                      ValueKind lane_kind) {
-  if (lane_kind == kF32) {
-    movaps(tmp_s128.fp(), src.fp());
-    cmpunordps(tmp_s128.fp(), tmp_s128.fp());
-  } else {
-    DCHECK_EQ(lane_kind, kF64);
-    movapd(tmp_s128.fp(), src.fp());
-    cmpunordpd(tmp_s128.fp(), tmp_s128.fp());
-  }
-  pmovmskb(tmp_gp, tmp_s128.fp());
-  orl(Operand(dst, 0), tmp_gp);
-}
-
-void LiftoffAssembler::emit_store_nonzero(Register dst) {
-  movl(Operand(dst, 0), Immediate(1));
 }
 
 void LiftoffStackSlots::Construct(int param_slots) {

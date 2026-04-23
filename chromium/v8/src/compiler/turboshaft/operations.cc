@@ -11,6 +11,7 @@
 
 #include "src/base/logging.h"
 #include "src/base/platform/mutex.h"
+#include "src/base/string-format.h"
 #include "src/builtins/builtins.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/codegen/machine-type.h"
@@ -93,7 +94,8 @@ void ValidateOpInputRep(
       std::cerr << "Input has results " << PrintCollection(input_reps)
                 << ", but expected at least " << (*projection_index + 1)
                 << " results.\n";
-      UNREACHABLE();
+      FATAL("Wrong input arity in a %s: not enough inputs.\n",
+            OpcodeName(input_op.opcode));
     }
   } else if (input_reps.size() == 1) {
     input_rep = input_reps[0];
@@ -106,11 +108,21 @@ void ValidateOpInputRep(
               << " with wrong arity.\n";
     std::cerr << "Expected a single output but found " << input_reps.size()
               << ".\n";
-    UNREACHABLE();
+    FATAL("Wrong input arity in a %s: too many inputs.\n",
+          OpcodeName(input_op.opcode));
   }
   for (RegisterRepresentation expected_rep : expected_reps) {
+    if (input_op.Is<Opmask::kTaggedIndexConstant>()) {
+      // TODO(dmercadier): TaggedIndex is sometimes treated as a WordPtr and
+      // sometimes as Tagged. We should clean this up and have a single
+      // consistent representation for TaggedIndex.
+      if (expected_rep == any_of(RegisterRepresentation::Tagged(),
+                                 RegisterRepresentation::WordPtr())) {
+        return;
+      }
+    }
     if (input_rep.AllowImplicitRepresentationChangeTo(
-            expected_rep, graph.IsCreatedFromTurbofan())) {
+            expected_rep, graph.IsCreatedFromTurbofan(), graph.IsTurbolev())) {
       return;
     }
   }
@@ -124,7 +136,7 @@ void ValidateOpInputRep(
             << PrintCollection(expected_reps).WithoutBrackets() << " but found "
             << input_rep << ".\n";
   std::cout << "Input: " << graph.Get(input) << "\n";
-  UNREACHABLE();
+  FATAL("Wrong input representation in a %s.\n", OpcodeName(input_op.opcode));
 }
 
 void ValidateOpInputRep(const Graph& graph, OpIndex input,
@@ -178,12 +190,16 @@ std::ostream& operator<<(std::ostream& os, GenericUnopOp::Kind kind) {
   }
 }
 
-std::ostream& operator<<(std::ostream& os, Word32SignHintOp::Sign sign) {
-  switch (sign) {
-    case Word32SignHintOp::Sign::kSigned:
-      return os << "Signed";
-    case Word32SignHintOp::Sign::kUnsigned:
-      return os << "Unsigned";
+std::ostream& operator<<(std::ostream& os, TypeHintOp::Type type) {
+  switch (type) {
+    case TypeHintOp::Type::kInt32:
+      return os << "Int32";
+    case TypeHintOp::Type::kUint32:
+      return os << "Uint32";
+    case TypeHintOp::Type::kFloat64:
+      return os << "Float64";
+    case TypeHintOp::Type::kHoleyFloat64:
+      return os << "HoleyFloat64";
   }
 }
 
@@ -567,21 +583,24 @@ void ConstantOp::PrintOptions(std::ostream& os) const {
       os << "external: " << external_reference();
       break;
     case Kind::kHeapObject:
-      os << "heap object: " << JSONEscaped(handle());
+      os << "heap object: " << base::JSONEscaped(handle());
       break;
     case Kind::kCompressedHeapObject:
-      os << "compressed heap object: " << JSONEscaped(handle());
+      os << "compressed heap object: " << base::JSONEscaped(handle());
       break;
     case Kind::kTrustedHeapObject:
-      os << "trusted heap object: " << JSONEscaped(handle());
+      os << "trusted heap object: " << base::JSONEscaped(handle());
       break;
     case Kind::kRelocatableWasmCall:
-      os << "relocatable wasm call: 0x"
-         << reinterpret_cast<void*>(storage.integral);
+      os << "relocatable wasm call: 0x" << std::hex << storage.integral
+         << std::dec;
       break;
     case Kind::kRelocatableWasmStubCall:
-      os << "relocatable wasm stub call: 0x"
-         << reinterpret_cast<void*>(storage.integral);
+      os << "relocatable wasm stub call: "
+         << (Builtins::IsBuiltinId(static_cast<int>(storage.integral))
+                 ? Builtins::name(Builtin(storage.integral))
+                 : "<not a builtin>")
+         << " (0x" << std::hex << storage.integral << std::dec << ")";
       break;
     case Kind::kRelocatableWasmCanonicalSignatureId:
       os << "relocatable wasm canonical signature ID: "
@@ -631,6 +650,7 @@ void LoadOp::PrintOptions(std::ostream& os) const {
   os << (kind.tagged_base ? "tagged base" : "raw");
   if (kind.maybe_unaligned) os << ", unaligned";
   if (kind.with_trap_handler) os << ", protected";
+  if (kind.is_immutable) os << ", immutable";
   os << ", " << loaded_rep;
   os << ", " << result_rep;
   if (element_size_log2 != 0)
@@ -682,6 +702,12 @@ void AtomicWord32PairOp::PrintInputs(std::ostream& os,
 void AtomicWord32PairOp::PrintOptions(std::ostream& os) const {
   os << "[opkind: " << kind << ']';
 }
+
+#ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
+void SwitchSandboxModeOp::PrintOptions(std::ostream& os) const {
+  os << "[sandbox mode: " << static_cast<int>(sandbox_mode) << ']';
+}
+#endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
 
 void MemoryBarrierOp::PrintOptions(std::ostream& os) const {
   os << "[memory order: " << memory_order << ']';
@@ -1116,7 +1142,24 @@ std::ostream& operator<<(std::ostream& os, BlockIndex b) {
 }
 
 std::ostream& operator<<(std::ostream& os, const Block* b) {
-  return os << b->index();
+  if (b == nullptr) {
+    os << "nullptr";
+  } else {
+    os << b->index();
+  }
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os, EffectHandler h) {
+  return os << h.block;
+}
+
+std::ostream& operator<<(std::ostream& os, base::Vector<EffectHandler> hs) {
+  os << "effect handlers: ";
+  for (auto& h : hs) {
+    os << h.tag_index << ":" << h.block << (&h == &hs.last() ? "" : " ");
+  }
+  return os;
 }
 
 std::ostream& operator<<(std::ostream& os, OpEffects effects) {
@@ -1323,20 +1366,11 @@ std::ostream& operator<<(
 
 std::ostream& operator<<(
     std::ostream& os,
-    ConvertUntaggedToJSPrimitiveOrDeoptOp::JSPrimitiveKind kind) {
-  switch (kind) {
-    case ConvertUntaggedToJSPrimitiveOrDeoptOp::JSPrimitiveKind::kSmi:
-      return os << "Smi";
-  }
-}
-
-std::ostream& operator<<(
-    std::ostream& os, ConvertUntaggedToJSPrimitiveOrDeoptOp::InputInterpretation
-                          input_interpretation) {
+    ConvertWordToSmiOrDeoptOp::InputInterpretation input_interpretation) {
   switch (input_interpretation) {
-    case ConvertUntaggedToJSPrimitiveOrDeoptOp::InputInterpretation::kSigned:
+    case ConvertWordToSmiOrDeoptOp::InputInterpretation::kSigned:
       return os << "Signed";
-    case ConvertUntaggedToJSPrimitiveOrDeoptOp::InputInterpretation::kUnsigned:
+    case ConvertWordToSmiOrDeoptOp::InputInterpretation::kUnsigned:
       return os << "Unsigned";
   }
 }
@@ -1354,10 +1388,8 @@ std::ostream& operator<<(std::ostream& os,
       return os << "Bit";
     case ConvertJSPrimitiveToUntaggedOp::UntaggedKind::kFloat64:
       return os << "Float64";
-#ifdef V8_ENABLE_UNDEFINED_DOUBLE
     case ConvertJSPrimitiveToUntaggedOp::UntaggedKind::kHoleyFloat64:
       return os << "HoleyFloat64";
-#endif  // V8_ENABLE_UNDEFINED_DOUBLE
   }
 }
 
@@ -1586,7 +1618,7 @@ void PrintMapSet(std::ostream& os, const ZoneRefSet<Map>& maps) {
   os << "{";
   for (size_t i = 0; i < maps.size(); ++i) {
     if (i != 0) os << ",";
-    os << JSONEscaped(maps[i].object());
+    os << base::JSONEscaped(maps[i].object());
   }
   os << "}";
 }
@@ -2141,13 +2173,25 @@ size_t CallOp::hash_value(HashingStrategy strategy) const {
   }
 }
 
+template <>
+struct fast_hash<EffectHandler> {
+  size_t operator()(const EffectHandler& h) {
+    DCHECK_NOT_NULL(h.block);
+    const BlockIndex index = h.block->index();
+    DCHECK(index.valid());
+    return index.id();
+  }
+};
+
 size_t CheckExceptionOp::hash_value(HashingStrategy strategy) const {
   if (strategy == HashingStrategy::kMakeSnapshotStable) {
     // Destructure here to cause a compilation error in case `options` is
     // changed.
-    auto [didnt_throw_block_value, catch_block_value] = options();
+    auto [didnt_throw_block_value, catch_block_value, effects_value] =
+        options();
     return HashWithOptions(index_for_bound_block(didnt_throw_block_value),
-                           index_for_bound_block(catch_block_value));
+                           index_for_bound_block(catch_block_value),
+                           effects_value);
   } else {
     return Base::hash_value(strategy);
   }
@@ -2280,5 +2324,70 @@ bool Operation::IsProtectedLoad() const {
   return false;
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
+
+IsSmiDecision CombineDecisions(IsSmiDecision left, IsSmiDecision right) {
+  if (left == right) return left;
+  return IsSmiDecision::kUnknown;
+}
+IsSmiDecision DecideObjectIsSmi(const Graph& graph, V<Object> idx, int depth) {
+  constexpr int kMaxDepth = 3;
+  DCHECK_LE(depth, kMaxDepth);
+
+  const Operation& op = graph.Get(idx);
+  switch (op.opcode) {
+    case Opcode::kConstant: {
+      const ConstantOp& cst = op.Cast<ConstantOp>();
+      if (cst.kind == ConstantOp::Kind::kNumber) {
+        // For kNumber, we don't know yet whether this will turn into a Smi or
+        // a HeapNumber.
+        return IsSmiDecision::kUnknown;
+      }
+      return (cst.IsIntegral() || cst.kind == ConstantOp::Kind::kSmi)
+                 ? IsSmiDecision::kTrue
+                 : IsSmiDecision::kFalse;
+    }
+    case Opcode::kAllocate:
+      return IsSmiDecision::kFalse;
+    case Opcode::kConvertUntaggedToJSPrimitive: {
+      using Kind = ConvertUntaggedToJSPrimitiveOp::JSPrimitiveKind;
+      switch (op.Cast<ConvertUntaggedToJSPrimitiveOp>().kind) {
+        case Kind::kBigInt:
+        case Kind::kBoolean:
+        case Kind::kHeapNumber:
+        case Kind::kHeapNumberOrUndefined:
+        case Kind::kString:
+          return IsSmiDecision::kFalse;
+        case Kind::kSmi:
+          return IsSmiDecision::kTrue;
+        case Kind::kNumber:
+          return IsSmiDecision::kUnknown;
+      }
+      UNREACHABLE();
+    }
+    case Opcode::kLoad: {
+      switch (op.Cast<LoadOp>().loaded_rep) {
+        case MemoryRepresentation::TaggedPointer():
+          return IsSmiDecision::kFalse;
+        case MemoryRepresentation::TaggedSigned():
+          return IsSmiDecision::kTrue;
+        default:
+          return IsSmiDecision::kUnknown;
+      }
+    }
+    case Opcode::kPhi:
+      if (depth == kMaxDepth) return IsSmiDecision::kUnknown;
+      return std::accumulate(
+          op.inputs().begin() + 1, op.inputs().end(),
+          DecideObjectIsSmi(graph, op.input(0), depth + 1),
+          [&](IsSmiDecision acc, OpIndex input_idx) {
+            return CombineDecisions(
+                acc, DecideObjectIsSmi(graph, input_idx, depth + 1));
+          });
+    default:
+      break;
+  }
+
+  return IsSmiDecision::kUnknown;
+}
 
 }  // namespace v8::internal::compiler::turboshaft

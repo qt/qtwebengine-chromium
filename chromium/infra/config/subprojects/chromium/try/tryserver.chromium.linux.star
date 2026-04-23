@@ -24,6 +24,9 @@ try_.defaults.set(
     os = os.LINUX_DEFAULT,
     compilator_cores = 8,
     execution_timeout = try_constants.DEFAULT_EXECUTION_TIMEOUT,
+    experiments = {
+        "chromium_tests.resultdb_module": 100,
+    },
     orchestrator_cores = 2,
     orchestrator_siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
     service_account = try_constants.DEFAULT_SERVICE_ACCOUNT,
@@ -82,7 +85,7 @@ try_.builder(
         },
         # Catches a couple of CLs per week that are either actionable or
         # worthy of discussion.
-        "size_threshold_mib": 250,
+        "size_threshold_mib": 200,
     },
     tryjob = try_.job(),
 )
@@ -216,6 +219,20 @@ try_.builder(
         ],
     ),
     contact_team_email = "chrome-security-architecture@google.com",
+    cq_settings = try_.cq_settings(
+        location_filters = [
+            r"chrome/browser/renderer_host/javascript_optimizer_feature_browsertest\.cc$",
+            r"chrome/browser/policy/test/v8_optimizer_policy_browsertest\.cc$",
+            r"chrome/browser/site_protection/.*\.(cc|h)$",
+            r"content/browser/agent_cluster_key.+",
+            r"content/browser/child_process_security_policy.+",
+            r"content/browser/process_lock.+",
+            r"content/browser/renderer_host/render_frame_host_manager.+",
+            r"content/browser/site_info\.(cc|h)$",
+            r"content/browser/site_instance.*\.(cc|h)$",
+            r"content/public/browser/site_instance.*\.(cc|h)$",
+        ],
+    ),
     siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
 )
 
@@ -419,6 +436,8 @@ try_.orchestrator_builder(
         "chromium.add_one_test_shard": 10,
         # crbug/940930
         "chromium.enable_cleandead": 100,
+        # TODO(crbug.com/442618066): ramp experiment and apply to more builders
+        "siso.keep_going_limited": 50,
     },
     main_list_view = "try",
     # TODO(crbug.com/40241638): Use orchestrator pool once overloaded test pools
@@ -523,7 +542,7 @@ try_.builder(
     coverage_test_types = ["unit", "overall"],
     tryjob = try_.job(
         location_filters = [
-            "chrome/browser/.+(ui|browser)test.+",
+            "chrome/browser/.+uitest.+",
             "chrome/browser/ui/views/.+test.+",
             "chrome/browser/ui/views/tabs/.+",
             "testing/xvfb\\.py",

@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Optional, Self, Type
+import logging
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, Self, Type
 
 from typing_extensions import override
 
@@ -13,6 +14,9 @@ from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import MetricsMerger
 
 if TYPE_CHECKING:
+  import datetime as dt
+
+  from crossbench import exception
   from crossbench.probes.probe import ProbeConfigParser, ProbeKeyT
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.actions import Actions
@@ -46,13 +50,12 @@ class JSProbe(JsonResultProbe):
     parser.add_default_argument(
         "js",
         type=parse_javascript,
-        required=True,
         help=("Required JavaScript code that is run immediately after "
               "a story has finished. The code must return a JS object with "
               "(nested) metric values (numbers)."))
     return parser
 
-  def __init__(self, js: str, setup: Optional[str] = None) -> None:
+  def __init__(self, js: Optional[str], setup: Optional[str] = None) -> None:
     super().__init__()
     self._setup_js = setup
     self._metric_js = js
@@ -62,7 +65,7 @@ class JSProbe(JsonResultProbe):
     return self._setup_js
 
   @property
-  def metric_js(self) -> str:
+  def metric_js(self) -> Optional[str]:
     return self._metric_js
 
   @property
@@ -89,10 +92,32 @@ class JSProbe(JsonResultProbe):
 
 class JSProbeContext(JsonResultProbeContext[JSProbe]):
 
+  def __init__(self, *args, **kwargs) -> None:
+    super().__init__(*args, **kwargs)
+    self._json_data: dict[str, Any] = {}
+
+  def _update_metrics(self, data: dict[str, Any]) -> None:
+    existing_metrics = {k: v for k, v in self._json_data.items() if k in data}
+    logging.debug("JSProbe: The following metrics will be overwritten: %s",
+                  existing_metrics)
+    self._json_data.update(data)
+
   @override
   def to_json(self, actions: Actions) -> Json:
-    data = actions.js(self.probe.metric_js)
-    return ObjectParser.non_empty_dict(data, "JS metric data")
+    if metric_js := self.probe.metric_js:
+      data = actions.js(metric_js)
+      self._update_metrics(ObjectParser.non_empty_dict(data, "JS metric data"))
+    return self._json_data
+
+  def invoke(self, info_stack: exception.TInfoStack, timeout: dt.timedelta,
+             **kwargs) -> None:
+    del info_stack
+    js = kwargs.pop("js")
+    self.expect_no_extra_kwargs(kwargs)
+    with self.run.actions(
+        f"Probe({self.probe.name}) invoke", measure=False) as actions:
+      data = actions.js(js, timeout=timeout)
+      self._update_metrics(ObjectParser.non_empty_dict(data, "JS metric data"))
 
   def start(self) -> None:
     if setup_js := self.probe.setup_js:

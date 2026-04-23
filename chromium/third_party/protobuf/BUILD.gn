@@ -30,6 +30,8 @@ config("protobuf_config_internal") {
     cflags = [
       # For src/google/protobuf/map.cc:
       "-Wno-deprecated-this-capture",
+      # For src/google/protobuf/generated_message_reflection.cc
+      "-Wno-unused-lambda-capture",
     ]
   }
 }
@@ -52,7 +54,12 @@ config("using_proto") {
 
 # On Android, we must use a static library to avoid symbol conflicts with
 # the system's version of protobuf.
-if (is_android) {
+# Exclude Android fuzzing builds since having targets that include a proto_library
+# and a fuzzable_proto_library leads to symbol conflicts due to the inclusion of
+# the protobuf lite_runtime and full_runtime.
+# TODO(448809154): Investigate whether symbol conflicts with the system's protobuf
+# version appear on our android fuzzing devices.
+if (is_android && !use_fuzzing_engine_with_lpm) {
   _protobuf_lite_target_type = "static_library"
 } else {
   _protobuf_lite_target_type = "component"

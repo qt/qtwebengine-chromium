@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
@@ -94,7 +95,6 @@ class MockWebMediaPlayer : public WebMediaPlayer {
           auto_picture_in_picture_info) override {}
 
   void SetWouldTaintOrigin(bool taint) { would_taint_origin_ = taint; }
-  bool PassedTimingAllowOriginCheck() const override { return true; }
 
   void Paint(cc::PaintCanvas* canvas,
              const gfx::Rect& rect,

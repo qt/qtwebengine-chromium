@@ -26,6 +26,18 @@ chromium-metrics-reviews@google.com.
 
 <enums>
 
+<!-- LINT.IfChange(ActorFormFillingOutcome) -->
+
+<enum name="ActorFormFillingOutcome">
+  <int value="0" label="Success"/>
+  <int value="1" label="Other error"/>
+  <int value="2" label="Autofill not available"/>
+  <int value="3" label="Form not found"/>
+  <int value="4" label="Suggestion not found"/>
+</enum>
+
+<!-- LINT.ThenChange(//components/autofill/core/browser/integrators/glic/actor_form_filling_types.h:ActorFormFillingError) -->
+
 <enum name="AndroidAutofillAvailabilityStatus">
   <summary>
     Describes whether Android Autofill was available. If not, it splits the
@@ -155,6 +167,16 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="Import with section union"/>
 </enum>
 
+<enum name="AutofillAiBubbleClosedReason">
+  <int value="0" label="The prompt was for closed due to an unknown reason"/>
+  <int value="1" label="The prompt was accepted"/>
+  <int value="2" label="The user clicked the cancel button"/>
+  <int value="3"
+      label="The user closed the prompt (via the close button or the ESC)"/>
+  <int value="4" label="The user did not interact with the prompt"/>
+  <int value="5" label="The prompt was closed due to losing focus"/>
+</enum>
+
 <!-- LINT.IfChange(AutofillAiDecryptStatus) -->
 
 <enum name="AutofillAiDecryptStatus">
@@ -165,19 +187,18 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(//components/autofill/core/browser/webdata/autofill_ai/entity_table.cc:DecryptionStatus) -->
 
-<!-- LINT.IfChange(AutofillAiEntityType) -->
-
 <enum name="AutofillAiEntityType">
+<!-- Generated from components/autofill/core/browser/data_model/autofill_ai/entity_schema.json.
+Called by update_autofill_enums.py.-->
+
   <int value="0" label="Passport"/>
-  <int value="1" label="Driver's License"/>
-  <int value="2" label="Vehicle Information"/>
-  <int value="3" label="National ID Card"/>
+  <int value="1" label="Driver's license"/>
+  <int value="2" label="Vehicle"/>
+  <int value="3" label="National Id Card"/>
   <int value="4" label="Known Traveler Number"/>
   <int value="5" label="Redress Number"/>
   <int value="6" label="Flight Reservation"/>
 </enum>
-
-<!-- LINT.ThenChange(//components/autofill/core/browser/data_model/autofill_ai/entity_type.cc:EntityType) -->
 
 <enum name="AutofillAiModelExecutionStatus">
   <int value="0"
@@ -205,6 +226,17 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(/components/autofill/core/browser/permissions/autofill_ai/autofill_ai_permission_utils.h:AutofillAiOptInStatus) -->
+
+<!-- LINT.IfChange(AutofillAiPrefMigrationStatus) -->
+
+<enum name="AutofillAiPrefMigrationStatus">
+  <int value="0" label="Pref migrated (set to true)"/>
+  <int value="1" label="Pref migrated (set to false)"/>
+  <int value="2" label="Pref already set"/>
+  <int value="3" label="Pref not migrated (account keyed pref never set)"/>
+</enum>
+
+<!-- LINT.ThenChange(/components/autofill/core/browser/data_manager/autofill_ai/entity_data_manager.h:AutofillAiPrefMigrationStatus) -->
 
 <enum name="AutofillAlternativeNameFieldValueCharacterSet">
   <int value="0" label="Katakana"/>
@@ -243,6 +275,7 @@ chromium-metrics-reviews@google.com.
   <int value="7" label="FilledCardInformation"/>
   <int value="8" label="Password"/>
   <int value="9" label="WalletablePassConsent"/>
+  <int value="10" label="WalletablePassSave"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/ui/autofill/bubble_controller_base.h:BubbleType) -->
@@ -983,43 +1016,11 @@ Called by update_autofill_enums.py.-->
              value edited"/>
   <int value="13121"
       label="FLIGHT_RESERVATION_ARRIVAL_AIRPORT: Autofilled value accepted"/>
-</enum>
-
-<enum name="AutofillDynamicElementType">
-  <int value="0" label="ButtonButton"/>
-  <int value="1" label="ButtonSubmit"/>
-  <int value="2" label="ButtonReset"/>
-  <int value="3" label="ButtonPopover"/>
-  <int value="4" label="Fieldset"/>
-  <int value="5" label="InputButton"/>
-  <int value="6" label="InputCheckbox"/>
-  <int value="7" label="InputColor"/>
-  <int value="8" label="InputDate"/>
-  <int value="9" label="InputDatetimeLocal"/>
-  <int value="10" label="InputEmail"/>
-  <int value="11" label="InputFile"/>
-  <int value="12" label="InputHidden"/>
-  <int value="13" label="InputImage"/>
-  <int value="14" label="InputMonth"/>
-  <int value="15" label="InputNumber"/>
-  <int value="16" label="InputPassword"/>
-  <int value="17" label="InputRadio"/>
-  <int value="18" label="InputRange"/>
-  <int value="19" label="InputReset"/>
-  <int value="20" label="InputSearch"/>
-  <int value="21" label="InputSubmit"/>
-  <int value="22" label="InputTelephone"/>
-  <int value="23" label="InputText"/>
-  <int value="24" label="InputTime"/>
-  <int value="25" label="InputUrl"/>
-  <int value="26" label="InputWeek"/>
-  <int value="27" label="Output"/>
-  <int value="28" label="SelectOne"/>
-  <int value="29" label="SelectMultiple"/>
-  <int value="30" label="TextArea"/>
-  <int value="31" label="Form"/>
-  <int value="32" label="Other"/>
-  <int value="33" label="Null"/>
+  <int value="13184"
+      label="FLIGHT_RESERVATION_DEPARTURE_DATE: Not autofilled or autofilled
+             value edited"/>
+  <int value="13185"
+      label="FLIGHT_RESERVATION_DEPARTURE_DATE: Autofilled value accepted"/>
 </enum>
 
 <enum name="AutofilledFieldUserEditingStatus">
@@ -1313,6 +1314,8 @@ Called by update_autofill_enums.py.-->
   <int value="3265" label="FLIGHT_RESERVATION_DEPARTURE_AIRPORT: accepted"/>
   <int value="3280" label="FLIGHT_RESERVATION_ARRIVAL_AIRPORT: edited"/>
   <int value="3281" label="FLIGHT_RESERVATION_ARRIVAL_AIRPORT: accepted"/>
+  <int value="3296" label="FLIGHT_RESERVATION_DEPARTURE_DATE: edited"/>
+  <int value="3297" label="FLIGHT_RESERVATION_DEPARTURE_DATE: accepted"/>
 </enum>
 
 <enum name="AutofillEmailOrLoyaltyCardAcceptanceMetricValue">
@@ -2185,6 +2188,7 @@ Called by update_autofill_enums.py.-->
   <int value="203" label="KNOWN_TRAVELER_NUMBER_EXPIRATION_DATE"/>
   <int value="204" label="FLIGHT_RESERVATION_DEPARTURE_AIRPORT"/>
   <int value="205" label="FLIGHT_RESERVATION_ARRIVAL_AIRPORT"/>
+  <int value="206" label="FLIGHT_RESERVATION_DEPARTURE_DATE"/>
 </enum>
 
 <enum name="AutofillFilledCardInformationBubbleFieldClicked">
@@ -2306,10 +2310,10 @@ Called by update_autofill_enums.py.-->
   <int value="48"
       label="CreditCardSeamlessFill :-( (all other scenarios = Partial fill)"/>
   <int value="49"
-      label="Missing shared-autofill feature prevented a cross-origin
-             credit-card field from being filled. Shared-autofill is a
-             policy-controlled feature by which a frame can allow a
-             child-frame to be autofilled across origin."/>
+      label="Disabled policy-controlled feature &quot;autofill&quot;
+             prevented a cross-origin credit-card field from being filled.
+             With &quot;autofill&quot;, a frame can allow a child-frame to be
+             autofilled across origin."/>
   <int value="50"
       label="CreditCardSeamlessFillable :-D (name &amp; number &amp; exp.
              date &amp; CVC = Full fill)"/>
@@ -2389,26 +2393,26 @@ Called by update_autofill_enums.py.-->
       label="(DEPRECATED) Suggestions were shown, and no card had a benefit
              available (once)"/>
   <int value="93"
-      label="Suggestion for a masked server card with a benefit available was
-             selected"/>
+      label="(DEPRECATED) Suggestion for a masked server card with a benefit
+             available was selected"/>
   <int value="94"
       label="(DEPRECATED) Suggestion for a masked server card with no benefit
              available was selected"/>
   <int value="95"
-      label="Suggestion for a masked server card with a benefit available was
-             selected (once)"/>
+      label="(DEPRECATED) Suggestion for a masked server card with a benefit
+             available was selected (once)"/>
   <int value="96"
       label="(DEPRECATED) Suggestion for a masked server card with no benefit
              available was selected (once)"/>
   <int value="97"
-      label="Suggestion for a masked server card with a benefit available was
-             filled"/>
+      label="(DEPRECATED) Suggestion for a masked server card with a benefit
+             available was filled"/>
   <int value="98"
       label="(DEPRECATED) Suggestion for a masked server card with no benefit
              available was filled"/>
   <int value="99"
-      label="Suggestion for a masked server card with a benefit available was
-             filled (once)"/>
+      label="(DEPRECATED) Suggestion for a masked server card with a benefit
+             available was filled (once)"/>
   <int value="100"
       label="(DEPRECATED) Suggestion for a masked server card with no benefit
              available was filled (once)"/>
@@ -2421,21 +2425,22 @@ Called by update_autofill_enums.py.-->
              for masked server card with no benefit available was filled
              (once)"/>
   <int value="103"
-      label="Form was submitted after a suggestion for a masked server card
-             with a benefit available was filled (once)"/>
+      label="(DEPRECATED) Form was submitted after a suggestion for a masked
+             server card with a benefit available was filled (once)"/>
   <int value="104"
       label="(DEPRECATED) Form was submitted after a suggestion for a masked
              server card with no benefit available was filled (once)"/>
   <int value="105"
-      label="Suggestion for a masked server card was selected after
-             suggestions containing cards with a benefit available were shown
-             (once)"/>
+      label="(DEPRECATED) Suggestion for a masked server card was selected
+             after suggestions containing cards with a benefit available were
+             shown (once)"/>
   <int value="106"
-      label="Suggestion for a masked server card was filled after suggestions
-             containing cards with a benefit available were shown (once)"/>
+      label="(DEPRECATED) Suggestion for a masked server card was filled
+             after suggestions containing cards with a benefit available were
+             shown (once)"/>
   <int value="107"
-      label="Form was submitted after suggestions containing cards with a
-             benefit available were shown (once)"/>
+      label="(DEPRECATED) Form was submitted after suggestions containing
+             cards with a benefit available were shown (once)"/>
   <int value="108" label="Local card suggestion selected"/>
   <int value="109" label="Local card suggestion selected (once)"/>
 </enum>
@@ -3139,6 +3144,7 @@ Called by update_autofill_enums.py.-->
   <int value="0" label="No pattern found"/>
   <int value="1" label="UPI VPA"/>
   <int value="2" label="IBAN"/>
+  <int value="3" label="ACH routing transit number"/>
 </enum>
 
 <enum name="AutofillVirtualCardDialogLinkClicked">
@@ -3185,9 +3191,11 @@ Called by update_autofill_enums.py.-->
   <int value="22" label="RemoveFormValueForElementName: Failure"/>
   <int value="30" label="AddAutofillProfile: Success"/>
   <int value="31" label="AddAutofillProfile: Failure"/>
+  <int value="32" label="AddAutofillProfile: GetFailure"/>
   <int value="40" label="UpdateAutofillProfile: Success"/>
   <int value="41" label="UpdateAutofillProfile: ReadFailure"/>
   <int value="42" label="UpdateAutofillProfile: WriteFailure"/>
+  <int value="43" label="UpdateAutofillProfile: GetFailure"/>
   <int value="50" label="RemoveAutofillProfile: Success"/>
   <int value="51" label="RemoveAutofillProfile: ReadFailure"/>
   <int value="52" label="RemoveAutofillProfile: WriteFailure"/>
@@ -3249,8 +3257,8 @@ Called by update_autofill_enums.py.-->
   <int value="301" label="RemoveEntityInstance: Failure"/>
   <int value="310" label="RemoveEntityInstancesModifiedBetween: Success"/>
   <int value="311" label="RemoveEntityInstancesModifiedBetween: Failure"/>
-  <int value="312" label="CleanupForCrbug411681430: Success"/>
-  <int value="313" label="CleanupForCrbug411681430: Failure"/>
+  <int value="312" label="ClearLocalCvcsUpToMay2025: Success"/>
+  <int value="313" label="ClearLocalCvcsUpToMay2025: Failure"/>
   <int value="314" label="CleanupForCrbug445879524: Success"/>
   <int value="315" label="CleanupForCrbug445879524: Failure"/>
 </enum>
@@ -3324,11 +3332,15 @@ Called by update_autofill_enums.py.-->
 
 <!-- LINT.ThenChange(/components/autofill/core/browser/payments/payments_window_manager.h:BnplFlowResult) -->
 
-<enum name="BnplSuggestionNotShownReason">
+<!-- LINT.IfChange(BnplSuggestionUnavailableReason) -->
+
+<enum name="BnplSuggestionUnavailableReason">
   <int value="0" label="Amount extraction failure"/>
   <int value="1" label="Checkout amount not supported"/>
   <int value="2" label="Amount extraction timeout"/>
 </enum>
+
+<!-- LINT.ThenChange(/components/autofill/core/browser/metrics/payments/bnpl_metrics.h:BnplSuggestionUnavailableReason) -->
 
 <!-- LINT.IfChange(BnplTosDialogResult) -->
 
@@ -3562,16 +3574,6 @@ Called by update_autofill_enums.py.-->
   <int value="3"
       label="FalseNegative: overall_type=not email, submitted text matches
              email"/>
-</enum>
-
-<enum name="EntitySaveOrUpdatePromptResult">
-  <int value="0" label="The prompt was for closed due to an unknown reason"/>
-  <int value="1" label="The prompt was accepted"/>
-  <int value="2" label="The user clicked the cancel button"/>
-  <int value="3"
-      label="The user closed the prompt (via the close button or the ESC)"/>
-  <int value="4" label="The user did not interact with the prompt"/>
-  <int value="5" label="The prompt was closed due to losing focus"/>
 </enum>
 
 <enum name="FastCheckoutCacheStateForIsTriggerFormSupported">
@@ -3915,6 +3917,8 @@ Called by update_autofill_enums.py.-->
   <int value="817" label="FLIGHT_RESERVATION_DEPARTURE_AIRPORT: Accepted"/>
   <int value="820" label="FLIGHT_RESERVATION_ARRIVAL_AIRPORT: Ignored"/>
   <int value="821" label="FLIGHT_RESERVATION_ARRIVAL_AIRPORT: Accepted"/>
+  <int value="824" label="FLIGHT_RESERVATION_DEPARTURE_DATE: Ignored"/>
+  <int value="825" label="FLIGHT_RESERVATION_DEPARTURE_DATE: Accepted"/>
 </enum>
 
 <!-- LINT.IfChange(FormSubmissionOutcomeIOS) -->
@@ -4132,6 +4136,24 @@ Called by update_autofill_enums.py.-->
   <int value="1" label="Settings link clicked"/>
 </enum>
 
+<!-- LINT.IfChange(OneTimeTokensBackendErrorCode) -->
+
+<enum name="OneTimeTokensBackendErrorCode">
+  <int value="0" label="GMSCore version not supported"/>
+</enum>
+
+<!-- LINT.ThenChange(/components/one_time_tokens/android/backend/common/java/src/org/chromium/components/one_time_tokens/backend/OneTimeTokensBackendErrorCode.java) -->
+
+<enum name="OneTimeTokensPhishGuardVerdict">
+  <summary>
+    The verdict of a PhishGuard check before offering to autofill one-time
+    tokens. Recorded every time a PhishGuard check is completed.
+  </summary>
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Phishing"/>
+  <int value="2" label="Not Phishing"/>
+</enum>
+
 <enum name="PaymentsWindowUserConsentDialogResult">
   <int value="0" label="The tab or browser was closed"/>
   <int value="1" label="The escape key was pressed, closing the dialog"/>
@@ -4202,12 +4224,6 @@ Called by update_autofill_enums.py.-->
   <int value="2" label="Expiration Date Formatted"/>
 </enum>
 
-<enum name="RelativePosition">
-  <int value="0" label="Ranked higher"/>
-  <int value="1" label="Ranked lower"/>
-  <int value="2" label="Ranked same"/>
-</enum>
-
 <enum name="RendererFillSkipReason">
   <int value="0" label="Unfillable"/>
   <int value="1" label="No value to fill"/>
@@ -4273,6 +4289,19 @@ Called by update_autofill_enums.py.-->
 
 <!-- LINT.ThenChange(/components/autofill/core/browser/metrics/payments/bnpl_metrics.h:SelectBnplIssuerDialogResult) -->
 
+<!-- LINT.IfChange(SmsOtpRetrievalApiErrorCode) -->
+
+<enum name="SmsOtpRetrievalApiErrorCode">
+  <int value="13" label="CommonStatusCodes.ERROR"/>
+  <int value="15" label="Timeout"/>
+  <int value="36500" label="Platform does not support SmsCodeAutofillClient"/>
+  <int value="36501"
+      label="Calling app not allowlisted by SmsCodeAutofillClient"/>
+  <int value="36502" label="Permission denied by user"/>
+</enum>
+
+<!-- LINT.ThenChange(/components/one_time_tokens/android/backend/sms/sms_otp_retrieval_api_error_codes.h:SmsOtpRetrievalApiErrorCode) -->
+
 <!-- LINT.IfChange(SuggestionType) -->
 
 <enum name="SuggestionType">
@@ -4323,7 +4352,7 @@ Called by update_autofill_enums.py.-->
   <int value="36" label="Virtual credit card entry"/>
   <int value="37" label="(Obsolete) Credit card field-by-field filling"/>
   <int value="38" label="Iban entry"/>
-  <int value="39" label="Create new plus address"/>
+  <int value="39" label="(Obsolete) Create new plus address"/>
   <int value="40" label="Fill existing plus address"/>
   <int value="41" label="Merchant promo code entry"/>
   <int value="42" label="See promo code details"/>
@@ -4336,12 +4365,12 @@ Called by update_autofill_enums.py.-->
   <int value="49" label="Devtools test addresses"/>
   <int value="50" label="Devtools test address entry"/>
   <int value="51" label="Devtools test address by country entry"/>
-  <int value="52" label="Create new plus address inline"/>
+  <int value="52" label="(Obsolete) Create new plus address inline"/>
   <int value="53" label="(Obsolete) Retrieve Autofill AI suggestions"/>
   <int value="54" label="(Obsolete) Autofill AI loading state"/>
   <int value="55" label="Autofill AI filling suggestion"/>
   <int value="56" label="(Obsolete) Autofill AI feedback"/>
-  <int value="57" label="Plus address error"/>
+  <int value="57" label="(Obsolete) Plus address error"/>
   <int value="58" label="(Obsolete) Autofill AI details"/>
   <int value="59" label="(Obsolete) Autofill AI error"/>
   <int value="60" label="(Obsolete) Edit Autofill AI information"/>
@@ -4393,7 +4422,8 @@ Called by update_autofill_enums.py.-->
   <int value="1" label="Not shown: clicked field not focusable or not empty"/>
   <int value="2" label="Not shown: no valid payment methods to display"/>
   <int value="3" label="Not shown: form or client not secure"/>
-  <int value="4" label="Not shown: was shown before"/>
+  <int value="4"
+      label="Not shown: was shown before and should not be shown again"/>
   <int value="5" label="Not shown: could not show Autofill UI"/>
   <int value="6"
       label="Not shown: tried to display the sheet, but failed due to unknown
@@ -4404,6 +4434,11 @@ Called by update_autofill_enums.py.-->
   <int value="10" label="Not shown: unsupported field type"/>
   <int value="11" label="Not shown: Fast Checkout was shown"/>
   <int value="12" label="Not shown: some inputs already contain values"/>
+</enum>
+
+<enum name="TouchToFillBnplSuggestionInteraction">
+  <int value="0" label="BNPL suggestion was shown and remained selectable"/>
+  <int value="1" label="BNPL suggestion was selected"/>
 </enum>
 
 <enum name="UploadPaymentMethodOrigin">
@@ -4473,6 +4508,48 @@ Called by update_autofill_enums.py.-->
 </enum>
 
 <!-- LINT.ThenChange(/chrome/browser/webdata_services/web_data_service_factory.cc:AutofillAccountStorageResult) -->
+
+<!-- LINT.IfChange(YourSavedInfoDataCategory) -->
+
+<enum name="YourSavedInfoDataCategory">
+  <int value="0" label="Password Manager"/>
+  <int value="1" label="Payments"/>
+  <int value="2" label="Contact info"/>
+  <int value="3" label="Identity docs"/>
+  <int value="4" label="Travel"/>
+</enum>
+
+<!-- LINT.ThenChange(/chrome/browser/resources/settings/metrics_browser_proxy.ts:YourSavedInfoDataCategory) -->
+
+<!-- LINT.IfChange(YourSavedInfoDataChip) -->
+
+<enum name="YourSavedInfoDataChip">
+  <int value="0" label="Passwords"/>
+  <int value="1" label="Passkeys"/>
+  <int value="2" label="Credit cards"/>
+  <int value="3" label="Pay over time"/>
+  <int value="4" label="IBANs"/>
+  <int value="5" label="Loyalty cards"/>
+  <int value="6" label="Addresses"/>
+  <int value="7" label="Driver's licenses"/>
+  <int value="8" label="National ID cards"/>
+  <int value="9" label="Passports"/>
+  <int value="10" label="Flight reservations"/>
+  <int value="11" label="Travel info"/>
+  <int value="12" label="Vehicles"/>
+</enum>
+
+<!-- LINT.ThenChange(/chrome/browser/resources/settings/metrics_browser_proxy.ts:YourSavedInfoDataChip) -->
+
+<!-- LINT.IfChange(YourSavedInfoRelatedService) -->
+
+<enum name="YourSavedInfoRelatedService">
+  <int value="0" label="Google Password Manager"/>
+  <int value="1" label="Google Wallet"/>
+  <int value="2" label="Google Account"/>
+</enum>
+
+<!-- LINT.ThenChange(/chrome/browser/resources/settings/metrics_browser_proxy.ts:YourSavedInfoRelatedService) -->
 
 </enums>
 

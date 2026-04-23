@@ -26,13 +26,12 @@
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/str_cat.h"
-#include "absl/strings/substitute.h"
 #include "absl/types/span.h"
 #include "ink/geometry/affine_transform.h"
 #include "ink/geometry/angle.h"
 #include "ink/geometry/mesh.h"
 #include "ink/geometry/mesh_format.h"
+#include "ink/geometry/mesh_index_types.h"
 #include "ink/geometry/mesh_packing_types.h"
 #include "ink/geometry/mesh_test_helpers.h"
 #include "ink/geometry/mutable_mesh.h"
@@ -47,37 +46,14 @@ namespace ink {
 namespace {
 
 using ::absl_testing::IsOk;
-using ::testing::AllOf;
 using ::testing::AnyOf;
 using ::testing::ElementsAre;
 using ::testing::Eq;
-using ::testing::ExplainMatchResult;
-using ::testing::Field;
 using ::testing::FloatNear;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
-using ::testing::Matcher;
 using ::testing::SizeIs;
 using ::testing::UnorderedElementsAre;
-
-MATCHER_P(TriangleIndexPairEqMatcher, expected,
-          absl::StrCat(negation ? "doesn't equal" : "equals",
-                       absl::Substitute(" TriangleIndexPair (expected "
-                                        "mesh_index = $0, triangle_index = $1)",
-                                        expected.mesh_index,
-                                        expected.triangle_index))) {
-  return ExplainMatchResult(
-      AllOf(Field("mesh_index", &PartitionedMesh::TriangleIndexPair::mesh_index,
-                  expected.mesh_index),
-            Field("triangle_index",
-                  &PartitionedMesh::TriangleIndexPair::triangle_index,
-                  expected.triangle_index)),
-      arg, result_listener);
-}
-Matcher<PartitionedMesh::TriangleIndexPair> TriangleIndexPairEq(
-    PartitionedMesh::TriangleIndexPair idx_pair) {
-  return TriangleIndexPairEqMatcher(idx_pair);
-}
 
 TEST(PartitionedMeshTest, DefaultCtor) {
   PartitionedMesh shape;
@@ -680,13 +656,13 @@ TEST(PartitionedMeshTest, InitializeSpatialIndexIsNoOpForEmptyPartitionedMesh) {
 // Helper function, visits all intersected triangles and returns them in a
 // vector.
 template <typename QueryType>
-std::vector<PartitionedMesh::TriangleIndexPair> GetAllIntersectedTriangles(
+std::vector<TriangleIndexPair> GetAllIntersectedTriangles(
     const PartitionedMesh& shape, const QueryType& query,
     const AffineTransform query_to_shape = {}) {
-  std::vector<PartitionedMesh::TriangleIndexPair> tri_index_pairs;
+  std::vector<TriangleIndexPair> tri_index_pairs;
   shape.VisitIntersectedTriangles(
       query,
-      [&tri_index_pairs](PartitionedMesh::TriangleIndexPair idx) {
+      [&tri_index_pairs](TriangleIndexPair idx) {
         tri_index_pairs.push_back(idx);
         return PartitionedMesh::FlowControl::kContinue;
       },
@@ -754,13 +730,13 @@ TEST(PartitionedMeshTest, VisitIntersectedTrianglesPointQueryEmptyShape) {
 
 TEST(PartitionedMeshTest, VisitIntersectedTrianglesPointQueryExitEarly) {
   PartitionedMesh shape = MakeCoiledRingPartitionedMesh(14, 6);
-  std::vector<PartitionedMesh::TriangleIndexPair> visited_tris;
+  std::vector<TriangleIndexPair> visited_tris;
 
-  shape.VisitIntersectedTriangles(
-      Point{.8, .1}, [&visited_tris](PartitionedMesh::TriangleIndexPair idx) {
-        visited_tris.push_back(idx);
-        return PartitionedMesh::FlowControl::kBreak;
-      });
+  shape.VisitIntersectedTriangles(Point{.8, .1},
+                                  [&visited_tris](TriangleIndexPair idx) {
+                                    visited_tris.push_back(idx);
+                                    return PartitionedMesh::FlowControl::kBreak;
+                                  });
 
   // The visitor should find one triangle, then stop; but because visitation
   // order is arbitrary, the visited triangle could be either of the two that
@@ -776,12 +752,11 @@ TEST(PartitionedMeshTest,
      VisitIntersectedTrianglesPointQueryInitializesTheSpatialIndex) {
   PartitionedMesh shape = MakeCoiledRingPartitionedMesh(14, 6);
 
-  shape.VisitIntersectedTriangles(Point{0, 0},
-                                  [](PartitionedMesh::TriangleIndexPair) {
-                                    // This doesn't actually need to do
-                                    // anything.
-                                    return PartitionedMesh::FlowControl::kBreak;
-                                  });
+  shape.VisitIntersectedTriangles(Point{0, 0}, [](TriangleIndexPair) {
+    // This doesn't actually need to do
+    // anything.
+    return PartitionedMesh::FlowControl::kBreak;
+  });
 
   EXPECT_TRUE(shape.IsSpatialIndexInitialized());
 }
@@ -859,14 +834,13 @@ TEST(PartitionedMeshTest, VisitIntersectedTrianglesSegmentQueryEmptyShape) {
 
 TEST(PartitionedMeshTest, VisitIntersectedTrianglesSegmentQueryExitEarly) {
   PartitionedMesh shape = MakeCoiledRingPartitionedMesh(14, 6);
-  std::vector<PartitionedMesh::TriangleIndexPair> visited_tris;
+  std::vector<TriangleIndexPair> visited_tris;
 
-  shape.VisitIntersectedTriangles(
-      Segment{{.8, .1}, {0, 0}},
-      [&visited_tris](PartitionedMesh::TriangleIndexPair idx) {
-        visited_tris.push_back(idx);
-        return PartitionedMesh::FlowControl::kBreak;
-      });
+  shape.VisitIntersectedTriangles(Segment{{.8, .1}, {0, 0}},
+                                  [&visited_tris](TriangleIndexPair idx) {
+                                    visited_tris.push_back(idx);
+                                    return PartitionedMesh::FlowControl::kBreak;
+                                  });
 
   // The visitor should find one triangle, then stop; but because visitation
   // order is arbitrary, the visited triangle could be either of the two that
@@ -883,7 +857,7 @@ TEST(PartitionedMeshTest,
   PartitionedMesh shape = MakeCoiledRingPartitionedMesh(14, 6);
 
   shape.VisitIntersectedTriangles(Segment{{0, 0}, {1, 1}},
-                                  [](PartitionedMesh::TriangleIndexPair) {
+                                  [](TriangleIndexPair) {
                                     // This doesn't actually need to do
                                     // anything.
                                     return PartitionedMesh::FlowControl::kBreak;
@@ -973,14 +947,13 @@ TEST(PartitionedMeshTest, VisitIntersectedTrianglesTriangleQueryEmptyShape) {
 
 TEST(PartitionedMeshTest, VisitIntersectedTrianglesTriangleQueryExitEarly) {
   PartitionedMesh shape = MakeCoiledRingPartitionedMesh(14, 6);
-  std::vector<PartitionedMesh::TriangleIndexPair> visited_tris;
+  std::vector<TriangleIndexPair> visited_tris;
 
-  shape.VisitIntersectedTriangles(
-      Triangle{{.8, .1}, {0, 0}, {0, .1}},
-      [&visited_tris](PartitionedMesh::TriangleIndexPair idx) {
-        visited_tris.push_back(idx);
-        return PartitionedMesh::FlowControl::kBreak;
-      });
+  shape.VisitIntersectedTriangles(Triangle{{.8, .1}, {0, 0}, {0, .1}},
+                                  [&visited_tris](TriangleIndexPair idx) {
+                                    visited_tris.push_back(idx);
+                                    return PartitionedMesh::FlowControl::kBreak;
+                                  });
 
   // The visitor should find one triangle, then stop; but because visitation
   // order is arbitrary, the visited triangle could be either of the two that
@@ -997,7 +970,7 @@ TEST(PartitionedMeshTest,
   PartitionedMesh shape = MakeCoiledRingPartitionedMesh(14, 6);
 
   shape.VisitIntersectedTriangles(Triangle{{0, 0}, {1, 1}, {1, 2}},
-                                  [](PartitionedMesh::TriangleIndexPair) {
+                                  [](TriangleIndexPair) {
                                     // This doesn't actually need to do
                                     // anything.
                                     return PartitionedMesh::FlowControl::kBreak;
@@ -1100,14 +1073,13 @@ TEST(PartitionedMeshTest, VisitIntersectedTrianglesRectQueryEmptyShape) {
 
 TEST(PartitionedMeshTest, VisitIntersectedTrianglesRectQueryExitEarly) {
   PartitionedMesh shape = MakeCoiledRingPartitionedMesh(14, 6);
-  std::vector<PartitionedMesh::TriangleIndexPair> visited_tris;
+  std::vector<TriangleIndexPair> visited_tris;
 
-  shape.VisitIntersectedTriangles(
-      Rect::FromTwoPoints({.8, .1}, {.05, .05}),
-      [&visited_tris](PartitionedMesh::TriangleIndexPair idx) {
-        visited_tris.push_back(idx);
-        return PartitionedMesh::FlowControl::kBreak;
-      });
+  shape.VisitIntersectedTriangles(Rect::FromTwoPoints({.8, .1}, {.05, .05}),
+                                  [&visited_tris](TriangleIndexPair idx) {
+                                    visited_tris.push_back(idx);
+                                    return PartitionedMesh::FlowControl::kBreak;
+                                  });
 
   // The visitor should find one triangle, then stop; but because visitation
   // order is arbitrary, the visited triangle could be either of the two that
@@ -1124,7 +1096,7 @@ TEST(PartitionedMeshTest,
   PartitionedMesh shape = MakeCoiledRingPartitionedMesh(14, 6);
 
   shape.VisitIntersectedTriangles(Rect::FromTwoPoints({0, 0}, {1, 1}),
-                                  [](PartitionedMesh::TriangleIndexPair) {
+                                  [](TriangleIndexPair) {
                                     // This doesn't actually need to do
                                     // anything.
                                     return PartitionedMesh::FlowControl::kBreak;
@@ -1148,7 +1120,7 @@ TEST(PartitionedMeshTest, VisitIntersectedTrianglesQuadQuery) {
                   TriangleIndexPairEq({.mesh_index = 0, .triangle_index = 5})));
   EXPECT_THAT(
       GetAllIntersectedTriangles(shape,
-                                 Quad::FromCenterDimensionsRotationAndShear(
+                                 Quad::FromCenterDimensionsRotationAndSkew(
                                      {1, .5}, .2, .5, Angle::Degrees(0), 2)),
       UnorderedElementsAre(
           TriangleIndexPairEq({.mesh_index = 0, .triangle_index = 0}),
@@ -1178,7 +1150,7 @@ TEST(PartitionedMeshTest, VisitIntersectedTrianglesQuadQueryMultipleMeshes) {
   ASSERT_EQ(shape.status(), absl::OkStatus());
 
   EXPECT_THAT(GetAllIntersectedTriangles(
-                  *shape, Quad::FromCenterDimensionsRotationAndShear(
+                  *shape, Quad::FromCenterDimensionsRotationAndSkew(
                               {5, 5}, 1, 2, Angle::Degrees(75), 1)),
               IsEmpty());
   EXPECT_THAT(GetAllIntersectedTriangles(
@@ -1219,11 +1191,11 @@ TEST(PartitionedMeshTest, VisitIntersectedTrianglesQuadQueryEmptyShape) {
 
 TEST(PartitionedMeshTest, VisitIntersectedTrianglesQuadQueryExitEarly) {
   PartitionedMesh shape = MakeCoiledRingPartitionedMesh(14, 6);
-  std::vector<PartitionedMesh::TriangleIndexPair> visited_tris;
+  std::vector<TriangleIndexPair> visited_tris;
 
   shape.VisitIntersectedTriangles(
       Quad::FromCenterAndDimensions({.8, .1}, .01, .01),
-      [&visited_tris](PartitionedMesh::TriangleIndexPair idx) {
+      [&visited_tris](TriangleIndexPair idx) {
         visited_tris.push_back(idx);
         return PartitionedMesh::FlowControl::kBreak;
       });
@@ -1243,7 +1215,7 @@ TEST(PartitionedMeshTest,
   PartitionedMesh shape = MakeCoiledRingPartitionedMesh(14, 6);
 
   shape.VisitIntersectedTriangles(Quad::FromCenterAndDimensions({0, 0}, 10, 10),
-                                  [](PartitionedMesh::TriangleIndexPair) {
+                                  [](TriangleIndexPair) {
                                     // This doesn't actually need to do
                                     // anything.
                                     return PartitionedMesh::FlowControl::kBreak;
@@ -1317,11 +1289,11 @@ TEST(PartitionedMeshTest,
      VisitIntersectedTrianglesPartitionedMeshQueryExitEarly) {
   PartitionedMesh star = MakeStarPartitionedMesh(4);
   PartitionedMesh line = MakeStraightLinePartitionedMesh(3);
-  std::vector<PartitionedMesh::TriangleIndexPair> visited_tris;
+  std::vector<TriangleIndexPair> visited_tris;
 
   star.VisitIntersectedTriangles(
       line,
-      [&visited_tris](PartitionedMesh::TriangleIndexPair idx) {
+      [&visited_tris](TriangleIndexPair idx) {
         visited_tris.push_back(idx);
         return PartitionedMesh::FlowControl::kBreak;
       },
@@ -1342,7 +1314,7 @@ TEST(PartitionedMeshTest,
   PartitionedMesh star = MakeStarPartitionedMesh(4);
   PartitionedMesh line = MakeStraightLinePartitionedMesh(3);
 
-  line.VisitIntersectedTriangles(star, [](PartitionedMesh::TriangleIndexPair) {
+  line.VisitIntersectedTriangles(star, [](TriangleIndexPair) {
     // This doesn't actually need to do anything.
     return PartitionedMesh::FlowControl::kBreak;
   });
@@ -1395,7 +1367,7 @@ TEST(PartitionedMeshTest,
 TEST(PartitionedMeshTest, VisitIntersectedTrianglesWithReentrantVisitor) {
   PartitionedMesh shape = MakeStraightLinePartitionedMesh(3);
   Rect query = Rect::FromTwoPoints({3, -2}, {6, 2});
-  auto visitor = [&shape, &query](PartitionedMesh::TriangleIndexPair idx) {
+  auto visitor = [&shape, &query](TriangleIndexPair idx) {
     GetAllIntersectedTriangles(shape, query);
     return PartitionedMesh::FlowControl::kContinue;
   };

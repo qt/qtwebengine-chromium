@@ -54,14 +54,15 @@ TEST_F(IR_ValidatorTest, Builtin_PointSize_WrongStage) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:1 error: __point_size must be used in a vertex shader entry point
+        testing::HasSubstr(
+            R"(:1:1 error: __point_size cannot be used on a fragment shader output. It can only be used on a vertex shader output.
 %f = @fragment func():f32 [@__point_size] {
 ^^
 )")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Builtin_OnStructReturn_BuiltinChecker) {
-    auto* f = FragmentEntryPoint();
+    auto* f = VertexEntryPoint();
     auto* str_ty = ty.Struct(mod.symbols.New("OutputStruct"), {
                                                                   {mod.symbols.New(""), ty.i32()},
                                                               });
@@ -75,9 +76,8 @@ TEST_F(IR_ValidatorTest, Builtin_OnStructReturn_BuiltinChecker) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(R"(:5:1 error: __point_size cannot be attached to a structure
-%f = @fragment func():OutputStruct [@__point_size] {
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(R"(:5:1 error: __point_size must be a f32
+%f = @vertex func():OutputStruct [@__point_size] {
 ^^
 )")) << res.Failure();
 }
@@ -99,7 +99,7 @@ TEST_F(IR_ValidatorTest, Builtin_OnStructReturn_Position) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(R"(:5:1 error: position cannot be attached to a structure
+                testing::HasSubstr(R"(:5:1 error: position must be an vec4<f32>
 %f = @vertex func():OutputStruct [@position] {
 ^^
 )")) << res.Failure();
@@ -120,8 +120,7 @@ TEST_F(IR_ValidatorTest, Builtin_OnStructReturn_SampleMask) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(R"(:5:1 error: sample_mask cannot be attached to a structure
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(R"(:5:1 error: sample_mask must be an u32
 %f = @fragment func():OutputStruct [@sample_mask] {
 ^^
 )")) << res.Failure();
@@ -143,8 +142,9 @@ TEST_F(IR_ValidatorTest, Builtin_OnStructReturn_ClipDistances) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(R"(:5:1 error: clip_distances cannot be attached to a structure
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(R"(:5:1 error: clip_distances must be an array<f32, N>, where N <= 8
 %f = @vertex func():OutputStruct [@clip_distances] {
 ^^
 )")) << res.Failure();
@@ -160,7 +160,8 @@ TEST_F(IR_ValidatorTest, Builtin_PointSize_WrongIODirection) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:19 error: __point_size must be an output of a shader entry point
+        testing::HasSubstr(
+            R"(:1:19 error: __point_size cannot be used on a vertex shader input. It can only be used on a vertex shader output.
 %f = @vertex func(%size:f32 [@__point_size]):vec4<f32> [@position] {
                   ^^^^^^^^^
 )")) << res.Failure();
@@ -190,7 +191,8 @@ TEST_F(IR_ValidatorTest, Builtin_ClipDistances_WrongStage) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:1 error: clip_distances must be used in a vertex shader entry point
+        testing::HasSubstr(
+            R"(:1:1 error: clip_distances cannot be used on a fragment shader output. It can only be used on a vertex shader output.
 %f = @fragment func():array<f32, 2> [@clip_distances] {
 ^^
 )")) << res.Failure();
@@ -206,7 +208,8 @@ TEST_F(IR_ValidatorTest, Builtin_ClipDistances_WrongIODirection) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:19 error: clip_distances must be an output of a shader entry point
+        testing::HasSubstr(
+            R"(:1:19 error: clip_distances cannot be used on a vertex shader input. It can only be used on a vertex shader output.
 %f = @vertex func(%distances:array<f32, 2> [@clip_distances]):vec4<f32> [@position] {
                   ^^^^^^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -254,7 +257,8 @@ TEST_F(IR_ValidatorTest, Builtin_FragDepth_WrongStage) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:6:1 error: frag_depth must be used in a fragment shader entry point
+        testing::HasSubstr(
+            R"(:6:1 error: frag_depth cannot be used on a vertex shader output. It can only be used on a fragment shader output.
 %f = @vertex func():OutputStruct {
 ^^
 )")) << res.Failure();
@@ -270,7 +274,8 @@ TEST_F(IR_ValidatorTest, Builtin_FragDepth_WrongIODirection) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:21 error: frag_depth must be an output of a shader entry point
+        testing::HasSubstr(
+            R"(:1:21 error: frag_depth cannot be used on a fragment shader input. It can only be used on a fragment shader output.
 %f = @fragment func(%depth:f32 [@frag_depth]):void {
                     ^^^^^^^^^^
 )")) << res.Failure();
@@ -290,6 +295,83 @@ TEST_F(IR_ValidatorTest, Builtin_FragDepth_WrongType) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Builtin_NonFragDepth_NonUndefinedDepthMode) {
+    auto* f = VertexEntryPoint();
+    f->SetReturnDepthMode(BuiltinDepthMode::kAny);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:1 error: position cannot have a depth mode of any. It can only be undefined.
+%f = @vertex func():vec4<f32> [@position] {
+^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, MissingBuiltin_WithFragDepth) {
+    auto* f = ComputeEntryPoint();
+    AddReturn(f, "pos", ty.vec4<f32>());
+    f->SetReturnDepthMode(BuiltinDepthMode::kAny);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
+                                          R"(:1:1 error: cannot have a depth_mode without a builtin
+%f = @compute @workgroup_size(1u, 1u, 1u) func():vec4<f32> {
+^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_FragDepth_UndefinedDepthMode) {
+    auto* f = FragmentEntryPoint();
+    AddBuiltinReturn(f, "depth", BuiltinValue::kFragDepth, ty.f32());
+    f->SetReturnDepthMode(BuiltinDepthMode::kUndefined);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success);
+}
+
+TEST_F(IR_ValidatorTest, Builtin_FragDepth_AnyDepthMode) {
+    auto* f = FragmentEntryPoint();
+    AddBuiltinReturn(f, "depth", BuiltinValue::kFragDepth, ty.f32());
+    f->SetReturnDepthMode(BuiltinDepthMode::kAny);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_FragDepth_GreaterDepthMode) {
+    auto* f = FragmentEntryPoint();
+    AddBuiltinReturn(f, "depth", BuiltinValue::kFragDepth, ty.f32());
+    f->SetReturnDepthMode(BuiltinDepthMode::kGreater);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_FragDepth_LessDepthMode) {
+    auto* f = FragmentEntryPoint();
+    AddBuiltinReturn(f, "depth", BuiltinValue::kFragDepth, ty.f32());
+    f->SetReturnDepthMode(BuiltinDepthMode::kLess);
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, Builtin_FrontFacing_WrongStage) {
     auto* f = VertexEntryPoint();
     AddBuiltinParam(f, "facing", BuiltinValue::kFrontFacing, ty.bool_());
@@ -298,9 +380,10 @@ TEST_F(IR_ValidatorTest, Builtin_FrontFacing_WrongStage) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:1:19 error: front_facing must be used in a fragment shader entry point
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:19 error: front_facing cannot be used on a vertex shader input. It can only be used on a fragment shader input.
 %f = @vertex func(%facing:bool [@front_facing]):vec4<f32> [@position] {
                   ^^^^^^^^^^^^
 )")) << res.Failure();
@@ -316,7 +399,8 @@ TEST_F(IR_ValidatorTest, Builtin_FrontFacing_WrongIODirection) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:1 error: front_facing must be an input of a shader entry point
+        testing::HasSubstr(
+            R"(:1:1 error: front_facing cannot be used on a fragment shader output. It can only be used on a fragment shader input.
 %f = @fragment func():bool [@front_facing] {
 ^^
 )")) << res.Failure();
@@ -347,7 +431,7 @@ TEST_F(IR_ValidatorTest, Builtin_GlobalInvocationId_WrongStage) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:1:21 error: global_invocation_id must be used in a compute shader entry point
+            R"(:1:21 error: global_invocation_id cannot be used on a fragment shader input. It can only be used on a compute shader input.
 %f = @fragment func(%invocation:vec3<u32> [@global_invocation_id]):void {
                     ^^^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -362,9 +446,10 @@ TEST_F(IR_ValidatorTest, Builtin_GlobalInvocationId_WrongIODirection) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:1:1 error: global_invocation_id must be an input of a shader entry point
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:1 error: global_invocation_id cannot be used on a compute shader output. It can only be used on a compute shader input.
 %f = @compute @workgroup_size(1u, 1u, 1u) func():vec3<u32> [@global_invocation_id] {
 ^^
 )")) << res.Failure();
@@ -378,8 +463,8 @@ TEST_F(IR_ValidatorTest, Builtin_GlobalInvocationId_WrongType) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(R"(:1:48 error: global_invocation_id must be an vec3<u32>
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
+                                          R"(:1:48 error: global_invocation_id must be an vec3<u32>
 %f = @compute @workgroup_size(1u, 1u, 1u) func(%invocation:u32 [@global_invocation_id]):void {
                                                ^^^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -393,9 +478,10 @@ TEST_F(IR_ValidatorTest, Builtin_InstanceIndex_WrongStage) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:1:21 error: instance_index must be used in a vertex shader entry point
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(1:21 error: instance_index cannot be used on a fragment shader input. It can only be used on a vertex shader input.
 %f = @fragment func(%instance:u32 [@instance_index]):void {
                     ^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -411,7 +497,8 @@ TEST_F(IR_ValidatorTest, Builtin_InstanceIndex_WrongIODirection) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:6:1 error: instance_index must be an input of a shader entry point
+        testing::HasSubstr(
+            R"(:6:1 error: instance_index cannot be used on a vertex shader output. It can only be used on a vertex shader input.
 %f = @vertex func():OutputStruct {
 ^^
 )")) << res.Failure();
@@ -440,9 +527,10 @@ TEST_F(IR_ValidatorTest, Builtin_LocalInvocationId_WrongStage) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:1:21 error: local_invocation_id must be used in a compute shader entry point
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:21 error: local_invocation_id cannot be used on a fragment shader input. It can only be used on a compute shader input.
 %f = @fragment func(%id:vec3<u32> [@local_invocation_id]):void {
                     ^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -457,9 +545,10 @@ TEST_F(IR_ValidatorTest, Builtin_LocalInvocationId_WrongIODirection) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:1:1 error: local_invocation_id must be an input of a shader entry point
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:1 error: local_invocation_id cannot be used on a compute shader output. It can only be used on a compute shader input.
 %f = @compute @workgroup_size(1u, 1u, 1u) func():vec3<u32> [@local_invocation_id] {
 ^^
 )")) << res.Failure();
@@ -491,7 +580,7 @@ TEST_F(IR_ValidatorTest, Builtin_LocalInvocationIndex_WrongStage) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:1:21 error: local_invocation_index must be used in a compute shader entry point
+            R"(:1:21 error: local_invocation_index cannot be used on a fragment shader input. It can only be used on a compute shader input.
 %f = @fragment func(%index:u32 [@local_invocation_index]):void {
                     ^^^^^^^^^^
 )")) << res.Failure();
@@ -506,9 +595,10 @@ TEST_F(IR_ValidatorTest, Builtin_LocalInvocationIndex_WrongIODirection) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:1:1 error: local_invocation_index must be an input of a shader entry point
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:1 error: local_invocation_index cannot be used on a compute shader output. It can only be used on a compute shader input.
 %f = @compute @workgroup_size(1u, 1u, 1u) func():u32 [@local_invocation_index] {
 ^^
 )")) << res.Failure();
@@ -537,9 +627,10 @@ TEST_F(IR_ValidatorTest, Builtin_NumWorkgroups_WrongStage) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:1:21 error: num_workgroups must be used in a compute shader entry point
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:21 error: num_workgroups cannot be used on a fragment shader input. It can only be used on a compute shader input.
 %f = @fragment func(%num:vec3<u32> [@num_workgroups]):void {
                     ^^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -556,7 +647,8 @@ TEST_F(IR_ValidatorTest, Builtin_NumWorkgroups_WrongIODirection) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:1 error: num_workgroups must be an input of a shader entry point
+        testing::HasSubstr(
+            R"(:1:1 error: num_workgroups cannot be used on a compute shader output. It can only be used on a compute shader input.
 %f = @compute @workgroup_size(1u, 1u, 1u) func():vec3<u32> [@num_workgroups] {
 ^^
 )")) << res.Failure();
@@ -585,9 +677,10 @@ TEST_F(IR_ValidatorTest, Builtin_SampleIndex_WrongStage) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:1:19 error: sample_index must be used in a fragment shader entry point
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:19 error: sample_index cannot be used on a vertex shader input. It can only be used on a fragment shader input.
 %f = @vertex func(%index:u32 [@sample_index]):vec4<f32> [@position] {
                   ^^^^^^^^^^
 )")) << res.Failure();
@@ -603,7 +696,8 @@ TEST_F(IR_ValidatorTest, Builtin_SampleIndex_WrongIODirection) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:1 error: sample_index must be an input of a shader entry point
+        testing::HasSubstr(
+            R"(:1:1 error: sample_index cannot be used on a fragment shader output. It can only be used on a fragment shader input.
 %f = @fragment func():u32 [@sample_index] {
 ^^
 )")) << res.Failure();
@@ -633,7 +727,8 @@ TEST_F(IR_ValidatorTest, Builtin_VertexIndex_WrongStage) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:21 error: vertex_index must be used in a vertex shader entry point
+        testing::HasSubstr(
+            R"(:1:21 error: vertex_index cannot be used on a fragment shader input. It can only be used on a vertex shader input.
 %f = @fragment func(%index:u32 [@vertex_index]):void {
                     ^^^^^^^^^^
 )")) << res.Failure();
@@ -649,7 +744,8 @@ TEST_F(IR_ValidatorTest, Builtin_VertexIndex_WrongIODirection) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:6:1 error: vertex_index must be an input of a shader entry point
+        testing::HasSubstr(
+            R"(:6:1 error: vertex_index cannot be used on a vertex shader output. It can only be used on a vertex shader input.
 %f = @vertex func():OutputStruct {
 ^^
 )")) << res.Failure();
@@ -679,7 +775,8 @@ TEST_F(IR_ValidatorTest, Builtin_WorkgroupId_WrongStage) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(1:21 error: workgroup_id must be used in a compute shader entry point
+        testing::HasSubstr(
+            R"(:1:21 error: workgroup_id cannot be used on a fragment shader input. It can only be used on a compute shader input.
 %f = @fragment func(%id:vec3<u32> [@workgroup_id]):void {
                     ^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -696,7 +793,8 @@ TEST_F(IR_ValidatorTest, Builtin_WorkgroupId_WrongIODirection) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:1 error: workgroup_id must be an input of a shader entry point
+        testing::HasSubstr(
+            R"(:1:1 error: workgroup_id cannot be used on a compute shader output. It can only be used on a compute shader input.
 %f = @compute @workgroup_size(1u, 1u, 1u) func():vec3<u32> [@workgroup_id] {
 ^^
 )")) << res.Failure();
@@ -725,9 +823,10 @@ TEST_F(IR_ValidatorTest, Builtin_Position_WrongStage) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:1:48 error: position must be used in a fragment or vertex shader entry point
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:48 error: position cannot be used on a compute shader input. It can only be used on one of [ fragment shader input, vertex shader output ]
 %f = @compute @workgroup_size(1u, 1u, 1u) func(%pos:vec4<f32> [@position]):void {
                                                ^^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -743,7 +842,8 @@ TEST_F(IR_ValidatorTest, Builtin_Position_WrongIODirectionForVertex) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:19 error: position must be an output for a vertex entry point
+        testing::HasSubstr(
+            R"(:1:19 error: position cannot be used on a vertex shader input. It can only be used on one of [ fragment shader input, vertex shader output ]
 %f = @vertex func(%pos:vec4<f32> [@position]):vec4<f32> [@position] {
                   ^^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -759,7 +859,8 @@ TEST_F(IR_ValidatorTest, Builtin_Position_WrongIODirectionForFragment) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:1 error: position must be an input for a fragment entry point
+        testing::HasSubstr(
+            R"(:1:1 error: position cannot be used on a fragment shader output. It can only be used on one of [ fragment shader input, vertex shader output ]
 %f = @fragment func():vec4<f32> [@position] {
 ^^
 )")) << res.Failure();
@@ -790,7 +891,8 @@ TEST_F(IR_ValidatorTest, Builtin_SampleMask_WrongStage) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:19 error: sample_mask must be used in a fragment entry point
+        testing::HasSubstr(
+            R"(:1:19 error: sample_mask cannot be used on a vertex shader input. It can only be used on one of [ fragment shader input, fragment shader output ]
 %f = @vertex func(%mask:u32 [@sample_mask]):vec4<f32> [@position] {
                   ^^^^^^^^^
 )")) << res.Failure();
@@ -838,9 +940,10 @@ TEST_F(IR_ValidatorTest, Builtin_SubgroupId_WrongStage) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:1:19 error: subgroup_id must be used in a compute shader entry point
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:19 error: subgroup_id cannot be used on a vertex shader input. It can only be used on a compute shader input.
 %f = @vertex func(%id:u32 [@subgroup_id]):vec4<f32> [@position] {
                   ^^^^^^^
 )")) << res.Failure();
@@ -856,7 +959,8 @@ TEST_F(IR_ValidatorTest, Builtin_SubgroupId_WrongIODirection) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:1 error: subgroup_id must be an input of a shader entry point
+        testing::HasSubstr(
+            R"(:1:1 error: subgroup_id cannot be used on a compute shader output. It can only be used on a compute shader input.
 %f = @compute @workgroup_size(1u, 1u, 1u) func():u32 [@subgroup_id] {
 ^^
 )")) << res.Failure();
@@ -887,7 +991,7 @@ TEST_F(IR_ValidatorTest, Builtin_SubgroupSize_WrongStage) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:1:19 error: subgroup_size must be used in a compute or fragment shader entry point
+            R"(:1:19 error: subgroup_size cannot be used on a vertex shader input. It can only be used on one of [ compute shader input, fragment shader input ]
 %f = @vertex func(%size:u32 [@subgroup_size]):vec4<f32> [@position] {
                   ^^^^^^^^^
 )")) << res.Failure();
@@ -903,7 +1007,8 @@ TEST_F(IR_ValidatorTest, Builtin_SubgroupSize_WrongIODirection) {
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(R"(:1:1 error: subgroup_size must be an input of a shader entry point
+        testing::HasSubstr(
+            R"(:1:1 error: subgroup_size cannot be used on a fragment shader output. It can only be used on one of [ compute shader input, fragment shader input ]
 %f = @fragment func():u32 [@subgroup_size] {
 ^^
 )")) << res.Failure();
@@ -935,7 +1040,7 @@ TEST_F(IR_ValidatorTest, Builtin_SubgroupInvocationId_WrongStage) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:1:19 error: subgroup_invocation_id must be used in a compute or fragment shader entry point
+            R"(:1:19 error: subgroup_invocation_id cannot be used on a vertex shader input. It can only be used on one of [ compute shader input, fragment shader input ]
 %f = @vertex func(%id:u32 [@subgroup_invocation_id]):vec4<f32> [@position] {
                   ^^^^^^^
 )")) << res.Failure();
@@ -949,9 +1054,10 @@ TEST_F(IR_ValidatorTest, Builtin_SubgroupInvocationId_WrongIODirection) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr(
-                    R"(:1:1 error: subgroup_invocation_id must be an input of a shader entry point
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:1 error: subgroup_invocation_id cannot be used on a fragment shader output. It can only be used on one of [ compute shader input, fragment shader input ]
 %f = @fragment func():u32 [@subgroup_invocation_id] {
 ^^
 )")) << res.Failure();
@@ -969,6 +1075,55 @@ TEST_F(IR_ValidatorTest, Builtin_SubgroupInvocationId_WrongType) {
                 testing::HasSubstr(R"(:1:48 error: subgroup_invocation_id must be an u32
 %f = @compute @workgroup_size(1u, 1u, 1u) func(%id:i32 [@subgroup_invocation_id]):void {
                                                ^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_NumSubgroups_WrongStage) {
+    auto* f = VertexEntryPoint();
+    AddBuiltinParam(f, "num", BuiltinValue::kNumSubgroups, ty.u32());
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:19 error: num_subgroups cannot be used on a vertex shader input. It can only be used on a compute shader input.
+%f = @vertex func(%num:u32 [@num_subgroups]):vec4<f32> [@position] {
+                  ^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_NumSubgroups_WrongIODirection) {
+    auto* f = ComputeEntryPoint();
+    AddBuiltinReturn(f, "num", BuiltinValue::kNumSubgroups, ty.u32());
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:1:1 error: num_subgroups cannot be used on a compute shader output. It can only be used on a compute shader input.
+%f = @compute @workgroup_size(1u, 1u, 1u) func():u32 [@num_subgroups] {
+^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Builtin_NumSubgroups_WrongType) {
+    auto* f = ComputeEntryPoint();
+    AddBuiltinParam(f, "num", BuiltinValue::kNumSubgroups, ty.i32());
+
+    b.Append(f->Block(), [&] { b.Unreachable(); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:1:48 error: num_subgroups must be an u32
+%f = @compute @workgroup_size(1u, 1u, 1u) func(%num:i32 [@num_subgroups]):void {
+                                               ^^^^^^^^
 )")) << res.Failure();
 }
 

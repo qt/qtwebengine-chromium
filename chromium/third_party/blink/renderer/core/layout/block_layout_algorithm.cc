@@ -710,7 +710,9 @@ NOINLINE const LayoutResult* BlockLayoutAlgorithm::LayoutInlineChild(
     DCHECK(ShouldWrapLineGreedy(wrap));
   }
 
-  SimpleInlineChildLayoutContext context(node, &container_builder_);
+  // For performance avoid stack initialization on this large object.
+  STACK_UNINITIALIZED SimpleInlineChildLayoutContext context(
+      node, &container_builder_);
   context.EnableMeasuringModeIfNecessary(paragraph_scale);
   return Layout(&context);
 }
@@ -1570,13 +1572,16 @@ void BlockLayoutAlgorithm::HandleOutOfFlowPositioned(
   }
 
   DCHECK(child.IsOutOfFlowPositioned());
-  LogicalOffset static_offset = {BorderScrollbarPadding().inline_start,
-                                 previous_inflow_position.logical_block_offset};
+  LogicalStaticPosition static_pos(
+      LogicalOffset(BorderScrollbarPadding().inline_start,
+                    previous_inflow_position.logical_block_offset));
 
   // We only include the margin strut in the OOF static-position if we know we
   // aren't going to be a zero-block-size fragment.
-  if (container_builder_.BfcBlockOffset())
-    static_offset.block_offset += previous_inflow_position.margin_strut.Sum();
+  if (container_builder_.BfcBlockOffset()) {
+    static_pos.offset.block_offset +=
+        previous_inflow_position.margin_strut.Sum();
+  }
 
   if (child.Style().IsOriginalDisplayInlineType()) {
     // The static-position of inline-level OOF-positioned nodes depends on
@@ -1592,26 +1597,25 @@ void BlockLayoutAlgorithm::HandleOutOfFlowPositioned(
     LayoutUnit origin_bfc_block_offset =
         container_builder_.BfcBlockOffset().value_or(
             GetConstraintSpace().ExpectedBfcBlockOffset()) +
-        static_offset.block_offset;
+        static_pos.offset.block_offset;
 
     BfcOffset origin_bfc_offset = {
         GetConstraintSpace().GetBfcOffset().line_offset +
             BorderScrollbarPadding().LineLeft(Style().Direction()),
         origin_bfc_block_offset};
 
-    static_offset.inline_offset += CalculateOutOfFlowStaticInlineLevelOffset(
-        Style(), origin_bfc_offset, GetExclusionSpace(),
-        ChildAvailableSize().inline_size);
-
-    container_builder_.AddOutOfFlowChildCandidate(child, static_offset);
+    static_pos.offset.inline_offset +=
+        CalculateOutOfFlowStaticInlineLevelOffset(
+            Style(), origin_bfc_offset, GetExclusionSpace(),
+            ChildAvailableSize().inline_size);
   } else {
     WritingDirectionMode parent_writing_direction =
         GetConstraintSpace().GetWritingDirection();
-    auto inline_axis_edge = InlineStaticPositionEdge(
+    static_pos.inline_edge = InlineStaticPositionEdge(
         child, /*justify_items_style=*/&Style(), parent_writing_direction);
     // 'align-items' doesn't apply in block layout, so don't apply it to OOF
     // items.
-    auto block_axis_edge = BlockStaticPositionEdge(
+    static_pos.block_edge = BlockStaticPositionEdge(
         child, /*align_items_style=*/nullptr, parent_writing_direction);
 
     // The alignment container for block OOF elements is a zero-thickness line
@@ -1622,21 +1626,20 @@ void BlockLayoutAlgorithm::HandleOutOfFlowPositioned(
     //
     // https://drafts.csswg.org/css-position-3/#staticpos-rect
     LayoutUnit available_inline_size = ChildAvailableSize().inline_size;
-    switch (inline_axis_edge) {
+    switch (static_pos.inline_edge) {
       case LogicalStaticPosition::InlineEdge::kInlineCenter:
-        static_offset.inline_offset += available_inline_size / 2;
+        static_pos.offset.inline_offset += available_inline_size / 2;
         break;
       case LogicalStaticPosition::InlineEdge::kInlineEnd:
-        static_offset.inline_offset += available_inline_size;
+        static_pos.offset.inline_offset += available_inline_size;
         break;
       case LogicalStaticPosition::InlineEdge::kInlineStart:
         // The static position is already correct in this case.
         break;
     }
-
-    container_builder_.AddOutOfFlowChildCandidate(
-        child, static_offset, inline_axis_edge, block_axis_edge);
   }
+
+  container_builder_.AddOutOfFlowChildCandidate(child, static_pos);
 }
 
 void BlockLayoutAlgorithm::HandleFloat(
@@ -1953,10 +1956,8 @@ LayoutResult::EStatus BlockLayoutAlgorithm::HandleNewFormattingContext(
   }
 
   // Update line-clamp data, and abort if needed
-  if (!line_clamp_data_.UpdateAfterLayout(layout_result, Node().GetDocument(),
-                                          *container_builder_.BfcBlockOffset(),
-                                          *previous_inflow_position,
-                                          Padding().block_end)) {
+  if (!line_clamp_data_.UpdateAfterLayout(
+          layout_result, *previous_inflow_position, container_builder_)) {
     container_builder_.SetLinesUntilClamp(
         line_clamp_data_.LinesUntilClamp(/*show_measured_lines*/ true));
     container_builder_.SetLineClampAfterLayoutObject(
@@ -2671,18 +2672,13 @@ LayoutResult::EStatus BlockLayoutAlgorithm::FinishInflow(
   *previous_inline_break_token = outgoing_inline_break_token;
 
   // Update |line_clamp_data_| from the LayoutResult, and abort if needed.
-  // If the BFC block offset hasn't been resolved, the child we just laid out
-  // must be empty (no lines and zero block size), so we can skip the update.
-  if (auto bfc_block_offset = container_builder_.BfcBlockOffset()) {
-    if (!line_clamp_data_.UpdateAfterLayout(
-            layout_result, Node().GetDocument(), *bfc_block_offset,
-            *previous_inflow_position, Padding().block_end)) {
-      container_builder_.SetLinesUntilClamp(
-          line_clamp_data_.LinesUntilClamp(/*show_measured_lines*/ true));
-      container_builder_.SetLineClampAfterLayoutObject(
-          line_clamp_data_.last_layout_object);
-      return LayoutResult::kNeedsLineClampRelayout;
-    }
+  if (!line_clamp_data_.UpdateAfterLayout(
+          layout_result, *previous_inflow_position, container_builder_)) {
+    container_builder_.SetLinesUntilClamp(
+        line_clamp_data_.LinesUntilClamp(/*show_measured_lines*/ true));
+    container_builder_.SetLineClampAfterLayoutObject(
+        line_clamp_data_.last_layout_object);
+    return LayoutResult::kNeedsLineClampRelayout;
   }
 
   if (container_builder_.ShouldTextBoxTrim()) [[unlikely]] {
@@ -3965,10 +3961,8 @@ void BlockLineClampData::UpdateFromStyle(int lines_until_clamp,
 
 bool BlockLineClampData::UpdateAfterLayout(
     const LayoutResult* layout_result,
-    Document& document,
-    LayoutUnit bfc_block_offset,
     const PreviousInflowPosition& previous_inflow_position,
-    LayoutUnit block_end_padding) {
+    const BoxFragmentBuilder& container_builder) {
   const PhysicalFragment& fragment = layout_result->GetPhysicalFragment();
 
   int old_lines_until_clamp = 0;
@@ -3977,10 +3971,30 @@ bool BlockLineClampData::UpdateAfterLayout(
     if (!fragment.IsFormattingContextRoot() && !ignore_further_lines) {
       data.lines_until_clamp = layout_result->LinesUntilClamp();
     }
+
+    // If data.lines_until_clamp is 0 (rather than negative) after clamping at
+    // the end of the line-clamp container, we relayout without clamping.
+    // However, if we have only lineless boxes and IFCs, we shouldn't relayout
+    // (since there *is* content after clamp), but data.lines_until_clamp would
+    // still be zero. Therefore, if there's a lineless block immediately after
+    // the clamp point, we explicitly decrease data.lines_until_clamp.
+    if (data.IsClampByLines() && !fragment.IsLineBox() &&
+        !ignore_further_lines && old_lines_until_clamp == 0 &&
+        data.lines_until_clamp == 0) {
+      data.lines_until_clamp = -1;
+    }
   }
 
   if (data.IsMeasureUntilBfcOffset() &&
       !previous_inflow_position_when_clamped.has_value()) {
+    // If the BFC block offset hasn't been resolved, the child we just laid out
+    // must be empty (no lines and zero block size), so we can skip the update.
+    if (!container_builder.BfcBlockOffset().has_value()) {
+      DCHECK_EQ(old_lines_until_clamp, data.lines_until_clamp);
+      DCHECK(fragment.Size().IsEmpty());
+      return true;
+    }
+
     // We compute the margin strut we'd have after this block if we were to
     // clamp here.
     MarginStrut collapsed_strut = previous_inflow_position.margin_strut;
@@ -4000,17 +4014,18 @@ bool BlockLineClampData::UpdateAfterLayout(
     if (previous_inflow_position.block_end_annotation_space < LayoutUnit()) {
       padding_annotation_overflow =
           std::max(previous_inflow_position.block_end_annotation_space,
-                   -block_end_padding);
+                   -container_builder.Padding().block_end);
     }
 
-    LayoutUnit bfc_offset = bfc_block_offset +
+    LayoutUnit bfc_offset = *container_builder.BfcBlockOffset() +
                             previous_inflow_position.logical_block_offset +
                             padding_annotation_overflow +
                             (collapsed_strut.Sum() - end_margin_strut.Sum());
 
     if (bfc_offset > data.clamp_bfc_offset) {
       if (data.IsClampByLines()) {
-        UseCounter::Count(document, WebFeature::kLineClampByLinesOverflows);
+        UseCounter::Count(container_builder.Node().GetDocument(),
+                          WebFeature::kLineClampByLinesOverflows);
       }
       if (RuntimeEnabledFeatures::CSSLineClampEnabled()) {
         data.lines_until_clamp = old_lines_until_clamp;

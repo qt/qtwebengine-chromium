@@ -147,6 +147,12 @@ class BLINK_EXPORT WebElement : public WebNode {
   // element's ancestor overflow or frame boxes.
   gfx::Rect VisibleBoundsInWidget() const;
 
+  // Returns the client rects of this Element relative to the RenderWidget
+  // (local root frame + viewport transform in the main frame). The bounds have
+  // been adjusted to include any transformations, including page scale. This
+  // function will update the layout if required.
+  std::vector<gfx::Rect> ClientRectsInWidget();
+
   // Returns the image contents of this element or a null SkBitmap
   // if there isn't any.
   SkBitmap ImageContents();
@@ -155,8 +161,8 @@ class BLINK_EXPORT WebElement : public WebNode {
   // if there isn't any.
   std::vector<uint8_t> CopyOfImageData();
 
-  // Returns the original image file extension.
-  std::string ImageExtension();
+  // Returns the original image mime type.
+  WebString ImageMimeType();
 
   // Returns the original image size.
   gfx::Size GetImageSize();
@@ -170,9 +176,10 @@ class BLINK_EXPORT WebElement : public WebNode {
   // Returns {scrollLeft, scrollTop}.
   gfx::Vector2dF GetScrollOffset() const;
 
-  // Sets {scrollLeft, scrollTop}, returns true if the scroll was completed (or
-  // will be completed via a smooth scroll animation), false if the element
-  // cannot scroll (e.g. it's not rendered, no scroll extent).
+  // Sets {scrollLeft, scrollTop} and forces instant scroll, returns true if the
+  // scroll was completed (or will be completed via a smooth scroll animation),
+  // false if the element cannot scroll (e.g. it's not rendered, no scroll
+  // extent).
   bool SetScrollOffset(const gfx::Vector2dF& offset);
 
   // Scrolls the element into view if it isn't already visible.

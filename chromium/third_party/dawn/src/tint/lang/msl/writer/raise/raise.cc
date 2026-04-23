@@ -50,6 +50,8 @@
 #include "src/tint/lang/core/ir/transform/rename_conflicts.h"
 #include "src/tint/lang/core/ir/transform/robustness.h"
 #include "src/tint/lang/core/ir/transform/signed_integer_polyfill.h"
+#include "src/tint/lang/core/ir/transform/single_entry_point.h"
+#include "src/tint/lang/core/ir/transform/substitute_overrides.h"
 #include "src/tint/lang/core/ir/transform/value_to_let.h"
 #include "src/tint/lang/core/ir/transform/vectorize_scalar_matrix_constructors.h"
 #include "src/tint/lang/core/ir/transform/vertex_pulling.h"
@@ -67,6 +69,7 @@
 #include "src/tint/lang/msl/writer/raise/packed_vec3.h"
 #include "src/tint/lang/msl/writer/raise/shader_io.h"
 #include "src/tint/lang/msl/writer/raise/simd_ballot.h"
+#include "src/tint/lang/msl/writer/raise/validate_subgroup_matrix.h"
 
 namespace tint::msl::writer {
 
@@ -78,6 +81,13 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
             return result.Failure();     \
         }                                \
     } while (false)
+
+    RUN_TRANSFORM(core::ir::transform::SingleEntryPoint, module, options.entry_point_name);
+
+    RUN_TRANSFORM(core::ir::transform::SubstituteOverrides, module,
+                  options.substitute_overrides_config);
+
+    RUN_TRANSFORM(raise::ValidateSubgroupMatrix, module);
 
     RaiseResult raise_result;
 
@@ -179,7 +189,7 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
     }
 
     if (array_length_from_constants.buffer_sizes_offset) {
-        TINT_ASSERT(!array_length_from_constants.ubo_binding);
+        TINT_IR_ASSERT(module, !array_length_from_constants.ubo_binding);
         auto array_length_from_immediate_result = core::ir::transform::ArrayLengthFromImmediates(
             module, immediate_data_layout.Get(),
             array_length_from_constants.buffer_sizes_offset.value(),
@@ -253,7 +263,10 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
 
     RUN_TRANSFORM(raise::BinaryPolyfill, module);
     RUN_TRANSFORM(raise::BuiltinPolyfill, module,
-                  {.polyfill_unpack_2x16_snorm = options.polyfill_unpack_2x16_snorm});
+                  {
+                      .polyfill_unpack_2x16_snorm = options.polyfill_unpack_2x16_snorm,
+                      .polyfill_unpack_2x16_unorm = options.polyfill_unpack_2x16_unorm,
+                  });
     // After 'BuiltinPolyfill' as that transform can introduce signed dot products.
     core::ir::transform::SignedIntegerPolyfillConfig signed_integer_cfg{
         .signed_negation = true, .signed_arithmetic = true, .signed_shiftleft = true};

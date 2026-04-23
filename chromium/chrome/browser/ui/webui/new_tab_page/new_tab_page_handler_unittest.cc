@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/hash/hash.h"
 #include "base/json/json_writer.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
@@ -31,6 +32,8 @@
 #include "chrome/browser/new_tab_page/promos/promo_service.h"
 #include "chrome/browser/new_tab_page/promos/promo_service_factory.h"
 #include "chrome/browser/new_tab_page/promos/promo_service_observer.h"
+#include "chrome/browser/optimization_guide/mock_optimization_guide_keyed_service.h"
+#include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
 #include "chrome/browser/promos/promos_pref_names.h"
 #include "chrome/browser/search/background/ntp_custom_background_service.h"
 #include "chrome/browser/search/background/ntp_custom_background_service_observer.h"
@@ -44,6 +47,7 @@
 #include "chrome/browser/ui/hats/mock_hats_service.h"
 #include "chrome/browser/ui/views/side_panel/customize_chrome/side_panel_controller_views.h"
 #include "chrome/browser/ui/webui/new_tab_page/new_tab_page.mojom.h"
+#include "chrome/browser/ui/webui/new_tab_page/ntp_pref_names.h"
 #include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_section.h"
 #include "chrome/browser/ui/webui/webui_util_desktop.h"
 #include "chrome/common/chrome_features.h"
@@ -59,6 +63,7 @@
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/prefs/pref_service.h"
+#include "components/prefs/scoped_user_pref_update.h"
 #include "components/search/ntp_features.h"
 #include "components/search_provider_logos/logo_common.h"
 #include "components/search_provider_logos/logo_service.h"
@@ -68,6 +73,7 @@
 #include "components/sync/test/test_sync_service.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "components/themes/ntp_background_data.h"
+#include "components/user_education/common/feature_promo/feature_promo_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_web_contents_factory.h"
@@ -114,6 +120,7 @@ class MockPage : public new_tab_page::mojom::Page {
   MOCK_METHOD(void, SetModulesLoadable, ());
   MOCK_METHOD(void, SetModulesFreVisibility, (bool));
   MOCK_METHOD(void, SetCustomizeChromeSidePanelVisibility, (bool));
+  MOCK_METHOD(void, SetActionChipsVisibility, (bool));
   MOCK_METHOD(void, SetPromo, (new_tab_page::mojom::PromoPtr));
   MOCK_METHOD(void, ShowWebstoreToast, ());
   MOCK_METHOD(void, SetWallpaperSearchButtonVisibility, (bool));
@@ -239,24 +246,6 @@ class MockCustomizeChromeTabHelper
   MOCK_METHOD(void, DeregisterEntry, (), (override));
 };
 
-class MockFeaturePromoHelper : public NewTabPageFeaturePromoHelper {
- public:
-  MOCK_METHOD(void,
-              RecordPromoFeatureUsageAndClosePromo,
-              (const base::Feature& feature, content::WebContents*),
-              (override));
-  MOCK_METHOD(void,
-              MaybeShowFeaturePromo,
-              (const base::Feature& iph_feature, content::WebContents*),
-              (override));
-  MOCK_METHOD(bool,
-              IsSigninModalDialogOpen,
-              (content::WebContents*),
-              (override));
-
-  ~MockFeaturePromoHelper() override = default;
-};
-
 class MockMicrosoftAuthService : public MicrosoftAuthService {
  public:
   MOCK_METHOD0(GetAuthState, MicrosoftAuthService::AuthState());
@@ -277,6 +266,13 @@ std::unique_ptr<TestingProfile> MakeTestingProfile(
       base::BindRepeating([](content::BrowserContext* context)
                               -> std::unique_ptr<KeyedService> {
         return std::make_unique<testing::NiceMock<MockMicrosoftAuthService>>();
+      }));
+  profile_builder.AddTestingFactory(
+      OptimizationGuideKeyedServiceFactory::GetInstance(),
+      base::BindRepeating([](content::BrowserContext* context)
+                              -> std::unique_ptr<KeyedService> {
+        return std::make_unique<
+            testing::NiceMock<MockOptimizationGuideKeyedService>>();
       }));
   profile_builder.SetSharedURLLoaderFactory(url_loader_factory);
   auto profile = profile_builder.Build();
@@ -306,9 +302,6 @@ class NewTabPageHandlerTest : public testing::Test {
         mock_promo_service_(*static_cast<MockPromoService*>(
             PromoServiceFactory::GetForProfile(profile_.get()))),
         web_contents_(factory_.CreateWebContents(profile_.get())),
-        mock_feature_promo_helper_(new MockFeaturePromoHelper()),
-        mock_feature_promo_helper_ptr_(std::unique_ptr<MockFeaturePromoHelper>(
-            mock_feature_promo_helper_)),
         mock_customize_chrome_tab_helper_(
             std::make_unique<MockCustomizeChromeTabHelper>()) {
     mock_hats_service_ = static_cast<MockHatsService*>(
@@ -352,8 +345,7 @@ class NewTabPageHandlerTest : public testing::Test {
         mock_page_.BindAndGetRemote(), profile_.get(),
         &mock_ntp_custom_background_service_, &mock_theme_service_,
         &mock_logo_service_, &test_sync_service_,
-        &mock_segmentation_platform_service_, web_contents_,
-        std::move(mock_feature_promo_helper_ptr_), base::Time::Now(),
+        &mock_segmentation_platform_service_, web_contents_, base::Time::Now(),
         &module_id_details);
     mock_page_.FlushForTesting();
     EXPECT_EQ(handler_.get(), theme_service_observer_);
@@ -409,9 +401,6 @@ class NewTabPageHandlerTest : public testing::Test {
   const raw_ref<MockPromoService> mock_promo_service_;
   content::TestWebContentsFactory factory_;
   raw_ptr<content::WebContents> web_contents_;  // Weak. Owned by factory_.
-  // Pointer to mock that will eventually be solely owned by the handler.
-  raw_ptr<MockFeaturePromoHelper, DanglingUntriaged> mock_feature_promo_helper_;
-  std::unique_ptr<MockFeaturePromoHelper> mock_feature_promo_helper_ptr_;
   std::unique_ptr<MockCustomizeChromeTabHelper>
       mock_customize_chrome_tab_helper_;
   base::HistogramTester histogram_tester_;
@@ -1047,6 +1036,268 @@ TEST_F(NewTabPageHandlerTest, GetModulesOrder) {
                                       "google_calendar", "tab_resumption"));
 }
 
+class NewTabPageHandlerModuleRemovalTest : public NewTabPageHandlerTest {
+ public:
+  // Wrapper around GetModulesEligibleForRemoval, for deduping the callback.
+  std::vector<std::string> WrapGetModulesEligibleForRemoval() {
+    std::vector<std::string> result;
+    base::MockCallback<NewTabPageHandler::GetModulesEligibleForRemovalCallback>
+        callback;
+    EXPECT_CALL(callback, Run(_))
+        .Times(1)
+        .WillOnce([&result](std::vector<std::string> arg) {
+          result = std::move(arg);
+        });
+
+    handler_->GetModulesEligibleForRemoval(callback.Get());
+
+    return result;
+  }
+};
+
+TEST_F(NewTabPageHandlerModuleRemovalTest,
+       GetModulesEligibleForRemovalFeatureDisabled) {
+  // Arrange.
+  base::test::ScopedFeatureList features;
+  features.InitWithFeaturesAndParameters(
+      {}, {
+              {ntp_features::kNtpFeatureOptimizationModuleRemoval},
+          });
+
+  // Act.
+  std::vector<std::string> removed_modules = WrapGetModulesEligibleForRemoval();
+
+  // Assert.
+  EXPECT_EQ(0u, removed_modules.size());
+}
+
+TEST_F(NewTabPageHandlerModuleRemovalTest,
+       GetModulesEligibleForRemovalIsManagedPreference) {
+  // Arrange.
+  base::test::ScopedFeatureList features;
+  features.InitWithFeaturesAndParameters(
+      {
+          {ntp_features::kNtpFeatureOptimizationModuleRemoval,
+           {
+               {"ModuleMinStalenessUpdateTimeInterval", "24h"},
+               {"StaleModulesCountThreshold", "14"},
+           }},
+      },
+      {});
+
+  profile_->GetTestingPrefService()->SetManagedPref(prefs::kNtpModulesVisible,
+                                                    base::Value(true));
+
+  // Act.
+  std::vector<std::string> removed_modules = WrapGetModulesEligibleForRemoval();
+
+  // Assert.
+  EXPECT_EQ(0u, removed_modules.size());
+}
+
+TEST_F(NewTabPageHandlerModuleRemovalTest,
+       GetModulesEligibleForRemovalAllModulesForceDisabled) {
+  // Arrange.
+  base::test::ScopedFeatureList features;
+  features.InitWithFeaturesAndParameters(
+      {
+          {ntp_features::kNtpFeatureOptimizationModuleRemoval,
+           {
+               {"ModuleMinStalenessUpdateTimeInterval", "24h"},
+               {"StaleModulesCountThreshold", "14"},
+           }},
+      },
+      {});
+
+  ScopedDictPrefUpdate update(profile_->GetPrefs(),
+                              ntp_prefs::kNtpModulesAutoRemovalDisabledDict);
+  update->Set(ntp_modules::kAllModulesId, true);
+
+  // Act.
+  std::vector<std::string> removed_modules = WrapGetModulesEligibleForRemoval();
+
+  // Assert.
+  EXPECT_EQ(0u, removed_modules.size());
+}
+
+TEST_F(NewTabPageHandlerModuleRemovalTest,
+       GetModulesEligibleForRemovalModuleForceDisabled) {
+  // Arrange.
+  base::test::ScopedFeatureList features;
+  features.InitWithFeaturesAndParameters(
+      {
+          {ntp_features::kNtpFeatureOptimizationModuleRemoval,
+           {
+               {"ModuleMinStalenessUpdateTimeInterval", "24h"},
+               {"StaleModulesCountThreshold", "14"},
+           }},
+      },
+      {});
+
+  ScopedDictPrefUpdate update(profile_->GetPrefs(),
+                              ntp_prefs::kNtpModulesAutoRemovalDisabledDict);
+  update->Set(ntp_modules::kDriveModuleId, true);
+
+  // Act.
+  std::vector<std::string> removed_modules = WrapGetModulesEligibleForRemoval();
+
+  // Assert.
+  EXPECT_EQ(0u, removed_modules.size());
+}
+
+TEST_F(NewTabPageHandlerModuleRemovalTest,
+       GetModulesEligibleForRemovalModuleBelowStalenessThreshold) {
+  // Arrange.
+  base::test::ScopedFeatureList features;
+  features.InitWithFeaturesAndParameters(
+      {
+          {ntp_features::kNtpFeatureOptimizationModuleRemoval,
+           {
+               {"ModuleMinStalenessUpdateTimeInterval", "24h"},
+               {"StaleModulesCountThreshold", "14"},
+           }},
+      },
+      {});
+
+  const int below_staleness_threshold = 1;
+  ScopedDictPrefUpdate update(profile_->GetPrefs(),
+                              ntp_prefs::kNtpModuleStalenessCountDict);
+  update->Set(ntp_modules::kDriveModuleId, below_staleness_threshold);
+
+  // Act.
+  std::vector<std::string> removed_modules = WrapGetModulesEligibleForRemoval();
+
+  // Assert.
+  EXPECT_EQ(0u, removed_modules.size());
+}
+
+TEST_F(NewTabPageHandlerModuleRemovalTest,
+       GetModulesEligibleForRemovalModuleAboveStalenessThreshold) {
+  // Arrange.
+  base::test::ScopedFeatureList features;
+  features.InitWithFeaturesAndParameters(
+      {
+          {ntp_features::kNtpFeatureOptimizationModuleRemoval,
+           {
+               {"ModuleMinStalenessUpdateTimeInterval", "24h"},
+               {"StaleModulesCountThreshold", "14"},
+           }},
+      },
+      {});
+
+  const int above_staleness_threshold = 100;
+  ScopedDictPrefUpdate update(profile_->GetPrefs(),
+                              ntp_prefs::kNtpModuleStalenessCountDict);
+  update->Set(ntp_modules::kDriveModuleId, above_staleness_threshold);
+
+  // Act.
+  std::vector<std::string> removed_modules = WrapGetModulesEligibleForRemoval();
+
+  // Assert.
+  EXPECT_EQ(1u, removed_modules.size());
+  EXPECT_TRUE(base::Contains(removed_modules, ntp_modules::kDriveModuleId));
+}
+
+TEST_F(NewTabPageHandlerTest, SetModulesDisabledTrue) {
+  // Arrange.
+  histogram_tester_.ExpectTotalCount("NewTabPage.Modules.AutoRemoval", 0);
+  histogram_tester_.ExpectTotalCount("NewTabPage.Modules.AutoRemovalModuleId",
+                                     0);
+  ScopedListPrefUpdate update(profile_->GetPrefs(), prefs::kNtpDisabledModules);
+  base::Value::List& initial_disabled_modules_list = update.Get();
+  initial_disabled_modules_list.Append(ntp_modules::kOutlookCalendarModuleId);
+
+  std::vector<std::string> set_disabled_modules_true = {
+      ntp_modules::kDriveModuleId,
+      ntp_modules::kGoogleCalendarModuleId,
+  };
+
+  base::Value::List expected_disabled_modules_list;
+  expected_disabled_modules_list.Append(ntp_modules::kOutlookCalendarModuleId);
+  expected_disabled_modules_list.Append(ntp_modules::kDriveModuleId);
+  expected_disabled_modules_list.Append(ntp_modules::kGoogleCalendarModuleId);
+
+  // Act.
+  handler_->SetModulesDisabled(set_disabled_modules_true, /*disabled=*/true);
+
+  // Assert.
+  EXPECT_EQ(expected_disabled_modules_list,
+            profile_->GetPrefs()->GetList(prefs::kNtpDisabledModules));
+  EXPECT_TRUE(profile_->GetPrefs()
+                  ->GetDict(ntp_prefs::kNtpModulesAutoRemovalDisabledDict)
+                  .FindBool(ntp_modules::kDriveModuleId)
+                  .value_or(false));
+  EXPECT_TRUE(profile_->GetPrefs()
+                  ->GetDict(ntp_prefs::kNtpModulesAutoRemovalDisabledDict)
+                  .FindBool(ntp_modules::kGoogleCalendarModuleId)
+                  .value_or(false));
+  histogram_tester_.ExpectTotalCount("NewTabPage.Modules.AutoRemoval", 1);
+  histogram_tester_.ExpectBucketCount(
+      "NewTabPage.Modules.AutoRemovalModuleId",
+      base::PersistentHash(ntp_modules::kDriveModuleId), 1);
+  histogram_tester_.ExpectBucketCount(
+      "NewTabPage.Modules.AutoRemovalModuleId",
+      base::PersistentHash(ntp_modules::kGoogleCalendarModuleId), 1);
+}
+
+TEST_F(NewTabPageHandlerTest, SetModulesDisabledFalse) {
+  // Arrange.
+  histogram_tester_.ExpectTotalCount("NewTabPage.Modules.AutoRemovalUndone", 0);
+  histogram_tester_.ExpectTotalCount(
+      "NewTabPage.Modules.AutoRemovalUndoneModuleId", 0);
+  ScopedListPrefUpdate update(profile_->GetPrefs(), prefs::kNtpDisabledModules);
+  base::Value::List& initial_disabled_modules_list = update.Get();
+  initial_disabled_modules_list.Append(ntp_modules::kOutlookCalendarModuleId);
+  initial_disabled_modules_list.Append(ntp_modules::kDriveModuleId);
+  initial_disabled_modules_list.Append(ntp_modules::kGoogleCalendarModuleId);
+
+  std::vector<std::string> set_disabled_modules_false = {
+      ntp_modules::kDriveModuleId,
+      ntp_modules::kGoogleCalendarModuleId,
+  };
+
+  base::Value::List expected_disabled_modules_list;
+  expected_disabled_modules_list.Append(ntp_modules::kOutlookCalendarModuleId);
+
+  // Act.
+  handler_->SetModulesDisabled(set_disabled_modules_false, /*disabled=*/false);
+
+  // Assert.
+  EXPECT_EQ(expected_disabled_modules_list,
+            profile_->GetPrefs()->GetList(prefs::kNtpDisabledModules));
+  histogram_tester_.ExpectTotalCount("NewTabPage.Modules.AutoRemovalUndone", 1);
+  histogram_tester_.ExpectBucketCount(
+      "NewTabPage.Modules.AutoRemovalUndoneModuleId",
+      base::PersistentHash(ntp_modules::kDriveModuleId), 1);
+  histogram_tester_.ExpectBucketCount(
+      "NewTabPage.Modules.AutoRemovalUndoneModuleId",
+      base::PersistentHash(ntp_modules::kGoogleCalendarModuleId), 1);
+}
+
+TEST_F(NewTabPageHandlerTest, SetModulesDisabledEmptyList) {
+  // Arrange.
+  histogram_tester_.ExpectTotalCount("NewTabPage.Modules.AutoRemoval", 0);
+  histogram_tester_.ExpectTotalCount("NewTabPage.Modules.AutoRemovalModuleId",
+                                     0);
+  ScopedListPrefUpdate update(profile_->GetPrefs(), prefs::kNtpDisabledModules);
+  base::Value::List& initial_disabled_modules_list = update.Get();
+  initial_disabled_modules_list.Append(ntp_modules::kDriveModuleId);
+  initial_disabled_modules_list.Append(ntp_modules::kGoogleCalendarModuleId);
+  initial_disabled_modules_list.Append(ntp_modules::kOutlookCalendarModuleId);
+
+  std::vector<std::string> set_disabled_modules_empty = {};
+
+  // Act.
+  handler_->SetModulesDisabled(set_disabled_modules_empty, /*disabled=*/true);
+
+  // Assert.
+  EXPECT_EQ(initial_disabled_modules_list,
+            profile_->GetPrefs()->GetList(prefs::kNtpDisabledModules));
+  histogram_tester_.ExpectTotalCount("NewTabPage.Modules.AutoRemoval", 0);
+  histogram_tester_.ExpectTotalCount("NewTabPage.Modules.AutoRemovalModuleId",
+                                     0);
+}
+
 TEST_F(NewTabPageHandlerTest, SurveyLaunchedEligibleModulesCriteria) {
   base::test::ScopedFeatureList features;
   features.InitWithFeaturesAndParameters(
@@ -1108,6 +1359,12 @@ TEST_F(NewTabPageHandlerTest, SetModuleDisabled) {
   disabled_modules_list.Append(ntp_modules::kDriveModuleId);
   EXPECT_EQ(disabled_modules_list,
             profile_->GetPrefs()->GetList(prefs::kNtpDisabledModules));
+
+  const std::optional<bool> drive_module_auto_removal_disabled =
+      profile_->GetPrefs()
+          ->GetDict(ntp_prefs::kNtpModulesAutoRemovalDisabledDict)
+          .FindBool(ntp_modules::kDriveModuleId);
+  EXPECT_TRUE(drive_module_auto_removal_disabled.value_or(false));
 }
 
 TEST_F(NewTabPageHandlerTest, SetModuleHiddenAndDisabled) {
@@ -1139,6 +1396,12 @@ TEST_F(NewTabPageHandlerTest, SetModuleHiddenAndDisabled) {
   EXPECT_FALSE(all);
   EXPECT_EQ(1u, disabled_module_ids.size());
   EXPECT_EQ(disabled_module_ids[0], ntp_modules::kDriveModuleId);
+
+  const std::optional<bool> drive_module_auto_removal_disabled =
+      profile_->GetPrefs()
+          ->GetDict(ntp_prefs::kNtpModulesAutoRemovalDisabledDict)
+          .FindBool(ntp_modules::kDriveModuleId);
+  EXPECT_TRUE(drive_module_auto_removal_disabled.value_or(false));
 }
 
 TEST_F(NewTabPageHandlerTest, SetModuleHiddenAndDisabledCardsManagedVisible) {
@@ -1172,6 +1435,12 @@ TEST_F(NewTabPageHandlerTest, SetModuleHiddenAndDisabledCardsManagedVisible) {
   EXPECT_FALSE(all);
   EXPECT_EQ(1u, disabled_module_ids.size());
   EXPECT_EQ(disabled_module_ids[0], ntp_modules::kDriveModuleId);
+
+  const std::optional<bool> drive_module_auto_removal_disabled =
+      profile_->GetPrefs()
+          ->GetDict(ntp_prefs::kNtpModulesAutoRemovalDisabledDict)
+          .FindBool(ntp_modules::kDriveModuleId);
+  EXPECT_TRUE(drive_module_auto_removal_disabled.value_or(false));
 }
 
 TEST_F(NewTabPageHandlerTest,
@@ -1204,6 +1473,40 @@ TEST_F(NewTabPageHandlerTest,
   mock_page_.FlushForTesting();
   EXPECT_TRUE(all);
   EXPECT_TRUE(disabled_module_ids.empty());
+
+  const std::optional<bool> drive_module_auto_removal_disabled =
+      profile_->GetPrefs()
+          ->GetDict(ntp_prefs::kNtpModulesAutoRemovalDisabledDict)
+          .FindBool(ntp_modules::kDriveModuleId);
+  EXPECT_TRUE(drive_module_auto_removal_disabled.value_or(false));
+}
+
+TEST_F(NewTabPageHandlerTest, SetModulesVisible) {
+  handler_->SetModulesVisible(true);
+  EXPECT_CALL(mock_page_, SetDisabledModules).Times(1);
+  mock_page_.FlushForTesting();
+
+  EXPECT_TRUE(profile_->GetPrefs()->GetBoolean(prefs::kNtpModulesVisible));
+
+  const std::optional<bool> all_modules_auto_removal_disabled =
+      profile_->GetPrefs()
+          ->GetDict(ntp_prefs::kNtpModulesAutoRemovalDisabledDict)
+          .FindBool(ntp_modules::kAllModulesId);
+  EXPECT_TRUE(all_modules_auto_removal_disabled.value_or(false));
+}
+
+TEST_F(NewTabPageHandlerTest, SetModulesNotVisible) {
+  handler_->SetModulesVisible(false);
+  EXPECT_CALL(mock_page_, SetDisabledModules).Times(1);
+  mock_page_.FlushForTesting();
+
+  EXPECT_FALSE(profile_->GetPrefs()->GetBoolean(prefs::kNtpModulesVisible));
+
+  const std::optional<bool> all_modules_auto_removal_disabled =
+      profile_->GetPrefs()
+          ->GetDict(ntp_prefs::kNtpModulesAutoRemovalDisabledDict)
+          .FindBool(ntp_modules::kAllModulesId);
+  EXPECT_TRUE(all_modules_auto_removal_disabled.value_or(false));
 }
 
 TEST_F(NewTabPageHandlerTest, ModulesVisiblePrefChangeTriggersPageCall) {
@@ -1212,57 +1515,19 @@ TEST_F(NewTabPageHandlerTest, ModulesVisiblePrefChangeTriggersPageCall) {
   mock_page_.FlushForTesting();
 }
 
-// TODO (crbug/1521350): Fails when ChromeRefresh2023 is enabled.
-TEST_F(NewTabPageHandlerTest, DISABLED_MaybeShowFeaturePromo_CustomizeChrome) {
-  EXPECT_CALL(*mock_feature_promo_helper_, IsSigninModalDialogOpen)
-      .WillRepeatedly(testing::Return(false));
-  EXPECT_CALL(*mock_feature_promo_helper_, MaybeShowFeaturePromo).Times(1);
+// Tests that UpdateActionChipsVisibility calls the page with
+// SetActionChipsVisibility
+TEST_F(NewTabPageHandlerTest, UpdateActionChipsVisibility) {
+  bool visible;
+  EXPECT_CALL(mock_page_, SetActionChipsVisibility)
+      .Times(1)
+      .WillOnce([&visible](bool visible_arg) { visible = visible_arg; });
 
-  handler_->MaybeShowFeaturePromo(
-      new_tab_page::mojom::IphFeature::kCustomizeChrome);
-
-  EXPECT_EQ(profile_->GetPrefs()->GetInteger(
-                prefs::kNtpCustomizeChromeButtonOpenCount),
-            1);
-  EXPECT_CALL(*mock_feature_promo_helper_, MaybeShowFeaturePromo).Times(0);
-
-  handler_->MaybeShowFeaturePromo(
-      new_tab_page::mojom::IphFeature::kCustomizeChrome);
-
+  profile_->GetPrefs()->SetBoolean(prefs::kNtpToolChipsVisible, true);
   mock_page_.FlushForTesting();
-}
 
-TEST_F(NewTabPageHandlerTest, MaybeShowFeaturePromo_CustomizeChromeRefresh) {
-  EXPECT_CALL(*mock_feature_promo_helper_, IsSigninModalDialogOpen)
-      .WillRepeatedly(testing::Return(false));
-  EXPECT_CALL(*mock_feature_promo_helper_,
-              MaybeShowFeaturePromo(_, web_contents_.get()))
-      .Times(1);
-
-  handler_->MaybeShowFeaturePromo(
-      new_tab_page::mojom::IphFeature::kCustomizeChrome);
-  // Assert that the code path taken is the one that does not involve
-  // incrementing the button open count.
-  EXPECT_EQ(profile_->GetPrefs()->GetInteger(
-                prefs::kNtpCustomizeChromeButtonOpenCount),
-            0);
-
-  mock_page_.FlushForTesting();
-}
-
-TEST_F(NewTabPageHandlerTest,
-       DontShowCustomizeChromeFeaturePromoWhenModalDialogIsOpen) {
-  EXPECT_CALL(*mock_feature_promo_helper_, IsSigninModalDialogOpen)
-      .WillRepeatedly(testing::Return(true));
-  EXPECT_EQ(profile_->GetPrefs()->GetInteger(
-                prefs::kNtpCustomizeChromeButtonOpenCount),
-            0);
-  EXPECT_CALL(*mock_feature_promo_helper_, MaybeShowFeaturePromo).Times(0);
-
-  handler_->MaybeShowFeaturePromo(
-      new_tab_page::mojom::IphFeature::kCustomizeChrome);
-
-  mock_page_.FlushForTesting();
+  EXPECT_TRUE(visible);
+  EXPECT_TRUE(profile_->GetPrefs()->GetBoolean(prefs::kNtpToolChipsVisible));
 }
 
 TEST_F(NewTabPageHandlerTest, ShowWebstoreToast) {

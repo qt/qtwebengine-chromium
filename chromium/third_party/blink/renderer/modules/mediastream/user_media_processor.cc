@@ -85,6 +85,36 @@ void LogEchoCancellationMode(EchoCancellationMode mode) {
       "Media.MediaDevices.GetUserMedia.EchoCancellationMode", mode);
 }
 
+void UpdateRequestResult(UserMediaRequest* request,
+                         MediaStreamRequestResult result) {
+  UserMediaRequestType media_type = request->MediaRequestType();
+  switch (media_type) {
+    case UserMediaRequestType::kUserMedia: {
+      if (request->IsGumExtensionRequest()) {
+        base::UmaHistogramEnumeration(
+            "WebRTC.UserMediaRequest.GetUserMedia.Extension.Result", result,
+            mojom::blink::MediaStreamRequestResult::NUM_MEDIA_REQUEST_RESULTS);
+        return;
+      } else {
+        base::UmaHistogramEnumeration(
+            "WebRTC.UserMediaRequest.GetUserMedia.DeviceCapture.Result", result,
+            mojom::blink::MediaStreamRequestResult::NUM_MEDIA_REQUEST_RESULTS);
+        return;
+      }
+    }
+    case UserMediaRequestType::kDisplayMedia:
+      base::UmaHistogramEnumeration(
+          "WebRTC.UserMediaRequest.GetDisplayMedia.Result", result,
+          mojom::blink::MediaStreamRequestResult::NUM_MEDIA_REQUEST_RESULTS);
+      return;
+    case UserMediaRequestType::kAllScreensMedia:
+      base::UmaHistogramEnumeration(
+          "WebRTC.UserMediaRequest.GetAllScreensMedia.Result", result,
+          mojom::blink::MediaStreamRequestResult::NUM_MEDIA_REQUEST_RESULTS);
+      return;
+  }
+}
+
 const char* MediaStreamRequestResultToString(MediaStreamRequestResult value) {
   switch (value) {
     case MediaStreamRequestResult::OK:
@@ -111,6 +141,8 @@ const char* MediaStreamRequestResultToString(MediaStreamRequestResult value) {
       return "TRACK_START_FAILURE_AUDIO";
     case MediaStreamRequestResult::TRACK_START_FAILURE_VIDEO:
       return "TRACK_START_FAILURE_VIDEO";
+    case MediaStreamRequestResult::MULTI_CAPTURE_NOT_SUPPORTED:
+      return "MULTI_CAPTURE_NOT_SUPPORTED";
     case MediaStreamRequestResult::NOT_SUPPORTED:
       return "NOT_SUPPORTED";
     case MediaStreamRequestResult::FAILED_DUE_TO_SHUTDOWN:
@@ -127,6 +159,30 @@ const char* MediaStreamRequestResultToString(MediaStreamRequestResult value) {
       return "START_TIMEOUT";
     case MediaStreamRequestResult::PERMISSION_DENIED_BY_USER:
       return "PERMISSION_DENIED_BY_USER";
+    case MediaStreamRequestResult::AUDIO_DEVICE_SOCKET_ERROR:
+      return "AUDIO_DEVICE_SOCKET_ERROR";
+    case MediaStreamRequestResult::NO_TRANSIENT_ACTIVATION:
+      return "NO_TRANSIENT_ACTIVATION";
+    case MediaStreamRequestResult::CAPTURE_NOT_ALLOWED_BY_POLICY:
+      return "CAPTURE_NOT_ALLOWED_BY_POLICY";
+    case MediaStreamRequestResult::INVALID_DISPLAY_CAPTURE_CONSTRAINTS:
+      return "INVALID_DISPLAY_CAPTURE_CONSTRAINTS";
+    case MediaStreamRequestResult::INVALID_GUM_TAB_CAPTURE_CONSTRAINTS:
+      return "INVALID_GUM_TAB_CAPTURE_CONSTRAINTS";
+    case MediaStreamRequestResult::INVALID_GUM_SCREEN_CAPTURE_CONSTRAINTS:
+      return "INVALID_GUM_SCREEN_CAPTURE_CONSTRAINTS";
+    case MediaStreamRequestResult::INVALID_VIDEO_DEVICE_ID:
+      return "INVALID_VIDEO_DEVICE_ID";
+    case MediaStreamRequestResult::STREAM_NOT_FOUND_IN_REGISTRY:
+      return "STREAM_NOT_FOUND_IN_REGISTRY";
+    case MediaStreamRequestResult::ANDROID_CANT_REQUEST_PERMISSION:
+      return "ANDROID_CANT_REQUEST_PERMISSION";
+    case MediaStreamRequestResult::PERMISSION_DENIED_BY_EMBEDDER_CONTEXT:
+      return "PERMISSION_DENIED_BY_EMBEDDER_CONTEXT";
+    case MediaStreamRequestResult::DLP_PERMISSION_DENIED:
+      return "DLP_PERMISSION_DENIED";
+    case MediaStreamRequestResult::REGISTRY_REQUEST_UNVERIFIED:
+      return "REGISTRY_REQUEST_UNVERIFIED";
     case MediaStreamRequestResult::NUM_MEDIA_REQUEST_RESULTS:
       break;
   }
@@ -283,16 +339,23 @@ String ErrorCodeToString(MediaStreamRequestResult result) {
     case MediaStreamRequestResult::OK:
       return "OK";
     case MediaStreamRequestResult::PERMISSION_DENIED:
+    case MediaStreamRequestResult::ANDROID_CANT_REQUEST_PERMISSION:
+    case MediaStreamRequestResult::CAPTURE_NOT_ALLOWED_BY_POLICY:
+    case MediaStreamRequestResult::PERMISSION_DENIED_BY_EMBEDDER_CONTEXT:
+    case MediaStreamRequestResult::DLP_PERMISSION_DENIED:
       return "Permission denied";
     case MediaStreamRequestResult::PERMISSION_DISMISSED:
       return "Permission dismissed";
     case MediaStreamRequestResult::INVALID_STATE:
+    case MediaStreamRequestResult::INVALID_VIDEO_DEVICE_ID:
+    case MediaStreamRequestResult::REGISTRY_REQUEST_UNVERIFIED:
       return "Invalid state";
     case MediaStreamRequestResult::NO_HARDWARE:
       return "Requested device not found";
     case MediaStreamRequestResult::INVALID_SECURITY_ORIGIN:
       return "Invalid security origin";
     case MediaStreamRequestResult::TAB_CAPTURE_FAILURE:
+    case MediaStreamRequestResult::STREAM_NOT_FOUND_IN_REGISTRY:
       return "Error starting tab capture";
     case MediaStreamRequestResult::SCREEN_CAPTURE_FAILURE:
       return "Error starting screen capture";
@@ -302,6 +365,7 @@ String ErrorCodeToString(MediaStreamRequestResult result) {
       return "Could not start audio source";
     case MediaStreamRequestResult::TRACK_START_FAILURE_VIDEO:
       return "Could not start video source";
+    case MediaStreamRequestResult::MULTI_CAPTURE_NOT_SUPPORTED:
     case MediaStreamRequestResult::NOT_SUPPORTED:
       return "Not supported";
     case MediaStreamRequestResult::FAILED_DUE_TO_SHUTDOWN:
@@ -320,6 +384,14 @@ String ErrorCodeToString(MediaStreamRequestResult result) {
       return "Constraint not satisfied";
     case MediaStreamRequestResult::PERMISSION_DENIED_BY_USER:
       return "Permission denied by user";
+    case MediaStreamRequestResult::AUDIO_DEVICE_SOCKET_ERROR:
+      return "Audio device socket error";
+    case MediaStreamRequestResult::NO_TRANSIENT_ACTIVATION:
+      return "No transient activation";
+    case MediaStreamRequestResult::INVALID_DISPLAY_CAPTURE_CONSTRAINTS:
+    case MediaStreamRequestResult::INVALID_GUM_TAB_CAPTURE_CONSTRAINTS:
+    case MediaStreamRequestResult::INVALID_GUM_SCREEN_CAPTURE_CONSTRAINTS:
+      return "Invalid capture constraints";
     case MediaStreamRequestResult::NUM_MEDIA_REQUEST_RESULTS:
       break;  // Not a valid enum value.
   }
@@ -1294,8 +1366,6 @@ void UserMediaProcessor::OnStreamsGenerated(
     SendLogMessage(base::StringPrintf(
         "OnStreamsGenerated([request_id=%d]) => (ERROR: invalid request ID)",
         request_id));
-    blink::LogUserMediaRequestResult(
-        MediaStreamRequestResult::REQUEST_CANCELLED);
     for (const mojom::blink::StreamDevicesPtr& stream_devices :
          stream_devices_set->stream_devices) {
       OnStreamGeneratedForCancelledRequest(*stream_devices);
@@ -1842,9 +1912,9 @@ MediaStreamSource* UserMediaProcessor::InitializeAudioSourceObject(
                             std::max(fallback_latency, max_latency)};
   }
 
-  capabilities.device_id = blink::WebString::FromUTF8(device.id);
+  capabilities.device_id = String::FromUTF8(device.id);
   if (device.group_id) {
-    capabilities.group_id = blink::WebString::FromUTF8(*device.group_id);
+    capabilities.group_id = String::FromUTF8(*device.group_id);
   }
 
   MediaStreamSource* source =
@@ -2149,7 +2219,7 @@ void UserMediaProcessor::DelayedGetUserMediaRequestSucceeded(
       "DelayedGetUserMediaRequestSucceeded({request_id=%d}, {result=%s})",
       request_id,
       MediaStreamRequestResultToString(MediaStreamRequestResult::OK)));
-  blink::LogUserMediaRequestResult(MediaStreamRequestResult::OK);
+  UpdateRequestResult(user_media_request, MediaStreamRequestResult::OK);
   DeleteUserMediaRequest(user_media_request);
   if (!user_media_request->IsTransferredTrackRequest()) {
     // For transferred tracks, user_media_request has already been resolved in
@@ -2189,7 +2259,7 @@ void UserMediaProcessor::DelayedGetUserMediaRequestFailed(
     MediaStreamRequestResult result,
     const String& constraint_name) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  blink::LogUserMediaRequestResult(result);
+  UpdateRequestResult(user_media_request, result);
   SendLogMessage(base::StringPrintf(
       "DelayedGetUserMediaRequestFailed({request_id=%d}, {result=%s})",
       request_id, MediaStreamRequestResultToString(result)));
@@ -2276,9 +2346,14 @@ bool UserMediaProcessor::RemoveLocalSource(MediaStreamSource* source) {
         result = MediaStreamRequestResult::DEVICE_IN_USE;
         message = "Audio capture device already in use";
         break;
-      default:
+      case AudioSourceErrorCode::kSocketError:
+        result = MediaStreamRequestResult::AUDIO_DEVICE_SOCKET_ERROR;
+        message = "Socket for audio capture device closed";
+        break;
+      case AudioSourceErrorCode::kUnknown:
         result = MediaStreamRequestResult::TRACK_START_FAILURE_AUDIO;
         message = "Failed to access audio capture device";
+        break;
     }
   } else {
     result = MediaStreamRequestResult::TRACK_START_FAILURE_VIDEO;
@@ -2303,21 +2378,52 @@ bool UserMediaProcessor::IsCurrentRequestInfo(
          current_request_info_->request() == user_media_request;
 }
 
-bool UserMediaProcessor::DeleteUserMediaRequest(
+bool UserMediaProcessor::CancelRequest(UserMediaRequest* user_media_request) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  if (current_request_info_ &&
+      current_request_info_->request() == user_media_request) {
+    SendLogMessage(base::StringPrintf("CancelRequest(request_id=%d)",
+                                      user_media_request->request_id()));
+    switch (current_request_info_->state()) {
+      case RequestInfo::State::kSentForGeneration:
+        // Let the browser process know that the previously sent request must be
+        // canceled.
+        GetMediaStreamDispatcherHost()->CancelRequest(
+            current_request_info_->request_id());
+        [[fallthrough]];
+
+      case RequestInfo::State::kNotSentForGeneration:
+        DeleteUserMediaRequest(user_media_request);
+        break;
+
+      case RequestInfo::State::kGenerated:
+        // Don't delete the request if it has already been generated as the
+        // request might be trying to start tracks and deleting it at this point
+        // might cause issues.
+        break;
+    }
+    UpdateRequestResult(user_media_request,
+                        MediaStreamRequestResult::FAILED_DUE_TO_SHUTDOWN);
+    return true;
+  }
+  return false;
+}
+
+void UserMediaProcessor::DeleteUserMediaRequest(
     UserMediaRequest* user_media_request) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   if (current_request_info_ &&
       current_request_info_->request() == user_media_request) {
     current_request_info_ = nullptr;
     std::move(request_completed_cb_).Run();
-    return true;
   }
-  return false;
 }
 
 void UserMediaProcessor::StopAllProcessing() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   if (current_request_info_) {
+    auto result = MediaStreamRequestResult::FAILED_DUE_TO_SHUTDOWN;
+    UpdateRequestResult(current_request_info_->request(), result);
     switch (current_request_info_->state()) {
       case RequestInfo::State::kSentForGeneration:
         // Let the browser process know that the previously sent request must be
@@ -2332,6 +2438,7 @@ void UserMediaProcessor::StopAllProcessing() {
       case RequestInfo::State::kGenerated:
         break;
     }
+    current_request_info_->request()->Fail(result, ErrorCodeToString(result));
     current_request_info_ = nullptr;
   }
   request_completed_cb_.Reset();

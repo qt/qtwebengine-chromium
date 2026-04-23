@@ -607,7 +607,7 @@ describeWithEnvironment('Overlays', () => {
       const generateButton = elementsWrapper.querySelector<HTMLElement>('.ai-label-button');
       assert.isOk(generateButton, 'could not find "Generate label" button');
       assert.isTrue(generateButton.classList.contains('enabled'));
-      const agent = new AiAssistanceModels.PerformanceAnnotationsAgent({
+      const agent = new AiAssistanceModels.PerformanceAnnotationsAgent.PerformanceAnnotationsAgent({
         aidaClient: mockAidaClient([[{
           explanation: 'This is an interesting entry',
           metadata: {
@@ -652,7 +652,7 @@ describeWithEnvironment('Overlays', () => {
           elementsWrapper.querySelector<HTMLElement>('.ai-label-button-wrapper') as HTMLSpanElement;
       assert.isOk(aiLabelButtonWrapper);
 
-      const tooltip = aiLabelButtonWrapper.querySelector<HTMLElement>('devtools-tooltip');
+      const tooltip = aiLabelButtonWrapper.querySelector('devtools-tooltip');
       assert.isOk(tooltip);
       assert.strictEqual(
           cleanTextContent(tooltip.innerText),
@@ -687,7 +687,7 @@ describeWithEnvironment('Overlays', () => {
       const aiLabelButtonWrapper =
           elementsWrapper.querySelector<HTMLElement>('.ai-label-button-wrapper') as HTMLSpanElement;
       assert.isOk(aiLabelButtonWrapper);
-      const tooltip = aiLabelButtonWrapper.querySelector<HTMLElement>('devtools-tooltip');
+      const tooltip = aiLabelButtonWrapper.querySelector('devtools-tooltip');
       assert.isOk(tooltip);
       assert.strictEqual(
           cleanTextContent(tooltip.innerText),
@@ -763,7 +763,7 @@ describeWithEnvironment('Overlays', () => {
              elementsWrapper.querySelector<HTMLElement>('.ai-label-disabled-button-wrapper') as HTMLSpanElement;
          assert.isOk(aiLabelButtonWrapper);
 
-         const tooltip = aiLabelButtonWrapper.querySelector<HTMLElement>('devtools-tooltip');
+         const tooltip = aiLabelButtonWrapper.querySelector('devtools-tooltip');
          assert.isOk(tooltip);
          assert.strictEqual(
              cleanTextContent(tooltip.innerText),
@@ -793,7 +793,7 @@ describeWithEnvironment('Overlays', () => {
           elementsWrapper.querySelector<HTMLElement>('.ai-label-disabled-button-wrapper') as HTMLSpanElement;
       assert.isOk(aiLabelButtonWrapper);
 
-      const tooltip = aiLabelButtonWrapper.querySelector<HTMLElement>('devtools-tooltip');
+      const tooltip = aiLabelButtonWrapper.querySelector('devtools-tooltip');
       assert.isOk(tooltip);
       assert.strictEqual(
           cleanTextContent(tooltip.innerText),

@@ -5,10 +5,10 @@
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
 import type * as SDK from '../../core/sdk/sdk.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import {createIcon} from '../../ui/kit/kit.js';
 
 import {ApplicationPanelTreeElement, ExpandableApplicationPanelTreeElement} from './ApplicationPanelTreeElement.js';
-import type * as PreloadingHelper from './preloading/helper/helper.js';
+import * as PreloadingHelper from './preloading/helper/helper.js';
 import {PreloadingAttemptView, PreloadingRuleSetView, PreloadingSummaryView} from './preloading/PreloadingView.js';
 import type {ResourcesPanel} from './ResourcesPanel.js';
 
@@ -45,7 +45,7 @@ class PreloadingTreeElementBase<View extends PreloadingRuleSetView|PreloadingAtt
     this.#viewConstructor = viewConstructor;
     this.#path = path;
 
-    const icon = IconButton.Icon.create('speculative-loads');
+    const icon = createIcon('speculative-loads');
     this.setLeadingIcons([icon]);
     this.#selected = false;
 
@@ -94,7 +94,7 @@ export class PreloadingSummaryTreeElement extends ExpandableApplicationPanelTree
   constructor(panel: ResourcesPanel) {
     super(panel, i18nString(UIStrings.speculativeLoads), '', '', 'preloading');
 
-    const icon = IconButton.Icon.create('speculative-loads');
+    const icon = createIcon('speculative-loads');
     this.setLeadingIcons([icon]);
     this.#selected = false;
 
@@ -125,7 +125,15 @@ export class PreloadingSummaryTreeElement extends ExpandableApplicationPanelTree
     this.#attempt.initialize(model);
 
     // Show the view if the model was initialized after selection.
-    if (this.#selected && !this.#view) {
+    // However, if the user last viewed this page and clicked into Rules or
+    // Speculations, we ensure that we instead show those pages.
+    if (this.#attempt.selected) {
+      const filter = new PreloadingHelper.PreloadingForward.AttemptViewWithFilter(null);
+      this.expandAndRevealAttempts(filter);
+    } else if (this.#ruleSet.selected) {
+      const filter = new PreloadingHelper.PreloadingForward.RuleSetView(null);
+      this.expandAndRevealRuleSet(filter);
+    } else if (this.#selected && !this.#view) {
       this.onselect(false);
     }
   }

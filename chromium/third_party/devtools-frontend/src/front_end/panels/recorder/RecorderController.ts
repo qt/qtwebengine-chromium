@@ -16,7 +16,6 @@ import * as Emulation from '../../panels/emulation/emulation.js';
 import * as Tracing from '../../services/tracing/tracing.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import type * as Dialogs from '../../ui/components/dialogs/dialogs.js';
-import * as ComponentHelpers from '../../ui/components/helpers/helpers.js';
 import type * as Menus from '../../ui/components/menus/menus.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Lit from '../../ui/lit/lit.js';
@@ -24,7 +23,6 @@ import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import * as Components from './components/components.js';
 import type {AddBreakpointEvent, RemoveBreakpointEvent} from './components/StepView.js';
-import type * as Controllers from './controllers/controllers.js';
 import * as Converters from './converters/converters.js';
 import * as Extensions from './extensions/extensions.js';
 import * as Models from './models/models.js';
@@ -33,7 +31,7 @@ import recorderControllerStyles from './recorderController.css.js';
 import * as Events from './RecorderEvents.js';
 
 // TODO(crbug.com/391381439): Fully migrate off of Constructable Stylesheets.
-const {html, Decorators, LitElement} = Lit;
+const {html, Decorators, Directives: {ref}, LitElement} = Lit;
 const {customElement, state} = Decorators;
 
 const UIStrings = {
@@ -233,6 +231,7 @@ export class RecorderController extends LitElement {
       'disable-self-xss-warning', false, Common.Settings.SettingStorageType.SYNCED);
 
   #recordingView?: Components.RecordingView.RecordingView;
+  #createRecordingView?: Components.CreateRecordingView.CreateRecordingView;
 
   constructor() {
     super();
@@ -804,7 +803,9 @@ export class RecorderController extends LitElement {
     this.#clearError();
   }
 
-  async #onRecordingStarted(event: Components.CreateRecordingView.RecordingStartedEvent): Promise<void> {
+  async #onRecordingStarted(
+      data: {name: string, selectorTypesToRecord: Models.Schema.SelectorType[], selectorAttribute?: string}):
+      Promise<void> {
     // Recording is not available in device mode.
     await this.#disableDeviceModeIfEnabled();
 
@@ -815,10 +816,10 @@ export class RecorderController extends LitElement {
     // -- Recording logic starts here --
     Host.userMetrics.recordingToggled(Host.UserMetrics.RecordingToggled.RECORDING_STARTED);
     this.currentRecordingSession = new Models.RecordingSession.RecordingSession(this.#getMainTarget(), {
-      title: event.name,
-      selectorAttribute: event.selectorAttribute,
-      selectorTypesToRecord: event.selectorTypesToRecord.length ? event.selectorTypesToRecord :
-                                                                  Object.values(Models.Schema.SelectorType),
+      title: data.name,
+      selectorAttribute: data.selectorAttribute,
+      selectorTypesToRecord: data.selectorTypesToRecord.length ? data.selectorTypesToRecord :
+                                                                 Object.values(Models.Schema.SelectorType),
     });
     this.#setCurrentRecording(await this.#storage.saveRecording(this.currentRecordingSession.cloneUserFlow()));
 
@@ -901,7 +902,7 @@ export class RecorderController extends LitElement {
     this.dispatchEvent(new Events.RecordingStateChangedEvent(this.currentRecording.flow));
   }
 
-  async #onRecordingCancelled(): Promise<void> {
+  async onRecordingCancelled(): Promise<void> {
     if (this.previousPage) {
       this.#setCurrentPage(this.previousPage);
     }
@@ -1060,15 +1061,17 @@ export class RecorderController extends LitElement {
 
       case Actions.RecorderActions.START_RECORDING:
         if (this.currentPage !== Pages.CREATE_RECORDING_PAGE && !this.isRecording) {
-          this.#shortcutHelper.handleShortcut(this.#onRecordingStarted.bind(
-              this,
-              new Components.CreateRecordingView.RecordingStartedEvent(
-                  this.#recorderSettings.defaultTitle, this.#recorderSettings.defaultSelectors,
-                  this.#recorderSettings.selectorAttribute)));
+          this.#shortcutHelper.handleShortcut(this.#onRecordingStarted.bind(this, {
+            name: this.#recorderSettings.defaultTitle,
+            selectorTypesToRecord: this.#recorderSettings.defaultSelectors,
+            selectorAttribute: this.#recorderSettings.selectorAttribute ? this.#recorderSettings.selectorAttribute :
+                                                                          undefined,
+          }));
         } else if (this.currentPage === Pages.CREATE_RECORDING_PAGE) {
-          const view = this.renderRoot.querySelector('devtools-create-recording-view');
-          if (view) {
-            this.#shortcutHelper.handleShortcut(view.startRecording.bind(view));
+          if (this.#createRecordingView) {
+            this.#shortcutHelper.handleShortcut(() => {
+              this.#createRecordingView?.startRecording();
+            });
           }
         } else if (this.isRecording) {
           void this.#onRecordingFinished();
@@ -1175,7 +1178,13 @@ export class RecorderController extends LitElement {
         <div class="empty-state-header">${i18nString(UIStrings.header)}</div>
         <div class="empty-state-description">
           <span>${i18nString(UIStrings.recordingDescription)}</span>
-          ${UI.XLink.XLink.create(RECORDER_EXPLANATION_URL, i18nString(UIStrings.learnMore), 'x-link', undefined, 'learn-more')}
+          <x-link
+            class="x-link devtools-link"
+            href=${RECORDER_EXPLANATION_URL}
+            jslog=${VisualLogging.link()
+                    .track({ click: true, keydown: 'Enter|Space' })
+                    .context('learn-more')}
+          >${i18nString(UIStrings.learnMore)}</x-link>
         </div>
         <devtools-button .variant=${Buttons.Button.Variant.TONAL} jslogContext=${Actions.RecorderActions.CREATE_RECORDING} @click=${this.#onCreateNewRecording}>${i18nString(UIStrings.createRecording)}</devtools-button>
       </div>
@@ -1214,7 +1223,7 @@ export class RecorderController extends LitElement {
             titleChanged: this.#handleRecordingTitleChanged.bind(this),
           })}
           @requestselectorattribute=${(
-            event: Controllers.SelectorPicker.RequestSelectorAttributeEvent,
+            event: Components.SelectorPicker.RequestSelectorAttributeEvent,
           ) => {
             event.send(this.currentRecording?.flow.selectorAttribute);
           }}
@@ -1233,15 +1242,20 @@ export class RecorderController extends LitElement {
   #renderCreateRecordingPage(): Lit.TemplateResult {
     // clang-format off
     return html`
-      <devtools-create-recording-view
-        .data=${
-          {
-            recorderSettings: this.#recorderSettings,
-          } as Components.CreateRecordingView.CreateRecordingViewData
-        }
-        @recordingstarted=${this.#onRecordingStarted}
-        @recordingcancelled=${this.#onRecordingCancelled}
-      ></devtools-create-recording-view>
+      <devtools-widget
+        class="recording-view"
+        .widgetConfig=${UI.Widget.widgetConfig(Components.CreateRecordingView.CreateRecordingView, {
+          recorderSettings: this.#recorderSettings,
+          onRecordingStarted: this.#onRecordingStarted.bind(this),
+          onRecordingCancelled: this.onRecordingCancelled.bind(this),
+        })}
+        ${UI.Widget.widgetRef(
+          Components.CreateRecordingView.CreateRecordingView,
+          widget => {
+            this.#createRecordingView = widget;
+          },
+        )}
+      ></devtools-widget>
     `;
     // clang-format on
   }
@@ -1344,11 +1358,11 @@ export class RecorderController extends LitElement {
             <devtools-button
               id='origin'
               @click=${this.#onExportRecording}
-              on-render=${ComponentHelpers.Directives.nodeRenderedCallback(
-                node => {
-                  this.#exportMenuButton = node as Buttons.Button.Button;
-                },
-              )}
+              ${ref(el => {
+                if (el instanceof HTMLElement) {
+                  this.#exportMenuButton = el as Buttons.Button.Button;
+                }
+              })}
               .data=${
                 {
                   variant: Buttons.Button.Variant.TOOLBAR,

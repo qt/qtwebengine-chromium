@@ -27,7 +27,6 @@ if TYPE_CHECKING:
   from crossbench.results_db.records.base import BaseRecord
   from crossbench.runner.run import Run
 
-
 DEFAULT_CLASSES: Final[tuple[Type[BaseRecord],
                              ...]] = (PlatformRecord, BrowserRecord, RunRecord,
                                       UnitRecord)

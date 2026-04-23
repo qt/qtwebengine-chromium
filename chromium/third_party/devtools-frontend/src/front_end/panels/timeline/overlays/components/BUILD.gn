@@ -16,7 +16,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("components") {
+devtools_ui_module("components") {
   sources = [
     "EntriesLinkOverlay.ts",
     "EntryLabelOverlay.ts",
@@ -33,9 +33,10 @@ devtools_module("components") {
     "../../../../models/trace:bundle",
     "../../../../panels/common:bundle",
     "../../../../ui/components/helpers:bundle",
-    "../../../../ui/components/icon_button:bundle",
     "../../../../ui/components/spinners:bundle",
     "../../../../ui/components/tooltips:bundle",
+    "../../../../ui/helpers:bundle",
+    "../../../../ui/kit:bundle",
     "../../../../ui/legacy/theme_support:bundle",
     "../../../../ui/lit:bundle",
     "../../../../ui/visual_logging:bundle",
@@ -58,7 +59,7 @@ devtools_entrypoint("bundle") {
   ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [ "TimespanBreakdownOverlay.test.ts" ]

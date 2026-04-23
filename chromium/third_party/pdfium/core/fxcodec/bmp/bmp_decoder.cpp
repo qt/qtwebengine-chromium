@@ -17,23 +17,22 @@
 namespace fxcodec {
 
 // static
-std::unique_ptr<ProgressiveDecoderIface::Context> BmpDecoder::StartDecode(
+std::unique_ptr<ProgressiveDecoderContext> BmpDecoder::StartDecode(
     Delegate* pDelegate) {
   return std::make_unique<CFX_BmpContext>(pDelegate);
 }
 
 // static
-BmpDecoder::Status BmpDecoder::ReadHeader(
-    ProgressiveDecoderIface::Context* pContext,
-    int32_t* width,
-    int32_t* height,
-    bool* tb_flag,
-    int32_t* components,
-    pdfium::span<const FX_ARGB>* palette,
-    CFX_DIBAttribute* pAttribute) {
+BmpDecoder::Status BmpDecoder::ReadHeader(ProgressiveDecoderContext* context,
+                                          int32_t* width,
+                                          int32_t* height,
+                                          bool* tb_flag,
+                                          int32_t* components,
+                                          pdfium::span<const FX_ARGB>* palette,
+                                          CFX_DIBAttribute* pAttribute) {
   DCHECK(pAttribute);
 
-  auto* ctx = static_cast<CFX_BmpContext*>(pContext);
+  auto* ctx = static_cast<CFX_BmpContext*>(context);
   Status status = ctx->bmp_.ReadHeader();
   if (status != Status::kSuccess) {
     return status;
@@ -51,21 +50,19 @@ BmpDecoder::Status BmpDecoder::ReadHeader(
 }
 
 // static
-BmpDecoder::Status BmpDecoder::LoadImage(
-    ProgressiveDecoderIface::Context* pContext) {
-  return static_cast<CFX_BmpContext*>(pContext)->bmp_.DecodeImage();
+BmpDecoder::Status BmpDecoder::LoadImage(ProgressiveDecoderContext* context) {
+  return static_cast<CFX_BmpContext*>(context)->bmp_.DecodeImage();
 }
 
 // static
-FX_FILESIZE BmpDecoder::GetAvailInput(
-    ProgressiveDecoderIface::Context* pContext) {
-  return static_cast<CFX_BmpContext*>(pContext)->bmp_.GetAvailInput();
+FX_FILESIZE BmpDecoder::GetAvailInput(ProgressiveDecoderContext* context) {
+  return static_cast<CFX_BmpContext*>(context)->bmp_.GetAvailInput();
 }
 
 // static
-bool BmpDecoder::Input(ProgressiveDecoderIface::Context* pContext,
+bool BmpDecoder::Input(ProgressiveDecoderContext* context,
                        RetainPtr<CFX_CodecMemory> codec_memory) {
-  auto* ctx = static_cast<CFX_BmpContext*>(pContext);
+  auto* ctx = static_cast<CFX_BmpContext*>(context);
   ctx->bmp_.SetInputBuffer(std::move(codec_memory));
   return true;
 }

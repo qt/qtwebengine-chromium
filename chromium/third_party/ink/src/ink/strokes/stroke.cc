@@ -30,12 +30,15 @@
 #include "ink/geometry/mutable_mesh.h"
 #include "ink/geometry/partitioned_mesh.h"
 #include "ink/strokes/input/stroke_input_batch.h"
+#include "ink/strokes/internal/stroke_input_modeler.h"
 #include "ink/strokes/internal/stroke_shape_builder.h"
 #include "ink/strokes/internal/stroke_vertex.h"
+#include "ink/types/duration.h"
 
 namespace ink {
 namespace {
 
+using ::ink::strokes_internal::StrokeInputModeler;
 using ::ink::strokes_internal::StrokeShapeBuilder;
 using ::ink::strokes_internal::StrokeVertex;
 
@@ -135,6 +138,7 @@ namespace {
 // Resources for stroke shape generation grouped into a struct for simpler
 // `thread_local` variable creation in `RegenerateShape()` below.
 struct ShapeGenerationResources {
+  StrokeInputModeler input_modeler;
   std::vector<StrokeShapeBuilder> builders;
   std::vector<StrokeVertex::CustomPackingArray> custom_packing_arrays;
   std::vector<PartitionedMesh::MutableMeshGroup> mesh_groups;
@@ -169,19 +173,28 @@ void Stroke::RegenerateShape() {
   shape_gen.mesh_groups.clear();
   shape_gen.mesh_groups.reserve(num_coats);
 
+  // A finished stroke has all of its
+  // `BrushBehavior::Source::kTimeSinceInputInMillis` and
+  // `BrushBehavior::Source::kTimeSinceInputInSeconds` behaviors completed.
+  // Passing an infinite duration to `ExtendStroke()` achieves this, in an
+  // equivalent but simpler way than looping through each behavior and finding
+  // the ones using these sources and getting their maximum range values.
+  shape_gen.input_modeler.StartStroke(brush_.GetFamily().GetInputModel(),
+                                      brush_.GetEpsilon());
+  shape_gen.input_modeler.ExtendStroke(inputs_, StrokeInputBatch(),
+                                       Duration32::Infinite());
+
   for (size_t i = 0; i < num_coats; ++i) {
     StrokeShapeBuilder& builder = shape_gen.builders[i];
-    builder.StartStroke(brush_.GetFamily().GetInputModel(), coats[i],
-                        brush_.GetSize(), brush_.GetEpsilon(),
+    builder.StartStroke(coats[i], brush_.GetSize(), brush_.GetEpsilon(),
                         inputs_.GetNoiseSeed());
-    builder.ExtendStroke(inputs_, StrokeInputBatch(), inputs_.GetDuration());
+    builder.ExtendStroke(shape_gen.input_modeler);
 
-    const MutableMesh& mesh = builder.GetMesh();
     shape_gen.custom_packing_arrays.push_back(
-        StrokeVertex::MakeCustomPackingArray(mesh.Format()));
+        StrokeVertex::MakeCustomPackingArray(builder.GetMeshFormat()));
 
     shape_gen.mesh_groups.push_back({
-        .mesh = &mesh,
+        .mesh = &builder.GetMesh(),
         .outlines = builder.GetOutlines(),
         .packing_params = shape_gen.custom_packing_arrays.back().Values(),
     });

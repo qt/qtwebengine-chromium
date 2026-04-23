@@ -10,6 +10,7 @@
 
 #include "base/android/scoped_java_ref.h"
 #include "base/memory/raw_ptr.h"
+#include "components/viz/common/input/viz_touch_state.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/android/transfer_input_to_viz_result.h"
 #include "content/public/browser/render_widget_host.h"
@@ -60,18 +61,22 @@ class CONTENT_EXPORT InputTransferHandlerAndroid {
   static constexpr const char* kEventsAfterTransferHistogram =
       "Android.InputOnViz.Browser.EventsAfterTransfer";
   static constexpr const char* kTransferInputToVizResultHistogram =
-      "Android.InputOnViz.Browser.TransferInputToVizResult";
+      "Android.InputOnViz.Browser.TransferInputToVizResult2";
   static constexpr const char* kEventsInDroppedSequenceHistogram =
-      "Android.InputOnViz.Browser.NumEventsInDroppedSequence";
+      "Android.InputOnViz.Browser.NumEventsInDroppedSequence2";
   static constexpr const char* kEventTypesInDroppedSequenceHistogram =
       "Android.InputOnViz.Browser.EventTypesInDroppedSequence";
   static constexpr const char* kTouchSequenceDroppedReasonHistogram =
-      "Android.InputOnViz.Browser.SequenceDroppedReason2";
+      "Android.InputOnViz.Browser.SequenceDroppedReason3";
+  static constexpr const char* kNewSequenceTransferredByOSHistogram =
+      "Android.InputOnViz.Browser.NewSequenceTransferredByOS";
 
   bool touch_transferred() {
     return handler_state_ == HandlerState::kConsumeEventsUntilCancel;
   }
   bool FilterRedundantDownEvent(const ui::MotionEvent& event);
+
+  void OnDetachedFromWindow();
 
   enum class RequestInputBackReason {
     kStartDragAndDropGesture = 0,
@@ -80,14 +85,21 @@ class CONTENT_EXPORT InputTransferHandlerAndroid {
   };
   void RequestInputBack(RequestInputBackReason reason);
 
-  void OnTouchEnd(base::TimeTicks event_time);
-
   // Virtual for testing.
+  // This is "potentially" active due to a race: Viz might have ended its
+  // previous sequence but not yet updated shared memory. If the Browser then
+  // sees a new DOWN event, it cannot distinguish a stale "active" state from a
+  // genuine multi-touch. The caller must reconcile this ambiguity (e.g., via
+  // `browser_would_have_handled=true`).
   virtual bool IsTouchSequencePotentiallyActiveOnViz() const;
 
   RenderWidgetHost::InputEventObserver& GetInputObserver() {
     return input_observer_;
   }
+
+ protected:
+  // Virtual for testing.
+  virtual const viz::VizTouchState* GetVizTouchState() const;
 
  private:
   class InputObserver : public RenderWidgetHost::InputEventObserver {
@@ -96,7 +108,8 @@ class CONTENT_EXPORT InputTransferHandlerAndroid {
     ~InputObserver() override;
     // Start RenderWidgetHost::InputEventObserver overrides
     void OnInputEvent(const RenderWidgetHost& host,
-                      const blink::WebInputEvent& event) override;
+                      const blink::WebInputEvent& event,
+                      InputEventSource source) override;
     // End RenderWidgetHost::InputEventObserver overrides
 
    private:
@@ -113,6 +126,17 @@ class CONTENT_EXPORT InputTransferHandlerAndroid {
   // These values are persisted to logs. Entries should not be renumbered and
   // numeric values should never be reused.
   //
+  // LINT.IfChange(TransferredSequenceType)
+  enum class TransferredSequenceType {
+    kActionDown = 0,
+    kPointerDown = 1,
+    kMaxValue = kPointerDown,
+  };
+  // LINT.ThenChange(//tools/metrics/histograms/metadata/android/enums.xml:TransferredSequenceType)
+
+  // These values are persisted to logs. Entries should not be renumbered and
+  // numeric values should never be reused.
+  //
   // LINT.IfChange(InputOnVizSequenceDroppedReason)
   enum class InputOnVizSequenceDroppedReason {
     kActiveSeqOnVizAbnormalDownTime = 0,
@@ -120,23 +144,33 @@ class CONTENT_EXPORT InputTransferHandlerAndroid {
     kAndroidOSTransferredANewSequence = 2,
     kMaxValue = kAndroidOSTransferredANewSequence,
   };
-  // LINT.ThenChange(//tools/metrics/histograms/metadata/android/enums.xml:InputOnVizSequenceDroppedReason)
+  // LINT.ThenChange(//tools/metrics/histograms/metadata/android/enums.xml:InputOnVizSequenceDroppedReason,
+  //   //base/tracing/protos/chrome_track_event.proto:InputOnVizSequenceDroppedReason
+  // )
+
+  void EmitSequenceDroppedReasonTraceEvent(
+      InputOnVizSequenceDroppedReason reason);
 
   void OnStartDroppingSequence(const ui::MotionEventAndroid& event,
                                InputOnVizSequenceDroppedReason reason);
 
   void DropCurrentSequence(const ui::MotionEventAndroid& event);
-  void ConsumeEventsUntilCancel(const ui::MotionEventAndroid& event);
+  bool ConsumeEventsUntilCancel(const ui::MotionEventAndroid& event);
   void ConsumeSequence(const ui::MotionEventAndroid& event);
 
   friend class MockInputTransferHandler;
   InputTransferHandlerAndroid();
 
   raw_ptr<InputTransferHandlerAndroidClient> client_ = nullptr;
-  // Stores the event time of first down event of the most recent touch sequence
+  // Stores the down time of first down event of the most recent touch sequence
   // transferred to VizCompositor. See
   // (https://developer.android.com/reference/android/view/MotionEvent#getDownTime())
   base::TimeTicks cached_transferred_sequence_down_time_ms_;
+  // When a touch sequence is successfully transferred to Viz then current time
+  // is written into `last_successful_transfer_time_`.
+  // Used to detect when a touch cancel might have been missed and unblock
+  // processing of touch sequences occurring later than this time.
+  base::TimeTicks last_successful_transfer_time_;
 
   int num_events_in_dropped_sequence_ = 0;
 
@@ -158,8 +192,6 @@ class CONTENT_EXPORT InputTransferHandlerAndroid {
       std::nullopt;
   int touch_moves_seen_after_transfer_ = 0;
   std::unique_ptr<JniDelegate> jni_delegate_ = nullptr;
-
-  base::TimeTicks last_seen_touch_end_ts_;
 
   // In cases where system transfers a different sequence than the one requested
   // by Chrome, a new state is transferred corresponding to the potential

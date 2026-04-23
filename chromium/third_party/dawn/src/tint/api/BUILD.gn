@@ -56,6 +56,7 @@ libtint_source_set("api") {
     "${tint_src_dir}/lang/core/ir",
     "${tint_src_dir}/lang/core/type",
     "${tint_src_dir}/lang/hlsl/writer/common",
+    "${tint_src_dir}/lang/null/writer/common",
     "${tint_src_dir}/lang/wgsl",
     "${tint_src_dir}/lang/wgsl/ast",
     "${tint_src_dir}/lang/wgsl/inspector",
@@ -90,6 +91,10 @@ libtint_source_set("api") {
       "${tint_src_dir}/lang/msl/writer",
       "${tint_src_dir}/lang/msl/writer/common",
     ]
+  }
+
+  if (tint_build_null_writer) {
+    deps += [ "${tint_src_dir}/lang/null/writer" ]
   }
 
   if (tint_build_spv_reader) {

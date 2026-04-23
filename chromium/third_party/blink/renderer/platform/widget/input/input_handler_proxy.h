@@ -17,6 +17,7 @@
 #include "cc/input/snap_fling_controller.h"
 #include "cc/paint/element_id.h"
 #include "third_party/blink/public/common/input/web_coalesced_input_event.h"
+#include "third_party/blink/public/common/input/web_gesture_device.h"
 #include "third_party/blink/public/common/input/web_gesture_event.h"
 #include "third_party/blink/public/platform/web_common.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
@@ -103,6 +104,7 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
     gfx::Vector2dF current_fling_velocity;
     gfx::PointF causal_event_viewport_point;
     cc::OverscrollBehavior overscroll_behavior;
+    blink::WebGestureDevice source_device;
   };
 
   // Result codes returned to the client indicating the status of handling the
@@ -264,6 +266,9 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
   // Immediately dispatches all queued events.
   void FlushQueuedEventsForTesting();
 
+  // Returns the ElementId of the currently latched scroller, or invalid id.
+  cc::ElementId LatchedScrollerElementId() const;
+
  private:
   friend class test::TestInputHandlerProxy;
   friend class test::InputHandlerProxyTest;
@@ -310,12 +315,14 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
   // Used to send overscroll messages to the browser. It bundles the overscroll
   // params with with event ack.
   void HandleOverscroll(const gfx::PointF& causal_event_viewport_point,
-                        const cc::InputHandlerScrollResult& scroll_result);
+                        const cc::InputHandlerScrollResult& scroll_result,
+                        const blink::WebGestureDevice source_device);
 
   // Update the elastic overscroll controller with |gesture_event|.
   void HandleScrollElasticityOverscroll(
       const blink::WebGestureEvent& gesture_event,
-      const cc::InputHandlerScrollResult& scroll_result);
+      const cc::InputHandlerScrollResult& scroll_result,
+      cc::ElementId latched_element_id);
 
   // Overrides the internal clock for testing.
   // This doesn't take the ownership of the clock. |tick_clock| must outlive the
@@ -471,7 +478,10 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
   // has started, or completed.
   bool enqueue_scroll_events_ = true;
 
-  // Cached value of the kUpdateScrollPredictorInputMapping feature flag.
+  // Cached value of the (kUpdateScrollPredictorInputMapping &
+  // kRefactorCompositorThreadEventQueue) feature flag. (Feature
+  // UpdateScrollPredictorInputMapping needs RefactorCompositorThreadEventQueue
+  // to be enabled).
   const bool update_scroll_predictor_;
 
   // `cc::InputHandlerClient::ScrollEventDispatchMode::kEnqueueScrollEvents`:
@@ -499,6 +509,10 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
 
   // Timer to ensure DeliverInputForDeadline is called.
   base::DeadlineTimer deadline_timer_;
+
+  // Is true when an empty (0 delta) GestureScrollUpdate is the only input in
+  // the current frame.
+  bool is_only_empty_gsu_in_queue_{false};
 };
 
 }  // namespace blink

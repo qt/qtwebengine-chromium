@@ -154,8 +154,7 @@ class EndpointFetcher {
     std::optional<UploadProgressCallback> upload_progress_callback;
 
     // Authentication-specific parameters
-    std::optional<std::string> oauth_consumer_name;
-    signin::ScopeSet oauth_scopes;
+    std::optional<signin::OAuthConsumerId> oauth_consumer_id;
     std::optional<signin::ConsentLevel> consent_level;
     std::optional<version_info::Channel> channel;
 
@@ -260,20 +259,8 @@ class EndpointFetcher {
       }
 
       // Authentication-specific builder methods
-      Builder& SetOauthConsumerName(const std::string& name) {
-        request_params_->oauth_consumer_name = name;
-        return *this;
-      }
-
-      Builder& SetOauthScopes(const signin::ScopeSet& scopes) {
-        request_params_->oauth_scopes = scopes;
-        return *this;
-      }
-
-      Builder& SetOauthScopes(const std::vector<std::string>& scopes_vector) {
-        for (const auto& scope : scopes_vector) {
-          request_params_->oauth_scopes.insert(scope);
-        }
+      Builder& SetOAuthConsumerId(signin::OAuthConsumerId id) {
+        request_params_->oauth_consumer_id = id;
         return *this;
       }
 
@@ -346,7 +333,7 @@ class EndpointFetcher {
                           EndpointFetcherCallback endpoint_fetcher_callback);
 
   void OnResponseFetched(EndpointFetcherCallback callback,
-                         std::unique_ptr<std::string> response_body);
+                         std::optional<std::string> response_body);
 
   network::mojom::CredentialsMode GetCredentialsMode() const;
   int GetMaxRetries() const;
@@ -357,7 +344,10 @@ class EndpointFetcher {
   const scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   // `identity_manager_` can be null if it is not needed for authentication (in
   // this case, callers should invoke `PerformRequest` directly).
-  const raw_ptr<signin::IdentityManager> identity_manager_;
+  // Dangling when executing the following on Windows:
+  // SingleClientSharedTabGroupDataSyncTest.ShouldReloadDataOnBrowserRestart/kSyncTransportOnly
+  // SingleClientSharedTabGroupVersioningSyncTest.ShouldShowVersioningMessagesAfterRestart/kSyncTransportOnly
+  const raw_ptr<signin::IdentityManager, DanglingUntriaged> identity_manager_;
 
   // The complete definition of the specific network request to be performed.
   // Contains authentication details and response handling preferences.

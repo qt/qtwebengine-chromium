@@ -15,6 +15,8 @@
 #include "include/gpu/vk/VulkanTypes.h"
 #include "src/gpu/graphite/vk/VulkanCaps.h"
 
+#include <atomic>
+
 namespace skgpu {
 struct VulkanBackendContext;
 struct VulkanInterface;
@@ -63,15 +65,26 @@ public:
 
     VkPipelineCache getPipelineCache() const { return fPipelineCache; }
 
+    void pipelineCompileWasRequired() { fHasNewVkPipelineCacheData = true; }
+    void syncPipelineData(PersistentPipelineStorage*, size_t maxSize) override;
+
 private:
     VulkanSharedContext(const VulkanBackendContext&,
                         sk_sp<const skgpu::VulkanInterface>,
                         sk_sp<skgpu::VulkanMemoryAllocator>,
                         std::unique_ptr<const VulkanCaps>,
                         SkExecutor*,
+                        PersistentPipelineStorage*,
                         SkSpan<sk_sp<SkRuntimeEffect>> userDefinedKnownRuntimeEffects);
 
-    VkPipelineCache createPipelineCache();
+    VkPipelineCache createPipelineCache(VkPhysicalDevice, PersistentPipelineStorage*);
+
+    sk_sp<GraphicsPipeline> createGraphicsPipeline(const RuntimeEffectDictionary*,
+                                                   const UniqueKey&,
+                                                   const GraphicsPipelineDesc&,
+                                                   const RenderPassDesc&,
+                                                   SkEnumBitMask<PipelineCreationFlags>,
+                                                   uint32_t compilationID) override;
 
     sk_sp<const skgpu::VulkanInterface> fInterface;
     sk_sp<skgpu::VulkanMemoryAllocator> fMemoryAllocator;
@@ -87,6 +100,8 @@ private:
     skgpu::VulkanDeviceLostProc fDeviceLostProc;
 
     VkPipelineCache fPipelineCache = VK_NULL_HANDLE;
+    std::atomic<bool> fHasNewVkPipelineCacheData = false;
+    size_t fLastKnownPersistentPipelineStorageSize = 0;
 };
 
 } // namespace skgpu::graphite

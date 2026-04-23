@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "absl/status/status.h"
@@ -27,6 +28,7 @@
 #include "ink/brush/brush_coat.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/brush/brush_tip.h"
+#include "ink/types/duration.h"
 
 namespace ink {
 
@@ -53,7 +55,7 @@ BrushFamily::BrushFamily(absl::Span<const BrushCoat> coats,
 absl::StatusOr<BrushFamily> BrushFamily::Create(
     const BrushTip& tip, const BrushPaint& paint,
     absl::string_view client_brush_family_id, const InputModel& input_model) {
-  BrushCoat coat = {.tip = tip, .paint = paint};
+  BrushCoat coat = {.tip = tip, .paint_preferences = {paint}};
   return BrushFamily::Create(absl::MakeConstSpan(&coat, 1),
                              client_brush_family_id, input_model);
 }
@@ -72,6 +74,10 @@ absl::StatusOr<BrushFamily> BrushFamily::Create(
       return status;
     }
   }
+  if (absl::Status status = brush_internal::ValidateInputModel(input_model);
+      !status.ok()) {
+    return status;
+  }
   return BrushFamily(coats, client_brush_family_id, input_model);
 }
 
@@ -82,8 +88,72 @@ std::string BrushFamily::ToFormattedString() const {
     absl::StrAppend(&formatted, ", client_brush_family_id='",
                     client_brush_family_id_, "'");
   }
-  formatted.push_back(')');
+  absl::StrAppend(&formatted, ", input_model=", input_model_, ")");
   return formatted;
 }
 
+namespace brush_internal {
+namespace {
+
+absl::Status ValidateInputModel(const BrushFamily::SpringModel& model) {
+  return absl::OkStatus();
+}
+
+absl::Status ValidateInputModel(
+    const BrushFamily::ExperimentalRawPositionModel& model) {
+  return absl::OkStatus();
+}
+
+absl::Status ValidateInputModel(
+    const BrushFamily::ExperimentalNaiveModel& model) {
+  return absl::OkStatus();
+}
+
+absl::Status ValidateInputModel(const BrushFamily::SlidingWindowModel& model) {
+  if (!model.window_size.IsFinite() ||
+      model.window_size <= Duration32::Zero()) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "`SlidingWindowModel::window_size` must be finite and positive. Got: ",
+        model.window_size));
+  }
+  if (model.upsampling_period <= Duration32::Zero()) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "`SlidingWindowModel::upsampling_period` must be positive. Got: ",
+        model.upsampling_period));
+  }
+  return absl::OkStatus();
+}
+
+std::string ToFormattedString(const BrushFamily::SpringModel& model) {
+  return "SpringModel";
+}
+
+std::string ToFormattedString(
+    const BrushFamily::ExperimentalRawPositionModel& model) {
+  return "ExperimentalRawPositionModel";
+}
+
+std::string ToFormattedString(
+    const BrushFamily::ExperimentalNaiveModel& model) {
+  return "ExperimentalNaiveModel";
+}
+
+std::string ToFormattedString(const BrushFamily::SlidingWindowModel& model) {
+  return absl::StrCat("SlidingWindowModel(window_size=", model.window_size,
+                      ", upsampling_period=", model.upsampling_period, ")");
+}
+
+}  // namespace
+
+absl::Status ValidateInputModel(const BrushFamily::InputModel& model) {
+  return std::visit([](const auto& model) { return ValidateInputModel(model); },
+                    model);
+}
+
+std::string ToFormattedString(const BrushFamily::InputModel& model) {
+  return std::visit([](const auto& model) { return ToFormattedString(model); },
+                    model);
+}
+
+}  // namespace brush_internal
 }  // namespace ink

@@ -5,6 +5,7 @@
 import * as Common from '../common/common.js';
 import * as Root from '../root/root.js';
 
+import * as DispatchHttpRequestClient from './DispatchHttpRequestClient.js';
 import {InspectorFrontendHostInstance} from './InspectorFrontendHost.js';
 import type {AidaClientResult, AidaCodeCompleteResult, SyncInformation} from './InspectorFrontendHostAPI.js';
 import {bindOutputStream} from './ResourceLoader.js';
@@ -93,7 +94,7 @@ export interface FunctionDeclaration<T extends string|number|symbol = string> {
   parameters: FunctionObjectParam<T>;
 }
 
-// Raw media bytes.
+/** Raw media bytes. **/
 export interface MediaBlob {
   // The IANA standard MIME type of the source data.
   // Currently supported types are: image/png, image/jpeg.
@@ -113,7 +114,7 @@ export enum FunctionalityType {
   AGENTIC_CHAT = 5,
 }
 
-// See: cs/aida.proto (google3).
+/** See: cs/aida.proto (google3). **/
 export enum ClientFeature {
   // Unspecified client feature.
   CLIENT_FEATURE_UNSPECIFIED = 0,
@@ -150,7 +151,7 @@ export enum UserTier {
   PUBLIC = 3,
 }
 
-// Googlers: see the Aida `retrieval` proto; this type is based on that.
+/** Googlers: see the Aida `retrieval` proto; this type is based on that. **/
 export interface RequestFactMetadata {
   /**
    * A description of where the fact comes from.
@@ -213,6 +214,24 @@ export interface CompleteCodeOptions {
 }
 /* eslint-enable @typescript-eslint/naming-convention */
 
+/* eslint-disable @typescript-eslint/naming-convention */
+export interface GenerateCodeOptions {
+  temperature?: number;
+  model_id?: string;
+  inference_language?: AidaInferenceLanguage;
+  expect_code_output?: boolean;
+}
+/* eslint-enable @typescript-eslint/naming-convention */
+
+/* eslint-disable @typescript-eslint/naming-convention */
+export interface ContextFile {
+  path: string;
+  full_content: string;
+  selected_content?: string;
+  programming_language: AidaInferenceLanguage;
+}
+/* eslint-enable @typescript-eslint/naming-convention */
+
 export enum EditType {
   // Unknown edit type
   EDIT_TYPE_UNSPECIFIED = 0,
@@ -252,6 +271,12 @@ export enum Reason {
 }
 
 /* eslint-disable @typescript-eslint/naming-convention */
+export interface AdditionalFile {
+  path: string;
+  content: string;
+  included_reason: Reason;
+}
+
 export interface CompletionRequest {
   client: string;
   prefix: string;
@@ -259,11 +284,28 @@ export interface CompletionRequest {
   options?: CompleteCodeOptions;
   metadata: RequestMetadata;
   last_user_action?: EditType;
-  additional_files?: Array<{
-    path: string,
-    content: string,
-    included_reason: Reason,
-  }>;
+  additional_files?: AdditionalFile[];
+}
+/* eslint-enable @typescript-eslint/naming-convention */
+
+export enum UseCase {
+  // Unspecified usecase.
+  USE_CASE_UNSPECIFIED = 0,
+
+  // Code generation use case is expected to generate code from scratch
+  CODE_GENERATION = 1,
+}
+
+/* eslint-disable @typescript-eslint/naming-convention */
+export interface GenerateCodeRequest {
+  client: string;
+  preamble: string;
+  current_message: Content;
+  options?: GenerateCodeOptions;
+  context_files?: ContextFile[];
+  use_case: UseCase;
+  metadata: RequestMetadata;
+  client_feature?: ClientFeature;
 }
 /* eslint-enable @typescript-eslint/naming-convention */
 
@@ -279,7 +321,7 @@ export interface DoConversationClientEvent {
 
 export interface UserImpression {
   sample: {
-    sample_id: number,
+    sample_id?: number,
   };
   latency: {
     duration: {
@@ -291,7 +333,7 @@ export interface UserImpression {
 
 export interface UserAcceptance {
   sample: {
-    sample_id: number,
+    sample_id?: number,
   };
 }
 
@@ -300,6 +342,7 @@ export interface AidaRegisterClientEvent {
   disable_user_content_logging: boolean;
   do_conversation_client_event?: DoConversationClientEvent;
   complete_code_client_event?: {user_acceptance: UserAcceptance}|{user_impression: UserImpression};
+  generate_code_client_event?: {user_acceptance: UserAcceptance}|{user_impression: UserImpression};
 }
 /* eslint-enable @typescript-eslint/naming-convention */
 
@@ -363,10 +406,15 @@ export interface CompletionResponse {
   metadata: ResponseMetadata;
 }
 
+export interface GenerateCodeResponse {
+  samples: GenerationSample[];
+  metadata: ResponseMetadata;
+}
+
 export interface GenerationSample {
   generationString: string;
   score: number;
-  sampleId: number;
+  sampleId?: number;
   attributionMetadata?: AttributionMetadata;
 }
 
@@ -416,6 +464,7 @@ const AidaLanguageToMarkdown: Record<AidaInferenceLanguage, string> = {
 };
 
 export const CLIENT_NAME = 'CHROME_DEVTOOLS';
+export const SERVICE_NAME = 'aidaService';
 
 const CODE_CHUNK_SEPARATOR = (lang = ''): string => ('\n`````' + lang + '\n');
 
@@ -657,6 +706,20 @@ export class AidaClient {
 
     return {generatedSamples, metadata};
   }
+
+  async generateCode(request: GenerateCodeRequest, options?: {signal?: AbortSignal}):
+      Promise<GenerateCodeResponse|null> {
+    const response = await DispatchHttpRequestClient.makeHttpRequest<GenerateCodeResponse>(
+        {
+          service: SERVICE_NAME,
+          path: '/v1/aida:generateCode',
+          method: 'POST',
+          body: JSON.stringify(request),
+        },
+        options);
+
+    return response;
+  }
 }
 
 export function convertToUserTierEnum(userTier: string|undefined): UserTier {
@@ -670,7 +733,7 @@ export function convertToUserTierEnum(userTier: string|undefined): UserTier {
         return UserTier.PUBLIC;
     }
   }
-  return UserTier.BETA;
+  return UserTier.PUBLIC;
 }
 
 let hostConfigTrackerInstance: HostConfigTracker|undefined;

@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING, ClassVar, Self, Sequence, Type
 from typing_extensions import override
 
 from crossbench.parse import DurationParser
-from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
-                                     ProbeKeyT)
+from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext, \
+    ProbeKeyT
 from crossbench.probes.result_location import ResultLocation
 from crossbench.str_enum_with_help import StrEnumWithHelp
 

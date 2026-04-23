@@ -18,14 +18,18 @@
 
 #include <string.h>  // for memset
 
+#include "src/utils/bounds_safety.h"
 #include "src/utils/utils.h"
 #include "src/webp/types.h"
+
+WEBP_ASSUME_UNSAFE_INDEXABLE_ABI
 
 // #define USE_DITHERING   // uncomment to enable ordered dithering (not vital)
 
 #define FIX 16                            // fix-point precision for averaging
 #define LFIX 2                            // extra precision for look-up table
 #define LUT_SIZE ((1 << (8 + LFIX)) - 1)  // look-up table size
+#define CORRECTION_LUT_SIZE (1 + 2 * LUT_SIZE)
 
 #if defined(USE_DITHERING)
 
@@ -43,11 +47,11 @@ static const uint8_t kOrderedDither[DSIZE][DSIZE] = {
 #endif
 
 typedef struct {
-  int width, height;  // dimension
-  int stride;         // stride in bytes
-  int row;            // current input row being processed
-  uint8_t* src;       // input pointer
-  uint8_t* dst;       // output pointer
+  int width, height;            // dimension
+  int stride;                   // stride in bytes
+  int row;                      // current input row being processed
+  uint8_t* WEBP_INDEXABLE src;  // input pointer
+  uint8_t* WEBP_INDEXABLE dst;  // output pointer
 
   int radius;  // filter radius (=delay)
   int scale;   // normalization factor, in FIX bits precision
@@ -55,18 +59,19 @@ typedef struct {
   void* mem;  // all memory
 
   // various scratch buffers
-  uint16_t* start;
-  uint16_t* cur;
-  uint16_t* end;
-  uint16_t* top;
-  uint16_t* average;
+  uint16_t* WEBP_INDEXABLE start;
+  uint16_t* WEBP_INDEXABLE cur;
+  uint16_t* WEBP_BIDI_INDEXABLE end;
+  uint16_t* WEBP_INDEXABLE top;
+  uint16_t* WEBP_COUNTED_BY(width) average;
 
   // input levels distribution
   int num_levels;      // number of quantized levels
   int min, max;        // min and max level values
   int min_level_dist;  // smallest distance between two consecutive levels
 
-  int16_t* correction;  // size = 1 + 2*LUT_SIZE  -> ~4k memory
+  // size = 1 + 2*LUT_SIZE  -> ~4k memory
+  int16_t* WEBP_COUNTED_BY_OR_NULL(CORRECTION_LUT_SIZE) correction;
 } SmoothParams;
 
 //------------------------------------------------------------------------------
@@ -79,11 +84,11 @@ static WEBP_INLINE uint8_t clip_8b(int v) {
 
 // vertical accumulation
 static void VFilter(SmoothParams* const p) {
-  const uint8_t* src = p->src;
+  const uint8_t* WEBP_INDEXABLE src = p->src;
   const int w = p->width;
-  uint16_t* const cur = p->cur;
-  const uint16_t* const top = p->top;
-  uint16_t* const out = p->end;
+  uint16_t* const WEBP_INDEXABLE cur = p->cur;
+  const uint16_t* const WEBP_INDEXABLE top = p->top;
+  uint16_t* const WEBP_INDEXABLE out = p->end;
   uint16_t sum = 0;  // all arithmetic is modulo 16bit
   int x;
 
@@ -108,8 +113,8 @@ static void VFilter(SmoothParams* const p) {
 // horizontal accumulation. We use mirror replication of missing pixels, as it's
 // a little easier to implement (surprisingly).
 static void HFilter(SmoothParams* const p) {
-  const uint16_t* const in = p->end;
-  uint16_t* const out = p->average;
+  const uint16_t* const WEBP_INDEXABLE in = p->end;
+  uint16_t* const WEBP_INDEXABLE out = p->average;
   const uint32_t scale = p->scale;
   const int w = p->width;
   const int r = p->radius;
@@ -132,13 +137,16 @@ static void HFilter(SmoothParams* const p) {
 
 // emit one filtered output row
 static void ApplyFilter(SmoothParams* const p) {
-  const uint16_t* const average = p->average;
+  const uint16_t* const WEBP_INDEXABLE average = p->average;
   const int w = p->width;
-  const int16_t* const correction = p->correction;
+  // correction is WEBP_COUNTED_BY, pointing to the start of the LUT.
+  // We need the middle pointer for negative indexing.
+  const int16_t* const WEBP_BIDI_INDEXABLE correction =
+      p->correction + LUT_SIZE;
 #if defined(USE_DITHERING)
   const uint8_t* const dither = kOrderedDither[p->row % DSIZE];
 #endif
-  uint8_t* const dst = p->dst;
+  uint8_t* const WEBP_INDEXABLE dst = p->dst;
   int x;
   for (x = 0; x < w; ++x) {
     const int v = dst[x];
@@ -157,7 +165,8 @@ static void ApplyFilter(SmoothParams* const p) {
 //------------------------------------------------------------------------------
 // Initialize correction table
 
-static void InitCorrectionLUT(int16_t* const lut, int min_dist) {
+static void InitCorrectionLUT(
+    int16_t* const WEBP_COUNTED_BY(CORRECTION_LUT_SIZE) lut_ptr, int min_dist) {
   // The correction curve is:
   //   f(x) = x for x <= threshold2
   //   f(x) = 0 for x >= threshold1
@@ -168,6 +177,9 @@ static void InitCorrectionLUT(int16_t* const lut, int min_dist) {
   const int threshold2 = (3 * threshold1) >> 2;
   const int max_threshold = threshold2 << DFIX;
   const int delta = threshold1 - threshold2;
+  // lut_ptr is WEBP_COUNTED_BY, pointing to the start of the LUT.
+  // We need the middle pointer (lut) for negative indexing.
+  int16_t* const WEBP_BIDI_INDEXABLE lut = lut_ptr + LUT_SIZE;
   int i;
   for (i = 1; i <= LUT_SIZE; ++i) {
     int c = (i <= threshold2)  ? (i << DFIX)
@@ -183,7 +195,7 @@ static void InitCorrectionLUT(int16_t* const lut, int min_dist) {
 static void CountLevels(SmoothParams* const p) {
   int i, j, last_level;
   uint8_t used_levels[256] = {0};
-  const uint8_t* data = p->src;
+  const uint8_t* WEBP_INDEXABLE data = p->src;
   p->min = 255;
   p->max = 0;
   for (j = 0; j < p->height; ++j) {
@@ -213,15 +225,16 @@ static void CountLevels(SmoothParams* const p) {
 }
 
 // Initialize all params.
-static int InitParams(uint8_t* const data, int width, int height, int stride,
-                      int radius, SmoothParams* const p) {
+static int InitParams(uint8_t* WEBP_SIZED_BY((size_t)stride* height) const data,
+                      int width, int height, int stride, int radius,
+                      SmoothParams* const p) {
   const int R = 2 * radius + 1;  // total size of the kernel
 
   const size_t size_scratch_m = (R + 1) * width * sizeof(*p->start);
   const size_t size_m = width * sizeof(*p->average);
-  const size_t size_lut = (1 + 2 * LUT_SIZE) * sizeof(*p->correction);
+  const size_t size_lut = CORRECTION_LUT_SIZE * sizeof(*p->correction);
   const size_t total_size = size_scratch_m + size_m + size_lut;
-  uint8_t* mem = (uint8_t*)WebPSafeMalloc(1U, total_size);
+  uint8_t* WEBP_BIDI_INDEXABLE mem = (uint8_t*)WebPSafeMalloc(1U, total_size);
 
   if (mem == NULL) return 0;
   p->mem = (void*)mem;
@@ -230,13 +243,13 @@ static int InitParams(uint8_t* const data, int width, int height, int stride,
   p->cur = p->start;
   p->end = p->start + R * width;
   p->top = p->end - width;
-  memset(p->top, 0, width * sizeof(*p->top));
+  WEBP_UNSAFE_MEMSET(p->top, 0, width * sizeof(*p->top));
   mem += size_scratch_m;
 
+  p->width = width;
   p->average = (uint16_t*)mem;
   mem += size_m;
 
-  p->width = width;
   p->height = height;
   p->stride = stride;
   p->src = data;
@@ -248,8 +261,9 @@ static int InitParams(uint8_t* const data, int width, int height, int stride,
   // analyze the input distribution so we can best-fit the threshold
   CountLevels(p);
 
-  // correction table
-  p->correction = ((int16_t*)mem) + LUT_SIZE;
+  // correction table. p->correction is WEBP_COUNTED_BY(CORRECTION_LUT_SIZE).
+  // It points to the start of the buffer.
+  p->correction = ((int16_t*)mem);
   InitCorrectionLUT(p->correction, p->min_level_dist);
 
   return 1;
@@ -257,8 +271,9 @@ static int InitParams(uint8_t* const data, int width, int height, int stride,
 
 static void CleanupParams(SmoothParams* const p) { WebPSafeFree(p->mem); }
 
-int WebPDequantizeLevels(uint8_t* const data, int width, int height, int stride,
-                         int strength) {
+int WebPDequantizeLevels(uint8_t* WEBP_SIZED_BY((size_t)stride* height)
+                             const data,
+                         int width, int height, int stride, int strength) {
   int radius = 4 * strength / 100;
 
   if (strength < 0 || strength > 100) return 0;
@@ -270,7 +285,7 @@ int WebPDequantizeLevels(uint8_t* const data, int width, int height, int stride,
 
   if (radius > 0) {
     SmoothParams p;
-    memset(&p, 0, sizeof(p));
+    WEBP_UNSAFE_MEMSET(&p, 0, sizeof(p));
     if (!InitParams(data, width, height, stride, radius, &p)) return 0;
     if (p.num_levels > 2) {
       for (; p.row < p.height; ++p.row) {

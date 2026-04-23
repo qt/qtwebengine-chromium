@@ -39,8 +39,6 @@
 # Kind:      lib
 ################################################################################
 tint_add_target(tint_lang_core_ir_transform lib
-  lang/core/ir/transform/add_empty_entry_point.cc
-  lang/core/ir/transform/add_empty_entry_point.h
   lang/core/ir/transform/array_length_from_immediate.cc
   lang/core/ir/transform/array_length_from_immediate.h
   lang/core/ir/transform/array_length_from_uniform.cc
@@ -65,6 +63,8 @@ tint_add_target(tint_lang_core_ir_transform lib
   lang/core/ir/transform/conversion_polyfill.h
   lang/core/ir/transform/dead_code_elimination.cc
   lang/core/ir/transform/dead_code_elimination.h
+  lang/core/ir/transform/decompose_uniform_access.cc
+  lang/core/ir/transform/decompose_uniform_access.h
   lang/core/ir/transform/demote_to_helper.cc
   lang/core/ir/transform/demote_to_helper.h
   lang/core/ir/transform/direct_variable_access.cc
@@ -82,12 +82,18 @@ tint_add_target(tint_lang_core_ir_transform lib
   lang/core/ir/transform/remove_continue_in_switch.h
   lang/core/ir/transform/remove_terminator_args.cc
   lang/core/ir/transform/remove_terminator_args.h
+  lang/core/ir/transform/remove_uniform_vector_component_loads.cc
+  lang/core/ir/transform/remove_uniform_vector_component_loads.h
   lang/core/ir/transform/rename_conflicts.cc
   lang/core/ir/transform/rename_conflicts.h
   lang/core/ir/transform/resource_binding.cc
   lang/core/ir/transform/resource_binding.h
   lang/core/ir/transform/resource_binding_helper.cc
   lang/core/ir/transform/resource_binding_helper.h
+  lang/core/ir/transform/resource_table.cc
+  lang/core/ir/transform/resource_table.h
+  lang/core/ir/transform/resource_table_helper.cc
+  lang/core/ir/transform/resource_table_helper.h
   lang/core/ir/transform/robustness.cc
   lang/core/ir/transform/robustness.h
   lang/core/ir/transform/shader_io.cc
@@ -140,7 +146,6 @@ tint_target_add_external_dependencies(tint_lang_core_ir_transform lib
 # Kind:      test
 ################################################################################
 tint_add_target(tint_lang_core_ir_transform_test test
-  lang/core/ir/transform/add_empty_entry_point_test.cc
   lang/core/ir/transform/array_length_from_immediate_test.cc
   lang/core/ir/transform/array_length_from_uniform_test.cc
   lang/core/ir/transform/bgra8unorm_polyfill_test.cc
@@ -153,6 +158,7 @@ tint_add_target(tint_lang_core_ir_transform_test test
   lang/core/ir/transform/combine_access_instructions_test.cc
   lang/core/ir/transform/conversion_polyfill_test.cc
   lang/core/ir/transform/dead_code_elimination_test.cc
+  lang/core/ir/transform/decompose_uniform_access_test.cc
   lang/core/ir/transform/demote_to_helper_test.cc
   lang/core/ir/transform/direct_variable_access_test.cc
   lang/core/ir/transform/helper_test.h
@@ -162,6 +168,7 @@ tint_add_target(tint_lang_core_ir_transform_test test
   lang/core/ir/transform/prevent_infinite_loops_test.cc
   lang/core/ir/transform/remove_continue_in_switch_test.cc
   lang/core/ir/transform/remove_terminator_args_test.cc
+  lang/core/ir/transform/remove_uniform_vector_component_loads_test.cc
   lang/core/ir/transform/rename_conflicts_test.cc
   lang/core/ir/transform/robustness_test.cc
   lang/core/ir/transform/signed_integer_polyfill_test.cc
@@ -205,7 +212,6 @@ tint_target_add_external_dependencies(tint_lang_core_ir_transform_test test
 # Kind:      fuzz
 ################################################################################
 tint_add_target(tint_lang_core_ir_transform_fuzz fuzz
-  lang/core/ir/transform/add_empty_entry_point_fuzz.cc
   lang/core/ir/transform/array_length_from_uniform_fuzz.cc
   lang/core/ir/transform/bgra8unorm_polyfill_fuzz.cc
   lang/core/ir/transform/binary_polyfill_fuzz.cc

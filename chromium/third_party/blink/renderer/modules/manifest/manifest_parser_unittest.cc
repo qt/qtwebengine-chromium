@@ -898,6 +898,62 @@ TEST_F(ManifestParserTest, ScopeParseRules) {
   }
 }
 
+TEST_F(ManifestParserTest, UpdateManifestUrlParseRules) {
+  // Smoke test.
+  {
+    auto& manifest =
+        ParseManifest(R"({ "update_manifest_url": "https://foo.com" })");
+    ASSERT_EQ(manifest->update_manifest_url, KURL("https://foo.com/"));
+    ASSERT_FALSE(IsManifestEmpty(manifest));
+    EXPECT_THAT(errors(), testing::IsEmpty());
+  }
+
+  // Whitespaces.
+  {
+    auto& manifest =
+        ParseManifest(R"({ "update_manifest_url": "  https://foo.com  " })");
+    ASSERT_EQ(manifest->update_manifest_url, KURL("https://foo.com/"));
+    ASSERT_FALSE(IsManifestEmpty(manifest));
+    EXPECT_THAT(errors(), testing::IsEmpty());
+  }
+
+  // Use nullopt if the property isn't a string.
+  {
+    auto& manifest = ParseManifest(R"({ "update_manifest_url": {} })");
+    ASSERT_FALSE(manifest->update_manifest_url.has_value());
+    EXPECT_EQ(1u, GetErrorCount());
+    EXPECT_EQ("property 'update_manifest_url' ignored, type string expected.",
+              errors()[0]);
+  }
+
+  // Use nullopt if the property isn't a string.
+  {
+    auto& manifest = ParseManifest(R"({ "update_manifest_url": 42 })");
+    ASSERT_FALSE(manifest->update_manifest_url.has_value());
+    EXPECT_EQ(1u, GetErrorCount());
+    EXPECT_EQ("property 'update_manifest_url' ignored, type string expected.",
+              errors()[0]);
+  }
+
+  // Absolute update manifest url (not in scope).
+  {
+    auto& manifest = ParseManifestWithURLs(
+        R"({ "scope": "http://foo.com/land",
+        "start_url": "http://foo.com/land/landing.html", "update_manifest_url": "https://bar.com/" })",
+        KURL("http://foo.com/manifest.json"),
+        KURL("http://foo.com/index.html"));
+
+    ASSERT_EQ(manifest->update_manifest_url, KURL("https://bar.com/"));
+    ASSERT_FALSE(IsManifestEmpty(manifest));
+    EXPECT_THAT(errors(), testing::IsEmpty());
+  }
+
+  {
+    auto& manifest = ParseManifest(R"({})");
+    ASSERT_FALSE(manifest->update_manifest_url.has_value());
+  }
+}
+
 TEST_F(ManifestParserTest, DisplayParseRules) {
   // Smoke test.
   {
@@ -6532,6 +6588,103 @@ TEST_F(ManifestParserTest, NameLocalizedParseRules) {
     EXPECT_TRUE(manifest->name_localized.Contains("es"));
     EXPECT_EQ(manifest->name_localized.find("es")->value->value, "Valid Name");
     EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Invalid language tags are ignored.
+  {
+    auto& manifest = ParseManifest(R"({
+      "name_localized": {
+        "en": {
+          "value": "Valid Name",
+          "lang": "en-US"
+        },
+        "es": {
+          "value": "Should be ignored",
+          "lang": "not-a-valid-language-tag-!!!"
+        },
+        "fr": {
+          "value": "Also ignored",
+          "lang": "123-invalid"
+        },
+        "de": {
+          "value": "German Name",
+          "lang": "de-DE"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->name_localized.empty());
+    EXPECT_EQ(manifest->name_localized.size(), 2u);
+    EXPECT_TRUE(manifest->name_localized.Contains("en"));
+    EXPECT_TRUE(manifest->name_localized.Contains("de"));
+    EXPECT_FALSE(manifest->name_localized.Contains("es"));
+    EXPECT_FALSE(manifest->name_localized.Contains("fr"));
+    EXPECT_EQ(manifest->name_localized.find("en")->value->value, "Valid Name");
+    EXPECT_EQ(manifest->name_localized.find("en")->value->lang, "en-US");
+    EXPECT_EQ(manifest->name_localized.find("de")->value->value, "German Name");
+    EXPECT_EQ(manifest->name_localized.find("de")->value->lang, "de-DE");
+    EXPECT_EQ(2u, GetErrorCount());
+    EXPECT_EQ(
+        errors()[0],
+        "property 'name_localized' entry for 'es' ignored, invalid language "
+        "tag 'not-a-valid-language-tag-!!!'.");
+    EXPECT_EQ(errors()[1],
+              "property 'name_localized' entry for 'fr' ignored, invalid "
+              "language tag '123-invalid'.");
+  }
+
+  // Manifest-level lang is used as fallback when entry has no lang.
+  {
+    auto& manifest = ParseManifest(R"({
+      "lang": "en-US",
+      "name_localized": {
+        "en": "Uses Manifest Lang",
+        "es": {
+          "value": "Uses Own Lang",
+          "lang": "es-ES"
+        },
+        "fr": {
+          "value": "Also Uses Manifest Lang"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->name_localized.empty());
+    EXPECT_EQ(manifest->name_localized.size(), 3u);
+    EXPECT_EQ(manifest->name_localized.find("en")->value->value,
+              "Uses Manifest Lang");
+    EXPECT_EQ(manifest->name_localized.find("en")->value->lang, "en-US");
+    EXPECT_EQ(manifest->name_localized.find("es")->value->value,
+              "Uses Own Lang");
+    EXPECT_EQ(manifest->name_localized.find("es")->value->lang, "es-ES");
+    EXPECT_EQ(manifest->name_localized.find("fr")->value->value,
+              "Also Uses Manifest Lang");
+    EXPECT_EQ(manifest->name_localized.find("fr")->value->lang, "en-US");
+    EXPECT_EQ(0u, GetErrorCount());
+  }
+
+  // Manifest-level lang fallback is validated.
+  {
+    auto& manifest = ParseManifest(R"({
+      "lang": "invalid-lang-!!!",
+      "name_localized": {
+        "en": "Should be ignored",
+        "es": {
+          "value": "Uses Valid Lang",
+          "lang": "es-ES"
+        }
+      }
+    })");
+    EXPECT_FALSE(manifest->name_localized.empty());
+    EXPECT_EQ(manifest->name_localized.size(), 1u);
+    EXPECT_FALSE(manifest->name_localized.Contains("en"));
+    EXPECT_TRUE(manifest->name_localized.Contains("es"));
+    EXPECT_EQ(manifest->name_localized.find("es")->value->value,
+              "Uses Valid Lang");
+    EXPECT_EQ(manifest->name_localized.find("es")->value->lang, "es-ES");
+    EXPECT_EQ(1u, GetErrorCount());
+    EXPECT_EQ(
+        errors()[0],
+        "property 'name_localized' entry for 'en' ignored, invalid language "
+        "tag 'invalid-lang-!!!'.");
   }
 
   // Don't parse if name_localized isn't an object.

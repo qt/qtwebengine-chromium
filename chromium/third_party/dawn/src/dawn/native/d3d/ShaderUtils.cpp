@@ -231,31 +231,6 @@ MaybeError TranslateToHLSL(d3d::HlslCompilationRequest r,
                         ir.Failure().reason);
     }
 
-    {
-        SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(tracePlatform.UnsafeGetValue(),
-                                           "ShaderModuleSingleEntryPoint");
-        auto singleEntryPointResult =
-            tint::core::ir::transform::SingleEntryPoint(ir.Get(), r.entryPointName);
-        DAWN_INVALID_IF(singleEntryPointResult != tint::Success,
-                        "Pipeline single entry point (IR) failed:\n%s",
-                        singleEntryPointResult.Failure().reason);
-    }
-
-    // this needs to run after SingleEntryPoint transform which removes unused
-    // overrides for the current entry point.
-    {
-        SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(tracePlatform.UnsafeGetValue(),
-                                           "ShaderModuleSubstituteOverrides");
-        tint::core::ir::transform::SubstituteOverridesConfig cfg;
-        cfg.map = std::move(r.substituteOverrideConfig);
-        auto substituteOverridesResult =
-            tint::core::ir::transform::SubstituteOverrides(ir.Get(), cfg);
-
-        DAWN_INVALID_IF(substituteOverridesResult != tint::Success,
-                        "Pipeline override substitution (IR) failed:\n%s",
-                        substituteOverridesResult.Failure().reason);
-    }
-
     tint::Result<tint::hlsl::writer::Output> result;
     {
         SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(tracePlatform.UnsafeGetValue(),
@@ -382,6 +357,10 @@ ResultOrError<CompiledShader> CompileShader(d3d::D3DCompilationRequest r) {
             break;
         }
     }
+
+    // Compute SHA3 of the shader blob.
+    compiledShader.sha3 =
+        Sha3_256::Hash(compiledShader.shaderBlob.Data(), compiledShader.shaderBlob.Size());
 
     // If dumpShaders is false, we don't need the HLSL for logging. Clear the contents so it
     // isn't stored into the cache.

@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -13,7 +13,7 @@ import * as Bindings from '../../models/bindings/bindings.js';
 import * as Geometry from '../../models/geometry/geometry.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import {createIcon, type Icon} from '../../ui/kit/kit.js';
 import * as ColorPicker from '../../ui/legacy/components/color_picker/color_picker.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
 import type * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
@@ -61,7 +61,7 @@ function findPropertyAt(node: CodeMirror.SyntaxNode, pos: number): CodeMirror.Sy
 }
 
 function getCurrentStyleSheet(
-    url: Platform.DevToolsPath.UrlString, cssModel: SDK.CSSModel.CSSModel): Protocol.CSS.StyleSheetId {
+    url: Platform.DevToolsPath.UrlString, cssModel: SDK.CSSModel.CSSModel): Protocol.DOM.StyleSheetId {
   const currentStyleSheet = cssModel.getStyleSheetIdsForURL(url);
   if (currentStyleSheet.length === 0) {
     throw new Error('Can\'t find style sheet ID for current URL');
@@ -211,7 +211,7 @@ class CurveSwatchWidget extends CodeMirror.WidgetType {
   toDOM(view: CodeMirror.EditorView): HTMLElement {
     const container = document.createElement('span');
     const bezierText = container.createChild('span');
-    const icon = IconButton.Icon.create('bezier-curve-filled', 'bezier-swatch-icon');
+    const icon = createIcon('bezier-curve-filled', 'bezier-swatch-icon');
     icon.setAttribute('jslog', `${VisualLogging.showStyleEditor('bezier')}`);
     bezierText.append(this.text);
     UI.Tooltip.Tooltip.install(icon, i18nString(UIStrings.openCubicBezierEditor));
@@ -251,7 +251,7 @@ type ActiveTooltip = {
   pos: number,
   text: string,
   curve: Geometry.CubicBezier,
-  swatch: IconButton.Icon.Icon,
+  swatch: Icon,
 };
 
 function createCSSTooltip(active: ActiveTooltip): CodeMirror.Tooltip {
@@ -385,7 +385,7 @@ function getNumberAt(node: CodeMirror.SyntaxNode): {from: number, to: number}|nu
   }
   if (node.name === 'NumberLiteral') {
     const lastChild = node.lastChild;
-    return {from: node.from, to: lastChild && lastChild.name === 'Unit' ? lastChild.from : node.to};
+    return {from: node.from, to: lastChild?.name === 'Unit' ? lastChild.from : node.to};
   }
   return null;
 }

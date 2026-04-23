@@ -274,6 +274,7 @@ bool Runtime::IsEnabledForFuzzing(FunctionId id) {
     case Runtime::kClearFunctionFeedback:
     case Runtime::kStringIsFlat:
     case Runtime::kGetInitializerFunction:
+    case Runtime::kArrayBufferDetachForceWasm:
 #ifdef V8_ENABLE_WEBASSEMBLY
     case Runtime::kWasmTraceEnter:
     case Runtime::kWasmTraceExit:
@@ -285,16 +286,10 @@ bool Runtime::IsEnabledForFuzzing(FunctionId id) {
 #endif  // V8_ENABLE_WEBASSEMBLY
     // TODO(353685107): investigate whether these should be exposed to fuzzers.
     case Runtime::kConstructDouble:
-    case Runtime::kConstructConsString:
-    case Runtime::kConstructSlicedString:
-    case Runtime::kConstructInternalizedString:
-    case Runtime::kConstructThinString:
     // TODO(353971258): investigate whether this should be exposed to fuzzers.
     case Runtime::kSerializeDeserializeNow:
     // TODO(353928347): investigate whether this should be exposed to fuzzers.
     case Runtime::kCompleteInobjectSlackTracking:
-    // TODO(354005312): investigate whether this should be exposed to fuzzers.
-    case Runtime::kShareObject:
     // TODO(354310130): investigate whether this should be exposed to fuzzers.
     case Runtime::kForceFlush:
       return false;

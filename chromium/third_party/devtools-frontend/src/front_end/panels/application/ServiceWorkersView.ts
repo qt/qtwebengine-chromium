@@ -1,7 +1,7 @@
 // Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -202,7 +202,6 @@ export class ServiceWorkersView extends UI.Widget.VBox implements
     });
     this.registerRequiredCSS(serviceWorkersViewStyles);
 
-    // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
     this.currentWorkersView = new UI.ReportView.ReportView(i18n.i18n.lockedString('Service workers'));
     this.currentWorkersView.setBodyScrollable(false);
     this.contentElement.classList.add('service-worker-list');
@@ -221,7 +220,6 @@ export class ServiceWorkersView extends UI.Widget.VBox implements
 
     const othersDiv = this.contentElement.createChild('div', 'service-workers-other-origin');
     othersDiv.setAttribute('jslog', `${VisualLogging.section('other-origin')}`);
-    // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
     const othersView = new UI.ReportView.ReportView();
     othersView.setHeaderVisible(false);
     othersView.show(othersDiv);
@@ -708,9 +706,9 @@ export class Section {
         this.routerField = this.wrapWidget(this.section.appendField(title));
       }
       if (!this.routerField.lastElementChild) {
-        this.routerField.appendChild(this.routerView);
+        this.routerView.show(this.routerField);
       }
-      this.routerView.update(active.routerRules);
+      this.routerView.rules = active.routerRules;
     } else {
       // If no active worker or no registered rules, remove the field.
       this.section.removeField(title);

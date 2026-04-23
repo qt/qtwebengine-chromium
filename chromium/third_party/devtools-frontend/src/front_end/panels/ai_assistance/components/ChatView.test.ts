@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as AiAssistanceModel from '../../../models/ai_assistance/ai_assistance.js';
 import {initializePersistenceImplForTests, setupAutomaticFileSystem} from '../../../testing/AiAssistanceHelpers.js';
@@ -14,7 +13,7 @@ describeWithEnvironment('ChatView', () => {
   function getProp(options: Partial<AiAssistancePanel.Props>): AiAssistancePanel.Props {
     const noop = () => {};
     const messages: AiAssistancePanel.ChatMessage[] = options.messages ?? [];
-    const selectedContext = sinon.createStubInstance(AiAssistanceModel.NodeContext);
+    const selectedContext = sinon.createStubInstance(AiAssistanceModel.StylingAgent.NodeContext);
     selectedContext.getTitle.returns('');
     return {
       onTextSubmit: noop,
@@ -25,11 +24,9 @@ describeWithEnvironment('ChatView', () => {
       onCopyResponseClick: noop,
       onNewConversation: noop,
       onTextInputChange: noop,
-      changeManager: new AiAssistanceModel.ChangeManager(),
+      changeManager: new AiAssistanceModel.ChangeManager.ChangeManager(),
       inspectElementToggled: false,
-      state: AiAssistancePanel.State.CHAT_VIEW,
-      conversationType: AiAssistanceModel.ConversationType.STYLING,
-      aidaAvailability: Host.AidaClient.AidaAccessPreconditions.AVAILABLE,
+      conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType.STYLING,
       messages,
       selectedContext,
       isLoading: false,
@@ -43,6 +40,7 @@ describeWithEnvironment('ChatView', () => {
       disclaimerText: i18n.i18n.lockedString('disclaimer text'),
       isTextInputEmpty: true,
       markdownRenderer: new AiAssistancePanel.MarkdownRendererWithCodeBlock(),
+      additionalFloatyContext: [],
       ...options,
     };
   }
@@ -56,14 +54,17 @@ describeWithEnvironment('ChatView', () => {
         messages: [
           {
             entity: AiAssistancePanel.ChatMessageEntity.MODEL,
-            steps: [
+            parts: [
               {
-                isLoading: false,
-                title: 'Updating element styles',
-                thought: 'Updating element styles',
-                code: '$0.style.background = "blue";',
-                sideEffect: {
-                  onAnswer: () => {},
+                type: 'step',
+                step: {
+                  isLoading: false,
+                  title: 'Updating element styles',
+                  thought: 'Updating element styles',
+                  code: '$0.style.background = "blue";',
+                  sideEffect: {
+                    onAnswer: () => {},
+                  },
                 },
               },
             ],
@@ -75,30 +76,6 @@ describeWithEnvironment('ChatView', () => {
 
       const sideEffect = chat.shadowRoot!.querySelector('.side-effect-confirmation');
       assert.exists(sideEffect);
-    });
-
-    it('shows the disabled view when the state is CONSENT_VIEW', async () => {
-      const props = getProp({
-        state: AiAssistancePanel.State.CONSENT_VIEW,
-      });
-      const chat = new AiAssistancePanel.ChatView(props);
-      renderElementIntoDOM(chat);
-
-      const optIn = chat.shadowRoot?.querySelector('.disabled-view');
-      assert.strictEqual(
-          optIn?.textContent?.trim(), 'Turn on AI assistance in Settings to get help with understanding CSS styles');
-    });
-
-    it('shows the disabled view when the AIDA is not available', async () => {
-      const props = getProp({
-        state: AiAssistancePanel.State.CHAT_VIEW,
-        aidaAvailability: Host.AidaClient.AidaAccessPreconditions.NO_INTERNET,
-      });
-      const chat = new AiAssistancePanel.ChatView(props);
-      renderElementIntoDOM(chat);
-
-      const optIn = chat.shadowRoot?.querySelector('.disabled-view');
-      assert.strictEqual(optIn?.textContent?.trim(), 'Check your internet connection and try again');
     });
   });
 });

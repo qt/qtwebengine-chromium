@@ -12,29 +12,32 @@
 :host {
   --input-inline-spacing: 12px;
   outline: none;
-  height: 44px;
+  height: var(--cr-composebox-match-height, 44px);
   display: block;
 }
 
 :host(:not([is-last])) {
-  padding-bottom: 2px;
+  padding-bottom: var(--cr-composebox-match-match-padding-bottom, 2px);
 }
 
 .container {
   border-start-end-radius: 24px;
   border-end-end-radius: 24px;
-  color: var(--color-new-tab-page-composebox-font);
+  color: var(--color-composebox-font);
   cursor: default;
   display: flex;
   font-size: 16px;
-  height: 44px;
+  height: var(--cr-composebox-match-height, 44px);
   line-height: 24px;
   position: relative;
 }
 
-.container:hover,
-:host(:is(:focus-visible, [selected])) .container {
+.container:hover {
   background-color: var(--color-searchbox-results-background-hovered);
+}
+
+:host(:is(:focus-visible, [selected])) .container {
+  background-color: var(--color-searchbox-results-background-selected, var(--color-searchbox-results-background-hovered));
 }
 
 #focusIndicator {
@@ -54,7 +57,7 @@
 #iconContainer {
   align-items: center;
   display: flex;
-  padding-inline-start: 18px;
+  padding-inline-start: var(--cr-composebox-match-icon-container-padding-inline-start, 18px);
   justify-content: center;
 }
 
@@ -62,19 +65,23 @@
   -webkit-mask-position: center;
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-size: cover;
-  background-color: var(--color-new-tab-page-composebox-input-icon);
-  height: 20px;
-  width: 20px;
+  background-color: var(--color-composebox-input-icon);
+  height: var(--cr-composebox-match-icon-size, 20px);
+  width: var(--cr-composebox-match-icon-size, 20px);
 }
 
 #textContainer {
   align-content: center;
-  color: var(--color-new-tab-page-composebox-font-light);
-  font-size: 16px;
+  color: var(--color-composebox-font-light);
+  font-size: var(--cr-composebox-match-text-container-font-size, 16px);
   overflow: hidden;
   padding-inline: var(--input-inline-spacing) 64px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+:host(:is(:focus-visible, [selected])) #textContainer {
+  color: var(--color-searchbox-results-foreground-selected, var(--color-composebox-font-light));
 }
 
 #remove {
@@ -82,10 +89,10 @@
       var(--color-searchbox-results-icon-selected);
   --cr-icon-button-icon-size: 16px;
   --cr-icon-button-hover-background-color:
-      var(--color-searchbox-results-background-hovered);
+      var(--color-searchbox-results-button-hover);
   display: none;
   position: absolute;
-  top: 6px;
+  top: var(--cr-composebox-match-remove-button-top, 6px);
   right: 12px;
 }
 
@@ -95,21 +102,31 @@
 }
 
 .container:hover #remove:not([hidden]),
-:host-context(ntp-composebox-match:-webkit-any(:focus-within, [selected])) #remove:not([hidden]) {
+:host-context(cr-composebox-match:-webkit-any(:focus-within, [selected])) #remove:not([hidden]) {
   display: inline-flex;
 }
 
 :host-context([in-deep-search-mode_]) #textContainer {
-  display: block;
-  line-clamp: 2;
   overflow: hidden;
-  box-orient: vertical;
   white-space: normal;
+  line-height: 24px;
 }
 
-:host-context([in-deep-search-mode_]),
+:host-context([in-deep-search-mode_]) #focusIndicator {
+  top: 0;
+  bottom: 0;
+  height: auto;
+}
+
+:host-context([in-deep-search-mode_]) {
+  height: auto;
+  min-height: var(--cr-composebox-match-height, 44px);
+}
+
 :host-context([in-deep-search-mode_]) .container {
-  height: 68px;
+  height: auto;
+  min-height: 24px;
+  padding-block: 10px;
 }
 
 :host-context([in-deep-search-mode_]) .container {

@@ -26,6 +26,7 @@ DEFAULT_DURATION: Final = dt.timedelta(seconds=DEFAULT_DURATION_SECONDS)
 # This is initialized in interactive.py to avoid circular dependencies
 PAGE_LIST: list[Page] = []
 
+
 class Page(Story, metaclass=abc.ABCMeta):
 
   @classmethod

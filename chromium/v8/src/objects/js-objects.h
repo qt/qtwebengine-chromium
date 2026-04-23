@@ -633,6 +633,11 @@ class JSObject : public TorqueGeneratedJSObject<JSObject, JSReceiver> {
   static inline void EnsureCanContainHeapObjectElements(
       Isolate* isolate, DirectHandle<JSObject> obj);
 
+  template <typename TSlot>
+  static inline ElementsKind GetTransitionedElementsKind(
+      Isolate* isolate, ElementsKind current_kind, TSlot elements,
+      uint32_t count, EnsureElementsMode mode);
+
   // Makes sure that this object can contain the specified elements.
   // TSlot here is either ObjectSlot or FullObjectSlot.
   template <typename TSlot>
@@ -1034,7 +1039,13 @@ class JSExternalObject
     : public TorqueGeneratedJSExternalObject<JSExternalObject, JSObject> {
  public:
   // [value]: field containing the pointer value.
-  DECL_EXTERNAL_POINTER_ACCESSORS(value, void*)
+  inline void* value(ExternalPointerTagRange tag_range) const;
+  inline void* value(IsolateForSandbox isolate,
+                     ExternalPointerTagRange tag_range) const;
+  inline void init_value(IsolateForSandbox isolate, ExternalPointerTag tag,
+                         void* initial_value);
+  inline void set_value(IsolateForSandbox isolate, ExternalPointerTag tag,
+                        void* value);
 
   static constexpr int kEndOfTaggedFieldsOffset = JSObject::kHeaderSize;
 
@@ -1186,8 +1197,7 @@ class JSIteratorResult : public JSObject {
 class JSGlobalProxy
     : public TorqueGeneratedJSGlobalProxy<JSGlobalProxy, JSSpecialObject> {
  public:
-  inline bool IsDetachedFrom(Isolate* isolate,
-                             Tagged<JSGlobalObject> global) const;
+  inline bool IsDetachedFrom(Tagged<JSGlobalObject> global) const;
   V8_EXPORT_PRIVATE bool IsDetached();
 
   static int SizeWithEmbedderFields(int embedder_field_count);
@@ -1208,7 +1218,7 @@ class JSGlobalObject
   static void InvalidatePropertyCell(DirectHandle<JSGlobalObject> object,
                                      DirectHandle<Name> name);
 
-  inline bool IsDetached(Isolate* isolate);
+  inline bool IsDetached();
   inline Tagged<NativeContext> native_context();
 
   // Dispatched behavior.

@@ -71,6 +71,7 @@
 #include "bytestream.h"
 #include "jpeg2000.h"
 #include "version.h"
+#include "libavutil/attributes.h"
 #include "libavutil/common.h"
 #include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
@@ -580,7 +581,7 @@ static void init_quantization(Jpeg2000EncoderContext *s)
     }
 }
 
-static void init_luts(void)
+static av_cold void init_luts(void)
 {
     int i, a,
         mask = ~((1<<NMSEDEC_FRACBITS)-1);
@@ -1268,7 +1269,7 @@ static void makelayer(Jpeg2000EncoderContext *s, int layno, double thresh, Jpeg2
 
 static void makelayers(Jpeg2000EncoderContext *s, Jpeg2000Tile *tile)
 {
-    int precno, compno, reslevelno, bandno, cblkno, lev, passno, layno;
+    int precno, compno, reslevelno, bandno, cblkno, passno, layno;
     int i;
     double min = DBL_MAX;
     double max = 0;
@@ -1279,7 +1280,7 @@ static void makelayers(Jpeg2000EncoderContext *s, Jpeg2000Tile *tile)
     for (compno = 0; compno < s->ncomponents; compno++){
         Jpeg2000Component *comp = tile->comp + compno;
 
-        for (reslevelno = 0, lev = codsty->nreslevels-1; reslevelno < codsty->nreslevels; reslevelno++, lev--){
+        for (reslevelno = 0; reslevelno < codsty->nreslevels; reslevelno++){
             Jpeg2000ResLevel *reslevel = comp->reslevel + reslevelno;
 
             for (precno = 0; precno < reslevel->num_precincts_x * reslevel->num_precincts_y; precno++){

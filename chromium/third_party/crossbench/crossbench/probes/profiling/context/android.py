@@ -130,7 +130,7 @@ class AndroidProfilingContext(PosixProfilingContext):
       self.browser.performance_mark("probe-profiling-stop")
 
   def teardown(self) -> ProbeResult:
-    return self.browser_result(trace=[self.result_path])
+    return self.browser_result(perfetto=[self.result_path])
 
 
 def generate_simpleperf_command_line(

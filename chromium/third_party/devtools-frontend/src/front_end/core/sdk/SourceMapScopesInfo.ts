@@ -3,7 +3,10 @@
 // found in the LICENSE file.
 
 import * as Protocol from '../../generated/protocol.js';
+import * as Formatter from '../../models/formatter/formatter.js';
+import type * as TextUtils from '../../models/text_utils/text_utils.js';
 import type * as ScopesCodec from '../../third_party/source-map-scopes-codec/source-map-scopes-codec.js';
+import type * as Platform from '../platform/platform.js';
 
 import type {CallFrame, ScopeChainEntry} from './DebuggerModel.js';
 import type {SourceMap} from './SourceMap.js';
@@ -22,6 +25,147 @@ export class SourceMapScopesInfo {
     this.#generatedRanges = scopeInfo.ranges;
   }
 
+  /**
+   * If the source map does not contain any scopes information, this factory function attempts to create scope information
+   * via the script's AST combined with the mappings.
+   *
+   * We create the generated ranges from the scope tree and for each range we create an original scope that matches the bounds 1:1.
+   */
+  static createFromAst(
+      sourceMap: SourceMap, scopeTree: Formatter.FormatterWorkerPool.ScopeTreeNode,
+      text: TextUtils.Text.Text): SourceMapScopesInfo {
+    const numSourceUrls = sourceMap.sourceURLs().length;
+    const scopeBySourceUrl: ScopesCodec.OriginalScope[] = [];
+    for (let i = 0; i < numSourceUrls; i++) {
+      const scope: ScopesCodec.OriginalScope = {
+        start: {line: 0, column: 0},
+        end: {line: Number.POSITIVE_INFINITY, column: Number.POSITIVE_INFINITY},
+        isStackFrame: false,
+        variables: [],
+        children: [],
+      };
+      scopeBySourceUrl.push(scope);
+    }
+
+    // Convert the entire scopeTree. Returns a root range that encompasses everything,
+    // and inserts scopes by sourceIndex into the above scopeBySourceUrl.
+    const {range} = convertScope(scopeTree, undefined);
+    return new SourceMapScopesInfo(sourceMap, {scopes: scopeBySourceUrl, ranges: [range]});
+
+    /**
+     * Recursively finds the correct place in the tree to insert the new scope.
+     * Maintains the invariant that children are sorted and contained by their parent.
+     */
+    function insertInScope(parent: ScopesCodec.OriginalScope, newScope: ScopesCodec.OriginalScope): void {
+      // Check if the newScope fits strictly inside any of the existing children.
+      for (const child of parent.children) {
+        if (contains(child, newScope)) {
+          insertInScope(child, newScope);
+          return;
+        }
+      }
+
+      // When here, newScope belongs directly in parent.
+      // However, newScope might encompass some of parent's existing children (due
+      // to compiler transform quirks or arbitrary insertion order). We must move
+      // those children inside newScope.
+      const childrenToKeep: ScopesCodec.OriginalScope[] = [];
+      for (const child of parent.children) {
+        if (contains(newScope, child)) {
+          // child is actually inside newScope, so re-parent it.
+          newScope.children.push(child);
+          child.parent = newScope;
+        } else {
+          childrenToKeep.push(child);
+        }
+      }
+
+      // Find the correct index in the remaining children to insert newScope.
+      // We look for the first child that starts after the new scope.
+      const insertIndex = childrenToKeep.findIndex(child => compareScopes(newScope, child) < 0);
+      if (insertIndex === -1) {
+        // If no child starts after, it goes at the end.
+        childrenToKeep.push(newScope);
+      } else {
+        childrenToKeep.splice(insertIndex, 0, newScope);
+      }
+
+      // Update parent's children to only be the ones that don't belong to newScope.
+      parent.children = childrenToKeep;
+      newScope.parent = parent;
+    }
+
+    function contains(outer: ScopesCodec.OriginalScope, inner: ScopesCodec.OriginalScope): boolean {
+      return comparePositions(outer.start, inner.start) <= 0 && comparePositions(outer.end, inner.end) >= 0;
+    }
+
+    function compareScopes(a: ScopesCodec.OriginalScope, b: ScopesCodec.OriginalScope): number {
+      return comparePositions(a.start, b.start);
+    }
+
+    function comparePositions(a: ScopesCodec.Position, b: ScopesCodec.Position): number {
+      if (a.line !== b.line) {
+        return a.line - b.line;
+      }
+      return a.column - b.column;
+    }
+
+    function convertScope(
+        node: Formatter.FormatterWorkerPool.ScopeTreeNode,
+        parentRange: ScopesCodec.GeneratedRange|undefined): {range: ScopesCodec.GeneratedRange} {
+      const start = positionFromOffset(node.start);
+      const end = positionFromOffset(node.end);
+      const startEntry = sourceMap.findEntry(start.line, start.column);
+      const endEntry = sourceMap.findEntry(end.line, end.column);
+      const sourceIndex = startEntry?.sourceIndex;
+      const canMapOriginalPosition = startEntry && endEntry && sourceIndex !== undefined &&
+          startEntry.sourceIndex === endEntry.sourceIndex && startEntry.sourceIndex !== undefined && sourceIndex >= 0 &&
+          sourceIndex < numSourceUrls;
+      const isStackFrame = node.kind === Formatter.FormatterWorkerPool.ScopeKind.FUNCTION ||
+          node.kind === Formatter.FormatterWorkerPool.ScopeKind.ARROW_FUNCTION;
+      // TODO(crbug.com/368222773): Instead of mapping `start`, we should report a number of candidates. e.g. for arrow functions we should
+      //     follow the spec and map the `=>` as the spec says that is where the original name (if any) for arrow functions can be found.
+      const name = node.kind === Formatter.FormatterWorkerPool.ScopeKind.FUNCTION ? startEntry?.name : undefined;
+
+      let scope: ScopesCodec.OriginalScope|undefined;
+      if (canMapOriginalPosition) {
+        scope = {
+          start: {line: startEntry.sourceLineNumber, column: startEntry.sourceColumnNumber},
+          end: {line: endEntry.sourceLineNumber, column: endEntry.sourceColumnNumber},
+          name,
+          isStackFrame,
+          variables: [],
+          children: [],
+        };
+      }
+
+      const range: ScopesCodec.GeneratedRange = {
+        start,
+        end,
+        originalScope: scope,
+        isStackFrame,
+        isHidden: false,
+        values: [],
+        children: [],
+      };
+
+      parentRange?.children.push(range);
+      if (canMapOriginalPosition && scope) {
+        const rootScope = scopeBySourceUrl[sourceIndex];
+        insertInScope(rootScope, scope);
+      }
+
+      node.children.forEach(child => convertScope(child, range));
+
+      return {range};
+    }
+
+    function positionFromOffset(offset: number): ScopesCodec.Position {
+      const location = text.positionFromOffset(offset);
+      return {line: location.lineNumber, column: location.columnNumber};
+    }
+  }
+
   addOriginalScopes(scopes: Array<ScopesCodec.OriginalScope|null>): void {
     for (const scope of scopes) {
       this.#originalScopes.push(scope);
@@ -38,12 +182,51 @@ export class SourceMapScopesInfo {
     return Boolean(this.#originalScopes[sourceIdx]);
   }
 
+  isEmpty(): boolean {
+    return !this.#originalScopes.length && !this.#generatedRanges.length;
+  }
+
   addOriginalScopesAtIndex(sourceIdx: number, scope: ScopesCodec.OriginalScope): void {
     if (!this.#originalScopes[sourceIdx]) {
       this.#originalScopes[sourceIdx] = scope;
     } else {
       throw new Error(`Trying to re-augment existing scopes for source at index: ${sourceIdx}`);
     }
+  }
+
+  /**
+   * @returns true, iff the function surrounding the provided position is marked as "hidden".
+   */
+  isOutlinedFrame(generatedLine: number, generatedColumn: number): boolean {
+    const rangeChain = this.#findGeneratedRangeChain(generatedLine, generatedColumn);
+    return this.#isOutlinedFrame(rangeChain);
+  }
+
+  #isOutlinedFrame(rangeChain: ScopesCodec.GeneratedRange[]): boolean {
+    for (let i = rangeChain.length - 1; i >= 0; --i) {
+      if (rangeChain[i].isStackFrame) {
+        return rangeChain[i].isHidden;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * @returns true, iff the range surrounding the provided position contains multiple
+   * inlined original functions.
+   */
+  hasInlinedFrames(generatedLine: number, generatedColumn: number): boolean {
+    const rangeChain = this.#findGeneratedRangeChain(generatedLine, generatedColumn);
+    for (let i = rangeChain.length - 1; i >= 0; --i) {
+      if (rangeChain[i].isStackFrame) {
+        // We stop looking for inlined original functions once we reach the current frame.
+        return false;
+      }
+      if (rangeChain[i].callSite) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -68,7 +251,10 @@ export class SourceMapScopesInfo {
 
       if (range.callSite) {
         // Record the name and call-site if the range corresponds to an inlined function.
-        result.inlinedFunctions.push({name: range.originalScope?.name ?? '', callsite: range.callSite});
+        result.inlinedFunctions.push({
+          name: range.originalScope?.name ?? '',
+          callsite: {...range.callSite, sourceURL: this.#sourceMap.sourceURLForSourceIndex(range.callSite.sourceIndex)}
+        });
       }
       if (range.isStackFrame) {
         // We arrived at an actual generated JS function, don't go further.
@@ -247,7 +433,16 @@ export class SourceMapScopesInfo {
   /**
    * Returns the authored function name of the function containing the provided generated position.
    */
-  findOriginalFunctionName({line, column}: ScopesCodec.Position): string|null {
+  findOriginalFunctionName(position: ScopesCodec.Position): string|null {
+    const originalInnerMostScope = this.findOriginalFunctionScope(position)?.scope ?? undefined;
+    return this.#findFunctionNameInOriginalScopeChain(originalInnerMostScope);
+  }
+
+  /**
+   * Returns the authored function scope of the function containing the provided generated position.
+   */
+  findOriginalFunctionScope({line, column}: ScopesCodec.Position):
+      {scope: ScopesCodec.OriginalScope, url?: Platform.DevToolsPath.UrlString}|null {
     // There are 2 approaches:
     //   1) Find the inner-most generated range containing the provided generated position
     //      and use it's OriginalScope (then walk it outwards until we hit a function).
@@ -276,13 +471,24 @@ export class SourceMapScopesInfo {
               .at(-1);
     }
 
-    // Walk the original scope chain outwards until we find a function.
-    for (let originalScope = originalInnerMostScope; originalScope; originalScope = originalScope.parent) {
-      if (originalScope.isStackFrame) {
-        return originalScope.name ?? '';
-      }
+    if (!originalInnerMostScope) {
+      return null;
     }
-    return null;
+
+    const functionScope = this.#findFunctionScopeInOriginalScopeChain(originalInnerMostScope);
+    if (!functionScope) {
+      return null;
+    }
+
+    // Find the root scope for some given original source, to get the source url.
+    let rootScope: ScopesCodec.OriginalScope = functionScope;
+    while (rootScope.parent) {
+      rootScope = rootScope.parent;
+    }
+    const sourceIndex = this.#originalScopes.indexOf(rootScope);
+    const url = sourceIndex !== -1 ? this.#sourceMap.sourceURLForSourceIndex(sourceIndex) : undefined;
+
+    return functionScope ? {scope: functionScope, url} : null;
   }
 
   /**
@@ -308,6 +514,84 @@ export class SourceMapScopesInfo {
 
     return result;
   }
+
+  #findFunctionScopeInOriginalScopeChain(innerOriginalScope: ScopesCodec.OriginalScope|undefined):
+      ScopesCodec.OriginalScope|null {
+    for (let originalScope = innerOriginalScope; originalScope; originalScope = originalScope.parent) {
+      if (originalScope.isStackFrame) {
+        return originalScope;
+      }
+    }
+    return null;
+  }
+
+  #findFunctionNameInOriginalScopeChain(innerOriginalScope: ScopesCodec.OriginalScope|undefined): string|null {
+    const functionScope = this.#findFunctionScopeInOriginalScopeChain(innerOriginalScope);
+    if (!functionScope) {
+      return null;
+    }
+
+    return functionScope.name ?? '';
+  }
+
+  /**
+   * Returns one or more original stack frames for this single "raw frame" or call-site.
+   *
+   * @returns An empty array if no mapping at the call-site was found, or the resulting frames
+   * in top-to-bottom order in case of inlining.
+   * @throws If this range is marked "hidden". Outlining needs to be handled externally as
+   * outlined function segments in stack traces can span across bundles.
+   */
+  translateCallSite(generatedLine: number, generatedColumn: number): TranslatedFrame[] {
+    const rangeChain = this.#findGeneratedRangeChain(generatedLine, generatedColumn);
+    if (this.#isOutlinedFrame(rangeChain)) {
+      throw new Error('SourceMapScopesInfo is unable to translate an outlined function by itself');
+    }
+
+    const mapping = this.#sourceMap.findEntry(generatedLine, generatedColumn);
+    if (mapping?.sourceIndex === undefined) {
+      return [];
+    }
+
+    // The top-most frame is translated the same even if we have inlined functions.
+    const result: TranslatedFrame[] = [{
+      line: mapping.sourceLineNumber,
+      column: mapping.sourceColumnNumber,
+      name: this.findOriginalFunctionName({line: generatedLine, column: generatedColumn}) ?? undefined,
+      url: mapping.sourceURL,
+    }];
+
+    // Walk the range chain inside out until we find a generated function and for each inlined function add a frame.
+    for (let i = rangeChain.length - 1; i >= 0 && !rangeChain[i].isStackFrame; --i) {
+      const range = rangeChain[i];
+      if (!range.callSite) {
+        continue;
+      }
+
+      const originalScopeChain = this.#findOriginalScopeChain(range.callSite);
+      result.push({
+        line: range.callSite.line,
+        column: range.callSite.column,
+        name: this.#findFunctionNameInOriginalScopeChain(originalScopeChain.at(-1)) ?? undefined,
+        url: this.#sourceMap.sourceURLForSourceIndex(range.callSite.sourceIndex),
+      });
+    }
+
+    return result;
+  }
+}
+
+/**
+ * Represents a stack frame in original terms. It closely aligns with StackTrace.StackTrace.Frame,
+ * but since we can't import that type here we mirror it here somewhat.
+ *
+ * Equivalent to Pick<StackTrace.StackTrace.Frame, 'line'|'column'|'name'|'url'>.
+ */
+export interface TranslatedFrame {
+  line: number;
+  column: number;
+  name?: string;
+  url?: Platform.DevToolsPath.UrlString;
 }
 
 /**
@@ -320,7 +604,15 @@ export class SourceMapScopesInfo {
  * The inlined functions are sorted from inner to outer (or top to bottom on the stack).
  */
 export interface InlineInfo {
-  inlinedFunctions: Array<{name: string, callsite: ScopesCodec.OriginalPosition}>;
+  inlinedFunctions: Array<{
+    name: string,
+    callsite: {
+      line: number,
+      column: number,
+      sourceIndex: number,
+      sourceURL?: Platform.DevToolsPath.UrlString,
+    },
+  }>;
   originalFunctionName: string;
 }
 

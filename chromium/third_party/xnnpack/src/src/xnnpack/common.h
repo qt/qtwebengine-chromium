@@ -297,7 +297,7 @@
 #define XNN_OOB_READS \
   XNN_DISABLE_TSAN XNN_DISABLE_MSAN XNN_DISABLE_HWASAN XNN_DISABLE_ASAN
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || XNN_COMPILER_HAS_ATTRIBUTE(fallthrough)
 #define XNN_FALLTHROUGH __attribute__((fallthrough));
 #elif defined(__cplusplus) && __cplusplus >= 201703L
 #define XNN_FALLTHROUGH [[fallthrough]];
@@ -412,9 +412,16 @@
 #define XNN_LOG2_SIZEOF_UINT8_T 0   // log2(sizeof(uint8_t))
 #define XNN_LOG2_SIZEOF_INT16_T 1   // log2(sizeof(int16_t))
 #define XNN_LOG2_SIZEOF_UINT16_T 1  // log2(sizeof(uint16_t))
-#define XNN_LOG2_SIZEOF_HALF 1      // log2(sizeof(half))
+#define XNN_LOG2_SIZEOF_FLOAT16 1   // log2(sizeof(xnn_float16))
+#define XNN_LOG2_SIZEOF_BFLOAT16 1  // log2(sizeof(xnn_bfloat16))
 #define XNN_LOG2_SIZEOF_FLOAT 2     // log2(sizeof(float))
 #define XNN_LOG2_SIZEOF_INT32_T 2   // log2(sizeof(int32_t))
 #define XNN_LOG2_SIZEOF_UINT32_T 2  // log2(sizeof(uint32_t))
+
+#define XNN_LOG2_BIT_SIZEOF_INT4 2  // log2(4)
+#define XNN_LOG2_BIT_SIZEOF_UINT4 2  // log2(4)
+
+#define XNN_LOG2_BIT_SIZEOF_INT2 1  // log2(2)
+#define XNN_LOG2_BIT_SIZEOF_UINT2 1  // log2(2)
 
 #endif  // XNNPACK_SRC_XNNPACK_COMMON_H_

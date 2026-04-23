@@ -116,9 +116,12 @@ AffineTransform ComputeTexelToSizeUnitTransform(
   AffineTransform uv_offset = AffineTransform::Translate(layer.offset);
   // Transform from UV space (where the texture image is a unit square) to
   // size-unit space (where distance is measured in the layer's chosen
-  // `TextureSizeUnit`).
+  // `TextureSizeUnit`). Stamping textures don't use TextureSizeUnit and stay
+  // in texture UV space.
   AffineTransform uv_to_size_unit =
-      AffineTransform::Scale(layer.size.x, layer.size.y);
+      layer.mapping == BrushPaint::TextureMapping::kStamping
+          ? AffineTransform::Identity()
+          : AffineTransform::Scale(layer.size.x, layer.size.y);
   return uv_to_size_unit * uv_offset * texel_to_uv;
 }
 
@@ -128,6 +131,11 @@ AffineTransform ComputeTexelToSizeUnitTransform(
 AffineTransform ComputeSizeUnitToStrokeSpaceTransform(
     const BrushPaint::TextureLayer& layer, float brush_size,
     const StrokeInputBatch& inputs) {
+  if (layer.mapping == BrushPaint::TextureMapping::kStamping) {
+    // Stamping textures don't use TextureOrigin or TextureSizeUnit.
+    return AffineTransform::Identity();
+  }
+
   // Transform from size-unit space (where distance is measured in the layer's
   // chosen `TextureSizeUnit`) to stroke space (where distance is measured in
   // stroke coordinates).
@@ -137,7 +145,6 @@ AffineTransform ComputeSizeUnitToStrokeSpaceTransform(
       size_unit_to_stroke = AffineTransform::Scale(brush_size);
       break;
     case BrushPaint::TextureSizeUnit::kStrokeCoordinates:
-      size_unit_to_stroke = AffineTransform::Identity();
       break;
     case BrushPaint::TextureSizeUnit::kStrokeSize:
       // TODO: b/336835642 - Implement support for `kStrokeSize`.
@@ -152,13 +159,13 @@ AffineTransform ComputeSizeUnitToStrokeSpaceTransform(
     case BrushPaint::TextureOrigin::kFirstStrokeInput:
       if (!inputs.IsEmpty()) {
         stroke_space_offset =
-            AffineTransform::Translate(inputs.Get(0).position.Offset());
+            AffineTransform::Translate(inputs.First().position.Offset());
       }
       break;
     case BrushPaint::TextureOrigin::kLastStrokeInput:
       if (!inputs.IsEmpty()) {
-        stroke_space_offset = AffineTransform::Translate(
-            inputs.Get(inputs.Size() - 1).position.Offset());
+        stroke_space_offset =
+            AffineTransform::Translate(inputs.Last().position.Offset());
       }
       break;
   }

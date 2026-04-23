@@ -65,6 +65,7 @@
 #include "printing/mojom/print.mojom.h"
 #include "printing/nup_parameters.h"
 #include "printing/print_job_constants.h"
+#include "printing/printing_features.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
@@ -333,6 +334,10 @@ void AddPrintPreviewFlags(content::WebUIDataSource* source, Profile* profile) {
   source->AddBoolean("useSystemDefaultPrinter", system_default_printer);
 #endif
 
+  source->AddBoolean("alignPdfDefaultPrintSettingsWithHTML",
+                     base::FeatureList::IsEnabled(
+                         features::kAlignPdfDefaultPrintSettingsWithHTML));
+
   source->AddBoolean(
       "isEnterpriseManaged",
       policy::ManagementServiceFactory::GetForPlatform()->IsManaged());
@@ -411,7 +416,7 @@ bool PrintPreviewUIConfig::IsWebUIEnabled(
 }
 
 bool PrintPreviewUIConfig::ShouldHandleURL(const GURL& url) {
-  return url.path() == "/" || url.path() == "/test_loader.html";
+  return url.GetPath() == "/" || url.GetPath() == "/test_loader.html";
 }
 
 PrintPreviewUIConfig::~PrintPreviewUIConfig() = default;

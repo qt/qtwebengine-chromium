@@ -15,13 +15,11 @@
 
 #include <cstdint>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "base/bits.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
-#include "base/files/file_util.h"
 #include "base/functional/callback.h"
 #include "base/rand_util.h"
 #include "base/run_loop.h"
@@ -46,6 +44,7 @@
 #include "media/gpu/test/image_quality_metrics.h"
 #include "media/gpu/test/video_test_environment.h"
 #include "media/gpu/video_frame_mapper_factory.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "ui/gfx/overlay_transform.h"
 #include "ui/gl/gl_bindings.h"
@@ -484,7 +483,7 @@ scoped_refptr<VideoFrame> ProcessFrameLibyuv(scoped_refptr<VideoFrame> in_frame,
   // steps for a given frame. Some of these conversions are not completely
   // lossless, so we want to minimize distortion.
   std::vector<FrameState> frame_states = {FrameState(in_fourcc, false)};
-  std::unordered_set<FrameState> seen_states;
+  absl::flat_hash_set<FrameState> seen_states;
   std::vector<std::vector<
       base::RepeatingCallback<scoped_refptr<VideoFrame>(const VideoFrame&)>>>
       paths = {{}};

@@ -833,14 +833,14 @@ class UniformityGraph {
 
             [&](const ast::ForLoopStatement* f) {
                 auto* sem_loop = sem_.Get(f);
-                auto* cfx = CreateNode({"loop_start"});
+                auto* cf_iter_start = CreateNode({"loop_start"});
 
                 // Insert the initializer before the loop.
-                auto* cf_init = cf;
+                auto* cf_init_end = cf;
                 if (f->initializer) {
-                    cf_init = ProcessStatement(cf, f->initializer);
+                    cf_init_end = ProcessStatement(cf, f->initializer);
                 }
-                auto* cf_start = cf_init;
+                auto* cf_body_start = cf_iter_start;
 
                 auto& info = current_function_->LoopSwitchInfoFor(sem_loop);
                 info.type = "forloop";
@@ -855,11 +855,11 @@ class UniformityGraph {
 
                 // Insert the condition at the start of the loop body.
                 if (f->condition) {
-                    auto [cf_cond, v] = ProcessExpression(cfx, f->condition);
+                    auto [cf_cond, v] = ProcessExpression(cf_iter_start, f->condition);
                     auto* cf_condition_end = CreateNode({"for_condition_CFend"}, f);
                     cf_condition_end->affects_control_flow = true;
                     cf_condition_end->AddEdge(v);
-                    cf_start = cf_condition_end;
+                    cf_body_start = cf_condition_end;
 
                     // Propagate assignments to the loop exit nodes.
                     for (auto& var : current_function_->local_var_decls) {
@@ -870,13 +870,17 @@ class UniformityGraph {
                         exit_node->AddEdge(current_function_->variables.Get(var));
                     }
                 }
-                auto* cf1 = ProcessStatement(cf_start, f->body);
+                auto* cf1 = ProcessStatement(cf_body_start, f->body);
 
                 auto& loop_body_behavior = sem_.Get(f->body)->Behaviors();
+                const bool body_has_next_or_continue =
+                    loop_body_behavior.Contains(sem::Behavior::kNext) ||
+                    loop_body_behavior.Contains(sem::Behavior::kContinue);
+                const bool body_has_return = loop_body_behavior.Contains(sem::Behavior::kReturn);
 
+                auto* cf_end_of_iter = cf1;
                 // Insert the continuing statement at the end of the loop body, if it is reachable.
-                if (f->continuing && (loop_body_behavior.Contains(sem::Behavior::kNext) ||
-                                      loop_body_behavior.Contains(sem::Behavior::kContinue))) {
+                if (f->continuing && body_has_next_or_continue) {
                     // Set up input nodes for the continuing block, to merge data flow paths from
                     // all blocks that branch to the continuing block.
                     for (auto v : info.var_continuing_nodes) {
@@ -895,11 +899,18 @@ class UniformityGraph {
                     }
 
                     auto* cf2 = ProcessStatement(cf1, f->continuing);
-                    cfx->AddEdge(cf2);
-                } else {
-                    cfx->AddEdge(cf1);
+                    cf_end_of_iter = cf2;
                 }
-                cfx->AddEdge(cf);
+                if (body_has_next_or_continue) {
+                    // The backedge of the loop is reachable in a static sense.
+                    // This edge allows non-uniformity present at the end of the
+                    // iteration to affect the next iteration.
+                    cf_iter_start->AddEdge(cf_end_of_iter);
+                }
+                // Desugaring the for-loop to a loop-loop moves the initializer
+                // to just before the loop construct. So 'CF' in the spec rules for
+                // loop{} is represented by cf_init_end.
+                cf_iter_start->AddEdge(cf_init_end);
 
                 // Add edges from variable loop input nodes to their values at the end of the loop
                 // (including the loop continuing statement).
@@ -925,11 +936,23 @@ class UniformityGraph {
 
                 current_function_->RemoveLoopSwitchInfoFor(sem_loop);
 
-                if (sem_loop->Behaviors() == sem::Behaviors{sem::Behavior::kNext}) {
-                    return cf;
-                } else {
-                    return cfx;
+                // Return the resulting control flow node.
+                // This structures the case analysis differently from the spec
+                // text in https://github.com/gpuweb/gpuweb/pull/5419
+                if (body_has_return) {
+                    if (body_has_next_or_continue) {
+                        // Control (statically) reaches the end of the iteration,
+                        // and then back to the top of the next iteration.
+                        return cf_iter_start;
+                    } else {
+                        // Control does not statically reach the end of the
+                        // iteration, nor the continuing block (update clause).
+                        return cf1;
+                    }
                 }
+                // When the loop does not include a return, divergence introduced
+                // by the loop resolves at the end of the loop.
+                return cf;
             },
 
             [&](const ast::WhileStatement* w) {
@@ -1121,7 +1144,13 @@ class UniformityGraph {
                 // processing the loop body BlockStatement. This is so that variable declarations
                 // inside the loop body are visible to the continuing statement.
                 auto* cf1 = ProcessStatement(cfx, l->body);
-                cfx->AddEdge(cf1);
+                const auto& body_behaviors = sem_.Get(l->body)->Behaviors();
+                if (body_behaviors.Contains(sem::Behavior::kNext) ||
+                    body_behaviors.Contains(sem::Behavior::kContinue)) {
+                    // Control reaches the backedge, so add an edge from the top
+                    // of the loop to the latch block.
+                    cfx->AddEdge(cf1);
+                }
                 cfx->AddEdge(cf);
 
                 // Set each variable's exit node as its value in the outer scope.
@@ -1131,10 +1160,10 @@ class UniformityGraph {
 
                 current_function_->RemoveLoopSwitchInfoFor(sem_loop);
 
-                if (sem_loop->Behaviors() == sem::Behaviors{sem::Behavior::kNext}) {
-                    return cf;
+                if (sem_loop->Behaviors().Contains(sem::Behavior::kReturn)) {
+                    return cf1;
                 } else {
-                    return cfx;
+                    return cf;
                 }
             },
 
@@ -1268,6 +1297,19 @@ class UniformityGraph {
             TINT_ICE_ON_NO_MATCH);
     }
 
+    /// @returns true if @p builtin is workgroup-uniform
+    bool IsWorkgroupUniform(core::BuiltinValue builtin) {
+        switch (builtin) {
+            case core::BuiltinValue::kNumSubgroups:
+            case core::BuiltinValue::kNumWorkgroups:
+            case core::BuiltinValue::kSubgroupSize:
+            case core::BuiltinValue::kWorkgroupId:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     /// Process an identifier expression.
     /// @param cf the input control flow node
     /// @param ident the identifier expression to process
@@ -1278,24 +1320,14 @@ class UniformityGraph {
                                                    bool load_rule = false) {
         // Helper to check if the entry point attribute of `obj` indicates non-uniformity.
         auto has_nonuniform_entry_point_attribute = [&](auto* obj, auto* entry_point) {
-            // Only the num_workgroups and workgroup_id builtins, and subgroup_size builtin used in
-            // compute stage are uniform.
+            // Only the num_subgroups, num_workgroups and workgroup_id builtins, and subgroup_size
+            // builtin used in compute stage are uniform.
             if (auto* builtin_attr = ast::GetAttribute<ast::BuiltinAttribute>(obj->attributes)) {
-                auto builtin = builtin_attr->builtin;
-                if (builtin == core::BuiltinValue::kNumWorkgroups ||
-                    builtin == core::BuiltinValue::kWorkgroupId) {
-                    return false;
-                }
-                if (builtin == core::BuiltinValue::kSubgroupSize) {
-                    if (entry_point->PipelineStage() == ast::PipelineStage::kCompute) {
-                        // Subgroup size is uniform in compute.
-                        return false;
-                    } else {
-                        // Currently the only other allowed usage for subgroup_size is in fragment.
-                        TINT_ASSERT(entry_point->PipelineStage() == ast::PipelineStage::kFragment);
-                        // Subgroup size is considered to be varying for fragment.
-                        return true;
-                    }
+                // Some builtins are workgroup-uniform in compute stages.
+                // All builtins are non-uniform in non-compute stages.
+                // Notably, we consider `subgroup_size` to be non-uniform in fragment shaders.
+                if (entry_point->PipelineStage() == ast::PipelineStage::kCompute) {
+                    return !IsWorkgroupUniform(builtin_attr->builtin);
                 }
             }
             return true;

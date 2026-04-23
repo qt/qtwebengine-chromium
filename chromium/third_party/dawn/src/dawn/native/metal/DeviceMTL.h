@@ -68,7 +68,7 @@ class Device final : public DeviceBase {
                                        BufferBase* destination,
                                        uint64_t destinationOffset,
                                        uint64_t size) override;
-    MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
+    MaybeError CopyFromStagingToTextureImpl(BufferBase* source,
                                             const TexelCopyBufferLayout& dataLayout,
                                             const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
@@ -112,8 +112,7 @@ class Device final : public DeviceBase {
     ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-        const std::vector<tint::wgsl::Extension>& internalExtensions,
-        ShaderModuleParseResult* parseResult) override;
+        const std::vector<tint::wgsl::Extension>& internalExtensions) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
         SwapChainBase* previousSwapChain,

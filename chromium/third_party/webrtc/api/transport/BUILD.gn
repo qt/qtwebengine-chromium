@@ -82,6 +82,7 @@ rtc_library("goog_cc") {
     "..:network_state_predictor_api",
     "../../api/units:time_delta",
     "../../modules/congestion_controller/goog_cc",
+    "../../modules/congestion_controller/goog_cc_scream_network_controller",
     "../../rtc_base/system:rtc_export",
   ]
 }
@@ -89,7 +90,10 @@ rtc_library("goog_cc") {
 rtc_source_set("sctp_transport_factory_interface") {
   visibility = [ "*" ]
   sources = [ "sctp_transport_factory_interface.h" ]
-  deps = [ "../../api/environment" ]
+  deps = [
+    "..:field_trials_view",
+    "../../api/environment",
+  ]
 }
 
 rtc_library("stun_types") {

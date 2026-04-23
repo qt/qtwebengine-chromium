@@ -6,7 +6,6 @@
 
 #include <utility>
 
-#include "base/functional/callback_forward.h"
 #include "base/metrics/histogram_macros.h"
 #include "components/autofill/content/browser/content_autofill_client.h"
 #include "components/autofill/content/browser/content_autofill_driver.h"
@@ -34,6 +33,7 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "mojo/public/cpp/bindings/message.h"
@@ -283,14 +283,6 @@ void ContentPasswordManagerDriver::FillChangePasswordForm(
   }
 }
 
-void ContentPasswordManagerDriver::SubmitFormWithEnter(
-    autofill::FieldRendererId field,
-    base::OnceCallback<void(bool)> success_callback) {
-  if (const auto& agent = GetPasswordAutofillAgent()) {
-    agent->SubmitFormWithEnter(field, std::move(success_callback));
-  }
-}
-
 void ContentPasswordManagerDriver::FillSuggestion(
     const std::u16string& username,
     const std::u16string& password,
@@ -388,6 +380,18 @@ bool ContentPasswordManagerDriver::IsInPrimaryMainFrame() const {
   return render_frame_host_->IsInPrimaryMainFrame();
 }
 
+bool ContentPasswordManagerDriver::IsNestedWithinFencedFrame() const {
+  return render_frame_host_->IsNestedWithinFencedFrame();
+}
+
+bool ContentPasswordManagerDriver::IsDirectChildOfPrimaryMainFrame() const {
+  // If it has no parent, returns `false` by default.
+  if (!render_frame_host_->GetParent()) {
+    return false;
+  }
+  return render_frame_host_->GetParent()->IsInPrimaryMainFrame();
+}
+
 bool ContentPasswordManagerDriver::CanShowAutofillUi() const {
   // Don't show AutofillUi for inactive RenderFrameHost.
   return render_frame_host_->IsActive();
@@ -400,6 +404,20 @@ const GURL& ContentPasswordManagerDriver::GetLastCommittedURL() const {
 const url::Origin& ContentPasswordManagerDriver::GetLastCommittedOrigin()
     const {
   return render_frame_host_->GetLastCommittedOrigin();
+}
+
+void ContentPasswordManagerDriver::CheckViewAreaVisible(
+    autofill::FieldRendererId field_id,
+    base::OnceCallback<void(bool)> callback) {
+  if (const auto& agent = GetPasswordAutofillAgent()) {
+    agent->CheckViewAreaVisible(field_id, std::move(callback));
+  }
+}
+
+autofill::AutofillDriver* ContentPasswordManagerDriver::GetAutofillDriver()
+    const {
+  return autofill::ContentAutofillDriver::GetForRenderFrameHost(
+      render_frame_host());
 }
 
 void ContentPasswordManagerDriver::AnnotateFieldsWithParsingResult(

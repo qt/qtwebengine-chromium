@@ -44,6 +44,7 @@
 #include "net/base/features.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom.h"
+#include "url/gurl.h"
 
 using blink::IndexedDBKey;
 using blink::IndexedDBKeyPath;
@@ -65,9 +66,7 @@ int64_t GetId(indexed_db::BackingStore::Database& db) {
 
 class LevelDbBackingStoreTest : public BackingStoreTestBase {
  public:
-  LevelDbBackingStoreTest()
-      : sqlite_override_(
-            BucketContext::OverrideShouldUseSqliteForTesting(false)) {}
+  LevelDbBackingStoreTest() : BackingStoreTestBase(/*use_sqlite=*/false) {}
 
   LevelDbBackingStoreTest(const LevelDbBackingStoreTest&) = delete;
   LevelDbBackingStoreTest& operator=(const LevelDbBackingStoreTest&) = delete;
@@ -76,9 +75,6 @@ class LevelDbBackingStoreTest : public BackingStoreTestBase {
     return static_cast<level_db::BackingStore*>(
         BackingStoreTestBase::backing_store());
   }
-
- private:
-  base::AutoReset<std::optional<bool>> sqlite_override_;
 };
 
 class LevelDbBackingStoreTestForThirdPartyStoragePartitioning
@@ -111,7 +107,8 @@ enum class ExternalObjectTestType {
 class LevelDbBackingStoreWithExternalObjectsTestBase
     : public BackingStoreWithExternalObjectsTestBase {
  public:
-  LevelDbBackingStoreWithExternalObjectsTestBase() = default;
+  LevelDbBackingStoreWithExternalObjectsTestBase()
+      : BackingStoreWithExternalObjectsTestBase(/*use_sqlite=*/false) {}
 
   LevelDbBackingStoreWithExternalObjectsTestBase(
       const LevelDbBackingStoreWithExternalObjectsTestBase&) = delete;
@@ -391,7 +388,7 @@ TEST_P(LevelDbBackingStoreTestWithExternalObjects, ActiveBlobJournal) {
   IndexedDBValue read_result_value = std::move(result.value());
 
   CommitTransactionAndVerify(*transaction2);
-  EXPECT_EQ(value3_.bits, read_result_value.bits);
+  EXPECT_EQ(base::span(value3_.bits), base::span(read_result_value.bits));
   EXPECT_TRUE(CheckBlobInfoMatches(read_result_value.external_objects));
   EXPECT_TRUE(CheckBlobReadsMatchWrites(read_result_value.external_objects));
   for (const IndexedDBExternalObject& external_object :
@@ -495,7 +492,7 @@ TEST_F(LevelDbBackingStoreTest, HighIds) {
     transaction2.Begin(CreateDummyLock());
     auto result = transaction2.GetRecord(high_object_store_id, key1);
     EXPECT_TRUE(result.has_value());
-    EXPECT_EQ(value1.bits, result->bits);
+    EXPECT_EQ(base::span(value1.bits), base::span(result->bits));
 
     EXPECT_FALSE(transaction2
                      .GetFirstPrimaryKeyForIndexKey(
@@ -1018,7 +1015,7 @@ TEST_F(LevelDbBackingStoreTestWithBlobs, SchemaUpgradeV3ToV4) {
 
   // Finish up transaction2, verifying blob reads.
   CommitTransactionAndVerify(transaction2);
-  EXPECT_EQ(value3_.bits, result_value.bits);
+  EXPECT_EQ(base::span(value3_.bits), base::span(result_value.bits));
   EXPECT_TRUE(CheckBlobInfoMatches(result_value.external_objects));
 }
 
@@ -1036,7 +1033,7 @@ TEST_F(LevelDbBackingStoreTestWithBlobs, SchemaUpgradeV4ToV5) {
   // to disk, so it's important to verify that a database with empty blobs
   // should be considered still valid.
   external_objects().push_back(
-      CreateBlobInfo(u"empty blob", u"file type", base::Time::Now(), 0u));
+      CreateFileInfo(u"empty blob", u"file type", base::Time::Now(), ""));
   // The V5 migration checks files on disk, so make sure our fake blob
   // context writes something there to check.
   blob_context_->SetWriteFilesToDisk(true);

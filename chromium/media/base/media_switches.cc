@@ -10,6 +10,7 @@
 
 #include "base/command_line.h"
 #include "base/feature_list.h"
+#include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
 #include "build/chromecast_buildflags.h"
@@ -33,93 +34,106 @@
 
 namespace switches {
 
+namespace autoplay {
+
+// Autoplay policy that requires a document user activation.
+const char kDocumentUserActivationRequiredPolicy[] =
+    "document-user-activation-required";
+
+// Autoplay policy that does not require any user gesture.
+const char kNoUserGestureRequiredPolicy[] = "no-user-gesture-required";
+
+// Autoplay policy to require a user gesture in order to play.
+const char kUserGestureRequiredPolicy[] = "user-gesture-required";
+
+}  // namespace autoplay
+
 // Allow users to specify a custom buffer size for debugging purpose.
 const char kAudioBufferSize[] = "audio-buffer-size";
 
-#if BUILDFLAG(ENABLE_PASSTHROUGH_AUDIO_CODECS)
-// Audio codecs supported by the HDMI sink is retrieved from the audio
-// service process. EDID contains the Short Audio Descriptors, which list
-// the audio decoders supported, and the information is presented as a
-// bitmask of supported audio codecs.
-const char kAudioCodecsFromEDID[] = "audio-codecs-from-edid";
-#endif  // BUILDFLAG(ENABLE_PASSTHROUGH_AUDIO_CODECS)
+// Skip the permission prompt for Captured Surface Control.
+const char kAutoGrantCapturedSurfaceControlPrompt[] =
+    "auto-grant-captured-surface-control-prompt";
 
 // Command line flag name to set the autoplay policy.
 const char kAutoplayPolicy[] = "autoplay-policy";
+
+// NOTE: callers should always use the free functions in
+// /media/cast/encoding/encoding_support.h instead of accessing these features
+// directly.
+//
+// TODO(crbug.com/286443864): Guard Cast Sender flags with !IS_ANDROID.
+//
+// If enabled, completely disables use of H264 hardware encoding for Cast
+// Streaming sessions. Takes precedence over
+// kCastStreamingForceEnableHardwareH264.
+const char kCastStreamingForceDisableHardwareH264[] =
+    "cast-streaming-force-disable-hardware-h264";
+
+// If enabled, completely disables use of VP8 hardware encoding for Cast
+// Streaming sessions. Takes precedence over
+// kCastStreamingForceEnableHardwareVp8.
+const char kCastStreamingForceDisableHardwareVp8[] =
+    "cast-streaming-force-disable-hardware-vp8";
+
+// If enabled, completely disables use of VP9 hardware encoding for Cast
+// Streaming sessions. Takes precedence over
+// kCastStreamingForceEnableHardwareVp9.
+const char kCastStreamingForceDisableHardwareVp9[] =
+    "cast-streaming-force-disable-hardware-vp9";
+
+// If enabled, allows use of H264 hardware encoding for Cast Streaming sessions,
+// even on platforms where it is disabled due to performance and reliability
+// issues. kCastStreamingForceDisableHardwareH264 must be disabled for this flag
+// to take effect.
+const char kCastStreamingForceEnableHardwareH264[] =
+    "cast-streaming-force-enable-hardware-h264";
+
+// If enabled, allows use of VP8 hardware encoding for Cast Streaming sessions,
+// even on platforms where it is disabled due to performance and reliability
+// issues. kCastStreamingForceDisableHardwareVp8 must be disabled for this flag
+// to take effect.
+const char kCastStreamingForceEnableHardwareVp8[] =
+    "cast-streaming-force-enable-hardware-vp8";
+
+// If enabled, allows use of VP9 hardware encoding for Cast Streaming sessions,
+// even on platforms where it is disabled due to performance and reliability
+// issues. kCastStreamingForceDisableHardwareVp9 must be disabled for this flag
+// to take effect.
+const char kCastStreamingForceEnableHardwareVp9[] =
+    "cast-streaming-force-enable-hardware-vp9";
+
+// Specifies the path to the Clear Key CDM for testing, which is necessary to
+// support External Clear Key key system when library CDM is enabled. Note that
+// External Clear Key key system support is also controlled by feature
+// kExternalClearKeyForTesting.
+const char kClearKeyCdmPathForTesting[] = "clear-key-cdm-path-for-testing";
+
+// Disable hardware acceleration of mjpeg decode for captured frame, where
+// available.
+const char kDisableAcceleratedMjpegDecode[] =
+    "disable-accelerated-mjpeg-decode";
 
 // Forces input and output stream creation to use fake audio streams.
 const char kDisableAudioInput[] = "disable-audio-input";
 const char kDisableAudioOutput[] = "disable-audio-output";
 
-// Causes the AudioManager to fail creating audio streams. Used when testing
-// various failure cases.
-const char kFailAudioStreamCreation[] = "fail-audio-stream-creation";
-
-// Set number of threads to use for video decoding.
-const char kVideoThreads[] = "video-threads";
-
 // Do not immediately suspend media in background tabs.
 const char kDisableBackgroundMediaSuspend[] =
     "disable-background-media-suspend";
 
-// Force to report VP9 as an unsupported MIME type.
-const char kReportVp9AsAnUnsupportedMimeType[] =
-    "report-vp9-as-an-unsupported-mime-type";
+// Disables the new rendering algorithm for webrtc, which is designed to improve
+// the rendering smoothness.
+const char kDisableRTCSmoothnessAlgorithm[] =
+    "disable-rtc-smoothness-algorithm";
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FREEBSD) || \
-    BUILDFLAG(IS_SOLARIS)
-// The Alsa device to use when opening an audio input stream.
-const char kAlsaInputDevice[] = "alsa-input-device";
-// The Alsa device to use when opening an audio stream.
-const char kAlsaOutputDevice[] = "alsa-output-device";
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) ||
-        // BUILDFLAG(IS_FREEBSD) || BUILDFLAG(IS_SOLARIS)
+// Sets the default value for the kLiveCaptionEnabled preference to true.
+const char kEnableLiveCaptionPrefForTesting[] =
+    "enable-live-caption-pref-for-testing";
 
-#if BUILDFLAG(IS_WIN)
-// Use exclusive mode audio streaming for Windows Vista and higher.
-// Leads to lower latencies for audio streams which uses the
-// AudioParameters::AUDIO_PCM_LOW_LATENCY audio path.
-// See http://msdn.microsoft.com/en-us/library/windows/desktop/dd370844.aspx
-// for details.
-const char kEnableExclusiveAudio[] = "enable-exclusive-audio";
-
-// Use Windows WaveOut/In audio API even if Core Audio is supported.
-const char kForceWaveAudio[] = "force-wave-audio";
-
-// Instead of always using the hardware channel layout, check if a driver
-// supports the source channel layout.  Avoids outputting empty channels and
-// permits drivers to enable stereo to multichannel expansion.  Kept behind a
-// flag since some drivers lie about supported layouts and hang when used.  See
-// http://crbug.com/259165 for more details.
-const char kTrySupportedChannelLayouts[] = "try-supported-channel-layouts";
-
-// Number of buffers to use for WaveOut.
-const char kWaveOutBuffers[] = "waveout-buffers";
-#endif  // BUILDFLAG(IS_WIN)
-
-#if BUILDFLAG(IS_FUCHSIA)
-// Enables protected buffers for encrypted video streams.
-const char kEnableProtectedVideoBuffers[] = "enable-protected-video-buffers";
-
-// Forces protected memory for all output video buffers generated by
-// FuchsiaVideoDecoder, including unencrypted streams. Ignored unless
-// --enable-protected-video-buffers is also specified.
-const char kForceProtectedVideoOutputBuffers[] =
-    "force-protected-video-output-buffers";
-
-// Minimum size for buffer size used for output video frames in
-// FuchsiaVideoDecoder. May be set to avoid re-allocating video buffers when an
-// application upgrades video resolution mid-stream.
-const char kMinVideoDecoderOutputBufferSize[] =
-    "min-video-decoder-output-buffer-size";
-
-// Forces AudioManagerFuchsia to assume that the AudioCapturer implements echo
-// cancellation.
-// TODO(crbug.com/42050621): Remove this once AudioManagerFuchsia is updated to
-// get this information from AudioCapturerFactory.
-const char kAudioCapturerWithEchoCancellation[] =
-    "audio-capturer-with-echo-cancellation";
-#endif  // BUILDFLAG(IS_FUCHSIA)
+// Causes the AudioManager to fail creating audio streams. Used when testing
+// various failure cases.
+const char kFailAudioStreamCreation[] = "fail-audio-stream-creation";
 
 // Inserts fake background blur state into `VideoFrameMetadata`. The value
 // represents the period in milliseconds. eg. Setting it to 1000ms, will cause
@@ -128,68 +142,8 @@ const char kAudioCapturerWithEchoCancellation[] =
 const char kFakeBackgroundBlurTogglePeriod[] =
     "fake-background-blur-toggle-period";
 
-#if BUILDFLAG(USE_CRAS)
-// Use CRAS, the ChromeOS audio server.
-const char kUseCras[] = "use-cras";
-// Enforce system audio echo cancellation.
-const char kSystemAecEnabled[] = "system-aec-enabled";
-#endif  // BUILDFLAG(USE_CRAS)
-
-// For automated testing of protected content, this switch allows specific
-// domains (e.g. example.com) to always allow the permission to share the
-// protected media identifier. In this context, domain does not include the
-// port number. User's content settings will not be affected by enabling this
-// switch.
-// Reference: http://crbug.com/718608
-// Example:
-// --unsafely-allow-protected-media-identifier-for-domain=a.com,b.ca
-const char kUnsafelyAllowProtectedMediaIdentifierForDomain[] =
-    "unsafely-allow-protected-media-identifier-for-domain";
-
-// Skip the permission prompt for Captured Surface Control.
-const char kAutoGrantCapturedSurfaceControlPrompt[] =
-    "auto-grant-captured-surface-control-prompt";
-
-// Use fake device for Media Stream to replace actual camera and microphone.
-// For the list of allowed parameters, see
-// FakeVideoCaptureDeviceFactory::ParseFakeDevicesConfigFromOptionsString().
-const char kUseFakeDeviceForMediaStream[] = "use-fake-device-for-media-stream";
-
-// Use an .y4m file to play as the webcam. See the comments in
-// media/capture/video/file_video_capture_device.h for more details.
-const char kUseFileForFakeVideoCapture[] = "use-file-for-fake-video-capture";
-
-// Play a .wav file as the microphone. Note that for WebRTC calls we'll treat
-// the bits as if they came from the microphone, which means you should disable
-// audio processing (lest your audio file will play back distorted). The input
-// file is converted to suit Chrome's audio buses if necessary, so most sane
-// .wav files should work. You can pass either <path> to play the file looping
-// or <path>%noloop to stop after playing the file to completion.
-//
-// Must also be used with kDisableAudioInput or kUseFakeDeviceForMediaStream.
-const char kUseFileForFakeAudioCapture[] = "use-file-for-fake-audio-capture";
-
-// Use a fake device for accelerated decoding of MJPEG. This allows, for
-// example, testing of the communication to the GPU service without requiring
-// actual accelerator hardware to be present.
-const char kUseFakeMjpegDecodeAccelerator[] =
-    "use-fake-mjpeg-decode-accelerator";
-
-// Disable hardware acceleration of mjpeg decode for captured frame, where
-// available.
-const char kDisableAcceleratedMjpegDecode[] =
-    "disable-accelerated-mjpeg-decode";
-
-// Mutes audio sent to the audio device so it is not audible during
-// automated testing.
-const char kMuteAudio[] = "mute-audio";
-
-// Disables the new rendering algorithm for webrtc, which is designed to improve
-// the rendering smoothness.
-const char kDisableRTCSmoothnessAlgorithm[] =
-    "disable-rtc-smoothness-algorithm";
-
 // Force media player using SurfaceView instead of SurfaceTexture on Android.
+// Note: This is used by the Cast playback pipeline and must be kept.
 const char kForceVideoOverlays[] = "force-video-overlays";
 
 // Allows explicitly specifying MSE audio/video buffer sizes as megabytes.
@@ -197,11 +151,9 @@ const char kForceVideoOverlays[] = "force-video-overlays";
 const char kMSEAudioBufferSizeLimitMb[] = "mse-audio-buffer-size-limit-mb";
 const char kMSEVideoBufferSizeLimitMb[] = "mse-video-buffer-size-limit-mb";
 
-// Specifies the path to the Clear Key CDM for testing, which is necessary to
-// support External Clear Key key system when library CDM is enabled. Note that
-// External Clear Key key system support is also controlled by feature
-// kExternalClearKeyForTesting.
-const char kClearKeyCdmPathForTesting[] = "clear-key-cdm-path-for-testing";
+// Mutes audio sent to the audio device so it is not audible during
+// automated testing.
+const char kMuteAudio[] = "mute-audio";
 
 // Overrides the default enabled library CDM interface version(s) with the one
 // specified with this switch, which will be the only version enabled. For
@@ -233,9 +185,56 @@ const char kOverrideEnabledCdmInterfaceVersion[] =
 const char kOverrideHardwareSecureCodecsForTesting[] =
     "override-hardware-secure-codecs-for-testing";
 
-// Sets the default value for the kLiveCaptionEnabled preference to true.
-const char kEnableLiveCaptionPrefForTesting[] =
-    "enable-live-caption-pref-for-testing";
+// Force to report VP9 as an unsupported MIME type.
+const char kReportVp9AsAnUnsupportedMimeType[] =
+    "report-vp9-as-an-unsupported-mime-type";
+
+// For automated testing of protected content, this switch allows specific
+// domains (e.g. example.com) to always allow the permission to share the
+// protected media identifier. In this context, domain does not include the
+// port number. User's content settings will not be affected by enabling this
+// switch.
+// Reference: https://crbug.com/41317087
+// Example:
+// --unsafely-allow-protected-media-identifier-for-domain=a.com,b.ca
+const char kUnsafelyAllowProtectedMediaIdentifierForDomain[] =
+    "unsafely-allow-protected-media-identifier-for-domain";
+
+// Use fake device for Media Stream to replace actual camera and microphone.
+// For the list of allowed parameters, see
+// FakeVideoCaptureDeviceFactory::ParseFakeDevicesConfigFromOptionsString().
+const char kUseFakeDeviceForMediaStream[] = "use-fake-device-for-media-stream";
+
+// Use a fake device for accelerated decoding of MJPEG. This allows, for
+// example, testing of the communication to the GPU service without requiring
+// actual accelerator hardware to be present.
+const char kUseFakeMjpegDecodeAccelerator[] =
+    "use-fake-mjpeg-decode-accelerator";
+
+// Play a .wav file as the microphone. Note that for WebRTC calls we'll treat
+// the bits as if they came from the microphone, which means you should disable
+// audio processing (lest your audio file will play back distorted). The input
+// file is converted to suit Chrome's audio buses if necessary, so most sane
+// .wav files should work. You can pass either <path> to play the file looping
+// or <path>%noloop to stop after playing the file to completion.
+//
+// Must also be used with kDisableAudioInput or kUseFakeDeviceForMediaStream.
+const char kUseFileForFakeAudioCapture[] = "use-file-for-fake-audio-capture";
+
+// Use an .y4m file to play as the webcam. See the comments in
+// media/capture/video/file_video_capture_device.h for more details.
+const char kUseFileForFakeVideoCapture[] = "use-file-for-fake-video-capture";
+
+// Set number of threads to use for video decoding.
+const char kVideoThreads[] = "video-threads";
+
+#if BUILDFLAG(ENABLE_PASSTHROUGH_AUDIO_CODECS)
+// Audio codecs supported by the HDMI sink is retrieved from the audio
+// service process. EDID contains the Short Audio Descriptors, which list
+// the audio decoders supported, and the information is presented as a
+// bitmask of supported audio codecs.
+const char kAudioCodecsFromEDID[] = "audio-codecs-from-edid";
+#endif  // BUILDFLAG(ENABLE_PASSTHROUGH_AUDIO_CODECS)
 
 #if BUILDFLAG(IS_CHROMEOS)
 // Allows remote attestation (RA) in dev mode for testing purpose. Usually RA
@@ -245,27 +244,66 @@ const char kEnableLiveCaptionPrefForTesting[] =
 const char kAllowRAInDevMode[] = "allow-ra-in-dev-mode";
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
-namespace autoplay {
+#if BUILDFLAG(IS_FUCHSIA)
+// Forces AudioManagerFuchsia to assume that the AudioCapturer implements echo
+// cancellation.
+// TODO(crbug.com/42050621): Remove this once AudioManagerFuchsia is updated to
+// get this information from AudioCapturerFactory.
+const char kAudioCapturerWithEchoCancellation[] =
+    "audio-capturer-with-echo-cancellation";
 
-// Autoplay policy that requires a document user activation.
-const char kDocumentUserActivationRequiredPolicy[] =
-    "document-user-activation-required";
+// Enables protected buffers for encrypted video streams.
+const char kEnableProtectedVideoBuffers[] = "enable-protected-video-buffers";
 
-// Autoplay policy that does not require any user gesture.
-const char kNoUserGestureRequiredPolicy[] = "no-user-gesture-required";
+// Forces protected memory for all output video buffers generated by
+// FuchsiaVideoDecoder, including unencrypted streams. Ignored unless
+// --enable-protected-video-buffers is also specified.
+const char kForceProtectedVideoOutputBuffers[] =
+    "force-protected-video-output-buffers";
 
-// Autoplay policy to require a user gesture in order to play.
-const char kUserGestureRequiredPolicy[] = "user-gesture-required";
+// Minimum size for buffer size used for output video frames in
+// FuchsiaVideoDecoder. May be set to avoid re-allocating video buffers when an
+// application upgrades video resolution mid-stream.
+const char kMinVideoDecoderOutputBufferSize[] =
+    "min-video-decoder-output-buffer-size";
+#endif  // BUILDFLAG(IS_FUCHSIA)
 
-}  // namespace autoplay
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FREEBSD) || \
+    BUILDFLAG(IS_SOLARIS)
+// The Alsa device to use when opening an audio input stream.
+const char kAlsaInputDevice[] = "alsa-input-device";
+// The Alsa device to use when opening an audio stream.
+const char kAlsaOutputDevice[] = "alsa-output-device";
+#endif  // BUILDFLAG(IS_LINUX) || ...
 
-#if BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
-// Some (Qualcomm only at the moment) V4L2 video decoders require setting the
-// framerate so that the hardware decoder can scale the clocks efficiently.
-// This provides a mechanism during testing to lock the decoder framerate
-// to a specific value.
-const char kHardwareVideoDecodeFrameRate[] = "hardware-video-decode-framerate";
-#endif
+#if BUILDFLAG(IS_WIN)
+// Use exclusive mode audio streaming for Windows Vista and higher.
+// Leads to lower latencies for audio streams which uses the
+// AudioParameters::AUDIO_PCM_LOW_LATENCY audio path.
+// See http://msdn.microsoft.com/en-us/library/windows/desktop/dd370844.aspx
+// for details.
+const char kEnableExclusiveAudio[] = "enable-exclusive-audio";
+
+// Use Windows WaveOut/In audio API even if Core Audio is supported.
+const char kForceWaveAudio[] = "force-wave-audio";
+
+// Instead of always using the hardware channel layout, check if a driver
+// supports the source channel layout.  Avoids outputting empty channels and
+// permits drivers to enable stereo to multichannel expansion.  Kept behind a
+// flag since some drivers lie about supported layouts and hang when used.  See
+// http://crbug.com/259165 for more details.
+const char kTrySupportedChannelLayouts[] = "try-supported-channel-layouts";
+
+// Number of buffers to use for WaveOut.
+const char kWaveOutBuffers[] = "waveout-buffers";
+#endif  // BUILDFLAG(IS_WIN)
+
+#if BUILDFLAG(USE_CRAS)
+// Enforce system audio echo cancellation.
+const char kSystemAecEnabled[] = "system-aec-enabled";
+// Use CRAS, the ChromeOS audio server.
+const char kUseCras[] = "use-cras";
+#endif  // BUILDFLAG(USE_CRAS)
 
 #if BUILDFLAG(USE_V4L2_CODEC)
 // This is needed for V4L2 testing using VISL (virtual driver) on cros VM with
@@ -273,20 +311,13 @@ const char kHardwareVideoDecodeFrameRate[] = "hardware-video-decode-framerate";
 // vkms.
 const char kEnablePrimaryNodeAccessForVkmsTesting[] =
     "enable-primary-node-access-for-vkms-testing";
-#endif
 
-const char kCastStreamingForceDisableHardwareH264[] =
-    "cast-streaming-force-disable-hardware-h264";
-const char kCastStreamingForceEnableHardwareH264[] =
-    "cast-streaming-force-enable-hardware-h264";
-const char kCastStreamingForceDisableHardwareVp8[] =
-    "cast-streaming-force-disable-hardware-vp8";
-const char kCastStreamingForceEnableHardwareVp8[] =
-    "cast-streaming-force-enable-hardware-vp8";
-const char kCastStreamingForceDisableHardwareVp9[] =
-    "cast-streaming-force-disable-hardware-vp9";
-const char kCastStreamingForceEnableHardwareVp9[] =
-    "cast-streaming-force-enable-hardware-vp9";
+// Some (Qualcomm only at the moment) V4L2 video decoders require setting the
+// framerate so that the hardware decoder can scale the clocks efficiently.
+// This provides a mechanism during testing to lock the decoder framerate
+// to a specific value.
+const char kHardwareVideoDecodeFrameRate[] = "hardware-video-decode-framerate";
+#endif  // BUILDFLAG(USE_V4L2_CODEC)
 
 }  // namespace switches
 
@@ -395,15 +426,10 @@ BASE_FEATURE(kWebrtcMediaCapabilitiesParameters,
 // widevine.
 BASE_FEATURE(kWidevinePersistentLicenseSupport,
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
-             // TODO(crbug.com/423458074): This will rollout slowly as an
-             // experiment eventually becoming disabled by default.
-             base::FEATURE_ENABLED_BY_DEFAULT);
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
-
-// Display the Cast overlay button on the media controls.
-BASE_FEATURE(kMediaCastOverlayButton, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Use AndroidOverlay only if required for secure video playback. This requires
 // that |kOverlayFullscreenVideo| is true, else it is ignored.
@@ -528,12 +554,6 @@ BASE_FEATURE(kAudioFlexibleLoopbackForSystemLoopback,
 BASE_FEATURE(kCrOSEnforceMonoAudioCapture, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
-// Make MSE garbage collection algorithm more aggressive when we are under
-// moderate or critical memory pressure. This will relieve memory pressure by
-// releasing stale data from MSE buffers.
-BASE_FEATURE(kMemoryPressureBasedSourceBufferGC,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 // Controls whether the Mirroring Service will fetch, analyze, and store
 // information on the quality of the session using RTCP logs.
 BASE_FEATURE(kEnableRtcpReporting, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -583,12 +603,10 @@ BASE_FEATURE(kDeferAudioFocusUntilAudible,
 #endif
 );
 
-#if !BUILDFLAG(IS_ANDROID)
 // Allow document picture-in-picture to navigate.  This should be disabled
 // except for testing.
 BASE_FEATURE(kDocumentPictureInPictureNavigation,
              base::FEATURE_DISABLED_BY_DEFAULT);
-#endif  // !BUILDFLAG(IS_ANDROID)
 
 // Adds an animation to document picture-in-picture resizes.
 BASE_FEATURE(kDocumentPictureInPictureAnimateResize,
@@ -652,16 +670,6 @@ BASE_FEATURE(kMediaRemotingWithoutFullscreen,
 );
 #endif
 
-// Show picture-in-picture button in Global Media Controls.
-BASE_FEATURE(kGlobalMediaControlsPictureInPicture,
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
-);
-
 // Enable selection of audio output device in Global Media Controls.
 BASE_FEATURE(kGlobalMediaControlsSeamlessTransfer,
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -688,7 +696,7 @@ BASE_FEATURE(kAcceleratedVideoDecodeLinux,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
-BASE_FEATURE(kAcceleratedVideoDecodeLinuxGL, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kAcceleratedVideoDecodeLinuxGL, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAcceleratedVideoEncodeLinux,
              "AcceleratedVideoEncoder",
@@ -743,10 +751,6 @@ BASE_FEATURE(kV4L2H264TemporalLayerHWEncoding,
 BASE_FEATURE(kVideoBlitColorAccuracy,
              "video-blit-color-accuracy",
              base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Displays new video picture-in-picture controls for the 2024 UI update.
-BASE_FEATURE(kVideoPictureInPictureControlsUpdate2024,
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // A video encoder is allowed to drop a frame in cast mirroring.
 BASE_FEATURE(kCastVideoEncoderFrameDrop, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -843,9 +847,6 @@ BASE_FEATURE(kLiveCaptionUseGreedyTextStabilizer,
 // recognition results.
 BASE_FEATURE(kLiveCaptionUseWaitK, base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Live Caption can be used in multiple languages, as opposed to just English.
-BASE_FEATURE(kLiveCaptionMultiLanguage, base::FEATURE_ENABLED_BY_DEFAULT);
-
 // Enable experimental Live Caption languages.
 BASE_FEATURE(kLiveCaptionExperimentalLanguages,
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -871,12 +872,12 @@ BASE_FEATURE(kFailUrlProvisionFetcherForTesting,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables hardware secure decryption if supported by hardware and CDM.
-// NOTE: This feature is experimental and not officially supported. Users may
-// encounter issues; enabling is discouraged.
+// NOTE: For Windows platform, hardware secure decryption is available via
+// PlayReady SL3000.
 // TODO(xhwang): Currently this is only used for development of new features.
 // Apply this to Android and ChromeOS as well where hardware secure decryption
 // is already available.
-BASE_FEATURE(kHardwareSecureDecryption, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kHardwareSecureDecryption, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // By default, a codec is not supported for hardware secure decryption if it
 // does not support clear lead. This option forces the support for testing.
@@ -942,6 +943,9 @@ BASE_FEATURE(kHardwareMediaKeyHandling,
 
 // Enables a platform-specific resolution cutoff for prioritizing platform
 // decoders over software decoders or vice-versa.
+//
+// Note: This feature is used by ChromeOS tests and shouldn't be removed even
+// though it has long been enabled by default.
 BASE_FEATURE(kResolutionBasedDecoderPriority, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Allows the AutoPictureInPictureTabHelper to automatically enter
@@ -954,11 +958,31 @@ BASE_FEATURE(kAutoPictureInPictureForVideoPlayback,
 BASE_FEATURE(kAutoPictureInPicturePageInfoDetails,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// Enables sending provisioning requests in the body of the POST request rather
+// than encoding it inside the URL.
+// Owner: vpasupathy@chromium.org
+// Bug: 448700051
+BASE_FEATURE(kUsePostBodyForUrlProvisionFetcher,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Treats H.264 SEI recovery points with a `recovery_frame_cnt=0` as keyframes.
+BASE_FEATURE(kTreatSEIRecoveryPointAsKeyframe,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Whether we should show a setting to disable autoplay policy.
 BASE_FEATURE(kAutoplayDisableSettings, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Whether we should allow color space changes to flush AcceleratedVideoDecoder.
 BASE_FEATURE(kAVDColorSpaceChanges, base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Allows Chrome to reconfigure the sink to match the channel count of the
+// source audio data. This ensures opening of an audio output stream to match
+// the source audio data channels, to signal to the downstream audio
+// subsystem that the audio must be processed according to the source audio
+// channel count.
+// TODO(crbug.com/445215599): This should be replaced with a MediaClient
+// mechanism if it works as intended.
+BASE_FEATURE(kMatchSourceAudioChannelLayout, base::FEATURE_DISABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_ANDROID)
 // Allows the enhanced picture-in-picture transition animation that depend on
@@ -970,16 +994,23 @@ BASE_FEATURE(kAllowEnhancedPipTransition, base::FEATURE_ENABLED_BY_DEFAULT);
 // that have registered an auto picture-in-picture action.
 BASE_FEATURE(kAutoPictureInPictureAndroid, base::FEATURE_DISABLED_BY_DEFAULT);
 
+// Enables audio power level analysis on Android to determine webcontents
+// audibility changes. This modifies the behavior of the MediaIndicatorsAndroid
+// feature to achieve a more responsive UI update when audio starts or stops.
+BASE_FEATURE(kEnableAudioMonitoringOnAndroid,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Enables Picture-in-Picture menu item on the video context menu on Android.
 BASE_FEATURE(kContextMenuPictureInPictureAndroid,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables the use of a Surface (ANativeWindow) as the input for the
 // NdkVideoEncodeAccelerator on Android.
-BASE_FEATURE(kEnableSurfaceInputForAndroidVEA,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kSurfaceInputForAndroidVEA, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables block model (LinearBlock) on supported devices.
+// TODO(crbug.com/327625558): Currently block model is buggy and can't be
+// enabled, we need to test it again when Android 17 is released.
 BASE_FEATURE(kMediaCodecBlockModel, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Allow selection of low latency decoders in low delay mode.
@@ -1050,14 +1081,7 @@ BASE_FEATURE(kUseAudioManagerMaxChannelLayout,
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-BASE_FEATURE(kBuiltInHlsPlayer,
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
-);
-
+BASE_FEATURE(kBuiltInHlsPlayer, base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
 
 // TODO(crbug.com/414430336): Consider restricting to IS_CHROMEOS.
@@ -1119,6 +1143,17 @@ BASE_FEATURE(kEnableArmHwdrm, base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // defined(ARCH_CPU_ARM_FAMILY)
 #endif  // BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
 
+#if BUILDFLAG(ENABLE_OPENH264)
+// Run-time feature for OpenH264 software encoder.
+BASE_FEATURE(kOpenH264SoftwareEncoder,
+#if BUILDFLAG(IS_ANDROID)
+             base::FEATURE_DISABLED_BY_DEFAULT
+#else
+             base::FEATURE_ENABLED_BY_DEFAULT
+#endif
+);
+#endif  // BUILDFLAG(ENABLE_OPENH264)
+
 #if BUILDFLAG(IS_WIN)
 // Enables DirectShow GetPhotoState implementation
 // Created to act as a kill switch by disabling it, in the case of the
@@ -1148,44 +1183,12 @@ BASE_FEATURE(kMediaFoundationD3D11VideoCaptureZeroCopy,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables the use of MediaFoundationRenderer for clear content on supported
-// systems.
+// systems. This is for testing purposes, and is not intended to be enabled
+// more broadly.
 BASE_FEATURE(kMediaFoundationClearPlayback, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enable VP9 kSVC decoding with HW decoder for webrtc use case on Windows.
 BASE_FEATURE(kD3D11Vp9kSVCHWDecoding, base::FEATURE_DISABLED_BY_DEFAULT);
-
-// The Media Foundation Rendering Strategy determines which presentation mode
-// Media Foundation Renderer should use for presenting clear content. This
-// strategy has no impact for protected content, which must always use Direct
-// Composition.
-//
-// The strategy may be one of the following options:
-// 1.) Direct Composition: Media Foundation Renderer will use a Windowsless
-//     Swapchain to present directly to a Direct Composition surface.
-// 2.) Frame Server: Media Foundation Renderer will produce Video Frames that
-//     may be passed through the Chromium video frame rendering pipeline.
-// 3.) Dynamic: Media Foundation Renderer may freely switch between Direct
-//     Composition & Frame Server mode based on the current operating
-//     conditions.
-//
-// Command line invocation:
-// --enable-features=MediaFoundationClearRendering:strategy/direct-composition
-// --enable-features=MediaFoundationClearRendering:strategy/frame-server
-// --enable-features=MediaFoundationClearRendering:strategy/dynamic
-BASE_FEATURE(kMediaFoundationClearRendering, base::FEATURE_ENABLED_BY_DEFAULT);
-
-constexpr base::FeatureParam<MediaFoundationClearRenderingStrategy>::Option
-    kMediaFoundationClearRenderingStrategyOptions[] = {
-        {MediaFoundationClearRenderingStrategy::kDirectComposition,
-         "direct-composition"},
-        {MediaFoundationClearRenderingStrategy::kFrameServer, "frame-server"},
-        {MediaFoundationClearRenderingStrategy::kDynamic, "dynamic"}};
-
-const base::FeatureParam<MediaFoundationClearRenderingStrategy>
-    kMediaFoundationClearRenderingStrategyParam{
-        &kMediaFoundationClearRendering, "strategy",
-        MediaFoundationClearRenderingStrategy::kDynamic,
-        &kMediaFoundationClearRenderingStrategyOptions};
 
 BASE_FEATURE(kMediaFoundationBatchRead, base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -1233,6 +1236,11 @@ BASE_FEATURE(kUseOutOfProcessVideoDecoding,
              base::FEATURE_DISABLED_BY_DEFAULT
 #endif
 );
+
+// Use shared image interface to transport video frame resources.
+// TODO(crbug.com/457296322): Enable after fixing issue where SharedImages are
+// missing from the SharedImageManager.
+BASE_FEATURE(kUseSharedImageInOOPVDProcess, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
@@ -1385,12 +1393,6 @@ BASE_FEATURE(kUseFakeDeviceForMediaStream,
 BASE_FEATURE(kMediaStreamAccurateDroppedFrameCount,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_FUCHSIA)
-// Enables effects for camera and mic streams.
-BASE_FEATURE(kCameraMicEffects, base::FEATURE_DISABLED_BY_DEFAULT);
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS) &&
-        // !BUILDFLAG(IS_FUCHSIA)
-
 // Controls whether mirroring negotiations will include the AV1 codec for video
 // encoding.
 //
@@ -1440,6 +1442,7 @@ BASE_FEATURE(kFuchsiaMediacodecVideoEncoder, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Controls whether to pre-dispatch more decode tasks when pending decodes is
 // smaller than maximum supported decodes as advertiszed by decoder.
+// Note: This is controlled on a per-board basis by ChromeOS and must be kept.
 BASE_FEATURE(kVideoDecodeBatching, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Safety switch to allow us to revert to the previous behavior of using the
@@ -1529,6 +1532,19 @@ bool IsChromeWideEchoCancellationEnabled() {
 #else
   return false;
 #endif
+}
+
+BASE_FEATURE(kWebRtcAudioNeuralResidualEchoEstimation,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+bool IsAudioProcessMlModelUsageEnabled() {
+  if (!media::IsChromeWideEchoCancellationEnabled()) {
+    // The feature relies on Chrome-wide echo cancellation being enabled,
+    // because that is when the audio service has processing that may use a
+    // model.
+    return false;
+  }
+  return base::FeatureList::IsEnabled(kWebRtcAudioNeuralResidualEchoEstimation);
 }
 
 #if BUILDFLAG(IS_MAC)
@@ -1719,9 +1735,13 @@ uint32_t GetPassthroughAudioFormats() {
     auto* command_line = base::CommandLine::ForCurrentProcess();
     uint32_t value = 0;
     if (command_line->HasSwitch(switches::kAudioCodecsFromEDID)) {
-      base::StringToUint(
-          command_line->GetSwitchValueASCII(switches::kAudioCodecsFromEDID),
-          &value);
+      const std::string switch_value =
+          command_line->GetSwitchValueASCII(switches::kAudioCodecsFromEDID);
+      if (!base::StringToUint(switch_value, &value)) {
+        LOG(WARNING) << "Invalid value for --audio-codecs-from-edid: "
+                     << switch_value << ". Falling back to 0.";
+        return 0u;
+      }
     }
     return value;
   }();

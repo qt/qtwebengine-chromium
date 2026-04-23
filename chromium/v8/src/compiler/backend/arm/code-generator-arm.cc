@@ -557,6 +557,10 @@ void CodeGenerator::AssemblePrepareTailCall() {
 
 namespace {
 
+bool HasImmediateInput(Instruction* instr, size_t index) {
+  return instr->InputAt(index)->IsImmediate();
+}
+
 void FlushPendingPushRegisters(MacroAssembler* masm,
                                FrameAccessState* frame_access_state,
                                ZoneVector<Register>* pending_pushes) {
@@ -676,11 +680,9 @@ void CodeGenerator::AssembleCodeStartRegisterCheck() {
   __ Assert(eq, AbortReason::kWrongFunctionCodeStart);
 }
 
-#ifdef V8_ENABLE_LEAPTIERING
 void CodeGenerator::AssembleDispatchHandleRegisterCheck() {
   CHECK(!V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE_BOOL);
 }
-#endif  // V8_ENABLE_LEAPTIERING
 
 // Check if the code object is marked for deoptimization. If it is, then it
 // jumps to the CompileLazyDeoptimizedCode builtin. In order to do this we need
@@ -689,7 +691,7 @@ void CodeGenerator::AssembleDispatchHandleRegisterCheck() {
 //       the flags in the referenced {Code} object;
 //    2. test kMarkedForDeoptimizationBit in those flags; and
 //    3. if it is not zero then it jumps to the builtin.
-void CodeGenerator::BailoutIfDeoptimized() { __ BailoutIfDeoptimized(); }
+void CodeGenerator::AssertNotDeoptimized() { __ AssertNotDeoptimized(); }
 
 // Assembles an instruction after register allocation, producing machine code.
 CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
@@ -793,18 +795,47 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArchCallJSFunction: {
-      Register func = i.InputRegister(0);
-      if (v8_flags.debug_code) {
-        UseScratchRegisterScope temps(masm());
-        Register scratch = temps.Acquire();
-        // Check the function's context matches the context argument.
-        __ ldr(scratch, FieldMemOperand(func, JSFunction::kContextOffset));
-        __ cmp(cp, scratch);
-        __ Assert(eq, AbortReason::kWrongFunctionContext);
-      }
       uint32_t num_arguments =
           i.InputUint32(instr->JSCallArgumentCountInputIndex());
-      __ CallJSFunction(func, num_arguments);
+      if (HasImmediateInput(instr, 0)) {
+        Handle<HeapObject> constant =
+            i.ToConstant(instr->InputAt(0)).ToHeapObject();
+        __ Move(kJavaScriptCallTargetRegister, constant);
+        if (Handle<JSFunction> function; TryCast(constant, &function)) {
+          if (function->shared()->HasBuiltinId()) {
+            Builtin builtin = function->shared()->builtin_id();
+            size_t expected = Builtins::GetFormalParameterCount(builtin);
+            if (num_arguments == expected) {
+              __ CallBuiltin(builtin);
+            } else {
+              __ AssertUnreachable(AbortReason::kJSSignatureMismatch);
+            }
+          } else {
+            JSDispatchHandle dispatch_handle = function->dispatch_handle();
+            size_t expected =
+                IsolateGroup::current()->js_dispatch_table()->GetParameterCount(
+                    dispatch_handle);
+            if (num_arguments >= expected) {
+              __ CallJSDispatchEntry(dispatch_handle, expected);
+            } else {
+              __ AssertUnreachable(AbortReason::kJSSignatureMismatch);
+            }
+          }
+        } else {
+          __ CallJSFunction(kJavaScriptCallTargetRegister, num_arguments);
+        }
+      } else {
+        Register func = i.InputRegister(0);
+        if (v8_flags.debug_code) {
+          UseScratchRegisterScope temps(masm());
+          Register scratch = temps.Acquire();
+          // Check the function's context matches the context argument.
+          __ ldr(scratch, FieldMemOperand(func, JSFunction::kContextOffset));
+          __ cmp(cp, scratch);
+          __ Assert(eq, AbortReason::kWrongFunctionContext);
+        }
+        __ CallJSFunction(func, num_arguments);
+      }
       RecordCallPosition(instr);
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       frame_access_state()->ClearSPDelta();
@@ -3989,7 +4020,7 @@ void CodeGenerator::AssembleConstructFrame() {
                     CommonFrameConstants::kFixedFrameSizeAboveFp));
         __ Call(static_cast<Address>(Builtin::kWasmHandleStackOverflow),
                 RelocInfo::WASM_STUB_CALL);
-        // If the call succesfully grew the stack, we don't expect it to have
+        // If the call successfully grew the stack, we don't expect it to have
         // allocated any heap objects or otherwise triggered any GC.
         // If it was not able to grow the stack, it may have triggered a GC when
         // allocating the stack overflow exception object, but the call did not

@@ -145,9 +145,8 @@ class VirtualAddressSubspace;
 class V8_BASE_EXPORT OS {
  public:
   // Initialize the OS class.
-  // - abort_mode: see src/base/abort-mode.h for details.
   // - gc_fake_mmap: Name of the file for fake gc mmap used in ll_prof.
-  static void Initialize(AbortMode abort_mode, const char* const gc_fake_mmap);
+  static void Initialize(const char* const gc_fake_mmap);
 
 #if V8_OS_WIN
   // On Windows, ensure the newer memory API is loaded if available.  This
@@ -382,9 +381,9 @@ class V8_BASE_EXPORT OS {
 
   static void* GetRandomMmapAddr();
 
-  V8_WARN_UNUSED_RESULT static void* Allocate(void* address, size_t size,
-                                              size_t alignment,
-                                              MemoryPermission access);
+  V8_WARN_UNUSED_RESULT static void* Allocate(
+      void* address, size_t size, size_t alignment, MemoryPermission access,
+      PlatformSharedMemoryHandle handle = kInvalidSharedMemoryHandle);
 
   V8_WARN_UNUSED_RESULT static void* AllocateShared(size_t size,
                                                     MemoryPermission access);
@@ -419,8 +418,10 @@ class V8_BASE_EXPORT OS {
   V8_WARN_UNUSED_RESULT static bool CanReserveAddressSpace();
 
   V8_WARN_UNUSED_RESULT static std::optional<AddressSpaceReservation>
-  CreateAddressSpaceReservation(void* hint, size_t size, size_t alignment,
-                                MemoryPermission max_permission);
+  CreateAddressSpaceReservation(
+      void* hint, size_t size, size_t alignment,
+      MemoryPermission max_permission,
+      PlatformSharedMemoryHandle handle = kInvalidSharedMemoryHandle);
 
   static void FreeAddressSpaceReservation(AddressSpaceReservation reservation);
 

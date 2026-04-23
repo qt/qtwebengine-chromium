@@ -54,7 +54,6 @@ class DescribeSubcommand(CrossbenchSubcommand):
   CATEGORIES = ("all",) + (
       PROBE_ALIAS + BENCHMARK_ALIAS + NETWORK_ALIAS + CONFIG_OBJECT_ALIAS)
 
-
   def add_cli_parser(self) -> argparse.ArgumentParser:
     describe_parser = self.cli.subparsers.add_parser(
         "describe", aliases=["desc"], help="Print all benchmarks and stories")

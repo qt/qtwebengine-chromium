@@ -9,11 +9,13 @@
 
 #include "src/base/base-export.h"
 #include "src/base/logging.h"
+#include "src/codegen/bailout-reason.h"
 #include "src/compiler/js-heap-broker.h"
 #include "src/maglev/maglev-basic-block.h"
 #include "src/maglev/maglev-graph-processor.h"
 #include "src/maglev/maglev-interpreter-frame-state.h"
 #include "src/maglev/maglev-ir.h"
+#include "src/maglev/maglev-known-node-aspects.h"
 
 namespace v8 {
 namespace internal {
@@ -35,7 +37,9 @@ concept IsNodeT = std::is_base_of_v<Node, T>;
 class RecomputeKnownNodeAspectsProcessor {
  public:
   explicit RecomputeKnownNodeAspectsProcessor(Graph* graph)
-      : graph_(graph), known_node_aspects_(nullptr) {}
+      : graph_(graph),
+        known_node_aspects_(nullptr),
+        reachable_exception_handlers_(zone()) {}
 
   void PreProcessGraph(Graph* graph) {
     known_node_aspects_ = zone()->New<KnownNodeAspects>(zone());
@@ -43,19 +47,33 @@ class RecomputeKnownNodeAspectsProcessor {
       if (block->has_state()) {
         block->state()->ClearKnownNodeAspects();
       }
-      if (block->is_loop() && block->state()->IsUnreachableByForwardEdge()) {
-        DCHECK(block->state()->is_resumable_loop());
-        block->state()->MergeNodeAspects(zone(), *known_node_aspects_);
-      }
     }
   }
   void PostProcessGraph(Graph* graph) {}
   BlockProcessResult PreProcessBasicBlock(BasicBlock* block) {
+    // TODO(victorgomes): Support removing the unreachable blocks instead of
+    // just skipping it.
     if (V8_UNLIKELY(block->IsUnreachable())) {
-      // The block is unreachable, we probably never set the KNA to this
-      // block. Just use an empty one.
-      // TODO(victorgomes): Maybe we shouldn't visit unreachable blocks.
+      // Ensure successors can also be unreachable.
+      return AbortBlock(block);
+    }
+
+    if (block->is_exception_handler_block()) {
+      if (!reachable_exception_handlers_.contains(block)) {
+        // This is an unreachable exception handler block.
+        // Ensure successors can also be unreachable.
+        return AbortBlock(block);
+      }
+    }
+
+    if (block->is_loop() && block->state()->is_resumable_loop()) {
+      // TODO(victorgomes): Ideally, we should use the loop backedge KNA cache
+      // for all loops.
       known_node_aspects_ = zone()->New<KnownNodeAspects>(zone());
+    } else if (block->is_loop()) {
+      known_node_aspects_ =
+          block->state()->TakeKnownNodeAspects()->CloneForLoopHeader(
+              false, nullptr, zone());
     } else if (block->has_state()) {
       known_node_aspects_ = block->state()->TakeKnownNodeAspects();
     } else if (block->is_edge_split_block()) {
@@ -77,7 +95,10 @@ class RecomputeKnownNodeAspectsProcessor {
     if constexpr (NodeT::kProperties.can_throw()) {
       ExceptionHandlerInfo* info = node->exception_handler_info();
       if (info->HasExceptionHandler() && !info->ShouldLazyDeopt()) {
-        Merge(node->exception_handler_info()->catch_block());
+        BasicBlock* exception_handler =
+            node->exception_handler_info()->catch_block();
+        reachable_exception_handlers_.insert(exception_handler);
+        Merge(exception_handler);
       }
     }
     MarkPossibleSideEffect(node);
@@ -137,6 +158,7 @@ class RecomputeKnownNodeAspectsProcessor {
  private:
   Graph* graph_;
   KnownNodeAspects* known_node_aspects_;
+  ZoneAbslFlatHashSet<BasicBlock*> reachable_exception_handlers_;
 
   Zone* zone() { return graph_->zone(); }
   compiler::JSHeapBroker* broker() { return graph_->broker(); }
@@ -151,6 +173,17 @@ class RecomputeKnownNodeAspectsProcessor {
     return known_node_aspects().GetType(broker(), node);
   }
 
+  BlockProcessResult AbortBlock(BasicBlock* block) {
+    ControlNode* control = block->reset_control_node();
+    block->RemovePredecessorFollowing(control);
+    control->OverwriteWith<Abort>()->set_reason(AbortReason::kUnreachable);
+    block->set_deferred(true);
+    block->set_control_node(control);
+    block->mark_dead();
+    graph_->set_may_have_unreachable_blocks();
+    return BlockProcessResult::kSkip;
+  }
+
   void Merge(BasicBlock* block) {
     while (block->is_edge_split_block()) {
       block = block->control_node()->Cast<Jump>()->target();
@@ -162,21 +195,8 @@ class RecomputeKnownNodeAspectsProcessor {
 
   template <typename NodeT>
   void MarkPossibleSideEffect(NodeT* node) {
-    // Don't do anything for nodes without side effects.
-    if constexpr (!NodeT::kProperties.can_write()) return;
-
-    if constexpr (IsElementsArrayWrite(Node::opcode_of<NodeT>)) {
-      node->ClearElementsProperties(graph_->is_tracing_enabled(),
-                                    known_node_aspects());
-    } else if constexpr (!IsSimpleFieldStore(Node::opcode_of<NodeT>) &&
-                         !IsTypedArrayStore(Node::opcode_of<NodeT>)) {
-      // Don't change known node aspects for simple field stores. The only
-      // relevant side effect on these is writes to objects which invalidate
-      // loaded properties and context slots, and we invalidate these already as
-      // part of emitting the store.
-      node->ClearUnstableNodeAspects(graph_->is_tracing_enabled(),
-                                     known_node_aspects());
-    }
+    known_node_aspects().MarkPossibleSideEffect(node, broker(),
+                                                graph_->is_tracing_enabled());
   }
 
 #define PROCESS_CHECK(Type)                             \
@@ -227,25 +247,133 @@ class RecomputeKnownNodeAspectsProcessor {
   PROCESS_UNSAFE_CONV(UnsafeSmiTagUint32, tagged, Smi)
   PROCESS_SAFE_CONV(CheckedSmiTagIntPtr, tagged, Smi)
   PROCESS_UNSAFE_CONV(UnsafeSmiTagIntPtr, tagged, Smi)
+  PROCESS_SAFE_CONV(CheckedSmiTagFloat64, tagged, Smi)
   PROCESS_SAFE_CONV(TruncateCheckedNumberOrOddballToInt32,
                     truncated_int32_to_number, NumberOrOddball)
   PROCESS_UNSAFE_CONV(TruncateUnsafeNumberOrOddballToInt32,
                       truncated_int32_to_number, NumberOrOddball)
   PROCESS_SAFE_CONV(CheckedUint32ToInt32, int32, Number)
-  PROCESS_UNSAFE_CONV(UnsafeInt32ToUint32, int32, Number)
   PROCESS_SAFE_CONV(CheckedIntPtrToInt32, int32, Number)
+  PROCESS_SAFE_CONV(CheckedFloat64ToInt32, int32, Number)
   PROCESS_SAFE_CONV(CheckedHoleyFloat64ToInt32, int32, Number)
+  PROCESS_UNSAFE_CONV(UnsafeFloat64ToInt32, int32, Number)
   PROCESS_UNSAFE_CONV(UnsafeHoleyFloat64ToInt32, int32, Number)
   PROCESS_SAFE_CONV(CheckedNumberToInt32, int32, Number)
   PROCESS_UNSAFE_CONV(ChangeIntPtrToFloat64, float64, Number)
-  PROCESS_SAFE_CONV(CheckedSmiTagFloat64, float64, Smi)
+  // TODO(victorgomes): pass node->conversion_type() rather than always
+  // NumberOrOddball for CheckedNumberOrOddballToFloat64.
   PROCESS_SAFE_CONV(CheckedNumberOrOddballToFloat64, float64, NumberOrOddball)
-  PROCESS_UNSAFE_CONV(UncheckedNumberOrOddballToFloat64, float64,
-                      NumberOrOddball)
+  PROCESS_SAFE_CONV(CheckedNumberToFloat64, float64, Number)
+  PROCESS_UNSAFE_CONV(UnsafeNumberOrOddballToFloat64, float64, NumberOrOddball)
+  PROCESS_UNSAFE_CONV(UnsafeNumberToFloat64, float64, Number)
   PROCESS_SAFE_CONV(CheckedHoleyFloat64ToFloat64, float64, Number)
-  PROCESS_UNSAFE_CONV(HoleyFloat64ToMaybeNanFloat64, float64, Number)
+  PROCESS_UNSAFE_CONV(HoleyFloat64ToSilencedFloat64, float64, Number)
+  PROCESS_SAFE_CONV(ChangeInt32ToFloat64, float64, Number)
+  PROCESS_SAFE_CONV(ChangeInt32ToHoleyFloat64, holey_float64, Number)
 #undef PROCESS_SAFE_CONV
 #undef PROCESS_UNSAFE_CONV
+
+  ProcessResult ProcessNode(LoadTaggedField* node) {
+    if (!node->property_key().is_none()) {
+      auto& props_for_key = known_node_aspects().GetLoadedPropertiesForKey(
+          zone(), node->is_const(), node->property_key());
+      props_for_key[node->ValueInput().node()] = node;
+    }
+    return ProcessResult::kContinue;
+  }
+
+  ProcessResult ProcessNode(LoadDataViewByteLength* node) {
+    auto& props_for_key = known_node_aspects().GetLoadedPropertiesForKey(
+        zone(), true, PropertyKey::ArrayBufferViewByteLength());
+    props_for_key[node->ValueInput().node()] = node;
+    return ProcessResult::kContinue;
+  }
+
+  void ProcessStoreContextSlot(ValueNode* context, ValueNode* value,
+                               int offset) {
+    known_node_aspects().ClearAliasedContextSlotsFor(graph_, context, offset,
+                                                     value);
+    known_node_aspects().SetContextCachedValue(context, offset, value);
+  }
+
+  template <typename NodeT>
+  void ProcessStoreTaggedField(NodeT* node) {
+    // If a store to a context, we use the specialized context slot cache.
+    if (node->is_store_to_context()) {
+      return ProcessStoreContextSlot(node->ObjectInput().node(),
+                                     node->ValueInput().node(), node->offset());
+    }
+    // ... otherwise we try the properties cache.
+    if (node->property_key().is_none()) return;
+    auto& props_for_key = known_node_aspects().GetLoadedPropertiesForKey(
+        zone(), false, node->property_key());
+    // We don't do any aliasing analysis, so stores clobber all other cached
+    // loads of a property with that key. We only need to do this for
+    // non-constant properties, since constant properties are known not to
+    // change and therefore can't be clobbered.
+    // TODO(leszeks): Do some light aliasing analysis here, e.g. checking
+    // whether there's an intersection of known maps.
+    props_for_key.clear();
+    props_for_key[node->ObjectInput().node()] = node->ValueInput().node();
+  }
+
+  ProcessResult ProcessNode(StoreTaggedFieldNoWriteBarrier* node) {
+    ProcessStoreTaggedField(node);
+    return ProcessResult::kContinue;
+  }
+
+  ProcessResult ProcessNode(StoreTaggedFieldWithWriteBarrier* node) {
+    ProcessStoreTaggedField(node);
+    return ProcessResult::kContinue;
+  }
+
+  template <typename NodeT>
+  void ProcessLoadContextSlot(NodeT* node) {
+    ValueNode* context = node->input_node(0);
+    ValueNode*& cached_value = known_node_aspects().GetContextCachedValue(
+        context, node->offset(),
+        node->is_const() ? ContextSlotMutability::kImmutable
+                         : ContextSlotMutability::kMutable);
+    if (!cached_value) cached_value = node;
+    if (!node->is_const()) {
+      known_node_aspects().UpdateMayHaveAliasingContexts(
+          broker(), broker()->local_isolate(), context);
+    }
+  }
+
+  ProcessResult ProcessNode(LoadContextSlot* node) {
+    ProcessLoadContextSlot(node);
+    return ProcessResult::kContinue;
+  }
+
+  ProcessResult ProcessNode(LoadContextSlotNoCells* node) {
+    ProcessLoadContextSlot(node);
+    return ProcessResult::kContinue;
+  }
+
+  ProcessResult ProcessNode(StoreContextSlotWithWriteBarrier* node) {
+    ProcessStoreContextSlot(node->ContextInput().node(),
+                            node->NewValueInput().node(), node->offset());
+    return ProcessResult::kContinue;
+  }
+
+  ProcessResult ProcessNode(StoreSmiContextCell* node) {
+    ProcessStoreContextSlot(graph_->GetConstant(node->context()),
+                            node->ValueInput().node(), node->slot_offset());
+    return ProcessResult::kContinue;
+  }
+
+  ProcessResult ProcessNode(StoreInt32ContextCell* node) {
+    ProcessStoreContextSlot(graph_->GetConstant(node->context()),
+                            node->ValueInput().node(), node->slot_offset());
+    return ProcessResult::kContinue;
+  }
+
+  ProcessResult ProcessNode(StoreFloat64ContextCell* node) {
+    ProcessStoreContextSlot(graph_->GetConstant(node->context()),
+                            node->ValueInput().node(), node->slot_offset());
+    return ProcessResult::kContinue;
+  }
 
   ProcessResult ProcessNode(Node* node) { return ProcessResult::kContinue; }
 };

@@ -730,7 +730,7 @@ class SomeWidget extends UI.Widget.Widget {
 }
 ```
 
-## Migrating `IconButton.Icon.Icon`
+## Migrating `Icon`
 
 Replace the imperative `Icon` creation with the declarative `<devtools-icon>` component.
 
@@ -740,7 +740,7 @@ Replace the imperative `Icon` creation with the declarative `<devtools-icon>` co
 class SomeWidget extends UI.Widget.Widget {
   constructor() {
     super();
-    const icon = new IconButton.Icon.Icon();
+    const icon = new Icon();
     icon.data = {iconName: 'checkmark', color: 'var(--icon-checkmark-green)', width: '14px', height: '14px'};
     this.contentElement.appendChild(icon);
   }
@@ -806,6 +806,165 @@ export const DEFAULT_VIEW = (input, _output, target) => {
         <devtools-checkbox title=${i18nString(UIStrings.someToolbarTooltip)}
             ${bindToSetting(this.someSetting)}>${i18nString(UIStrings.alternateToolbarTitle)}</devtools-checkbox>
         <devtools-checkbox ${bindToSetting(this.someOtherSetting)}>${this.someOtherSetting.title()}</devtools-checkbox>
+      </devtools-toolbar>
+    </div>`,
+    target, {host: input});
+};
+```
+
+## Binding an action to a button
+
+Use the `bindToAction` directive to create a button that is bound to a registered action. The button's properties (e.g., `title`, `disabled`) will be automatically updated when the action's state changes.
+
+**Before:**
+```typescript
+class SomeWidget extends UI.Widget.Widget implements UI.Toolbar.ItemsProvider {
+  constructor() {
+    super();
+    this.toolbarItemsInternal = [];
+    this.toolbarItemsInternal.push(UI.Toolbar.Toolbar.createActionButton('elements.refresh-event-listeners'));
+  }
+
+  toolbarItems(): UI.Toolbar.ToolbarItem[] {
+    return this.toolbarItemsInternal;
+  }
+}
+```
+
+**After:**
+```typescript
+export const DEFAULT_VIEW = (input, _output, target) => {
+  const {bindToAction} = UI.UIUtils;
+  render(html`
+    <div>
+      <devtools-toolbar>
+        <devtools-button ${bindToAction('elements.refresh-event-listeners')}></devtools-button>
+      </devtools-toolbar>
+    </div>`,
+    target, {host: input});
+};
+```
+
+## Binding a setting to a checkbox
+
+Use the `bindToSetting` directive to bind a boolean setting to a `<devtools-checkbox>` component.
+
+**Before:**
+```typescript
+class SomeWidget extends UI.Widget.Widget {
+  constructor() {
+    super();
+    const toolbar = this.contentElement.createChild('devtools-toolbar');
+    const showAllPropertiesSetting = Common.Settings.Settings.instance().createSetting('show-all-properties', false);
+    toolbar.appendToolbarItem(new UI.Toolbar.ToolbarSettingCheckbox(
+        showAllPropertiesSetting, i18nString(UIStrings.showAllTooltip), i18nString(UIStrings.showAll)));
+  }
+}
+```
+
+**After:**
+```typescript
+export const DEFAULT_VIEW = (input, _output, target) => {
+  const {bindToSetting} = UI.SettingsUI;
+  const showAllPropertiesSetting = Common.Settings.Settings.instance().createSetting('show-all-properties', false);
+  render(html`
+    <div>
+      <devtools-toolbar>
+        <devtools-checkbox title=${i18nString(UIStrings.showAllTooltip)} ${bindToSetting(showAllPropertiesSetting)}>
+          ${i18nString(UIStrings.showAll)}
+        </devtools-checkbox>
+      </devtools-toolbar>
+    </div>`,
+    target, {host: input});
+};
+```
+
+## Migrating `UI.Toolbar.ToolbarComboBox`
+
+Replace the imperative creation of a `ToolbarComboBox` with a declarative `<select>` element.
+
+**Before:**
+```typescript
+class SomeWidget extends UI.Widget.Widget {
+  constructor() {
+    super();
+    const toolbar = this.contentElement.createChild('devtools-toolbar');
+    toolbar.appendToolbarItem(new UI.Toolbar.ToolbarComboBox(
+       this.someToolbarComboBoxClicked.bind(this), 'Combox',
+       'the-toolbar-combox', 'some-toolbar-combox'));
+  }
+}
+```
+
+**After:**
+```typescript
+export const DEFAULT_VIEW = (input, _output, target) => {
+  render(html`
+    <div>
+      <devtools-toolbar>
+        <select class="the-toolbar-combox" title="Combox" aria-label="Combox"
+            jslog=${VisualLogging.dropDown('some-toolbar-combox').track({change: true})}
+            @change=${this.someToolbarComboBoxClicked.bind(this)}></select>
+      </devtools-toolbar>
+    </div>`,
+    target, {host: input});
+};
+```
+
+## Migrating various Toolbar items
+
+Replace various imperative `UI.Toolbar` methods like `appendSeparator`, `appendSpacer`, and `setEnabled` with their declarative equivalents.
+
+**Before:**
+```typescript
+class SomeWidget extends UI.Widget.Widget {
+  constructor() {
+    super();
+    const toolbar = this.contentElement.createChild('devtools-toolbar');
+    toolbar.wrappable = true;
+    toolbar.appendSeparator();
+    const combo = new UI.Toolbar.ToolbarComboBox(this.onSelect.bind(this), 'aria-label', undefined, 'combo-box');
+    combo.createOption('Option 1', '1', 'option-1');
+    const option2 = document.createElement('option');
+    option2.value = '2';
+    option2.textContent = 'Option 2';
+    combo.addOption(option2);
+    toolbar.appendToolbarItem(combo);
+    toolbar.appendSpacer();
+    const button = new UI.Toolbar.ToolbarButton('Click me', 'largeicon-add');
+    button.setEnabled(false);
+    toolbar.appendToolbarItem(button);
+    const otherButton = new UI.Toolbar.ToolbarButton('Other button', 'largeicon-delete');
+    otherButton.setEnabled(this.isEnabled);
+    toolbar.appendToolbarItem(otherButton);
+    toolbar.appendToolbarItem(new UI.Toolbar.ToolbarSeparator());
+    toolbar.appendToolbarItem(new UI.Toolbar.ToolbarSeparator(false));
+    toolbar.appendToolbarItem(new UI.Toolbar.ToolbarSeparator(true));
+  }
+}
+```
+
+**After:**
+```typescript
+export const DEFAULT_VIEW = (input, _output, target) => {
+  render(html`
+    <div>
+      <devtools-toolbar wrappable>
+        <div class="toolbar-divider"></div>
+        <select title="aria-label" aria-label="aria-label"
+            jslog=${VisualLogging.dropDown('combo-box').track({change: true})}
+            @change=${this.onSelect.bind(this)}>
+          <option value="1" jslog=${VisualLogging.item('option-1').track({click: true})}>Option 1</option>
+          <option value="2">Option 2</option>
+        </select>
+        <div class="toolbar-spacer"></div>
+        <devtools-button title="Click me" .variant=${Buttons.Button.Variant.TOOLBAR}
+            .iconName=${'largeicon-add'} disabled></devtools-button>
+        <devtools-button title="Other button" ?disabled=${!this.isEnabled}
+            .variant=${Buttons.Button.Variant.TOOLBAR} .iconName=${'largeicon-delete'}></devtools-button>
+        <div class="toolbar-divider"></div>
+        <div class="toolbar-divider"></div>
+        <div class="toolbar-spacer"></div>
       </devtools-toolbar>
     </div>`,
     target, {host: input});
@@ -1223,3 +1382,101 @@ export const DEFAULT_VIEW = (input, _output, target) => {
     target, {host: input});
 };
 ```
+
+## Refactoring UI.Toolbar.Provider
+
+As part of the migration, sometimes classes need to be broken up into smaller pieces. Classes implementing
+`UI.Toolbar.Provider` logic are good examples of this, if they implement `View` logic in addition to their
+`UI.Toolbar.Provider` responsibilities. The View logic needs to be moved to a separate class.
+
+
+**Before:**
+```typescript
+export class NodeIndicator implements UI.Toolbar.Provider {
+  readonly #element: Element;
+  readonly #item: UI.Toolbar.ToolbarItem;
+
+  private constructor() {
+    // Creates `this.#element` and `this.#item` imperatively (e.g. using document.createElement/createChild).
+  }
+  static instance(opts: { forceNew: boolean|null, } = {forceNew: null}): NodeIndicator {
+    // Creates an instance of this class and returns it.
+  }
+  #update(input): void { /* Handles updates to `this.#element` and `this.#item`. */}
+  item(): UI.Toolbar.ToolbarItem|null {
+    return this.#item;
+  }
+}
+```
+
+**After:**
+```typescript
+export const DEFAULT_VIEW: View = (input, output, target) => {
+  // Implementation of the View using Lit.render() (omitted for brevity).
+};
+
+export class NodeIndicator extends UI.Widget.Widget {
+  readonly #view: View;
+
+  constructor(element?: HTMLElement, view = DEFAULT_VIEW) {
+    super(element, {useShadowDom: true});
+    this.#view = view;
+  }
+
+  override performUpdate(): void {
+    const input = {
+      // Whatever input the View needs.
+    };
+    this.#view(input, {}, this.contentElement);
+  }
+}
+
+let nodeIndicatorProviderInstance: NodeIndicatorProvider;
+export class NodeIndicatorProvider implements UI.Toolbar.Provider {
+  #toolbarItem: UI.Toolbar.ToolbarItem;
+  #widgetElement: UI.Widget.WidgetElement<NodeIndicator>;
+
+  private constructor() {
+    this.#widgetElement = document.createElement('devtools-widget') as UI.Widget.WidgetElement<NodeIndicator>;
+    this.#widgetElement.widgetConfig = UI.Widget.widgetConfig(NodeIndicator);
+
+    this.#toolbarItem = new UI.Toolbar.ToolbarItem(this.#widgetElement);
+    this.#toolbarItem.setVisible(false);
+  }
+
+  item(): UI.Toolbar.ToolbarItem|null {
+    return this.#toolbarItem;
+  }
+
+  static instance(opts: {forceNew: boolean|null} = {forceNew: null}): NodeIndicatorProvider {
+    const {forceNew} = opts;
+    if (!nodeIndicatorProviderInstance || forceNew) {
+      nodeIndicatorProviderInstance = new NodeIndicatorProvider();
+    }
+
+    return nodeIndicatorProviderInstance;
+  }
+}
+```
+
+## Highlighting text
+
+### (UI.UIUtils.highlightRangesWithStyleClass or Highlighting.HighlightManager)
+
+Use the `<devtools-highlight>` component to highlight text ranges within its
+container. The component takes two attributes: `ranges`, which is a
+space-separated list of `offset,length` pairs, and `current-range`, which is a
+single `offset,length` pair to highlight with a different color.
+
+The component will automatically sort and merge the ranges provided.
+
+```html
+<div style="position:relative">
+  <devtools-highlight ranges="10,2 1,3 2,3" current-range="5,3">
+    This is some text to highlight.
+  </devtools-highlight>
+</div>
+```
+
+In this example, the ranges `1,3` and `2,3` will be merged into `1,4`. The
+ranges `10,2` and the current range `5,3` will also be highlighted.

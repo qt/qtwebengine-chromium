@@ -8,7 +8,7 @@ import type * as Platform from '../platform/platform.js';
 import {UserVisibleError} from '../platform/platform.js';
 
 import type {
-  HydratingDataPerTarget, RehydratingExecutionContext, RehydratingScript, RehydratingTarget} from
+  HydratingDataPerTarget, RehydratingExecutionContext, RehydratingResource, RehydratingScript, RehydratingTarget} from
   './RehydratingObject.js';
 import type {SourceMapV3} from './SourceMap.js';
 import type {TraceObject} from './TraceObject.js';
@@ -35,11 +35,10 @@ export interface RundownScriptCompiled extends EventBase {
       frameType: 'page'|'iframe',
       url: string,
       /**
-       * isolate is a `uint64_t`, which is too much for JS number to represent exactly.
-       * TODO: consider adjusting the trace event impl to either string or reduced precision. see https://crrev.com/c/6300647
-       * This applies for all `isolate` in trace events we consume.
+       * Older traces were a number, but this is an unsigned 64 bit value, so that was a bug.
+       * New traces use string instead. See https://crbug.com/447654178.
        */
-      isolate: number,
+      isolate: string|number,
       /** AKA V8ContextToken. https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/inspector/inspector_trace_events.cc;l=1229;drc=3c88f61e18b043e70c225d8d57c77832a85e7f58 */
       v8context: string,
       origin: string,
@@ -60,7 +59,11 @@ export interface RundownScript extends EventBase {
   name: 'ScriptCatchup';
   args: {
     data: {
-      isolate: number,
+      /**
+       * Older traces were a number, but this is an unsigned 64 bit value, so that was a bug.
+       * New traces use string instead. See https://crbug.com/447654178.
+       */
+      isolate: string|number,
       executionContextId: Protocol.Runtime.ExecutionContextId,
       scriptId: number,
       isModule: boolean,
@@ -119,7 +122,11 @@ interface FunctionCall extends EventBase {
     data: {
       frame: Protocol.Page.FrameId,
       scriptId: Protocol.Runtime.ScriptId,
-      isolate?: number,
+      /**
+       * Older traces were a number, but this is an unsigned 64 bit value, so that was a bug.
+       * New traces use string instead. See https://crbug.com/447654178.
+       */
+      isolate?: string|number,
     },
   };
 }
@@ -135,6 +142,7 @@ export class EnhancedTracesParser {
   #targets: RehydratingTarget[] = [];
   #executionContexts: RehydratingExecutionContext[] = [];
   #scripts: RehydratingScript[] = [];
+  #resources: RehydratingResource[] = [];
   static readonly enhancedTraceVersion: number = 1;
 
   constructor(trace: TraceObject) {
@@ -157,6 +165,10 @@ export class EnhancedTracesParser {
           if (frame.url === 'about:blank') {
             continue;
           }
+          if (!frame.isInPrimaryMainFrame) {
+            continue;
+          }
+
           const frameId = frame.frame as string as Protocol.Target.TargetID;
           if (!this.#targets.find(target => target.targetId === frameId)) {
             const frameType = frame.isOutermostMainFrame ? 'page' : 'iframe';
@@ -308,7 +320,10 @@ export class EnhancedTracesParser {
       this.resolveSourceMap(script);
     }
 
-    return this.groupContextsAndScriptsUnderTarget(this.#targets, this.#executionContexts, this.#scripts);
+    this.#resources = this.#trace.metadata.resources ?? [];
+
+    return this.groupContextsAndScriptsUnderTarget(
+        this.#targets, this.#executionContexts, this.#scripts, this.#resources);
   }
 
   private resolveSourceMap(script: RehydratingScript): void {
@@ -400,8 +415,8 @@ export class EnhancedTracesParser {
   }
 
   private groupContextsAndScriptsUnderTarget(
-      targets: RehydratingTarget[], executionContexts: RehydratingExecutionContext[],
-      scripts: RehydratingScript[]): HydratingDataPerTarget[] {
+      targets: RehydratingTarget[], executionContexts: RehydratingExecutionContext[], scripts: RehydratingScript[],
+      resources: RehydratingResource[]): HydratingDataPerTarget[] {
     const data: HydratingDataPerTarget[] = [];
     const targetIds = new Set<Protocol.Target.TargetID>();
     const targetToExecutionContexts: Map<string, RehydratingExecutionContext[]> =
@@ -413,12 +428,15 @@ export class EnhancedTracesParser {
     const targetToScripts: Map<Protocol.Target.TargetID, RehydratingScript[]> =
         new Map<Protocol.Target.TargetID, RehydratingScript[]>();
     const orphanScripts: RehydratingScript[] = [];
+    const targetToResources: Map<Protocol.Target.TargetID, RehydratingResource[]> =
+        new Map<Protocol.Target.TargetID, RehydratingResource[]>();
 
     // Initialize all the mapping needed
     for (const target of targets) {
       targetIds.add(target.targetId);
       targetToExecutionContexts.set(target.targetId, []);
       targetToScripts.set(target.targetId, []);
+      targetToResources.set(target.targetId, []);
     }
 
     // Put all of the known execution contexts under respective targets
@@ -474,12 +492,20 @@ export class EnhancedTracesParser {
       }
     }
 
+    for (const resource of resources) {
+      const frameId = resource.frame as Protocol.Target.TargetID;
+      if (targetIds.has(frameId)) {
+        targetToResources.get(frameId)?.push(resource);
+      }
+    }
+
     // Now all the scripts are linked to a target, we want to make sure all the scripts are pointing to a valid
     // execution context. If not, we will create an artificial execution context for the script
     for (const target of targets) {
       const targetId = target.targetId;
       const executionContexts = targetToExecutionContexts.get(targetId) || [];
       const scripts = targetToScripts.get(targetId) || [];
+      const resources = targetToResources.get(targetId) || [];
       for (const script of scripts) {
         if (!executionContexts.find(context => context.id === script.executionContextId)) {
           const artificialContext: RehydratingExecutionContext = {
@@ -500,7 +526,7 @@ export class EnhancedTracesParser {
       }
 
       // Finally, we put all the information into the data structure we want to return as.
-      data.push({target, executionContexts, scripts});
+      data.push({target, executionContexts, scripts, resources});
     }
 
     return data;

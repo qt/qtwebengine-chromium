@@ -15,7 +15,13 @@
 import {Trace} from '../../public/trace';
 import StandardGroupsPlugin from '../dev.perfetto.StandardGroups';
 import {PerfettoPlugin} from '../../public/plugin';
-import {STR, LONG, UNKNOWN, SqlValue} from '../../trace_processor/query_result';
+import {
+  STR,
+  LONG,
+  UNKNOWN,
+  SqlValue,
+  LONG_NULL,
+} from '../../trace_processor/query_result';
 import {SourceDataset} from '../../trace_processor/dataset';
 import SupportPlugin from '../com.android.AndroidLongBatterySupport';
 
@@ -78,7 +84,7 @@ const DEFAULT_NETWORK_DATASET = new SourceDataset({
   `,
   schema: {
     ts: LONG,
-    dur: LONG,
+    dur: LONG_NULL,
     name: STR,
   },
 });
@@ -124,7 +130,7 @@ const TETHERING_DATASET = new SourceDataset({
   `,
   schema: {
     ts: LONG,
-    dur: LONG,
+    dur: LONG_NULL,
     name: STR,
   },
 });
@@ -182,7 +188,7 @@ const SUSPEND_RESUME_DATASET = new SourceDataset({
   `,
   schema: {
     ts: LONG,
-    dur: LONG,
+    dur: LONG_NULL,
     name: STR,
   },
 });
@@ -223,7 +229,7 @@ const THERMAL_THROTTLING_DATASET = new SourceDataset({
   `,
   schema: {
     ts: LONG,
-    dur: LONG,
+    dur: LONG_NULL,
     name: STR,
   },
 });
@@ -386,7 +392,7 @@ export default class implements PerfettoPlugin {
         `,
         schema: {
           ts: LONG,
-          dur: LONG,
+          dur: LONG_NULL,
           name: STR,
         },
       }),
@@ -420,7 +426,7 @@ export default class implements PerfettoPlugin {
         `,
         schema: {
           ts: LONG,
-          dur: LONG,
+          dur: LONG_NULL,
           name: STR,
         },
       }),
@@ -440,7 +446,7 @@ export default class implements PerfettoPlugin {
     const groupName = 'Device State';
     const deviceStateGroup = ctx.plugins
       .getPlugin(StandardGroupsPlugin)
-      .getOrCreateStandardGroup(ctx.workspace, 'DEVICE_STATE');
+      .getOrCreateStandardGroup(ctx.defaultWorkspace, 'DEVICE_STATE');
     support.groups.set(groupName, deviceStateGroup);
 
     const query = (name: string, track: string) =>
@@ -466,7 +472,7 @@ export default class implements PerfettoPlugin {
         `,
         schema: {
           ts: LONG,
-          dur: LONG,
+          dur: LONG_NULL,
           name: STR,
         },
       }),
@@ -486,7 +492,7 @@ export default class implements PerfettoPlugin {
         `,
         schema: {
           ts: LONG,
-          dur: LONG,
+          dur: LONG_NULL,
           name: STR,
         },
       }),
@@ -513,7 +519,7 @@ export default class implements PerfettoPlugin {
         `,
         schema: {
           ts: LONG,
-          dur: LONG,
+          dur: LONG_NULL,
           name: STR,
         },
       }),
@@ -533,7 +539,7 @@ export default class implements PerfettoPlugin {
         `,
         schema: {
           ts: LONG,
-          dur: LONG,
+          dur: LONG_NULL,
           name: STR,
         },
       }),
@@ -548,8 +554,11 @@ export default class implements PerfettoPlugin {
       new SourceDataset({
         src: `
           SELECT
-            ts - 60000000000 AS ts,
-            safe_dur + 60000000000 AS dur,
+            -- Clamp start time to > 0 to avoid negative timestamps.
+            MAX(0, ts - 60000000000) AS ts,
+            -- The end time is (ts + safe_dur), so the duration is the original
+            -- end time minus the clamped start time.
+            (ts + safe_dur) - MAX(0, ts - 60000000000) AS dur,
             str_value AS name,
             package_name AS package
           FROM add_package_name!((
@@ -562,7 +571,7 @@ export default class implements PerfettoPlugin {
         `,
         schema: {
           ts: LONG,
-          dur: LONG,
+          dur: LONG_NULL,
           name: STR,
           package: STR,
         },
@@ -592,7 +601,7 @@ export default class implements PerfettoPlugin {
           `,
           schema: {
             ts: LONG,
-            dur: LONG,
+            dur: LONG_NULL,
             name: STR,
             uid: UNKNOWN,
           },
@@ -730,7 +739,7 @@ export default class implements PerfettoPlugin {
           `,
           schema: {
             ts: LONG,
-            dur: LONG,
+            dur: LONG_NULL,
             name: STR,
             ...argsSchema,
           },
@@ -861,7 +870,7 @@ export default class implements PerfettoPlugin {
         `,
         schema: {
           ts: LONG,
-          dur: LONG,
+          dur: LONG_NULL,
           name: STR,
         },
       }),
@@ -877,13 +886,13 @@ export default class implements PerfettoPlugin {
     );
   }
 
-  async addModemTeaData(ctx: Trace, support: SupportPlugin): Promise<void> {
+  async addModemMintData(ctx: Trace, support: SupportPlugin): Promise<void> {
     const e = ctx.engine;
     const groupName = 'Modem Detail';
 
     await e.query(
       `INCLUDE PERFETTO MODULE
-          google3.wireless.android.telemetry.trace_extractor.modules.modem_tea_metrics`,
+          google3.wireless.android.telemetry.trace_extractor.modules.modem_mint_metrics`,
     );
 
     const counters = await e.query(
@@ -917,7 +926,7 @@ export default class implements PerfettoPlugin {
           `,
           schema: {
             ts: LONG,
-            dur: LONG,
+            dur: LONG_NULL,
             name: STR,
           },
         }),
@@ -1023,7 +1032,7 @@ export default class implements PerfettoPlugin {
           src: `${sqlPrefix} WHERE item="${it.item}"`,
           schema: {
             ts: LONG,
-            dur: LONG,
+            dur: LONG_NULL,
             name: STR,
             item: UNKNOWN,
             type: UNKNOWN,
@@ -1048,7 +1057,7 @@ export default class implements PerfettoPlugin {
         src: `${sqlPrefix} WHERE item NOT IN ('${items.join("','")}')`,
         schema: {
           ts: LONG,
-          dur: LONG,
+          dur: LONG_NULL,
           name: STR,
           item: UNKNOWN,
           type: UNKNOWN,
@@ -1108,7 +1117,7 @@ export default class implements PerfettoPlugin {
     if (features.has('google3')) {
       await this.addAtomCounters(ctx, support);
       await this.addAtomSlices(ctx, support);
-      await this.addModemTeaData(ctx, support);
+      await this.addModemMintData(ctx, support);
     }
   }
 }

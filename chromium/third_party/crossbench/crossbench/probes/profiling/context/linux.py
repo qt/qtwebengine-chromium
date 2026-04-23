@@ -8,6 +8,7 @@ import atexit
 import json
 import logging
 import multiprocessing
+import shlex
 import time
 from typing import TYPE_CHECKING, Final, Optional
 
@@ -52,6 +53,7 @@ class LinuxProfilingContext(PosixProfilingContext):
     self.setup_v8_log_path()
     if self.has_perf_prof_path:
       self.session.extra_js_flags["--perf-prof-path"] = str(self.result_path)
+    prepare_linux_perf_env(self.browser_platform, self.result_path, {})
 
   def start(self) -> None:
     if not self.probe.sample_browser_process:
@@ -69,6 +71,12 @@ class LinuxProfilingContext(PosixProfilingContext):
     if self._profiling_process.poll():
       raise ValueError("Could not start linux profiler")
     atexit.register(self.stop_process)
+
+  @override
+  def start_story_run(self) -> None:
+    super().start_story_run()
+    if self.probe.start_profiling_after_setup:
+      (self._renderer_pid, self._renderer_tid) = self.renderer_pid_tid
 
   def stop(self) -> None:
     self.stop_process()
@@ -91,6 +99,7 @@ class LinuxProfilingContext(PosixProfilingContext):
     perf_files: list[pth.AnyPath] = fs_helper.sort_by_file_size(
         list(self.browser_platform.glob(self.result_path, PERF_DATA_PATTERN)),
         self.browser_platform)
+    perf_files = self._filter_perf_files(perf_files)
     raw_perf_files = perf_files
     urls: list[str] = []
     try:
@@ -108,7 +117,34 @@ class LinuxProfilingContext(PosixProfilingContext):
                    "for interactive analysis:")
       logging.info("   pprof --http=localhost:1984 %s",
                    " ".join(map(str, perf_files)))
-    return self.browser_result(trace=perf_files)
+    return self.browser_result(perfetto=perf_files)
+
+  def _filter_perf_files(self,
+                         perf_files: list[pth.AnyPath]) -> list[pth.AnyPath]:
+    if not self.probe.start_profiling_after_setup:
+      return perf_files
+    renderer_pid = self._renderer_pid
+    if not renderer_pid:
+      return perf_files
+    # There will be exactly one matching file, usually the largest one
+    for perf_file in reversed(perf_files):
+      if self._extract_perf_pid(perf_file) == str(renderer_pid):
+        return [perf_file]
+    logging.error(
+        "Found no matching profiling for renderer PID %s. "
+        "Using largest profile.", renderer_pid)
+    return [perf_files[-1]]
+
+  def _extract_perf_pid(self, perf_file: pth.AnyPath) -> str:
+    # Run 'perf script' to extract *all* pids in the result file. This might
+    # return a lot of data, thus let's filter it directly on the
+    # browser platform.
+    maybe_pid = self.browser_platform.sh_stdout(  # noqa: S604
+        shlex.join(
+            ("perf", "--buildid-dir", str(perf_file.parent / "debug"), "script",
+             "-i", str(perf_file), "-F", "pid")) + " | head -n1",
+        shell=True)
+    return maybe_pid.strip()
 
   def _inject_v8_symbols(self, run: Run,
                          perf_files: list[pth.AnyPath]) -> list[pth.AnyPath]:
@@ -184,10 +220,19 @@ class LinuxProfilingContext(PosixProfilingContext):
         file.unlink()
 
 
-def prepare_linux_perf_env(platform: plt.Platform,
-                           cwd: pth.AnyPath) -> dict[str, str]:
-  env: dict[str, str] = dict(platform.environ)
-  env["JITDUMPDIR"] = str(platform.absolute(cwd))
+def prepare_linux_perf_env(
+    platform: plt.Platform,
+    cwd: pth.AnyPath,
+    env: Optional[dict[str, str]] = None) -> dict[str, str]:
+  abs_cwd = platform.absolute(cwd)
+  if env is None:
+    env = dict(platform.environ)
+  jit_dump_dir = abs_cwd / "jitdump"
+  platform.mkdir(jit_dump_dir, parents=True, exist_ok=True)
+  env["JITDUMPDIR"] = str(jit_dump_dir)
+  debug_dir = abs_cwd / "debug"
+  platform.mkdir(debug_dir, parents=True, exist_ok=True)
+  env["PERF_BUILDID_DIR"] = str(debug_dir)
   return env
 
 
@@ -206,6 +251,8 @@ def linux_perf_probe_inject_v8_symbols(
     # TODO: use remote chdir
     platform.sh(
         "perf",
+        "--buildid-dir",
+        str(perf_data_file.parent / "debug"),
         "inject",
         "--jit",
         f"--input={perf_data_file}",
@@ -230,7 +277,7 @@ def linux_perf_probe_pprof(
   platform = platform or plt.PLATFORM
   size = fs_helper.get_file_size(perf_data_file, platform=platform)
   env = prepare_linux_perf_env(platform, perf_data_file.parent)
-  url = ""
+  url: str = ""
   try:
     url = platform.sh_stdout(
         "pprof",
@@ -242,26 +289,12 @@ def linux_perf_probe_pprof(
   except plt.SubprocessError as e:
     # Occasionally small .jitted files fail, likely due perf inject silently
     # failing?
-    raw_perf_data_file = perf_data_file.with_suffix("")
-    if (perf_data_file.suffix == ".jitted" and
-        platform.exists(raw_perf_data_file)):
-      logging.debug(
-          "pprof best-effort: falling back to standard perf data "
-          "without js symbols: %s \n"
-          "Got failures for %s: %s", raw_perf_data_file, perf_data_file.name, e)
-      try:
-        perf_data_file = raw_perf_data_file
-        url = platform.sh_stdout(
-            "pprof",
-            "-flame",
-            f"-add_comment={run_details}",
-            raw_perf_data_file,
-        ).strip()
-      except plt.SubprocessError as e2:
-        logging.debug("pprof -flame failed: %s", e2)
-    if not url:
+    perf_data_file, maybe_url = _linux_perf_probe_pprof_fallback(
+        perf_data_file, run_details, platform, e)
+    if not maybe_url:
       logging.warning("Failed processing: %s\n%s", perf_data_file, e)
       return None
+    url = maybe_url
   if perf_data_file.suffix == ".jitted":
     logging.info("PPROF (with js-symbols):")
   else:
@@ -269,3 +302,26 @@ def linux_perf_probe_pprof(
   logging.info("  linux-perf:   %s [%s]", perf_data_file.name, size)
   logging.info("  pprof result: %s", url)
   return url
+
+
+def _linux_perf_probe_pprof_fallback(
+    perf_data_file: pth.AnyPath, run_details: str, platform: plt.Platform,
+    e: Exception) -> tuple[pth.AnyPath, str | None]:
+  raw_perf_data_file = perf_data_file.with_suffix("")
+  if perf_data_file.suffix != ".jitted" or (
+      not platform.exists(raw_perf_data_file)):
+    return perf_data_file, None
+  logging.debug(
+      "pprof best-effort: falling back to standard perf data "
+      "without js symbols: %s \n"
+      "Got failures for %s: %s", raw_perf_data_file, perf_data_file.name, e)
+  try:
+    url = platform.sh_stdout(
+        "pprof",
+        "-flame",
+        f"-add_comment={run_details}",
+        raw_perf_data_file,
+    ).strip()
+  except plt.SubprocessError as e2:
+    logging.debug("pprof -flame failed: %s", e2)
+  return raw_perf_data_file, url

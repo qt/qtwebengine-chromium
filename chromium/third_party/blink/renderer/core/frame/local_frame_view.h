@@ -187,7 +187,6 @@ class CORE_EXPORT LocalFrameView final
     can_have_scrollbars_ = can_have_scrollbars;
   }
   bool CanHaveScrollbars() const { return can_have_scrollbars_; }
-  bool VisualViewportSuppliesScrollbars();
 
   void SetLayoutOverflowSize(const gfx::Size&);
 
@@ -285,6 +284,22 @@ class CORE_EXPORT LocalFrameView final
   bool LayoutSizeFixedToFrameSize() const {
     return layout_size_fixed_to_frame_size_;
   }
+
+  // The natural size should be computed with a consistent ICB, to mitigate the
+  // risk of layout loops. This class sets up the ICB to be consistent for the
+  // natural size. The destructor restores it.
+  class NaturalSizeLayoutScope {
+    STACK_ALLOCATED();
+
+   public:
+    explicit NaturalSizeLayoutScope(LocalFrameView*);
+    ~NaturalSizeLayoutScope();
+
+   public:
+    LocalFrameView* view_ = nullptr;
+    bool is_fixed_to_frame_size_ = false;
+    int height_ = 0;
+  };
 
   std::optional<NaturalSizingInfo> GetNaturalDimensions() const override;
 
@@ -844,10 +859,18 @@ class CORE_EXPORT LocalFrameView final
       ScrollMarkerGroupPseudoElement* scroll_marker_group);
   void ExecutePendingScrollMarkerSelectionUpdates();
 
-  void RecordNaturalDimensions();
+  // True if the recorded value has changed.
+  bool RecordNaturalDimensions();
 
   void RequestSameDocumentNavigationPresentationTime(
       base::OnceCallback<void(const viz::FrameTimingDetails&)>);
+
+  // Return true if this frame, or any of its sub-frames, has an anchor-
+  // positioned element that is anchored against something with a transform, AND
+  // the transform is currently being animated. This means that a transform on
+  // one element may affect layout of another element, which means that the main
+  // thread needs to be involved during the animation.
+  bool HasRunningAnchorTransformAnimation() const;
 
  protected:
   void FrameRectsChanged(const gfx::Rect&) override;
@@ -868,6 +891,8 @@ class CORE_EXPORT LocalFrameView final
   void EnqueueScrollEvents();
 
  private:
+  friend class NaturalSizeLayoutScope;
+
   LocalFrameView(LocalFrame&, gfx::Rect);
 
 #if DCHECK_IS_ON()
@@ -1032,7 +1057,12 @@ class CORE_EXPORT LocalFrameView final
 
   void ForAllRemoteFrameViews(base::FunctionRef<void(RemoteFrameView&)>);
 
-  bool UpdateViewportIntersectionsForSubtree(
+  // Recomputes the values returned by HasActiveIntersectionObservations() and
+  // NeedsOcclusionTracking().
+  void UpdateIntersectionObserverStatus() override;
+  bool HasActiveIntersectionObservations() const override;
+  bool NeedsOcclusionTracking() const override;
+  void UpdateViewportIntersectionsForSubtree(
       unsigned parent_flags,
       ComputeIntersectionsContext&) override;
   void DeliverSynchronousIntersectionObservations();
@@ -1056,7 +1086,8 @@ class CORE_EXPORT LocalFrameView final
   // again before proceeding.
   bool RunPostLayoutIntersectionObserverSteps();
   // This is a recursive helper for determining intersection observations which
-  // need to happen in post-layout.
+  // need to happen in post-layout. Returns true if there are any active
+  // post-layout observations.
   void ComputePostLayoutIntersections(unsigned parent_flags,
                                       ComputeIntersectionsContext&);
 
@@ -1139,6 +1170,7 @@ class CORE_EXPORT LocalFrameView final
 
   Member<PaginationState> pagination_state_;
   gfx::Size layout_size_;
+  std::optional<int> layout_height_for_natural_size_;
   bool layout_size_fixed_to_frame_size_;
 
   bool needs_update_geometries_;
@@ -1187,6 +1219,12 @@ class CORE_EXPORT LocalFrameView final
 #endif
 
   IntersectionObservationState intersection_observation_state_;
+  // True if this FrameView or any descendant FrameView has active
+  // IntersectionObservers.
+  bool has_active_intersection_observations_ = false;
+  // True if this FrameView or any descendant FrameView has active
+  // IntersectionObservers for which observer->trackVisibility() is true.
+  bool needs_occlusion_tracking_ = false;
   gfx::Vector2dF accumulated_scroll_delta_since_last_intersection_update_;
   // Used only if the frame is the local root.
   HeapTaskRunnerTimer<LocalFrameView> delayed_intersection_timer_;

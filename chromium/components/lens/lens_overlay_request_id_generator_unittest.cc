@@ -267,10 +267,10 @@ TEST_F(
   std::unique_ptr<lens::LensOverlayRequestId> second_id =
       request_id_generator.GetNextRequestId(
           RequestIdUpdateMode::kMultiContextUploadRequest,
-          lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+          lens::LensOverlayRequestId::MEDIA_TYPE_PDF);
   ASSERT_EQ(second_id->image_sequence_id(), 1);
   ASSERT_EQ(second_id->sequence_id(), 1);
-  ASSERT_EQ(second_id->long_context_id(), 0);
+  ASSERT_EQ(second_id->long_context_id(), 1);
   ASSERT_NE(first_id->analytics_id(), second_id->analytics_id());
   ASSERT_NE(first_id->uuid(), second_id->uuid());
 }
@@ -298,6 +298,48 @@ TEST_F(LensOverlayRequestIdGeneratorTest,
           lens::LensOverlayRequestId::MEDIA_TYPE_WEBPAGE_AND_IMAGE);
   ASSERT_EQ(third_id->media_type(),
             lens::LensOverlayRequestId::MEDIA_TYPE_WEBPAGE_AND_IMAGE);
+}
+
+TEST_F(LensOverlayRequestIdGeneratorTest,
+       CreateNextRequestIdForUpdate_IncrementsFields) {
+  lens::LensOverlayRequestIdGenerator request_id_generator;
+  std::unique_ptr<lens::LensOverlayRequestId> first_id =
+      request_id_generator.GetNextRequestId(
+          RequestIdUpdateMode::kInitialRequest,
+          lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+  ASSERT_EQ(first_id->sequence_id(), 1);
+  ASSERT_EQ(first_id->image_sequence_id(), 1);
+  ASSERT_EQ(first_id->long_context_id(), 1);
+
+  std::unique_ptr<lens::LensOverlayRequestId> input_id =
+      std::make_unique<lens::LensOverlayRequestId>(*first_id);
+  input_id->set_media_type(
+      lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+  std::unique_ptr<lens::LensOverlayRequestId> second_id =
+      request_id_generator.CreateNextRequestIdForUpdate(
+          std::move(input_id),
+          RequestIdUpdateMode::kPageContentWithViewportRequest);
+  ASSERT_EQ(second_id->sequence_id(), 2);
+  ASSERT_EQ(second_id->image_sequence_id(), 2);
+  ASSERT_EQ(second_id->long_context_id(), 2);
+  ASSERT_EQ(second_id->uuid(), first_id->uuid());
+  ASSERT_EQ(second_id->context_id(), first_id->context_id());
+  ASSERT_NE(second_id->analytics_id(), first_id->analytics_id());
+}
+
+TEST_F(LensOverlayRequestIdGeneratorTest, GetNextRequestId_SetsContextId) {
+  lens::LensOverlayRequestIdGenerator request_id_generator;
+  std::unique_ptr<lens::LensOverlayRequestId> first_id =
+      request_id_generator.GetNextRequestId(
+          RequestIdUpdateMode::kInitialRequest,
+          lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+  ASSERT_NE(first_id->context_id(), 0);
+
+  std::unique_ptr<lens::LensOverlayRequestId> second_id =
+      request_id_generator.GetNextRequestId(
+          RequestIdUpdateMode::kPageContentRequest,
+          lens::LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE);
+  ASSERT_EQ(first_id->context_id(), second_id->context_id());
 }
 
 }  // namespace lens

@@ -17,17 +17,17 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("menus") {
+devtools_ui_module("menus") {
   sources = [
     "Menu.ts",
     "SelectMenu.ts",
   ]
   deps = [
     "../../../../front_end/core/platform:bundle",
-    "../../../../front_end/services/window_bounds:bundle",
     "../../../../front_end/ui/components/buttons:bundle",
     "../../../../front_end/ui/components/helpers:bundle",
     "../../../../front_end/ui/components/render_coordinator:bundle",
+    "../../legacy:bundle",
     "../dialogs:bundle",
   ]
 }
@@ -43,7 +43,7 @@ devtools_entrypoint("bundle") {
   visibility = [ "*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [ "SelectMenu.test.ts" ]

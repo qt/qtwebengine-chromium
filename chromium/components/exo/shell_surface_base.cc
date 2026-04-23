@@ -452,7 +452,7 @@ ShellSurfaceBase::~ShellSurfaceBase() {
 
   // If the surface was TrustedPinned, we have to unpin first as this might have
   // locked down some system functions.
-  if (current_pinned_state_ == chromeos::WindowPinType::kTrustedPinned) {
+  if (current_pinned_state_ == chromeos::WindowPinType::kLockedFullscreen) {
     pending_pinned_state_ = chromeos::WindowPinType::kNone;
     UpdatePinned();
   }
@@ -776,7 +776,7 @@ void ShellSurfaceBase::SetInitialWorkspace(const char* initial_workspace) {
 }
 
 void ShellSurfaceBase::Pin(bool trusted) {
-  pending_pinned_state_ = trusted ? chromeos::WindowPinType::kTrustedPinned
+  pending_pinned_state_ = trusted ? chromeos::WindowPinType::kLockedFullscreen
                                   : chromeos::WindowPinType::kPinned;
   UpdatePinned();
 }
@@ -803,7 +803,7 @@ void ShellSurfaceBase::UpdatePinned() {
       ash::WindowState::Get(window)->Restore();
     } else {
       bool trusted_pinned =
-          pending_pinned_state_ == chromeos::WindowPinType::kTrustedPinned;
+          pending_pinned_state_ == chromeos::WindowPinType::kLockedFullscreen;
       ash::window_util::PinWindow(window,
                                   /*trusted=*/trusted_pinned);
     }
@@ -1410,7 +1410,7 @@ void ShellSurfaceBase::GetWidgetHitTestMask(SkPath* mask) const {
   matrix.setScaleTranslate(
       SkFloatToScalar(1.0f / scale), SkFloatToScalar(1.0f / scale),
       SkIntToScalar(offset.x()), SkIntToScalar(offset.y()));
-  mask->transform(matrix);
+  *mask = mask->makeTransform(matrix);
 }
 
 void ShellSurfaceBase::OnCaptureChanged(aura::Window* lost_capture,

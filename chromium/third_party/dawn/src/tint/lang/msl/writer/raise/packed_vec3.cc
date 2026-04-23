@@ -200,7 +200,7 @@ struct State {
         } else if (auto count = arr->ConstantCount()) {
             return ty.array(new_elem_type, u32(count.value()));
         }
-        TINT_UNREACHABLE();
+        TINT_IR_UNREACHABLE(ir);
     }
 
     /// @param str the struct type to rewrite if necessary
@@ -290,7 +290,7 @@ struct State {
             },
             [&](core::ir::CoreBuiltinCall* call) {
                 // Assume this is only `arrayLength` until we find other cases.
-                TINT_ASSERT(call->Func() == core::BuiltinFn::kArrayLength);
+                TINT_IR_ASSERT(ir, call->Func() == core::BuiltinFn::kArrayLength);
                 // Nothing to do - the arrayLength builtin does not need to access the memory.
             },
             [&](core::ir::Let* let) {
@@ -478,7 +478,7 @@ struct State {
 
                 // Array elements that are packed vectors are wrapped in structures, so pull the
                 // packed vectors out of each structure and then construct the array from them.
-                TINT_ASSERT(unpacked_arr->ConstantCount());
+                TINT_IR_ASSERT(ir, unpacked_arr->ConstantCount());
                 auto count = unpacked_arr->ConstantCount().value();
                 if (count <= kMaxSeriallyUnpackedArraySize) {
                     Vector<core::ir::Value*, kMaxSeriallyUnpackedArraySize> elements;
@@ -489,7 +489,7 @@ struct State {
                     b.Return(func, b.Construct(unpacked_arr, std::move(elements)));
                 } else {
                     auto* result = b.Var(ty.ptr<function>(unpacked_arr));
-                    b.LoopRange(ty, u32(0), u32(count), u32(1), [&](core::ir::Value* idx) {
+                    b.LoopRange(u32(0), u32(count), u32(1), [&](core::ir::Value* idx) {
                         auto* to =
                             b.Access(ty.ptr(function, unpacked_arr->ElemType()), result, idx);
                         auto* unpacked_el = load_array_element(idx);
@@ -624,14 +624,14 @@ struct State {
 
                 // Store to each element of the array in a loop. If the element count is below a
                 // threshold, unroll that loop in the shader.
-                TINT_ASSERT(unpacked_arr->ConstantCount());
+                TINT_IR_ASSERT(ir, unpacked_arr->ConstantCount());
                 auto count = unpacked_arr->ConstantCount().value();
                 if (count <= kMaxSeriallyUnpackedArraySize) {
                     for (uint32_t i = 0; i < count; i++) {
                         store_array_element(b.Constant(u32(i)));
                     }
                 } else {
-                    b.LoopRange(ty, u32(0), u32(count), u32(1), [&](core::ir::Value* idx) {  //
+                    b.LoopRange(u32(0), u32(count), u32(1), [&](core::ir::Value* idx) {  //
                         store_array_element(idx);
                     });
                 }

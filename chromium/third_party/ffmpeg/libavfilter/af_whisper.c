@@ -150,7 +150,7 @@ static int init(AVFilterContext *ctx)
     }
 
     av_log(ctx, AV_LOG_INFO,
-           "Whisper filter initialized: model: %s lang: %s queue: %ld ms\n",
+           "Whisper filter initialized: model: %s lang: %s queue: %" PRId64 " ms\n",
            wctx->model_path, wctx->language, wctx->queue / 1000);
 
     return 0;
@@ -194,7 +194,7 @@ static void run_transcription(AVFilterContext *ctx, AVFrame *frame, int samples)
     const float duration = (float) samples / WHISPER_SAMPLE_RATE;
 
     av_log(ctx, AV_LOG_INFO,
-           "run transcription at %ld ms, %d/%d samples (%.2f seconds)...\n",
+           "run transcription at %" PRId64 " ms, %d/%d samples (%.2f seconds)...\n",
            timestamp_ms, samples, wctx->audio_buffer_fill_size, duration);
 
     struct whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
@@ -215,7 +215,9 @@ static void run_transcription(AVFilterContext *ctx, AVFrame *frame, int samples)
 
     for (int i = 0; i < n_segments; ++i) {
         const char *text = whisper_full_get_segment_text(wctx->ctx_wsp, i);
-        char *text_cleaned = av_strireplace(text + 1, "[BLANK_AUDIO]", "");
+        if (av_isspace(text[0]))
+            text++;
+        char *text_cleaned = av_strireplace(text, "[BLANK_AUDIO]", "");
 
         if (av_strnlen(text_cleaned, 1) == 0) {
             av_freep(&text_cleaned);
@@ -226,7 +228,7 @@ static void run_transcription(AVFilterContext *ctx, AVFrame *frame, int samples)
         const int64_t t0_ms = whisper_full_get_segment_t0(wctx->ctx_wsp, i) * 10;
         const int64_t t1_ms = whisper_full_get_segment_t1(wctx->ctx_wsp, i) * 10;
 
-        av_log(ctx, AV_LOG_DEBUG, "  [%ld-%ld%s]: \"%s\"\n",
+        av_log(ctx, AV_LOG_DEBUG, "  [%" PRId64 "-%" PRId64 "%s]: \"%s\"\n",
                timestamp_ms + t0_ms, timestamp_ms + t1_ms, turn ? " (turn)" : "", text_cleaned);
 
         if (segments_text) {
@@ -244,13 +246,15 @@ static void run_transcription(AVFilterContext *ctx, AVFrame *frame, int samples)
             if (!av_strcasecmp(wctx->format, "srt")) {
                 buf =
                     av_asprintf
-                    ("%d\n%02ld:%02ld:%02ld.%03ld --> %02ld:%02ld:%02ld.%03ld\n%s\n\n",
+                    ("%d\n%02" PRId64 ":%02" PRId64 ":%02" PRId64 ",%03" PRId64 " --> %02" PRId64 ":%02" PRId64 ":%02" PRId64 ",%03" PRId64 "\n%s\n\n",
                      wctx->index, start_t / 3600000,
                      (start_t / 60000) % 60, (start_t / 1000) % 60,
                      start_t % 1000, end_t / 3600000, (end_t / 60000) % 60,
                      (end_t / 1000) % 60, end_t % 1000, text_cleaned);
+
+                wctx->index++;
             } else if (!av_strcasecmp(wctx->format, "json")) {
-                buf = av_asprintf("{\"start\":%ld,\"end\":%ld,\"text\":\"%s\"}\n", start_t, end_t, text_cleaned);
+                buf = av_asprintf("{\"start\":%" PRId64 ",\"end\":%" PRId64 ",\"text\":\"%s\"}\n", start_t, end_t, text_cleaned);
             } else
                 buf = av_strdup(text_cleaned);
 
@@ -262,8 +266,6 @@ static void run_transcription(AVFilterContext *ctx, AVFrame *frame, int samples)
 
         av_freep(&text_cleaned);
     }
-
-    wctx->index++;
 
     AVDictionary **metadata = &frame->metadata;
     if (metadata && segments_text) {
@@ -428,7 +430,8 @@ static int query_formats(const AVFilterContext *ctx,
 #define HOURS 3600000000
 
 static const AVOption whisper_options[] = {
-    { "model", "Path to the whisper.cpp model file", OFFSET(model_path), AV_OPT_TYPE_STRING,.flags = FLAGS }, { "language", "Language for transcription ('auto' for auto-detect)", OFFSET(language), AV_OPT_TYPE_STRING, {.str = "auto"}, .flags = FLAGS },
+    { "model", "Path to the whisper.cpp model file", OFFSET(model_path), AV_OPT_TYPE_STRING,.flags = FLAGS },
+    { "language", "Language for transcription ('auto' for auto-detect)", OFFSET(language), AV_OPT_TYPE_STRING, {.str = "auto"}, .flags = FLAGS },
     { "queue", "Audio queue size", OFFSET(queue), AV_OPT_TYPE_DURATION, {.i64 = 3000000}, 20000, HOURS, .flags = FLAGS },
     { "use_gpu", "Use GPU for processing", OFFSET(use_gpu), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, .flags = FLAGS },
     { "gpu_device", "GPU device to use", OFFSET(gpu_device), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, .flags = FLAGS },

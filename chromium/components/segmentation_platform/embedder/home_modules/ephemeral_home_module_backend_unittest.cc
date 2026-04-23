@@ -70,8 +70,7 @@ class EphemeralHomeModuleBackendTest : public DefaultModelTestBase {
       : DefaultModelTestBase(
             std::make_unique<EphemeralHomeModuleBackend>(nullptr)) {
     feature_list_.InitWithFeatures(
-        {commerce::kPriceTrackingPromo},
-        {features::kSegmentationPlatformTipsEphemeralCard});
+        {}, {features::kSegmentationPlatformTipsEphemeralCard});
     HomeModulesCardRegistry::RegisterProfilePrefs(
         profile_pref_service_.registry());
     HomeModulesCardRegistry::RegisterLocalStatePrefs(
@@ -101,7 +100,7 @@ TEST_F(EphemeralHomeModuleBackendTest, ExecuteModelWithInput) {
                            {kNotShownResultValue, kNotShownResultValue});
 #elif BUILDFLAG(IS_ANDROID)
   ExpectExecutionWithInput(
-      std::vector<float>(20, 0), /*expected_error=*/false,
+      std::vector<float>(22, 0), /*expected_error=*/false,
       /*expected_result=*/std::vector<float>(7, kNotShownResultValue));
 #else
   ExpectExecutionWithInput(/*inputs=*/{}, /*expected_error=*/false,

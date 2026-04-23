@@ -46,6 +46,7 @@ viz_component("host") {
     "//gpu/ipc/common",
     "//gpu/webgpu:common",
     "//services/viz/privileged/mojom",
+    "//services/webnn/host",
     "//services/webnn/public/mojom",
     "//ui/base",
     "//ui/base:ozone_buildflags",
@@ -73,10 +74,11 @@ viz_component("host") {
 viz_source_set("unit_tests") {
   testonly = true
 
-  sources = [
-    "host_frame_sink_manager_unittest.cc",
-    "persistent_cache_sandboxed_file_factory_unittest.cc",
-  ]
+  sources = [ "host_frame_sink_manager_unittest.cc" ]
+
+  if (enable_skia_graphite_tests) {
+    sources += [ "persistent_cache_sandboxed_file_factory_unittest.cc" ]
+  }
 
   deps = [
     ":host",

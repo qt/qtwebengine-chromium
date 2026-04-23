@@ -11,8 +11,8 @@ import json
 import logging
 import os
 import threading
-from typing import (TYPE_CHECKING, Final, Iterator, Mapping, Optional, Self,
-                    Type, TypeVar)
+from typing import TYPE_CHECKING, Final, Iterator, Mapping, Optional, Self, \
+    Type, TypeVar
 
 from immutabledict import immutabledict
 from typing_extensions import override
@@ -45,6 +45,7 @@ _DEFAULT_HEADERS: Final[immutabledict[str, str]] = immutabledict({
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Embedder-Policy": "require-corp"
 })
+
 
 class CustomHeadersRequestHandler(http.server.SimpleHTTPRequestHandler):
 

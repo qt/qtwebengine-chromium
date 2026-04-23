@@ -986,6 +986,11 @@ Set TCP_NODELAY to disable Nagle's algorithm. Default value is 0.
 
 @emph{Remark: Writing to the socket is currently not optimized to minimize system calls and reduces the efficiency / effect of TCP_NODELAY.}
 
+@item tcp_keepalive=@var{1|0}
+Enable the TCP keepalive mechanism to detect dead peers and help maintain long-lived idle connections. Default value is 0.
+
+Only the basic keepalive option (SO_KEEPALIVE) can be enabled or disabled. Platform-specific tuning parameters such as TCP_KEEPIDLE, TCP_KEEPINTVL, or TCP_KEEPCNT are not configurable and will use the operating system's default values.
+
 @end table
 
 For example to read with @command{ffplay} a multimedia resource named
@@ -1157,9 +1162,13 @@ rtp://@var{hostname}[:@var{port}][?@var{options}]
 @var{port} specifies the RTP port to use.
 
 @var{options} contains a list of &-separated options of the form
-@var{key}=@var{val}.
+@var{key}=@var{val}. Standard percent-encoding (and using the plus sign for
+space) can be used to escape keys and values.
 
-The following URL options are supported:
+Options can also can be specified via command line options (or in code via
+@code{AVOption}s).
+
+The list of supported options follows.
 
 @table @option
 
@@ -1169,10 +1178,12 @@ Set the TTL (Time-To-Live) value (for multicast only).
 @item rtcpport=@var{n}
 Set the remote RTCP port to @var{n}.
 
-@item localrtpport=@var{n}
+@item localport, local_rtpport, localrtpport=@var{n}
 Set the local RTP port to @var{n}.
 
-@item localrtcpport=@var{n}'
+Using the localport option name is deprecated and should not be used.
+
+@item local_rtcpport, localrtcpport=@var{n}'
 Set the local RTCP port to @var{n}.
 
 @item pkt_size=@var{n}
@@ -1194,12 +1205,6 @@ List disallowed (blocked) source IP addresses.
 @item write_to_source=0|1
 Send packets to the source address of the latest received packet (if
 set to 1) or to a default remote address (if set to 0).
-
-@item localport=@var{n}
-Set the local RTP port to @var{n}.
-
-This is a deprecated option. Instead, @option{localrtpport} should be
-used.
 
 @item localaddr=@var{addr}
 Local IP address of a network interface used for sending packets or joining
@@ -1534,7 +1539,15 @@ The accepted URL syntax is:
 sctp://@var{host}:@var{port}[?@var{options}]
 @end example
 
-The protocol accepts the following options:
+@var{options} contains a list of &-separated options of the form
+@var{key}=@var{val}. Standard percent-encoding (and using the plus sign for
+space) can be used to escape keys and values.
+
+Options can also can be specified via command line options (or in code via
+@code{AVOption}s).
+
+The list of supported options follows.
+
 @table @option
 @item listen
 If set to any value, listen for an incoming connection. Outgoing connection is done by default.
@@ -1553,18 +1566,13 @@ srt://@var{hostname}:@var{port}[?@var{options}]
 @end example
 
 @var{options} contains a list of &-separated options of the form
-@var{key}=@var{val}.
+@var{key}=@var{val}. Standard percent-encoding (and using the plus sign for
+space) can be used to escape keys and values.
 
-or
+Options can also can be specified via command line options (or in code via
+@code{AVOption}s).
 
-@example
-@var{options} srt://@var{hostname}:@var{port}
-@end example
-
-@var{options} contains a list of '-@var{key} @var{val}'
-options.
-
-This protocol accepts the following options.
+The list of supported options follows.
 
 @table @option
 @item connect_timeout=@var{milliseconds}
@@ -1917,7 +1925,11 @@ tcp://@var{hostname}:@var{port}[?@var{options}]
 @end example
 
 @var{options} contains a list of &-separated options of the form
-@var{key}=@var{val}.
+@var{key}=@var{val}. Standard percent-encoding (and using the plus sign for
+space) can be used to escape keys and values.
+
+Options can also can be specified via command line options (or in code via
+@code{AVOption}s).
 
 The list of supported options follows.
 
@@ -1972,8 +1984,14 @@ The required syntax for a TLS/SSL url is:
 tls://@var{hostname}:@var{port}[?@var{options}]
 @end example
 
-The following parameters can be set via command line options
-(or in code via @code{AVOption}s):
+@var{options} contains a list of &-separated options of the form
+@var{key}=@var{val}. Standard percent-encoding (and using the plus sign for
+space) can be used to escape keys and values.
+
+Options can also can be specified via command line options (or in code via
+@code{AVOption}s).
+
+The list of supported options follows.
 
 @table @option
 
@@ -1984,7 +2002,7 @@ need to be specified for verification to work, but not all libraries and
 setups have defaults built in.
 The file must be in OpenSSL PEM format.
 
-@item tls_verify=@var{1|0}
+@item tls_verify, verify=@var{1|0}
 If enabled, try to verify the peer that we are communicating with.
 Note, if using OpenSSL, this currently only makes sure that the
 peer certificate is signed by one of the root certificates in the CA
@@ -2034,12 +2052,19 @@ Datagram Transport Layer Security (DTLS)
 
 The required syntax for a DTLS URL is:
 @example
-dtls://@var{hostname}:@var{port}
+dtls://@var{hostname}:@var{port}[?@var{options}]
 @end example
 
+@var{options} contains a list of &-separated options of the form
+@var{key}=@var{val}. Standard percent-encoding (and using the plus sign for
+space) can be used to escape keys and values.
+
+Options can also can be specified via command line options (or in code via
+@code{AVOption}s).
+
 DTLS shares most options with TLS, but operates over UDP instead of TCP.
-The following parameters can be set via command line options
-(or in code via @code{AVOption}s):
+
+The list of supported options follows.
 
 @table @option
 
@@ -2050,7 +2075,7 @@ need to be specified for verification to work, but not all libraries and
 setups have defaults built in.
 The file must be in OpenSSL PEM format.
 
-@item tls_verify=@var{1|0}
+@item tls_verify, verify=@var{1|0}
 If enabled, try to verify the peer that we are communicating with.
 Note, if using OpenSSL, this currently only makes sure that the
 peer certificate is signed by one of the root certificates in the CA
@@ -2118,7 +2143,12 @@ The required syntax for an UDP URL is:
 udp://@var{hostname}:@var{port}[?@var{options}]
 @end example
 
-@var{options} contains a list of &-separated options of the form @var{key}=@var{val}.
+@var{options} contains a list of &-separated options of the form
+@var{key}=@var{val}. Standard percent-encoding (and using the plus sign for
+space) can be used to escape keys and values.
+
+Options can also can be specified via command line options (or in code via
+@code{AVOption}s).
 
 In case threading is enabled on the system, a circular buffer is used
 to store the incoming data, which allows one to reduce loss of data due to
@@ -2156,6 +2186,9 @@ Explicitly allow or disallow reusing UDP sockets.
 
 @item ttl=@var{ttl}
 Set the time to live value (for multicast only).
+
+@item dscp=@var{dscp}
+Set the 6-bit DSCP field for outgoing packets.
 
 @item connect=@var{1|0}
 Initialize the UDP socket with @code{connect()}. In this case, the

@@ -1,9 +1,9 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
-import './Icon.js';
+import '../../kit/kit.js';
 
 import * as Lit from '../../lit/lit.js';
 
@@ -93,6 +93,7 @@ export class IconButton extends HTMLElement {
   }
 }
 
+// eslint-disable-next-line @devtools/enforce-custom-element-prefix
 customElements.define('icon-button', IconButton);
 
 declare global {

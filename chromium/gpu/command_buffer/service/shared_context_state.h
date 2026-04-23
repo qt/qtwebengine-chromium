@@ -158,8 +158,7 @@ class GPU_GLES2_EXPORT SharedContextState
   void MarkContextLost(error::ContextLostReason reason = error::kUnknown);
   bool IsCurrent(gl::GLSurface* surface, bool needs_gl = false);
 
-  void PurgeMemory(
-      base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
+  void PurgeMemory(base::MemoryPressureLevel memory_pressure_level);
 
   void UpdateSkiaOwnedMemorySize();
   uint64_t GetMemoryUsage();
@@ -356,7 +355,7 @@ class GPU_GLES2_EXPORT SharedContextState
       nullptr;
   bool created_on_compositor_gpu_thread_ = false;
   bool is_drdc_enabled_ = false;
-  raw_ptr<GrDirectContext, DanglingUntriaged> gr_context_ = nullptr;
+  raw_ptr<GrDirectContext> gr_context_ = nullptr;
   std::unique_ptr<skgpu::graphite::Recorder> gpu_main_graphite_recorder_;
   std::unique_ptr<skgpu::graphite::Recorder> viz_compositor_graphite_recorder_;
 

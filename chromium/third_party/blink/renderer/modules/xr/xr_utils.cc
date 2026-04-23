@@ -7,6 +7,9 @@
 #include <cmath>
 
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_webgl2renderingcontext_webglrenderingcontext.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_xr_eye.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_xr_layer_init.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_xr_layer_layout.h"
 #include "third_party/blink/renderer/core/geometry/dom_point_read_only.h"
 #include "third_party/blink/renderer/modules/webgl/webgl2_rendering_context.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context.h"
@@ -24,7 +27,7 @@ NotShared<DOMFloat32Array> transformationMatrixToDOMFloat32Array(
 
 gfx::Transform DOMFloat32ArrayToTransform(NotShared<DOMFloat32Array> m) {
   CHECK_EQ(m->length(), 16u);
-  return gfx::Transform::ColMajorF(m->Data());
+  return gfx::Transform::ColMajorF(m->AsSpan().first<16>());
 }
 
 // Normalize to have length = 1.0
@@ -214,7 +217,7 @@ std::optional<device::mojom::XRSessionFeature> StringToXRSessionFeature(
   return std::nullopt;
 }
 
-String XRSessionFeatureToString(device::mojom::XRSessionFeature feature) {
+StringView XRSessionFeatureToString(device::mojom::XRSessionFeature feature) {
   switch (feature) {
     case device::mojom::XRSessionFeature::REF_SPACE_VIEWER:
       return "viewer";
@@ -284,6 +287,58 @@ bool IsFeatureEnabledForContext(device::mojom::XRSessionFeature feature,
     case device::mojom::XRSessionFeature::DOM_OVERLAY:
     case device::mojom::XRSessionFeature::SECONDARY_VIEWS:
       return true;
+  }
+}
+
+V8XREye GetV8Eye(const device::mojom::blink::XREye& eye) {
+  switch (eye) {
+    case device::mojom::blink::XREye::kLeft:
+      return V8XREye(V8XREye::Enum::kLeft);
+    case device::mojom::blink::XREye::kRight:
+      return V8XREye(V8XREye::Enum::kRight);
+    case device::mojom::blink::XREye::kNone:
+      return V8XREye(V8XREye::Enum::kNone);
+  }
+  NOTREACHED();
+}
+
+device::mojom::blink::XRLayerLayout V8ToMojomLayerLayout(
+    V8XRLayerLayout::Enum layout) {
+  switch (layout) {
+    case V8XRLayerLayout::Enum::kDefault:
+      return device::mojom::blink::XRLayerLayout::kDefault;
+    case V8XRLayerLayout::Enum::kMono:
+      return device::mojom::blink::XRLayerLayout::kMono;
+    case V8XRLayerLayout::Enum::kStereo:
+      return device::mojom::blink::XRLayerLayout::kStereo;
+    case V8XRLayerLayout::Enum::kStereoLeftRight:
+      return device::mojom::blink::XRLayerLayout::kStereoLeftRight;
+    case V8XRLayerLayout::Enum::kStereoTopBottom:
+      return device::mojom::blink::XRLayerLayout::kStereoTopBottom;
+  }
+}
+
+uint16_t GetHorizontalViewCount(V8XRLayerLayout layout) {
+  switch (layout.AsEnum()) {
+    case V8XRLayerLayout::Enum::kDefault:
+    case V8XRLayerLayout::Enum::kMono:
+    case V8XRLayerLayout::Enum::kStereo:
+    case V8XRLayerLayout::Enum::kStereoTopBottom:
+      return 1;
+    case V8XRLayerLayout::Enum::kStereoLeftRight:
+      return 2;
+  }
+}
+
+uint16_t GetVerticalViewCount(V8XRLayerLayout layout) {
+  switch (layout.AsEnum()) {
+    case V8XRLayerLayout::Enum::kDefault:
+    case V8XRLayerLayout::Enum::kMono:
+    case V8XRLayerLayout::Enum::kStereo:
+    case V8XRLayerLayout::Enum::kStereoLeftRight:
+      return 1;
+    case V8XRLayerLayout::Enum::kStereoTopBottom:
+      return 2;
   }
 }
 

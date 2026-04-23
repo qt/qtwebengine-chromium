@@ -27,8 +27,15 @@
 
 #include "dawn/native/webgpu/BindGroupLayoutWGPU.h"
 
+#include <vector>
+
+#include "dawn/common/MatchVariant.h"
+#include "dawn/common/StringViewUtils.h"
+#include "dawn/native/webgpu/CaptureContext.h"
+#include "dawn/native/webgpu/ComputePipelineWGPU.h"
 #include "dawn/native/webgpu/DeviceWGPU.h"
 #include "dawn/native/webgpu/Forward.h"
+#include "dawn/native/webgpu/RenderPipelineWGPU.h"
 
 namespace dawn::native::webgpu {
 
@@ -42,10 +49,33 @@ ResultOrError<Ref<BindGroupLayout>> BindGroupLayout::Create(
 BindGroupLayout::BindGroupLayout(Device* device,
                                  const UnpackedPtr<BindGroupLayoutDescriptor>& descriptor)
     : BindGroupLayoutInternalBase(device, descriptor),
+      RecordableObject(schema::ObjectType::BindGroupLayout),
       ObjectWGPU(device->wgpu.bindGroupLayoutRelease),
       mBindGroupAllocator(MakeFrontendBindGroupAllocator<BindGroup>(4096)) {
-    auto desc = ToAPI(*descriptor);
-    mInnerHandle = device->wgpu.deviceCreateBindGroupLayout(device->GetInnerHandle(), desc);
+    // Rebuild the descriptor and resolve internal bindings to regular ones.
+    std::vector<WGPUBindGroupLayoutEntry> entries(descriptor->entryCount);
+    for (size_t i = 0; i < entries.size(); i++) {
+        entries[i] = *ToAPI(&descriptor->entries[i]);
+
+        switch (descriptor->entries[i].buffer.type) {
+            case kInternalStorageBufferBinding:
+                entries[i].buffer.type = WGPUBufferBindingType_Storage;
+                break;
+            case kInternalReadOnlyStorageBufferBinding:
+                entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+                break;
+            default:
+                break;
+        }
+    }
+
+    WGPUBindGroupLayoutDescriptor desc = {};
+    desc.nextInChain = nullptr;
+    desc.label = ToOutputStringView(descriptor->label);
+    desc.entryCount = descriptor->entryCount;
+    desc.entries = entries.data();
+
+    mInnerHandle = device->wgpu.deviceCreateBindGroupLayout(device->GetInnerHandle(), &desc);
     DAWN_ASSERT(mInnerHandle);
 }
 
@@ -61,6 +91,88 @@ void BindGroupLayout::DeallocateBindGroup(BindGroup* bindGroup) {
 
 void BindGroupLayout::ReduceMemoryUsage() {
     mBindGroupAllocator->DeleteEmptySlabs();
+}
+
+MaybeError BindGroupLayout::AddReferenced(CaptureContext& captureContext) {
+    // BindGroupLayouts don't reference anything.
+    return {};
+}
+
+void BindGroupLayout::SetLabelImpl() {
+    ToBackend(GetDevice())->CaptureSetLabel(this, GetLabel());
+}
+
+MaybeError BindGroupLayout::CaptureCreationParameters(CaptureContext& captureContext) {
+    const auto& bindingMap = GetBindingMap();
+
+    schema::BindGroupLayout data{{
+        .numEntries = uint32_t(bindingMap.size()),
+    }};
+    Serialize(captureContext, data);
+
+    for (const auto& [bindingNumber, apiBindingIndex] : bindingMap) {
+        const auto& bindingInfo = GetAPIBindingInfo(apiBindingIndex);
+
+        schema::BindGroupLayoutBinding binding{{
+            .binding = uint32_t(bindingNumber),
+            .visibility = bindingInfo.visibility,
+            .bindingArraySize = uint32_t(bindingInfo.arraySize),
+        }};
+
+        DAWN_TRY(MatchVariant(
+            bindingInfo.bindingLayout,
+            [&](const BufferBindingInfo& info) -> MaybeError {
+                schema::BindGroupLayoutEntryTypeBufferBinding entry{{
+                    .binding = binding,
+                    .data{{
+                        .type = info.type,
+                        .minBindingSize = info.minBindingSize,
+                        .hasDynamicOffset = info.hasDynamicOffset,
+                    }},
+                }};
+                Serialize(captureContext, entry);
+                return {};
+            },
+            [&](const SamplerBindingInfo& info) -> MaybeError {
+                schema::BindGroupLayoutEntryTypeSamplerBinding entry{{
+                    .binding = binding,
+                    .data{{
+                        .type = info.type,
+                    }},
+                }};
+                Serialize(captureContext, entry);
+                return {};
+            },
+            [&](const StorageTextureBindingInfo& info) -> MaybeError {
+                schema::BindGroupLayoutEntryTypeStorageTextureBinding entry{{
+                    .binding = binding,
+                    .data{{
+                        .format = info.format,
+                        .viewDimension = info.viewDimension,
+                        .access = info.access,
+                    }},
+                }};
+                Serialize(captureContext, entry);
+                return {};
+            },
+            [&](const TextureBindingInfo& info) -> MaybeError {
+                schema::BindGroupLayoutEntryTypeTextureBinding entry{{
+                    .binding = binding,
+                    .data{{
+                        .sampleType = info.sampleType,
+                        .viewDimension = info.viewDimension,
+                        .multisampled = info.multisampled,
+                    }},
+                }};
+                Serialize(captureContext, entry);
+                return {};
+            },
+            [&](const auto& info) -> MaybeError {
+                return DAWN_INTERNAL_ERROR("Unsupported bind layout entry type");
+            }));
+    }
+
+    return {};
 }
 
 }  // namespace dawn::native::webgpu

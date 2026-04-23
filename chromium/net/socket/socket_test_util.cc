@@ -49,6 +49,7 @@
 #include "net/log/net_log_source_type.h"
 #include "net/socket/connect_job.h"
 #include "net/socket/socket.h"
+#include "net/socket/socket_pool_additional_capacity.h"
 #include "net/socket/stream_socket.h"
 #include "net/socket/websocket_endpoint_lock_manager.h"
 #include "net/ssl/ssl_cert_request_info.h"
@@ -148,14 +149,28 @@ MockConnectCompleter::MockConnectCompleter() = default;
 
 MockConnectCompleter::~MockConnectCompleter() = default;
 
-void MockConnectCompleter::SetCallback(CompletionOnceCallback callback) {
-  CHECK(!callback_);
-  callback_ = std::move(callback);
+void MockConnectCompleter::WaitForConnect() {
+  // This class is single use - so either the RunLoop should already have been
+  // quit, or `connect_` is null (but not both).
+  CHECK(!callback_ || run_loop_.AnyQuitCalled());
+  CHECK(callback_ || !run_loop_.AnyQuitCalled());
+  run_loop_.Run();
 }
 
 void MockConnectCompleter::Complete(int result) {
   CHECK(callback_);
   std::move(callback_).Run(result);
+}
+
+void MockConnectCompleter::WaitForConnectAndComplete(int result) {
+  WaitForConnect();
+  Complete(result);
+}
+
+void MockConnectCompleter::SetCallback(CompletionOnceCallback callback) {
+  CHECK(!callback_);
+  callback_ = std::move(callback);
+  run_loop_.Quit();
 }
 
 MockConnect::MockConnect() : mode(ASYNC), result(OK) {
@@ -357,6 +372,13 @@ void StaticSocketDataProvider::Pause() {
 
 void StaticSocketDataProvider::Resume() {
   paused_ = false;
+}
+
+void StaticSocketDataProvider::ExpectAllReadDataConsumed() const {
+  helper_.ExpectAllReadDataConsumed(printer_.get());
+}
+void StaticSocketDataProvider::ExpectAllWriteDataConsumed() const {
+  helper_.ExpectAllWriteDataConsumed(printer_.get());
 }
 
 MockRead StaticSocketDataProvider::OnRead() {
@@ -2079,6 +2101,7 @@ MockTransportClientSocketPool::MockTransportClientSocketPool(
     : TransportClientSocketPool(
           max_sockets,
           max_sockets_per_group,
+          SocketPoolAdditionalCapacity::Create(),
           base::Seconds(10) /* unused_idle_socket_timeout */,
           ProxyChain::Direct(),
           false /* is_for_websockets */,

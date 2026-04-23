@@ -1063,6 +1063,8 @@ static void print_pkt_side_data(AVTextFormatContext *tfc,
         print_int("crop_right",  AV_RL32(sd->data + 12));
     } else if (sd->type == AV_PKT_DATA_AFD && sd->size > 0) {
         print_int("active_format", *sd->data);
+    } else if (sd->type == AV_PKT_DATA_EXIF) {
+        print_int("size", sd->size);
     }
 }
 
@@ -1151,6 +1153,16 @@ static void print_chroma_location(AVTextFormatContext *tfc, enum AVChromaLocatio
         print_str_opt("chroma_location", "unspecified");
     } else {
         print_str("chroma_location", val);
+    }
+}
+
+static void print_alpha_mode(AVTextFormatContext *tfc, enum AVAlphaMode alpha_mode)
+{
+    const char *val = av_alpha_mode_name(alpha_mode);
+    if (!val || alpha_mode == AVALPHA_MODE_UNSPECIFIED) {
+        print_str_opt("alpha_mode", "unspecified");
+    } else {
+        print_str("alpha_mode", val);
     }
 }
 
@@ -1342,6 +1354,8 @@ static void print_frame_side_data(AVTextFormatContext *tfc,
             print_film_grain_params(tfc, fgp);
         } else if (sd->type == AV_FRAME_DATA_VIEW_ID) {
             print_int("view_id", *(int*)sd->data);
+        } else if (sd->type == AV_FRAME_DATA_EXIF) {
+            print_int("size", sd->size);
         }
         avtext_print_section_footer(tfc);
     }
@@ -1406,6 +1420,7 @@ static void show_frame(AVTextFormatContext *tfc, AVFrame *frame, AVStream *strea
         print_primaries(tfc, frame->color_primaries);
         print_color_trc(tfc, frame->color_trc);
         print_chroma_location(tfc, frame->chroma_location);
+        print_alpha_mode(tfc, frame->alpha_mode);
         break;
 
     case AVMEDIA_TYPE_AUDIO:

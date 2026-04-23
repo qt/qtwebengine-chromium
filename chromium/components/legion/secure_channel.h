@@ -5,31 +5,12 @@
 #ifndef COMPONENTS_LEGION_SECURE_CHANNEL_H_
 #define COMPONENTS_LEGION_SECURE_CHANNEL_H_
 
-#include <cstdint>
-#include <memory>
-#include <optional>
-#include <vector>
-
 #include "base/functional/callback.h"
+#include "base/types/expected.h"
+#include "components/legion/error_code.h"
+#include "components/legion/legion_common.h"
 
 namespace legion {
-
-// Placeholder for the request data structure. Likely a serialized proto.
-using Request = std::vector<uint8_t>;
-// Placeholder for the response data structure. Likely a deserialized proto.
-using Response = std::vector<uint8_t>;
-
-// Represents the result of an operation.
-enum class ResultCode {
-  // Operation completed successfully.
-  kSuccess,
-  // A non-transient error occurred. The client should not retry the request.
-  kError,
-  // Authentication failed, e.g., due to an invalid API key.
-  kAuthenticationFailed,
-  // A transient network error occurred. The client may retry the request.
-  kNetworkError,
-};
 
 // Interface for the Secure Channel Layer.
 // This layer is responsible for handling the secure communication
@@ -37,13 +18,22 @@ enum class ResultCode {
 // and using the WebSocketClient for transport.
 class SecureChannel {
  public:
-  using OnWriteCompletedCallback =
-      base::OnceCallback<void(ResultCode, std::optional<Response>)>;
+  using ResponseCallback =
+      base::RepeatingCallback<void(base::expected<Response, ErrorCode>)>;
+  using EstablishChannelCallback =
+      base::OnceCallback<void(base::expected<void, ErrorCode>)>;
 
   virtual ~SecureChannel() = default;
 
+  // Sets a callback that will be invoked for each response from the server.
+  virtual void SetResponseCallback(ResponseCallback callback) = 0;
+
+  // Establishes a secure channel without sending a request.
+  virtual void EstablishChannel(EstablishChannelCallback callback) = 0;
+
   // Asynchronously performs the operation over the secure channel.
-  virtual void Write(Request request, OnWriteCompletedCallback callback) = 0;
+  // Returns false if the channel is in a permanent failure state.
+  virtual bool Write(const Request& request) = 0;
 };
 
 }  // namespace legion

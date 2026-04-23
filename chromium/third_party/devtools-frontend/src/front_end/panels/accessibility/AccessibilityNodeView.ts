@@ -1,14 +1,16 @@
 // Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as uiI18n from '../../ui/i18n/i18n.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import * as PanelsCommon from '../common/common.js';
 
 import accessibilityNodeStyles from './accessibilityNode.css.js';
 import {AXAttributes, AXNativeSourceTypes, AXSourceTypes} from './AccessibilityStrings.js';
@@ -325,7 +327,7 @@ export class AXNodePropertyTreeElement extends UI.TreeOutline.TreeElement {
   }
 
   appendRelatedNodeListValueElement(value: Protocol.Accessibility.AXValue): void {
-    if (value.relatedNodes && value.relatedNodes.length === 1 && !value.value) {
+    if (value.relatedNodes?.length === 1 && !value.value) {
       this.appendRelatedNodeInline(value.relatedNodes[0]);
       return;
     }
@@ -586,8 +588,11 @@ export class AXRelatedNodeElement {
       const valueElement = document.createElement('span');
       element.appendChild(valueElement);
       void this.deferredNode.resolvePromise().then(node => {
-        void Common.Linkifier.Linkifier.linkify(node, {tooltip: undefined, preventKeyboardFocus: true})
-            .then(linkfied => valueElement.appendChild(linkfied));
+        if (!node) {
+          return;
+        }
+        valueElement.appendChild(PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(
+            node, {tooltip: undefined, preventKeyboardFocus: true}));
       });
     } else if (this.idref) {
       element.classList.add('invalid');
@@ -626,65 +631,65 @@ export class AXNodeIgnoredReasonTreeElement extends AXNodePropertyTreeElement {
     let reasonElement: Element|null = null;
     switch (reason) {
       case 'activeModalDialog':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementIsHiddenBy, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.elementIsHiddenBy, {});
         break;
       case 'hiddenByChildTree':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementIsHiddenByChildTree, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.elementIsHiddenByChildTree, {});
         break;
       case 'ancestorIsLeafNode':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.ancestorChildrenAreAll, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.ancestorChildrenAreAll, {});
         break;
       case 'ariaHiddenElement': {
         const ariaHiddenSpan = document.createElement('span', {is: 'source-code'}).textContent = 'aria-hidden';
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementIsPlaceholder, {PH1: ariaHiddenSpan});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.elementIsPlaceholder, {PH1: ariaHiddenSpan});
         break;
       }
       case 'ariaHiddenSubtree': {
         const ariaHiddenSpan = document.createElement('span', {is: 'source-code'}).textContent = 'aria-hidden';
         const trueSpan = document.createElement('span', {is: 'source-code'}).textContent = 'true';
-        reasonElement = i18n.i18n.getFormatLocalizedString(
+        reasonElement = uiI18n.getFormatLocalizedString(
             str_, UIStrings.placeholderIsPlaceholderOnAncestor, {PH1: ariaHiddenSpan, PH2: trueSpan});
         break;
       }
       case 'emptyAlt':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementHasEmptyAltText, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.elementHasEmptyAltText, {});
         break;
       case 'emptyText':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.noTextContent, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.noTextContent, {});
         break;
       case 'inertElement':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementIsInert, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.elementIsInert, {});
         break;
       case 'inertSubtree':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementIsInAnInertSubTree, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.elementIsInAnInertSubTree, {});
         break;
       case 'inheritsPresentation':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementsInheritsPresentational, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.elementsInheritsPresentational, {});
         break;
       case 'labelContainer':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.partOfLabelElement, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.partOfLabelElement, {});
         break;
       case 'labelFor':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.labelFor, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.labelFor, {});
         break;
       case 'notRendered':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementIsNotRendered, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.elementIsNotRendered, {});
         break;
       case 'notVisible':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementIsNotVisible, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.elementIsNotVisible, {});
         break;
       case 'presentationalRole': {
         const role = axNode?.role()?.value || '';
         const rolePresentationSpan = document.createElement('span', {is: 'source-code'}).textContent = 'role=' + role;
         reasonElement =
-            i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementHasPlaceholder, {PH1: rolePresentationSpan});
+            uiI18n.getFormatLocalizedString(str_, UIStrings.elementHasPlaceholder, {PH1: rolePresentationSpan});
         break;
       }
       case 'probablyPresentational':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementIsPresentational, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.elementIsPresentational, {});
         break;
       case 'uninteresting':
-        reasonElement = i18n.i18n.getFormatLocalizedString(str_, UIStrings.elementNotInteresting, {});
+        reasonElement = uiI18n.getFormatLocalizedString(str_, UIStrings.elementNotInteresting, {});
         break;
     }
     if (reasonElement) {

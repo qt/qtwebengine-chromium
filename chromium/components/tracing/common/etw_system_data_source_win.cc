@@ -17,6 +17,7 @@
 #include "components/tracing/common/etw_consumer_win.h"
 #include "third_party/perfetto/include/perfetto/ext/tracing/core/trace_writer.h"
 #include "third_party/perfetto/include/perfetto/tracing/core/data_source_descriptor.h"
+#include "third_party/perfetto/protos/perfetto/config/chrome/chrome_config.gen.h"
 #include "third_party/perfetto/protos/perfetto/config/etw/etw_config.gen.h"
 
 namespace tracing {
@@ -28,6 +29,13 @@ ULONG EtwSystemFlagsFromSchedulerProvider(std::string_view keyword) {
     return EVENT_TRACE_FLAG_CSWITCH;
   } else if (keyword == "DISPATCHER") {
     return EVENT_TRACE_FLAG_DISPATCHER;
+  }
+  return 0;
+}
+
+ULONG EtwSystemFlagsFromFileProvider(std::string_view keyword) {
+  if (keyword == "FILE_IO") {
+    return EVENT_TRACE_FLAG_FILE_IO | EVENT_TRACE_FLAG_FILE_IO_INIT;
   }
   return 0;
 }
@@ -119,6 +127,9 @@ void EtwSystemDataSource::OnStart(const StartArgs&) {
   for (const auto& keyword : etw_config.scheduler_provider_events()) {
     p.EnableFlags |= EtwSystemFlagsFromSchedulerProvider(keyword);
   }
+  for (const auto& keyword : etw_config.file_provider_events()) {
+    p.EnableFlags |= EtwSystemFlagsFromFileProvider(keyword);
+  }
 
   // The ETW Session must be started (but not opened) before providers can be
   // enabled.
@@ -144,7 +155,10 @@ void EtwSystemDataSource::OnStart(const StartArgs&) {
                                  TRACE_LEVEL_INFORMATION,
                                  memory_provider_flags);
 
-  consumer_ = {new EtwConsumer(client_pid_, CreateTraceWriter()),
+  bool privacy_filtering_enabled =
+      data_source_config_.chrome_config().privacy_filtering_enabled();
+  consumer_ = {new EtwConsumer(client_pid_, CreateTraceWriter(),
+                               privacy_filtering_enabled),
                base::OnTaskRunnerDeleter(consume_task_runner_)};
   hr = consumer_->OpenRealtimeSession(kEtwSystemSessionName);
   if (FAILED(hr)) {
@@ -158,10 +172,16 @@ void EtwSystemDataSource::OnStart(const StartArgs&) {
                                 base::Unretained(consumer_.get())));
 }
 
-void EtwSystemDataSource::OnStop(const StopArgs&) {
+void EtwSystemDataSource::OnStop(const StopArgs& args) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (consumer_) {
+    consume_task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(&EtwConsumer::Flush, base::Unretained(consumer_.get()),
+                       args.HandleStopAsynchronously()));
+    consumer_.reset();
+  }
   etw_controller_.Stop(nullptr);
-  consumer_.reset();
 }
 
 }  // namespace tracing

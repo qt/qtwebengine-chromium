@@ -38,16 +38,16 @@ class ProbeResult(abc.ABC):
   def __init__(self,
                url: Optional[Iterable[str]] = None,
                file: Optional[Iterable[pth.LocalPath]] = None,
-               trace: Optional[Iterable[pth.LocalPath]] = None,
+               perfetto: Optional[Iterable[pth.LocalPath]] = None,
                **kwargs: Iterable[pth.LocalPath]) -> None:
     self._url_list: tuple[str, ...] = ()
     if url:
       self._url_list = ObjectParser.unique_sequence(
           tuple(url), "urls", DuplicateProbeResult)
-    self._trace_list: tuple[pth.LocalPath, ...] = ()
-    if trace:
-      self._trace_list = ObjectParser.unique_sequence(
-          tuple(trace), "traces", DuplicateProbeResult)
+    self._perfetto_list: tuple[pth.LocalPath, ...] = ()
+    if perfetto:
+      self._perfetto_list = ObjectParser.unique_sequence(
+          tuple(perfetto), "traces", DuplicateProbeResult)
     tmp_files: dict[str, OrderedSet[pth.LocalPath]] = {}
     if file:
       self._extend(tmp_files, file, suffix=None, allow_duplicates=False)
@@ -56,7 +56,7 @@ class ProbeResult(abc.ABC):
 
     # Do last and allow duplicated
     self._extend(
-        tmp_files, self._trace_list, suffix=None, allow_duplicates=True)
+        tmp_files, self._perfetto_list, suffix=None, allow_duplicates=True)
     self._files: immutabledict[str, tuple[pth.LocalPath, ...]] = immutabledict({
         suffix: tuple(files) for suffix, files in tmp_files.items()
     })
@@ -143,7 +143,7 @@ class ProbeResult(abc.ABC):
     return LocalProbeResult(
         url=self.url_list + other.url_list,
         file=self.file_list + other.file_list,
-        trace=self.trace_list + other.trace_list)
+        perfetto=self.perfetto_list + other.perfetto_list)
 
   def _validate(self) -> None:
     for path in self.all_files():
@@ -189,14 +189,14 @@ class ProbeResult(abc.ABC):
     return list(self.all_files())
 
   @property
-  def trace(self) -> pth.LocalPath:
-    if len(self._trace_list) != 1:
+  def perfetto(self) -> pth.LocalPath:
+    if len(self._perfetto_list) != 1:
       raise ValueError("ProbeResult has multiple traces.")
-    return self._trace_list[0]
+    return self._perfetto_list[0]
 
   @property
-  def trace_list(self) -> list[pth.LocalPath]:
-    return list(self._trace_list)
+  def perfetto_list(self) -> list[pth.LocalPath]:
+    return list(self._perfetto_list)
 
   @property
   def json(self) -> pth.LocalPath:
@@ -244,22 +244,28 @@ class BrowserProbeResult(ProbeResult):
                result_origin: ProbeResultOrigin,
                url: Optional[Iterable[str]] = None,
                file: Optional[Iterable[pth.AnyPath]] = None,
+               perfetto: Optional[Iterable[pth.AnyPath]] = None,
                **kwargs: Iterable[pth.AnyPath]) -> None:
     self._browser_file = file
     local_file: Iterable[pth.LocalPath] | None = None
+    local_perfetto: Iterable[pth.LocalPath] | None = None
     local_kwargs: dict[str, Iterable[pth.LocalPath]] = {}
     self._is_remote = result_origin.is_remote
     if self._is_remote:
       if file:
         local_file = self._copy_files(result_origin, file)
+      if perfetto:
+        local_perfetto = self._copy_files(result_origin, perfetto)
       for suffix_name, files in kwargs.items():
         local_kwargs[suffix_name] = self._copy_files(result_origin, files)
     else:
       # Keep local files as is.
       local_file = cast(Iterable[pth.LocalPath], file)
+      local_perfetto = cast(Iterable[pth.LocalPath], perfetto)
       local_kwargs = cast(dict[str, Iterable[pth.LocalPath]], kwargs)
 
-    super().__init__(url, local_file, **local_kwargs)
+    super().__init__(
+        url=url, file=local_file, perfetto=local_perfetto, **local_kwargs)
 
   @override
   def __bool__(self) -> bool:
@@ -294,6 +300,7 @@ class BrowserProbeResult(ProbeResult):
 
 
 DefaultT = TypeVar("DefaultT")
+
 
 class ProbeResultDict:
   """
@@ -358,4 +365,4 @@ class ProbeResultDict:
 
   def all_traces(self) -> Iterable[pth.LocalPath]:
     for probe_result in self._dict.values():
-      yield from probe_result.trace_list
+      yield from probe_result.perfetto_list

@@ -92,6 +92,7 @@
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/memory/memory_pressure_listener.h"
+#include "content/browser/renderer_host/android_spare_renderer_navigation_throttle.h"
 #include "content/public/browser/android/child_process_importance.h"
 #endif
 
@@ -243,6 +244,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   int VisibleClientCount() override;
   unsigned int GetFrameDepth() override;
   bool GetIntersectsViewport() override;
+#if !BUILDFLAG(IS_ANDROID)
+  bool IsForInitialWebUI() const override;
+#endif  // !BUILDFLAG(IS_ANDROID)
   bool IsForGuestsOnly() override;
   bool IsJitDisabled() override;
   bool AreV8OptimizationsDisabled() override;
@@ -282,8 +286,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   bool HasPriorityOverride() override;
   void ClearPriorityOverride() override;
 #endif
-  void GraduateSpareToNormalRendererPriority() override;
 #if BUILDFLAG(IS_ANDROID)
+  void GraduateSpareToNormalRendererPriority() override;
+  bool ShouldThrottleNavigationForSpareRendererGraduation() override;
   ChildProcessImportance GetEffectiveImportance() override;
   base::android::ChildBindingState GetEffectiveChildBindingState() override;
   void DumpProcessStack() override;
@@ -371,17 +376,13 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void ResumeSocketManagerForRenderFrameHost(
       const GlobalRenderFrameHostId& render_frame_host_id) override;
 
-  // IPC::Sender via RenderProcessHost.
-  bool Send(IPC::Message* msg) override;
-
   // IPC::Listener via RenderProcessHost.
-  bool OnMessageReceived(const IPC::Message& msg) override;
   void OnAssociatedInterfaceRequest(
       const std::string& interface_name,
       mojo::ScopedInterfaceEndpointHandle handle) override;
   void OnChannelConnected(int32_t peer_pid) override;
   void OnChannelError() override;
-  void OnBadMessageReceived(const IPC::Message& message) override;
+  void OnBadMessageReceived() override;
 
   // ChildProcessLauncher::Client implementation.
   void OnProcessLaunched() override;
@@ -389,6 +390,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #if BUILDFLAG(IS_ANDROID)
   bool CanUseWarmUpConnection() override;
   bool HasSpareRendererPriority() override;
+  void OnSpareRendererPriorityGraduated(bool is_alive) override;
 #endif
 
   const std::string& GetUnresponsiveDocumentJavascriptCallStack() const;
@@ -586,7 +588,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
     kRefusedForJitMismatch = 7,
     kRefusedForV8OptimizationMismatch = 8,
     kRefusedNonNavigation = 9,
-    kMaxValue = kRefusedNonNavigation
+    kCannotAddThrottle = 10,
+    kMaxValue = kCannotAddThrottle
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/browser/histograms.xml:SpareProcessMaybeTakeAction)
 
@@ -878,8 +881,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
 #if BUILDFLAG(IS_ANDROID)
   // Notifies the renderer process of memory pressure level.
-  void NotifyMemoryPressureToRenderer(
-      base::MemoryPressureListener::MemoryPressureLevel level);
+  void NotifyMemoryPressureToRenderer(base::MemoryPressureLevel level);
 #endif
 
 #if BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
@@ -971,7 +973,23 @@ class CONTENT_EXPORT RenderProcessHostImpl
     // Indicates whether v8 feature flag overrides are disallowed in this
     // renderer process.
     kDisallowV8FeatureFlagOverrides = 1 << 4,
+
+#if !BUILDFLAG(IS_ANDROID)
+    // Indicates that this RenderProcessHost is hosting the initial WebUI.
+    // Initial WebUI (WaaP) and WebUI (e.g. Tab Search) are hosted in the same
+    // process. This flag is only set when the initial WebUI exists.
+    // Only used on desktop.
+    kForInitialWebUI = 1 << 5,
+#endif  // !BUILDFLAG(IS_ANDROID)
   };
+
+#if BUILDFLAG(IS_ANDROID)
+  enum class SpareRendererPriorityStatus {
+    kNormal = 0,
+    kSpare = 1,
+    kGraduating = 2,
+  };
+#endif  // BUILDFLAG(IS_ANDROID)
 
   // A RenderProcessHostImpl's IO thread implementation of the
   // |mojom::ChildProcessHost| interface. This exists to allow the process host
@@ -1298,6 +1316,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
       const GlobalRenderFrameHostId& render_frame_host_id,
       bool is_prerendering);
 
+  bool ShouldPauseChannelUntilProcessLaunched();
+
   mojo::OutgoingInvitation mojo_invitation_;
 
   // These cover mutually-exclusive cases. While keep-alive is time-based,
@@ -1403,11 +1423,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // vibe with raw_ptr<T>.
   RAW_PTR_EXCLUSION BrowserContext* browser_context_ = nullptr;
 
-  // Owned by |browser_context_|.
-  //
-  // TODO(crbug.com/40061679): Change back to `raw_ptr` after the ad-hoc
-  // debugging is no longer needed to investigate the bug.
-  base::WeakPtr<StoragePartitionImpl> storage_partition_impl_;
+  // Owned by `browser_context_`.
+  raw_ptr<StoragePartitionImpl> storage_partition_impl_;
 
   // Owns the singular DomStorageProvider binding established by this renderer.
   mojo::Receiver<blink::mojom::DomStorageProvider>
@@ -1532,12 +1549,17 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   bool channel_connected_ = false;
   bool sent_render_process_ready_ = false;
-  bool sent_process_created_ = false;
+  bool sent_process_launched_ = false;
 
   std::unique_ptr<FileSystemManagerImpl, BrowserThread::DeleteOnIOThread>
       file_system_manager_impl_;
   std::unique_ptr<viz::GpuClient> gpu_client_;
   std::unique_ptr<PushMessagingManager> push_messaging_manager_;
+#if BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
+  std::unique_ptr<viz::GpuClient, base::OnTaskRunnerDeleter>
+      oop_video_decoder_gpu_client_{nullptr,
+                                    base::OnTaskRunnerDeleter(nullptr)};
+#endif  // BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
 
   std::unique_ptr<EmbeddedFrameSinkProviderImpl> embedded_frame_sink_provider_;
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -1629,15 +1651,16 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Maximum number of outermost main frames this process hosted concurrently.
   size_t max_outermost_main_frames_ = 0;
 
-  // Whether to consider the process as a spare renderer when
-  // calculating the priority.
-  // The attribute starts out as false and is set to true if this renderer
-  // process is launched as a spare process.  When the process is taken for
-  // navigation, the value will stay true until the priority is set in
-  // RenderWidgetHostImpl. For other renderer process allocations, the value
-  // will be set to false when the process is taken from the
-  // SpareRenderProcessHostManager.
-  bool has_spare_renderer_priority_;
+#if BUILDFLAG(IS_ANDROID)
+  // The spare renderer priority status of the process.
+  // The attribute starts out as kNormal and is set to kSpare if this renderer
+  // process is launched as a spare process. When the process is taken for
+  // navigation, the value be set to kGraduating when
+  // GraduateSpareToNormalRendererPriority is called. The value will be further
+  // updated to kNormal when we receive the OnSpareRendererPriorityGraduated
+  // callback.
+  SpareRendererPriorityStatus spare_renderer_priority_status_;
+#endif  // BUILDFLAG(IS_ANDROID)
 
   // Tracing track used to emit async event related to lifecycle.
   perfetto::NamedTrack tracing_track_;

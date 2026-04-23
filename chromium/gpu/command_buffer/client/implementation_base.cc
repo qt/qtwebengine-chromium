@@ -333,9 +333,9 @@ void ImplementationBase::SetBucketContents(uint32_t bucket_id,
       if (!buffer.valid()) {
         return;
       }
-      UNSAFE_TODO(memcpy(buffer.address(),
-                         static_cast<const int8_t*>(data) + offset,
-                         buffer.size()));
+      auto span = UNSAFE_TODO(base::span(
+          static_cast<const uint8_t*>(data) + offset, buffer.size()));
+      buffer.as_byte_span().copy_from(span);
       helper_->SetBucketData(bucket_id, offset, buffer.size(), buffer.shm_id(),
                              buffer.offset());
       offset += buffer.size();
@@ -401,22 +401,6 @@ void ImplementationBase::RunIfContextNotLost(base::OnceClosure callback) {
   if (!lost_context_callback_run_) {
     std::move(callback).Run();
   }
-}
-
-void ImplementationBase::SetGrContext(GrDirectContext* gr) {}
-
-bool ImplementationBase::HasGrContextSupport() const {
-  return false;
-}
-
-void ImplementationBase::WillCallGLFromSkia() {
-  // Should only be called on subclasses that have GrContextSupport
-  NOTREACHED();
-}
-
-void ImplementationBase::DidCallGLFromSkia() {
-  // Should only be called on subclasses that have GrContextSupport
-  NOTREACHED();
 }
 
 }  // namespace gpu

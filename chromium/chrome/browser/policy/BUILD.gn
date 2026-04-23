@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/features.gni")
 import("//components/services/on_device_translation/buildflags/features.gni")
 import("//components/signin/features.gni")
 import("//extensions/buildflags/buildflags.gni")
@@ -265,7 +264,6 @@ source_set("policy_specific_browser_tests") {
   deps = [
     ":test_support",
     "//base",
-    "//build:android_buildflags",
     "//chrome/app:command_ids",
     "//chrome/browser",
     "//chrome/browser/media/webrtc",
@@ -288,9 +286,12 @@ source_set("policy_specific_browser_tests") {
     deps += [
       "//chrome/browser/ash/login/lock:test_support",
       "//chrome/browser/ash/login/saml:test_support",
+      "//chrome/browser/ash/login/users",
       "//chrome/browser/ash/net",
+      "//chrome/browser/ash/policy/core:test_support",
       "//chrome/browser/policy:onc",
       "//chromeos:test_support",
+      "//chromeos/ash/components/browser_context_helper",
       "//chromeos/components/onc:test_support",
       "//components/onc",
       "//components/session_manager/core",
@@ -320,6 +321,7 @@ source_set("policy_specific_browser_tests") {
       "test/quic_allowed_browsertest.cc",
       "test/shared_dictionary_policy_browsertest.cc",
       "test/signed_exchange_browsertest.cc",
+      "test/static_storage_quota_policy_browsertest.cc",
       "test/task_manager_end_process_enabled_browsertest.cc",
       "test/web_rtc_event_log_collection_allowed_policy_browsertest.cc",
       "test/web_rtc_local_ips_allowed_urls_policy_browsertest.cc",
@@ -330,6 +332,7 @@ source_set("policy_specific_browser_tests") {
     deps += [
       "//chrome/browser/autofill",
       "//chrome/browser/content_settings:content_settings_factory",
+      "//chrome/browser/devtools",
       "//chrome/browser/devtools:test_support",
       "//chrome/browser/profiles",
       "//chrome/browser/profiles:profile",

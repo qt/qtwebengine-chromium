@@ -4,14 +4,87 @@
 
 #include "components/contextual_tasks/public/contextual_task_context.h"
 
+#include "base/strings/utf_string_conversions.h"
 #include "components/contextual_tasks/public/contextual_task.h"
+#include "components/url_deduplication/url_deduplication_helper.h"
+#include "components/visited_url_ranking/public/url_visit_util.h"
 
 namespace contextual_tasks {
 
+UrlAttachmentDecoratorData::UrlAttachmentDecoratorData() = default;
+UrlAttachmentDecoratorData::~UrlAttachmentDecoratorData() = default;
+UrlAttachmentDecoratorData::UrlAttachmentDecoratorData(
+    const UrlAttachmentDecoratorData&) = default;
+UrlAttachmentDecoratorData& UrlAttachmentDecoratorData::operator=(
+    const UrlAttachmentDecoratorData&) = default;
+UrlAttachmentDecoratorData::UrlAttachmentDecoratorData(
+    UrlAttachmentDecoratorData&&) = default;
+UrlAttachmentDecoratorData& UrlAttachmentDecoratorData::operator=(
+    UrlAttachmentDecoratorData&&) = default;
+
+UrlAttachment::UrlAttachment(const GURL& url) : url_(url) {}
+
+UrlAttachment::~UrlAttachment() = default;
+
+UrlAttachment::UrlAttachment(const UrlAttachment&) = default;
+UrlAttachment::UrlAttachment(UrlAttachment&&) = default;
+UrlAttachment& UrlAttachment::operator=(const UrlAttachment&) = default;
+UrlAttachment& UrlAttachment::operator=(UrlAttachment&&) = default;
+
+GURL UrlAttachment::GetURL() const {
+  return url_;
+}
+
+std::u16string UrlAttachment::GetTitle() const {
+  if (title_.has_value()) {
+    return title_.value();
+  }
+  if (!decorator_data_.contextual_search_context_data.title.empty()) {
+    return decorator_data_.contextual_search_context_data.title;
+  }
+  if (!decorator_data_.tab_strip_data.title.empty()) {
+    return decorator_data_.tab_strip_data.title;
+  }
+  if (!decorator_data_.history_data.title.empty()) {
+    return decorator_data_.history_data.title;
+  }
+  return decorator_data_.fallback_title_data.title;
+}
+
+gfx::Image UrlAttachment::GetFavicon() const {
+  return decorator_data_.favicon_data.image;
+}
+
+bool UrlAttachment::IsOpen() const {
+  return decorator_data_.tab_strip_data.is_open_in_tab_strip;
+}
+
+SessionID UrlAttachment::GetTabSessionId() const {
+  if (tab_session_id_.has_value()) {
+    return tab_session_id_.value();
+  }
+  return decorator_data_.contextual_search_context_data.tab_session_id;
+}
+
+UrlAttachmentDecoratorData& UrlAttachment::GetMutableDecoratorDataForTesting() {
+  return decorator_data_;
+}
+
+UrlAttachmentDecoratorData& UrlAttachment::GetMutableDecoratorData() {
+  return decorator_data_;
+}
+
 ContextualTaskContext::ContextualTaskContext(const ContextualTask& task)
     : task_id_(task.GetTaskId()) {
-  for (const auto& url : task.GetUrls()) {
-    urls_.push_back({url});
+  for (const auto& url_resource : task.GetUrlResources()) {
+    UrlAttachment attachment(url_resource.url);
+    if (url_resource.title.has_value()) {
+      attachment.title_ = base::UTF8ToUTF16(url_resource.title.value());
+    }
+    if (url_resource.tab_id.has_value()) {
+      attachment.tab_session_id_ = url_resource.tab_id.value();
+    }
+    urls_.push_back(std::move(attachment));
   }
 }
 
@@ -36,6 +109,50 @@ const base::Uuid& ContextualTaskContext::GetTaskId() const {
 const std::vector<UrlAttachment>& ContextualTaskContext::GetUrlAttachments()
     const {
   return urls_;
+}
+
+std::vector<UrlAttachment>&
+ContextualTaskContext::GetMutableUrlAttachmentsForTesting() {
+  return urls_;
+}
+
+std::vector<UrlAttachment>& ContextualTaskContext::GetMutableUrlAttachments() {
+  return urls_;
+}
+
+bool ContextualTaskContext::ContainsURL(
+    const GURL& url,
+    url_deduplication::URLDeduplicationHelper* deduplication_helper) const {
+  visited_url_ranking::URLMergeKey merge_key =
+      visited_url_ranking::ComputeURLMergeKey(url, std::u16string(),
+                                              deduplication_helper);
+  for (const auto& attachment : urls_) {
+    if (visited_url_ranking::ComputeURLMergeKey(
+            attachment.GetURL(), std::u16string(), deduplication_helper) ==
+        merge_key) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::vector<const UrlAttachment*>
+ContextualTaskContext::GetMatchingUrlAttachments(
+    const GURL& url,
+    url_deduplication::URLDeduplicationHelper* deduplication_helper) const {
+  // TODO(crbug.com/470979776): Add unit tests for this function.
+  std::vector<const UrlAttachment*> matching_attachments;
+  visited_url_ranking::URLMergeKey merge_key =
+      visited_url_ranking::ComputeURLMergeKey(url, std::u16string(),
+                                              deduplication_helper);
+  for (const auto& attachment : urls_) {
+    if (visited_url_ranking::ComputeURLMergeKey(
+            attachment.GetURL(), std::u16string(), deduplication_helper) ==
+        merge_key) {
+      matching_attachments.push_back(&attachment);
+    }
+  }
+  return matching_attachments;
 }
 
 }  // namespace contextual_tasks

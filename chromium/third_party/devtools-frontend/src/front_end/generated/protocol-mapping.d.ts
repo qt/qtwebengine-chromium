@@ -7,6 +7,9 @@
  * Re-generate with: npm run generate-protocol-resources.
  */
 
+
+import type * as Protocol from './protocol.js'
+
 /**
  * Mappings from protocol event and command names to the types required for them.
  */
@@ -113,6 +116,10 @@ export namespace ProtocolMapping {
      * Fired when `Element`'s attribute is modified.
      */
     'DOM.attributeModified': [Protocol.DOM.AttributeModifiedEvent];
+    /**
+     * Fired when `Element`'s adoptedStyleSheets are modified.
+     */
+    'DOM.adoptedStyleSheetsModified': [Protocol.DOM.AdoptedStyleSheetsModifiedEvent];
     /**
      * Fired when `Element`'s attribute is removed.
      */
@@ -233,6 +240,10 @@ export namespace ProtocolMapping {
      * Fired when debugging target has reloaded after crash
      */
     'Inspector.targetReloadedAfterCrash': [];
+    /**
+     * Fired on worker targets when main worker script and any imported scripts have been evaluated.
+     */
+    'Inspector.workerScriptLoaded': [];
     'LayerTree.layerPainted': [Protocol.LayerTree.LayerPaintedEvent];
     'LayerTree.layerTreeDidChange': [Protocol.LayerTree.LayerTreeDidChangeEvent];
     /**
@@ -369,6 +380,8 @@ export namespace ProtocolMapping {
      * Fired when data is received from tcp direct socket stream.
      */
     'Network.directTCPSocketChunkReceived': [Protocol.Network.DirectTCPSocketChunkReceivedEvent];
+    'Network.directUDPSocketJoinedMulticastGroup': [Protocol.Network.DirectUDPSocketJoinedMulticastGroupEvent];
+    'Network.directUDPSocketLeftMulticastGroup': [Protocol.Network.DirectUDPSocketLeftMulticastGroupEvent];
     /**
      * Fired upon direct_socket.UDPSocket creation.
      */
@@ -423,24 +436,6 @@ export namespace ProtocolMapping {
      * Fired once security policy has been updated.
      */
     'Network.policyUpdated': [];
-    /**
-     * Fired once when parsing the .wbn file has succeeded.
-     * The event contains the information about the web bundle contents.
-     */
-    'Network.subresourceWebBundleMetadataReceived': [Protocol.Network.SubresourceWebBundleMetadataReceivedEvent];
-    /**
-     * Fired once when parsing the .wbn file has failed.
-     */
-    'Network.subresourceWebBundleMetadataError': [Protocol.Network.SubresourceWebBundleMetadataErrorEvent];
-    /**
-     * Fired when handling requests for resources within a .wbn file.
-     * Note: this will only be fired for resources that are requested by the webpage.
-     */
-    'Network.subresourceWebBundleInnerResponseParsed': [Protocol.Network.SubresourceWebBundleInnerResponseParsedEvent];
-    /**
-     * Fired when request for resources within a .wbn file failed.
-     */
-    'Network.subresourceWebBundleInnerResponseError': [Protocol.Network.SubresourceWebBundleInnerResponseErrorEvent];
     /**
      * Is sent whenever a new report is added.
      * And after 'enableReportingApi' for all existing reports.
@@ -1231,14 +1226,15 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
-     * Set permission settings for given requesting and embedding origins.
+     * Set permission settings for given embedding and embedded origins.
      */
     'Browser.setPermission': {
       paramsType: [Protocol.Browser.SetPermissionRequest];
       returnType: void;
     };
     /**
-     * Grant specific permissions to the given origin and reject all others.
+     * Grant specific permissions to the given origin and reject all others. Deprecated. Use
+     * setPermission instead.
      */
     'Browser.grantPermissions': {
       paramsType: [Protocol.Browser.GrantPermissionsRequest];
@@ -3251,21 +3247,6 @@ export namespace ProtocolMapping {
       returnType: Protocol.Memory.GetSamplingProfileResponse;
     };
     /**
-     * Returns enum representing if IP Proxy of requests is available
-     * or reason it is not active.
-     */
-    'Network.getIPProtectionProxyStatus': {
-      paramsType: [];
-      returnType: Protocol.Network.GetIPProtectionProxyStatusResponse;
-    };
-    /**
-     * Sets bypass IP Protection Proxy boolean.
-     */
-    'Network.setIPProtectionProxyBypassEnabled': {
-      paramsType: [Protocol.Network.SetIPProtectionProxyBypassEnabledRequest];
-      returnType: void;
-    };
-    /**
      * Sets a list of content encodings that will be accepted. Empty list means no encoding is accepted.
      */
     'Network.setAcceptedEncodings': {
@@ -3348,7 +3329,9 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
-     * Activates emulation of network conditions for individual requests using URL match patterns.
+     * Activates emulation of network conditions for individual requests using URL match patterns. Unlike the deprecated
+     * Network.emulateNetworkConditions this method does not affect `navigator` state. Use Network.overrideNetworkState to
+     * explicitly modify `navigator` behavior.
      */
     'Network.emulateNetworkConditionsByRule': {
       paramsType: [Protocol.Network.EmulateNetworkConditionsByRuleRequest];
@@ -3443,7 +3426,7 @@ export namespace ProtocolMapping {
      * Blocks URLs from loading.
      */
     'Network.setBlockedURLs': {
-      paramsType: [Protocol.Network.SetBlockedURLsRequest];
+      paramsType: [Protocol.Network.SetBlockedURLsRequest?];
       returnType: void;
     };
     /**
@@ -4281,6 +4264,14 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * Get the annotated page content for the main frame.
+     * This is an experimental command that is subject to change.
+     */
+    'Page.getAnnotatedPageContent': {
+      paramsType: [Protocol.Page.GetAnnotatedPageContentRequest?];
+      returnType: Protocol.Page.GetAnnotatedPageContentResponse;
+    };
+    /**
      * Disable collecting and reporting metrics.
      */
     'Performance.disable': {
@@ -4845,6 +4836,14 @@ export namespace ProtocolMapping {
     'Target.setRemoteLocations': {
       paramsType: [Protocol.Target.SetRemoteLocationsRequest];
       returnType: void;
+    };
+    /**
+     * Gets the targetId of the DevTools page target opened for the given target
+     * (if any).
+     */
+    'Target.getDevToolsTarget': {
+      paramsType: [Protocol.Target.GetDevToolsTargetRequest];
+      returnType: Protocol.Target.GetDevToolsTargetResponse;
     };
     /**
      * Opens a DevTools window for the target.

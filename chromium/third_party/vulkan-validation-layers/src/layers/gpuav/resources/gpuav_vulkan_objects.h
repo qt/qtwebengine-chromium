@@ -90,6 +90,7 @@ struct BufferRange {
     VkDeviceAddress offset_address = 0;
     VmaAllocation vma_alloc = VK_NULL_HANDLE;  // Todo: get rid of this once host cached allocation are removed
 
+    VkDescriptorBufferInfo GetDescriptorBufferInfo() const { return {buffer, offset, size}; }
     void Clear() const;
 };
 
@@ -100,7 +101,7 @@ class GpuResourcesManager {
 
     VkDescriptorSet GetManagedDescriptorSet(VkDescriptorSetLayout desc_set_layout);
 
-    vko::BufferRange GetHostVisibleBufferRange(VkDeviceSize size);
+    vko::BufferRange GetHostCoherentBufferRange(VkDeviceSize size);
     vko::BufferRange GetHostCachedBufferRange(VkDeviceSize size);
     void FlushAllocation(const vko::BufferRange &buffer_range);
     void InvalidateAllocation(const vko::BufferRange &buffer_range);
@@ -142,8 +143,8 @@ class GpuResourcesManager {
 
         struct CachedBufferBlock {
             vko::Buffer buffer;
-            vvl::range<VkDeviceSize> total_range;
-            vvl::range<VkDeviceSize> used_range;
+            vvl::range<VkDeviceAddress> total_range;
+            vvl::range<VkDeviceAddress> used_range;
         };
 
         std::vector<CachedBufferBlock> cached_buffers_blocks_{};
@@ -151,12 +152,35 @@ class GpuResourcesManager {
         size_t next_avail_buffer_pos_hint_ = 0;
     };
 
-    // One cache per buffer type: having them mixed in just one would worse cache lookups
-    BufferCache host_visible_buffer_cache_;
-    BufferCache host_cached_buffer_cache_;
-    BufferCache device_local_buffer_cache_;
-    BufferCache device_local_indirect_buffer_cache_;
-    BufferCache staging_buffer_cache_;
+    // One cache per buffer type: having them mixed in just one would make cache lookups worse
+    struct BufferCaches {
+        // Will have HOST_VISIBLE and HOST_COHERENT (may be HOST_CACHED)
+        BufferCache host_coherent;
+        // Will have HOST_VISIBLE and HOST_CACHED (may be HOST_COHERENT)
+        BufferCache host_cached;
+        // Will have DEVICE_LOCAL
+        BufferCache device_local;
+        // Will have DEVICE_LOCAL with VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT
+        BufferCache device_local_indirect;
+        // Used to transfer from HOST_VISIBLE to DEVICE_LOCAL buffers
+        BufferCache staging;
+
+        void ReturnBuffers() {
+            host_coherent.ReturnBuffers();
+            host_cached.ReturnBuffers();
+            device_local.ReturnBuffers();
+            device_local_indirect.ReturnBuffers();
+            staging.ReturnBuffers();
+        }
+
+        void DestroyBuffers() {
+            host_coherent.DestroyBuffers();
+            host_cached.DestroyBuffers();
+            device_local.DestroyBuffers();
+            device_local_indirect.DestroyBuffers();
+            staging.DestroyBuffers();
+        }
+    } buffer_caches_;
 };
 
 class StagingBuffer {
@@ -196,11 +220,18 @@ class CommandPool {
 };
 
 // Cache a single object of type T. Key is *only* based on typeid(T)
+// Set "thread_safe" to true if the caches needs to be.
+template <bool thread_safe>
 class SharedResourcesCache {
   public:
     // Try get an object, returns null if not found
     template <typename T>
     T *TryGet() {
+        std::unique_lock<std::mutex> lock(mtx, std::defer_lock);
+        if (thread_safe) {
+            lock.lock();
+        }
+
         auto entry = shared_validation_resources_map_.find(typeid(T));
         if (entry == shared_validation_resources_map_.cend()) {
             return nullptr;
@@ -210,6 +241,11 @@ class SharedResourcesCache {
     }
     template <typename T>
     const T *TryGet() const {
+        std::unique_lock<std::mutex> lock(mtx, std::defer_lock);
+        if (thread_safe) {
+            lock.lock();
+        }
+
         auto entry = shared_validation_resources_map_.find(typeid(T));
         if (entry == shared_validation_resources_map_.cend()) {
             return nullptr;
@@ -239,8 +275,13 @@ class SharedResourcesCache {
     template <typename T, class... ConstructorTypes>
     T &GetOrCreate(ConstructorTypes &&...args) {
         T *t = TryGet<T>();
-        if (t) return *t;
-
+        if (t) {
+            return *t;
+        }
+        std::unique_lock<std::mutex> lock(mtx, std::defer_lock);
+        if (thread_safe) {
+            lock.lock();
+        }
         auto entry =
             shared_validation_resources_map_.insert({typeid(T), {new T(std::forward<ConstructorTypes>(args)...), [](void *ptr) {
                                                                      auto obj = static_cast<T *>(ptr);
@@ -249,7 +290,13 @@ class SharedResourcesCache {
         return *static_cast<T *>(entry.first->second.first);
     }
 
-    void Clear();
+    void Clear() {
+        for (auto &[key, value] : shared_validation_resources_map_) {
+            auto &[object, destructor] = value;
+            destructor(object);
+        }
+        shared_validation_resources_map_.clear();
+    }
 
   private:
     using TypeInfoRef = std::reference_wrapper<const std::type_info>;
@@ -259,7 +306,7 @@ class SharedResourcesCache {
     struct EqualTo {
         bool operator()(TypeInfoRef lhs, TypeInfoRef rhs) const { return lhs.get() == rhs.get(); }
     };
-
+    mutable std::mutex mtx;
     vvl::unordered_map<TypeInfoRef, std::pair<void * /*object*/, void (*)(void *) /*object destructor*/>, Hasher, EqualTo>
         shared_validation_resources_map_;
 };

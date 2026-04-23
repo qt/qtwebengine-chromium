@@ -24,8 +24,6 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &switches::kForceStartupSigninPromo,
     &switches::kForceHistoryOptInScreen,
     &switches::kSkipCheckForAccountManagementOnSignin,
-    &switches::kUnoForAuto,
-    &switches::kUseHostedDomainForManagementCheckOnSignin,
     &switches::kSyncEnableBookmarksInTransportMode,
     &switches::kHistoryOptInEducationalTip,
     &switches::kMakeAccountsAvailableInIdentityManager,
@@ -34,6 +32,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &switches::kSmartEmailLineBreaking,
     &switches::kSupportWebSigninAddSession,
     &switches::kSkipRefreshTokenCheckInIdentityManager,
+    &switches::kFRESignInAlternativeSecondaryButtonText,
 };
 
 // static
@@ -50,3 +49,5 @@ static jlong JNI_SigninFeatureMap_GetNativeMap(JNIEnv* env) {
 }
 
 }  // namespace signin
+
+DEFINE_JNI(SigninFeatureMap)

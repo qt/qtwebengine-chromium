@@ -8,10 +8,11 @@
 #include <cstdint>
 
 #include "base/time/time.h"
+#include "base/unguessable_token.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/web/web_performance_metrics_for_reporting.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/core/paint/timing/largest_contentful_paint_calculator.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_record.h"
 #include "third_party/blink/renderer/core/timing/navigation_id_generator.h"
 #include "third_party/blink/renderer/core/timing/performance_entry.h"
@@ -22,13 +23,14 @@
 
 namespace blink {
 
-class Node;
-class LargestContentfulPaintCalculator;
 struct LargestContentfulPaintDetails;
+class LocalDOMWindow;
+class Node;
 class SoftNavigationHeuristics;
 
 class CORE_EXPORT SoftNavigationContext
-    : public GarbageCollected<SoftNavigationContext> {
+    : public GarbageCollected<SoftNavigationContext>,
+      public LargestContentfulPaintCalculator::Delegate {
   static uint64_t last_context_id_;
 
  public:
@@ -41,6 +43,16 @@ class CORE_EXPORT SoftNavigationContext
 
   SoftNavigationContext(LocalDOMWindow& window,
                         features::SoftNavigationHeuristicsMode);
+
+  // LargestContentfulPaintCalculator::Delegate:
+  void EmitPerformanceEntry(const DOMPaintTimingInfo& paint_timing_info,
+                            uint64_t paint_size,
+                            base::TimeTicks load_time,
+                            const AtomicString& id,
+                            const String& url,
+                            Element* element) override;
+  bool IsHardNavigation() const override { return false; }
+  void Trace(Visitor* visitor) const override;
 
   bool IsMostRecentlyCreatedContext() const {
     return context_id_ == last_context_id_;
@@ -75,13 +87,18 @@ class CORE_EXPORT SoftNavigationContext
 
   // First Url and Last Url help for cases with multiple client-side redirects.
   const String& InitialUrl() const { return initial_url_; }
-  void AddUrl(const String& url) {
+  void AddUrl(const String& url,
+              base::UnguessableToken same_document_metrics_token) {
     if (initial_url_.empty()) {
       initial_url_ = url;
+      same_document_metrics_token_ = same_document_metrics_token;
     }
     most_recent_url_ = url;
   }
   bool HasUrl() const { return !initial_url_.empty(); }
+  base::UnguessableToken SameDocumentMetricsToken() const {
+    return same_document_metrics_token_;
+  }
 
   void AddModifiedNode(Node* node);
   // Returns true if this paint updated the attributed area, and so we should
@@ -119,8 +136,6 @@ class CORE_EXPORT SoftNavigationContext
   // Called when `SoftNavigationHeuristics` is shut down on frame detach.
   void Shutdown();
 
-  void Trace(Visitor* visitor) const;
-
  private:
   // Pre-Increment `last_context_id_` such that the newest context uses the
   // largest value and can be used to identify the most recent context.
@@ -134,11 +149,13 @@ class CORE_EXPORT SoftNavigationContext
   base::TimeTicks first_input_or_scroll_time_;
 
   String initial_url_;
+  base::UnguessableToken same_document_metrics_token_;
   String most_recent_url_;
 
   blink::HeapHashSet<WeakMember<Node>> modified_nodes_;
   blink::HeapHashSet<WeakMember<Node>> already_painted_modified_nodes_;
 
+  Member<LocalDOMWindow> window_;
   Member<LargestContentfulPaintCalculator> lcp_calculator_;
   Member<TextRecord> largest_text_;
   Member<ImageRecord> largest_image_;
@@ -156,7 +173,6 @@ class CORE_EXPORT SoftNavigationContext
   uint64_t repainted_area_last_animation_frame_ = 0;
 
   WeakMember<Node> known_not_related_parent_;
-  Member<SoftNavigationHeuristics> heuristics_;
 };
 
 }  // namespace blink

@@ -1,6 +1,8 @@
 // Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_drawer/cr_drawer.js';
 import 'chrome://resources/cr_elements/cr_page_host_style.css.js';
 import 'chrome://resources/cr_elements/cr_page_selector/cr_page_selector.js';
 import 'chrome://resources/cr_elements/cr_shared_style.css.js';
@@ -161,13 +163,13 @@ export class PasswordManagerAppElement extends PasswordManagerAppElementBase {
   override connectedCallback() {
     super.connectedCallback();
 
-    const narrowQuery = window.matchMedia('(max-width: 1036px)');
+    const narrowQuery = window.matchMedia('(max-width: 1300px)');
     this.narrow_ = narrowQuery.matches;
     this.eventTracker_.add(
         narrowQuery, 'change',
         (e: MediaQueryListEvent) => this.narrow_ = e.matches);
 
-    const collapsedQuery = window.matchMedia('(max-width: 1200px)');
+    const collapsedQuery = window.matchMedia('(max-width: 1605px)');
     this.collapsed_ = collapsedQuery.matches;
     this.eventTracker_.add(
         collapsedQuery, 'change',
@@ -266,7 +268,7 @@ export class PasswordManagerAppElement extends PasswordManagerAppElementBase {
     if (this.$.drawer.open && !this.narrow_) {
       this.$.drawer.close();
     }
-    // Window is greater than 980px but less than 1200px.
+    // Window is greater than 1300px but less than 1605px.
     if (!this.narrow_ && this.collapsed_) {
       this.pageTitle_ = this.i18n('passwordManagerString');
     } else {

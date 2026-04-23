@@ -5,6 +5,7 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
 import * as Workspace from '../../models/workspace/workspace.js';
@@ -232,18 +233,6 @@ const UIStrings = {
    */
   doNotAutomaticallyRevealFilesIn: 'Do not automatically reveal files in sidebar',
   /**
-   * @description Setting under the Sources category to toggle usage of JavaScript source maps.
-   */
-  javaScriptSourceMaps: 'JavaScript source maps',
-  /**
-   * @description Title of a setting under the Sources category that can be invoked through the Command Menu
-   */
-  enableJavaScriptSourceMaps: 'Enable JavaScript source maps',
-  /**
-   * @description Title of a setting under the Sources category that can be invoked through the Command Menu
-   */
-  disableJavaScriptSourceMaps: 'Disable JavaScript source maps',
-  /**
    * @description Title of a setting under the Sources category.
    *'tab moves focus' is the name of the setting, which means that when the user
    *hits the tab key, the focus in the UI will be moved to the next part of the
@@ -373,18 +362,6 @@ const UIStrings = {
    */
   doNotDisplayVariableValuesInline: 'Do not display variable values inline while debugging',
   /**
-   * @description Title of a setting under the Sources category
-   */
-  cssSourceMaps: 'CSS source maps',
-  /**
-   * @description Title of a setting under the Sources category that can be invoked through the Command Menu
-   */
-  enableCssSourceMaps: 'Enable CSS source maps',
-  /**
-   * @description Title of a setting under the Sources category that can be invoked through the Command Menu
-   */
-  disableCssSourceMaps: 'Disable CSS source maps',
-  /**
    * @description Title of a setting under the Sources category in Settings
    */
   allowScrollingPastEndOfFile: 'Allow scrolling past end of file',
@@ -395,7 +372,11 @@ const UIStrings = {
   /**
    * @description Title of a setting under the Sources category in Settings
    */
-  wasmAutoStepping: 'When debugging Wasm with debug information, do not pause on wasm bytecode if possible',
+  wasmAutoStepping: 'Wasm auto-stepping bytecode',
+  /**
+   * @description Tooltip text for a setting that controls Wasm will try to skip wasm bytecode
+   */
+  wasmAutoSteppingInfo: 'When debugging Wasm with debug information, try to skip wasm bytecode',
   /**
    * @description Title of a setting under the Sources category in Settings
    */
@@ -515,6 +496,7 @@ UI.ViewManager.registerViewExtension({
   title: i18nLazyString(UIStrings.workspace),
   order: 3,
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
+  condition: () => !Root.Runtime.Runtime.isTraceApp(),
   async loadView() {
     const Sources = await loadSourcesModule();
     return new Sources.SourcesNavigator.FilesNavigatorView();
@@ -528,6 +510,7 @@ UI.ViewManager.registerViewExtension({
   title: i18nLazyString(UIStrings.snippets),
   order: 6,
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
+  condition: () => !Root.Runtime.Runtime.isTraceApp(),
   async loadView() {
     const Sources = await loadSourcesModule();
     return new Sources.SourcesNavigator.SnippetsNavigatorView();
@@ -1280,18 +1263,17 @@ UI.ActionRegistration.registerActionExtension({
   title: i18nLazyString(UIStrings.createNewSnippet),
 });
 
-if (!Host.InspectorFrontendHost.InspectorFrontendHostInstance.isHostedMode()) {
-  UI.ActionRegistration.registerActionExtension({
-    category: UI.ActionRegistration.ActionCategory.SOURCES,
-    actionId: 'sources.add-folder-to-workspace',
-    async loadActionDelegate() {
-      const Sources = await loadSourcesModule();
-      return new Sources.SourcesNavigator.ActionDelegate();
-    },
-    iconClass: UI.ActionRegistration.IconClass.PLUS,
-    title: i18nLazyString(UIStrings.addFolderToWorkspace),
-  });
-}
+UI.ActionRegistration.registerActionExtension({
+  category: UI.ActionRegistration.ActionCategory.SOURCES,
+  actionId: 'sources.add-folder-to-workspace',
+  condition: () => !Host.InspectorFrontendHost.InspectorFrontendHostInstance.isHostedMode(),
+  async loadActionDelegate() {
+    const Sources = await loadSourcesModule();
+    return new Sources.SourcesNavigator.ActionDelegate();
+  },
+  iconClass: UI.ActionRegistration.IconClass.PLUS,
+  title: i18nLazyString(UIStrings.addFolderToWorkspace),
+});
 
 UI.ActionRegistration.registerActionExtension({
   category: UI.ActionRegistration.ActionCategory.DEBUGGER,
@@ -1553,25 +1535,6 @@ Common.Settings.registerSettingExtension({
 Common.Settings.registerSettingExtension({
   category: Common.Settings.SettingCategory.SOURCES,
   storageType: Common.Settings.SettingStorageType.SYNCED,
-  title: i18nLazyString(UIStrings.javaScriptSourceMaps),
-  settingName: 'js-source-maps-enabled',
-  settingType: Common.Settings.SettingType.BOOLEAN,
-  defaultValue: true,
-  options: [
-    {
-      value: true,
-      title: i18nLazyString(UIStrings.enableJavaScriptSourceMaps),
-    },
-    {
-      value: false,
-      title: i18nLazyString(UIStrings.disableJavaScriptSourceMaps),
-    },
-  ],
-});
-
-Common.Settings.registerSettingExtension({
-  category: Common.Settings.SettingCategory.SOURCES,
-  storageType: Common.Settings.SettingStorageType.SYNCED,
   title: i18nLazyString(UIStrings.tabMovesFocus),
   settingName: 'text-editor-tab-moves-focus',
   settingType: Common.Settings.SettingType.BOOLEAN,
@@ -1796,25 +1759,6 @@ Common.Settings.registerSettingExtension({
 Common.Settings.registerSettingExtension({
   category: Common.Settings.SettingCategory.SOURCES,
   storageType: Common.Settings.SettingStorageType.SYNCED,
-  title: i18nLazyString(UIStrings.cssSourceMaps),
-  settingName: 'css-source-maps-enabled',
-  settingType: Common.Settings.SettingType.BOOLEAN,
-  defaultValue: true,
-  options: [
-    {
-      value: true,
-      title: i18nLazyString(UIStrings.enableCssSourceMaps),
-    },
-    {
-      value: false,
-      title: i18nLazyString(UIStrings.disableCssSourceMaps),
-    },
-  ],
-});
-
-Common.Settings.registerSettingExtension({
-  category: Common.Settings.SettingCategory.SOURCES,
-  storageType: Common.Settings.SettingStorageType.SYNCED,
   title: i18nLazyString(UIStrings.allowScrollingPastEndOfFile),
   settingName: 'allow-scroll-past-eof',
   settingType: Common.Settings.SettingType.BOOLEAN,
@@ -1848,6 +1792,9 @@ Common.Settings.registerSettingExtension({
       title: i18nLazyString(UIStrings.disableWasmAutoStepping),
     },
   ],
+  learnMore: {
+    tooltip: i18nLazyString(UIStrings.wasmAutoSteppingInfo),
+  }
 });
 
 UI.ViewManager.registerLocationResolver({
@@ -2091,4 +2038,19 @@ QuickOpen.FilteredListWidget.registerProvider({
   helpTitle: i18nLazyString(UIStrings.openFile),
   titlePrefix: i18nLazyString(UIStrings.open),
   titleSuggestion: i18nLazyString(UIStrings.file),
+});
+
+UI.ContextMenu.registerProvider({
+  contextTypes() {
+    return [
+      Workspace.UISourceCode.UISourceCode,
+      SDK.Resource.Resource,
+      SDK.NetworkRequest.NetworkRequest,
+    ];
+  },
+  async loadProvider() {
+    const Sources = await loadSourcesModule();
+    return new Sources.PersistenceActions.ContextMenuProvider();
+  },
+  experiment: undefined,
 });

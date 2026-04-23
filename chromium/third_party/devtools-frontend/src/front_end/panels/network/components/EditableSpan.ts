@@ -1,7 +1,7 @@
 // Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import {html, render} from '../../../ui/lit/lit.js';
@@ -75,7 +75,7 @@ export class EditableSpan extends HTMLElement {
         tabindex="0"
         .innerText=${this.#value}
         jslog=${VisualLogging.value('header-editor').track({change: true, keydown: 'Enter|Escape'})}
-      </span>`, this.#shadow, {host: this});
+        ></span>`, this.#shadow, {host: this});
     // clang-format on
   }
 

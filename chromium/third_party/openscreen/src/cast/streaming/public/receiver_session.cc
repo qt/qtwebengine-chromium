@@ -13,6 +13,7 @@
 #include "cast/common/public/message_port.h"
 #include "cast/streaming/message_fields.h"
 #include "cast/streaming/public/answer_messages.h"
+#include "cast/streaming/public/constants.h"
 #include "cast/streaming/public/environment.h"
 #include "cast/streaming/public/offer_messages.h"
 #include "cast/streaming/public/receiver.h"
@@ -358,10 +359,10 @@ void ReceiverSession::InitializeSession(const PendingOffer& properties) {
 std::unique_ptr<Receiver> ReceiverSession::ConstructReceiver(
     const Stream& stream) {
   // Session config is currently only for mirroring.
-  SessionConfig config = {stream.ssrc,         stream.ssrc + 1,
-                          stream.rtp_timebase, stream.channels,
-                          stream.target_delay, stream.aes_key,
-                          stream.aes_iv_mask,  /* is_pli_enabled */ true};
+  SessionConfig config(stream.ssrc, stream.ssrc + 1, stream.rtp_timebase,
+                       stream.channels, stream.target_delay, stream.aes_key,
+                       stream.aes_iv_mask, /* is_pli_enabled */ true,
+                       StreamType::kUnknown, stream.receiver_rtcp_event_log);
   if (!config.IsValid()) {
     return nullptr;
   }
@@ -420,10 +421,16 @@ Answer ReceiverSession::ConstructAnswer(const PendingOffer& properties) {
 
   std::vector<int> stream_indexes;
   std::vector<Ssrc> stream_ssrcs;
+  std::vector<int> stream_indexes_with_events;
   Constraints constraints;
   if (properties.selected_audio) {
     stream_indexes.push_back(properties.selected_audio->stream.index);
     stream_ssrcs.push_back(properties.selected_audio->stream.ssrc + 1);
+
+    if (properties.selected_audio->stream.receiver_rtcp_event_log) {
+      stream_indexes_with_events.push_back(
+          properties.selected_audio->stream.index);
+    }
 
     for (const auto& limit : constraints_.audio_limits) {
       if (limit.codec == properties.selected_audio->codec ||
@@ -469,9 +476,19 @@ Answer ReceiverSession::ConstructAnswer(const PendingOffer& properties) {
   if (constraints.IsValid()) {
     answer_constraints = std::move(constraints);
   }
-  return Answer{environment_.GetBoundLocalEndpoint().port,
-                std::move(stream_indexes), std::move(stream_ssrcs),
-                answer_constraints, std::move(display)};
+  return Answer{
+      .udp_port = environment_.GetBoundLocalEndpoint().port,
+      .send_indexes = std::move(stream_indexes),
+      .ssrcs = std::move(stream_ssrcs),
+      .constraints = answer_constraints,
+      .display = std::move(display),
+      .receiver_rtcp_event_log = std::move(stream_indexes_with_events),
+
+      // TODO(jophba): add support for DSCP??
+      .receiver_rtcp_dscp = {},
+
+      // TODO(jophba): add support for adaptive playout delay??
+      .rtp_extensions = {}};
 }
 
 ReceiverCapability ReceiverSession::CreateRemotingCapabilityV2() {

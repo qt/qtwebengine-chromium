@@ -129,13 +129,11 @@ class HistoryService::BackendDelegate : public HistoryBackend::Delegate {
                                   history_service_, page_urls, icon_url));
   }
 
-  void NotifyURLVisited(const URLRow& url_row,
-                        const VisitRow& visit_row,
-                        std::optional<int64_t> local_navigation_id) override {
+  void NotifyURLVisited(VisitedURLInfo visited_url_info) override {
     service_task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(&HistoryService::NotifyURLVisited, history_service_,
-                       url_row, visit_row, local_navigation_id));
+                       std::move(visited_url_info)));
   }
 
   void NotifyURLsModified(const URLRows& changed_urls) override {
@@ -558,18 +556,34 @@ void HistoryService::AddPage(const GURL& url,
                              VisitResponseCodeCategory response_code_category,
                              bool did_replace_entry) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  AddPage(HistoryAddPageArgs(
-      url, time, context_id, nav_entry_id,
-      /*local_navigation_id=*/std::nullopt, referrer, redirects, transition,
-      !ui::PageTransitionIsMainFrame(transition), visit_source,
-      response_code_category, did_replace_entry,
-      /*consider_for_ntp_most_visited=*/true));
+
+  bool consider_for_ntp_most_visited = true;
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  consider_for_ntp_most_visited =
+      !(base::FeatureList::IsEnabled(kBrowsingHistoryActorIntegrationM2) &&
+        visit_source == VisitSource::SOURCE_ACTOR);
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+
+  AddPage(HistoryAddPageArgs(url, time, context_id, nav_entry_id,
+                             /*local_navigation_id=*/std::nullopt, referrer,
+                             redirects, transition,
+                             !ui::PageTransitionIsMainFrame(transition),
+                             visit_source, response_code_category,
+                             did_replace_entry, consider_for_ntp_most_visited));
 }
 
 void HistoryService::AddPage(const GURL& url,
                              base::Time time,
                              VisitSource visit_source) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  bool consider_for_ntp_most_visited = true;
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  consider_for_ntp_most_visited =
+      !(base::FeatureList::IsEnabled(kBrowsingHistoryActorIntegrationM2) &&
+        visit_source == VisitSource::SOURCE_ACTOR);
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+
   // This function will construct the following "self-links" entry in the
   // VisitedLinkDatabase: `<url, url, url>`.
   AddPage(HistoryAddPageArgs(
@@ -577,7 +591,7 @@ void HistoryService::AddPage(const GURL& url,
       /*local_navigation_id=*/std::nullopt,
       /*referrer=*/GURL(), RedirectList(), ui::PAGE_TRANSITION_LINK,
       /*hidden=*/false, visit_source, VisitResponseCodeCategory::kNot404,
-      /*did_replace_entry=*/false, /*consider_for_ntp_most_visited=*/true,
+      /*did_replace_entry=*/false, consider_for_ntp_most_visited,
       VisitContextEphemerality::kNotEphemeral,
       /*title=*/std::nullopt,
       /*top_level_url=*/url, /*frame_url=*/url));
@@ -1211,6 +1225,7 @@ base::CancelableTaskTracker::TaskId HistoryService::GetLastVisitToHost(
     const std::string& host,
     base::Time begin_time,
     base::Time end_time,
+    VisitQuery404sPolicy policy_for_404_visits,
     GetLastVisitCallback callback,
     base::CancelableTaskTracker* tracker) {
   DCHECK(backend_task_runner_) << "History service being called after cleanup";
@@ -1219,7 +1234,7 @@ base::CancelableTaskTracker::TaskId HistoryService::GetLastVisitToHost(
   return tracker->PostTaskAndReplyWithResult(
       backend_task_runner_.get(), FROM_HERE,
       base::BindOnce(&HistoryBackend::GetLastVisitToHost, history_backend_,
-                     host, begin_time, end_time),
+                     host, begin_time, end_time, policy_for_404_visits),
       std::move(callback));
 }
 
@@ -1262,6 +1277,7 @@ base::CancelableTaskTracker::TaskId HistoryService::GetDailyVisitsToOrigin(
 base::CancelableTaskTracker::TaskId HistoryService::GetMostRecentVisitsForGurl(
     GURL url,
     int max_visits,
+    VisitQuery404sPolicy policy_for_404_visits,
     QueryURLAndVisitsCallback callback,
     base::CancelableTaskTracker* tracker) {
   DCHECK(backend_task_runner_) << "History service being called after cleanup";
@@ -1269,7 +1285,7 @@ base::CancelableTaskTracker::TaskId HistoryService::GetMostRecentVisitsForGurl(
   return tracker->PostTaskAndReplyWithResult(
       backend_task_runner_.get(), FROM_HERE,
       base::BindOnce(&HistoryBackend::GetMostRecentVisitsForGurl,
-                     history_backend_, url, max_visits),
+                     history_backend_, url, max_visits, policy_for_404_visits),
       std::move(callback));
 }
 
@@ -1386,15 +1402,13 @@ base::CancelableTaskTracker::TaskId HistoryService::QueryMostVisitedURLs(
     QueryMostVisitedURLsCallback callback,
     base::CancelableTaskTracker* tracker,
     const std::optional<std::string>& recency_factor_name,
-    std::optional<size_t> recency_window_days,
-    bool check_visual_deduplication_flag) {
+    std::optional<size_t> recency_window_days) {
   DCHECK(backend_task_runner_) << "History service being called after cleanup";
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return tracker->PostTaskAndReplyWithResult(
       backend_task_runner_.get(), FROM_HERE,
       base::BindOnce(&HistoryBackend::QueryMostVisitedURLs, history_backend_,
-                     result_count, recency_factor_name, recency_window_days,
-                     check_visual_deduplication_flag),
+                     result_count, recency_factor_name, recency_window_days),
       std::move(callback));
 }
 
@@ -1729,15 +1743,11 @@ void HistoryService::OnDBLoaded() {
   NotifyHistoryServiceLoaded();
 }
 
-void HistoryService::NotifyURLVisited(
-    const URLRow& url_row,
-    const VisitRow& new_visit,
-    std::optional<int64_t> local_navigation_id) {
+void HistoryService::NotifyURLVisited(const VisitedURLInfo& visited_url_info) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   for (HistoryServiceObserver& observer : observers_) {
-    observer.OnURLVisited(this, url_row, new_visit);
-    observer.OnURLVisitedWithNavigationId(this, url_row, new_visit,
-                                          local_navigation_id);
+    observer.OnURLVisited(this, visited_url_info);
+    observer.OnURLVisitedWithNavigationId(this, visited_url_info);
   }
 }
 

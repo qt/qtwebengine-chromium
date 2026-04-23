@@ -9,6 +9,7 @@
 
 #include "include/v8-internal.h"
 #include "src/base/iterator.h"
+#include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/machine-type.h"
 #include "src/codegen/tick-counter.h"
 #include "src/common/globals.h"
@@ -160,9 +161,9 @@ std::optional<BailoutReason> InstructionSelector::SelectInstructions() {
         AddInstruction(instructions_[start]);
       }
       UpdateRenames(instructions_[end]);
-      AddTerminator(instructions_[end]);
     }
-    EndBlock(this->rpo_number(block));
+    Instruction* terminator = instructions_[end];
+    EndBlock(this->rpo_number(block), terminator);
   }
 #if DEBUG
   sequence()->ValidateSSA();
@@ -179,21 +180,12 @@ void InstructionSelector::StartBlock(RpoNumber rpo) {
   }
 }
 
-void InstructionSelector::EndBlock(RpoNumber rpo) {
+void InstructionSelector::EndBlock(RpoNumber rpo, Instruction* terminator) {
   if (UseInstructionScheduling()) {
     DCHECK_NOT_NULL(scheduler_);
-    scheduler_->EndBlock(rpo);
+    scheduler_->EndBlock(rpo, terminator);
   } else {
-    sequence()->EndBlock(rpo);
-  }
-}
-
-void InstructionSelector::AddTerminator(Instruction* instr) {
-  if (UseInstructionScheduling()) {
-    DCHECK_NOT_NULL(scheduler_);
-    scheduler_->AddTerminator(instr);
-  } else {
-    sequence()->AddInstruction(instr);
+    sequence()->EndBlock(rpo, terminator);
   }
 }
 
@@ -1250,6 +1242,16 @@ void InstructionSelector::InitializeCallBuffer(
       break;
     }
     case CallDescriptor::kCallJSFunction:
+      // TODO(olivf): Implement the required kArchCallJSFunction with
+      // immediate argument on all architectures.
+#if defined(V8_TARGET_ARCH_X64) || defined(V8_TARGET_ARCH_ARM) ||     \
+    defined(V8_TARGET_ARCH_ARM64) || defined(V8_TARGET_ARCH_PPC64) || \
+    defined(V8_TARGET_ARCH_S390X) || defined(V8_TARGET_ARCH_LOONG64)
+      if (this->IsHeapConstant(callee)) {
+        buffer->instruction_args.push_back(g.UseImmediate(callee));
+        break;
+      }
+#endif
       buffer->instruction_args.push_back(
           g.UseLocation(callee, buffer->descriptor->GetInputLocation(0)));
       break;
@@ -1630,6 +1632,13 @@ void InstructionSelector::VisitLoadFramePointer(OpIndex node) {
 void InstructionSelector::VisitLoadStackPointer(OpIndex node) {
   OperandGenerator g(this);
   Emit(kArchStackPointer, g.DefineAsRegister(node));
+}
+
+void InstructionSelector::VisitWasmFXArgBuffer(OpIndex node) {
+  OperandGenerator g(this);
+  LinkageLocation arg_buffer = LinkageLocation::ForRegister(
+      WasmFXSuspendDescriptor::GetRegisterParameter(2).code());
+  Emit(kArchNop, g.DefineAsLocation(node, arg_buffer));
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
@@ -2162,7 +2171,9 @@ void InstructionSelector::UpdateMaxPushedArgumentCount(size_t count) {
   *max_pushed_argument_count_ = std::max(count, *max_pushed_argument_count_);
 }
 
-void InstructionSelector::VisitCall(OpIndex node, Block* handler) {
+void InstructionSelector::VisitCall(
+    OpIndex node, Block* exception_handler,
+    base::Vector<EffectHandler> effect_handlers) {
   OperandGenerator g(this);
   const CallOp& call_op = Cast<CallOp>(node);
   const CallDescriptor* call_descriptor = call_op.descriptor->descriptor;
@@ -2222,15 +2233,28 @@ void InstructionSelector::VisitCall(OpIndex node, Block* handler) {
   }
 
   // Pass label of exception handler block.
-  if (handler) {
+  bool lazy_deopt_on_throw =
+      call_op.descriptor->lazy_deopt_on_throw == LazyDeoptOnThrow::kYes;
+  if (exception_handler) {
     flags |= CallDescriptor::kHasExceptionHandler;
-    buffer.instruction_args.push_back(g.Label(handler));
-  } else {
-    if (call_op.descriptor->lazy_deopt_on_throw == LazyDeoptOnThrow::kYes) {
-      flags |= CallDescriptor::kHasExceptionHandler;
-      buffer.instruction_args.push_back(
-          g.UseImmediate(kLazyDeoptOnThrowSentinel));
+    buffer.instruction_args.push_back(g.Label(exception_handler));
+  } else if (lazy_deopt_on_throw) {
+    flags |= CallDescriptor::kHasExceptionHandler;
+    buffer.instruction_args.push_back(
+        g.UseImmediate(kLazyDeoptOnThrowSentinel));
+  }
+  if (!effect_handlers.empty()) {
+    flags |= CallDescriptor::kHasEffectHandler;
+    for (auto& handler : effect_handlers) {
+      buffer.instruction_args.push_back(g.Label(handler.block));
+      buffer.instruction_args.push_back(g.UseImmediate(handler.tag_index));
     }
+    buffer.instruction_args.push_back(
+        g.UseImmediate(static_cast<int>(effect_handlers.size())));
+  } else {
+    // This bit had a different meaning before isel, so ensure that it is
+    // cleared:
+    flags &= ~CallDescriptor::kHasEffectHandler;
   }
 
   // Select the appropriate opcode based on the call type.
@@ -2692,7 +2716,8 @@ void InstructionSelector::VisitControl(const Block* block) {
     }
     case Opcode::kCheckException: {
       const CheckExceptionOp& check = op.Cast<CheckExceptionOp>();
-      VisitCall(check.throwing_operation(), check.catch_block);
+      VisitCall(check.throwing_operation(), check.catch_block,
+                check.effect_handlers);
       VisitGoto(check.didnt_throw_block);
       return;
     }
@@ -3455,6 +3480,8 @@ void InstructionSelector::VisitNode(OpIndex node) {
 #if V8_ENABLE_WEBASSEMBLY
     case Opcode::kTrapIf:
       return VisitTrapIf(node);
+    case Opcode::kWasmFXArgBuffer:
+      return VisitWasmFXArgBuffer(node);
 #endif  // V8_ENABLE_WEBASSEMBLY
     case Opcode::kCatchBlockBegin:
       MarkAsTagged(node);
@@ -3479,6 +3506,10 @@ void InstructionSelector::VisitNode(OpIndex node) {
       return VisitDebugBreak(node);
     case Opcode::kAbortCSADcheck:
       return VisitAbortCSADcheck(node);
+#ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
+    case Opcode::kSwitchSandboxMode:
+      return VisitSwitchSandboxMode(node);
+#endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
     case Opcode::kSelect: {
       const SelectOp& select = op.Cast<SelectOp>();
       // If there is a Select, then it should only be one that is supported by

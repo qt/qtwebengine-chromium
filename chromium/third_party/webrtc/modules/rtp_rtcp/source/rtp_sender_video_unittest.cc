@@ -1539,8 +1539,9 @@ TEST_F(RtpSenderVideoRawPacketizationTest, SendRawVideo) {
   RTPVideoHeader video_header;
   video_header.frame_type = VideoFrameType::kVideoFrameKey;
   ASSERT_TRUE(rtp_sender_video_->SendVideo(
-      kPayloadTypeRaw, std::nullopt, 1234, fake_clock_.CurrentTime(), kPayload,
-      sizeof(kPayload), video_header, TimeDelta::PlusInfinity(), {}));
+      kPayloadTypeRaw, VideoCodecType::kVideoCodecGeneric, 1234,
+      fake_clock_.CurrentTime(), kPayload, sizeof(kPayload), video_header,
+      TimeDelta::PlusInfinity(), {}));
 
   ArrayView<const uint8_t> sent_payload =
       transport_.last_sent_packet().payload();
@@ -1575,7 +1576,8 @@ class RtpSenderVideoWithFrameTransformerTest : public ::testing::Test {
             env_,
             {.outgoing_transport = &transport_,
              .retransmission_rate_limiter = &retransmission_rate_limiter_,
-             .local_media_ssrc = kSsrc}) {
+             .local_media_ssrc = kSsrc,
+             .rid = "myrid"}) {
     rtp_module_.SetSequenceNumber(kSeqNum);
     rtp_module_.SetStartTimestamp(0);
   }
@@ -1818,6 +1820,7 @@ TEST_F(RtpSenderVideoWithFrameTransformerTest,
                     transformable_frame.release()));
             ASSERT_TRUE(frame);
             auto metadata = frame->Metadata();
+            EXPECT_EQ(frame->Rid(), "myrid");
             EXPECT_EQ(metadata.GetWidth(), 1280u);
             EXPECT_EQ(metadata.GetHeight(), 720u);
             EXPECT_EQ(metadata.GetFrameId(), 10);

@@ -142,6 +142,13 @@ void RecordMetricsForLoginWithChangedPassword(
     password_manager::PasswordManagerClient* client,
     const PasswordFormManager& submitted_manager,
     bool login_successful) {
+  if (client->IsPasswordChangeOngoing()) {
+    // During password change Chrome saved a newly generated password as a
+    // backup before filling, and later Password Manager might detect change
+    // password form submission. This shouldn't be recorded as login attempt.
+    return;
+  }
+
   const PasswordForm* change_password_login =
       password_manager_util::FindChangedPasswordLoginWithBackup(
           submitted_manager);
@@ -516,6 +523,25 @@ bool HasManuallyFilledPassword(const PasswordForm& form) {
       });
 }
 
+PasswordForm CreateFormForLeakCheck(const PasswordForm& pending_credentials,
+                                    const PasswordForm& submitted_credentials) {
+  PasswordForm form = pending_credentials;
+  form.form_data = submitted_credentials.form_data;
+  form.username_element_renderer_id =
+      submitted_credentials.username_element_renderer_id;
+  form.password_element_renderer_id =
+      submitted_credentials.password_element_renderer_id;
+  form.new_password_element_renderer_id =
+      submitted_credentials.new_password_element_renderer_id;
+  form.confirmation_password_element_renderer_id =
+      submitted_credentials.confirmation_password_element_renderer_id;
+  // Take the url from the submitted form because the url from pendind
+  // credentials may be for the site where the stored password was saved
+  // originally.
+  form.url = submitted_credentials.url;
+  return form;
+}
+
 }  // namespace
 
 // static
@@ -524,11 +550,6 @@ void PasswordManager::RegisterProfilePrefs(
   registry->RegisterBooleanPref(
       prefs::kCredentialsEnableService, true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
-#if BUILDFLAG(IS_IOS)
-  // Deprecated pref in profile prefs.
-  registry->RegisterBooleanPref(prefs::kCredentialProviderEnabledOnStartup,
-                                false);
-#endif  // BUILDFLAG(IS_IOS)
   registry->RegisterBooleanPref(
       prefs::kCredentialsEnableAutosignin, true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
@@ -589,6 +610,11 @@ void PasswordManager::RegisterProfilePrefs(
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)  // Desktop
   registry->RegisterListPref(prefs::kPasswordManagerPromoCardsList);
 #endif  // BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN) || \
+    BUILDFLAG(IS_MAC)
+  registry->RegisterListPref(prefs::kPasswordManagerBlocklist);
+#endif  // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN) ||
+        // BUILDFLAG(IS_MAC)
   registry->RegisterBooleanPref(prefs::kPasswordSharingEnabled, true);
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
   registry->RegisterIntegerPref(prefs::kRelaunchChromeBubbleDismissedCounter,
@@ -618,6 +644,8 @@ void PasswordManager::RegisterProfilePrefs(
       prefs::kAccountStoreBackupPasswordCleaningLastTimestamp, base::Time());
   registry->RegisterTimePref(
       prefs::kProfileStoreBackupPasswordCleaningLastTimestamp, base::Time());
+  registry->RegisterTimePref(prefs::kLastNegativePasswordChangeTimestamp,
+                             base::Time());
 }
 
 // static
@@ -1441,7 +1469,7 @@ bool PasswordManager::IsAutomaticSavePromptAvailable(
 
 bool PasswordManager::ShouldBlockPasswordForSameOriginButDifferentScheme(
     const GURL& url) const {
-  return submitted_form_url_.host_piece() == url.host_piece() &&
+  return submitted_form_url_.host() == url.host() &&
          submitted_form_url_.SchemeIsCryptographic() &&
          !url.SchemeIsCryptographic();
 }
@@ -1601,9 +1629,13 @@ void PasswordManager::OnLoginSuccessful() {
           submitted_manager->GetInsecureCredentials(),
           submitted_manager->GetSubmittedForm()->username_value) &&
       !IsSingleUsernameSubmission(*submitted_manager->GetSubmittedForm())) {
-    leak_delegate_.StartLeakCheck(client_->GetLeakDetectionInitiator(),
-                                  submitted_manager->GetPendingCredentials(),
-                                  submitted_manager->GetURL());
+    // Some data from submitted from is used for logging and it may be absent
+    // from pending credentials, see crbug.com/455813888.
+    leak_delegate_.StartLeakCheck(
+        client_->GetLeakDetectionInitiator(),
+        CreateFormForLeakCheck(submitted_manager->GetPendingCredentials(),
+                               *submitted_manager->GetSubmittedForm()),
+        submitted_manager->GetURL());
   }
 
   // TODO(crbug.com/40570965): Implement checking whether to save with

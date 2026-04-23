@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import '../../ui/legacy/legacy.js';
-import '../../ui/components/icon_button/icon_button.js';
+import '../../ui/kit/kit.js';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -542,6 +542,7 @@ export class SearchView extends UI.Widget.VBox {
   }
 
   override willHide(): void {
+    super.willHide();
     this.#stopSearch();
   }
 

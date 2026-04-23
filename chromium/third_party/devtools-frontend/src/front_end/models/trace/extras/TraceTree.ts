@@ -397,6 +397,7 @@ export class BottomUpRootNode extends Node {
     const root = this;
     const startTime = this.startTime;
     const endTime = this.endTime;
+    const idStack: string[] = [];
     const nodeById = new Map<string, Node>();
     const selfTimeStack: number[] = [endTime - startTime];
     const firstNodeStack: boolean[] = [];
@@ -460,6 +461,13 @@ export class BottomUpRootNode extends Node {
       if (forceGroupIdCallback && eventGroupIdCallback) {
         id = `${id}-${eventGroupIdCallback(e)}`;
       }
+
+      idStack.push(id);
+
+      // For an event 'X' that contains another event 'X' (resolving to the same node
+      // id), we need to measure `totalTime` from the start of the outermost 'X' to
+      // its corresponding end. This logic ensures we don't double-count the duration
+      // of the inner event.
       const noNodeOnStack = !totalTimeById.has(id);
       if (noNodeOnStack) {
         totalTimeById.set(id, duration);
@@ -468,10 +476,11 @@ export class BottomUpRootNode extends Node {
     }
 
     function onEndEvent(event: Types.Events.Event): void {
-      let id = generateEventID(event);
-      if (forceGroupIdCallback && eventGroupIdCallback) {
-        id = `${id}-${eventGroupIdCallback(event)}`;
+      const id = idStack.pop();
+      if (!id) {
+        return;
       }
+
       let node = nodeById.get(id);
       if (!node) {
         node = new BottomUpNode(root, id, event, false, root);
@@ -484,6 +493,7 @@ export class BottomUpRootNode extends Node {
         node.totalTime += totalTimeById.get(id) || 0;
         totalTimeById.delete(id);
       }
+      // TODO: this may be wrong. See the skipped test in TraceTree.test.ts.
       if (firstNodeStack.length) {
         node.setHasChildren(true);
       }
@@ -668,7 +678,7 @@ export function eventStackFrame(event: Types.Events.Event): Protocol.Runtime.Cal
   return {...topFrame, scriptId: String(topFrame.scriptId) as Protocol.Runtime.ScriptId};
 }
 
-// TODO(paulirish): rename to generateNodeId
+/** TODO(paulirish): rename to generateNodeId **/
 export function generateEventID(event: Types.Events.Event): string {
   if (Types.Events.isProfileCall(event)) {
     const name = SamplesIntegrator.isNativeRuntimeFrame(event.callFrame) ?

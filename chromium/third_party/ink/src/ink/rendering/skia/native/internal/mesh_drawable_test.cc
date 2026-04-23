@@ -71,20 +71,13 @@ MeshDrawable::Partition MakeNonEmptyTestPartition(int vertex_stride) {
   };
 }
 
-TEST(MeshDrawableTest, DefaultConstructed) {
-  MeshDrawable drawable;
-  EXPECT_FALSE(drawable.HasObjectToCanvas());
-  EXPECT_FALSE(drawable.HasBrushColor());
-}
-
 TEST(MeshDrawableTest, CreateWithoutPartitionsIsNotAnError) {
   auto drawable =
       MeshDrawable::Create(SpecificationForInProgressStroke(),
                            /* blender= */ nullptr, /* shader= */ nullptr,
+                           /* color_functions = */ {},
                            /* partitions = */ {});
   ASSERT_EQ(absl::OkStatus(), drawable.status());
-  EXPECT_TRUE(drawable->HasObjectToCanvas());
-  EXPECT_TRUE(drawable->HasBrushColor());
 }
 
 TEST(MeshDrawableTest, CreateNonEmptyWithoutUnpackingTransform) {
@@ -92,11 +85,10 @@ TEST(MeshDrawableTest, CreateNonEmptyWithoutUnpackingTransform) {
 
   auto drawable =
       MeshDrawable::Create(spec, /* blender= */ nullptr, /* shader= */ nullptr,
+                           /* color_functions = */ {},
                            {MakeNonEmptyTestPartition(spec->stride()),
                             MakeNonEmptyTestPartition(spec->stride())});
   ASSERT_EQ(absl::OkStatus(), drawable.status());
-  EXPECT_TRUE(drawable->HasObjectToCanvas());
-  EXPECT_TRUE(drawable->HasBrushColor());
 }
 
 TEST(MeshDrawableTest, CreateSucceedsWithProvidedStartingUniforms) {
@@ -105,12 +97,11 @@ TEST(MeshDrawableTest, CreateSucceedsWithProvidedStartingUniforms) {
   MeshUniformData starting_uniforms(*spec);
   auto drawable =
       MeshDrawable::Create(spec, /* blender= */ nullptr, /* shader= */ nullptr,
+                           /* color_functions = */ {},
                            {MakeNonEmptyTestPartition(spec->stride()),
                             MakeNonEmptyTestPartition(spec->stride())},
                            starting_uniforms);
   ASSERT_EQ(absl::OkStatus(), drawable.status());
-  EXPECT_TRUE(drawable->HasObjectToCanvas());
-  EXPECT_TRUE(drawable->HasBrushColor());
 }
 
 TEST(MeshDrawableTest, ReturnsSkiaError) {
@@ -121,6 +112,7 @@ TEST(MeshDrawableTest, ReturnsSkiaError) {
 
   absl::Status skia_error =
       MeshDrawable::Create(spec, /* blender= */ nullptr, /* shader= */ nullptr,
+                           /* color_functions = */ {},
                            {MakeNonEmptyTestPartition(incompatible_stride)})
           .status();
   EXPECT_EQ(skia_error.code(), absl::StatusCode::kInvalidArgument);
@@ -132,6 +124,7 @@ TEST(MeshDrawableDeathTest, CreateWithNullSpecification) {
   EXPECT_DEATH_IF_SUPPORTED(auto drawable = MeshDrawable::Create(
                                 /* specification= */ nullptr,
                                 /* blender= */ nullptr, /* shader= */ nullptr,
+                                /* color_functions = */ {},
                                 /* partitions= */ {}),
                             "specification");
 }
@@ -141,10 +134,12 @@ TEST(MeshDrawableDeathTest, CreateWithNullVertexBuffer) {
   MeshDrawable::Partition partition = MakeNonEmptyTestPartition(spec->stride());
   partition.vertex_buffer.reset();
 
-  EXPECT_DEATH_IF_SUPPORTED(auto drawable = MeshDrawable::Create(
-                                spec, /* blender= */ nullptr,
-                                /* shader= */ nullptr, {std::move(partition)}),
-                            "vertex_buffer");
+  EXPECT_DEATH_IF_SUPPORTED(
+      auto drawable = MeshDrawable::Create(spec, /* blender= */ nullptr,
+                                           /* shader= */ nullptr,
+                                           /* color_functions = */ {},
+                                           {std::move(partition)}),
+      "vertex_buffer");
 }
 
 TEST(MeshDrawableDeathTest, CreateWithNullIndexBuffer) {
@@ -152,10 +147,12 @@ TEST(MeshDrawableDeathTest, CreateWithNullIndexBuffer) {
   MeshDrawable::Partition partition = MakeNonEmptyTestPartition(spec->stride());
   partition.index_buffer.reset();
 
-  EXPECT_DEATH_IF_SUPPORTED(auto drawable = MeshDrawable::Create(
-                                spec, /* blender= */ nullptr,
-                                /* shader= */ nullptr, {std::move(partition)}),
-                            "index_buffer");
+  EXPECT_DEATH_IF_SUPPORTED(
+      auto drawable = MeshDrawable::Create(spec, /* blender= */ nullptr,
+                                           /* shader= */ nullptr,
+                                           /* color_functions = */ {},
+                                           {std::move(partition)}),
+      "index_buffer");
 }
 
 }  // namespace

@@ -32,6 +32,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/memory/memory_pressure_listener.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/unguessable_token.h"
 #include "services/metrics/public/cpp/mojo_ukm_recorder.h"
@@ -101,7 +102,7 @@ struct ResourceLoaderOptions;
 // Document.
 class PLATFORM_EXPORT ResourceFetcher
     : public GarbageCollected<ResourceFetcher>,
-      public MemoryPressureListener {
+      public base::MemoryPressureListener {
   USING_PRE_FINALIZER(ResourceFetcher, ClearPreloads);
 
  public:
@@ -135,7 +136,7 @@ class PLATFORM_EXPORT ResourceFetcher
   ResourceFetcher(const ResourceFetcher&) = delete;
   ResourceFetcher& operator=(const ResourceFetcher&) = delete;
   ~ResourceFetcher() override;
-  void Trace(Visitor*) const override;
+  void Trace(Visitor*) const;
 
   // - This function returns the same object throughout this fetcher's
   //   entire life.
@@ -378,8 +379,8 @@ class PLATFORM_EXPORT ResourceFetcher
   void CancelWebBundleSubresourceLoadersFor(
       const base::UnguessableToken& web_bundle_token);
 
-  void OnMemoryPressure(
-      base::MemoryPressureListener::MemoryPressureLevel) override;
+  // base::MemoryPressureListener:
+  void OnMemoryPressure(base::MemoryPressureLevel) override;
 
   void MaybeRecordLCPPSubresourceMetrics(const KURL& document_url);
 
@@ -415,6 +416,11 @@ class PLATFORM_EXPORT ResourceFetcher
       LcppDeferUnusedPreloadExcludedResourceType excluded_resource_type) {
     defer_unused_preload_excluded_resource_type_for_testing_ =
         excluded_resource_type;
+  }
+
+  base::TimeDelta total_taken_time_for_did_load_resource_from_memory_cache()
+      const {
+    return total_taken_time_for_did_load_resource_from_memory_cache_;
   }
 
  private:
@@ -543,8 +549,7 @@ class PLATFORM_EXPORT ResourceFetcher
                                       const Resource& existing_resource,
                                       bool is_static_data) const;
 
-  void MakePreloadedResourceBlockOnloadIfNeeded(Resource*,
-                                                const FetchParameters&);
+  void MakePreloadedResourceBlockIfNeeded(Resource*, const FetchParameters&);
   void MoveResourceLoaderToNonBlocking(ResourceLoader*);
   void RemoveResourceLoader(ResourceLoader*);
 
@@ -729,6 +734,11 @@ class PLATFORM_EXPORT ResourceFetcher
       defer_unused_preload_preloaded_reason_for_testing_;
   features::LcppDeferUnusedPreloadExcludedResourceType
       defer_unused_preload_excluded_resource_type_for_testing_;
+
+  // The accumulated time taken by `DidLoadResourceFromMemoryCache()`.
+  base::TimeDelta total_taken_time_for_did_load_resource_from_memory_cache_;
+
+  MemoryPressureListenerRegistration memory_pressure_listener_registration_;
 };
 
 class ResourceCacheValidationSuppressor {

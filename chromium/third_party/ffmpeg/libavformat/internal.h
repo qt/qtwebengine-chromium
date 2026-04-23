@@ -649,4 +649,30 @@ int ff_bprint_get_frame_filename(struct AVBPrint *buf, const char *path, int64_t
  */
 int ff_dict_set_timestamp(AVDictionary **dict, const char *key, int64_t timestamp);
 
+/**
+ * Set a list of query string options on an object. Only the objects own
+ * options will be set.
+ *
+ * @param obj the object to set options on
+ * @param str the query string
+ * @param allow_unknown ignore unknown query string options. This can be OK if
+ *                      nested protocols are used.
+ * @return <0 on error
+ */
+int ff_parse_opts_from_query_string(void *obj, const char *str, int allow_unkown);
+
+/**
+ * Make a RFC 4281/6381 like string describing a codec.
+ *
+ * @param logctx a context for potential log messages
+ * @param par pointer to an AVCodecParameters struct describing the codec
+ * @param frame_rate an optional pointer to AVRational for the frame rate,
+ *                   for deciding the right profile for video codecs
+ * @param str the output string buffer
+ * @param size the size of the string pointed to by str
+ * @return <0 on error
+ */
+int ff_make_codec_str(void *logctx, const AVCodecParameters *par,
+                      const AVRational *frame_rate, struct AVBPrint *out);
+
 #endif /* AVFORMAT_INTERNAL_H */

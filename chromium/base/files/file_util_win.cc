@@ -662,7 +662,7 @@ File CreateAndOpenTemporaryFileInDir(const FilePath& dir, FilePath* temp_file) {
   // still use a loop here in case it happens.
   for (int i = 0; i < 100; ++i) {
     temp_name = dir.Append(FormatTemporaryFileName(
-        UTF8ToWide(Uuid::GenerateRandomV4().AsLowercaseString())));
+        UTF8ToWide(Uuid::GenerateRandomV4().AsLowercaseString()), true));
     file.Initialize(temp_name, kFlags);
     if (file.IsValid()) {
       break;
@@ -692,7 +692,8 @@ bool CreateTemporaryFileInDir(const FilePath& dir, FilePath* temp_file) {
   return CreateAndOpenTemporaryFileInDir(dir, temp_file).IsValid();
 }
 
-FilePath FormatTemporaryFileName(FilePath::StringViewType identifier) {
+FilePath FormatTemporaryFileName(FilePath::StringViewType identifier,
+                                 bool /*hidden*/) {
   return FilePath(StrCat({identifier, FILE_PATH_LITERAL(".tmp")}));
 }
 
@@ -735,7 +736,7 @@ bool CreateTemporaryDirInDir(const FilePath& base_dir,
 // The directory is created under SystemTemp for security reasons if the caller
 // is the default admin (i.e., no split token, such as the SYSTEM user or the
 // built-in administrator) to avoid attacks from lower privilege processes.
-bool CreateNewTempDirectory(const FilePath::StringType& prefix,
+bool CreateNewTempDirectory(FilePath::StringViewType prefix,
                             FilePath* new_temp_path) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
 

@@ -1,21 +1,33 @@
 package androidx.webgpu
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SmallTest
 import androidx.webgpu.helper.createWebGpu
+import java.util.concurrent.Executor
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
+@SmallTest
 class FeaturesTest {
     /**
      * Test that the features requested match the features in the adapter are present on the device.
      */
     @Test
     fun featuresTest() {
-        val requiredFeatures = arrayOf(FeatureName.TextureCompressionASTC)
+        val requiredFeatures = intArrayOf(FeatureName.TextureCompressionASTC)
         runBlocking {
-            val webGpu = createWebGpu(requiredFeatures = requiredFeatures)
+            val webGpu =
+                createWebGpu(
+                    deviceDescriptor = DeviceDescriptor(
+                        requiredFeatures = requiredFeatures,
+                        deviceLostCallback = null,
+                        deviceLostCallbackExecutor = Executor(Runnable::run),
+                        uncapturedErrorCallback = null,
+                        uncapturedErrorCallbackExecutor = Executor(Runnable::run)
+                    )
+                )
             val device = webGpu.device
             val deviceFeatures = device.getFeatures().features
             requiredFeatures.forEach {

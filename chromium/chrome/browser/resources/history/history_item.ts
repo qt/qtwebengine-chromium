@@ -2,12 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// <if expr="_google_chrome">
+import './internal/icons.html.js';
+// </if>
 import './searched_label.js';
 import './shared_icons.html.js';
 import '/strings.m.js';
 import 'chrome://resources/cr_elements/cr_checkbox/cr_checkbox.js';
-import 'chrome://resources/cr_elements/policy/cr_tooltip_icon.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import 'chrome://resources/cr_elements/icons.html.js';
+import 'chrome://resources/cr_elements/policy/cr_tooltip_icon.js';
 
 import {HistoryResultType} from 'chrome://resources/cr_components/history/constants.js';
 import type {HistoryEntry} from 'chrome://resources/cr_components/history/history.mojom-webui.js';
@@ -328,6 +332,15 @@ export class HistoryItemElement extends HistoryItemElementBase {
     const el = this.$['time-accessed'];
     el.setAttribute('title', new Date(this.item.time).toString());
     this.eventTracker_.remove(el, 'mouseover');
+  }
+
+  protected actorIconClass_(): string {
+    // <if expr="_google_chrome">
+    return 'history-internal:arrow-selector-spark';
+    // </if>
+    // <if expr="not _google_chrome">
+    return 'history20:arrow-selector-tool';
+    // </if>
   }
 }
 

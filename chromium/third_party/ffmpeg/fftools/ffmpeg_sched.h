@@ -205,6 +205,8 @@ int sch_add_dec_output(Scheduler *sch, unsigned dec_idx);
 int sch_add_filtergraph(Scheduler *sch, unsigned nb_inputs, unsigned nb_outputs,
                         SchThreadFunc func, void *ctx);
 
+void sch_remove_filtergraph(Scheduler *sch, int idx);
+
 /**
  * Add a muxer to the scheduler.
  *
@@ -257,7 +259,7 @@ int sch_add_mux(Scheduler *sch, SchThreadFunc func, int (*init)(void *),
 /**
  * Default size of a frame thread queue.
  */
-#define DEFAULT_FRAME_THREAD_QUEUE_SIZE 8
+#define DEFAULT_FRAME_THREAD_QUEUE_SIZE 2
 
 /**
  * Add a muxed stream for a previously added muxer.
@@ -442,6 +444,13 @@ int sch_filter_send(Scheduler *sch, unsigned fg_idx, unsigned out_idx,
                     struct AVFrame *frame);
 
 int sch_filter_command(Scheduler *sch, unsigned fg_idx, struct AVFrame *frame);
+
+/**
+ * Called by filtergraph tasks to choke all filter inputs, preventing them from
+ * receiving more frames until woken up again by the scheduler. Used during
+ * initial graph configuration to avoid unnecessary buffering.
+ */
+void sch_filter_choke_inputs(Scheduler *sch, unsigned fg_idx);
 
 /**
  * Called by encoder tasks to obtain frames for encoding. Will wait for a frame

@@ -103,7 +103,7 @@ describe('Widget', () => {
 
       widget.detach();
 
-      assert.isTrue(await widget.updateComplete);
+      await widget.updateComplete;
       assert.strictEqual(performUpdate.callCount, 0, 'Expected no calls to `performUpdate`');
     });
   });
@@ -125,7 +125,7 @@ describe('Widget', () => {
 
       widget.requestUpdate();
 
-      assert.isTrue(await widget.updateComplete);
+      await widget.updateComplete;
     });
   });
 
@@ -140,13 +140,55 @@ describe('Widget', () => {
 
       assert.strictEqual(performUpdate.callCount, 1, 'Expected exactly one call to `performUpdate`');
     });
+
+    it('runs nested updates in the same update cycle', async () => {
+      const parentWidget = new Widget();
+      const childWidget = new Widget();
+      childWidget.show(parentWidget.contentElement);
+
+      const parentPerformUpdate = sinon.stub(parentWidget, 'performUpdate');
+      parentPerformUpdate.callsFake(childWidget.requestUpdate.bind(childWidget));
+      const childPerformUpdate = sinon.stub(childWidget, 'performUpdate');
+
+      const animationFrame = sinon.spy();
+      requestAnimationFrame(animationFrame);
+
+      parentWidget.requestUpdate();
+      await parentWidget.updateComplete;
+
+      assert.strictEqual(parentPerformUpdate.callCount, 1, 'Expected exactly one call to `parentWidget.performUpdate`');
+      assert.strictEqual(childPerformUpdate.callCount, 1, 'Expected exactly one call to `childWidget.performUpdate`');
+      assert.strictEqual(animationFrame.callCount, 1, 'Expected exactly one call to `requestAnimationFrame`');
+    });
+
+    it('runs microtask updates in the same update cycle', async () => {
+      const parentWidget = new Widget();
+      const childWidget = new Widget();
+      childWidget.show(parentWidget.contentElement);
+
+      const parentPerformUpdate = sinon.stub(parentWidget, 'performUpdate');
+      parentPerformUpdate.callsFake(() => {
+        queueMicrotask(childWidget.requestUpdate.bind(childWidget));
+      });
+      const childPerformUpdate = sinon.stub(childWidget, 'performUpdate');
+
+      const animationFrame = sinon.spy();
+      requestAnimationFrame(animationFrame);
+
+      parentWidget.requestUpdate();
+      await parentWidget.updateComplete;
+
+      assert.strictEqual(parentPerformUpdate.callCount, 1, 'Expected exactly one call to `parentWidget.performUpdate`');
+      assert.strictEqual(childPerformUpdate.callCount, 1, 'Expected exactly one call to `childWidget.performUpdate`');
+      assert.strictEqual(animationFrame.callCount, 1, 'Expected exactly one call to `requestAnimationFrame`');
+    });
   });
 
   describe('updateComplete', () => {
     it('resolves to `true` when there\'s no pending update', async () => {
       const widget = new Widget();
 
-      assert.isTrue(await widget.updateComplete);
+      await widget.updateComplete;
     });
 
     it('resolves to `true` when update cycles ends without scheduling another update', async () => {
@@ -154,16 +196,16 @@ describe('Widget', () => {
 
       widget.requestUpdate();
 
-      assert.isTrue(await widget.updateComplete);
+      await widget.updateComplete;
     });
 
-    it('resolves to `false` when another update is requested during an update cycle', async () => {
+    it('resolves when another update is requested during an update cycle', async () => {
       const widget = new Widget();
       sinon.stub(widget, 'performUpdate').onFirstCall().callsFake(widget.requestUpdate.bind(widget));
 
       widget.requestUpdate();
 
-      assert.isFalse(await widget.updateComplete);
+      await widget.updateComplete;
       await widget.updateComplete;
     });
 
@@ -188,6 +230,148 @@ describe('Widget', () => {
 
       assert.notStrictEqual(updateComplete, widget.updateComplete);
       await widget.updateComplete;
+    });
+  });
+
+  describe('focus', () => {
+    it('does nothing if the widget is not showing', () => {
+      const div = document.createElement('div');
+      renderElementIntoDOM(div);
+      const widget = new Widget();
+      const input = document.createElement('input');
+      widget.setDefaultFocusedElement(input);
+      widget.contentElement.appendChild(input);
+      widget.markAsRoot();
+
+      widget.focus();
+
+      assert.notStrictEqual(document.activeElement, input);
+    });
+
+    it('gives focus to the default focused element', () => {
+      const div = document.createElement('div');
+      renderElementIntoDOM(div);
+      const widget = new Widget();
+      const input = document.createElement('input');
+      widget.setDefaultFocusedElement(input);
+      widget.contentElement.appendChild(input);
+      widget.markAsRoot();
+      widget.show(div);
+
+      widget.focus();
+
+      assert.strictEqual(document.activeElement, input);
+    });
+
+    it('gives focus to the default focused child widget', () => {
+      const div = document.createElement('div');
+      renderElementIntoDOM(div);
+      const parent = new Widget();
+      const child = new Widget();
+      child.show(parent.contentElement);
+      const input = document.createElement('input');
+      child.setDefaultFocusedElement(input);
+      child.contentElement.appendChild(input);
+      parent.setDefaultFocusedChild(child);
+      parent.markAsRoot();
+      parent.show(div);
+      child.show(parent.contentElement);
+
+      parent.focus();
+
+      assert.strictEqual(document.activeElement, input);
+    });
+
+    it('gives focus to the first visible child if no default is set', () => {
+      const div = document.createElement('div');
+      renderElementIntoDOM(div);
+      const parent = new Widget();
+      const child1 = new Widget();
+      const input1 = document.createElement('input');
+      child1.setDefaultFocusedElement(input1);
+      child1.contentElement.appendChild(input1);
+      const child2 = new Widget();
+      const input2 = document.createElement('input');
+      child2.setDefaultFocusedElement(input2);
+      child2.contentElement.appendChild(input2);
+      parent.markAsRoot();
+      parent.show(div);
+      child1.show(parent.contentElement);
+      child2.show(parent.contentElement);
+
+      parent.focus();
+
+      assert.strictEqual(document.activeElement, input1);
+    });
+
+    it('gives focus to its own element with an autofocus attribute', () => {
+      const div = document.createElement('div');
+      renderElementIntoDOM(div);
+      const parent = new Widget();
+      const parentInput = document.createElement('input');
+      parentInput.setAttribute('autofocus', '');
+      parent.contentElement.appendChild(parentInput);
+
+      const child = new Widget();
+      const childInput = document.createElement('input');
+      child.setDefaultFocusedElement(childInput);
+      child.contentElement.appendChild(childInput);
+
+      parent.markAsRoot();
+      parent.show(div);
+      child.show(parent.contentElement);
+
+      parent.focus();
+
+      // parent.getDefaultFocusedElement() should find parentInput and focus it,
+      // ignoring the child.
+      assert.strictEqual(document.activeElement, parentInput);
+    });
+
+    it('does not directly focus an autofocus element in a child widget', () => {
+      const div = document.createElement('div');
+      renderElementIntoDOM(div);
+      const parent = new Widget();
+      const child1 = new Widget();
+      const child1Input = document.createElement('input');
+      child1.setDefaultFocusedElement(child1Input);
+      child1.contentElement.appendChild(child1Input);
+
+      const child2 = new Widget();
+      const child2Input = document.createElement('input');
+      child2.contentElement.appendChild(child2Input);
+
+      parent.markAsRoot();
+      parent.show(div);
+      child1.show(parent.contentElement);
+      child2.show(parent.contentElement);
+
+      parent.focus();
+
+      // parent.getDefaultFocusedElement() should be null because child2's autofocus
+      // is not its own. Then it should focus the first child (child1).
+      // child1 will then focus its default element.
+      assert.strictEqual(document.activeElement, child1Input);
+    });
+
+    it('gives focus an autofocus element of a child widget', () => {
+      const parent = new Widget();
+      const child1 = new Widget();
+      const child1Input = document.createElement('input');
+      child1.setDefaultFocusedElement(child1Input);
+      child1.contentElement.appendChild(child1Input);
+
+      const child2 = new Widget();
+      child2.element.setAttribute('autofocus', '');
+      child2.element.tabIndex = 0;
+
+      renderElementIntoDOM(parent);
+      child1.show(parent.contentElement);
+      child2.show(parent.contentElement);
+
+      parent.focus();
+
+      assert.strictEqual(document.activeElement, child2.element);
     });
   });
 

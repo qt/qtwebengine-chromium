@@ -4,6 +4,7 @@
 
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Workspace from '../workspace/workspace.js';
 
@@ -16,15 +17,14 @@ import type {ResourceMapping} from './ResourceMapping.js';
 import {SASSSourceMapping} from './SASSSourceMapping.js';
 import {StylesSourceMapping} from './StylesSourceMapping.js';
 
-let cssWorkspaceBindingInstance: CSSWorkspaceBinding|undefined;
-
 export class CSSWorkspaceBinding implements SDK.TargetManager.SDKModelObserver<SDK.CSSModel.CSSModel> {
   readonly #resourceMapping: ResourceMapping;
   readonly #modelToInfo: Map<SDK.CSSModel.CSSModel, ModelInfo>;
   readonly #liveLocationPromises: Set<Promise<unknown>>;
 
-  private constructor(resourceMapping: ResourceMapping, targetManager: SDK.TargetManager.TargetManager) {
+  constructor(resourceMapping: ResourceMapping, targetManager: SDK.TargetManager.TargetManager) {
     this.#resourceMapping = resourceMapping;
+    this.#resourceMapping.cssWorkspaceBinding = this;
     this.#modelToInfo = new Map();
     targetManager.observeModels(SDK.CSSModel.CSSModel, this);
 
@@ -37,20 +37,21 @@ export class CSSWorkspaceBinding implements SDK.TargetManager.SDKModelObserver<S
     targetManager: SDK.TargetManager.TargetManager|null,
   } = {forceNew: null, resourceMapping: null, targetManager: null}): CSSWorkspaceBinding {
     const {forceNew, resourceMapping, targetManager} = opts;
-    if (!cssWorkspaceBindingInstance || forceNew) {
+    if (forceNew) {
       if (!resourceMapping || !targetManager) {
         throw new Error(`Unable to create CSSWorkspaceBinding: resourceMapping and targetManager must be provided: ${
             new Error().stack}`);
       }
 
-      cssWorkspaceBindingInstance = new CSSWorkspaceBinding(resourceMapping, targetManager);
+      Root.DevToolsContext.globalInstance().set(
+          CSSWorkspaceBinding, new CSSWorkspaceBinding(resourceMapping, targetManager));
     }
 
-    return cssWorkspaceBindingInstance;
+    return Root.DevToolsContext.globalInstance().get(CSSWorkspaceBinding);
   }
 
   static removeInstance(): void {
-    cssWorkspaceBindingInstance = undefined;
+    Root.DevToolsContext.globalInstance().delete(CSSWorkspaceBinding);
   }
 
   get modelToInfo(): Map<SDK.CSSModel.CSSModel, ModelInfo> {
@@ -62,7 +63,7 @@ export class CSSWorkspaceBinding implements SDK.TargetManager.SDKModelObserver<S
   }
 
   modelAdded(cssModel: SDK.CSSModel.CSSModel): void {
-    this.#modelToInfo.set(cssModel, new ModelInfo(cssModel, this.#resourceMapping));
+    this.#modelToInfo.set(cssModel, new ModelInfo(cssModel, this.#resourceMapping, this));
   }
 
   modelRemoved(cssModel: SDK.CSSModel.CSSModel): void {
@@ -156,7 +157,8 @@ export class ModelInfo {
   #sassSourceMapping: SASSSourceMapping;
   readonly #locations: Platform.MapUtilities.Multimap<SDK.CSSStyleSheetHeader.CSSStyleSheetHeader, LiveLocation>;
   readonly #unboundLocations: Platform.MapUtilities.Multimap<Platform.DevToolsPath.UrlString, LiveLocation>;
-  constructor(cssModel: SDK.CSSModel.CSSModel, resourceMapping: ResourceMapping) {
+  constructor(
+      cssModel: SDK.CSSModel.CSSModel, resourceMapping: ResourceMapping, cssWorkspaceBinding: CSSWorkspaceBinding) {
     this.#eventListeners = [
       cssModel.addEventListener(
           SDK.CSSModel.Events.StyleSheetAdded,
@@ -175,7 +177,8 @@ export class ModelInfo {
     this.#resourceMapping = resourceMapping;
     this.#stylesSourceMapping = new StylesSourceMapping(cssModel, resourceMapping.workspace);
     const sourceMapManager = cssModel.sourceMapManager();
-    this.#sassSourceMapping = new SASSSourceMapping(cssModel.target(), sourceMapManager, resourceMapping.workspace);
+    this.#sassSourceMapping =
+        new SASSSourceMapping(cssModel.target(), sourceMapManager, resourceMapping.workspace, cssWorkspaceBinding);
 
     this.#locations = new Platform.MapUtilities.Multimap();
     this.#unboundLocations = new Platform.MapUtilities.Multimap();

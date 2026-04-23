@@ -1,7 +1,7 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
@@ -47,10 +47,12 @@ import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Logs from '../../models/logs/logs.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import * as Highlighting from '../../ui/components/highlighting/highlighting.js';
 import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.js';
-// eslint-disable-next-line rulesdir/es-modules-import
+import {createIcon} from '../../ui/kit/kit.js';
+// eslint-disable-next-line @devtools/es-modules-import
 import objectValueStyles from '../../ui/legacy/components/object_ui/objectValue.css.js';
+import * as SettingsUI from '../../ui/legacy/components/settings_ui/settings_ui.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -470,29 +472,30 @@ export class ConsoleView extends UI.Widget.VBox implements
     const preserveConsoleLogSetting = Common.Settings.Settings.instance().moduleSetting('preserve-console-log');
     const userActivationEvalSetting = Common.Settings.Settings.instance().moduleSetting('console-user-activation-eval');
     settingsPane.append(
-        UI.SettingsUI.createSettingCheckbox(
+        SettingsUI.SettingsUI.createSettingCheckbox(
             i18nString(UIStrings.hideNetwork), this.filter.hideNetworkMessagesSetting,
             this.filter.hideNetworkMessagesSetting.title()),
-        UI.SettingsUI.createSettingCheckbox(i18nString(UIStrings.logXMLHttpRequests), monitoringXHREnabledSetting),
-        UI.SettingsUI.createSettingCheckbox(
+        SettingsUI.SettingsUI.createSettingCheckbox(
+            i18nString(UIStrings.logXMLHttpRequests), monitoringXHREnabledSetting),
+        SettingsUI.SettingsUI.createSettingCheckbox(
             i18nString(UIStrings.preserveLog), preserveConsoleLogSetting,
             i18nString(UIStrings.doNotClearLogOnPageReload)),
-        UI.SettingsUI.createSettingCheckbox(
+        SettingsUI.SettingsUI.createSettingCheckbox(
             consoleEagerEvalSetting.title(), consoleEagerEvalSetting,
             i18nString(UIStrings.eagerlyEvaluateTextInThePrompt)),
-        UI.SettingsUI.createSettingCheckbox(
+        SettingsUI.SettingsUI.createSettingCheckbox(
             i18nString(UIStrings.selectedContextOnly), this.filter.filterByExecutionContextSetting,
             i18nString(UIStrings.onlyShowMessagesFromTheCurrentContext)),
-        UI.SettingsUI.createSettingCheckbox(
+        SettingsUI.SettingsUI.createSettingCheckbox(
             this.consoleHistoryAutocompleteSetting.title(), this.consoleHistoryAutocompleteSetting,
             i18nString(UIStrings.autocompleteFromHistory)),
-        UI.SettingsUI.createSettingCheckbox(
+        SettingsUI.SettingsUI.createSettingCheckbox(
             this.groupSimilarSetting.title(), this.groupSimilarSetting,
             i18nString(UIStrings.groupSimilarMessagesInConsole)),
-        UI.SettingsUI.createSettingCheckbox(
+        SettingsUI.SettingsUI.createSettingCheckbox(
             userActivationEvalSetting.title(), userActivationEvalSetting,
             i18nString(UIStrings.treatEvaluationAsUserActivation)),
-        UI.SettingsUI.createSettingCheckbox(
+        SettingsUI.SettingsUI.createSettingCheckbox(
             this.showCorsErrorsSetting.title(), this.showCorsErrorsSetting,
             i18nString(UIStrings.showCorsErrorsInConsole)),
     );
@@ -505,6 +508,7 @@ export class ConsoleView extends UI.Widget.VBox implements
 
     this.pinPane = new ConsolePinPane(liveExpressionButton, () => this.prompt.focus());
     this.pinPane.element.classList.add('console-view-pinpane');
+    this.pinPane.element.classList.remove('flex-auto');
     this.pinPane.show(this.contentsElement);
 
     this.viewport = new ConsoleViewport(this);
@@ -767,6 +771,7 @@ export class ConsoleView extends UI.Widget.VBox implements
   }
 
   override willHide(): void {
+    super.willHide();
     this.hidePromptSuggestBox();
   }
 
@@ -976,7 +981,7 @@ export class ConsoleView extends UI.Widget.VBox implements
     this.scheduleViewportRefresh();
     this.consoleMessageAddedForTest(viewMessage);
 
-    // Figure out whether the message should belong into this group or the parent group based on group end timestamp.
+    /** Figure out whether the message should belong into this group or the parent group based on group end timestamp. **/
     function addToGroup(viewMessage: ConsoleViewMessage, currentGroup: ConsoleGroupViewMessage): void {
       const currentEnd = currentGroup.groupEnd();
       if (currentEnd !== null) {
@@ -1070,7 +1075,7 @@ export class ConsoleView extends UI.Widget.VBox implements
 
     this.messageAppendedForTests();
 
-    // Show the group the message belongs to, and also show parent groups.
+    /** Show the group the message belongs to, and also show parent groups. **/
     function showGroup(currentGroup: ConsoleGroupViewMessage|null, visibleViewMessages: ConsoleViewMessage[]): void {
       if (currentGroup === null) {
         return;
@@ -1320,7 +1325,7 @@ export class ConsoleView extends UI.Widget.VBox implements
     }
     this.updateFilterStatus();
     this.#searchableView.updateSearchMatchesCount(this.regexMatchRanges.length);
-    this.jumpToMatch(this.currentMatchRangeIndex);  // Re-highlight current match.
+    this.highlightMatch(this.currentMatchRangeIndex, false);  // Re-highlight current match without scrolling.
     this.viewport.invalidate();
     this.messagesCountElement.setAttribute(
         'aria-label', i18nString(UIStrings.filteredMessagesInConsole, {PH1: this.visibleViewMessages.length}));
@@ -1560,7 +1565,7 @@ export class ConsoleView extends UI.Widget.VBox implements
 
     this.#searchableView.updateSearchMatchesCount(this.regexMatchRanges.length);
     if (typeof this.searchShouldJumpBackwards !== 'undefined' && this.regexMatchRanges.length) {
-      this.jumpToMatch(this.searchShouldJumpBackwards ? -1 : 0);
+      this.highlightMatch(this.searchShouldJumpBackwards ? -1 : 0);
       delete this.searchShouldJumpBackwards;
     }
 
@@ -1585,11 +1590,11 @@ export class ConsoleView extends UI.Widget.VBox implements
   }
 
   jumpToNextSearchResult(): void {
-    this.jumpToMatch(this.currentMatchRangeIndex + 1);
+    this.highlightMatch(this.currentMatchRangeIndex + 1);
   }
 
   jumpToPreviousSearchResult(): void {
-    this.jumpToMatch(this.currentMatchRangeIndex - 1);
+    this.highlightMatch(this.currentMatchRangeIndex - 1);
   }
 
   supportsCaseSensitiveSearch(): boolean {
@@ -1604,7 +1609,7 @@ export class ConsoleView extends UI.Widget.VBox implements
     return true;
   }
 
-  private jumpToMatch(index: number): void {
+  private highlightMatch(index: number, scrollIntoView = true): void {
     if (!this.regexMatchRanges.length) {
       return;
     }
@@ -1614,7 +1619,7 @@ export class ConsoleView extends UI.Widget.VBox implements
       matchRange = this.regexMatchRanges[this.currentMatchRangeIndex];
       const message = this.visibleViewMessages[matchRange.messageIndex];
       message.searchHighlightNode(matchRange.matchIndex)
-          .classList.remove(UI.UIUtils.highlightedCurrentSearchResultClassName);
+          .classList.remove(Highlighting.highlightedCurrentSearchResultClassName);
     }
 
     index = Platform.NumberUtilities.mod(index, this.regexMatchRanges.length);
@@ -1623,9 +1628,11 @@ export class ConsoleView extends UI.Widget.VBox implements
     matchRange = this.regexMatchRanges[index];
     const message = this.visibleViewMessages[matchRange.messageIndex];
     const highlightNode = message.searchHighlightNode(matchRange.matchIndex);
-    highlightNode.classList.add(UI.UIUtils.highlightedCurrentSearchResultClassName);
-    this.viewport.scrollItemIntoView(matchRange.messageIndex);
-    highlightNode.scrollIntoViewIfNeeded();
+    highlightNode.classList.add(Highlighting.highlightedCurrentSearchResultClassName);
+    if (scrollIntoView) {
+      this.viewport.scrollItemIntoView(matchRange.messageIndex);
+      highlightNode.scrollIntoViewIfNeeded();
+    }
   }
 
   private updateStickToBottomOnPointerDown(isRightClick?: boolean): void {
@@ -1774,7 +1781,7 @@ export class ConsoleViewFilter {
 
     this.levelMenuButton =
         new UI.Toolbar.ToolbarMenuButton(this.appendLevelMenuItems.bind(this), undefined, undefined, 'log-level');
-    const levelMenuButtonInfoIcon = IconButton.Icon.create('info', 'console-sidebar-levels-info');
+    const levelMenuButtonInfoIcon = createIcon('info', 'console-sidebar-levels-info');
     levelMenuButtonInfoIcon.title = i18nString(UIStrings.overriddenByFilterSidebar);
     this.levelMenuButtonInfo = new UI.Toolbar.ToolbarItem(levelMenuButtonInfoIcon);
     this.levelMenuButtonInfo.setVisible(false);

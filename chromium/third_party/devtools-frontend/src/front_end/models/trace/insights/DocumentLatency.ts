@@ -27,7 +27,7 @@ export const UIStrings = {
    * @description Description of an insight that provides a breakdown for how long it took to download the main document.
    */
   description:
-      'Your first network request is the most important.  Reduce its latency by avoiding redirects, ensuring a fast server response, and enabling text compression.',
+      'Your first network request is the most important. [Reduce its latency](https://developer.chrome.com/docs/performance/insights/document-latency) by avoiding redirects, ensuring a fast server response, and enabling text compression.',
   /**
    * @description Text to tell the user that the document request does not have redirects.
    */
@@ -95,15 +95,14 @@ export type DocumentLatencyInsightModel = InsightModel<typeof UIStrings, {
   },
 }>;
 
-function getServerResponseTime(
-    request: Types.Events.SyntheticNetworkRequest, context: InsightSetContext): Types.Timing.Milli|null {
-  // Prefer the value as given by the Lantern provider.
-  // For PSI, Lighthouse uses this to set a better value for the server response
-  // time. For technical reasons, in Lightrider we do not have `sendEnd` timing
-  // values. See Lighthouse's `asLanternNetworkRequest` function for more.
-  const lanternRequest = context.navigation && context.lantern?.requests.find(r => r.rawRequest === request);
-  if (lanternRequest?.serverResponseTime !== undefined) {
-    return lanternRequest.serverResponseTime as Types.Timing.Milli;
+function getServerResponseTime(request: Types.Events.SyntheticNetworkRequest): Types.Timing.Milli|null {
+  // For technical reasons, Lightrider does not have `sendEnd` timing values. The
+  // closest we can get to the server response time is from a header that Lightrider
+  // sets.
+  // @ts-expect-error
+  const isLightrider = globalThis.isLightrider;
+  if (isLightrider) {
+    return request.args.data.lrServerResponseTime ?? null;
   }
 
   const timing = request.args.data.timing;
@@ -111,7 +110,7 @@ function getServerResponseTime(
     return null;
   }
 
-  const ms = Helpers.Timing.microToMilli(request.args.data.syntheticData.waiting);
+  const ms = Helpers.Timing.microToMilli(request.args.data.syntheticData.serverResponseTime);
   return Math.round(ms) as Types.Timing.Milli;
 }
 
@@ -183,6 +182,7 @@ function finalize(partialModel: PartialInsightModel<DocumentLatencyInsightModel>
     strings: UIStrings,
     title: i18nString(UIStrings.title),
     description: i18nString(UIStrings.description),
+    docs: 'https://developer.chrome.com/docs/performance/insights/document-latency',
     category: InsightCategory.ALL,
     state: hasFailure ? 'fail' : 'pass',
     ...partialModel,
@@ -202,7 +202,7 @@ export function generateInsight(
     return finalize({warnings: [InsightWarning.NO_DOCUMENT_REQUEST]});
   }
 
-  const serverResponseTime = getServerResponseTime(documentRequest, context);
+  const serverResponseTime = getServerResponseTime(documentRequest);
   if (serverResponseTime === null) {
     throw new Error('missing document request timing');
   }

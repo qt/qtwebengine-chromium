@@ -49,7 +49,7 @@ class InterpreterFrameState {
 
   void set_accumulator(ValueNode* value) {
     // Conversions should be stored in known_node_aspects/NodeInfo.
-    DCHECK(!value->properties().is_conversion());
+    DCHECK(!value->is_conversion());
     frame_[interpreter::Register::virtual_accumulator()] = value;
   }
   ValueNode* accumulator() const {
@@ -63,7 +63,7 @@ class InterpreterFrameState {
                        reg == interpreter::Register::virtual_accumulator() ||
                        reg.ToParameterIndex() >= 0);
     // Conversions should be stored in known_node_aspects/NodeInfo.
-    DCHECK(!value->properties().is_conversion());
+    DCHECK(!value->is_conversion());
     frame_[reg] = value;
   }
   ValueNode* get(interpreter::Register reg) const {
@@ -651,7 +651,7 @@ struct LoopEffects {
 #endif
   ZoneSet<KnownNodeAspects::LoadedContextSlotsKey> context_slot_written;
   ZoneSet<ValueNode*> objects_written;
-  ZoneSet<KnownNodeAspects::LoadedPropertyMapKey> keys_cleared;
+  ZoneSet<PropertyKey> keys_cleared;
   ZoneSet<InlinedAllocation*> allocations;
   bool unstable_aspects_cleared = false;
   bool may_have_aliasing_contexts = false;

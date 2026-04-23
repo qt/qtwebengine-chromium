@@ -8,6 +8,7 @@
 #include <tuple>
 
 #include "base/containers/queue.h"
+#include "base/sequence_checker.h"
 #include "media/formats/hls/media_playlist.h"
 #include "media/formats/hls/media_segment.h"
 
@@ -85,6 +86,12 @@ class MEDIA_EXPORT SegmentStream {
     types::DecimalInteger media_sequence_;
     types::DecimalInteger discontinuity_sequence_;
   };
+
+  // For live streams, start 3 segments from the end per RFC 8216
+  // Section 6.3.3, which recommends starting at least 3 target durations from
+  // the live edge to prevent playback stalls. Since segment duration ≈ target
+  // duration, queuing the last 3 segments achieves RFC compliance.
+  void SkipEarlySegmentsForLiveStream();
 
   const bool seekable_;
   base::TimeDelta next_segment_start_;

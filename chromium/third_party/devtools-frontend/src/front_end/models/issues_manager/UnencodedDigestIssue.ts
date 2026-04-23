@@ -26,21 +26,15 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('models/issues_manager/UnencodedDigestIssue.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
 
-export class UnencodedDigestIssue extends Issue<string> {
-  readonly #issueDetails: Protocol.Audits.UnencodedDigestIssueDetails;
-
-  constructor(issueDetails: Protocol.Audits.UnencodedDigestIssueDetails, issuesModel: SDK.IssuesModel.IssuesModel) {
+export class UnencodedDigestIssue extends Issue<Protocol.Audits.UnencodedDigestIssueDetails> {
+  constructor(
+      issueDetails: Protocol.Audits.UnencodedDigestIssueDetails, issuesModel: SDK.IssuesModel.IssuesModel|null) {
     super(
         {
           code: `${Protocol.Audits.InspectorIssueCode.UnencodedDigestIssue}::${issueDetails.error}`,
           umaCode: `${Protocol.Audits.InspectorIssueCode.UnencodedDigestIssue}::${issueDetails.error}`,
         },
-        issuesModel);
-    this.#issueDetails = issueDetails;
-  }
-
-  details(): Protocol.Audits.UnencodedDigestIssueDetails {
-    return this.#issueDetails;
+        issueDetails, issuesModel);
   }
 
   override primaryKey(): string {
@@ -76,8 +70,9 @@ export class UnencodedDigestIssue extends Issue<string> {
     return this.details().request ? [this.details().request] : [];
   }
 
-  static fromInspectorIssue(issuesModel: SDK.IssuesModel.IssuesModel, inspectorIssue: Protocol.Audits.InspectorIssue):
-      UnencodedDigestIssue[] {
+  static fromInspectorIssue(
+      issuesModel: SDK.IssuesModel.IssuesModel|null,
+      inspectorIssue: Protocol.Audits.InspectorIssue): UnencodedDigestIssue[] {
     const details = inspectorIssue.details.unencodedDigestIssueDetails;
     if (!details) {
       console.warn('Unencoded-Digest issue without details received.');

@@ -129,6 +129,11 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
 
     // Which state is dynamic from pipeline creation, factors in GPL library state as well
     CBDynamicFlags dynamic_state;
+    // There are really 3 states [static, dynamic, ignored] where |ignored| is based on which stages are not part of the pipeline.
+    // To keep all the logic still using a bitset, we just create a mask here.
+    // It is applied both when we need to invalidate things at vkCmdBindPipleine time and at draw/dispatch time to know if the user
+    // forgot to call vkCmdSet* on some state
+    CBDynamicFlags ignored_dynamic_state;
 
     const VkPrimitiveTopology topology_at_rasterizer = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
     const bool descriptor_buffer_mode = false;
@@ -142,14 +147,12 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
     // state objects of the pipeline This is to make it clear that while currently everyone has to allocate this memory, it is only
     // meant for GPU-AV
     struct InstrumentationData {
-        // < unique_shader_id, instrumented_shader_module_handle >
-        // We create a VkShaderModule that is instrumented and need to delete before leaving the pipeline call
-        std::vector<std::pair<uint32_t, VkShaderModule>> instrumented_shader_modules;
-        // TODO - For GPL, this doesn't get passed down from linked shaders
+        // We create a VkShaderModule that is instrumented and it needs to be destroyed before leaving the pipeline call
+        std::vector<VkShaderModule> shader_modules;
         bool was_instrumented = false;
-        // When we instrument GPL at link time, we need to hold the new libraries until they are done
-        VkPipeline pre_raster_lib = VK_NULL_HANDLE;
-        VkPipeline frag_out_lib = VK_NULL_HANDLE;
+        // When we instrument GPL at link time, we need to hold the libraries created by GPU-AV
+        // so they can be re-used
+        VkPipeline instrumented_pipeline_lib = VK_NULL_HANDLE;
     } instrumentation_data;
 
     Pipeline(const DeviceState &state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
@@ -163,11 +166,10 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
 
     Pipeline(const DeviceState &state_data, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
              std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
-             spirv::StatelessData *stateless_data);
+             std::vector<spirv::StatelessData> *stateless_data);
 
     Pipeline(const DeviceState &state_data, const VkRayTracingPipelineCreateInfoNV *pCreateInfo,
-             std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
-             spirv::StatelessData *stateless_data);
+             std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout);
 
     Pipeline(const DeviceState &state_data, const VkDataGraphPipelineCreateInfoARM *pCreateInfo,
              std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
@@ -218,7 +220,7 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
         return {};
     }
 
-    std::shared_ptr<const vvl::ShaderModule> GetLibraryStateShader(VkShaderStageFlagBits state) const;
+    std::shared_ptr<const vvl::ShaderModule> GetGraphicsLibraryStateShader(VkShaderStageFlagBits state) const;
 
     template <VkGraphicsPipelineLibraryFlagBitsEXT type_flag>
     static inline typename LibraryStateTraits<type_flag>::type GetLibraryState(const DeviceState &device_state,
@@ -448,7 +450,10 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
     const Location GetCreateFlagsLoc(const Location &create_info_loc) const;
 
     static std::vector<ShaderStageState> GetStageStates(const DeviceState &state_data, const Pipeline &pipe_state,
-                                                        spirv::StatelessData *stateless_data);
+                                                        VkPipelineLayout pipeline_layout, spirv::StatelessData *stateless_data);
+    static std::vector<ShaderStageState> GetRayTracingStageStates(
+        const DeviceState &state_data, const Pipeline &pipe_state, VkPipelineLayout pipeline_layout,
+        std::vector<spirv::StatelessData> *inout_per_shader_stateless_data);
 
     // Return true if for a given PSO, the given state enum is dynamic, else return false
     bool IsDynamic(const CBDynamicState state) const { return dynamic_state[state]; }

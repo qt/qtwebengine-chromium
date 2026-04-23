@@ -174,6 +174,12 @@ enum class DetachReason {
   kNavigation,
 };
 
+enum class BFCacheStateChange {
+  kStoredToBFCache,
+  kRestoredFromBFCache,
+  kNoChange,
+};
+
 class BLINK_EXPORT WebLocalFrameClient {
  public:
   virtual ~WebLocalFrameClient() = default;
@@ -458,7 +464,8 @@ class BLINK_EXPORT WebLocalFrameClient {
       mojom::SameDocumentNavigationType,
       bool is_client_redirect,
       const std::optional<blink::SameDocNavigationScreenshotDestinationToken>&
-          screenshot_destination) {}
+          screenshot_destination,
+      base::UnguessableToken same_document_metrics_token) {}
 
   // Called when an async same-document navigation fails before commit. This is
   // used in the case where a same-document navigation was instructed to commit
@@ -473,7 +480,7 @@ class BLINK_EXPORT WebLocalFrameClient {
   virtual void DidOpenDocumentInputStream(const WebURL&) {}
 
   // Called when a frame's page lifecycle state gets updated.
-  virtual void DidSetPageLifecycleState(bool restoring_from_bfcache) {}
+  virtual void DidSetPageLifecycleState(BFCacheStateChange bfcache_change) {}
 
   // Immediately notifies the browser of a change in the current HistoryItem.
   // Prefer DidUpdateCurrentHistoryItem().
@@ -884,6 +891,9 @@ class BLINK_EXPORT WebLocalFrameClient {
   virtual base::ScopedClosureRunner CreateScopedClientNavigationThrottler() {
     return {};
   }
+
+  // Returns true if this frame is for the initial WebUI.
+  virtual bool IsForInitialWebUI() const { return false; }
 };
 
 }  // namespace blink

@@ -4,7 +4,7 @@
  *
  *   User-selectable configuration macros (specification only).
  *
- * Copyright (C) 1996-2024 by
+ * Copyright (C) 1996-2025 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -273,7 +273,8 @@ FT_BEGIN_HEADER
    *   options set by those programs have precedence, overwriting the value
    *   here with the configured one.
    */
-#define FT_CONFIG_OPTION_USE_PNG
+/* Not needed since PDFs do not support fonts with PNGs. */
+/* #define FT_CONFIG_OPTION_USE_PNG */
 
 
   /**************************************************************************
@@ -605,7 +606,8 @@ FT_BEGIN_HEADER
    * outlines (from the 'COLR'/'CPAL' tables) in all formats using the 'sfnt'
    * module (namely TrueType~& OpenType).
    */
-#define TT_CONFIG_OPTION_COLOR_LAYERS
+/* Not needed since PDFs do not support any of the color font formats. */
+/* #define TT_CONFIG_OPTION_COLOR_LAYERS */
 
 
   /**************************************************************************

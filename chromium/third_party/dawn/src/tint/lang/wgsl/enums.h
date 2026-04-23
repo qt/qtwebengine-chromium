@@ -111,7 +111,7 @@ constexpr std::string_view kChromiumDiagnosticRuleStrings[] = {
 };
 
 /// An enumerator of WGSL extensions
-/// @see src/tint/lang/wgsl/intrinsics.def for extension descriptions
+/// @see src/tint/lang/wgsl/wgsl.def for extension descriptions
 enum class Extension : uint8_t {
     kUndefined,
     kChromiumDisableUniformityAnalysis,
@@ -193,11 +193,15 @@ enum class LanguageFeature : uint8_t {
     kChromiumTestingShippedWithKillswitch,
     kChromiumTestingUnimplemented,
     kChromiumTestingUnsafeExperimental,
+    kFragmentDepth,
+    kImmediateAddressSpace,
     kPacked4X8IntegerDotProduct,
     kPointerCompositeAccess,
     kReadonlyAndReadwriteStorageTextures,
     kSizedBindingArray,
+    kSubgroupId,
     kTexelBuffers,
+    kUniformBufferStandardLayout,
     kUnrestrictedPointerParameters,
 };
 
@@ -217,11 +221,15 @@ constexpr std::string_view kLanguageFeatureStrings[] = {
     "chromium_testing_shipped_with_killswitch",
     "chromium_testing_unimplemented",
     "chromium_testing_unsafe_experimental",
+    "fragment_depth",
+    "immediate_address_space",
     "packed_4x8_integer_dot_product",
     "pointer_composite_access",
     "readonly_and_readwrite_storage_textures",
     "sized_binding_array",
+    "subgroup_id",
     "texel_buffers",
+    "uniform_buffer_standard_layout",
     "unrestricted_pointer_parameters",
 };
 
@@ -233,11 +241,15 @@ static constexpr LanguageFeature kAllLanguageFeatures[] = {
     LanguageFeature::kChromiumTestingShippedWithKillswitch,
     LanguageFeature::kChromiumTestingUnimplemented,
     LanguageFeature::kChromiumTestingUnsafeExperimental,
+    LanguageFeature::kFragmentDepth,
+    LanguageFeature::kImmediateAddressSpace,
     LanguageFeature::kPacked4X8IntegerDotProduct,
     LanguageFeature::kPointerCompositeAccess,
     LanguageFeature::kReadonlyAndReadwriteStorageTextures,
     LanguageFeature::kSizedBindingArray,
+    LanguageFeature::kSubgroupId,
     LanguageFeature::kTexelBuffers,
+    LanguageFeature::kUniformBufferStandardLayout,
     LanguageFeature::kUnrestrictedPointerParameters,
 };
 
@@ -441,10 +453,15 @@ enum class BuiltinFn : uint8_t {
     kSubgroupMatrixStore,
     kSubgroupMatrixMultiply,
     kSubgroupMatrixMultiplyAccumulate,
+    kSubgroupMatrixScalarAdd,
+    kSubgroupMatrixScalarSubtract,
+    kSubgroupMatrixScalarMultiply,
     kPrint,
     kTintMaterialize,
     kHasBinding,
     kGetBinding,
+    kHasResource,
+    kGetResource,
     kNone,
 };
 
@@ -619,10 +636,15 @@ constexpr BuiltinFn kBuiltinFns[] = {
     BuiltinFn::kSubgroupMatrixStore,
     BuiltinFn::kSubgroupMatrixMultiply,
     BuiltinFn::kSubgroupMatrixMultiplyAccumulate,
+    BuiltinFn::kSubgroupMatrixScalarAdd,
+    BuiltinFn::kSubgroupMatrixScalarSubtract,
+    BuiltinFn::kSubgroupMatrixScalarMultiply,
     BuiltinFn::kPrint,
     BuiltinFn::kTintMaterialize,
     BuiltinFn::kHasBinding,
     BuiltinFn::kGetBinding,
+    BuiltinFn::kHasResource,
+    BuiltinFn::kGetResource,
 };
 
 /// All builtin function names
@@ -778,10 +800,15 @@ constexpr const char* kBuiltinFnStrings[] = {
     "subgroupMatrixStore",
     "subgroupMatrixMultiply",
     "subgroupMatrixMultiplyAccumulate",
+    "subgroupMatrixScalarAdd",
+    "subgroupMatrixScalarSubtract",
+    "subgroupMatrixScalarMultiply",
     "print",
     "__tint_materialize",
     "hasBinding",
     "getBinding",
+    "hasResource",
+    "getResource",
 };
 
 /// Determines if the given `f` is a coarse derivative.

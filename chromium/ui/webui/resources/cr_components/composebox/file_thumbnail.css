@@ -24,7 +24,7 @@
 .spinner-circle {
   animation: spin 1.5s linear infinite;
   fill: none;
-  stroke: var(--color-new-tab-page-composebox-upload-button);
+  stroke: var(--color-composebox-file-chip-spinner);
   stroke-dasharray: 240;
   stroke-dashoffset: 60;
   stroke-linecap: round;
@@ -43,15 +43,15 @@
   align-items: center;
   border-radius: 8px;
   display: flex;
-  height: 44px;
+  height: var(--composebox-thumbnail-img-chip-size, 44px);
   justify-content: center;
   overflow: hidden;
   position: relative;
-  width: 44px;
+  width: var(--composebox-thumbnail-img-chip-size, 44px);
 }
 
 .img-overlay {
-  background-color: var(--color-new-tab-page-composebox-file-image-overlay);
+  background-color: var(--color-composebox-file-image-overlay);
   height: 100%;
   left: 0;
   opacity: 0;
@@ -72,7 +72,7 @@
 
 .chip {
   align-items: center;
-  background-color: var(--color-new-tab-page-composebox-file-chip-background);
+  background-color: var(--color-composebox-file-chip-background);
   border-radius: 8px;
   display: flex;
   gap: 6px;
@@ -80,39 +80,35 @@
   overflow: hidden;
   padding: 0px 12px 0px 8px;
   position: relative;
-  width: 174px;
+  width: var(--thumbnail-chip-width, 154px);
 }
 
 .thumbnail {
   align-items: center;
-  background-color: var(--color-new-tab-page-composebox-file-chip-favicon-background);
+  background-color: var(--color-composebox-file-chip-favicon-background);
   border-radius: 4px;
   display: flex;
   flex-shrink: 0;
   height: 16px;
   justify-content: center;
-  padding: 6px;
+  padding: var(--thumbnail-chip-padding, 6px);
   position: relative;
-  width: 16px;
+  width: var(--thumbnail-chip-icon-size, 16px);
 }
 
 .pdf-icon {
-  background-color: var(--color-new-tab-page-composebox-background);
+  background-color: var(--color-composebox-pdf-chip-icon-background,
+      --color-composebox-background);
+  /* TODO(crbug.com/467758241): fix radius of svg itself. */
+  border-radius: var(--pdf-icon-border-radius, 4px);
   box-sizing: border-box;
-  border-radius: 4px;
-  color: var(--color-new-tab-page-composebox-pdf-chip-icon);
-  height: 100%;
-  padding: 4px;
-  width: 100%;
-}
-
-.chip:hover .pdf-icon,
-.chip:hover composebox-tab-favicon {
-  display: none;
+  border-radius: var(--pdf-icon-border-radius, 4px);
+  color: var(--color-composebox-pdf-chip-icon-border);
+  height: var(--pdf-icon-size, 100%);
+  width: var(--pdf-icon-size, 100%);
 }
 
 .chip-overlay {
-  background-color: var(--color-new-tab-page-composebox-context-entrypoint-hover-background);
   border-radius: inherit;
   inset: 0;
   display: none;
@@ -125,32 +121,53 @@
 }
 
 .overlay {
+  align-items: center;
+  display: flex;
   height: 100%;
-  left: 0;
+  justify-content: center;
   opacity: 0;
   position: absolute;
+  inset-inline-end: 0;
   top: 0;
-  width: 100%;
+  width: var(--thumbnail-chip-overlay-width, 44px);
+}
+
+.gradient-protection {
+  background: linear-gradient(
+    270deg,
+    var(--color-composebox-file-carousel-remove-gradient-start) 85.29%,
+    var(--color-composebox-file-carousel-remove-gradient-end) 123.53%
+  );
+  border-radius: 0 8px 8px 0;
+  inline-size: var(--gradient-protection-width, 56px);
+  inset-block: 0;
+  inset-inline-end: 0;
+  pointer-events: none;
+  position: absolute;
 }
 
 .remove-button {
-  --cr-icon-button-fill-color: white;
-  --cr-icon-button-icon-size: 20px;
+  --cr-icon-button-fill-color: var(--cr-composebox-file-thumbnail-remove-button-fill-color, black);
+  --cr-icon-button-hover-background-color: var(--color-composebox-file-carousel-remove-button);
+  --cr-icon-button-height: var(--remove-button-height, 24px);
+  --cr-icon-button-width: var(--remove-button-width, 24px);
+  --cr-icon-button-icon-size: 16px;
   --cr-icon-button-margin-start: 0;
-  background-color: var(--color-new-tab-page-composebox-file-image-overlay);
-  border-radius: 4px;
-  color: var(--color-new-tab-page-composebox-pdf-chip-icon);
-  height: 100%;
-  left: 0;
-  position: absolute;
-  top: 0;
-  width: 100%;
+  background-color: var(--color-composebox-file-carousel-remove-button);
+  border-radius: var(--remove-button-border-radius, 50%);
+  inset-inline-end: var(--remove-button-inset-inline-end, 0);
+  color: var(--color-composebox-pdf-chip-icon);
+  position: relative;
+}
+
+:host-context([dir='rtl']) .gradient-protection {
+  transform: scaleX(-1);
 }
 
 .title {
-  color: var(--color-new-tab-page-composebox-file-chip-text);
+  color: var(--color-composebox-file-chip-text);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--cr-composebox-file-chip-title-text-size, 12px);
   font-style: normal;
   font-weight: 500;
   line-height: 16px;
@@ -167,8 +184,33 @@
   opacity: 1;
 }
 
-#tabThumbnail composebox-tab-favicon {
+#tabThumbnail cr-composebox-tab-favicon {
   border-radius: 50%;
   height: 16px;
   width: 16px;
+}
+
+.tabInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.url {
+  color: var(--color-composebox-file-carousel-url);
+    font-size: var(--cr-composebox-file-chip-url-text-size, 12px);
+  font-weight: 500;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (forced-colors: active) {
+  .remove-button {
+    --cr-icon-button-fill-color: ButtonText;
+    --cr-icon-button-hover-background-color: ButtonFace;
+    border: 1px solid ButtonText;
+    box-sizing: border-box;
+  }
 }

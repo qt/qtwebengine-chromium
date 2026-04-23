@@ -591,12 +591,14 @@ declare namespace ProtocolProxyApi {
 
   export interface BrowserApi {
     /**
-     * Set permission settings for given requesting and embedding origins.
+     * Set permission settings for given embedding and embedded origins.
      */
     invoke_setPermission(params: Protocol.Browser.SetPermissionRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
-     * Grant specific permissions to the given origin and reject all others.
+     * Grant specific permissions to the given origin and reject all others. Deprecated. Use
+     * setPermission instead.
+     * @deprecated
      */
     invoke_grantPermissions(params: Protocol.Browser.GrantPermissionsRequest): Promise<Protocol.ProtocolResponseWithError>;
 
@@ -1336,6 +1338,11 @@ declare namespace ProtocolProxyApi {
      * Fired when `Element`'s attribute is modified.
      */
     attributeModified(params: Protocol.DOM.AttributeModifiedEvent): void;
+
+    /**
+     * Fired when `Element`'s adoptedStyleSheets are modified.
+     */
+    adoptedStyleSheetsModified(params: Protocol.DOM.AdoptedStyleSheetsModifiedEvent): void;
 
     /**
      * Fired when `Element`'s attribute is removed.
@@ -2246,6 +2253,11 @@ declare namespace ProtocolProxyApi {
      */
     targetReloadedAfterCrash(): void;
 
+    /**
+     * Fired on worker targets when main worker script and any imported scripts have been evaluated.
+     */
+    workerScriptLoaded(): void;
+
   }
 
   export interface LayerTreeApi {
@@ -2445,17 +2457,6 @@ declare namespace ProtocolProxyApi {
 
   export interface NetworkApi {
     /**
-     * Returns enum representing if IP Proxy of requests is available
-     * or reason it is not active.
-     */
-    invoke_getIPProtectionProxyStatus(): Promise<Protocol.Network.GetIPProtectionProxyStatusResponse>;
-
-    /**
-     * Sets bypass IP Protection Proxy boolean.
-     */
-    invoke_setIPProtectionProxyBypassEnabled(params: Protocol.Network.SetIPProtectionProxyBypassEnabledRequest): Promise<Protocol.ProtocolResponseWithError>;
-
-    /**
      * Sets a list of content encodings that will be accepted. Empty list means no encoding is accepted.
      */
     invoke_setAcceptedEncodings(params: Protocol.Network.SetAcceptedEncodingsRequest): Promise<Protocol.ProtocolResponseWithError>;
@@ -2521,7 +2522,9 @@ declare namespace ProtocolProxyApi {
     invoke_emulateNetworkConditions(params: Protocol.Network.EmulateNetworkConditionsRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
-     * Activates emulation of network conditions for individual requests using URL match patterns.
+     * Activates emulation of network conditions for individual requests using URL match patterns. Unlike the deprecated
+     * Network.emulateNetworkConditions this method does not affect `navigator` state. Use Network.overrideNetworkState to
+     * explicitly modify `navigator` behavior.
      */
     invoke_emulateNetworkConditionsByRule(params: Protocol.Network.EmulateNetworkConditionsByRuleRequest): Promise<Protocol.Network.EmulateNetworkConditionsByRuleResponse>;
 
@@ -2799,6 +2802,10 @@ declare namespace ProtocolProxyApi {
      */
     directTCPSocketChunkReceived(params: Protocol.Network.DirectTCPSocketChunkReceivedEvent): void;
 
+    directUDPSocketJoinedMulticastGroup(params: Protocol.Network.DirectUDPSocketJoinedMulticastGroupEvent): void;
+
+    directUDPSocketLeftMulticastGroup(params: Protocol.Network.DirectUDPSocketLeftMulticastGroupEvent): void;
+
     /**
      * Fired upon direct_socket.UDPSocket creation.
      */
@@ -2863,28 +2870,6 @@ declare namespace ProtocolProxyApi {
      * Fired once security policy has been updated.
      */
     policyUpdated(): void;
-
-    /**
-     * Fired once when parsing the .wbn file has succeeded.
-     * The event contains the information about the web bundle contents.
-     */
-    subresourceWebBundleMetadataReceived(params: Protocol.Network.SubresourceWebBundleMetadataReceivedEvent): void;
-
-    /**
-     * Fired once when parsing the .wbn file has failed.
-     */
-    subresourceWebBundleMetadataError(params: Protocol.Network.SubresourceWebBundleMetadataErrorEvent): void;
-
-    /**
-     * Fired when handling requests for resources within a .wbn file.
-     * Note: this will only be fired for resources that are requested by the webpage.
-     */
-    subresourceWebBundleInnerResponseParsed(params: Protocol.Network.SubresourceWebBundleInnerResponseParsedEvent): void;
-
-    /**
-     * Fired when request for resources within a .wbn file failed.
-     */
-    subresourceWebBundleInnerResponseError(params: Protocol.Network.SubresourceWebBundleInnerResponseErrorEvent): void;
 
     /**
      * Is sent whenever a new report is added.
@@ -3491,6 +3476,12 @@ declare namespace ProtocolProxyApi {
      * TODO(https://crbug.com/1440085): Remove this once Puppeteer supports tab targets.
      */
     invoke_setPrerenderingAllowed(params: Protocol.Page.SetPrerenderingAllowedRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Get the annotated page content for the main frame.
+     * This is an experimental command that is subject to change.
+     */
+    invoke_getAnnotatedPageContent(params: Protocol.Page.GetAnnotatedPageContentRequest): Promise<Protocol.Page.GetAnnotatedPageContentResponse>;
 
   }
   export interface PageDispatcher {
@@ -4217,6 +4208,12 @@ declare namespace ProtocolProxyApi {
      * `true`.
      */
     invoke_setRemoteLocations(params: Protocol.Target.SetRemoteLocationsRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Gets the targetId of the DevTools page target opened for the given target
+     * (if any).
+     */
+    invoke_getDevToolsTarget(params: Protocol.Target.GetDevToolsTargetRequest): Promise<Protocol.Target.GetDevToolsTargetResponse>;
 
     /**
      * Opens a DevTools window for the target.

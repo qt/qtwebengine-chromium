@@ -128,13 +128,11 @@ export function setDefaultScreenshotOptions(options) {
  * ```ts
  * import puppeteer from 'puppeteer';
  *
- * (async () => {
- *   const browser = await puppeteer.launch();
- *   const page = await browser.newPage();
- *   await page.goto('https://example.com');
- *   await page.screenshot({path: 'screenshot.png'});
- *   await browser.close();
- * })();
+ * const browser = await puppeteer.launch();
+ * const page = await browser.newPage();
+ * await page.goto('https://example.com');
+ * await page.screenshot({path: 'screenshot.png'});
+ * await browser.close();
  * ```
  *
  * The Page class extends from Puppeteer's {@link EventEmitter} class and will
@@ -240,12 +238,12 @@ let Page = (() => {
         get accessibility() {
             return this.mainFrame().accessibility;
         }
-        locator(selectorOrFunc) {
-            if (typeof selectorOrFunc === 'string') {
-                return NodeLocator.create(this, selectorOrFunc);
+        locator(input) {
+            if (typeof input === 'string') {
+                return NodeLocator.create(this, input);
             }
             else {
-                return FunctionLocator.create(this, selectorOrFunc);
+                return FunctionLocator.create(this, input);
             }
         }
         /**
@@ -739,7 +737,7 @@ let Page = (() => {
          *
          * @remarks
          * This method is a shortcut for calling two methods:
-         * {@link Page.setUserAgent} and {@link Page.setViewport}.
+         * {@link Page.(setUserAgent:2) } and {@link Page.setViewport}.
          *
          * This method will resize the page. A lot of websites don't expect phones to
          * change size, so you should emulate before navigating to the page.
@@ -750,19 +748,17 @@ let Page = (() => {
          * import {KnownDevices} from 'puppeteer';
          * const iPhone = KnownDevices['iPhone 15 Pro'];
          *
-         * (async () => {
-         *   const browser = await puppeteer.launch();
-         *   const page = await browser.newPage();
-         *   await page.emulate(iPhone);
-         *   await page.goto('https://www.google.com');
-         *   // other actions...
-         *   await browser.close();
-         * })();
+         * const browser = await puppeteer.launch();
+         * const page = await browser.newPage();
+         * await page.emulate(iPhone);
+         * await page.goto('https://www.google.com');
+         * // other actions...
+         * await browser.close();
          * ```
          */
         async emulate(device) {
             await Promise.all([
-                this.setUserAgent(device.userAgent),
+                this.setUserAgent({ userAgent: device.userAgent }),
                 this.setViewport(device.viewport),
             ]);
         }
@@ -1321,22 +1317,21 @@ let Page = (() => {
          *
          * ```ts
          * import puppeteer from 'puppeteer';
-         * (async () => {
-         *   const browser = await puppeteer.launch();
-         *   const page = await browser.newPage();
-         *   let currentURL;
-         *   page
-         *     .waitForSelector('img')
-         *     .then(() => console.log('First URL with image: ' + currentURL));
-         *   for (currentURL of [
-         *     'https://example.com',
-         *     'https://google.com',
-         *     'https://bbc.com',
-         *   ]) {
-         *     await page.goto(currentURL);
-         *   }
-         *   await browser.close();
-         * })();
+         *
+         * const browser = await puppeteer.launch();
+         * const page = await browser.newPage();
+         * let currentURL;
+         * page
+         *   .waitForSelector('img')
+         *   .then(() => console.log('First URL with image: ' + currentURL));
+         * for (currentURL of [
+         *   'https://example.com',
+         *   'https://google.com',
+         *   'https://bbc.com',
+         * ]) {
+         *   await page.goto(currentURL);
+         * }
+         * await browser.close();
          * ```
          *
          * @param selector -
@@ -1386,14 +1381,13 @@ let Page = (() => {
          *
          * ```ts
          * import puppeteer from 'puppeteer';
-         * (async () => {
-         *   const browser = await puppeteer.launch();
-         *   const page = await browser.newPage();
-         *   const watchDog = page.waitForFunction('window.innerWidth < 100');
-         *   await page.setViewport({width: 50, height: 50});
-         *   await watchDog;
-         *   await browser.close();
-         * })();
+         *
+         * const browser = await puppeteer.launch();
+         * const page = await browser.newPage();
+         * const watchDog = page.waitForFunction('window.innerWidth < 100');
+         * await page.setViewport({width: 50, height: 50});
+         * await watchDog;
+         * await browser.close();
          * ```
          *
          * @example

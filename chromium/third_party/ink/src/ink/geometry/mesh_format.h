@@ -147,7 +147,7 @@ class MeshFormat {
   };
   // LINT.ThenChange(
   //   fuzz_domains.cc:attribute_types,
-  //   ../storage/proto/coded.proto:attribute_types,
+  //   ../storage/proto/mesh.proto:attribute_types,
   // )
 
   // Indicates what a vertex attribute is used for or represents.  `MeshFormat`,
@@ -181,7 +181,7 @@ class MeshFormat {
   };
   // LINT.ThenChange(
   //   fuzz_domains.cc:attribute_id,
-  //   ../storage/proto/coded.proto:attribute_id,
+  //   ../storage/proto/mesh.proto:attribute_id,
   // )
 
   // An attribute stored on the vertex.
@@ -330,10 +330,9 @@ class MeshFormat {
   uint8_t unpacked_index_stride_;
 };
 
+// Attribute equivalence is more complicated than equality on the underlying
+// fields.
 bool operator==(const MeshFormat& a, const MeshFormat& b);
-inline bool operator!=(const MeshFormat& a, const MeshFormat& b) {
-  return !(a == b);
-}
 
 namespace mesh_internal {
 std::string ToFormattedString(MeshFormat::AttributeType type);

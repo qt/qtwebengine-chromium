@@ -23,6 +23,7 @@
 #include "device/vr/openxr/openxr_stage_bounds_provider.h"
 #include "device/vr/openxr/openxr_unbounded_space_provider.h"
 #include "device/vr/openxr/openxr_view_configuration.h"
+#include "device/vr/openxr/openxr_visibility_mask_handler.h"
 #include "device/vr/public/mojom/vr_service.mojom.h"
 #include "device/vr/public/mojom/xr_session.mojom.h"
 #include "device/vr/vr_export.h"
@@ -55,6 +56,12 @@ using SessionStartedCallback =
 using SessionEndedCallback = base::RepeatingCallback<void(ExitXrPresentReason)>;
 using VisibilityChangedCallback =
     base::RepeatingCallback<void(mojom::XRVisibilityState)>;
+
+// An XrPosef with the space it is relative to.
+struct XrLocation {
+  XrPosef pose;
+  XrSpace space;
+};
 
 class OpenXrApiWrapper {
  public:
@@ -91,7 +98,10 @@ class OpenXrApiWrapper {
                        SessionEndedCallback on_session_ended_callback,
                        VisibilityChangedCallback visibility_changed_callback);
 
-  XrSpace GetReferenceSpace(device::mojom::XRReferenceSpaceType type) const;
+  XrSpace GetReferenceSpace(mojom::XRReferenceSpaceType type) const;
+  std::optional<XrLocation> GetXrLocationFromNativeOriginInformation(
+      const mojom::XRNativeOriginInformation& native_origin,
+      const gfx::Transform& native_origin_from_object);
 
   XrInstance instance() const { return instance_; }
   XrSession session() const { return session_; }
@@ -107,6 +117,7 @@ class OpenXrApiWrapper {
   std::vector<mojom::XRViewPtr> GetViews() const;
   mojom::VRPosePtr GetViewerPose() const;
   std::vector<mojom::XRInputSourceStatePtr> GetInputState();
+  void OnHideInputSources();
 
   std::vector<mojom::XRViewPtr> GetDefaultViews() const;
   float RecommendedViewportScale() const;
@@ -258,6 +269,7 @@ class OpenXrApiWrapper {
   std::unique_ptr<OpenXrStageBoundsProvider> bounds_provider_;
   std::unique_ptr<OpenXRSceneUnderstandingManager> scene_understanding_manager_;
   std::unique_ptr<OpenXrUnboundedSpaceProvider> unbounded_space_provider_;
+  std::unique_ptr<OpenXrVisibilityMaskHandler> visibility_mask_handler_;
 
   // The context provider is owned by the OpenXrRenderLoop, and may change when
   // there is a context lost.

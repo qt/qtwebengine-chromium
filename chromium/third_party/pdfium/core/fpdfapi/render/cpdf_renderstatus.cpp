@@ -175,9 +175,9 @@ bool Type3CharMissingStrokeColor(const CPDF_Type3Char* pChar,
 
 }  // namespace
 
-CPDF_RenderStatus::CPDF_RenderStatus(CPDF_RenderContext* pContext,
+CPDF_RenderStatus::CPDF_RenderStatus(CPDF_RenderContext* context,
                                      CFX_RenderDevice* pDevice)
-    : context_(pContext), device_(pDevice) {}
+    : context_(context), device_(pDevice) {}
 
 CPDF_RenderStatus::~CPDF_RenderStatus() = default;
 
@@ -1089,7 +1089,7 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
     return true;
   }
 
-  FX_RECT rect = GetGlyphsBBox(glyphs, 0);
+  FX_RECT rect = GetGlyphsBBox(glyphs, FontAntiAliasingMode::kNormal);
   auto bitmap = pdfium::MakeRetain<CFX_DIBitmap>();
   if (!bitmap->Create(rect.Width(), rect.Height(), FXDIB_Format::k8bppMask)) {
     return true;

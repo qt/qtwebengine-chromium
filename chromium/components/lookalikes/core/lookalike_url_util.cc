@@ -30,6 +30,8 @@
 #include "components/url_formatter/url_formatter.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/url_util.h"
+#include "third_party/icu/source/common/unicode/uchar.h"
+#include "third_party/icu/source/common/unicode/utypes.h"
 
 using lookalikes::ComboSquattingParams;
 using lookalikes::DomainInfo;
@@ -55,14 +57,14 @@ const size_t kMinE2LDLengthForTargetEmbedding = 4;
 // We might not protect a domain whose e2LD is a common word in target embedding
 // based on the TLD that is paired with it. This list supplements words from
 // url_formatter::common_words::IsCommonWord().
-const char* kLocalAdditionalCommonWords[] = {"asahi", "hoteles", "jharkhand",
-                                             "nifty"};
+constexpr const char* kLocalAdditionalCommonWords[] = {"asahi", "hoteles",
+                                                       "jharkhand", "nifty"};
 
 // These domains are plausible lookalike targets, but they also use common words
 // in their names. Selectively prevent flagging embeddings where the embedder
 // ends in "-DOMAIN.TLD", since these tend to have higher false positive rates.
-const char* kDomainsPermittedInEndEmbeddings[] = {"office.com", "medium.com",
-                                                  "orange.fr"};
+constexpr const char* kDomainsPermittedInEndEmbeddings[] = {
+    "office.com", "medium.com", "orange.fr"};
 
 // What separators can be used to separate tokens in target embedding spoofs?
 // e.g. www-google.com.example.com uses "-" (www-google) and "." (google.com).
@@ -71,7 +73,8 @@ const char kTargetEmbeddingSeparators[] = "-.";
 // A small subset of private registries on the PSL that act like public
 // registries AND are a common source of false positives in lookalike checks. We
 // treat them as public for the purposes of lookalike checks.
-const char* kPrivateRegistriesTreatedAsPublic[] = {"com.de", "com.se"};
+constexpr const char* kPrivateRegistriesTreatedAsPublic[] = {"com.de",
+                                                             "com.se"};
 
 TopBucketDomainsParams* GetTopDomainParams() {
   static TopBucketDomainsParams params{
@@ -739,7 +742,7 @@ bool IsComboSquatting(
 
 // Hostnames containing these strings are considered unsafe due to ligature
 // rendering in some fonts.
-const char* kUnsafeLigatures[] = {
+constexpr const char* kUnsafeLigatures[] = {
     "g_logo", "o_logo", "l_logo", "e_logo",
     // google_logo is also unsafe, but e_logo is its substring.
     // super_g_logo is also unsafe, but g_logo is its substring.
@@ -774,8 +777,7 @@ std::string GetConsoleMessage(const GURL& lookalike_url,
                               bool is_new_heuristic) {
   const char* const kNewHeuristicMessage =
       "Future Chrome versions will show a warning on this domain name.\n";
-  return base::StrCat({"Chrome has determined that ",
-                       lookalike_url.host_piece(),
+  return base::StrCat({"Chrome has determined that ", lookalike_url.host(),
                        " could be fake or fraudulent.\n\n",
                        is_new_heuristic ? kNewHeuristicMessage : "",
                        "If you believe this is shown in error please visit "
@@ -840,7 +842,7 @@ DomainInfo GetDomainInfo(const std::string& hostname) {
 }
 
 DomainInfo GetDomainInfo(const GURL& url) {
-  return GetDomainInfo(url.host());
+  return GetDomainInfo(url.GetHost());
 }
 
 std::string GetETLDPlusOne(const std::string& hostname) {
@@ -1281,26 +1283,26 @@ bool ShouldBlockBySpoofCheckResult(const DomainInfo& navigated_domain) {
   // Here, only a subset of spoof checks that cause an IDN to fallback to
   // punycode are configured to show an interstitial.
   switch (navigated_domain.idn_result.spoof_check_result) {
-    case url_formatter::IDNSpoofChecker::Result::kNone:
-    case url_formatter::IDNSpoofChecker::Result::kSafe:
+    case url_formatter::IDNSpoofCheckerResult::kNone:
+    case url_formatter::IDNSpoofCheckerResult::kSafe:
       return false;
 
-    case url_formatter::IDNSpoofChecker::Result::kICUSpoofChecks:
+    case url_formatter::IDNSpoofCheckerResult::kICUSpoofChecks:
       // If the eTLD+1 contains only a mix of ASCII + Emoji, allow.
       return !IsASCIIAndEmojiOnly(navigated_domain.idn_result.result) &&
              IsPunycodeInterstitialCandidate(navigated_domain);
 
-    case url_formatter::IDNSpoofChecker::Result::kDeviationCharacters:
+    case url_formatter::IDNSpoofCheckerResult::kDeviationCharacters:
       // Failures because of deviation characters, especially ß, is common.
       return false;
 
-    case url_formatter::IDNSpoofChecker::Result::kTLDSpecificCharacters:
-    case url_formatter::IDNSpoofChecker::Result::kUnsafeMiddleDot:
-    case url_formatter::IDNSpoofChecker::Result::kWholeScriptConfusable:
-    case url_formatter::IDNSpoofChecker::Result::kDigitLookalikes:
-    case url_formatter::IDNSpoofChecker::Result::
+    case url_formatter::IDNSpoofCheckerResult::kTLDSpecificCharacters:
+    case url_formatter::IDNSpoofCheckerResult::kUnsafeMiddleDot:
+    case url_formatter::IDNSpoofCheckerResult::kWholeScriptConfusable:
+    case url_formatter::IDNSpoofCheckerResult::kDigitLookalikes:
+    case url_formatter::IDNSpoofCheckerResult::
         kNonAsciiLatinCharMixedWithNonLatin:
-    case url_formatter::IDNSpoofChecker::Result::kDangerousPattern:
+    case url_formatter::IDNSpoofCheckerResult::kDangerousPattern:
       return IsPunycodeInterstitialCandidate(navigated_domain);
   }
 }

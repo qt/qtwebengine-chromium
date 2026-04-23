@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING, ClassVar, Type
 from typing_extensions import override
 
 from crossbench.browsers.attributes import BrowserAttributes
-from crossbench.browsers.chromium.devtools import DevToolsClient
+from crossbench.browsers.chromium.devtools import \
+    DevToolsRemoteClient as DevToolsClient
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.probe_error import ProbeMissingDataError
 
@@ -133,17 +134,15 @@ class VideoAccelerationProbeContext(
       })
 
   @override
-  def invoke(self,
-             info_stack: exception.TInfoStack,
-             timeout: dt.timedelta,
+  def invoke(self, info_stack: exception.TInfoStack, timeout: dt.timedelta,
              **kwargs) -> None:
     del info_stack
     self._verify_hw_accel(timeout, **kwargs)
 
   def _verify_hw_accel(self,
-             timeout: dt.timedelta,
-             expect_hw_accel: bool = True,
-             **kwargs) -> None:
+                       timeout: dt.timedelta,
+                       expect_hw_accel: bool = True,
+                       **kwargs) -> None:
     """
     Called from the "probe" action in the ActionRunner.
     Checks for hardware or software video acceleration.
@@ -165,7 +164,7 @@ class VideoAccelerationProbeContext(
   @override
   def stop(self) -> None:
     if not self._is_hw_acceleration_determined():
-      self._check_acceleration_status(timeout = dt.timedelta(seconds=10))
+      self._check_acceleration_status(timeout=dt.timedelta(seconds=10))
     super().stop()
 
   @override

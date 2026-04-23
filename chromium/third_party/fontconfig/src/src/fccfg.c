@@ -1249,7 +1249,7 @@ FcConfigCompareValue (const FcValue *left_o,
 #define FcDoubleTrunc(d)  ((d) >= 0 ? _FcDoubleFloor (d) : -_FcDoubleFloor (-(d)))
 
 static FcValue
-FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e)
+FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcObject object, FcMatchKind kind, FcExpr *e)
 {
     FcValue                v, vl, vr, vle, vre;
     FcMatrix              *m;
@@ -1275,10 +1275,10 @@ FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e)
 	FcMatrix m;
 	FcValue  xx, xy, yx, yy;
 	v.type = FcTypeMatrix;
-	xx = FcConfigPromote (FcConfigEvaluate (p, p_pat, kind, e->u.mexpr->xx), v, NULL);
-	xy = FcConfigPromote (FcConfigEvaluate (p, p_pat, kind, e->u.mexpr->xy), v, NULL);
-	yx = FcConfigPromote (FcConfigEvaluate (p, p_pat, kind, e->u.mexpr->yx), v, NULL);
-	yy = FcConfigPromote (FcConfigEvaluate (p, p_pat, kind, e->u.mexpr->yy), v, NULL);
+	xx = FcConfigPromote (FcConfigEvaluate (p, p_pat, object, kind, e->u.mexpr->xx), v, NULL);
+	xy = FcConfigPromote (FcConfigEvaluate (p, p_pat, object, kind, e->u.mexpr->xy), v, NULL);
+	yx = FcConfigPromote (FcConfigEvaluate (p, p_pat, object, kind, e->u.mexpr->yx), v, NULL);
+	yy = FcConfigPromote (FcConfigEvaluate (p, p_pat, object, kind, e->u.mexpr->yy), v, NULL);
 	if (xx.type == FcTypeDouble && xy.type == FcTypeDouble &&
 	    yx.type == FcTypeDouble && yy.type == FcTypeDouble) {
 	    m.xx = xx.u.d;
@@ -1324,18 +1324,18 @@ FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e)
 	v = FcValueSave (v);
 	break;
     case FcOpConst:
-	if (FcNameConstant (e->u.constant, &v.u.i))
+	if (FcNameConstantWithObjectCheck (e->u.constant, object, &v.u.i))
 	    v.type = FcTypeInteger;
 	else
 	    v.type = FcTypeVoid;
 	break;
     case FcOpQuest:
-	vl = FcConfigEvaluate (p, p_pat, kind, e->u.tree.left);
+	vl = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.left);
 	if (vl.type == FcTypeBool) {
 	    if (vl.u.b)
-		v = FcConfigEvaluate (p, p_pat, kind, e->u.tree.right->u.tree.left);
+		v = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.right->u.tree.left);
 	    else
-		v = FcConfigEvaluate (p, p_pat, kind, e->u.tree.right->u.tree.right);
+		v = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.right->u.tree.right);
 	} else
 	    v.type = FcTypeVoid;
 	FcValueDestroy (vl);
@@ -1349,8 +1349,8 @@ FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e)
     case FcOpContains:
     case FcOpNotContains:
     case FcOpListing:
-	vl = FcConfigEvaluate (p, p_pat, kind, e->u.tree.left);
-	vr = FcConfigEvaluate (p, p_pat, kind, e->u.tree.right);
+	vl = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.left);
+	vr = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.right);
 	v.type = FcTypeBool;
 	v.u.b = FcConfigCompareValue (&vl, e->op, &vr);
 	FcValueDestroy (vl);
@@ -1362,8 +1362,8 @@ FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e)
     case FcOpMinus:
     case FcOpTimes:
     case FcOpDivide:
-	vl = FcConfigEvaluate (p, p_pat, kind, e->u.tree.left);
-	vr = FcConfigEvaluate (p, p_pat, kind, e->u.tree.right);
+	vl = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.left);
+	vr = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.right);
 	vle = FcConfigPromote (vl, vr, &buf1);
 	vre = FcConfigPromote (vr, vle, &buf2);
 	if (vle.type == vre.type) {
@@ -1492,7 +1492,7 @@ FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e)
 	FcValueDestroy (vr);
 	break;
     case FcOpNot:
-	vl = FcConfigEvaluate (p, p_pat, kind, e->u.tree.left);
+	vl = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.left);
 	switch ((int)vl.type) {
 	case FcTypeBool:
 	    v.type = FcTypeBool;
@@ -1505,7 +1505,7 @@ FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e)
 	FcValueDestroy (vl);
 	break;
     case FcOpFloor:
-	vl = FcConfigEvaluate (p, p_pat, kind, e->u.tree.left);
+	vl = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.left);
 	switch ((int)vl.type) {
 	case FcTypeInteger:
 	    v = vl;
@@ -1521,7 +1521,7 @@ FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e)
 	FcValueDestroy (vl);
 	break;
     case FcOpCeil:
-	vl = FcConfigEvaluate (p, p_pat, kind, e->u.tree.left);
+	vl = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.left);
 	switch ((int)vl.type) {
 	case FcTypeInteger:
 	    v = vl;
@@ -1537,7 +1537,7 @@ FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e)
 	FcValueDestroy (vl);
 	break;
     case FcOpRound:
-	vl = FcConfigEvaluate (p, p_pat, kind, e->u.tree.left);
+	vl = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.left);
 	switch ((int)vl.type) {
 	case FcTypeInteger:
 	    v = vl;
@@ -1553,7 +1553,7 @@ FcConfigEvaluate (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e)
 	FcValueDestroy (vl);
 	break;
     case FcOpTrunc:
-	vl = FcConfigEvaluate (p, p_pat, kind, e->u.tree.left);
+	vl = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.left);
 	switch ((int)vl.type) {
 	case FcTypeInteger:
 	    v = vl;
@@ -1694,6 +1694,7 @@ FamilyTableClear (FamilyTable *table)
 static FcValueList *
 FcConfigMatchValueList (FcPattern   *p,
                         FcPattern   *p_pat,
+                        FcObject     object,
                         FcMatchKind  kind,
                         FcTest      *t,
                         FcValueList *values,
@@ -1708,10 +1709,10 @@ FcConfigMatchValueList (FcPattern   *p,
     while (e) {
 	/* Compute the value of the match expression */
 	if (FC_OP_GET_OP (e->op) == FcOpComma) {
-	    value = FcConfigEvaluate (p, p_pat, kind, e->u.tree.left);
+	    value = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.left);
 	    e = e->u.tree.right;
 	} else {
-	    value = FcConfigEvaluate (p, p_pat, kind, e);
+	    value = FcConfigEvaluate (p, p_pat, object, kind, e);
 	    e = 0;
 	}
 
@@ -1752,7 +1753,7 @@ FcConfigMatchValueList (FcPattern   *p,
 }
 
 static FcValueList *
-FcConfigValues (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e, FcValueBinding binding)
+FcConfigValues (FcPattern *p, FcPattern *p_pat, FcObject object, FcMatchKind kind, FcExpr *e, FcValueBinding binding)
 {
     FcValueList *l;
 
@@ -1762,10 +1763,10 @@ FcConfigValues (FcPattern *p, FcPattern *p_pat, FcMatchKind kind, FcExpr *e, FcV
     if (!l)
 	return 0;
     if (FC_OP_GET_OP (e->op) == FcOpComma) {
-	l->value = FcConfigEvaluate (p, p_pat, kind, e->u.tree.left);
-	l->next = FcConfigValues (p, p_pat, kind, e->u.tree.right, binding);
+	l->value = FcConfigEvaluate (p, p_pat, object, kind, e->u.tree.left);
+	l->next = FcConfigValues (p, p_pat, object, kind, e->u.tree.right, binding);
     } else {
-	l->value = FcConfigEvaluate (p, p_pat, kind, e);
+	l->value = FcConfigEvaluate (p, p_pat, object, kind, e);
 	l->next = NULL;
     }
     l->binding = binding;
@@ -2102,7 +2103,7 @@ FcConfigSubstituteWithPat (FcConfig   *config,
 		     * Check to see if there is a match, mark the location
 		     * to apply match-relative edits
 		     */
-		    vl = FcConfigMatchValueList (m, p_pat, kind, r->u.test, e->values, table);
+		    vl = FcConfigMatchValueList (m, p_pat, object, kind, r->u.test, e->values, table);
 		    /* different 'kind' won't be the target of edit */
 		    if (!value[object] && kind == r->u.test->kind)
 			value[object] = vl;
@@ -2124,7 +2125,7 @@ FcConfigSubstituteWithPat (FcConfig   *config,
 		    /*
 		     * Evaluate the list of expressions
 		     */
-		    l = FcConfigValues (p, p_pat, kind, r->u.edit->expr, r->u.edit->binding);
+		    l = FcConfigValues (p, p_pat, object, kind, r->u.edit->expr, r->u.edit->binding);
 		    if (tst[object] && (tst[object]->kind == FcMatchFont || kind == FcMatchPattern))
 			elt[object] = FcPatternObjectFindElt (p, tst[object]->object);
 

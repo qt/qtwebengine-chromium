@@ -6,8 +6,8 @@
  * this script was taken from https://github.com/ChromeDevTools/devtools-protocol/tree/master/scripts
  * and adjusted slightly to fit within devtools-frontend
  */
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 import type {Protocol} from './protocol_schema.js';
 
@@ -118,7 +118,7 @@ const emitTsComment =
 
 const emitDescription = (lines: string[]) => {
   emitLine('/**');
-  lines.map(l => l ? emitLine(` * ${l}`) : emitLine(' *'));
+  lines.map(l => l ? emitLine(` * ${l.replaceAll('*/', '*\\/')}`) : emitLine(' *'));
   emitLine(' */');
 };
 
@@ -341,6 +341,9 @@ const getCommandMapping = (command: Protocol.Command, domainName: string,
 const emitMapping = (moduleName: string, protocolModuleName: string, domains: Protocol.Domain[]) => {
   moduleName = toTitleCase(moduleName);
   emitHeaderComments();
+  emitLine();
+  emitLine('import type * as Protocol from \'./protocol.js\'');
+  emitLine();
   emitDescription(['Mappings from protocol event and command names to the types required for them.']);
   emitOpenBlock(`export namespace ${moduleName}`);
 

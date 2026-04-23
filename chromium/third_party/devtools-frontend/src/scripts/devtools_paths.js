@@ -10,8 +10,8 @@
  * here. Please add any paths you need that are missing.
  */
 
-const os = require('os');
-const path = require('path');
+const os = require('node:os');
+const path = require('node:path');
 
 /**
  * You would think we can use __filename here but we cannot because __filename
@@ -34,11 +34,13 @@ const path = require('path');
  */
 const PATH_TO_EXECUTED_FILE = process.argv[1];
 
-const _lookUpCaches = new Map([['chromium', null]]);
+const _lookUpCaches = new Map();
 /**
  * This function figures out if we're within a chromium directory, and therefore
  * we are in the integrated workflow mode, rather than working in a standalone
  * devtools-frontend repository.
+ *
+ * @returns {{isInChromium: boolean, chromiumDirectory: string}}
  */
 function isInChromiumDirectory() {
   const cached = _lookUpCaches.get('chromium');
@@ -132,7 +134,11 @@ function autoninjaPyPath() {
 }
 
 function vpython3ExecutablePath() {
-  return path.join(thirdPartyPath(), 'depot_tools', os.platform() === 'win32' ? 'vpython3.bat' : 'vpython3');
+  return path.join(
+      thirdPartyPath(),
+      'depot_tools',
+      os.platform() === 'win32' ? 'vpython3.bat' : 'vpython3',
+  );
 }
 
 function gnPyPath() {

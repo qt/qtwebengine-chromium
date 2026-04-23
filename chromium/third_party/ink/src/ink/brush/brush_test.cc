@@ -72,7 +72,7 @@ BrushFamily CreateTestFamily() {
           }}},
       },
       {.texture_layers = {{.client_texture_id = std::string(kTestTextureId),
-                           .mapping = BrushPaint::TextureMapping::kWinding,
+                           .mapping = BrushPaint::TextureMapping::kStamping,
                            .size_unit = BrushPaint::TextureSizeUnit::kBrushSize,
                            .size = {3, 5},
                            .size_jitter = {0.1, 2},
@@ -86,10 +86,9 @@ BrushFamily CreateTestFamily() {
 
 TEST(BrushTest, Stringify) {
   absl::StatusOr<BrushFamily> family = BrushFamily::Create(
-      BrushTip{
-          .scale = {3, 3}, .corner_rounding = 0, .opacity_multiplier = 0.7},
+      BrushTip{.scale = {3, 3}, .corner_rounding = 0},
       {.texture_layers = {{.client_texture_id = std::string(kTestTextureId),
-                           .mapping = BrushPaint::TextureMapping::kWinding,
+                           .mapping = BrushPaint::TextureMapping::kStamping,
                            .size_unit = BrushPaint::TextureSizeUnit::kBrushSize,
                            .size = {3, 5},
                            .size_jitter = {0.1, 2},
@@ -105,16 +104,17 @@ TEST(BrushTest, Stringify) {
       "Brush(color=Color({0.000000, 0.000000, 1.000000, 1.000000}, sRGB), "
       "size=3, epsilon=0.1, "
       "family=BrushFamily(coats=[BrushCoat{tip=BrushTip{scale=<3, 3>, "
-      "corner_rounding=0, opacity_multiplier=0.7}, "
-      "paint=BrushPaint{texture_layers={TextureLayer{client_texture_id="
-      "test-texture, mapping=kWinding, "
+      "corner_rounding=0}, "
+      "paint_preferences={BrushPaint{texture_layers={TextureLayer{client_"
+      "texture_id=test-texture, mapping=kStamping, "
       "origin=kStrokeSpaceOrigin, size_unit=kBrushSize, wrap_x=kRepeat, "
       "wrap_y=kRepeat, size=<3, 5>, offset=<0, 0>, rotation=0π, "
       "size_jitter=<0.1, 2>, offset_jitter=<0, 0>, rotation_jitter=0π, "
       "opacity=1, animation_frames=1, animation_rows=1, animation_columns=1, "
-      "keyframes={TextureKeyframe{progress=0.1, "
-      "rotation=0.25π}}, blend_mode=kDstOut}}}}], "
-      "client_brush_family_id='big-square'))");
+      "animation_duration=1s, keyframes={TextureKeyframe{progress=0.1, "
+      "rotation=0.25π}}, blend_mode=kDstOut}}, "
+      "self_overlap=kAny}}}], "
+      "client_brush_family_id='big-square', input_model=SpringModel))");
 }
 
 TEST(BrushTest, Create) {
@@ -238,7 +238,7 @@ TEST(BrushTest, SetNewFamily) {
   auto new_family = BrushFamily::Create(
       BrushTip{},
       {.texture_layers = {{.client_texture_id = std::string(kTestTextureId),
-                           .mapping = BrushPaint::TextureMapping::kWinding,
+                           .mapping = BrushPaint::TextureMapping::kStamping,
                            .size_unit = BrushPaint::TextureSizeUnit::kBrushSize,
                            .size = {3, 5},
                            .size_jitter = {0.1, 2},

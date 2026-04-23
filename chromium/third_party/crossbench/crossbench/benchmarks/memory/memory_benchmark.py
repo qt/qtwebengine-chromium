@@ -7,8 +7,8 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
-from typing import (TYPE_CHECKING, Any, ClassVar, Final, MutableMapping,
-                    Optional, Sequence, Type)
+from typing import TYPE_CHECKING, Any, ClassVar, Final, MutableMapping, \
+    Optional, Sequence, Type
 
 import selenium.common.exceptions
 import urllib3.exceptions
@@ -390,7 +390,6 @@ class MemoryBenchmark(SubStoryBenchmark):
   @property
   def intensive_tab_switch_count(self) -> int:
     return self._intensive_tab_switch_count
-
 
   @classmethod
   @override

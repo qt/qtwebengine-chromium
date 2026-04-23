@@ -47,6 +47,11 @@ static constexpr T FirstFromVarArgs(T x, ...) noexcept {
 #define BUILTIN_CODE(isolate, name) \
   (isolate)->builtins()->code_handle(i::Builtin::k##name)
 
+#define ADD_ONE(Name, ...) +1
+static constexpr int kBuiltinLoadICHandlerCount =
+    0 BUILTIN_LOAD_IC_HANDLER_LIST(ADD_ONE);
+#undef ADD_ONE
+
 enum class Builtin : int32_t {
   kNoBuiltinId = -1,
 #define DEF_ENUM(Name, ...) k##Name,
@@ -56,8 +61,11 @@ enum class Builtin : int32_t {
 #define EXTRACT_NAME(Name, ...) k##Name,
   // Define kFirstBytecodeHandler,
   kFirstBytecodeHandler = FirstFromVarArgs(
-      BUILTIN_LIST_BYTECODE_HANDLERS(EXTRACT_NAME, EXTRACT_NAME) 0)
+      BUILTIN_LIST_BYTECODE_HANDLERS(EXTRACT_NAME, EXTRACT_NAME) 0),
+  kFirstLoadICHandler =
+      FirstFromVarArgs(BUILTIN_LOAD_IC_HANDLER_LIST(EXTRACT_NAME) 0),
 #undef EXTRACT_NAME
+  kLastLoadICHandler = kFirstLoadICHandler + kBuiltinLoadICHandlerCount - 1
 };
 enum class TieringBuiltin : int32_t {
 #define DEF_ENUM(Name, ...) k##Name = static_cast<int32_t>(Builtin::k##Name),
@@ -308,7 +316,8 @@ class Builtins {
   V8_EXPORT_PRIVATE Tagged<Code> code(Builtin builtin);
   V8_EXPORT_PRIVATE Handle<Code> code_handle(Builtin builtin);
 
-  static CallInterfaceDescriptor CallInterfaceDescriptorFor(Builtin builtin);
+  V8_EXPORT_PRIVATE static CallInterfaceDescriptor CallInterfaceDescriptorFor(
+      Builtin builtin);
   V8_EXPORT_PRIVATE static Callable CallableFor(Isolate* isolate,
                                                 Builtin builtin);
   V8_EXPORT_PRIVATE static bool HasJSLinkage(Builtin builtin);
@@ -330,6 +339,16 @@ class Builtins {
   static bool CheckFormalParameterCount(
       Builtin builtin, int function_length,
       int formal_parameter_count_with_receiver);
+
+  // Checks that a call to this JS builtin is allowed to be generated in user
+  // code. Ensures that the formal parameter count matches the builtin's
+  // parameter count and that the builtin is not a JS trampoline. The latter
+  // is a sanity check against generating direct calls to JS trampolines - this
+  // just doesn't make sense.
+  // This is a similar to JSDispatchTable::IsCompatibleCode(..) but for
+  // builtins.
+  static inline bool IsCompatibleJSBuiltin(Builtin builtin,
+                                           uint16_t parameter_count);
 
   V8_EXPORT_PRIVATE static const char* name(Builtin builtin);
   V8_EXPORT_PRIVATE static const char* NameForStackTrace(Isolate* isolate,
@@ -475,6 +494,98 @@ class Builtins {
   // Public for ia32-specific helper.
   enum class ForwardWhichFrame { kCurrentFrame, kParentFrame };
 
+  // Flags describing properties of a builtin with JS calling convention.
+  // Builtins with non-JS linkage have kDisabledNonJSBuiltin flags.
+  //
+  // This machinery is used by V8 Sandbox to ensure that builtins that belong
+  // to disabled features can't be made callable (i.e. can't be installed
+  // into a JSFunction).
+  enum class JSBuiltinStateFlag {
+    kNone = 0,
+
+    // Builtin is allowed to be installed as Code object into a JSFunction:
+    //  - it has a JS calling convention,
+    //  - it's an entry point builtin and not an arbitrary helper builtin that
+    //    has JS calling convention for convenience.
+    kEnabled = 1 << 0,
+
+    // Builtin represents some JS trampoline builtin that can be set as a
+    // JSFunction's code (for example, CompileLazy). It might or might not
+    // be currently used.
+    kCoreV8JSTrampoline = 1 << 1,
+
+    // The builtin belongs to a JS language feature that's always available,
+    // i.e. the builtin must be installed in some JSFunction by default.
+    // For example, ArrayPrototypePush or StringPrototypeConcat.
+    kCoreJS = 1 << 2,
+
+    // The builtin belongs to a feature that's enabled by a runtime flag,
+    // unlike core JS language builtins which are always available.
+    kFlagDependent = 1 << 3,
+
+    // The builtin might belong either to core JS language feature or to
+    // to a feature behind runtime flag but in either case it's is installed
+    // to JSFunctions lazily. This means that there might be no JSFunction
+    // instances with this builtin in the heap even though the corresponding
+    // JS feature is enabled.
+    // For example, V8 lazily creates JSFunctions with
+    // AsyncGeneratorAwaitResolveClosure and AsyncGeneratorAwaitRejectClosure
+    // builtins as a part of AsyncGeneratorAwait logic, see
+    // AsyncGeneratorBuiltinsAssembler::AsyncGeneratorAwait().
+    kLazy = 1 << 4,
+
+    // Builtin has non-JS linkage. State of this flag must be equivalent to
+    // (!HasJSLinkage(..)) predicate.
+    kNonJSLinkage = 1 << 5,
+
+    // Common combinations.
+    kJSTrampoline = kEnabled | kCoreV8JSTrampoline,
+    kCoreJSMandatory = kEnabled | kCoreJS,
+    kCoreJSLazy = kEnabled | kCoreJS | kLazy,
+
+    kDisabledJSBuiltin = kNone,
+    kDisabledNonJSBuiltin = kNonJSLinkage,
+    kEnabledFlagDependent = kEnabled | kFlagDependent,
+    kDisabledFlagDependent = kFlagDependent,
+    kEnabledFlagDependentLazy = kEnabled | kFlagDependent | kLazy,
+    kDisabledFlagDependentLazy = kFlagDependent | kLazy,
+  };
+  using JSBuiltinStateFlags = base::Flags<JSBuiltinStateFlag>;
+  V8_EXPORT_PRIVATE static JSBuiltinStateFlags GetJSBuiltinState(
+      Builtin builtin);
+
+  // Returns true for disabled builtins with JS linkage (all non-JS builtins
+  // are considered enabled).
+  static inline bool IsDisabled(Builtin builtin);
+
+  // Returns true if given builtin is a JS trampoline builtin - the builtin
+  // that can be installed into JSFunction as a code object. Note, that
+  // for example tiering trampoines are not allowed to be installed into
+  // JSFunctions. This predicate is used as an allow-list of cases where
+  // a signature mismatch is allowed. See JSDispatchTable::IsCompatibleCode().
+  static inline bool IsJSTrampoline(Builtin builtin);
+
+  // Returns true if given builtin is enabled and it's not a JS trampoline
+  // builtin.
+  static inline bool IsEnabledAndNotJSTrampoline(Builtin builtin);
+
+#ifdef DEBUG
+  // Verify correctness of GetJSBuiltinState() which has to be maintained
+  // manually. The idea is to iterate the heap to figure out which builtins
+  // with JS calling convention are never installed into any JSFunction and
+  // make sure that GetJSBuiltinState() works properly for such builtins.
+  //
+  // |allow_non_initial_state| defines whether the strict verification is
+  // not applicable because user code might have changed the heap state.
+  // For example, user code could have
+  //   - deleted mandatory builtin: delete String.prototype.concat;
+  //   - triggered instantiation of some lazy builtins.
+  //
+  // In any case, even in this mode there must be no usages of disabled
+  // builtins.
+  void VerifyGetJSBuiltinState(bool allow_non_initial_state);
+#endif
+
  private:
   static void Generate_CallFunction(MacroAssembler* masm,
                                     ConvertReceiverMode mode);
@@ -555,6 +666,8 @@ class Builtins {
 
   friend class SetupIsolateDelegate;
 };
+
+DEFINE_OPERATORS_FOR_FLAGS(Builtins::JSBuiltinStateFlags)
 
 V8_INLINE constexpr bool IsInterpreterTrampolineBuiltin(Builtin builtin_id) {
   // Check for kNoBuiltinId first to abort early when the current

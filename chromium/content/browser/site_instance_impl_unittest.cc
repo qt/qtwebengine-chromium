@@ -33,7 +33,6 @@
 #include "content/browser/webui/url_data_manager_backend.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/content_navigation_policy.h"
-#include "content/public/browser/browser_or_resource_context.h"
 #include "content/public/browser/site_isolation_policy.h"
 #include "content/public/browser/web_exposed_isolation_level.h"
 #include "content/public/browser/web_ui_controller.h"
@@ -731,8 +730,8 @@ TEST_F(SiteInstanceTest, GetSiteForURL) {
   GURL test_url = GURL("http://www.google.com/index.html");
   GURL site_url = GetSiteForURL(test_url);
   EXPECT_EQ(GURL("http://google.com"), site_url);
-  EXPECT_EQ("http", site_url.scheme());
-  EXPECT_EQ("google.com", site_url.host());
+  EXPECT_EQ("http", site_url.GetScheme());
+  EXPECT_EQ("google.com", site_url.GetHost());
 
   // Ports are irrelevant.
   test_url = GURL("https://www.google.com:8080");
@@ -758,12 +757,12 @@ TEST_F(SiteInstanceTest, GetSiteForURL) {
   test_url = GURL("http://127.0.0.1/a.html");
   site_url = GetSiteForURL(test_url);
   EXPECT_EQ(GURL("http://127.0.0.1"), site_url);
-  EXPECT_EQ("127.0.0.1", site_url.host());
+  EXPECT_EQ("127.0.0.1", site_url.GetHost());
 
   test_url = GURL("http://2130706433/a.html");
   site_url = GetSiteForURL(test_url);
   EXPECT_EQ(GURL("http://127.0.0.1"), site_url);
-  EXPECT_EQ("127.0.0.1", site_url.host());
+  EXPECT_EQ("127.0.0.1", site_url.GetHost());
 
   test_url = GURL("http://[::1]:2/page.html");
   site_url = GetSiteForURL(test_url);
@@ -772,19 +771,19 @@ TEST_F(SiteInstanceTest, GetSiteForURL) {
   } else {
     EXPECT_EQ(GURL("http://[::1]"), site_url);
   }
-  EXPECT_EQ("[::1]", site_url.host());
+  EXPECT_EQ("[::1]", site_url.GetHost());
 
   // Hostnames without TLDs are okay.
   test_url = GURL("http://foo/a.html");
   site_url = GetSiteForURL(test_url);
   EXPECT_EQ(GURL("http://foo"), site_url);
-  EXPECT_EQ("foo", site_url.host());
+  EXPECT_EQ("foo", site_url.GetHost());
 
   // File URLs should include the scheme.
   test_url = GURL("file:///C:/Downloads/");
   site_url = GetSiteForURL(test_url);
   EXPECT_EQ(GURL("file:"), site_url);
-  EXPECT_EQ("file", site_url.scheme());
+  EXPECT_EQ("file", site_url.GetScheme());
   EXPECT_FALSE(site_url.has_host());
 
   // Some file URLs have hosts in the path.  For consistency with Blink (which
@@ -793,13 +792,13 @@ TEST_F(SiteInstanceTest, GetSiteForURL) {
   test_url = GURL("file://server/path");
   site_url = GetSiteForURL(test_url);
   EXPECT_EQ(GURL("file:"), site_url);
-  EXPECT_EQ("file", site_url.scheme());
+  EXPECT_EQ("file", site_url.GetScheme());
   EXPECT_FALSE(site_url.has_host());
 
   // Data URLs should have the scheme and the nonce of their opaque origin.
   test_url = GURL("data:text/html,foo");
   site_url = GetSiteForURL(test_url);
-  EXPECT_EQ("data", site_url.scheme());
+  EXPECT_EQ("data", site_url.GetScheme());
 
   // Check that there is a serialized nonce in the site URL. The nonce is
   // different each time, but has length 32.
@@ -815,7 +814,7 @@ TEST_F(SiteInstanceTest, GetSiteForURL) {
   test_url = GURL("javascript:foo();");
   site_url = GetSiteForURL(test_url);
   EXPECT_EQ(GURL("javascript:"), site_url);
-  EXPECT_EQ("javascript", site_url.scheme());
+  EXPECT_EQ("javascript", site_url.GetScheme());
   EXPECT_FALSE(site_url.has_host());
 
   // Blob URLs extract the site from the origin.
@@ -833,7 +832,7 @@ TEST_F(SiteInstanceTest, GetSiteForURL) {
   test_url = GURL("blob:file:///1029e5a4-2983-4b90-a585-ed217563acfeb");
   site_url = GetSiteForURL(test_url);
   EXPECT_EQ(GURL("file:"), site_url);
-  EXPECT_EQ("file", site_url.scheme());
+  EXPECT_EQ("file", site_url.GetScheme());
   EXPECT_FALSE(site_url.has_host());
 
   // Blob URLs created from a unique origin use the full URL as the site URL,
@@ -1948,7 +1947,7 @@ TEST_F(SiteInstanceTest, CreateForUrlInfo) {
   const GURL kCustomAppUrl(std::string(kCustomStandardScheme) + "://custom");
   const GURL kEmptySchemeUrl("siteless://test");
   CustomBrowserClient modified_client(kCustomUrl, kCustomAppUrl,
-                                      kEmptySchemeUrl.scheme());
+                                      kEmptySchemeUrl.GetScheme());
   ContentBrowserClient* regular_client =
       SetBrowserClientForTesting(&modified_client);
 

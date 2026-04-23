@@ -20,17 +20,13 @@
 #include "sync/sync_reporting.h"
 #include "state_tracker/cmd_buffer_state.h"
 
-struct ReportProperties;
 struct RecordObject;
-class SyncValidator;
-
-namespace syncval_stats {
-struct AccessStats;
-}  // namespace syncval_stats
 
 namespace syncval {
+
+class SyncValidator;
 class ErrorMessages;
-}  // namespace syncval
+struct AccessStats;
 
 class AlternateResourceUsage {
   public:
@@ -197,7 +193,7 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
 
     ~CommandBufferAccessContext() override;
 
-    // NOTE: because this class is encapsulated in syncval_state::CommandBuffer, it isn't safe
+    // NOTE: because this class is encapsulated in syncval::CommandBuffer, it isn't safe
     // to use shared_from_this from the constructor.
     void SetSelfReference() { cbs_referenced_->push_back(cb_state_->shared_from_this()); }
 
@@ -221,8 +217,8 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     ResourceUsageTag RecordBeginRenderPass(vvl::Func command, const vvl::RenderPass &rp_state, const VkRect2D &render_area,
                                            const std::vector<const vvl::ImageView *> &attachment_views);
 
-    bool ValidateBeginRendering(const ErrorObject &error_obj, syncval_state::BeginRenderingCmdState &cmd_state) const;
-    void RecordBeginRendering(syncval_state::BeginRenderingCmdState &cmd_state, const Location &loc);
+    bool ValidateBeginRendering(const ErrorObject &error_obj, BeginRenderingCmdState &cmd_state) const;
+    void RecordBeginRendering(BeginRenderingCmdState &cmd_state, const Location &loc);
     bool ValidateEndRendering(const ErrorObject &error_obj) const;
     void RecordEndRendering(const RecordObject &record_obj);
     bool ValidateDispatchDrawDescriptorSet(VkPipelineBindPoint pipelineBindPoint, const Location &loc) const;
@@ -290,7 +286,7 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
 
     std::vector<vvl::LabelCommand> &GetProxyLabelCommands() { return proxy_label_commands_; }
 
-    void UpdateStats(syncval_stats::AccessStats &access_stats) const;
+    void UpdateStats(AccessStats &access_stats) const;
 
   private:
     CommandBufferAccessContext(const SyncValidator &sync_validator, VkQueueFlags queue_flags);
@@ -338,7 +334,7 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
 
     // State during dynamic rendering (dynamic rendering rendering passes must be
     // contained within a single command buffer)
-    std::unique_ptr<syncval_state::DynamicRenderingInfo> dynamic_rendering_info_;
+    std::unique_ptr<DynamicRenderingInfo> dynamic_rendering_info_;
 
     // Secondary buffer validation uses proxy context and does local update (imitates Record).
     // Because in this case PreRecord is not called, the label state is not updated. We make
@@ -346,7 +342,6 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     std::vector<vvl::LabelCommand> proxy_label_commands_;
 };
 
-namespace syncval_state {
 class CommandBufferSubState : public vvl::CommandBufferSubState {
   public:
     CommandBufferAccessContext access_context;
@@ -420,11 +415,12 @@ static inline const CommandBufferSubState &SubState(const vvl::CommandBuffer &cb
     return *static_cast<const CommandBufferSubState *>(cb.SubState(LayerObjectTypeSyncValidation));
 }
 
-static inline CommandBufferAccessContext *AccessContext(vvl::CommandBuffer &cb) {
+static inline CommandBufferAccessContext *GetAccessContext(vvl::CommandBuffer &cb) {
     return &static_cast<CommandBufferSubState *>(cb.SubState(LayerObjectTypeSyncValidation))->access_context;
 }
-static inline const CommandBufferAccessContext *AccessContext(const vvl::CommandBuffer &cb) {
+static inline const CommandBufferAccessContext *GetAccessContext(const vvl::CommandBuffer &cb) {
     return &static_cast<const CommandBufferSubState *>(cb.SubState(LayerObjectTypeSyncValidation))->access_context;
 }
 
-}  // namespace syncval_state
+}  // namespace syncval
+

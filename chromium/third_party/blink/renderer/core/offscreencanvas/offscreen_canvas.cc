@@ -10,12 +10,8 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/task/single_thread_task_runner.h"
-#include "third_party/blink/public/common/privacy_budget/identifiability_metric_builder.h"
-#include "third_party/blink/public/common/privacy_budget/identifiability_metrics.h"
-#include "third_party/blink/public/common/privacy_budget/identifiability_study_settings.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
-#include "third_party/blink/renderer/core/canvas_interventions/canvas_interventions_helper.h"
 #include "third_party/blink/renderer/core/css/css_font_selector.h"
 #include "third_party/blink/renderer/core/css/offscreen_font_selector.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
@@ -228,27 +224,13 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
                                       "ImageBitmap construction failed");
   }
 
-  if (plain_text_painter_ != nullptr) {
-    plain_text_painter_->DidSwitchFrame();
-  }
-  if (unique_font_selector_) {
-    unique_font_selector_->DidSwitchFrame();
+  if (!RuntimeEnabledFeatures::CanvasTextSwitchFrameOnFinalizeEnabled()) {
+    NotifyCachesOfSwitchingFrame();
   }
   return image;
 }
 
-void OffscreenCanvas::RecordIdentifiabilityMetric(
-    const blink::IdentifiableSurface& surface,
-    const IdentifiableToken& token) const {
-  if (!IdentifiabilityStudySettings::Get()->ShouldSampleSurface(surface))
-    return;
-  blink::IdentifiabilityMetricBuilder(GetExecutionContext()->UkmSourceID())
-      .Add(surface, token)
-      .Record(GetExecutionContext()->UkmRecorder());
-}
-
 scoped_refptr<Image> OffscreenCanvas::GetSourceImageForCanvas(
-    FlushReason reason,
     SourceImageStatus* status,
     const gfx::SizeF& size) {
   if (!context_) {
@@ -272,23 +254,18 @@ scoped_refptr<Image> OffscreenCanvas::GetSourceImageForCanvas(
     // Because WebGL/WebGPU sources always require copying the back buffer,
     // we use PaintRenderingResultsToSnapshot instead of GetImage in order to
     // keep a cached copy of the backing in the canvas's resource provider.
-    image = RenderingContext()->PaintRenderingResultsToSnapshot(kBackBuffer,
-                                                                reason);
+    image = RenderingContext()->PaintRenderingResultsToSnapshot(kBackBuffer);
   } else {
-    image = RenderingContext()->GetImage(reason);
+    image = RenderingContext()->GetImage();
   }
   if (!image) {
     image = CreateTransparentImage();
   }
   *status = image ? kNormalSourceImageStatus : kInvalidSourceImageStatus;
 
-  if (RuntimeEnabledFeatures::CanvasTextTexImage2DFixEnabled()) {
-    if (plain_text_painter_) {
-      plain_text_painter_->DidSwitchFrame();
-    }
-    if (unique_font_selector_) {
-      unique_font_selector_->DidSwitchFrame();
-    }
+  if (RuntimeEnabledFeatures::CanvasTextTexImage2DFixEnabled() &&
+      !RuntimeEnabledFeatures::CanvasTextSwitchFrameOnFinalizeEnabled()) {
+    NotifyCachesOfSwitchingFrame();
   }
   return image;
 }
@@ -305,7 +282,7 @@ ScriptPromise<ImageBitmap> OffscreenCanvas::CreateImageBitmap(
     return EmptyPromise();
   }
   if (context_) {
-    context_->FinalizeFrame(FlushReason::kCreateImageBitmap);
+    context_->FinalizeFrame(FlushReason::kOther);
   }
   return ImageBitmapSource::FulfillImageBitmap(
       script_state,
@@ -342,18 +319,11 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
     return EmptyPromise();
   }
 
-  if (RuntimeEnabledFeatures::BlockCanvasReadbackEnabled(
-          GetExecutionContext())) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kNotAllowedError,
-                                      String(kBlockCanvasReadbackErrorMessage));
-    return EmptyPromise();
-  }
-
   // It's possible that there are recorded commands that have not been resolved
   // Finalize frame will be called in GetImage, but if there's no
   // resourceProvider yet then the IsPaintable check will fail
   if (context_) {
-    context_->FinalizeFrame(FlushReason::kToBlob);
+    context_->FinalizeFrame(FlushReason::kOther);
   }
 
   if (!IsPaintable() || Size().IsEmpty()) {
@@ -371,17 +341,8 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
   }
 
   base::TimeTicks start_time = base::TimeTicks::Now();
-  scoped_refptr<StaticBitmapImage> image_bitmap =
-      context_->GetImage(FlushReason::kToBlob);
+  scoped_refptr<StaticBitmapImage> image_bitmap = context_->GetImage();
   if (image_bitmap) {
-    auto intervention_type =
-        CanvasInterventionsHelper::CanvasInterventionType::kNone;
-    if (CanvasInterventionsHelper::MaybeNoiseSnapshot(GetExecutionContext(),
-                                                      image_bitmap)) {
-      intervention_type =
-          CanvasInterventionsHelper::CanvasInterventionType::kNoise;
-    };
-
     auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
         script_state, exception_state.GetContext());
     CanvasAsyncBlobCreator::ToBlobFunctionType function_type =
@@ -389,11 +350,7 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
     auto* execution_context = ExecutionContext::From(script_state);
     auto* async_creator = MakeGarbageCollected<CanvasAsyncBlobCreator>(
         image_bitmap, options, function_type, start_time, execution_context,
-        IdentifiabilityStudySettings::Get()->ShouldSampleType(
-            IdentifiableSurface::Type::kCanvasReadback)
-            ? IdentifiabilityInputDigest(context_)
-            : 0,
-        intervention_type, resolver);
+        resolver);
     async_creator->ScheduleAsyncBlobCreation(options->quality());
     return resolver->Promise();
   }
@@ -562,11 +519,8 @@ bool OffscreenCanvas::PushFrame(scoped_refptr<CanvasResource>&& canvas_resource,
       std::move(canvas_resource), current_frame_damage_rect_, IsOpaque());
   current_frame_damage_rect_ = SkIRect::MakeEmpty();
 
-  if (plain_text_painter_ != nullptr) {
-    plain_text_painter_->DidSwitchFrame();
-  }
-  if (unique_font_selector_) {
-    unique_font_selector_->DidSwitchFrame();
+  if (!RuntimeEnabledFeatures::CanvasTextSwitchFrameOnFinalizeEnabled()) {
+    NotifyCachesOfSwitchingFrame();
   }
   return true;
 }
@@ -585,9 +539,8 @@ UkmParameters OffscreenCanvas::GetUkmParameters() {
 
 void OffscreenCanvas::NotifyGpuContextLost() {
   if (context_ && !context_->isContextLost()) {
-    // This code path is used only by 2D canvas, because NotifyGpuContextLost
-    // is called by Canvas2DLayerBridge and OffscreenCanvas itself, rather
-    // than the rendering context.
+    // This code path is used only by 2D canvas, where NotifyGpuContextLost is
+    // called by OffscreenCanvas itself rather than the rendering context.
     DCHECK(context_->IsRenderingContext2D());
     context_->LoseContext(CanvasRenderingContext::kRealLostContext);
   }
@@ -635,9 +588,8 @@ UniqueFontSelector* OffscreenCanvas::GetFontSelector() {
     base_selector =
         To<WorkerGlobalScope>(GetExecutionContext())->GetFontSelector();
   }
-  auto* unique_font_selector = MakeGarbageCollected<UniqueFontSelector>(
-      base_selector,
-      RuntimeEnabledFeatures::CanvasTextNgEnabled(GetExecutionContext()));
+  auto* unique_font_selector =
+      MakeGarbageCollected<UniqueFontSelector>(base_selector);
   unique_font_selector_ = unique_font_selector;
   return unique_font_selector;
 }

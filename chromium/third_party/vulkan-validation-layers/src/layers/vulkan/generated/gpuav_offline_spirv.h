@@ -37,6 +37,7 @@ extern const uint32_t instrumentation_descriptor_class_general_buffer_comp_size;
 extern const uint32_t instrumentation_descriptor_class_general_buffer_comp[];
 // These offset match the function in the order they are declared in the GLSL source
 extern const uint32_t instrumentation_descriptor_class_general_buffer_comp_function_0_offset;
+extern const uint32_t instrumentation_descriptor_class_general_buffer_comp_function_1_offset;
 
 extern const uint32_t instrumentation_descriptor_class_texel_buffer_comp_size;
 extern const uint32_t instrumentation_descriptor_class_texel_buffer_comp[];
@@ -65,13 +66,25 @@ extern const uint32_t instrumentation_ray_query_comp[];
 // These offset match the function in the order they are declared in the GLSL source
 extern const uint32_t instrumentation_ray_query_comp_function_0_offset;
 
+extern const uint32_t instrumentation_sanitizer_comp_size;
+extern const uint32_t instrumentation_sanitizer_comp[];
+// These offset match the function in the order they are declared in the GLSL source
+extern const uint32_t instrumentation_sanitizer_comp_function_0_offset;
+extern const uint32_t instrumentation_sanitizer_comp_function_1_offset;
+
 extern const uint32_t instrumentation_vertex_attribute_fetch_oob_vert_size;
 extern const uint32_t instrumentation_vertex_attribute_fetch_oob_vert[];
 // These offset match the function in the order they are declared in the GLSL source
 extern const uint32_t instrumentation_vertex_attribute_fetch_oob_vert_function_0_offset;
 
+extern const uint32_t validation_cmd_build_acceleration_structures_comp_size;
+extern const uint32_t validation_cmd_build_acceleration_structures_comp[];
+
 extern const uint32_t validation_cmd_copy_buffer_to_image_comp_size;
 extern const uint32_t validation_cmd_copy_buffer_to_image_comp[];
+
+extern const uint32_t validation_cmd_copy_memory_indirect_comp_size;
+extern const uint32_t validation_cmd_copy_memory_indirect_comp[];
 
 extern const uint32_t validation_cmd_count_buffer_comp_size;
 extern const uint32_t validation_cmd_count_buffer_comp[];

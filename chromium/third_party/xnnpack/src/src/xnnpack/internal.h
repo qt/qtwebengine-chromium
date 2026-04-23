@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
@@ -8,18 +8,45 @@
 #ifndef XNNPACK_SRC_XNNPACK_INTERNAL_H_
 #define XNNPACK_SRC_XNNPACK_INTERNAL_H_
 
+#include <pthreadpool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "include/xnnpack.h"
 #include "src/xnnpack/config-types.h"
+#include "src/xnnpack/log.h"
 #include "src/xnnpack/math.h"
 #include "src/xnnpack/subgraph.h"
-#include <pthreadpool.h>
 
 // Runtime values marked with this flag should be cleaned up (i.e. deallocated)
 // by the runtime.
 #define XNN_VALUE_FLAG_NEEDS_CLEANUP 0x00000008
+
+// Macro to check the `enum xnn_status` result of an expression and return it
+// if it is not `xnn_status_success`, followed by an optional string literal and
+// parameters for `xnn_log_error`.
+#define XNN_VAR_ARG_HEAD(FIRST, ...) FIRST
+#define XNN_RETURN_IF_ERROR(expr, ...)                             \
+  do {                                                             \
+    const enum xnn_status status_ = (expr);                        \
+    if (status_ != xnn_status_success) {                           \
+      if (sizeof(XNN_VAR_ARG_HEAD("" __VA_ARGS__)) > sizeof("")) { \
+        xnn_log_error("" __VA_ARGS__);                             \
+      }                                                            \
+      return status_;                                              \
+    }                                                              \
+  } while (false)
+
+#define XNN_IF_ERROR_GOTO(label, expr, ...)                        \
+  do {                                                             \
+    status = (expr);                                               \
+    if (status != xnn_status_success) {                            \
+      if (sizeof(XNN_VAR_ARG_HEAD("" __VA_ARGS__)) > sizeof("")) { \
+        xnn_log_error("" __VA_ARGS__);                             \
+      }                                                            \
+      goto label;                                                  \
+    }                                                              \
+  }while (false)
 
 #ifdef __cplusplus
 extern "C" {
@@ -274,8 +301,8 @@ enum xnn_status xnn_create_batch_matrix_multiply_nc_pf16(
     uint32_t flags, xnn_operator_t* batch_matrix_multiply_op_out);
 
 enum xnn_status xnn_create_batch_matrix_multiply_nc_pf16_const_weights(
-    size_t batch_size_b, size_t k, size_t n, const void* data_b, uint32_t flags,
-    xnn_operator_t* batch_matrix_multiply_op_out);
+    size_t batch_size_b, size_t k, size_t n, const xnn_float16* data_b,
+    uint32_t flags, xnn_operator_t* batch_matrix_multiply_op_out);
 
 enum xnn_status xnn_reshape_batch_matrix_multiply_nc_pf16(
     xnn_operator_t batch_matrix_multiply_op, size_t num_batch_dims,

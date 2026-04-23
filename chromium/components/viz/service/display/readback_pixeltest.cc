@@ -91,14 +91,10 @@ SharedQuadState* CreateSharedQuadState(AggregatedRenderPass* render_pass,
 }
 
 void DeleteSharedImage(
-    scoped_refptr<RasterContextProvider> context_provider,
     scoped_refptr<gpu::ClientSharedImage> client_shared_image,
     const gpu::SyncToken& sync_token,
     bool is_lost) {
-  DCHECK(context_provider);
-  gpu::SharedImageInterface* sii = context_provider->SharedImageInterface();
-  DCHECK(sii);
-  sii->DestroySharedImage(sync_token, std::move(client_shared_image));
+  client_shared_image->UpdateDestructionSyncToken(sync_token);
 }
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -469,7 +465,8 @@ class ReadbackPixelTest : public VizPixelTest {
     std::unordered_map<ResourceId, ResourceId, ResourceIdHasher> resource_map =
         cc::SendResourceAndGetChildToParentMap(
             {resource_id}, resource_provider_.get(),
-            child_resource_provider_.get(), child_context_provider_.get());
+            child_resource_provider_.get(),
+            child_context_provider_->SharedImageInterface());
     ResourceId mapped_resource_id = resource_map[resource_id];
 
     const gfx::Rect output_rect(source_size);
@@ -500,8 +497,7 @@ class ReadbackPixelTest : public VizPixelTest {
         client_shared_image->creation_sync_token());
 
     auto release_callback =
-        base::BindOnce(&DeleteSharedImage, child_context_provider_,
-                       std::move(client_shared_image));
+        base::BindOnce(&DeleteSharedImage, std::move(client_shared_image));
     return child_resource_provider_->ImportResource(
         resource, std::move(release_callback));
   }

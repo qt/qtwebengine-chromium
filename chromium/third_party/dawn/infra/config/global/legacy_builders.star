@@ -61,7 +61,7 @@ def get_dimension(os):
         A string containing the dimensions the given OS should target.
     """
     if os.category == os_category.LINUX:
-        return "Ubuntu-22.04"
+        return "Ubuntu-24.04"
     elif os.category == os_category.MAC:
         return "Mac-12|Mac-13|Mac-14|Mac-15"
     elif os.category == os_category.WINDOWS:
@@ -78,16 +78,6 @@ luci.notifier(
 )
 
 # Recipes
-
-def get_builder_executable(use_gn):
-    """Get standard executable for builders
-
-    Returns:
-      The name of a recipe from //recipes.star to use.
-    """
-    if use_gn:
-        return "recipe:dawn/gn"
-    return "recipe:dawn/cmake"
 
 def get_os_from_arg(arg):
     """Get OS enum for a builder name string
@@ -178,8 +168,8 @@ def get_common_properties(os, clang, rbe_project, remote_jobs):
 
     return properties
 
-def add_ci_builder(name, os, properties):
-    """Add a CI builder
+def add_ci_cmake_builder(name, os, properties):
+    """Add a CI CMake builder
 
     Args:
       name: builder's name in string form
@@ -220,7 +210,7 @@ def add_ci_builder(name, os, properties):
         bucket = "ci",
         schedule = schedule_ci,
         triggered_by = triggered_by_ci,
-        executable = get_builder_executable(use_gn = "cmake" not in name),
+        executable = "recipe:dawn/cmake",
         properties = properties_ci,
         dimensions = dimensions_ci,
         caches = get_default_caches(os),
@@ -230,8 +220,8 @@ def add_ci_builder(name, os, properties):
         shadow_properties = shadow_properties_ci,
     )
 
-def add_try_builder(name, os, properties):
-    """Add a Try builder
+def add_try_cmake_builder(name, os, properties):
+    """Add a Try CMake builder
 
     Args:
       name: builder's name in string form
@@ -252,94 +242,12 @@ def add_try_builder(name, os, properties):
     luci.builder(
         name = name,
         bucket = "try",
-        executable = get_builder_executable(use_gn = "cmake" not in name),
+        executable = "recipe:dawn/cmake",
         properties = properties_try,
         dimensions = dimensions_try,
         caches = get_default_caches(os),
         service_account = "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
     )
-
-def dawn_standalone_builder(name, clang, debug, cpu, fuzzer):
-    """Adds both the CI and Try standalone builders as appropriate
-
-    Args:
-      name: builder's name in string form
-      clang: is this builder running clang
-      debug: is this builder generating debug builds
-      cpu: string representing the target CPU architecture
-      fuzzer: enable building fuzzer corpus
-
-    """
-    os = get_os_from_arg(name)
-
-    properties = {
-        "clang": clang,
-        "debug": debug,
-        "gen_fuzz_corpus": fuzzer,
-        "target_cpu": cpu,
-    }
-
-    add_ci_builder(name, os, properties)
-    if not fuzzer:
-        add_try_builder(name, os, properties)
-
-    config = ""
-    if clang:
-        config = "clang"
-    elif os.category == os_category.WINDOWS:
-        config = "msvc"
-
-    category = ""
-    if fuzzer:
-        category += "cron|"
-    category += os.console_name
-
-    if os.category != os_category.MAC:
-        category += "|" + config
-        if config != "msvc":
-            category += "|dbg" if debug else "|rel"
-
-    short_name = "dbg" if debug else "rel"
-    if os.category != os_category.MAC:
-        if config != "msvc":
-            short_name = cpu
-
-    luci.console_view_entry(
-        console_view = "ci",
-        builder = "ci/" + name,
-        category = category,
-        short_name = short_name,
-    )
-
-    if not fuzzer:
-        luci.list_view_entry(
-            list_view = "try",
-            builder = "try/" + name,
-        )
-
-        additional_filters = []
-        if config == "msvc":
-            additional_filters = exclusion_filters.gn_msvc_cq_file_exclusions
-
-        luci.cq_tryjob_verifier(
-            cq_group = "Dawn-CQ",
-            builder = "dawn:try/" + name,
-            location_filters = [
-                cq.location_filter(path_regexp = ".*"),
-                cq.location_filter(
-                    path_regexp = "\\.github/.+",
-                    exclude = True,
-                ),
-            ] + additional_filters,
-        )
-
-        # These builders run fine unbranched on branch CLs, so add them to the
-        # branch groups as well.
-        for milestone in ACTIVE_MILESTONES.keys():
-            luci.cq_tryjob_verifier(
-                cq_group = "Dawn-CQ-" + milestone,
-                builder = "dawn:try/" + name,
-            )
 
 def dawn_cmake_standalone_builder(name, clang, debug, cpu, asan, ubsan, experimental = False):
     """Adds both the CI and Try standalone builders as appropriate for the CMake build
@@ -363,8 +271,8 @@ def dawn_cmake_standalone_builder(name, clang, debug, cpu, asan, ubsan, experime
         "ubsan": ubsan,
     }
 
-    add_ci_builder(name, os, properties)
-    add_try_builder(name, os, properties)
+    add_ci_cmake_builder(name, os, properties)
+    add_try_cmake_builder(name, os, properties)
 
     config = ""
     if clang:
@@ -397,13 +305,21 @@ def dawn_cmake_standalone_builder(name, clang, debug, cpu, asan, ubsan, experime
         builder = "try/" + name,
     )
 
-    # Only add CQ verifiers for non-ASAN and non-UBSAN bots to minimize CQ load.
+    # Only automatically add CQ verifiers for non-ASAN and non-UBSAN bots to
+    # minimize CQ load.
     if not asan and not ubsan:
         luci.cq_tryjob_verifier(
             experiment_percentage = 100 if experimental else None,
             cq_group = "Dawn-CQ",
             builder = "dawn:try/" + name,
             location_filters = exclusion_filters.cmake_cq_file_exclusions,
+        )
+    else:
+        luci.cq_tryjob_verifier(
+            experiment_percentage = 100 if experimental else None,
+            cq_group = "Dawn-CQ",
+            builder = "dawn:try/" + name,
+            includable_only = True,
         )
 
     # These builders run fine unbranched on branch CLs, so add them to the
@@ -414,92 +330,6 @@ def dawn_cmake_standalone_builder(name, clang, debug, cpu, asan, ubsan, experime
             cq_group = "Dawn-CQ-" + milestone,
             builder = "dawn:try/" + name,
         )
-
-def _add_branch_verifiers(builder_name, os, min_milestone = None, includable_only = False, disable_reuse = False):
-    for milestone, details in ACTIVE_MILESTONES.items():
-        if os not in details.platforms:
-            continue
-        if min_milestone != None and int(milestone[1:]) < min_milestone:
-            continue
-        luci.cq_tryjob_verifier(
-            cq_group = "Dawn-CQ-" + milestone,
-            builder = "{}:try/{}".format(details.chromium_project, builder_name),
-            includable_only = includable_only,
-            disable_reuse = disable_reuse,
-        )
-
-# We use the DEPS version for branches because ToT builders do not make sense on
-# branches and the DEPS versions already exist.
-_os_arch_to_branch_builder = {
-    "android-arm": "dawn-android-arm-deps-rel",
-    "android-arm64": "dawn-android-arm64-deps-rel",
-    "linux": "dawn-linux-x64-deps-rel",
-    "mac": "dawn-mac-x64-deps-rel",
-    "mac-arm64": "dawn-mac-arm64-deps-rel",
-    "win": "dawn-win10-x64-deps-rel",
-    "win-arm64": "dawn-win11-arm64-deps-rel",
-}
-
-_os_arch_to_dawn_cq_builder = {
-    "android-arm": "android-dawn-arm-rel",
-    "android-arm64": "android-dawn-arm64-rel",
-    "linux": "linux-dawn-rel",
-    "mac": "mac-dawn-rel",
-    "mac-arm64": "mac-arm64-dawn-rel",
-    "win": "win-dawn-rel",
-    "win-arm64": "win11-arm64-dawn-rel",
-}
-
-# The earliest milestone that the builder is relevant for
-_os_arch_to_min_milestone = {
-    "android-arm": None,
-    "android-arm64": None,
-    "linux": 112,
-    "mac": 112,
-    "mac-arm64": 122,
-    "win": 112,
-    "win-arm64": 126,
-}
-
-def chromium_dawn_tryjob(os, arch = None):
-    """Adds a tryjob that tests against Chromium
-
-    Args:
-      os: string for the OS, should be one or linux|mac|win
-      arch: string for the arch, or None
-    """
-
-    if arch:
-        luci.cq_tryjob_verifier(
-            cq_group = "Dawn-CQ",
-            builder = "chromium:try/{builder}".format(builder =
-                                                          _os_arch_to_dawn_cq_builder["{os}-{arch}".format(os = os, arch = arch)]),
-            location_filters = [
-                cq.location_filter(path_regexp = ".*"),
-                cq.location_filter(
-                    path_regexp = "\\.github/.+",
-                    exclude = True,
-                ),
-            ],
-        )
-        _add_branch_verifiers(
-            _os_arch_to_branch_builder["{os}-{arch}".format(os = os, arch = arch)],
-            os,
-            _os_arch_to_min_milestone["{os}-{arch}".format(os = os, arch = arch)],
-        )
-    else:
-        luci.cq_tryjob_verifier(
-            cq_group = "Dawn-CQ",
-            builder = "chromium:try/{}-dawn-rel".format(os),
-            location_filters = [
-                cq.location_filter(path_regexp = ".*"),
-                cq.location_filter(
-                    path_regexp = "\\.github/.+",
-                    exclude = True,
-                ),
-            ],
-        )
-        _add_branch_verifiers(_os_arch_to_branch_builder[os], os)
 
 def clang_tidy_dawn_tryjob():
     """Adds a tryjob that runs clang tidy on new patchset upload."""
@@ -577,6 +407,8 @@ luci.console_view_entry(
 
 # The following standalone builders have been replaced with functionally
 # equivalent ones using the gn_v2 recipe. See crbug.com/385317083.
+# * cron-linux-clang-rel-x64
+#   * dawn-linux-x64-sws-clusterfuzz
 # * linux-clang-dbg-x64
 #   * dawn-cq-linux-x64-dbg
 #   * dawn-cq-linux-x64-fuzz-dbg
@@ -589,6 +421,10 @@ luci.console_view_entry(
 # * linux-clang-rel-x86
 #   * dawn-cq-linux-x86-rel
 #   * dawn-cq-linux-x86-fuzz-rel
+# * mac-dbg
+#   * dawn-cq-mac-x64-dbg
+# * mac-rel
+#   * dawn-cq-mac-x64-rel
 # * win-clang-dbg-x64
 #   * dawn-cq-win-x64-dbg
 # * win-clang-dbg-x86
@@ -597,12 +433,10 @@ luci.console_view_entry(
 #   * dawn-cq-win-x64-rel
 # * win-clang-rel-x86
 #   * dawn-cq-win-x86-rel
-
-dawn_standalone_builder("mac-dbg", clang = True, debug = True, cpu = "x64", fuzzer = False)
-dawn_standalone_builder("mac-rel", clang = True, debug = False, cpu = "x64", fuzzer = False)
-dawn_standalone_builder("win-msvc-dbg-x64", clang = False, debug = True, cpu = "x64", fuzzer = False)
-dawn_standalone_builder("win-msvc-rel-x64", clang = False, debug = False, cpu = "x64", fuzzer = False)
-dawn_standalone_builder("cron-linux-clang-rel-x64", clang = True, debug = False, cpu = "x64", fuzzer = True)
+# * win-msvc-dbg-x64
+#   * dawn-cq-win-x64-msvc-dbg
+# * win-msvc-rel-x64
+#   * dawn-cq-win-x64-msvc-rel
 
 dawn_cmake_standalone_builder("cmake-linux-clang-dbg-x64", clang = True, debug = True, cpu = "x64", asan = False, ubsan = False)
 dawn_cmake_standalone_builder("cmake-linux-clang-dbg-x64-asan", clang = True, debug = True, cpu = "x64", asan = True, ubsan = False)
@@ -615,93 +449,7 @@ dawn_cmake_standalone_builder("cmake-mac-rel", clang = True, debug = False, cpu 
 dawn_cmake_standalone_builder("cmake-win-msvc-dbg-x64", clang = False, debug = True, cpu = "x64", asan = False, ubsan = False)
 dawn_cmake_standalone_builder("cmake-win-msvc-rel-x64", clang = False, debug = False, cpu = "x64", asan = False, ubsan = False)
 
-chromium_dawn_tryjob("linux")
-chromium_dawn_tryjob("mac")
-chromium_dawn_tryjob("mac", "arm64")
-chromium_dawn_tryjob("win")
-chromium_dawn_tryjob("win", "arm64")
-chromium_dawn_tryjob("android", "arm")
-chromium_dawn_tryjob("android", "arm64")
-
 clang_tidy_dawn_tryjob()
-
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/dawn-try-linux-x64-intel-uhd770-rel",
-    includable_only = True,
-)
-
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/dawn-try-win-x64-intel-uhd770-rel",
-    includable_only = True,
-)
-
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/dawn-try-win10-x86-rel",
-    includable_only = True,
-)
-_add_branch_verifiers("dawn-win10-x86-deps-rel", "win", includable_only = True)
-
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/dawn-try-mac-arm64-rel",
-    includable_only = True,
-)
-
-# Experimental builders that usually don't actually run any tests, but will when
-# qualifying a new configuration.
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/android-dawn-arm64-exp-rel",
-    includable_only = True,
-)
-
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/dawn-try-mac-arm64-m2-exp",
-    includable_only = True,
-)
-
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/dawn-try-mac-intel-exp",
-    includable_only = True,
-)
-
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/dawn-try-mac-amd-exp",
-    includable_only = True,
-)
-
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/dawn-try-win-x64-intel-exp",
-    includable_only = True,
-)
-
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/dawn-try-win-x64-nvidia-exp",
-    includable_only = True,
-)
-
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/linux-dawn-nvidia-1660-exp-rel",
-    includable_only = True,
-)
-
-# This is separate from the "presubmit" builder since we need branch-specific
-# branch builders unlike stock presubmit.
-luci.cq_tryjob_verifier(
-    cq_group = "Dawn-CQ",
-    builder = "chromium:try/dawn-chromium-presubmit",
-    disable_reuse = True,
-)
-_add_branch_verifiers("dawn-chromium-presubmit", "linux", min_milestone = 130, disable_reuse = True)
 
 # CQ
 

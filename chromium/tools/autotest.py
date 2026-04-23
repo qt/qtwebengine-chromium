@@ -4,9 +4,9 @@
 # found in the LICENSE file.
 """Builds and runs a test by filename.
 
-This script finds the appropriate test suites for the specified test files or
-directories, builds it, then runs it with the (optionally) specified filter,
-passing any extra args on to the test runner.
+This script finds the appropriate test suites for the specified test files,
+directories, or test names, builds it, then runs it with the (optionally) specified
+filter, passing any extra args on to the test runner.
 
 Examples:
 # Run the test target for bit_cast_unittest.cc. Use a custom test filter instead
@@ -26,6 +26,9 @@ autotest.py -C out/foo base/strings base/pickle_unittest.cc
 # Run only the test on line 11. Useful when running autotest.py from your text
 # editor.
 autotest.py -C out/foo --line 11 base/strings/strcat_unittest.cc
+
+# Search for and run tests with the given names.
+autotest.py -C out/foo StringUtilTest.IsStringUTF8 SpanTest.AsStringView
 """
 
 import argparse
@@ -81,7 +84,6 @@ _TEST_TARGET_ALLOWLIST = [
     '//chrome/test:unit_tests',
     '//clank/javatests:chrome_apk_baseline_profile_generator',
     '//clank/javatests:chrome_smoke_test',
-    '//clank/javatests:monochrome_bundle_smoke_test',
     '//clank/javatests:trichrome_chrome_google_bundle_smoke_test',
     '//components/chromeos_camera:jpeg_decode_accelerator_unittest',
     '//components/exo/wayland:wayland_client_compatibility_tests',
@@ -104,7 +106,7 @@ _TEST_TARGET_ALLOWLIST = [
     '//gpu:gpu_benchmark',
     '//gpu/vulkan/android:vk_tests',
     '//ios/web:ios_web_inttests',
-    '//ios/web_view:ios_web_view_inttests',
+    '//ios/web_view/test:ios_web_view_inttests',
     '//media/cdm:aes_decryptor_fuzztests',
     '//media/formats:ac3_util_fuzzer',
     '//media/gpu/chromeos:image_processor_test',
@@ -193,17 +195,23 @@ class TestValidity(Enum):
   VALID_TEST = 2  # Matches test file regex and includes gtest files.
 
 
+def CodeSearchFiles(query_args):
+  lines = RunCommand([
+      'cs',
+      '-l',
+      # Give the local path to the file, if the file exists.
+      '--local',
+      # Restrict our search to Chromium
+      'git:chrome-internal/codesearch/chrome/src@main',
+  ] + query_args).splitlines()
+  return [l.strip() for l in lines if l.strip()]
+
+
 def FindRemoteCandidates(target):
   """Find files using a remote code search utility, if installed."""
   if not shutil.which('cs'):
     return []
-  results = RunCommand([
-      'cs', '-l',
-      # Give the local path to the file, if the file exists.
-      '--local',
-      f'file:{target}',
-      # Restrict our search to Chromium
-      'git:chrome-internal/codesearch/chrome/src@main']).splitlines()
+  results = CodeSearchFiles([f'file:{target}'])
   exact = set()
   close = set()
   for filename in results:
@@ -260,8 +268,9 @@ def StreamCommandOrExit(cmd, **kwargs):
 def RunCommand(cmd, **kwargs):
   try:
     # Set an encoding to convert the binary output to a string.
-    return subprocess.check_output(
-        cmd, **kwargs, encoding=locale.getpreferredencoding())
+    return subprocess.check_output(cmd,
+                                   **kwargs,
+                                   encoding=locale.getpreferredencoding())
   except subprocess.CalledProcessError as e:
     raise CommandError(e.cmd, e.returncode, e.output) from None
 
@@ -299,8 +308,8 @@ def RecursiveMatchFilename(folder, filename):
       for entry in it:
         if (entry.is_symlink()):
           continue
-        if (entry.is_file() and filename in entry.path and
-            not os.path.basename(entry.path).startswith('.')):
+        if (entry.is_file() and filename in entry.path
+            and not os.path.basename(entry.path).startswith('.')):
           file_validity = IsTestFile(entry.path)
           if file_validity is TestValidity.VALID_TEST:
             exact.append(entry.path)
@@ -341,7 +350,60 @@ def FindTestFilesInDirectory(directory):
   return test_files
 
 
-def FindMatchingTestFiles(target, remote_search=False):
+def SearchForTestsByName(terms, quiet, remote_search):
+
+  def GetPatternForTerm(term):
+    ANY = '.' if not remote_search else r'[\s\S]'
+    slash_parts = term.split('/')
+    # These are the formats, for now, just ignore the prefix and suffix here.
+    # Prefix/Test.Name/Suffix  -> \bTest\b.*\bName\b
+    # Test.Name/Suffix         -> \bTest\b.*\bName\b
+    # Test.Name                -> \bTest\b.*\bName\b
+    if len(slash_parts) <= 2:
+      dot_parts = slash_parts[0].split('.')
+    else:
+      dot_parts = slash_parts[1].split('.')
+    return f'{ANY}*'.join(r'\b' + re.escape(p) + r'\b' for p in dot_parts)
+
+  def GetFilterForTerm(term):
+    # If the user supplied a '/', assume they've included the full test name.
+    if '/' in term:
+      return term
+    # If there's no '.', assume this is a test prefix or suffix.
+    if '.' not in term:
+      return '*' + term + '*'
+    # Otherwise run any parameterized tests with this prefix.
+    return f'{term}:{term}/*'
+
+  pattern = '|'.join(f'({GetPatternForTerm(t)})' for t in terms)
+
+  # find files containing the tests.
+  if not remote_search:
+    # Use ripgrep.
+    files = [
+        f for f in RunCommand([
+            'rg', '-l', '--multiline', '--multiline-dotall', '-t', 'cpp', '-t',
+            'java', '-t', 'objcpp', pattern, SRC_DIR
+        ]).splitlines()
+    ]
+  else:
+    # Use code search.
+    files = CodeSearchFiles(['pcre:true', pattern])
+  files = [f for f in files if IsTestFile(f) != TestValidity.NOT_A_TEST]
+  gtest_filter = ':'.join(GetFilterForTerm(t) for t in terms)
+
+  if files and not quiet:
+    print('Found tests in files:')
+    print('\n'.join([f'  {f}' for f in files]))
+  return files, gtest_filter
+
+
+def IsProbablyFile(name):
+  '''Returns whether the name is likely a test file name, path, or directory path.'''
+  return TEST_FILE_NAME_REGEX.match(name) or os.path.exists(name)
+
+
+def FindMatchingTestFiles(target, remote_search=False, path_index=None):
   # Return early if there's an exact file match.
   if os.path.isfile(target):
     if test_file := _FindTestForFile(target):
@@ -357,8 +419,8 @@ def FindMatchingTestFiles(target, remote_search=False):
   if sys.platform.startswith('win32') and os.path.altsep in target:
     # Use backslash as the path separator on Windows to match os.scandir().
     if DEBUG:
-      print('Replacing ' + os.path.altsep + ' with ' + os.path.sep + ' in: '
-            + target)
+      print('Replacing ' + os.path.altsep + ' with ' + os.path.sep + ' in: ' +
+            target)
     target = target.replace(os.path.altsep, os.path.sep)
   if DEBUG:
     print('Finding files with full path containing: ' + target)
@@ -392,14 +454,10 @@ def FindMatchingTestFiles(target, remote_search=False):
     test_files = close
 
   if len(test_files) > 1:
-    if len(test_files) < 10:
-      test_files = [HaveUserPickFile(test_files)]
+    if path_index is not None and 0 <= path_index < len(test_files):
+      test_files = [test_files[path_index]]
     else:
-      # Arbitrarily capping at 10 results so we don't print the name of every
-      # file in the repo if the target is poorly specified.
-      test_files = test_files[:10]
-      ExitWithMessage(f'Target "{target}" is ambiguous. Matching files: '
-                      f'{test_files}')
+      test_files = [HaveUserPickFile(test_files)]
   if not test_files:
     ExitWithMessage(f'Target "{target}" did not match any files.')
   return test_files
@@ -431,37 +489,46 @@ def _FindTestForFile(target: os.PathLike) -> str | None:
   return maybe_valid[0] if maybe_valid else None
 
 
+def _ChooseByIndex(msg, options):
+  while True:
+    user_input = input(msg)
+    try:
+      return options[int(user_input)]
+    except (ValueError, IndexError):
+      msg = 'Invalid index. Try again: '
+
+
 def HaveUserPickFile(paths):
-  paths = sorted(paths, key=lambda p: (len(p), p))
+  paths = sorted(paths, key=lambda p: (len(p), p))[:20]
   path_list = '\n'.join(f'{i}. {t}' for i, t in enumerate(paths))
 
-  while True:
-    user_input = input(f'Please choose the path you mean.\n{path_list}\n')
-    try:
-      value = int(user_input)
-      return paths[value]
-    except (ValueError, IndexError):
-      print('Try again')
+  msg = f"""\
+Found multiple paths with that name.
+Hint: Avoid this in subsequent runs using --path-index=$INDEX, or --run-all.
+
+{path_list}
+
+Pick the path that you want by its index: """
+  return _ChooseByIndex(msg, paths)
 
 
 def HaveUserPickTarget(paths, targets):
-  # Cap to 10 targets for convenience [0-9].
-  targets = targets[:10]
+  targets = targets[:20]
   target_list = '\n'.join(f'{i}. {t}' for i, t in enumerate(targets))
 
-  user_input = input(f'Target "{paths}" is used by multiple test targets.\n' +
-                     target_list + '\nPlease pick a target by its numeric index'
-                     'listed below: ')
-  try:
-    value = int(user_input)
-    return targets[value]
-  except (ValueError, IndexError):
-    print('Value entered was not a numeric index listed above. Trying again.')
-    return HaveUserPickTarget(paths, targets)
+  msg = f"""\
+Path(s) belong to multiple test targets.
+Hint: Avoid this in subsequent runs using --target-index=$INDEX, or --run-all.
+
+{target_list}
+
+Pick a target by its index: """
+  return _ChooseByIndex(msg, targets)
 
 
 # A persistent cache to avoid running gn on repeated runs of autotest.
 class TargetCache:
+
   def __init__(self, out_dir):
     self.out_dir = out_dir
     self.path = os.path.join(out_dir, 'autotest_cache')
@@ -494,25 +561,28 @@ class TargetCache:
 
 
 def _TestTargetsFromGnRefs(targets):
-  # First apply allowlists:
-  ret = [t for t in targets if '__' not in t]
-  ret = [
-      t for t in ret
+  # Prevent repeated targets.
+  all_test_targets = set()
+
+  # Find "standard" targets (e.g., GTests).
+  standard_targets = [t for t in targets if '__' not in t]
+  standard_targets = [
+      t for t in standard_targets
       if _TEST_TARGET_REGEX.search(t) or t in _TEST_TARGET_ALLOWLIST
   ]
-  if ret:
-    return ret
+  all_test_targets.update(standard_targets)
 
+  # Find targets using internal GN suffixes (e.g., Java APKs).
   _SUBTARGET_SUFFIXES = (
       '__java_binary',  # robolectric_binary()
       '__test_runner_script',  # test() targets
       '__test_apk',  # instrumentation_test_apk() targets
   )
-  ret = []
   for suffix in _SUBTARGET_SUFFIXES:
-    ret.extend(t[:-len(suffix)] for t in targets if t.endswith(suffix))
+    all_test_targets.update(t[:-len(suffix)] for t in targets
+                            if t.endswith(suffix))
 
-  return ret
+  return sorted(list(all_test_targets))
 
 
 def _ParseRefsOutput(output):
@@ -523,7 +593,10 @@ def _ParseRefsOutput(output):
   return targets
 
 
-def FindTestTargets(target_cache, out_dir, paths, run_all):
+def FindTestTargets(target_cache, out_dir, paths, args):
+  run_all = args.run_all or args.run_changed
+  target_index = args.target_index
+
   # Normalize paths, so they can be cached.
   paths = [os.path.realpath(p) for p in paths]
   test_targets = target_cache.Find(paths)
@@ -536,7 +609,15 @@ def FindTestTargets(target_cache, out_dir, paths, run_all):
     # back to a list of known test targets if that fails.
     gn_path = os.path.join(DEPOT_TOOLS_DIR, 'gn.py')
 
-    cmd = [sys.executable, gn_path, 'refs', out_dir, '--all'] + paths
+    cmd = [
+        sys.executable,
+        gn_path,
+        'refs',
+        out_dir,
+        '--all',
+        '--relation=source',
+        '--relation=input',
+    ] + paths
     targets = _ParseRefsOutput(RunCommand(cmd))
     test_targets = _TestTargetsFromGnRefs(targets)
 
@@ -562,6 +643,8 @@ def FindTestTargets(target_cache, out_dir, paths, run_all):
       if len(test_targets) > 10:
         ExitWithMessage('Your query likely involves non-test sources.')
       print('Trying to run all of them!', file=sys.stderr)
+    elif target_index is not None and 0 <= target_index < len(test_targets):
+      test_targets = [test_targets[target_index]]
     else:
       test_targets = [HaveUserPickTarget(paths, test_targets)]
 
@@ -680,11 +763,24 @@ def main():
                       '-r',
                       action='store_true',
                       help='Search for tests using a remote service')
+  parser.add_argument('--name',
+                      action='append',
+                      help='Search for the test by name, and apply test filter')
   parser.add_argument(
       '--run-all',
       '--run_all',
       action='store_true',
       help='Run all tests for the file or directory, instead of just one')
+  parser.add_argument(
+      '--target-index',
+      '--target_index',
+      type=int,
+      help='When the target is ambiguous, choose the one with this index.')
+  parser.add_argument(
+      '--path-index',
+      '--path_index',
+      type=int,
+      help='When the test path is ambiguous, choose the one with this index.')
   parser.add_argument(
       '--run-changed',
       '--run_changed',
@@ -725,7 +821,7 @@ def main():
   parser.add_argument('files',
                       metavar='FILE_NAME',
                       nargs='*',
-                      help='test suite file (eg. FooTest.java)')
+                      help='test suite file (eg. FooTest.java) or test name')
 
   args, _extras = parser.parse_known_args()
 
@@ -738,10 +834,39 @@ def main():
     parser.error(f'OUT_DIR "{out_dir}" does not exist.')
   target_cache = TargetCache(out_dir)
 
-  if not args.run_changed and not args.files:
+  if not args.run_changed and not args.files and not args.name:
     parser.error('Specify a file to test or use --run-changed')
 
-  files_to_test = args.files
+  # Cog is almost unusable with local search, so turn on remote_search.
+  use_remote_search = args.remote_search
+  if not use_remote_search and SRC_DIR.parts[:3] == ('/', 'google', 'cog'):
+    if DEBUG:
+      print('Detected cog, turning on remote-search.')
+    use_remote_search = True
+
+  gtest_filter = args.gtest_filter
+
+  # Don't try to search if rg is not installed, and use the old behavior.
+  if not use_remote_search and not shutil.which('rg'):
+    if not args.quiet:
+      print(
+          'rg command not found. Install ripgrep to enable running tests by name.'
+      )
+    files_to_test = args.files
+    test_names = []
+  else:
+    test_names = [f for f in args.files if not IsProbablyFile(f)]
+    files_to_test = [f for f in args.files if IsProbablyFile(f)]
+
+  if args.name:
+    test_names.extend(args.name)
+  if test_names:
+    files, filter = SearchForTestsByName(test_names, args.quiet,
+                                         use_remote_search)
+    if not gtest_filter:
+      gtest_filter = filter
+    files_to_test.extend(files)
+
   if args.run_changed:
     files_to_test.extend(GetChangedTestFiles())
     # Remove duplicates.
@@ -749,15 +874,14 @@ def main():
 
   filenames = []
   for file in files_to_test:
-    filenames.extend(FindMatchingTestFiles(file, args.remote_search))
+    filenames.extend(
+        FindMatchingTestFiles(file, use_remote_search, args.path_index))
 
   if not filenames:
     ExitWithMessage('No associated test files found.')
 
-  targets, used_cache = FindTestTargets(target_cache, out_dir, filenames,
-                                        args.run_all or args.run_changed)
+  targets, used_cache = FindTestTargets(target_cache, out_dir, filenames, args)
 
-  gtest_filter = args.gtest_filter
   if not gtest_filter:
     gtest_filter = BuildTestFilter(filenames, args.line)
 
@@ -777,8 +901,7 @@ def main():
   # valid.
   if used_cache and not target_cache.IsStillValid():
     target_cache = TargetCache(out_dir)
-    new_targets, _ = FindTestTargets(target_cache, out_dir, filenames,
-                                     args.run_all or args.run_changed)
+    new_targets, _ = FindTestTargets(target_cache, out_dir, filenames, args)
     if targets != new_targets:
       # Note that this can happen, for example, if you rename a test target.
       print('gn config was changed, trying to build again', file=sys.stderr)

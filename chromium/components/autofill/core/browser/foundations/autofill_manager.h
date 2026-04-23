@@ -38,7 +38,6 @@
 #include "components/autofill/core/common/mojom/autofill_types.mojom.h"
 #include "components/autofill/core/common/signatures.h"
 #include "components/autofill/core/common/unique_ids.h"
-#include "components/optimization_guide/proto/models.pb.h"
 #include "components/translate/core/browser/translate_driver.h"
 
 namespace autofill {
@@ -47,6 +46,7 @@ struct AutofillServerPrediction;
 class AutofillField;
 class AutofillProfile;
 class CreditCard;
+class CreditCardAccessManager;
 class FormData;
 class FormFieldData;
 class FormStructure;
@@ -159,6 +159,9 @@ class AutofillManager
                                          FormGlobalId form,
                                          FieldGlobalId field) {}
 
+    virtual void OnBeforeFocusOnNonFormField(AutofillManager& manager) {}
+    virtual void OnAfterFocusOnNonFormField(AutofillManager& manager) {}
+
     virtual void OnBeforeSelectFieldOptionsDidChange(AutofillManager& manager,
                                                      FormGlobalId form) {}
     virtual void OnAfterSelectFieldOptionsDidChange(AutofillManager& manager,
@@ -257,7 +260,8 @@ class AutofillManager
                                     const FieldGlobalId& field_id);
   virtual void OnSelectControlSelectionChanged(const FormData& form,
                                                const FieldGlobalId& field_id);
-  virtual void OnSelectFieldOptionsDidChange(const FormData& form);
+  virtual void OnSelectFieldOptionsDidChange(const FormData& form,
+                                             const FieldGlobalId& field_id);
   virtual void OnFocusOnFormField(const FormData& form,
                                   const FieldGlobalId& field_id);
   void OnFocusOnNonFormField();
@@ -271,8 +275,7 @@ class AutofillManager
   virtual void OnCaretMovedInFormField(const FormData& form,
                                        const FieldGlobalId& field_id,
                                        const gfx::Rect& caret_bounds);
-  virtual void OnDidAutofillForm(const FormData& form,
-                                 const base::TimeTicks timestamp);
+  virtual void OnDidAutofillForm(const FormData& form);
   virtual void OnJavaScriptChangedAutofilledValue(
       const FormData& form,
       const FieldGlobalId& field_id,
@@ -335,10 +338,15 @@ class AutofillManager
   // Returns predictions from a heuristic source for fields identified by
   // `field_ids` in a form identified by `form_id`. Returns an empty map if the
   // manager has no data about the form.
-  base::flat_map<FieldGlobalId, FieldType> GetHeursticPredictionForForm(
+  base::flat_map<FieldGlobalId, FieldType> GetHeuristicPredictionForForm(
       HeuristicSource source,
       FormGlobalId form_id,
       const std::vector<FieldGlobalId>& field_ids) const;
+
+  // Returns the `CreditCardAccessManager` associated with `this`. Null only
+  // for Android (i.e., platform) Autofill.
+  virtual CreditCardAccessManager* GetCreditCardAccessManager() = 0;
+  virtual const CreditCardAccessManager* GetCreditCardAccessManager() const = 0;
 
   void AddObserver(Observer* observer) { observers_.AddObserver(observer); }
 
@@ -397,7 +405,9 @@ class AutofillManager
   virtual void OnSelectControlSelectionChangedImpl(
       const FormData& form,
       const FieldGlobalId& field_id) = 0;
-  virtual void OnSelectFieldOptionsDidChangeImpl(const FormData& form) = 0;
+  virtual void OnSelectFieldOptionsDidChangeImpl(
+      const FormData& form,
+      const FieldGlobalId& field_id) = 0;
   virtual void OnFocusOnFormFieldImpl(const FormData& form,
                                       const FieldGlobalId& field_id) = 0;
   virtual void OnFocusOnNonFormFieldImpl() = 0;
@@ -407,8 +417,7 @@ class AutofillManager
       const gfx::Rect& caret_bounds,
       AutofillSuggestionTriggerSource trigger_source,
       std::optional<PasswordSuggestionRequest> password_request) = 0;
-  virtual void OnDidAutofillFormImpl(const FormData& form,
-                                     const base::TimeTicks timestamp) = 0;
+  virtual void OnDidAutofillFormImpl(const FormData& form) = 0;
   virtual void OnHidePopupImpl() = 0;
   virtual void OnJavaScriptChangedAutofilledValueImpl(
       const FormData& form,
@@ -443,7 +452,7 @@ class AutofillManager
 
   // Logs the field types of `form` to chrome://autofill-internals and the
   // autofill-information attribute (if
-  // `features::test::kAutofillShowTypePredictions` is enabled).
+  // `features::debug::kAutofillShowTypePredictions` is enabled).
   void LogCurrentFieldTypes(
       std::variant<const FormData*, const FormStructure*> form);
 
@@ -500,26 +509,34 @@ class AutofillManager
   // |form_structures|.
   void OnFormsParsed(const std::vector<FormData>& forms);
 
+  // Updates `form_structures_` with the information in `forms` and `context`,
+  // if available. `context` is available when this function is called as a
+  // result of a parsing operation, `reason` is an indicator of that.
+  // If `preserve_signatures` is true, credit card forms have their
+  // `FormSignature`s preserved. `forms` might contain forms that are not in the
+  // cache (on pageload for example). In that case, the function creates and
+  // adds a `FormStructure` to the cache (`context` should not be `std::nullopt`
+  // in that case).
+  void UpdateFormCache(base::span<const FormData> forms,
+                       base::optional_ref<const AsyncContext> context,
+                       FormStructure::RetrieveFromCacheReason reason,
+                       bool preserve_signatures);
+
   std::unique_ptr<autofill_metrics::FormInteractionsUkmLogger>
   CreateFormInteractionsUkmLogger();
 
+  // If `kAutofillSynchronousAfterParsing` is disabled:
   // Returns a callback that runs `callback` on the main thread after all
   // ongoing async parsing operations have finished.
+  //
+  // If `kAutofillSynchronousAfterParsing` is enabled (default behavior):
+  // Just returns callback; enforces no asynchronicity.
+  //
+  // TODO(crbug.com/448144129): Remove once `kAutofillSynchronousAfterParsing`
+  // can be cleaned up.
   template <typename... Args>
-  base::OnceCallback<void(Args...)> AfterParsingFinishes(
-      base::OnceCallback<void(Args...)> callback) {
-    return base::BindOnce(
-        [](base::WeakPtr<AutofillManager> self,
-           base::OnceCallback<void(Args...)> callback, Args... args) {
-          if (self) {
-            self->parsing_task_runner_->PostTaskAndReply(
-                FROM_HERE, base::DoNothing(),
-                base::BindOnce(std::move(callback),
-                               std::forward<Args>(args)...));
-          }
-        },
-        GetWeakPtr(), std::move(callback));
-  }
+  base::OnceCallback<void(Args...)> AfterParsingFinishesDeprecated(
+      base::OnceCallback<void(Args...)> callback);
 
   // Provides driver-level context to the shared code of the component.
   // `*driver_` owns this object.

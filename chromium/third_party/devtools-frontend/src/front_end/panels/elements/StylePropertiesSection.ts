@@ -1,7 +1,7 @@
 // Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007 Apple Inc.  All rights reserved.
@@ -49,10 +49,10 @@ import * as Tooltips from '../../ui/components/tooltips/tooltips.js';
 import type * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import * as PanelsCommon from '../common/common.js';
 
 import {FontEditorSectionManager} from './ColorSwatchPopoverIcon.js';
 import * as ElementsComponents from './components/components.js';
-import {DeferredDOMNodeLink} from './DOMLinkifier.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import stylePropertiesTreeOutlineStyles from './stylePropertiesTreeOutline.css.js';
 import {type Context, StylePropertyTreeElement} from './StylePropertyTreeElement.js';
@@ -402,8 +402,10 @@ export class StylePropertiesSection {
 
     function linkifyNode(label: string): Node|null {
       if (header?.ownerNode) {
-        const link = document.createElement('devtools-widget') as UI.Widget.WidgetElement<DeferredDOMNodeLink>;
-        link.widgetConfig = UI.Widget.widgetConfig(e => new DeferredDOMNodeLink(e, header.ownerNode));
+        const link = document.createElement('devtools-widget') as
+            UI.Widget.WidgetElement<PanelsCommon.DOMLinkifier.DeferredDOMNodeLink>;
+        link.widgetConfig =
+            UI.Widget.widgetConfig(e => new PanelsCommon.DOMLinkifier.DeferredDOMNodeLink(e, header.ownerNode));
         link.textContent = label;
         return link;
       }
@@ -633,6 +635,17 @@ export class StylePropertiesSection {
     if (this.styleInternal.parentRule instanceof SDK.CSSRule.CSSStyleRule) {
       return this.styleInternal.parentRule.selectorText();
     }
+    if (this.styleInternal.parentRule instanceof SDK.CSSRule.CSSAtRule) {
+      if (this.styleInternal.parentRule.subsection()) {
+        return '@' + this.styleInternal.parentRule.subsection();
+      }
+      const atRule = '@' + this.styleInternal.parentRule.type();
+      const name = this.styleInternal.parentRule.name();
+      if (name) {
+        return atRule + ' ' + name.text;
+      }
+      return atRule;
+    }
     return '';
   }
 
@@ -813,11 +826,36 @@ export class StylePropertiesSection {
       // We reduce one level since no selector means one less pair of braces are added for declarations.
       this.nestingLevel--;
     }
+  }
 
-    let curNestingLevel = 0;
-    for (const element of this.#ancestorRuleListElement.children) {
-      this.indentElement(element as HTMLElement, curNestingLevel);
-      curNestingLevel++;
+  protected createAtRuleAncestor(rule: SDK.CSSRule.CSSAtRule): void {
+    if (rule.subsection()) {
+      const atRuleElement = new ElementsComponents.CSSQuery.CSSQuery();
+      atRuleElement.data = {
+        queryPrefix: '@' + rule.type(),
+        queryText: rule.name()?.text ?? '',
+        jslogContext: 'at-rule-' + rule.type(),
+      };
+
+      this.#ancestorRuleListElement.prepend(atRuleElement);
+      this.#ancestorClosingBracesElement.prepend(this.indentElement(this.createClosingBrace(), 0));
+      this.nestingLevel = 1;
+    }
+  }
+
+  protected maybeCreateAncestorRules(style: SDK.CSSStyleDeclaration.CSSStyleDeclaration): void {
+    if (style.parentRule) {
+      if (style.parentRule instanceof SDK.CSSRule.CSSStyleRule) {
+        this.createAncestorRules(style.parentRule);
+      } else if (style.parentRule instanceof SDK.CSSRule.CSSAtRule) {
+        this.createAtRuleAncestor(style.parentRule);
+      }
+
+      let curNestingLevel = 0;
+      for (const element of this.#ancestorRuleListElement.children) {
+        this.indentElement(element as HTMLElement, curNestingLevel);
+        curNestingLevel++;
+      }
     }
   }
 
@@ -994,9 +1032,7 @@ export class StylePropertiesSection {
   private updateAncestorRuleList(): void {
     this.#ancestorRuleListElement.removeChildren();
     this.#ancestorClosingBracesElement.removeChildren();
-    if (this.styleInternal.parentRule && this.styleInternal.parentRule instanceof SDK.CSSRule.CSSStyleRule) {
-      this.createAncestorRules(this.styleInternal.parentRule);
-    }
+    this.maybeCreateAncestorRules(this.styleInternal);
     this.#styleRuleElement.style.paddingLeft = `${this.nestingLevel}ch`;
   }
 
@@ -1640,9 +1676,7 @@ export class BlankStylePropertiesSection extends StylePropertiesSection {
     this.selectorRefElement.removeChildren();
     this.selectorRefElement.appendChild(StylePropertiesSection.linkifyRuleLocation(
         cssModel, this.parentPane.linkifier, styleSheetHeader, this.actualRuleLocation()));
-    if (insertAfterStyle?.parentRule && insertAfterStyle.parentRule instanceof SDK.CSSRule.CSSStyleRule) {
-      this.createAncestorRules(insertAfterStyle.parentRule);
-    }
+    this.maybeCreateAncestorRules(insertAfterStyle);
     this.element.classList.add('blank-section');
   }
 
@@ -1830,12 +1864,15 @@ export class FunctionRuleSection extends StylePropertiesSection {
   }
 }
 
-export class FontPaletteValuesRuleSection extends StylePropertiesSection {
+export class AtRuleSection extends StylePropertiesSection {
   constructor(
       stylesPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
-      style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number) {
+      style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number, expandedByDefault: boolean) {
     super(stylesPane, matchedStyles, style, sectionIdx, null, null);
     this.selectorElement.className = 'font-palette-values-key';
+    if (!expandedByDefault) {
+      this.element.classList.add('hidden');
+    }
   }
 }
 

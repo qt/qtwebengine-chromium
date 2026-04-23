@@ -11,7 +11,7 @@ generate_css("css_files") {
   sources = [ "dataGrid.css" ]
 }
 
-devtools_module("data_grid") {
+devtools_ui_module("data_grid") {
   sources = [
     "DataGrid.ts",
     "DataGridElement.ts",
@@ -37,8 +37,10 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility = [
+    # IMPORTANT: Be careful when extending visibility of front_end/ui/legacy/*,
+    # as the UI modules should only be used to actually build user interfaces,
+    # and the business logic should never depend on the UI modules.
     ":*",
-    "../../../../models/persistence/*",
     "../../../../panels/*",
     "../cookie_table/*",
   ]
@@ -46,7 +48,7 @@ devtools_entrypoint("bundle") {
   visibility += devtools_ui_legacy_visibility
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [ "DataGridElement.test.ts" ]

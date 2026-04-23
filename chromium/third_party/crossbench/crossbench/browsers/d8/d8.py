@@ -30,6 +30,7 @@ if TYPE_CHECKING:
   from crossbench.flags.js_flags import JSFlags
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
+
 class D8(Browser):
 
   @classmethod

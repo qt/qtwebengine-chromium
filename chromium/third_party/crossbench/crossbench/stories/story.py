@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING, Optional, Sequence
+from typing import TYPE_CHECKING, Final, Optional, Sequence
 
 from crossbench.cli.config.secrets import Secrets
 from crossbench.path import safe_filename
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 
 class Story(abc.ABC):
+
   @classmethod
   @abc.abstractmethod
   def all_story_names(cls) -> Sequence[str]:
@@ -28,9 +29,9 @@ class Story(abc.ABC):
                duration: dt.timedelta = dt.timedelta(seconds=15),
                secrets: Optional[Secrets] = None) -> None:
     assert name, "Invalid page name"
-    self._name = safe_filename(name)
-    self._duration = duration
-    self._secrets = secrets or Secrets()
+    self._name: str = safe_filename(name)
+    self._duration: Final[dt.timedelta] = duration
+    self._secrets: Final[Secrets] = secrets or Secrets()
     if self._duration:
       assert self._duration.total_seconds() > 0, (
           f"Duration must be non-empty, but got: {duration}")

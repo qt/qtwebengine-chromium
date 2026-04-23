@@ -20,17 +20,17 @@
  *
  */
 
-#include "base/memory/stack_allocated.h"
-
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_CSS_RULE_SET_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_RULE_SET_H_
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/stack_allocated.h"
 #include "base/substring_set_matcher/substring_set_matcher.h"
 #include "base/types/pass_key.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/cascade_layer.h"
+#include "third_party/blink/renderer/core/css/cascade_layered.h"
 #include "third_party/blink/renderer/core/css/css_keyframes_rule.h"
 #include "third_party/blink/renderer/core/css/css_position_try_rule.h"
 #include "third_party/blink/renderer/core/css/media_query_evaluator.h"
@@ -44,6 +44,7 @@
 #include "third_party/blink/renderer/core/css/style_rule_font_palette_values.h"
 #include "third_party/blink/renderer/core/css/style_rule_view_transition.h"
 #include "third_party/blink/renderer/core/dom/element.h"
+#include "third_party/blink/renderer/core/route_matching/route_match_state.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_linked_stack.h"
@@ -390,12 +391,12 @@ class CORE_EXPORT RuleSet final : public GarbageCollected<RuleSet> {
    public:
     Member<StyleRuleMixin> mixin;
     Member<StyleRuleApplyMixin> invoking_apply_rule;
-    Member<CustomEnvBindings> env_bindings;
+    Member<MixinParameterBindings> mixin_parameter_bindings;
 
     void Trace(Visitor* visitor) const {
       visitor->Trace(mixin);
       visitor->Trace(invoking_apply_rule);
-      visitor->Trace(env_bindings);
+      visitor->Trace(mixin_parameter_bindings);
     }
   };
   using ApplyMixinsStack = HeapVector<ApplyingMixin, 4>;
@@ -508,40 +509,42 @@ class CORE_EXPORT RuleSet final : public GarbageCollected<RuleSet> {
   base::span<const RuleData> ActiveViewTransitionRules() const {
     return active_view_transition_rules_;
   }
-  const HeapVector<Member<StyleRulePage>>& PageRules() const {
+  const HeapVector<CascadeLayered<StyleRulePage>>& PageRules() const {
     return page_rules_;
   }
   const HeapVector<Member<StyleRuleRoute>>& RouteRules() const {
     return route_rules_;
   }
-  const HeapVector<Member<StyleRuleFontFace>>& FontFaceRules() const {
+  const HeapVector<CascadeLayered<StyleRuleFontFace>>& FontFaceRules() const {
     return font_face_rules_;
   }
-  const HeapVector<Member<StyleRuleKeyframes>>& KeyframesRules() const {
+  const HeapVector<CascadeLayered<StyleRuleKeyframes>>& KeyframesRules() const {
     return keyframes_rules_;
   }
-  const HeapVector<Member<StyleRuleProperty>>& PropertyRules() const {
+  const HeapVector<CascadeLayered<StyleRuleProperty>>& PropertyRules() const {
     return property_rules_;
   }
-  const HeapVector<Member<StyleRuleCounterStyle>>& CounterStyleRules() const {
+  const HeapVector<CascadeLayered<StyleRuleCounterStyle>>& CounterStyleRules()
+      const {
     return counter_style_rules_;
   }
   const HeapVector<Member<StyleRuleFontPaletteValues>>& FontPaletteValuesRules()
       const {
     return font_palette_values_rules_;
   }
-  const HeapVector<Member<StyleRuleFontFeatureValues>>& FontFeatureValuesRules()
-      const {
+  const HeapVector<CascadeLayered<StyleRuleFontFeatureValues>>&
+  FontFeatureValuesRules() const {
     return font_feature_values_rules_;
   }
-  const HeapVector<Member<StyleRuleViewTransition>>& ViewTransitionRules()
-      const {
+  const HeapVector<CascadeLayered<StyleRuleViewTransition>>&
+  ViewTransitionRules() const {
     return view_transition_rules_;
   }
-  const HeapVector<Member<StyleRulePositionTry>>& PositionTryRules() const {
+  const HeapVector<CascadeLayered<StyleRulePositionTry>>& PositionTryRules()
+      const {
     return position_try_rules_;
   }
-  const HeapVector<Member<StyleRuleFunction>>& FunctionRules() const {
+  const HeapVector<CascadeLayered<StyleRuleFunction>>& FunctionRules() const {
     return function_rules_;
   }
   base::span<const RuleData> SlottedPseudoElementRules() const {
@@ -667,17 +670,18 @@ class CORE_EXPORT RuleSet final : public GarbageCollected<RuleSet> {
 
   void AddToBucket(const AtomicString& key, RuleMap&, const RuleData&);
   void AddToBucket(HeapVector<RuleData>&, const RuleData&);
-  void AddPageRule(StyleRulePage*);
+  void AddPageRule(StyleRulePage*, const CascadeLayer*);
   void AddRouteRule(StyleRuleRoute*);
-  void AddFontFaceRule(StyleRuleFontFace*);
-  void AddKeyframesRule(StyleRuleKeyframes*);
-  void AddPropertyRule(StyleRuleProperty*);
-  void AddCounterStyleRule(StyleRuleCounterStyle*);
+  void AddFontFaceRule(StyleRuleFontFace*, const CascadeLayer*);
+  void AddKeyframesRule(StyleRuleKeyframes*, const CascadeLayer*);
+  void AddPropertyRule(StyleRuleProperty*, const CascadeLayer*);
+  void AddCounterStyleRule(StyleRuleCounterStyle*, const CascadeLayer*);
   void AddFontPaletteValuesRule(StyleRuleFontPaletteValues*);
-  void AddFontFeatureValuesRule(StyleRuleFontFeatureValues*);
-  void AddPositionTryRule(StyleRulePositionTry*);
-  void AddFunctionRule(StyleRuleFunction*);
-  void AddViewTransitionRule(StyleRuleViewTransition*);
+  void AddFontFeatureValuesRule(StyleRuleFontFeatureValues*,
+                                const CascadeLayer*);
+  void AddPositionTryRule(StyleRulePositionTry*, const CascadeLayer*);
+  void AddFunctionRule(StyleRuleFunction*, const CascadeLayer*);
+  void AddViewTransitionRule(StyleRuleViewTransition*, const CascadeLayer*);
 
   bool MatchMediaForAddRules(const MediaQueryEvaluator& evaluator,
                              const MediaQuerySet* media_queries);
@@ -795,19 +799,22 @@ class CORE_EXPORT RuleSet final : public GarbageCollected<RuleSet> {
   HeapVector<RuleData> active_view_transition_rules_;
   HeapVector<RuleData> root_element_rules_;
   RuleFeatureSet features_;
-  HeapVector<Member<StyleRulePage>> page_rules_;
+  HeapVector<CascadeLayered<StyleRulePage>> page_rules_;
   HeapVector<Member<StyleRuleRoute>> route_rules_;
-  HeapVector<Member<StyleRuleFontFace>> font_face_rules_;
+  HeapVector<CascadeLayered<StyleRuleFontFace>> font_face_rules_;
   HeapVector<Member<StyleRuleFontPaletteValues>> font_palette_values_rules_;
-  HeapVector<Member<StyleRuleFontFeatureValues>> font_feature_values_rules_;
-  HeapVector<Member<StyleRuleViewTransition>> view_transition_rules_;
-  HeapVector<Member<StyleRuleKeyframes>> keyframes_rules_;
-  HeapVector<Member<StyleRuleProperty>> property_rules_;
-  HeapVector<Member<StyleRuleCounterStyle>> counter_style_rules_;
-  HeapVector<Member<StyleRulePositionTry>> position_try_rules_;
+  HeapVector<CascadeLayered<StyleRuleFontFeatureValues>>
+      font_feature_values_rules_;
+  HeapVector<CascadeLayered<StyleRuleViewTransition>> view_transition_rules_;
+  HeapVector<CascadeLayered<StyleRuleKeyframes>> keyframes_rules_;
+  HeapVector<CascadeLayered<StyleRuleProperty>> property_rules_;
+  HeapVector<CascadeLayered<StyleRuleCounterStyle>> counter_style_rules_;
+  HeapVector<CascadeLayered<StyleRulePositionTry>> position_try_rules_;
+  HeapVector<CascadeLayered<StyleRuleFunction>> function_rules_;
   HeapVector<MediaQuerySetResult> media_query_set_results_;
-  HeapVector<Member<StyleRuleFunction>> function_rules_;
-  HashSet<String> active_routes_;
+
+  // State of route matching when this RuleSet was built.
+  Member<RouteMatchState> route_match_state_;
 
   // Whether there is a ruleset bucket for rules with a selector on
   // the style attribute (which is rare, but allowed). If so, the caller

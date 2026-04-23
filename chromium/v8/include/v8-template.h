@@ -139,7 +139,7 @@ class V8_EXPORT Template : public Data {
 enum class Intercepted : uint8_t { kNo = 0, kYes = 1 };
 
 /**
- * Interceptor for get requests on an object.
+ * Interceptor for [[Get]] requests on an object.
  *
  * If the interceptor handles the request (i.e. the property should not be
  * looked up beyond the interceptor or in case an exception was thrown) it
@@ -153,8 +153,8 @@ enum class Intercepted : uint8_t { kNo = 0, kYes = 1 };
  * \param property The name of the property for which the request was
  * intercepted.
  * \param info Information about the intercepted request, such as
- * isolate, receiver, return value, or whether running in `'use strict'` mode.
- * See `PropertyCallbackInfo`.
+ * isolate, object holding the property, return value. See
+ * `PropertyCallbackInfo`.
  *
  * \code
  *  Intercepted GetterCallback(
@@ -183,21 +183,20 @@ enum class Intercepted : uint8_t { kNo = 0, kYes = 1 };
  */
 using NamedPropertyGetterCallback = Intercepted (*)(
     Local<Name> property, const PropertyCallbackInfo<Value>& info);
-// This variant will be deprecated soon.
-//
-// Use `info.GetReturnValue().Set()` to set the return value of the
-// intercepted get request. If the property does not exist the callback should
-// not set the result and must not produce side effects.
-using GenericNamedPropertyGetterCallback V8_DEPRECATE_SOON(
-    "Use NamedPropertyGetterCallback instead") =
-    void (*)(Local<Name> property, const PropertyCallbackInfo<Value>& info);
 
 /**
- * Interceptor for set requests on an object.
+ * Interceptor for [[Set]] requests on an object.
  *
  * If the interceptor handles the request (i.e. the property should not be
  * looked up beyond the interceptor or in case an exception was thrown) it
- * should return `Intercepted::kYes`.
+ * should
+ *  - use `info.GetReturnValue().Set(false)` to indicate that the operation
+ *    failed,
+ *  - (optionally) upon operation failure and info.ShouldThrowOnError()
+ *    is true (indicating execution in `'use strict'` mode) the callback can
+ *    throw TypeError if the error message needs to include more details than
+ *    a TypeError thrown by V8 in this case,
+ *  - return `Intercepted::kYes`.
  * If the interceptor does not handle the request it must return
  * `Intercepted::kNo` and it must not produce side effects.
  *
@@ -206,31 +205,19 @@ using GenericNamedPropertyGetterCallback V8_DEPRECATE_SOON(
  * \param value The value which the property will have if the request
  * is not intercepted.
  * \param info Information about the intercepted request, such as
- * isolate, receiver, return value, or whether running in `'use strict'` mode.
- * See `PropertyCallbackInfo`.
+ * isolate, object holding the property, return value, or whether running in
+ * `'use strict'` mode. See `PropertyCallbackInfo`.
  *
  * See also `ObjectTemplate::SetHandler.`
  */
 using NamedPropertySetterCallback =
     Intercepted (*)(Local<Name> property, Local<Value> value,
                     const PropertyCallbackInfo<void>& info);
-// This variant will be deprecated soon.
-//
-// Use `info.GetReturnValue()` to indicate whether the request was intercepted
-// or not. If the setter successfully intercepts the request, i.e., if the
-// request should not be further executed, call
-// `info.GetReturnValue().Set(value)`. If the setter did not intercept the
-// request, i.e., if the request should be handled as if no interceptor is
-// present, do not not call `Set()` and do not produce side effects.
-using GenericNamedPropertySetterCallback V8_DEPRECATE_SOON(
-    "Use NamedPropertySetterCallback instead") =
-    void (*)(Local<Name> property, Local<Value> value,
-             const PropertyCallbackInfo<Value>& info);
 
 /**
- * Intercepts all requests that query the attributes of the
- * property, e.g., getOwnPropertyDescriptor(), propertyIsEnumerable(), and
- * defineProperty().
+ * Intercepts all requests that query the attributes of the property,
+ * e.g. [[GetOwnProperty]], [[DefineOwnProperty]], [[Set]] and derived ones
+ * like Object.prototype.propertyIsEnumerable() and similar.
  *
  * If the interceptor handles the request (i.e. the property should not be
  * looked up beyond the interceptor or in case an exception was thrown) it
@@ -255,24 +242,19 @@ using GenericNamedPropertySetterCallback V8_DEPRECATE_SOON(
  */
 using NamedPropertyQueryCallback = Intercepted (*)(
     Local<Name> property, const PropertyCallbackInfo<Integer>& info);
-// This variant will be deprecated soon.
-//
-// Use `info.GetReturnValue().Set(value)` to set the property attributes. The
-// value is an integer encoding a `v8::PropertyAttribute`. If the property does
-// not exist the callback should not set the result and must not produce side
-// effects.
-using GenericNamedPropertyQueryCallback V8_DEPRECATE_SOON(
-    "Use NamedPropertyQueryCallback instead") =
-    void (*)(Local<Name> property, const PropertyCallbackInfo<Integer>& info);
 
 /**
- * Interceptor for delete requests on an object.
+ * Interceptor for [[Delete]] requests on an object.
  *
  * If the interceptor handles the request (i.e. the property should not be
  * looked up beyond the interceptor or in case an exception was thrown) it
  * should
- *  - (optionally) use `info.GetReturnValue().Set()` to set to a Boolean value
- *    indicating whether the property deletion was successful or not,
+ *  - use `info.GetReturnValue().Set(false)` to indicate that the operation
+ *    failed,
+ *  - (optionally) upon operation failure and info.ShouldThrowOnError()
+ *    is true (indicating execution in `'use strict'` mode) the callback can
+ *    throw TypeError if the error message needs to include more details than
+ *    a TypeError thrown by V8 in this case,
  *  - return `Intercepted::kYes`.
  * If the interceptor does not handle the request it must return
  * `Intercepted::kNo` and it must not produce side effects.
@@ -280,28 +262,13 @@ using GenericNamedPropertyQueryCallback V8_DEPRECATE_SOON(
  * \param property The name of the property for which the request was
  * intercepted.
  * \param info Information about the intercepted request, such as
- * isolate, receiver, return value, or whether running in `'use strict'` mode.
- * See `PropertyCallbackInfo`.
- *
- * \note If you need to mimic the behavior of `delete`, i.e., throw in strict
- * mode instead of returning false, use `info.ShouldThrowOnError()` to determine
- * if you are in strict mode.
+ * isolate, object holding the property, return value, or whether running in
+ * `'use strict'` mode. See `PropertyCallbackInfo`.
  *
  * See also `ObjectTemplate::SetHandler.`
  */
 using NamedPropertyDeleterCallback = Intercepted (*)(
     Local<Name> property, const PropertyCallbackInfo<Boolean>& info);
-// This variant will be deprecated soon.
-//
-// Use `info.GetReturnValue()` to indicate whether the request was intercepted
-// or not. If the deleter successfully intercepts the request, i.e., if the
-// request should not be further executed, call
-// `info.GetReturnValue().Set(value)` with a boolean `value`. The `value` is
-// used as the return value of `delete`. If the deleter does not intercept the
-// request then it should not set the result and must not produce side effects.
-using GenericNamedPropertyDeleterCallback V8_DEPRECATE_SOON(
-    "Use NamedPropertyDeleterCallback instead") =
-    void (*)(Local<Name> property, const PropertyCallbackInfo<Boolean>& info);
 
 /**
  * Returns an array containing the names of the properties the named
@@ -311,18 +278,20 @@ using GenericNamedPropertyDeleterCallback V8_DEPRECATE_SOON(
  */
 using NamedPropertyEnumeratorCallback =
     void (*)(const PropertyCallbackInfo<Array>& info);
-// This variant will be deprecated soon.
-// This is just a renaming of the typedef.
-using GenericNamedPropertyEnumeratorCallback V8_DEPRECATE_SOON(
-    "Use NamedPropertyEnumeratorCallback instead") =
-    NamedPropertyEnumeratorCallback;
 
 /**
- * Interceptor for defineProperty requests on an object.
+ * Interceptor for [[DefineOwnProperty]] requests on an object.
  *
  * If the interceptor handles the request (i.e. the property should not be
  * looked up beyond the interceptor or in case an exception was thrown) it
- * should return `Intercepted::kYes`.
+ * should
+ *  - use `info.GetReturnValue().Set(false)` to indicate that the operation
+ *    failed,
+ *  - (optionally) upon operation failure and info.ShouldThrowOnError()
+ *    is true (indicating execution in `'use strict'` mode) the callback can
+ *    throw TypeError if the error message needs to include more details than
+ *    a TypeError thrown by V8 in this case,
+ *  - return `Intercepted::kYes`.
  * If the interceptor does not handle the request it must return
  * `Intercepted::kNo` and it must not produce side effects.
  *
@@ -331,29 +300,17 @@ using GenericNamedPropertyEnumeratorCallback V8_DEPRECATE_SOON(
  * \param desc The property descriptor which is used to define the
  * property if the request is not intercepted.
  * \param info Information about the intercepted request, such as
- * isolate, receiver, return value, or whether running in `'use strict'` mode.
- * See `PropertyCallbackInfo`.
+ * isolate, object holding the property, return value, or whether running in
+ * `'use strict'` mode. See `PropertyCallbackInfo`.
  *
  * See also `ObjectTemplate::SetHandler`.
  */
 using NamedPropertyDefinerCallback =
     Intercepted (*)(Local<Name> property, const PropertyDescriptor& desc,
                     const PropertyCallbackInfo<void>& info);
-// This variant will be deprecated soon.
-//
-// Use `info.GetReturnValue()` to indicate whether the request was intercepted
-// or not. If the definer successfully intercepts the request, i.e., if the
-// request should not be further executed, call
-// `info.GetReturnValue().Set(value)`. If the definer did not intercept the
-// request, i.e., if the request should be handled as if no interceptor is
-// present, do not not call `Set()` and do not produce side effects.
-using GenericNamedPropertyDefinerCallback V8_DEPRECATE_SOON(
-    "Use NamedPropertyDefinerCallback instead") =
-    void (*)(Local<Name> property, const PropertyDescriptor& desc,
-             const PropertyCallbackInfo<Value>& info);
 
 /**
- * Interceptor for getOwnPropertyDescriptor requests on an object.
+ * Interceptor for [[GetOwnProperty]] requests on an object.
  *
  * If the interceptor handles the request (i.e. the property should not be
  * looked up beyond the interceptor or in case an exception was thrown) it
@@ -371,22 +328,10 @@ using GenericNamedPropertyDefinerCallback V8_DEPRECATE_SOON(
  * isolate, receiver, return value, or whether running in `'use strict'` mode.
  * See `PropertyCallbackInfo`.
  *
- * \note If GetOwnPropertyDescriptor is intercepted, it will
- * always return true, i.e., indicate that the property was found.
- *
  * See also `ObjectTemplate::SetHandler`.
  */
 using NamedPropertyDescriptorCallback = Intercepted (*)(
     Local<Name> property, const PropertyCallbackInfo<Value>& info);
-// This variant will be deprecated soon.
-//
-// Use `info.GetReturnValue().Set()` to set the return value of the
-// intercepted request. The return value must be an object that
-// can be converted to a PropertyDescriptor, e.g., a `v8::Value` returned from
-// `v8::Object::getOwnPropertyDescriptor`.
-using GenericNamedPropertyDescriptorCallback V8_DEPRECATE_SOON(
-    "Use NamedPropertyDescriptorCallback instead") =
-    void (*)(Local<Name> property, const PropertyCallbackInfo<Value>& info);
 
 // TODO(ishell): Rename IndexedPropertyXxxCallbackV2 back to
 // IndexedPropertyXxxCallback once the old IndexedPropertyXxxCallback is
@@ -397,41 +342,24 @@ using GenericNamedPropertyDescriptorCallback V8_DEPRECATE_SOON(
  */
 using IndexedPropertyGetterCallbackV2 =
     Intercepted (*)(uint32_t index, const PropertyCallbackInfo<Value>& info);
-// This variant will be deprecated soon.
-using IndexedPropertyGetterCallback V8_DEPRECATE_SOON(
-    "Use IndexedPropertyGetterCallbackV2 instead") =
-    void (*)(uint32_t index, const PropertyCallbackInfo<Value>& info);
 
 /**
  * See `v8::NamedPropertySetterCallback`.
  */
 using IndexedPropertySetterCallbackV2 = Intercepted (*)(
     uint32_t index, Local<Value> value, const PropertyCallbackInfo<void>& info);
-// This variant will be deprecated soon.
-using IndexedPropertySetterCallback V8_DEPRECATE_SOON(
-    "Use IndexedPropertySetterCallbackV2 instead") =
-    void (*)(uint32_t index, Local<Value> value,
-             const PropertyCallbackInfo<Value>& info);
 
 /**
  * See `v8::NamedPropertyQueryCallback`.
  */
 using IndexedPropertyQueryCallbackV2 =
     Intercepted (*)(uint32_t index, const PropertyCallbackInfo<Integer>& info);
-// This variant will be deprecated soon.
-using IndexedPropertyQueryCallback V8_DEPRECATE_SOON(
-    "Use IndexedPropertyQueryCallbackV2 instead") =
-    void (*)(uint32_t index, const PropertyCallbackInfo<Integer>& info);
 
 /**
  * See `v8::NamedPropertyDeleterCallback`.
  */
 using IndexedPropertyDeleterCallbackV2 =
     Intercepted (*)(uint32_t index, const PropertyCallbackInfo<Boolean>& info);
-// This variant will be deprecated soon.
-using IndexedPropertyDeleterCallback V8_DEPRECATE_SOON(
-    "Use IndexedPropertyDeleterCallbackV2 instead") =
-    void (*)(uint32_t index, const PropertyCallbackInfo<Boolean>& info);
 
 /**
  * Returns an array containing the indices of the properties the indexed
@@ -448,21 +376,12 @@ using IndexedPropertyEnumeratorCallback =
 using IndexedPropertyDefinerCallbackV2 =
     Intercepted (*)(uint32_t index, const PropertyDescriptor& desc,
                     const PropertyCallbackInfo<void>& info);
-// This variant will be deprecated soon.
-using IndexedPropertyDefinerCallback V8_DEPRECATE_SOON(
-    "Use IndexedPropertyDefinerCallbackV2 instead") =
-    void (*)(uint32_t index, const PropertyDescriptor& desc,
-             const PropertyCallbackInfo<Value>& info);
 
 /**
  * See `v8::NamedPropertyDescriptorCallback`.
  */
 using IndexedPropertyDescriptorCallbackV2 =
     Intercepted (*)(uint32_t index, const PropertyCallbackInfo<Value>& info);
-// This variant will be deprecated soon.
-using IndexedPropertyDescriptorCallback V8_DEPRECATE_SOON(
-    "Use IndexedPropertyDescriptorCallbackV2 instead") =
-    void (*)(uint32_t index, const PropertyCallbackInfo<Value>& info);
 
 /**
  * Returns true if the given context should be allowed to access the given
@@ -632,7 +551,7 @@ class V8_EXPORT FunctionTemplate : public Template {
    * API call, see the comment above the class declaration.
    */
   void SetCallHandler(
-      FunctionCallback callback, Local<Value> data = Local<Value>(),
+      FunctionCallback callback, Local<Data> data = {},
       SideEffectType side_effect_type = SideEffectType::kHasSideEffect,
       const MemorySpan<const CFunction>& c_function_overloads = {});
 

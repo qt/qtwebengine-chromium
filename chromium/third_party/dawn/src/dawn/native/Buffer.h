@@ -80,7 +80,7 @@ ResultOrError<UnpackedPtr<TexelBufferViewDescriptor>> ValidateTexelBufferViewDes
     const BufferBase* buffer,
     const TexelBufferViewDescriptor* descriptor);
 
-class BufferBase : public SharedResource {
+class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
   public:
     enum class BufferState {
         Unmapped,
@@ -177,27 +177,26 @@ class BufferBase : public SharedResource {
     ExecutionSerial mLastUsageSerial = ExecutionSerial(0);
 
   private:
-    struct MapAsyncEvent;
+    class MapAsyncEvent;
 
     virtual MaybeError MapAtCreationImpl() = 0;
     virtual MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) = 0;
-    virtual void FinalizeMapImpl() = 0;
+    // `newState` is the state the buffer will be in after this returns.
+    virtual MaybeError FinalizeMapImpl(BufferState newState) = 0;
     virtual void* GetMappedPointerImpl() = 0;
-    virtual void UnmapImpl() = 0;
+    // `oldState` is the state of the buffer before unmap operation started.
+    virtual void UnmapImpl(BufferState oldState) = 0;
 
     virtual bool IsCPUWritableAtCreation() const = 0;
     MaybeError CopyFromStagingBuffer();
 
-    MaybeError ValidateMapAsync(wgpu::MapMode mode,
-                                size_t offset,
-                                size_t size,
-                                WGPUMapAsyncStatus* status) const;
+    MaybeError ValidateMapAsync(wgpu::MapMode mode, size_t offset, size_t size) const;
     MaybeError ValidateUnmap() const;
     bool CanGetMappedRange(bool writable, size_t offset, size_t size) const;
-    MaybeError UnmapInternal(WGPUMapAsyncStatus status, std::string_view message);
+    MaybeError UnmapInternal(std::string_view earlyUnmapMessage);
 
     // Updates internal state to reflect that the buffer is now mapped.
-    void FinalizeMap(BufferState newState);
+    MaybeError FinalizeMap(BufferState newState);
 
     const uint64_t mSize = 0;
     const wgpu::BufferUsage mUsage = wgpu::BufferUsage::None;
@@ -228,15 +227,25 @@ class BufferBase : public SharedResource {
     // staging buffer recursively.
     Ref<BufferBase> mStagingBuffer = nullptr;
 
-    // Track texel buffer views created from this buffer so they can be destroyed
-    // when the buffer is destroyed.
+    // Track texel buffer views created from this buffer so they can be destroyed when the buffer is
+    // destroyed.
     ApiObjectList mTexelBufferViews;
+
+    // Once MapAsync() returns a future there is a possible race between MapAsyncEvent completing
+    // and the buffer being unmapped as they can happen on different threads. `mPendingMapMutex`
+    // must be locked when resetting `mPendingMapEvent` to guard against concurrent access.
+    // `mPendingMapMutex` must also be locked for any access to MapAsyncEvent::mStatus/mErrorMessage
+    // until after `mPendingMapEvent` is reset and potential race is averted.
+    // Note: MutexProtected isn't used here due to Use() providing MapAsyncEvent* instead of
+    // Ref<MapAsyncEvent> which doesn't allow resetting the Ref.
+    Mutex mPendingMapMutex;
+    Ref<MapAsyncEvent> mPendingMapEvent;
 
     // Mapping specific states.
     wgpu::MapMode mMapMode = wgpu::MapMode::None;
     size_t mMapOffset = 0;
     size_t mMapSize = 0;
-    std::variant<void*, Ref<MapAsyncEvent>> mMapData;
+    void* mMappedPointer = nullptr;
 };
 
 }  // namespace dawn::native

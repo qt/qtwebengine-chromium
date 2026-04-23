@@ -106,40 +106,39 @@ bool IsSwiftShader(std::string_view renderer) {
 // static
 ResultOrError<Ref<PhysicalDevice>> PhysicalDevice::Create(wgpu::BackendType backendType,
                                                           Ref<DisplayEGL> display,
-                                                          bool forceES31AndMinExtensions) {
-    const EGLFunctions& egl = display->egl;
-    EGLDisplay eglDisplay = display->GetDisplay();
-
+                                                          bool forceES31AndMinExtensions,
+                                                          EGLint angleVirtualizationGroup) {
     // Create a temporary context and make it current during the creation of the PhysicalDevice so
     // that we can query the limits and other properties. Assumes that the limit are the same
     // irrespective of the context creation options.
     std::unique_ptr<ContextEGL> context;
-    DAWN_TRY_ASSIGN(context,
-                    ContextEGL::Create(display, backendType, /*useRobustness*/ false,
-                                       /*useANGLETextureSharing*/ false,
-                                       /*forceES31AndMinExtensions*/ forceES31AndMinExtensions));
+    DAWN_TRY_ASSIGN(
+        context, ContextEGL::Create(display, backendType, /*useRobustness*/ false,
+                                    /*disableEGL15Robustness */ false,
+                                    /*useANGLETextureSharing*/ false,
+                                    /*forceES31AndMinExtensions*/ forceES31AndMinExtensions,
+                                    /*bindContextOnlyDuringUse*/ true, angleVirtualizationGroup));
 
-    EGLSurface prevDrawSurface = egl.GetCurrentSurface(EGL_DRAW);
-    EGLSurface prevReadSurface = egl.GetCurrentSurface(EGL_READ);
-    EGLContext prevContext = egl.GetCurrentContext();
-
-    context->MakeCurrent();
+    ContextEGL::ScopedMakeCurrent scopedCurrentContext;
+    DAWN_TRY_ASSIGN(scopedCurrentContext, context->MakeCurrent());
     // Needed to request extensions here to initialize supported gl extensions set
     context->RequestRequiredExtensionsExplicitly();
 
     Ref<PhysicalDevice> physicalDevice =
-        AcquireRef(new PhysicalDevice(backendType, std::move(display)));
-    DAWN_TRY_WITH_CLEANUP(physicalDevice->Initialize(), {
-        egl.MakeCurrent(eglDisplay, prevDrawSurface, prevReadSurface, prevContext);
-    });
+        AcquireRef(new PhysicalDevice(backendType, std::move(display), angleVirtualizationGroup));
+    DAWN_TRY(physicalDevice->Initialize());
 
-    egl.MakeCurrent(eglDisplay, prevDrawSurface, prevReadSurface, prevContext);
+    DAWN_TRY(scopedCurrentContext.End());
 
     return physicalDevice;
 }
 
-PhysicalDevice::PhysicalDevice(wgpu::BackendType backendType, Ref<DisplayEGL> display)
-    : PhysicalDeviceBase(backendType), mDisplay(std::move(display)) {}
+PhysicalDevice::PhysicalDevice(wgpu::BackendType backendType,
+                               Ref<DisplayEGL> display,
+                               EGLint angleVirtualizationGroup)
+    : PhysicalDeviceBase(backendType),
+      mDisplay(std::move(display)),
+      mAngleVirtualizationGroup(angleVirtualizationGroup) {}
 
 DisplayEGL* PhysicalDevice::GetDisplay() const {
     return mDisplay.Get();
@@ -302,7 +301,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     }
 
     // TextureComponentSwizzle
-    if (mFunctions.IsAtLeastGLES(3, 0) || mFunctions.IsAtLeastGL(3, 3)) {
+    if (SupportTextureComponentSwizzle()) {
         EnableFeature(Feature::TextureComponentSwizzle);
     }
 }
@@ -412,7 +411,11 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 }
 
 void PhysicalDevice::SetupBackendAdapterToggles(dawn::platform::Platform* platform,
-                                                TogglesState* adapterToggles) const {}
+                                                TogglesState* adapterToggles) const {
+    adapterToggles->Default(
+        Toggle::DecomposeUniformBuffers,
+        platform->IsFeatureEnabled(platform::Features::kWebGPUDecomposeUniformBuffers));
+}
 
 void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platform,
                                                TogglesState* deviceToggles) const {
@@ -521,11 +524,18 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
     }
 
     bool useRobustness = !deviceToggles.IsEnabled(Toggle::DisableRobustness);
+
+    // Workaround: Imagination EGL 1.5 drivers do not support the new robustness enum.
+    // Use the pre-1.5 extension enum instead.
+    bool disableEGL15Robustness = mVendorId == gpu_info::kVendorID_ImgTec;
     bool forceES31AndMinExtensions = deviceToggles.IsEnabled(Toggle::GLForceES31AndNoExtensions);
+    bool bindContextOnlyDuringUse = deviceToggles.IsEnabled(Toggle::GLAllowContextOnMultiThreads);
 
     std::unique_ptr<ContextEGL> context;
     DAWN_TRY_ASSIGN(context, ContextEGL::Create(mDisplay, GetBackendType(), useRobustness,
-                                                useANGLETextureSharing, forceES31AndMinExtensions));
+                                                disableEGL15Robustness, useANGLETextureSharing,
+                                                forceES31AndMinExtensions, bindContextOnlyDuringUse,
+                                                mAngleVirtualizationGroup));
 
     return Device::Create(adapter, descriptor, mFunctions, std::move(context), deviceToggles,
                           std::move(lostEvent));
@@ -570,6 +580,13 @@ FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     return {};
 }
 
-void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {}
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
+                                               const TogglesState&) const {}
+
+bool PhysicalDevice::SupportTextureComponentSwizzle() const {
+    // Texture component swizzle requires GLES 3.0 / GL 3.3+ and is known to be incomplete or
+    // unsupported on the ANGLE D3D11 backend (as D3D11 lacks native support).
+    return (mFunctions.IsAtLeastGLES(3, 0) || mFunctions.IsAtLeastGL(3, 3));
+}
 
 }  // namespace dawn::native::opengl

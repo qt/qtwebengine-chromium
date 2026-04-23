@@ -9,9 +9,11 @@
  * Find more information about web development at [Learn more](exampleLink)
  */
 
-// This is only exported for tests, and it should not be
-// imported in any component, instead add link in map and
-// use getMarkdownLink to get the appropriate link.
+/**
+ * This is only exported for tests, and it should not be
+ * imported in any component, instead add link in map and
+ * use getMarkdownLink to get the appropriate link.
+ **/
 export const markdownLinks = new Map<string, string>([
   ['issuesContrastWCAG21AA', 'https://www.w3.org/TR/WCAG21/#contrast-minimum'],
   ['issuesContrastWCAG21AAA', 'https://www.w3.org/TR/WCAG21/#contrast-enhanced'],
@@ -67,9 +69,10 @@ export const markdownLinks = new Map<string, string>([
   ],
   ['storagePartitioningExplainer', 'https://developers.google.com/privacy-sandbox/cookies/storage-partitioning'],
   ['storageAccessAPI', 'https://developer.mozilla.org/en-US/docs/Web/API/StorageAccessHandle/createObjectURL'],
+  ['https://goo.gle/ps-status', 'https://goo.gle/ps-status'],
   [
-    'userReidentificationBugReports',
-    'https://issues.chromium.org/issues?q=status:open%20componentid:1456351&s=created_time:desc)'
+    'https://privacysandbox.com/news/update-on-plans-for-privacy-sandbox-technologies/',
+    'https://privacysandbox.com/news/update-on-plans-for-privacy-sandbox-technologies/'
   ],
 ]);
 

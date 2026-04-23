@@ -1,7 +1,7 @@
 // Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import '../../../ui/legacy/components/data_grid/data_grid.js';
 
@@ -72,7 +72,7 @@ export class InterestGroupAccessGrid extends HTMLElement {
     this.#render();
   }
 
-  // eslint-disable-next-line rulesdir/set-data-type-reference
+  // eslint-disable-next-line @devtools/set-data-type-reference
   set data(data: Protocol.Storage.InterestGroupAccessedEvent[]) {
     this.#datastores = data;
     this.#render();
@@ -102,8 +102,9 @@ export class InterestGroupAccessGrid extends HTMLElement {
   }
 
   #renderGrid(): Lit.TemplateResult {
+    // clang-format off
     return html`
-      <devtools-data-grid @select=${this.#onSelect} striped inline>
+      <devtools-data-grid striped inline>
         <table>
           <tr>
             <th id="event-time" sortable weight="10">${i18nString(UIStrings.eventTime)}</td>
@@ -111,8 +112,8 @@ export class InterestGroupAccessGrid extends HTMLElement {
             <th id="event-group-owner" sortable weight="10">${i18nString(UIStrings.groupOwner)}</td>
             <th id="event-group-name" sortable weight="10">${i18nString(UIStrings.groupName)}</td>
           </tr>
-          ${this.#datastores.map((event, index) => html`
-          <tr data-index=${index}>
+          ${this.#datastores.map(event => html`
+          <tr @select=${() => this.dispatchEvent(new CustomEvent('select', {detail: event}))}>
             <td>${new Date(1e3 * event.accessTime).toLocaleString()}</td>
             <td>${event.type}</td>
             <td>${event.ownerOrigin}</td>
@@ -120,14 +121,8 @@ export class InterestGroupAccessGrid extends HTMLElement {
           </tr>
         `)}
         </table>
-      </devtools-data-grid>
-    `;
-  }
-
-  #onSelect(event: CustomEvent<HTMLElement|null>): void {
-    if (event.detail) {
-      this.dispatchEvent(new CustomEvent('select', {detail: this.#datastores[Number(event.detail.dataset.index)]}));
-    }
+      </devtools-data-grid>`;
+    // clang-format on
   }
 }
 

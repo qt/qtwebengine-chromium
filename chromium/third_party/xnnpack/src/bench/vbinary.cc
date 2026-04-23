@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2021-2025 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
@@ -21,7 +21,7 @@
 #include "src/xnnpack/math.h"
 #include "src/xnnpack/microfnptr.h"
 #include "src/xnnpack/microparams-init.h"
-#include "src/xnnpack/microparams.h"
+#include "test/replicable_random_device.h"
 #include <benchmark/benchmark.h>
 
 template <typename T>
@@ -123,8 +123,7 @@ static void vbinary(benchmark::State& state, uint64_t arch_flags,
 
   const size_t num_elements = state.range(0);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   UniformDistribution<T> dist;
 
   xnnpack::Buffer<T, XNN_ALLOCATION_ALIGNMENT> a(num_elements);

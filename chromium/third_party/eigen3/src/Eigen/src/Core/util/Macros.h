@@ -17,13 +17,9 @@
 // Eigen version and basic defaults
 //------------------------------------------------------------------------------------------
 
-#define EIGEN_WORLD_VERSION 3
-#define EIGEN_MAJOR_VERSION 4
-#define EIGEN_MINOR_VERSION 90
-
 #define EIGEN_VERSION_AT_LEAST(x, y, z) \
-  (EIGEN_WORLD_VERSION > x ||           \
-   (EIGEN_WORLD_VERSION >= x && (EIGEN_MAJOR_VERSION > y || (EIGEN_MAJOR_VERSION >= y && EIGEN_MINOR_VERSION >= z))))
+  (EIGEN_MAJOR_VERSION > x ||           \
+   (EIGEN_MAJOR_VERSION >= x && (EIGEN_MINOR_VERSION > y || (EIGEN_MINOR_VERSION >= y && EIGEN_PATCH_VERSION >= z))))
 
 #ifdef EIGEN_DEFAULT_TO_ROW_MAJOR
 #define EIGEN_DEFAULT_MATRIX_STORAGE_ORDER_OPTION Eigen::RowMajor
@@ -54,6 +50,26 @@
 #ifndef EIGEN_STACK_ALLOCATION_LIMIT
 // 131072 == 128 KB
 #define EIGEN_STACK_ALLOCATION_LIMIT 131072
+#endif
+
+/* Specify whether to use std::fma for scalar multiply-add instructions.
+ *
+ * On machines that have FMA as a single instruction, this will generally
+ * improve precision without significant performance implications.
+ *
+ * Without a single instruction, performance has been found to be reduced 2-3x
+ * on Intel CPUs, and up to 30x for WASM.
+ *
+ * If unspecified, defaults to using FMA if hardware support is available.
+ * The default should be used in most cases to ensure consistency between
+ * vectorized and non-vectorized paths.
+ */
+#ifndef EIGEN_SCALAR_MADD_USE_FMA
+#ifdef EIGEN_VECTORIZE_FMA
+#define EIGEN_SCALAR_MADD_USE_FMA 1
+#else
+#define EIGEN_SCALAR_MADD_USE_FMA 0
+#endif
 #endif
 
 //------------------------------------------------------------------------------------------
@@ -404,6 +420,13 @@
 #define EIGEN_ARCH_PPC 0
 #endif
 
+/// \internal EIGEN_ARCH_RISCV set to 1 if the architecture is RISC-V.
+#if defined(__riscv)
+#define EIGEN_ARCH_RISCV 1
+#else
+#define EIGEN_ARCH_RISCV 0
+#endif
+
 //------------------------------------------------------------------------------------------
 // Operating system identification, EIGEN_OS_*
 //------------------------------------------------------------------------------------------
@@ -684,6 +707,13 @@
 #define EIGEN_HAS_BUILTIN(x) 0
 #endif
 
+// Cross compiler wrapper around LLVM's __has_attribute
+#ifdef __has_attribute
+#define EIGEN_HAS_ATTRIBUTE(x) __has_attribute(x)
+#else
+#define EIGEN_HAS_ATTRIBUTE(x) 0
+#endif
+
 // A Clang feature extension to determine compiler features.
 // We use it to determine 'cxx_rvalue_references'
 #ifndef __has_feature
@@ -812,6 +842,18 @@
 #else
 #define EIGEN_HAS_BUILTIN_INT128 0
 #endif
+#endif
+
+// Does the compiler support vector types?
+#if EIGEN_HAS_ATTRIBUTE(ext_vector_type) && EIGEN_HAS_BUILTIN(__builtin_vectorelements)
+#define EIGEN_ARCH_VECTOR_EXTENSIONS 1
+#else
+#define EIGEN_ARCH_VECTOR_EXTENSIONS 0
+#endif
+
+// Multidimensional subscript operator feature test
+#if defined(__cpp_multidimensional_subscript) && __cpp_multidimensional_subscript >= 202110L
+#define EIGEN_MULTIDIMENSIONAL_SUBSCRIPT
 #endif
 
 //------------------------------------------------------------------------------------------
@@ -944,6 +986,18 @@
 #define EIGEN_DEPRECATED
 #endif
 
+#ifndef EIGEN_NO_DEPRECATED_WARNING
+#if EIGEN_COMP_GNUC
+#define EIGEN_DEPRECATED_WITH_REASON(message) __attribute__((deprecated(message)))
+#elif EIGEN_COMP_MSVC
+#define EIGEN_DEPRECATED_WITH_REASON(message) __declspec(deprecated(message))
+#else
+#define EIGEN_DEPRECATED_WITH_REASON(message)
+#endif
+#else
+#define EIGEN_DEPRECATED_WITH_REASON(message)
+#endif
+
 #if EIGEN_COMP_GNUC
 #define EIGEN_UNUSED __attribute__((unused))
 #else
@@ -976,7 +1030,7 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE constexpr void ignore_unused_variable(cons
 #define EIGEN_UNUSED_VARIABLE(var) Eigen::internal::ignore_unused_variable(var);
 
 #if !defined(EIGEN_ASM_COMMENT)
-#if EIGEN_COMP_GNUC && (EIGEN_ARCH_i386_OR_x86_64 || EIGEN_ARCH_ARM_OR_ARM64)
+#if EIGEN_COMP_GNUC && (EIGEN_ARCH_i386_OR_x86_64 || EIGEN_ARCH_ARM_OR_ARM64 || EIGEN_ARCH_RISCV)
 #define EIGEN_ASM_COMMENT(X) __asm__("#" X)
 #else
 #define EIGEN_ASM_COMMENT(X)
@@ -993,8 +1047,9 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE constexpr void ignore_unused_variable(cons
 #endif
 
 #if !defined(EIGEN_OPTIMIZATION_BARRIER)
-#if EIGEN_COMP_GNUC
-   // According to https://gcc.gnu.org/onlinedocs/gcc/Constraints.html:
+// Implement the barrier on GNUC compilers or clang-cl.
+#if EIGEN_COMP_GNUC || (defined(__clang__) && defined(_MSC_VER))
+// According to https://gcc.gnu.org/onlinedocs/gcc/Constraints.html:
 //   X: Any operand whatsoever.
 //   r: A register operand is allowed provided that it is in a general
 //      register.
@@ -1027,37 +1082,37 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE constexpr void ignore_unused_variable(cons
 // directly for std::complex<T>, Eigen::half, Eigen::bfloat16. For these,
 // you will need to apply to the underlying POD type.
 #if EIGEN_ARCH_PPC && EIGEN_COMP_GNUC_STRICT
-   // This seems to be broken on clang. Packet4f is loaded into a single
+// This seems to be broken on clang. Packet4f is loaded into a single
 //   register rather than a vector, zeroing out some entries. Integer
 //   types also generate a compile error.
 #if EIGEN_OS_MAC
-   // General, Altivec for Apple (VSX were added in ISA v2.06):
+// General, Altivec for Apple (VSX were added in ISA v2.06):
 #define EIGEN_OPTIMIZATION_BARRIER(X) __asm__("" : "+r,v"(X));
 #else
-   // General, Altivec, VSX otherwise:
+// General, Altivec, VSX otherwise:
 #define EIGEN_OPTIMIZATION_BARRIER(X) __asm__("" : "+r,v,wa"(X));
 #endif
 #elif EIGEN_ARCH_ARM_OR_ARM64
 #ifdef __ARM_FP
-   // General, VFP or NEON.
+// General, VFP or NEON.
 // Clang doesn't like "r",
 //    error: non-trivial scalar-to-vector conversion, possible invalid
 //           constraint for vector typ
 #define EIGEN_OPTIMIZATION_BARRIER(X) __asm__("" : "+g,w"(X));
 #else
-   // Arm without VFP or NEON.
+// Arm without VFP or NEON.
 // "w" constraint will not compile.
 #define EIGEN_OPTIMIZATION_BARRIER(X) __asm__("" : "+g"(X));
 #endif
 #elif EIGEN_ARCH_i386_OR_x86_64
-   // General, SSE.
+// General, SSE.
 #define EIGEN_OPTIMIZATION_BARRIER(X) __asm__("" : "+g,x"(X));
 #else
-   // Not implemented for other architectures.
+// Not implemented for other architectures.
 #define EIGEN_OPTIMIZATION_BARRIER(X)
 #endif
 #else
-   // Not implemented for other compilers.
+// Not implemented for other compilers.
 #define EIGEN_OPTIMIZATION_BARRIER(X)
 #endif
 #endif

@@ -110,12 +110,10 @@
 #include "gpu/config/gpu_driver_bug_workarounds.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/config/gpu_switches.h"
-#include "gpu/ipc/client/client_shared_image_interface.h"
 #include "gpu/ipc/client/command_buffer_proxy_impl.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_factory.h"
-#include "ipc/ipc_platform_file.h"
 #include "media/base/decoder_factory.h"
 #include "media/base/media.h"
 #include "media/base/media_switches.h"
@@ -143,12 +141,12 @@
 #include "third_party/blink/public/common/page/launching_process_state.h"
 #include "third_party/blink/public/common/switches.h"
 #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
+#include "third_party/blink/public/mojom/cpu_performance.mojom.h"
 #include "third_party/blink/public/mojom/origin_trials/origin_trials_settings.mojom.h"
 #include "third_party/blink/public/platform/modules/video_capture/web_video_capture_impl_manager.h"
 #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/blink/public/platform/web_cache.h"
 #include "third_party/blink/public/platform/web_image_generator.h"
-#include "third_party/blink/public/platform/web_memory_pressure_listener.h"
 #include "third_party/blink/public/platform/web_network_state_notifier.h"
 #include "third_party/blink/public/platform/web_runtime_features.h"
 #include "third_party/blink/public/platform/web_scoped_page_pauser.h"
@@ -242,21 +240,19 @@ constinit thread_local RenderThreadImpl* render_thread = nullptr;
 base::LazyInstance<scoped_refptr<base::SingleThreadTaskRunner>>::
     DestructorAtExit g_main_task_runner = LAZY_INSTANCE_INITIALIZER;
 
-// v8::MemoryPressureLevel should correspond to base::MemoryPressureListener.
+// v8::MemoryPressureLevel should correspond to base::MemoryPressureLevel.
+static_assert(
+    static_cast<v8::MemoryPressureLevel>(base::MEMORY_PRESSURE_LEVEL_NONE) ==
+        v8::MemoryPressureLevel::kNone,
+    "none level not align");
 static_assert(static_cast<v8::MemoryPressureLevel>(
-                  base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE) ==
-                  v8::MemoryPressureLevel::kNone,
-              "none level not align");
-static_assert(
-    static_cast<v8::MemoryPressureLevel>(
-        base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE) ==
-        v8::MemoryPressureLevel::kModerate,
-    "moderate level not align");
-static_assert(
-    static_cast<v8::MemoryPressureLevel>(
-        base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL) ==
-        v8::MemoryPressureLevel::kCritical,
-    "critical level not align");
+                  base::MEMORY_PRESSURE_LEVEL_MODERATE) ==
+                  v8::MemoryPressureLevel::kModerate,
+              "moderate level not align");
+static_assert(static_cast<v8::MemoryPressureLevel>(
+                  base::MEMORY_PRESSURE_LEVEL_CRITICAL) ==
+                  v8::MemoryPressureLevel::kCritical,
+              "critical level not align");
 
 // Feature to migrate the Media thread to a SequencedTaskRunner backed from
 // the base::ThreadPool. Does not currently work on Fuchsia due to FIDL
@@ -594,20 +590,13 @@ void RenderThreadImpl::Init() {
   // been initialized by the Zygote before this instance became a Renderer.
   media::InitializeMediaLibrary();
 
-  memory_pressure_listener_ =
-      std::make_unique<base::AsyncMemoryPressureListener>(
-          FROM_HERE, base::MemoryPressureListenerTag::kRenderThreadImpl,
-          base::BindRepeating(&RenderThreadImpl::OnMemoryPressure,
-                              base::Unretained(this)));
   // In tests or in single-process mode, the render thread does not live on the
   // main thread of the process, so we can't register a sync listener.
   if (base::SingleThreadTaskRunner::GetMainThreadDefault()
           ->BelongsToCurrentThread()) {
-    sync_memory_pressure_listener_ =
-        std::make_unique<base::SyncMemoryPressureListener>(
-            base::MemoryPressureListenerTag::kRenderThreadImpl,
-            base::BindRepeating(&RenderThreadImpl::OnSyncMemoryPressure,
-                                base::Unretained(this)));
+    memory_pressure_listener_registration_ =
+        std::make_unique<base::SyncMemoryPressureListenerRegistration>(
+            base::MemoryPressureListenerTag::kRenderThreadImpl, this);
   }
 
   discardable_memory_allocator_ = CreateDiscardableMemoryAllocator();
@@ -855,6 +844,7 @@ void RenderThreadImpl::InitializeRenderer(
     const blink::UserAgentMetadata& user_agent_metadata,
     const std::vector<std::string>& cors_exempt_header_list,
     blink::mojom::OriginTrialsSettingsPtr origin_trials_settings,
+    blink::mojom::PerformanceTier cpu_performance_tier,
     uint64_t trace_id) {
   TRACE_EVENT("navigation", "RenderThreadImpl::InitializeRenderer",
               perfetto::TerminatingFlow::Global(trace_id));
@@ -864,6 +854,7 @@ void RenderThreadImpl::InitializeRenderer(
   GetContentClient()->renderer()->DidSetUserAgent(user_agent);
   user_agent_metadata_ = user_agent_metadata;
   cors_exempt_header_list_ = cors_exempt_header_list;
+  cpu_performance_tier_ = cpu_performance_tier;
 
   std::vector<blink::WebString> web_cors_exempt_header_list(
       cors_exempt_header_list.size());
@@ -1077,10 +1068,9 @@ RenderThreadImpl::GetVideoFrameCompositorContextProvider(
   return video_frame_compositor_context_provider_;
 }
 
-scoped_refptr<gpu::ClientSharedImageInterface>
+scoped_refptr<gpu::SharedImageInterface>
 RenderThreadImpl::GetRenderThreadSharedImageInterface() {
-  if (shared_image_interface_ &&
-      !shared_image_interface_->gpu_channel()->IsLost()) {
+  if (shared_image_interface_ && !shared_image_interface_->IsLost()) {
     return shared_image_interface_;
   }
 
@@ -1199,6 +1189,10 @@ const blink::UserAgentMetadata& RenderThreadImpl::GetUserAgentMetadata() {
   return user_agent_metadata_;
 }
 
+blink::mojom::PerformanceTier RenderThreadImpl::GetCpuPerformanceTier() {
+  return cpu_performance_tier_;
+}
+
 void RenderThreadImpl::WriteIntoTrace(
     perfetto::TracedProto<perfetto::protos::pbzero::RenderProcessHost> proto) {
   int id = GetClientId();
@@ -1286,7 +1280,10 @@ void RenderThreadImpl::SetProcessState(
             features::kIsolatesPriorityBestEffortWhenHidden)) {
       blink::WebV8Features::SetIsolatePriority(
           base::Process::Priority::kBestEffort);
-    } else {
+    } else if (!process_priority_.has_value() ||
+               *process_priority_ != process_priority ||
+               base::FeatureList::IsEnabled(
+                   features::kIsolatesPriorityBestEffortWhenHidden)) {
       blink::WebV8Features::SetIsolatePriority(process_priority);
     }
   }
@@ -1308,23 +1305,13 @@ void RenderThreadImpl::SetProcessState(
           is_visible);
     }
 
-    if (is_visible)
+    if (is_visible) {
       OnRendererVisible();
-    else
+    } else {
       OnRendererHidden();
+    }
   }
 
-  if (process_priority_ != process_priority) {
-    TRACE_EVENT_END("renderer", process_priority_track_);
-    TRACE_EVENT_BEGIN("renderer", ProcessPriorityToString(process_priority),
-                      process_priority_track_);
-  }
-
-  if (visible_state_ != visible_state) {
-    TRACE_EVENT_END("renderer", process_visibility_track_);
-    TRACE_EVENT_BEGIN("renderer", ProcessVisibilityToString(visible_state),
-                      process_visibility_track_);
-  }
   process_priority_ = process_priority;
   visible_state_ = visible_state;
 }
@@ -1539,9 +1526,9 @@ void RenderThreadImpl::UpdateSystemColorInfo(
   }
 }
 
-void RenderThreadImpl::PurgePluginListCache(bool reload_pages) {
+void RenderThreadImpl::PurgePluginListCache() {
 #if BUILDFLAG(ENABLE_PLUGINS)
-  blink::ResetPluginCache(reload_pages);
+  blink::ResetPluginCache();
 
   for (auto& observer : observers_)
     observer.PluginListChanged();
@@ -1553,31 +1540,6 @@ void RenderThreadImpl::PurgePluginListCache(bool reload_pages) {
 void RenderThreadImpl::PurgeResourceCache(PurgeResourceCacheCallback callback) {
   blink::WebCache::Clear();
   std::move(callback).Run();
-}
-
-void RenderThreadImpl::OnMemoryPressure(
-    base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
-  TRACE_EVENT(
-      "memory", "RenderThreadImpl::OnMemoryPressure",
-      [&](perfetto::EventContext ctx) {
-        auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
-        auto* data = event->set_chrome_memory_pressure_notification();
-        data->set_level(base::trace_event::MemoryPressureLevelToTraceEnum(
-            memory_pressure_level));
-      });
-  if (blink_platform_impl_)
-    blink::WebMemoryPressureListener::OnMemoryPressure(memory_pressure_level);
-  if (memory_pressure_level ==
-      base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL) {
-    discardable_memory_allocator_->ReleaseFreeMemory();
-
-    // Do not call into blink if it is not initialized.
-    if (blink_platform_impl_) {
-      // Purge Skia font cache, resource cache, and image filter.
-      SkGraphics::PurgeAllCaches();
-      blink::WebMemoryPressureListener::OnPurgeMemory();
-    }
-  }
 }
 
 scoped_refptr<base::SequencedTaskRunner>
@@ -1669,11 +1631,7 @@ void RenderThreadImpl::OnRendererHidden() {
         base::Process::Priority::kBestEffort);
   }
 
-  // TODO(rmcilroy): Remove IdleHandler and replace it with an IdleTask
-  // scheduled by the RendererScheduler - http://crbug.com/469210.
-  if (!GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
-    return;
-  main_thread_scheduler_->SetRendererHidden(true);
+  blink_isolates_pressure_listener_.OnRendererHidden();
 }
 
 void RenderThreadImpl::OnRendererVisible() {
@@ -1682,10 +1640,7 @@ void RenderThreadImpl::OnRendererVisible() {
     blink::WebV8Features::SetIsolatePriority(
         base::Process::Priority::kUserBlocking);
   }
-
-  if (!GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
-    return;
-  main_thread_scheduler_->SetRendererHidden(false);
+  blink_isolates_pressure_listener_.OnRendererVisible();
 }
 
 bool RenderThreadImpl::RendererIsBackgrounded() const {
@@ -1710,23 +1665,16 @@ void RenderThreadImpl::OnRendererForegrounded() {
   process_foregrounded_count_++;
 }
 
-void RenderThreadImpl::OnSyncMemoryPressure(
-    base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
-  v8::MemoryPressureLevel v8_memory_pressure_level =
-      static_cast<v8::MemoryPressureLevel>(memory_pressure_level);
-
-#if !BUILDFLAG(ALLOW_CRITICAL_MEMORY_PRESSURE_HANDLING_IN_FOREGROUND)
-  // In order to reduce performance impact, translate critical level to
-  // moderate level for foreground renderer.
-  if (!RendererIsHidden() &&
-      v8_memory_pressure_level == v8::MemoryPressureLevel::kCritical)
-    v8_memory_pressure_level = v8::MemoryPressureLevel::kModerate;
-#endif  // !BUILDFLAG(ALLOW_CRITICAL_MEMORY_PRESSURE_HANDLING_IN_FOREGROUND)
-
-  if (base::FeatureList::IsEnabled(
-          features::kForwardMemoryPressureToBlinkIsolates)) {
-    blink::MemoryPressureNotificationToAllIsolates(v8_memory_pressure_level);
-  }
+void RenderThreadImpl::OnMemoryPressure(
+    base::MemoryPressureLevel memory_pressure_level) {
+  TRACE_EVENT(
+      "memory", "RenderThreadImpl::OnMemoryPressure",
+      [&](perfetto::EventContext ctx) {
+        auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
+        auto* data = event->set_chrome_memory_pressure_notification();
+        data->set_level(base::trace_event::MemoryPressureLevelToTraceEnum(
+            memory_pressure_level));
+      });
 }
 
 void RenderThreadImpl::OnRendererInterfaceReceiver(
@@ -1802,7 +1750,7 @@ void RenderThreadImpl::SetPrivateMemoryFootprint(
 }
 
 void RenderThreadImpl::OnMemoryPressureFromBrowserReceived(
-    base::MemoryPressureListener::MemoryPressureLevel level) {
+    base::MemoryPressureLevel level) {
   // To avoid that the browser process requests a signal while a renderer
   // is creating and blink has not been initialized yet, check
   // |blink_platform_impl_| here.

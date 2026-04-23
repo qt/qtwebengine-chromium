@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import path from 'path';
+import path from 'node:path';
 
 import {createRule} from './utils/ruleCreator.ts';
 
-// Define the structure of the options object
+/** Define the structure of the options object **/
 interface Options {
   bannedImportPaths?: Array<{
     bannedPath: string,

@@ -1,12 +1,12 @@
 // Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
 
-import * as IconButton from '../../../components/icon_button/icon_button.js';
-import * as UI from '../../legacy.js';
+import '../../../kit/kit.js';
 
-import {getRegisteredProviders, Provider, registerProvider, type ProviderRegistration} from './FilteredListWidget.js';
+import {html, type TemplateResult} from '../../../lit/lit.js';
+
+import {getRegisteredProviders, Provider, type ProviderRegistration, registerProvider} from './FilteredListWidget.js';
 import {QuickOpenImpl} from './QuickOpen.js';
 
 export class HelpQuickOpen extends Provider {
@@ -44,15 +44,15 @@ export class HelpQuickOpen extends Provider {
     return -this.providers[itemIndex].prefix.length;
   }
 
-  override renderItem(itemIndex: number, _query: string, titleElement: Element, _subtitleElement: Element): void {
+  override renderItem(itemIndex: number, _query: string): TemplateResult {
     const provider = this.providers[itemIndex];
-
-    const iconElement = new IconButton.Icon.Icon();
-    iconElement.name = provider.iconName;
-    iconElement.classList.add('large');
-    titleElement.parentElement?.parentElement?.insertBefore(iconElement, titleElement.parentElement);
-
-    UI.UIUtils.createTextChild(titleElement, provider.title);
+    // clang-format off
+    return html`
+      <devtools-icon class="large" name=${provider.iconName}></devtools-icon>
+      <div>
+        <div>${provider.title}</div>
+      </div>`;
+    // clang-format on
   }
 
   override jslogContextAt(itemIndex: number): string {
@@ -63,10 +63,6 @@ export class HelpQuickOpen extends Provider {
     if (itemIndex !== null) {
       QuickOpenImpl.show(this.providers[itemIndex].prefix);
     }
-  }
-
-  override renderAsTwoRows(): boolean {
-    return false;
   }
 }
 

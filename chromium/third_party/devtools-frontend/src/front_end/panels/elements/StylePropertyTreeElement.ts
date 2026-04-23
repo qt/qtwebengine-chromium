@@ -1,8 +1,8 @@
 // Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-imperative-dom-api */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -14,8 +14,8 @@ import * as Badges from '../../models/badges/badges.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import type * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as Tooltips from '../../ui/components/tooltips/tooltips.js';
+import {createIcon, Icon} from '../../ui/kit/kit.js';
 import * as ColorPicker from '../../ui/legacy/components/color_picker/color_picker.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -56,6 +56,7 @@ const {html, nothing, render, Directives: {classMap}} = Lit;
 const ASTUtils = SDK.CSSPropertyParser.ASTUtils;
 const FlexboxEditor = ElementsComponents.StylePropertyEditor.FlexboxEditor;
 const GridEditor = ElementsComponents.StylePropertyEditor.GridEditor;
+const GridLanesEditor = ElementsComponents.StylePropertyEditor.GridLanesEditor;
 
 const UIStrings = {
   /**
@@ -107,6 +108,10 @@ const UIStrings = {
    * @description Title of the button that opens the CSS Grid editor in the Styles panel.
    */
   gridEditorButton: 'Open `grid` editor',
+  /**
+   * @description Title of the button that opens the CSS Grid Lanes editor in the Styles panel.
+   */
+  gridLanesEditorButton: 'Open `grid-lanes` editor',
   /**
    * @description A context menu item in Styles panel to copy CSS declaration as JavaScript property.
    */
@@ -196,7 +201,7 @@ export class EnvFunctionRenderer extends rendererBase(SDK.CSSPropertyParserMatch
   }
 }
 // clang-format off
-export class FlexGridRenderer extends rendererBase(SDK.CSSPropertyParserMatchers.FlexGridMatch) {
+export class FlexGridRenderer extends rendererBase(SDK.CSSPropertyParserMatchers.FlexGridGridLanesMatch) {
   // clang-format on
   readonly #treeElement: StylePropertyTreeElement|null;
   readonly #stylesPane: StylesSidebarPane;
@@ -206,23 +211,56 @@ export class FlexGridRenderer extends rendererBase(SDK.CSSPropertyParserMatchers
     this.#stylesPane = stylesPane;
   }
 
-  override render(match: SDK.CSSPropertyParserMatchers.FlexGridMatch, context: RenderingContext): Node[] {
+  override render(match: SDK.CSSPropertyParserMatchers.FlexGridGridLanesMatch, context: RenderingContext): Node[] {
     const children = Renderer.render(ASTUtils.siblings(ASTUtils.declValue(match.node)), context).nodes;
     if (!this.#treeElement?.editable()) {
       return children;
     }
     const key =
         `${this.#treeElement.section().getSectionIdx()}_${this.#treeElement.section().nextEditorTriggerButtonIdx}`;
+
+    function getEditorClass(layoutType: SDK.CSSPropertyParserMatchers.LayoutType): typeof FlexboxEditor|
+        typeof GridEditor|typeof GridLanesEditor {
+      switch (layoutType) {
+        case SDK.CSSPropertyParserMatchers.LayoutType.FLEX:
+          return FlexboxEditor;
+        case SDK.CSSPropertyParserMatchers.LayoutType.GRID:
+          return GridEditor;
+        case SDK.CSSPropertyParserMatchers.LayoutType.GRID_LANES:
+          return GridLanesEditor;
+      }
+    }
+
+    function getButtonTitle(layoutType: SDK.CSSPropertyParserMatchers.LayoutType): string {
+      switch (layoutType) {
+        case SDK.CSSPropertyParserMatchers.LayoutType.FLEX:
+          return i18nString(UIStrings.flexboxEditorButton);
+        case SDK.CSSPropertyParserMatchers.LayoutType.GRID:
+          return i18nString(UIStrings.gridEditorButton);
+        case SDK.CSSPropertyParserMatchers.LayoutType.GRID_LANES:
+          return i18nString(UIStrings.gridLanesEditorButton);
+      }
+    }
+
+    function getSwatchType(layoutType: SDK.CSSPropertyParserMatchers.LayoutType): Host.UserMetrics.SwatchType {
+      switch (layoutType) {
+        case SDK.CSSPropertyParserMatchers.LayoutType.FLEX:
+          return Host.UserMetrics.SwatchType.FLEX;
+        case SDK.CSSPropertyParserMatchers.LayoutType.GRID:
+          return Host.UserMetrics.SwatchType.GRID;
+        case SDK.CSSPropertyParserMatchers.LayoutType.GRID_LANES:
+          return Host.UserMetrics.SwatchType.GRID_LANES;
+      }
+    }
+
     const button = StyleEditorWidget.createTriggerButton(
-        this.#stylesPane, this.#treeElement.section(), match.isFlex ? FlexboxEditor : GridEditor,
-        match.isFlex ? i18nString(UIStrings.flexboxEditorButton) : i18nString(UIStrings.gridEditorButton), key);
+        this.#stylesPane, this.#treeElement.section(), getEditorClass(match.layoutType),
+        getButtonTitle(match.layoutType), key);
     button.tabIndex = -1;
-    button.setAttribute(
-        'jslog', `${VisualLogging.showStyleEditor().track({click: true}).context(match.isFlex ? 'flex' : 'grid')}`);
+    button.setAttribute('jslog', `${VisualLogging.showStyleEditor().track({click: true}).context(match.layoutType)}`);
     this.#treeElement.section().nextEditorTriggerButtonIdx++;
     button.addEventListener('click', () => {
-      Host.userMetrics.swatchActivated(
-          match.isFlex ? Host.UserMetrics.SwatchType.FLEX : Host.UserMetrics.SwatchType.GRID);
+      Host.userMetrics.swatchActivated(getSwatchType(match.layoutType));
     });
     const helper = this.#stylesPane.swatchPopoverHelper();
     if (helper.isShowing(StyleEditorWidget.instance()) && StyleEditorWidget.instance().getTriggerKey() === key) {
@@ -1050,8 +1088,9 @@ export class LinkableNameRenderer extends rendererBase(SDK.CSSPropertyParserMatc
         return {
           jslogContext: 'css-font-palette',
           metric: null,
-          ruleBlock: '@font-palette-values',
-          isDefined: this.#matchedStyles.fontPaletteValuesRule()?.name().text === match.text,
+          ruleBlock: '@font-*',
+          isDefined: Boolean(this.#matchedStyles.atRules().find(
+              ar => ar.type() === 'font-palette-values' && ar.name()?.text === match.text)),
         };
       case SDK.CSSPropertyParserMatchers.LinkableNameProperties.POSITION_TRY:
       case SDK.CSSPropertyParserMatchers.LinkableNameProperties.POSITION_TRY_FALLBACKS:
@@ -1073,7 +1112,11 @@ export class LinkableNameRenderer extends rendererBase(SDK.CSSPropertyParserMatc
       isDefined,
       onLinkActivate: (): void => {
         metric && Host.userMetrics.swatchActivated(metric);
-        this.#stylesPane.jumpToSectionBlock(`${ruleBlock} ${match.text}`);
+        if (match.propertyName === SDK.CSSPropertyParserMatchers.LinkableNameProperties.FONT_PALETTE) {
+          this.#stylesPane.jumpToFontPaletteDefinition(match.text);
+        } else {
+          this.#stylesPane.jumpToSectionBlock(`${ruleBlock} ${match.text}`);
+        }
       },
       jslogContext,
     };
@@ -1091,7 +1134,7 @@ export class LinkableNameRenderer extends rendererBase(SDK.CSSPropertyParserMatc
             return;
           }
 
-          const icon = IconButton.Icon.create('animation', 'open-in-animations-panel');
+          const icon = createIcon('animation', 'open-in-animations-panel');
           icon.setAttribute('jslog', `${VisualLogging.link('open-in-animations-panel').track({click: true})}`);
           icon.setAttribute('role', 'button');
           icon.setAttribute('title', i18nString(UIStrings.jumpToAnimationsPanel));
@@ -1127,7 +1170,7 @@ export class BezierRenderer extends rendererBase(SDK.CSSPropertyParserMatchers.B
       return nodes;
     }
     const swatchPopoverHelper = this.#treeElement.parentPane().swatchPopoverHelper();
-    const icon = IconButton.Icon.create('bezier-curve-filled', 'bezier-swatch-icon');
+    const icon = createIcon('bezier-curve-filled', 'bezier-swatch-icon');
     icon.setAttribute('jslog', `${VisualLogging.showStyleEditor('bezier')}`);
     icon.tabIndex = -1;
     icon.addEventListener('click', () => {
@@ -1136,7 +1179,11 @@ export class BezierRenderer extends rendererBase(SDK.CSSPropertyParserMatchers.B
     const bezierText = document.createElement('span');
     bezierText.append(...nodes);
     new BezierPopoverIcon({treeElement: this.#treeElement, swatchPopoverHelper, swatch: icon, bezierText});
-    return [icon, bezierText];
+    const iconAndTextContainer = document.createElement('span');
+    iconAndTextContainer.classList.add('bezier-icon-and-text');
+    iconAndTextContainer.append(icon);
+    iconAndTextContainer.append(bezierText);
+    return [iconAndTextContainer];
   }
 }
 
@@ -1193,10 +1240,12 @@ type ShadowLengthProperty = ShadowProperty&{
   propertyType: Exclude<ShadowPropertyType, ShadowPropertyType.INSET|ShadowPropertyType.COLOR>,
 };
 
-// The shadow model is an abstraction over the various shadow properties on the one hand and the order they were defined
-// in on the other, so that modifications through the shadow editor can retain the property order in the authored text.
-// The model also looks through var()s by keeping a mapping between individual properties and any var()s they are coming
-// from, replacing the var() functions as needed with concrete values when edited.
+/**
+ * The shadow model is an abstraction over the various shadow properties on the one hand and the order they were defined
+ * in on the other, so that modifications through the shadow editor can retain the property order in the authored text.
+ * The model also looks through var()s by keeping a mapping between individual properties and any var()s they are coming
+ * from, replacing the var() functions as needed with concrete values when edited.
+ **/
 export class ShadowModel implements InlineEditor.CSSShadowEditor.CSSShadowModel {
   readonly #properties: ShadowProperty[];
   readonly #shadowType: SDK.CSSPropertyParserMatchers.ShadowType;
@@ -1561,9 +1610,8 @@ export class LengthRenderer extends rendererBase(SDK.CSSPropertyParserMatchers.L
     valueElement.tabIndex = -1;
     valueElement.textContent = match.text;
 
-    if (!context.tracing) {
-      void this.#attachPopover(valueElement, match, context);
-    }
+    const tooltip = this.#getTooltip(valueElement, match, context);
+
     const evaluation = context.tracing?.applyEvaluation([], () => {
       return {
         placeholder: [valueElement],
@@ -1571,7 +1619,11 @@ export class LengthRenderer extends rendererBase(SDK.CSSPropertyParserMatchers.L
       };
     });
 
-    return evaluation ?? [valueElement];
+    if (evaluation) {
+      return evaluation;
+    }
+
+    return tooltip ? [valueElement, tooltip] : [valueElement];
   }
 
   async #applyEvaluation(
@@ -1586,25 +1638,26 @@ export class LengthRenderer extends rendererBase(SDK.CSSPropertyParserMatchers.L
     return false;
   }
 
-  async #attachPopover(
-      valueElement: HTMLElement, match: SDK.CSSPropertyParser.Match, context: RenderingContext): Promise<void> {
+  #getTooltip(valueElement: HTMLElement, match: SDK.CSSPropertyParser.Match, context: RenderingContext):
+      Tooltips.Tooltip.Tooltip|undefined {
+    const tooltipId = this.#treeElement?.getTooltipId('length');
+    if (!tooltipId) {
+      return undefined;
+    }
+    valueElement.setAttribute('aria-details', tooltipId);
+    const tooltip = new Tooltips.Tooltip.Tooltip(
+        {anchor: valueElement, variant: 'rich', id: tooltipId, jslogContext: 'length-popover'});
+    tooltip.addEventListener('beforetoggle', () => this.getTooltipValue(tooltip, match, context), {once: true});
+    return tooltip;
+  }
+
+  async getTooltipValue(
+      tooltip: Tooltips.Tooltip.Tooltip, match: SDK.CSSPropertyParser.Match, context: RenderingContext): Promise<void> {
     const pixelValue = await resolveValues(this.#stylesPane, this.#propertyName, match, context, match.text);
     if (!pixelValue) {
       return;
     }
-
-    const tooltipId = this.#treeElement?.getTooltipId('length');
-    if (tooltipId) {
-      valueElement.setAttribute('aria-details', tooltipId);
-      const tooltip = new Tooltips.Tooltip.Tooltip(
-          {anchor: valueElement, variant: 'rich', id: tooltipId, jslogContext: 'length-popover'});
-      tooltip.appendChild(document.createTextNode(pixelValue[0]));
-      valueElement.insertAdjacentElement('afterend', tooltip);
-    }
-    this.popOverAttachedForTest();
-  }
-
-  popOverAttachedForTest(): void {
+    tooltip.appendChild(document.createTextNode(pixelValue[0]));
   }
 }
 
@@ -1901,7 +1954,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
   private expandedDueToFilter = false;
   valueElement: HTMLElement|null = null;
   nameElement: HTMLElement|null = null;
-  private expandElement: IconButton.Icon.Icon|null = null;
+  private expandElement: Icon|null = null;
   private originalPropertyText = '';
   private hasBeenEditedIncrementally = false;
   private prompt: CSSPropertyPrompt|null = null;
@@ -2285,7 +2338,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     this.#tooltipKeyCounts.clear();
     this.updateState();
     if (this.isExpandable()) {
-      this.expandElement = IconButton.Icon.create('triangle-right', 'expand-icon');
+      this.expandElement = createIcon('triangle-right', 'expand-icon');
       this.expandElement.setAttribute('jslog', `${VisualLogging.expand().track({click: true})}`);
     }
 
@@ -2359,8 +2412,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     }
 
     if (this.valueElement) {
-      const lineBreakValue =
-          this.valueElement.firstElementChild && this.valueElement.firstElementChild.tagName === 'BR';
+      const lineBreakValue = this.valueElement.firstElementChild?.tagName === 'BR';
       const separator = lineBreakValue ? ':' : ': ';
       this.listItemElement.createChild('span', 'styles-name-value-separator').textContent = separator;
       if (this.expandElement) {
@@ -2589,7 +2641,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       if (hint) {
         const wrapper = document.createElement('span');
         wrapper.classList.add('hint-wrapper');
-        const hintIcon = new IconButton.Icon.Icon();
+        const hintIcon = new Icon();
         hintIcon.name = 'info';
         hintIcon.classList.add('hint', 'small');
         hintIcon.tabIndex = -1;

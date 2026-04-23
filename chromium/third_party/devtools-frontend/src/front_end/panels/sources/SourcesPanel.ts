@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2008 Apple Inc. All Rights Reserved.
@@ -41,9 +41,10 @@ import * as Protocol from '../../generated/protocol.js';
 import * as Badges from '../../models/badges/badges.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
-import * as Extensions from '../../models/extensions/extensions.js';
 import * as Workspace from '../../models/workspace/workspace.js';
+import * as PanelCommon from '../../panels/common/common.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
+import * as SettingsUI from '../../ui/legacy/components/settings_ui/settings_ui.js';
 import type * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -251,8 +252,12 @@ export class SourcesPanel extends UI.Panel.Panel implements
     const initialDebugSidebarWidth = 225;
     this.splitWidget =
         new UI.SplitWidget.SplitWidget(true, true, 'sources-panel-split-view-state', initialDebugSidebarWidth);
-    this.splitWidget.enableShowModeSaving();
     this.splitWidget.show(this.element);
+    if (Root.Runtime.Runtime.isTraceApp()) {
+      this.splitWidget.hideSidebar();
+    } else {
+      this.splitWidget.enableShowModeSaving();
+    }
 
     // Create scripts navigator
     const initialNavigatorWidth = 225;
@@ -333,8 +338,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
     SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.GlobalObjectCleared,
         event => this.debuggerResumed(event.data));
-    Extensions.ExtensionServer.ExtensionServer.instance().addEventListener(
-        Extensions.ExtensionServer.Events.SidebarPaneAdded, this.extensionSidebarPaneAdded, this);
+    PanelCommon.ExtensionServer.ExtensionServer.instance().addEventListener(
+        PanelCommon.ExtensionServer.Events.SidebarPaneAdded, this.extensionSidebarPaneAdded, this);
     SDK.TargetManager.TargetManager.instance().observeTargets(this);
     this.lastModificationTime = -Infinity;
   }
@@ -363,10 +368,12 @@ export class SourcesPanel extends UI.Panel.Panel implements
     }
     if (!isInWrapper) {
       panel.#sourcesView.leftToolbar().appendToolbarItem(panel.toggleNavigatorSidebarButton);
-      if (panel.splitWidget.isVertical()) {
-        panel.#sourcesView.rightToolbar().appendToolbarItem(panel.toggleDebuggerSidebarButton);
-      } else {
-        panel.#sourcesView.bottomToolbar().appendToolbarItem(panel.toggleDebuggerSidebarButton);
+      if (!Root.Runtime.Runtime.isTraceApp()) {
+        if (panel.splitWidget.isVertical()) {
+          panel.#sourcesView.rightToolbar().appendToolbarItem(panel.toggleDebuggerSidebarButton);
+        } else {
+          panel.#sourcesView.bottomToolbar().appendToolbarItem(panel.toggleDebuggerSidebarButton);
+        }
       }
     }
   }
@@ -632,7 +639,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
   private addExperimentMenuItem(
       menuSection: UI.ContextMenu.Section, experiment: string, menuItem: Common.UIString.LocalizedString): void {
-    // menu handler
+    /** menu handler **/
     function toggleExperiment(): void {
       const checked = Root.Runtime.experiments.isEnabled(experiment);
       Root.Runtime.experiments.setEnabled(experiment, !checked);
@@ -919,7 +926,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
     const label = i18nString(UIStrings.pauseOnCaughtExceptions);
     const setting = Common.Settings.Settings.instance().moduleSetting('pause-on-caught-exception');
-    debugToolbarDrawer.appendChild(UI.SettingsUI.createSettingCheckbox(label, setting));
+    debugToolbarDrawer.appendChild(SettingsUI.SettingsUI.createSettingCheckbox(label, setting));
 
     return debugToolbarDrawer;
   }
@@ -1217,6 +1224,10 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
     SourcesPanel.updateResizerAndSidebarButtons(this);
 
+    if (Root.Runtime.Runtime.isTraceApp()) {
+      return;
+    }
+
     // Create vertical box with stack.
     const vbox = new UI.Widget.VBox();
     vbox.element.appendChild(this.debugToolbar);
@@ -1274,7 +1285,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     }
 
     this.sidebarPaneStack.appendApplicableItems('sources.sidebar-bottom');
-    const extensionSidebarPanes = Extensions.ExtensionServer.ExtensionServer.instance().sidebarPanes();
+    const extensionSidebarPanes = PanelCommon.ExtensionServer.ExtensionServer.instance().sidebarPanes();
     for (let i = 0; i < extensionSidebarPanes.length; ++i) {
       this.addExtensionSidebarPane(extensionSidebarPanes[i]);
     }
@@ -1287,11 +1298,11 @@ export class SourcesPanel extends UI.Panel.Panel implements
   }
 
   private extensionSidebarPaneAdded(
-      event: Common.EventTarget.EventTargetEvent<Extensions.ExtensionPanel.ExtensionSidebarPane>): void {
+      event: Common.EventTarget.EventTargetEvent<PanelCommon.ExtensionPanel.ExtensionSidebarPane>): void {
     this.addExtensionSidebarPane(event.data);
   }
 
-  private addExtensionSidebarPane(pane: Extensions.ExtensionPanel.ExtensionSidebarPane): void {
+  private addExtensionSidebarPane(pane: PanelCommon.ExtensionPanel.ExtensionSidebarPane): void {
     if (pane.panelName() === this.name) {
       (this.extensionSidebarPanesContainer as UI.View.ViewLocation).appendView(pane);
     }

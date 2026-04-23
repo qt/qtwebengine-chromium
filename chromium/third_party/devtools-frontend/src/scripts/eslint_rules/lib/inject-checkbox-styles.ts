@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 import type {TSESTree} from '@typescript-eslint/utils';
-import path from 'path';
+import path from 'node:path';
 
 import {isLitHtmlTemplateCall} from './utils/lit.ts';
 import {createRule} from './utils/ruleCreator.ts';
@@ -162,7 +162,7 @@ export default createRule<[], MessageIds>({
 
     function isCheckboxStylesReference(elem: Node|null): boolean {
       // Ensure elem is not null and is a MemberExpression before accessing properties
-      if (!elem || elem.type !== 'MemberExpression') {
+      if (elem?.type !== 'MemberExpression') {
         return false;
       }
 

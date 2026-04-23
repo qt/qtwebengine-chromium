@@ -18,6 +18,7 @@
  */
 #include "aom/aom.h"
 #include "aom/aom_encoder.h"
+#include "aom/aom_ext_ratectrl.h"
 #include "aom/aom_external_partition.h"
 
 /*!\file
@@ -1617,6 +1618,18 @@ enum aome_enc_control_id {
    */
   AV1E_SET_ENABLE_ADAPTIVE_SHARPNESS = 172,
 
+  /*!\brief Codec control function to enable external rate control library.
+   *
+   * args: a pointer to aom_rc_funcs_t that contains implementation of callbacks
+   */
+  AV1E_SET_EXTERNAL_RATE_CONTROL = 173,
+
+  /*!\brief Codec control function to get GOP structure from the encoder.
+   *
+   * args: a pointer to aom_gop_info_t
+   */
+  AV1E_GET_GOP_INFO,
+
   // Any new encoder control IDs should be added above.
   // Maximum allowed encoder control ID is 229.
   // No encoder control ID should be added below.
@@ -1852,6 +1865,20 @@ typedef enum {
   AOM_LAYER_DROP,           /**< Any spatial layer can drop. */
   AOM_FULL_SUPERFRAME_DROP, /**< Only full superframe can drop. */
 } AOM_SVC_FRAME_DROP_MODE;
+
+/*!\brief The GOP structure information determined by the encoder.
+ * 250 is MAX_STATIC_GF_GROUP_LENGTH defined in av1/firstpass.h.
+ * This is a subset of GF_GROUP. More fields can be added if needed.
+ */
+typedef struct aom_gop_info {
+  int gop_size; /**< The number of frames of this GOP */
+  /*! The coding index for each entry in the gop */
+  int coding_index[250];
+  /*! The display index for each entry in the gop */
+  int display_index[250];
+  /*! The layer depth for each entry in the gop */
+  int layer_depth[250];
+} aom_gop_info_t;
 
 /*!\cond */
 /*!\brief Encoder control function parameter type
@@ -2359,6 +2386,12 @@ AOM_CTRL_USE_TYPE(AV1E_SET_SCREEN_CONTENT_DETECTION_MODE,
 
 AOM_CTRL_USE_TYPE(AV1E_SET_ENABLE_ADAPTIVE_SHARPNESS, unsigned int)
 #define AOM_CTRL_AV1E_SET_ENABLE_ADAPTIVE_SHARPNESS
+
+AOM_CTRL_USE_TYPE(AV1E_SET_EXTERNAL_RATE_CONTROL, aom_rc_funcs_t *)
+#define AOM_CTRL_AV1E_SET_EXTERNAL_RATE_CONTROL
+
+AOM_CTRL_USE_TYPE(AV1E_GET_GOP_INFO, aom_gop_info_t *)
+#define AOM_CTRL_AV1E_GET_GOP_INFO
 
 /*!\endcond */
 /*! @} - end defgroup aom_encoder */

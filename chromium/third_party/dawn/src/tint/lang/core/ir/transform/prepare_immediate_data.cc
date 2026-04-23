@@ -32,6 +32,8 @@
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
+#include "src/tint/lang/core/type/struct.h"
+#include "src/tint/utils/ice/ice.h"
 
 using namespace tint::core::number_suffixes;  // NOLINT
 
@@ -69,12 +71,12 @@ struct State {
                 continue;
             }
             auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
-            if (ptr->AddressSpace() != core::AddressSpace::kImmediate) {
+            if (!ptr || ptr->AddressSpace() != core::AddressSpace::kImmediate) {
                 continue;
             }
 
             if (user_defined_immediates) {
-                TINT_ICE() << "multiple user-defined immediate data variables";
+                TINT_IR_ICE(ir) << "multiple user-defined immediate data variables";
             }
             user_defined_immediates = var;
 
@@ -91,7 +93,8 @@ struct State {
         // Create the structure and immediate data variable.
         for (auto& internal : config.internal_immediate_data) {
             if (!members.IsEmpty()) {
-                TINT_ASSERT(internal.first >= members.Back()->Offset() + members.Back()->Size());
+                TINT_IR_ASSERT(ir,
+                               internal.first >= members.Back()->Offset() + members.Back()->Size());
             }
 
             auto index = static_cast<uint32_t>(members.Length());

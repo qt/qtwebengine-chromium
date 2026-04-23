@@ -26,7 +26,7 @@ namespace embedder_support {
 
 namespace {
 
-GURL JNI_UrlUtilities_ConvertJavaStringToGURL(
+static GURL JNI_UrlUtilities_ConvertJavaStringToGURL(
     JNIEnv* env,
     const base::android::JavaRef<jstring>& url) {
   return url ? GURL(ConvertJavaStringToUTF8(env, url)) : GURL();
@@ -136,7 +136,7 @@ static jboolean JNI_UrlUtilities_IsUrlWithinScope(
   GURL gscope_url = JNI_UrlUtilities_ConvertJavaStringToGURL(env, scope_url);
   return gurl.DeprecatedGetOriginAsURL() ==
              gscope_url.DeprecatedGetOriginAsURL() &&
-         base::StartsWith(gurl.path(), gscope_url.path(),
+         base::StartsWith(gurl.GetPath(), gscope_url.GetPath(),
                           base::CompareCase::SENSITIVE);
 }
 
@@ -170,7 +170,7 @@ static jboolean JNI_UrlUtilities_UrlsFragmentsDiffer(
     return !gurl2.is_empty();
   if (!gurl.is_valid() || !gurl2.is_valid())
     return true;
-  return gurl.ref() != gurl2.ref();
+  return gurl.GetRef() != gurl2.GetRef();
 }
 
 static ScopedJavaLocalRef<jstring> JNI_UrlUtilities_EscapeQueryParamValue(
@@ -197,7 +197,7 @@ static ScopedJavaLocalRef<jstring> JNI_UrlUtilities_GetValueForKeyInQuery(
   return base::android::ConvertUTF8ToJavaString(env, out);
 }
 
-ScopedJavaLocalRef<jobject> JNI_UrlUtilities_ClearPort(
+static ScopedJavaLocalRef<jobject> JNI_UrlUtilities_ClearPort(
     JNIEnv* env,
     const JavaParamRef<jobject>& j_url) {
   GURL gurl = url::GURLAndroid::ToNativeGURL(env, j_url);
@@ -208,3 +208,5 @@ ScopedJavaLocalRef<jobject> JNI_UrlUtilities_ClearPort(
 }
 
 }  // namespace embedder_support
+
+DEFINE_JNI(UrlUtilities)

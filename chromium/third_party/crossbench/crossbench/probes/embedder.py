@@ -73,13 +73,14 @@ class WebviewEmbedderProbe(JsonResultProbe):
 
 
 class WebviewEmbedderProbeContext(JsonResultProbeContext[WebviewEmbedderProbe]):
+
   @property
   @override
   def browser(self) -> WebviewEmbedder:
     browser = super().browser
     # TODO(b/412981884): use BrowserAttributes instead of instance check
-    assert isinstance(browser, WebviewEmbedder), (
-      "Only supported for WV embedders")
+    assert isinstance(browser,
+                      WebviewEmbedder), ("Only supported for WV embedders")
     return browser
 
   @property

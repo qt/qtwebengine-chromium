@@ -51,6 +51,7 @@ export const enum IssueCategory {
   CORS = 'Cors',
   ATTRIBUTION_REPORTING = 'AttributionReporting',
   QUIRKS_MODE = 'QuirksMode',
+  PERMISSION_ELEMENT = 'PermissionElement',
   OTHER = 'Other',
 }
 
@@ -119,17 +120,21 @@ export interface AffectedElement {
   nodeName: string;
   target: SDK.Target.Target|null;
 }
-
-export abstract class Issue<IssueCode extends string = string> {
+export type ValidIssueDetails =
+    NonNullable<Protocol.Audits.InspectorIssueDetails[keyof Protocol.Audits.InspectorIssueDetails]>;
+export abstract class Issue<IssueDetails extends ValidIssueDetails|null = ValidIssueDetails | null,
+                                                 IssueCode extends string = string> {
   #issueCode: IssueCode;
   #issuesModel: SDK.IssuesModel.IssuesModel|null;
   protected issueId: Protocol.Audits.IssueId|undefined = undefined;
+  #issueDetails: IssueDetails;
   #hidden: boolean;
 
   constructor(
-      code: IssueCode|{code: IssueCode, umaCode: string}, issuesModel: SDK.IssuesModel.IssuesModel|null = null,
-      issueId?: Protocol.Audits.IssueId) {
+      code: IssueCode|{code: IssueCode, umaCode: string}, issueDetails: IssueDetails,
+      issuesModel: SDK.IssuesModel.IssuesModel|null = null, issueId?: Protocol.Audits.IssueId) {
     this.#issueCode = typeof code === 'object' ? code.code : code;
+    this.#issueDetails = issueDetails;
     this.#issuesModel = issuesModel;
     this.issueId = issueId;
     Host.userMetrics.issueCreated(typeof code === 'string' ? code : code.umaCode);
@@ -144,6 +149,10 @@ export abstract class Issue<IssueCode extends string = string> {
   abstract getDescription(): MarkdownIssueDescription|null;
   abstract getCategory(): IssueCategory;
   abstract getKind(): IssueKind;
+
+  details(): IssueDetails {
+    return this.#issueDetails;
+  }
 
   getBlockedByResponseDetails(): Iterable<Protocol.Audits.BlockedByResponseIssueDetails> {
     return [];

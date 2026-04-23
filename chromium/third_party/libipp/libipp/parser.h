@@ -18,8 +18,7 @@ namespace ipp {
 // The errors spotted by the parser. Comments next to the values describe
 // actions taken by the parser.
 enum class ParserCode : uint8_t {
-  kOK = 0,
-  kBooleanValueOutOfRange,            // the boolean value was set to 1
+  kBooleanValueOutOfRange = 0,        // the boolean value was set to 1
   kValueMismatchTagConverted,         // the value was converted
   kOutOfBandValueWithNonEmptyData,    // the data field was ignored
   kOutOfBandAttributeWithManyValues,  // additional values were ignored
@@ -59,6 +58,8 @@ LIBIPP_EXPORT std::string_view ToStrView(ParserCode code);
 struct ParserError {
   AttrPath path;
   ParserCode code;
+  // Position in the input buffer, set to -1 if unknown.
+  ssize_t buf_offset = -1;
 };
 
 // Returns a one line string representation of the `error`. There is no EOL

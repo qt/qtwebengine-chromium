@@ -91,7 +91,7 @@ set(ei_smoke_test_list
   qr_1
   qr_colpivoting_7
   qr_fullpivoting_4
-  rand
+  rand_1
   real_qz_1
   redux_1
   ref_1

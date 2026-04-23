@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
@@ -336,6 +337,9 @@ class MockHostResolverBase : public HostResolver {
 
   // Returns the hostname of the request with the given id.
   std::string_view request_host(size_t id);
+
+  // Returns the detailed host object for the request with the given id.
+  const HostResolver::Host& request_full_host(size_t id);
 
   // Returns the priority of the request with the given id.
   RequestPriority request_priority(size_t id);

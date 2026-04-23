@@ -33,7 +33,6 @@
 #include <memory>
 
 #include "base/functional/callback.h"
-#include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/events/event_listener_map.h"
 #include "third_party/blink/renderer/core/inspector/inspector_base_agent.h"
@@ -299,6 +298,8 @@ class CORE_EXPORT InspectorDOMAgent final
                         const AtomicString& value);
   void DidRemoveDOMAttr(Element*, const QualifiedName&);
   void StyleAttributeInvalidated(const HeapVector<Member<Element>>& elements);
+  void DidModifyAdoptedStyleSheets(Node*);
+  void AdoptedStyleSheetsInvalidated(Node*);
   void CharacterDataModified(CharacterData*);
   void DidInvalidateStyleAttr(Node*);
   void DidPushShadowRoot(Element* host, ShadowRoot*);

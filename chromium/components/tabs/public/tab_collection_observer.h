@@ -13,24 +13,29 @@ namespace tabs {
 
 class TabCollectionObserver : public base::CheckedObserver {
  public:
-  // The parent collection and direct index within the parent collection for a
-  // child node. This uniquely determines the position of a node in the tree.
-  struct Position {
-    TabCollection::Handle parent_handle;
-    size_t index;
+  struct NodeData {
+    const TabCollection::Position position;
+    const TabCollection::NodeHandle handle;
   };
 
   // Notifies that tabs and collections are added starting at position.
-  virtual void OnChildrenAdded(const Position& position,
-                               const TabCollectionNodes& handles) {}
+  // TODO(crbug.com/435179292): Remove insert_from_detached bool and pausing by
+  // proper selection model synchronization with collection updates.
+  // `insert_from_detached` is used to signal the client to read the whole
+  // subtree.
+  virtual void OnChildrenAdded(const TabCollection::Position& position,
+                               const TabCollectionNodes& handles,
+                               bool insert_from_detached) {}
 
-  // Notifies that tabs and collections are removed starting at position.
-  virtual void OnChildrenRemoved(const TabCollectionNodes& handles) {}
+  // Notifies that tabs and collections are removed. `position` represents
+  // the start of the block after which all children are removed.
+  virtual void OnChildrenRemoved(const TabCollection::Position& position,
+                                 const TabCollectionNodes& handles) {}
 
-  // Notifies that tabs and collections are moved to a block starting at
-  // position.
-  virtual void OnChildrenMoved(const Position& position,
-                               const TabCollectionNodes& handles) {}
+  // Notifies that a tab or collection is moved to a position. node_data
+  // contains the src information.
+  virtual void OnChildMoved(const TabCollection::Position& to_position,
+                            const NodeData& node_data) {}
 };
 
 }  // namespace tabs

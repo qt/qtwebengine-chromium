@@ -17,7 +17,6 @@
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
-#include "base/hash/sha1.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/path_service.h"
@@ -30,10 +29,9 @@
 #include "base/test/bind.h"
 #include "base/test/test_future.h"
 #include "base/values.h"
-#include "chrome/browser/certificate_provider/certificate_provider.h"
-#include "chrome/browser/certificate_provider/certificate_provider_service.h"
-#include "chrome/browser/certificate_provider/certificate_provider_service_factory.h"
-#include "chrome/browser/certificate_provider/test_certificate_provider_extension.h"
+#include "chrome/browser/ash/certificate_provider/certificate_provider_service.h"
+#include "chrome/browser/ash/certificate_provider/certificate_provider_service_factory.h"
+#include "chrome/browser/ash/certificate_provider/test_certificate_provider_extension.h"
 #include "chrome/browser/extensions/api/certificate_provider/certificate_provider_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/profiles/profile.h"
@@ -42,6 +40,7 @@
 #include "chrome/browser/ui/views/notifications/request_pin_view_chromeos.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "chromeos/components/certificate_provider/certificate_provider.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
@@ -54,6 +53,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
+#include "crypto/hash.h"
 #include "extensions/browser/api/test/test_api_observer.h"
 #include "extensions/browser/api/test/test_api_observer_registry.h"
 #include "extensions/browser/disable_reason.h"
@@ -168,7 +168,7 @@ std::string GetPageTextContent(content::WebContents* web_contents) {
 }
 
 std::string GetCertFingerprint1(const net::X509Certificate& cert) {
-  return base::ToLowerASCII(base::HexEncode(base::SHA1Hash(cert.cert_span())));
+  return base::HexEncodeLower(crypto::hash::Sha256(cert.cert_span()));
 }
 
 // Generates a gtest failure whenever extension JS reports failure.
@@ -269,8 +269,8 @@ class CertificateProviderApiTest : public extensions::ExtensionApiTest {
 
   std::vector<scoped_refptr<net::X509Certificate>>
   GetAllProvidedCertificates() {
-    std::unique_ptr<chromeos::CertificateProvider> cert_provider =
-        cert_provider_service_->CreateCertificateProvider();
+    std::unique_ptr<chromeos::certificate_provider::CertificateProvider>
+        cert_provider = cert_provider_service_->CreateCertificateProvider();
 
     base::test::TestFuture<net::ClientCertIdentityList> get_certificates_future;
     cert_provider->GetCertificates(get_certificates_future.GetCallback());

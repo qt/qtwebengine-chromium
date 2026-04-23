@@ -45,9 +45,10 @@ describeWithMockConnection('DefaultScriptMapping', () => {
       resourceMapping,
       targetManager,
       ignoreListManager,
+      workspace,
     });
-    target = createTarget();
     backend = new MockProtocolBackend();
+    target = createTarget();
     defaultScriptMapping = new Bindings.DefaultScriptMapping.DefaultScriptMapping(
         target.model(SDK.DebuggerModel.DebuggerModel) as SDK.DebuggerModel.DebuggerModel,
         Workspace.Workspace.WorkspaceImpl.instance(),

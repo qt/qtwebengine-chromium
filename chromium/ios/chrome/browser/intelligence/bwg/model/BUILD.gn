@@ -13,6 +13,9 @@ source_set("model") {
     "bwg_session_delegate.h",
     "bwg_session_handler.h",
     "bwg_session_handler.mm",
+    "gemini_suggestion_delegate.h",
+    "gemini_suggestion_handler.h",
+    "gemini_suggestion_handler.mm",
   ]
   deps = [
     ":tab_helper",
@@ -38,6 +41,7 @@ source_set("browser_agent") {
   deps = [
     ":config",
     ":model",
+    ":page_context",
     ":tab_helper",
     "//base",
     "//components/favicon/ios",
@@ -64,15 +68,34 @@ source_set("tab_helper") {
   ]
   deps = [
     ":snapshot_utils",
+    "//components/feature_engagement/public",
     "//components/google/core/common",
+    "//components/optimization_guide/core",
+    "//components/optimization_guide/proto:optimization_guide_proto",
+    "//ios/chrome/app/strings",
+    "//ios/chrome/browser/feature_engagement/model",
+    "//ios/chrome/browser/intelligence/bwg/ui",
     "//ios/chrome/browser/intelligence/bwg/utils:constants",
     "//ios/chrome/browser/intelligence/features",
+    "//ios/chrome/browser/intelligence/proto_wrappers",
+    "//ios/chrome/browser/intelligence/zero_state_suggestions/model",
+    "//ios/chrome/browser/location_bar/badge/model",
+    "//ios/chrome/browser/location_bar/badge/ui:constants",
+    "//ios/chrome/browser/optimization_guide/model",
+    "//ios/chrome/browser/optimization_guide/mojom",
     "//ios/chrome/browser/shared/model/prefs:pref_names",
     "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/browser/shared/model/utils",
     "//ios/chrome/browser/shared/public/commands",
+    "//ios/chrome/browser/shared/public/snackbar",
+    "//ios/chrome/browser/shared/ui/symbols",
     "//ios/chrome/browser/snapshots/model",
+    "//ios/chrome/browser/web/model/image_fetch",
+    "//ios/public/provider/chrome/browser/bwg:bwg_api",
     "//ios/web/public",
+    "//ios/web/public/js_image_transcoder",
+    "//ios/web/public/js_messaging",
+    "//mojo/public/cpp/bindings",
   ]
 }
 
@@ -88,6 +111,8 @@ source_set("bwg_service") {
     "//ios/chrome/app:tests_hook",
     "//ios/chrome/browser/intelligence/bwg/metrics",
     "//ios/chrome/browser/intelligence/features",
+    "//ios/chrome/browser/intelligence/proto_wrappers:utils",
+    "//ios/chrome/browser/optimization_guide/model",
     "//ios/chrome/browser/shared/model/prefs:pref_names",
     "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/browser/signin/model:authentication_service",
@@ -106,6 +131,7 @@ source_set("bwg_service_factory") {
     ":bwg_service",
     "//components/signin/public/identity_manager",
     "//ios/chrome/browser/intelligence/features",
+    "//ios/chrome/browser/optimization_guide/model",
     "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/browser/shared/model/profile:profile_keyed_service_factory",
     "//ios/chrome/browser/signin/model",
@@ -117,6 +143,17 @@ source_set("config") {
   sources = [
     "bwg_configuration.h",
     "bwg_configuration.mm",
+  ]
+  deps = [
+    "//base",
+    "//components/optimization_guide/proto:optimization_guide_proto",
+  ]
+}
+
+source_set("page_context") {
+  sources = [
+    "gemini_page_context.h",
+    "gemini_page_context.mm",
   ]
   deps = [
     "//base",
@@ -139,6 +176,7 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "bwg_browser_agent_unittest.mm",
+    "bwg_link_opening_handler_unittest.mm",
     "bwg_service_unittest.mm",
     "bwg_session_handler_unittest.mm",
     "bwg_snapshot_utils_unittest.mm",
@@ -153,6 +191,8 @@ source_set("unit_tests") {
     "//base/test:test_support",
     "//components/favicon/core",
     "//components/favicon/ios",
+    "//components/feature_engagement/public",
+    "//components/feature_engagement/test:test_support",
     "//components/prefs:test_support",
     "//components/signin/public/identity_manager:test_support",
     "//components/sync/base",
@@ -160,10 +200,12 @@ source_set("unit_tests") {
     "//components/sync_preferences",
     "//components/sync_preferences:test_support",
     "//ios/chrome/browser/favicon/model",
+    "//ios/chrome/browser/feature_engagement/model",
     "//ios/chrome/browser/intelligence/bwg/metrics",
     "//ios/chrome/browser/intelligence/bwg/utils:constants",
     "//ios/chrome/browser/intelligence/features",
     "//ios/chrome/browser/intelligence/proto_wrappers",
+    "//ios/chrome/browser/optimization_guide/model",
     "//ios/chrome/browser/shared/model/application_context",
     "//ios/chrome/browser/shared/model/browser/test:test_support",
     "//ios/chrome/browser/shared/model/prefs:browser_prefs",
@@ -177,6 +219,8 @@ source_set("unit_tests") {
     "//ios/chrome/browser/signin/model",
     "//ios/chrome/browser/signin/model:authentication_service_factory",
     "//ios/chrome/browser/signin/model:test_support",
+    "//ios/chrome/browser/url_loading/model",
+    "//ios/chrome/browser/url_loading/model:test_support",
     "//ios/chrome/test:test_support",
     "//ios/public/provider/chrome/browser/bwg:bwg_api",
     "//ios/web/public/test",

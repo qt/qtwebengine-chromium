@@ -11,6 +11,7 @@ load("@chromium-luci//consoles.star", "consoles")
 load("@chromium-luci//gn_args.star", "gn_args")
 load("@chromium-luci//targets.star", "targets")
 load("//lib/ci_constants.star", "ci_constants")
+load("//lib/gardener_rotations.star", "gardener_rotations")
 load("//lib/siso.star", "siso")
 
 ci.defaults.set(
@@ -18,7 +19,11 @@ ci.defaults.set(
     builder_group = "crossbench",
     pool = ci_constants.DEFAULT_POOL,
     cores = 8,
+    gardener_rotations = gardener_rotations.CROSSBENCH,
     execution_timeout = 10 * time.hour,
+    experiments = {
+        "chromium_tests.resultdb_module": 100,
+    },
     health_spec = health_spec.default(),
     priority = ci_constants.DEFAULT_FYI_PRIORITY,
     service_account = ci_constants.DEFAULT_SERVICE_ACCOUNT,

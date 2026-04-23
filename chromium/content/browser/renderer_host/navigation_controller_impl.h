@@ -162,12 +162,8 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   void DeleteNavigationEntries(
       const DeletionPredicate& deletionPredicate) override;
   BackForwardCacheImpl& GetBackForwardCache() override;
-
-  // Discards the pending entry if any. If this is caused by a navigation
-  // committing a new entry, `commit_details` will contain the committed
-  // navigation's details.
-  void DiscardNonCommittedEntriesWithCommitDetails(
-      LoadCommittedDetails* commit_details);
+  bool ShouldOverrideUserAgentInNextNavigation(
+      NavigationController::UserAgentOverrideOption option) override;
 
   // Creates the initial NavigationEntry for the NavigationController when its
   // FrameTree is being initialized. See NavigationEntry::IsInitialEntry() on
@@ -513,12 +509,6 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   void DidChangeReferrerPolicy(FrameTreeNode* node,
                                network::mojom::ReferrerPolicy referrer_policy);
 
-  // Determines whether to override user agent in the next navigation. This
-  // decision depends on the last committed entry if the given `option` is
-  // `NavigationController::UserAgentOverrideOption::INHERIT`.
-  bool ShouldOverrideUserAgentInNextNavigation(
-      NavigationController::UserAgentOverrideOption option);
-
   base::WeakPtr<NavigationControllerImpl> GetWeakPtr() {
     return weak_factory_.GetWeakPtr();
   }
@@ -610,6 +600,27 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
     base::SafeRef<NavigationControllerImpl> controller_;
     std::unique_ptr<NavigationControllerImpl::PendingEntryRef>
         pending_entry_ref_;
+  };
+
+  // In most but not all navigation commits, the RendererDidNavigate logic needs
+  // to notify the delegate of navigation state changes (using
+  // INVALIDATE_TYPE_ALL), so that the address bar and other UI can be updated.
+  // There are several places in that function and its helper functions that
+  // must ensure a notification is sent, but it is redundant and expensive to
+  // send multiple notifications. This scoped object ensures that, at most, one
+  // notification will be sent at the end of RendererDidNavigate (when it is
+  // deallocated) and only if RequestDeferredNotification has been called.
+  class ScopedDeferredNavigationStateChangeNotifier {
+   public:
+    explicit ScopedDeferredNavigationStateChangeNotifier(
+        raw_ptr<NavigationControllerDelegate> delegate);
+    ~ScopedDeferredNavigationStateChangeNotifier();
+
+    void RequestDeferredNotification();
+
+   private:
+    raw_ptr<NavigationControllerDelegate> delegate_;
+    bool requested_ = false;
   };
 
   // Records which navigation API keys are associated with live frames.
@@ -807,7 +818,8 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
       bool replace_entry,
       bool previous_document_had_history_intervention_activation,
       NavigationRequest* request,
-      LoadCommittedDetails* details);
+      LoadCommittedDetails* details,
+      ScopedDeferredNavigationStateChangeNotifier* deferred_notifier);
   void RendererDidNavigateToExistingEntry(
       RenderFrameHostImpl* rfh,
       const mojom::DidCommitProvisionalLoadParams& params,
@@ -815,7 +827,8 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
       bool was_restored,
       NavigationRequest* request,
       bool keep_pending_entry,
-      LoadCommittedDetails* details);
+      LoadCommittedDetails* details,
+      ScopedDeferredNavigationStateChangeNotifier* deferred_notifier);
   void RendererDidNavigateNewSubframe(
       RenderFrameHostImpl* rfh,
       const mojom::DidCommitProvisionalLoadParams& params,
@@ -823,18 +836,35 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
       bool replace_entry,
       bool previous_document_had_history_intervention_activation,
       NavigationRequest* request,
-      LoadCommittedDetails* details);
+      LoadCommittedDetails* details,
+      ScopedDeferredNavigationStateChangeNotifier* deferred_notifier);
   bool RendererDidNavigateAutoSubframe(
       RenderFrameHostImpl* rfh,
       const mojom::DidCommitProvisionalLoadParams& params,
       bool is_same_document,
       bool was_on_initial_empty_document,
       NavigationRequest* request,
-      LoadCommittedDetails* details);
+      LoadCommittedDetails* details,
+      ScopedDeferredNavigationStateChangeNotifier* deferred_notifier);
 
   // Allows the derived class to issue notifications that a load has been
   // committed. This will fill in the active entry to the details structure.
-  void NotifyNavigationEntryCommitted(LoadCommittedDetails* details);
+  //
+  // |deferred_notifier| is scoped to a calling function and delays notifying
+  // the delegate of navigation state changes until that function returns. This
+  // avoids sending multiple redundant and expensive notifications during a
+  // single navigation commit. When non-null, notifications are requested on the
+  // notifier and sent when it goes out of scope. Passing null causes
+  // notifications to send immediately.
+  void NotifyNavigationEntryCommitted(
+      LoadCommittedDetails* details,
+      ScopedDeferredNavigationStateChangeNotifier* deferred_notifier = nullptr);
+
+  // Discards the pending entry if any. Immediately notifies the delegate of a
+  // navigation state change unless `deferred_notifier` is provided, in which
+  // case, the notification is deferred until that object is deallocated.
+  void DiscardNonCommittedEntriesInternal(
+      ScopedDeferredNavigationStateChangeNotifier* deferred_notifier);
 
   // Updates the virtual URL of an entry to match a new URL, for cases where
   // the real renderer URL is derived from the virtual URL, like view-source:
@@ -850,11 +880,15 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   // If |was_post_commit_error_| is set, the last committed entry will be saved,
   // the new entry will replace it, and on any navigation away from the new
   // entry or on reloads, the old one will replace |entry|.
-  void InsertOrReplaceEntry(std::unique_ptr<NavigationEntryImpl> entry,
-                            bool replace,
-                            bool was_post_commit_error,
-                            bool is_in_fenced_frame_tree,
-                            LoadCommittedDetails* details);
+  // If |deferred_notifier| is provided, notifications are requested on the
+  // notifier and sent when it goes out of scope; passing null causes
+  // notifications to send immediately.
+  void InsertOrReplaceEntry(
+      std::unique_ptr<NavigationEntryImpl> entry,
+      bool replace,
+      bool was_post_commit_error,
+      bool is_in_fenced_frame_tree,
+      ScopedDeferredNavigationStateChangeNotifier* deferred_notifier = nullptr);
 
   // Removes the entry at |index|, as long as it is not the current entry.
   void RemoveEntryAtIndexInternal(int index);
@@ -891,11 +925,18 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   // Note that this function must be called before the new navigation entry is
   // inserted in |entries_| to make sure UKM reports the URL of the document
   // adding the entry.
+  // The parameter |source_rfh_for_report| is passed down from
+  // RenderDidNavigateToNewEntry() when the history manipulation intervention
+  // is triggered at the top level render frame host, and
+  // RenderDidNavigateToNewSubframe() when the intervention is triggered within
+  // a nested frame. This parameter will be used for surfacing an issue within
+  // the DevTools Issues panel. |source_rfh_for_report| should never be null.
   void SetShouldSkipOnBackForwardUIIfNeeded(
       bool replace_entry,
       bool previous_document_had_history_intervention_activation,
       bool is_renderer_initiated,
-      ukm::SourceId previous_page_load_ukm_source_id);
+      ukm::SourceId previous_page_load_ukm_source_id,
+      RenderFrameHostImpl* source_rfh_for_report);
 
   // This function sets all same document entries with the same value
   // of skippable flag. This is to avoid back button abuse by inserting
@@ -903,7 +944,13 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   // on the document should apply to all same document history entries and none
   // should be skipped. All entries belonging to the same document as the entry
   // at |reference_index| will get their skippable flag set to |skippable|.
-  void SetSkippableForSameDocumentEntries(int reference_index, bool skippable);
+  // The parameter |source_rfh_for_report| should be non-null when the
+  // |skippable| flag has been set to True, and is utilized for surfacing the
+  // issue within the DevTools issue panel.
+  void SetSkippableForSameDocumentEntries(
+      int reference_index,
+      bool skippable,
+      RenderFrameHostImpl* source_rfh_for_report);
 
   // Called when one PendingEntryRef is deleted. When all of the refs for the
   // current pending entry have been deleted, this automatically discards the

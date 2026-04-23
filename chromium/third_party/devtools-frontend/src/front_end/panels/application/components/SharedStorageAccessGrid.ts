@@ -84,7 +84,7 @@ export const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export interface ViewInput {
   events: Protocol.Storage.SharedStorageAccessedEvent[];
-  onSelect: (event: CustomEvent<HTMLElement>) => void;
+  onSelect: (event: Protocol.Storage.SharedStorageAccessedEvent) => void;
 }
 export type View = (input: ViewInput, output: object, target: HTMLElement) => void;
 export const DEFAULT_VIEW: View = (input, _output, target) => {
@@ -97,9 +97,11 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
           <div class="empty-state-header">${i18nString(UIStrings.noEvents)}</div>
           <div class="empty-state-description">
             <span>${i18nString(UIStrings.sharedStorageDescription)}</span>
-            ${
-          UI.XLink.XLink.create(
-              SHARED_STORAGE_EXPLANATION_URL, i18nString(UIStrings.learnMore), 'x-link', undefined, 'learn-more')}
+            <x-link
+              class="x-link devtools-link"
+              href=${SHARED_STORAGE_EXPLANATION_URL}
+              jslog=${VisualLogging.link().track({click: true, keydown: 'Enter|Space'}).context('learn-more')}
+            >${i18nString(UIStrings.learnMore)}</x-link>
           </div>
         </div>`
       : html`
@@ -108,7 +110,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
           <devtools-icon class="info-icon medium" name="info"
                           title=${i18nString(UIStrings.allSharedStorageEvents)}>
           </devtools-icon>
-          <devtools-data-grid striped inline @select=${input.onSelect}>
+          <devtools-data-grid striped inline>
             <table>
               <thead>
                 <tr>
@@ -133,8 +135,8 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
                 </tr>
               </thead>
               <tbody>
-                ${input.events.map((event, index) => html`
-                  <tr data-index=${index}>
+                ${input.events.map(event => html`
+                  <tr @select=${() =>input.onSelect(event)}>
                     <td data-value=${event.accessTime}>
                       ${new Date(1e3 * event.accessTime).toLocaleString()}
                     </td>
@@ -181,16 +183,8 @@ export class SharedStorageAccessGrid extends UI.Widget.Widget {
     this.#view(
         {
           events: this.#events,
-          onSelect: this.#onSelectEvent.bind(this),
+          onSelect: this.#onSelect.bind(this),
         },
         {}, this.contentElement);
-  }
-
-  #onSelectEvent(event: CustomEvent<HTMLElement>): void {
-    const index = parseInt(event.detail?.dataset.index || '', 10);
-    const datastore = isNaN(index) ? undefined : this.#events[index];
-    if (datastore) {
-      this.#onSelect(datastore);
-    }
   }
 }

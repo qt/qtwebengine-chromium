@@ -1,7 +1,7 @@
 // Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import type * as SDK from '../../core/sdk/sdk.js';
@@ -13,7 +13,6 @@ import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
 
 import type {NetworkNode} from './NetworkDataGridNode.js';
 import {RequestTimeRangeNameToColor} from './NetworkOverview.js';
-import networkingTimingTableStyles from './networkTimingTable.css.js';
 import networkWaterfallColumnStyles from './networkWaterfallColumn.css.js';
 import {RequestTimingView} from './RequestTimingView.js';
 
@@ -288,11 +287,11 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
 
     return {
       box: anchorBox,
-      show: (popover: UI.GlassPane.GlassPane) => {
-        const content = RequestTimingView.createTimingTable((request), this.calculator);
-        popover.registerRequiredCSS(networkingTimingTableStyles);
-        popover.contentElement.appendChild(content);
-        return Promise.resolve(true);
+      show: async (popover: UI.GlassPane.GlassPane) => {
+        const content = RequestTimingView.create(request, this.calculator);
+        await content.updateComplete;
+        content.show(popover.contentElement);
+        return true;
       },
       hide: undefined,
     };

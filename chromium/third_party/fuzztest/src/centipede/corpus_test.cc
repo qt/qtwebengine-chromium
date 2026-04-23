@@ -28,6 +28,7 @@
 #include "./centipede/feature.h"
 #include "./centipede/feature_set.h"
 #include "./centipede/pc_info.h"
+#include "./centipede/runner_result.h"
 #include "./centipede/util.h"
 #include "./common/defs.h"
 #include "./common/test_util.h"
@@ -45,7 +46,8 @@ TEST(Corpus, GetCmpData) {
   ByteArray cmp_data{2, 0, 1, 2, 3};
   FeatureVec features1 = {10, 20, 30};
   fs.MergeFeatures(features1);
-  corpus.Add({1}, features1, /*metadata=*/{cmp_data}, fs, coverage_frontier);
+  corpus.Add({1}, features1, /*metadata=*/{cmp_data}, /*stats=*/{}, fs,
+             coverage_frontier);
   EXPECT_EQ(corpus.NumActive(), 1);
   EXPECT_EQ(corpus.GetMetadata(0).cmp_data, cmp_data);
 }
@@ -61,9 +63,9 @@ TEST(Corpus, PrintStats) {
   FeatureVec features1 = {10, 20, 30};
   FeatureVec features2 = {20, 40};
   fs.MergeFeatures(features1);
-  corpus.Add({1, 2, 3}, features1, {}, fs, coverage_frontier);
+  corpus.Add({1, 2, 3}, features1, {}, /*stats=*/{}, fs, coverage_frontier);
   fs.MergeFeatures(features2);
-  corpus.Add({4, 5}, features2, {}, fs, coverage_frontier);
+  corpus.Add({4, 5}, features2, {}, /*stats=*/{}, fs, coverage_frontier);
   const std::string stats_filepath = test_tmpdir / "corpus.txt";
   corpus.DumpStatsToFile(fs, stats_filepath, "Test corpus");
   std::string stats_file_contents;
@@ -93,7 +95,8 @@ TEST(Corpus, Prune) {
 
   auto Add = [&](const CorpusRecord& record) {
     fs.MergeFeatures(record.features);
-    corpus.Add(record.data, record.features, {}, fs, coverage_frontier);
+    corpus.Add(record.data, record.features, {}, /*stats=*/{}, fs,
+               coverage_frontier);
   };
 
   auto VerifyActiveInputs = [&](std::vector<ByteArray> expected_inputs) {
@@ -111,6 +114,7 @@ TEST(Corpus, Prune) {
   Add({{2}, {30, 40}});
   Add({{3}, {40, 50}});
   Add({{4}, {10, 20}});
+  corpus.UpdateWeights(fs, coverage_frontier, /*scale_by_exec_time=*/false);
 
   // Prune. Features 20 and 40 are frequent => input {0} will be removed.
   EXPECT_EQ(corpus.NumActive(), 5);
@@ -120,6 +124,8 @@ TEST(Corpus, Prune) {
   VerifyActiveInputs({{1}, {2}, {3}, {4}});
 
   Add({{5}, {30, 60}});
+  corpus.UpdateWeights(fs, coverage_frontier, /*scale_by_exec_time=*/false);
+
   EXPECT_EQ(corpus.NumTotal(), 6);
   // Prune. Feature 30 is now frequent => inputs {1} and {2} will be removed.
   EXPECT_EQ(corpus.NumActive(), 5);
@@ -139,6 +145,55 @@ TEST(Corpus, Prune) {
   EXPECT_EQ(corpus.NumTotal(), 6);
 }
 
+TEST(Corpus, ScalesWeightsWithExecTime) {
+  PCTable pc_table(100);
+  CFTable cf_table(100);
+  BinaryInfo bin_info{pc_table, {}, cf_table, {}, {}, {}};
+  CoverageFrontier coverage_frontier(bin_info);
+  FeatureSet fs(2, {});
+  Corpus corpus;
+
+  auto Add = [&](const CorpusRecord& record, uint64_t exec_time_usec) {
+    fs.MergeFeatures(record.features);
+    ExecutionResult::Stats stats = {};
+    stats.exec_time_usec = exec_time_usec;
+    corpus.Add(record.data, record.features, /*metadata=*/{}, stats, fs,
+               coverage_frontier);
+  };
+
+  Add({/*data=*/{0}, /*features=*/{10}}, /*exec_time_usec=*/1);
+  Add({/*data=*/{1}, /*features=*/{20}}, /*exec_time_usec=*/5);
+  Add({/*data=*/{2}, /*features=*/{30}}, /*exec_time_usec=*/9);
+
+  constexpr int kNumIter = 10000;
+  std::vector<uint64_t> freq;
+
+  Rng rng;
+  auto ComputeFreq = [&]() {
+    freq.clear();
+    freq.resize(corpus.NumActive());
+    for (int i = 0; i < kNumIter; i++) {
+      const auto& record = corpus.WeightedRandom(rng);
+      const auto id = record.data[0];
+      ASSERT_LT(id, freq.size());
+      freq[id]++;
+    }
+  };
+
+  // The weights should be equal without exec time scaling.
+  corpus.UpdateWeights(fs, coverage_frontier, /*scale_by_exec_time=*/false);
+  ComputeFreq();
+  EXPECT_NEAR(freq[0], kNumIter / 3, 100);
+  EXPECT_NEAR(freq[1], kNumIter / 3, 100);
+  EXPECT_NEAR(freq[2], kNumIter / 3, 100);
+
+  // The weights should favor {0} over {1} over {2} with exec time scaling.
+  corpus.UpdateWeights(fs, coverage_frontier, /*scale_by_exec_time=*/true);
+  ComputeFreq();
+  EXPECT_GT(freq[0], freq[1] + 100);
+  EXPECT_GT(freq[1], freq[2] + 100);
+}
+
 // Regression test for a crash in Corpus::Prune().
 TEST(Corpus, PruneRegressionTest1) {
   PCTable pc_table(100);
@@ -152,7 +207,8 @@ TEST(Corpus, PruneRegressionTest1) {
 
   auto Add = [&](const CorpusRecord& record) {
     fs.MergeFeatures(record.features);
-    corpus.Add(record.data, record.features, {}, fs, coverage_frontier);
+    corpus.Add(record.data, record.features, {}, /*stats=*/{}, fs,
+               coverage_frontier);
   };
 
   Add({{1}, {10, 20}});
@@ -172,20 +228,19 @@ TEST(WeightedDistribution, WeightedDistribution) {
     }
   };
 
+  Rng rng(12345);
   auto compute_freq = [&]() {
     freq.clear();
     freq.resize(wd.size());
-    // We use numbers in [0, kNumIter) instead of random numbers
-    // for simplicity.
     for (int i = 0; i < kNumIter; i++) {
-      freq[wd.RandomIndex(i)]++;
+      freq[wd.RandomIndex(rng)]++;
     }
   };
 
   set_weights({1, 1});
   compute_freq();
-  EXPECT_EQ(freq[0], kNumIter / 2);
-  EXPECT_EQ(freq[1], kNumIter / 2);
+  EXPECT_NEAR(freq[0], kNumIter / 2, 100);
+  EXPECT_NEAR(freq[1], kNumIter / 2, 100);
 
   set_weights({1, 2});
   compute_freq();
@@ -325,7 +380,7 @@ TEST(CoverageFrontier, Compute) {
 
   auto Add = [&](feature_t feature) {
     fs.MergeFeatures({feature});
-    corpus.Add({42}, {feature}, {}, fs, frontier);
+    corpus.Add({42}, {feature}, {}, /*stats=*/{}, fs, frontier);
   };
 
   // Add PC-based features.

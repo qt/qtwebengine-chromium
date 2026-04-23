@@ -175,7 +175,7 @@ TEST_F(CompoundRtcpParserTest, OnCastReceiverFrameLogMessages_ValidPacket) {
   EXPECT_EQ(1u, messages[0].messages.size());
 
   const RtcpReceiverEventLogMessage& log = messages[0].messages[0];
-  EXPECT_EQ(StatisticsEventType::kPacketReceived, log.type);
+  EXPECT_EQ(StatisticsEvent::Type::kPacketReceived, log.type);
   EXPECT_EQ(session()->start_time() + microseconds{1057321000}, log.timestamp);
   EXPECT_EQ(milliseconds{}, log.delay);
   EXPECT_EQ(FramePacketId{7701}, log.packet_id);
@@ -221,14 +221,14 @@ TEST_F(CompoundRtcpParserTest,
 
   // Note: the first log message is removed due to it being an invalid type.
   const RtcpReceiverEventLogMessage& second_log = first_message.messages[0];
-  EXPECT_EQ(StatisticsEventType::kPacketReceived, second_log.type);
+  EXPECT_EQ(StatisticsEvent::Type::kPacketReceived, second_log.type);
   EXPECT_EQ(session()->start_time() + microseconds{1057097000},
             second_log.timestamp);
   EXPECT_EQ(milliseconds{}, second_log.delay);
   EXPECT_EQ(FramePacketId{277}, second_log.packet_id);
 
   const RtcpReceiverEventLogMessage& third_log = first_message.messages[1];
-  EXPECT_EQ(StatisticsEventType::kFramePlayedOut, third_log.type);
+  EXPECT_EQ(StatisticsEvent::Type::kFramePlayedOut, third_log.type);
   EXPECT_EQ(session()->start_time() + microseconds{1057367000},
             third_log.timestamp);
   EXPECT_EQ(milliseconds{535}, third_log.delay);
@@ -241,7 +241,7 @@ TEST_F(CompoundRtcpParserTest,
 
   const RtcpReceiverEventLogMessage& second_first_log =
       second_message.messages[0];
-  EXPECT_EQ(StatisticsEventType::kPacketReceived, second_first_log.type);
+  EXPECT_EQ(StatisticsEvent::Type::kPacketReceived, second_first_log.type);
   EXPECT_EQ(session()->start_time() + microseconds{4203049000},
             second_first_log.timestamp);
   EXPECT_EQ(milliseconds{}, second_first_log.delay);

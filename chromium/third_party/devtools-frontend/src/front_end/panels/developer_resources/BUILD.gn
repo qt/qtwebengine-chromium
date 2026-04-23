@@ -15,7 +15,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("developer_resources") {
+devtools_ui_module("developer_resources") {
   sources = [
     "DeveloperResourcesListView.ts",
     "DeveloperResourcesView.ts",
@@ -30,6 +30,7 @@ devtools_module("developer_resources") {
     "../../models/text_utils:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/data_grid:bundle",
+    "../../ui/legacy/components/settings_ui:bundle",
   ]
 }
 
@@ -61,7 +62,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

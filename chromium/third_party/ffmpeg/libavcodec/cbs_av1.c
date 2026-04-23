@@ -16,6 +16,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixfmt.h"
@@ -461,7 +462,7 @@ static int cbs_av1_get_relative_dist(const AV1RawSequenceHeader *seq,
     return diff;
 }
 
-static av_unused size_t cbs_av1_get_payload_bytes_left(GetBitContext *gbc)
+av_unused static size_t cbs_av1_get_payload_bytes_left(GetBitContext *gbc)
 {
     GetBitContext tmp = *gbc;
     size_t size = 0;
@@ -1265,7 +1266,7 @@ static int cbs_av1_assemble_fragment(CodedBitstreamContext *ctx,
 #endif
 }
 
-static void cbs_av1_flush(CodedBitstreamContext *ctx)
+static av_cold void cbs_av1_flush(CodedBitstreamContext *ctx)
 {
     CodedBitstreamAV1Context *priv = ctx->priv_data;
 
@@ -1279,7 +1280,7 @@ static void cbs_av1_flush(CodedBitstreamContext *ctx)
     priv->tile_num = 0;
 }
 
-static void cbs_av1_close(CodedBitstreamContext *ctx)
+static av_cold void cbs_av1_close(CodedBitstreamContext *ctx)
 {
     CodedBitstreamAV1Context *priv = ctx->priv_data;
 
@@ -1311,7 +1312,7 @@ static void cbs_av1_free_metadata(AVRefStructOpaque unused, void *content)
 }
 #endif
 
-static const CodedBitstreamUnitTypeDescriptor cbs_av1_unit_types[] = {
+static CodedBitstreamUnitTypeDescriptor cbs_av1_unit_types[] = {
     CBS_UNIT_TYPE_POD(AV1_OBU_SEQUENCE_HEADER,        AV1RawOBU),
     CBS_UNIT_TYPE_POD(AV1_OBU_TEMPORAL_DELIMITER,     AV1RawOBU),
     CBS_UNIT_TYPE_POD(AV1_OBU_FRAME_HEADER,           AV1RawOBU),

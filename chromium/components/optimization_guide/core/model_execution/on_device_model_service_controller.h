@@ -16,7 +16,6 @@
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
-#include "base/memory/ref_counted.h"
 #include "base/memory/safe_ref.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
@@ -24,8 +23,8 @@
 #include "base/types/optional_ref.h"
 #include "base/types/pass_key.h"
 #include "components/optimization_guide/core/delivery/model_info.h"
-#include "components/optimization_guide/core/model_execution/feature_keys.h"
 #include "components/optimization_guide/core/model_execution/model_broker_impl.h"
+#include "components/optimization_guide/core/model_execution/on_device_capability.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_adaptation_loader.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_component.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_metadata.h"
@@ -34,7 +33,6 @@
 #include "components/optimization_guide/core/model_execution/safety_client.h"
 #include "components/optimization_guide/core/model_execution/safety_model_info.h"
 #include "components/optimization_guide/core/model_execution/session_impl.h"
-#include "components/optimization_guide/core/optimization_guide_model_executor.h"
 #include "components/optimization_guide/proto/model_execution.pb.h"
 #include "components/optimization_guide/public/mojom/model_broker.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -46,8 +44,6 @@
 #include "services/on_device_model/public/cpp/text_safety_assets.h"
 #include "services/on_device_model/public/mojom/on_device_model.mojom.h"
 #include "services/on_device_model/public/mojom/on_device_model_service.mojom.h"
-
-class OptimizationGuideLogger;
 
 namespace optimization_guide {
 enum class OnDeviceModelEligibilityReason;
@@ -84,22 +80,17 @@ class OnDeviceModelServiceController final {
       base::SafeRef<on_device_model::ServiceClient> service_client);
   ~OnDeviceModelServiceController();
 
-  // Initializes OnDeviceModelServiceController. This should be called once
-  // after creation.
-  void Init();
-
   // Whether an on-device session can be created for `feature`.
   OnDeviceModelEligibilityReason CanCreateSession(
-      ModelBasedCapabilityKey feature);
+      mojom::OnDeviceFeature feature);
 
   // Starts a session for `feature`. This will start the service and load the
   // model if it is not already loaded. The session will handle updating
   // context, executing input, and sending the response.
-  std::unique_ptr<OptimizationGuideModelExecutor::Session> CreateSession(
-      ModelBasedCapabilityKey feature,
-      ExecuteRemoteFn execute_remote_fn,
+  std::unique_ptr<OnDeviceSession> CreateSession(
+      mojom::OnDeviceFeature feature,
       base::WeakPtr<OptimizationGuideLogger> logger,
-      const std::optional<SessionConfigParams>& config_params);
+      const SessionConfigParams& config_params);
 
   // Sets the language detection model to be used by the ODM service when text
   // safety evaluation is restricted to a specific set of languages.
@@ -115,15 +106,15 @@ class OnDeviceModelServiceController final {
   void UpdateModel(std::unique_ptr<OnDeviceModelMetadata> model_metadata);
 
   // Updates the model adaptation for the feature.
-  void MaybeUpdateModelAdaptation(ModelBasedCapabilityKey feature,
+  void MaybeUpdateModelAdaptation(mojom::OnDeviceFeature feature,
                                   MaybeAdaptationMetadata adaptation_metadata);
 
   // Add/remove observers for notifying on-device model availability changes.
   void AddOnDeviceModelAvailabilityChangeObserver(
-      ModelBasedCapabilityKey feature,
+      mojom::OnDeviceFeature feature,
       OnDeviceModelAvailabilityObserver* observer);
   void RemoveOnDeviceModelAvailabilityChangeObserver(
-      ModelBasedCapabilityKey feature,
+      mojom::OnDeviceFeature feature,
       OnDeviceModelAvailabilityObserver* observer);
 
   // Calls `callback` with the capabilities of the current model.
@@ -134,7 +125,7 @@ class OnDeviceModelServiceController final {
   }
 
   // Retrieves the object storing the adaptation metadata for 'feature'.
-  MaybeAdaptationMetadata& GetFeatureMetadata(ModelBasedCapabilityKey feature);
+  MaybeAdaptationMetadata& GetFeatureMetadata(mojom::OnDeviceFeature feature);
 
   // Returns the selected performance hint.
   proto::OnDeviceModelPerformanceHint GetPerformanceHint();
@@ -149,11 +140,11 @@ class OnDeviceModelServiceController final {
 
  private:
   // A set of (references to) compatible, versioned dependencies that implement
-  // a ModelBasedCapability.
+  // a OnDeviceFeature.
   // e.g. "You can summarize with this model by building the prompt this way."
   class Solution final : public ModelBrokerImpl::Solution {
    public:
-    Solution(ModelBasedCapabilityKey feature,
+    Solution(mojom::OnDeviceFeature feature,
              scoped_refptr<const OnDeviceModelFeatureAdapter> adapter,
              base::WeakPtr<ModelController> model_controller,
              std::unique_ptr<SafetyChecker> safety_checker,
@@ -189,7 +180,7 @@ class OnDeviceModelServiceController final {
     void ReportHealthyCompletion() override;
 
     // What this is a solution for.
-    ModelBasedCapabilityKey feature_;
+    mojom::OnDeviceFeature feature_;
     // Describes how to implement this capability with these dependencies.
     scoped_refptr<const OnDeviceModelFeatureAdapter> adapter_;
     // The language model the adapter config is for.
@@ -227,10 +218,10 @@ class OnDeviceModelServiceController final {
     }
 
     base::WeakPtr<ModelController> GetOrCreateFeatureController(
-        ModelBasedCapabilityKey key,
+        mojom::OnDeviceFeature feature,
         const OnDeviceModelAdaptationMetadata& metadata);
 
-    void EraseController(ModelBasedCapabilityKey key);
+    void EraseController(mojom::OnDeviceFeature feature);
 
     void RequireAdaptationRank(uint32_t rank);
 
@@ -266,7 +257,7 @@ class OnDeviceModelServiceController final {
     std::vector<uint32_t> supported_adaptation_ranks_;
 
     // Controllers for adaptations that depend on this model.
-    std::map<ModelBasedCapabilityKey, OnDeviceModelAdaptationController>
+    std::map<mojom::OnDeviceFeature, OnDeviceModelAdaptationController>
         model_adaptation_controllers_;
 
     std::unique_ptr<OnDeviceModelValidator> model_validator_;
@@ -274,37 +265,16 @@ class OnDeviceModelServiceController final {
     base::WeakPtrFactory<BaseModelController> weak_ptr_factory_{this};
   };
 
-  // Implements OnDeviceOptions::Client for Sessions created by this object.
-  class OnDeviceModelClient final : public OnDeviceOptions::Client {
-   public:
-    OnDeviceModelClient(
-        ModelBasedCapabilityKey feature,
-        base::WeakPtr<OnDeviceModelServiceController> controller,
-        base::WeakPtr<ModelController> model_controller);
-    ~OnDeviceModelClient() override;
-    std::unique_ptr<OnDeviceOptions::Client> Clone() const override;
-    bool ShouldUse() override;
-    void StartSession(
-        mojo::PendingReceiver<on_device_model::mojom::Session> pending,
-        on_device_model::mojom::SessionParamsPtr params) override;
-    void OnResponseCompleted() override;
-
-   private:
-    ModelBasedCapabilityKey feature_;
-    base::WeakPtr<OnDeviceModelServiceController> controller_;
-    base::WeakPtr<ModelController> model_controller_;
-  };
   friend class OnDeviceModelAdaptationController;
-  friend class OnDeviceModelClient;
 
   // Called when the service disconnects unexpectedly.
   void OnServiceDisconnected(on_device_model::ServiceDisconnectReason reason);
 
   // Constructs a solution using the currently available dependencies.
-  MaybeSolution GetSolution(ModelBasedCapabilityKey feature);
+  MaybeSolution GetSolution(mojom::OnDeviceFeature feature);
 
   void UpdateSolutionProviders();
-  void UpdateSolutionProvider(ModelBasedCapabilityKey feature);
+  void UpdateSolutionProvider(mojom::OnDeviceFeature feature);
 
   // This may be null in the destructor, otherwise non-null.
   std::unique_ptr<OnDeviceModelAccessController> access_controller_;

@@ -475,15 +475,15 @@ Expression* Parser::NewSuperPropertyReference(int pos) {
 
 SuperCallReference* Parser::NewSuperCallReference(int pos) {
   VariableProxy* new_target_proxy =
-      NewUnresolved(ast_value_factory()->new_target_string(), pos);
+      NewUnresolved(ast_value_factory()->dot_new_target_string(), pos);
   VariableProxy* this_function_proxy =
-      NewUnresolved(ast_value_factory()->this_function_string(), pos);
+      NewUnresolved(ast_value_factory()->dot_this_function_string(), pos);
   return factory()->NewSuperCallReference(new_target_proxy, this_function_proxy,
                                           pos);
 }
 
 Expression* Parser::NewTargetExpression(int pos) {
-  auto proxy = NewUnresolved(ast_value_factory()->new_target_string(), pos);
+  auto proxy = NewUnresolved(ast_value_factory()->dot_new_target_string(), pos);
   proxy->set_is_new_target();
   return proxy;
 }
@@ -863,7 +863,9 @@ FunctionLiteral* Parser::DoParseProgram(Isolate* isolate, ParseInfo* info) {
   if (timer && timer->Elapsed().InNanoseconds() > 0) {
     auto end = timer->Elapsed();
     end += std::min(base::TimeDelta::FromSeconds(1),
-                    end * v8_flags.parser_ablation_amount);
+                    base::TimeDelta::FromMicroseconds(
+                        static_cast<double>(end.InMicroseconds()) *
+                        v8_flags.parser_ablation_amount));
     while (timer->Elapsed() < end) {
     }
   }
@@ -1061,7 +1063,7 @@ void Parser::ParseFunction(Isolate* isolate, ParseInfo* info,
 
   FunctionKind function_kind = flags().function_kind();
   FunctionLiteral* result;
-  if (V8_UNLIKELY(IsClassMembersInitializerFunction(function_kind))) {
+  if (V8_UNLIKELY(IsClassInitializerFunction(function_kind))) {
     // Reparsing of class member initializer functions has to be handled
     // specially because they require reparsing of the whole class body,
     // function start/end positions correspond to the class literal body
@@ -1116,9 +1118,7 @@ FunctionLiteral* Parser::DoParseFunction(Isolate* isolate, ParseInfo* info,
   DCHECK(ast_value_factory());
   fni_.PushEnclosingName(raw_name);
 
-  ResetInfoId();
-  DCHECK_LT(0, function_literal_id);
-  SkipInfos(function_literal_id - 1);
+  ResetInfoId(function_literal_id - 1);
 
   ScopedModification<Mode> mode_scope(&mode_, PARSE_EAGERLY);
 
@@ -1230,7 +1230,9 @@ FunctionLiteral* Parser::DoParseFunction(Isolate* isolate, ParseInfo* info,
   if (timer && timer->Elapsed().InNanoseconds() > 0) {
     auto end = timer->Elapsed();
     end += std::min(base::TimeDelta::FromSeconds(1),
-                    end * v8_flags.parser_ablation_amount);
+                    base::TimeDelta::FromMicroseconds(
+                        static_cast<double>(end.InMicroseconds()) *
+                        v8_flags.parser_ablation_amount));
     while (timer->Elapsed() < end) {
     }
   }
@@ -1251,10 +1253,6 @@ FunctionLiteral* Parser::ParseClassForMemberInitialization(
   DeclarationScope* nearest_decl_scope = original_scope_->GetDeclarationScope();
   DCHECK_NOT_NULL(nearest_decl_scope);
   FunctionState function_state(&function_state_, &scope_, nearest_decl_scope);
-
-  // We will reindex the function literals later.
-  ResetInfoId();
-  SkipInfos(initializer_id - 1);
 
   // We preparse the class members that are not fields with initializers
   // in order to collect the function literal ids.
@@ -1300,9 +1298,43 @@ FunctionLiteral* Parser::ParseClassForMemberInitialization(
     scope()->MarkReparsingForClassInitializer();
 #endif
 
+    // Class members for instance and static fields can be intertwined. For
+    // example, in `class { a; static {}; b; static {} }` (where `a` and `b` are
+    // instance fields, and `static {}` are static initialization blocks), the
+    // initial parse might assign function literal IDs as follows:
+    //   - Instance members initializer (for `a` and `b`): ID 1
+    //   - Static members initializer (for `static {}` blocks): ID 2
+    //
+    // When we reparse a specific initializer (e.g., the static members
+    // initializer, ID 2), we must ensure that the scope for the "other" kind of
+    // initializer (e.g., the instance members initializer, ID 1) is
+    // pre-allocated if it lexically precedes the current one.
+    //
+    // If the instance scope (ID 1) is not pre-allocated:
+    // 1. The parser processes the first `static {}` block. It allocates the
+    //    static scope with the correct ID (ID 2), as that is the next available
+    //    ID after skipping.
+    // 2. The parser continues and encounters `b`. Since no instance scope
+    //    exists yet, it lazily allocates one.
+    // 3. This new instance scope takes the *next* available ID, which is ID 3.
+    //    However, ID 3 might not exist (overrunning the range) or might belong
+    //    to a subsequent function, causing a shift/mismatch.
+    //
+    // Pre-allocating the preceding scope (ID 1) ensures it exists before the
+    // parser encounters `b`, preventing the incorrect allocation of a new ID.
+
+    if (initializer_kind ==
+        FunctionKind::kClassMembersInitializerFunctionPrecededByStatic) {
+      class_info.EnsureStaticElementsScope(this, kNoSourcePosition, -1);
+    } else if (initializer_kind ==
+               FunctionKind::kClassStaticInitializerFunctionPrecededByMember) {
+      class_info.EnsureInstanceMembersScope(this, kNoSourcePosition, -1);
+    }
+    ResetInfoId(initializer_id - 1);
+
     ParseClassLiteralBody(class_info, class_name, class_token_pos, Token::kEos);
 
-    if (initializer_kind == FunctionKind::kClassMembersInitializerFunction) {
+    if (IsClassInstanceInitializerFunction(initializer_kind)) {
       DCHECK_EQ(class_info.instance_members_function_id, initializer_id);
       initializer = CreateInstanceMembersInitializer(class_name, &class_info);
     } else {
@@ -1314,7 +1346,7 @@ FunctionLiteral* Parser::ParseClassForMemberInitialization(
 
   if (has_error()) return nullptr;
 
-  DCHECK(IsClassMembersInitializerFunction(initializer_kind));
+  DCHECK(IsClassInitializerFunction(initializer_kind));
 
   no_expression_scope.ValidateExpression();
 
@@ -1581,6 +1613,7 @@ void Parser::ParseImportDeclaration() {
   //       AssertClause ';'
   //   'import' ModuleSpecifier [no LineTerminator here] AssertClause';'
   //   'import' 'source' ImportedBinding 'from' ModuleSpecifier ';'
+  //   'import' 'defer'  NameSpaceImport FromClause WithClause_opt ';'
   //
   // ImportClause :
   //   ImportedDefaultBinding
@@ -1619,18 +1652,28 @@ void Parser::ParseImportDeclaration() {
         PeekAheadAhead() == Token::kIdentifier) {
       Consume(Token::kIdentifier);
       import_phase = ModuleImportPhase::kSource;
+    } else if (v8_flags.js_defer_import_eval &&
+               PeekContextualKeyword(ast_value_factory()->defer_string()) &&
+               PeekAhead() == Token::kMul &&
+               PeekAheadAhead() == Token::kIdentifier) {
+      Consume(Token::kIdentifier);
+      import_phase = ModuleImportPhase::kDefer;
     }
-    import_default_binding = ParseNonRestrictedIdentifier();
-    import_default_binding_loc = scanner()->location();
-    DeclareUnboundVariable(import_default_binding, VariableMode::kConst,
-                           kNeedsInitialization, pos);
+
+    // 'import defer' is only allowed with namespaced import
+    if (import_phase != ModuleImportPhase::kDefer) {
+      import_default_binding = ParseNonRestrictedIdentifier();
+      import_default_binding_loc = scanner()->location();
+      DeclareUnboundVariable(import_default_binding, VariableMode::kConst,
+                             kNeedsInitialization, pos);
+    }
   }
 
   // Parse NameSpaceImport or NamedImports if present.
   const AstRawString* module_namespace_binding = nullptr;
   Scanner::Location module_namespace_binding_loc;
   const ZonePtrList<const NamedImport>* named_imports = nullptr;
-  if (import_phase == ModuleImportPhase::kEvaluation &&
+  if (import_phase != ModuleImportPhase::kSource &&
       (import_default_binding == nullptr || Check(Token::kComma))) {
     switch (peek()) {
       case Token::kMul: {
@@ -1644,6 +1687,10 @@ void Parser::ParseImportDeclaration() {
       }
 
       case Token::kLeftBrace:
+        if (import_phase == ModuleImportPhase::kDefer) {
+          ReportUnexpectedToken(scanner()->current_token());
+          return;
+        }
         named_imports = ParseNamedImports(pos);
         break;
 
@@ -1659,7 +1706,7 @@ void Parser::ParseImportDeclaration() {
   // TODO(42204365): Enable import attributes with source phase import once
   // specified.
   const ImportAttributes* import_attributes =
-      import_phase == ModuleImportPhase::kEvaluation
+      import_phase != ModuleImportPhase::kSource
           ? ParseImportWithOrAssertClause()
           : zone()->New<ImportAttributes>(zone());
   ExpectSemicolon();
@@ -1673,10 +1720,11 @@ void Parser::ParseImportDeclaration() {
   // Declare that takes a location?
 
   if (module_namespace_binding != nullptr) {
-    DCHECK_EQ(ModuleImportPhase::kEvaluation, import_phase);
-    module()->AddStarImport(module_namespace_binding, module_specifier,
-                            import_attributes, module_namespace_binding_loc,
-                            specifier_loc, zone());
+    DCHECK(import_phase == ModuleImportPhase::kEvaluation ||
+           import_phase == ModuleImportPhase::kDefer);
+    module()->AddStarImport(
+        module_namespace_binding, module_specifier, import_phase,
+        import_attributes, module_namespace_binding_loc, specifier_loc, zone());
   }
 
   if (import_default_binding != nullptr) {
@@ -1819,7 +1867,8 @@ void Parser::ParseExportStar() {
   const ImportAttributes* import_attributes = ParseImportWithOrAssertClause();
   ExpectSemicolon();
 
-  module()->AddStarImport(local_name, module_specifier, import_attributes,
+  module()->AddStarImport(local_name, module_specifier,
+                          ModuleImportPhase::kEvaluation, import_attributes,
                           local_name_loc, specifier_loc, zone());
   module()->AddExport(local_name, export_name, export_name_loc, zone());
 }
@@ -1975,12 +2024,13 @@ VariableProxy* Parser::DeclareBoundVariable(const AstRawString* name,
 
 void Parser::DeclareAndBindVariable(VariableProxy* proxy, VariableKind kind,
                                     VariableMode mode, Scope* scope,
-                                    bool* was_added, int initializer_position) {
+                                    bool* was_added, int initializer_position,
+                                    VariableProxy::BindingMode binding_mode) {
   Variable* var = DeclareVariable(
       proxy->raw_name(), kind, mode, Variable::DefaultInitializationFlag(mode),
       scope, was_added, proxy->position(), kNoSourcePosition);
   var->set_initializer_position(initializer_position);
-  proxy->BindTo(var);
+  proxy->BindTo(var, binding_mode);
 }
 
 Variable* Parser::DeclareVariable(const AstRawString* name, VariableKind kind,
@@ -2687,6 +2737,7 @@ void Parser::ReindexArrowFunctionFormalParameters(
       reindexer.Reindex(p->initializer());
     }
     if (reindexer.HasStackOverflow()) {
+      reindexer.ClearStackOverflow();
       set_stack_overflow();
       return;
     }
@@ -2698,6 +2749,11 @@ void Parser::ReindexComputedMemberName(Expression* computed_name) {
   // name.
   AstFunctionLiteralIdReindexer reindexer(stack_limit_, 1);
   reindexer.Reindex(computed_name);
+  if (reindexer.HasStackOverflow()) {
+    reindexer.ClearStackOverflow();
+    set_stack_overflow();
+    return;
+  }
 }
 
 void Parser::PrepareGeneratorVariables() {
@@ -3008,7 +3064,9 @@ bool Parser::SkipFunction(const AstRawString* function_name, FunctionKind kind,
   if (timer && timer->Elapsed().InNanoseconds() > 0) {
     auto end = timer->Elapsed();
     end += std::min(base::TimeDelta::FromSeconds(1),
-                    end * v8_flags.preparser_ablation_amount);
+                    base::TimeDelta::FromMicroseconds(
+                        static_cast<double>(end.InMicroseconds()) *
+                        v8_flags.preparser_ablation_amount));
     while (timer->Elapsed() < end) {
     }
   }
@@ -3324,7 +3382,7 @@ void Parser::AddClassStaticBlock(Block* block, ClassInfo* class_info) {
 FunctionLiteral* Parser::CreateInitializerFunction(
     const AstRawString* class_name, DeclarationScope* scope,
     int function_literal_id, Statement* initializer_stmt) {
-  DCHECK(IsClassMembersInitializerFunction(scope->function_kind()));
+  DCHECK(IsClassInitializerFunction(scope->function_kind()));
   // function() { .. class fields initializer .. }
   ScopedPtrList<Statement> statements(pointer_buffer());
   statements.Add(initializer_stmt);

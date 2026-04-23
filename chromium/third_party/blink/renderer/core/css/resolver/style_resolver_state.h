@@ -97,7 +97,7 @@ class CORE_EXPORT StyleResolverState {
     return element_context_;
   }
 
-  void SetStyle(const ComputedStyle& style) {
+  void CreateNewClonedStyle(const ComputedStyle& style) {
     // FIXME: Improve RAII of StyleResolverState to remove this function.
     style_builder_.emplace(style);
     UpdateLengthConversionData();
@@ -139,6 +139,9 @@ class CORE_EXPORT StyleResolverState {
   }
   void SetConversionZoom(float zoom) {
     css_to_length_conversion_data_.SetZoom(zoom);
+  }
+  void SubtractScrollbarsFromViewportUnits(const gfx::Size& scrollbars) {
+    css_to_length_conversion_data_.SubtractScrollbars(scrollbars);
   }
 
   CSSAnimationUpdate& AnimationUpdate() { return animation_update_; }
@@ -190,8 +193,12 @@ class CORE_EXPORT StyleResolverState {
   void SetWritingMode(WritingMode);
   void SetTextSizeAdjust(TextSizeAdjust);
   void SetTextOrientation(ETextOrientation);
-  void SetPositionAnchor(ScopedCSSName*);
+  void SetPositionAnchor(const StylePositionAnchor&);
   void SetPositionAreaOffsets(const std::optional<PositionAreaOffsets>&);
+
+  // Return the writing-direction of the abs-pos container for an anchored
+  // element.
+  WritingDirectionMode GetAnchoredContainerWritingDirection() const;
 
   CSSParserMode GetParserMode() const;
 
@@ -271,7 +278,8 @@ class CORE_EXPORT StyleResolverState {
 
   // The element to start the search from, when looking for a CQ size container.
   Element* NearestSizeContainer() const {
-    return style_recalc_context_ ? style_recalc_context_->container : nullptr;
+    return style_recalc_context_ ? style_recalc_context_->size_container
+                                 : nullptr;
   }
 
   // See StyleRequest.pseudo_id.

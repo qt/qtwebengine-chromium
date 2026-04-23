@@ -81,6 +81,7 @@
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_deque.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/fp16/src/include/fp16.h"
 
 namespace blink {
 
@@ -580,6 +581,10 @@ webnn::BatchNormalizationAttributes ConvertToBatchNormalizationAttributes(
   return attributes;
 }
 
+String BuildErrorMessage(const std::string& label, StringView message) {
+  return StrCat({String::FromUTF8(webnn::GetErrorLabelPrefix(label)), message});
+}
+
 template <typename MLConv2dOptionsType, typename Conv2dAttributesType>
 base::expected<Conv2dAttributesType, String> ConvertToConv2dAttributesBase(
     const MLConv2dOptionsType* options) {
@@ -590,8 +595,7 @@ base::expected<Conv2dAttributesType, String> ConvertToConv2dAttributesBase(
   auto padding = options->getPaddingOr({0, 0, 0, 0});
   if (padding.size() != 4) {
     return base::unexpected(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-        "The length of padding should be 4.");
+        BuildErrorMessage(label, "The length of padding should be 4."));
   }
   // The order of padding array is [beginning_height, ending_height,
   // beginning_width, ending_width].
@@ -605,8 +609,7 @@ base::expected<Conv2dAttributesType, String> ConvertToConv2dAttributesBase(
   auto strides = options->getStridesOr({1, 1});
   if (strides.size() != 2) {
     return base::unexpected(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-        "The length of strides should be 2.");
+        BuildErrorMessage(label, "The length of strides should be 2."));
   }
   attributes.strides =
       webnn::Size2d<uint32_t>{.height = strides[0], .width = strides[1]};
@@ -615,8 +618,7 @@ base::expected<Conv2dAttributesType, String> ConvertToConv2dAttributesBase(
   auto dilations = options->getDilationsOr({1, 1});
   if (dilations.size() != 2) {
     return base::unexpected(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-        +"The length of dilations should be 2.");
+        BuildErrorMessage(label, "The length of dilations should be 2."));
   }
   attributes.dilations =
       webnn::Size2d<uint32_t>{.height = dilations[0], .width = dilations[1]};
@@ -660,8 +662,7 @@ ConvertToConvTranspose2dAttributes(
   const auto output_padding = options->getOutputPaddingOr({0, 0});
   if (output_padding.size() != 2) {
     return base::unexpected(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-        "The length of output padding should be 2.");
+        BuildErrorMessage(label, "The length of output padding should be 2."));
   }
   attributes.value().output_padding = webnn::Size2d<uint32_t>{
       .height = output_padding[0], .width = output_padding[1]};
@@ -670,8 +671,7 @@ ConvertToConvTranspose2dAttributes(
     auto output_sizes = options->getOutputSizesOr({});
     if (output_sizes.size() != 2) {
       return base::unexpected(
-          String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-          "The length of output sizes should be 2.");
+          BuildErrorMessage(label, "The length of output sizes should be 2."));
     }
     attributes.value().output_sizes = webnn::Size2d<uint32_t>{
         .height = output_sizes[0], .width = output_sizes[1]};
@@ -930,31 +930,27 @@ MLOperand* BuildElementWiseBinary(
     ExceptionState& exception_state) {
   const std::string label = options->label().Utf8();
   if (!tensor_constraint.Supports(a->Descriptor())) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-        String(NotSupportedArgumentError("a", a->Descriptor(),
-                                         tensor_constraint)));
+    exception_state.ThrowTypeError(BuildErrorMessage(
+        label, String(NotSupportedArgumentError("a", a->Descriptor(),
+                                                tensor_constraint))));
     return nullptr;
   }
   if (!tensor_constraint.Supports(b->Descriptor())) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-        String(NotSupportedArgumentError("b", b->Descriptor(),
-                                         tensor_constraint)));
+    exception_state.ThrowTypeError(BuildErrorMessage(
+        label, String(NotSupportedArgumentError("b", b->Descriptor(),
+                                                tensor_constraint))));
     return nullptr;
   }
 
   if (a->DataType() != b->DataType()) {
     exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-        "The input operand data types don't match.");
+        BuildErrorMessage(label, "The input operand data types don't match."));
     return nullptr;
   }
   auto output_shape = webnn::BroadcastShapes(a->Shape(), b->Shape());
   if (!output_shape) {
     exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-        "The input shapes are not broadcastable.");
+        BuildErrorMessage(label, "The input shapes are not broadcastable."));
     return nullptr;
   }
 
@@ -988,10 +984,9 @@ MLOperand* BuildUnaryOperator(MLGraphBuilder* builder,
   // The output tensor of unary operator has the same data type and dimensions
   // as its input tensor.
   if (!tensor_constraint.Supports(input->Descriptor())) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(options->label().Utf8())) +
-        String(NotSupportedInputArgumentError(input->Descriptor(),
-                                              tensor_constraint)));
+    exception_state.ThrowTypeError(BuildErrorMessage(
+        options->label().Utf8(), String(NotSupportedInputArgumentError(
+                                     input->Descriptor(), tensor_constraint))));
     return nullptr;
   }
 
@@ -1014,9 +1009,8 @@ MLOperand* BuildElementWiseUnaryOperator(
   const std::string label = options->label().Utf8();
   if (!tensor_constraint.Supports(input->Descriptor())) {
     exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(options->label().Utf8())) +
-        String(webnn::NotSupportedInputArgumentError(input->Descriptor(),
-                                                     tensor_constraint)));
+        BuildErrorMessage(label, String(webnn::NotSupportedInputArgumentError(
+                                     input->Descriptor(), tensor_constraint))));
     return nullptr;
   }
 
@@ -1780,6 +1774,99 @@ MLOperand* MLGraphBuilder::constant(ScriptState* script_state,
   return MakeGarbageCollected<MLConstantOperand>(this, tensor);
 }
 
+MLOperand* MLGraphBuilder::constant(
+    ScriptState* script_state,
+    V8MLOperandDataType type,
+    const V8UnionBigintOrUnrestrictedDouble* value,
+    ExceptionState& exception_state) {
+  webnn::ScopedTrace scoped_trace("MLGraphBuilder::constant");
+
+  THROW_AND_RETURN_IF_ERROR(ValidateGraphBuilderState(), nullptr);
+
+  webnn::OperandDataType data_type = FromBlinkDataType(type.AsEnum());
+  ASSIGN_OR_THROW_AND_RETURN_IF_ERROR(
+      webnn::OperandDescriptor descriptor,
+      webnn::OperandDescriptor::Create(ml_context_->GetProperties(), data_type,
+                                       /*shape=*/{},
+                                       webnn::GetErrorLabelPrefix("constant")));
+
+  if (!ml_context_->GetProperties().data_type_limits.constant.Supports(
+          descriptor)) {
+    exception_state.ThrowTypeError(String(webnn::NotSupportedConstantError(
+        descriptor, ml_context_->GetProperties().data_type_limits.constant)));
+    return nullptr;
+  }
+
+  base::expected<webnn::MLNumber, String> ml_number_value =
+      ToMLNumberAsType(*value, data_type);
+  if (!ml_number_value.has_value()) {
+    exception_state.ThrowTypeError(ml_number_value.error());
+    return nullptr;
+  }
+
+  // Write value to big buffer based on data type.
+  mojo_base::BigBuffer constant_data;
+  switch (data_type) {
+    case webnn::OperandDataType::kFloat32: {
+      constant_data = mojo_base::BigBuffer(base::byte_span_from_ref(
+          base::allow_nonunique_obj, ml_number_value->AsFloat32()));
+      break;
+    }
+    case webnn::OperandDataType::kFloat16: {
+      constant_data = mojo_base::BigBuffer(base::byte_span_from_ref(
+          fp16_ieee_from_fp32_value(ml_number_value->AsFloat32())));
+      break;
+    }
+    case webnn::OperandDataType::kInt32: {
+      constant_data = mojo_base::BigBuffer(
+          base::byte_span_from_ref(ml_number_value->AsInt32()));
+      break;
+    }
+    case webnn::OperandDataType::kUint32: {
+      constant_data = mojo_base::BigBuffer(
+          base::byte_span_from_ref(ml_number_value->AsUint32()));
+      break;
+    }
+    case webnn::OperandDataType::kInt64: {
+      constant_data = mojo_base::BigBuffer(
+          base::byte_span_from_ref(ml_number_value->AsInt64()));
+      break;
+    }
+    case webnn::OperandDataType::kUint64: {
+      constant_data = mojo_base::BigBuffer(
+          base::byte_span_from_ref(ml_number_value->AsUint64()));
+      break;
+    }
+    case webnn::OperandDataType::kInt8: {
+      constant_data = mojo_base::BigBuffer(
+          base::byte_span_from_ref(ml_number_value->AsInt8()));
+      break;
+    }
+    case webnn::OperandDataType::kUint8: {
+      constant_data = mojo_base::BigBuffer(
+          base::byte_span_from_ref(ml_number_value->AsUint8()));
+      break;
+    }
+    case webnn::OperandDataType::kInt4:
+    case webnn::OperandDataType::kUint4:
+      exception_state.ThrowTypeError("Unsupported data type for constant");
+      return nullptr;
+  }
+
+  size_t byte_length = descriptor.PackedByteLength();
+  auto* constant =
+      MakeGarbageCollected<MLConstantOperand>(this, std::move(descriptor));
+
+  UMA_HISTOGRAM_MEMORY_KB("WebNN.ConstantDataSizeInKB", byte_length / 1024);
+  TRACE_EVENT_BEGIN("webnn", "create constant scalar value BigBuffer",
+                    scoped_trace.track(), "size", byte_length);
+  scoped_trace.AddStep("post mojo message: CreatePendingConstant");
+  remote_->CreatePendingConstant(constant->handle(), data_type,
+                                 std::move(constant_data));
+  TRACE_EVENT_END("webnn", scoped_trace.track());
+  return constant;
+}
+
 MLOperand* MLGraphBuilder::argMin(MLOperand* input,
                                   const uint32_t axis,
                                   MLArgMinMaxOptions* options,
@@ -1869,10 +1956,10 @@ MLOperand* MLGraphBuilder::clamp(MLOperand* input,
   const webnn::SupportedTensors& tensor_constraint =
       ml_context_->GetProperties().data_type_limits.clamp_input;
   if (!tensor_constraint.Supports(input->Descriptor())) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(options->label().Utf8())) +
-        String(NotSupportedInputArgumentError(input->Descriptor(),
-                                              tensor_constraint)));
+    exception_state.ThrowTypeError(StrCat(
+        {String::FromUTF8(webnn::GetErrorLabelPrefix(options->label().Utf8())),
+         String(NotSupportedInputArgumentError(input->Descriptor(),
+                                               tensor_constraint))}));
     return nullptr;
   }
 
@@ -1881,9 +1968,9 @@ MLOperand* MLGraphBuilder::clamp(MLOperand* input,
           ? ToMLNumberAsType(*options->minValue(), input->DataType())
           : webnn::MLNumber::NegativeInfinity();
   if (!min_value.has_value()) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(options->label().Utf8())) +
-        min_value.error());
+    exception_state.ThrowTypeError(StrCat(
+        {String::FromUTF8(webnn::GetErrorLabelPrefix(options->label().Utf8())),
+         min_value.error()}));
     return nullptr;
   }
   base::expected<webnn::MLNumber, String> max_value =
@@ -1892,8 +1979,7 @@ MLOperand* MLGraphBuilder::clamp(MLOperand* input,
           : webnn::MLNumber::Infinity();
   if (!max_value.has_value()) {
     exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(options->label().Utf8())) +
-        max_value.error());
+        BuildErrorMessage(options->label().Utf8(), max_value.error()));
     return nullptr;
   }
 
@@ -1909,10 +1995,9 @@ MLOperand* MLGraphBuilder::clamp(MLOperand* input,
       max_value->IsNaN() ? webnn::MLNumber::Infinity() : std::move(*max_value);
 
   if (coerced_min_value.IsGreaterThan(coerced_max_value, input->DataType())) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(options->label().Utf8())) +
-        "The min value should be less than or equal to "
-        "the max value.");
+    exception_state.ThrowTypeError(BuildErrorMessage(
+        options->label().Utf8(),
+        "The min value should be less than or equal to the max value."));
     return nullptr;
   }
 
@@ -2698,23 +2783,28 @@ MLOperand* MLGraphBuilder::pad(ScriptState* script_state,
           ending_padding, BlinkPaddingModeToComponent(options->mode().AsEnum()),
           label));
 
+  // Pad becomes a no-op if input is a scalar and the paddings are all empty.
+  if (input->Rank() == 0) {
+    return BuildElementWiseUnaryOperator(
+        ml_context_->GetProperties(), this, exception_state,
+        blink_mojom::ElementWiseUnary::Kind::kIdentity,
+        ml_context_->GetProperties().data_type_limits.identity_input, input,
+        options);
+  }
+
   base::expected<webnn::MLNumber, String> pad_value =
       ToMLNumberAsType(*options->value(), input->DataType());
   if (!pad_value.has_value()) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(options->label().Utf8())) +
-        pad_value.error());
+    exception_state.ThrowTypeError(BuildErrorMessage(label, pad_value.error()));
     return nullptr;
   }
 
   if (options->mode().AsEnum() != V8MLPaddingMode::Enum::kConstant &&
       pad_value.value().AsFloat64() != 0.0) {
-    LogConsoleWarning(
-        script_state,
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-            String::Format(
-                "The pad value is ignored unless the options.mode is set to "
-                "constant."));
+    LogConsoleWarning(script_state,
+                      BuildErrorMessage(label,
+                                        "The pad value is ignored unless the "
+                                        "options.mode is set to constant."));
   }
 
   auto* pad = MakeGarbageCollected<MLPadOperator>(
@@ -2835,22 +2925,21 @@ MLOperand* MLGraphBuilder::reshape(MLOperand* input,
 
   if (!ml_context_->GetProperties().data_type_limits.reshape_input.Supports(
           input->Descriptor())) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
+    exception_state.ThrowTypeError(BuildErrorMessage(
+        label,
         String(NotSupportedInputArgumentError(
             input->Descriptor(),
-            ml_context_->GetProperties().data_type_limits.reshape_input)));
+            ml_context_->GetProperties().data_type_limits.reshape_input))));
     return nullptr;
   }
 
   if (!ml_context_->GetProperties()
            .data_type_limits.reshape_input.ranks.Supports(new_shape.size())) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-        String(NotSupportedOpOutputRankError(
-            static_cast<uint32_t>(new_shape.size()),
-            ml_context_->GetProperties()
-                .data_type_limits.reshape_input.ranks)));
+    exception_state.ThrowTypeError(BuildErrorMessage(
+        label, String(NotSupportedOpOutputRankError(
+                   static_cast<uint32_t>(new_shape.size()),
+                   ml_context_->GetProperties()
+                       .data_type_limits.reshape_input.ranks))));
     return nullptr;
   }
 
@@ -2862,8 +2951,7 @@ MLOperand* MLGraphBuilder::reshape(MLOperand* input,
     auto dim = new_shape[i];
     if (dim == 0) {
       exception_state.ThrowTypeError(
-          String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-          "The value of new shape should not be 0.");
+          BuildErrorMessage(label, "The value of new shape should not be 0."));
       return nullptr;
     }
     checked_newshape_number_of_elements *= dim;
@@ -2872,21 +2960,20 @@ MLOperand* MLGraphBuilder::reshape(MLOperand* input,
   size_t newshape_number_of_elements;
   if (!checked_newshape_number_of_elements.AssignIfValid(
           &newshape_number_of_elements)) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-        "The number of elements implied by new shape is too large.");
+    exception_state.ThrowTypeError(BuildErrorMessage(
+        label, "The number of elements implied by new shape is too large."));
     return nullptr;
   }
   DCHECK_NE(newshape_number_of_elements, size_t(0));
   // The number of elements implied by new shape must be the same as the
   // number of elements in the input tensor.
   if (input->NumberOfElements() != newshape_number_of_elements) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
+    exception_state.ThrowTypeError(BuildErrorMessage(
+        label,
         String::Format(
             "The number of elements (%zu) implied by new shape doesn't match "
             "the number of elements (%zu) in the input tensor.",
-            newshape_number_of_elements, input->NumberOfElements()));
+            newshape_number_of_elements, input->NumberOfElements())));
     return nullptr;
   }
 
@@ -2919,11 +3006,11 @@ MLOperand* MLGraphBuilder::resample2d(ScriptState* script_state,
   Vector<float> default_scales = {1.0, 1.0};
   if (options->hasSizes()) {
     if (options->hasScales()) {
-      LogConsoleWarning(script_state,
-                        String::FromUTF8(webnn::GetErrorLabelPrefix(label)) +
-                            "When sizes and scales are both "
-                            "specified, scales argument is "
-                            "ignored.");
+      LogConsoleWarning(
+          script_state,
+          BuildErrorMessage(label,
+                            "When sizes and scales are both specified, scales "
+                            "argument is ignored."));
     }
     scales_or_sizes = options->sizes();
   } else {
@@ -3058,6 +3145,16 @@ MLOperand* MLGraphBuilder::slice(MLOperand* input,
       webnn::ValidateSliceAndInferOutput(ml_context_->GetProperties(),
                                          input->Descriptor(), attributes));
 
+  // Slice becomes a no-op if the input is a scalar and starts, sizes, strides
+  // are all empty.
+  if (input->Rank() == 0) {
+    return BuildElementWiseUnaryOperator(
+        ml_context_->GetProperties(), this, exception_state,
+        blink_mojom::ElementWiseUnary::Kind::kIdentity,
+        ml_context_->GetProperties().data_type_limits.identity_input, input,
+        options);
+  }
+
   auto* slice = MakeGarbageCollected<MLSliceOperator>(this, starts, sizes,
                                                       strides, options);
   MLOperand* output =
@@ -3086,20 +3183,6 @@ MLOperand* MLGraphBuilder::softmax(MLOperand* input,
 
   softmax->Connect({input}, {output});
   return output;
-}
-
-MLOperand* MLGraphBuilder::softmax(MLOperand* input,
-                                   MLOperatorOptions* options,
-                                   ExceptionState& exception_state) {
-  // This is to emulate the deprecated 2-D softmax until all Chrome channels
-  // support the latest version.
-  if (input->Rank() != 2) {
-    exception_state.ThrowTypeError(
-        String::FromUTF8(webnn::GetErrorLabelPrefix(options->label().Utf8())) +
-        "The input must be a 2-D tensor.");
-    return nullptr;
-  }
-  return softmax(input, /*axis=*/1, options, exception_state);
 }
 
 MLOperand* MLGraphBuilder::softplus(MLOperand* input,

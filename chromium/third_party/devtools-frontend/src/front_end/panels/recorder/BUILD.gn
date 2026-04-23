@@ -11,7 +11,7 @@ generate_css("css_files") {
   sources = [ "recorderController.css" ]
 }
 
-devtools_module("recorder") {
+devtools_ui_module("recorder") {
   sources = [
     "RecorderController.ts",
     "RecorderEvents.ts",
@@ -29,11 +29,10 @@ devtools_module("recorder") {
     "../../services/tracing:bundle",
     "../../third_party/puppeteer-replay:bundle",
     "../../ui/components/dialogs:bundle",
-    "../../ui/components/icon_button:bundle",
     "../../ui/components/menus:bundle",
+    "../../ui/kit:bundle",
     "../../ui/visual_logging:bundle",
     "./components:bundle",
-    "./controllers:bundle",
     "./converters:bundle",
     "./extensions:bundle",
     "./models:bundle",
@@ -52,7 +51,7 @@ devtools_entrypoint("bundle") {
   visibility = [
     ":*",
     "../../../test/e2e/helpers:*",
-    "../../../test/e2e_non_hosted/recorder:*",
+    "../../../test/e2e/recorder:*",
     "../../entrypoints/main/*",
     "../../panels/sources/*",
   ]
@@ -75,7 +74,7 @@ devtools_entrypoint("meta") {
   ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

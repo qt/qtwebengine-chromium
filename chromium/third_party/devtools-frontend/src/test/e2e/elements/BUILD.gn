@@ -1,0 +1,45 @@
+# Copyright 2020 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("../../../scripts/build/typescript/typescript.gni")
+
+ts_e2e_library("elements") {
+  sources = [
+    "accessibility-pane.test.ts",
+    "accessibility-tree.test.ts",
+    "add-view-transition-pseudo-styles.test.ts",
+    "adopted-stylesheets.test.ts",
+    "adornment.test.ts",
+    "at-function-sections.test.ts",
+    "at-property-sections.test.ts",
+    "classes-pane.test.ts",
+    "color-picker.test.ts",
+    "computed-pane-properties.test.ts",
+    "css-hints.test.ts",
+    "dom-breakpoints.test.ts",
+    "element-breadcrumbs.test.ts",
+    "elements-tree.test.ts",
+    "filter-matched-styles.test.ts",
+    "flexbox-editor.test.ts",
+    "grid-editor.test.ts",
+    "grid-lanes-editor.test.ts",
+    "layout-pane.test.ts",
+    "oopif-elements.test.ts",
+    "prerender.test.ts",
+    "pseudo-states.test.ts",
+    "reveal-correct-node.test.ts",
+    "search-elements.test.ts",
+    "selection-after-delete.test.ts",
+    "shadowroot-styles.test.ts",
+    "sidebar-event-listeners.test.ts",
+    "style-pane-properties.test.ts",
+    "styles-disable-inherited.test.ts",
+    "switch-panels-while-editing-as-html.test.ts",
+    "violating-element-and-attributes.test.ts",
+  ]
+  deps = [
+    "../helpers",
+    "../shared",
+  ]
+}

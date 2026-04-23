@@ -116,8 +116,6 @@ class LanguageSettingsPrivateApiTest : public ExtensionServiceTestBase {
  protected:
   void RunGetLanguageListTest();
 
-  virtual void InitFeatures() {}
-
 #if BUILDFLAG(IS_WIN)
   virtual void AddSpellcheckLanguagesForTesting(
       const std::vector<std::string>& spellcheck_languages_for_testing) {
@@ -135,8 +133,6 @@ class LanguageSettingsPrivateApiTest : public ExtensionServiceTestBase {
     ExtensionServiceTestBase::InitializeEmptyExtensionService();
     EventRouterFactory::GetInstance()->SetTestingFactory(
         profile(), base::BindRepeating(&BuildEventRouter));
-
-    InitFeatures();
 
     LanguageSettingsPrivateDelegateFactory::GetInstance()->SetTestingFactory(
         profile(), base::BindRepeating(&BuildLanguageSettingsPrivateDelegate));
@@ -295,28 +291,6 @@ TEST_F(LanguageSettingsPrivateApiTest, GetNeverTranslateLanguagesListTest) {
   }
 }
 
-class LanguageSettingsPrivateApiGetLanguageListTest
-    : public LanguageSettingsPrivateApiTest {
- public:
-  LanguageSettingsPrivateApiGetLanguageListTest() = default;
-  ~LanguageSettingsPrivateApiGetLanguageListTest() override = default;
-
- protected:
-  void InitFeatures() override {
-#if BUILDFLAG(IS_WIN)
-    // Disable the delayed init feature since that case is tested in
-    // LanguageSettingsPrivateApiTestDelayInit below.
-    feature_list_.InitAndDisableFeature(
-        spellcheck::kWinDelaySpellcheckServiceInit);
-#endif  // BUILDFLAG(IS_WIN)
-  }
-};
-
-TEST_F(LanguageSettingsPrivateApiGetLanguageListTest, GetLanguageList) {
-  translate::TranslateDownloadManager::GetInstance()->ResetForTesting();
-  RunGetLanguageListTest();
-}
-
 void LanguageSettingsPrivateApiTest::RunGetLanguageListTest() {
   struct LanguageToTest {
     std::string accept_language;
@@ -335,7 +309,7 @@ void LanguageSettingsPrivateApiTest::RunGetLanguageListTest() {
       {"de", "de-DE", false, true},
       {"es-MX", "", true, true},
       {"fa", "", false, true},
-      {"gl", "", true, false},
+      {"gl", "", true, true},
       {"zu", "", false, false},
       // Finnish with Filipino language pack (string in string).
       {"fi", "fil", true, false},
@@ -726,13 +700,6 @@ class LanguageSettingsPrivateApiTestDelayInit
   LanguageSettingsPrivateApiTestDelayInit() = default;
 
  protected:
-  void InitFeatures() override {
-    // Force Windows hybrid spellcheck and delayed initialization of the
-    // spellcheck service to be enabled.
-    feature_list_.InitAndEnableFeature(
-        spellcheck::kWinDelaySpellcheckServiceInit);
-  }
-
   void AddSpellcheckLanguagesForTesting(
       const std::vector<std::string>& spellcheck_languages_for_testing)
       override {

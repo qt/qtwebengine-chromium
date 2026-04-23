@@ -125,7 +125,7 @@ class Device final : public DeviceBase {
                                        BufferBase* destination,
                                        uint64_t destinationOffset,
                                        uint64_t size) override;
-    MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
+    MaybeError CopyFromStagingToTextureImpl(BufferBase* source,
                                             const TexelCopyBufferLayout& src,
                                             const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
@@ -160,8 +160,7 @@ class Device final : public DeviceBase {
     ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
         const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-        const std::vector<tint::wgsl::Extension>& internalExtensions,
-        ShaderModuleParseResult* parseResult) override;
+        const std::vector<tint::wgsl::Extension>& internalExtensions) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
         SwapChainBase* previousSwapChain,
@@ -220,7 +219,8 @@ class PhysicalDevice : public PhysicalDeviceBase {
         const TogglesState& deviceToggles,
         Ref<DeviceBase::DeviceLostEvent>&& lostEvent) override;
 
-    void PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const override;
+    void PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
+                                   const TogglesState& adapterToggles) const override;
 };
 
 // Helper class so |BindGroup| can allocate memory for its binding data,
@@ -266,8 +266,8 @@ class Buffer final : public BufferBase {
 
   private:
     MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) override;
-    void FinalizeMapImpl() override;
-    void UnmapImpl() override;
+    MaybeError FinalizeMapImpl(BufferState newState) override;
+    void UnmapImpl(BufferState oldState) override;
     void DestroyImpl() override;
     bool IsCPUWritableAtCreation() const override;
     MaybeError MapAtCreationImpl() override;
@@ -323,8 +323,6 @@ class RenderPipeline final : public RenderPipelineBase {
 class ShaderModule final : public ShaderModuleBase {
   public:
     using ShaderModuleBase::ShaderModuleBase;
-
-    MaybeError Initialize(ShaderModuleParseResult* parseResult);
 };
 
 class SwapChain final : public SwapChainBase {

@@ -11,7 +11,7 @@ generate_css("css_files") {
   sources = [ "releaseNoteView.css" ]
 }
 
-devtools_module("whats_new") {
+devtools_ui_module("whats_new") {
   sources = [
     "ReleaseNoteText.ts",
     "ReleaseNoteView.ts",
@@ -28,6 +28,7 @@ devtools_module("whats_new") {
     "../../ui/components/helpers:bundle",
     "../../ui/components/markdown_view:bundle",
     "../../ui/components/render_coordinator:bundle",
+    "../../ui/helpers:bundle",
     "../../ui/legacy:bundle",
     "../../ui/lit:bundle",
     "../../ui/visual_logging:bundle",
@@ -63,7 +64,7 @@ devtools_entrypoint("meta") {
   ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
   sources = [
     "ReleaseNote.test.ts",

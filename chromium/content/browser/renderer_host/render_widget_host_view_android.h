@@ -27,6 +27,7 @@
 #include "cc/trees/render_frame_metadata.h"
 #include "components/input/android_input_helper.h"
 #include "components/viz/common/quads/selection.h"
+#include "components/viz/common/resources/release_callback.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "content/browser/device_posture/device_posture_platform_provider.h"
 #include "content/browser/renderer_host/input/input_transfer_handler_android.h"
@@ -78,6 +79,7 @@ struct DidOverscrollParams;
 
 namespace viz {
 class RasterContextProvider;
+struct CopyOutputBitmapWithMetadata;
 }  // namespace viz
 
 namespace content {
@@ -176,20 +178,25 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void CopyFromSurface(
       const gfx::Rect& src_rect,
       const gfx::Size& output_size,
-      base::OnceCallback<void(const SkBitmap&)> callback) override;
+      base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+          callback) override;
+  ui::FilteredGestureProvider* GetFilteredGestureProviderForTesting() override;
   void CopyFromExactSurfaceWithIpcDelay(
       const gfx::Rect& src_rect,
       const gfx::Size& output_size,
-      base::OnceCallback<void(const SkBitmap&)> callback,
+      base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+          callback,
       base::TimeDelta ipc_delay) override;
   void CopyFromExactSurface(
       const gfx::Rect& src_rect,
       const gfx::Size& output_size,
-      base::OnceCallback<void(const SkBitmap&)> callback) override;
+      base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+          callback) override;
   void CopySharedImageFromExactSurface(
       const gfx::Rect& src_rect,
       const gfx::Size& output_size,
-      base::OnceCallback<void(scoped_refptr<gpu::ClientSharedImage>)> callback);
+      base::OnceCallback<void(scoped_refptr<gpu::ClientSharedImage>,
+                              viz::ReleaseCallback release_callback)> callback);
 
   void EnsureSurfaceSynchronizedForWebTest() override;
   uint32_t GetCaptureSequenceNumber() const override;
@@ -521,6 +528,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       device::mojom::ScreenOrientationLockType orientation) override;
   void UnlockOrientation() override;
   void SetHasPersistentVideo(bool has_persistent_video) override;
+  void SetTouchpadOverscrollHistoryNavigation(bool enabled) override;
+  void OnUnconfirmedTapConvertedToTap() override;
 
   // This method is used as a callback for `ViewAndroid::HitTest` to determine
   // if the View is actually ready to send event.
@@ -607,9 +616,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void OnDidUpdateVisualPropertiesComplete(
       const cc::RenderFrameMetadata& metadata);
 
-  void OnFinishGetContentBitmap(const base::android::JavaRef<jobject>& callback,
-                                const std::string& path,
-                                const SkBitmap& bitmap);
+  void OnFinishGetContentBitmap(
+      const base::android::JavaRef<jobject>& callback,
+      const std::string& path,
+      const viz::CopyOutputBitmapWithMetadata& result);
 
   void ShowInternal();
   void HideInternal();
@@ -624,7 +634,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void SynchronousCopyContents(
       const gfx::Rect& src_subrect_dip,
       const gfx::Size& dst_size_in_pixel,
-      base::OnceCallback<void(const SkBitmap&)> callback);
+      base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+          callback);
 
   void MaybeCreateSynchronousCompositor();
   void ResetSynchronousCompositor();

@@ -31,8 +31,10 @@
 #include <utility>
 #include <vector>
 
+#include "src/tint/lang/core/ir/core_builtin_call.h"
 #include "src/tint/lang/core/ir/function.h"
 #include "src/tint/lang/core/ir/module.h"
+#include "src/tint/lang/core/ir/referenced_module_vars.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/ir/var.h"
 #include "src/tint/lang/core/type/binding_array.h"
@@ -67,29 +69,57 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
         }
     }
 
-    // Check for unsupported module-scope variable address spaces and types.
-    {
-        for (auto* inst : *ir.root_block) {
-            auto* var = inst->As<core::ir::Var>();
-            auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
-            if (ptr->AddressSpace() == core::AddressSpace::kPixelLocal) {
-                // Check the pixel_local variables have corresponding entries in the PLS attachment
-                // map.
-                auto* str = ptr->StoreType()->As<core::type::Struct>();
-                for (uint32_t i = 0; i < str->Members().Length(); i++) {
-                    if (options.pixel_local.attachments.count(i) == 0) {
-                        return Failure("missing pixel local attachment for member index " +
-                                       std::to_string(i));
-                    }
-                }
-            }
-            if (ptr->StoreType()->Is<core::type::InputAttachment>()) {
-                return Failure("input attachments are not supported by the HLSL backend");
-            }
+    for (auto* i : ir.Instructions()) {
+        auto* call = i->As<core::ir::CoreBuiltinCall>();
+        if (!call) {
+            continue;
+        }
+
+        if (call->Func() == core::BuiltinFn::kGetResource ||
+            call->Func() == core::BuiltinFn::kHasResource) {
+            return Failure("resource tables not supported by the HLSL backend");
         }
     }
 
-    auto user_immediate_res = core::ir::ValidateSingleUserImmediate(ir);
+    core::ir::Function* ep_func = nullptr;
+    for (auto* f : ir.functions) {
+        if (!f->IsEntryPoint()) {
+            continue;
+        }
+        if (ir.NameOf(f).NameView() == options.entry_point_name) {
+            ep_func = f;
+            break;
+        }
+    }
+
+    // No entrypoint, so no bindings needed
+    if (!ep_func) {
+        return Failure("entry point not found");
+    }
+
+    core::ir::ReferencedModuleVars<const core::ir::Module> referenced_module_vars{ir};
+    auto& refs = referenced_module_vars.TransitiveReferences(ep_func);
+
+    // Check for unsupported module-scope variable address spaces and types.
+    for (auto* var : refs) {
+        auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
+        if (ptr->AddressSpace() == core::AddressSpace::kPixelLocal) {
+            // Check the pixel_local variables have corresponding entries in the PLS attachment
+            // map.
+            auto* str = ptr->StoreType()->As<core::type::Struct>();
+            for (uint32_t i = 0; i < str->Members().Length(); i++) {
+                if (options.pixel_local.attachments.count(i) == 0) {
+                    return Failure("missing pixel local attachment for member index " +
+                                   std::to_string(i));
+                }
+            }
+        }
+        if (ptr->StoreType()->Is<core::type::InputAttachment>()) {
+            return Failure("input attachments are not supported by the HLSL backend");
+        }
+    }
+
+    auto user_immediate_res = core::ir::ValidateSingleUserImmediate(ir, ep_func);
     if (user_immediate_res != Success) {
         return user_immediate_res.Failure();
     }
@@ -128,8 +158,13 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
                     if (member->Attributes().color.has_value()) {
                         return Failure("@color attribute is not supported by the HLSL backend");
                     }
-                    if (member->Attributes().builtin == core::BuiltinValue::kSubgroupId) {
-                        return Failure("subgroup_id is not yet supported by the HLSL backend");
+                    if (member->Attributes().builtin == core::BuiltinValue::kSubgroupId ||
+                        member->Attributes().builtin == core::BuiltinValue::kSubgroupInvocationId ||
+                        member->Attributes().builtin == core::BuiltinValue::kSubgroupSize ||
+                        member->Attributes().builtin == core::BuiltinValue::kNumSubgroups) {
+                        if (options.compiler == Options::Compiler::kFXC) {
+                            return Failure("subgroups are not supported by FXC");
+                        }
                     }
 
                     if (member->Attributes().builtin == core::BuiltinValue::kBarycentricCoord &&
@@ -142,8 +177,13 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
                 if (param->Color().has_value()) {
                     return Failure("@color attribute is not supported by the HLSL backend");
                 }
-                if (param->Builtin() == core::BuiltinValue::kSubgroupId) {
-                    return Failure("subgroup_id is not yet supported by the HLSL backend");
+                if (param->Builtin() == core::BuiltinValue::kSubgroupId ||
+                    param->Builtin() == core::BuiltinValue::kSubgroupInvocationId ||
+                    param->Builtin() == core::BuiltinValue::kSubgroupSize ||
+                    param->Builtin() == core::BuiltinValue::kNumSubgroups) {
+                    if (options.compiler == Options::Compiler::kFXC) {
+                        return Failure("subgroups are not supported by FXC");
+                    }
                 }
 
                 if (param->Builtin() == core::BuiltinValue::kBarycentricCoord &&

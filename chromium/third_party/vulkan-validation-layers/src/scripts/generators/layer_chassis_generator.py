@@ -95,6 +95,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
         'vkAllocateDescriptorSets',
         'vkCreateBuffer',
         'vkQueuePresentKHR',
+        'vkCmdBindDescriptorBuffersEXT',
         # Need to inject HandleData logic
         'vkBeginCommandBuffer',
         # ValidationCache functions do not get dispatched

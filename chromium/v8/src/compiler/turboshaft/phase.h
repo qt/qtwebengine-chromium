@@ -224,11 +224,12 @@ class V8_EXPORT_PRIVATE PipelineData {
                                std::move(bytecode_handler_data));
   }
 
-  void InitializeGraphComponent(SourcePositionTable* source_positions) {
+  void InitializeGraphComponent(SourcePositionTable* source_positions,
+                                Graph::Origin origin) {
     DCHECK(!graph_component_.has_value());
     graph_component_.emplace(zone_stats_);
     auto& zone = graph_component_->zone;
-    graph_component_->graph = zone.New<Graph>(zone);
+    graph_component_->graph = zone.New<Graph>(zone, origin);
     graph_component_->source_positions =
         GraphComponent::Pointer<SourcePositionTable>(source_positions);
     if (info_ && info_->trace_turbo_json()) {
@@ -239,11 +240,12 @@ class V8_EXPORT_PRIVATE PipelineData {
   void InitializeGraphComponentWithGraphZone(
       ZoneWithName<kGraphZoneName> graph_zone,
       ZoneWithNamePointer<SourcePositionTable, kGraphZoneName> source_positions,
-      ZoneWithNamePointer<NodeOriginTable, kGraphZoneName> node_origins) {
+      ZoneWithNamePointer<NodeOriginTable, kGraphZoneName> node_origins,
+      Graph::Origin origin) {
     DCHECK(!graph_component_.has_value());
     graph_component_.emplace(std::move(graph_zone));
     auto& zone = graph_component_->zone;
-    graph_component_->graph = zone.New<Graph>(zone);
+    graph_component_->graph = zone.New<Graph>(zone, origin);
     graph_component_->source_positions = source_positions;
     graph_component_->node_origins = node_origins;
     if (!graph_component_->node_origins && info_ && info_->trace_turbo_json()) {
@@ -408,6 +410,9 @@ class V8_EXPORT_PRIVATE PipelineData {
     pipeline_statistics_ = pipeline_statistics;
   }
 
+  const Linkage* linkage() const { return linkage_; }
+  void set_linkage(const Linkage* linkage) { linkage_ = linkage; }
+
 #if V8_ENABLE_WEBASSEMBLY
   // Module-specific signature: type indices are only valid in the WasmModule*
   // they belong to.
@@ -462,25 +467,6 @@ class V8_EXPORT_PRIVATE PipelineData {
   }
 
   void clear_wasm_shuffle_analyzer() { wasm_shuffle_analyzer_ = nullptr; }
-
-  bool has_wasm_type_cast_rtt_in_loop() const {
-    // If this DCHECK fails, then you may need to check that the
-    // WasmLoopTypeCastRttPreFinder reducer has indeed run, and that nothing
-    // cleared has_wasm_type_cast_rtt_in_loop_ since then.
-    DCHECK(has_wasm_type_cast_rtt_in_loop_.has_value());
-    return has_wasm_type_cast_rtt_in_loop_.value();
-  }
-  void set_has_wasm_type_cast_rtt_in_loop() {
-    DCHECK(has_wasm_type_cast_rtt_in_loop_.has_value());
-    has_wasm_type_cast_rtt_in_loop_ = true;
-  }
-  void initialize_has_wasm_type_cast_rtt_in_loop() {
-    DCHECK(!has_wasm_type_cast_rtt_in_loop_.has_value());
-    has_wasm_type_cast_rtt_in_loop_ = false;
-  }
-  void reset_has_wasm_type_cast_rtt_in_loop() {
-    has_wasm_type_cast_rtt_in_loop_.reset();
-  }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   bool is_wasm() const {
@@ -543,6 +529,7 @@ class V8_EXPORT_PRIVATE PipelineData {
   MaybeIndirectHandle<Code> code_;
   std::string source_position_output_;
   RuntimeCallStats* runtime_call_stats_ = nullptr;
+  const Linkage* linkage_ = nullptr;
   // Components
   std::optional<BuiltinComponent> builtin_component_;
   std::optional<GraphComponent> graph_component_;
@@ -558,7 +545,6 @@ class V8_EXPORT_PRIVATE PipelineData {
   const wasm::WasmModule* wasm_module_ = nullptr;
   bool wasm_shared_ = false;
   WasmShuffleAnalyzer* wasm_shuffle_analyzer_ = nullptr;
-  std::optional<bool> has_wasm_type_cast_rtt_in_loop_ = std::nullopt;
 #ifdef V8_ENABLE_WASM_SIMD256_REVEC
 
   WasmRevecAnalyzer* wasm_revec_analyzer_ = nullptr;

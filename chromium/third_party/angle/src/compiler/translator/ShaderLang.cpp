@@ -17,13 +17,17 @@
 
 #include "common/PackedEnums.h"
 #include "compiler/translator/Compiler.h"
-#include "compiler/translator/InitializeDll.h"
+#include "compiler/translator/InitializeGlobals.h"
 #include "compiler/translator/length_limits.h"
 #ifdef ANGLE_ENABLE_HLSL
 #    include "compiler/translator/hlsl/TranslatorHLSL.h"
 #endif  // ANGLE_ENABLE_HLSL
 #include "angle_gl.h"
 #include "compiler/translator/VariablePacker.h"
+
+#ifdef ANGLE_IR
+#    include "compiler/translator/ir/src/compile.h"
+#endif
 
 namespace sh
 {
@@ -147,7 +151,10 @@ bool Initialize()
 {
     if (!isInitialized)
     {
-        isInitialized = InitProcess();
+        isInitialized = InitializePoolIndex();
+#ifdef ANGLE_IR
+        ir::ffi::initialize_global_pool_index_workaround();
+#endif
     }
     return isInitialized;
 }
@@ -159,7 +166,10 @@ bool Finalize()
 {
     if (isInitialized)
     {
-        DetachProcess();
+        FreePoolIndex();
+#ifdef ANGLE_IR
+        ir::ffi::free_global_pool_index_workaround();
+#endif
         isInitialized = false;
     }
     return true;
@@ -200,7 +210,6 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->EXT_shader_texture_lod                         = 0;
     resources->EXT_shader_framebuffer_fetch                   = 0;
     resources->EXT_shader_framebuffer_fetch_non_coherent      = 0;
-    resources->NV_shader_framebuffer_fetch                    = 0;
     resources->ARM_shader_framebuffer_fetch                   = 0;
     resources->ARM_shader_framebuffer_fetch_depth_stencil     = 0;
     resources->OVR_multiview                                  = 0;
@@ -643,28 +652,6 @@ uint32_t GetShaderSpecConstUsageBits(const ShHandle handle)
 bool CheckVariablesWithinPackingLimits(int maxVectors, const std::vector<ShaderVariable> &variables)
 {
     return CheckVariablesInPackingLimits(maxVectors, variables);
-}
-
-bool GetShaderStorageBlockRegister(const ShHandle handle,
-                                   const std::string &shaderStorageBlockName,
-                                   unsigned int *indexOut)
-{
-#ifdef ANGLE_ENABLE_HLSL
-    ASSERT(indexOut);
-
-    TranslatorHLSL *translator = GetTranslatorHLSLFromHandle(handle);
-    ASSERT(translator);
-
-    if (!translator->hasShaderStorageBlock(shaderStorageBlockName))
-    {
-        return false;
-    }
-
-    *indexOut = translator->getShaderStorageBlockRegister(shaderStorageBlockName);
-    return true;
-#else
-    return false;
-#endif  // ANGLE_ENABLE_HLSL
 }
 
 bool GetUniformBlockRegister(const ShHandle handle,

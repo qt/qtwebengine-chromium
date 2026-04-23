@@ -10,7 +10,15 @@ export class RangeWalker {
   #eof: boolean;
 
   constructor(readonly root: Node) {
-    this.#treeWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodeFilter = {
+      acceptNode(node: Node): number {
+        if (['STYLE', 'SCRIPT'].includes(node.parentNode?.nodeName ?? '')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    };
+    this.#treeWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, nodeFilter);
     this.#eof = !this.#treeWalker.firstChild();
   }
 
@@ -57,15 +65,34 @@ export class RangeWalker {
     range.setEnd(endNode, offsetInEndNode);
     return range;
   }
+
+  goToTextNode(node: Text): void {
+    while (this.#treeWalker.currentNode !== node) {
+      if (!this.#next()) {
+        return;
+      }
+    }
+  }
+
+  get offset(): number {
+    return this.#offset;
+  }
 }
 
 export const HIGHLIGHT_REGISTRY = 'highlighted-search-result';
 export const CURRENT_HIGHLIGHT_REGISTRY = 'current-search-result';
 
+interface HighlightState {
+  activeRanges: Range[];
+  ranges: TextUtils.TextRange.SourceRange[];
+  currentRange: TextUtils.TextRange.SourceRange|undefined;
+}
+
 let highlightManagerInstance: HighlightManager;
 export class HighlightManager {
   #highlights = new Highlight();
   #currentHighlights = new Highlight();
+  #stateByNode = new WeakMap<Node, HighlightState>();
 
   constructor() {
     CSS.highlights.set(HIGHLIGHT_REGISTRY, this.#highlights);
@@ -118,5 +145,35 @@ export class HighlightManager {
       this.addHighlights(ranges);
     }
     return ranges;
+  }
+
+  #getOrCreateState(node: Node): HighlightState {
+    let state = this.#stateByNode.get(node);
+    if (!state) {
+      state = {
+        activeRanges: [],
+        ranges: [],
+        currentRange: undefined,
+      };
+      this.#stateByNode.set(node, state);
+    }
+    return state;
+  }
+
+  apply(node: Node): void {
+    const state = this.#getOrCreateState(node);
+    this.removeHighlights(state.activeRanges);
+    state.activeRanges = this.highlightOrderedTextRanges(node, state.ranges);
+    if (state.currentRange) {
+      state.activeRanges.push(...this.highlightOrderedTextRanges(node, [state.currentRange], /* isCurrent=*/ true));
+    }
+  }
+
+  set(element: Node, ranges: TextUtils.TextRange.SourceRange[],
+      currentRange: TextUtils.TextRange.SourceRange|undefined): void {
+    const state = this.#getOrCreateState(element);
+    state.ranges = ranges;
+    state.currentRange = currentRange;
+    this.apply(element);
   }
 }

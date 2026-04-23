@@ -1,7 +1,7 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import '../../../../ui/components/markdown_view/markdown_view.js';
 
@@ -83,12 +83,16 @@ export abstract class BaseInsightComponent<T extends InsightModel> extends HTMLE
 
   // This flag tracks if the Insights AI feature is enabled within Chrome for
   // the active user.
-  #insightsAskAiEnabled = false;
+  #askAiEnabled = false;
+  // Tracks if this component is rendered withing the AI assistance panel.
+  // Currently only relevant to GreenDev.
+  #isAIAssistanceContext = false;
 
   #selected = false;
   #model: T|null = null;
-  #agentFocus: AIAssistance.AgentFocus|null = null;
+  #agentFocus: AIAssistance.AIContext.AgentFocus|null = null;
   #fieldMetrics: Trace.Insights.Common.CrUXFieldMetricResults|null = null;
+  #parsedTrace: Trace.TraceModel.ParsedTrace|null = null;
 
   get model(): T|null {
     return this.#model;
@@ -122,8 +126,12 @@ export abstract class BaseInsightComponent<T extends InsightModel> extends HTMLE
     this.dataset.insightName = this.internalName;
 
     const {devToolsAiAssistancePerformanceAgent} = Root.Runtime.hostConfig;
-    this.#insightsAskAiEnabled =
-        Boolean(devToolsAiAssistancePerformanceAgent?.enabled && devToolsAiAssistancePerformanceAgent?.insightsEnabled);
+    this.#askAiEnabled = Boolean(devToolsAiAssistancePerformanceAgent?.enabled);
+  }
+
+  set isAIAssistanceContext(isAIAssistanceContext: boolean) {
+    this.#isAIAssistanceContext = isAIAssistanceContext;
+    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#render);
   }
 
   set selected(selected: boolean) {
@@ -138,6 +146,10 @@ export abstract class BaseInsightComponent<T extends InsightModel> extends HTMLE
 
   get selected(): boolean {
     return this.#selected;
+  }
+
+  set parsedTrace(trace: Trace.TraceModel.ParsedTrace|null) {
+    this.#parsedTrace = trace;
   }
 
   set model(model: T) {
@@ -159,7 +171,7 @@ export abstract class BaseInsightComponent<T extends InsightModel> extends HTMLE
     void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#render);
   }
 
-  set agentFocus(agentFocus: AIAssistance.AgentFocus) {
+  set agentFocus(agentFocus: AIAssistance.AIContext.AgentFocus) {
     this.#agentFocus = agentFocus;
   }
 
@@ -181,19 +193,32 @@ export abstract class BaseInsightComponent<T extends InsightModel> extends HTMLE
       return;
     }
 
-    const focus = UI.Context.Context.instance().flavor(AIAssistance.AgentFocus);
+    if (this.#parsedTrace && UI.Floaty.enabled()) {
+      const floatyHandled = UI.Floaty.onFloatyClick({
+        type: UI.Floaty.FloatyContextTypes.PERFORMANCE_INSIGHT,
+        data: {
+          insight: this.model,
+          trace: this.#parsedTrace,
+        }
+      });
+      if (floatyHandled) {
+        return;
+      }
+    }
+
+    const focus = UI.Context.Context.instance().flavor(AIAssistance.AIContext.AgentFocus);
     if (this.#selected) {
       this.dispatchEvent(new SidebarInsight.InsightDeactivated());
 
       // Clear agent (but only if currently focused on an insight).
       if (focus) {
-        UI.Context.Context.instance().setFlavor(AIAssistance.AgentFocus, focus.withInsight(null));
+        UI.Context.Context.instance().setFlavor(AIAssistance.AIContext.AgentFocus, focus.withInsight(null));
       }
       return;
     }
 
     if (focus) {
-      UI.Context.Context.instance().setFlavor(AIAssistance.AgentFocus, focus.withInsight(this.model));
+      UI.Context.Context.instance().setFlavor(AIAssistance.AIContext.AgentFocus, focus.withInsight(this.model));
     }
 
     Badges.UserBadges.instance().recordAction(Badges.BadgeAction.PERFORMANCE_INSIGHT_CLICKED);
@@ -205,7 +230,11 @@ export abstract class BaseInsightComponent<T extends InsightModel> extends HTMLE
     this.dispatchEvent(new SidebarInsight.InsightActivated(this.model, this.data.insightSetKey));
   }
 
-  #renderHoverIcon(insightIsActive: boolean): Lit.TemplateResult {
+  #renderHoverIcon(insightIsActive: boolean): Lit.LitTemplate {
+    if (this.#isAIAssistanceContext) {
+      return Lit.nothing;
+    }
+
     // clang-format off
     const containerClasses = Lit.Directives.classMap({
       'insight-hover-icon': true,
@@ -361,18 +390,18 @@ export abstract class BaseInsightComponent<T extends InsightModel> extends HTMLE
     }
 
     // matches the one in ai_assistance-meta.ts
-    const actionId = 'drjones.performance-insight-context';
+    const actionId = 'drjones.performance-panel-context';
     if (!UI.ActionRegistry.ActionRegistry.instance().hasAction(actionId)) {
       return;
     }
 
-    let focus = UI.Context.Context.instance().flavor(AIAssistance.AgentFocus);
+    let focus = UI.Context.Context.instance().flavor(AIAssistance.AIContext.AgentFocus);
     if (focus) {
       focus = focus.withInsight(this.model);
     } else {
       focus = this.#agentFocus;
     }
-    UI.Context.Context.instance().setFlavor(AIAssistance.AgentFocus, focus);
+    UI.Context.Context.instance().setFlavor(AIAssistance.AIContext.AgentFocus, focus);
 
     // Trigger the AI Assistance panel to open.
     const action = UI.ActionRegistry.ActionRegistry.instance().getAction(actionId);
@@ -380,9 +409,12 @@ export abstract class BaseInsightComponent<T extends InsightModel> extends HTMLE
   }
 
   #canShowAskAI(): boolean {
+    if (this.#isAIAssistanceContext) {
+      return false;
+    }
     const aiAvailable = Root.Runtime.hostConfig.aidaAvailability?.enterprisePolicyValue !==
             Root.Runtime.GenAiEnterprisePolicyValue.DISABLE &&
-        this.#insightsAskAiEnabled && Root.Runtime.hostConfig.aidaAvailability?.enabled === true;
+        this.#askAiEnabled && Root.Runtime.hostConfig.aidaAvailability?.enabled === true;
 
     return aiAvailable && this.hasAskAiSupport();
   }
@@ -429,7 +461,8 @@ export abstract class BaseInsightComponent<T extends InsightModel> extends HTMLE
 
     const containerClasses = Lit.Directives.classMap({
       insight: true,
-      closed: !this.#selected,
+      closed: !this.#selected || this.#isAIAssistanceContext,
+      'ai-assistance-context': this.#isAIAssistanceContext,
     });
     const estimatedSavingsString = this.#getEstimatedSavingsString();
     const estimatedSavingsAriaLabel = this.#getEstimatedSavingsAriaLabel();

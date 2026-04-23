@@ -1,7 +1,7 @@
 // Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
 import * as Platform from '../../../core/platform/platform.js';
 import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
@@ -14,7 +14,7 @@ import menuStyles from './menu.css.js';
 import menuGroupStyles from './menuGroup.css.js';
 import menuItemStyles from './menuItem.css.js';
 
-const {html} = Lit;
+const {html, Directives: {ref}} = Lit;
 
 export interface MenuData {
   /**
@@ -380,8 +380,10 @@ export class Menu extends HTMLElement {
         .dialogShownCallback=${this.#dialogDeployed.bind(this)}
         .horizontalAlignment=${this.horizontalAlignment}
         .getConnectorCustomXPosition=${this.getConnectorCustomXPosition}
-        on-render=${ComponentHelpers.Directives.nodeRenderedCallback((domNode: Element) => {
-          this.#dialog = domNode as Dialogs.Dialog.Dialog;
+        ${ref(el => {
+          if (el instanceof HTMLElement) {
+            this.#dialog = el as Dialogs.Dialog.Dialog;
+          }
         })}
         >
         <span id="container" role="menu" tabIndex="0" @keydown=${this.#handleDialogKeyDown} jslog=${VisualLogging.menu().track({resize: true, keydown: 'Escape'})}>

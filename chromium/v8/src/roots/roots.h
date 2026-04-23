@@ -148,6 +148,8 @@ class RootVisitor;
   IF_WASM(V, Map, wasm_import_data_map, WasmImportDataMap)                     \
   IF_WASM(V, Map, wasm_capi_function_data_map, WasmCapiFunctionDataMap)        \
   IF_WASM(V, Map, wasm_dispatch_table_map, WasmDispatchTableMap)               \
+  IF_WASM(V, Map, wasm_dispatch_table_for_imports_map,                         \
+          WasmDispatchTableForImportsMap)                                      \
   IF_WASM(V, Map, wasm_exported_function_data_map,                             \
           WasmExportedFunctionDataMap)                                         \
   IF_WASM(V, Map, wasm_internal_function_map, WasmInternalFunctionMap)         \
@@ -257,7 +259,6 @@ class RootVisitor;
   V(ByteArray, hash_seed, HashSeed)                                            \
   V(FixedArray, preallocated_number_string_table,                              \
     PreallocatedNumberStringTable)                                             \
-  IF_WASM(V, HeapObject, wasm_null_padding, WasmNullPadding)                   \
   IF_WASM(V, WasmNull, wasm_null, WasmNull)
 
 // TODO(saelo): ideally, these would be read-only roots (and then become part
@@ -374,12 +375,6 @@ class RootVisitor;
     SourceTextModuleExecuteAsyncModuleFulfilledSFI)                            \
   V(SharedFunctionInfo, source_text_module_execute_async_module_rejected_sfi,  \
     SourceTextModuleExecuteAsyncModuleRejectedSFI)                             \
-  V(SharedFunctionInfo, atomics_mutex_async_unlock_resolve_handler_sfi,        \
-    AtomicsMutexAsyncUnlockResolveHandlerSFI)                                  \
-  V(SharedFunctionInfo, atomics_mutex_async_unlock_reject_handler_sfi,         \
-    AtomicsMutexAsyncUnlockRejectHandlerSFI)                                   \
-  V(SharedFunctionInfo, atomics_condition_acquire_lock_sfi,                    \
-    AtomicsConditionAcquireLockSFI)                                            \
   V(SharedFunctionInfo, async_disposable_stack_on_fulfilled_shared_fun,        \
     AsyncDisposableStackOnFulfilledSharedFun)                                  \
   V(SharedFunctionInfo, async_disposable_stack_on_rejected_shared_fun,         \

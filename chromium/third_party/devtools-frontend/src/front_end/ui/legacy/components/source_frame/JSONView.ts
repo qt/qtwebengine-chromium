@@ -1,11 +1,12 @@
 // Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as i18n from '../../../../core/i18n/i18n.js';
 import * as Platform from '../../../../core/platform/platform.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
+import * as Highlighting from '../../../components/highlighting/highlighting.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
 import * as ObjectUI from '../object_ui/object_ui.js';
@@ -20,6 +21,7 @@ const UIStrings = {
 } as const;
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/source_frame/JSONView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+
 export class JSONView extends UI.Widget.VBox implements UI.SearchableView.Searchable {
   private initialized: boolean;
   private readonly parsedJSON: ParsedJSON;
@@ -65,6 +67,10 @@ export class JSONView extends UI.Widget.VBox implements UI.SearchableView.Search
     jsonView.show(searchableView.element);
     jsonView.element.tabIndex = 0;
     return searchableView;
+  }
+
+  setSearchableView(searchableView: UI.SearchableView.SearchableView): void {
+    this.searchableView = searchableView;
   }
 
   private static parseJSON(text: string|null): Promise<ParsedJSON|null> {
@@ -129,6 +135,7 @@ export class JSONView extends UI.Widget.VBox implements UI.SearchableView.Search
   }
 
   override wasShown(): void {
+    super.wasShown();
     this.initialize();
   }
 
@@ -166,7 +173,7 @@ export class JSONView extends UI.Widget.VBox implements UI.SearchableView.Search
     const newFocusElement = this.currentSearchTreeElements[index];
     if (newFocusElement) {
       this.updateSearchIndex(index);
-      newFocusElement.setSearchRegex(this.searchRegex, UI.UIUtils.highlightedCurrentSearchResultClassName);
+      newFocusElement.setSearchRegex(this.searchRegex, Highlighting.highlightedCurrentSearchResultClassName);
       newFocusElement.reveal();
     } else {
       this.updateSearchIndex(0);
@@ -278,5 +285,28 @@ export class ParsedJSON<T extends unknown = unknown> {
     this.data = data;
     this.prefix = prefix;
     this.suffix = suffix;
+  }
+}
+
+export class SearchableJsonView extends UI.SearchableView.SearchableView {
+  #jsonView: JSONView;
+
+  constructor(element: HTMLElement) {
+    const jsonView = new JSONView(new ParsedJSON('', '', ''));
+    super(jsonView, null, undefined, element);
+    this.#jsonView = jsonView;
+    this.setPlaceholder(i18nString(UIStrings.find));
+    jsonView.setSearchableView(this);
+    jsonView.show(this.element);
+    jsonView.element.tabIndex = 0;
+  }
+
+  set jsonObject(obj: Object) {
+    const jsonView = new JSONView(new ParsedJSON(obj, '', ''));
+    this.#jsonView.detach();
+    this.#jsonView = jsonView;
+    this.searchProvider = jsonView;
+    jsonView.show(this.element);
+    this.requestUpdate();
   }
 }

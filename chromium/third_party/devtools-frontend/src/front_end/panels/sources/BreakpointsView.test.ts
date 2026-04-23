@@ -88,6 +88,7 @@ function createStubBreakpointManagerAndSettings() {
     syncedStorage: dummyStorage,
     globalStorage: dummyStorage,
     localStorage: dummyStorage,
+    settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
   });
   return {breakpointManager, settings};
 }
@@ -734,6 +735,7 @@ describeWithMockConnection('BreakpointsSidebarController', () => {
       resourceMapping,
       targetManager,
       ignoreListManager,
+      workspace,
     });
     Breakpoints.BreakpointManager.BreakpointManager.instance(
         {forceNew: true, targetManager, workspace, debuggerWorkspaceBinding});
@@ -921,6 +923,7 @@ describeWithMockConnection('BreakpointsView', () => {
       resourceMapping,
       targetManager,
       ignoreListManager,
+      workspace,
     });
     Breakpoints.BreakpointManager.BreakpointManager.instance(
         {forceNew: true, targetManager, workspace, debuggerWorkspaceBinding});
@@ -1548,7 +1551,7 @@ describeWithMockConnection('BreakpointsView', () => {
   });
 
   describe('navigating with keyboard', () => {
-    // One expanded group with 2 breakpoints, and one collapsed with 2 breakpoints.
+    /** One expanded group with 2 breakpoints, and one collapsed with 2 breakpoints. **/
     async function renderBreakpointsForKeyboardNavigation(): Promise<{
       component: Sources.BreakpointsView.BreakpointsView,
       data: Sources.BreakpointsView.BreakpointsViewData,

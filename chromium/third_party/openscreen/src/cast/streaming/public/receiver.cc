@@ -25,8 +25,11 @@ using clock_operators::operator<<;
 // to help distinguish one out of multiple instances in a Cast Streaming
 // session.
 //
-#define RECEIVER_LOG(level) OSP_LOG_##level << "[SSRC:" << ssrc() << "] "
-#define RECEIVER_VLOG OSP_VLOG << "[SSRC:" << ssrc() << "] "
+#define SSRC() "[SSRC:" << ssrc() << "] "
+#define RECEIVER_DLOG(level) OSP_DLOG_##level << SSRC()
+#define RECEIVER_LOG(level) OSP_LOG_##level << SSRC()
+#define RECEIVER_VLOG OSP_VLOG << SSRC()
+#define RECEIVER_DVLOG OSP_DVLOG << SSRC()
 
 Receiver::Receiver(Environment& environment,
                    ReceiverPacketRouter& packet_router,
@@ -36,7 +39,7 @@ Receiver::Receiver(Environment& environment,
       config_(config),
       rtcp_session_(config.sender_ssrc, config.receiver_ssrc, now_()),
       rtcp_parser_(rtcp_session_),
-      rtcp_builder_(rtcp_session_),
+      rtcp_builder_(std::make_unique<CompoundRtcpBuilder>(rtcp_session_)),
       stats_tracker_(config.rtp_timebase),
       rtp_parser_(config.sender_ssrc),
       rtp_timebase_(config.rtp_timebase),
@@ -51,7 +54,7 @@ Receiver::Receiver(Environment& environment,
   rtcp_buffer_.assign(environment.GetMaxPacketSize(), 0);
   OSP_CHECK_GT(rtcp_buffer_.size(), 0);
 
-  rtcp_builder_.SetPlayoutDelay(config.target_playout_delay);
+  rtcp_builder_->SetPlayoutDelay(config.target_playout_delay);
   playout_delay_changes_.emplace_back(FrameId::leader(),
                                       config.target_playout_delay);
 
@@ -81,19 +84,49 @@ void Receiver::SetPlayerProcessingTime(Clock::duration needed_time) {
   player_processing_time_ = std::max(Clock::duration::zero(), needed_time);
 }
 
+Error Receiver::ReportPlayoutEvent(FrameId frame_id,
+                                   RtpTimeTicks rtp_timestamp,
+                                   Clock::time_point playout_time) {
+  if (!config_.are_receiver_event_logs_enabled) {
+    return Error(Error::Code::kOperationInvalid,
+                 "receiver event logs are disabled. reports are ignored.");
+  }
+
+  if (frame_id <= latest_frame_expected_ - kMaxUnackedFrames) {
+    return Error(Error::Code::kParameterOutOfRange, "frame is too old.");
+  }
+
+  const PendingFrame& entry = GetQueueEntry(frame_id);
+  OSP_CHECK(entry.estimated_capture_time);
+  const Clock::duration playout_delay =
+      std::max(Clock::duration(), playout_time - *entry.estimated_capture_time);
+
+  if (config_.are_receiver_event_logs_enabled) {
+    AddEventToPendingLogs(
+        rtp_timestamp,
+        RtcpReceiverEventLogMessage{
+            .type = StatisticsEvent::Type::kFramePlayedOut,
+            .timestamp = playout_time,
+            .delay = std::chrono::duration_cast<std::chrono::milliseconds>(
+                playout_delay)});
+  }
+
+  return Error::None();
+}
+
 void Receiver::RequestKeyFrame() {
   // If we don't have picture loss indication enabled, we should not request
   // any key frames.
   if (!is_pli_enabled_) {
-    OSP_LOG_WARN << "Should not request any key frames when picture loss "
-                    "indication is not enabled";
+    RECEIVER_LOG(WARN) << "Should not request any key frames when picture loss "
+                          "indication is not enabled";
     return;
   }
 
   if (!last_key_frame_received_.is_null() &&
       last_frame_consumed_ >= last_key_frame_received_ &&
-      !rtcp_builder_.is_picture_loss_indicator_set()) {
-    rtcp_builder_.SetPictureLossIndicator(true);
+      !rtcp_builder_->is_picture_loss_indicator_set()) {
+    rtcp_builder_->SetPictureLossIndicator(true);
     SendRtcp();
   }
 }
@@ -166,8 +199,9 @@ EncodedFrame Receiver::ConsumeNextFrame(ByteBuffer buffer) {
   EncodedFrame frame;
   encrypted_frame.CopyMetadataTo(&frame);
   frame.data = buffer;
-  frame.reference_time =
-      *entry.estimated_capture_time + ResolveTargetPlayoutDelay(frame_id);
+  frame.reference_time = *entry.estimated_capture_time +
+                         ResolveTargetPlayoutDelay(frame_id) -
+                         player_processing_time_;
 
   RECEIVER_VLOG << "ConsumeNextFrame → " << frame.frame_id << ": "
                 << frame.data.size() << " payload bytes, RTP Timestamp "
@@ -176,7 +210,10 @@ EncodedFrame Receiver::ConsumeNextFrame(ByteBuffer buffer) {
                 << ", to play-out " << (frame.reference_time - now_())
                 << " from now.";
 
-  entry.Reset();
+  // Reset the collector to free up memory, and leave the estimated_capture_time
+  // for this entry, as it may still be used if the consumer decides to report
+  // the playout event.
+  entry.collector.Reset();
   last_frame_consumed_ = frame_id;
 
   // Ensure the Consumer is notified if there are already more frames ready for
@@ -201,6 +238,8 @@ void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
 
   // Ignore packets for frames the Receiver is no longer interested in.
   if (part->frame_id <= checkpoint_frame()) {
+    RECEIVER_VLOG << "ignoring packet for frame " << part->frame_id
+                  << " as it has been fully received already.";
     return;
   }
 
@@ -211,12 +250,16 @@ void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
     const FrameId max_allowed_frame_id =
         last_frame_consumed_ + kMaxUnackedFrames;
     if (part->frame_id > max_allowed_frame_id) {
+      RECEIVER_VLOG << "ignoring packet for unknown frame " << part->frame_id;
       return;
     }
     do {
       ++latest_frame_expected_;
-      GetQueueEntry(latest_frame_expected_)
-          .collector.set_frame_id(latest_frame_expected_);
+      PendingFrame& entry = GetQueueEntry(latest_frame_expected_);
+
+      // The collector was already reset, so just reset the capture time.
+      entry.estimated_capture_time.reset();
+      entry.collector.set_frame_id(latest_frame_expected_);
     } while (latest_frame_expected_ < part->frame_id);
   }
 
@@ -239,10 +282,13 @@ void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
   if (collector.is_complete()) {
     // An extra, redundant `packet` was received. Do nothing since the frame was
     // already complete.
+    RECEIVER_VLOG << "ignoring redundant packet for frame " << part->frame_id;
     return;
   }
 
   if (!collector.CollectRtpPacket(*part, &packet)) {
+    RECEIVER_LOG(WARN) << "bad data in parsed packet for frame "
+                       << part->frame_id;
     return;  // Bad data in the parsed packet. Ignore it.
   }
 
@@ -251,6 +297,8 @@ void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
   // but only once.
   if (part->packet_id == FramePacketId{0} &&
       !pending_frame.estimated_capture_time) {
+    pending_frame.rtp_timestamp = part->rtp_timestamp;
+
     // Estimate the original capture time of this frame (at the Sender), in
     // terms of the Receiver's clock: First, start with a reference time point
     // from the Sender's clock (the one from the last Sender Report). Then,
@@ -258,8 +306,12 @@ void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
     // Receiver's clock by applying the measured offset between the two clocks.
     // Finally, apply the RTP timestamp difference between the Sender Report and
     // this frame to determine what the original capture time of this frame was.
+    const auto smoothed_offset = smoothed_clock_offset_.Current();
+    if (!smoothed_offset) {
+      return;
+    }
     pending_frame.estimated_capture_time =
-        last_sender_report_->reference_time + smoothed_clock_offset_.Current() +
+        last_sender_report_->reference_time + *smoothed_offset +
         (part->rtp_timestamp - last_sender_report_->rtp_timestamp)
             .ToDuration<Clock::duration>(rtp_timebase_);
 
@@ -273,6 +325,14 @@ void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
     ScheduleFrameReadyCheck();
   }
 
+  if (config_.are_receiver_event_logs_enabled) {
+    AddEventToPendingLogs(part->rtp_timestamp,
+                          RtcpReceiverEventLogMessage{
+                              .type = StatisticsEvent::Type::kPacketReceived,
+                              .timestamp = arrival_time,
+                              .packet_id = part->packet_id});
+  }
+
   if (!collector.is_complete()) {
     return;  // Wait for the rest of the packets to come in.
   }
@@ -281,13 +341,15 @@ void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
   // Whenever a key frame has been received, the decoder has what it needs to
   // recover. In this case, clear the PLI condition.
   if (encrypted_frame.dependency == EncryptedFrame::Dependency::kKeyFrame) {
-    rtcp_builder_.SetPictureLossIndicator(false);
+    rtcp_builder_->SetPictureLossIndicator(false);
     last_key_frame_received_ = part->frame_id;
   }
 
   // If this just-completed frame is the one right after the checkpoint frame,
   // advance the checkpoint forward.
   if (part->frame_id == (checkpoint_frame() + 1)) {
+    // Make sure we provide a FrameAckSent event to the sender later.
+    pending_frame_acks_.push_back(part->rtp_timestamp);
     AdvanceCheckpoint(part->frame_id);
   }
 
@@ -327,7 +389,7 @@ void Receiver::OnReceivedRtcpPacket(Clock::time_point arrival_time,
   stats_tracker_.PopulateNextReport(&report);
   report.last_status_report_id = last_sender_report_->report_id;
   report.SetDelaySinceLastReport(now_() - last_sender_report_arrival_time_);
-  rtcp_builder_.IncludeReceiverReportInNextPacket(report);
+  rtcp_builder_->IncludeReceiverReportInNextPacket(report);
 
   SendRtcp();
 }
@@ -337,28 +399,48 @@ void Receiver::SendRtcp() {
   std::vector<PacketNack> packet_nacks;
   std::vector<FrameId> frame_acks;
   for (FrameId f = checkpoint_frame() + 1; f <= latest_frame_expected_; ++f) {
-    const FrameCollector& collector = GetQueueEntry(f).collector;
-    if (collector.is_complete()) {
+    const PendingFrame& entry = GetQueueEntry(f);
+    if (entry.collector.is_complete()) {
       frame_acks.push_back(f);
+
+      if (config_.are_receiver_event_logs_enabled) {
+        if (entry.rtp_timestamp) {
+          pending_frame_acks_.push_back(entry.rtp_timestamp.value());
+        }
+      }
     } else {
-      collector.GetMissingPackets(&packet_nacks);
+      entry.collector.GetMissingPackets(&packet_nacks);
     }
   }
 
+  // Fire off events for frames that were implicitly ACKed.
+  if (config_.are_receiver_event_logs_enabled) {
+    for (auto rtp_timestamp : pending_frame_acks_) {
+      AddEventToPendingLogs(rtp_timestamp,
+                            RtcpReceiverEventLogMessage{
+                                .type = StatisticsEvent::Type::kFrameAckSent,
+                                .timestamp = now_(),
+                            });
+    }
+    pending_frame_acks_.clear();
+
+    rtcp_builder_->IncludeReceiverLogsInNextPacket(std::move(pending_logs_));
+    pending_logs_.clear();
+  }
+
   // Build and send a compound RTCP packet.
-  const bool no_nacks = packet_nacks.empty();
-  rtcp_builder_.IncludeFeedbackInNextPacket(std::move(packet_nacks),
-                                            std::move(frame_acks));
+  rtcp_builder_->IncludeFeedbackInNextPacket(std::move(packet_nacks),
+                                             std::move(frame_acks));
   last_rtcp_send_time_ = now_();
   packet_router_.SendRtcpPacket(
-      rtcp_builder_.BuildPacket(last_rtcp_send_time_, rtcp_buffer_));
+      rtcp_builder_->BuildPacket(last_rtcp_send_time_, rtcp_buffer_));
 
   // Schedule the automatic sending of another RTCP packet, if this method is
   // not called within some bounded amount of time. While incomplete frames
   // exist in the queue, send RTCP packets (with ACK/NACK feedback) frequently.
   // When there are no incomplete frames, use a longer "keepalive" interval.
   const Clock::duration interval =
-      (no_nacks ? kRtcpReportInterval : kNackFeedbackInterval);
+      (packet_nacks.empty() ? kRtcpReportInterval : kNackFeedbackInterval);
   rtcp_alarm_.Schedule([this] { SendRtcp(); }, last_rtcp_send_time_ + interval);
 }
 
@@ -378,7 +460,7 @@ void Receiver::RecordNewTargetPlayoutDelay(FrameId as_of_frame,
   // Prune-out entries from `playout_delay_changes_` that are no longer needed.
   // At least one entry must always be kept (i.e., there must always be a
   // "current" setting).
-  const FrameId next_frame = last_frame_consumed_ + 1;
+  const FrameId next_frame = last_frame_consumed_ - kMaxUnackedFrames + 1;
   const auto keep_one_before_it = std::find_if(
       std::next(playout_delay_changes_.begin()), playout_delay_changes_.end(),
       [&](const auto& entry) { return entry.first > next_frame; });
@@ -396,13 +478,17 @@ void Receiver::RecordNewTargetPlayoutDelay(FrameId as_of_frame,
 }
 
 milliseconds Receiver::ResolveTargetPlayoutDelay(FrameId frame_id) const {
-  OSP_CHECK_GT(frame_id, last_frame_consumed_);
+  const FrameId first_possible =
+      last_frame_consumed_ > FrameId::first() + kMaxUnackedFrames
+          ? last_frame_consumed_ - kMaxUnackedFrames
+          : FrameId::first();
+  OSP_CHECK_GE(frame_id, first_possible);
 
 #if OSP_DCHECK_IS_ON()
   // Extra precaution: Ensure all possible playout delay changes are known. In
   // other words, every unconsumed frame in the queue, up to (and including)
   // `frame_id`, must have an assigned estimated_capture_time.
-  for (FrameId f = last_frame_consumed_ + 1; f <= frame_id; ++f) {
+  for (FrameId f = first_possible; f <= frame_id; ++f) {
     OSP_CHECK(GetQueueEntry(f).estimated_capture_time)
         << " don't know whether there was a playout delay change for frame "
         << f;
@@ -430,7 +516,7 @@ void Receiver::AdvanceCheckpoint(FrameId new_checkpoint) {
   }
 
   set_checkpoint_frame(new_checkpoint);
-  rtcp_builder_.SetPlayoutDelay(ResolveTargetPlayoutDelay(new_checkpoint));
+  rtcp_builder_->SetPlayoutDelay(ResolveTargetPlayoutDelay(new_checkpoint));
   SendRtcp();
 }
 
@@ -448,7 +534,7 @@ void Receiver::DropAllFramesBefore(FrameId first_kept_frame) {
     // Pedantic sanity-check: Ensure the "target playout delay change" data
     // dependency was satisfied. See comments in AdvanceToNextFrame().
     OSP_CHECK(entry.estimated_capture_time);
-    entry.Reset();
+    entry.collector.Reset();
   }
   last_frame_consumed_ = first_kept_frame - 1;
 
@@ -469,13 +555,24 @@ void Receiver::ScheduleFrameReadyCheck(Clock::time_point when) {
       when);
 }
 
+void Receiver::AddEventToPendingLogs(RtpTimeTicks rtp_timestamp,
+                                     RtcpReceiverEventLogMessage event_log) {
+  OSP_CHECK(config_.are_receiver_event_logs_enabled);
+
+  // Find or create a frame log for this RTP timestamp.
+  auto it = std::find_if(
+      pending_logs_.begin(), pending_logs_.end(),
+      [&](const auto& log) { return log.rtp_timestamp == rtp_timestamp; });
+  if (it == pending_logs_.end()) {
+    pending_logs_.push_back({rtp_timestamp, {}});
+    it = pending_logs_.end() - 1;
+  }
+  it->messages.push_back(event_log);
+}
+
 Receiver::PendingFrame::PendingFrame() = default;
 Receiver::PendingFrame::~PendingFrame() = default;
 
-void Receiver::PendingFrame::Reset() {
-  collector.Reset();
-  estimated_capture_time = std::nullopt;
-}
 
 // static
 constexpr milliseconds Receiver::kDefaultPlayerProcessingTime;

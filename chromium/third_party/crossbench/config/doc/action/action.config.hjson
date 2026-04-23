@@ -4,186 +4,192 @@
 
 # Test file with demo configs of all actions.
 {
-  pages: {
-    get: [
+  "pages": {
+    "get": [
       {
-        action: get
-        url: http://crossben.ch
+        "action": "get"
+        "url": "http://crossben.ch"
       }
     ]
-    js: [
+    "js": [
       {
-        action: js
-        script: alert(1)
+        "action": "js"
+        "script": "alert(1)"
       }
     ]
-    wait: [
+    "wait": [
       {
-        action: wait
-        duration: 1s
+        "action": "wait"
+        "duration": "1s"
       }
     ]
-    scroll: [
+    "scroll": [
       {
-        action: scroll
+        "action": "scroll"
       }
       {
-        action: scroll
-        distance: 1000
-        duration: 2s
-        selector: "#my-scrolling-element"
-        required: true
+        "action": "scroll"
+        "distance": 1000
+        "duration": "2s"
+        "selector": "#my-scrolling-element"
+        "required": true
       }
     ]
-    click: [
+    "click": [
       {
-        action: click
-        selector: "#button"
+        "action": "click"
+        "selector": "#button"
       }
       {
-        action: click
-        position: {
-          selector: "#button"
-          required: true
+        "action": "click"
+        "position": {
+          "selector": "#button"
+          "required": true
         }
-        duration: 500ms
-        attempts: 3
-        verify: window.location.href.includes('success')
+        "duration": "500ms"
+        "attempts": 3
+        "verify": "window.location.href.includes('success')"
       }
     ]
-    swipe: [
+    "swipe": [
       {
-        action: swipe
-        startx: 1
-        starty: 2
-        endx: 3
-        endy: 4
-        duration: 1s
+        "action": "swipe"
+        "startx": 1
+        "starty": 2
+        "endx": 3
+        "endy": 4
+        "duration": "1s"
       }
       {
-        action: swipe
-        start_x: 100
-        start_y: 200
-        end_x: 100
-        end_y: 500
-        duration: 500ms
-      }
-    ]
-    text_input: [
-      {
-        action: text_input
-        text: some text
-      }
-      {
-        action: text_input
-        keyevent: KEYCODE_ENTER
-        duration: 100ms
+        "action": "swipe"
+        "start_x": 100
+        "start_y": 200
+        "end_x": 100
+        "end_y": 500
+        "duration": "500ms"
       }
     ]
-    wait_for_condition: [
+    "text_input": [
       {
-        action: wait_for_condition
-        condition: return true
+        "action": "text_input"
+        "text": "some text"
       }
       {
-        action: wait_for_condition
-        condition: return document.readyState === 'complete'
-      }
-    ]
-    wait_for_element: [
-      {
-        action: wait_for_element
-        selector: "#button"
-      }
-      {
-        action: wait_for_element
-        selector: .my-class
-        expected_count: 5
-        or_more: true
+        "action": "text_input"
+        "keyevent": "KEYCODE_ENTER"
+        "duration": "100ms"
       }
     ]
-    inject_new_document_script: [
+    "wait_for_condition": [
       {
-        action: inject_new_document_script
-        script: alert(1)
+        "action": "wait_for_condition"
+        "condition": "return true"
       }
       {
-        action: inject_new_document_script
-        script_path: ./script.js
-        replacements: {
-          "{{some_placeholder}}": some_value
+        "action": "wait_for_condition"
+        "condition": "return document.readyState === 'complete'"
+      }
+    ]
+    "wait_for_element": [
+      {
+        "action": "wait_for_element"
+        "selector": "#button"
+      }
+      {
+        "action": "wait_for_element"
+        "selector": ".my-class"
+        "expected_count": 5
+        "or_more": true
+      }
+    ]
+    "inject_new_document_script": [
+      {
+        "action": "inject_new_document_script"
+        "script": "alert(1)"
+      }
+      {
+        "action": "inject_new_document_script"
+        "script_path": "./script.js"
+        "replacements": {
+          "{{some_placeholder}}": "some_value"
         }
       }
     ]
-    screenshot: [
+    "screenshot": [
       {
-        action: screenshot
+        "action": "screenshot"
       }
     ]
-    switch_tab: [
+    "switch_tab": [
       {
-        action: switch_tab
-        tab_index: 0
+        "action": "switch_tab"
+        "tab_index": 0
       }
       {
-        action: switch_tab
-        relative_tab_index: -1
+        "action": "switch_tab"
+        "relative_tab_index": -1
       }
       {
-        action: switch_tab
-        title: .*Google.*
+        "action": "switch_tab"
+        "title": ".*Google.*"
       }
       {
-        action: switch_tab
-        url: .*crossbench\.ch.*
-      }
-    ]
-    close_all_tabs: [
-      {
-        action: close_all_tabs
+        "action": "switch_tab"
+        "url": '''.*crossbench\.ch.*'''
       }
     ]
-    close_tab: [
+    "close_all_tabs": [
       {
-        action: close_tab
+        "action": "close_all_tabs"
       }
     ]
-    wait_for_download: [
+    "close_tab": [
       {
-        action: wait_for_download
-        pattern: .*
+        "action": "close_tab"
       }
     ]
-    wait_for_ready_state: [
+    "wait_for_download": [
       {
-        action: wait_for_ready_state
+        "action": "wait_for_download"
+        "pattern": ".*"
       }
     ]
-    dump_html: [
+    "wait_for_ready_state": [
       {
-        action: dump_html
+        "action": "wait_for_ready_state"
       }
     ]
-    meet_create: [
+    "dump_html": [
       {
-        action: meet_create
+        "action": "dump_html"
       }
     ]
-    meet_script: [
+    "meet_create": [
       {
-        action: meet_script
-        script: foo
+        "action": "meet_create"
       }
     ]
-    meminfo: [
+    "meet_script": [
       {
-        action: meminfo
+        "action": "meet_script"
+        "script": "foo"
       }
     ]
-    probe: [
+    "meminfo": [
       {
-        action: probe
-        probe: js
+        "action": "meminfo"
+      }
+    ]
+    "probe": [
+      {
+        "action": "probe"
+        "probe": "js"
+      }
+    ]
+    "open_devtools": [
+      {
+        "action": "open_devtools"
+        "panel_name": "elements"
       }
     ]
   }

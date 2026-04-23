@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/ai/language_model_create_client.h"
 
+#include "base/feature_list.h"
 #include "base/task/sequenced_task_runner.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_create_monitor_callback.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_language_model_message.h"
@@ -16,6 +17,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/modules/ai/ai_features.h"
 #include "third_party/blink/renderer/modules/ai/ai_interface_proxy.h"
 #include "third_party/blink/renderer/modules/ai/ai_utils.h"
 #include "third_party/blink/renderer/modules/ai/language_model_prompt_builder.h"
@@ -83,13 +85,13 @@ void LanguageModelCreateClient::Create(
   }
 
   ScriptState* script_state = GetScriptState();
-  LocalDOMWindow* const window = LocalDOMWindow::From(script_state);
+  LocalDOMWindow* window = LocalDOMWindow::From(script_state);
 
   // Prompt APIs are only available within window and extension worker
   // contexts by default. User activation is not consumed by workers,
   // as they lack the ability to do so.
   if (window && RequiresUserActivation(availability) &&
-      !LocalFrame::ConsumeTransientUserActivation(window->GetFrame())) {
+      !MeetsUserActivationRequirements(window)) {
     GetResolver()->RejectWithDOMException(
         DOMExceptionCode::kNotAllowedError,
         kExceptionMessageUserActivationRequired);
@@ -102,6 +104,8 @@ void LanguageModelCreateClient::Create(
   if (options_->hasExpectedInputs()) {
     expected_in = ToMojoExpectations(options_->expectedInputs());
     for (const auto& expected : expected_in) {
+      // TODO(crbug.com/422803232): reject when `expected` has tool types
+      // without AIPromptAPIToolUse runtime feature enabled.
       if (expected->type != mojom::blink::AILanguageModelPromptType::kText &&
           !RuntimeEnabledFeatures::AIPromptAPIMultimodalInputEnabled(
               GetExecutionContext())) {
@@ -116,6 +120,8 @@ void LanguageModelCreateClient::Create(
   if (options_->hasExpectedOutputs()) {
     expected_out = ToMojoExpectations(options_->expectedOutputs());
     for (const auto& expected : expected_out) {
+      // TODO(crbug.com/422803232): reject when `expected` has tool types
+      // without AIPromptAPIToolUse runtime feature enabled.
       if (expected->type != mojom::blink::AILanguageModelPromptType::kText) {
         GetResolver()->Reject(DOMException::Create(
             kExceptionMessageUnableToCreateSession,
@@ -143,6 +149,17 @@ void LanguageModelCreateClient::Create(
       GetResolver()->Reject(DOMException::Create(
           "initialPrompts cannot specify an assistant response prefix.",
           DOMException::GetErrorName(DOMExceptionCode::kSyntaxError)));
+      return;
+    }
+  }
+
+  if (options_->hasTools()) {
+    // Check if the AIPromptAPIToolUse feature is enabled.
+    if (!RuntimeEnabledFeatures::AIPromptAPIToolUseEnabled(
+            GetExecutionContext())) {
+      GetResolver()->Reject(DOMException::Create(
+          "Tool use feature is not enabled",
+          DOMException::GetErrorName(DOMExceptionCode::kNotSupportedError)));
       return;
     }
   }

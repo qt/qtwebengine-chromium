@@ -37,12 +37,6 @@ if (!defined(dawn_standalone)) {
   dawn_standalone = false
 }
 
-if (!defined(dawn_has_build)) {
-  dawn_has_build = true
-}
-
-dawn_has_fuzzers = dawn_has_build
-
 if (!defined(dawn_root)) {
   dawn_root = get_path_info("..", "abspath")
 }
@@ -116,6 +110,7 @@ if (!defined(dawn_egl_registry_dir)) {
 }
 
 # Defaults to the value inherited from .gclient.
+# Enable by setting "custom_vars": { "dawn_wasm": True }.
 if (!defined(dawn_wasm)) {
   dawn_wasm = false
 }

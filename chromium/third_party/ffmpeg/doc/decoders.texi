@@ -119,16 +119,6 @@ The following options are supported by the libdav1d wrapper.
 
 @table @option
 
-@item framethreads
-Set amount of frame threads to use during decoding. The default value is 0 (autodetect).
-This option is deprecated for libdav1d >= 1.0 and will be removed in the future. Use the
-option @code{max_frame_delay} and the global option @code{threads} instead.
-
-@item tilethreads
-Set amount of tile threads to use during decoding. The default value is 0 (autodetect).
-This option is deprecated for libdav1d >= 1.0 and will be removed in the future. Use the
-global option @code{threads} instead.
-
 @item max_frame_delay
 Set max amount of frames the decoder may buffer internally. The default value is 0
 (autodetect).
@@ -355,6 +345,15 @@ Enable the enhancement of the decoded audio when set to 1. The default
 value is 0 (disabled).
 
 @end table
+
+@section libmpeghdec
+
+libmpeghdec decoder wrapper.
+
+libmpeghdec allows libmpeghdec to decode the MPEG-H 3D audio codec.
+Requires the presence of the libmpeghdec headers and library during
+configuration. You need to explicitly configure the build with
+@code{--enable-libmpeghdec --enable-nonfree}.
 
 @section libopencore-amrnb
 

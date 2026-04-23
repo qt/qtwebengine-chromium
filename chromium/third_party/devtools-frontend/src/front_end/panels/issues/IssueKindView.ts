@@ -1,14 +1,14 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Adorners from '../../ui/components/adorners/adorners.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.js';
+import {Icon} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as Components from './components/components.js';
@@ -93,7 +93,7 @@ export class IssueKindView extends UI.TreeOutline.TreeElement {
     const header = document.createElement('div');
     header.classList.add('header');
 
-    const issueKindIcon = new IconButton.Icon.Icon();
+    const issueKindIcon = new Icon();
     issueKindIcon.name = IssueCounter.IssueCounter.getIssueKindIconName(this.#kind);
     issueKindIcon.classList.add('leading-issue-icon', 'extra-large');
 

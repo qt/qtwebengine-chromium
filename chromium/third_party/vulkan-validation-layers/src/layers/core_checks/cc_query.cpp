@@ -86,7 +86,7 @@ bool CoreChecks::ValidatePerformanceQueryResults(const vvl::QueryPool &query_poo
                          FormatHandle(query_pool_state).c_str(), invalid_flags_string.c_str());
     }
 
-    for (uint32_t query_index = firstQuery; query_index < queryCount; query_index++) {
+    for (uint32_t query_index = firstQuery; query_index < firstQuery + queryCount; query_index++) {
         uint32_t submitted = 0;
         for (uint32_t pass_index = 0; pass_index < query_pool_state.n_performance_passes; pass_index++) {
             auto state = query_pool_state.GetQueryState(query_index, pass_index);
@@ -159,6 +159,17 @@ bool CoreChecks::PreCallValidateGetQueryPoolResults(VkDevice device, VkQueryPool
                          "VK_QUERY_TYPE_TIMESTAMP.",
                          string_VkQueryResultFlags(flags).c_str(), FormatHandle(queryPool).c_str());
     }
+
+    if ((query_pool_state->create_info.queryType != VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR) &&
+        (query_pool_state->create_info.queryType != VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR) &&
+        (flags & VK_QUERY_RESULT_WITH_STATUS_BIT_KHR)) {
+        skip |= LogError("VUID-vkGetQueryPoolResults-queryType-11874", queryPool, error_obj.location.dot(Field::flags),
+                         "(%s) includes VK_QUERY_RESULT_WITH_STATUS_BIT_KHR, but queryPool (%s) was created with "
+                         "%s queryType.",
+                         string_VkQueryResultFlags(flags).c_str(), FormatHandle(queryPool).c_str(),
+                         string_VkQueryType(query_pool_state->create_info.queryType));
+    }
+
     if (query_pool_state->create_info.queryType == VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR &&
         (flags & VK_QUERY_RESULT_WITH_STATUS_BIT_KHR) == 0) {
         skip |= LogError("VUID-vkGetQueryPoolResults-queryType-09442", queryPool, error_obj.location.dot(Field::flags),
@@ -308,6 +319,18 @@ bool CoreChecks::PreCallValidateCreateQueryPool(VkDevice device, const VkQueryPo
                 skip |= core::ValidateVideoProfileInfo(*this, video_profile, error_obj,
                                                        create_info_loc.pNext(Struct::VkVideoProfileInfoKHR));
             }
+
+            {
+                const auto &queue_family_ext_props = device_state->queue_family_ext_props;
+                auto it = std::find_if(queue_family_ext_props.begin(), queue_family_ext_props.end(),
+                                       [](const auto &entry) { return entry.query_result_status_props.queryResultStatusSupport; });
+                if (it == queue_family_ext_props.end()) {
+                    skip |= LogError("VUID-VkQueryPoolCreateInfo-queryType-11839", device, create_info_loc.dot(Field::queryType),
+                                     "is VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR, but none of the queue families supports "
+                                     "queryResultStatusSupport.");
+                }
+            }
+
             break;
         }
         case VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR: {
@@ -491,12 +514,12 @@ bool CoreChecks::ValidateBeginQuery(const vvl::CommandBuffer &cb_state, const Qu
                 const LogObjectList objlist(cb_state.Handle(), cb_state.command_pool->Handle(), query_obj.pool);
                 skip |= LogError(vuid, objlist, loc.dot(Field::queryPool),
                                  "was created with VkQueryPoolPerformanceCreateInfoKHR::queueFamilyIndex (%" PRIu32
-                                 ") but the command buffer is from a comment pool created with "
+                                 ") but the command buffer is from a command pool created with "
                                  "VkCommandPoolCreateInfo::queueFamilyIndex (%" PRIu32 ").",
                                  query_pool_state->perf_counter_queue_family_index, cb_state.command_pool->queueFamilyIndex);
             }
             break;
-        } break;
+        }
         case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR:
         case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR: {
             const char *vuid =
@@ -1086,6 +1109,18 @@ bool CoreChecks::PreCallValidateCmdCopyQueryPoolResults(VkCommandBuffer commandB
         skip |= LogError("VUID-vkCmdCopyQueryPoolResults-queryType-02734", objlist, error_obj.location.dot(Field::queryPool),
                          "(%s) was created with queryType VK_QUERY_TYPE_PERFORMANCE_QUERY_INTEL.", FormatHandle(queryPool).c_str());
     }
+
+    if ((query_pool_state->create_info.queryType != VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR) &&
+        (query_pool_state->create_info.queryType != VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR) &&
+        (flags & VK_QUERY_RESULT_WITH_STATUS_BIT_KHR)) {
+        const LogObjectList objlist(commandBuffer, queryPool);
+        skip |= LogError("VUID-vkCmdCopyQueryPoolResults-queryType-11874", objlist, error_obj.location.dot(Field::flags),
+                         "(%s) includes VK_QUERY_RESULT_WITH_STATUS_BIT_KHR, but queryPool (%s) was created with "
+                         "%s queryType.",
+                         string_VkQueryResultFlags(flags).c_str(), FormatHandle(queryPool).c_str(),
+                         string_VkQueryType(query_pool_state->create_info.queryType));
+    }
+
     if (query_pool_state->create_info.queryType == VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR &&
         (flags & VK_QUERY_RESULT_WITH_STATUS_BIT_KHR) == 0) {
         const LogObjectList objlist(commandBuffer, queryPool);
@@ -1356,7 +1391,7 @@ void CoreChecks::PostCallRecordGetQueryPoolResults(VkDevice device, VkQueryPool 
     ASSERT_AND_RETURN(query_pool_state);
 
     if ((flags & VK_QUERY_RESULT_PARTIAL_BIT) == 0) {
-        for (uint32_t i = firstQuery; i < queryCount; ++i) {
+        for (uint32_t i = firstQuery; i < firstQuery + queryCount; ++i) {
             query_pool_state->SetQueryState(i, 0, QUERYSTATE_AVAILABLE);
         }
     }

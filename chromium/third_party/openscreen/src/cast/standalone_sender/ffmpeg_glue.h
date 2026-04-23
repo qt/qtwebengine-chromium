@@ -55,13 +55,13 @@ AVFormatContext* CreateAVFormatContextForFile(const char* path);
 
 DEFINE_AV_UNIQUE_PTR(AVFormatContext,
                      ::openscreen::cast::internal::CreateAVFormatContextForFile,
-                     avformat_close_input);
+                     avformat_close_input)
 DEFINE_AV_UNIQUE_PTR(AVCodecContext,
                      avcodec_alloc_context3,
-                     avcodec_free_context);
-DEFINE_AV_UNIQUE_PTR(AVPacket, av_packet_alloc, av_packet_free);
-DEFINE_AV_UNIQUE_PTR(AVFrame, av_frame_alloc, av_frame_free);
-DEFINE_AV_UNIQUE_PTR(SwrContext, swr_alloc, swr_free);
+                     avcodec_free_context)
+DEFINE_AV_UNIQUE_PTR(AVPacket, av_packet_alloc, av_packet_free)
+DEFINE_AV_UNIQUE_PTR(AVFrame, av_frame_alloc, av_frame_free)
+DEFINE_AV_UNIQUE_PTR(SwrContext, swr_alloc, swr_free)
 
 #undef DEFINE_AV_UNIQUE_PTR
 

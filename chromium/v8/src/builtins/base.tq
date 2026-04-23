@@ -498,6 +498,7 @@ extern enum MessageTemplate {
   kWasmTrapDivUnrepresentable,
   kWasmTrapRemByZero,
   kWasmTrapFloatUnrepresentable,
+  kWasmTrapNullFunc,
   kWasmTrapFuncSigMismatch,
   kWasmTrapDataSegmentOutOfBounds,
   kWasmTrapElementSegmentOutOfBounds,
@@ -509,7 +510,7 @@ extern enum MessageTemplate {
   kWasmTrapArrayOutOfBounds,
   kWasmTrapArrayTooLarge,
   kWasmTrapStringOffsetOutOfBounds,
-  kWasmObjectsAreOpaque,
+  kWasmTrapResume,
   kWeakRefsRegisterTargetAndHoldingsMustNotBeSame,
   kInvalidWeakRefsRegisterTarget,
   kInvalidWeakRefsUnregisterToken,
@@ -807,8 +808,6 @@ extern macro GetInterestingProperty(Context, JSReceiver, Name): JSAny
     labels NotFound;
 extern transitioning builtin SetProperty(
     implicit context: Context)(JSAny, JSAny, JSAny): JSAny;
-extern transitioning builtin SetPropertyIgnoreAttributes(
-    implicit context: Context)(JSObject, String, JSAny, Smi): JSAny;
 extern transitioning builtin CreateDataProperty(
     implicit context: Context)(JSAny, JSAny, JSAny): JSAny;
 extern transitioning builtin DeleteProperty(
@@ -936,6 +935,9 @@ extern macro LoadBufferPointer(RawPtr, constexpr int32): RawPtr;
 extern macro LoadBufferSmi(RawPtr, constexpr int32): Smi;
 extern macro LoadBufferIntptr(RawPtr, constexpr int32): intptr;
 
+extern macro LoadFullTagged(RawPtr): Object;
+extern macro StoreFullTaggedNoWriteBarrier(RawPtr, Object): void;
+
 extern runtime StringEqual(Context, String, String): Oddball;
 extern builtin StringLessThan(String, String): Boolean;
 extern builtin StringCompare(String, String): Smi;
@@ -945,6 +947,7 @@ extern macro StringFromSingleCharCode(char16): String;
 
 extern macro NumberToString(Number): String;
 extern macro SmiToString(Smi): String;
+extern macro Int32ToString(int32): String;
 extern macro Float64ToString(float64): String;
 extern macro StringToNumber(String): Number;
 extern transitioning macro NonNumberToNumber(
@@ -1411,6 +1414,7 @@ extern macro Uint64Constant(constexpr uint64): uint64;
 extern macro Float64Constant(constexpr int32): float64;
 extern macro Float64Constant(constexpr float64): float64;
 extern macro Float64Constant(constexpr IntegerLiteral): float64;
+extern macro Float32Constant(constexpr float32): float32;
 extern macro SmiConstant(constexpr int31): Smi;
 extern macro SmiConstant(constexpr Smi): Smi;
 extern macro SmiConstant(constexpr MessageTemplate): Smi;
@@ -2228,7 +2232,7 @@ operator '==' macro HashFieldTypeEquals(
 
 const kNoHashSentinel:
     constexpr int32 generates 'PropertyArray::kNoHashSentinel';
-extern macro LoadNameHash(Name): uint32;
+extern macro LoadNameHashAssumeComputed(Name): uint32;
 
 extern transitioning builtin ToName(implicit context: Context)(JSAny): AnyName;
 

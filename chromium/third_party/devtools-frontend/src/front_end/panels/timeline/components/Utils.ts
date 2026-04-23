@@ -1,7 +1,7 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Platform from '../../../core/platform/platform.js';
@@ -119,7 +119,7 @@ export function colorForNetworkRequest(request: Trace.Types.Events.SyntheticNetw
 export type MetricRating = 'good'|'needs-improvement'|'poor';
 export type MetricThresholds = [number, number];
 
-// TODO: Consolidate our metric rating logic with the trace engine.
+/** TODO: Consolidate our metric rating logic with the trace engine. **/
 export const LCP_THRESHOLDS = [2500, 4000] as MetricThresholds;
 export const CLS_THRESHOLDS = [0.1, 0.25] as MetricThresholds;
 export const INP_THRESHOLDS = [200, 500] as MetricThresholds;

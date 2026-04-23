@@ -49,6 +49,7 @@ class Secret(ConfigObject):
   def is_interactive(self) -> bool:
     return False
 
+
 @dataclasses.dataclass(frozen=True)
 class UsernamePassword(Secret):
   username: str

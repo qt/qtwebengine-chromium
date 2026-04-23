@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Iterable, Optional
 import colorama
 
 from crossbench import plt
+from crossbench.cli import ui
 from crossbench.cli.config.env import EnvConfig, ValidationMode
 
 if TYPE_CHECKING:
@@ -65,8 +66,8 @@ class BaseEnv(abc.ABC):
       return
     if self._validation_mode == ValidationMode.PROMPT:
       if allow_interactive:
-        result = input(f"{colorama.Fore.RED}{message} Continue?"
-                       f"{colorama.Fore.RESET} [Yn]")
+        result = ui.prompt(
+            f"{message} Continue?", "[Yn]", color=colorama.Fore.RED)
         # Accept <enter> as default input to continue.
         if result.lower() != "n":
           return

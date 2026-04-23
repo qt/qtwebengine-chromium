@@ -1,4 +1,4 @@
-// Copyright 2023 Google LLC
+// Copyright 2023-2025 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
@@ -23,12 +23,13 @@
 #include "src/xnnpack/gemm.h"
 #include "src/xnnpack/math.h"
 #include "src/xnnpack/microfnptr.h"
-#include "src/xnnpack/microparams-init.h"
 #include "src/xnnpack/microparams.h"
+#include "src/xnnpack/microparams-init.h"
 #include "src/xnnpack/pack-lh.h"
 #include "src/xnnpack/pack.h"
 #include "src/xnnpack/packq.h"
 #include "src/xnnpack/packw.h"
+#include "test/replicable_random_device.h"
 #include <benchmark/benchmark.h>
 
 void GEMMBenchmark(benchmark::State& state, xnn_qs8_gemm_minmax_ukernel_fn gemm,
@@ -46,8 +47,7 @@ void GEMMBenchmark(benchmark::State& state, xnn_qs8_gemm_minmax_ukernel_fn gemm,
   const size_t nc_stride = benchmark::utils::RoundUp(nc, nr);
   const size_t kc_stride = benchmark::utils::RoundUp(kc, kr * sr);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto i32rng = std::bind(std::uniform_int_distribution<int32_t>(-10000, 10000),
                           std::ref(rng));
 
@@ -133,8 +133,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t nc_stride = benchmark::utils::RoundUp(nc, nr);
   const size_t kc_stride = benchmark::utils::RoundUp(kc, kr * sr);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto i32rng = std::bind(std::uniform_int_distribution<int32_t>(-10000, 10000),
                           std::ref(rng));
 
@@ -219,8 +218,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t nc_stride = benchmark::utils::RoundUp(nc, nr);
   const size_t kc_stride = benchmark::utils::RoundUp(kc, kr * sr) / 2;
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto i32rng = std::bind(std::uniform_int_distribution<int32_t>(-10000, 10000),
                           std::ref(rng));
 
@@ -304,8 +302,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t nc_stride = benchmark::utils::RoundUp(nc, nr);
   const size_t kc_stride = benchmark::utils::RoundUp(kc, kr * sr);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
 
   xnnpack::Buffer<int8_t> a(mc * kc, xnnpack::XnnExtraBytes);
   xnnpack::fill_uniform_random_bits(a.data(), a.size(), rng);
@@ -382,8 +379,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t nc_stride = benchmark::utils::RoundUp(nc, nr);
   const size_t kc_stride = benchmark::utils::RoundUp(kc, kr * sr);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
 
   xnnpack::Buffer<int8_t> a(mc * kc, xnnpack::XnnExtraBytes);
   xnnpack::fill_uniform_random_bits(a.data(), a.size(), rng);
@@ -458,8 +454,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t bl = state.range(3);
   const size_t kc = round_up(state.range(2), bl);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto scalerng = std::bind(std::uniform_real_distribution<float>(0.5f, 2.f),
                             std::ref(rng));
 
@@ -556,8 +551,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t nc_stride = benchmark::utils::RoundUp(nc, nr);
   const size_t kc_stride = benchmark::utils::RoundUp(kc, kr * sr) / 2;
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
 
   xnnpack::Buffer<int8_t> a(mc * kc, xnnpack::XnnExtraBytes);
   xnnpack::fill_uniform_random_bits(a.data(), a.size(), rng);
@@ -633,8 +627,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t bl = state.range(3);
   const size_t kc = round_up(state.range(2), bl);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto scalerng = std::bind(std::uniform_real_distribution<float>(0.5f, 2.f),
                             std::ref(rng));
 
@@ -712,6 +705,91 @@ void GEMMBenchmark(benchmark::State& state,
       benchmark::Counter(uint64_t(state.iterations()) * 2 * mc * nc * kc,
                          benchmark::Counter::kIsRate);
 }
+void GEMMBenchmark(benchmark::State& state,
+                   xnn_qd8_f32_qc2w_gemm_ukernel_fn gemm,
+                   xnn_init_f32_minmax_params_fn init_params,
+                   xnn_pack_qs8_qc2w_gemm_fn pack, size_t mr, size_t nr,
+                   size_t kr, size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
+    return;
+  }
+
+  const size_t mc = state.range(0);
+  const size_t nc = state.range(1);
+  const size_t kc = state.range(2);
+
+  // Only allow full bytes of input rows.
+  if (kc % 4 != 0) {
+    return;
+  }
+
+  const size_t nc_stride = round_up_po2(nc, nr);
+  const size_t kc_stride = (round_up_po2(kc, kr * sr * 4) + 3) / 4;
+
+  xnnpack::ReplicableRandomDevice rng;
+
+  xnnpack::Buffer<int8_t> a(mc * kc, xnnpack::XnnExtraBytes);
+  xnnpack::fill_uniform_random_bits(a.data(), a.size(), rng);
+
+  xnnpack::Buffer<uint8_t> k(nc * kc / 4);
+  xnnpack::fill_uniform_random_bits(k.data(), k.size(), rng);
+
+  xnnpack::Buffer<xnn_qd8_quantization_params> quantization_params(
+      mc + XNN_EXTRA_QUANTIZATION_PARAMS);
+  xnnpack::Buffer<float> row_sum(mc + XNN_EXTRA_QUANTIZATION_PARAMS);
+  const size_t w_elements =
+      nc_stride * (sizeof(float) * 2 + sizeof(int32_t)) + kc_stride * nc_stride;
+
+  const size_t c_elements = mc * nc;
+  const size_t num_buffers = 1 + benchmark::utils::DivideRoundUp<size_t>(
+                                     benchmark::utils::GetMaxCacheSize(),
+                                     sizeof(float) * (w_elements + c_elements));
+
+  xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> w(w_elements * num_buffers);
+  xnnpack::Buffer<float> kernel_zero_point(nc, 0.0f);
+
+  const xnn_qs8_qc2w_packing_params packing_params = {
+      /*input_zero_point=*/1, /*kernel_zero_point=*/kernel_zero_point.data()};
+  pack(1, nc, kc, nr, kr, sr, k.data(), /*bias=*/nullptr, /*scale=*/nullptr,
+       w.data(), sizeof(float) * 2 * nr, &packing_params);
+  xnnpack::Buffer<float> c(c_elements * num_buffers);
+
+  // Prepare parameters.
+  xnn_f32_minmax_params params;
+  init_params(&params, std::numeric_limits<int8_t>::min(),
+              std::numeric_limits<int8_t>::max());
+
+  size_t buffer_index = 0;
+  for (auto _ : state) {
+    // Use circular buffers (exceeding cache size) and prefetch to control cache
+    // state:
+    // - A is always in L1 cache (if fits, otherwise L2, L3, etc)
+    // - W is not in cache (for any cache level)
+    // - C is not in cache (for any cache level)
+    state.PauseTiming();
+    benchmark::utils::PrefetchToL1(a.data(), a.size());
+    buffer_index = (buffer_index + 1) % num_buffers;
+    state.ResumeTiming();
+
+    for (uint32_t m = 0; m < mc; m += mr) {
+      const uint32_t mb = min(mc - m, mr);
+      gemm(mb, nc, kc * sizeof(int8_t), a.data() + m * kc, kc * sizeof(int8_t),
+           w.data() + w_elements * buffer_index,
+           c.data() + (buffer_index * mc + m) * nc, nc * sizeof(float),
+           nr * sizeof(float), &params, row_sum.data() + m,
+           quantization_params.data() + m);
+    }
+  }
+
+  const uint64_t cpu_frequency = benchmark::utils::GetCurrentCpuFrequency();
+  if (cpu_frequency != 0) {
+    state.counters["cpufreq"] = cpu_frequency;
+  }
+
+  state.counters["OPS"] =
+      benchmark::Counter(static_cast<uint64_t>(
+          state.iterations()) * 2 * mc * nc * kc, benchmark::Counter::kIsRate);
+}
 
 void GEMMBenchmark(benchmark::State& state,
                    xnn_qd8_f32_qc4w_gemm_ukernel_fn gemm,
@@ -730,8 +808,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t nc_stride = round_up_po2(nc, nr);
   const size_t kc_stride = (round_up_po2(kc, kr * sr * 2) + 1) / 2;
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
 
   xnnpack::Buffer<int8_t> a(mc * kc, xnnpack::XnnExtraBytes);
   xnnpack::fill_uniform_random_bits(a.data(), a.size(), rng);
@@ -797,7 +874,7 @@ void GEMMBenchmark(benchmark::State& state,
                    xnn_init_f32_minmax_params_fn init_minmax_params,
                    xnn_pack_weights_and_biases_fn pack_weights,
                    xnn_packed_stride_weights_and_biases_fn packed_stride,
-                   size_t mr, size_t nr, size_t kr, size_t sr, size_t mr_packed,
+                   ConstantOrFunction mr, ConstantOrFunction nr, size_t kr, size_t sr, ConstantOrFunction mr_packed,
                    uint64_t arch_flags) {
   if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
@@ -807,8 +884,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t nc = state.range(1);
   const size_t kc = round_up(state.range(2), 2UL);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(std::uniform_real_distribution<float>(-10.0f, 10.0f),
                           std::ref(rng));
 
@@ -921,8 +997,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t nc = state.range(1);
   const size_t kc = state.range(2);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(std::uniform_real_distribution<float>(-10.0f, 10.0f),
                           std::ref(rng));
 
@@ -998,21 +1073,14 @@ void GEMMBenchmark(benchmark::State& state,
     buffer_index = (buffer_index + 1) % num_buffers;
     state.ResumeTiming();
 
-    if (mr > 1) {
-      for (uint32_t m = 0; m < mc; m += mr) {
-        const uint32_t mb = min(mc - m, mr);
-        gemm(mb, nc, kc * sizeof(float),
-             input_packed.data() +
-                 xnn_x32_pack_lh_offset__neonsme(m, kc, mr_packed, kr, sr),
-             w.data() + packed_w_size / sizeof(float) * buffer_index,
-             c.data() + (buffer_index * mc + m) * nc, nc * sizeof(float),
-             sizeof(float), &minmax_params);
-      }
-    } else {
-      gemm(mr, nc, kc * sizeof(float), input_packed.data(),
-           w.data() + packed_w_size / sizeof(float) * buffer_index,
-           c.data() + (buffer_index * mc) * nc, nc * sizeof(float),
-           sizeof(float), &minmax_params);
+    for (uint32_t m = 0; m < mc; m += mr) {
+      const uint32_t mb = min(mc - m, mr);
+      gemm(mb, nc, kc * sizeof(float),
+            input_packed.data() +
+                xnn_x32_pack_lh_offset__neonsme(m, kc, mr_packed, kr, sr),
+            w.data() + packed_w_size / sizeof(float) * buffer_index,
+            c.data() + (buffer_index * mc + m) * nc, nc * sizeof(float),
+            sizeof(float), &minmax_params);
     }
   }
 
@@ -1043,8 +1111,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t nc = state.range(1);
   const size_t kc = state.range(2);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(std::uniform_real_distribution<float>(-10.0f, 10.0f),
                           std::ref(rng));
 
@@ -1118,21 +1185,14 @@ void GEMMBenchmark(benchmark::State& state,
     buffer_index = (buffer_index + 1) % num_buffers;
     state.ResumeTiming();
 
-    if (mr > 1) {
-      for (uint32_t m = 0; m < mc; m += mr) {
-        const uint32_t mb = min(mc - m, mr);
-        gemm(mb, nc, kc * sizeof(xnn_float16),
-             input_packed.data() +
-                 xnn_x16_pack_lh_offset__neonsme2(m, kc, mr_packed, kr, sr),
-             w.data() + packed_w_size * buffer_index,
-             &c[c_elements * buffer_index], nc * sizeof(xnn_float16),
-             sizeof(xnn_float16), &minmax_params);
-      }
-    } else {
-      gemm(mr, nc, kc * sizeof(xnn_float16), input_packed.data(),
-           w.data() + packed_w_size * buffer_index,
-           &c[c_elements * buffer_index], nc * sizeof(xnn_float16),
-           sizeof(xnn_float16), &minmax_params);
+    for (uint32_t m = 0; m < mc; m += mr) {
+      const uint32_t mb = min(mc - m, mr);
+      gemm(mb, nc, kc * sizeof(xnn_float16),
+            input_packed.data() +
+                xnn_x16_pack_lh_offset__neonsme(m, kc, mr_packed, kr, sr),
+            w.data() + packed_w_size * buffer_index,
+            &c[c_elements * buffer_index], nc * sizeof(xnn_float16),
+            sizeof(xnn_float16), &minmax_params);
     }
   }
 
@@ -1163,8 +1223,7 @@ void GEMMBenchmark(benchmark::State& state,
   const size_t bl = state.range(3);
   const size_t kc = round_up(state.range(2), bl);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng = std::bind(std::uniform_real_distribution<float>(-10.0f, 10.0f),
                           std::ref(rng));
   auto scalerng = std::bind(std::uniform_real_distribution<float>(0.5f, 2.f),
@@ -1282,8 +1341,7 @@ void GEMMBenchmark(benchmark::State& state, xnn_qu8_gemm_minmax_ukernel_fn gemm,
   const size_t nc_stride = benchmark::utils::RoundUp(nc, nr);
   const size_t kc_stride = benchmark::utils::RoundUp(kc, kr * sr);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto i32rng = std::bind(std::uniform_int_distribution<int32_t>(-10000, 10000),
                           std::ref(rng));
 
@@ -1365,8 +1423,7 @@ void GEMMBenchmark(benchmark::State& state, xnn_f32_gemm_minmax_ukernel_fn gemm,
   const size_t nc_stride = benchmark::utils::RoundUp(nc, nr);
   const size_t kc_stride = benchmark::utils::RoundUp(kc, kr * sr);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng =
       std::bind(std::uniform_real_distribution<float>(), std::ref(rng));
 
@@ -1435,8 +1492,7 @@ void GEMMBenchmark(benchmark::State& state, xnn_f32_gemm_minmax_ukernel_fn gemm,
   const size_t nc = state.range(1);
   const size_t kc = state.range(2);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng =
       std::bind(std::uniform_real_distribution<float>(), std::ref(rng));
 
@@ -1503,8 +1559,7 @@ void GEMMBenchmark(benchmark::State& state, xnn_f16_gemm_minmax_ukernel_fn gemm,
   const size_t nc_stride = benchmark::utils::RoundUp(nc, nr);
   const size_t kc_stride = benchmark::utils::RoundUp(kc, kr * sr);
 
-  std::random_device random_device;
-  auto rng = std::mt19937(random_device());
+  xnnpack::ReplicableRandomDevice rng;
   auto f32rng =
       std::bind(std::uniform_real_distribution<float>(), std::ref(rng));
 

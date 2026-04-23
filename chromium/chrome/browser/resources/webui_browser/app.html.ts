@@ -12,28 +12,30 @@ export function getHtml(this: WebuiBrowserAppElement) {
 <div class="activeFrame" id="rootContainer">
   <div id="topContainer">
     <div class="titlebarDiv" @mousedown="${this.onTabDragMouseDown_}">
-      <div class="tabstripDiv">
-        <webui-browser-tabstrip id="tabstrip"
+      <div class="tabstripDiv" style="margin-left:${this.tabStripInset_}px">
+        <webui-browser-tab-strip id="tabstrip"
           @tab-click="${this.onTabClick_}"
           @tab-drag-out-of-bounds="${this.onTabDragOutOfBounds_}"
           @tab-close="${this.onTabClosed_}"
           @tab-add="${this.onAddTabClick_}">
-        </webui-browser-tabstrip>
+        </webui-browser-tab-strip>
       </div>
-      <div class="captionButtonsDiv">
-        <cr-button type="button" class="caption-button"
-          @click="${this.onMinimizeClick_}">
-          <cr-icon icon="webui-browser:minimize"></cr-icon>
-        </cr-button>
-        <cr-button type="button" class="caption-button"
-          @click="${this.onMaximizeClick_}">
-          <cr-icon icon="webui-browser:maximize"></cr-icon>
-        </cr-button>
-        <cr-button type="button" class="caption-button"
-          @click="${this.onCloseClick_}">
-          <cr-icon icon="webui-browser:close"></cr-icon>
+      <if expr="not is_macosx">
+        <div class="captionButtonsDiv">
+          <cr-button type="button" class="caption-button"
+            @click="${this.onMinimizeClick_}">
+            <cr-icon icon="webui-browser:minimize"></cr-icon>
           </cr-button>
-      </div>
+          <cr-button type="button" class="caption-button"
+            @click="${this.onMaximizeClick_}">
+            <cr-icon icon="webui-browser:maximize"></cr-icon>
+          </cr-button>
+          <cr-button type="button" class="caption-button"
+            @click="${this.onCloseClick_}">
+            <cr-icon icon="webui-browser:close"></cr-icon>
+          </cr-button>
+        </div>
+      </if>
     </div>
     <div id="searchBar">
       <cr-icon-button iron-icon="cr:arrow-back"
@@ -62,11 +64,7 @@ export function getHtml(this: WebuiBrowserAppElement) {
         title="$i18n{appMenuTooltip}"
         @click="${this.onAppMenuClick_}"></cr-icon-button>
     </div>
-    <webui-browser-bookmark-bar
-      id="bookmarkBar"
-      @show-bookmark-bar="${this.onShowBookmarkBar_}"
-      @hide-bookmark-bar="${this.onHideBookmarkBar_}"
-      @bookmark-click="${this.onBookmarkButtonClick_}">
+    <webui-browser-bookmark-bar id="bookmarkBar">
     </webui-browser-bookmark-bar>
   </div>
   <div id="main">

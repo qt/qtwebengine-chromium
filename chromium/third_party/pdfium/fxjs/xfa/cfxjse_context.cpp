@@ -27,6 +27,11 @@
 
 namespace {
 
+// TODO(pdfium): Define and use type-specific type tags for aligned pointers
+// stored in V8 objects. The type tags should not overlap with the ones used by
+// Blink, as defined in gin/public/gin_embedders.h.
+constexpr v8::EmbedderDataTypeTag kDefaultPDFiumTag = 0;
+
 const char szCompatibleModeScript[] =
     "(function(global, list) {\n"
     "  'use strict';\n"
@@ -126,15 +131,19 @@ void FXJSE_UpdateObjectBinding(v8::Local<v8::Object> hObject,
   DCHECK(!hObject.IsEmpty());
   DCHECK_EQ(hObject->InternalFieldCount(), 2);
   hObject->SetAlignedPointerInInternalField(
-      0, const_cast<wchar_t*>(kFXJSEHostObjectTag));
-  hObject->SetAlignedPointerInInternalField(1, pNewBinding);
+      0, const_cast<wchar_t*>(kFXJSEHostObjectTag),
+      kDefaultPDFiumTag);
+  hObject->SetAlignedPointerInInternalField(1, pNewBinding,
+                                            kDefaultPDFiumTag);
 }
 
 void FXJSE_ClearObjectBinding(v8::Local<v8::Object> hObject) {
   DCHECK(!hObject.IsEmpty());
   DCHECK_EQ(hObject->InternalFieldCount(), 2);
-  hObject->SetAlignedPointerInInternalField(0, nullptr);
-  hObject->SetAlignedPointerInInternalField(1, nullptr);
+  hObject->SetAlignedPointerInInternalField(0, nullptr,
+                                            kDefaultPDFiumTag);
+  hObject->SetAlignedPointerInInternalField(1, nullptr,
+                                            kDefaultPDFiumTag);
 }
 
 CFXJSE_HostObject* FXJSE_RetrieveObjectBinding(v8::Local<v8::Value> hValue) {
@@ -144,12 +153,14 @@ CFXJSE_HostObject* FXJSE_RetrieveObjectBinding(v8::Local<v8::Value> hValue) {
 
   v8::Local<v8::Object> hObject = hValue.As<v8::Object>();
   if (hObject->InternalFieldCount() != 2 ||
-      hObject->GetAlignedPointerFromInternalField(0) != kFXJSEHostObjectTag) {
+      hObject->GetAlignedPointerFromInternalField(
+          0, kDefaultPDFiumTag) != kFXJSEHostObjectTag) {
     return nullptr;
   }
 
   return static_cast<CFXJSE_HostObject*>(
-      hObject->GetAlignedPointerFromInternalField(1));
+      hObject->GetAlignedPointerFromInternalField(
+          1, kDefaultPDFiumTag));
 }
 
 // static
@@ -161,11 +172,11 @@ std::unique_ptr<CFXJSE_Context> CFXJSE_Context::Create(
   CFXJSE_ScopeUtil_IsolateHandle scope(pIsolate);
 
   // Private constructor.
-  auto pContext = pdfium::WrapUnique(new CFXJSE_Context(pIsolate, pProxy));
+  auto context = pdfium::WrapUnique(new CFXJSE_Context(pIsolate, pProxy));
   v8::Local<v8::ObjectTemplate> hObjectTemplate;
   if (pGlobalClass) {
     CFXJSE_Class* pGlobalClassObj =
-        CFXJSE_Class::Create(pContext.get(), pGlobalClass, true);
+        CFXJSE_Class::Create(context.get(), pGlobalClass, true);
     hObjectTemplate =
         pGlobalClassObj->GetTemplate(pIsolate)->InstanceTemplate();
   } else {
@@ -183,8 +194,8 @@ std::unique_ptr<CFXJSE_Context> CFXJSE_Context::Create(
   v8::Local<v8::Context> hRootContext =
       CFXJSE_RuntimeData::Get(pIsolate)->GetRootContext(pIsolate);
   hNewContext->SetSecurityToken(hRootContext->GetSecurityToken());
-  pContext->context_.Reset(pIsolate, hNewContext);
-  return pContext;
+  context->context_.Reset(pIsolate, hNewContext);
+  return context;
 }
 
 CFXJSE_Context::CFXJSE_Context(v8::Isolate* pIsolate, CXFA_ThisProxy* pProxy)

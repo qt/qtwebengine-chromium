@@ -4,8 +4,8 @@
 
 #include "third_party/blink/renderer/core/frame/cached_permission_status.h"
 
+#include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
-#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
@@ -18,31 +18,31 @@ using mojom::blink::PermissionService;
 using mojom::blink::PermissionStatus;
 
 // static
-const char CachedPermissionStatus::kSupplementName[] = "CachedPermissionStatus";
-
-// static
-CachedPermissionStatus* CachedPermissionStatus::From(LocalDOMWindow* window) {
-  CachedPermissionStatus* cache =
-      Supplement<LocalDOMWindow>::From<CachedPermissionStatus>(window);
+CachedPermissionStatus* CachedPermissionStatus::From(
+    ExecutionContext* context) {
+  CachedPermissionStatus* cache = context->GetCachedPermissionStatus();
   if (!cache) {
-    cache = MakeGarbageCollected<CachedPermissionStatus>(window);
-    ProvideTo(*window, cache);
+    cache = MakeGarbageCollected<CachedPermissionStatus>(context);
+    context->SetCachedPermissionStatus(cache);
   }
   return cache;
 }
 
-CachedPermissionStatus::CachedPermissionStatus(LocalDOMWindow* local_dom_window)
-    : Supplement<LocalDOMWindow>(*local_dom_window),
-      permission_service_(local_dom_window),
-      permission_observer_receivers_(this, local_dom_window) {
-  CHECK(local_dom_window);
+CachedPermissionStatus::CachedPermissionStatus(ExecutionContext* context)
+    : execution_context_(*context),
+      permission_service_(context),
+      permission_observer_receivers_(this, context) {
+  CHECK(context);
+  CHECK(RuntimeEnabledFeatures::PermissionElementEnabled(context) ||
+        RuntimeEnabledFeatures::GeolocationElementEnabled(context) ||
+        RuntimeEnabledFeatures::UserMediaElementEnabled(context));
 }
 
 void CachedPermissionStatus::Trace(Visitor* visitor) const {
   visitor->Trace(permission_service_);
   visitor->Trace(permission_observer_receivers_);
   visitor->Trace(clients_);
-  Supplement<LocalDOMWindow>::Trace(visitor);
+  visitor->Trace(execution_context_);
 }
 
 void CachedPermissionStatus::RegisterClient(
@@ -108,7 +108,7 @@ void CachedPermissionStatus::RegisterPermissionObserver(
   mojo::ReceiverId id = permission_observer_receivers_.Add(
       observer.InitWithNewPipeAndPassReceiver(), descriptor->name,
       GetTaskRunner());
-  GetPermissionService()->AddCombinedPermissionObserver(
+  GetPermissionService()->AddPageEmbeddedPermissionObserver(
       descriptor.Clone(), current_status, std::move(observer));
   auto inserted = permission_to_receivers_map_.insert(descriptor->name, id);
   CHECK(inserted.is_new_entry);
@@ -129,7 +129,7 @@ void CachedPermissionStatus::OnPermissionStatusChange(PermissionStatus status) {
 
 PermissionService* CachedPermissionStatus::GetPermissionService() {
   if (!permission_service_.is_bound()) {
-    GetSupplementable()->GetBrowserInterfaceBroker().GetInterface(
+    execution_context_->GetBrowserInterfaceBroker().GetInterface(
         permission_service_.BindNewPipeAndPassReceiver(GetTaskRunner()));
   }
 
@@ -138,7 +138,7 @@ PermissionService* CachedPermissionStatus::GetPermissionService() {
 
 scoped_refptr<base::SingleThreadTaskRunner>
 CachedPermissionStatus::GetTaskRunner() {
-  return GetSupplementable()->GetTaskRunner(TaskType::kInternalDefault);
+  return execution_context_->GetTaskRunner(TaskType::kInternalDefault);
 }
 
 }  // namespace blink

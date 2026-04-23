@@ -18,6 +18,9 @@ try_.defaults.set(
     cores = 8,
     os = os.LINUX_DEFAULT,
     execution_timeout = try_constants.DEFAULT_EXECUTION_TIMEOUT,
+    experiments = {
+        "chromium_tests.resultdb_module": 100,
+    },
     service_account = try_constants.DEFAULT_SERVICE_ACCOUNT,
     siso_project = siso.project.DEFAULT_UNTRUSTED,
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
@@ -114,7 +117,7 @@ _builder(
     mirror_of = "ci/UBSan vptr Release",
 )
 
-_mirror_builder(name = "android-x64-libfuzzer-asan", executable = "recipe:chromium/fuzz")
+_mirror_builder(name = "android-desktop-x64-libfuzzer-asan", executable = "recipe:chromium/fuzz")
 
 _mirror_builder(name = "android-arm64-libfuzzer-hwasan", executable = "recipe:chromium/fuzz")
 

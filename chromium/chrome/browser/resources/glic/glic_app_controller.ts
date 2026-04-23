@@ -5,11 +5,10 @@
 import {loadTimeData} from '//resources/js/load_time_data.js';
 import {getRequiredElement} from 'chrome://resources/js/util.js';
 
-import {BrowserProxyImpl} from './browser_proxy.js';
-import {PrepareForClientResult, ProfileReadyState, WebUiState} from './glic.mojom-webui.js';
-import type {PageInterface} from './glic.mojom-webui.js';
-import type {ApiHostEmbedder} from './glic_api_impl/glic_api_host.js';
-import {WebClientState} from './glic_api_impl/glic_api_host.js';
+import type {BrowserProxyImpl} from './browser_proxy.js';
+import {PanelStateKind, PrepareForClientResult, ProfileReadyState, WebUiState} from './glic.mojom-webui.js';
+import type {ApiHostEmbedder} from './glic_api_impl/host/glic_api_host.js';
+import {WebClientState} from './glic_api_impl/host/glic_api_host.js';
 import type {PageType, WebviewDelegate} from './webview.js';
 import {WebviewController, WebviewPersistentState} from './webview.js';
 
@@ -97,8 +96,7 @@ export enum LoadingStage {
 }
 // LINT.ThenChange(//tools/metrics/histograms/metadata/glic/enums.xml:LoadingStage,//tools/metrics/histograms/metadata/glic/histograms.xml:LoadingStage)
 
-export class GlicAppController implements PageInterface, WebviewDelegate,
-                                          ApiHostEmbedder {
+export class GlicAppController implements WebviewDelegate, ApiHostEmbedder {
   loadingTimer: number|undefined;
 
   // This is used to simulate no connection for tests.
@@ -107,8 +105,12 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
 
   private guestResizeEnabled: boolean = false;
 
-  // Width for non-resizable panel.
-  private defaultWidth: number = 352;
+  // Width and height for non-resizable panel.
+  private defaultWidth: number = 400;
+  private defaultHeight: number = 252;
+
+  // Height for floating loading panel.
+  private floatingLoadingHeight: number = 80;
 
   // Last seen width and height of guest panel.
   private lastWidth: number = 400;
@@ -126,6 +128,8 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
   private loadingStage: LoadingStage = LoadingStage.NOT_LOADING;
   private loadingStageStartTimestampMs?: DOMHighResTimeStamp;
 
+  private panelStateKind: PanelStateKind = PanelStateKind.kHidden;
+
   state: WebUiState|undefined;
 
   // When entering loading state, this represents the earliest timestamp at
@@ -135,17 +139,19 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
 
   browserProxy: BrowserProxyImpl;
 
-  constructor() {
-    this.browserProxy = new BrowserProxyImpl(this);
+  constructor(browserProxy: BrowserProxyImpl) {
+    this.browserProxy = browserProxy;
 
     window.addEventListener('online', () => {
       this.online();
     });
     window.addEventListener('offline', () => {
-      this.offline();
+      if (!this.isOnline()) {
+        this.offline();
+      }
     });
 
-    if (navigator.onLine && !this.simulateNoConnection) {
+    if (this.isOnline()) {
       this.setState(WebUiState.kBeginLoad);
     } else {
       this.setState(WebUiState.kOffline);
@@ -213,7 +219,8 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
             unresponsiveDuration);
         this.enteredUnresponsiveTimestampMs = undefined;
       } else {
-        console.error('Unresponsive state exited without an entering timestamp');
+        console.error(
+            'Unresponsive state exited without an entering timestamp');
       }
     }
 
@@ -536,16 +543,27 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
     for (const panel of document.querySelectorAll<HTMLElement>('.panel')) {
       panel.hidden = panel.id !== id;
     }
+
+    const panelStateKindSection = getRequiredElement('localPanels');
+    panelStateKindSection.classList.toggle('hidden', id === 'guestPanel');
     // Resize widget to size of new panel.
     if (id === 'guestPanel') {
       // For the guest webview, use the most recently requested size.
       this.browserProxy.handler.resizeWidget(
           {width: this.lastWidth, height: this.lastHeight}, transitionDuration);
+    }
+    if (id === 'loadingPanel') {
+      this.browserProxy.handler.resizeWidget(
+          {
+            width: this.defaultWidth,
+            height: this.floatingLoadingHeight,
+          },
+          transitionDuration);
     } else {
       this.browserProxy.handler.resizeWidget(
           {
             width: this.defaultWidth,
-            height: $[id].getBoundingClientRect().height,
+            height: this.defaultHeight,
           },
           transitionDuration);
     }
@@ -695,6 +713,18 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
   }
 
   // PageInterface implementation.
+  updatePageState(panelStateKind: PanelStateKind) {
+    if (this.panelStateKind === panelStateKind) {
+      return;
+    }
+    this.panelStateKind = panelStateKind;
+
+    const panelStateKindSection = getRequiredElement('localPanels');
+    panelStateKindSection.classList.toggle(
+        'sidePanel', this.panelStateKind === PanelStateKind.kAttached);
+    panelStateKindSection.classList.toggle(
+        'floating', this.panelStateKind === PanelStateKind.kDetached);
+  }
 
   // Called before the WebUI is shown. If we're in an error state, automatically
   // try to reload.
@@ -739,5 +769,11 @@ export class GlicAppController implements PageInterface, WebviewDelegate,
 
   openDisabledByAdminLink(): void {
     this.browserProxy.handler.openDisabledByAdminLinkAndClosePanel();
+  }
+
+  isOnline() {
+    return loadTimeData.getBoolean('ignoreOfflineState') ?
+        true :
+        navigator.onLine && !this.simulateNoConnection;
   }
 }

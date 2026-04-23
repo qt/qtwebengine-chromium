@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2023-2024 Valve Corporation
-# Copyright (c) 2023-2024 LunarG, Inc.
+# Copyright (c) 2023-2025 Valve Corporation
+# Copyright (c) 2023-2025 LunarG, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,6 +57,13 @@ def getVUID(valid_vuids: set, vuid: str, quotes: bool = True) -> str:
         vuid = vuid.replace('VUID-', 'UNASSIGNED-')
     return vuid if not quotes else f'"{vuid}"'
 
+# There is no way to find this information in the XML
+def createObject(command_name: str):
+    return any(x in command_name for x in ['Create', 'Allocate', 'Enumerate', 'RegisterDeviceEvent', 'RegisterDisplayEvent', 'AcquirePerformanceConfigurationINTEL'])
+
+def destroyObject(command_name: str):
+    return any(x in command_name for x in ['Destroy', 'Free', 'ReleasePerformanceConfigurationINTEL'])
+
 class PlatformGuardHelper():
     """Used to elide platform guards together, so redundant #endif then #ifdefs are removed
     Note - be sure to call add_guard(None) when done to add a trailing #endif if needed
@@ -108,39 +115,66 @@ def IsNonVulkanSprivCapability(capability):
         'VariableLengthArrayINTEL',
         'FunctionFloatControlINTEL',
         'FPGAMemoryAttributesINTEL',
+        'FPGAMemoryAttributesALTERA',
         'FPFastMathModeINTEL',
         'ArbitraryPrecisionIntegersINTEL',
+        'ArbitraryPrecisionIntegersALTERA',
         'ArbitraryPrecisionFloatingPointINTEL',
+        'ArbitraryPrecisionFloatingPointALTERA',
         'UnstructuredLoopControlsINTEL',
+        'UnstructuredLoopControlsALTERA',
         'FPGALoopControlsINTEL',
+        'FPGALoopControlsALTERA',
         'KernelAttributesINTEL',
         'FPGAKernelAttributesINTEL',
         'FPGAMemoryAccessesINTEL',
+        'FPGAMemoryAccessesALTERA',
         'FPGAClusterAttributesINTEL',
+        'FPGAClusterAttributesALTERA',
         'LoopFuseINTEL',
+        'LoopFuseALTERA',
         'FPGADSPControlINTEL',
+        'FPGADSPControlALTERA',
         'MemoryAccessAliasingINTEL',
+        'MemoryAccessAliasingALTERA',
         'FPGAInvocationPipeliningAttributesINTEL',
+        'FPGAInvocationPipeliningAttributesALTERA',
         'FPGABufferLocationINTEL',
+        'FPGABufferLocationALTERA',
         'ArbitraryPrecisionFixedPointINTEL',
+        'ArbitraryPrecisionFixedPointALTERA',
         'USMStorageClassesINTEL',
+        'USMStorageClassesALTERA',
         'RuntimeAlignedAttributeINTEL',
+        'RuntimeAlignedAttributeALTERA',
         'IOPipesINTEL',
+        'IOPipesALTERA',
         'BlockingPipesINTEL',
+        'BlockingPipesALTERA',
         'FPGARegINTEL',
+        'FPGARegALTERA',
         'LongCompositesINTEL',
+        'LongCompositesALTERA',
         'OptNoneINTEL',
         'DebugInfoModuleINTEL',
         'BFloat16ConversionINTEL',
         'SplitBarrierINTEL',
         'FPGAClusterAttributesV2INTEL',
+        'FPGAClusterAttributesV2ALTERA',
         'FPGAKernelAttributesv2INTEL',
+        'FPGAKernelAttributesv2ALTERA',
         'FPMaxErrorINTEL',
+        'FPMaxErrorALTERA',
         'FPGALatencyControlINTEL',
+        'FPGALatencyControlALTERA',
         'FPGAArgumentInterfacesINTEL',
+        'FPGAArgumentInterfacesALTERA',
         'GlobalVariableHostAccessINTEL',
         'GlobalVariableFPGADecorationsINTEL',
+        'GlobalVariableFPGADecorationsALTERA',
         'MaskedGatherScatterINTEL',
         'CacheControlsINTEL',
-        'RegisterLimitsINTEL'
+        'RegisterLimitsINTEL',
+        'TaskSequenceINTEL',
+        'TaskSequenceALTERA',
     ]

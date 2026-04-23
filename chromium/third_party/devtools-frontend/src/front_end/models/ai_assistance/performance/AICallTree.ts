@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Root from '../../../core/root/root.js';
+import type * as Protocol from '../../../generated/protocol.js';
 import * as Trace from '../../../models/trace/trace.js';
 import * as SourceMapsResolver from '../../../models/trace_source_maps_resolver/trace_source_maps_resolver.js';
 
@@ -144,7 +144,7 @@ export class AICallTree {
       return null;
     }
 
-    const allEventsEnabled = Root.Runtime.experiments.isEnabled('timeline-show-all-events');
+    const showAllEvents = parsedTrace.data.Meta.config.showAllEvents;
     const {startTime, endTime} = Trace.Helpers.Timing.eventTimingsMilliSeconds(selectedEvent);
     const selectedEventBounds = Trace.Helpers.Timing.traceWindowFromMicroSeconds(
         Trace.Helpers.Timing.milliToMicro(startTime), Trace.Helpers.Timing.milliToMicro(endTime));
@@ -166,7 +166,7 @@ export class AICallTree {
     // If the "Show all events" experiment is on, we don't filter out any
     // events here, otherwise the generated call tree will not match what the
     // user is seeing.
-    if (!allEventsEnabled) {
+    if (!showAllEvents) {
       filters.push(new Trace.Extras.TraceFilter.VisibleEventsFilter(Trace.Styles.visibleTypes()));
     }
 
@@ -287,10 +287,12 @@ export class AICallTree {
   *   5. `urlIndex`: An index referencing a URL in the `allUrls` array. If no URL is present, this is an empty string.
   *   6. `childRange`: A string indicating the range of IDs for the node's children. Children should always have consecutive IDs.
   *                    If there is only one child, it's a single ID.
-  *   7. `[S]`: An optional marker indicating that this node is the selected node.
+  *   7. `[line]`: An optional field for a call frame's line number.
+  *   8. `[column]`: An optional field for a call frame's column number.
+  *   9. `[S]`: An optional marker indicating that this node is the selected node.
   *
   * Example:
-  *   `1;Parse HTML;2.5;0.3;0;2-5;S`
+  *   `1;Parse HTML;2.5;0.3;0;2-5;10;11;S`
   *   This represents:
   *     - Node ID 1
   *     - Name "Parse HTML"
@@ -298,6 +300,7 @@ export class AICallTree {
   *     - Self time of 0.3ms
   *     - URL index 0 (meaning the URL is the first one in the `allUrls` array)
   *     - Child range of IDs 2 to 5
+  *     - Line, column is 10:11
   *     - This node is the selected node (S marker)
   */
   stringifyNode(
@@ -332,7 +335,8 @@ export class AICallTree {
     const selfTimeStr = roundToTenths(node.selfTime);
 
     // 6. URL Index
-    const url = SourceMapsResolver.SourceMapsResolver.resolvedURLForEntry(parsedTrace, event);
+    const location = SourceMapsResolver.SourceMapsResolver.codeLocationForEntry(parsedTrace, event);
+    const url = location?.url;
     let urlIndexStr = '';
     if (url) {
       const existingIndex = allUrls.indexOf(url);
@@ -362,12 +366,55 @@ export class AICallTree {
     line += ';' + selfTimeStr;
     line += ';' + urlIndexStr;
     line += ';' + childRangeStr;
+    line += ';' + (location?.line ?? '');
+    line += ';' + (location?.column ?? '');
 
     if (selectedMarker) {
       line += ';' + selectedMarker;
     }
 
     return line;
+  }
+
+  topCallFramesBySelfTime(limit: number): Protocol.Runtime.CallFrame[] {
+    const functionNodesByCallFrame = new Map<string, Trace.Extras.TraceTree.Node[]>();
+
+    this.breadthFirstWalk(this.rootNode.children().values(), node => {
+      if (Trace.Types.Events.isProfileCall(node.event)) {
+        const callFrame = node.event.callFrame;
+        const callFrameKey = `${callFrame.scriptId}:${callFrame.lineNumber}:${callFrame.columnNumber}`;
+        const array = functionNodesByCallFrame.get(callFrameKey) ?? [];
+        array.push(node);
+        functionNodesByCallFrame.set(callFrameKey, array);
+      }
+    });
+
+    return [...functionNodesByCallFrame.values()]
+        .map(nodes => {
+          return {
+            callFrame: (nodes[0].event as Trace.Types.Events.SyntheticProfileCall).callFrame,
+            selfTime: nodes.reduce((total, cur) => total + cur.selfTime, 0),
+          };
+        })
+        .sort((a, b) => b.selfTime - a.selfTime)
+        .slice(0, limit)
+        .map(({callFrame}) => callFrame);
+  }
+
+  topCallFrameByTotalTime(): Protocol.Runtime.CallFrame|null {
+    let topChild: Trace.Extras.TraceTree.Node|null = null;
+    let topProfileCallEvent: Trace.Types.Events.SyntheticProfileCall|null = null;
+
+    for (const child of this.rootNode.children().values()) {
+      if (Trace.Types.Events.isProfileCall(child.event)) {
+        if (!topChild || child.totalTime > topChild.totalTime) {
+          topChild = child;
+          topProfileCallEvent = child.event;
+        }
+      }
+    }
+
+    return topProfileCallEvent?.callFrame ?? null;
   }
 
   // Only used for debugging.

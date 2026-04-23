@@ -41,13 +41,13 @@ instance_ci.pNext = &layer_settings_create_info;
 
 ```bash
 # Windows
-set VK_LAYER_VALIDATE_SYNC=1
+set VK_VALIDATION_VALIDATE_SYNC=1
 
 # Linux
-export VK_LAYER_VALIDATE_SYNC=1
+export VK_VALIDATION_VALIDATE_SYNC=1
 
 # Android
-adb setprop debug.vulkan.khronos_validation.validate_sync=1
+adb shell setprop debug.vulkan.khronos_validation.validate_sync=1
 ```
 
 [Additional configuration settings](https://vulkan.lunarg.com/doc/sdk/latest/windows/khronos_validation_layer.html) will all share the `VK_LAYER_SYNCVAL_`/`khronos_validation.syncval_*` prefix namespace.
@@ -123,7 +123,7 @@ The pipelined and multi-threaded nature of Vulkan makes it particularly importan
 - Dynamic Rendering support
 
 ### Known Limitations
-- Does not support precise tracking of descriptors accessed by the shader (requires integration with GPU-AV)
+- Does not support precise tracking of descriptors accessed by the shader (requires integration with GPU-AV). This includes both classic VkDescriptorSet and VK_EXT_descriptor_buffer APIs
 - Hazards related to memory aliasing are not detected properly
 - Indirectly accessed (indirect/indexed) buffers validated at *binding* granularity. (Every valid location assumed to be accessed.)
 - Queue family ownership transfer not supported

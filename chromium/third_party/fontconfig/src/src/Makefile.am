@@ -75,6 +75,7 @@ AM_CPPFLAGS = 						\
 	-I$(top_srcdir)					\
 	-I$(top_srcdir)/src				\
 	-I$(top_builddir)/fc-lang			\
+	-I$(top_builddir)/fc-const			\
 	$(FREETYPE_CFLAGS)				\
 	$(ICONV_CFLAGS)					\
 	$(LIBXML2_CFLAGS)				\

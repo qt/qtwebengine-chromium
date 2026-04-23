@@ -51,15 +51,19 @@
 #include "dawn/native/webgpu/BindGroupLayoutWGPU.h"
 #include "dawn/native/webgpu/BindGroupWGPU.h"
 #include "dawn/native/webgpu/BufferWGPU.h"
+#include "dawn/native/webgpu/CaptureContext.h"
 #include "dawn/native/webgpu/CommandBufferWGPU.h"
 #include "dawn/native/webgpu/ComputePipelineWGPU.h"
 #include "dawn/native/webgpu/PhysicalDeviceWGPU.h"
 #include "dawn/native/webgpu/PipelineLayoutWGPU.h"
+#include "dawn/native/webgpu/QuerySetWGPU.h"
 #include "dawn/native/webgpu/QueueWGPU.h"
+#include "dawn/native/webgpu/RenderBundleWGPU.h"
 #include "dawn/native/webgpu/RenderPipelineWGPU.h"
 #include "dawn/native/webgpu/SamplerWGPU.h"
 #include "dawn/native/webgpu/ShaderModuleWGPU.h"
 #include "dawn/native/webgpu/TextureWGPU.h"
+#include "dawn/native/webgpu/ToWGPU.h"
 
 #include "tint/tint.h"
 
@@ -90,6 +94,20 @@ Device::Device(AdapterBase* adapter,
     WGPUDeviceDescriptor apiDesc = *(ToAPI(*descriptor));
     std::string label = "Inner Device on " + adapter->GetPhysicalDevice()->GetName();
     apiDesc.label = ToOutputStringView(label);
+
+    WGPUDawnTogglesDescriptor apiToggleDescriptor = WGPU_DAWN_TOGGLES_DESCRIPTOR_INIT;
+
+    apiDesc.nextInChain = nullptr;
+    auto enabledTogglesName = deviceToggles.GetEnabledToggleNames();
+    apiToggleDescriptor.enabledToggleCount = enabledTogglesName.size();
+    apiToggleDescriptor.enabledToggles = enabledTogglesName.data();
+
+    auto disabledTogglesName = deviceToggles.GetDisabledToggleNames();
+    apiToggleDescriptor.disabledToggleCount = disabledTogglesName.size();
+    apiToggleDescriptor.disabledToggles = disabledTogglesName.data();
+
+    apiDesc.nextInChain = &apiToggleDescriptor.chain;
+
     // Acquire a Ref to the outer webgpu::Device to avoid possible dangling pointer in the callback.
     Ref<Device>* outerDeviceRef = new Ref<Device>(this);
     apiDesc.deviceLostCallbackInfo = {
@@ -160,6 +178,12 @@ ResultOrError<Ref<CommandBufferBase>> Device::CreateCommandBuffer(
     // TODO(crbug.com/413053623): Store CommandEncoderDescriptor and assign here.
     return CommandBuffer::Create(encoder, descriptor);
 }
+ResultOrError<Ref<RenderBundleBase>> Device::CreateRenderBundle(
+    RenderBundleEncoderBase* encoder,
+    const RenderBundleDescriptor* descriptor) {
+    return RenderBundle::Create(encoder, descriptor, encoder->AcquireRenderPassUsages(),
+                                encoder->AcquireIndirectDrawMetadata());
+}
 Ref<ComputePipelineBase> Device::CreateUninitializedComputePipelineImpl(
     const UnpackedPtr<ComputePipelineDescriptor>& descriptor) {
     return ComputePipeline::CreateUninitialized(this, descriptor);
@@ -171,7 +195,7 @@ ResultOrError<Ref<PipelineLayoutBase>> Device::CreatePipelineLayoutImpl(
 }
 
 ResultOrError<Ref<QuerySetBase>> Device::CreateQuerySetImpl(const QuerySetDescriptor* descriptor) {
-    return Ref<QuerySetBase>{nullptr};
+    return QuerySet::Create(this, descriptor);
 }
 
 Ref<RenderPipelineBase> Device::CreateUninitializedRenderPipelineImpl(
@@ -183,9 +207,8 @@ ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescripto
 }
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-    const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult) {
-    return ShaderModule::Create(this, descriptor, internalExtensions, parseResult);
+    const std::vector<tint::wgsl::Extension>& internalExtensions) {
+    return ShaderModule::Create(this, descriptor, internalExtensions);
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
                                                               SwapChainBase* previousSwapChain,
@@ -217,19 +240,46 @@ void Device::DestroyImpl() {
     }
 }
 
+void Device::SetLabelImpl() {
+    CaptureSetLabel(this, GetLabel());
+}
+
 MaybeError Device::CopyFromStagingToBuffer(BufferBase* source,
                                            uint64_t sourceOffset,
                                            BufferBase* destination,
                                            uint64_t destinationOffset,
                                            uint64_t size) {
-    return DAWN_UNIMPLEMENTED_ERROR("webgpu::Device implementation is incomplete.");
+    wgpu.queueWriteBuffer(
+        ToBackend(GetQueue())->GetInnerHandle(), ToBackend(destination)->GetInnerHandle(),
+        sourceOffset,
+        // The staging buffers in the DynamicUploader are assumed in Dawn to be persistently mapped
+        // buffers that always have the mapped pointer accessible. n the WebGPU backend, to use the
+        // buffers in a copyB2B we would need to unmap them but the DynamicUploader doesn't support
+        // that. Instead keep the buffers mapped and use queueWriteBuffer to read directly from the
+        // mapped staging memory.
+        wgpu.bufferGetConstMappedRange(ToBackend(source)->GetInnerHandle(), 0, source->GetSize()),
+        size);
+    return {};
 }
 
-MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
+MaybeError Device::CopyFromStagingToTextureImpl(BufferBase* source,
                                                 const TexelCopyBufferLayout& src,
                                                 const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
-    return DAWN_UNIMPLEMENTED_ERROR("webgpu::Device implementation is incomplete.");
+    WGPUTexelCopyBufferLayout innerSource = ToWGPU(src);
+    WGPUTexelCopyTextureInfo innerDestination = ToWGPU(dst);
+    size_t bufferSize = source->GetSize();
+    WGPUExtent3D size = ToWGPU(copySizePixels);
+    wgpu.queueWriteTexture(
+        ToBackend(GetQueue())->GetInnerHandle(), &innerDestination,
+        // The staging buffers in the DynamicUploader are assumed in Dawn to be persistently mapped
+        // buffers that always have the mapped pointer accessible. n the WebGPU backend, to use the
+        // buffers in a copyB2T we would need to unmap them but the DynamicUploader doesn't support
+        // that. Instead keep the buffers mapped and use queueWriteTexture to read directly from the
+        // mapped staging memory.
+        wgpu.bufferGetConstMappedRange(ToBackend(source)->GetInnerHandle(), 0, bufferSize),
+        bufferSize, &innerSource, &size);
+    return {};
 }
 
 MaybeError Device::TickImpl() {
@@ -247,6 +297,33 @@ uint64_t Device::GetOptimalBufferToTextureCopyOffsetAlignment() const {
 
 float Device::GetTimestampPeriodInNS() const {
     return 1.0f;
+}
+
+bool Device::CanResolveSubRect() const {
+    // Related code in src/dawn/native/RenderPassWorkaroundsHelper.cpp
+    // WebGPU backend will pass down cmd->resolveRect to the inner layer backend to handle it
+    // anyways, so return true and do not apply any workarounds here.
+    return true;
+}
+
+bool Device::NeedsIndirectDrawGPUValidation() const {
+    // WebGPU backend never actually dispatch compute pass to validate indirect draw cmds,
+    // since the inner backend will take care of it.
+    return false;
+}
+
+void Device::StartCapture(CaptureStream& commandStream, CaptureStream& contentStream) {
+    MaybeError result = ToBackend(GetQueue())
+                            ->SetCaptureContext(std::unique_ptr<CaptureContext>(
+                                new CaptureContext(this, commandStream, contentStream)));
+    [[maybe_unused]] bool hadError =
+        ConsumedError(std::move(result), "calling %s.StartCapture()", this);
+}
+
+void Device::EndCapture() {
+    MaybeError result = ToBackend(GetQueue())->SetCaptureContext(nullptr);
+    [[maybe_unused]] bool hadError =
+        ConsumedError(std::move(result), "calling %s.EndCapture()", this);
 }
 
 }  // namespace dawn::native::webgpu

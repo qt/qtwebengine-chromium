@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -10,7 +10,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as HeapSnapshotModel from '../../models/heap_snapshot_model/heap_snapshot_model.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import {createIcon} from '../../ui/kit/kit.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -434,7 +434,7 @@ export class HeapSnapshotGridNode extends
             }
 
             // Merge with the next range.
-            if (nextRange && newEndOfRange === nextRange.from) {
+            if (newEndOfRange === nextRange?.from) {
               range.to = nextRange.to;
               // Remove "show next" button if there is one.
               this.removeChildByIndex(insertionIndex);
@@ -631,12 +631,12 @@ export abstract class HeapSnapshotGenericObjectNode extends HeapSnapshotGridNode
     const div = fragment.$('container');
     this.prefixObjectCell(div);
     if (this.reachableFromWindow) {
-      const frameIcon = IconButton.Icon.create('frame', 'heap-object-tag');
+      const frameIcon = createIcon('frame', 'heap-object-tag');
       UI.Tooltip.Tooltip.install(frameIcon, i18nString(UIStrings.userObjectReachableFromWindow));
       div.appendChild(frameIcon);
     }
     if (this.detachedDOMTreeNode) {
-      const frameIcon = IconButton.Icon.create('scissors', 'heap-object-tag');
+      const frameIcon = createIcon('scissors', 'heap-object-tag');
       UI.Tooltip.Tooltip.install(frameIcon, i18nString(UIStrings.detachedFromDomTree));
       div.appendChild(frameIcon);
     }
@@ -1084,6 +1084,8 @@ export class HeapSnapshotConstructorNode extends HeapSnapshotGridNode {
   readonly retainedSize: number;
   readonly classKey: string;
 
+  #numberFormatter = new Intl.NumberFormat(i18n.DevToolsLocale.DevToolsLocale.instance().locale);
+
   constructor(
       dataGrid: HeapSnapshotConstructorsDataGrid, classKey: string,
       aggregate: HeapSnapshotModel.HeapSnapshotModel.Aggregate,
@@ -1102,7 +1104,7 @@ export class HeapSnapshotConstructorNode extends HeapSnapshotGridNode {
     const shallowSizePercent = this.shallowSize / snapshot.totalSize * 100.0;
     this.data = {
       object: this.nameInternal,
-      count: Platform.NumberUtilities.withThousandsSeparator(this.count),
+      count: this.#numberFormatter.format(this.count),
       distance: this.toUIDistance(this.distance),
       shallowSize: i18n.ByteUtilities.formatBytesToKb(this.shallowSize),
       retainedSize: i18n.ByteUtilities.formatBytesToKb(this.retainedSize),
@@ -1143,7 +1145,7 @@ export class HeapSnapshotConstructorNode extends HeapSnapshotGridNode {
   override createCell(columnId: string): HTMLElement {
     const cell = columnId === 'object' ? super.createCell(columnId) : this.createValueCell(columnId);
     if (columnId === 'object' && this.count > 1) {
-      cell.appendChild(UI.Fragment.html`<span class="objects-count">×${this.count}</span>`);
+      cell.appendChild(UI.Fragment.html`<span class="objects-count">×${this.data.count}</span>`);
     }
     return cell;
   }

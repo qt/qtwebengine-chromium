@@ -36,7 +36,10 @@ void RecordGetCredentialsResult(const CredentialsOrError& result_or_error) {
       RecordGetCredentialsResult(
           GetCredentialsResult::kErrorInvalidTabInterface);
       break;
-    case ActorLoginError::kUnknown:
+    case ActorLoginError::kFillingNotAllowed:
+      RecordGetCredentialsResult(GetCredentialsResult::kErrorFillingNotAllowed);
+      break;
+    case ActorLoginError::kFeatureDisabled:
       RecordGetCredentialsResult(GetCredentialsResult::kErrorUnknown);
       break;
   }
@@ -64,8 +67,12 @@ void RecordAttemptLoginResult(const LoginStatusResultOrError& result_or_error) {
       case LoginStatusResult::kErrorNoFillableFields:
         RecordAttemptLoginResult(AttemptLoginResult::kErrorNoFillableFields);
         break;
-      case LoginStatusResult::kErrorFillingNotAllowed:
-        RecordAttemptLoginResult(AttemptLoginResult::kErrorFillingNotAllowed);
+      case LoginStatusResult::kErrorDeviceReauthRequired:
+        RecordAttemptLoginResult(
+            AttemptLoginResult::kErrorDeviceReauthRequired);
+        break;
+      case LoginStatusResult::kErrorDeviceReauthFailed:
+        RecordAttemptLoginResult(AttemptLoginResult::kErrorDeviceReauthFailed);
         break;
     }
     return;
@@ -78,7 +85,10 @@ void RecordAttemptLoginResult(const LoginStatusResultOrError& result_or_error) {
     case ActorLoginError::kInvalidTabInterface:
       RecordAttemptLoginResult(AttemptLoginResult::kErrorInvalidTabInterface);
       break;
-    case ActorLoginError::kUnknown:
+    case ActorLoginError::kFillingNotAllowed:
+      RecordAttemptLoginResult(AttemptLoginResult::kErrorFillingNotAllowed);
+      break;
+    case ActorLoginError::kFeatureDisabled:
       RecordAttemptLoginResult(AttemptLoginResult::kErrorUnknown);
       break;
   }

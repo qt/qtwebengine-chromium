@@ -12,7 +12,6 @@ generate_css("css_files") {
   sources = [
     "cookieControlsView.css",
     "cookieReportView.css",
-    "ipProtectionView.css",
     "lockIcon.css",
     "mainView.css",
     "originView.css",
@@ -20,14 +19,12 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("security") {
+devtools_ui_module("security") {
   sources = [
     "CookieControlsTreeElement.ts",
     "CookieControlsView.ts",
     "CookieReportTreeElement.ts",
     "CookieReportView.ts",
-    "IPProtectionTreeElement.ts",
-    "IPProtectionView.ts",
     "OriginTreeElement.ts",
     "SecurityModel.ts",
     "SecurityPanel.ts",
@@ -45,9 +42,11 @@ devtools_module("security") {
     "../../models/issues_manager:bundle",
     "../../panels/network/forward:bundle",
     "../../ui/components/buttons:bundle",
-    "../../ui/components/cards:bundle",
     "../../ui/components/chrome_link:bundle",
+    "../../ui/components/input:bundle",
     "../../ui/components/switch:bundle",
+    "../../ui/i18n:bundle",
+    "../../ui/kit:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/data_grid:bundle",
   ]
@@ -84,13 +83,12 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
     "CookieControlsView.test.ts",
     "CookieReportView.test.ts",
-    "IPProtectionView.test.ts",
     "SecurityModel.test.ts",
     "SecurityPanel.test.ts",
   ]

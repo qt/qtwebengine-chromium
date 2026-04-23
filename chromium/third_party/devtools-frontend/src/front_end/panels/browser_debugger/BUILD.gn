@@ -16,7 +16,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("browser_debugger") {
+devtools_ui_module("browser_debugger") {
   sources = [
     "CSPViolationBreakpointsSidebarPane.ts",
     "CategorizedBreakpointsSidebarPane.ts",
@@ -34,6 +34,7 @@ devtools_module("browser_debugger") {
     "../../panels/sources:bundle",
     "../../ui/legacy:bundle",
     "../../ui/visual_logging:bundle",
+    "../common:bundle",
   ]
 }
 
@@ -67,7 +68,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

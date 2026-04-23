@@ -17,7 +17,6 @@
 #include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
-#include "base/functional/callback_forward.h"
 #include "base/functional/callback_helpers.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/weak_ptr.h"
@@ -105,9 +104,6 @@ bool IsSuggestionHandledInPasswordManager(SuggestionType type) {
     case SuggestionType::kDatalistEntry:
     case SuggestionType::kAutocompleteEntry:
     case SuggestionType::kFillExistingPlusAddress:
-    case SuggestionType::kCreateNewPlusAddress:
-    case SuggestionType::kCreateNewPlusAddressInline:
-    case SuggestionType::kPlusAddressError:
     case SuggestionType::kComposeResumeNudge:
     case SuggestionType::kComposeProactiveNudge:
     case SuggestionType::kComposeSavedStateNotification:
@@ -188,6 +184,24 @@ bool AreNewSuggestionsTheSame(
         return lhs.main_text == rhs.main_text && lhs.type == rhs.type &&
                lhs.icon == rhs.icon && lhs.payload == rhs.payload;
       });
+}
+
+// Check whether the `new_suggestions` have a suggestion with the Pending Signin
+// state that is not present in the `old_suggestions`. This assumes that a
+// suggestion of type `kPendingStateSignin` is only present once in the list (or
+// that multiple instances are the same).
+bool IsNewSigninPendingSuggestion(
+    const std::vector<autofill::Suggestion>& new_suggestions,
+    const std::vector<autofill::Suggestion>& old_suggestions) {
+  auto new_it = std::ranges::find_if(
+      new_suggestions, [](const autofill::Suggestion& suggestion) {
+        return suggestion.type == autofill::SuggestionType::kPendingStateSignin;
+      });
+  if (new_it == new_suggestions.end()) {
+    return false;
+  }
+
+  return std::ranges::find(old_suggestions, *new_it) == old_suggestions.end();
 }
 
 }  // namespace
@@ -488,7 +502,13 @@ void PasswordAutofillManager::DeleteFillData() {
 
 void PasswordAutofillManager::ShowSuggestions(
     const autofill::TriggeringField& field) {
-  if (autofill::IsAutofillManuallyTriggered(field.trigger_source)) {
+#if !BUILDFLAG(IS_ANDROID)
+  if (password_client_->IsActorTaskActive()) {
+    // Disables password suggestions if actor is active on the tab.
+    return;
+  }
+#endif  // !BUILDFLAG(IS_ANDROID)
+  if (autofill::IsPasswordsAutofillManuallyTriggered(field.trigger_source)) {
     if (!manual_fallback_flow_) {
       manual_fallback_flow_ = std::make_unique<PasswordManualFallbackFlow>(
           password_manager_driver_, autofill_client_, password_client_,
@@ -660,6 +680,13 @@ bool PasswordAutofillManager::ShowPopup(
         autofill::SuggestionHidingReason::kNoSuggestions);
     return false;
   }
+
+  if (IsNewSigninPendingSuggestion(suggestions,
+                                   last_popup_open_args_.suggestions)) {
+    signin_metrics::LogSigninPendingOffered(
+        signin_metrics::AccessPoint::kAutofillDropdown);
+  }
+
   if (!password_client_
            ->GetWebAuthnCredentialsDelegateForDriver(password_manager_driver_)
            ->HasPendingPasskeySelection() ||

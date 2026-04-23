@@ -577,6 +577,11 @@ The cross fade is applied for specified duration near the end of first stream.
 The filter accepts the following options:
 
 @table @option
+@item inputs, n
+Specify the number of inputs to crossfade. When crossfading multiple inputs,
+each input will be concatenated and crossfaded in sequence, similar to the
+@ref{concat filter}. Default is 2.
+
 @item nb_samples, ns
 Specify the number of samples for which the cross fade effect has to last.
 At the end of the cross fade effect the first input audio will be completely
@@ -614,6 +619,11 @@ ffmpeg -i first.flac -i second.flac -filter_complex acrossfade=d=10:c1=exp:c2=ex
 Cross fade from one input to another but without overlapping:
 @example
 ffmpeg -i first.flac -i second.flac -filter_complex acrossfade=d=10:o=0:c1=exp:c2=exp output.flac
+@end example
+
+Concatenate multiple inputs with cross fade between each:
+@example
+ffmpeg -i first.flac -i second.flac -i third.flac -filter_complex acrossfade=n=3 output.flac
 @end example
 @end itemize
 
@@ -9880,7 +9890,7 @@ which indicates that this is a full range YUV source.
 @item alpha_mode
 Detect if the source contains color values above the alpha channel, which
 indicates that the alpha channel is independent (straight), rather than
-premultiplied.
+premultiplied. Also detects if the alpha plane is fully opaque or not.
 @item all
 Enable detection of all of the above properties. This is the default.
 @end table
@@ -10401,6 +10411,18 @@ von Kries whitepoint adaptation
 
 @item identity
 identity whitepoint adaptation (i.e. no whitepoint adaptation)
+@end table
+
+@item clipgamut
+Controls how to clip out-of-gamut colors that arise as a result of colorspace conversion.
+
+The accepted values are:
+@table @samp
+@item none
+No clipping of out of gamut colors.
+
+@item rgb
+Clips the RGB values to the [0, 1] range when building the gamma transfer LUTs.
 @end table
 
 @item iall
@@ -13027,6 +13049,80 @@ For more information about libfribidi, check:
 For more information about libharfbuzz, check:
 @url{https://github.com/harfbuzz/harfbuzz}.
 
+@anchor{drawvg}
+@section drawvg
+
+Draw vector graphics on top of video frames, by executing a script written in
+a custom language called VGS (@emph{Vector Graphics Script}).
+
+The documentation for the language can be found in
+@ref{,,drawvg - Language Reference,drawvg-reference}. A version of this reference
+with rendered examples can be found at the
+@uref{https://ayosec.github.io/ffmpeg-drawvg/playground/docs/langref.html, author's site}.
+
+Graphics are rendered using the @uref{https://cairographics.org/,cario 2D
+graphics library}.
+
+To enable compilation of this filter, you need to configure FFmpeg with
+@code{--enable-cairo}.
+
+@subsection Parameters
+
+Either @code{script} or @code{file} must be set.
+
+@table @option
+
+@item s, script
+Script source to draw the graphics.
+
+@item file
+Path of the file to load the script source.
+
+@end table
+
+@subsection Pixel Formats
+
+Since Cairo only supports RGB images, if the input video is something else (like
+YUV 4:2:0), before executing the script the video is converted to a format
+compatible with Cairo. Then, you have to use use either the @ref{format} filter,
+or the @code{-pix_fmt} option, to convert it to the expected format in the
+output.
+
+@subsection Examples
+
+@itemize
+@item
+Draw the outline of an ellipse.
+
+@example
+ffmpeg -i input.webm \
+    -vf 'drawvg=ellipse (w/2) (h/2) (w/3) (h/3) stroke' \
+    -pix_fmt yuv420p \
+    output.webm
+@end example
+
+@item
+
+Draw a square rotating in the middle of the frame.
+
+The script for drawvg is in a file @code{draw.vgs}:
+
+@example
+translate (w/2) (h/2)
+rotate t
+rect -100 -100 200 200
+setcolor red@@0.5
+fill
+@end example
+
+Then:
+
+@example
+ffmpeg -i input.webm -vf 'drawvg=file=draw.vgs,format=yuv420p' output.webm
+@end example
+
+@end itemize
+
 @section edgedetect
 
 Detect and draw edges. The filter uses the Canny Edge Detection algorithm.
@@ -14306,6 +14402,10 @@ A '|'-separated list of color space names, such as
 @item color_ranges
 A '|'-separated list of color range names, such as
 "color_ranges=tv|pc".
+
+@item alpha_modes
+A '|'-separated list of color range names, such as
+"alpha_modes=straight|premultiplied".
 
 @end table
 
@@ -16423,7 +16523,8 @@ will be performed.
 
 @item force_original_aspect_ratio
 @item force_divisible_by
-Work the same as the identical @ref{scale} filter options.
+Work the same as the identical @ref{scale} filter options. Note that
+@option{force_divisible_by} also works with @code{fit_sense=constraint}.
 
 @item reset_sar
 If enabled, output frames will always have a pixel aspect ratio of 1:1.  If
@@ -16433,7 +16534,7 @@ e.g. anamorphic video sources, are forwarded to the output pixel aspect ratio.
 @item normalize_sar
 Like @option{reset_sar}, but instead of stretching the video content to fill
 the new output aspect ratio, the content is instead padded or cropped as
-necessary.
+necessary. Mutually exclusive with @option{fit_mode}. Disabled by default.
 
 @item pad_crop_ratio
 Specifies a ratio (between @code{0.0} and @code{1.0}) between padding and
@@ -16442,6 +16543,56 @@ cropping when the input aspect ratio does not match the output aspect ratio and
 content with black borders, while a value of @code{1.0} always crops off parts
 of the content. Intermediate values are possible, leading to a mix of the two
 approaches.
+
+@item fit_mode
+Specify the content fit strategy according to a list of predefined modes.
+Determines how the input image is to be placed inside the destination crop
+rectangle (as defined by @code{pos_x/y} and @code{pos_w/h}). The names and
+their implementations are taken from the CSS 'object-fit' property. Note that
+this option is mutually exclusive with @option{normalize_sar}. Defaults to
+@code{fill}. Valid values are:
+
+@table @samp
+@item fill
+Stretch the input to the output rectangle, ignoring aspect ratio mismatches.
+Note that unless @option{reset_sar} is also enabled, the output will still
+have the correct pixel aspect ratio tagged.
+
+@item contain
+Scale the input to fit inside the output, preserving aspect ratio by padding.
+Equivalent to @option{normalize_sar} with @option{pad_crop_ratio} set to
+@code{0.0}.
+
+@item cover
+Scale the input to fill the output, preserving aspect ratio by cropping.
+Equivalent to @option{normalize_sar} with @option{pad_crop_ratio} set to
+@code{1.0}.
+
+@item none, place
+Don't scale the input. The input will be placed inside the output rectangle at
+its natural size; which may result in additional padding or cropping.
+
+@item scale_down
+Scale the input down as much as needed to fit inside the output. Equivalent
+to either @code{contain} or @code{none}, depending on whether the input is
+larger than the output or not.
+@end table
+
+@item fit_sense
+When @option{fit_mode} is in use, this option controls how the fit strategy
+is applied against the specified output resolution. Mutually exclusive with
+@option{force_original_aspect_ratio}. Valid values are:
+
+@table @samp
+@item target
+The computed output resolution is taken as the exact size of the output frame.
+This is the default behavior.
+
+@item constraint
+The computed output resolution is a size reference against which the fit mode
+is applied, enlarging or decreasing the true frame size as needed to fit the
+content.
+@end table
 
 @item fillcolor
 Set the color used to fill the output area not covered by the output image, for
@@ -16516,6 +16667,10 @@ value of @code{auto} outputs frames in the same format as the input frames,
 leading to no change. For any other value, conversion will be performed.
 
 See the @ref{setparams} filter for a list of possible values.
+
+@item alpha_mode
+Choose the desired output alpha mode, when the output format has an alpha
+channel. See the @ref{setparams} filter for a list of possible values.
 
 @item apply_filmgrain
 Apply film grain (e.g. AV1 or H.274) if present in source frames, and strip
@@ -16654,6 +16809,8 @@ No deinterlacing, weave fields together into a single frame. This is the default
 Naive bob deinterlacing, simply repeat each field line twice.
 @item yadif
 Yet another deinterlacing filter. See the @ref{yadif} filter for more details.
+@item bwdif
+Bob weaver deinterlacing filter. See the @ref{bwdif} filter for more details.
 @end table
 
 @item skip_spatial_check
@@ -16711,6 +16868,11 @@ coefficients for RGB inputs.
 
 @item gamma
 Gamma adjustment, between @code{0.0} and @code{16.0}. Defaults to @code{1.0}.
+
+@item temperature
+Color temperature adjustment. Lower values make the output warmer/redder,
+down to @code{1667}, while higher values make the output cooler/bluer, up to
+@code{25000}. Defaults to @code{6500} (neutral white).
 
 @item cones
 Cone model to use for color blindness simulation. Accepts any combination of
@@ -18865,7 +19027,8 @@ See @ref{framesync}.
 
 @item alpha
 Set format of alpha of the overlaid video, it can be @var{straight} or
-@var{premultiplied}. Default is @var{straight}.
+@var{premultiplied}, or @var{auto} to choose the alpha mode automatically.
+Default is @var{auto}.
 @end table
 
 The @option{x}, and @option{y} expressions can contain the following
@@ -19624,6 +19787,20 @@ By default value 0xf, all planes will be processed.
 
 @item inplace
 Do not require 2nd input for processing, instead use alpha plane from input stream.
+@end table
+
+@section premultiply_dynamic
+Dynamically premultiply or unpremultiply the input video stream as needed,
+to match the requirements of the downstream filter graph. This is roughly
+equivalent to either @code{premultiply:inplace=yes} or
+@code{unpremultiply:inplace=yes}, or otherwise a noop.
+
+The filter accepts the following option:
+
+@table @option
+@item planes
+Set which planes will be processed, unprocessed planes will be copied.
+By default value 0xf, all planes will be processed.
 @end table
 
 @section prewitt
@@ -21737,6 +21914,19 @@ Keep the same chroma location (default).
 @item top
 @item bottomleft
 @item bottom
+@end table
+
+@item alpha_mode
+Set the alpha moda.
+Available values are:
+
+@table @samp
+@item auto
+Keep the same alpha mode (default).
+
+@item unspecified, unknown
+@item premultiplied
+@item straight
 @end table
 @end table
 
@@ -28755,6 +28945,10 @@ Allocates linear images. Does not apply to decoding.
 
 @item disable_multiplane
 Disables multiplane images. Does not apply to decoding.
+
+@item avoid_host_import
+Avoids the use of dynamic host memory imports, in favor of a regular memcpy()
+into a previously mapped buffer.
 @end table
 
 @item -filter_hw_device @var{name}
@@ -28981,7 +29175,7 @@ The filter accepts the following options.
 
 @table @option
 @item s
-Set denoising strength for all components. Default is 1.0. Must be in range [1.0, 100.0].
+Set denoising strength for all components. Default is 1.0. Must be in range [0.0, 100.0].
 
 @item p
 Set patch size for all planes. Default is 7. Must be odd number in range [0, 99].
@@ -28990,17 +29184,16 @@ Set patch size for all planes. Default is 7. Must be odd number in range [0, 99]
 Set research size. Default is 15. Must be odd number in range [0, 99].
 
 @item t
-Set parallelism. Default is 36. Must be a number in the range [1, 168].
-Larger values may speed up processing, at the cost of more VRAM.
-Lower values will slow it down, reducing VRAM usage.
-Only supported on GPUs with atomic float operations (RDNA3+, Ampere+).
+Set parallelism. Default is 8. Must be a number in the range [1, 64].
+Larger values will use more VRAM but may not result in greater speed.
+The optimal value is hardware and input dependent.
 
 @item s0
 @item s1
 @item s2
 @item s3
-Set denoising strength for a specific component. Default is @var{1}, equal to @option{s}.
-Must be odd number in range [1, 100].
+Set denoising strength for a specific component. Default is @var{1.0}, equal to @option{s}.
+Must be in range [0.0, 100.0]. 0.0 disables denoising in that component.
 
 @item p0
 @item p1
@@ -29256,6 +29449,11 @@ name.
 @item range
 A string representing the color range of the buffered video frames.
 It may be a number corresponding to a color range, or a color range
+name.
+
+@item alpha_mode
+A string representing the alpha mode of the buffered video frames.
+It may be a number corresponding to an alpha mode, or an alpha mode
 name.
 
 @item pixel_aspect, sar
@@ -29555,6 +29753,165 @@ by specifying a smaller size and its offsets into the screen:
 @example
 ddagrab=video_size=800x600:offset_x=100:offset_y=100
 @end example
+
+
+@section gfxcapture
+
+Capture windows or monitors using Windows.Graphics.Capture API.
+
+This source provides low overhead capture of application windows or entire monitors.
+The filter outputs hardware frames in @code{d3d11} format; use @code{hwdownload,format=}
+if system memory frames are required.
+
+The window to be captured can be selected via regular expressions on its title,
+class name or backing executable name, by explicit native handles, or by monitor
+index or explicit native handle. A window must match all provided expressions to be
+selected. The first matching window will be picked, in whatever order Windows
+returns them.
+
+Explicit handles (@option{hwnd}, @option{hmonitor}) override pattern or index
+based selection. If neither handles nor a monitor index are given, the first
+window matching the provided regular expressions is captured.
+
+This source does NOT hold a stable FPS. It returns frames at whatever rate the compositor
+provides them, only capped by the @option{max_framerate}.
+If you need a stable rate, you need to add an fps filter to drop/duplicate frames as needed.
+
+If the capture source disappears mid-capture (window closed, monitor disconnected), the filter will return EOF.
+
+This source accepts the following options:
+@table @option
+@item window_title
+ECMAScript regular expression matched against the window title. Supports a
+PCRE style @code{(?i)} prefix for case-insensitive matching.
+
+@item window_class
+As @option{window_title}, but matched against the window class name.
+
+@item window_exe
+As @option{window_title}, but matched against the executable file name of the
+window's process.
+
+@item monitor_idx
+Zero-based index of the monitor to capture.
+
+Can also be set to @code{window} to capture the monitor the selected window
+is displayed on at filter initialization time.
+
+@item hwnd
+Explicit native window handle (HWND).
+
+@item hmonitor
+Explicit native monitor handle (HMONITOR).
+
+@item capture_cursor
+Capture the mouse cursor. Enabled by default.
+
+@item capture_border
+Capture the full area of the window, including its window decorarions/border.
+Disabled by default.
+
+@item display_border
+Draw a yellow highlight border around the captured window. Disabled by default.
+
+@item max_framerate
+Maximum capture frame rate. Accepts a video rate (e.g. @code{30}, @code{60/1},
+@code{24000/1001}). The default is @code{60} FPS.
+The actual rate is the rate at which the compositor renders the window/monitor,
+capped by this option.
+
+@item width
+Force the output canvas width. If zero (default) the initial captured source
+width is used. If a negative number is provided, the width will be rounded
+down to the next multiple of that number.
+
+See @option{resize_mode}.
+
+@item height
+Force the output canvas height. If zero (default) the initial captured source
+height is used. If a negative number is provided, the height will be rounded
+down to the next multiple of that number.
+
+See @option{resize_mode}.
+
+@item crop_left
+Crop this many pixels from the left side of the captured frames.
+
+@item crop_top
+Crop this many pixels from the left side of the captured frames.
+
+@item crop_right
+Crop this many pixels from the left side of the captured frames.
+
+@item crop_bottom
+Crop this many pixels from the left side of the captured frames.
+
+@item premultiplied
+If set to 1, return frames with premultiplied alpha. Default is 0 (straight
+alpha).
+
+@item resize_mode
+Defines how the captured content is fitted into the output canvas size.
+Possible values:
+@table @samp
+@item crop
+Crop (or pad with black) to the canvas size. (default)
+@item scale
+Scale the source to fill the canvas, potentially altering aspect ratio.
+@item scale_aspect
+Scale the source to fit inside the canvas while preserving aspect ratio.
+Remaining area is filled with black.
+@end table
+
+@item scale_mode
+Scaling algorithm used when resizing is required.
+
+Possible values:
+@table @samp
+@item point
+Nearest neighbour (pixelated) scaling.
+@item bilinear
+Bilinear filtering. (default)
+@item bicubic
+Bicubic filtering. Potentially more blurry, but fewer scaling artifacts depending on contents.
+@end table
+
+@item output_fmt
+Desired output pixel format inside the D3D11 hardware frames.
+
+Possible values:
+@table @samp
+@item bgra
+@item 8bit
+8 bit BGRA output (default)
+@item x2bgr10
+@item 10bit
+10 bit BGR output
+@item rgbaf16
+@item 16bit
+16bit float RGBA output
+@end table
+
+@end table
+
+@subsection Examples
+@itemize
+@item Capture a window by title (case-insensitive) at a maximum of 60 fps:
+@example
+ffmpeg -filter_complex gfxcapture=window_title='(?i)My Application':max_framerate=60,hwdownload,format=bgra,format=yuv420p -c:v libx264 -crf 15 capture.mp4
+@end example
+
+@item Capture monitor 1 at native refresh, 10bit color depth, scale to 1920x1080 preserving aspect:
+@example
+ffmpeg -filter_complex gfxcapture=monitor_idx=1:width=1920:height=1080:resize_mode=scale_aspect:output_fmt=10bit -c:v hevc_nvenc -cq 15 capture.mp4
+@end example
+
+@item Capture a window by executable name, draw border, force point scaling, fixed 60 fps:
+@example
+ffmpeg -filter_complex gfxcapture=window_exe='^firefox.exe$':display_border=1:scale_mode=point,fps=60 -rc qvbr -qvbr_quality_level 15 -c:v h264_amf capture.mp4
+@end example
+
+@end itemize
 
 
 @section gradients
@@ -30961,6 +31318,7 @@ bench=start,selectivecolor=reds=-.2 .12 -.49,bench=stop
 @end example
 @end itemize
 
+@anchor{concat filter}
 @section concat
 
 Concatenate audio and video streams, joining them together one after the
@@ -31907,9 +32265,9 @@ This filter accepts the following options:
 The expression which is evaluated for each frame to construct its timestamp.
 
 @item strip_fps (@emph{video only})
-Boolean option which determines if the original framerate metadata is unset.
-If set to true, be advised that a sane frame rate should be explicitly
-specified if output is sent to a constant frame rate muxer.
+Boolean option which determines if the original framerate and frame duration
+metadata is unset. If set to true, be advised that a sane frame rate should be
+explicitly specified if output is sent to a constant frame rate muxer.
 Default is @code{false}.
 
 @end table

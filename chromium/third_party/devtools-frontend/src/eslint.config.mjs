@@ -3,16 +3,17 @@
 // found in the LICENSE file.
 
 import stylisticPlugin from '@stylistic/eslint-plugin';
+import { defineConfig, globalIgnores } from 'eslint/config';
 import eslintPlugin from 'eslint-plugin-eslint-plugin';
 import importPlugin from 'eslint-plugin-import';
 import jsdocPlugin from 'eslint-plugin-jsdoc';
+import litPlugin from 'eslint-plugin-lit';
 import mochaPlugin from 'eslint-plugin-mocha';
-import {defineConfig, globalIgnores} from 'eslint/config';
 import globals from 'globals';
-import {join} from 'path';
+import { join } from 'node:path';
 import typescriptEslint from 'typescript-eslint';
 
-import rulesdirPlugin from './scripts/eslint_rules/rules-dir.mjs';
+import devToolsPlugin from './scripts/eslint_rules/plugin.mjs';
 
 export default defineConfig([
   globalIgnores([
@@ -30,7 +31,7 @@ export default defineConfig([
     // All of these scripts are auto-generated so don't lint them.
     'front_end/generated/ARIAProperties.js',
     'front_end/generated/Deprecation.ts',
-    'front_end/generated/InspectorBackendCommands.js',
+    'front_end/generated/InspectorBackendCommands.ts',
     'front_end/generated/protocol-mapping.d.ts',
     'front_end/generated/protocol-proxy-api.d.ts',
     'front_end/generated/protocol.ts',
@@ -69,9 +70,10 @@ export default defineConfig([
       '@stylistic': stylisticPlugin,
       '@eslint-plugin': eslintPlugin,
       mocha: mochaPlugin,
-      rulesdir: rulesdirPlugin,
+      '@devtools': devToolsPlugin,
       import: importPlugin,
       jsdoc: jsdocPlugin,
+      lit: litPlugin,
     },
 
     languageOptions: {
@@ -84,6 +86,7 @@ export default defineConfig([
 
     linterOptions: {
       reportUnusedDisableDirectives: 'error',
+      reportUnusedInlineConfigs: 'error',
     },
 
     rules: {
@@ -193,7 +196,7 @@ export default defineConfig([
       radix: 'error',
       'valid-typeof': 'error',
       'no-return-assign': ['error', 'always'],
-      'no-implicit-coercion': ['error', {allow: ['!!']}],
+      'no-implicit-coercion': ['error', { allow: ['!!'] }],
 
       'no-array-constructor': 'error',
 
@@ -281,10 +284,11 @@ export default defineConfig([
           },
         },
       ],
+      'import/enforce-node-protocol-usage': ['error', 'always'],
       // Try to spot '// console.log()' left over from debugging
-      'rulesdir/no-commented-out-console': 'error',
+      '@devtools/no-commented-out-console': 'error',
       // Prevent imports being commented out rather than deleted.
-      'rulesdir/no-commented-out-import': 'error',
+      '@devtools/no-commented-out-import': 'error',
       /**
        * Enforce some consistency and usefulness of JSDoc comments, to make sure
        * we actually benefit from them.
@@ -294,8 +298,8 @@ export default defineConfig([
         'error',
         {
           definedTags: [
-            'attribute',  // @attribute is used by lit-analyzer (through web-component-analyzer)
-            'meaning',    // @meaning is used by localization
+            'attribute', // @attribute is used by lit-analyzer (through web-component-analyzer)
+            'meaning', // @meaning is used by localization
           ],
         },
       ],
@@ -326,11 +330,11 @@ export default defineConfig([
       parserOptions: {
         allowAutomaticSingleRunInference: true,
         project: join(
-            import.meta.dirname,
-            'config',
-            'typescript',
-            'tsconfig.eslint.json',
-            ),
+          import.meta.dirname,
+          'config',
+          'typescript',
+          'tsconfig.eslint.json',
+        ),
       },
     },
 
@@ -567,25 +571,25 @@ export default defineConfig([
       'no-useless-constructor': 'off',
       '@typescript-eslint/no-useless-constructor': 'error',
 
-      'rulesdir/no-underscored-properties': 'error',
-      'rulesdir/inline-type-imports': 'error',
+      '@devtools/no-underscored-properties': 'error',
+      '@devtools/inline-type-imports': 'error',
 
-      'rulesdir/enforce-default-import-name': [
+      '@devtools/enforce-default-import-name': [
         'error',
         {
           // Enforce that any import of models/trace/trace.js names the import Trace.
           modulePath: join(
-              import.meta.dirname,
-              'front_end',
-              'models',
-              'trace',
-              'trace.js',
-              ),
+            import.meta.dirname,
+            'front_end',
+            'models',
+            'trace',
+            'trace.js',
+          ),
           importName: 'Trace',
         },
       ],
 
-      'rulesdir/validate-timing-types': 'error',
+      '@devtools/validate-timing-types': 'error',
 
       // Disallow redundant (and potentially conflicting) type information
       // within JSDoc comments.
@@ -598,7 +602,7 @@ export default defineConfig([
     files: ['scripts/**/*'],
     rules: {
       'no-console': 'off',
-      'rulesdir/es-modules-import': 'off',
+      '@devtools/es-modules-import': 'off',
       'import/no-default-export': 'off',
     },
   },
@@ -607,17 +611,17 @@ export default defineConfig([
     files: ['front_end/**/*'],
     rules: {
       // L10n rules are only relevant in 'front_end'.
-      'rulesdir/l10n-filename-matches': [
+      '@devtools/l10n-filename-matches': [
         'error',
         {
           rootFrontendDirectory: join(import.meta.dirname, 'front_end'),
         },
       ],
-      'rulesdir/l10n-i18nString-call-only-with-uistrings': 'error',
-      'rulesdir/l10n-no-i18nString-calls-module-instantiation': 'error',
-      'rulesdir/l10n-no-locked-or-placeholder-only-phrase': 'error',
-      'rulesdir/l10n-no-uistrings-export': 'error',
-      'rulesdir/l10n-no-unused-message': 'error',
+      '@devtools/l10n-i18nString-call-only-with-uistrings': 'error',
+      '@devtools/l10n-no-i18nString-calls-module-instantiation': 'error',
+      '@devtools/l10n-no-locked-or-placeholder-only-phrase': 'error',
+      '@devtools/l10n-no-uistrings-export': 'error',
+      '@devtools/l10n-no-unused-message': 'error',
     },
   },
   {
@@ -632,36 +636,57 @@ export default defineConfig([
           allowIIFEs: true,
         },
       ],
-      'rulesdir/no-imperative-dom-api': 'error',
-      'rulesdir/no-lit-render-outside-of-view': 'error',
-      'rulesdir/no-importing-images-from-src': 'error',
-      'rulesdir/enforce-custom-event-names': 'error',
-      'rulesdir/set-data-type-reference': 'error',
-      'rulesdir/no-bound-component-methods': 'error',
-      'rulesdir/no-adopted-style-sheets': 'error',
-      'rulesdir/no-customized-builtin-elements': 'error',
-      'rulesdir/no-deprecated-component-usages': 'error',
-      'rulesdir/no-self-closing-custom-element-tagnames': 'error',
-      'rulesdir/no-a-tags-in-lit': 'error',
-      'rulesdir/check-css-import': 'error',
-      'rulesdir/enforce-optional-properties-last': 'error',
-      'rulesdir/check-enumerated-histograms': 'error',
-      'rulesdir/check-was-shown-methods': 'error',
-      'rulesdir/static-custom-event-names': 'error',
-      'rulesdir/lit-no-attribute-quotes': 'error',
-      'rulesdir/lit-template-result-or-nothing': 'error',
-      'rulesdir/inject-checkbox-styles': 'error',
-      'rulesdir/jslog-context-list': 'error',
-      'rulesdir/es-modules-import': 'error',
-      'rulesdir/html-tagged-template': 'error',
-      'rulesdir/enforce-custom-element-definitions-location': [
+      '@devtools/no-imperative-dom-api': 'error',
+      '@devtools/no-lit-render-outside-of-view': 'error',
+      '@devtools/no-importing-images-from-src': 'error',
+      '@devtools/enforce-custom-event-names': 'error',
+      '@devtools/set-data-type-reference': 'error',
+      '@devtools/no-bound-component-methods': 'error',
+      '@devtools/no-adopted-style-sheets': 'error',
+      '@devtools/no-customized-builtin-elements': 'error',
+      '@devtools/no-deprecated-component-usages': 'error',
+      '@devtools/no-self-closing-custom-element-tagnames': 'error',
+      '@devtools/no-a-tags-in-lit': 'error',
+      '@devtools/check-css-import': 'error',
+      '@devtools/enforce-optional-properties-last': 'error',
+      '@devtools/check-enumerated-histograms': 'error',
+      '@devtools/require-super-calls-in-overridden-methods': [
+        'error',
+        {
+          methodNames: ['wasShown', 'willHide'],
+        },
+      ],
+      '@devtools/static-custom-event-names': 'error',
+      '@devtools/lit-no-attribute-quotes': 'error',
+      '@devtools/lit-template-result-or-nothing': 'error',
+      '@devtools/inject-checkbox-styles': 'error',
+      '@devtools/jslog-context-list': 'error',
+      '@devtools/es-modules-import': 'error',
+      '@devtools/html-tagged-template': 'error',
+      '@devtools/enforce-ui-kit-named-import': 'error',
+      '@devtools/enforce-custom-element-definitions-location': [
         'error',
         {
           rootFrontendDirectory: join(import.meta.dirname, 'front_end'),
         },
       ],
-      'rulesdir/enforce-ui-strings-as-const': 'error',
-      'rulesdir/no-new-lit-element-components': 'error',
+      '@devtools/enforce-ui-strings-as-const': 'error',
+      '@devtools/no-new-lit-element-components': 'error',
+      '@devtools/enforce-custom-element-prefix': 'error',
+
+      // Lit recommended
+      'lit/attribute-value-entities': 'error',
+      'lit/binding-positions': 'error',
+      'lit/no-duplicate-template-bindings': 'error',
+      'lit/no-invalid-html': 'error',
+      // TODO: enable this once we figure ot the custom directive
+      // 'lit/no-legacy-template-syntax': 'error',
+      'lit/no-property-change-update': 'error',
+
+      // Lit DevTools preferred
+      'lit/prefer-nothing': 'error',
+      'lit/value-after-constraints': 'error',
+      'lit/quoted-expressions': ['error', 'never'],
     },
   },
   {
@@ -676,6 +701,13 @@ export default defineConfig([
           leadingUnderscore: 'allow',
         },
       ],
+    },
+  },
+  {
+    name: 'Front-end docs files',
+    files: ['front_end/**/*.docs.ts'],
+    rules: {
+      'no-console': 'off',
     },
   },
   {
@@ -715,23 +747,24 @@ export default defineConfig([
         },
       ],
 
-      'rulesdir/check-test-definitions': 'error',
-      'rulesdir/no-assert-strict-equal-for-arrays-and-objects': 'error',
-      'rulesdir/no-assert-deep-strict-equal': 'error',
-      'rulesdir/no-assert-equal': 'error',
-      'rulesdir/no-assert-equal-boolean-null-undefined': 'error',
-      'rulesdir/no-capture-screenshot': 'error',
-      'rulesdir/no-imperative-dom-api': 'off',
-      'rulesdir/no-lit-render-outside-of-view': 'off',
-      'rulesdir/prefer-assert-instance-of': 'error',
-      'rulesdir/prefer-assert-is-ok': 'error',
-      'rulesdir/prefer-assert-length-of': 'error',
-      'rulesdir/prefer-assert-strict-equal': 'error',
-      'rulesdir/prefer-sinon-assert': 'error',
-      'rulesdir/prefer-url-string': 'error',
-      'rulesdir/trace-engine-test-timeouts': 'error',
-      'rulesdir/no-document-body-mutation': 'error',
-      'rulesdir/enforce-custom-element-definitions-location': 'off',
+      '@devtools/check-test-definitions': 'error',
+      '@devtools/no-assert-strict-equal-for-arrays-and-objects': 'error',
+      '@devtools/no-assert-deep-strict-equal': 'error',
+      '@devtools/no-assert-equal': 'error',
+      '@devtools/no-assert-equal-boolean-null-undefined': 'error',
+      '@devtools/no-capture-screenshot': 'error',
+      '@devtools/no-imperative-dom-api': 'off',
+      '@devtools/no-lit-render-outside-of-view': 'off',
+      '@devtools/prefer-assert-instance-of': 'error',
+      '@devtools/prefer-assert-is-ok': 'error',
+      '@devtools/prefer-assert-length-of': 'error',
+      '@devtools/prefer-assert-strict-equal': 'error',
+      '@devtools/prefer-sinon-assert': 'error',
+      '@devtools/prefer-url-string': 'error',
+      '@devtools/trace-engine-test-timeouts': 'error',
+      '@devtools/no-document-body-mutation': 'error',
+      '@devtools/enforce-custom-element-definitions-location': 'off',
+      '@devtools/enforce-custom-element-prefix': 'off',
     },
 
     settings: {
@@ -768,7 +801,7 @@ export default defineConfig([
     ],
 
     rules: {
-      'rulesdir/prefer-private-class-members': 'error',
+      '@devtools/prefer-private-class-members': 'error',
     },
   },
   {
@@ -779,14 +812,14 @@ export default defineConfig([
     ],
     rules: {
       // TODO(crbug/1402569): Reenable once https://github.com/microsoft/TypeScript/issues/48885 is closed.
-      'rulesdir/prefer-private-class-members': 'off',
+      '@devtools/prefer-private-class-members': 'off',
     },
   },
   {
     name: 'Supported CSS properties rules',
     files: ['front_end/generated/SupportedCSSProperties.js'],
     rules: {
-      'rulesdir/jslog-context-list': 'error',
+      '@devtools/jslog-context-list': 'error',
     },
   },
   {
@@ -800,12 +833,12 @@ export default defineConfig([
     name: 'Legacy test runner',
     files: ['front_end/legacy_test_runner/**/*'],
     rules: {
-      'rulesdir/es-modules-import': 'off',
+      '@devtools/es-modules-import': 'off',
     },
   },
   {
     name: 'Front-end component docs',
-    files: ['front_end/ui/components/docs/**/*.ts'],
+    files: ['front_end/ui/components/docs/**/*.ts', '**/*.docs.ts'],
     rules: {
       // This makes the component doc examples very verbose and doesn't add
       // anything, so we leave return types to the developer within the
@@ -813,9 +846,9 @@ export default defineConfig([
       '@typescript-eslint/explicit-function-return-type': 'off',
       // We use Lit to help render examples sometimes and we don't use
       // {host: this} as often the `this` is the window.
-      'rulesdir/lit-host-this': 'off',
-      'rulesdir/no-imperative-dom-api': 'off',
-      'rulesdir/no-lit-render-outside-of-view': 'off',
+      '@devtools/lit-host-this': 'off',
+      '@devtools/no-imperative-dom-api': 'off',
+      '@devtools/no-lit-render-outside-of-view': 'off',
     },
   },
   {
@@ -823,63 +856,19 @@ export default defineConfig([
     files: ['front_end/models/trace/**/*.ts'],
     ignores: ['front_end/models/trace/**/*.test.ts'],
     rules: {
-      'rulesdir/no-imports-in-directory': [
+      '@devtools/no-imports-in-directory': [
         'error',
         {
           bannedImportPaths: [
             {
               bannedPath: join(
-                  import.meta.dirname,
-                  'front_end',
-                  'core',
-                  'sdk',
-                  'sdk.js',
-                  ),
+                import.meta.dirname,
+                'front_end',
+                'core',
+                'sdk',
+                'sdk.js',
+              ),
               allowTypeImports: true,
-            },
-            {
-              bannedPath: join(
-                  import.meta.dirname,
-                  'front_end',
-                  'ui',
-                  'legacy',
-                  'legacy.js',
-                  ),
-              allowTypeImports: false,
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    name: 'No UI in models',
-    files: ['front_end/models/**/*.ts'],
-    ignores: ['front_end/models/**/*.test.ts'],
-    rules: {
-      'rulesdir/no-imports-in-directory': [
-        'error',
-        {
-          bannedImportPaths: [
-            {
-              bannedPath: join(
-                  import.meta.dirname,
-                  'front_end',
-                  'ui',
-                  'legacy',
-                  'legacy.js',
-                  ),
-              allowTypeImports: false,
-            },
-            {
-              bannedPath: join(
-                  import.meta.dirname,
-                  'front_end',
-                  'ui',
-                  'lit',
-                  'lit.js',
-                  ),
-              allowTypeImports: false,
             },
           ],
         },
@@ -891,7 +880,7 @@ export default defineConfig([
     files: ['front_end/panels/recorder/injected/**/*.ts'],
     rules: {
       // The code is rolled up and tree-shaken independently from the regular entrypoints.
-      'rulesdir/es-modules-import': 'off',
+      '@devtools/es-modules-import': 'off',
     },
   },
   {
@@ -903,7 +892,7 @@ export default defineConfig([
       // enabled in this folder because it is an
       // expensive rule to run and we do not need it
       // for any code that doesn't use Canvas.
-      'rulesdir/canvas-context-tracking': 'error',
+      '@devtools/canvas-context-tracking': 'error',
     },
   },
   {

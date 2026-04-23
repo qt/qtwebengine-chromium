@@ -369,7 +369,7 @@ class ConvertableToTraceFormat {
  *
  * Can be implemented by an embedder to record trace events from V8.
  *
- * Will become obsolete in Perfetto SDK build (v8_use_perfetto = true).
+ * Will become obsolete in Perfetto build (v8_use_perfetto = true).
  */
 class TracingController {
  public:
@@ -1038,12 +1038,17 @@ class VirtualAddressSpace {
    * \param key Optional memory protection key for the subspace. If used, the
    * returned subspace will use this key for all its memory pages.
    *
+   * \param handle Optional file descriptor for the subspace. If used, the
+   * returned subspace will use this file descriptor with 0 offset as the
+   * space's underlying file.
+   *
    * \returns a new subspace or nullptr on failure.
    */
   virtual std::unique_ptr<VirtualAddressSpace> AllocateSubspace(
       Address hint, size_t size, size_t alignment,
       PagePermissions max_page_permissions,
-      std::optional<MemoryProtectionKeyId> key = std::nullopt) = 0;
+      std::optional<MemoryProtectionKeyId> key = std::nullopt,
+      PlatformSharedMemoryHandle handle = kInvalidSharedMemoryHandle) = 0;
 
   //
   // TODO(v8) maybe refactor the methods below before stabilizing the API. For

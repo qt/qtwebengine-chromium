@@ -106,6 +106,8 @@ void SpellCheckProvider::ResetDictionaryUpdateObserverForTesting() {
 
 void SpellCheckProvider::RequestTextChecking(
     const std::u16string& text,
+    blink::WebTextCheckClient::ShouldForceRefreshTextCheckService
+        should_force_refresh,
     std::unique_ptr<WebTextCheckingCompletion> completion) {
   // Ignore invalid requests.
   if (text.empty() || !HasWordCharacters(text, 0)) {
@@ -114,8 +116,11 @@ void SpellCheckProvider::RequestTextChecking(
   }
 
   // Try to satisfy check from cache.
-  if (SatisfyRequestFromCache(text, completion.get()))
+  if (should_force_refresh ==
+          blink::WebTextCheckClient::ShouldForceRefreshTextCheckService::kNo &&
+      SatisfyRequestFromCache(text, completion.get())) {
     return;
+  }
 
   // Send this text to a browser. A browser checks the user profile and send
   // this text to the Spelling service only if a user enables this feature.
@@ -126,9 +131,7 @@ void SpellCheckProvider::RequestTextChecking(
 #if BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   if (spellcheck::UseBrowserSpellChecker()) {
 #if BUILDFLAG(IS_WIN)
-    if (base::FeatureList::IsEnabled(
-            spellcheck::kWinDelaySpellcheckServiceInit) &&
-        !dictionaries_loaded_) {
+    if (!dictionaries_loaded_) {
       // Initialize the spellcheck service on demand (this spellcheck request
       // could be the result of the first click in editable content), then
       // complete the text check request when the dictionaries are loaded.
@@ -301,8 +304,11 @@ void SpellCheckProvider::CheckSpelling(
 
 void SpellCheckProvider::RequestCheckingOfText(
     const WebString& text,
+    blink::WebTextCheckClient::ShouldForceRefreshTextCheckService
+        should_force_refresh,
     std::unique_ptr<WebTextCheckingCompletion> completion) {
-  RequestTextChecking(text.Utf16(), std::move(completion));
+  RequestTextChecking(text.Utf16(), should_force_refresh,
+                      std::move(completion));
   spellcheck_renderer_metrics::RecordAsyncCheckedTextLength(
       base::saturated_cast<int>(text.length()));
 }

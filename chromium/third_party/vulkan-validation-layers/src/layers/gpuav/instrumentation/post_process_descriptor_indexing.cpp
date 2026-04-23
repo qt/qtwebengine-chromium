@@ -17,6 +17,7 @@
 
 #include "drawdispatch/descriptor_validator.h"
 #include "gpuav/core/gpuav.h"
+#include "gpuav/core/gpuav_constants.h"
 #include "gpuav/resources/gpuav_shader_resources.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "state_tracker/pipeline_state.h"
@@ -80,7 +81,7 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
         DescriptorSetBindings& desc_set_bindings = cb.shared_resources_cache.Get<DescriptorSetBindings>();
 
         for (const DescriptorSetBindings::BindingCommand& desc_binding_cmd : desc_set_bindings.descriptor_set_binding_commands) {
-            vko::BufferRange desc_set_buffer_lut_buffer_range = cb.gpu_resources_manager.GetHostVisibleBufferRange(
+            vko::BufferRange desc_set_buffer_lut_buffer_range = cb.gpu_resources_manager.GetHostCoherentBufferRange(
                 32 * sizeof(VkDeviceAddress));  // No driver offers more than 32 descriptor set bindings
 
             // For each unique bound descriptor set in this command buffer,
@@ -226,6 +227,14 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                 context.SetOriginalSpirv(&it->second.original_spirv);
 
                 for (const DescriptorAccess& descriptor_access : descriptor_accesses) {
+                    if (descriptor_access.error_logger_i == cst::invalid_index_command) {
+                        gpuav.LogError("GPUAV-Overflow-Unknown", LogObjectList(), Location(vvl::Func::Empty),
+                                       "Cannot perform runtime descriptor access validation, access was done in a command past the "
+                                       "internal limit of %" PRIu32 " draw/dispatch/traceRays in a command buffer.",
+                                       cst::indices_count);
+                        continue;
+                    }
+
                     auto descriptor_binding = desc_set->GetBinding(descriptor_access.binding);
                     ASSERT_AND_CONTINUE(descriptor_binding);
 
@@ -263,12 +272,10 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                     context.SetSetIndexForGpuAv(resource_variable->decorations.set);
 
                     const CommandBufferSubState::CommandErrorLogger& cmd_error_logger =
-                        cb.command_error_loggers[descriptor_access.error_logger_i];
+                        cb.GetErrorLogger(descriptor_access.error_logger_i);
                     context.SetObjlistForGpuAv(&cmd_error_logger.objlist);
-                    std::string debug_region_name;
-                    if (cmd_error_logger.label_cmd_i >= 0) {
-                        debug_region_name = cb.GetDebugLabelRegion(cmd_error_logger.label_cmd_i, label_logging.initial_label_stack);
-                    }
+                    std::string debug_region_name =
+                        cb.GetDebugLabelRegion(cmd_error_logger.label_cmd_i, label_logging.initial_label_stack);
 
                     Location access_loc(cmd_error_logger.loc.Get(), debug_region_name);
                     context.SetLocationForGpuAv(access_loc);

@@ -481,7 +481,7 @@ TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
     EXPECT_CALL(observer, OnBeforeSelectFieldOptionsDidChange(m, f));
     EXPECT_CALL(observer, OnAfterSelectFieldOptionsDidChange(m, f))
         .WillOnce(RunClosure(run_loop.QuitClosure()));
-    autofill_manager().OnSelectFieldOptionsDidChange(form);
+    autofill_manager().OnSelectFieldOptionsDidChange(form, field.global_id());
     std::move(run_loop).Run();
   }
 
@@ -490,7 +490,7 @@ TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
     EXPECT_CALL(observer, OnBeforeDidAutofillForm(m, f));
     EXPECT_CALL(observer, OnAfterDidAutofillForm(m, f))
         .WillOnce(RunClosure(run_loop.QuitClosure()));
-    autofill_manager().OnDidAutofillForm(form, {});
+    autofill_manager().OnDidAutofillForm(form);
     std::move(run_loop).Run();
   }
 
@@ -513,6 +513,10 @@ TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
     autofill_manager().OnFocusOnFormField(form, field.global_id());
     std::move(run_loop).Run();
   }
+
+  EXPECT_CALL(observer, OnBeforeFocusOnNonFormField(m));
+  EXPECT_CALL(observer, OnAfterFocusOnNonFormField(m));
+  autofill_manager().OnFocusOnNonFormField();
 
   {
     base::RunLoop run_loop;
@@ -771,7 +775,7 @@ TEST_F(
   std::move(run_loop).Run();
 }
 
-TEST_F(AutofillManagerTest, GetHeursticPredictionForForm) {
+TEST_F(AutofillManagerTest, GetHeuristicPredictionForForm) {
   FormData seen_form = test::CreateTestAddressFormData();
   OnFormsSeenWithExpectations(autofill_manager(), {seen_form}, {}, {seen_form});
 
@@ -780,7 +784,7 @@ TEST_F(AutofillManagerTest, GetHeursticPredictionForForm) {
 
   // Check that predictions are returned for the form that was seen.
   EXPECT_EQ(autofill_manager()
-                .GetHeursticPredictionForForm(
+                .GetHeuristicPredictionForForm(
                     autofill::HeuristicSource::kPasswordManagerMachineLearning,
                     seen_form.global_id(),
                     base::ToVector(seen_form.fields(),
@@ -791,7 +795,7 @@ TEST_F(AutofillManagerTest, GetHeursticPredictionForForm) {
   // Check that no predictions are returned for the unseen form.
   EXPECT_TRUE(
       autofill_manager()
-          .GetHeursticPredictionForForm(
+          .GetHeuristicPredictionForForm(
               autofill::HeuristicSource::kPasswordManagerMachineLearning,
               unseen_form.global_id(),
               base::ToVector(unseen_form.fields(),

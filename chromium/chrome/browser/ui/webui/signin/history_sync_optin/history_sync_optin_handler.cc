@@ -7,7 +7,6 @@
 #include "base/check_op.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
-#include "base/functional/callback_forward.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "chrome/browser/profiles/profile.h"
@@ -38,7 +37,6 @@ constexpr char kSigninAccountCapabilitiesFetchLatency[] =
 constexpr char kSigninAccountCapabilitiesImmediatelyAvailable[] =
     "Signin.AccountCapabilities.ImmediatelyAvailable";
 constexpr char kSigninSyncButtonsShown[] = "Signin.SyncButtons.Shown";
-constexpr char kSignInSyncButtonsClicked[] = "Signin.SyncButtons.Clicked";
 
 enum class ButtonType : bool { kAccept = true, kReject = false };
 
@@ -70,30 +68,6 @@ signin_metrics::SyncButtonsType GetButtonTypeMetricValue(ScreenMode mode) {
   }
 }
 
-// Convert ScreenMode to the metric describing Accept/Reject button types.
-signin_metrics::SyncButtonClicked GetButtonClickedMetricValue(
-    ScreenMode mode,
-    ButtonType button_type) {
-  switch (mode) {
-    case ScreenMode::kRestricted:
-    case ScreenMode::kDeadlined:
-      return button_type == ButtonType::kAccept
-                 ? signin_metrics::SyncButtonClicked::
-                       kHistorySyncOptInEqualWeighted
-                 : signin_metrics::SyncButtonClicked::
-                       kHistorySyncCancelEqualWeighted;
-    case ScreenMode::kUnrestricted:
-      return button_type == ButtonType::kAccept
-                 ? signin_metrics::SyncButtonClicked::
-                       kHistorySyncOptInNotEqualWeighted
-                 : signin_metrics::SyncButtonClicked::
-                       kHistorySyncCancelNotEqualWeighted;
-    // Metrics are not emitted when the buttons are not visible.
-    case ScreenMode::kPending:
-      NOTREACHED();
-  }
-}
-
 history_sync_optin::mojom::AccountInfoPtr CreateAccountInfoDataMojo(
     const AccountInfo& info) {
   history_sync_optin::mojom::AccountInfoPtr account_info_mojo =
@@ -110,17 +84,23 @@ HistorySyncOptinHandler::HistorySyncOptinHandler(
     mojo::PendingRemote<history_sync_optin::mojom::Page> page,
     Browser* browser,
     Profile* profile,
+    std::optional<bool> should_close_modal_dialog,
     HistorySyncOptinHelper::FlowCompletedCallback
         history_optin_completed_callback)
     : receiver_(this, std::move(receiver)),
       page_(std::move(page)),
       browser_(browser ? browser->AsWeakPtr() : nullptr),
       profile_(profile),
+      should_close_modal_dialog_(should_close_modal_dialog),
       history_optin_completed_callback_(
           std::move(history_optin_completed_callback)),
       identity_manager_(IdentityManagerFactory::GetForProfile(profile_)) {
   CHECK(profile_);
   CHECK(identity_manager_);
+  CHECK(!history_optin_completed_callback_->is_null());
+  if (browser) {
+    CHECK(should_close_modal_dialog.has_value());
+  }
 }
 
 HistorySyncOptinHandler::~HistorySyncOptinHandler() {
@@ -134,16 +114,10 @@ HistorySyncOptinHandler::~HistorySyncOptinHandler() {
 
 void HistorySyncOptinHandler::Accept() {
   AddHistorySyncConsent();
-  base::UmaHistogramEnumeration(
-      kSignInSyncButtonsClicked,
-      GetButtonClickedMetricValue(screen_mode_, ButtonType::kAccept));
   FinishAndCloseDialog(HistorySyncOptinHelper::ScreenChoiceResult::kAccepted);
 }
 
 void HistorySyncOptinHandler::Reject() {
-  base::UmaHistogramEnumeration(
-      kSignInSyncButtonsClicked,
-      GetButtonClickedMetricValue(screen_mode_, ButtonType::kReject));
   FinishAndCloseDialog(HistorySyncOptinHelper::ScreenChoiceResult::kDeclined);
 }
 
@@ -157,13 +131,10 @@ void HistorySyncOptinHandler::MaybeGetAccountInfo() {
 
   if (!primary_account_info.IsEmpty()) {
     DispatchAccountInfoUpdate(primary_account_info);
-
-    // Derive the screen mode from account capabilities.
-    ScreenMode screen_mode =
-        GetHistorySyncScreenMode(primary_account_info.capabilities);
-    if (!screen_mode_changed_ && screen_mode != ScreenMode::kPending) {
-      OnScreenModeChanged(screen_mode);
-      // TODO(crbug.com/450448970): Consider short circuiting from here.
+    if (avatar_changed_ && screen_mode_changed_) {
+      // Both avatar and screen mode are immediately available.
+      identity_manager_observation_.Reset();
+      return;
     }
   }
 
@@ -192,26 +163,27 @@ void HistorySyncOptinHandler::UpdateDialogHeight(uint32_t height) {
 
 void HistorySyncOptinHandler::FinishAndCloseDialog(
     HistorySyncOptinHelper::ScreenChoiceResult result) {
-  if (browser_) {
+  // The callback is moved to a local variable to ensure that it can be safely
+  // executed even if `this` is destroyed by `CloseModalSignin()` (this should
+  // not happen as the dialog destruction should be asynchronous).
+  auto callback = std::move(history_optin_completed_callback_);
+
+  if (browser_ && should_close_modal_dialog_.value_or(false)) {
     browser_->GetFeatures().signin_view_controller()->CloseModalSignin();
   }
-  if (!history_optin_completed_callback_->is_null()) {
-    std::move(history_optin_completed_callback_.value()).Run(result);
+  if (!callback->is_null()) {
+    std::move(callback.value()).Run(result);
   } else {
     // The user may have double-clicked on an action, which could have
     // caused the callback to execute already.
     // TODO(crbug.com/456458942): Disabled the buttons so that this is not
-    // possible.
+    // possible. Convert back to a check after we verify we no longer hit this.
     base::debug::DumpWithoutCrashing();
   }
 }
 
 void HistorySyncOptinHandler::AddHistorySyncConsent() {
   CHECK(identity_manager_->HasPrimaryAccount(signin::ConsentLevel::kSignin));
-  // TODO(crbug.com/404806988): As we add the invocation points check if
-  // additional actions are needed to enable sync for history. The invocation
-  // below works for an already syncing user. It enables the syncing for history
-  // if it's not already turned on.
   signin_util::EnableHistorySync(SyncServiceFactory::GetForProfile(profile_));
 }
 
@@ -245,6 +217,7 @@ void HistorySyncOptinHandler::OnScreenModeChanged(ScreenMode screen_mode) {
 
 void HistorySyncOptinHandler::OnAvatarChanged(const AccountInfo& info) {
   CHECK(info.IsValid());
+  avatar_changed_ = true;
   page_->SendAccountInfo(CreateAccountInfoDataMojo(info));
 }
 
@@ -255,22 +228,30 @@ void HistorySyncOptinHandler::DispatchAccountInfoUpdate(
     // confirmation dialog.
     return;
   }
+
   if (info.account_id !=
       identity_manager_->GetPrimaryAccountId(signin::ConsentLevel::kSignin)) {
     return;
   }
-  if (info.IsValid()) {
+
+  ScreenMode screen_mode = GetHistorySyncScreenMode(info.capabilities);
+  if (!screen_mode_changed_ && screen_mode != ScreenMode::kPending) {
+    OnScreenModeChanged(screen_mode);
+  }
+
+  if (info.IsValid() && !avatar_changed_) {
     OnAvatarChanged(info);
   }
 }
 
 void HistorySyncOptinHandler::OnExtendedAccountInfoUpdated(
     const AccountInfo& info) {
-  ScreenMode screen_mode = GetHistorySyncScreenMode(info.capabilities);
-  if (!screen_mode_changed_ && screen_mode != ScreenMode::kPending) {
-    OnScreenModeChanged(screen_mode);
-  }
   DispatchAccountInfoUpdate(info);
+
+  if (avatar_changed_ && screen_mode_changed_) {
+    // The IdentityManager emitted both avatar and screen mode information.
+    identity_manager_observation_.Reset();
+  }
 }
 
 void HistorySyncOptinHandler::OnScreenModeTimeout() {

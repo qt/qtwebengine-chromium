@@ -1,7 +1,7 @@
 // Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import './Toolbar.js';
 
@@ -13,11 +13,6 @@ import reportViewStyles from './reportView.css.js';
 import type {Toolbar} from './Toolbar.js';
 import {Tooltip} from './Tooltip.js';
 import {VBox} from './Widget.js';
-
-/**
- * @deprecated Please consider using the web component version of this widget
- *             (`ui/components/report_view/ReportView.ts`) for new code.
- */
 export class ReportView extends VBox {
   private readonly contentBox: HTMLElement;
   private headerElement: HTMLElement;
@@ -55,7 +50,7 @@ export class ReportView extends VBox {
   }
 
   setSubtitle(subtitle: string): void {
-    if (this.subtitleElement && this.subtitleElement.textContent === subtitle) {
+    if (this.subtitleElement?.textContent === subtitle) {
       return;
     }
     if (!this.subtitleElement) {

@@ -21,6 +21,8 @@
 #include "chrome/browser/new_tab_page/modules/v2/calendar/outlook_calendar.mojom.h"
 #include "chrome/browser/new_tab_page/modules/v2/most_relevant_tab_resumption/most_relevant_tab_resumption.mojom.h"
 #include "chrome/browser/new_tab_page/modules/v2/tab_groups/tab_groups.mojom.h"
+#include "chrome/browser/ui/webui/new_tab_page/action_chips/action_chips.mojom.h"
+#include "chrome/browser/ui/webui/new_tab_page/action_chips/action_chips_handler.h"
 #include "chrome/browser/ui/webui/new_tab_page/ntp_promo/ntp_promo.mojom.h"
 #include "chrome/browser/ui/webui/new_tab_page/ntp_promo/ntp_promo_handler.h"
 #include "components/user_education/common/ntp_promo/ntp_promo_controller.h"
@@ -51,7 +53,6 @@
 #include "ui/native_theme/native_theme.h"
 #include "ui/native_theme/native_theme_observer.h"
 #include "ui/webui/mojo_web_ui_controller.h"
-#include "ui/webui/resources/cr_components/color_change_listener/color_change_listener.mojom.h"
 #include "ui/webui/resources/cr_components/composebox/composebox.mojom.h"
 #include "ui/webui/resources/cr_components/most_visited/most_visited.mojom.h"
 
@@ -64,13 +65,13 @@ class NavigationHandle;
 class WebUI;
 }  // namespace content
 
+namespace contextual_search {
+class ContextualSearchSessionHandle;
+}  // namespace contextual_search
+
 namespace page_image_service {
 class ImageServiceHandler;
 }  // namespace page_image_service
-
-namespace ui {
-class ColorChangeHandler;
-}  // namespace ui
 
 class BrowserCommandHandler;
 class ComposeboxHandler;
@@ -117,6 +118,7 @@ class NewTabPageUI
       public help_bubble::mojom::HelpBubbleHandlerFactory,
       public ntp_promo::mojom::NtpPromoHandlerFactory,
       public NtpCustomBackgroundServiceObserver,
+      public action_chips::mojom::ActionChipsHandlerFactory,
       content::WebContentsObserver {
  public:
   explicit NewTabPageUI(content::WebUI* web_ui);
@@ -126,25 +128,17 @@ class NewTabPageUI
 
   ~NewTabPageUI() override;
 
-  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kCustomizeChromeButtonElementId);
-  DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kModulesCustomizeIPHAnchorElement);
-
   static bool IsNewTabPageOrigin(const GURL& url);
   static void RegisterProfilePrefs(PrefRegistrySimple* registry);
   static void ResetProfilePrefs(PrefService* prefs);
   static void MigrateDeprecatedUseMostVisitedTilesPref(PrefService* prefs);
+  static void MigrateDeprecatedShortcutsTypePref(PrefService* prefs);
   static bool IsManagedProfile(Profile* profile);
 
   // Instantiates the implementor of the mojom::PageHandlerFactory mojo
   // interface passing the pending receiver that will be internally bound.
   void BindInterface(
       mojo::PendingReceiver<new_tab_page::mojom::PageHandlerFactory>
-          pending_receiver);
-
-  // Instantiates the implementor of the mojom::PageHandler mojo interface
-  // passing the pending receiver that will be internally bound.
-  void BindInterface(
-      mojo::PendingReceiver<color_change_listener::mojom::PageHandler>
           pending_receiver);
 
   // Instantiates the implementor of the searchbox::mojom::PageHandler mojo
@@ -240,6 +234,10 @@ class NewTabPageUI
       mojo::PendingReceiver<ntp_promo::mojom::NtpPromoHandlerFactory>
           pending_receiver);
 
+  void BindInterface(
+      mojo::PendingReceiver<action_chips::mojom::ActionChipsHandlerFactory>
+          pending_receiver);
+
   void ConnectToParentDocument(
       mojo::PendingRemote<new_tab_page::mojom::MicrosoftAuthUntrustedDocument>
           child_page);
@@ -293,6 +291,11 @@ class NewTabPageUI
       mojo::PendingReceiver<ntp_promo::mojom::NtpPromoHandler> handler)
       override;
 
+  // action_chips::mojom::ActionChipsHandlerFactory:
+  void CreateActionChipsHandler(
+      mojo::PendingReceiver<action_chips::mojom::ActionChipsHandler> handler,
+      mojo::PendingRemote<action_chips::mojom::Page> page) override;
+
   // NtpCustomBackgroundServiceObserver:
   void OnCustomBackgroundImageUpdated() override;
 
@@ -301,29 +304,42 @@ class NewTabPageUI
       content::NavigationHandle* navigation_handle) override;
   void OnColorProviderChanged() override;
 
-  bool IsCustomLinksEnabled() const;
-  bool IsEnterpriseShortcutsEnabled() const;
   bool IsShortcutsVisible() const;
 
-  // Callback for when the value of the pref for determining the type of NTP
-  // tiles changes.
-  void OnShortcutsTypePrefChanged();
+  // Updates the NTP tile types based on current preferences.
+  void UpdateMostVisitedTileTypes();
+  // Callback for when the value of the prefs for determining the type of NTP
+  // tiles to show changes.
+  void OnTileTypesChanged();
   // Callback for when the value of the pref for showing the NTP tiles changes.
   void OnTilesVisibilityPrefChanged();
+  // Called when the enterprise shortcuts policy may have changed.
+  void OnEnterpriseShortcutsPolicyChanged();
   // Called when the NTP (re)loads. Sets mutable load time data.
   void OnLoad();
+
+  // Called to maybe enable enterprise shortcuts visibility by default.
+  void MaybeEnableEnterpriseShortcutsVisibility();
 
   // Based on the current profile and NTP promo controller, determine which
   // type of NTP promos can be shown, if any.
   std::string_view GetNtpPromoType();
 
+  // Lazily creates and returns a reference to the owned contextual search
+  // session handle for `realbox_handler_` and `composebox_handler_`.
+  contextual_search::ContextualSearchSessionHandle*
+  GetOrCreateContextualSessionHandle();
+
   // The counter for NewTabPage.Count UMA metrics.
   static int instance_count_;
+
+  // Must outlive `realbox_handler_` and `composebox_handler_`.
+  std::unique_ptr<contextual_search::ContextualSearchSessionHandle>
+      shared_session_handle_;
 
   std::unique_ptr<NewTabPageHandler> page_handler_;
   mojo::Receiver<new_tab_page::mojom::PageHandlerFactory>
       page_factory_receiver_;
-  std::unique_ptr<ui::ColorChangeHandler> color_provider_handler_;
   std::unique_ptr<CustomizeButtonsHandler> customize_buttons_handler_;
   mojo::Receiver<customize_buttons::mojom::CustomizeButtonsHandlerFactory>
       customize_buttons_factory_receiver_;
@@ -343,6 +359,9 @@ class NewTabPageUI
   std::unique_ptr<NtpPromoHandler> ntp_promo_handler_;
   mojo::Receiver<ntp_promo::mojom::NtpPromoHandlerFactory>
       ntp_promo_handler_factory_receiver_{this};
+  std::unique_ptr<ActionChipsHandler> action_chips_handler_;
+  mojo::Receiver<action_chips::mojom::ActionChipsHandlerFactory>
+      action_chips_handler_factory_receiver_{this};
 #if !defined(OFFICIAL_BUILD)
   std::unique_ptr<FooHandler> foo_handler_;
 #endif

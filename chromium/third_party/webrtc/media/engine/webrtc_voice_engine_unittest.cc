@@ -88,6 +88,7 @@ using ::testing::ContainerEq;
 using ::testing::Contains;
 using ::testing::Field;
 using ::testing::IsEmpty;
+using ::testing::Mock;
 using ::testing::Return;
 using ::testing::ReturnPointee;
 using ::testing::SaveArg;
@@ -146,6 +147,20 @@ constexpr webrtc::AudioProcessing::Config::GainController1::Mode
 constexpr webrtc::AudioProcessing::Config::NoiseSuppression::Level
     kDefaultNsLevel =
         webrtc::AudioProcessing::Config::NoiseSuppression::Level::kHigh;
+
+// A test RAII helper class for `WebRtcVoiceEngine` which calls Init()
+// in the constructor and Terminate() when it goes out of scope. It's similar to
+// `absl::MakeCleanup()` except that it also issues a call during construction.
+class AutoInitTerminate {
+ public:
+  explicit AutoInitTerminate(WebRtcVoiceEngine& engine) : engine_(engine) {
+    engine_.Init();
+  }
+  ~AutoInitTerminate() { engine_.Terminate(); }
+
+ private:
+  webrtc::WebRtcVoiceEngine& engine_;
+};
 
 void AdmSetupExpectations(webrtc::test::MockAudioDeviceModule* adm) {
   RTC_DCHECK(adm);
@@ -237,7 +252,7 @@ TEST(WebRtcVoiceEngineTestStubLibrary, StartupShutdown) {
           env, adm, webrtc::MockAudioEncoderFactory::CreateUnusedFactory(),
           webrtc::MockAudioDecoderFactory::CreateUnusedFactory(), nullptr, apm,
           nullptr);
-      engine.Init();
+      AutoInitTerminate init_term(engine);
     }
   }
 }
@@ -297,6 +312,8 @@ class WebRtcVoiceEngineTestFake : public ::testing::TestWithParam<bool> {
       VerifyGainControlDefaultSettings();
     }
   }
+
+  ~WebRtcVoiceEngineTestFake() { engine_->Terminate(); }
 
   bool SetupChannel() {
     send_channel_ = engine_->CreateSendChannel(
@@ -931,6 +948,27 @@ INSTANTIATE_TEST_SUITE_P(TestBothWithAndWithoutNullApm,
 
 // Tests that we can create and destroy a channel.
 TEST_P(WebRtcVoiceEngineTestFake, CreateMediaChannel) {
+  EXPECT_TRUE(SetupChannel());
+}
+
+TEST_P(WebRtcVoiceEngineTestFake, MultipleStartStop) {
+  // Call Start/Stop a few times in a loop. The `engine_` will have already been
+  // started so we'll start by stopping and re-starting.
+  for (int i = 0; i < 10; ++i) {
+    engine_->Terminate();
+    Mock::VerifyAndClearExpectations(adm_.get());
+    AdmSetupExpectations(adm_.get());
+    if (!use_null_apm_) {
+      // AudioProcessing.
+      EXPECT_CALL(*apm_, GetConfig())
+          .WillRepeatedly(ReturnPointee(&apm_config_));
+      EXPECT_CALL(*apm_, ApplyConfig(_))
+          .WillRepeatedly(SaveArg<0>(&apm_config_));
+      EXPECT_CALL(*apm_, DetachAecDump());
+    }
+    engine_->Init();
+  }
+  // SetupChannel should succeed as before.
   EXPECT_TRUE(SetupChannel());
 }
 
@@ -3389,7 +3427,7 @@ TEST_P(WebRtcVoiceEngineTestFake, SetOptionOverridesViaChannels) {
 // This test verifies DSCP settings are properly applied on voice media channel.
 TEST_P(WebRtcVoiceEngineTestFake, TestSetDscpOptions) {
   EXPECT_TRUE(SetupSendStream());
-  webrtc::FakeNetworkInterface network_interface;
+  webrtc::FakeNetworkInterface network_interface(env_);
   webrtc::MediaConfig config;
   std::unique_ptr<webrtc::VoiceMediaSendChannelInterface> channel;
   webrtc::RtpParameters parameters;
@@ -3793,6 +3831,37 @@ TEST_P(WebRtcVoiceEngineTestFake, OnReadyToSendSignalsNetworkState) {
             call_.GetNetworkState(webrtc::MediaType::VIDEO));
 }
 
+// Test that when an unsignaled stream is promoted to a signaled stream,
+// its ProxySink doesn't hold a dangling raw pointer if the default sink
+// is subsequently destroyed.
+TEST_P(WebRtcVoiceEngineTestFake,
+       ProxySinkSurvivesUnsignaledToSignaledPromotion) {
+  EXPECT_TRUE(SetupChannel());
+  std::unique_ptr<FakeAudioSink> fake_sink(new FakeAudioSink());
+
+  // Set the default sink.
+  receive_channel_->SetDefaultRawAudioSink(std::move(fake_sink));
+
+  // Deliver an RTP packet to create an unsignaled stream.
+  DeliverPacket(kPcmuFrame);
+  const AudioSinkInterface* proxy_sink = GetRecvStream(kSsrc1).sink();
+  EXPECT_NE(nullptr, proxy_sink);
+
+  // Promote the unsignaled stream to a signaled stream.
+  StreamParams sp = StreamParams::CreateLegacy(kSsrc1);
+  EXPECT_TRUE(receive_channel_->AddRecvStream(sp));
+
+  // The proxy sink should be removed from the stream upon promotion.
+  EXPECT_EQ(nullptr, GetRecvStream(kSsrc1).sink());
+
+  // Destroy the original sink by passing nullptr.
+  receive_channel_->SetDefaultRawAudioSink(nullptr);
+
+  // Note: calling proxy_sink->OnData would crash here if the proxy_sink
+  // would still be attached to the stream and hold a dangling pointer to
+  // default_sink_. But we've verified that it's detached, so that won't happen.
+}
+
 // Test that playout is still started after changing parameters
 TEST_P(WebRtcVoiceEngineTestFake, PreservePlayoutWhenRecreateRecvStream) {
   SetupRecvStream();
@@ -3835,7 +3904,7 @@ TEST(WebRtcVoiceEngineTest, StartupShutdown) {
         env, adm, webrtc::MockAudioEncoderFactory::CreateUnusedFactory(),
         webrtc::MockAudioDecoderFactory::CreateUnusedFactory(), nullptr, apm,
         nullptr);
-    engine.Init();
+    AutoInitTerminate init_term(engine);
     std::unique_ptr<Call> call = Call::Create(CallConfig(env));
     std::unique_ptr<webrtc::VoiceMediaSendChannelInterface> send_channel =
         engine.CreateSendChannel(
@@ -3864,7 +3933,7 @@ TEST(WebRtcVoiceEngineTest, StartupShutdownWithExternalADM) {
           env, adm, webrtc::MockAudioEncoderFactory::CreateUnusedFactory(),
           webrtc::MockAudioDecoderFactory::CreateUnusedFactory(), nullptr, apm,
           nullptr);
-      engine.Init();
+      AutoInitTerminate init_term(engine);
       std::unique_ptr<Call> call = Call::Create(CallConfig(env));
       std::unique_ptr<webrtc::VoiceMediaSendChannelInterface> send_channel =
           engine.CreateSendChannel(
@@ -3897,7 +3966,7 @@ TEST(WebRtcVoiceEngineTest, HasCorrectPayloadTypeMapping) {
         env, adm, webrtc::MockAudioEncoderFactory::CreateUnusedFactory(),
         webrtc::MockAudioDecoderFactory::CreateUnusedFactory(), nullptr, apm,
         nullptr);
-    engine.Init();
+    AutoInitTerminate init_term(engine);
     for (const webrtc::Codec& codec : engine.LegacySendCodecs()) {
       auto is_codec = [&codec](const char* name, int clockrate = 0) {
         return absl::EqualsIgnoreCase(codec.name, name) &&
@@ -3944,7 +4013,7 @@ TEST(WebRtcVoiceEngineTest, Has32Channels) {
         env, adm, webrtc::MockAudioEncoderFactory::CreateUnusedFactory(),
         webrtc::MockAudioDecoderFactory::CreateUnusedFactory(), nullptr, apm,
         nullptr);
-    engine.Init();
+    AutoInitTerminate init_term(engine);
     std::unique_ptr<Call> call = Call::Create(CallConfig(env));
 
     std::vector<std::unique_ptr<webrtc::VoiceMediaSendChannelInterface>>
@@ -3982,7 +4051,7 @@ TEST(WebRtcVoiceEngineTest, SetRecvCodecs) {
     webrtc::WebRtcVoiceEngine engine(
         env, adm, webrtc::MockAudioEncoderFactory::CreateUnusedFactory(),
         webrtc::CreateBuiltinAudioDecoderFactory(), nullptr, apm, nullptr);
-    engine.Init();
+    AutoInitTerminate init_term(engine);
     std::unique_ptr<Call> call = Call::Create(CallConfig(env));
     webrtc::WebRtcVoiceReceiveChannel channel(
         env, &engine, webrtc::MediaConfig(), webrtc::AudioOptions(),
@@ -4003,7 +4072,7 @@ TEST(WebRtcVoiceEngineTest, SetRtpSendParametersMaxBitrate) {
   webrtc::WebRtcVoiceEngine engine(
       env, adm, webrtc::CreateBuiltinAudioEncoderFactory(),
       webrtc::CreateBuiltinAudioDecoderFactory(), nullptr, nullptr, nullptr);
-  engine.Init();
+  AutoInitTerminate init_term(engine);
   CallConfig call_config(env);
   {
     webrtc::AudioState::Config config;
@@ -4075,7 +4144,7 @@ TEST(WebRtcVoiceEngineTest, CollectRecvCodecs) {
     webrtc::WebRtcVoiceEngine engine(env, adm, unused_encoder_factory,
                                      mock_decoder_factory, nullptr, apm,
                                      nullptr);
-    engine.Init();
+    AutoInitTerminate init_term(engine);
     auto codecs = engine.LegacyRecvCodecs();
     EXPECT_EQ(7u, codecs.size());
 
@@ -4164,7 +4233,7 @@ TEST(WebRtcVoiceEngineTest, CollectRecvCodecsWithLatePtAssignment) {
     webrtc::WebRtcVoiceEngine engine(env, adm, unused_encoder_factory,
                                      mock_decoder_factory, nullptr, apm,
                                      nullptr);
-    engine.Init();
+    AutoInitTerminate init_term(engine);
     auto codecs = engine.LegacyRecvCodecs();
     EXPECT_EQ(7u, codecs.size());
 

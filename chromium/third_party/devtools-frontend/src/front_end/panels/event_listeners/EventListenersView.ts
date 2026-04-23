@@ -1,7 +1,7 @@
 // Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -10,7 +10,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
-/* eslint-disable rulesdir/es-modules-import */
+/* eslint-disable @devtools/es-modules-import */
 import objectValueStyles from '../../ui/legacy/components/object_ui/objectValue.css.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -296,14 +296,18 @@ export class ObjectEventListenerBar extends UI.TreeOutline.TreeElement {
     const properties = [];
     const eventListener = this.#eventListener;
     const runtimeModel = eventListener.domDebuggerModel().runtimeModel();
-    properties.push(runtimeModel.createRemotePropertyFromPrimitiveValue('useCapture', eventListener.useCapture()));
-    properties.push(runtimeModel.createRemotePropertyFromPrimitiveValue('passive', eventListener.passive()));
-    properties.push(runtimeModel.createRemotePropertyFromPrimitiveValue('once', eventListener.once()));
+    properties.push(new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(
+        runtimeModel.createRemotePropertyFromPrimitiveValue('useCapture', eventListener.useCapture())));
+    properties.push(new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(
+        runtimeModel.createRemotePropertyFromPrimitiveValue('passive', eventListener.passive())));
+    properties.push(new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(
+        runtimeModel.createRemotePropertyFromPrimitiveValue('once', eventListener.once())));
     if (typeof eventListener.handler() !== 'undefined') {
-      properties.push(new SDK.RemoteObject.RemoteObjectProperty('handler', eventListener.handler()));
+      properties.push(new ObjectUI.ObjectPropertiesSection.ObjectTreeNode(
+          new SDK.RemoteObject.RemoteObjectProperty('handler', eventListener.handler())));
     }
     ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement.populateWithProperties(
-        this, properties, [], true, true, null);
+        this, {properties}, true, true, undefined);
   }
 
   private setTitle(object: SDK.RemoteObject.RemoteObject, linkifier: Components.Linkifier.Linkifier): void {
@@ -311,7 +315,7 @@ export class ObjectEventListenerBar extends UI.TreeOutline.TreeElement {
 
     const propertyValue = ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.createPropertyValue(
         object, /* wasThrown */ false, /* showPreview */ false);
-    this.valueTitle = propertyValue.element;
+    this.valueTitle = propertyValue;
     title.appendChild(this.valueTitle);
 
     if (this.#eventListener.canRemove()) {

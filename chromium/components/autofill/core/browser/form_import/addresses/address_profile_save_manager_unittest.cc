@@ -20,6 +20,7 @@
 #include "components/autofill/core/browser/test_utils/autofill_test_utils.h"
 #include "components/autofill/core/browser/test_utils/test_profiles.h"
 #include "components/autofill/core/common/autofill_constants.h"
+#include "components/autofill/core/common/autofill_debug_features.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -289,7 +290,7 @@ void AddressProfileSaveManagerTest::TestImportScenario(
                 ->GetMaxStrikesLimit()
           : 1;
   address_data_manager().GetProfileSaveStrikeDatabase()->AddStrikes(
-      initial_strikes_for_domain, form_url().host());
+      initial_strikes_for_domain, form_url().GetHost());
   ASSERT_EQ(
       address_data_manager().IsNewProfileImportBlockedForDomain(form_url()),
       test_scenario.new_profiles_suppresssed_for_domain);
@@ -536,7 +537,7 @@ void AddressProfileSaveManagerTest::VerifyStrikeCounts(
   // profile was declined.
   const int profile_save_strikes =
       address_data_manager().GetProfileSaveStrikeDatabase()->GetStrikes(
-          form_url().host());
+          form_url().GetHost());
   if (IsNewProfile(test_scenario) && last_import.UserDeclined()) {
     EXPECT_EQ(initial_strikes_for_domain + 1, profile_save_strikes);
   } else if (IsNewProfile(test_scenario) && last_import.UserAccepted()) {
@@ -837,7 +838,7 @@ TEST_P(AddressProfileSaveManagerTest,
        SilentlyUpdateProfile_DisabledByFeatureFlag) {
   base::test::ScopedFeatureList disabled_update_feature;
   disabled_update_feature.InitAndEnableFeature(
-      features::test::kAutofillDisableSilentProfileUpdates);
+      features::debug::kAutofillDisableSilentProfileUpdates);
 
   AutofillProfile observed_profile = test::StandardProfile();
   AutofillProfile updateable_profile = test::UpdateableStandardProfile();
@@ -930,7 +931,7 @@ TEST_P(AddressProfileSaveManagerTest,
        UserConfirmableMerge_DisabledByFeatureFlag) {
   base::test::ScopedFeatureList disabled_update_feature;
   disabled_update_feature.InitAndEnableFeature(
-      features::test::kAutofillDisableProfileUpdates);
+      features::debug::kAutofillDisableProfileUpdates);
 
   AutofillProfile observed_profile = test::StandardProfile();
   AutofillProfile mergeable_profile = test::SubsetOfStandardProfile();

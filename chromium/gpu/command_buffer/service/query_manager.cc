@@ -11,6 +11,7 @@
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
 #include "ui/gl/gl_bindings.h"
@@ -142,70 +143,6 @@ void CommandsIssuedQuery::EndProcessingCommands() {
 
 CommandsIssuedQuery::~CommandsIssuedQuery() = default;
 
-class CommandsIssuedTimestampQuery : public QueryManager::Query {
- public:
-  CommandsIssuedTimestampQuery(QueryManager* manager,
-                               GLenum target,
-                               scoped_refptr<gpu::Buffer> buffer,
-                               QuerySync* sync);
-
-  // This query should only be used with QueryCounter(), so Begin() and End()
-  // should not be reached.
-  void Begin() override;
-  void End(base::subtle::Atomic32 submit_count) override;
-  void QueryCounter(base::subtle::Atomic32 submit_count) override;
-  void Pause() override;
-  void Resume() override;
-  void Process(bool did_finish) override;
-  void Destroy(bool have_context) override;
-
- protected:
-  ~CommandsIssuedTimestampQuery() override;
-};
-
-CommandsIssuedTimestampQuery::CommandsIssuedTimestampQuery(
-    QueryManager* manager,
-    GLenum target,
-    scoped_refptr<gpu::Buffer> buffer,
-    QuerySync* sync)
-    : Query(manager, target, std::move(buffer), sync) {}
-
-void CommandsIssuedTimestampQuery::Begin() {
-  NOTREACHED();
-}
-
-void CommandsIssuedTimestampQuery::Pause() {
-  MarkAsPaused();
-}
-
-void CommandsIssuedTimestampQuery::Resume() {
-  MarkAsActive();
-}
-
-void CommandsIssuedTimestampQuery::End(base::subtle::Atomic32 submit_count) {
-  NOTREACHED();
-}
-
-void CommandsIssuedTimestampQuery::QueryCounter(
-    base::subtle::Atomic32 submit_count) {
-  const base::TimeDelta end_time = base::TimeTicks::Now().since_origin();
-  DCHECK_GE(end_time.InMicroseconds(), 0);
-  MarkAsActive();
-  MarkAsPending(submit_count);
-  MarkAsCompleted(end_time.InMicroseconds());
-}
-
-void CommandsIssuedTimestampQuery::Process(bool did_finish) {
-  NOTREACHED();
-}
-
-void CommandsIssuedTimestampQuery::Destroy(bool /* have_context */) {
-  if (!IsDeleted())
-    MarkAsDeleted();
-}
-
-CommandsIssuedTimestampQuery::~CommandsIssuedTimestampQuery() = default;
-
 class CommandsCompletedQuery : public QueryManager::Query {
  public:
   CommandsCompletedQuery(QueryManager* manager,
@@ -317,10 +254,6 @@ QueryManager::Query* QueryManager::CreateQuery(
   switch (target) {
     case GL_COMMANDS_ISSUED_CHROMIUM:
       query = new CommandsIssuedQuery(this, target, std::move(buffer), sync);
-      break;
-    case GL_COMMANDS_ISSUED_TIMESTAMP_CHROMIUM:
-      query = new CommandsIssuedTimestampQuery(this, target, std::move(buffer),
-                                               sync);
       break;
     case GL_READBACK_SHADOW_COPIES_UPDATED_CHROMIUM:
     case GL_COMMANDS_COMPLETED_CHROMIUM:

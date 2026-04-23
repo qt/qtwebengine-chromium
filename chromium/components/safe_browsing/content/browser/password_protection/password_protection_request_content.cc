@@ -16,6 +16,7 @@
 #include "components/safe_browsing/core/browser/password_protection/request_canceler.h"
 #include "components/safe_browsing/core/common/features.h"
 #include "components/safe_browsing/core/common/proto/csd.pb.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
@@ -82,13 +83,14 @@ PasswordProtectionRequestContent::CreateForTesting(
     LoginReputationClientRequest::TriggerType type,
     bool password_field_exists,
     PasswordProtectionServiceBase* pps,
-    int request_timeout_in_ms) {
+    int request_timeout_in_ms,
+    std::optional<OtpPhishingVerdictCallback> otp_phishing_verdict_callback) {
   scoped_refptr<PasswordProtectionRequest> request(
       new PasswordProtectionRequestContent(
           web_contents, main_frame_url, password_form_action,
           password_form_frame_url, mime_type, username, password_type,
           matching_reused_credentials, type, password_field_exists, pps,
-          request_timeout_in_ms));
+          request_timeout_in_ms, std::move(otp_phishing_verdict_callback)));
   static_cast<PasswordProtectionRequestContent*>(request.get())
       ->prevent_initiating_url_loader_for_testing_ = true;
   return request;
@@ -107,7 +109,8 @@ PasswordProtectionRequestContent::PasswordProtectionRequestContent(
     LoginReputationClientRequest::TriggerType type,
     bool password_field_exists,
     PasswordProtectionServiceBase* pps,
-    int request_timeout_in_ms)
+    int request_timeout_in_ms,
+    std::optional<OtpPhishingVerdictCallback> otp_phishing_verdict_callback)
     : PasswordProtectionRequest(content::GetUIThreadTaskRunner({}),
                                 content::GetIOThreadTaskRunner({}),
                                 main_frame_url,
@@ -120,7 +123,8 @@ PasswordProtectionRequestContent::PasswordProtectionRequestContent(
                                 type,
                                 password_field_exists,
                                 pps,
-                                request_timeout_in_ms),
+                                request_timeout_in_ms,
+                                std::move(otp_phishing_verdict_callback)),
       web_contents_(web_contents) {
   request_canceler_ = RequestCanceler::CreateRequestCanceler(
       weak_factory_.GetWeakPtr(), web_contents);
@@ -373,7 +377,9 @@ bool PasswordProtectionRequestContent::ShouldCollectVisualFeatures() {
   // straight to sending the ping.
   bool trigger_type_supports_visual_features =
       trigger_type() == LoginReputationClientRequest::UNFAMILIAR_LOGIN_PAGE ||
-      trigger_type() == LoginReputationClientRequest::PASSWORD_REUSE_EVENT;
+      trigger_type() == LoginReputationClientRequest::PASSWORD_REUSE_EVENT ||
+      trigger_type() ==
+          LoginReputationClientRequest::ONE_TIME_PASSWORD_FIELD_DETECTED;
 
   return trigger_type_supports_visual_features &&
          can_extract_visual_features_result ==
@@ -407,7 +413,8 @@ void PasswordProtectionRequestContent::CollectVisualFeatures() {
 }
 
 void PasswordProtectionRequestContent::OnScreenshotTaken(
-    const SkBitmap& screenshot) {
+    const viz::CopyOutputBitmapWithMetadata& result) {
+  const SkBitmap& bitmap = result.bitmap;
   // Do the feature extraction on a worker thread, to avoid blocking the UI.
   auto ui_thread_callback = base::BindOnce(
       &PasswordProtectionRequestContent::OnVisualFeatureCollectionDone,
@@ -416,7 +423,7 @@ void PasswordProtectionRequestContent::OnScreenshotTaken(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
        base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
-      base::BindOnce(&ExtractVisualFeaturesAndReplyOnUIThread, screenshot,
+      base::BindOnce(&ExtractVisualFeaturesAndReplyOnUIThread, bitmap,
                      std::move(ui_thread_callback)));
 }
 

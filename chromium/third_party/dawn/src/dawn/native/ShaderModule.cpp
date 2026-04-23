@@ -39,6 +39,7 @@
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/CompilationMessages.h"
 #include "dawn/native/Device.h"
+#include "dawn/native/Error.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/ObjectContentHasher.h"
 #include "dawn/native/Pipeline.h"
@@ -602,54 +603,30 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
                                                           SingleShaderStage entryPointStage,
                                                           BindingNumber bindingNumber,
                                                           const ShaderBindingInfo& shaderInfo) {
+    // Check that the binding exists.
     const BindGroupLayoutInternalBase::BindingMap& layoutBindings = layout->GetBindingMap();
-
-    // An external texture binding found in the shader will later be expanded into multiple
-    // bindings at compile time. This expansion will have already happened in the bgl - so
-    // the shader and bgl will always mismatch at this point. Expansion info is contained in
-    // the bgl object, so we can still verify the bgl used to have an external texture in
-    // the slot corresponding to the shader reflection.
-    if (std::holds_alternative<ExternalTextureBindingInfo>(shaderInfo.bindingInfo)) {
-        // If an external texture binding used to exist in the bgl, it will be found as a
-        // key in the ExternalTextureBindingExpansions map.
-        // TODO(dawn:563): Provide info about the binding types.
-        DAWN_INVALID_IF(!layout->GetExternalTextureBindingExpansionMap().contains(bindingNumber),
-                        "Binding type in the shader (texture_external) doesn't match the "
-                        "type in the layout.");
-
-        return {};
-    }
 
     const auto& bindingIt = layoutBindings.find(bindingNumber);
     DAWN_INVALID_IF(bindingIt == layoutBindings.end(), "Binding doesn't exist in %s.", layout);
 
-    BindingIndex bindingIndex(bindingIt->second);
-    const BindingInfo& layoutInfo = layout->GetBindingInfo(bindingIndex);
+    APIBindingIndex bindingIndex(bindingIt->second);
+    const BindingInfo& layoutInfo = layout->GetAPIBindingInfo(bindingIndex);
 
-    BindingInfoType bindingLayoutType = GetBindingInfoType(layoutInfo);
+    // Check that it is of the same type as in the layout.
     BindingInfoType shaderBindingType = GetShaderBindingType(shaderInfo);
-
-    if (bindingLayoutType == BindingInfoType::StaticSampler) {
-        DAWN_INVALID_IF(shaderBindingType != BindingInfoType::Sampler,
-                        "Binding type in the shader (%s) doesn't match the required type of %s for "
-                        "the %s type in the layout.",
-                        shaderBindingType, BindingInfoType::Sampler, bindingLayoutType);
-        return {};
+    BindingInfoType requiredType = GetBindingInfoType(layoutInfo);
+    if (requiredType == BindingInfoType::StaticSampler) {
+        requiredType = BindingInfoType::Sampler;
     }
-
-    DAWN_INVALID_IF(bindingLayoutType != shaderBindingType,
+    DAWN_INVALID_IF(requiredType != shaderBindingType,
                     "Binding type in the shader (%s) doesn't match the type in the layout (%s).",
-                    shaderBindingType, bindingLayoutType);
-
-    ExternalTextureBindingExpansionMap expansions = layout->GetExternalTextureBindingExpansionMap();
-    DAWN_INVALID_IF(expansions.contains(bindingNumber),
-                    "Binding type (buffer vs. texture vs. sampler vs. external) doesn't "
-                    "match the type in the layout.");
+                    shaderBindingType, requiredType);
 
     DAWN_INVALID_IF((layoutInfo.visibility & StageBit(entryPointStage)) == 0,
                     "Entry point's stage (%s) is not in the binding visibility in the layout (%s).",
                     StageBit(entryPointStage), layoutInfo.visibility);
 
+    // Check the arraySize matches the layout and that the shader has the start of the array.
     DAWN_INVALID_IF(layoutInfo.arraySize < shaderInfo.arraySize,
                     "Binding type in the shader is a binding_array with %u elements but the "
                     "layout only provides %u elements",
@@ -660,6 +637,7 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
                     shaderInfo.binding, layoutInfo.indexInArray,
                     uint32_t(layoutInfo.binding) - uint32_t(layoutInfo.indexInArray));
 
+    // Validation specific to each type of binding.
     return MatchVariant(
         shaderInfo.bindingInfo,
         [&](const TextureBindingInfo& bindingInfo) -> MaybeError {
@@ -759,19 +737,26 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
             return {};
         },
         [&](const SamplerBindingInfo& bindingInfo) -> MaybeError {
-            const SamplerBindingInfo& bindingLayout =
-                std::get<SamplerBindingInfo>(layoutInfo.bindingLayout);
+            bool comparisonInShader = bindingInfo.type == wgpu::SamplerBindingType::Comparison;
+            bool comparisonInLayout;
+            if (auto* staticBindingLayout =
+                    std::get_if<StaticSamplerBindingInfo>(&layoutInfo.bindingLayout)) {
+                comparisonInLayout = staticBindingLayout->sampler->IsComparison();
+            } else {
+                const SamplerBindingInfo& bindingLayout =
+                    std::get<SamplerBindingInfo>(layoutInfo.bindingLayout);
+                comparisonInLayout = bindingLayout.type == wgpu::SamplerBindingType::Comparison;
+            }
+
             DAWN_INVALID_IF(
-                (bindingLayout.type == wgpu::SamplerBindingType::Comparison) !=
-                    (bindingInfo.type == wgpu::SamplerBindingType::Comparison),
+                comparisonInShader != comparisonInLayout,
                 "The sampler type in the shader (comparison: %u) doesn't match the type in "
                 "the layout (comparison: %u).",
-                bindingInfo.type == wgpu::SamplerBindingType::Comparison,
-                bindingLayout.type == wgpu::SamplerBindingType::Comparison);
+                comparisonInShader, comparisonInLayout);
             return {};
         },
         [](const ExternalTextureBindingInfo&) -> MaybeError {
-            DAWN_UNREACHABLE();
+            // There are no other things to validate for the external textures.
             return {};
         },
         [&](const InputAttachmentBindingInfo& bindingInfo) -> MaybeError {
@@ -1026,6 +1011,10 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
 
             metadata->usedInterStageVariables[location] = true;
             metadata->interStageVariables[location] = variable;
+            if (inputVar.interpolation_sampling ==
+                tint::inspector::InterpolationSampling::kSample) {
+                metadata->isFragMultiSampled = true;
+            }
         }
 
         uint32_t totalInterStageShaderVariables = entryPoint.input_variables.size();
@@ -1038,6 +1027,8 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
             ++totalInterStageShaderVariables;
         }
         metadata->usesFragDepth = entryPoint.frag_depth_used;
+        metadata->usesFragPosition = entryPoint.frag_position_used;
+        metadata->usesFineDerivativeBuiltin = entryPoint.fine_derivative_builtin_used;
 
         metadata->totalInterStageShaderVariables = totalInterStageShaderVariables;
         if (metadata->totalInterStageShaderVariables > maxInterStageShaderVariables) {
@@ -1644,37 +1635,47 @@ MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
         if (pair.sampler == EntryPointMetadata::nonSamplerBindingPoint) {
             continue;
         }
-        const BindGroupLayoutInternalBase* samplerBGL =
-            layout->GetBindGroupLayout(pair.sampler.group);
-        const BindingInfo& samplerInfo =
-            samplerBGL->GetBindingInfo(samplerBGL->GetBindingIndex(pair.sampler.binding));
+
         bool samplerIsFiltering = false;
-        if (std::holds_alternative<StaticSamplerBindingInfo>(samplerInfo.bindingLayout)) {
-            const StaticSamplerBindingInfo& samplerLayout =
-                std::get<StaticSamplerBindingInfo>(samplerInfo.bindingLayout);
-            samplerIsFiltering = samplerLayout.sampler->IsFiltering();
-        } else {
-            const SamplerBindingInfo& samplerLayout =
-                std::get<SamplerBindingInfo>(samplerInfo.bindingLayout);
-            samplerIsFiltering = (samplerLayout.type == wgpu::SamplerBindingType::Filtering);
+        {
+            const BindGroupLayoutInternalBase* samplerBGL =
+                layout->GetBindGroupLayout(pair.sampler.group);
+            const BindingInfo& samplerInfo =
+                samplerBGL->GetAPIBindingInfo(samplerBGL->GetAPIBindingIndex(pair.sampler.binding));
+            if (std::holds_alternative<StaticSamplerBindingInfo>(samplerInfo.bindingLayout)) {
+                const StaticSamplerBindingInfo& samplerLayout =
+                    std::get<StaticSamplerBindingInfo>(samplerInfo.bindingLayout);
+                samplerIsFiltering = samplerLayout.sampler->IsFiltering();
+            } else {
+                const SamplerBindingInfo& samplerLayout =
+                    std::get<SamplerBindingInfo>(samplerInfo.bindingLayout);
+                samplerIsFiltering = (samplerLayout.type == wgpu::SamplerBindingType::Filtering);
+            }
         }
-        if (!samplerIsFiltering) {
-            continue;
+
+        wgpu::TextureSampleType sampleType = wgpu::TextureSampleType::Undefined;
+        {
+            const BindGroupLayoutInternalBase* textureBGL =
+                layout->GetBindGroupLayout(pair.texture.group);
+            const BindingInfo& textureInfo =
+                textureBGL->GetAPIBindingInfo(textureBGL->GetAPIBindingIndex(pair.texture.binding));
+
+            if (std::holds_alternative<ExternalTextureBindingInfo>(textureInfo.bindingLayout)) {
+                sampleType = wgpu::TextureSampleType::Float;
+            } else {
+                const TextureBindingInfo& sampledTextureBindingInfo =
+                    std::get<TextureBindingInfo>(textureInfo.bindingLayout);
+                sampleType = sampledTextureBindingInfo.sampleType;
+            }
         }
-        const BindGroupLayoutInternalBase* textureBGL =
-            layout->GetBindGroupLayout(pair.texture.group);
-        const BindingInfo& textureInfo =
-            textureBGL->GetBindingInfo(textureBGL->GetBindingIndex(pair.texture.binding));
-        const TextureBindingInfo& sampledTextureBindingInfo =
-            std::get<TextureBindingInfo>(textureInfo.bindingLayout);
 
         DAWN_INVALID_IF(
-            sampledTextureBindingInfo.sampleType != wgpu::TextureSampleType::Float &&
-                sampledTextureBindingInfo.sampleType != kInternalResolveAttachmentSampleType,
+            samplerIsFiltering && sampleType != wgpu::TextureSampleType::Float &&
+                sampleType != kInternalResolveAttachmentSampleType,
             "Texture binding (group:%u, binding:%u) is %s but used statically with a sampler "
             "(group:%u, binding:%u) that's %s",
-            pair.texture.group, pair.texture.binding, sampledTextureBindingInfo.sampleType,
-            pair.sampler.group, pair.sampler.binding, wgpu::SamplerBindingType::Filtering);
+            pair.texture.group, pair.texture.binding, sampleType, pair.sampler.group,
+            pair.sampler.binding, wgpu::SamplerBindingType::Filtering);
     }
 
     // Validate compatibility of the pixel local storage.
@@ -1745,7 +1746,7 @@ ShaderModuleBase::ShaderModuleBase(DeviceBase* device,
                                    const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
                                    std::vector<tint::wgsl::Extension> internalExtensions,
                                    ApiObjectBase::UntrackedByDeviceTag tag)
-    : Base(device, descriptor->label),
+    : Base(device, ObjectBase::kDelayedInitialization, descriptor->label),
       mType(Type::Undefined),
       mInternalExtensions(std::move(internalExtensions)) {
     size_t shaderCodeByteSize = 0;
@@ -1806,10 +1807,10 @@ ShaderModuleBase::ShaderModuleBase(DeviceBase* device,
                                    ObjectBase::ErrorTag tag,
                                    StringView label,
                                    ParsedCompilationMessages&& compilationMessages)
-    : Base(device, tag, label),
-      mType(Type::Undefined),
-      mCompilationMessages(
-          std::make_unique<OwnedCompilationMessages>(std::move(compilationMessages))) {}
+    : Base(device, tag, label), mType(Type::Undefined) {
+    mCompiledState.compilationMessages =
+        std::make_unique<OwnedCompilationMessages>(std::move(compilationMessages));
+}
 
 ShaderModuleBase::~ShaderModuleBase() = default;
 
@@ -1825,12 +1826,98 @@ Ref<ShaderModuleBase> ShaderModuleBase::MakeError(DeviceBase* device,
         new ShaderModuleBase(device, ObjectBase::kError, label, std::move(compilationMessages)));
 }
 
+void ShaderModuleBase::Initialize() {
+    auto task = [&, shaderModuleRef = Ref<ShaderModuleBase>(this)]() {
+        SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(GetDevice()->GetPlatform(), "CreateShaderModuleUS");
+
+        CompiledState resultState;
+        auto taskMaybeError = [&resultState, shaderModule = static_cast<const ShaderModuleBase*>(
+                                                 this)]() -> MaybeError {
+            // Check blob cache first before calling ParseShaderModule. ShaderModuleParseResult
+            // returned from blob cache or ParseShaderModule will hold compilation messages and
+            // validation errors if any. ShaderModuleParseResult from ParseShaderModule also
+            // holds tint program.
+            CacheResult<ShaderModuleParseResult> cacheResult;
+            DAWN_TRY_LOAD_OR_RUN(cacheResult, shaderModule->GetDevice(),
+                                 shaderModule->GenerateShaderModuleParseRequest(true),
+                                 ShaderModuleParseResult::FromBlob, ParseShaderModule,
+                                 "ShaderModuleParsing");
+            shaderModule->GetDevice()->GetBlobCache()->EnsureStored(cacheResult);
+
+            ShaderModuleParseResult parseResult = cacheResult.Acquire();
+
+            // Move the compilation messages regardless of compilation success. Compilation messages
+            // should be inject only once for each shader module.
+            DAWN_ASSERT(resultState.compilationMessages == nullptr);
+            // Move the compilationMessages into the shader module and emit the tint errors and
+            // warnings
+            resultState.compilationMessages = std::make_unique<OwnedCompilationMessages>(
+                std::move(parseResult.compilationMessages));
+
+            // If ShaderModuleParseResult has validation error, notify the caller that compilation
+            // failed. The compilation messages have already been stored.
+            if (parseResult.HasError()) {
+                return parseResult.cachedValidationError->ToErrorData();
+            }
+
+            DAWN_ASSERT(!parseResult.HasError());
+            if (parseResult.HasTintProgram()) {
+                resultState.tintData.Use([&](auto tintData) {
+                    tintData->tintProgram =
+                        std::move(parseResult.tintProgram.UnsafeGetValue().value());
+                });
+            }
+
+            // Gather the metadata and default entry point names
+            DAWN_ASSERT(parseResult.metadataTable.has_value());
+            resultState.entryPoints = std::move(parseResult.metadataTable.value());
+
+            for (auto stage : IterateStages(kAllStages)) {
+                resultState.entryPointCounts[stage] = 0;
+            }
+            for (auto& [name, metadata] : resultState.entryPoints) {
+                SingleShaderStage stage = metadata->stage;
+                if (resultState.entryPointCounts[stage] == 0) {
+                    resultState.defaultEntryPointNames[stage] = name;
+                }
+                resultState.entryPointCounts[stage]++;
+            }
+
+            return {};
+        }();
+
+        // Always set mCompiledState, even if the compilation failed. It contains error messages
+        // that are used regardless of success.
+        mCompiledState = std::move(resultState);
+
+        DAWN_HISTOGRAM_BOOLEAN(GetDevice()->GetPlatform(), "CreateShaderModuleSuccess",
+                               taskMaybeError.IsSuccess());
+        if (taskMaybeError.IsError()) {
+            SetInitializedError();
+            mInitializationError = CachedValidationError(taskMaybeError.AcquireError());
+        } else {
+            SetInitializedNoError();
+
+            // On successful compilation, emit the compilation log
+            GetDevice()->EmitCompilationLog(this);
+        }
+    };
+
+    task();
+    DAWN_ASSERT(IsInitialized());
+}
+
+std::unique_ptr<ErrorData> ShaderModuleBase::GetInitializationError() {
+    DAWN_ASSERT(mInitializationError.has_value());
+    return mInitializationError->ToErrorData();
+}
+
 ObjectType ShaderModuleBase::GetType() const {
     return ObjectType::ShaderModule;
 }
 
 bool ShaderModuleBase::HasEntryPoint(absl::string_view entryPoint) const {
-    return mEntryPoints.contains(entryPoint);
+    return mCompiledState.entryPoints.contains(entryPoint);
 }
 
 ShaderModuleEntryPoint ShaderModuleBase::ReifyEntryPointName(StringView entryPointName,
@@ -1838,7 +1925,7 @@ ShaderModuleEntryPoint ShaderModuleBase::ReifyEntryPointName(StringView entryPoi
     ShaderModuleEntryPoint entryPoint;
     if (entryPointName.IsUndefined()) {
         entryPoint.defaulted = true;
-        entryPoint.name = mDefaultEntryPointNames[stage];
+        entryPoint.name = mCompiledState.defaultEntryPointNames[stage];
     } else {
         entryPoint.defaulted = false;
         entryPoint.name = entryPointName;
@@ -1852,7 +1939,7 @@ std::optional<bool> ShaderModuleBase::GetStrictMath() const {
 
 const EntryPointMetadata& ShaderModuleBase::GetEntryPoint(absl::string_view entryPoint) const {
     DAWN_ASSERT(HasEntryPoint(entryPoint));
-    return *mEntryPoints.at(entryPoint);
+    return *mCompiledState.entryPoints.at(entryPoint);
 }
 
 size_t ShaderModuleBase::ComputeContentHash() {
@@ -1883,7 +1970,7 @@ ShaderModuleBase::ScopedUseTintProgram ShaderModuleBase::UseTintProgram() {
 }
 
 Ref<TintProgram> ShaderModuleBase::GetTintProgram() {
-    return mTintData.Use([&](auto tintData) {
+    return mCompiledState.tintData.Use([&](auto tintData) {
         // If the tintProgram is valid, just return it.
         if (tintData->tintProgram) {
             return tintData->tintProgram;
@@ -1895,34 +1982,9 @@ Ref<TintProgram> ShaderModuleBase::GetTintProgram() {
         // shader source code, Dawn will look up from the cache and return the same
         // ShaderModuleBase. In this case, we have to recreate the released mTintProgram for
         // initializing new pipelines.
-        ShaderModuleDescriptor descriptor;
-        ShaderSourceWGSL wgslDescriptor;
-        ShaderSourceSPIRV spirvDescriptor;
-        DawnShaderModuleSPIRVOptionsDescriptor spirvOptionsDescriptor;
-
-        switch (mType) {
-            case Type::Spirv:
-                spirvOptionsDescriptor.allowNonUniformDerivatives =
-                    mAllowSpirvNonUniformDerivitives;
-                spirvDescriptor.nextInChain = &spirvOptionsDescriptor;
-
-                spirvDescriptor.codeSize = mOriginalSpirv.size();
-                spirvDescriptor.code = mOriginalSpirv.data();
-                descriptor.nextInChain = &spirvDescriptor;
-                break;
-            case Type::Wgsl:
-                wgslDescriptor.code = std::string_view(mWgsl);
-                descriptor.nextInChain = &wgslDescriptor;
-                break;
-            default:
-                DAWN_UNREACHABLE();
-        }
-
         // Assuming ParseShaderModule will not throw error for regenerating.
         ShaderModuleParseResult regeneratedParseResult =
-            ParseShaderModule(BuildShaderModuleParseRequest(GetDevice(), mHash, Unpack(&descriptor),
-                                                            mInternalExtensions,
-                                                            /* needReflection */ false))
+            ParseShaderModule(GenerateShaderModuleParseRequest(/* needReflection */ false))
                 .AcquireSuccess();
         DAWN_ASSERT(regeneratedParseResult.HasTintProgram() && !regeneratedParseResult.HasError());
 
@@ -1935,11 +1997,12 @@ Ref<TintProgram> ShaderModuleBase::GetTintProgram() {
 }
 
 Ref<TintProgram> ShaderModuleBase::GetNullableTintProgramForTesting() const {
-    return mTintData.Use([&](auto tintData) { return tintData->tintProgram; });
+    return mCompiledState.tintData.Use([&](auto tintData) { return tintData->tintProgram; });
 }
 
 int ShaderModuleBase::GetTintProgramRecreateCountForTesting() const {
-    return mTintData.Use([&](auto tintData) { return tintData->tintProgramRecreateCount; });
+    return mCompiledState.tintData.Use(
+        [&](auto tintData) { return tintData->tintProgramRecreateCount; });
 }
 
 Future ShaderModuleBase::APIGetCompilationInfo(
@@ -1969,7 +2032,7 @@ Future ShaderModuleBase::APIGetCompilationInfo(
             const CompilationInfo* compilationInfo = nullptr;
             if (completionType == EventCompletionType::Ready) {
                 status = WGPUCompilationInfoRequestStatus_Success;
-                compilationInfo = mShaderModule->mCompilationMessages->GetCompilationInfo();
+                compilationInfo = mShaderModule->GetCompilationMessages()->GetCompilationInfo();
             }
 
             mCallback(status, ToAPI(compilationInfo), mUserdata1.ExtractAsDangling(),
@@ -1982,19 +2045,19 @@ Future ShaderModuleBase::APIGetCompilationInfo(
 }
 
 const OwnedCompilationMessages* ShaderModuleBase::GetCompilationMessages() const {
-    return mCompilationMessages.get();
+    return mCompiledState.compilationMessages.get();
 }
 
 std::string ShaderModuleBase::GetCompilationLog() const {
-    DAWN_ASSERT(mCompilationMessages);
-    if (!mCompilationMessages->HasWarningsOrErrors()) {
+    DAWN_ASSERT(mCompiledState.compilationMessages);
+    if (!mCompiledState.compilationMessages->HasWarningsOrErrors()) {
         return "";
     }
 
     // Emit the formatted Tint errors and warnings.
     std::ostringstream t;
     t << absl::StrFormat("Compilation log for %s:\n", this);
-    for (const auto& pMessage : mCompilationMessages->GetFormattedTintMessages()) {
+    for (const auto& pMessage : mCompiledState.compilationMessages->GetFormattedTintMessages()) {
         t << "\n" << pMessage;
     }
 
@@ -2003,45 +2066,58 @@ std::string ShaderModuleBase::GetCompilationLog() const {
 
 void ShaderModuleBase::SetCompilationMessagesForTesting(
     std::unique_ptr<OwnedCompilationMessages>* compilationMessages) {
-    mCompilationMessages = std::move(*compilationMessages);
-}
-
-MaybeError ShaderModuleBase::InitializeBase(ShaderModuleParseResult* parseResult) {
-    DAWN_ASSERT(!parseResult->HasError());
-    if (parseResult->HasTintProgram()) {
-        mTintData.Use([&](auto tintData) {
-            tintData->tintProgram = std::move(parseResult->tintProgram.UnsafeGetValue().value());
-        });
-    }
-    DAWN_ASSERT(parseResult->metadataTable.has_value());
-    mEntryPoints = std::move(parseResult->metadataTable.value());
-
-    for (auto stage : IterateStages(kAllStages)) {
-        mEntryPointCounts[stage] = 0;
-    }
-    for (auto& [name, metadata] : mEntryPoints) {
-        SingleShaderStage stage = metadata->stage;
-        if (mEntryPointCounts[stage] == 0) {
-            mDefaultEntryPointNames[stage] = name;
-        }
-        mEntryPointCounts[stage]++;
-    }
-
-    // Move the compilation messages if initialized successfully. Compilation messages should be
-    // inject only once for each shader module.
-    DAWN_ASSERT(mCompilationMessages == nullptr);
-    // Move the compilationMessages into the shader module and emit the tint errors and warnings
-    mCompilationMessages =
-        std::make_unique<OwnedCompilationMessages>(std::move(parseResult->compilationMessages));
-
-    return {};
+    mCompiledState.compilationMessages = std::move(*compilationMessages);
 }
 
 void ShaderModuleBase::WillDropLastExternalRef() {
     // The last external ref being dropped indicates that the application is not currently using,
     // and no pending task will use the shader module. In this case we can free the memory for the
     // parsed module.
-    mTintData.Use([&](auto tintData) { tintData->tintProgram = nullptr; });
+    mCompiledState.tintData.Use([&](auto tintData) { tintData->tintProgram = nullptr; });
 }
 
+ShaderModuleParseRequest ShaderModuleBase::GenerateShaderModuleParseRequest(
+    bool needReflection) const {
+    ShaderModuleDescriptor descriptor;
+    ShaderSourceWGSL wgslDescriptor;
+    ShaderSourceSPIRV spirvDescriptor;
+    DawnShaderModuleSPIRVOptionsDescriptor spirvOptionsDescriptor;
+
+    switch (mType) {
+        case Type::Spirv:
+            spirvOptionsDescriptor.allowNonUniformDerivatives = mAllowSpirvNonUniformDerivitives;
+            spirvDescriptor.nextInChain = &spirvOptionsDescriptor;
+
+            spirvDescriptor.codeSize = mOriginalSpirv.size();
+            spirvDescriptor.code = mOriginalSpirv.data();
+            descriptor.nextInChain = &spirvDescriptor;
+            break;
+        case Type::Wgsl:
+            wgslDescriptor.code = std::string_view(mWgsl);
+            descriptor.nextInChain = &wgslDescriptor;
+            break;
+        default:
+            DAWN_UNREACHABLE();
+    }
+
+    return BuildShaderModuleParseRequest(GetDevice(), mHash, Unpack(&descriptor),
+                                         mInternalExtensions, needReflection);
+}
+
+ShaderModuleBase::CompiledState& ShaderModuleBase::CompiledState::operator=(
+    ShaderModuleBase::CompiledState&& source) {
+    entryPoints = std::move(source.entryPoints);
+    defaultEntryPointNames = std::move(source.defaultEntryPointNames);
+    entryPointCounts = std::move(source.entryPointCounts);
+
+    TintData sourceTintData;
+    source.tintData.Use(
+        [&sourceTintData](auto tintData) { sourceTintData = std::move(*tintData); });
+    tintData.Use(
+        [&sourceTintData](auto destTintData) { *destTintData = std::move(sourceTintData); });
+
+    compilationMessages = std::move(source.compilationMessages);
+
+    return *this;
+}
 }  // namespace dawn::native

@@ -52,9 +52,9 @@ class ScopedSDLSubSystem {
         SDL_Create##name(std::forward<Args>(args)...));      \
   }
 
-DEFINE_SDL_UNIQUE_PTR(Window);
-DEFINE_SDL_UNIQUE_PTR(Renderer);
-DEFINE_SDL_UNIQUE_PTR(Texture);
+DEFINE_SDL_UNIQUE_PTR(Window)
+DEFINE_SDL_UNIQUE_PTR(Renderer)
+DEFINE_SDL_UNIQUE_PTR(Texture)
 
 #undef DEFINE_SDL_UNIQUE_PTR
 

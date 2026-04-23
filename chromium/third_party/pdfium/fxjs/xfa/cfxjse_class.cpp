@@ -32,6 +32,11 @@ using pdfium::fxjse::kFuncTag;
 
 namespace {
 
+// TODO(pdfium): Define and use type-specific type tags for aligned pointers
+// stored in V8 objects. The type tags should not overlap with the ones used by
+// Blink, as defined in gin/public/gin_embedders.h.
+constexpr v8::EmbedderDataTypeTag kDefaultPDFiumTag = 0;
+
 FXJSE_FUNCTION_DESCRIPTOR* AsFunctionDescriptor(void* ptr) {
   auto* result = static_cast<FXJSE_FUNCTION_DESCRIPTOR*>(ptr);
   return result && result->tag == kFuncTag ? result : nullptr;
@@ -45,7 +50,8 @@ FXJSE_CLASS_DESCRIPTOR* AsClassDescriptor(void* ptr) {
 void V8FunctionCallback_Wrapper(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   const FXJSE_FUNCTION_DESCRIPTOR* pFunctionInfo =
-      AsFunctionDescriptor(info.Data().As<v8::External>()->Value());
+      AsFunctionDescriptor(info.Data().As<v8::External>()->Value(
+          v8::kExternalPointerTypeTagDefault));
   if (!pFunctionInfo) {
     return;
   }
@@ -60,20 +66,22 @@ void V8ConstructorCallback_Wrapper(
   }
 
   const FXJSE_CLASS_DESCRIPTOR* pClassDescriptor =
-      AsClassDescriptor(info.Data().As<v8::External>()->Value());
+      AsClassDescriptor(info.Data().As<v8::External>()->Value(
+          v8::kExternalPointerTypeTagDefault));
   if (!pClassDescriptor) {
     return;
   }
 
   DCHECK_EQ(info.This()->InternalFieldCount(), 2);
-  info.This()->SetAlignedPointerInInternalField(0, nullptr);
-  info.This()->SetAlignedPointerInInternalField(1, nullptr);
+  info.This()->SetAlignedPointerInInternalField(0, nullptr, kDefaultPDFiumTag);
+  info.This()->SetInternalField(1, v8::Undefined(info.GetIsolate()));
 }
 
 void Context_GlobalObjToString(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   const FXJSE_CLASS_DESCRIPTOR* pClassDescriptor =
-      AsClassDescriptor(info.Data().As<v8::External>()->Value());
+      AsClassDescriptor(info.Data().As<v8::External>()->Value(
+          v8::kExternalPointerTypeTagDefault));
   if (!pClassDescriptor) {
     return;
   }
@@ -100,7 +108,7 @@ void DynPropGetterAdapter_MethodCallback(
   }
 
   auto* pClassDescriptor = static_cast<const FXJSE_CLASS_DESCRIPTOR*>(
-      hCallBackInfo->GetAlignedPointerFromInternalField(0));
+      hCallBackInfo->GetAlignedPointerFromInternalField(0, kDefaultPDFiumTag));
   if (pClassDescriptor != &kGlobalClassDescriptor &&
       pClassDescriptor != &kNormalClassDescriptor &&
       pClassDescriptor != &kVariablesClassDescriptor &&
@@ -156,7 +164,8 @@ std::unique_ptr<CFXJSE_Value> DynPropGetterAdapter(
           hCallBackInfoTemplate->NewInstance(pIsolate->GetCurrentContext())
               .ToLocalChecked();
       hCallBackInfo->SetAlignedPointerInInternalField(
-          0, const_cast<FXJSE_CLASS_DESCRIPTOR*>(pClassDescriptor));
+          0, const_cast<FXJSE_CLASS_DESCRIPTOR*>(pClassDescriptor),
+          kDefaultPDFiumTag);
       hCallBackInfo->SetInternalField(
           1, fxv8::NewStringHelper(pIsolate, szPropName));
       return std::make_unique<CFXJSE_Value>(
@@ -204,7 +213,8 @@ v8::Intercepted NamedPropertyQueryCallback(
     v8::Local<v8::Name> property,
     const v8::PropertyCallbackInfo<v8::Integer>& info) {
   const FXJSE_CLASS_DESCRIPTOR* pClass =
-      AsClassDescriptor(info.Data().As<v8::External>()->Value());
+      AsClassDescriptor(info.Data().As<v8::External>()->Value(
+          v8::kExternalPointerTypeTagDefault));
   if (!pClass) {
     return v8::Intercepted::kNo;
   }
@@ -227,7 +237,8 @@ v8::Intercepted NamedPropertyGetterCallback(
     v8::Local<v8::Name> property,
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   const FXJSE_CLASS_DESCRIPTOR* pClass =
-      AsClassDescriptor(info.Data().As<v8::External>()->Value());
+      AsClassDescriptor(info.Data().As<v8::External>()->Value(
+          v8::kExternalPointerTypeTagDefault));
   if (!pClass) {
     return v8::Intercepted::kNo;
   }
@@ -247,7 +258,8 @@ v8::Intercepted NamedPropertySetterCallback(
     v8::Local<v8::Value> value,
     const v8::PropertyCallbackInfo<void>& info) {
   const FXJSE_CLASS_DESCRIPTOR* pClass =
-      AsClassDescriptor(info.Data().As<v8::External>()->Value());
+      AsClassDescriptor(info.Data().As<v8::External>()->Value(
+          v8::kExternalPointerTypeTagDefault));
   if (!pClass) {
     return v8::Intercepted::kNo;
   }
@@ -277,7 +289,8 @@ void SetUpNamedPropHandler(v8::Isolate* pIsolate,
                                           : nullptr,
       nullptr, NamedPropertyEnumeratorCallback,
       v8::External::New(pIsolate,
-                        const_cast<FXJSE_CLASS_DESCRIPTOR*>(pClassDescriptor)),
+                        const_cast<FXJSE_CLASS_DESCRIPTOR*>(pClassDescriptor),
+                        v8::kExternalPointerTypeTagDefault),
       v8::PropertyHandlerFlags::kNonMasking);
   pObjectTemplate->SetHandler(configuration);
 }
@@ -286,28 +299,29 @@ void SetUpNamedPropHandler(v8::Isolate* pIsolate,
 
 // static
 CFXJSE_Class* CFXJSE_Class::Create(
-    CFXJSE_Context* pContext,
+    CFXJSE_Context* context,
     const FXJSE_CLASS_DESCRIPTOR* pClassDescriptor,
     bool bIsJSGlobal) {
-  if (!pContext || !pClassDescriptor) {
+  if (!context || !pClassDescriptor) {
     return nullptr;
   }
 
   CFXJSE_Class* pExistingClass =
-      pContext->GetClassByName(pClassDescriptor->name);
+      context->GetClassByName(pClassDescriptor->name);
   if (pExistingClass) {
     return pExistingClass;
   }
 
-  v8::Isolate* pIsolate = pContext->GetIsolate();
-  auto pClass = std::make_unique<CFXJSE_Class>(pContext);
+  v8::Isolate* pIsolate = context->GetIsolate();
+  auto pClass = std::make_unique<CFXJSE_Class>(context);
   pClass->class_name_ = pClassDescriptor->name;
   pClass->class_descriptor_ = pClassDescriptor;
   CFXJSE_ScopeUtil_IsolateHandleRootContext scope(pIsolate);
   v8::Local<v8::FunctionTemplate> hFunctionTemplate = v8::FunctionTemplate::New(
       pIsolate, bIsJSGlobal ? nullptr : V8ConstructorCallback_Wrapper,
       v8::External::New(pIsolate,
-                        const_cast<FXJSE_CLASS_DESCRIPTOR*>(pClassDescriptor)));
+                        const_cast<FXJSE_CLASS_DESCRIPTOR*>(pClassDescriptor),
+                        v8::kExternalPointerTypeTagDefault));
   v8::Local<v8::String> classname =
       fxv8::NewStringHelper(pIsolate, pClassDescriptor->name);
   hFunctionTemplate->SetClassName(classname);
@@ -323,7 +337,8 @@ CFXJSE_Class* CFXJSE_Class::Create(
     v8::Local<v8::FunctionTemplate> fun = v8::FunctionTemplate::New(
         pIsolate, V8FunctionCallback_Wrapper,
         v8::External::New(pIsolate,
-                          const_cast<FXJSE_FUNCTION_DESCRIPTOR*>(&method)));
+                          const_cast<FXJSE_FUNCTION_DESCRIPTOR*>(&method),
+                          v8::kExternalPointerTypeTagDefault));
     fun->RemovePrototype();
     hObjectTemplate->Set(
         fxv8::NewStringHelper(pIsolate, method.name), fun,
@@ -333,19 +348,19 @@ CFXJSE_Class* CFXJSE_Class::Create(
   if (bIsJSGlobal) {
     v8::Local<v8::FunctionTemplate> fn = v8::FunctionTemplate::New(
         pIsolate, Context_GlobalObjToString,
-        v8::External::New(
-            pIsolate, const_cast<FXJSE_CLASS_DESCRIPTOR*>(pClassDescriptor)));
+        v8::External::New(pIsolate,
+                          const_cast<FXJSE_CLASS_DESCRIPTOR*>(pClassDescriptor),
+                          v8::kExternalPointerTypeTagDefault));
     fn->RemovePrototype();
     hObjectTemplate->Set(fxv8::NewStringHelper(pIsolate, "toString"), fn);
   }
-  pClass->func_template_.Reset(pContext->GetIsolate(), hFunctionTemplate);
+  pClass->func_template_.Reset(context->GetIsolate(), hFunctionTemplate);
   CFXJSE_Class* pResult = pClass.get();
-  pContext->AddClass(std::move(pClass));
+  context->AddClass(std::move(pClass));
   return pResult;
 }
 
-CFXJSE_Class::CFXJSE_Class(const CFXJSE_Context* pContext)
-    : context_(pContext) {}
+CFXJSE_Class::CFXJSE_Class(const CFXJSE_Context* context) : context_(context) {}
 
 CFXJSE_Class::~CFXJSE_Class() = default;
 

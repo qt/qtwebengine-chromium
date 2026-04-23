@@ -86,13 +86,17 @@ class RecomputePhiUseHintsProcessor {
     return ProcessResult::kContinue;
   }
 
+  ProcessResult Process(CheckSmi* node, const ProcessingState& state) {
+    return ProcessResult::kContinue;
+  }
+
   ProcessResult Process(NodeBase* node, const ProcessingState& state) {
     DCHECK(!node->Is<Phi>());
     for (Input input : node->inputs()) {
       if (!input.node()) continue;
       if (Phi* phi = input.node()->TryCast<Phi>()) {
         UseRepresentation use_repr = UseRepresentation::kTagged;
-        if (node->properties().is_conversion()) {
+        if (node->is_conversion()) {
           use_repr = UseRepresentationFromValue(
               node->Cast<ValueNode>()->value_representation());
         } else if (node->Is<ReturnedValue>()) {
@@ -100,18 +104,22 @@ class RecomputePhiUseHintsProcessor {
           while (!unwrapped->Is<ReturnedValue>()) {
             unwrapped = unwrapped->input_node(0);
           }
-          DCHECK(!unwrapped->properties().is_conversion());
+          DCHECK(!unwrapped->is_conversion());
           DCHECK(!node->Is<TruncateCheckedNumberOrOddballToInt32>());
           DCHECK(!node->Is<TruncateUnsafeNumberOrOddballToInt32>());
           DCHECK(!node->Is<TruncateUint32ToInt32>());
+          DCHECK(!node->Is<TruncateFloat64ToInt32>());
           DCHECK(!node->Is<TruncateHoleyFloat64ToInt32>());
           use_repr =
               UseRepresentationFromValue(unwrapped->value_representation());
         } else if (node->Is<TruncateUint32ToInt32>() ||
+                   node->Is<TruncateFloat64ToInt32>() ||
                    node->Is<TruncateHoleyFloat64ToInt32>() ||
                    node->Is<TruncateCheckedNumberOrOddballToInt32>() ||
                    node->Is<TruncateUnsafeNumberOrOddballToInt32>()) {
           use_repr = UseRepresentation::kTruncatedInt32;
+        } else if (node->Is<NumberToString>()) {
+          use_repr = UseRepresentation::kTaggedForNumberToString;
         }
         phi->RecordUseReprHint(UseRepresentationSet{use_repr},
                                live_loop_phis_.contains(phi));
@@ -135,6 +143,8 @@ class RecomputePhiUseHintsProcessor {
         return UseRepresentation::kInt32;
       case ValueRepresentation::kUint32:
         return UseRepresentation::kUint32;
+      case ValueRepresentation::kShiftedInt53:
+        return UseRepresentation::kShiftedInt53;
       case ValueRepresentation::kFloat64:
         return UseRepresentation::kFloat64;
       case ValueRepresentation::kHoleyFloat64:
@@ -204,10 +214,10 @@ class LoopOptimizationProcessor {
     return input->owner() != current_block;
   }
 
-  ProcessResult Process(LoadTaggedFieldForContextSlotNoCells* ltf,
+  ProcessResult Process(LoadContextSlotNoCells* ltf,
                         const ProcessingState& state) {
     DCHECK(loop_effects);
-    ValueNode* object = ltf->object_input().node();
+    ValueNode* object = ltf->ValueInput().node();
     if (IsLoopPhi(object)) {
       return ProcessResult::kContinue;
     }
@@ -220,26 +230,26 @@ class LoopOptimizationProcessor {
     return ProcessResult::kContinue;
   }
 
-  ProcessResult Process(LoadTaggedFieldForProperty* ltf,
-                        const ProcessingState& state) {
-    return ProcessNamedLoad(ltf, ltf->object_input().node(), ltf->name());
+  ProcessResult Process(LoadTaggedField* ltf, const ProcessingState& state) {
+    if (ltf->property_key().type() != PropertyKey::kName) {
+      return ProcessResult::kContinue;
+    }
+    return ProcessNamedLoad(ltf, ltf->ValueInput().node(), ltf->property_key());
   }
 
   ProcessResult Process(StringLength* len, const ProcessingState& state) {
-    return ProcessNamedLoad(
-        len, len->object_input().node(),
-        KnownNodeAspects::LoadedPropertyMapKey::StringLength());
+    return ProcessNamedLoad(len, len->StringInput().node(),
+                            PropertyKey::StringLength());
   }
 
   ProcessResult Process(LoadTypedArrayLength* len,
                         const ProcessingState& state) {
-    return ProcessNamedLoad(
-        len, len->receiver_input().node(),
-        KnownNodeAspects::LoadedPropertyMapKey::TypedArrayLength());
+    return ProcessNamedLoad(len, len->ValueInput().node(),
+                            PropertyKey::TypedArrayLength());
   }
 
   ProcessResult ProcessNamedLoad(Node* load, ValueNode* object,
-                                 KnownNodeAspects::LoadedPropertyMapKey name) {
+                                 PropertyKey name) {
     DCHECK(!load->properties().can_deopt());
     if (!loop_effects) return ProcessResult::kContinue;
     if (IsLoopPhi(object)) {
@@ -262,7 +272,7 @@ class LoopOptimizationProcessor {
     // hoisting of this check fails we need to abort (and not continue) to
     // ensure we are not hoisting other instructions over it.
     if (was_deoptimized) return ProcessResult::kSkipBlock;
-    ValueNode* object = maps->receiver_input().node();
+    ValueNode* object = maps->ReceiverInput().node();
     if (IsLoopPhi(object)) {
       return ProcessResult::kSkipBlock;
     }
@@ -336,16 +346,9 @@ class AnyUseMarkingProcessor {
     return ProcessResult::kContinue;
   }
 
-#ifdef DEBUG
   ProcessResult Process(Dead* node, const ProcessingState& state) {
-    if (!v8_flags.maglev_untagged_phis) {
-      // These nodes are removed in the phi representation selector, if we are
-      // running without it. Just remove it here.
-      return ProcessResult::kRemove;
-    }
-    UNREACHABLE();
+    return ProcessResult::kRemove;
   }
-#endif  // DEBUG
 
   void PostProcessGraph(Graph* graph) {
     RunEscapeAnalysis(graph);

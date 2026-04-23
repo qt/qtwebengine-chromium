@@ -1,42 +1,45 @@
 {
-  browsers: {
-    chrome: {
-      browser: "chrome-dev"
-      driver: {
-        type: "adb",
-      }}}
-  env: {}
-  probes: {
-    perfetto: {
-      textproto: '''
-buffers {
-  size_kb: 300000
-  fill_policy: DISCARD
-}
-data_sources: {
-    config {
-        name: "track_event"
-        track_event_config {
-            disabled_categories: "*"
-            enabled_categories: "disabled-by-default-v8.gc"
-            enabled_categories: "v8.gc"
-            enabled_categories: "disabled-by-default-cppgc"
-            enabled_categories: "cppgc"
-            enabled_categories: "blink.user_timing"
-            enabled_categories: "__metadata"
-            timestamp_unit_multiplier: 1000
-            filter_debug_annotations: false
-            enable_thread_time_sampling: true
-            filter_dynamic_event_names: false
-        }
+  "browsers": {
+    "chrome": {
+      "browser": "chrome-dev"
+      "driver": {
+        "type": "adb"
+      }
     }
-}
-data_sources: {
-    config {
-        name: "org.chromium.trace_metadata2"
-    }
-}
-'''
+  }
+  "env": {}
+  "probes": {
+    "perfetto": {
+      "textproto":
+        '''
+          buffers {
+            size_kb: 300000
+            fill_policy: DISCARD
+          }
+          data_sources: {
+              config {
+                  name: "track_event"
+                  track_event_config {
+                      disabled_categories: "*"
+                      enabled_categories: "disabled-by-default-v8.gc"
+                      enabled_categories: "v8.gc"
+                      enabled_categories: "disabled-by-default-cppgc"
+                      enabled_categories: "cppgc"
+                      enabled_categories: "blink.user_timing"
+                      enabled_categories: "__metadata"
+                      timestamp_unit_multiplier: 1000
+                      filter_debug_annotations: false
+                      enable_thread_time_sampling: true
+                      filter_dynamic_event_names: false
+                  }
+              }
+          }
+          data_sources: {
+              config {
+                  name: "org.chromium.trace_metadata2"
+              }
+          }
+        '''
     }
   }
 }

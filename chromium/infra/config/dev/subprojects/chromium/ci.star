@@ -33,7 +33,7 @@ luci.bucket(
     name = "ci.shadow",
     shadows = "ci",
     constraints = luci.bucket_constraints(
-        pools = ["luci.chromium.ci"],
+        pools = ["luci.chromium.ci", "luci.chromium.btrfs"],
         service_accounts = ["chromium-ci-builder-dev@chops-service-accounts.iam.gserviceaccount.com"],
     ),
     bindings = [
@@ -137,7 +137,6 @@ ci_builder(
             "minimal_symbols",
             "arm64",
             "strip_debug_info",
-            "webview_monochrome",
         ],
     ),
     targets = targets.bundle(
@@ -173,6 +172,9 @@ ci_builder(
             build_config = builder_config.build_config.RELEASE,
             target_platform = builder_config.target_platform.LINUX,
         ),
+    ),
+    builder_config_settings = builder_config.ci_settings(
+        retry_failed_shards = True,
     ),
     gn_args = gn_args.config(
         configs = [

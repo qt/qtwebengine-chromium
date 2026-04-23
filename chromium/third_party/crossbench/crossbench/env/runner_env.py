@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, Final, Iterable, Optional
 
 from crossbench import plt
 from crossbench.cli.config.env import EnvConfig, ValidationMode
-from crossbench.env.base import BaseEnv, ValidationError
+from crossbench.env.base import BaseEnv
+from crossbench.exception import ExceptionAnnotator
 from crossbench.helper import collection_helper, url_helper
 from crossbench.parse import ObjectParser
 
@@ -53,7 +54,7 @@ class RunnerEnv(BaseEnv):
     self._wait_until: dt.datetime = dt.datetime.now()
     self._out_dir: pth.LocalPath = out_dir
     self._browsers: tuple[Browser, ...] = tuple(browsers)
-    self._probes = tuple(probes)
+    self._probes: tuple[Probe, ...] = tuple(probes)
     self._repetitions: int = repetitions
 
   @property
@@ -63,6 +64,9 @@ class RunnerEnv(BaseEnv):
   @property
   def browsers(self) -> tuple[Browser, ...]:
     return self._browsers
+
+  def add_probes(self, probes: Iterable[Probe]) -> None:
+    self._probes += tuple(probes)
 
   def _add_min_delay(self, seconds: float) -> None:
     end_time = dt.datetime.now() + dt.timedelta(seconds=seconds)
@@ -323,13 +327,11 @@ class RunnerEnv(BaseEnv):
           f"but no display is available on {browser.platform}. "
           "Use --headless to run chrome without a display.")
 
-  def _check_probes(self) -> None:
-    for probe in self._probes:
-      try:
-        probe.validate_env(self)
-      except Exception as e:
-        raise ValidationError(
-            f"Probe='{probe.NAME}' validation failed: {e}") from e
+  def _check_probes(self, exceptions: ExceptionAnnotator) -> None:
+    with exceptions.annotate("Validating Probes"):
+      for probe in self._probes:
+        with exceptions.annotate(f"probe: {probe.name}"):
+          probe.validate_env(self)
     require_probes = self._config.require_probes
     if require_probes is EnvConfig.IGNORE:
       return
@@ -437,21 +439,24 @@ class RunnerEnv(BaseEnv):
       message += " (--env-validation=warn for soft warnings)"
     message += ": %s"
     logging.info(message, self._validation_mode.name)
-    self._check_system_monitoring()
-    self._check_power()
-    self._check_disk_space()
-    self._check_cpu_usage()
-    self._check_cpu_temperature()
-    self._check_cpu_power_mode()
-    self._check_system_min_uptime()
-    self._check_running_binaries()
-    self._check_screen_brightness()
-    self._check_screen_refresh_rate()
-    self._check_headless()
-    self._check_results_dir()
-    self._check_probes()
-    self._wait_min_time()
-    self._check_forbidden_system_process()
-    self._check_screen_autobrightness()
-    self._check_macos_terminal()
-    self._check_file_access()
+    exceptions = ExceptionAnnotator(
+        throw=self.validation_mode == ValidationMode.THROW)
+    with exceptions.annotate():
+      self._check_system_monitoring()
+      self._check_power()
+      self._check_disk_space()
+      self._check_cpu_usage()
+      self._check_cpu_temperature()
+      self._check_cpu_power_mode()
+      self._check_system_min_uptime()
+      self._check_running_binaries()
+      self._check_screen_brightness()
+      self._check_screen_refresh_rate()
+      self._check_headless()
+      self._check_results_dir()
+      self._check_probes(exceptions)
+      self._wait_min_time()
+      self._check_forbidden_system_process()
+      self._check_screen_autobrightness()
+      self._check_macos_terminal()
+      self._check_file_access()

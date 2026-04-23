@@ -24,6 +24,7 @@
 #include "state_tracker/pipeline_library_state.h"
 #include "state_tracker/video_session_state.h"
 #include "state_tracker/last_bound_state.h"
+#include "state_tracker/bind_point.h"
 #include "state_tracker/query_state.h"
 #include "state_tracker/vertex_index_buffer_state.h"
 #include "utils/sync_utils.h"
@@ -55,6 +56,14 @@ enum class CbState {
 static inline bool IsRecorded(CbState state) { return state == CbState::Recorded || state == CbState::InvalidComplete; }
 
 static inline bool IsRecording(CbState state) { return state == CbState::Recording || state == CbState::InvalidIncomplete; }
+
+// Submit time validation helper. Since CmdBeginRendering is itself an action command,
+// if the first detected action or sync command is CmdBeginRendering, it means there are
+// no other action commands before it.
+static inline bool HasActionOrSyncCommandBeforeBeginRendering(vvl::Func first_action_or_sync_command) {
+    return first_action_or_sync_command != vvl::Func::Empty &&
+           !IsValueIn(first_action_or_sync_command, {vvl::Func::vkCmdBeginRendering, vvl::Func::vkCmdBeginRenderingKHR});
+}
 
 enum class AttachmentSource {
     Empty = 0,
@@ -177,12 +186,6 @@ struct LabelCommand {
     std::string label_name;  // used when begin == true
 };
 
-enum class DescriptorMode {
-    Unknown,           // Has not been set yet
-    Classic,           // Vulkan 1.0
-    DescriptorBuffer,  // VK_EXT_descriptor_buffer
-};
-
 class CommandBuffer : public RefcountedStateObject, public SubStateManager<CommandBufferSubState> {
     using Func = vvl::Func;
 
@@ -198,10 +201,8 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     // since command buffers can only be destroyed by their command pool, this does not need to be a shared_ptr
     const vvl::CommandPool *command_pool;
     DeviceState &dev_data;
-    bool unprotected;  // can't be used for protected memory
-    bool has_render_pass_instance;
-    bool suspends_render_pass_instance;
-    bool resumes_render_pass_instance;
+
+    const bool unprotected;  // can't be used for protected memory
 
     CbState state;           // Track cmd buffer update state
     uint64_t command_count;  // Number of commands recorded. Currently only used with VK_KHR_performance_query
@@ -426,6 +427,21 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     // Device mask from vkCmdBeginRenderPass/vkCmdBeginRendering
     uint32_t render_pass_device_mask;
 
+    // Set to true when the first render pass instance is encountered during recording.
+    // When recording is finished, it indicates if command buffer has render pass instances.
+    bool has_render_pass_instance;
+
+    // True if the *first* render pass instance specifies VK_RENDERING_RESUMING_BIT
+    bool resumes_render_pass_instance;
+
+    // The suspension state at the end of the command buffer, based on previous render pass instances.
+    // Regular render pass instances (without RESUMING/SUSPENDING) do not change the suspend state.
+    enum class SuspendState { Empty, Suspended, Resumed };
+    SuspendState last_suspend_state;
+
+    // Used by submit time validation to check for invalild commands when render pass instance is suspended.
+    vvl::Func first_action_or_sync_command;
+
     // This is null if we are outside a renderPass/rendering
     //
     // There are 4 ways we populate this pointer
@@ -449,6 +465,7 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     // only when not using dynamic rendering
     vku::safe_VkRenderPassSampleLocationsBeginInfoEXT sample_locations_begin_info;
     std::vector<SubpassInfo> active_subpasses;
+    const char *DescribeActiveColorAttachment() const;
 
     VkSubpassContents active_subpass_contents;
     uint32_t GetActiveSubpass() const { return active_subpass_; }
@@ -522,9 +539,22 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     bool conditional_rendering_inside_render_pass{false};
     uint32_t conditional_rendering_subpass{0};
 
-    std::vector<VkDescriptorBufferBindingInfoEXT> descriptor_buffer_binding_info;
-    bool descriptor_buffer_ever_bound{false};
-    DescriptorMode descriptor_mode = DescriptorMode::Unknown;
+    // VK_EXT_descriptor_buffer
+    struct DescriptorBuffer {
+        struct BindingInfo {
+            VkDeviceAddress address;
+            VkBufferUsageFlags2 usage;
+        };
+
+        // This information is always tracked
+        std::vector<BindingInfo> binding_info;
+        bool ever_bound{false};
+
+        void Reset() {
+            binding_info.clear();
+            ever_bound = false;
+        }
+    } descriptor_buffer;
 
     mutable std::shared_mutex lock;
     ReadLockGuard ReadLock() const { return ReadLockGuard(lock); }
@@ -577,6 +607,8 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     void Begin(const VkCommandBufferBeginInfo *pBeginInfo);
     void End(VkResult result);
 
+    void RecordCommand(const Location &loc);
+
     void RecordBeginQuery(const QueryObject &query_obj, const Location &loc);
     void RecordEndQuery(const QueryObject &query_obj, const Location &loc);
     void RecordEndQueries(VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount);
@@ -594,11 +626,12 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     void RecordNextSubpass(const VkSubpassBeginInfo &subpass_begin_info, const VkSubpassEndInfo *subpass_end_info,
                            const Location &loc);
     void UpdateSubpassAttachments();
-    void RecordEndRendering(const VkRenderingEndInfoEXT *pRenderingEndInfo);
+    void RecordEndRendering(const VkRenderingEndInfoEXT *pRenderingEndInfo, const Location &loc);
     void RecordEndRenderPass(const VkSubpassEndInfo *subpass_end_info, const Location &loc);
+    void RecordBeginCustomResolve(const Location &loc);
 
     void RecordBeginVideoCoding(const VkVideoBeginCodingInfoKHR &begin_info, const Location &loc);
-    void RecordEndVideoCoding();
+    void RecordEndVideoCoding(const Location &loc);
     void RecordControlVideoCoding(const VkVideoCodingControlInfoKHR &control_info, const Location &loc);
     void RecordDecodeVideo(const VkVideoDecodeInfoKHR &decode_info, const Location &loc);
     void RecordEncodeVideo(const VkVideoEncodeInfoKHR &encode_info, const Location &loc);
@@ -667,18 +700,19 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     void RecordFillBuffer(vvl::Buffer &buffer_state, VkDeviceSize offset, VkDeviceSize size, const Location &loc);
     void RecordUpdateBuffer(vvl::Buffer &buffer_state, VkDeviceSize offset, VkDeviceSize size, const Location &loc);
 
-    void RecordSetEvent(VkEvent event, VkPipelineStageFlags2KHR stageMask, const VkDependencyInfo *dependency_info);
-    void RecordResetEvent(VkEvent event, VkPipelineStageFlags2KHR stageMask);
+    void RecordSetEvent(VkEvent event, VkPipelineStageFlags2KHR stageMask, const VkDependencyInfo *dependency_info,
+                        const Location &loc);
+    void RecordResetEvent(VkEvent event, VkPipelineStageFlags2KHR stageMask, const Location &loc);
     void RecordWaitEvents(uint32_t eventCount, const VkEvent *pEvents, VkPipelineStageFlags2KHR src_stage_mask,
                           const VkDependencyInfo *dependency_info, const Location &loc);
     void RecordPushConstants(const vvl::PipelineLayout &pipeline_layout_state, VkShaderStageFlags stage_flags, uint32_t offset,
                              uint32_t size, const void *values);
 
-    void RecordBeginConditionalRendering();
-    void RecordEndConditionalRendering();
+    void RecordBeginConditionalRendering(const Location &loc);
+    void RecordEndConditionalRendering(const Location &loc);
 
-    void RecordSetRenderingAttachmentLocations(const VkRenderingAttachmentLocationInfo *pLocationInfo);
-    void RecordSetRenderingInputAttachmentIndices(const VkRenderingInputAttachmentIndexInfo *pLocationInfo);
+    void RecordSetRenderingAttachmentLocations(const VkRenderingAttachmentLocationInfo *pLocationInfo, const Location &loc);
+    void RecordSetRenderingInputAttachmentIndices(const VkRenderingInputAttachmentIndexInfo *pLocationInfo, const Location &loc);
 
     void RecordBarrierObjects(uint32_t buffer_barrier_count, const VkBufferMemoryBarrier *buffer_barriers,
                               uint32_t image_barrier_count, const VkImageMemoryBarrier *image_barriers,
@@ -686,7 +720,12 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     void RecordBarrierObjects(const VkDependencyInfo &dep_info, const Location &loc);
 
     void SetImageViewLayout(const vvl::ImageView &view_state, VkImageLayout layout, VkImageLayout layoutStencil);
-    void TrackImageViewFirstLayout(const vvl::ImageView &view_state, VkImageLayout layout);
+    void TrackImageViewFirstLayout(const vvl::ImageView &view_state, VkImageLayout layout,
+                                   const char *submit_time_layout_mismatch_vuid);
+    void TrackDepthAttachmentFirstLayout(const vvl::ImageView &view_state, VkImageLayout layout,
+                                         const char *submit_time_layout_mismatch_vuid);
+    void TrackStencilAttachmentFirstLayout(const vvl::ImageView &view_state, VkImageLayout layout,
+                                           const char *submit_time_layout_mismatch_vuid);
 
     void SetImageLayout(const vvl::Image &image_state, const VkImageSubresourceRange &normalized_subresource_range,
                         VkImageLayout layout, VkImageLayout expected_layout = kInvalidLayout);
@@ -840,6 +879,7 @@ class CommandBufferSubState {
     // Note - these are called prior to the renderPass object being destroyed
     virtual void RecordEndRendering(const VkRenderingEndInfoEXT *pRenderingEndInfo) {}
     virtual void RecordEndRenderPass(const VkSubpassEndInfo *subpass_end_info, const Location &loc) {}
+    virtual void RecordBeginCustomResolve() {}
 
     virtual void RecordBeginQuery(const QueryObject &query_obj, const Location &loc) {}
     virtual void RecordEndQuery(const QueryObject &query_obj, const Location &loc) {}

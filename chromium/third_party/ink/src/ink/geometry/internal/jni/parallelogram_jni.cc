@@ -48,33 +48,31 @@ extern "C" {
 
 JNI_METHOD(geometry, ParallelogramNative, jobject, createBoundingBox)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
- jfloat height, jfloat rotation, jfloat shear_factor) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndShear(
-      {center_x, center_y}, width, height, Angle::Radians(rotation),
-      shear_factor);
-
+ jfloat height, jfloat rotation_degrees, jfloat skew) {
+  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
+      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
+      skew);
   return CreateJImmutableBoxFromRectOrThrow(env,
                                             Envelope(quad).AsRect().value());
 }
 
 JNI_METHOD(geometry, ParallelogramNative, void, populateBoundingBox)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
- jfloat height, jfloat rotation, jfloat shear_factor, jobject mutable_box) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndShear(
-      {center_x, center_y}, width, height, Angle::Radians(rotation),
-      shear_factor);
-
+ jfloat height, jfloat rotation_degrees, jfloat skew, jobject mutable_box) {
+  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
+      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
+      skew);
   FillJMutableBoxFromRectOrThrow(env, mutable_box,
                                  Envelope(quad).AsRect().value());
 }
 
 JNI_METHOD(geometry, ParallelogramNative, jobjectArray, createSemiAxes)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
- jfloat height, jfloat rotation, jfloat shear_factor,
+ jfloat height, jfloat rotation_degrees, jfloat skew,
  jclass immutable_vec_class) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndShear(
-      {center_x, center_y}, width, height, Angle::Radians(rotation),
-      shear_factor);
+  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
+      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
+      skew);
   std::pair<Vec, Vec> axes = quad.SemiAxes();
   jobjectArray vector_array =
       env->NewObjectArray(2, ClassImmutableVec(env), nullptr);
@@ -87,11 +85,11 @@ JNI_METHOD(geometry, ParallelogramNative, jobjectArray, createSemiAxes)
 
 JNI_METHOD(geometry, ParallelogramNative, void, populateSemiAxes)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
- jfloat height, jfloat rotation, jfloat shear_factor, jobject out_axis1,
+ jfloat height, jfloat rotation_degrees, jfloat skew, jobject out_axis1,
  jobject out_axis2) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndShear(
-      {center_x, center_y}, width, height, Angle::Radians(rotation),
-      shear_factor);
+  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
+      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
+      skew);
   std::pair<Vec, Vec> axes = quad.SemiAxes();
   FillJMutableVecFromVecOrThrow(env, out_axis1, axes.first);
   if (env->ExceptionCheck()) return;
@@ -100,10 +98,10 @@ JNI_METHOD(geometry, ParallelogramNative, void, populateSemiAxes)
 
 JNI_METHOD(geometry, ParallelogramNative, jobjectArray, createCorners)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
- jfloat height, jfloat rotation, jfloat shear_factor) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndShear(
-      {center_x, center_y}, width, height, Angle::Radians(rotation),
-      shear_factor);
+ jfloat height, jfloat rotation_degrees, jfloat skew) {
+  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
+      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
+      skew);
   std::array<Point, 4> corners = quad.Corners();
   jobjectArray vector_array =
       env->NewObjectArray(4, ClassImmutableVec(env), nullptr);
@@ -117,11 +115,11 @@ JNI_METHOD(geometry, ParallelogramNative, jobjectArray, createCorners)
 
 JNI_METHOD(geometry, ParallelogramNative, void, populateCorners)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
- jfloat height, jfloat rotation, jfloat shear_factor, jobject out_corner1,
+ jfloat height, jfloat rotation_degrees, jfloat skew, jobject out_corner1,
  jobject out_corner2, jobject out_corner3, jobject out_corner4) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndShear(
-      {center_x, center_y}, width, height, Angle::Radians(rotation),
-      shear_factor);
+  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
+      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
+      skew);
   std::array<Point, 4> corners = quad.Corners();
   FillJMutableVecFromPointOrThrow(env, out_corner1, corners[0]);
   if (env->ExceptionCheck()) return;
@@ -134,11 +132,11 @@ JNI_METHOD(geometry, ParallelogramNative, void, populateCorners)
 
 JNI_METHOD(geometry, ParallelogramNative, jboolean, contains)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
- jfloat height, jfloat rotation, jfloat shear_factor, jfloat point_x,
+ jfloat height, jfloat rotation_degrees, jfloat skew, jfloat point_x,
  jfloat point_y) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndShear(
-      {center_x, center_y}, width, height, Angle::Radians(rotation),
-      shear_factor);
+  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
+      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
+      skew);
   return quad.Contains({point_x, point_y});
 }
 

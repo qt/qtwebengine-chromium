@@ -47,8 +47,11 @@ void LogModelDownloadResult(
 }  // namespace
 
 ModelDownloaderAndroid::ModelDownloaderAndroid(
-    optimization_guide::proto::ModelExecutionFeature feature)
-    : java_downloader_(OnDeviceModelBridge::CreateModelDownloader(feature)),
+    optimization_guide::proto::ModelExecutionFeature feature,
+    mojom::DownloaderParamsPtr params)
+    : java_downloader_(
+          OnDeviceModelBridge::CreateModelDownloader(feature,
+                                                     std::move(params))),
       feature_(feature) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   weak_ptr_ = weak_factory_.GetWeakPtr();
@@ -106,7 +109,7 @@ void ModelDownloaderAndroid::OnUnavailableOnSequence(
       .Run(base::unexpected(failure_reason));
 }
 
-void JNI_AiCoreModelDownloaderWrapper_OnAvailable(
+static void JNI_AiCoreModelDownloaderWrapper_OnAvailable(
     JNIEnv* env,
     jlong model_downloader_android,
     const jni_zero::JavaParamRef<jstring>& j_name,
@@ -116,7 +119,7 @@ void JNI_AiCoreModelDownloaderWrapper_OnAvailable(
                     base::android::ConvertJavaStringToUTF8(env, j_version));
 }
 
-void JNI_AiCoreModelDownloaderWrapper_OnUnavailable(
+static void JNI_AiCoreModelDownloaderWrapper_OnUnavailable(
     JNIEnv* env,
     jlong model_downloader_android,
     jint j_reason) {
@@ -126,3 +129,5 @@ void JNI_AiCoreModelDownloaderWrapper_OnUnavailable(
 }
 
 }  // namespace on_device_model
+
+DEFINE_JNI(AiCoreModelDownloaderWrapper)

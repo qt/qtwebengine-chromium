@@ -2,16 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "gpu/vulkan/vulkan_util.h"
 
 #include <algorithm>
 #include <string_view>
 
+#include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/pattern.h"
@@ -29,11 +25,9 @@
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/android_info.h"
 #include "base/android/device_info.h"
-#include "build/android_buildflags.h"
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS)
-#include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/linux/drm_util_linux.h"  //nogncheck
 #endif
 
@@ -74,8 +68,9 @@ int GetEMUIVersion() {
   // Huawei puts EMUI version in the build version incremental.
   // Example: 11.0.0.130C00
   int version = 0;
-  if (sscanf(base::android::android_info::version_incremental().c_str(), "%d.",
-             &version) != 1) {
+  if (UNSAFE_TODO(
+          sscanf(base::android::android_info::version_incremental().c_str(),
+                 "%d.", &version)) != 1) {
     return -1;
   }
 
@@ -320,11 +315,6 @@ bool IsVulkanV3EnabledForAdreno(
   return true;
 }
 
-bool SkipVulkanBlocklist() {
-  // Expectation is for all desktop android devices to use vulkan
-  return BUILDFLAG(IS_DESKTOP_ANDROID);
-}
-
 #endif
 }  // namespace
 
@@ -355,7 +345,8 @@ bool SubmitSignalVkSemaphore(VkQueue vk_queue,
                              VkSemaphore vk_semaphore,
                              VkFence vk_fence) {
   return SubmitSignalVkSemaphores(
-      vk_queue, base::span<VkSemaphore>(&vk_semaphore, 1u), vk_fence);
+      vk_queue, UNSAFE_TODO(base::span<VkSemaphore>(&vk_semaphore, 1u)),
+      vk_fence);
 }
 
 bool SubmitWaitVkSemaphores(VkQueue vk_queue,
@@ -379,7 +370,8 @@ bool SubmitWaitVkSemaphore(VkQueue vk_queue,
                            VkSemaphore vk_semaphore,
                            VkFence vk_fence) {
   return SubmitWaitVkSemaphores(
-      vk_queue, base::span<VkSemaphore>(&vk_semaphore, 1u), vk_fence);
+      vk_queue, UNSAFE_TODO(base::span<VkSemaphore>(&vk_semaphore, 1u)),
+      vk_fence);
 }
 
 VkSemaphore CreateExternalVkSemaphore(
@@ -488,7 +480,7 @@ bool CheckVulkanCompatibilities(
   return true;
 #endif
 #else   // BUILDFLAG(IS_ANDROID)
-   if (SkipVulkanBlocklist()) {
+   if (base::FeatureList::IsEnabled(features::kSkipVulkanBlocklist)) {
     return true;
   }
 
@@ -549,8 +541,8 @@ bool CheckVulkanCompatibilities(
   // https://crbug.com/1122650: Poor performance and untriaged crashes with
   // Imagination GPUs.
   if (device_properties.vendor_id == kVendorImagination) {
-    // Only PowerVR D series allowed in V1.
-    if (base::StartsWith(device_properties.device_name, "PowerVR D")) {
+    // Only PowerVR D series and newer allowed in V1.
+    if (base::MatchPattern(device_properties.device_name, "PowerVR ?-Series*")) {
       return true;
     }
     return IsVulkanV2EnabledForImagination(gpu_info);

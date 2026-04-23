@@ -55,7 +55,7 @@ TEST(SegmentStreamUnittest, BasicQueueUsage) {
   ASSERT_TRUE(segment_stream->Exhausted());
   ASSERT_EQ(segment_stream->NextSegmentStartTime(), base::Seconds(9.2));
 
-  ASSERT_EQ(segment->GetUri().path(), "/video.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video.ts");
 }
 
 TEST(SegmentStreamUnittest, SeekInQueue) {
@@ -147,7 +147,7 @@ TEST(SegmentStreamUnittest, SeekablePlaylistAdapt) {
 
   // Check the segment is low quality.
   ASSERT_EQ(segment_stream->NextSegmentStartTime(), base::Seconds(9.2));
-  ASSERT_EQ(segment->GetUri().path(), "/video1_low.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video1_low.ts");
 
   // Quality scaled up, a new playlist is injected:
   segment_stream->SetNewPlaylist(CreateMediaPlaylist(
@@ -161,7 +161,7 @@ TEST(SegmentStreamUnittest, SeekablePlaylistAdapt) {
   ASSERT_EQ(segment_stream->NextSegmentStartTime(), base::Seconds(9.2));
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
   ASSERT_EQ(segment_stream->NextSegmentStartTime(), base::Seconds(18.4));
-  ASSERT_EQ(segment->GetUri().path(), "/video2_high.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video2_high.ts");
 
   // Seek to the last segment:
   ASSERT_TRUE(segment_stream->Seek(base::Seconds(45)));
@@ -169,7 +169,7 @@ TEST(SegmentStreamUnittest, SeekablePlaylistAdapt) {
 
   // pop it.
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video5_high.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video5_high.ts");
   ASSERT_TRUE(segment_stream->Exhausted());
 
   // adapt downwards:
@@ -186,11 +186,11 @@ TEST(SegmentStreamUnittest, SeekablePlaylistAdapt) {
   // Seek backwards and read from the stream, should be low video.
   ASSERT_TRUE(segment_stream->Seek(base::Seconds(20)));
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video3_low.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video3_low.ts");
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video4_low.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video4_low.ts");
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video5_low.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video5_low.ts");
 }
 
 TEST(SegmentStreamUnittest, RealWorldExample) {
@@ -220,12 +220,12 @@ TEST(SegmentStreamUnittest, RealWorldExample) {
   bool need_init;
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/playlist_800Kb_20909320.ts");
-  ASSERT_EQ(segment->GetMediaSequenceNumber(), 20909320lu);
+  ASSERT_EQ(segment->GetUri().GetPath(), "/playlist_800Kb_20909327.ts");
+  ASSERT_EQ(segment->GetMediaSequenceNumber(), 20909327lu);
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/playlist_800Kb_20909321.ts");
-  ASSERT_EQ(segment->GetMediaSequenceNumber(), 20909321lu);
+  ASSERT_EQ(segment->GetUri().GetPath(), "/playlist_800Kb_20909328.ts");
+  ASSERT_EQ(segment->GetMediaSequenceNumber(), 20909328lu);
 
   segment_stream->SetNewPlaylist(
       CreateMediaPlaylist("#EXT-X-VERSION:1", "#EXT-X-TARGETDURATION:2",
@@ -242,22 +242,29 @@ TEST(SegmentStreamUnittest, RealWorldExample) {
                           "playlist_2500Kb_20909330.ts"));
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/playlist_2500Kb_20909322.ts");
-  ASSERT_EQ(segment->GetMediaSequenceNumber(), 20909322lu);
+  ASSERT_EQ(segment->GetUri().GetPath(), "/playlist_2500Kb_20909329.ts");
+  ASSERT_EQ(segment->GetMediaSequenceNumber(), 20909329lu);
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/playlist_2500Kb_20909323.ts");
-  ASSERT_EQ(segment->GetMediaSequenceNumber(), 20909323lu);
+  ASSERT_EQ(segment->GetUri().GetPath(), "/playlist_2500Kb_20909330.ts");
+  ASSERT_EQ(segment->GetMediaSequenceNumber(), 20909330lu);
 }
 
 TEST(SegmentStreamUnittest, UnseekablePlaylistAdapt) {
   auto segment_stream = std::make_unique<SegmentStream>(
       CreateMediaPlaylist("#EXT-X-TARGETDURATION:10", "#EXT-X-VERSION:1",
                           "#EXT-X-MEDIA-SEQUENCE:10",
-                          "#EXT-X-MEDIA-PLAYLIST-TYPE:LIVE", "#EXTINF:9.2,",
-                          "video10_low.ts", "#EXTINF:9.2,", "video11_low.ts",
-                          "#EXTINF:9.2,", "video12_low.ts", "#EXTINF:9.2,",
-                          "video13_low.ts", "#EXTINF:9.2,", "video14_low.ts"),
+                          "#EXT-X-MEDIA-PLAYLIST-TYPE:LIVE",
+                          "#EXTINF:9.2,",     // This long
+                          "video10_low.ts",   // block comment
+                          "#EXTINF:9.2,",     // helps keep
+                          "video11_low.ts",   // the manifest
+                          "#EXTINF:9.2,",     // content formatted
+                          "video12_low.ts",   // because otherwise
+                          "#EXTINF:9.2,",     // git-cl-format likes
+                          "video13_low.ts",   // to be
+                          "#EXTINF:9.2,",     // a big
+                          "video14_low.ts"),  // meanieface.
       /*seekable=*/false);
 
   ASSERT_TRUE(segment_stream->PlaylistHasSegments());
@@ -270,18 +277,11 @@ TEST(SegmentStreamUnittest, UnseekablePlaylistAdapt) {
   base::TimeDelta end;
   bool need_init;
 
-
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video10_low.ts");
-  ASSERT_EQ(segment->GetMediaSequenceNumber(), 10lu);
-  std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video11_low.ts");
-  ASSERT_EQ(segment->GetMediaSequenceNumber(), 11lu);
-  std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video12_low.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video12_low.ts");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 12lu);
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video13_low.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video13_low.ts");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 13lu);
   ASSERT_FALSE(segment_stream->Exhausted());
 
@@ -299,7 +299,7 @@ TEST(SegmentStreamUnittest, UnseekablePlaylistAdapt) {
       "#EXTINF:9.2,", "video16_low.ts", "#EXT-X-ENDLIST"));
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video14_low.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video14_low.ts");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 14lu);
 
   // The original stream had only up to segment 14. But since we've added new
@@ -308,10 +308,10 @@ TEST(SegmentStreamUnittest, UnseekablePlaylistAdapt) {
 
   // Read the rest out
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video15_low.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video15_low.ts");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 15lu);
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video16_low.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video16_low.ts");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 16lu);
 
   ASSERT_TRUE(segment_stream->Exhausted());
@@ -327,7 +327,7 @@ TEST(SegmentStreamUnittest, UnseekablePlaylistAdapt) {
   ASSERT_FALSE(segment_stream->Exhausted());
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/video17_low.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/video17_low.ts");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 17lu);
   ASSERT_FALSE(segment_stream->Exhausted());
 }
@@ -357,7 +357,7 @@ TEST(SegmentStreamUnittest, SeekableEncryptedPlaylistAdapt) {
   bool need_init;
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/playlist_100000Kb_0.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/playlist_100000Kb_0.ts");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 0lu);
 
   // If we load a new playlist now, it will replace segment 1, because despite
@@ -377,7 +377,7 @@ TEST(SegmentStreamUnittest, SeekableEncryptedPlaylistAdapt) {
       "#EXTINF:12.0000000,", "playlist_200000Kb_8.ts"));
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/playlist_200000Kb_1.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/playlist_200000Kb_1.ts");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 1lu);
 
   // Now though, we'll keep the next segment, because it's encrypted with an
@@ -397,11 +397,11 @@ TEST(SegmentStreamUnittest, SeekableEncryptedPlaylistAdapt) {
       "#EXTINF:12.0000000,", "playlist_300000Kb_8.ts"));
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/playlist_200000Kb_2.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/playlist_200000Kb_2.ts");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 2lu);
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/playlist_300000Kb_3.ts");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/playlist_300000Kb_3.ts");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 3lu);
 }
 
@@ -422,17 +422,17 @@ TEST(SegmentStreamUnittest, InitSegmentGetsReloadedAfterRenditionAdaptation) {
   bool need_init;
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/a0.mp4");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/a0.mp4");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 0lu);
   ASSERT_TRUE(need_init);
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/a1.mp4");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/a1.mp4");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 1lu);
   ASSERT_FALSE(need_init);
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/a2.mp4");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/a2.mp4");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 2lu);
   ASSERT_FALSE(need_init);
   segment_stream->SetNewPlaylist(CreateMediaPlaylist(
@@ -444,17 +444,17 @@ TEST(SegmentStreamUnittest, InitSegmentGetsReloadedAfterRenditionAdaptation) {
       "b6.mp4", "#EXTINF:1,", "b7.mp4", "#EXT-X-ENDLIST"));
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/b3.mp4");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/b3.mp4");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 3lu);
   ASSERT_TRUE(need_init);
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/b4.mp4");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/b4.mp4");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 4lu);
   ASSERT_FALSE(need_init);
 
   std::tie(segment, start, end, need_init) = segment_stream->GetNextSegment();
-  ASSERT_EQ(segment->GetUri().path(), "/b5.mp4");
+  ASSERT_EQ(segment->GetUri().GetPath(), "/b5.mp4");
   ASSERT_EQ(segment->GetMediaSequenceNumber(), 5lu);
   ASSERT_TRUE(need_init);
 }

@@ -7,6 +7,7 @@
 
 #include <compare>
 
+#include "base/sequence_checker.h"
 #include "third_party/blink/public/mojom/loader/navigation_predictor.mojom-blink.h"
 #include "third_party/blink/public/mojom/preloading/anchor_element_interaction_host.mojom-blink.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -16,7 +17,6 @@
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
-#include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
@@ -57,10 +57,9 @@ class PointerEvent;
 class CORE_EXPORT AnchorElementMetricsSender final
     : public GarbageCollected<AnchorElementMetricsSender>,
       public LocalFrameView::LifecycleNotificationObserver,
-      public AnchorElementViewportPositionTracker::Observer,
-      public Supplement<Document> {
+      public AnchorElementViewportPositionTracker::Observer {
  public:
-  static const char kSupplementName[];
+  static const unsigned kSupplementIndex;
 
   using AnchorId = uint32_t;
 
@@ -150,6 +149,8 @@ class CORE_EXPORT AnchorElementMetricsSender final
       override;
   void AnchorPositionsUpdated(
       HeapVector<Member<AnchorPositionUpdate>>& position_updates) override;
+
+  Member<Document> document_;
 
   // Mock timestamp for navigation start used for testing.
   std::optional<base::TimeTicks> mock_navigation_start_for_testing_;

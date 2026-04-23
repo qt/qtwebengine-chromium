@@ -306,8 +306,6 @@ IPAddressSpace IPAddressToIPAddressSpace(const IPAddress& address) {
       IPAddressSpace::kPublic);
 }
 
-namespace {
-
 IPAddressSpace IPEndPointToIPAddressSpace(const IPEndPoint& endpoint) {
   if (!endpoint.address().IsValid()) {
     return IPAddressSpace::kUnknown;
@@ -320,8 +318,6 @@ IPAddressSpace IPEndPointToIPAddressSpace(const IPEndPoint& endpoint) {
 
   return IPAddressToIPAddressSpace(endpoint.address());
 }
-
-}  // namespace
 
 std::string_view IPAddressSpaceToStringPiece(IPAddressSpace space) {
   switch (space) {
@@ -439,8 +435,21 @@ std::optional<net::IPAddress> ParsePrivateIpFromUrl(const GURL& url) {
   return address;
 }
 
-bool IsRFC6762LocalDomain(const GURL& url) {
-  return url.DomainIs("local");
+std::optional<mojom::IPAddressSpace> GetAddressSpaceFromUrl(const GURL& url) {
+  if (url.DomainIs("local")) {
+    return mojom::IPAddressSpace::kLocal;
+  }
+
+  if (url.DomainIs("localhost")) {
+    return mojom::IPAddressSpace::kLoopback;
+  }
+
+  net::IPAddress address;
+  if (!address.AssignFromIPLiteral(url.HostNoBracketsPiece())) {
+    return std::nullopt;
+  }
+  net::IPEndPoint endpoint(address, url.EffectiveIntPort());
+  return IPEndPointToIPAddressSpace(endpoint);
 }
 
 }  // namespace network

@@ -58,6 +58,7 @@ _PACKAGE_NAMES = {
     'TRICHROME_AUTO': 50,
     'TRICHROME_DESKTOP': 60,
     'CHROME_DESKTOP': 70,
+    'CHROME_DESKTOP_BETA': 80,
     'WEBVIEW_STABLE': 0,
     'WEBVIEW_BETA': 10,
     'WEBVIEW_DEV': 20,
@@ -111,7 +112,10 @@ _APKS = {
         ('WEBVIEW_DESKTOP', 'WEBVIEW_DESKTOP', '64'),
     ],
     'hybrid': [
-        ('CHROME', 'CHROME', '64'),
+        ('CHROME', 'CHROME', '64_32'),
+        ('CHROME_HIGH', 'CHROME', '64'),
+        # Obsolete Chrome Modern version code being used for Chrome
+        ('CHROME_HIGH_BETA', 'CHROME_MODERN', '64'),
         ('CHROME_32', 'CHROME', '32'),
         ('CHROME_MODERN', 'CHROME_MODERN', '64'),
         ('MONOCHROME', 'MONOCHROME', '32_64'),
@@ -139,6 +143,7 @@ _APKS = {
         ('TRICHROME_DESKTOP_64', 'TRICHROME_DESKTOP', '64'),
         ('TRICHROME_64_BETA', 'TRICHROME_BETA', '64'),
         ('CHROME_DESKTOP', 'CHROME_DESKTOP', '64'),
+        ('CHROME_DESKTOP_BETA', 'CHROME_DESKTOP_BETA', '64'),
         ('WEBVIEW_STABLE', 'WEBVIEW_STABLE', '32_64'),
         ('WEBVIEW_32_STABLE', 'WEBVIEW_STABLE', '32'),
         ('WEBVIEW_32_64_STABLE', 'WEBVIEW_STABLE', '32_64'),
@@ -321,11 +326,15 @@ def TranslateVersionCode(version_code, is_webview=False):
     is_next_build = True
     package_digit -= 5
 
+  package_name = None
   for package, number in _PACKAGE_NAMES.items():
     if number == package_digit * 10:
       if is_webview == ('WEBVIEW' in package):
         package_name = package
         break
+  if not package_name:
+    raise Error(f'Unable to match package with package_digit={package_digit} '
+                f'and is_webview={is_webview}')
 
   for arch, bitness_to_number in (_GetAbisToDigitMask(build_number,
                                                       patch_number).items()):

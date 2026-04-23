@@ -142,9 +142,14 @@ declare_args() {
   # needs to be evaluated before enabling it there as well.
   init_stack_vars = !(is_android && is_official_build)
 
-  # Zero init has favorable performance/size tradeoffs for Chrome OS
-  # but was not evaluated for other platforms.
-  init_stack_vars_zero = is_chromeos
+  # Specialization of `init_stack_vars` where locals are initialized with
+  # zeroes instead of patterns. Zero init is generally faster and can lead to
+  # better binary size due to being able to use instructions taking
+  # immediates. Patterns potentially have better signaling behavior though. We
+  # thus enable zero-init for all official builds that don't also enable
+  # DCHECKs explicitly or implicitly. Note that this intentionally also keeps
+  # the patterns for DCHECK Canary releases.
+  init_stack_vars_zero = is_official_build && !dcheck_always_on
 
   # This argument is to control whether enabling text section splitting in the
   # final binary. When enabled, the separated text sections with prefix
@@ -261,8 +266,15 @@ declare_args() {
        (clang_use_default_sample_profile || clang_sample_profile_path != ""))
 }
 
-assert(!(llvm_force_head_revision && use_remoteexec && host_os != "linux"),
-       "rbe with locally built clang only works on linux")
+is_bot = false
+if (getenv("SWARMING_HEADLESS") != "" || getenv("SWARMING_BOT_ID") != "" ||
+    getenv("SWARMING_TASK_ID") != "") {
+  is_bot = true
+}
+
+assert(is_bot ||
+           !(llvm_force_head_revision && use_remoteexec && host_os != "linux"),
+       "rbe with locally built clang only works on linux")  # Or on CI bots
 
 # Whether or not we should pass the warning_suppression.txt file to clang
 # compilations. This file allows us to suppress warnings that originate from
@@ -601,6 +613,13 @@ config("compiler") {
     }
   }
 
+  # Fuchsia-specific compiler flags setup.
+  # ------------------------------------
+  if (is_fuchsia) {
+    # Enable LLD's balanced partitioning for ordering function sections.
+    ldflags += [ "-Wl,--bp-compression-sort=function" ]
+  }
+
   if (is_chromeos_device && current_toolchain == default_toolchain) {
     # Flags added automatically by ChromeOS's custom toolchain that are
     # not already added elsewhere in the configuration. Add these here,
@@ -733,10 +752,7 @@ config("compiler") {
 
     cflags_c += [ "-std=${standard_prefix}11" ]
     if (is_clang) {
-      if (defined(use_cxx17) && use_cxx17) {
-        assert(!use_cxx23)
-        cflags_cc += [ "-std=${standard_prefix}++17" ]
-      } else if (use_cxx23) {
+      if (use_cxx23) {
         cflags_cc += [ "-std=${standard_prefix}++23" ]
       } else {
         cflags_cc += [ "-std=${standard_prefix}++20" ]
@@ -748,11 +764,8 @@ config("compiler") {
     }
   } else if (is_win) {
     cflags_c += [ "/std:c11" ]
-    if (defined(use_cxx17) && use_cxx17) {
-      assert(!use_cxx23)
-      cflags_cc += [ "/std:c++17" ]
-    } else if (use_cxx23) {
-      cflags_cc += [ "/std:c++23" ]
+    if (use_cxx23) {
+      cflags_cc += [ "/std:c++23preview" ]
     } else {
       cflags_cc += [ "/std:c++20" ]
     }
@@ -765,10 +778,7 @@ config("compiler") {
   } else {
     cflags_c += [ "-std=c11" ]
 
-    if (defined(use_cxx17) && use_cxx17) {
-      assert(!use_cxx23)
-      cflags_cc += [ "-std=c++17" ]
-    } else if (use_cxx23) {
+    if (use_cxx23) {
       cflags_cc += [ "-std=c++23" ]
     } else {
       cflags_cc += [ "-std=c++20" ]
@@ -1124,7 +1134,9 @@ config("compiler") {
     # `-nodefaultlibs` from the linker invocation from Rust, which would be used
     # to compile dylibs on Android, such as for constructing unit test APKs.
     "-Cdefault-linker-libraries",
+  ]
 
+  rustflags += [
     # To make Rust .d files compatible with ninja
     "-Zdep-info-omit-d-target",
 
@@ -1185,12 +1197,6 @@ config("compiler") {
     }
   }
 
-  # crbug.com/397463803: Set this until CrOS' user enumeration is done; its
-  # `lld` will complain otherwise. Should be removable by Q4 2025.
-  if (is_chromeos) {
-    rustenv += [ "CROSTC_IS_AWARE_OF_THIS_USECASE=1" ]
-  }
-
   # 64-bit Android sometimes defines __ARM_NEON but not __ARM_NEON__.
   # 32-bit Android builds and macOS, however, define __ARM_NEON__,
   # and code typically checks for this.
@@ -1206,36 +1212,6 @@ config("compiler") {
 # additional command line flags.
 config("disallow_unstable_features") {
   rustflags = [ "-Zallow-features=" ]
-}
-
-config("libcxx_hardening") {
-  # Normally, this would be defined in the `runtime_library` config but NaCl
-  # saigo libc++ does not use the custom hermetic libc++. Unfortunately, there
-  # isn't really a better config to add this define for the define to
-  # consistently apply in both Chromium and non-Chromium code *and* non-NaCl and
-  # NaCl code.
-  #
-  # TODO(crbug.com/40511454): Move this back to the `runtime_library` config
-  # when NaCl is removed.
-  if (use_safe_libcxx) {
-    defines = [ "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE" ]
-  } else {
-    defines = [ "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE" ]
-  }
-
-  # Enable libstdc++ hardening lightweight assertions. Those have a low
-  # performance penalty but are considered a bare minimum for security.
-  if (use_safe_libstdcxx) {
-    defines += [ "_GLIBCXX_ASSERTIONS=1" ]
-  }
-
-  # Propagate all definitions for hardening to the swift compiler.
-  if (is_ios) {
-    swiftflags = []
-    foreach(_define, defines) {
-      swiftflags += [ "-Xcc=-D$_define" ]
-    }
-  }
 }
 
 # The BUILDCONFIG file sets this config on targets by default, which means when
@@ -1742,6 +1718,12 @@ config("compiler_deterministic") {
       # This removes absolute paths from .pcm files.
       "-Xclang",
       "-fmodule-file-home-is-cwd",
+
+      # Set a fixed dummy path to get deterministic module files even if the
+      # build happens in a different directory. See https://crbug.com/448270644
+      # for more context.
+      "-Xclang",
+      "-fmodules-cache-path=/not_exist_dummy_dir",
     ]
   }
 }
@@ -1923,6 +1905,12 @@ config("libcxx_module") {
       # TODO(crbug.com/40440396): Clean up.
       "-Wno-modules-import-nested-redundant",
 
+      # This ensures that a diagnostic mismatch between a module and depender
+      # is not a config mismatch.
+      # For example, compiling libcxx without -Wfoo and then having another
+      # target which uses it declare -Wfoo should not be an error
+      "-fmodules-disable-diagnostic-validation",
+
       # Needed to allow using builtin modules when the headers are
       # unnecessarily using extern "C".
       "-Wno-module-import-in-extern-c",
@@ -1944,6 +1932,7 @@ config("libcxx_module") {
 
 config("runtime_library") {
   configs = []
+  defines = []
 
   # The order of this config is important: it must appear before
   # android:runtime_library.  This is to ensure libc++ appears before
@@ -1994,7 +1983,27 @@ config("runtime_library") {
   }
 
   if (is_component_build) {
-    defines = [ "COMPONENT_BUILD" ]
+    defines += [ "COMPONENT_BUILD" ]
+  }
+
+  if (use_safe_libcxx) {
+    defines += [ "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE" ]
+  } else {
+    defines += [ "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE" ]
+  }
+
+  # Enable libstdc++ hardening lightweight assertions. Those have a low
+  # performance penalty but are considered a bare minimum for security.
+  if (use_safe_libstdcxx) {
+    defines += [ "_GLIBCXX_ASSERTIONS=1" ]
+  }
+
+  # Propagate all definitions for hardening to the swift compiler.
+  if (is_ios) {
+    swiftflags = []
+    foreach(_define, defines) {
+      swiftflags += [ "-Xcc=-D$_define" ]
+    }
   }
 }
 
@@ -2245,6 +2254,10 @@ config("default_warnings") {
       # should always be added for clang builds.
       cflags += [ "-Wexit-time-destructors" ]
     }
+
+    if (disable_unknown_warning_option) {
+      cflags += [ "-Wno-unknown-warning-option" ]
+    }
   }
 
   # TODO(crbug.com/354162568): Clean up and enable.
@@ -2331,9 +2344,9 @@ config("chromium_code") {
     ]
 
     if (!is_debug && !using_sanitizer && current_cpu != "s390x" &&
-        current_cpu != "s390" && current_cpu != "ppc64" &&
-        current_cpu != "mips" && current_cpu != "mips64" &&
-        current_cpu != "riscv64" && current_cpu != "loong64") {
+        current_cpu != "ppc64" && current_cpu != "mips" &&
+        current_cpu != "mips64" && current_cpu != "riscv64" &&
+        current_cpu != "loong64") {
       # Non-chromium code is not guaranteed to compile cleanly with
       # _FORTIFY_SOURCE. Also, fortified build may fail when optimizations are
       # disabled, so only do that for Release build.

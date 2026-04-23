@@ -19,6 +19,7 @@
 #include <vulkan/vulkan_core.h>
 #include <spirv/unified1/spirv.hpp>
 #include "core_validation.h"
+#include "drawdispatch/drawdispatch_vuids.h"
 #include "error_message/error_strings.h"
 #include "generated/dispatch_functions.h"
 #include "state_tracker/device_generated_commands_state.h"
@@ -32,6 +33,7 @@
 #include "state_tracker/pipeline_state.h"
 #include "containers/limits.h"
 #include "cc_buffer_address.h"
+#include "utils/image_utils.h"
 
 static inline bool IsActionCommand(VkIndirectCommandsTokenTypeEXT type) {
     return IsValueIn(
@@ -43,10 +45,10 @@ static inline bool IsActionCommand(VkIndirectCommandsTokenTypeEXT type) {
 }
 
 // Make sure sub_range is contained inside the full_range
-bool PushConstantRangesContained(VkPushConstantRange full_range, VkPushConstantRange sub_range) {
-    const uint32_t start = full_range.offset;
-    const uint32_t end = start + full_range.size;
-    return (start >= sub_range.offset && end <= (sub_range.offset + sub_range.size));
+bool PushConstantRangesContained(VkPushConstantRange sub_range, VkPushConstantRange full_range) {
+    const uint32_t start = sub_range.offset;
+    const uint32_t end = start + sub_range.size;
+    return (start >= full_range.offset && end <= (full_range.offset + full_range.size));
 }
 
 bool CoreChecks::PreCallValidateCreateIndirectCommandsLayoutEXT(VkDevice device,
@@ -61,11 +63,10 @@ bool CoreChecks::PreCallValidateCreateIndirectCommandsLayoutEXT(VkDevice device,
     auto pipeline_layout_state = Get<vvl::PipelineLayout>(pCreateInfo->pipelineLayout);
     auto* dynamic_layout_create = vku::FindStructInPNextChain<VkPipelineLayoutCreateInfo>(pCreateInfo->pNext);
 
-    const uint32_t kNotFound = vvl::kU32Max;
-    uint32_t execution_set_token_index = kNotFound;
-    uint32_t vertex_buffer_token_index = kNotFound;
-    uint32_t index_buffer_token_index = kNotFound;
-    uint32_t sequence_index_token_index = kNotFound;
+    uint32_t execution_set_token_index = vvl::kNoIndex32;
+    uint32_t vertex_buffer_token_index = vvl::kNoIndex32;
+    uint32_t index_buffer_token_index = vvl::kNoIndex32;
+    uint32_t sequence_index_token_index = vvl::kNoIndex32;
 
     vvl::unordered_map<uint32_t, uint32_t> vertex_binding_unit_unique;
     vvl::unordered_map<uint32_t, VkPushConstantRange> token_ranges;
@@ -84,30 +85,54 @@ bool CoreChecks::PreCallValidateCreateIndirectCommandsLayoutEXT(VkDevice device,
 
             if (!dynamic_layout_create && pipeline_layout_state) {
                 const auto& layout_ranges = *pipeline_layout_state->push_constant_ranges_layout;
+                bool stage_found = false;
                 for (const auto& layout_range : layout_ranges) {
-                    if (!PushConstantRangesContained(token_range, layout_range)) {
-                        skip |= LogError("VUID-VkIndirectCommandsPushConstantTokenEXT-updateRange-11132",
-                                         pipeline_layout_state->Handle(), update_range_loc,
-                                         "is %s but the push constant range in "
-                                         "VkIndirectCommandsLayoutCreateInfoEXT::pipelineLayout is %s.",
-                                         string_VkPushConstantRange(token_range).c_str(),
-                                         string_VkPushConstantRange(layout_range).c_str());
+                    if ((token_range.stageFlags & layout_range.stageFlags) != 0) {
+                        stage_found = true;
+                        if (!PushConstantRangesContained(token_range, layout_range)) {
+                            skip |= LogError("VUID-VkIndirectCommandsPushConstantTokenEXT-updateRange-11132",
+                                             pipeline_layout_state->Handle(), update_range_loc,
+                                             "is %s but the push constant range in "
+                                             "VkIndirectCommandsLayoutCreateInfoEXT::pipelineLayout is %s.",
+                                             string_VkPushConstantRange(token_range).c_str(),
+                                             string_VkPushConstantRange(layout_range).c_str());
+                            break;
+                        }
                     }
-                    break;
+                }
+                if (!stage_found) {
+                    skip |= LogError("VUID-VkIndirectCommandsPushConstantTokenEXT-updateRange-11132",
+                                     pipeline_layout_state->Handle(), update_range_loc,
+                                     "is %s but there is no push constant range in "
+                                     "VkIndirectCommandsLayoutCreateInfoEXT::pipelineLayout for stage %s.",
+                                     string_VkPushConstantRange(token_range).c_str(),
+                                     string_VkShaderStageFlags(token_range.stageFlags).c_str());
                 }
 
             } else if (dynamic_layout_create) {
                 // TODO - Because of custom PushConstantRangesId, can't share logic when using dynamicGeneratedPipelineLayout
+                bool stage_found = false;
                 for (uint32_t pc_index = 0; pc_index < dynamic_layout_create->pushConstantRangeCount; pc_index++) {
                     const VkPushConstantRange& layout_range = dynamic_layout_create->pPushConstantRanges[pc_index];
-                    if (!PushConstantRangesContained(token_range, layout_range)) {
-                        skip |= LogError("VUID-VkIndirectCommandsPushConstantTokenEXT-updateRange-11132", device, update_range_loc,
+                    if ((token_range.stageFlags & layout_range.stageFlags) != 0) {
+                        stage_found = true;
+                        if (!PushConstantRangesContained(token_range, layout_range)) {
+                            skip |=
+                                LogError("VUID-VkIndirectCommandsPushConstantTokenEXT-updateRange-11132", device, update_range_loc,
                                          "is %s but the push constant range in "
                                          "VkPipelineLayoutCreateInfo::pPushConstantRanges[%" PRIu32 "] is %s.",
                                          string_VkPushConstantRange(token_range).c_str(), pc_index,
                                          string_VkPushConstantRange(layout_range).c_str());
+                            break;
+                        }
                     }
-                    break;
+                }
+                if (!stage_found) {
+                    skip |= LogError("VUID-VkIndirectCommandsPushConstantTokenEXT-updateRange-11132", device, update_range_loc,
+                                     "is %s but there is no push constant range in "
+                                     "VkPipelineLayoutCreateInfo::pPushConstantRanges for stage %s.",
+                                     string_VkPushConstantRange(token_range).c_str(),
+                                     string_VkShaderStageFlags(token_range.stageFlags).c_str());
                 }
             }
         } else if (token.type == VK_INDIRECT_COMMANDS_TOKEN_TYPE_VERTEX_BUFFER_EXT) {
@@ -126,7 +151,7 @@ bool CoreChecks::PreCallValidateCreateIndirectCommandsLayoutEXT(VkDevice device,
         // Check for duplicate tokens
         if (token.type == VK_INDIRECT_COMMANDS_TOKEN_TYPE_EXECUTION_SET_EXT) {
             // currently these 2 VUs overlap but can be helpful to catch in different times
-            if (execution_set_token_index == kNotFound) {
+            if (execution_set_token_index == vvl::kNoIndex32) {
                 execution_set_token_index = i;
                 if (i != 0) {
                     skip |= LogError(
@@ -140,7 +165,7 @@ bool CoreChecks::PreCallValidateCreateIndirectCommandsLayoutEXT(VkDevice device,
                                  execution_set_token_index);
             }
         } else if (token.type == VK_INDIRECT_COMMANDS_TOKEN_TYPE_INDEX_BUFFER_EXT) {
-            if (index_buffer_token_index == kNotFound) {
+            if (index_buffer_token_index == vvl::kNoIndex32) {
                 index_buffer_token_index = i;
             } else {
                 skip |= LogError("VUID-VkIndirectCommandsLayoutCreateInfoEXT-pTokens-11094", device, token_loc.dot(Field::type),
@@ -149,7 +174,7 @@ bool CoreChecks::PreCallValidateCreateIndirectCommandsLayoutEXT(VkDevice device,
                                  index_buffer_token_index);
             }
         } else if (token.type == VK_INDIRECT_COMMANDS_TOKEN_TYPE_SEQUENCE_INDEX_EXT) {
-            if (sequence_index_token_index == kNotFound) {
+            if (sequence_index_token_index == vvl::kNoIndex32) {
                 sequence_index_token_index = i;
             } else {
                 skip |= LogError("VUID-VkIndirectCommandsLayoutCreateInfoEXT-pTokens-11145", device, token_loc.dot(Field::type),
@@ -204,7 +229,7 @@ bool CoreChecks::PreCallValidateCreateIndirectCommandsLayoutEXT(VkDevice device,
     } else {
         if (!IsValueIn(final_token_type, {VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_INDEXED_EXT,
                                           VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_INDEXED_COUNT_EXT}) &&
-            index_buffer_token_index != kNotFound) {
+            index_buffer_token_index != vvl::kNoIndex32) {
             skip |= LogError("VUID-VkIndirectCommandsLayoutCreateInfoEXT-pTokens-11095", device,
                              create_info_loc.dot(Field::pTokens, final_token_index).dot(Field::type),
                              "is %s (not an index draw token), but pTokens[%" PRIu32
@@ -214,7 +239,7 @@ bool CoreChecks::PreCallValidateCreateIndirectCommandsLayoutEXT(VkDevice device,
         if (!IsValueIn(final_token_type,
                        {VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_INDEXED_EXT, VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_EXT,
                         VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_INDEXED_COUNT_EXT, VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_COUNT_EXT}) &&
-            vertex_buffer_token_index != kNotFound) {
+            vertex_buffer_token_index != vvl::kNoIndex32) {
             skip |= LogError("VUID-VkIndirectCommandsLayoutCreateInfoEXT-pTokens-11096", device,
                              create_info_loc.dot(Field::pTokens, final_token_index).dot(Field::type),
                              "is %s (not a non-mesh draw token), but pTokens[%" PRIu32
@@ -283,13 +308,13 @@ bool CoreChecks::ValidateIndirectExecutionSetPipelineInfo(const VkIndirectExecut
 
     auto pipeline_layout = initial_pipeline->PipelineLayoutState();
     ASSERT_AND_RETURN_SKIP(pipeline_layout);
-    for (uint32_t i = 0; i < pipeline_layout->set_layouts.size(); i++) {
-        if (pipeline_layout->set_layouts[i] == nullptr) continue;
-        const auto& bindings = pipeline_layout->set_layouts[i]->GetBindings();
+    for (uint32_t i = 0; i < pipeline_layout->set_layouts.list.size(); i++) {
+        if (pipeline_layout->set_layouts.list[i] == nullptr) continue;
+        const auto& bindings = pipeline_layout->set_layouts.list[i]->GetBindings();
         for (uint32_t j = 0; j < bindings.size(); j++) {
             if (bindings[j].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
                 bindings[j].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
-                const LogObjectList objlist(pipeline_layout->Handle(), pipeline_layout->set_layouts[i]->Handle());
+                const LogObjectList objlist(pipeline_layout->Handle(), pipeline_layout->set_layouts.list[i]->Handle());
                 skip |= LogError("VUID-VkIndirectExecutionSetPipelineInfoEXT-initialPipeline-11019", objlist,
                                  pipeline_info_loc.dot(Field::initialPipeline),
                                  "was created with a VkPipelineLayout that contains a descriptor type of %s in pSetLayouts[%" PRIu32
@@ -485,9 +510,7 @@ bool CoreChecks::ValidateGeneratedCommandsInfo(const vvl::CommandBuffer& cb_stat
                    return (buffer_state.usage & VK_BUFFER_USAGE_2_PREPROCESS_BUFFER_BIT_EXT) == 0;
                },
                []() { return "The following buffers are missing VK_BUFFER_USAGE_2_PREPROCESS_BUFFER_BIT_EXT"; },
-               [](const vvl::Buffer& buffer_state) {
-                   return "buffer has usage " + string_VkBufferUsageFlags2(buffer_state.usage);
-               }}}}};
+               kUsageErrorMsgBuffer}}}};
 
         skip |= buffer_address_validator.ValidateDeviceAddress(*this, info_loc.dot(Field::preprocessAddress),
                                                                LogObjectList(cb_state.Handle()),
@@ -495,12 +518,10 @@ bool CoreChecks::ValidateGeneratedCommandsInfo(const vvl::CommandBuffer& cb_stat
     }
 
     {
-        BufferAddressValidation<1> buffer_address_validator = {{{{
-            "VUID-VkGeneratedCommandsInfoEXT-sequenceCountAddress-11072",
-            [](const vvl::Buffer& buffer_state) { return (buffer_state.usage & VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT) == 0; },
-            []() { return "The following buffers are missing VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT"; },
-            [](const vvl::Buffer& buffer_state) { return "buffer has usage " + string_VkBufferUsageFlags2(buffer_state.usage); },
-        }}}};
+        BufferAddressValidation<1> buffer_address_validator = {
+            {{{"VUID-VkGeneratedCommandsInfoEXT-sequenceCountAddress-11072",
+               [](const vvl::Buffer& buffer_state) { return (buffer_state.usage & VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT) == 0; },
+               []() { return "The following buffers are missing VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT"; }, kUsageErrorMsgBuffer}}}};
 
         skip |= buffer_address_validator.ValidateDeviceAddress(*this, info_loc.dot(Field::sequenceCountAddress),
                                                                LogObjectList(cb_state.Handle()),
@@ -604,6 +625,16 @@ bool CoreChecks::PreCallValidateCmdExecuteGeneratedCommandsEXT(VkCommandBuffer c
 
     skip |= ValidateGeneratedCommandsInfo(cb_state, *indirect_commands_layout, *pGeneratedCommandsInfo, isPreprocessed, info_loc);
 
+    // You can only have 1 "action token" so we know there is only a draw or dispatch or traceRay
+    // If a VkIndirectExecutionSetEXT is not used, we can guarantee the pipeline/shaderObject being used.
+    if (pGeneratedCommandsInfo->indirectExecutionSet == VK_NULL_HANDLE) {
+        const VkPipelineBindPoint vk_bind_point = ConvertStageToBindPoint(pGeneratedCommandsInfo->shaderStages);
+        const vvl::BindPoint vvl_bind_point = ConvertToVvlBindPoint(vk_bind_point);
+        const LastBound& last_bound = cb_state.lastBound[vvl_bind_point];
+        const vvl::DrawDispatchVuid& vuid = vvl::GetDrawDispatchVuid(error_obj.location.function);
+        skip |= ValidateActionState(last_bound, vuid);
+    }
+
     return skip;
 }
 
@@ -634,11 +665,11 @@ bool CoreChecks::ValidateGeneratedCommandsInitialShaderState(const vvl::CommandB
     } else if (indirect_execution_set.is_shader_objects) {
         // Shader Objects only has compute or graphics
         if (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
-            if (!last_bound.IsValidShaderBound(ShaderObjectStage::COMPUTE)) {
+            if (!last_bound.IsValidShaderObjectBound(ShaderObjectStage::COMPUTE)) {
                 skip |= LogError(vuid, objlist, cb_loc, "has not had a compute VkShaderEXT bound yet.");
             }
         } else if (bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
-            if (!last_bound.IsAnyGraphicsShaderBound()) {
+            if (!last_bound.IsAnyGraphicsStageBound()) {
                 skip |= LogError(vuid, objlist, cb_loc, "has not had a graphics VkShaderEXT bound yet.");
             }
         }

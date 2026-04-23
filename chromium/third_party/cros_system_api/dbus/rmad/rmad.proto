@@ -485,6 +485,9 @@ message UpdateDeviceInfoState {
   bool custom_label_modifiable = 406;
   // Modifiability of Detected feature level field.
   bool feature_level_modifiable = 407;
+
+  // Customized Serial Number Naming.
+  string customized_serial_number_naming = 501;
 }
 
 // Calibration Component and status used in all calibration-related

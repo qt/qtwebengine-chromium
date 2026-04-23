@@ -18,9 +18,12 @@
 #include <string>
 #include <vector>
 
+#include "absl/base/attributes.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "ink/brush/brush_behavior.h"
 #include "ink/geometry/angle.h"
+#include "ink/geometry/mesh_format.h"
 #include "ink/geometry/vec.h"
 #include "ink/types/duration.h"
 
@@ -83,12 +86,6 @@ struct BrushTip {
   // Angle specifying the initial rotation of the tip shape after applying
   // `scale`, `pinch`, and `slant`.
   Angle rotation = Angle::Radians(0);
-  // Scales the opacity of the base brush color for this tip, independent of
-  // `brush_behavior`s. A possible example application is a highlighter brush.
-  //
-  // The multiplier must be in the range [0, 2] and the value ultimately applied
-  // can be modified by applicable `brush_behavior`s.
-  float opacity_multiplier = 1.f;
   // Parameter controlling emission of particles as a function of distance
   // traveled by the stroke inputs. The value must be finite and non-negative.
   //
@@ -109,8 +106,7 @@ struct BrushTip {
 
   std::vector<BrushBehavior> behaviors;
 
-  bool operator==(const BrushTip& other) const;
-  bool operator!=(const BrushTip& other) const;
+  friend bool operator==(const BrushTip&, const BrushTip&) = default;
 };
 
 namespace brush_internal {
@@ -118,6 +114,15 @@ namespace brush_internal {
 // Determines whether the given BrushTip struct is valid to be used in a
 // BrushFamily, and returns an error if not.
 absl::Status ValidateBrushTip(const BrushTip& tip);
+
+// Adds the mesh attribute IDs that are required to properly render a mesh
+// with this brush tip to the given `attribute_ids` set. Note that other
+// attributes may also be required - either for core functionality (see
+// `AddRequiredAttributeIds`), or by the paint (see
+// `AddAttributeIdsRequiredByPaint`).
+void AddAttributeIdsRequiredByTip(
+    const BrushTip& tip,
+    absl::flat_hash_set<MeshFormat::AttributeId>& attribute_ids);
 
 std::string ToFormattedString(const BrushTip& tip);
 

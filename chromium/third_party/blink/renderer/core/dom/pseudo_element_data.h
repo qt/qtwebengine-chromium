@@ -9,7 +9,9 @@
 #include "build/build_config.h"
 #include "third_party/blink/renderer/core/dom/column_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/element_rare_data_field.h"
+#include "third_party/blink/renderer/core/dom/overscroll_pseudo_element_data.h"
 #include "third_party/blink/renderer/core/dom/transition_pseudo_element_data.h"
+#include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 
 namespace blink {
@@ -23,10 +25,10 @@ class PseudoElementData final : public GarbageCollected<PseudoElementData>,
 
   void SetPseudoElement(PseudoId,
                         PseudoElement*,
-                        const AtomicString& view_transition_name = g_null_atom);
+                        const AtomicString& pseudo_argument = g_null_atom);
   PseudoElement* GetPseudoElement(
       PseudoId,
-      const AtomicString& view_transition_name = g_null_atom) const;
+      const AtomicString& pseudo_argument = g_null_atom) const;
 
   bool HasScrollButtonOrMarkerGroupPseudos() const;
 
@@ -63,6 +65,16 @@ class PseudoElementData final : public GarbageCollected<PseudoElementData>,
       column_pseudo_elements_->clear();
     }
   }
+  const OverscrollPseudoElementData* GetOverscrollAreaData() const {
+    return overscroll_data_;
+  }
+  void ClearOverscrollAreas() {
+    if (!overscroll_data_) {
+      return;
+    }
+    overscroll_data_->ClearPseudoElements();
+    overscroll_data_ = nullptr;
+  }
 
   bool HasPseudoElements() const;
   void ClearPseudoElements();
@@ -82,6 +94,7 @@ class PseudoElementData final : public GarbageCollected<PseudoElementData>,
     visitor->Trace(generated_scroll_button_inline_end_);
     visitor->Trace(generated_scroll_button_block_end_);
     visitor->Trace(backdrop_);
+    visitor->Trace(overscroll_data_);
     visitor->Trace(transition_data_);
     visitor->Trace(column_pseudo_elements_);
     ElementRareDataField::Trace(visitor);
@@ -104,6 +117,7 @@ class PseudoElementData final : public GarbageCollected<PseudoElementData>,
   Member<PseudoElement> generated_scroll_button_block_end_;
   Member<PseudoElement> backdrop_;
 
+  Member<OverscrollPseudoElementData> overscroll_data_;
   Member<TransitionPseudoElementData> transition_data_;
 
   // Column pseudo-elements are created once per column (fragmentainer)
@@ -152,12 +166,16 @@ inline void PseudoElementData::ClearPseudoElements() {
     transition_data_->ClearPseudoElements();
     transition_data_ = nullptr;
   }
+  if (overscroll_data_) {
+    overscroll_data_->ClearPseudoElements();
+    overscroll_data_ = nullptr;
+  }
 }
 
 inline void PseudoElementData::SetPseudoElement(
     PseudoId pseudo_id,
     PseudoElement* element,
-    const AtomicString& view_transition_name) {
+    const AtomicString& pseudo_argument) {
   PseudoElement* previous_element = nullptr;
   switch (pseudo_id) {
     case kPseudoIdCheckMark:
@@ -220,6 +238,14 @@ inline void PseudoElementData::SetPseudoElement(
       previous_element = generated_first_letter_;
       generated_first_letter_ = element;
       break;
+    case kPseudoIdOverscrollAreaParent:
+    case kPseudoIdOverscrollClientArea:
+      CHECK(element);
+      if (!overscroll_data_) {
+        overscroll_data_ = MakeGarbageCollected<OverscrollPseudoElementData>();
+      }
+      overscroll_data_->AddPseudoElement(pseudo_id, element, pseudo_argument);
+      break;
     case kPseudoIdViewTransition:
     case kPseudoIdViewTransitionGroup:
     case kPseudoIdViewTransitionGroupChildren:
@@ -229,8 +255,7 @@ inline void PseudoElementData::SetPseudoElement(
       if (element && !transition_data_)
         transition_data_ = MakeGarbageCollected<TransitionPseudoElementData>();
       if (transition_data_) {
-        transition_data_->SetPseudoElement(pseudo_id, element,
-                                           view_transition_name);
+        transition_data_->SetPseudoElement(pseudo_id, element, pseudo_argument);
         if (!transition_data_->HasPseudoElements())
           transition_data_ = nullptr;
       }
@@ -245,7 +270,7 @@ inline void PseudoElementData::SetPseudoElement(
 
 inline PseudoElement* PseudoElementData::GetPseudoElement(
     PseudoId pseudo_id,
-    const AtomicString& view_transition_name) const {
+    const AtomicString& pseudo_argument) const {
   if (kPseudoIdCheckMark == pseudo_id) {
     return generated_check_.Get();
   }
@@ -292,9 +317,13 @@ inline PseudoElement* PseudoElementData::GetPseudoElement(
   if (kPseudoIdFirstLetter == pseudo_id)
     return generated_first_letter_.Get();
   if (IsTransitionPseudoElement(pseudo_id)) {
-    return transition_data_ ? transition_data_->GetPseudoElement(
-                                  pseudo_id, view_transition_name)
-                            : nullptr;
+    return transition_data_
+               ? transition_data_->GetPseudoElement(pseudo_id, pseudo_argument)
+               : nullptr;
+  }
+  if (overscroll_data_ && (pseudo_id == kPseudoIdOverscrollAreaParent ||
+                           pseudo_id == kPseudoIdOverscrollClientArea)) {
+    return overscroll_data_->GetPseudoElement(pseudo_id, pseudo_argument);
   }
   return nullptr;
 }

@@ -6,6 +6,7 @@
 #define CAST_STREAMING_IMPL_CLOCK_DRIFT_SMOOTHER_H_
 
 #include <chrono>
+#include <optional>
 
 #include "platform/api/time.h"
 
@@ -23,8 +24,9 @@ class ClockDriftSmoother {
   explicit ClockDriftSmoother(Clock::duration time_constant);
   ~ClockDriftSmoother();
 
-  // Returns the current offset.
-  Clock::duration Current() const;
+  // Returns the current offset. Will be std::nullopt if no values have been
+  // set yet (via Reset() or Update()).
+  std::optional<Clock::duration> Current() const;
 
   // Discard all history and reset to exactly `offset`, measured `now`.
   void Reset(Clock::time_point now, Clock::duration offset);

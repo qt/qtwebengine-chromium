@@ -30,7 +30,7 @@ export const UIStrings = {
    * @description Description of an insight that recommends avoiding chaining critical requests.
    */
   description:
-      '[Avoid chaining critical requests](https://developer.chrome.com/docs/lighthouse/performance/critical-request-chains) by reducing the length of chains, reducing the download size of resources, or deferring the download of unnecessary resources to improve page load.',
+      '[Avoid chaining critical requests](https://developer.chrome.com/docs/performance/insights/network-dependency-tree) by reducing the length of chains, reducing the download size of resources, or deferring the download of unnecessary resources to improve page load.',
   /**
    * @description Description of the warning that recommends avoiding chaining critical requests.
    */
@@ -175,6 +175,7 @@ function finalize(partialModel: PartialInsightModel<NetworkDependencyTreeInsight
     strings: UIStrings,
     title: i18nString(UIStrings.title),
     description: i18nString(UIStrings.description),
+    docs: 'https://developer.chrome.com/docs/performance/insights/network-dependency-tree',
     category: InsightCategory.LCP,
     state: partialModel.fail ? 'fail' : 'pass',
     ...partialModel,
@@ -458,7 +459,7 @@ export function handleLinkResponseHeader(linkHeaderValue: string): Array<{url: s
   return preconnectedOrigins;
 }
 
-// Export the function for test purpose.
+/** Export the function for test purpose. **/
 export function generatePreconnectedOrigins(
     data: Handlers.Types.HandlerData, context: InsightSetContextWithNavigation,
     contextRequests: Types.Events.SyntheticNetworkRequest[],
@@ -584,7 +585,7 @@ function candidateRequestsByOrigin(
   return origins;
 }
 
-// Export the function for test purpose.
+/** Export the function for test purpose. **/
 export function generatePreconnectCandidates(
     data: Handlers.Types.HandlerData, context: InsightSetContextWithNavigation,
     contextRequests: Types.Events.SyntheticNetworkRequest[]): PreconnectCandidate[] {

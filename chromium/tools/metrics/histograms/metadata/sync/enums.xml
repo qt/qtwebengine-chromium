@@ -81,7 +81,17 @@ chromium-metrics-reviews@google.com.
   <int value="4" label="Profile menu primary button action"/>
   <int value="5" label="Profile menu primary button with bookmarks action"/>
   <int value="6"
-      label="Profile menu priamry button with Windows10 depreciation action"/>
+      label="Profile menu primary button with Windows10 depreciation action"/>
+  <int value="7" label="Account settings"/>
+  <int value="8"
+      label="Profile menu primary button action following Avatar button promo
+             click"/>
+  <int value="9"
+      label="Profile menu primary button with bookmarks action following
+             Avatar button promo click"/>
+  <int value="10"
+      label="Profile menu primary button with Windows10 depreciation action
+             following Avatar button promo click"/>
 </enum>
 
 <!-- LINT.ThenChange(/chrome/browser/profiles/batch_upload/batch_upload_service.h:EntryPoint) -->
@@ -130,39 +140,33 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="First sync"/>
 </enum>
 
-<!-- LINT.IfChange(CrossUserSharingDecryptionResult) -->
+<!-- LINT.IfChange(CrossDevicePrefTrackerAvailabilityAtQuery) -->
 
-<enum name="CrossUserSharingDecryptionResult">
-  <int value="0" label="Succeeded"/>
-  <int value="1" label="Invitation missing required fields"/>
-  <int value="2" label="Failed to decrypt invitation"/>
-  <int value="3" label="Failed to parse decrypted invitation"/>
+<enum name="CrossDevicePrefTrackerAvailabilityAtQuery">
+  <int value="0" label="Available">
+    The tracker is fully operational (DeviceInfoTracker available,
+    LocalDeviceInfo initialized, and Sync configured for writes).
+  </int>
+  <int value="1" label="DeviceInfoTracker Missing">
+    Prerequisite failed: DeviceInfoTracker is not available. Queries cannot be
+    fulfilled.
+  </int>
+  <int value="2" label="Sync Not Configured">
+    DeviceInfoTracker and LocalDeviceInfo available, but Sync is not configured
+    for writes (e.g., signed out or Prefs sync disabled). Writes are blocked;
+    data may be stale.
+  </int>
+  <int value="3" label="LocalDeviceInfo Missing">
+    DeviceInfoTracker available and Sync configured, but LocalDeviceInfo is
+    missing (writes blocked).
+  </int>
+  <int value="4" label="Sync Not Configured + LocalDeviceInfo Missing">
+    DeviceInfoTracker available, but both LocalDeviceInfo is missing and Sync is
+    not configured.
+  </int>
 </enum>
 
-<!-- LINT.ThenChange(/components/sync/engine/data_type_worker.cc:CrossUserSharingDecryptionResult) -->
-
-<!-- LINT.IfChange(CrossUserSharingKeyPairState) -->
-
-<enum name="CrossUserSharingKeyPairState">
-  <int value="0" label="Key pair valid"/>
-  <int value="1" label="Public key not initialized"/>
-  <int value="2" label="Public key version invalid"/>
-  <int value="3" label="Corrupted public-private key pair"/>
-  <int value="4" label="Pending keys are non-empty"/>
-</enum>
-
-<!-- LINT.ThenChange(/components/sync/nigori/nigori_state.cc:CrossUserSharingKeyPairState) -->
-
-<!-- LINT.IfChange(CrossUserSharingKeyPairStateOnDecryptPendingKeys) -->
-
-<enum name="CrossUserSharingKeyPairStateOnDecryptPendingKeys">
-  <int value="0" label="Valid key pair"/>
-  <int value="1" label="Missing private key"/>
-  <int value="2" label="Empty key pair"/>
-  <int value="3" label="Missing public key"/>
-</enum>
-
-<!-- LINT.ThenChange(/components/sync/nigori/nigori_sync_bridge_impl.cc:CrossUserSharingKeyPairStateOnDecryptPendingKeys) -->
+<!-- LINT.ThenChange(/components/sync_preferences/cross_device_pref_tracker/cross_device_pref_tracker.h:CrossDevicePrefTrackerAvailabilityAtQuery) -->
 
 <!-- LINT.IfChange(InvalidBookmarkSpecificsError) -->
 
@@ -381,6 +385,19 @@ chromium-metrics-reviews@google.com.
   <int value="96" label="AutofillAiLastVersionDeduped"/>
   <int value="97" label="CrossDeviceOmniboxIsInBottomPosition"/>
   <int value="98" label="AutofillWasNameAndEmailProfileUsed"/>
+  <int value="99" label="CrossDeviceCrossPlatformPromosIOS16thActiveDay"/>
+  <int value="100" label="CrossDeviceSafetyCheckHomeModuleEnabled"/>
+  <int value="101" label="AutofillAiIdentityEntitiesEnabled"/>
+  <int value="102" label="AutofillAiTravelEntitiesEnabled"/>
+  <int value="103" label="CrossDeviceTabResumptionHomeModuleEnabled"/>
+  <int value="104" label="AutofillAmountExtractionAiTermsSeen"/>
+  <int value="105" label="CrossDevicePriceTrackingHomeModuleEnabled"/>
+  <int value="106" label="CrossDeviceMostVisitedHomeModuleEnabled"/>
+  <int value="107" label="CrossDeviceTipsHomeModuleEnabled"/>
+  <int value="108" label="CrossDeviceMagicStackHomeModuleEnabled"/>
+  <int value="109" label="ShowAiModeOmniboxButton"/>
+  <int value="110" label="AutofillAiSyncedOptInStatus"/>
+  <int value="111" label="iOSPromoReminder"/>
 <!-- LINT.ThenChange(/components/sync_preferences/common_syncable_prefs_database.cc:CommonSyncablePref)-->
 
 <!-- LINT.IfChange(ChromeSyncablePref) -->
@@ -422,7 +439,7 @@ chromium-metrics-reviews@google.com.
   <int value="100033" label="AccessibilityAutoclickRevertToLeftClick"/>
   <int value="100034" label="AccessibilityAutoclickStabilizePosition"/>
   <int value="100035"
-      label="(obsolete, no longer synced) AccessibilityCursorColor"/>
+      label="(obsolete, synced as 100340 now) AccessibilityCursorColor"/>
   <int value="100036"
       label="AccessibilityEnhancedNetworkVoicesInSelectToSpeakAllowed"/>
   <int value="100037" label="AccessibilityFloatingMenuPosition"/>
@@ -757,6 +774,38 @@ chromium-metrics-reviews@google.com.
   <int value="100335" label="iOSLensPromoLastImpressionTimestamp"/>
   <int value="100336" label="iOSLensPromoImpressionsCounter"/>
   <int value="100337" label="iOSLensPromoOptOut"/>
+  <int value="100338" label="SubscriptionEligibilityAiSubscriptionTier"/>
+  <int value="100339" label="AccessibilityCursorHighlightEnabled"/>
+  <int value="100340" label="AccessibilityCursorColorEnabled"/>
+  <int value="100341" label="AccessibilityCursorColor"/>
+  <int value="100342" label="AccessibilityLargeCursorEnabled"/>
+  <int value="100343" label="AccessibilityLargeCursorDipSize"/>
+  <int value="100344" label="AccessibilityHighContrastEnabled"/>
+  <int value="100345" label="AccessibilityCaretHighlightEnabled"/>
+  <int value="100346" label="AccessibilityCaretBlinkInterval"/>
+  <int value="100347" label="AccessibilityFocusHighlightEnabled"/>
+  <int value="100348" label="AccessibilityColorCorrectionHasBeenSetup"/>
+  <int value="100349" label="HighContrastAcceleratorDialogHasBeenAccepted"/>
+  <int value="100350" label="AccessibilityReducedAnimationsEnabled"/>
+  <int value="100351" label="AccessibilityCaptionsTextSize"/>
+  <int value="100352" label="AccessibilityCaptionsTextFont"/>
+  <int value="100353" label="AccessibilityCaptionsTextColor"/>
+  <int value="100354" label="AccessibilityCaptionsTextOpacity"/>
+  <int value="100355" label="AccessibilityCaptionsBackgroundColor"/>
+  <int value="100356" label="AccessibilityCaptionsTextShadow"/>
+  <int value="100357" label="AccessibilityCaptionsBackgroundOpacity"/>
+  <int value="100358" label="AccessibilityScreenMagnifierEnabled"/>
+  <int value="100359" label="AccessibilitySelectToSpeakEnabled"/>
+  <int value="100360" label="DockedMagnifierEnabled"/>
+  <int value="100361" label="DockedMagnifierScale"/>
+  <int value="100362" label="ScreenMagnifierAcceleratorDialogHasBeenAccepted"/>
+  <int value="100363" label="DockedMagnifierAcceleratorDialogHasBeenAccepted"/>
+  <int value="100364" label="SelectToSpeakAcceleratorDialogHasBeenAccepted"/>
+  <int value="100365" label="AccessibilityScreenMagnifierScale"/>
+  <int value="100366" label="(obsolete) iOSPromoReminder"/>
+  <int value="100367" label="ClassManagementToolsOOBEAccessCountSetting"/>
+  <int value="100368" label="ClassManagementToolsKioskReceiverCodes"/>
+  <int value="100369" label="PinContextualTaskButton"/>
 <!-- LINT.ThenChange(/chrome/browser/sync/prefs/chrome_syncable_prefs_database.cc:ChromeSyncablePref)-->
 
 <!-- LINT.IfChange(IosSyncablePref) -->
@@ -813,14 +862,33 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(/components/sync/protocol/sync.proto:SyncClientToServerMessageContents) -->
 
+<!-- LINT.IfChange(SyncConfigureDataTypeManagerReason) -->
+
+<enum name="SyncConfigureDataTypeManagerReason">
+  <summary>
+    The reason that triggered a configuration cycle, i.e. initializing
+    DataTypeManager or changing the set of datatypes that should be actively
+    syncing.
+  </summary>
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Reconfiguration"/>
+  <int value="2" label="Migration"/>
+  <int value="3" label="New client"/>
+  <int value="4" label="Existing client restart"/>
+  <int value="5" label="Crypto"/>
+  <int value="6" label="Programmatic"/>
+</enum>
+
+<!-- LINT.ThenChange(/components/sync/engine/configure_reason.h:ConfigureReason) -->
+
 <!-- LINT.IfChange(SyncConflictResolution) -->
 
 <enum name="SyncConflictResolution">
   <int value="0" label="Changes match"/>
   <int value="1" label="Use local"/>
   <int value="2" label="Use remote"/>
-  <int value="3" label="Ignore local encryption"/>
-  <int value="4" label="Ignore remote encryption"/>
+  <int value="3" label="Ignore local no-op change"/>
+  <int value="4" label="Ignore remote no-op change"/>
 </enum>
 
 <!-- LINT.ThenChange(/components/sync/model/conflict_resolution.h:SyncConflictResolution) -->
@@ -857,6 +925,9 @@ chromium-metrics-reviews@google.com.
   <int value="4"
       label="Error triggered by update not matching
              SupportsIncrementalUpdates()"/>
+  <int value="5"
+      label="Error returned when applying incremental updates containing a
+             clear all directive"/>
 </enum>
 
 <!-- LINT.ThenChange(/components/sync/model/client_tag_based_data_type_processor.h:SyncDataTypeErrorSite) -->
@@ -941,6 +1012,7 @@ chromium-metrics-reviews@google.com.
   <int value="72" label="Account Setting"/>
   <int value="73" label="AI Thread"/>
   <int value="74" label="Contextual Task"/>
+  <int value="75" label="Autofill Valuable Metadata"/>
 </enum>
 
 <!-- LINT.ThenChange(/components/sync/base/data_type.h:SyncDataTypes) -->
@@ -1004,6 +1076,7 @@ chromium-metrics-reviews@google.com.
   <int value="5" label="Sync settings not confirmed"/>
   <int value="6" label="Sync needs trusted vault key"/>
   <int value="7" label="Sync trusted vault recoverability degraded"/>
+  <int value="8" label="Bookmarks limit exceeded"/>
 </enum>
 
 <!-- LINT.ThenChange(/ios/chrome/browser/settings/model/sync/utils/sync_util.mm:SyncErrorInfobarTypes) -->
@@ -1349,6 +1422,11 @@ chromium-metrics-reviews@google.com.
   <int value="185" label="kContactInfoFailedToLoadAutofillWebDatabase"/>
   <int value="186" label="kContactInfoFailedToLoadProfilesFromTable"/>
   <int value="187" label="kGenericTestError"/>
+  <int value="188" label="kAutofillValuableMetadataFailedToLoadDatabase"/>
+  <int value="189"
+      label="kAutofillValuableMetadataTransactionCommitFailedOnIncrementalSync"/>
+  <int value="190" label="kAutofillValuableMetadataFailedToLoadMetadata"/>
+  <int value="191" label="kDataTypeControllerInFailedState"/>
 </enum>
 
 <!-- LINT.ThenChange(/components/sync/model/model_error.h:Type) -->
@@ -1384,7 +1462,7 @@ chromium-metrics-reviews@google.com.
 <enum name="SyncPlaceholderTabResyncResult">
   <int value="0" label="PLACEHOLDER_TAB_FOUND"/>
   <int value="1" label="PLACEHOLDER_TAB_RESYNCED"/>
-  <int value="2" label="PLACEHOLDER_TAB_NOT_SYNCED"/>
+  <int value="2" label="(Obsolete) PLACEHOLDER_TAB_NOT_SYNCED"/>
   <int value="3" label="PLACEHOLDER_TAB_RESYNC_FAILED"/>
 </enum>
 
@@ -1410,6 +1488,18 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(/components/sync/service/sync_service_impl.h:SyncResetEngineReason) -->
+
+<!-- LINT.IfChange(SyncSetupIncompleteMigrationDecision) -->
+
+<enum name="SyncSetupIncompleteMigrationDecision">
+  <int value="0" label="Migrate"/>
+  <int value="1" label="Don't migrate, not signed in"/>
+  <int value="2" label="Don't migrate, not syncing"/>
+  <int value="3" label="Don't migrate, sync setup complete"/>
+  <int value="4" label="Don't migrate, migration feature flag disabled"/>
+</enum>
+
+<!-- LINT.ThenChange(/components/browser_sync/sync_to_signin_migration.cc:SyncSetupIncompleteMigrationDecision) -->
 
 <!-- LINT.IfChange(SyncSharingMessageCommitErrorCode) -->
 
@@ -1457,7 +1547,7 @@ chromium-metrics-reviews@google.com.
   <int value="9" label="Don't migrate, auth error"/>
 </enum>
 
-<!-- LINT.ThenChange(/components/browser_sync/sync_to_signin_migration.cc:SyncToSigninMigrationDecisionOverall) -->
+<!-- LINT.ThenChange(/components/browser_sync/sync_to_signin_migration.cc:SyncToSigninMigrationDecision) -->
 
 <!-- LINT.IfChange(SyncToSigninMigrationReadingListStep) -->
 
@@ -1544,7 +1634,7 @@ chromium-metrics-reviews@google.com.
   <int value="7" label="Password Manager keyboard accessory"/>
 </enum>
 
-<!-- LINT.ThenChange(/components/sync/service/sync_service_utils.h:TrustedVaultUserActionTrigger) -->
+<!-- LINT.ThenChange(/components/trusted_vault/trusted_vault_client.h:TrustedVaultUserActionTrigger) -->
 
 <!-- LINT.IfChange(UserActionableError) -->
 
@@ -1559,6 +1649,7 @@ chromium-metrics-reviews@google.com.
   <int value="8" label="Unrecoverable error"/>
   <int value="9" label="Needs UPM backend upgrade"/>
   <int value="10" label="Needs client upgrade"/>
+  <int value="11" label="Bookmarks limit exceeded"/>
 </enum>
 
 <!-- LINT.ThenChange(/components/sync/service/sync_service.h:UserActionableError) -->

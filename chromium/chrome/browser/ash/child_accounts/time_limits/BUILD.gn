@@ -36,6 +36,7 @@ static_library("time_limits") {
   public_deps = [
     "//base",
     "//chrome/browser:browser_public_dependencies",
+    "//chrome/browser/ash/browser_delegate",
     "//chromeos/ash/components/dbus/system_clock",
     "//chromeos/ash/components/settings",
     "//components/policy/proto",
@@ -49,6 +50,7 @@ static_library("time_limits") {
     "//chrome/browser/ash/child_accounts/constants",
     "//chrome/browser/notifications",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/tabs:tab_strip",
     "//chrome/browser/web_applications",
     "//chrome/common",
@@ -103,7 +105,6 @@ source_set("unit_tests") {
     "//chrome/test:test_support",
     "//chromeos/ash/experiences/arc:arc_test_support",
     "//components/app_constants",
-    "//components/custom_handlers:test_support",
     "//extensions/common",
     "//testing/gtest",
     "//url",

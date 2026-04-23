@@ -21,9 +21,6 @@ declare_args() {
   # Allows googletest to pretty-print various absl types.  Disabled for nacl due
   # to lack of toolchain support.
   gtest_enable_absl_printers = true
-
-  # Allow projects that wish to stay on C++17 to override Chromium's default.
-  use_cxx17 = true
 }
 
 if (host_os == "mac" || is_apple) {

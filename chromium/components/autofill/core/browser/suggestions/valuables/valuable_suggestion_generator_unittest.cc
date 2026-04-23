@@ -137,18 +137,9 @@ TEST_F(ValuableSuggestionGeneratorTest,
   test_autofill_client().set_last_committed_primary_main_frame_url(
       GURL("https://not-existing-domain.example/test"));
   field().set_is_autofilled(false);
-  EXPECT_THAT(
-      GetSuggestionsForLoyaltyCards(form().ToFormData(), &form(), field(),
-                                    &field(), client()),
-      testing::ElementsAre(
-          EqualsLoyaltyCardSuggestion(u"987654321987654321", u"CVS Pharmacy",
-                                      "loyalty_card_id_1"),
-          EqualsLoyaltyCardSuggestion(u"37262999281", u"Ticket Maester",
-                                      "loyalty_card_id_2"),
-          EqualsLoyaltyCardSuggestion(u"998766823", u"Walgreens",
-                                      "loyalty_card_id_3"),
-          EqualsSuggestion(SuggestionType::kSeparator),
-          EqualsManageLoyaltyCardsSuggestion()));
+  EXPECT_THAT(GetSuggestionsForLoyaltyCards(form().ToFormData(), &form(),
+                                            field(), &field(), client()),
+              testing::IsEmpty());
 }
 
 TEST_F(ValuableSuggestionGeneratorTest,
@@ -156,19 +147,9 @@ TEST_F(ValuableSuggestionGeneratorTest,
   test_autofill_client().set_last_committed_primary_main_frame_url(
       GURL("https://not-existing-domain.example/test"));
   field().set_is_autofilled(true);
-  EXPECT_THAT(
-      GetSuggestionsForLoyaltyCards(form().ToFormData(), &form(), field(),
-                                    &field(), client()),
-      testing::ElementsAre(
-          EqualsLoyaltyCardSuggestion(u"987654321987654321", u"CVS Pharmacy",
-                                      "loyalty_card_id_1"),
-          EqualsLoyaltyCardSuggestion(u"37262999281", u"Ticket Maester",
-                                      "loyalty_card_id_2"),
-          EqualsLoyaltyCardSuggestion(u"998766823", u"Walgreens",
-                                      "loyalty_card_id_3"),
-          EqualsSuggestion(SuggestionType::kSeparator),
-          EqualsSuggestion(SuggestionType::kUndoOrClear),
-          EqualsManageLoyaltyCardsSuggestion()));
+  EXPECT_THAT(GetSuggestionsForLoyaltyCards(form().ToFormData(), &form(),
+                                            field(), &field(), client()),
+              testing::IsEmpty());
 }
 
 TEST_F(ValuableSuggestionGeneratorTest,
@@ -186,16 +167,13 @@ TEST_F(ValuableSuggestionGeneratorTest,
                                       "loyalty_card_id_2"),
           EqualsLoyaltyCardSuggestion(u"998766823", u"Walgreens",
                                       "loyalty_card_id_3"),
-#if BUILDFLAG(IS_ANDROID)
-          EqualsLoyaltyCardSuggestion(u"987654321987654321", u"CVS Pharmacy",
-                                      "loyalty_card_id_1"),
-#else
+#if !BUILDFLAG(IS_ANDROID)
           EqualsSuggestion(SuggestionType::kSeparator),
           EqualsSuggestion(
               SuggestionType::kAllLoyaltyCardsEntry,
               l10n_util::GetStringUTF16(
                   IDS_AUTOFILL_LOYALTY_CARDS_ALL_YOUR_CARDS_SUBMENU_TITLE)),
-#endif  // BUILDFLAG(IS_ANDROID)
+#endif  // !BUILDFLAG(IS_ANDROID)
           EqualsSuggestion(SuggestionType::kSeparator),
           EqualsManageLoyaltyCardsSuggestion()));
 
@@ -212,10 +190,6 @@ TEST_F(ValuableSuggestionGeneratorTest,
                                       "loyalty_card_id_2"),
           EqualsLoyaltyCardSuggestion(u"998766823", u"Walgreens",
                                       "loyalty_card_id_3")));
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-  EXPECT_THAT(suggestions_with_matching_domain.back(),
-              HasTrailingIcon(Suggestion::Icon::kGoogleWallet));
-#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 #endif  // !BUILDFLAG(IS_ANDROID)
 }
 
@@ -234,16 +208,13 @@ TEST_F(ValuableSuggestionGeneratorTest,
                                       "loyalty_card_id_2"),
           EqualsLoyaltyCardSuggestion(u"998766823", u"Walgreens",
                                       "loyalty_card_id_3"),
-#if BUILDFLAG(IS_ANDROID)
-          EqualsLoyaltyCardSuggestion(u"987654321987654321", u"CVS Pharmacy",
-                                      "loyalty_card_id_1"),
-#else
+#if !BUILDFLAG(IS_ANDROID)
           EqualsSuggestion(SuggestionType::kSeparator),
           EqualsSuggestion(
               SuggestionType::kAllLoyaltyCardsEntry,
               l10n_util::GetStringUTF16(
                   IDS_AUTOFILL_LOYALTY_CARDS_ALL_YOUR_CARDS_SUBMENU_TITLE)),
-#endif  // BUILDFLAG(IS_ANDROID)
+#endif  // !BUILDFLAG(IS_ANDROID)
           EqualsSuggestion(SuggestionType::kSeparator),
           EqualsSuggestion(SuggestionType::kUndoOrClear),
           EqualsManageLoyaltyCardsSuggestion()));
@@ -261,10 +232,6 @@ TEST_F(ValuableSuggestionGeneratorTest,
                                       "loyalty_card_id_2"),
           EqualsLoyaltyCardSuggestion(u"998766823", u"Walgreens",
                                       "loyalty_card_id_3")));
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-  EXPECT_THAT(suggestions_with_matching_domain.back(),
-              HasTrailingIcon(Suggestion::Icon::kGoogleWallet));
-#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 #endif  // !BUILDFLAG(IS_ANDROID)
 }
 
@@ -303,7 +270,7 @@ TEST_F(ValuableSuggestionGeneratorTest,
   valuables_data_manager().CacheImage(program_logo, fake_image);
   test_api(valuables_data_manager()).NotifyObservers();
   test_autofill_client().set_last_committed_primary_main_frame_url(
-      GURL("https://common-domain.example/test"));
+      GURL("https://domain1.example/test"));
   field().set_is_autofilled(false);
 
   std::vector<Suggestion> suggestions = GetSuggestionsForLoyaltyCards(
@@ -314,10 +281,6 @@ TEST_F(ValuableSuggestionGeneratorTest,
                                        "loyalty_card_id_1"),
                                    EqualsSuggestion(SuggestionType::kSeparator),
                                    EqualsManageLoyaltyCardsSuggestion()));
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-  EXPECT_THAT(suggestions.back(),
-              HasTrailingIcon(Suggestion::Icon::kGoogleWallet));
-#endif
   // Verify that for loyalty cards, the custom icon is shown.
   EXPECT_THAT(suggestions[0],
               SuggestionIconHasImageOrUrl(fake_image, program_logo));
@@ -333,14 +296,21 @@ TEST_F(ValuableSuggestionGeneratorTest,
           /*program_logo=*/GURL("https://empty.url.com"),
           /*loyalty_card_number=*/"987654321987654321",
           {GURL("https://domain1.example"),
-           GURL("https://common-domain.example")}),
+           GURL("https://common-matching-domain.example")}),
       LoyaltyCard(/*loyalty_card_id=*/ValuableId("loyalty_card_id_2"),
                   /*merchant_name=*/"Ticket Maester",
                   /*program_name=*/"TourLoyal",
                   /*program_logo=*/GURL("https://empty.url.com"),
                   /*loyalty_card_number=*/"37262999281",
                   {GURL("https://domain2.example"),
-                   GURL("https://common-matching-domain.example")})};
+                   GURL("https://common-matching-domain.example")}),
+      LoyaltyCard(/*loyalty_card_id=*/ValuableId("loyalty_card_id_3"),
+                  /*merchant_name=*/"Walgreens",
+                  /*program_name=*/"CustomerCard",
+                  /*program_logo=*/GURL("https://empty.url.com"),
+                  /*loyalty_card_number=*/"998766823",
+                  {GURL("https://domain2.example"),
+                   GURL("https://common-domain.example")})};
   test_api(valuables_data_manager()).SetLoyaltyCards(loyalty_cards);
   std::vector<Suggestion> email_suggestions = {
       Suggestion(u"test-email1@domain1.example", SuggestionType::kAddressEntry),
@@ -392,19 +362,17 @@ TEST_F(ValuableSuggestionGeneratorTest,
   EXPECT_THAT(
       lc_submenu_suggestion.children,
       testing::ElementsAre(
-          EqualsLoyaltyCardSuggestion(u"37262999281", u"Ticket Maester",
-                                      "loyalty_card_id_2",
-                                      Suggestion::LetterMonochromeIcon(u"T")),
           EqualsLoyaltyCardSuggestion(u"987654321987654321", u"CVS Pharmacy",
                                       "loyalty_card_id_1",
                                       Suggestion::LetterMonochromeIcon(u"C")),
+          EqualsLoyaltyCardSuggestion(u"37262999281", u"Ticket Maester",
+                                      "loyalty_card_id_2",
+                                      Suggestion::LetterMonochromeIcon(u"T")),
           EqualsSuggestion(SuggestionType::kSeparator),
           EqualsManageLoyaltyCardsSuggestion()));
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   EXPECT_THAT(lc_submenu_suggestion,
               HasIcon(Suggestion::Icon::kGoogleWalletMonochrome));
-  EXPECT_THAT(lc_submenu_suggestion.children.back(),
-              HasTrailingIcon(Suggestion::Icon::kGoogleWallet));
 #endif
 #endif  // BUILDFLAG(IS_ANDROID)
 }
@@ -445,14 +413,21 @@ TEST_F(ValuableSuggestionGeneratorTest,
           /*program_logo=*/GURL("https://empty.url.com"),
           /*loyalty_card_number=*/"987654321987654321",
           {GURL("https://domain1.example"),
-           GURL("https://common-domain.example")}),
+           GURL("https://common-matching-domain.example")}),
       LoyaltyCard(/*loyalty_card_id=*/ValuableId("loyalty_card_id_2"),
                   /*merchant_name=*/"Ticket Maester",
                   /*program_name=*/"TourLoyal",
                   /*program_logo=*/GURL("https://empty.url.com"),
                   /*loyalty_card_number=*/"37262999281",
                   {GURL("https://domain2.example"),
-                   GURL("https://common-matching-domain.example")})};
+                   GURL("https://common-matching-domain.example")}),
+      LoyaltyCard(/*loyalty_card_id=*/ValuableId("loyalty_card_id_3"),
+                  /*merchant_name=*/"Walgreens",
+                  /*program_name=*/"CustomerCard",
+                  /*program_logo=*/GURL("https://empty.url.com"),
+                  /*loyalty_card_number=*/"998766823",
+                  {GURL("https://domain2.example"),
+                   GURL("https://common-domain.example")})};
   test_api(valuables_data_manager()).SetLoyaltyCards(loyalty_cards);
 
   std::vector<Suggestion> email_suggestions = {
@@ -465,7 +440,8 @@ TEST_F(ValuableSuggestionGeneratorTest,
                  SuggestionType::kManageAddress)};
 
   ExtendEmailSuggestionsWithLoyaltyCardSuggestions(
-      valuables_data_manager(), GURL("https://common-domain.example/test"),
+      valuables_data_manager(),
+      GURL("https://common-matching-domain.example/test"),
       /*trigger_field_is_autofilled=*/true, email_suggestions);
 
 #if BUILDFLAG(IS_ANDROID)
@@ -538,7 +514,35 @@ TEST_F(ValuableSuggestionGeneratorTest,
   raw_ptr<const base::Feature> kIphFeature =
       &feature_engagement::kIPHAutofillEnableLoyaltyCardsFeature;
   test_autofill_client().set_last_committed_primary_main_frame_url(
-      GURL("https://common-domain.example/test"));
+      GURL("https://domain1.example/test"));
+  field().set_is_autofilled(false);
+  EXPECT_THAT(GetSuggestionsForLoyaltyCards(form().ToFormData(), &form(),
+                                            field(), &field(), client()),
+              testing::ElementsAre(HasIphFeature(kIphFeature),
+                                   HasNoIphFeature(), HasNoIphFeature()));
+}
+
+TEST_F(ValuableSuggestionGeneratorTest,
+       GetSuggestionsForLoyaltyCards_SuggestionsUpdatedIPH) {
+  base::test::ScopedFeatureList scoped_feature_list_;
+  scoped_feature_list_.InitWithFeatures(
+      /*enabled_features=*/{features::kAutofillAiWalletVehicleRegistration,
+                            features::kAutofillAiWalletFlightReservation},
+      /*disabled_features=*/{});
+  test_api(valuables_data_manager()).ClearLoyaltyCards();
+  test_api(valuables_data_manager())
+      .AddLoyaltyCard(LoyaltyCard(
+          /*loyalty_card_id=*/ValuableId("loyalty_card_id_1"),
+          /*merchant_name=*/"CVS Pharmacy",
+          /*program_name=*/"CVS Extra",
+          /*program_logo=*/GURL("https://empty.url.com"),
+          /*loyalty_card_number=*/"987654321987654321",
+          {GURL("https://domain1.example")}));
+
+  raw_ptr<const base::Feature> kIphFeature =
+      &feature_engagement::kIPHAutofillAiValuablesFeature;
+  test_autofill_client().set_last_committed_primary_main_frame_url(
+      GURL("https://domain1.example/test"));
   field().set_is_autofilled(false);
   EXPECT_THAT(GetSuggestionsForLoyaltyCards(form().ToFormData(), &form(),
                                             field(), &field(), client()),
@@ -561,9 +565,7 @@ TEST_F(ValuableSuggestionGeneratorTest, GeneratesLoyaltyCardSuggestions) {
       base::OnceCallback<void(SuggestionGenerator::ReturnedSuggestions)>>
       suggestions_generated_callback;
 
-  LoyaltyCardSuggestionGenerator generator(
-      client().GetValuablesDataManager()->GetWeakPtr(),
-      client().GetLastCommittedPrimaryMainFrameURL());
+  LoyaltyCardSuggestionGenerator generator;
   std::pair<SuggestionGenerator::SuggestionDataSource,
             std::vector<SuggestionGenerator::SuggestionData>>
       savedCallbackArgument;
@@ -590,7 +592,7 @@ TEST_F(ValuableSuggestionGeneratorTest, GeneratesLoyaltyCardSuggestions) {
               EqualsSuggestion(SuggestionType::kSeparator),
               EqualsManageLoyaltyCardsSuggestion()))));
   generator.GenerateSuggestions(form().ToFormData(), field(), &form(), &field(),
-                                {savedCallbackArgument},
+                                test_autofill_client(), {savedCallbackArgument},
                                 suggestions_generated_callback.Get());
 }
 

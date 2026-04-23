@@ -19,8 +19,8 @@ if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
   from crossbench.path import LocalPath
   from crossbench.runner.groups.browsers import BrowsersRunGroup
-  from crossbench.runner.groups.repetitions import (
-      CacheTemperatureRepetitionsRunGroup, RepetitionsRunGroup)
+  from crossbench.runner.groups.repetitions import \
+      CacheTemperatureRepetitionsRunGroup, RepetitionsRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
 
 

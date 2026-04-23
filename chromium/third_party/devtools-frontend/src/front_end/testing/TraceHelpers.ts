@@ -15,9 +15,11 @@ import {raf, renderElementIntoDOM} from './DOMHelpers.js';
 import {initializeGlobalVars} from './EnvironmentHelpers.js';
 import {TraceLoader} from './TraceLoader.js';
 
-// This mock class is used for instancing a flame chart in the helpers.
-// Its implementation is empty because the methods aren't used by the
-// helpers, only the mere definition.
+/**
+ * This mock class is used for instancing a flame chart in the helpers.
+ * Its implementation is empty because the methods aren't used by the
+ * helpers, only the mere definition.
+ **/
 export class MockFlameChartDelegate implements PerfUI.FlameChart.FlameChartDelegate {
   windowChanged(_startTime: number, _endTime: number, _animate: boolean): void {
   }
@@ -85,6 +87,7 @@ export async function renderFlameChartIntoDOM(context: Mocha.Context|null, optio
     forceNew: true,
     resourceMapping,
     targetManager,
+    workspace,
     ignoreListManager,
   });
 
@@ -175,8 +178,10 @@ export async function getNetworkFlameChart(traceFileName: string, expanded: bool
   return {flameChart, dataProvider};
 }
 
-// We create here a cross-test base trace event. It is assumed that each
-// test will import this default event and copy-override properties at will.
+/**
+ * We create here a cross-test base trace event. It is assumed that each
+ * test will import this default event and copy-override properties at will.
+ **/
 export const defaultTraceEvent: Trace.Types.Events.Event = {
   name: 'process_name',
   tid: Trace.Types.Events.ThreadID(0),
@@ -633,14 +638,13 @@ export function renderWidgetInVbox(widget: UI.Widget.Widget, opts: {
   flexAuto?: boolean,
 } = {}): void {
   const target = document.createElement('div');
-  target.innerHTML = `<style>${UI.inspectorCommonStyles}</style>`;
   target.classList.add('vbox');
   target.classList.toggle('flex-auto', Boolean(opts.flexAuto));
   target.style.width = (opts.width ?? 800) + 'px';
   target.style.height = (opts.height ?? 600) + 'px';
   widget.markAsRoot();
   widget.show(target);
-  renderElementIntoDOM(target);
+  renderElementIntoDOM(target, {includeCommonStyles: true});
 }
 
 export function getMainThread(data: Trace.Handlers.ModelHandlers.Renderer.RendererHandlerData):
@@ -872,6 +876,7 @@ export function setupIgnoreListManagerEnvironment(): {
     forceNew: true,
     resourceMapping,
     targetManager,
+    workspace,
     ignoreListManager,
   });
 
@@ -1008,4 +1013,28 @@ export function makeTimingEventWithConsoleExtensionData(
     ts: Trace.Types.Timing.Micro(ts),
     ph: Trace.Types.Events.Phase.INSTANT,
   };
+}
+
+export async function createTraceExtensionDataFromPerformanceAPITestInput(
+    extensionData: PerformanceAPIExtensionTestData[]):
+    Promise<Trace.Handlers.ModelHandlers.ExtensionTraceData.ExtensionTraceData> {
+  const events = extensionData.flatMap(makeTimingEventWithPerformanceExtensionData).sort((e1, e2) => e1.ts - e2.ts);
+  return await createTraceExtensionDataFromEvents(events);
+}
+
+export async function createTraceExtensionDataFromEvents(events: Trace.Types.Events.Event[]):
+    Promise<Trace.Handlers.ModelHandlers.ExtensionTraceData.ExtensionTraceData> {
+  Trace.Helpers.SyntheticEvents.SyntheticEventsManager.createAndActivate(events);
+
+  Trace.Handlers.ModelHandlers.UserTimings.reset();
+  for (const event of events) {
+    Trace.Handlers.ModelHandlers.UserTimings.handleEvent(event);
+  }
+  await Trace.Handlers.ModelHandlers.UserTimings.finalize();
+
+  Trace.Handlers.ModelHandlers.ExtensionTraceData.reset();
+  // ExtensionTraceData handler doesn't need to handle events since
+  // it only consumes the output of the user timings handler.
+  await Trace.Handlers.ModelHandlers.ExtensionTraceData.finalize();
+  return Trace.Handlers.ModelHandlers.ExtensionTraceData.data();
 }

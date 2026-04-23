@@ -15,6 +15,7 @@
 #include "base/task/bind_post_task.h"
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
+#include "base/trace_event/trace_event.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -40,12 +41,8 @@ class SessionWrapper final : public mojom::Session {
   SessionWrapper(base::WeakPtr<OnDeviceModelMojomImpl> model,
                  mojo::PendingReceiver<mojom::Session> receiver,
                  std::unique_ptr<BackendSession> session,
-                 mojom::Priority priority)
-      : model_(model),
-        receiver_(this, std::move(receiver)),
-        session_(std::move(session)),
-        priority_(priority) {}
-  ~SessionWrapper() override = default;
+                 mojom::Priority priority);
+  ~SessionWrapper() override;
 
   SessionWrapper(const SessionWrapper&) = delete;
   SessionWrapper& operator=(const SessionWrapper&) = delete;
@@ -149,6 +146,17 @@ class AsrStreamWrapper final : public mojom::AsrStreamInput {
   mojo::Receiver<mojom::AsrStreamInput> receiver_;
   base::WeakPtrFactory<AsrStreamWrapper> weak_ptr_factory_{this};
 };
+
+SessionWrapper::SessionWrapper(base::WeakPtr<OnDeviceModelMojomImpl> model,
+                               mojo::PendingReceiver<mojom::Session> receiver,
+                               std::unique_ptr<BackendSession> session,
+                               mojom::Priority priority)
+    : model_(model),
+      receiver_(this, std::move(receiver)),
+      session_(std::move(session)),
+      priority_(priority) {}
+
+SessionWrapper::~SessionWrapper() = default;
 
 void SessionWrapper::Append(mojom::AppendOptionsPtr options,
                             mojo::PendingRemote<mojom::ContextClient> client) {
@@ -293,6 +301,8 @@ OnDeviceModelMojomImpl::~OnDeviceModelMojomImpl() = default;
 void OnDeviceModelMojomImpl::AddAndRunPendingTask(
     base::OnceCallback<void(base::OnceClosure finish_callback)> task,
     base::WeakPtr<SessionWrapper> session) {
+  TRACE_EVENT("optimization_guide",
+              "OnDeviceModelMojomImpl::AddAndRunPendingTask");
   base::ScopedClosureRunner task_finished(base::BindPostTaskToCurrentDefault(
       base::BindOnce(&OnDeviceModelMojomImpl::TaskFinished,
                      weak_ptr_factory_.GetWeakPtr())));
@@ -308,6 +318,7 @@ void OnDeviceModelMojomImpl::AddAndRunPendingTask(
 void OnDeviceModelMojomImpl::StartSession(
     mojo::PendingReceiver<mojom::Session> session,
     mojom::SessionParamsPtr params) {
+  TRACE_EVENT("optimization_guide", "OnDeviceModelMojomImpl::StartSession");
   // If the idle timer is active (no ongoing request), restart the timer.
   if (idle_timer_) {
     RestartIdleTimer();
@@ -333,6 +344,7 @@ void OnDeviceModelMojomImpl::LoadAdaptation(
     mojom::LoadAdaptationParamsPtr params,
     mojo::PendingReceiver<mojom::OnDeviceModel> model,
     LoadAdaptationCallback callback) {
+  TRACE_EVENT("optimization_guide", "OnDeviceModelMojomImpl::LoadAdaptation");
   auto load_adaptation =
       base::BindOnce(&OnDeviceModelMojomImpl::LoadAdaptationInternal,
                      weak_ptr_factory_.GetWeakPtr(), std::move(params),
@@ -346,6 +358,7 @@ void OnDeviceModelMojomImpl::AddSession(
     mojo::PendingReceiver<mojom::Session> receiver,
     std::unique_ptr<BackendSession> session,
     mojom::Priority priority) {
+  TRACE_EVENT("optimization_guide", "OnDeviceModelMojomImpl::AddSession");
   auto current_session = std::make_unique<SessionWrapper>(
       weak_ptr_factory_.GetWeakPtr(), std::move(receiver), std::move(session),
       priority);
@@ -364,6 +377,8 @@ void OnDeviceModelMojomImpl::SetForceQueueingForTesting(bool force_queueing) {
 }
 
 void OnDeviceModelMojomImpl::SessionDisconnected(SessionWrapper* ptr) {
+  TRACE_EVENT("optimization_guide",
+              "OnDeviceModelMojomImpl::SessionDisconnected");
   auto it = sessions_.find(ptr);
   if (it != sessions_.end()) {
     sessions_.erase(it);
@@ -371,6 +386,8 @@ void OnDeviceModelMojomImpl::SessionDisconnected(SessionWrapper* ptr) {
 }
 
 void OnDeviceModelMojomImpl::ModelDisconnected() {
+  TRACE_EVENT("optimization_guide",
+              "OnDeviceModelMojomImpl::ModelDisconnected");
   if (receivers_.empty()) {
     std::move(on_delete_).Run(weak_ptr_factory_.GetWeakPtr());
   }
@@ -380,12 +397,16 @@ void OnDeviceModelMojomImpl::LoadAdaptationInternal(
     mojom::LoadAdaptationParamsPtr params,
     mojo::PendingReceiver<mojom::OnDeviceModel> model,
     LoadAdaptationCallback callback) {
+  TRACE_EVENT("optimization_guide",
+              "OnDeviceModelMojomImpl::LoadAdaptationInternal");
   receivers_.Add(this, std::move(model),
                  model_->LoadAdaptation(std::move(params)));
   std::move(callback).Run(mojom::LoadModelResult::kSuccess);
 }
 
 void OnDeviceModelMojomImpl::RunTaskIfPossible() {
+  TRACE_EVENT("optimization_guide",
+              "OnDeviceModelMojomImpl::RunTaskIfPossible");
   if (is_running_ || force_queueing_for_testing_) {
     return;
   }
@@ -424,11 +445,13 @@ void OnDeviceModelMojomImpl::RunTaskIfPossible() {
 }
 
 void OnDeviceModelMojomImpl::TaskFinished() {
+  TRACE_EVENT("optimization_guide", "OnDeviceModelMojomImpl::TaskFinished");
   is_running_ = false;
   RunTaskIfPossible();
 }
 
 void OnDeviceModelMojomImpl::RestartIdleTimer() {
+  TRACE_EVENT("optimization_guide", "OnDeviceModelMojomImpl::RestartIdleTimer");
   idle_timer_.emplace();
   idle_timer_->Start(FROM_HERE, kModelIdleTimeout.Get(),
                      base::BindOnce(&OnDeviceModelMojomImpl::OnIdleTimeout,
@@ -436,6 +459,7 @@ void OnDeviceModelMojomImpl::RestartIdleTimer() {
 }
 
 void OnDeviceModelMojomImpl::OnIdleTimeout() {
+  TRACE_EVENT("optimization_guide", "OnDeviceModelMojomImpl::OnIdleTimeout");
   for (auto& session : sessions_) {
     session->receiver().ResetWithReason(
         static_cast<uint32_t>(ModelDisconnectReason::kIdleShutdown),

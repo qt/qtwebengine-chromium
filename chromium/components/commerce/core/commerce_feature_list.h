@@ -38,7 +38,6 @@ extern const char kPriceInsightsShowFeedbackParam[];
 extern const base::FeatureParam<bool> kPriceInsightsShowFeedback;
 extern const char kPriceInsightsUseCacheParam[];
 extern const base::FeatureParam<bool> kPriceInsightsUseCache;
-BASE_DECLARE_FEATURE(kPriceTrackingPromo);
 BASE_DECLARE_FEATURE(kTabResumptionShopCard);
 BASE_DECLARE_FEATURE(kShopCardImpressionLimits);
 
@@ -58,11 +57,6 @@ BASE_DECLARE_FEATURE(kSubscriptionsApi);
 BASE_DECLARE_FEATURE(kDiscountAutofill);
 
 BASE_DECLARE_FEATURE(kShoppingAlternateServer);
-
-#if BUILDFLAG(IS_IOS)
-BASE_DECLARE_FEATURE(kPriceInsightsIos);
-BASE_DECLARE_FEATURE(kPriceInsightsHighPriceIos);
-#endif
 
 // Feature flag for Discounts on navigation.
 enum class DiscountDialogAutoPopupBehavior {
@@ -89,9 +83,6 @@ BASE_DECLARE_FEATURE(kRetailCoupons);
 BASE_DECLARE_FEATURE(kCommerceDeveloper);
 // Parameter for enabling feature variation of coupons with code.
 extern const char kRetailCouponsWithCodeParam[];
-
-// Feature flag for Discount user consent v2.
-BASE_DECLARE_FEATURE(kDiscountConsentV2);
 
 // Shopping list update interval.
 constexpr base::FeatureParam<base::TimeDelta>
@@ -171,7 +162,6 @@ inline constexpr base::FeatureParam<std::string> kShopCardPosition{
     &kTabResumptionShopCard, "ShopCardPosition", ""};
 
 extern const char kShopCardArm1[];
-extern const char kShopCardArm2[];
 extern const char kShopCardArm3[];
 extern const char kShopCardArm4[];
 extern const char kShopCardArm5[];

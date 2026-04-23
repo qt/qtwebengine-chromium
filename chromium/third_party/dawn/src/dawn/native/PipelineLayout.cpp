@@ -43,6 +43,7 @@
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Device.h"
+#include "dawn/native/Instance.h"
 #include "dawn/native/ObjectContentHasher.h"
 #include "dawn/native/ObjectType_autogen.h"
 #include "dawn/native/ShaderModule.h"
@@ -65,7 +66,7 @@ ResultOrError<UnpackedPtr<PipelineLayoutDescriptor>> ValidatePipelineLayoutDescr
             const Format* format;
             DAWN_TRY_ASSIGN_CONTEXT(format, device->GetInternalFormat(attachment.format),
                                     "validating storageAttachments[%i]", i);
-            DAWN_INVALID_IF(!format->supportsStorageAttachment,
+            DAWN_INVALID_IF(!format->SupportsStorageAttachment(),
                             "storageAttachments[%i]'s format (%s) cannot be used with %s.", i,
                             format->format, wgpu::TextureUsage::StorageAttachment);
 
@@ -102,6 +103,9 @@ ResultOrError<UnpackedPtr<PipelineLayoutDescriptor>> ValidatePipelineLayoutDescr
 
     // Validate immediateSize.
     if (descriptor->immediateSize) {
+        DAWN_INVALID_IF(!device->GetInstance()->HasFeature(
+                            wgpu::WGSLLanguageFeatureName::ImmediateAddressSpace),
+                        "ImmediateAddressSpace feature is not enabled");
         uint32_t maxImmediateSize = device->GetLimits().v1.maxImmediateSize;
         DAWN_INVALID_IF(descriptor->immediateSize > maxImmediateSize,
                         "immediateSize (%i) is larger than the maximum allowed (%i).",

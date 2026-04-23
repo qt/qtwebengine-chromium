@@ -544,9 +544,9 @@ export namespace Animation {
      */
     iterationStart: number;
     /**
-     * `AnimationEffect`'s iterations.
+     * `AnimationEffect`'s iterations. Omitted if the value is infinite.
      */
-    iterations: number;
+    iterations?: number;
     /**
      * `AnimationEffect`'s iteration duration.
      * Milliseconds for time based animations and
@@ -1187,12 +1187,13 @@ export namespace Audits {
     FormInputWithNoLabelError = 'FormInputWithNoLabelError',
     FormAutocompleteAttributeEmptyError = 'FormAutocompleteAttributeEmptyError',
     FormEmptyIdAndNameAttributesForInputError = 'FormEmptyIdAndNameAttributesForInputError',
-    FormAriaLabelledByToNonExistingId = 'FormAriaLabelledByToNonExistingId',
+    FormAriaLabelledByToNonExistingIdError = 'FormAriaLabelledByToNonExistingIdError',
     FormInputAssignedAutocompleteValueToIdOrNameAttributeError = 'FormInputAssignedAutocompleteValueToIdOrNameAttributeError',
-    FormLabelHasNeitherForNorNestedInput = 'FormLabelHasNeitherForNorNestedInput',
+    FormLabelHasNeitherForNorNestedInputError = 'FormLabelHasNeitherForNorNestedInputError',
     FormLabelForMatchesNonExistingIdError = 'FormLabelForMatchesNonExistingIdError',
     FormInputHasWrongButWellIntendedAutocompleteValueError = 'FormInputHasWrongButWellIntendedAutocompleteValueError',
     ResponseWasBlockedByORB = 'ResponseWasBlockedByORB',
+    NavigationEntryMarkedSkippable = 'NavigationEntryMarkedSkippable',
   }
 
   /**
@@ -1460,6 +1461,66 @@ export namespace Audits {
     sourceCodeLocation?: SourceCodeLocation;
   }
 
+  export const enum PermissionElementIssueType {
+    InvalidType = 'InvalidType',
+    FencedFrameDisallowed = 'FencedFrameDisallowed',
+    CspFrameAncestorsMissing = 'CspFrameAncestorsMissing',
+    PermissionsPolicyBlocked = 'PermissionsPolicyBlocked',
+    PaddingRightUnsupported = 'PaddingRightUnsupported',
+    PaddingBottomUnsupported = 'PaddingBottomUnsupported',
+    InsetBoxShadowUnsupported = 'InsetBoxShadowUnsupported',
+    RequestInProgress = 'RequestInProgress',
+    UntrustedEvent = 'UntrustedEvent',
+    RegistrationFailed = 'RegistrationFailed',
+    TypeNotSupported = 'TypeNotSupported',
+    InvalidTypeActivation = 'InvalidTypeActivation',
+    SecurityChecksFailed = 'SecurityChecksFailed',
+    ActivationDisabled = 'ActivationDisabled',
+    GeolocationDeprecated = 'GeolocationDeprecated',
+    InvalidDisplayStyle = 'InvalidDisplayStyle',
+    NonOpaqueColor = 'NonOpaqueColor',
+    LowContrast = 'LowContrast',
+    FontSizeTooSmall = 'FontSizeTooSmall',
+    FontSizeTooLarge = 'FontSizeTooLarge',
+    InvalidSizeValue = 'InvalidSizeValue',
+  }
+
+  /**
+   * This issue warns about improper usage of the <permission> element.
+   */
+  export interface PermissionElementIssueDetails {
+    issueType: PermissionElementIssueType;
+    /**
+     * The value of the type attribute.
+     */
+    type?: string;
+    /**
+     * The node ID of the <permission> element.
+     */
+    nodeId?: DOM.BackendNodeId;
+    /**
+     * True if the issue is a warning, false if it is an error.
+     */
+    isWarning?: boolean;
+    /**
+     * Fields for message construction:
+     * Used for messages that reference a specific permission name
+     */
+    permissionName?: string;
+    /**
+     * Used for messages about occlusion
+     */
+    occluderNodeInfo?: string;
+    /**
+     * Used for messages about occluder's parent
+     */
+    occluderParentNodeInfo?: string;
+    /**
+     * Used for messages about activation disabled reason
+     */
+    disableReason?: string;
+  }
+
   /**
    * A unique identifier for the type of issue. Each type may use one of the
    * optional fields in InspectorIssueDetails to convey more specific
@@ -1492,6 +1553,7 @@ export namespace Audits {
     SRIMessageSignatureIssue = 'SRIMessageSignatureIssue',
     UnencodedDigestIssue = 'UnencodedDigestIssue',
     UserReidentificationIssue = 'UserReidentificationIssue',
+    PermissionElementIssue = 'PermissionElementIssue',
   }
 
   /**
@@ -1529,6 +1591,7 @@ export namespace Audits {
     sriMessageSignatureIssueDetails?: SRIMessageSignatureIssueDetails;
     unencodedDigestIssueDetails?: UnencodedDigestIssueDetails;
     userReidentificationIssueDetails?: UserReidentificationIssueDetails;
+    permissionElementIssueDetails?: PermissionElementIssueDetails;
   }
 
   /**
@@ -2289,15 +2352,15 @@ export namespace Browser {
      */
     setting: PermissionSetting;
     /**
-     * Requesting origin the permission applies to, all origins if not specified.
+     * Embedding origin the permission applies to, all origins if not specified.
      */
     origin?: string;
     /**
-     * Embedding origin the permission applies to. It is ignored unless the requesting origin is
-     * present and valid. If the requesting origin is provided but the embedding origin isn't, the
-     * requesting origin is used as the embedding origin.
+     * Embedded origin the permission applies to. It is ignored unless the embedding origin is
+     * present and valid. If the embedding origin is provided but the embedded origin isn't, the
+     * embedding origin is used as the embedded origin.
      */
-    embeddingOrigin?: string;
+    embeddedOrigin?: string;
     /**
      * Context to override. When omitted, default browser context is used.
      */
@@ -2588,8 +2651,6 @@ export namespace Browser {
  */
 export namespace CSS {
 
-  export type StyleSheetId = OpaqueIdentifier<string, 'Protocol.CSS.StyleSheetId'>;
-
   /**
    * Stylesheet type: "injected" for stylesheets injected via extension, "user-agent" for user-agent
    * stylesheets, "inspector" for stylesheets created by the inspector (i.e. those holding the "via
@@ -2745,7 +2806,7 @@ export namespace CSS {
     /**
      * The stylesheet identifier.
      */
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     /**
      * Owner frame identifier.
      */
@@ -2831,7 +2892,7 @@ export namespace CSS {
      * The css style sheet identifier (absent for user agent stylesheet and user-specified
      * stylesheet rules) this rule came from.
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
     /**
      * Rule selector data.
      */
@@ -2910,7 +2971,7 @@ export namespace CSS {
      * The css style sheet identifier (absent for user agent stylesheet and user-specified
      * stylesheet rules) this rule came from.
      */
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     /**
      * Offset of the start of the rule (including selector) from the beginning of the stylesheet.
      */
@@ -2990,7 +3051,7 @@ export namespace CSS {
      * The css style sheet identifier (absent for user agent stylesheet and user-specified
      * stylesheet rules) this rule came from.
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
     /**
      * CSS properties in the style.
      */
@@ -3086,7 +3147,7 @@ export namespace CSS {
     /**
      * Identifier of the stylesheet containing this object (if exists).
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
     /**
      * Array of media queries.
      */
@@ -3149,7 +3210,7 @@ export namespace CSS {
     /**
      * Identifier of the stylesheet containing this object (if exists).
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
     /**
      * Optional name for the container.
      */
@@ -3192,7 +3253,7 @@ export namespace CSS {
     /**
      * Identifier of the stylesheet containing this object (if exists).
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
   }
 
   /**
@@ -3211,7 +3272,7 @@ export namespace CSS {
     /**
      * Identifier of the stylesheet containing this object (if exists).
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
   }
 
   /**
@@ -3230,7 +3291,7 @@ export namespace CSS {
     /**
      * Identifier of the stylesheet containing this object (if exists).
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
   }
 
   /**
@@ -3245,7 +3306,7 @@ export namespace CSS {
     /**
      * Identifier of the stylesheet containing this object (if exists).
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
   }
 
   /**
@@ -3370,7 +3431,7 @@ export namespace CSS {
      * The css style sheet identifier (absent for user agent stylesheet and user-specified
      * stylesheet rules) this rule came from.
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
     /**
      * Parent stylesheet's origin.
      */
@@ -3393,7 +3454,7 @@ export namespace CSS {
      * The css style sheet identifier (absent for user agent stylesheet and user-specified
      * stylesheet rules) this rule came from.
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
     /**
      * Parent stylesheet's origin.
      */
@@ -3429,23 +3490,47 @@ export namespace CSS {
     syntax: string;
   }
 
+  export const enum CSSAtRuleType {
+    FontFace = 'font-face',
+    FontFeatureValues = 'font-feature-values',
+    FontPaletteValues = 'font-palette-values',
+  }
+
+  export const enum CSSAtRuleSubsection {
+    Swash = 'swash',
+    Annotation = 'annotation',
+    Ornaments = 'ornaments',
+    Stylistic = 'stylistic',
+    Styleset = 'styleset',
+    CharacterVariant = 'character-variant',
+  }
+
   /**
-   * CSS font-palette-values rule representation.
+   * CSS generic @rule representation.
    */
-  export interface CSSFontPaletteValuesRule {
+  export interface CSSAtRule {
+    /**
+     * Type of at-rule.
+     */
+    type: CSSAtRuleType;
+    /**
+     * Subsection of font-feature-values, if this is a subsection.
+     */
+    subsection?: CSSAtRuleSubsection;
+    /**
+     * LINT_SKIP.ThenChange(//third_party/blink/renderer/core/inspector/inspector_style_sheet.cc:FontVariantAlternatesFeatureType,//third_party/blink/renderer/core/inspector/inspector_css_agent.cc:FontVariantAlternatesFeatureType)
+     * Associated name, if applicable.
+     */
+    name?: Value;
     /**
      * The css style sheet identifier (absent for user agent stylesheet and user-specified
      * stylesheet rules) this rule came from.
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
     /**
      * Parent stylesheet's origin.
      */
     origin: StyleSheetOrigin;
-    /**
-     * Associated font palette name.
-     */
-    fontPaletteName: Value;
     /**
      * Associated style declaration.
      */
@@ -3460,7 +3545,7 @@ export namespace CSS {
      * The css style sheet identifier (absent for user agent stylesheet and user-specified
      * stylesheet rules) this rule came from.
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
     /**
      * Parent stylesheet's origin.
      */
@@ -3541,7 +3626,7 @@ export namespace CSS {
      * The css style sheet identifier (absent for user agent stylesheet and user-specified
      * stylesheet rules) this rule came from.
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
     /**
      * Parent stylesheet's origin.
      */
@@ -3564,7 +3649,7 @@ export namespace CSS {
      * The css style sheet identifier (absent for user agent stylesheet and user-specified
      * stylesheet rules) this rule came from.
      */
-    styleSheetId?: StyleSheetId;
+    styleSheetId?: DOM.StyleSheetId;
     /**
      * Parent stylesheet's origin.
      */
@@ -3586,7 +3671,7 @@ export namespace CSS {
     /**
      * The css style sheet identifier.
      */
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     /**
      * The range of the style text in the enclosing stylesheet.
      */
@@ -3601,7 +3686,7 @@ export namespace CSS {
     /**
      * The css style sheet identifier where a new rule should be inserted.
      */
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     /**
      * The text of a new rule.
      */
@@ -3626,7 +3711,7 @@ export namespace CSS {
   }
 
   export interface CollectClassNamesRequest {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
   }
 
   export interface CollectClassNamesResponse extends ProtocolResponseWithError {
@@ -3654,7 +3739,7 @@ export namespace CSS {
     /**
      * Identifier of the created "via-inspector" stylesheet.
      */
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
   }
 
   export interface ForcePseudoStateRequest {
@@ -3845,9 +3930,9 @@ export namespace CSS {
      */
     cssPropertyRegistrations?: CSSPropertyRegistration[];
     /**
-     * A font-palette-values rule matching this node.
+     * A list of simple @rules matching this node or its pseudo-elements.
      */
-    cssFontPaletteValuesRule?: CSSFontPaletteValuesRule;
+    cssAtRules?: CSSAtRule[];
     /**
      * Id of the first parent element that does not have display: contents.
      */
@@ -3878,7 +3963,7 @@ export namespace CSS {
   }
 
   export interface GetStyleSheetTextRequest {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
   }
 
   export interface GetStyleSheetTextResponse extends ProtocolResponseWithError {
@@ -3897,7 +3982,7 @@ export namespace CSS {
   }
 
   export interface GetLocationForSelectorRequest {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     selectorText: string;
   }
 
@@ -3930,7 +4015,7 @@ export namespace CSS {
   }
 
   export interface SetPropertyRulePropertyNameRequest {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     range: SourceRange;
     propertyName: string;
   }
@@ -3943,7 +4028,7 @@ export namespace CSS {
   }
 
   export interface SetKeyframeKeyRequest {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     range: SourceRange;
     keyText: string;
   }
@@ -3956,7 +4041,7 @@ export namespace CSS {
   }
 
   export interface SetMediaTextRequest {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     range: SourceRange;
     text: string;
   }
@@ -3969,7 +4054,7 @@ export namespace CSS {
   }
 
   export interface SetContainerQueryTextRequest {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     range: SourceRange;
     text: string;
   }
@@ -3982,7 +4067,7 @@ export namespace CSS {
   }
 
   export interface SetSupportsTextRequest {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     range: SourceRange;
     text: string;
   }
@@ -3995,7 +4080,7 @@ export namespace CSS {
   }
 
   export interface SetScopeTextRequest {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     range: SourceRange;
     text: string;
   }
@@ -4008,7 +4093,7 @@ export namespace CSS {
   }
 
   export interface SetRuleSelectorRequest {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     range: SourceRange;
     selector: string;
   }
@@ -4021,7 +4106,7 @@ export namespace CSS {
   }
 
   export interface SetStyleSheetTextRequest {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
     text: string;
   }
 
@@ -4093,7 +4178,7 @@ export namespace CSS {
    * Fired whenever a stylesheet is changed as a result of the client operation.
    */
   export interface StyleSheetChangedEvent {
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
   }
 
   /**
@@ -4103,7 +4188,7 @@ export namespace CSS {
     /**
      * Identifier of the removed stylesheet.
      */
-    styleSheetId: StyleSheetId;
+    styleSheetId: DOM.StyleSheetId;
   }
 
   export interface ComputedStyleUpdatedEvent {
@@ -4383,6 +4468,11 @@ export namespace DOM {
   export type BackendNodeId = OpaqueIdentifier<integer, 'Protocol.DOM.BackendNodeId'>;
 
   /**
+   * Unique identifier for a CSS stylesheet.
+   */
+  export type StyleSheetId = OpaqueIdentifier<string, 'Protocol.DOM.StyleSheetId'>;
+
+  /**
    * Backend node with a friendly name.
    */
   export interface BackendNode {
@@ -4440,6 +4530,8 @@ export namespace DOM {
     DetailsContent = 'details-content',
     Picker = 'picker',
     PermissionIcon = 'permission-icon',
+    OverscrollAreaParent = 'overscroll-area-parent',
+    OverscrollClientArea = 'overscroll-client-area',
   }
 
   /**
@@ -4617,6 +4709,7 @@ export namespace DOM {
     assignedSlot?: BackendNode;
     isScrollable?: boolean;
     affectedByStartingStyles?: boolean;
+    adoptedStyleSheets?: StyleSheetId[];
   }
 
   /**
@@ -5532,6 +5625,20 @@ export namespace DOM {
      * Attribute value.
      */
     value: string;
+  }
+
+  /**
+   * Fired when `Element`'s adoptedStyleSheets are modified.
+   */
+  export interface AdoptedStyleSheetsModifiedEvent {
+    /**
+     * Id of the node that has changed.
+     */
+    nodeId: NodeId;
+    /**
+     * New adoptedStyleSheets array.
+     */
+    adoptedStyleSheets: StyleSheetId[];
   }
 
   /**
@@ -10113,20 +10220,6 @@ export namespace Network {
   }
 
   /**
-   * Sets Controls for IP Proxy of requests.
-   * Page reload is required before the new behavior will be observed.
-   */
-  export const enum IpProxyStatus {
-    Available = 'Available',
-    FeatureNotEnabled = 'FeatureNotEnabled',
-    MaskedDomainListNotEnabled = 'MaskedDomainListNotEnabled',
-    MaskedDomainListNotPopulated = 'MaskedDomainListNotPopulated',
-    AuthTokensUnavailable = 'AuthTokensUnavailable',
-    Unavailable = 'Unavailable',
-    BypassedByDevTools = 'BypassedByDevTools',
-  }
-
-  /**
    * The reason why request was blocked.
    */
   export const enum CorsError {
@@ -10371,11 +10464,6 @@ export namespace Network {
      * Security details for the request.
      */
     securityDetails?: SecurityDetails;
-    /**
-     * Indicates whether the request was sent through IP Protection proxies. If
-     * set to true, the request used the IP Protection privacy feature.
-     */
-    isIpProtectionUsed?: boolean;
   }
 
   /**
@@ -10466,6 +10554,7 @@ export namespace Network {
     Preload = 'preload',
     SignedExchange = 'SignedExchange',
     Preflight = 'preflight',
+    FedCM = 'FedCM',
     Other = 'other',
   }
 
@@ -11012,8 +11101,8 @@ export namespace Network {
   export interface NetworkConditions {
     /**
      * Only matching requests will be affected by these conditions. Patterns use the URLPattern constructor string
-     * syntax (https://urlpattern.spec.whatwg.org/). If the pattern is empty, all requests are matched (including p2p
-     * connections).
+     * syntax (https://urlpattern.spec.whatwg.org/) and must be absolute. If the pattern is empty, all requests are
+     * matched (including p2p connections).
      */
     urlPattern: string;
     /**
@@ -11044,6 +11133,19 @@ export namespace Network {
      * WebRTC packetReordering feature.
      */
     packetReordering?: boolean;
+  }
+
+  export interface BlockPattern {
+    /**
+     * URL pattern to match. Patterns use the URLPattern constructor string syntax
+     * (https://urlpattern.spec.whatwg.org/) and must be absolute. Example: `*://*:*\/*.css`.
+     */
+    urlPattern: string;
+    /**
+     * Whether or not to block the pattern. If false, a matching request will not be blocked even if it matches a later
+     * `BlockPattern`.
+     */
+    block: boolean;
   }
 
   export const enum DirectSocketDnsQueryType {
@@ -11091,6 +11193,12 @@ export namespace Network {
      * Expected to be unsigned integer.
      */
     receiveBufferSize?: number;
+    multicastLoopback?: boolean;
+    /**
+     * Unsigned int 8.
+     */
+    multicastTimeToLive?: integer;
+    multicastAllowAddressSharing?: boolean;
   }
 
   export interface DirectUDPMessage {
@@ -11110,8 +11218,6 @@ export namespace Network {
     Allow = 'Allow',
     BlockFromInsecureToMorePrivate = 'BlockFromInsecureToMorePrivate',
     WarnFromInsecureToMorePrivate = 'WarnFromInsecureToMorePrivate',
-    PreflightBlock = 'PreflightBlock',
-    PreflightWarn = 'PreflightWarn',
     PermissionBlock = 'PermissionBlock',
     PermissionWarn = 'PermissionWarn',
   }
@@ -11269,20 +11375,6 @@ export namespace Network {
   export interface LoadNetworkResourceOptions {
     disableCache: boolean;
     includeCredentials: boolean;
-  }
-
-  export interface GetIPProtectionProxyStatusResponse extends ProtocolResponseWithError {
-    /**
-     * Whether IP proxy is available
-     */
-    status: IpProxyStatus;
-  }
-
-  export interface SetIPProtectionProxyBypassEnabledRequest {
-    /**
-     * Whether IP Proxy is being bypassed by devtools; false by default.
-     */
-    enabled: boolean;
   }
 
   export interface SetAcceptedEncodingsRequest {
@@ -11607,9 +11699,15 @@ export namespace Network {
 
   export interface SetBlockedURLsRequest {
     /**
-     * URL patterns to block. Wildcards ('*') are allowed.
+     * Patterns to match in the order in which they are given. These patterns
+     * also take precedence over any wildcard patterns defined in `urls`.
      */
-    urls: string[];
+    urlPatterns?: BlockPattern[];
+    /**
+     * URL patterns to block. Wildcards ('*') are allowed.
+     * @deprecated
+     */
+    urls?: string[];
   }
 
   export interface SetBypassServiceWorkerRequest {
@@ -12354,6 +12452,16 @@ export namespace Network {
     timestamp: MonotonicTime;
   }
 
+  export interface DirectUDPSocketJoinedMulticastGroupEvent {
+    identifier: RequestId;
+    IPAddress: string;
+  }
+
+  export interface DirectUDPSocketLeftMulticastGroupEvent {
+    identifier: RequestId;
+    IPAddress: string;
+  }
+
   /**
    * Fired upon direct_socket.UDPSocket creation.
    */
@@ -12574,80 +12682,6 @@ export namespace Network {
      * The number of obtained Trust Tokens on a successful "Issuance" operation.
      */
     issuedTokenCount?: integer;
-  }
-
-  /**
-   * Fired once when parsing the .wbn file has succeeded.
-   * The event contains the information about the web bundle contents.
-   */
-  export interface SubresourceWebBundleMetadataReceivedEvent {
-    /**
-     * Request identifier. Used to match this information to another event.
-     */
-    requestId: RequestId;
-    /**
-     * A list of URLs of resources in the subresource Web Bundle.
-     */
-    urls: string[];
-  }
-
-  /**
-   * Fired once when parsing the .wbn file has failed.
-   */
-  export interface SubresourceWebBundleMetadataErrorEvent {
-    /**
-     * Request identifier. Used to match this information to another event.
-     */
-    requestId: RequestId;
-    /**
-     * Error message
-     */
-    errorMessage: string;
-  }
-
-  /**
-   * Fired when handling requests for resources within a .wbn file.
-   * Note: this will only be fired for resources that are requested by the webpage.
-   */
-  export interface SubresourceWebBundleInnerResponseParsedEvent {
-    /**
-     * Request identifier of the subresource request
-     */
-    innerRequestId: RequestId;
-    /**
-     * URL of the subresource resource.
-     */
-    innerRequestURL: string;
-    /**
-     * Bundle request identifier. Used to match this information to another event.
-     * This made be absent in case when the instrumentation was enabled only
-     * after webbundle was parsed.
-     */
-    bundleRequestId?: RequestId;
-  }
-
-  /**
-   * Fired when request for resources within a .wbn file failed.
-   */
-  export interface SubresourceWebBundleInnerResponseErrorEvent {
-    /**
-     * Request identifier of the subresource request
-     */
-    innerRequestId: RequestId;
-    /**
-     * URL of the subresource resource.
-     */
-    innerRequestURL: string;
-    /**
-     * Error message
-     */
-    errorMessage: string;
-    /**
-     * Bundle request identifier. Used to match this information to another event.
-     * This made be absent in case when the instrumentation was enabled only
-     * after webbundle was parsed.
-     */
-    bundleRequestId?: RequestId;
   }
 
   /**
@@ -13636,6 +13670,7 @@ export namespace Page {
     AmbientLightSensor = 'ambient-light-sensor',
     AriaNotify = 'aria-notify',
     AttributionReporting = 'attribution-reporting',
+    Autofill = 'autofill',
     Autoplay = 'autoplay',
     Bluetooth = 'bluetooth',
     BrowsingTopics = 'browsing-topics',
@@ -13701,6 +13736,7 @@ export namespace Page {
     LocalFonts = 'local-fonts',
     LocalNetworkAccess = 'local-network-access',
     Magnetometer = 'magnetometer',
+    ManualText = 'manual-text',
     MediaPlaybackWhileNotVisible = 'media-playback-while-not-visible',
     Microphone = 'microphone',
     Midi = 'midi',
@@ -13708,7 +13744,6 @@ export namespace Page {
     OtpCredentials = 'otp-credentials',
     Payment = 'payment',
     PictureInPicture = 'picture-in-picture',
-    Popins = 'popins',
     PrivateAggregation = 'private-aggregation',
     PrivateStateTokenIssuance = 'private-state-token-issuance',
     PrivateStateTokenRedemption = 'private-state-token-redemption',
@@ -13719,7 +13754,6 @@ export namespace Page {
     RunAdAuction = 'run-ad-auction',
     ScreenWakeLock = 'screen-wake-lock',
     Serial = 'serial',
-    SharedAutofill = 'shared-autofill',
     SharedStorage = 'shared-storage',
     SharedStorageSelectUrl = 'shared-storage-select-url',
     SmartCard = 'smart-card',
@@ -15446,6 +15480,22 @@ export namespace Page {
     isAllowed: boolean;
   }
 
+  export interface GetAnnotatedPageContentRequest {
+    /**
+     * Whether to include actionable information. Defaults to true.
+     */
+    includeActionableInformation?: boolean;
+  }
+
+  export interface GetAnnotatedPageContentResponse extends ProtocolResponseWithError {
+    /**
+     * The annotated page content as a base64 encoded protobuf.
+     * The format is defined by the `AnnotatedPageContent` message in
+     * components/optimization_guide/proto/features/common_quality_data.proto
+     */
+    content: binary;
+  }
+
   export interface DomContentEventFiredEvent {
     timestamp: Network.MonotonicTime;
   }
@@ -16120,6 +16170,7 @@ export namespace Preload {
   export const enum SpeculationAction {
     Prefetch = 'Prefetch',
     Prerender = 'Prerender',
+    PrerenderUntilScript = 'PrerenderUntilScript',
   }
 
   /**
@@ -18083,29 +18134,6 @@ export namespace SystemInfo {
   }
 
   /**
-   * Describes a supported image decoding profile with its associated minimum and
-   * maximum resolutions and subsampling.
-   */
-  export interface ImageDecodeAcceleratorCapability {
-    /**
-     * Image coded, e.g. Jpeg.
-     */
-    imageType: ImageType;
-    /**
-     * Maximum supported dimensions of the image in pixels.
-     */
-    maxDimensions: Size;
-    /**
-     * Minimum supported dimensions of the image in pixels.
-     */
-    minDimensions: Size;
-    /**
-     * Optional array of supported subsampling formats, e.g. 4:2:0, if known.
-     */
-    subsamplings: SubsamplingFormat[];
-  }
-
-  /**
    * Provides information about the GPU(s) on the system.
    */
   export interface GPUInfo {
@@ -18133,10 +18161,6 @@ export namespace SystemInfo {
      * Supported accelerated video encoding capabilities.
      */
     videoEncoding: VideoEncodeAcceleratorCapability[];
-    /**
-     * Supported accelerated image decoding capabilities.
-     */
-    imageDecoding: ImageDecodeAcceleratorCapability[];
   }
 
   /**
@@ -18539,11 +18563,31 @@ export namespace Target {
     locations: RemoteLocation[];
   }
 
+  export interface GetDevToolsTargetRequest {
+    /**
+     * Page or tab target ID.
+     */
+    targetId: TargetID;
+  }
+
+  export interface GetDevToolsTargetResponse extends ProtocolResponseWithError {
+    /**
+     * The targetId of DevTools page target if exists.
+     */
+    targetId?: TargetID;
+  }
+
   export interface OpenDevToolsRequest {
     /**
      * This can be the page or tab target ID.
      */
     targetId: TargetID;
+    /**
+     * The id of the panel we want DevTools to open initially. Currently
+     * supported panels are elements, console, network, sources, resources
+     * and performance.
+     */
+    panelId?: string;
   }
 
   export interface OpenDevToolsResponse extends ProtocolResponseWithError {

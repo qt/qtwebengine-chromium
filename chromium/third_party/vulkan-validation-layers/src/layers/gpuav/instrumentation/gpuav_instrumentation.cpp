@@ -16,18 +16,24 @@
  */
 
 #include "gpuav/instrumentation/gpuav_instrumentation.h"
+#include <vulkan/vulkan_core.h>
+#include <spirv/unified1/spirv.hpp>
+#include <vulkan/utility/vk_struct_helper.hpp>
 
 #include "chassis/chassis_modification_state.h"
 #include "containers/small_vector.h"
+#include "generated/spirv_grammar_helper.h"
 #include "gpuav/core/gpuav.h"
+#include "gpuav/core/gpuav_constants.h"
 #include "gpuav/error_message/gpuav_vuids.h"
+#include "gpuav/shaders/gpuav_error_codes.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/shaders/gpuav_error_header.h"
 #include "gpuav/debug_printf/debug_printf.h"
 #include "containers/limits.h"
 
-#include "gpuav/spirv/vertex_attribute_fetch_oob.h"
+#include "gpuav/spirv/vertex_attribute_fetch_oob_pass.h"
 
 #include "state_tracker/cmd_buffer_state.h"
 #include "state_tracker/descriptor_sets.h"
@@ -36,7 +42,9 @@
 #include "state_tracker/pipeline_state.h"
 #include "state_tracker/pipeline_layout_state.h"
 #include "state_tracker/shader_module.h"
+#include "state_tracker/descriptor_mode.h"
 #include "utils/action_command_utils.h"
+#include "utils/image_utils.h"
 
 namespace gpuav {
 
@@ -44,12 +52,12 @@ namespace gpuav {
 static uint32_t LastBoundPipelineOrShaderDescSetBindingsCount(const LastBound &last_bound) {
     // App uses pipeline or graphics pipeline libraries
     if (last_bound.pipeline_state && last_bound.pipeline_state->PipelineLayoutState()) {
-        return uint32_t(last_bound.pipeline_state->PipelineLayoutState()->set_layouts.size());
+        return uint32_t(last_bound.pipeline_state->PipelineLayoutState()->set_layouts.list.size());
     }
 
     // App uses shader objects
     if (const vvl::ShaderObject *main_bound_shader = last_bound.GetFirstShader()) {
-        return static_cast<uint32_t>(main_bound_shader->set_layouts.size());
+        return static_cast<uint32_t>(main_bound_shader->set_layouts.list.size());
     }
 
     // Should not get there, it would mean no pipeline nor shader object was bound
@@ -98,10 +106,10 @@ static VkPipelineLayout CreateInstrumentationPipelineLayout(Validator &gpuav, co
         pipe_layout_ci.pPushConstantRanges = ranges.data();
         std::vector<VkDescriptorSetLayout> set_layouts;
         set_layouts.reserve(inst_desc_set_binding + 1);
-        for (const auto &set_layout : last_bound_pipeline_pipe_layout->set_layouts) {
+        for (const auto &set_layout : last_bound_pipeline_pipe_layout->set_layouts.list) {
             set_layouts.push_back(set_layout->VkHandle());
         }
-        for (uint32_t set_i = static_cast<uint32_t>(last_bound_pipeline_pipe_layout->set_layouts.size());
+        for (uint32_t set_i = static_cast<uint32_t>(last_bound_pipeline_pipe_layout->set_layouts.list.size());
              set_i < inst_desc_set_binding; ++set_i) {
             set_layouts.push_back(dummy_desc_set_layout);
         }
@@ -135,19 +143,19 @@ static VkPipelineLayout CreateInstrumentationPipelineLayout(Validator &gpuav, co
         // layouts
         // => To compose a VkPipelineLayout, only need to get compute or vertex/mesh shader and look at their bindings,
         // no need to check other shaders.
-        const vvl::ShaderObject::SetLayoutVector *set_layouts = &main_bound_shader->set_layouts;
+        const vvl::DescriptorSetLayoutList &set_layouts = main_bound_shader->set_layouts;
         PushConstantRangesId push_constants_layouts = main_bound_shader->push_constant_ranges;
 
         if (last_bound.desc_set_pipeline_layout) {
             pipe_layout_ci.flags = last_bound.desc_set_pipeline_layout->CreateFlags();
         }
         std::vector<VkDescriptorSetLayout> set_layout_handles;
-        if (set_layouts) {
+        {
             set_layout_handles.reserve(inst_desc_set_binding + 1);
-            for (const auto &set_layout : *set_layouts) {
+            for (const auto &set_layout : set_layouts.list) {
                 set_layout_handles.push_back(set_layout->VkHandle());
             }
-            for (uint32_t set_i = static_cast<uint32_t>(set_layouts->size()); set_i < inst_desc_set_binding; ++set_i) {
+            for (uint32_t set_i = static_cast<uint32_t>(set_layouts.list.size()); set_i < inst_desc_set_binding; ++set_i) {
                 set_layout_handles.push_back(dummy_desc_set_layout);
             }
             set_layout_handles.push_back(instrumentation_desc_set_layout);
@@ -282,6 +290,27 @@ static std::pair<std::optional<VertexAttributeFetchLimit>, std::optional<VertexA
     return {vertex_attribute_fetch_limit_vertex_input_rate, vertex_attribute_fetch_limit_instance_input_rate};
 }
 
+void UpdateInstrumentationDescBuffer(Validator &gpuav, CommandBufferSubState &cb_state, const LastBound &last_bound,
+                                     const Location &loc, InstrumentationErrorBlob &out_instrumentation_error_blob) {
+    void *descriptor_start = gpuav.global_resource_descriptor_buffer_.GetMappedPtr();
+
+    for (size_t func_i = 0; func_i < cb_state.on_instrumentation_desc_buffer_update_functions.size(); ++func_i) {
+        VkDescriptorGetInfoEXT get_info = vku::InitStructHelper();
+        get_info.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+
+        VkDescriptorAddressInfoEXT address_info = vku::InitStructHelper();
+        uint32_t binding = 0;
+
+        cb_state.on_instrumentation_desc_buffer_update_functions[func_i](cb_state, last_bound.bind_point, address_info, binding);
+        get_info.data.pStorageBuffer = &address_info;
+
+        const VkDeviceSize binding_offset = gpuav.resource_descriptor_buffer_offsets_[binding];
+        uint8_t *descriptor_offset = (uint8_t *)descriptor_start + binding_offset;
+        DispatchGetDescriptorEXT(gpuav.device, &get_info,
+                                 gpuav.phys_dev_ext_props.descriptor_buffer_props.storageBufferDescriptorSize, descriptor_offset);
+    }
+}
+
 void UpdateInstrumentationDescSet(Validator &gpuav, CommandBufferSubState &cb_state, VkPipelineBindPoint bind_point,
                                   VkDescriptorSet instrumentation_desc_set, const Location &loc,
                                   InstrumentationErrorBlob &out_instrumentation_error_blob) {
@@ -312,7 +341,7 @@ void UpdateInstrumentationDescSet(Validator &gpuav, CommandBufferSubState &cb_st
 
         {
             indices_desc_buffer_info.range = sizeof(uint32_t);
-            indices_desc_buffer_info.buffer = gpuav.indices_buffer_.VkHandle();
+            indices_desc_buffer_info.buffer = gpuav.global_indices_buffer_.VkHandle();
             indices_desc_buffer_info.offset = 0;
 
             VkWriteDescriptorSet wds = vku::InitStructHelper();
@@ -357,7 +386,7 @@ void UpdateInstrumentationDescSet(Validator &gpuav, CommandBufferSubState &cb_st
             // This check is only for indexed draws
             if (vvl::IsCommandDrawVertexIndexed(loc.function)) {
                 vko::BufferRange vertex_attribute_fetch_limits_buffer_range =
-                    cb_state.gpu_resources_manager.GetHostVisibleBufferRange(4 * sizeof(uint32_t));
+                    cb_state.gpu_resources_manager.GetHostCoherentBufferRange(4 * sizeof(uint32_t));
                 if (vertex_attribute_fetch_limits_buffer_range.buffer == VK_NULL_HANDLE) {
                     return;
                 }
@@ -394,7 +423,7 @@ void UpdateInstrumentationDescSet(Validator &gpuav, CommandBufferSubState &cb_st
                 vertex_attribute_fetch_limits_buffer_bi.range = vertex_attribute_fetch_limits_buffer_range.size;
             } else {
                 // Point all non-indexed draws to our global buffer that will bypass the check in shader
-                VertexAttributeFetchOff &resource = gpuav.shared_resources_manager.GetOrCreate<VertexAttributeFetchOff>(gpuav);
+                VertexAttributeFetchOff &resource = gpuav.shared_resources_cache.GetOrCreate<VertexAttributeFetchOff>(gpuav);
                 if (!resource.valid) return;
                 vertex_attribute_fetch_limits_buffer_bi.buffer = resource.buffer.VkHandle();
                 vertex_attribute_fetch_limits_buffer_bi.offset = 0;
@@ -415,7 +444,7 @@ void UpdateInstrumentationDescSet(Validator &gpuav, CommandBufferSubState &cb_st
     for (size_t func_i = 0; func_i < cb_state.on_instrumentation_desc_set_update_functions.size(); ++func_i) {
         VkWriteDescriptorSet wds = vku::InitStructHelper();
         wds.dstSet = instrumentation_desc_set;
-        wds.dstBinding = vvl::kU32Max;
+        wds.dstBinding = vvl::kNoIndex32;
         wds.descriptorCount = 1;
         wds.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         wds.pBufferInfo = &buffer_infos[func_i];
@@ -423,7 +452,7 @@ void UpdateInstrumentationDescSet(Validator &gpuav, CommandBufferSubState &cb_st
         cb_state.on_instrumentation_desc_set_update_functions[func_i](cb_state, bind_point, buffer_infos[func_i], wds.dstBinding);
 
         assert(buffer_infos[func_i].buffer != VK_NULL_HANDLE);
-        assert(wds.dstBinding != vvl::kU32Max);
+        assert(wds.dstBinding != vvl::kNoIndex32);
 
         desc_writes.emplace_back(wds);
     }
@@ -437,10 +466,10 @@ static bool WasInstrumented(const LastBound &last_bound) {
     }
     for (uint32_t i = 0; i < kShaderObjectStageCount; ++i) {
         const auto stage = static_cast<ShaderObjectStage>(i);
-        if (!last_bound.IsValidShaderBound(stage)) {
+        if (!last_bound.IsValidShaderObjectBound(stage)) {
             continue;
         }
-        if (const vvl::ShaderObject *shader_object_state = last_bound.GetShaderState(stage)) {
+        if (const vvl::ShaderObject *shader_object_state = last_bound.GetShaderObjectState(stage)) {
             auto &sub_state = SubState(*shader_object_state);
             if (sub_state.was_instrumented) {
                 return true;
@@ -449,22 +478,11 @@ static bool WasInstrumented(const LastBound &last_bound) {
     }
     return false;
 }
-
-void PreCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBufferSubState &cb_state, VkPipelineBindPoint bind_point,
+void PreCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBufferSubState &cb_state, const LastBound &last_bound,
                                                 const Location &loc) {
     if (!gpuav.gpuav_settings.IsSpirvModified()) {
         return;
     }
-
-    assert(bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS || bind_point == VK_PIPELINE_BIND_POINT_COMPUTE ||
-           bind_point == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
-
-    if (cb_state.max_actions_cmd_validation_reached_) {
-        return;
-    }
-
-    const vvl::BindPoint vvl_bind_point = ConvertToVvlBindPoint(bind_point);
-    const LastBound &last_bound = cb_state.base.lastBound[vvl_bind_point];
 
     // If nothing was updated, we don't want to bind anything
     if (!WasInstrumented(last_bound)) {
@@ -476,6 +494,44 @@ void PreCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBufferS
         return;
     }
 
+    InstBindingPipeLayout inst_binding_pipe_layout;
+
+    // App uses regular pipelines or graphics pipeline libraries
+    if (last_bound.pipeline_state) {
+        const PipelineSubState &pipeline_sub_state = SubState(*last_bound.pipeline_state);
+        const vvl::DescriptorMode mode = last_bound.GetActionDescriptorMode();
+        inst_binding_pipe_layout.handle = pipeline_sub_state.GetPipelineLayoutUnion(loc, mode);
+        assert(inst_binding_pipe_layout.handle != VK_NULL_HANDLE);
+        if (gpuav.aborted_) {
+            return;
+        }
+        inst_binding_pipe_layout.source = PipelineLayoutSource::LastBoundPipeline;
+    }
+    // App uses shader objects
+    else {
+        const vvl::BindPoint vvl_bind_point = ConvertToVvlBindPoint(last_bound.bind_point);
+        if (last_bound.desc_set_pipeline_layout) {
+            inst_binding_pipe_layout.state = last_bound.desc_set_pipeline_layout;
+            inst_binding_pipe_layout.handle = inst_binding_pipe_layout.state->VkHandle();
+            inst_binding_pipe_layout.source = PipelineLayoutSource::LastBoundDescriptorSet;
+        } else if (cb_state.push_constant_latest_used_layout[vvl_bind_point] != VK_NULL_HANDLE) {
+            inst_binding_pipe_layout.state =
+                gpuav.Get<vvl::PipelineLayout>(cb_state.push_constant_latest_used_layout[vvl_bind_point]);
+            inst_binding_pipe_layout.handle = inst_binding_pipe_layout.state->VkHandle();
+            inst_binding_pipe_layout.source = PipelineLayoutSource::LastPushedConstants;
+        }
+    }
+
+    if (last_bound.GetActionDescriptorMode() == vvl::DescriptorModeBuffer) {
+        PreCallSetupShaderInstrumentationResourcesDescriptorBuffer(gpuav, cb_state, last_bound, inst_binding_pipe_layout, loc);
+    } else {
+        PreCallSetupShaderInstrumentationResourcesClassic(gpuav, cb_state, last_bound, inst_binding_pipe_layout, loc);
+    }
+}
+
+void PreCallSetupShaderInstrumentationResourcesClassic(Validator &gpuav, CommandBufferSubState &cb_state,
+                                                       const LastBound &last_bound,
+                                                       const InstBindingPipeLayout &inst_binding_pipe_layout, const Location &loc) {
     VkDescriptorSet instrumentation_desc_set =
         cb_state.gpu_resources_manager.GetManagedDescriptorSet(cb_state.GetInstrumentationDescriptorSetLayout());
     if (!instrumentation_desc_set) {
@@ -483,81 +539,39 @@ void PreCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBufferS
         return;
     }
 
-    // Pathetic way of trying to make sure we take care of updating all
-    // bindings of the instrumentation descriptor set
-    assert(gpuav.instrumentation_bindings_.size() == glsl::kTotalBindings);
-
     InstrumentationErrorBlob instrumentation_error_blob;
-    UpdateInstrumentationDescSet(gpuav, cb_state, bind_point, instrumentation_desc_set, loc, instrumentation_error_blob);
+    UpdateInstrumentationDescSet(gpuav, cb_state, last_bound.bind_point, instrumentation_desc_set, loc, instrumentation_error_blob);
 
-    instrumentation_error_blob.action_command_i = (bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS)  ? cb_state.draw_index
-                                                  : (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) ? cb_state.compute_index
-                                                  : (bind_point == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR)
-                                                      ? cb_state.trace_rays_index
-                                                      : 0;
-    instrumentation_error_blob.pipeline_bind_point = bind_point;
+    instrumentation_error_blob.action_command_index = cb_state.GetActionCommandIndex(last_bound.bind_point);
+    instrumentation_error_blob.pipeline_bind_point = last_bound.bind_point;
     instrumentation_error_blob.uses_shader_object = last_bound.pipeline_state == nullptr;
 
     // Bind instrumentation descriptor set, using an appropriate pipeline layout
     // ---
 
-    enum class PipelineLayoutSource { NoPipelineLayout, LastBoundPipeline, LastBoundDescriptorSet, LastPushedConstants };
-    std::shared_ptr<const vvl::PipelineLayout> inst_binding_pipe_layout_state;
-    VkPipelineLayout inst_binding_pipe_layout = VK_NULL_HANDLE;
-    PipelineLayoutSource inst_binding_pipe_layout_src = PipelineLayoutSource::NoPipelineLayout;
+    const uint32_t error_logger_index = cb_state.GetErrorLoggerIndex();
 
-    // App uses regular pipelines or graphics pipeline libraries
-    if (last_bound.pipeline_state) {
-        // Regular pipeline, and its pipeline layout has not been destroyed: pick it
-        const auto last_bound_pipe_layout = last_bound.pipeline_state->PipelineLayoutState();
-        if (!last_bound.pipeline_state->library_create_info && last_bound_pipe_layout && !last_bound_pipe_layout->Destroyed()) {
-            inst_binding_pipe_layout = last_bound.pipeline_state->PipelineLayoutState()->VkHandle();
-        }
-        // Pipeline layout has been destroyed, or pipeline is a graphics pipeline library
-        else {
-            const PipelineSubState &pipeline_sub_state = SubState(*last_bound.pipeline_state);
-            inst_binding_pipe_layout = pipeline_sub_state.GetPipelineLayoutUnion(loc);
-            assert(inst_binding_pipe_layout != VK_NULL_HANDLE);
-            if (gpuav.aborted_) {
-                return;
-            }
-        }
-        inst_binding_pipe_layout_src = PipelineLayoutSource::LastBoundPipeline;
-    }
-    // App uses shader objects
-    else {
-        if (last_bound.desc_set_pipeline_layout) {
-            inst_binding_pipe_layout_state = last_bound.desc_set_pipeline_layout;
-            inst_binding_pipe_layout = inst_binding_pipe_layout_state->VkHandle();
-            inst_binding_pipe_layout_src = PipelineLayoutSource::LastBoundDescriptorSet;
-        } else if (cb_state.push_constant_latest_used_layout[vvl_bind_point] != VK_NULL_HANDLE) {
-            inst_binding_pipe_layout_state =
-                gpuav.Get<vvl::PipelineLayout>(cb_state.push_constant_latest_used_layout[vvl_bind_point]);
-            inst_binding_pipe_layout = inst_binding_pipe_layout_state->VkHandle();
-            inst_binding_pipe_layout_src = PipelineLayoutSource::LastPushedConstants;
-        }
-    }
+    assert(error_logger_index < cst::indices_count);
+    assert(instrumentation_error_blob.action_command_index < cst::indices_count);
+    const std::array<uint32_t, 2> dynamic_offsets = {
+        {instrumentation_error_blob.action_command_index * gpuav.indices_buffer_alignment_,
+         error_logger_index * gpuav.indices_buffer_alignment_}};
 
-    // TODO: Using cb_state.per_command_resources.size() is kind of a hack? Worth considering passing the resource index as a
-    // parameter
-    const uint32_t error_logger_i = static_cast<uint32_t>(cb_state.command_error_loggers.size());
-    const std::array<uint32_t, 2> dynamic_offsets = {{instrumentation_error_blob.action_command_i * gpuav.indices_buffer_alignment_,
-                                                      error_logger_i * gpuav.indices_buffer_alignment_}};
-    if (inst_binding_pipe_layout) {
-        if (inst_binding_pipe_layout_state &&
-            (uint32_t)inst_binding_pipe_layout_state->set_layouts.size() > gpuav.instrumentation_desc_set_bind_index_) {
+    if (inst_binding_pipe_layout.handle != VK_NULL_HANDLE) {
+        if (inst_binding_pipe_layout.state &&
+            (uint32_t)inst_binding_pipe_layout.state->set_layouts.list.size() > gpuav.instrumentation_desc_set_bind_index_) {
             gpuav.InternalWarning(cb_state.Handle(), loc,
                                   "Unable to bind instrumentation descriptor set, it would override application's bound set");
             return;
         }
 
-        switch (inst_binding_pipe_layout_src) {
+        switch (inst_binding_pipe_layout.source) {
             case PipelineLayoutSource::NoPipelineLayout:
                 // should not get there, because inst_desc_set_binding_pipe_layout_state is not null
                 assert(false);
                 break;
             case PipelineLayoutSource::LastBoundPipeline:
-                DispatchCmdBindDescriptorSets(cb_state.VkHandle(), bind_point, inst_binding_pipe_layout,
+                DispatchCmdBindDescriptorSets(cb_state.VkHandle(), last_bound.bind_point, inst_binding_pipe_layout.handle,
                                               gpuav.instrumentation_desc_set_bind_index_, 1, &instrumentation_desc_set,
                                               static_cast<uint32_t>(dynamic_offsets.size()), dynamic_offsets.data());
                 break;
@@ -578,14 +592,15 @@ void PreCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBufferS
                 // less that the number of bindings in the pipeline layout used to bind descriptor sets,
                 // GPU-AV needs to create a temporary pipeline layout matching the the currently bound pipeline's layout
                 // to bind the instrumentation descriptor set
-                if (last_pipe_bindings_count < (uint32_t)inst_binding_pipe_layout_state->set_layouts.size() ||
-                    last_pipe_pcr_count < (uint32_t)inst_binding_pipe_layout_state->push_constant_ranges_layout->size()) {
+                if (last_pipe_bindings_count < (uint32_t)inst_binding_pipe_layout.state->set_layouts.list.size() ||
+                    last_pipe_pcr_count < (uint32_t)inst_binding_pipe_layout.state->push_constant_ranges_layout->size()) {
                     VkPipelineLayout instrumentation_pipe_layout = CreateInstrumentationPipelineLayout(
-                        gpuav, loc, last_bound, gpuav.dummy_desc_layout_, gpuav.GetInstrumentationDescriptorSetLayout(),
+                        gpuav, loc, last_bound, gpuav.dummy_desc_layout_[vvl::DescriptorModeClassic],
+                        gpuav.GetInstrumentationDescriptorSetLayout(vvl::DescriptorModeClassic),
                         gpuav.instrumentation_desc_set_bind_index_);
 
                     if (instrumentation_pipe_layout != VK_NULL_HANDLE) {
-                        DispatchCmdBindDescriptorSets(cb_state.VkHandle(), bind_point, instrumentation_pipe_layout,
+                        DispatchCmdBindDescriptorSets(cb_state.VkHandle(), last_bound.bind_point, instrumentation_pipe_layout,
                                                       gpuav.instrumentation_desc_set_bind_index_, 1, &instrumentation_desc_set,
                                                       static_cast<uint32_t>(dynamic_offsets.size()), dynamic_offsets.data());
                         DispatchDestroyPipelineLayout(gpuav.device, instrumentation_pipe_layout, nullptr);
@@ -595,7 +610,8 @@ void PreCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBufferS
                     }
                 } else {
                     // No incompatibility detected, safe to use pipeline layout for last bound descriptor set/push constants.
-                    DispatchCmdBindDescriptorSets(cb_state.VkHandle(), bind_point, inst_binding_pipe_layout_state->VkHandle(),
+                    DispatchCmdBindDescriptorSets(cb_state.VkHandle(), last_bound.bind_point,
+                                                  inst_binding_pipe_layout.state->VkHandle(),
                                                   gpuav.instrumentation_desc_set_bind_index_, 1, &instrumentation_desc_set,
                                                   static_cast<uint32_t>(dynamic_offsets.size()), dynamic_offsets.data());
                 }
@@ -605,7 +621,8 @@ void PreCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBufferS
     } else {
         // If no pipeline layout was bound when using shader objects that don't use any descriptor set, and no push constants, bind
         // the instrumentation pipeline layout
-        DispatchCmdBindDescriptorSets(cb_state.VkHandle(), bind_point, gpuav.GetInstrumentationPipelineLayout(),
+        DispatchCmdBindDescriptorSets(cb_state.VkHandle(), last_bound.bind_point,
+                                      gpuav.GetInstrumentationPipelineLayout(vvl::DescriptorModeClassic),
                                       gpuav.instrumentation_desc_set_bind_index_, 1, &instrumentation_desc_set,
                                       static_cast<uint32_t>(dynamic_offsets.size()), dynamic_offsets.data());
     }
@@ -613,33 +630,70 @@ void PreCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBufferS
     // We want to grab the last (current) element in descriptor_binding_commands, but as a std::vector, the reference might be
     // garbage later, so just hold the index for later. It is possible to have no descriptor sets bound, for example if using push
     // constants.
-    instrumentation_error_blob.descriptor_binding_index = vvl::kU32Max;
+    instrumentation_error_blob.descriptor_binding_index = vvl::kNoIndex32;
     DescriptorSetBindings *desc_set_bindings = cb_state.shared_resources_cache.TryGet<DescriptorSetBindings>();
     if (desc_set_bindings && !desc_set_bindings->descriptor_set_binding_commands.empty()) {
         instrumentation_error_blob.descriptor_binding_index =
             uint32_t(desc_set_bindings->descriptor_set_binding_commands.size() - 1);
     }
 
-    instrumentation_error_blob.label_command_i =
-        !cb_state.base.GetLabelCommands().empty() ? uint32_t(cb_state.base.GetLabelCommands().size() - 1) : vvl::kU32Max;
-
     CommandBufferSubState::ErrorLoggerFunc error_logger = [&gpuav, &cb_state, instrumentation_error_blob](
-                                                              const uint32_t *error_record, const Location &loc,
-                                                              const LogObjectList &objlist,
-                                                              const std::vector<std::string> &initial_label_stack) {
+                                                              const uint32_t *error_record, const Location &loc_with_debug_region,
+                                                              const LogObjectList &objlist) {
         bool skip = false;
-        skip |=
-            LogInstrumentationError(gpuav, cb_state, objlist, instrumentation_error_blob, initial_label_stack, error_record, loc);
+        skip |= LogInstrumentationError(gpuav, cb_state, objlist, instrumentation_error_blob, error_record, loc_with_debug_region);
         return skip;
     };
 
-    cb_state.command_error_loggers.emplace_back(CommandBufferSubState::CommandErrorLogger{
-        loc, last_bound.pipeline_state ? LogObjectList(last_bound.pipeline_state->VkHandle()) : LogObjectList{},
-        std::move(error_logger), int32_t(instrumentation_error_blob.label_command_i)});
+    cb_state.AddCommandErrorLogger(loc, &last_bound, std::move(error_logger));
 }
 
-void PostCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBufferSubState &cb_state, const LastBound &last_bound,
-                                                 const Location &loc) {
+void PreCallSetupShaderInstrumentationResourcesDescriptorBuffer(Validator &gpuav, CommandBufferSubState &cb_state,
+                                                                const LastBound &last_bound,
+                                                                const InstBindingPipeLayout &inst_binding_pipe_layout,
+                                                                const Location &loc) {
+    if (!gpuav.gpuav_settings.debug_printf_enabled) {
+        return;  // currently only thing enabled
+    }
+
+    VkPipelineLayout bind_pipeline_layout_handle = inst_binding_pipe_layout.handle;
+
+    if (inst_binding_pipe_layout.handle == VK_NULL_HANDLE) {
+        // This can only happen if there are no pipeline layout bound when using shader objects, with no descriptor set nor push
+        // constants and the user called vkCmdBindDescriptorBuffersEXT but never vkCmdSetDescriptorBufferOffsetsEXT
+        bind_pipeline_layout_handle = gpuav.GetInstrumentationPipelineLayout(vvl::DescriptorModeBuffer);
+    } else if (inst_binding_pipe_layout.state &&
+               (uint32_t)inst_binding_pipe_layout.state->set_layouts.list.size() > gpuav.instrumentation_desc_set_bind_index_) {
+        gpuav.InternalWarning(cb_state.Handle(), loc,
+                              "Unable to bind instrumentation descriptor set, it would override application's bound set");
+        return;
+    }
+
+    // There likely is only Push Constants (and BDA) used, but because the VkDescriptorSetLayout is using VK_EXT_descriptor_buffer,
+    // and GPU-AV requires using a previous vkCmdBindDescriptorBuffersEXT to inject our code, so we have to inject it ourselves
+    if (last_bound.GetDescriptorMode() == vvl::DescriptorModeUnknown) {
+        VkDescriptorBufferBindingInfoEXT binding_info = vku::InitStructHelper();
+        binding_info.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+        binding_info.address = gpuav.global_resource_descriptor_buffer_.Address();
+        DispatchCmdBindDescriptorBuffersEXT(cb_state.VkHandle(), 1, &binding_info);
+
+        cb_state.resource_descriptor_buffer_index_ = 0;
+    }
+
+    // Currently only DebugPrintf is using the Descriptor Buffer so we just put our information in front
+    const VkDeviceSize front_offset = 0;
+    DispatchCmdSetDescriptorBufferOffsetsEXT(cb_state.VkHandle(), last_bound.bind_point, bind_pipeline_layout_handle,
+                                             gpuav.instrumentation_desc_set_bind_index_, 1,
+                                             &cb_state.resource_descriptor_buffer_index_, &front_offset);
+
+    InstrumentationErrorBlob instrumentation_error_blob;
+    UpdateInstrumentationDescBuffer(gpuav, cb_state, last_bound, loc, instrumentation_error_blob);
+
+    // TODO - Add callback for non-DebugPrintf checks
+    (void)instrumentation_error_blob;
+}
+
+void PostCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBufferSubState &cb_state, const LastBound &last_bound) {
     if (!gpuav.gpuav_settings.IsSpirvModified()) {
         return;
     }
@@ -649,6 +703,13 @@ void PostCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBuffer
         return;
     }
 
+    if (last_bound.GetActionDescriptorMode() == vvl::DescriptorModeClassic) {
+        PostCallSetupShaderInstrumentationResourcesClassic(gpuav, cb_state, last_bound);
+    }
+}
+
+void PostCallSetupShaderInstrumentationResourcesClassic(Validator &gpuav, CommandBufferSubState &cb_state,
+                                                        const LastBound &last_bound) {
     // Only need to rebind application desc sets if they have been disturbed by GPU-AV binding its instrumentation desc set.
     // - Can happen if the pipeline layout used to bind instrumentation descriptor set is not compatible with the one used by the
     // app to bind the last/all the last desc set.
@@ -659,11 +720,11 @@ void PostCallSetupShaderInstrumentationResources(Validator &gpuav, CommandBuffer
 
         const bool any_disturbed_desc_sets_bindings =
             desc_set_bindings_counts_from_last_pipeline <
-            static_cast<uint32_t>(last_bound.desc_set_pipeline_layout->set_layouts.size());
+            static_cast<uint32_t>(last_bound.desc_set_pipeline_layout->set_layouts.list.size());
 
         if (any_disturbed_desc_sets_bindings) {
             const uint32_t disturbed_bindings_count = static_cast<uint32_t>(
-                last_bound.desc_set_pipeline_layout->set_layouts.size() - desc_set_bindings_counts_from_last_pipeline);
+                last_bound.desc_set_pipeline_layout->set_layouts.list.size() - desc_set_bindings_counts_from_last_pipeline);
             const uint32_t first_disturbed_set = desc_set_bindings_counts_from_last_pipeline;
 
             for (uint32_t set_i = 0; set_i < disturbed_bindings_count; ++set_i) {
@@ -692,7 +753,7 @@ bool LogMessageInstDescriptorIndexingOOB(Validator &gpuav, const CommandBufferSu
     std::ostringstream strm;
     const GpuVuid &vuid = GetGpuVuid(loc.function);
 
-    if (instrumentation_error_blob.descriptor_binding_index == vvl::kU32Max) {
+    if (instrumentation_error_blob.descriptor_binding_index == vvl::kNoIndex32) {
         assert(false);  // This means we have hit a situtation where there are no descriptors bound
         return false;
     }
@@ -767,7 +828,7 @@ bool LogMessageInstDescriptorClass(Validator &gpuav, const CommandBufferSubState
     std::ostringstream strm;
     const GpuVuid &vuid = GetGpuVuid(loc.function);
 
-    if (instrumentation_error_blob.descriptor_binding_index == vvl::kU32Max) {
+    if (instrumentation_error_blob.descriptor_binding_index == vvl::kNoIndex32) {
         assert(false);  // This means we have hit a situtation where there are no descriptors bound
         return false;
     }
@@ -789,7 +850,8 @@ bool LogMessageInstDescriptorClass(Validator &gpuav, const CommandBufferSubState
 
     const uint32_t error_sub_code = (error_record[kHeaderShaderIdErrorOffset] & kErrorSubCodeMask) >> kErrorSubCodeShift;
     switch (error_sub_code) {
-        case kErrorSubCodeDescriptorClassGeneralBufferBounds: {
+        case kErrorSubCodeDescriptorClassGeneralBufferBounds:
+        case kErrorSubCodeDescriptorClassGeneralBufferCoopMatBounds: {
             if (binding_state->descriptor_class != vvl::DescriptorClass::GeneralBuffer) {
                 assert(false);
                 return false;
@@ -806,6 +868,9 @@ bool LogMessageInstDescriptorClass(Validator &gpuav, const CommandBufferSubState
                 // This will only get called when using nullDescriptor without bindless
                 strm << "Trying to access a null descriptor, but vkUpdateDescriptorSets was not called with VK_NULL_HANDLE for "
                         "this descriptor. ";
+            }
+            if (error_sub_code == kErrorSubCodeDescriptorClassGeneralBufferCoopMatBounds) {
+                strm << "\nFor VK_KHR_cooperative_matrix this is invalid unless cooperativeMatrixRobustBufferAccess is enabled.";
             }
 
             if (binding_state->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
@@ -876,7 +941,7 @@ bool LogMessageInstBufferDeviceAddress(const uint32_t *error_record, std::string
                      << " corresponds to a full OpTypeStruct load. While not all members of the struct might be accessed, it is up "
                         "to the source language or tooling to detect that and reflect it in the SPIR-V.";
             }
-            out_vuid_msg = "UNASSIGNED-Device address out of bounds";
+            out_vuid_msg = "VUID-RuntimeSpirv-PhysicalStorageBuffer64-11819";
         } break;
         case kErrorSubCodeBufferDeviceAddressAlignment: {
             const char *access_type = is_write ? "OpStore" : "OpLoad";
@@ -993,27 +1058,27 @@ bool LogMessageInstIndexedDraw(Validator &gpuav, const uint32_t *error_record, s
 
     auto add_vertex_buffer_binding_info = [&gpuav, error_sub_code](const VertexAttributeFetchLimit &vertex_attribute_fetch_limit,
                                                                    std::string &out) {
-        out += "- Buffer: ";
+        out += "Vertex Buffer (";
         out += gpuav.FormatHandle(vertex_attribute_fetch_limit.binding_info.buffer);
-        out += '\n';
-        out += "- Binding: ";
+        out += ") binding info:\n";
+        out += "  - Binding: ";
         out += std::to_string(vertex_attribute_fetch_limit.attribute.binding);
         out += '\n';
-        out += "- Binding size (effective): ";
-        out += std::to_string(vertex_attribute_fetch_limit.binding_info.effective_size);
-        out += " bytes\n";
-        out += "- Binding offset: ";
+        out += "  - Offset: ";
         out += std::to_string(vertex_attribute_fetch_limit.binding_info.offset);
         out += " bytes\n";
-        out += "- Binding stride: ";
-        out += std::to_string(vertex_attribute_fetch_limit.binding_info.stride);
+        out += "  - Effective Size: ";
+        out += std::to_string(vertex_attribute_fetch_limit.binding_info.effective_size);
         out += " bytes\n";
-        out += "- Vertices count: ";
+        out += "  - Vertices Count: ";
         out += std::to_string(vertex_attribute_fetch_limit.max_vertex_attributes_count);
         out += '\n';
+        out += "  - Stride: ";
+        out += std::to_string(vertex_attribute_fetch_limit.binding_info.stride);
+        out += " bytes\n";
         if (error_sub_code == glsl::kErrorSubCode_IndexedDraw_OOBInstanceIndex) {
-            if (vertex_attribute_fetch_limit.instance_rate_divisor != vvl::kU32Max) {
-                out += "- Instance rate divisor: ";
+            if (vertex_attribute_fetch_limit.instance_rate_divisor != vvl::kNoIndex32) {
+                out += "  - Instance rate divisor: ";
                 out += std::to_string(vertex_attribute_fetch_limit.instance_rate_divisor);
                 out += '\n';
             }
@@ -1021,17 +1086,17 @@ bool LogMessageInstIndexedDraw(Validator &gpuav, const uint32_t *error_record, s
     };
 
     auto add_vertex_attribute_info = [](const VertexAttributeFetchLimit &vertex_attribute_fetch_limit, std::string &out) {
-        out += "At least the following vertex attribute caused OOB access:\n";
-        out += "- Location: ";
+        out += "The following VkVertexInputAttributeDescription caused OOB access:\n";
+        out += "  - Location: ";
         out += std::to_string(vertex_attribute_fetch_limit.attribute.location);
         out += '\n';
-        out += "- Binding: ";
+        out += "  - Binding: ";
         out += std::to_string(vertex_attribute_fetch_limit.attribute.binding);
         out += '\n';
-        out += "- Format: ";
+        out += "  - Format: ";
         out += string_VkFormat(vertex_attribute_fetch_limit.attribute.format);
         out += '\n';
-        out += "- Offset: ";
+        out += "  - Offset: ";
         out += std::to_string(vertex_attribute_fetch_limit.attribute.offset);
         out += " bytes\n";
     };
@@ -1046,7 +1111,7 @@ bool LogMessageInstIndexedDraw(Validator &gpuav, const uint32_t *error_record, s
         out_error_msg += std::to_string(oob_instance_index);
         const uint32_t instance_rate_divisor =
             inst_error_blob.vertex_attribute_fetch_limit_instance_input_rate->instance_rate_divisor;
-        if (instance_rate_divisor > 1 && instance_rate_divisor != vvl::kU32Max) {
+        if (instance_rate_divisor > 1 && instance_rate_divisor != vvl::kNoIndex32) {
             out_error_msg += " (or ";
             out_error_msg += std::to_string(oob_instance_index / instance_rate_divisor);
             out_error_msg += " if divided by instance rate divisor of ";
@@ -1055,15 +1120,18 @@ bool LogMessageInstIndexedDraw(Validator &gpuav, const uint32_t *error_record, s
         }
     }
 
-    out_error_msg += " is not within the smallest bound vertex buffer.\n";
+    if (error_sub_code == glsl::kErrorSubCode_IndexedDraw_OOBVertexIndex) {
+        out_error_msg += ", using VK_VERTEX_INPUT_RATE_VERTEX, has caused an OOB access within a bound vertex buffer.\n";
+
+    } else if (error_sub_code == glsl::kErrorSubCode_IndexedDraw_OOBInstanceIndex) {
+        out_error_msg += ", using VK_VERTEX_INPUT_RATE_INSTANCE, has caused an OOB access within a bound vertex buffer.\n";
+    }
 
     if (error_sub_code == glsl::kErrorSubCode_IndexedDraw_OOBVertexIndex) {
-        out_error_msg += "Smallest vertex buffer binding info, causing OOB access with VK_VERTEX_INPUT_RATE_VERTEX:\n";
         add_vertex_buffer_binding_info(*inst_error_blob.vertex_attribute_fetch_limit_vertex_input_rate, out_error_msg);
         add_vertex_attribute_info(*inst_error_blob.vertex_attribute_fetch_limit_vertex_input_rate, out_error_msg);
 
     } else if (error_sub_code == glsl::kErrorSubCode_IndexedDraw_OOBInstanceIndex) {
-        out_error_msg += "Smallest vertex buffer binding info, causing OOB access with VK_VERTEX_INPUT_RATE_INSTANCE:\n";
         add_vertex_buffer_binding_info(*inst_error_blob.vertex_attribute_fetch_limit_instance_input_rate, out_error_msg);
         add_vertex_attribute_info(*inst_error_blob.vertex_attribute_fetch_limit_instance_input_rate, out_error_msg);
     }
@@ -1072,29 +1140,74 @@ bool LogMessageInstIndexedDraw(Validator &gpuav, const uint32_t *error_record, s
         const uint32_t index_bits_size = GetIndexBitsSize(inst_error_blob.index_buffer_binding->index_type);
         const uint32_t max_indices_in_buffer =
             static_cast<uint32_t>(inst_error_blob.index_buffer_binding->size / (index_bits_size / 8u));
-        out_error_msg += "Index buffer binding info:\n";
-        out_error_msg += "- Buffer: ";
+        out_error_msg += "Index Buffer (";
         out_error_msg += gpuav.FormatHandle(inst_error_blob.index_buffer_binding->buffer);
-        out_error_msg += '\n';
-        out_error_msg += "- Index type: ";
+        out_error_msg += ") binding info:\n";
+        out_error_msg += "  - Type: ";
         out_error_msg += string_VkIndexType(inst_error_blob.index_buffer_binding->index_type);
         out_error_msg += '\n';
-        out_error_msg += "- Binding offset: ";
+        out_error_msg += "  - Offset: ";
         out_error_msg += std::to_string(inst_error_blob.index_buffer_binding->offset);
         out_error_msg += " bytes\n";
-        out_error_msg += "- Binding size: ";
+        out_error_msg += "  - Size: ";
         out_error_msg += std::to_string(inst_error_blob.index_buffer_binding->size);
-        out_error_msg += " bytes (or ";
-        out_error_msg += std::to_string(max_indices_in_buffer);
-        out_error_msg += ' ';
+        out_error_msg += " bytes (sizeof(";
         out_error_msg += string_VkIndexType(inst_error_blob.index_buffer_binding->index_type);
+        out_error_msg += ") * ";
+        out_error_msg += std::to_string(max_indices_in_buffer);
         out_error_msg += ")\n";
     }
     out_error_msg +=
         "Note: Vertex buffer binding size is the effective, valid one, based on how the VkBuffer was created and "
-        "vertex buffer binding parameters. So it can be clamped up to 0 if binding was invalid.";
+        "the vkCmdBindVertexBuffers parameters. So it can be clamped up to 0 if binding was invalid.";
 
     return true;
+}
+
+static std::string GetSpirvSpecLink(const uint32_t opcode) {
+    // Currently the Working Group decided to not provide "real" VUIDs as it would become duplicating the SPIR-V spec
+    // So these are not "UNASSIGNED", but instead are "SPIRV" VUs because we can point to the instruction in the SPIR-V spec
+    // (https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/7853)
+    return "\nSee more at https://registry.khronos.org/SPIR-V/specs/unified1/SPIRV.html#" + std::string(string_SpvOpcode(opcode));
+}
+
+bool LogMessageInstSanitizer(const uint32_t *error_record, std::string &out_error_msg, std::string &out_vuid_msg) {
+    using namespace glsl;
+    bool error_found = true;
+    std::ostringstream strm;
+
+    const uint32_t error_sub_code = (error_record[kHeaderShaderIdErrorOffset] & kErrorSubCodeMask) >> kErrorSubCodeShift;
+    switch (error_sub_code) {
+        case kErrorSubCodeSanitizerDivideZero: {
+            const uint32_t opcode = error_record[kInstLogErrorParameterOffset_0];
+            const uint32_t vector_size = error_record[kInstLogErrorParameterOffset_1];
+            strm << "Integer divide by zero. Operand 2 of " << string_SpvOpcode(opcode) << " is ";
+            if (vector_size == 0) {
+                strm << "zero";
+            } else {
+                strm << "a " << vector_size << "-wide vector which contains a zero value";
+            }
+            strm << GetSpirvSpecLink(opcode);
+            out_vuid_msg = "SPIRV-Sanitizer-Divide-By-Zero";
+        } break;
+        case kErrorSubCodeSanitizerImageGather: {
+            const uint32_t component_value = error_record[kInstLogErrorParameterOffset_0];
+            const int32_t signed_value = (int32_t)component_value;
+            strm << "OpImageGather has a component value of ";
+            if (signed_value > 0) {
+                strm << component_value;
+            } else {
+                strm << signed_value;
+            }
+            strm << ", but it must be 0, 1, 2, or 3" << GetSpirvSpecLink(spv::OpImageGather);
+            out_vuid_msg = "SPIRV-Sanitizer-Image-Gather";
+        } break;
+        default:
+            error_found = false;
+            break;
+    }
+    out_error_msg += strm.str();
+    return error_found;
 }
 
 // Pull together all the information from the debug record to build the error message strings,
@@ -1105,9 +1218,8 @@ bool LogMessageInstIndexedDraw(Validator &gpuav, const uint32_t *error_record, s
 // keeps a copy, but it can be destroyed after the pipeline is created and before it is submitted.)
 //
 bool LogInstrumentationError(Validator &gpuav, const CommandBufferSubState &cb_state, const LogObjectList &objlist,
-                             const InstrumentationErrorBlob &instrumentation_error_blob,
-                             const std::vector<std::string> &initial_label_stack, const uint32_t *error_record,
-                             const Location &loc) {
+                             const InstrumentationErrorBlob &instrumentation_error_blob, const uint32_t *error_record,
+                             const Location &loc_with_debug_region) {
     // The second word in the debug output buffer is the number of words that would have
     // been written by the shader instrumentation, if there was enough room in the buffer we provided.
     // The number of words actually written by the shaders is determined by the size of the buffer
@@ -1124,12 +1236,12 @@ bool LogInstrumentationError(Validator &gpuav, const CommandBufferSubState &cb_s
     const uint32_t error_group = error_record[glsl::kHeaderShaderIdErrorOffset] >> glsl::kErrorGroupShift;
     switch (error_group) {
         case glsl::kErrorGroupInstDescriptorIndexingOOB:
-            error_found = LogMessageInstDescriptorIndexingOOB(gpuav, cb_state, error_record, error_msg, vuid_msg, loc,
-                                                              instrumentation_error_blob);
+            error_found = LogMessageInstDescriptorIndexingOOB(gpuav, cb_state, error_record, error_msg, vuid_msg,
+                                                              loc_with_debug_region, instrumentation_error_blob);
             break;
         case glsl::kErrorGroupInstDescriptorClass:
-            error_found =
-                LogMessageInstDescriptorClass(gpuav, cb_state, error_record, error_msg, vuid_msg, loc, instrumentation_error_blob);
+            error_found = LogMessageInstDescriptorClass(gpuav, cb_state, error_record, error_msg, vuid_msg, loc_with_debug_region,
+                                                        instrumentation_error_blob);
             break;
         case glsl::kErrorGroupInstBufferDeviceAddress:
             error_found = LogMessageInstBufferDeviceAddress(error_record, error_msg, vuid_msg);
@@ -1138,7 +1250,11 @@ bool LogInstrumentationError(Validator &gpuav, const CommandBufferSubState &cb_s
             error_found = LogMessageInstRayQuery(error_record, error_msg, vuid_msg);
             break;
         case glsl::kErrorGroupInstIndexedDraw:
-            error_found = LogMessageInstIndexedDraw(gpuav, error_record, error_msg, vuid_msg, loc, instrumentation_error_blob);
+            error_found = LogMessageInstIndexedDraw(gpuav, error_record, error_msg, vuid_msg, loc_with_debug_region,
+                                                    instrumentation_error_blob);
+            break;
+        case glsl::kErrorGroupInstSanitizer:
+            error_found = LogMessageInstSanitizer(error_record, error_msg, vuid_msg);
             break;
         default:
             break;
@@ -1154,10 +1270,6 @@ bool LogInstrumentationError(Validator &gpuav, const CommandBufferSubState &cb_s
             instrumented_shader = &it->second;
         }
 
-        std::string debug_region_name =
-            cb_state.GetDebugLabelRegion(instrumentation_error_blob.label_command_i, initial_label_stack);
-        Location loc_with_debug_region(loc, debug_region_name);
-
         const uint32_t stage_id = error_record[glsl::kHeaderStageInstructionIdOffset] >> glsl::kStageIdShift;
         const uint32_t instruction_position_offset = error_record[glsl::kHeaderStageInstructionIdOffset] & glsl::kInstructionIdMask;
         GpuShaderInstrumentor::ShaderMessageInfo shader_info{stage_id,
@@ -1168,7 +1280,7 @@ bool LogInstrumentationError(Validator &gpuav, const CommandBufferSubState &cb_s
                                                              shader_id};
         std::string debug_info_message = gpuav.GenerateDebugInfoMessage(cb_state.VkHandle(), shader_info, instrumented_shader,
                                                                         instrumentation_error_blob.pipeline_bind_point,
-                                                                        instrumentation_error_blob.action_command_i);
+                                                                        instrumentation_error_blob.action_command_index);
 
         gpuav.LogError(vuid_msg.c_str(), objlist, loc_with_debug_region, "%s\n%s", error_msg.c_str(), debug_info_message.c_str());
     }

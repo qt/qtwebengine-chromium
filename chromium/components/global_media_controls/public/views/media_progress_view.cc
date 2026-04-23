@@ -11,6 +11,7 @@
 #include "components/strings/grit/components_strings.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
 #include "third_party/skia/include/core/SkPath.h"
+#include "third_party/skia/include/core/SkPathBuilder.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -133,12 +134,12 @@ MediaProgressView::~MediaProgressView() = default;
 void MediaProgressView::AnimationProgressed(const gfx::Animation* animation) {
   if (animation == &slide_animation_) {
     progress_amp_fraction_ = animation->GetCurrentValue();
-    OnPropertyChanged(&progress_amp_fraction_, views::kPropertyEffectsPaint);
+    OnPropertyChanged(&progress_amp_fraction_, views::PropertyEffects::kPaint);
   } else if (animation == &thickness_animation_) {
     straight_progress_stroke_width_ =
         animation->CurrentValueBetween(kStrokeWidth, kLargeStrokeWidth);
     OnPropertyChanged(&straight_progress_stroke_width_,
-                      views::kPropertyEffectsPaint);
+                      views::PropertyEffects::kPaint);
   }
 }
 
@@ -202,7 +203,7 @@ void MediaProgressView::OnPaint(gfx::Canvas* canvas) {
     // Create a foreground squiggly progress path longer than the required
     // length and truncate it later in canvas. If the media is paused, this will
     // become a straight line.
-    SkPath progress_path;
+    SkPathBuilder progress_path;
     int current_x = -phase_offset_ - kProgressWavelength / 2;
     int current_amp =
         static_cast<int>(kProgressAmplitude * progress_amp_fraction_);
@@ -220,7 +221,7 @@ void MediaProgressView::OnPaint(gfx::Canvas* canvas) {
 
     // Paint the foreground squiggly progress in a clipped rect.
     canvas->ClipRect(gfx::Rect(0, 0, progress_width, view_height));
-    canvas->DrawPath(progress_path, flags);
+    canvas->DrawPath(progress_path.detach(), flags);
   } else {
     // Paint the foreground straight progress line with rounded corners.
     flags.setStyle(cc::PaintFlags::kFill_Style);
@@ -438,7 +439,7 @@ void MediaProgressView::UpdateProgress(
   if (new_value != current_value_) {
     current_value_ = new_value;
     MaybeNotifyAccessibilityValueChanged();
-    OnPropertyChanged(&current_value_, views::kPropertyEffectsPaint);
+    OnPropertyChanged(&current_value_, views::PropertyEffects::kPaint);
   }
 
   if (!is_paused_) {
@@ -448,7 +449,7 @@ void MediaProgressView::UpdateProgress(
           static_cast<int>(kProgressUpdateFrequency.InMillisecondsF() / 1000 *
                            kProgressPhaseSpeed);
       phase_offset_ %= kProgressWavelength;
-      OnPropertyChanged(&phase_offset_, views::kPropertyEffectsPaint);
+      OnPropertyChanged(&phase_offset_, views::PropertyEffects::kPaint);
     }
 
     update_progress_timer_->Start(

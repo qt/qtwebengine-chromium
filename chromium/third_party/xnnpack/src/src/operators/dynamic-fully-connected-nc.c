@@ -190,7 +190,7 @@ enum xnn_status create_dynamic_fully_connected_nc_f16(
 
   return create_dynamic_fully_connected_nc(
       flags,
-      /*log2_input_element_size=*/XNN_LOG2_SIZEOF_HALF, &params, sizeof(params),
+      /*log2_input_element_size=*/XNN_LOG2_SIZEOF_FLOAT16, &params, sizeof(params),
       &params, sizeof(params), gemm_config, &gemm_config->minmax,
       /*gemm_nr2_config=*/NULL, /*gemm_nr2_ukernels=*/NULL,
       expected_operator_type, dynamic_fully_connected_op_out);
@@ -408,19 +408,17 @@ static enum xnn_status reshape_dynamic_fully_connected_nc(
 
   struct xnn_ukernel_gemm* ukernel =
       &dynamic_fully_connected_op->ukernel.gemm_ukernels->gemm;
-  bool use_gemm_nr2 = false;
-  if (ukernel->nr > output_channels) {
-    uint32_t gemm_nr2_mr =
-        dynamic_fully_connected_op->ukernel.gemm_ukernels->gemm_nr2.mr;
-    // Default microkernel is suboptimal, use a microkernel that better supports
-    // less output channels.
-    if (gemm_nr2_mr != 0 &&
-        dynamic_fully_connected_op->ukernel.gemm_ukernels->gemm_nr2
-                .gemm_cases[gemm_nr2_mr - 1]
-                .function[XNN_UARCH_DEFAULT] != NULL) {
-      use_gemm_nr2 = true;
-      ukernel = &dynamic_fully_connected_op->ukernel.gemm_ukernels->gemm_nr2;
-    }
+  struct xnn_ukernel_gemm* ukernel_nr2 =
+      &dynamic_fully_connected_op->ukernel.gemm_ukernels->gemm_nr2;
+  bool use_gemm_nr2 =
+      ukernel_nr2->nr != 0 &&
+      ukernel_nr2->gemm_cases[ukernel_nr2->mr - 1]
+              .function[XNN_UARCH_DEFAULT] != NULL &&
+      xnn_use_nr2(ukernel->nr, ukernel_nr2->nr, output_channels);
+  if (use_gemm_nr2) {
+    xnn_log_debug("Using `nr2` GEMM config for %s operator.",
+                  xnn_operator_type_to_string_v2(dynamic_fully_connected_op));
+    ukernel = ukernel_nr2;
   }
 
   const uint32_t nr = ukernel->nr;
@@ -577,8 +575,8 @@ static enum xnn_status reshape_dynamic_fully_connected_nc(
             batch_size, output_channels, input_channels,
             !should_inline_lhs_packing
                 ? "packed lhs will likely not stay in cache"
-                : "batch size does not parallelize "
-                  "well over the number of threads");
+                : "batch size does not parallelize well over the number of "
+                  "threads");
 
         // Allocate a workspace for the entire LHS.
         *workspace_size =
@@ -721,10 +719,10 @@ enum xnn_status xnn_reshape_dynamic_fully_connected_nc_f16(
       xnn_operator_type_dynamic_fully_connected_nc_f16, batch_size,
       input_channels, output_channels, input_stride, output_stride,
       workspace_size,
-      /*log2_input_element_size=*/XNN_LOG2_SIZEOF_HALF,
-      /*log2_filter_element_size=*/XNN_LOG2_SIZEOF_HALF,
+      /*log2_input_element_size=*/XNN_LOG2_SIZEOF_FLOAT16,
+      /*log2_filter_element_size=*/XNN_LOG2_SIZEOF_FLOAT16,
       /*bias_element_size=*/sizeof(uint16_t),
-      /*log2_output_element_size=*/XNN_LOG2_SIZEOF_HALF,
+      /*log2_output_element_size=*/XNN_LOG2_SIZEOF_FLOAT16,
       &dynamic_fully_connected_op->params.f16_minmax,
       sizeof(dynamic_fully_connected_op->params.f16_minmax),
       &dynamic_fully_connected_op->params.f16_minmax,
@@ -740,10 +738,10 @@ enum xnn_status xnn_reshape_dynamic_fully_connected_nc_pf16(
       xnn_operator_type_dynamic_fully_connected_nc_pf16, batch_size,
       input_channels, output_channels, input_stride, output_stride,
       workspace_size,
-      /*log2_input_element_size=*/XNN_LOG2_SIZEOF_HALF,
-      /*log2_filter_element_size=*/XNN_LOG2_SIZEOF_HALF,
+      /*log2_input_element_size=*/XNN_LOG2_SIZEOF_FLOAT16,
+      /*log2_filter_element_size=*/XNN_LOG2_SIZEOF_FLOAT16,
       /*bias_element_size=*/sizeof(uint16_t),
-      /*log2_output_element_size=*/XNN_LOG2_SIZEOF_HALF,
+      /*log2_output_element_size=*/XNN_LOG2_SIZEOF_FLOAT16,
       &dynamic_fully_connected_op->params.f16_minmax,
       sizeof(dynamic_fully_connected_op->params.f16_minmax),
       &dynamic_fully_connected_op->params.f16_minmax,

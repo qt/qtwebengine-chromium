@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as VisualLogging from '../visual_logging/visual_logging.js';
@@ -33,7 +33,6 @@ export class Dialog extends Common.ObjectWrapper.eventMixin<EventTypes, typeof G
       this.contentElement.setAttribute(
           'jslog', `${VisualLogging.dialog(jslogContext).track({resize: true, keydown: 'Escape'})}`);
     }
-    this.widget().setDefaultFocusedElement(this.contentElement);
     this.setPointerEventsBehavior(PointerEventsBehavior.BLOCKED_BY_GLASS_PANE);
     this.setOutsideClickCallback(event => {
       // If there are stacked dialogs, we only want to

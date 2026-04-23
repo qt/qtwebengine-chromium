@@ -54,10 +54,6 @@ const UIStrings = {
    */
   showMessagesFromAllContexts: 'Show messages from all contexts',
   /**
-   * @description Title of a setting under the Console category in Settings
-   */
-  logXmlhttprequests: 'Log XMLHttpRequests',
-  /**
    * @description Title of a setting under the Console category
    */
   timestamps: 'Timestamps',
@@ -133,6 +129,11 @@ const UIStrings = {
    * @description Title of a setting under the Console category in Settings that controls whether `console.trace()` messages appear collapsed by default.
    */
   collapseConsoleTraceMessagesByDefault: 'Do not automatically expand `console.trace()` messages',
+  /**
+   * @description Title of a setting under the Console category in Settings that controls whether AI summaries should
+   * be shown for console warnings/errors.
+   */
+  showConsoleInsightTeasers: 'Show AI summaries for console messages',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/console/console-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -276,15 +277,6 @@ Common.Settings.registerSettingExtension({
       title: i18nLazyString(UIStrings.showMessagesFromAllContexts),
     },
   ],
-});
-
-Common.Settings.registerSettingExtension({
-  category: Common.Settings.SettingCategory.CONSOLE,
-  storageType: Common.Settings.SettingStorageType.SYNCED,
-  title: i18nLazyString(UIStrings.logXmlhttprequests),
-  settingName: 'monitoring-xhr-enabled',
-  settingType: Common.Settings.SettingType.BOOLEAN,
-  defaultValue: false,
 });
 
 Common.Settings.registerSettingExtension({
@@ -435,6 +427,15 @@ Common.Settings.registerSettingExtension({
       title: i18nLazyString(UIStrings.collapseConsoleTraceMessagesByDefault),
     },
   ],
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.CONSOLE,
+  storageType: Common.Settings.SettingStorageType.SYNCED,
+  title: i18nLazyString(UIStrings.showConsoleInsightTeasers),
+  settingName: 'console-insight-teasers-enabled',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
 });
 
 Common.Revealer.registerRevealer({

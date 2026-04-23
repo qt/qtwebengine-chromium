@@ -85,7 +85,40 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   /* size unmodified to avoid unexpected performance implications. */       \
   /* It should be removed. */
 
-#ifdef V8_ENABLE_LEAPTIERING
+#define LOAD_IC_IN_OBJECT_FIELD_WITH_INDEX_HANDLER_LIST(V, GENERATE_MACRO) \
+  GENERATE_MACRO(V, InObject, NonDouble, Field, 0)                         \
+  GENERATE_MACRO(V, InObject, NonDouble, Field, 1)                         \
+  GENERATE_MACRO(V, InObject, NonDouble, Field, 2)                         \
+  GENERATE_MACRO(V, InObject, NonDouble, Field, 3)                         \
+  GENERATE_MACRO(V, InObject, NonDouble, Field, 4)                         \
+  GENERATE_MACRO(V, InObject, NonDouble, Field, 5)                         \
+  GENERATE_MACRO(V, InObject, NonDouble, Field, 6)                         \
+  GENERATE_MACRO(V, InObject, NonDouble, Field, 7)
+
+#define LOAD_IC_OUT_OF_OBJECT_FIELD_WITH_INDEX_HANDLER_LIST(V, GENERATE_MACRO) \
+  GENERATE_MACRO(V, OutOfObject, NonDouble, Field, 0)                          \
+  GENERATE_MACRO(V, OutOfObject, NonDouble, Field, 1)                          \
+  GENERATE_MACRO(V, OutOfObject, NonDouble, Field, 2)                          \
+  GENERATE_MACRO(V, OutOfObject, NonDouble, Field, 3)
+
+#define LOAD_IC_HANDLER_LIST(V, GENERATE_MACRO)                              \
+  GENERATE_MACRO(V, /*Location*/, /*Representation*/, Uninitialized,         \
+                 /*Index*/)                                                  \
+  GENERATE_MACRO(V, InObject, NonDouble, Field, /*Index*/)                   \
+  LOAD_IC_IN_OBJECT_FIELD_WITH_INDEX_HANDLER_LIST(V, GENERATE_MACRO)         \
+  GENERATE_MACRO(V, OutOfObject, NonDouble, Field, /*Index*/)                \
+  LOAD_IC_OUT_OF_OBJECT_FIELD_WITH_INDEX_HANDLER_LIST(V, GENERATE_MACRO)     \
+  GENERATE_MACRO(V, /*Location*/, Double, Field, /*Index*/)                  \
+  GENERATE_MACRO(V, /*Location*/, /*Representation*/, ConstantFromPrototype, \
+                 /*Index*/)                                                  \
+  GENERATE_MACRO(V, /*Location*/, /*Representation*/, Generic, /*Index*/)
+
+#define GENERATE_BUILTIN_LOAD_IC_DEFINITION(V, Location, Representation, Kind, \
+                                            Index)                             \
+  V(LoadIC##Location##Representation##Kind##Index##Baseline, LoadBaseline)
+
+#define BUILTIN_LOAD_IC_HANDLER_LIST(V) \
+  LOAD_IC_HANDLER_LIST(V, GENERATE_BUILTIN_LOAD_IC_DEFINITION)
 
 /* Tiering related builtins
  *
@@ -116,14 +149,6 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   TFC(FunctionLogNextExecution, JSTrampoline)      \
   TFC(MarkReoptimizeLazyDeoptimized, JSTrampoline) \
   TFC(MarkLazyDeoptimized, JSTrampoline)
-
-#else
-
-#define BUILTIN_LIST_BASE_TIERING(TFC)                       \
-  /* TODO(saelo): should this use a different descriptor? */ \
-  TFC(CompileLazyDeoptimizedCode, JSTrampoline)
-
-#endif
 
 #define BUILTIN_LIST_BASE_TIER1(CPP, TFJ_TSA, TFJ, TFC_TSA, TFC, TFS, TFH,     \
                                 ASM)                                           \
@@ -777,7 +802,7 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   TFH(LoadIC_Megamorphic, LoadWithVector)                                      \
   TFH(LoadIC_Noninlined, LoadWithVector)                                       \
   TFH(LoadICTrampoline, Load)                                                  \
-  TFH(LoadICBaseline, LoadBaseline)                                            \
+  BUILTIN_LOAD_IC_HANDLER_LIST(TFH)                                            \
   TFH(LoadICTrampoline_Megamorphic, Load)                                      \
   TFH(LoadSuperIC, LoadWithReceiverAndVector)                                  \
   TFH(LoadSuperICBaseline, LoadWithReceiverBaseline)                           \
@@ -866,6 +891,10 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   TFJ(MapPrototypeGet, kJSArgcReceiverSlots + 1, kReceiver, kKey)              \
   TFJ(MapPrototypeHas, kJSArgcReceiverSlots + 1, kReceiver, kKey)              \
   CPP(MapPrototypeClear, JSParameterCount(0))                                  \
+  TFJ(MapPrototypeGetOrInsert, kJSArgcReceiverSlots + 2, kReceiver, kKey,      \
+      kValue)                                                                  \
+  TFJ(MapPrototypeGetOrInsertComputed, kJSArgcReceiverSlots + 2, kReceiver,    \
+      kKey, kCallbackfn)                                                       \
   /* ES #sec-map.prototype.entries */                                          \
   TFJ(MapPrototypeEntries, kJSArgcReceiverSlots, kReceiver)                    \
   /* ES #sec-get-map.prototype.size */                                         \
@@ -936,14 +965,14 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
                                                                                \
   /* Compare ops with feedback collection */                                   \
   TFC(Equal_Baseline, Compare_Baseline)                                        \
-  TFC(StrictEqual_Baseline, Compare_Baseline)                                  \
+  TFC(StrictEqual_Baseline, Compare_WithEmbeddedFeedbackOffset)                \
   TFC(LessThan_Baseline, Compare_Baseline)                                     \
   TFC(GreaterThan_Baseline, Compare_Baseline)                                  \
   TFC(LessThanOrEqual_Baseline, Compare_Baseline)                              \
   TFC(GreaterThanOrEqual_Baseline, Compare_Baseline)                           \
                                                                                \
   TFC(Equal_WithFeedback, Compare_WithFeedback)                                \
-  TFC(StrictEqual_WithFeedback, Compare_WithFeedback)                          \
+  TFC(StrictEqual_WithEmbeddedFeedback, Compare_WithEmbeddedFeedback)          \
   TFC(LessThan_WithFeedback, Compare_WithFeedback)                             \
   TFC(GreaterThan_WithFeedback, Compare_WithFeedback)                          \
   TFC(LessThanOrEqual_WithFeedback, Compare_WithFeedback)                      \
@@ -1385,6 +1414,7 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   IF_WASM(ASM, WasmSuspend, WasmSuspend)                                       \
   IF_WASM(ASM, WasmResume, JSTrampoline)                                       \
   IF_WASM(ASM, WasmFXResume, WasmFXResume)                                     \
+  IF_WASM(ASM, WasmFXSuspend, WasmFXSuspend)                                   \
   IF_WASM(ASM, WasmFXReturn, WasmFXReturn)                                     \
   IF_WASM(ASM, WasmReject, JSTrampoline)                                       \
   IF_WASM(ASM, WasmTrapHandlerLandingPad, WasmDummy)                           \
@@ -1401,9 +1431,13 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   /* WeakMap */                                                                \
   TFJ(WeakMapConstructor, kDontAdaptArgumentsSentinel)                         \
   TFS(WeakMapLookupHashIndex, NeedsContext::kYes, kTable, kKey)                \
-  TFJ(WeakMapGet, kJSArgcReceiverSlots + 1, kReceiver, kKey)                   \
+  TFJ(WeakMapPrototypeGet, kJSArgcReceiverSlots + 1, kReceiver, kKey)          \
   TFJ(WeakMapPrototypeHas, kJSArgcReceiverSlots + 1, kReceiver, kKey)          \
   TFJ(WeakMapPrototypeSet, kJSArgcReceiverSlots + 2, kReceiver, kKey, kValue)  \
+  TFJ(WeakMapPrototypeGetOrInsert, kJSArgcReceiverSlots + 2, kReceiver, kKey,  \
+      kValue)                                                                  \
+  TFJ(WeakMapPrototypeGetOrInsertComputed, kJSArgcReceiverSlots + 2,           \
+      kReceiver, kKey, kCallbackfn)                                            \
   TFJ(WeakMapPrototypeDelete, kJSArgcReceiverSlots + 1, kReceiver, kKey)       \
                                                                                \
   /* WeakSet */                                                                \
@@ -1426,17 +1460,12 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   CPP(AtomicsMutexConstructor, JSParameterCount(0))                            \
   CPP(AtomicsMutexIsMutex, JSParameterCount(1))                                \
   CPP(AtomicsMutexLock, JSParameterCount(2))                                   \
-  CPP(AtomicsMutexLockAsync, JSParameterCount(2))                              \
   CPP(AtomicsMutexLockWithTimeout, JSParameterCount(3))                        \
   CPP(AtomicsMutexTryLock, JSParameterCount(2))                                \
-  CPP(AtomicsMutexAsyncUnlockResolveHandler, JSParameterCount(1))              \
-  CPP(AtomicsMutexAsyncUnlockRejectHandler, JSParameterCount(1))               \
   CPP(AtomicsConditionConstructor, JSParameterCount(0))                        \
-  CPP(AtomicsConditionAcquireLock, JSParameterCount(0))                        \
   CPP(AtomicsConditionIsCondition, JSParameterCount(1))                        \
   CPP(AtomicsConditionWait, kDontAdaptArgumentsSentinel)                       \
   CPP(AtomicsConditionNotify, kDontAdaptArgumentsSentinel)                     \
-  CPP(AtomicsConditionWaitAsync, kDontAdaptArgumentsSentinel)                  \
                                                                                \
   /* AsyncGenerator */                                                         \
                                                                                \
@@ -2162,6 +2191,8 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   CPP(LocalePrototypeTimeZones, JSParameterCount(0))                           \
   /* ecma402 #sec-Intl.Locale.prototype.toString */                            \
   CPP(LocalePrototypeToString, kDontAdaptArgumentsSentinel)                    \
+  /* ecma402 #sec-Intl.Locale.prototype.variants */                            \
+  CPP(LocalePrototypeVariants, JSParameterCount(0))                            \
   /* ecma402 #sec-Intl.Locale.prototype.weekInfo */                            \
   CPP(LocalePrototypeWeekInfo, JSParameterCount(0))                            \
   /* ecma402 #sec-intl.numberformat */                                         \

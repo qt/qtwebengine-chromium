@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import logging
 import shlex
-from typing import (TYPE_CHECKING, Any, ClassVar, Final, Iterable, Optional,
-                    Self, Sequence, cast)
+from typing import TYPE_CHECKING, Any, ClassVar, Final, Iterable, Optional, \
+    Self, Sequence, cast
 
 from typing_extensions import override
 
@@ -16,13 +16,13 @@ from crossbench import plt
 from crossbench.browsers.chromium_based.chromium_based import ChromiumBased
 from crossbench.helper import fs_helper
 from crossbench.parse import NumberParser, ObjectParser
-from crossbench.probes.probe import (Probe, ProbeConfigParser,
-                                     ProbeIncompatibleBrowser, ProbeKeyT)
+from crossbench.probes.probe import Probe, ProbeConfigParser, \
+    ProbeIncompatibleBrowser, ProbeKeyT
 from crossbench.probes.profiling.context.android import AndroidProfilingContext
 from crossbench.probes.profiling.context.linux import LinuxProfilingContext
 from crossbench.probes.profiling.context.macos import MacOSProfilingContext
-from crossbench.probes.profiling.enum import (CallGraphMode, CleanupMode,
-                                              TargetMode)
+from crossbench.probes.profiling.enum import CallGraphMode, CleanupMode, \
+    TargetMode
 from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
@@ -31,7 +31,6 @@ if TYPE_CHECKING:
   from crossbench.probes.profiling.context.base import ProfilingContext
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.run import Run
-
 
 V8_INTERPRETED_FRAMES_FLAG: Final = "--interpreted-frames-native-stack"
 RENDERER_CMD_PATH: Final = pth.LocalPath(

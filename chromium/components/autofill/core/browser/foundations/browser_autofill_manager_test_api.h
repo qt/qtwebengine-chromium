@@ -23,7 +23,6 @@
 #include "components/autofill/core/browser/payments/bnpl_manager.h"
 #include "components/autofill/core/browser/payments/credit_card_access_manager.h"
 #include "components/autofill/core/browser/single_field_fillers/single_field_fill_router.h"
-#include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace autofill {
@@ -53,12 +52,9 @@ class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
         .form_interactions_flow_id_for_test();
   }
 
-  autofill_metrics::CreditCardFormEventLogger* credit_card_form_event_logger() {
-    return &manager_->metrics_->credit_card_form_event_logger;
-  }
-
-  autofill_metrics::OtpFormEventLogger* get_otp_form_event_logger() {
-    return &manager_->metrics_->otp_form_event_logger;
+  FormInteractionsFlowId otp_form_interactions_flow_id() const {
+    return manager_->metrics_->otp_form_event_logger
+        .form_interactions_flow_id_for_test();
   }
 
   void set_credit_card_access_manager(
@@ -83,12 +79,6 @@ class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
   void SetFourDigitCombinationsInDOM(
       const std::vector<std::string>& combinations) {
     manager_->four_digit_combinations_in_dom_ = combinations;
-  }
-
-  void SetConsiderFormAsSecureForTesting(
-      std::optional<bool> consider_form_as_secure_for_testing) {
-    manager_->consider_form_as_secure_for_testing_ =
-        consider_form_as_secure_for_testing;
   }
 
   FormFiller& form_filler() { return *manager_->form_filler_; }

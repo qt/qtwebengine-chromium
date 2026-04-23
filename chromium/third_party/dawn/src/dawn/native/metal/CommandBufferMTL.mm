@@ -865,7 +865,7 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
                     DAWN_CHECK(false);
                 },
                 [](const InputAttachmentBindingInfo&) { DAWN_CHECK(false); },
-                [](const ExternalTextureBindingInfo&) { DAWN_UNREACHABLE(); });
+                [](const ExternalTextureBindingInfo&) { DAWN_CHECK(false); });
         }
 
         uint32_t offset_size = uint32_t(dynamicOffsets.size());
@@ -1236,8 +1236,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
 
             case Command::CopyBufferToTexture: {
                 CopyBufferToTextureCmd* copy = mCommands.NextCommand<CopyBufferToTextureCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -1246,23 +1245,25 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 auto& copySize = copy->copySize;
                 Buffer* buffer = ToBackend(src.buffer.Get());
                 Texture* texture = ToBackend(dst.texture.Get());
+                const TypedTexelBlockInfo& blockInfo = GetBlockInfo(dst);
 
                 buffer->EnsureDataInitialized(commandContext);
-                DAWN_TRY(
-                    EnsureDestinationTextureInitialized(commandContext, texture, dst, copySize));
+                DAWN_TRY(EnsureDestinationTextureInitialized(commandContext, texture, dst,
+                                                             copySize.ToExtent3D()));
 
                 buffer->TrackUsage();
                 texture->SynchronizeTextureBeforeUse(commandContext);
                 RecordCopyBufferToTexture(commandContext, buffer->GetMTLBuffer(), buffer->GetSize(),
-                                          src.offset, src.bytesPerRow, src.rowsPerImage, texture,
-                                          dst.mipLevel, dst.origin, dst.aspect, copySize);
+                                          src.offset, blockInfo.ToBytes(src.blocksPerRow),
+                                          static_cast<uint32_t>(src.rowsPerImage), texture,
+                                          dst.mipLevel, dst.origin.ToOrigin3D(), dst.aspect,
+                                          copySize.ToExtent3D());
                 break;
             }
 
             case Command::CopyTextureToBuffer: {
                 CopyTextureToBufferCmd* copy = mCommands.NextCommand<CopyTextureToBufferCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -1271,6 +1272,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 auto& copySize = copy->copySize;
                 Texture* texture = ToBackend(src.texture.Get());
                 Buffer* buffer = ToBackend(dst.buffer.Get());
+                const TypedTexelBlockInfo& blockInfo = GetBlockInfo(src);
 
                 buffer->EnsureDataInitializedAsDestination(commandContext, copy);
 
@@ -1280,8 +1282,9 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 buffer->TrackUsage();
 
                 TextureBufferCopySplit splitCopies = ComputeTextureBufferCopySplit(
-                    texture, src.mipLevel, src.origin, copySize, buffer->GetSize(), dst.offset,
-                    dst.bytesPerRow, dst.rowsPerImage, src.aspect);
+                    texture, src.mipLevel, src.origin.ToOrigin3D(), copySize.ToExtent3D(),
+                    buffer->GetSize(), dst.offset, blockInfo.ToBytes(dst.blocksPerRow),
+                    static_cast<uint32_t>(dst.rowsPerImage), src.aspect);
 
                 for (const auto& copyInfo : splitCopies) {
                     MTLBlitOption blitOption = texture->ComputeMTLBlitOption(src.aspect);
@@ -1358,8 +1361,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
 
             case Command::CopyTextureToTexture: {
                 CopyTextureToTextureCmd* copy = mCommands.NextCommand<CopyTextureToTextureCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -1370,11 +1372,12 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 dstTexture->SynchronizeTextureBeforeUse(commandContext);
                 DAWN_TRY(srcTexture->EnsureSubresourceContentInitialized(
                     commandContext, GetSubresourcesAffectedByCopy(copy->source, copy->copySize)));
-                DAWN_TRY(EnsureDestinationTextureInitialized(commandContext, dstTexture,
-                                                             copy->destination, copy->copySize));
+                DAWN_TRY(EnsureDestinationTextureInitialized(
+                    commandContext, dstTexture, copy->destination, copy->copySize.ToExtent3D()));
 
                 const MTLSize sizeOneSlice =
-                    MTLSizeMake(copy->copySize.width, copy->copySize.height, 1);
+                    MTLSizeMake(static_cast<uint32_t>(copy->copySize.width),
+                                static_cast<uint32_t>(copy->copySize.height), 1);
 
                 uint32_t sourceLayer = 0;
                 uint32_t sourceOriginZ = 0;
@@ -1397,9 +1400,9 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 }
 
                 // TODO(crbug.com/dawn/782): Do a single T2T copy if both are 1D or 3D.
-                for (uint32_t z = 0; z < copy->copySize.depthOrArrayLayers; ++z) {
-                    *sourceZPtr = copy->source.origin.z + z;
-                    *destinationZPtr = copy->destination.origin.z + z;
+                for (TexelCount z{0}; z < copy->copySize.depthOrArrayLayers; ++z) {
+                    *sourceZPtr = static_cast<uint32_t>(copy->source.origin.z + z);
+                    *destinationZPtr = static_cast<uint32_t>(copy->destination.origin.z + z);
 
                     // Hold the ref until out of scope
                     NSPRef<id<MTLTexture>> dstTextureView =
@@ -1409,15 +1412,18 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                           copyFromTexture:srcTexture->GetMTLTexture(copy->source.aspect)
                               sourceSlice:sourceLayer
                               sourceLevel:copy->source.mipLevel
-                             sourceOrigin:MTLOriginMake(copy->source.origin.x,
-                                                        copy->source.origin.y, sourceOriginZ)
+                             sourceOrigin:MTLOriginMake(
+                                              static_cast<uint32_t>(copy->source.origin.x),
+                                              static_cast<uint32_t>(copy->source.origin.y),
+                                              sourceOriginZ)
                                sourceSize:sizeOneSlice
                                 toTexture:dstTextureView.Get()
                          destinationSlice:destinationLayer
                          destinationLevel:copy->destination.mipLevel
-                        destinationOrigin:MTLOriginMake(copy->destination.origin.x,
-                                                        copy->destination.origin.y,
-                                                        destinationOriginZ)];
+                        destinationOrigin:MTLOriginMake(
+                                              static_cast<uint32_t>(copy->destination.origin.x),
+                                              static_cast<uint32_t>(copy->destination.origin.y),
+                                              destinationOriginZ)];
                 }
                 break;
             }
@@ -1675,10 +1681,10 @@ MaybeError CommandBuffer::EncodeComputePass(CommandRecordingContext* commandCont
                 break;
             }
 
-            case Command::SetImmediateData: {
-                SetImmediateDataCmd* cmd = mCommands.NextCommand<SetImmediateDataCmd>();
+            case Command::SetImmediates: {
+                SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
                 uint8_t* value = mCommands.NextData<uint8_t>(cmd->size);
-                immediates.SetImmediateData(cmd->offset, value, cmd->size);
+                immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }
 
@@ -1972,10 +1978,10 @@ MaybeError CommandBuffer::EncodeRenderPass(
                 break;
             }
 
-            case Command::SetImmediateData: {
-                SetImmediateDataCmd* cmd = mCommands.NextCommand<SetImmediateDataCmd>();
+            case Command::SetImmediates: {
+                SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
                 uint8_t* value = mCommands.NextData<uint8_t>(cmd->size);
-                immediates.SetImmediateData(cmd->offset, value, cmd->size);
+                immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }
 

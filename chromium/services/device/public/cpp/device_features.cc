@@ -41,7 +41,7 @@ BASE_FEATURE(kWebHidAttributeAllowsBackForwardCache,
 
 #if BUILDFLAG(IS_WIN)
 // Enable integration with the Windows system-level location permission.
-BASE_FEATURE(kWinSystemLocationPermission, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kWinSystemLocationPermission, base::FEATURE_ENABLED_BY_DEFAULT);
 // Enables a fix for a HID issue where feature reports read from devices that
 // do not use report IDs would incorrectly include an extra zero byte at the
 // start of the report and truncate the last byte of the report.
@@ -58,11 +58,11 @@ const base::FeatureParam<int> kWinSystemLocationPermissionPollingParam{
 // Enables usage of the location provider manager to select between
 // the operating system's location API or our network-based provider
 // as the source of location data for Geolocation API.
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kLocationProviderManager, base::FEATURE_ENABLED_BY_DEFAULT);
 #else
 BASE_FEATURE(kLocationProviderManager, base::FEATURE_DISABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_MAC)
+#endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_CHROMEOS)
 // Enables crash key logging for USB device open operations on ChromeOS. See
@@ -81,13 +81,8 @@ BASE_FEATURE(kBatteryStatusManagerBroadcastReceiverInBackground,
 // Modifies the internal allowlist behavior that enables privileged extensions
 // to bypass the HID blocklist when accessing FIDO devices. When enabled,
 // privileged extensions can access non-FIDO interfaces on known security keys.
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 BASE_FEATURE(kSecurityKeyHidInterfacesAreFido,
              base::FEATURE_ENABLED_BY_DEFAULT);
-#else
-BASE_FEATURE(kSecurityKeyHidInterfacesAreFido,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 #endif  // !BUILDFLAG(IS_ANDROID)
 
 const base::FeatureParam<device::mojom::LocationProviderManagerMode>::Option
@@ -107,6 +102,12 @@ const base::FeatureParam<device::mojom::LocationProviderManagerMode>
     kLocationProviderManagerParam{
         &kLocationProviderManager, "LocationProviderManagerMode",
         device::mojom::LocationProviderManagerMode::kHybridPlatform,
+        &location_provider_manager_mode_options};
+#elif BUILDFLAG(IS_WIN)
+const base::FeatureParam<device::mojom::LocationProviderManagerMode>
+    kLocationProviderManagerParam{
+        &kLocationProviderManager, "LocationProviderManagerMode",
+        device::mojom::LocationProviderManagerMode::kPlatformOnly,
         &location_provider_manager_mode_options};
 #else
 const base::FeatureParam<device::mojom::LocationProviderManagerMode>
@@ -139,5 +140,9 @@ BASE_FEATURE(kAutomaticUsbDetach, base::FEATURE_DISABLED_BY_DEFAULT);
 // Can be disabled as a kill switch if needed.
 BASE_FEATURE(kSerialSplitDtrAndRts, base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // !BUILDFLAG(IS_WIN)
+
+#if BUILDFLAG(IS_MAC)
+BASE_FEATURE(kHidReportRequestExactLength, base::FEATURE_ENABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_MAC)
 
 }  // namespace features

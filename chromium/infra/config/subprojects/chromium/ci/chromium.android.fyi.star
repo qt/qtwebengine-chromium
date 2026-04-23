@@ -20,6 +20,9 @@ ci.defaults.set(
     cores = 8,
     os = os.LINUX_DEFAULT,
     execution_timeout = ci_constants.DEFAULT_EXECUTION_TIMEOUT,
+    experiments = {
+        "chromium_tests.resultdb_module": 100,
+    },
     health_spec = health_spec.default(),
     priority = ci_constants.DEFAULT_FYI_PRIORITY,
     service_account = ci_constants.DEFAULT_SERVICE_ACCOUNT,
@@ -459,11 +462,6 @@ ci.builder(
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.crashpad_tests.filter",
                 ],
             ),
-            "device_unittests": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.device_unittests.filter",
-                ],
-            ),
             "gl_tests_validating": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_12_12l_13.gl_tests.filter",
@@ -600,11 +598,6 @@ ci.builder(
                 ],
                 # TODO(crbug.com/337935399): Remove experiment after the bug is fixed.
                 experiment_percentage = 100,
-            ),
-            "device_unittests": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.device_unittests.filter",
-                ],
             ),
             "gl_tests_validating": targets.mixin(
                 args = [
@@ -775,11 +768,6 @@ ci.builder(
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.crashpad_tests.filter",
                 ],
             ),
-            "device_unittests": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.device_unittests.filter",
-                ],
-            ),
             "gl_tests_validating": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_12_12l_13.gl_tests.filter",
@@ -807,9 +795,6 @@ ci.builder(
                 ],
             ),
             "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.14.webview_instrumentation_test_apk.filter",
-                ],
                 swarming = targets.swarming(
                     shards = 12,
                 ),
@@ -1126,6 +1111,69 @@ ci.builder(
         short_name = "and",
     ),
     notifies = ["annotator-rel"],
+)
+
+ci.builder(
+    name = "android-canary-x64-fyi-rel",
+    description_html = "Run chromium tests on Android Emulators with Canary Image",
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "android",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "main_builder",
+            apply_configs = ["mb"],
+            build_config = builder_config.build_config.RELEASE,
+            target_arch = builder_config.target_arch.INTEL,
+            target_bits = 64,
+            target_platform = builder_config.target_platform.ANDROID,
+        ),
+        android_config = builder_config.android_config(
+            config = "base_config",
+        ),
+    ),
+    gn_args = gn_args.config(
+        configs = [
+            "android_builder",
+            "release_builder",
+            "remoteexec",
+            "minimal_symbols",
+            "x64",
+            "strip_debug_info",
+            "android_fastbuild",
+            "webview_trichrome",
+            "webview_shell",
+        ],
+    ),
+    targets = targets.bundle(
+        targets = [
+            "android_canary_emulator_fyi_gtests",
+            "android_canary_isolated_scripts",
+        ],
+        mixins = [
+            "canary-x64-emulator",
+            "emulator-8-cores",
+            "has_native_resultdb_integration",
+            "linux-jammy",
+            "x86-64",
+        ],
+        per_test_modifications = {
+        },
+    ),
+    targets_settings = targets.settings(
+        os_type = targets.os_type.ANDROID,
+    ),
+    console_view_entry = consoles.console_view_entry(
+        category = "emulator|x64|rel",
+        short_name = "canary",
+    ),
+    # Android x64 builds take longer than x86 builds to compile
+    # So they need longer timeouts
+    contact_team_email = "clank-engprod@google.com",
+    execution_timeout = 4 * time.hour,
 )
 
 # TODO(crbug.com/40216047): Move to non-FYI once the tester works fine.

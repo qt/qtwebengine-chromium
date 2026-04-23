@@ -69,6 +69,7 @@
 #include "components/sync/base/features.h"
 #include "components/sync/base/passphrase_enums.h"
 #include "components/sync/base/user_selectable_type.h"
+#include "components/sync/service/sync_service.h"
 #include "components/sync/service/sync_service_utils.h"
 #include "components/sync/service/sync_user_settings.h"
 #include "components/unified_consent/unified_consent_metrics.h"
@@ -112,6 +113,13 @@ enum class TrustedVaultBannerState {
   kOfferOptIn = 1,
   kOptedIn = 2,
 };
+
+// LINT.IfChange(ChromeSigninAccessPoint)
+enum class ChromeSigninAccessPoint {
+  kSettings = 0,
+  kSettingsYourSavedInfo = 1,
+};
+// LINT.ThenChange(/chrome/browser/resources/settings_shared/people_page/sync_browser_proxy.ts:ChromeSigninAccessPoint)
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 // This enum is used for metrics purposes only, it is aligned with
@@ -206,6 +214,8 @@ std::string GetSyncErrorAction(SyncStatusActionType action_type) {
       return "retrieveTrustedVaultKeys";
     case SyncStatusActionType::kConfirmSyncSettings:
       return "confirmSyncSettings";
+    case SyncStatusActionType::kShowBookmarksLimitHelpArticle:
+      return "showBookmarksLimitHelpArticle";
     case SyncStatusActionType::kNoAction:
       return "noAction";
   }
@@ -249,6 +259,16 @@ bool IsChangePrimaryAccountAllowed(Profile* profile, const std::string& email) {
   return gaia::AreEmailsSame(
       email,
       identity_manager->GetPrimaryAccountInfo(ConsentLevel::kSignin).email);
+}
+
+signin_metrics::AccessPoint GetAccessPoint(
+    ChromeSigninAccessPoint access_point) {
+  switch (access_point) {
+    case ChromeSigninAccessPoint::kSettings:
+      return signin_metrics::AccessPoint::kSettings;
+    case ChromeSigninAccessPoint::kSettingsYourSavedInfo:
+      return signin_metrics::AccessPoint::kSettingsYourSavedInfo;
+  }
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 
@@ -407,6 +427,10 @@ void PeopleHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "SetChromeSigninUserChoice",
       base::BindRepeating(&PeopleHandler::HandleSetChromeSigninUserChoice,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "RecordSigninPendingOffered",
+      base::BindRepeating(&PeopleHandler::HandleRecordSigninPendingOffered,
                           base::Unretained(this)));
 #endif
 }
@@ -659,7 +683,7 @@ base::Value::List PeopleHandler::GetStoredAccountsList() {
   return accounts;
 }
 
-// TODO(crbug.com/419203245): Rename this method once syncing is removed.
+// TODO(crbug.com/457426419): Rename this method once syncing is removed.
 void PeopleHandler::HandleStartSyncingWithEmail(const base::Value::List& args) {
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   DCHECK(AccountConsistencyModeManager::IsDiceEnabledForProfile(profile_) ||
@@ -794,13 +818,16 @@ void PeopleHandler::HandleTurnOffSync(const base::Value::List& args) {
 #if !BUILDFLAG(IS_CHROMEOS)
 void PeopleHandler::HandleStartSignin(const base::Value::List& args) {
   AllowJavascript();
+  CHECK_EQ(1U, args.size());
+  auto access_point =
+      GetAccessPoint(static_cast<ChromeSigninAccessPoint>(args[0].GetInt()));
 
   // Should only be called if the user is not already signed in, has a auth
   // error, or a unrecoverable sync error requiring re-auth.
   syncer::SyncService* service = GetSyncService();
   DCHECK(IsProfileAuthNeededOrHasErrors() ||
          (service && service->HasUnrecoverableError()));
-  DisplayGaiaLogin(signin_metrics::AccessPoint::kSettings);
+  DisplayGaiaLogin(access_point);
 }
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
@@ -916,7 +943,7 @@ void PeopleHandler::HandleStartKeyRetrieval(const base::Value::List& args) {
   }
 
   OpenTabForSyncKeyRetrieval(
-      browser, syncer::TrustedVaultUserActionTriggerForUMA::kSettings);
+      browser, trusted_vault::TrustedVaultUserActionTriggerForUMA::kSettings);
 }
 
 #if !BUILDFLAG(IS_CHROMEOS)
@@ -927,11 +954,7 @@ void PeopleHandler::HandleShowSyncPassphraseDialog(
     return;
   }
 
-  ShowSyncPassphraseDialog(
-      *browser,
-      base::BindRepeating(&SyncPassphraseDialogDecryptData,
-                          base::Unretained(SyncServiceFactory::GetForProfile(
-                              browser->profile()))));
+  ShowSyncPassphraseDialogAndDecryptData(*browser);
 }
 
 void PeopleHandler::HandleShowAccountSettingsUI(const base::Value::List& args) {
@@ -1123,6 +1146,12 @@ void PeopleHandler::OnStateChanged(syncer::SyncService* sync_service) {
   PushTrustedVaultBannerState();
 }
 
+void PeopleHandler::OnSyncShutdown(syncer::SyncService* sync_service) {
+  // Unreachable, since this class is tied to UI which gets destroyed before the
+  // Profile and its KeyedServices.
+  NOTREACHED();
+}
+
 void PeopleHandler::BeforeUnloadDialogCancelled() {
   // The before unload dialog is only shown during the first sync setup.
   DCHECK(IdentityManagerFactory::GetForProfile(profile_)->HasPrimaryAccount(
@@ -1175,20 +1204,21 @@ base::Value::Dict PeopleHandler::GetSyncStatusDictionary() const {
           !service->GetUserSettings()->IsInitialSyncFeatureSetupComplete() &&
           identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync));
 
-  SyncStatusLabels status_labels;
+  SyncStatusLabels status_labels = GetSyncStatusLabelsForSettings(
+      SyncServiceFactory::GetForProfile(profile_));
 
-  const std::optional<AvatarSyncErrorType> error =
-      GetAvatarSyncErrorType(profile_);
-  // Avoid reacting to AvatarSyncErrorType::kSyncPaused in case of no sync
-  // consent, as the signin-pending state is not considered to be an error here.
-  if (error.has_value() &&
-      (error.value() != AvatarSyncErrorType::kSyncPaused ||
-       identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync))) {
-    status_labels =
-        GetAvatarSyncErrorLabelsForSettings(profile_, error.value());
-  } else {
-    status_labels = GetSyncStatusLabelsForSettings(
-        SyncServiceFactory::GetForProfile(profile_));
+  if (service) {
+    const syncer::SyncService::UserActionableError error =
+        service->GetUserActionableError();
+    // Avoid reacting to UserActionableError::kSignInNeedsUpdate in case of no
+    // sync consent, as the signin-pending state is not considered to be an
+    // error here.
+    if (error != syncer::SyncService::UserActionableError::kNone &&
+        (error !=
+             syncer::SyncService::UserActionableError::kSignInNeedsUpdate ||
+         identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync))) {
+      status_labels = GetAvatarSyncErrorLabelsForSettings(profile_, error);
+    }
   }
 
   // TODO(crbug.com/40660240): Consider unifying some of the fields below to
@@ -1263,6 +1293,7 @@ void PeopleHandler::PushSyncPrefs() {
   //                   passphrase was set (in milliseconds since the Unix
   //                   epoch); undefined if the time is unknown or no explicit
   //                   passphrase is set.
+  //   localSyncEnabled: true if the user has local sync enabled.
   //
   base::Value::Dict args;
 
@@ -1304,6 +1335,8 @@ void PeopleHandler::PushSyncPrefs() {
     args.Set("explicitPassphraseTime",
              base::TimeFormatShortDate(passphrase_time));
   }
+
+  args.Set("localSyncEnabled", service->IsLocalSyncEnabled());
 
   FireWebUIListener("sync-prefs-changed", args);
 }
@@ -1480,6 +1513,12 @@ void PeopleHandler::HandleSetChromeSigninUserChoiceForTesting(
   args.Append(static_cast<int>(choice));
   args.Append(email);
   HandleSetChromeSigninUserChoice(args);
+}
+
+void PeopleHandler::HandleRecordSigninPendingOffered(
+    const base::Value::List& /*args*/) {
+  signin_metrics::LogSigninPendingOffered(
+      signin_metrics::AccessPoint::kSettings);
 }
 #endif
 

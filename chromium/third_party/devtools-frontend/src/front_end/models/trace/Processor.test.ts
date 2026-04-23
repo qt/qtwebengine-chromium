@@ -289,8 +289,8 @@ describeWithEnvironment('TraceProcessor', function() {
 
       const insights = Array.from(processor.insights.values());
       assert.lengthOf(insights, 1);
-      assert.instanceOf(insights[0].model.RenderBlocking, Error, 'RenderBlocking did not throw an error');
-      assert.strictEqual(insights[0].model.RenderBlocking.message, 'forced error');
+      assert.instanceOf(insights[0].modelErrors.RenderBlocking, Error, 'RenderBlocking did not throw an error');
+      assert.strictEqual(insights[0].modelErrors.RenderBlocking.message, 'forced error');
     });
 
     it('returns insights for a navigation', async function() {
@@ -304,7 +304,7 @@ describeWithEnvironment('TraceProcessor', function() {
 
       assert.deepEqual([...processor.insights.keys()], [
         // excluded NO_NAVIGATION set, as it was trivial
-        '0BCFC23BC7D7BEDC9F93E912DCCEC1DA',
+        'NAVIGATION_0',
       ]);
 
       const insights = Array.from(processor.insights.values());
@@ -312,6 +312,7 @@ describeWithEnvironment('TraceProcessor', function() {
         throw new Error('RenderBlocking threw an error');
       }
 
+      assert.isOk(insights[0].model.RenderBlocking);
       assert.lengthOf(insights[0].model.RenderBlocking.renderBlockingRequests, 2);
     });
 
@@ -326,29 +327,20 @@ describeWithEnvironment('TraceProcessor', function() {
 
       assert.deepEqual([...processor.insights.keys()], [
         Trace.Types.Events.NO_NAVIGATION,
-        '83ACBFD389F1F66EF79CEDB4076EB44A',
-        '70BCD304FD2C098BA2513488AB0FF3F2',
-        '71CF0F2B9FE50F2CB31B261D129D06E8',
+        'NAVIGATION_1',
+        'NAVIGATION_2',
+        'NAVIGATION_3',
       ]);
 
-      const insights = Array.from(processor.insights.values());
-      if (insights[0].model.RenderBlocking instanceof Error) {
-        throw new Error('RenderBlocking threw an error');
-      }
-      if (insights[1].model.RenderBlocking instanceof Error) {
-        throw new Error('RenderBlocking threw an error');
-      }
-      if (insights[2].model.RenderBlocking instanceof Error) {
-        throw new Error('RenderBlocking threw an error');
-      }
-      if (insights[3].model.RenderBlocking instanceof Error) {
-        throw new Error('RenderBlocking threw an error');
-      }
-
-      assert.lengthOf(insights[0].model.RenderBlocking.renderBlockingRequests, 0);
-      assert.lengthOf(insights[1].model.RenderBlocking.renderBlockingRequests, 0);
-      assert.lengthOf(insights[2].model.RenderBlocking.renderBlockingRequests, 0);
-      assert.lengthOf(insights[3].model.RenderBlocking.renderBlockingRequests, 1);
+      const insightSets = Array.from(processor.insights.values());
+      assert.isOk(insightSets[0].model.RenderBlocking);
+      assert.isOk(insightSets[1].model.RenderBlocking);
+      assert.isOk(insightSets[2].model.RenderBlocking);
+      assert.isOk(insightSets[3].model.RenderBlocking);
+      assert.lengthOf(insightSets[0].model.RenderBlocking.renderBlockingRequests, 0);
+      assert.lengthOf(insightSets[1].model.RenderBlocking.renderBlockingRequests, 0);
+      assert.lengthOf(insightSets[2].model.RenderBlocking.renderBlockingRequests, 0);
+      assert.lengthOf(insightSets[3].model.RenderBlocking.renderBlockingRequests, 1);
     });
 
     it('sorts insights by estimated savings and field data', async function() {
@@ -373,6 +365,8 @@ describeWithEnvironment('TraceProcessor', function() {
 
         // It's been sorted already ... but let's add some fake estimated savings and re-sort to
         // better test the sorting.
+        assert.isOk(insightSet.model.CLSCulprits);
+        assert.isOk(insightSet.model.Viewport);
         insightSet.model.CLSCulprits.metricSavings = {CLS: 0.07};
         insightSet.model.Viewport.metricSavings = {INP: Trace.Types.Timing.Milli(300)};
         processor.sortInsightSet(insightSet, metadata ?? null);

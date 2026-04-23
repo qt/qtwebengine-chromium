@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/prefer-private-class-members */
+/* eslint-disable @devtools/prefer-private-class-members */
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -633,9 +633,11 @@ export class HeapSnapshotProgress {
   }
 }
 
-// An "interface" to be used when classifying plain JS objects in the snapshot.
-// An object matches the interface if it contains every listed property (even
-// if it also contains extra properties).
+/**
+ * An "interface" to be used when classifying plain JS objects in the snapshot.
+ * An object matches the interface if it contains every listed property (even
+ * if it also contains extra properties).
+ **/
 interface InterfaceDefinition {
   name: string;
   properties: string[];
@@ -680,7 +682,7 @@ export interface Profile {
 
 export type LiveObjects = Record<number, {count: number, size: number, ids: number[]}>;
 
-// The first batch of data sent from the primary worker to the secondary.
+/** The first batch of data sent from the primary worker to the secondary. **/
 interface SecondaryInitArgumentsStep1 {
   // For each edge ordinal, this array contains the ordinal of the pointed-to node.
   edgeToNodeOrdinals: Uint32Array;
@@ -692,7 +694,7 @@ interface SecondaryInitArgumentsStep1 {
   nodeFieldCount: number;
 }
 
-// The second batch of data sent from the primary worker to the secondary.
+/** The second batch of data sent from the primary worker to the secondary. **/
 interface SecondaryInitArgumentsStep2 {
   rootNodeOrdinal: number;
   // An array with one bit per edge, where each bit indicates whether the edge
@@ -700,7 +702,7 @@ interface SecondaryInitArgumentsStep2 {
   essentialEdgesBuffer: ArrayBuffer;
 }
 
-// The third batch of data sent from the primary worker to the secondary.
+/** The third batch of data sent from the primary worker to the secondary. **/
 interface SecondaryInitArgumentsStep3 {
   // For each node ordinal, this array contains the node's shallow size.
   nodeSelfSizes: Uint32Array;
@@ -749,11 +751,13 @@ interface DominatedNodes {
   dominatedNodes: Uint32Array;
 }
 
-// The data transferred from the secondary worker to the primary.
+/** The data transferred from the secondary worker to the primary. **/
 interface ResultsFromSecondWorker extends Retainers, DominatorsAndRetainedSizes, DominatedNodes {}
 
-// Initialization work is split into two threads. This class is the entry point
-// for work done by the second thread.
+/**
+ * Initialization work is split into two threads. This class is the entry point
+ * for work done by the second thread.
+ **/
 export class SecondaryInitManager {
   argsStep1: Promise<SecondaryInitArgumentsStep1>;
   argsStep2: Promise<SecondaryInitArgumentsStep2>;
@@ -1398,6 +1402,71 @@ export abstract class HeapSnapshot {
           }
         }
         return getBit;
+      }
+      case 'objectsRetainedByEventHandlers': {
+        // This filter is based on the assumption that event handler functions are contained
+        // (directly or indirectly) by V8EventListener nodes. In particular, the callback_object_
+        // field of V8EventListener points to either the function used as the event handler,
+        // or to a framework-specific wrapper object that in turn contains the actual handler.
+        //
+        // The filter works in two steps:
+        // 1. Identify all event handler functions and mark them in a bitmap.
+        // 2. Traverse the graph, avoiding paths that pass through any of the event handlers
+        const node = this.createNode(0);
+        const nodeFieldCount = this.nodeFieldCount;
+
+        // First, identify which nodes are event handlers
+        const eventHandlerBitmap = Platform.TypedArrayUtilities.createBitVector(this.nodeCount);
+
+        // Iterate all nodes looking for V8EventListener objects
+        for (let i = 0; i < this.nodeCount; ++i) {
+          node.nodeIndex = i * nodeFieldCount;
+
+          // Check if this node is a V8EventListener
+          if (node.rawName() === 'V8EventListener') {
+            // Get the callback_object_ (edge "1")
+            const callbackNode = this.getEdgeTarget(node, '1');
+            if (!callbackNode) {
+              continue;
+            }
+
+            const callbackOrdinal = callbackNode.nodeIndex / nodeFieldCount;
+
+            // Check if callback has a "code" edge (direct function handler)
+            if (this.getEdgeTarget(callbackNode, 'code')) {
+              eventHandlerBitmap.setBit(callbackOrdinal);
+              continue;
+            }
+
+            // Check if any child has a "code" edge (framework wrapper)
+            let foundChildWithCode = false;
+            for (let childEdgeIt = callbackNode.edges(); childEdgeIt.hasNext(); childEdgeIt.next()) {
+              const childNode = childEdgeIt.item().node();
+              if (this.getEdgeTarget(childNode, 'code')) {
+                eventHandlerBitmap.setBit(childNode.nodeIndex / nodeFieldCount);
+                foundChildWithCode = true;
+                break;
+              }
+            }
+
+            // Fallback to marking the callback node itself
+            if (!foundChildWithCode) {
+              eventHandlerBitmap.setBit(callbackOrdinal);
+            }
+          }
+        }
+
+        // Traverse the graph, avoiding paths that pass through event handlers
+        traverse((currentNode: HeapSnapshotNode, edge: HeapSnapshotEdge) => {
+          const targetNode = edge.node();
+          const targetOrdinal = targetNode.nodeIndex / nodeFieldCount;
+          // Return false (don't traverse) if the target node is an event handler
+          return !eventHandlerBitmap.getBit(targetOrdinal);
+        });
+
+        markUnreachableNodes();
+
+        return (node: HeapSnapshotNode) => !getBit(node);
       }
     }
     throw new Error('Invalid filter name');
@@ -2153,8 +2222,10 @@ export abstract class HeapSnapshot {
   private inferInterfaceDefinitions(): InterfaceDefinition[] {
     const {edgePropertyType} = this;
 
-    // First, produce a set of candidate definitions by iterating the properties
-    // on every plain JS Object in the snapshot.
+    /**
+     * First, produce a set of candidate definitions by iterating the properties
+     * on every plain JS Object in the snapshot.
+     **/
     interface InterfaceDefinitionCandidate extends InterfaceDefinition {
       // How many objects start with these properties in this order.
       count: number;
@@ -2229,7 +2300,7 @@ export abstract class HeapSnapshot {
     this.#aggregates = {};
     this.#aggregatesSortedFlags = {};
 
-    // Information about a named interface.
+    /** Information about a named interface. **/
     interface MatchInfo {
       name: string;
       // The number of properties listed in the interface definition.
@@ -2248,9 +2319,11 @@ export abstract class HeapSnapshot {
       return a.index <= b.index ? a : b;
     }
 
-    // A node in the tree which allows us to search for interfaces matching an object.
-    // Each edge in this tree represents adding a property, starting from an empty
-    // object. Properties must be iterated in sorted order.
+    /**
+     * A node in the tree which allows us to search for interfaces matching an object.
+     * Each edge in this tree represents adding a property, starting from an empty
+     * object. Properties must be iterated in sorted order.
+     **/
     interface PropertyTreeNode {
       // All possible successors from this node. Keys are property names.
       next: Map<string, PropertyTreeNode>;
@@ -2384,6 +2457,22 @@ export abstract class HeapSnapshot {
   private addString(string: string): number {
     this.strings.push(string);
     return this.strings.length - 1;
+  }
+
+  /**
+   * Gets the target node of an edge with the specified name.
+   * @param node The source node to search from
+   * @param edgeName The name of the edge to find
+   * @returns The target node if found, null otherwise
+   */
+  private getEdgeTarget(node: HeapSnapshotNode, edgeName: string): HeapSnapshotNode|null {
+    for (let edgeIt = node.edges(); edgeIt.hasNext(); edgeIt.next()) {
+      const edge = edgeIt.item();
+      if (edge.name() === edgeName) {
+        return edge.node();
+      }
+    }
+    return null;
   }
 
   /**
@@ -3627,7 +3716,7 @@ export class JSHeapSnapshot extends HeapSnapshot {
   }
 }
 
-// Creates and initializes a JSHeapSnapshot using only one thread.
+/** Creates and initializes a JSHeapSnapshot using only one thread. **/
 export async function createJSHeapSnapshotForTesting(profile: Profile): Promise<JSHeapSnapshot> {
   const result = new JSHeapSnapshot(profile, new HeapSnapshotProgress());
   const channel = new MessageChannel();

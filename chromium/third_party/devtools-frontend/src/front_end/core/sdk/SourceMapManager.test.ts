@@ -5,6 +5,8 @@
 import type * as Protocol from '../../generated/protocol.js';
 import {createTarget} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 import {setupPageResourceLoaderForSourceMap} from '../../testing/SourceMapHelpers.js';
 import * as Platform from '../platform/platform.js';
 
@@ -87,6 +89,9 @@ describe('SourceMapManager', () => {
   const sourceURL = urlString`http://localhost/foo.js`;
   const sourceMappingURL = `${sourceURL}.map`;
 
+  setupRuntimeHooks();
+  setupSettingsHooks();
+
   beforeEach(() => {
     SDK.TargetManager.TargetManager.instance({forceNew: true});
     SDK.PageResourceLoader.PageResourceLoader.instance({forceNew: true, loadOverride: null, maxConcurrentLoads: 1});
@@ -96,12 +101,6 @@ describe('SourceMapManager', () => {
     SDK.PageResourceLoader.PageResourceLoader.removeInstance();
     SDK.TargetManager.TargetManager.removeInstance();
   });
-
-  const createTarget = () => {
-    const target = sinon.createStubInstance(SDK.Target.Target);
-    target.type.returns(SDK.Target.Type.FRAME);
-    return target;
-  };
 
   class MockClient implements SDK.FrameAssociated.FrameAssociated {
     constructor(private target: SDK.Target.Target) {
@@ -203,7 +202,7 @@ describe('SourceMapManager', () => {
       const sourceMapManager = new SDK.SourceMapManager.SourceMapManager(target);
       sourceMapManager.setEnabled(false);
       const client = new MockClient(target);
-      const loadResource = sinon.spy(SDK.PageResourceLoader.PageResourceLoader.instance(), 'loadResource');
+      const loadResource = sinon.stub(SDK.PageResourceLoader.PageResourceLoader.instance(), 'loadResource');
       sourceMapManager.attachSourceMap(client, sourceURL, sourceMappingURL);
       assert.strictEqual(loadResource.callCount, 0, 'loadResource calls');
       assert.isUndefined(sourceMapManager.sourceMapForClient(client));

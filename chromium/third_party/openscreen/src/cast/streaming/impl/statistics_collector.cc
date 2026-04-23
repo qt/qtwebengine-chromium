@@ -23,7 +23,7 @@ void StatisticsCollector::CollectPacketSentEvent(ByteView packet,
 
   // Populate the new PacketEvent by parsing the wire-format `packet`.
   event.timestamp = now_();
-  event.type = StatisticsEventType::kPacketSentToNetwork;
+  event.type = StatisticsEvent::Type::kPacketSentToNetwork;
 
   BigEndianReader reader(packet.data(), packet.size());
   bool success = reader.Skip(4);
@@ -32,7 +32,7 @@ void StatisticsCollector::CollectPacketSentEvent(ByteView packet,
   success &= reader.Skip(4);
 
   event.rtp_timestamp = metadata.rtp_timestamp.Expand(truncated_rtp_timestamp);
-  event.media_type = ToMediaType(metadata.stream_type);
+  event.media_type = StatisticsEvent::ToMediaType(metadata.stream_type);
 
   success &= reader.Skip(2);
   success &= reader.Read<uint16_t>(&event.packet_id);

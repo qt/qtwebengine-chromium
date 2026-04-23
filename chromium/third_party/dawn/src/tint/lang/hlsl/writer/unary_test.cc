@@ -36,17 +36,17 @@ namespace tint::hlsl::writer {
 namespace {
 
 TEST_F(HlslWriterTest, UnaryComplement) {
-    auto* func = b.ComputeFunction("foo");
+    auto* func = b.ComputeFunction("main");
     b.Append(func->Block(), [&] {
         auto* a = b.Var("a", b.Zero<i32>());
-        b.Var("b", b.Complement<i32>(b.Load(a)));
+        b.Var("b", b.Complement(b.Load(a)));
         b.Return(func);
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
-void foo() {
+void main() {
   int a = int(0);
   int b = ~(a);
 }
@@ -55,17 +55,17 @@ void foo() {
 }
 
 TEST_F(HlslWriterTest, UnaryNot) {
-    auto* func = b.ComputeFunction("foo");
+    auto* func = b.ComputeFunction("main");
     b.Append(func->Block(), [&] {
         auto* a = b.Var("a", b.Zero<bool>());
-        b.Var("b", b.Not<bool>(b.Load(a)));
+        b.Var("b", b.Not(b.Load(a)));
         b.Return(func);
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
-void foo() {
+void main() {
   bool a = false;
   bool b = !(a);
 }
@@ -74,17 +74,17 @@ void foo() {
 }
 
 TEST_F(HlslWriterTest, UnaryNegation) {
-    auto* func = b.ComputeFunction("foo");
+    auto* func = b.ComputeFunction("main");
     b.Append(func->Block(), [&] {
         auto* a = b.Var("a", b.Zero<f32>());
-        b.Var("b", b.Negation<f32>(b.Load(a)));
+        b.Var("b", b.Negation(b.Load(a)));
         b.Return(func);
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
-void foo() {
+void main() {
   float a = 0.0f;
   float b = -(a);
 }

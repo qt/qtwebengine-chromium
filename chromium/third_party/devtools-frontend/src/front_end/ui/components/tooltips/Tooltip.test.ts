@@ -13,7 +13,7 @@ const {html, nothing} = Lit;
 interface RenderProps {
   variant?: Tooltips.Tooltip.TooltipVariant;
   attribute?: 'aria-describedby'|'aria-details';
-  useClick?: boolean;
+  trigger?: Tooltips.Tooltip.TooltipTrigger;
   useHotkey?: boolean;
   jslogContext?: string;
   id?: string;
@@ -22,7 +22,7 @@ interface RenderProps {
 function renderTooltip({
   variant = 'simple',
   attribute = 'aria-describedby',
-  useClick = false,
+  trigger = 'hover',
   useHotkey = false,
   jslogContext = undefined,
   id = 'tooltip-id',
@@ -37,8 +37,8 @@ function renderTooltip({
     <devtools-tooltip
      id=${id}
      variant=${variant}
-     hover-delay=${0}
-     ?use-click=${useClick}
+     .hover-delay=${0}
+     trigger=${trigger}
      ?use-hotkey=${useHotkey}
      jslogContext=${jslogContext??nothing}
      >
@@ -101,6 +101,81 @@ describe('Tooltip', () => {
     assert.isTrue(tooltip.open);
   });
 
+  it('should close if the user presses escape when it is open', async () => {
+    const container = renderTooltip();
+    const tooltip = container.querySelector('devtools-tooltip');
+    assert.exists(tooltip);
+
+    const button = container.querySelector('button');
+    const opened = waitForToggle(tooltip, 'open');
+    button?.dispatchEvent(new MouseEvent('mouseenter'));
+
+    await opened;
+    assert.isTrue(tooltip.open);
+
+    const closed = waitForToggle(tooltip, 'closed');
+    document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+    await closed;
+    assert.isFalse(tooltip.open);
+  });
+
+  it('should only close the innermost tooltip on escape', async () => {
+    const container = document.createElement('div');
+    // clang-format off
+    Lit.render(html`
+      <button aria-details="outer-tooltip-id">Outer Button</button>
+      <devtools-tooltip
+        id="outer-tooltip-id"
+        variant="rich"
+        .hover-delay=${0}
+      >
+        <button aria-details="inner-tooltip-id">Inner Button</button>
+        <devtools-tooltip
+          id="inner-tooltip-id"
+          variant="rich"
+          .hover-delay=${0}
+        >
+          <p>Inner Tooltip Content</p>
+        </devtools-tooltip>
+      </devtools-tooltip>
+    `, container);
+    // clang-format on
+    renderElementIntoDOM(container, {allowMultipleChildren: true});
+
+    const outerTooltip = container.querySelector('devtools-tooltip');
+    assert.exists(outerTooltip);
+
+    const outerButton = container.querySelector('button');
+    const outerOpened = waitForToggle(outerTooltip, 'open');
+    outerButton?.dispatchEvent(new MouseEvent('mouseenter'));
+
+    await outerOpened;
+    assert.isTrue(outerTooltip.open);
+
+    const innerTooltip = outerTooltip.querySelector('devtools-tooltip');
+    assert.exists(innerTooltip);
+
+    const innerButton = outerTooltip.querySelector('button');
+    const innerOpened = waitForToggle(innerTooltip, 'open');
+    innerButton?.dispatchEvent(new MouseEvent('mouseenter'));
+
+    await innerOpened;
+    assert.isTrue(innerTooltip.open);
+
+    const outerClosed = waitForToggle(outerTooltip, 'closed');
+    const innerClosed = waitForToggle(innerTooltip, 'closed');
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+    await innerClosed;
+    assert.isTrue(outerTooltip.open);
+    assert.isFalse(innerTooltip.open);
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+    await outerClosed;
+    assert.isFalse(outerTooltip.open);
+    assert.isFalse(innerTooltip.open);
+  });
+
   it('should be activated if focused', async () => {
     const container = renderTooltip();
     const tooltip = container.querySelector('devtools-tooltip');
@@ -158,9 +233,9 @@ describe('Tooltip', () => {
     assert.isFalse(tooltip.open);
   });
 
-  it('should not open on hover if use-click is set', () => {
+  it('should not open on hover if `trigger` is set to `click`', () => {
     const clock = sinon.useFakeTimers({toFake: ['setTimeout']});
-    const container = renderTooltip({useClick: true});
+    const container = renderTooltip({trigger: 'click'});
 
     const button = container.querySelector('button');
     button?.dispatchEvent(new MouseEvent('mouseenter'));
@@ -170,9 +245,9 @@ describe('Tooltip', () => {
     clock.restore();
   });
 
-  it('should not open on focus if use-click is set', () => {
+  it('should not open on focus if `trigger` is set to `click`', () => {
     const clock = sinon.useFakeTimers({toFake: ['setTimeout']});
-    const container = renderTooltip({useClick: true});
+    const container = renderTooltip({trigger: 'click'});
 
     const button = container.querySelector('button');
     button?.dispatchEvent(new FocusEvent('focus'));
@@ -182,8 +257,41 @@ describe('Tooltip', () => {
     clock.restore();
   });
 
-  it('should open with click if use-click is set', () => {
-    const container = renderTooltip({useClick: true});
+  it('should open with click if `trigger` is set to `click`', () => {
+    const container = renderTooltip({trigger: 'click'});
+
+    const button = container.querySelector('button');
+    button?.click();
+
+    assert.isTrue(container.querySelector('devtools-tooltip')?.open);
+  });
+
+  it('should open on hover if `trigger` is set to `both`', () => {
+    const clock = sinon.useFakeTimers({toFake: ['setTimeout']});
+    const container = renderTooltip({trigger: 'both'});
+
+    const button = container.querySelector('button');
+    button?.dispatchEvent(new MouseEvent('mouseenter'));
+
+    clock.runAll();
+    assert.isTrue(container.querySelector('devtools-tooltip')?.open);
+    clock.restore();
+  });
+
+  it('should open on focus if `trigger` is set to `both`', () => {
+    const clock = sinon.useFakeTimers({toFake: ['setTimeout']});
+    const container = renderTooltip({trigger: 'both'});
+
+    const button = container.querySelector('button');
+    button?.dispatchEvent(new FocusEvent('focus'));
+
+    clock.runAll();
+    assert.isTrue(container.querySelector('devtools-tooltip')?.open);
+    clock.restore();
+  });
+
+  it('should open with click if `trigger` is set to `both`', () => {
+    const container = renderTooltip({trigger: 'both'});
 
     const button = container.querySelector('button');
     button?.click();
@@ -309,5 +417,140 @@ describe('Tooltip', () => {
     const tooltip3 = container3.querySelector('devtools-tooltip');
     assert.exists(tooltip3);
     assert.isTrue(tooltip3.open);
+  });
+
+  describe('assigns the correct position', () => {
+    const inspectorViewRect = {
+      top: 0,
+      bottom: 290,
+      height: 290,
+      left: 0,
+      right: 500,
+      width: 500,
+    } as DOMRect;
+    const anchorRect = {
+      top: 100,
+      bottom: 200,
+      height: 100,
+      left: 200,
+      right: 400,
+      width: 200,
+    } as DOMRect;
+
+    it('for default postion bottom span right', () => {
+      const currentPopoverRect = {
+        height: 80,
+        width: 160,
+      } as DOMRect;
+      const proposedRect = Tooltips.Tooltip.proposedRectForRichTooltip(
+          {inspectorViewRect, anchorRect, currentPopoverRect, preferredPositions: []});
+      assert.strictEqual(proposedRect.top, 200);
+      assert.strictEqual(proposedRect.left, 200);
+    });
+
+    it('for preferred postion bottom span left', () => {
+      const currentPopoverRect = {
+        height: 80,
+        width: 160,
+      } as DOMRect;
+      const proposedRect = Tooltips.Tooltip.proposedRectForRichTooltip({
+        inspectorViewRect,
+        anchorRect,
+        currentPopoverRect,
+        preferredPositions: [Tooltips.Tooltip.PositionOption.BOTTOM_SPAN_LEFT]
+      });
+      assert.strictEqual(proposedRect.top, 200);
+      assert.strictEqual(proposedRect.left, 240);
+    });
+
+    it('uses 2nd option from default order if 1st is impossible', () => {
+      const currentPopoverRect = {
+        height: 80,
+        width: 350,
+      } as DOMRect;
+      const proposedRect = Tooltips.Tooltip.proposedRectForRichTooltip(
+          {inspectorViewRect, anchorRect, currentPopoverRect, preferredPositions: []});
+      assert.strictEqual(proposedRect.top, 200);
+      assert.strictEqual(proposedRect.left, 50);
+    });
+
+    it('uses 3rd option from default order if first 2 are impossible', () => {
+      const currentPopoverRect = {
+        height: 95,
+        width: 160,
+      } as DOMRect;
+      const proposedRect = Tooltips.Tooltip.proposedRectForRichTooltip(
+          {inspectorViewRect, anchorRect, currentPopoverRect, preferredPositions: []});
+      assert.strictEqual(proposedRect.top, 5);
+      assert.strictEqual(proposedRect.left, 200);
+    });
+
+    it('uses 4th option from default order if first 3 are impossible', () => {
+      const currentPopoverRect = {
+        height: 95,
+        width: 350,
+      } as DOMRect;
+      const proposedRect = Tooltips.Tooltip.proposedRectForRichTooltip(
+          {inspectorViewRect, anchorRect, currentPopoverRect, preferredPositions: []});
+      assert.strictEqual(proposedRect.top, 5);
+      assert.strictEqual(proposedRect.left, 50);
+    });
+
+    it('uses 4th option from preferred order if first 3 are impossible', () => {
+      const currentPopoverRect = {
+        height: 95,
+        width: 350,
+      } as DOMRect;
+      const proposedRect = Tooltips.Tooltip.proposedRectForRichTooltip({
+        inspectorViewRect,
+        anchorRect,
+        currentPopoverRect,
+        preferredPositions:
+            [Tooltips.Tooltip.PositionOption.BOTTOM_SPAN_LEFT, Tooltips.Tooltip.PositionOption.TOP_SPAN_LEFT]
+      });
+      assert.strictEqual(proposedRect.top, 5);
+      assert.strictEqual(proposedRect.left, 50);
+    });
+
+    it('moves the rect into the viewport if all 4 options are impossible', () => {
+      const currentPopoverRect = {
+        height: 110,
+        width: 440,
+      } as DOMRect;
+      const proposedRect = Tooltips.Tooltip.proposedRectForRichTooltip(
+          {inspectorViewRect, anchorRect, currentPopoverRect, preferredPositions: []});
+      assert.strictEqual(proposedRect.top, 0);
+      assert.strictEqual(proposedRect.left, 60);
+    });
+
+    it('for anchors in a corner of the viewport', () => {
+      const anchorBottomLeftCorner = {
+        top: 190,
+        bottom: 290,
+        height: 100,
+        left: 0,
+        right: 100,
+        width: 100,
+      } as DOMRect;
+      const currentPopoverRect = {
+        height: 100,
+        width: 200,
+      } as DOMRect;
+      const proposedRect = Tooltips.Tooltip.proposedRectForRichTooltip(
+          {inspectorViewRect, anchorRect: anchorBottomLeftCorner, currentPopoverRect, preferredPositions: []});
+      assert.strictEqual(proposedRect.top, 90);
+      assert.strictEqual(proposedRect.left, 0);
+    });
+
+    it('moves a simple tooltip into the viewport', () => {
+      const currentPopoverRect = {
+        height: 95,
+        width: 410,
+      } as DOMRect;
+      const proposedRect =
+          Tooltips.Tooltip.proposedRectForSimpleTooltip({inspectorViewRect, anchorRect, currentPopoverRect});
+      assert.strictEqual(proposedRect.top, 5);
+      assert.strictEqual(proposedRect.left, 90);
+    });
   });
 });

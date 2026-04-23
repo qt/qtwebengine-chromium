@@ -32,7 +32,9 @@ struct GpuAVSettings {
     bool validate_indirect_dispatches_buffers = true;
     bool validate_indirect_trace_rays_buffers = true;
     bool validate_buffer_copies = true;
+    bool validate_copy_memory_indirect = true;
     bool validate_index_buffers = true;
+    bool validate_acceleration_structures_builds = true;
 
     // Currently turned of due to some false positives still observed
     bool validate_image_layout = false;
@@ -55,6 +57,7 @@ struct GpuAVSettings {
         bool ray_query = true;
         bool post_process_descriptor_indexing = true;
         bool vertex_attribute_fetch_oob = true;
+        bool sanitizer = true;
     } shader_instrumentation;
 
     bool IsShaderInstrumentationEnabled() const;

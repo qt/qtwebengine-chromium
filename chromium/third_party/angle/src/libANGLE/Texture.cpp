@@ -1832,7 +1832,7 @@ angle::Result Texture::setStorageMultisample(Context *context,
 
     // Potentially adjust "samples" to a supported value
     const TextureCaps &formatCaps = context->getTextureCaps().get(internalFormat);
-    GLsizei samples               = formatCaps.getNearestSamples(samplesIn);
+    GLsizei samples               = formatCaps.sampleCounts.getNearestSamples(samplesIn);
 
     mState.mImmutableFormat = true;
     mState.mImmutableLevels = static_cast<GLuint>(1);
@@ -2729,11 +2729,7 @@ void Texture::onBufferContentsChange()
 
 void Texture::onBindToMSRTTFramebuffer()
 {
-    if (!mState.mHasBeenBoundToMSRTTFramebuffer)
-    {
-        mDirtyBits.set(DIRTY_BIT_BOUND_TO_MSRTT_FRAMEBUFFER);
-        mState.mHasBeenBoundToMSRTTFramebuffer = true;
-    }
+    mState.mHasBeenBoundToMSRTTFramebuffer = true;
 }
 
 GLenum Texture::getImplementationColorReadFormat(const Context *context) const

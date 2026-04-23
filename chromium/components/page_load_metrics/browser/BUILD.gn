@@ -38,6 +38,8 @@ source_set("browser") {
     "observers/early_hints_page_load_metrics_observer.h",
     "observers/fenced_frames_page_load_metrics_observer.cc",
     "observers/fenced_frames_page_load_metrics_observer.h",
+    "observers/paid_content_page_load_metrics_observer.cc",
+    "observers/paid_content_page_load_metrics_observer.h",
     "observers/performance_manager_metrics_observer.cc",
     "observers/performance_manager_metrics_observer.h",
     "observers/prerender_page_load_metrics_observer.cc",
@@ -67,8 +69,6 @@ source_set("browser") {
     "page_load_metrics_embedder_interface.h",
     "page_load_metrics_forward_observer.cc",
     "page_load_metrics_forward_observer.h",
-    "page_load_metrics_memory_tracker.cc",
-    "page_load_metrics_memory_tracker.h",
     "page_load_metrics_observer.cc",
     "page_load_metrics_observer.h",
     "page_load_metrics_observer_delegate.cc",
@@ -104,6 +104,7 @@ source_set("browser") {
     "//content/public/common",
     "//net",
     "//services/metrics/public/cpp:ukm_builders",
+    "//services/service_manager/public/cpp",
     "//ui/base",
   ]
 }
@@ -161,7 +162,6 @@ source_set("unit_tests") {
     "observers/use_counter_page_load_metrics_observer_unittest.cc",
     "observers/zstd_page_load_metrics_observer_unittest.cc",
     "page_load_metrics_forward_observer_unittest.cc",
-    "page_load_metrics_memory_tracker_unittest.cc",
     "page_load_metrics_util_unittest.cc",
     "page_load_tracker_unittest.cc",
     "resource_tracker_unittest.cc",

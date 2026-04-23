@@ -26,9 +26,8 @@ BASE_FEATURE(kDeprecatedExternalPickerFunction,
 BASE_FEATURE(kDisablePhotoPickerForVideoCapture,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kFormFactorUseMaxWindowMetrics, base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kMirrorBackForwardGesturesInRTL, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kRefactorMinWidthContextOverride,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kReportBottomOverscrolls, base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -43,5 +42,8 @@ BASE_FEATURE(kSendTouchMovesToEventForwarderObservers,
 BASE_FEATURE(kUseNewEtc1Encoder, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kCheckHitEligibility, base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kAndroidTouchpadOverscrollHistoryNavigation,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 }  // namespace ui

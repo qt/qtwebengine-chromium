@@ -159,10 +159,7 @@ void Serializer::SerializeDeferredObjects() {
 }
 
 void Serializer::SerializeObject(Handle<HeapObject> obj, SlotType slot_type) {
-  if (SafeIsAnyHole(*obj)) {
-    CHECK(SerializeRoot(*obj));
-    return;
-  } else if (IsThinString(*obj, isolate())) {
+  if (IsThinString(*obj, isolate())) {
     // ThinStrings are just an indirection to an internalized string, so elide
     // the indirection and serialize the actual string directly.
     obj = handle(Cast<ThinString>(*obj)->actual(), isolate());
@@ -682,6 +679,15 @@ void Serializer::ObjectSerializer::SerializeJSArrayBuffer() {
   }
 }
 
+void Serializer::ObjectSerializer::SerializeNativeContext() {
+  DisallowGarbageCollection no_gc;
+  Tagged<Context> context = Cast<Context>(*object_);
+  Tagged<Object> saved_next_context_link = context->next_context_link();
+  context->set_next_context_link(ReadOnlyRoots(isolate()).undefined_value());
+  SerializeObject();
+  context->set_next_context_link(saved_next_context_link);
+}
+
 void Serializer::ObjectSerializer::SerializeExternalString() {
   // For external strings with known resources, we replace the resource field
   // with the encoded external reference, which we restore upon deserialize.
@@ -846,6 +852,10 @@ void Serializer::ObjectSerializer::Serialize(SlotType slot_type) {
     SerializeJSArrayBuffer();
     return;
   }
+  if (InstanceTypeChecker::IsNativeContext(instance_type)) {
+    SerializeNativeContext();
+    return;
+  }
   if (InstanceTypeChecker::IsScript(instance_type)) {
     // Clear cached line ends & compiled lazy function positions.
     Cast<Script>(object_)->set_line_ends(Smi::zero());
@@ -853,16 +863,7 @@ void Serializer::ObjectSerializer::Serialize(SlotType slot_type) {
         ReadOnlyRoots(isolate()).undefined_value());
   }
 
-#if V8_ENABLE_WEBASSEMBLY
-  // The padding for wasm null is a free space filler. We put it into the roots
-  // table to be able to skip its payload when serializing the read only heap
-  // in the ReadOnlyHeapImageSerializer.
-  DCHECK_IMPLIES(
-      !object_->SafeEquals(ReadOnlyRoots(isolate()).wasm_null_padding()),
-      !IsFreeSpaceOrFiller(*object_, cage_base));
-#else
   DCHECK(!IsFreeSpaceOrFiller(*object_, cage_base));
-#endif
 
   SerializeObject();
 }
@@ -1299,7 +1300,6 @@ void Serializer::ObjectSerializer::VisitProtectedPointer(
 
 void Serializer::ObjectSerializer::VisitJSDispatchTableEntry(
     Tagged<HeapObject> host, JSDispatchHandle handle) {
-#ifdef V8_ENABLE_LEAPTIERING
   JSDispatchTable* jdt = IsolateGroup::current()->js_dispatch_table();
   // If the slot is empty, we will skip it here and then just serialize the
   // null handle as raw data.
@@ -1332,9 +1332,6 @@ void Serializer::ObjectSerializer::VisitJSDispatchTableEntry(
     sink_->PutUint30(it->second, "EntryID");
   }
 
-#else
-  UNREACHABLE();
-#endif  // V8_ENABLE_LEAPTIERING
 }
 namespace {
 

@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/xr/xr_webgl_binding.h"
 
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_webgl2renderingcontext_webglrenderingcontext.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_xr_cube_layer_init.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_cylinder_layer_init.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_equirect_layer_init.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_eye.h"
@@ -14,6 +15,7 @@
 #include "third_party/blink/renderer/modules/webgl/webgl_texture.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_unowned_texture.h"
 #include "third_party/blink/renderer/modules/xr/xr_camera.h"
+#include "third_party/blink/renderer/modules/xr/xr_cube_layer.h"
 #include "third_party/blink/renderer/modules/xr/xr_cube_map.h"
 #include "third_party/blink/renderer/modules/xr/xr_cylinder_layer.h"
 #include "third_party/blink/renderer/modules/xr/xr_equirect_layer.h"
@@ -28,8 +30,10 @@
 #include "third_party/blink/renderer/modules/xr/xr_system.h"
 #include "third_party/blink/renderer/modules/xr/xr_utils.h"
 #include "third_party/blink/renderer/modules/xr/xr_viewer_pose.h"
+#include "third_party/blink/renderer/modules/xr/xr_webgl_cubemap_swap_chain.h"
 #include "third_party/blink/renderer/modules/xr/xr_webgl_drawing_buffer_swap_chain.h"
 #include "third_party/blink/renderer/modules/xr/xr_webgl_drawing_context.h"
+#include "third_party/blink/renderer/modules/xr/xr_webgl_frame_transport_context_impl.h"
 #include "third_party/blink/renderer/modules/xr/xr_webgl_layer.h"
 #include "third_party/blink/renderer/modules/xr/xr_webgl_sub_image.h"
 #include "third_party/blink/renderer/modules/xr/xr_webgl_swap_chain.h"
@@ -99,7 +103,10 @@ XRWebGLBinding::XRWebGLBinding(XRSession* session,
                                bool webgl2)
     : XRGraphicsBinding(session),
       webgl_context_(webgl_context),
-      webgl2_(webgl2) {}
+      webgl2_(webgl2),
+      transport_delegate_(MakeGarbageCollected<XRWebGLFrameTransportDelegate>(
+          MakeGarbageCollected<XRWebGLFrameTransportContextImpl>(
+              webgl_context_))) {}
 
 bool XRWebGLBinding::usesDepthValues() const {
   return false;
@@ -227,10 +234,13 @@ XRQuadLayer* XRWebGLBinding::createQuadLayer(const XRQuadLayerInit* init,
     return nullptr;
   }
 
-  // TODO(crbug.com/444020394): create layer instance.
-  exception_state.ThrowTypeError(
-      "XRQuadLayer was not implemented for the platform.");
-  return nullptr;
+  XRWebGLSwapChain* color_swap_chain =
+      CreateColorSwapchain(init->colorFormat(), GetTextureSizeForLayer(init));
+
+  auto* drawing_context =
+      MakeGarbageCollected<XRWebGLDrawingContext>(this, color_swap_chain);
+
+  return MakeGarbageCollected<XRQuadLayer>(init, this, drawing_context);
 }
 
 XRCylinderLayer* XRWebGLBinding::createCylinderLayer(
@@ -241,10 +251,13 @@ XRCylinderLayer* XRWebGLBinding::createCylinderLayer(
     return nullptr;
   }
 
-  // TODO(crbug.com/444020394): create layer instance.
-  exception_state.ThrowTypeError(
-      "XRCylinderLayer was not implemented for the platform.");
-  return nullptr;
+  XRWebGLSwapChain* color_swap_chain =
+      CreateColorSwapchain(init->colorFormat(), GetTextureSizeForLayer(init));
+
+  auto* drawing_context =
+      MakeGarbageCollected<XRWebGLDrawingContext>(this, color_swap_chain);
+
+  return MakeGarbageCollected<XRCylinderLayer>(init, this, drawing_context);
 }
 
 XREquirectLayer* XRWebGLBinding::createEquirectLayer(
@@ -269,10 +282,65 @@ XREquirectLayer* XRWebGLBinding::createEquirectLayer(
     return nullptr;
   }
 
-  // TODO(crbug.com/444020394): create layer instance.
-  exception_state.ThrowTypeError(
-      "XREquirectLayer was not implemented for the platform.");
-  return nullptr;
+  XRWebGLSwapChain* color_swap_chain =
+      CreateColorSwapchain(init->colorFormat(), GetTextureSizeForLayer(init));
+
+  auto* drawing_context =
+      MakeGarbageCollected<XRWebGLDrawingContext>(this, color_swap_chain);
+
+  return MakeGarbageCollected<XREquirectLayer>(init, this, drawing_context);
+}
+
+XRCubeLayer* XRWebGLBinding::createCubeLayer(const XRCubeLayerInit* init,
+                                             ExceptionState& exception_state) {
+  if (!CanCreateShapedLayer(init, exception_state)) {
+    return nullptr;
+  }
+
+  // Validating parameters specific to XRCubeLayer.
+  if (init->viewPixelWidth() != init->viewPixelHeight()) {
+    exception_state.ThrowTypeError(
+        "Cube face must be square (width == height).");
+    return nullptr;
+  }
+
+  XRWebGLSwapChain* texture_2d_swapchain = CreateColorSwapchain(
+      init->colorFormat(),
+      gfx::Size(init->viewPixelWidth(), init->viewPixelHeight()));
+
+  XRWebGLSwapChain* cubemap_swap_chain =
+      MakeGarbageCollected<XRWebGLCubemapSwapChain>(texture_2d_swapchain);
+
+  auto* drawing_context =
+      MakeGarbageCollected<XRWebGLDrawingContext>(this, cubemap_swap_chain);
+
+  return MakeGarbageCollected<XRCubeLayer>(init, this, drawing_context);
+}
+
+gfx::Size XRWebGLBinding::GetTextureSizeForLayer(
+    const XRLayerInit* init) const {
+  return gfx::Size(
+      init->viewPixelWidth() * GetHorizontalViewCount(init->layout()),
+      init->viewPixelHeight() * GetVerticalViewCount(init->layout()));
+}
+
+gfx::Rect XRWebGLBinding::GetViewportForLayer(const XRCompositionLayer& layer,
+                                              V8XREye eye) const {
+  uint32_t width =
+      layer.textureWidth() / GetHorizontalViewCount(layer.layout());
+  uint32_t height =
+      layer.textureHeight() / GetHorizontalViewCount(layer.layout());
+
+  if (eye == V8XREye::Enum::kRight &&
+      (layer.layout() == V8XRLayerLayout::Enum::kStereoTopBottom ||
+       layer.layout() == V8XRLayerLayout::Enum::kStereoLeftRight)) {
+    return gfx::Rect(
+        (layer.layout() == V8XRLayerLayout::Enum::kStereoTopBottom) ? 0 : width,
+        (layer.layout() == V8XRLayerLayout::Enum::kStereoLeftRight) ? 0
+                                                                    : height,
+        width, height);
+  }
+  return gfx::Rect(0, 0, width, height);
 }
 
 XRWebGLSubImage* XRWebGLBinding::getViewSubImage(
@@ -295,6 +363,15 @@ XRWebGLSubImage* XRWebGLBinding::getViewSubImage(
     return nullptr;
   }
 
+  // Method could be called for the layer which is not in an active render
+  // state.
+  if (!layer->HasSharedImage()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "Invalid frame state. There is no shared buffer for layer.");
+    return nullptr;
+  }
+
   XRViewData* viewData = view->ViewData();
   if (viewData->ApplyViewportScaleForFrame()) {
     layer->SetModified(true);
@@ -309,7 +386,8 @@ XRWebGLSubImage* XRWebGLBinding::getViewSubImage(
 
   return MakeGarbageCollected<XRWebGLSubImage>(
       viewport, viewData->index(), drawing_context->color_swap_chain(),
-      drawing_context->depth_stencil_swap_chain(), nullptr);
+      drawing_context->depth_stencil_swap_chain(),
+      /*motion_vector_swap_chain=*/nullptr);
 }
 
 XRWebGLSubImage* XRWebGLBinding::getSubImage(XRCompositionLayer* layer,
@@ -344,8 +422,10 @@ XRWebGLSubImage* XRWebGLBinding::getSubImage(XRCompositionLayer* layer,
     return nullptr;
   }
 
-  // TODO(crbug.com/444018463): check that layer is not XRProjectionLayer and
-  // has shared image.
+  if (layer->LayerType() == XRLayerType::kProjectionLayer) {
+    exception_state.ThrowTypeError("Invalid layer type.");
+    return nullptr;
+  }
 
   if (layer->layout() == V8XRLayerLayout::Enum::kDefault) {
     exception_state.ThrowTypeError("Invalid layer's layout type.");
@@ -360,10 +440,24 @@ XRWebGLSubImage* XRWebGLBinding::getSubImage(XRCompositionLayer* layer,
     }
   }
 
-  // TODO(crbug.com/444020394): create XRWebGLSubImage.
-  exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                    "Invalid frame state.");
-  return nullptr;
+  // There is no shared image instance if the layer is not in an active render
+  // state list.
+  if (!layer->HasSharedImage()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "Invalid frame state. There is no shared buffer for layer.");
+    return nullptr;
+  }
+
+  // The layer passed the OwnsLayer check, confirming it can only contain
+  // a WebGL drawing context. This makes the static_cast safe.
+  auto* drawing_context =
+      static_cast<XRWebGLDrawingContext*>(layer->drawing_context());
+
+  return MakeGarbageCollected<XRWebGLSubImage>(
+      GetViewportForLayer(*layer, eye), 0, drawing_context->color_swap_chain(),
+      drawing_context->depth_stencil_swap_chain(),
+      /*motion_vector_swap_chain=*/nullptr);
 }
 
 WebGLTexture* XRWebGLBinding::getReflectionCubeMap(
@@ -552,6 +646,10 @@ gfx::Rect XRWebGLBinding::GetViewportForView(XRProjectionLayer* layer,
   return gfx::Rect(viewport_offset, 0,
                    viewport_width * view->CurrentViewportScale(),
                    layer->textureHeight() * view->CurrentViewportScale());
+}
+
+XRFrameTransportDelegate* XRWebGLBinding::GetTransportDelegate() {
+  return transport_delegate_;
 }
 
 bool XRWebGLBinding::ValidateSessionAndContext(
@@ -757,8 +855,9 @@ bool XRWebGLBinding::ValidateShapedLayerData(const XRLayerInit* init,
   }
 
   // TODO(crbug.com/444681345): Add stereo layout support.
-  if (init->layout() != V8XRLayerLayout::Enum::kMono) {
-    exception_state.ThrowTypeError("Platform only supports 'mono' layout.");
+  if (init->layout() == V8XRLayerLayout::Enum::kStereo) {
+    exception_state.ThrowTypeError(
+        "Platform does not support 'stereo' layout.");
     return false;
   }
 
@@ -788,13 +887,15 @@ bool XRWebGLBinding::ValidateShapedLayerData(const XRLayerInit* init,
   webgl_context_->ContextGL()->GetIntegerv(GL_MAX_TEXTURE_SIZE,
                                            &max_texture_size);
 
-  if (init->viewPixelHeight() > static_cast<uint32_t>(max_texture_size)) {
+  if (init->viewPixelHeight() > static_cast<uint32_t>(max_texture_size) /
+                                    GetVerticalViewCount(init->layout())) {
     exception_state.ThrowTypeError(
         "ViewPixelHeight exceeds the maximum texture size.");
     return false;
   }
 
-  if (init->viewPixelWidth() > static_cast<uint32_t>(max_texture_size)) {
+  if (init->viewPixelWidth() > static_cast<uint32_t>(max_texture_size) /
+                                   GetHorizontalViewCount(init->layout())) {
     exception_state.ThrowTypeError(
         "ViewPixelWidth exceeds the maximum texture size.");
     return false;
@@ -805,6 +906,7 @@ bool XRWebGLBinding::ValidateShapedLayerData(const XRLayerInit* init,
 
 void XRWebGLBinding::Trace(Visitor* visitor) const {
   visitor->Trace(webgl_context_);
+  visitor->Trace(transport_delegate_);
   XRGraphicsBinding::Trace(visitor);
   ScriptWrappable::Trace(visitor);
 }

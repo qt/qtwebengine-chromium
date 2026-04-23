@@ -52,12 +52,15 @@ import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.components.external_intents.ExternalNavigationHandler.IncognitoDialogDelegate;
 import org.chromium.components.external_intents.ExternalNavigationHandler.OverrideUrlLoadingResult;
 import org.chromium.components.external_intents.ExternalNavigationHandler.OverrideUrlLoadingResultType;
+import org.chromium.components.external_intents.ExternalNavigationHandler.QueryIntentActivitiesSupplier;
+import org.chromium.components.external_intents.ExternalNavigationHandler.ResolveActivitySupplier;
 import org.chromium.components.external_intents.ExternalNavigationParams.AsyncActionTakenParams;
 import org.chromium.components.external_intents.ExternalNavigationParams.AsyncActionTakenParams.AsyncActionTakenType;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.test.NativeLibraryTestUtils;
 import org.chromium.ui.base.PageTransition;
 import org.chromium.ui.base.WindowAndroid;
+import org.chromium.ui.modaldialog.DialogDismissalCause;
 import org.chromium.ui.modaldialog.ModalDialogManager;
 import org.chromium.ui.modaldialog.ModalDialogProperties;
 import org.chromium.ui.test.util.BlankUiTestActivity;
@@ -75,7 +78,6 @@ import java.util.function.Supplier;
 @RunWith(BaseJUnit4ClassRunner.class)
 @Batch(Batch.UNIT_TESTS)
 @Features.DisableFeatures(ExternalIntentsFeatures.EXTERNAL_NAVIGATION_DEBUG_LOGS_NAME)
-@Features.EnableFeatures(ExternalIntentsFeatures.BLOCK_INTENTS_TO_SELF_NAME)
 public class ExternalNavigationHandlerTest {
     // Expectations
     private static final int IGNORE = 0x0;
@@ -176,6 +178,8 @@ public class ExternalNavigationHandlerTest {
     private static final String INVALID_WEBAPK_PACKAGE_NAME = WEBAPK_PACKAGE_PREFIX + ".invalid";
 
     private static final String SELF_SCHEME = "selfscheme";
+    private static final String DIGITAL_CREDENTIALS_URL = "openid4vp-v1-unsigned://authorize";
+    private static final String DIGITAL_CREDENTIALS_PACKAGE_NAME = "pkg.dcc";
 
     @Rule public MockitoRule mMockitoRule = MockitoJUnit.rule().strictness(Strictness.STRICT_STUBS);
 
@@ -1629,6 +1633,226 @@ public class ExternalNavigationHandlerTest {
     }
 
     @Test
+    @MediumTest
+    public void testDigitalCredentialsWarningDialog_PositiveClick() {
+        mUrlHandler.sendIntentsForReal();
+        IntentFilter filter = new IntentFilter(Intent.ACTION_VIEW);
+        filter.addCategory(Intent.CATEGORY_BROWSABLE);
+        filter.addDataScheme("openid4vp-v1-unsigned");
+        ActivityMonitor monitor =
+                InstrumentationRegistry.getInstrumentation()
+                        .addMonitor(
+                                filter,
+                                new Instrumentation.ActivityResult(Activity.RESULT_OK, null),
+                                true);
+        Intent dummyIntent = new Intent(mRealApplicationContext, BlankUiTestActivity.class);
+        dummyIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Activity activity =
+                InstrumentationRegistry.getInstrumentation().startActivitySync(dummyIntent);
+        mDelegate.setContext(activity);
+        mDelegate.setCanLoadUrlInTab(true);
+
+        mDelegate.add(
+                new IntentActivity("openid4vp-v1-unsigned", DIGITAL_CREDENTIALS_PACKAGE_NAME));
+
+        try {
+            ThreadUtils.runOnUiThreadBlocking(
+                    () -> {
+                        checkUrl(DIGITAL_CREDENTIALS_URL, redirectHandlerForLinkClick())
+                                .withHasUserGesture(true)
+                                .expecting(
+                                        OverrideUrlLoadingResultType.OVERRIDE_WITH_ASYNC_ACTION,
+                                        IGNORE);
+                        Assert.assertNull(mUrlHandler.mStartActivityIntent);
+                        Assert.assertNull(mUrlHandler.mNewUrlAfterClobbering);
+
+                        mUrlHandler.mDigitalCredentialsWarningDialogDelegate.onClick(
+                                null, ModalDialogProperties.ButtonType.POSITIVE);
+                    });
+            ThreadUtils.runOnUiThreadBlocking(
+                    () -> {
+                        Assert.assertNull(mUrlHandler.mNewUrlAfterClobbering);
+                        Assert.assertEquals(1, monitor.getHits());
+                        Assert.assertEquals(
+                                DIGITAL_CREDENTIALS_URL,
+                                mUrlHandler.mStartActivityIntent.getDataString());
+                    });
+        } finally {
+            activity.finish();
+            InstrumentationRegistry.getInstrumentation().removeMonitor(monitor);
+        }
+    }
+
+    @Test
+    @MediumTest
+    public void testDigitalCredentialsWarningDialog_NegativeClick() {
+        mUrlHandler.sendIntentsForReal();
+        IntentFilter filter = new IntentFilter(Intent.ACTION_VIEW);
+        filter.addCategory(Intent.CATEGORY_BROWSABLE);
+        filter.addDataScheme("openid4vp-v1-unsigned");
+        ActivityMonitor monitor =
+                InstrumentationRegistry.getInstrumentation()
+                        .addMonitor(
+                                filter,
+                                new Instrumentation.ActivityResult(Activity.RESULT_OK, null),
+                                true);
+        Intent dummyIntent = new Intent(mRealApplicationContext, BlankUiTestActivity.class);
+        dummyIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Activity activity =
+                InstrumentationRegistry.getInstrumentation().startActivitySync(dummyIntent);
+        mDelegate.setContext(activity);
+        mDelegate.setCanLoadUrlInTab(true);
+
+        mDelegate.add(
+                new IntentActivity("openid4vp-v1-unsigned", DIGITAL_CREDENTIALS_PACKAGE_NAME));
+
+        try {
+            ThreadUtils.runOnUiThreadBlocking(
+                    () -> {
+                        checkUrl(DIGITAL_CREDENTIALS_URL, redirectHandlerForLinkClick())
+                                .withHasUserGesture(true)
+                                .expecting(
+                                        OverrideUrlLoadingResultType.OVERRIDE_WITH_ASYNC_ACTION,
+                                        IGNORE);
+                        Assert.assertNull(mUrlHandler.mStartActivityIntent);
+                        Assert.assertNull(mUrlHandler.mNewUrlAfterClobbering);
+
+                        mUrlHandler.mDigitalCredentialsWarningDialogDelegate.onClick(
+                                null, ModalDialogProperties.ButtonType.NEGATIVE);
+                    });
+            ThreadUtils.runOnUiThreadBlocking(
+                    () -> {
+                        Assert.assertNull(mUrlHandler.mNewUrlAfterClobbering);
+                        Assert.assertEquals(0, monitor.getHits());
+                        Assert.assertNull(mUrlHandler.mStartActivityIntent);
+                    });
+        } finally {
+            activity.finish();
+            InstrumentationRegistry.getInstrumentation().removeMonitor(monitor);
+        }
+    }
+
+    @Test
+    @MediumTest
+    public void testDigitalCredentialsWarningDialog_Dismiss() {
+        mUrlHandler.sendIntentsForReal();
+        IntentFilter filter = new IntentFilter(Intent.ACTION_VIEW);
+        filter.addCategory(Intent.CATEGORY_BROWSABLE);
+        filter.addDataScheme("openid4vp-v1-unsigned");
+        ActivityMonitor monitor =
+                InstrumentationRegistry.getInstrumentation()
+                        .addMonitor(
+                                filter,
+                                new Instrumentation.ActivityResult(Activity.RESULT_OK, null),
+                                true);
+        Intent dummyIntent = new Intent(mRealApplicationContext, BlankUiTestActivity.class);
+        dummyIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Activity activity =
+                InstrumentationRegistry.getInstrumentation().startActivitySync(dummyIntent);
+        mDelegate.setContext(activity);
+        mDelegate.setCanLoadUrlInTab(true);
+
+        mDelegate.add(
+                new IntentActivity("openid4vp-v1-unsigned", DIGITAL_CREDENTIALS_PACKAGE_NAME));
+
+        try {
+            ThreadUtils.runOnUiThreadBlocking(
+                    () -> {
+                        checkUrl(DIGITAL_CREDENTIALS_URL, redirectHandlerForLinkClick())
+                                .withHasUserGesture(true)
+                                .expecting(
+                                        OverrideUrlLoadingResultType.OVERRIDE_WITH_ASYNC_ACTION,
+                                        IGNORE);
+                        Assert.assertNull(mUrlHandler.mStartActivityIntent);
+                        Assert.assertNull(mUrlHandler.mNewUrlAfterClobbering);
+
+                        mUrlHandler.mDigitalCredentialsWarningDialogDelegate.onDismiss(
+                                null, DialogDismissalCause.NAVIGATE);
+                    });
+            ThreadUtils.runOnUiThreadBlocking(
+                    () -> {
+                        Assert.assertNull(mUrlHandler.mNewUrlAfterClobbering);
+                        Assert.assertEquals(0, monitor.getHits());
+                        Assert.assertNull(mUrlHandler.mStartActivityIntent);
+                    });
+        } finally {
+            activity.finish();
+            InstrumentationRegistry.getInstrumentation().removeMonitor(monitor);
+        }
+    }
+
+    public void runDigitalCredentialsWarningDialogDismissedTest(
+            long navId, Runnable testCallback, boolean shouldDismiss) {
+        mDelegate.add(
+                new IntentActivity("openid4vp-v1-unsigned", DIGITAL_CREDENTIALS_PACKAGE_NAME));
+        Intent dummyIntent = new Intent(mRealApplicationContext, BlankUiTestActivity.class);
+        dummyIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Activity activity =
+                InstrumentationRegistry.getInstrumentation().startActivitySync(dummyIntent);
+        mDelegate.setContext(activity);
+        mDelegate.setCanLoadUrlInTab(true);
+        try {
+            mDelegate.setCanResolveActivityForExternalSchemes(true);
+            ThreadUtils.runOnUiThreadBlocking(
+                    () -> {
+                        RedirectHandler redirectHandler = RedirectHandler.create();
+                        redirectHandler.updateNewUrlLoading(
+                                PageTransition.LINK, false, true, 0, false, true);
+                        checkUrl(DIGITAL_CREDENTIALS_URL, redirectHandler)
+                                .withHasUserGesture(true)
+                                .withNavigationId(navId)
+                                .expecting(
+                                        OverrideUrlLoadingResultType.OVERRIDE_WITH_ASYNC_ACTION,
+                                        IGNORE);
+                        Assert.assertNull(mUrlHandler.mStartActivityIntent);
+                        Assert.assertNull(mUrlHandler.mNewUrlAfterClobbering);
+                    });
+            ExternalNavigationHandler.DigitalCredentialsWarningDialogDelegate delegateSpy =
+                    mUrlHandler.spyDigitalCredentialsWarningDialogDelegate();
+            Mockito.doReturn(true).when(delegateSpy).isShowing();
+            ThreadUtils.runOnUiThreadBlocking(
+                    () -> {
+                        testCallback.run();
+                    });
+            if (shouldDismiss) {
+                Mockito.verify(delegateSpy).cancelDialog();
+            } else {
+                Mockito.verify(delegateSpy, never()).cancelDialog();
+                // Dialog must be canceled before Activity finishes since the ModalDialogManager
+                // isn't hooked up.
+                delegateSpy.cancelDialog();
+            }
+        } finally {
+            activity.finish();
+        }
+    }
+
+    @Test
+    @MediumTest
+    public void testDigitalCredentialsWarningDialogDismissedOnNewNavigation() {
+        int navId = 1;
+        runDigitalCredentialsWarningDialogDismissedTest(
+                navId,
+                () -> {
+                    mUrlHandler.onNavigationStarted(navId + 1);
+                },
+                true);
+    }
+
+    @Test
+    @MediumTest
+    public void testDigitalCredentialsWarningDialogNotDismissedOnSameNavigation() {
+        int navId = 1;
+        runDigitalCredentialsWarningDialogDismissedTest(
+                navId,
+                () -> {
+                    mUrlHandler.onNavigationStarted(navId);
+                    mUrlHandler.onNavigationFinished(navId);
+                },
+                false);
+    }
+
+    @Test
     @SmallTest
     public void testFallbackUrl_SubframeFallbackToMarketApp() {
         mDelegate.setCanResolveActivityForExternalSchemes(false);
@@ -1927,7 +2151,6 @@ public class ExternalNavigationHandlerTest {
     }
 
     @Test
-    @Features.EnableFeatures(ExternalIntentsFeatures.REPARENT_TOP_LEVEL_NAVIGATION_FROM_PWA_NAME)
     @SmallTest
     public void testReparentTopLevelNavigationWithNoSpecializedHandler() {
         mDelegate.add(new IntentActivity(YOUTUBE_MOBILE_URL, YOUTUBE_PACKAGE_NAME));
@@ -1952,7 +2175,6 @@ public class ExternalNavigationHandlerTest {
     }
 
     @Test
-    @Features.EnableFeatures(ExternalIntentsFeatures.REPARENT_TOP_LEVEL_NAVIGATION_FROM_PWA_NAME)
     @SmallTest
     public void testDoNotReparentTopLevelNavigationWithSpecializedHandler() {
         mDelegate.add(new IntentActivity(YOUTUBE_MOBILE_URL, YOUTUBE_PACKAGE_NAME));
@@ -1975,7 +2197,6 @@ public class ExternalNavigationHandlerTest {
     }
 
     @Test
-    @Features.EnableFeatures(ExternalIntentsFeatures.REPARENT_TOP_LEVEL_NAVIGATION_FROM_PWA_NAME)
     @SmallTest
     public void testDoNotReparentSelfNavigation() {
         mUrlHandler = new ExternalNavigationHandlerForTesting(mDelegate);
@@ -3239,6 +3460,13 @@ public class ExternalNavigationHandlerTest {
             mIncognitoDialogDelegate = Mockito.spy(mIncognitoDialogDelegate);
             return mIncognitoDialogDelegate;
         }
+
+        public ExternalNavigationHandler.DigitalCredentialsWarningDialogDelegate
+                spyDigitalCredentialsWarningDialogDelegate() {
+            mDigitalCredentialsWarningDialogDelegate =
+                    Mockito.spy(mDigitalCredentialsWarningDialogDelegate);
+            return mDigitalCredentialsWarningDialogDelegate;
+        }
     }
 
     private static class TestExternalNavigationDelegate implements ExternalNavigationDelegate {
@@ -3375,7 +3603,7 @@ public class ExternalNavigationHandlerTest {
         }
 
         @Override
-        public boolean canCloseTabOnIncognitoIntentLaunch() {
+        public boolean canCloseTabOnIntentLaunch() {
             return false;
         }
 
@@ -3434,6 +3662,16 @@ public class ExternalNavigationHandlerTest {
         @Override
         public Intent createIntentToPreventIncognitoAccess(GURL url) {
             return null;
+        }
+
+        @Override
+        public boolean wasTabLaunchedFromLinkCreatingNewForegroundTab() {
+            return false;
+        }
+
+        @Override
+        public boolean wasTabLaunchedFromLinkCreatingNewWindow() {
+            return false;
         }
 
         public void reset() {

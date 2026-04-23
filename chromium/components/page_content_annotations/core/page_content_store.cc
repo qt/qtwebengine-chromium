@@ -4,12 +4,18 @@
 
 #include "components/page_content_annotations/core/page_content_store.h"
 
+#include <functional>
+#include <set>
+
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/thread_pool.h"
 #include "components/database_utils/url_converter.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
+#include "components/page_content_annotations/core/page_content_annotations_features.h"
+#include "sql/error_delegate_util.h"
 #include "sql/init_status.h"
+#include "sql/recovery.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
 
@@ -22,17 +28,42 @@ PageContentStore::PageContentStore(const base::FilePath& db_path)
 
 PageContentStore::~PageContentStore() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  db_.reset_error_callback();
+}
+
+void PageContentStore::OnDatabaseError(int extended_error,
+                                       sql::Statement* stmt) {
+  VLOG(1) << "PageContentStore database operation failed: " << extended_error
+          << ", " << stmt->GetSQLStatement();
+
+  // Attempt to recover a corrupt database, if it is eligible to be recovered.
+  if (sql::IsErrorCatastrophic(extended_error) &&
+      sql::Recovery::RecoverIfPossible(
+          &db_, extended_error, sql::Recovery::Strategy::kRecoverOrRaze)) {
+    // Recovery was attempted. The database handle has been poisoned and the
+    // error callback has been reset.
+
+    // Signal the test-expectation framework that the error was handled.
+    std::ignore = sql::Database::IsExpectedSqliteError(extended_error);
+
+    db_initialized_ = InitializeDb();
+    return;
+  }
+
+  if (!sql::Database::IsExpectedSqliteError(extended_error)) {
+    VLOG(1) << db_.GetErrorMessage();
+  }
+
+  // Close the db.
+  db_.Close();
+  db_initialized_ = false;
 }
 
 bool PageContentStore::InitializeDb() {
   CHECK(!db_initialized_);
 
-  db_.set_error_callback(base::BindRepeating([](int extended_error,
-                                                sql::Statement* stmt) {
-    // TODO(ssid): Add error handling.
-    VLOG(1) << "PageContentStore database operation failed: " << extended_error
-            << ", " << stmt->GetSQLStatement();
-  }));
+  db_.set_error_callback(base::BindRepeating(&PageContentStore::OnDatabaseError,
+                                             base::Unretained(this)));
 
   if (!db_.Open(db_path_)) {
     return false;
@@ -61,7 +92,7 @@ bool PageContentStore::InitializeDb() {
     static const char kCreateContentTableSql[] =
         "CREATE TABLE page_content ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "apc BLOB)";
+        "value BLOB)";
     if (!db_.Execute(kCreateContentTableSql)) {
       return false;
     }
@@ -94,7 +125,7 @@ void PageContentStore::InitWithEncryptor(os_crypt_async::Encryptor encryptor) {
 }
 
 bool PageContentStore::AddPageContent(const GURL& url,
-                                      const proto::AnnotatedPageContent& apc,
+                                      const proto::PageContext& page_context,
                                       base::Time visit_timestamp,
                                       base::Time extraction_timestamp,
                                       std::optional<int64_t> tab_id) {
@@ -103,12 +134,19 @@ bool PageContentStore::AddPageContent(const GURL& url,
     return false;
   }
 
-  std::string serialized_apc;
-  if (!apc.SerializeToString(&serialized_apc)) {
+  // Delete existing contents, else the insert call would fail since tab_id is
+  // marked unique
+  if (tab_id.has_value()) {
+    DeletePageContentForTab(tab_id.value());
+  }
+
+  std::string serialized_page_context;
+  if (!page_context.SerializeToString(&serialized_page_context)) {
     return false;
   }
-  std::string encrypted_apc;
-  if (!encryptor_->EncryptString(serialized_apc, &encrypted_apc)) {
+  std::string encrypted_page_context;
+  if (!encryptor_->EncryptString(serialized_page_context,
+                                 &encrypted_page_context)) {
     return false;
   }
 
@@ -118,17 +156,15 @@ bool PageContentStore::AddPageContent(const GURL& url,
   }
 
   static const char kInsertContentSql[] =
-      "INSERT INTO page_content (apc) VALUES (?)";
+      "INSERT INTO page_content (value) VALUES (?)";
   sql::Statement content_statement(
       db_.GetCachedStatement(SQL_FROM_HERE, kInsertContentSql));
-  content_statement.BindBlob(0, encrypted_apc);
+  content_statement.BindBlob(0, encrypted_page_context);
   if (!content_statement.Run()) {
     return false;
   }
   const int64_t content_id = db_.GetLastInsertRowId();
 
-  // Note only run INSERT here and not REPLACE, the caller should have deleted
-  // stale contents for a tab.
   static const char kInsertMetadataSql[] =
       "INSERT INTO page_metadata (url, content_id, visit_timestamp, "
       "extraction_timestamp, tab_id) "
@@ -151,7 +187,7 @@ bool PageContentStore::AddPageContent(const GURL& url,
   return transaction.Commit();
 }
 
-std::optional<proto::AnnotatedPageContent> PageContentStore::GetPageContent(
+std::optional<proto::PageContext> PageContentStore::GetPageContent(
     const GURL& url) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!db_initialized_ || !encryptor_.has_value()) {
@@ -159,7 +195,7 @@ std::optional<proto::AnnotatedPageContent> PageContentStore::GetPageContent(
   }
 
   static const char kSelectSql[] =
-      "SELECT pc.apc FROM page_content pc "
+      "SELECT pc.value FROM page_content pc "
       "JOIN page_metadata pm ON pc.id = pm.content_id "
       "WHERE pm.url = ? "
       "ORDER BY pm.visit_timestamp DESC "
@@ -170,15 +206,15 @@ std::optional<proto::AnnotatedPageContent> PageContentStore::GetPageContent(
   return GetPageContentFromStatement(&statement);
 }
 
-std::optional<proto::AnnotatedPageContent>
-PageContentStore::GetPageContentForTab(int64_t tab_id) {
+std::optional<proto::PageContext> PageContentStore::GetPageContentForTab(
+    int64_t tab_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!db_initialized_ || !encryptor_.has_value()) {
     return std::nullopt;
   }
 
   static const char kSelectSql[] =
-      "SELECT pc.apc FROM page_content pc "
+      "SELECT pc.value FROM page_content pc "
       "JOIN page_metadata pm ON pc.id = pm.content_id "
       "WHERE pm.tab_id = ?";
   sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE, kSelectSql));
@@ -187,25 +223,23 @@ PageContentStore::GetPageContentForTab(int64_t tab_id) {
   return GetPageContentFromStatement(&statement);
 }
 
-std::optional<proto::AnnotatedPageContent>
-PageContentStore::GetPageContentFromStatement(sql::Statement* statement) {
+std::optional<proto::PageContext> PageContentStore::GetPageContentFromStatement(
+    sql::Statement* statement) {
   if (!statement->Step()) {
     return std::nullopt;
   }
 
-  std::string encrypted_apc;
-  if (!statement->ColumnBlobAsString(0, &encrypted_apc)) {
+  std::string encrypted_page_context = statement->ColumnBlobAsString(0);
+  std::string serialized_page_context;
+  if (!encryptor_->DecryptString(encrypted_page_context,
+                                 &serialized_page_context)) {
     return std::nullopt;
   }
-  std::string serialized_apc;
-  if (!encryptor_->DecryptString(encrypted_apc, &serialized_apc)) {
+  proto::PageContext page_context;
+  if (!page_context.ParseFromString(serialized_page_context)) {
     return std::nullopt;
   }
-  proto::AnnotatedPageContent apc;
-  if (!apc.ParseFromString(serialized_apc)) {
-    return std::nullopt;
-  }
-  return apc;
+  return page_context;
 }
 
 bool PageContentStore::DeletePageContentOlderThan(base::Time timestamp) {
@@ -219,21 +253,36 @@ bool PageContentStore::DeletePageContentOlderThan(base::Time timestamp) {
     return false;
   }
 
+  int max_limit =
+      page_content_annotations::features::kPageContentCacheMaxTabs.Get();
+
+  // This statement identifies the `page_metadata` entries to KEEP, which are
+  // the `max_limit` most recent entries that are also newer than the
+  // provided `timestamp`. Everything else will be deleted.
+  static const char kSelectIdsToKeepSql[] =
+      "SELECT content_id FROM page_metadata WHERE visit_timestamp >= ? "
+      "ORDER BY visit_timestamp DESC LIMIT ?";
+
   static const char kDeleteContentSql[] =
-      "DELETE FROM page_content WHERE id IN ("
-      "SELECT content_id FROM page_metadata WHERE visit_timestamp < ?)";
+      "DELETE FROM page_content WHERE id NOT IN (%s)";
+  std::string delete_content_sql_string =
+      base::StringPrintf(kDeleteContentSql, kSelectIdsToKeepSql);
   sql::Statement delete_content_statement(
-      db_.GetCachedStatement(SQL_FROM_HERE, kDeleteContentSql));
+      db_.GetUniqueStatement(delete_content_sql_string));
   delete_content_statement.BindTime(0, timestamp);
+  delete_content_statement.BindInt(1, max_limit);
   if (!delete_content_statement.Run()) {
     return false;
   }
 
   static const char kDeleteMetadataSql[] =
-      "DELETE FROM page_metadata WHERE visit_timestamp < ?";
+      "DELETE FROM page_metadata WHERE content_id NOT IN (%s)";
+  std::string delete_metadata_sql_string =
+      base::StringPrintf(kDeleteMetadataSql, kSelectIdsToKeepSql);
   sql::Statement delete_metadata_statement(
-      db_.GetCachedStatement(SQL_FROM_HERE, kDeleteMetadataSql));
+      db_.GetUniqueStatement(delete_metadata_sql_string));
   delete_metadata_statement.BindTime(0, timestamp);
+  delete_metadata_statement.BindInt(1, max_limit);
   if (!delete_metadata_statement.Run()) {
     return false;
   }
@@ -270,6 +319,59 @@ bool PageContentStore::DeletePageContentForTab(int64_t tab_id) {
   if (!delete_metadata_statement.Run()) {
     return false;
   }
+  return transaction.Commit();
+}
+
+bool PageContentStore::DeletePageContentForTabs(
+    const std::set<int64_t>& tab_ids) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!db_initialized_) {
+    return false;
+  }
+  if (tab_ids.empty()) {
+    return true;
+  }
+
+  sql::Transaction transaction(&db_);
+  if (!transaction.Begin()) {
+    return false;
+  }
+
+  std::string placeholders;
+  placeholders.reserve(tab_ids.size() * 2 - 1);
+  for (size_t i = 0; i < tab_ids.size(); ++i) {
+    if (i > 0) {
+      placeholders.append(",");
+    }
+    placeholders.append("?");
+  }
+
+  const std::string delete_content_sql = base::StringPrintf(
+      "DELETE FROM page_content WHERE id IN "
+      "(SELECT content_id FROM page_metadata WHERE tab_id IN (%s))",
+      placeholders.c_str());
+  sql::Statement delete_content_statement(
+      db_.GetUniqueStatement(delete_content_sql));
+  int i = 0;
+  for (int64_t tab_id : tab_ids) {
+    delete_content_statement.BindInt64(i++, tab_id);
+  }
+  if (!delete_content_statement.Run()) {
+    return false;
+  }
+
+  const std::string delete_metadata_sql = base::StringPrintf(
+      "DELETE FROM page_metadata WHERE tab_id IN (%s)", placeholders.c_str());
+  sql::Statement delete_metadata_statement(
+      db_.GetUniqueStatement(delete_metadata_sql));
+  i = 0;
+  for (int64_t tab_id : tab_ids) {
+    delete_metadata_statement.BindInt64(i++, tab_id);
+  }
+  if (!delete_metadata_statement.Run()) {
+    return false;
+  }
+
   return transaction.Commit();
 }
 

@@ -5,21 +5,25 @@
 import {
   createTarget,
 } from '../../testing/EnvironmentHelpers.js';
-import {
-  describeWithMockConnection,
-} from '../../testing/MockConnection.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 import * as Platform from '../platform/platform.js';
 
 import * as SDK from './sdk.js';
 
 const {urlString} = Platform.DevToolsPath;
 
-describeWithMockConnection('Target', () => {
+describe('Target', () => {
+  let browserTarget: SDK.Target.Target;
   let tabTarget: SDK.Target.Target;
   let mainFrameTargetUnderTab: SDK.Target.Target;
   let subframeTarget: SDK.Target.Target;
 
+  setupRuntimeHooks();
+  setupSettingsHooks();
+
   beforeEach(() => {
+    browserTarget = createTarget({type: SDK.Target.Type.BROWSER});
     tabTarget = createTarget({type: SDK.Target.Type.TAB});
     mainFrameTargetUnderTab = createTarget({type: SDK.Target.Type.FRAME, parentTarget: tabTarget});
     subframeTarget = createTarget({type: SDK.Target.Type.FRAME, parentTarget: mainFrameTargetUnderTab});
@@ -34,6 +38,31 @@ describeWithMockConnection('Target', () => {
 
     assert.isTrue(subframeTarget.hasAllCapabilities(SDK.Target.Capability.TARGET | SDK.Target.Capability.DOM));
     assert.isFalse(subframeTarget.hasAllCapabilities(SDK.Target.Capability.DEVICE_EMULATION));
+  });
+
+  // Temporarily disabled until the root cause for the crashers in https://crbug.com/466134219 is
+  // found and resolved.
+  it.skip('[crbug.com/406991275] should grant STORAGE capability to top-level workers', () => {
+    const serviceWorker = createTarget({type: SDK.Target.Type.ServiceWorker, parentTarget: browserTarget});
+    const sharedWorker = createTarget({type: SDK.Target.Type.SHARED_WORKER, parentTarget: browserTarget});
+    const dedicatedWorker = createTarget({type: SDK.Target.Type.Worker, parentTarget: browserTarget});
+
+    assert.isTrue(serviceWorker.hasAllCapabilities(SDK.Target.Capability.STORAGE), 'top-level service worker');
+    assert.isTrue(sharedWorker.hasAllCapabilities(SDK.Target.Capability.STORAGE), 'top-level shared worker');
+    assert.isTrue(dedicatedWorker.hasAllCapabilities(SDK.Target.Capability.STORAGE), 'top-level dedicated worker');
+  });
+
+  it('should NOT grant STORAGE capability to frame-attached workers', () => {
+    const frameTarget = mainFrameTargetUnderTab;
+
+    const serviceWorker = createTarget({type: SDK.Target.Type.ServiceWorker, parentTarget: frameTarget});
+    const sharedWorker = createTarget({type: SDK.Target.Type.SHARED_WORKER, parentTarget: frameTarget});
+    const dedicatedWorker = createTarget({type: SDK.Target.Type.Worker, parentTarget: frameTarget});
+
+    assert.isFalse(serviceWorker.hasAllCapabilities(SDK.Target.Capability.STORAGE), 'frame-attached service worker');
+    assert.isFalse(sharedWorker.hasAllCapabilities(SDK.Target.Capability.STORAGE), 'frame-attached shared worker');
+    assert.isFalse(
+        dedicatedWorker.hasAllCapabilities(SDK.Target.Capability.STORAGE), 'frame-attached dedicated worker');
   });
 
   it('notifies about inspected URL change', () => {

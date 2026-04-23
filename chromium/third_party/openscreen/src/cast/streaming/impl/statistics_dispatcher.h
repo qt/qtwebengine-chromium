@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#include "cast/streaming/impl/statistics_defines.h"
+#include "cast/streaming/impl/statistics_common.h"
 #include "platform/api/time.h"
 #include "platform/base/span.h"
 

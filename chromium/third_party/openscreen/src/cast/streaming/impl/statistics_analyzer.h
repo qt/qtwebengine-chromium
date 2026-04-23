@@ -59,7 +59,7 @@ class StatisticsAnalyzer {
 
   struct PacketInfo {
     Clock::time_point timestamp;
-    StatisticsEventType type;
+    StatisticsEvent::Type type;
   };
 
   struct SessionStats {
@@ -75,20 +75,20 @@ class StatisticsAnalyzer {
     T audio;
     T video;
 
-    const T& Get(StatisticsEventMediaType media_type) const {
-      if (media_type == StatisticsEventMediaType::kAudio) {
+    const T& Get(StatisticsEvent::MediaType media_type) const {
+      if (media_type == StatisticsEvent::MediaType::kAudio) {
         return audio;
       }
-      OSP_CHECK(media_type == StatisticsEventMediaType::kVideo);
+      OSP_CHECK(media_type == StatisticsEvent::MediaType::kVideo);
       return video;
     }
-    T& Get(StatisticsEventMediaType media_type) {
+    T& Get(StatisticsEvent::MediaType media_type) {
       return const_cast<T&>(const_cast<const AVPair*>(this)->Get(media_type));
     }
   };
 
-  using FrameStatsMap = std::map<StatisticsEventType, FrameStatsAggregate>;
-  using PacketStatsMap = std::map<StatisticsEventType, PacketStatsAggregate>;
+  using FrameStatsMap = std::map<StatisticsEvent::Type, FrameStatsAggregate>;
+  using PacketStatsMap = std::map<StatisticsEvent::Type, PacketStatsAggregate>;
   using LatencyStatsMap = std::map<StatisticType, LatencyStatsAggregate>;
 
   using FrameInfoMap = std::map<RtpTimeTicks, FrameInfo>;
@@ -116,50 +116,50 @@ class StatisticsAnalyzer {
   void ErasePacketInfo(const PacketEvent& packet_event);
   void AddToLatencyAggregrate(StatisticType latency_stat,
                               Clock::duration latency_delta,
-                              StatisticsEventMediaType media_type);
+                              StatisticsEvent::MediaType media_type);
   void AddToHistogram(HistogramType histogram,
-                      StatisticsEventMediaType media_type,
+                      StatisticsEvent::MediaType media_type,
                       int64_t sample);
 
   // Creates a stats list, and populates the entries based on stored stats info
   // / aggregates for each stat field.
   SenderStats::StatisticsList ConstructStatisticsList(
       Clock::time_point end_time,
-      StatisticsEventMediaType media_type);
+      StatisticsEvent::MediaType media_type);
 
-  void PopulatePacketCountStat(StatisticsEventType event,
+  void PopulatePacketCountStat(StatisticsEvent::Type event,
                                StatisticType stat,
-                               StatisticsEventMediaType media_type,
+                               StatisticsEvent::MediaType media_type,
                                SenderStats::StatisticsList& stats_list);
 
-  void PopulateFrameCountStat(StatisticsEventType event,
+  void PopulateFrameCountStat(StatisticsEvent::Type event,
                               StatisticType stat,
-                              StatisticsEventMediaType media_type,
+                              StatisticsEvent::MediaType media_type,
                               SenderStats::StatisticsList& stats_list);
 
-  void PopulateFpsStat(StatisticsEventType event,
+  void PopulateFpsStat(StatisticsEvent::Type event,
                        StatisticType stat,
-                       StatisticsEventMediaType media_type,
+                       StatisticsEvent::MediaType media_type,
                        Clock::time_point end_time,
                        SenderStats::StatisticsList& stats_list);
 
   void PopulateAvgLatencyStat(StatisticType stat,
-                              StatisticsEventMediaType media_type,
+                              StatisticsEvent::MediaType media_type,
                               SenderStats::StatisticsList& stats_list);
 
-  void PopulateFrameBitrateStat(StatisticsEventType event,
+  void PopulateFrameBitrateStat(StatisticsEvent::Type event,
                                 StatisticType stat,
-                                StatisticsEventMediaType media_type,
+                                StatisticsEvent::MediaType media_type,
                                 Clock::time_point end_time,
                                 SenderStats::StatisticsList& stats_list);
 
-  void PopulatePacketBitrateStat(StatisticsEventType event,
+  void PopulatePacketBitrateStat(StatisticsEvent::Type event,
                                  StatisticType stat,
-                                 StatisticsEventMediaType media_type,
+                                 StatisticsEvent::MediaType media_type,
                                  Clock::time_point end_time,
                                  SenderStats::StatisticsList& stats_list);
 
-  void PopulateSessionStats(StatisticsEventMediaType media_type,
+  void PopulateSessionStats(StatisticsEvent::MediaType media_type,
                             Clock::time_point end_time,
                             SenderStats::StatisticsList& stats_list);
 
@@ -167,11 +167,7 @@ class StatisticsAnalyzer {
   // the sender-side version of this receiver timestamp, if possible.
   std::optional<Clock::time_point> ToSenderTimestamp(
       Clock::time_point receiver_timestamp,
-      StatisticsEventMediaType media_type) const;
-
-  // Records the network latency estimate, which is then weighted and used as
-  // part of the moving network latency estimate.
-  void RecordEstimatedNetworkLatency(Clock::duration latency);
+      StatisticsEvent::MediaType media_type) const;
 
   // The statistics client to which we report analyzed statistics.
   SenderStatsClient* const stats_client_;
@@ -186,12 +182,6 @@ class StatisticsAnalyzer {
   ClockNowFunctionPtr now_;
   Alarm alarm_;
   Clock::time_point start_time_;
-
-  // Keep track of the currently estimated network latency.
-  //
-  // NOTE: though we currently record the average network latency separately for
-  // audio and video, they use the same network so the value should be the same.
-  Clock::duration estimated_network_latency_{};
 
   // Maps of frame / packet infos used for stats that rely on seeing multiple
   // events. For example, network latency is the calculated time difference

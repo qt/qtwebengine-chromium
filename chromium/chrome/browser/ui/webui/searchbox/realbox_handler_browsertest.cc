@@ -16,6 +16,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/browser_features.h"
 #include "chrome/browser/preloading/chrome_preloading.h"
@@ -28,7 +29,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/omnibox/omnibox_controller.h"
 #include "chrome/browser/ui/omnibox/omnibox_pedal_implementations.h"
-#include "chrome/browser/ui/webui/searchbox/searchbox_handler.h"
+#include "chrome/browser/ui/webui/cr_components/searchbox/searchbox_handler.h"
 #include "chrome/browser/ui/webui/searchbox/searchbox_test_utils.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -80,6 +81,18 @@ class RealboxSearchBrowserTestPage : public searchbox::mojom::Page {
       std::optional<composebox_query::mojom::FileUploadErrorType> error_type)
       override {}
   void OnTabStripChanged() override {}
+  void AddFileContext(
+      const base::UnguessableToken& token,
+      searchbox::mojom::SelectedFileInfoPtr file_info) override {}
+  void UpdateAutoSuggestedTabContext(
+      searchbox::mojom::TabInfoPtr tab_info) override {}
+  void OnShow() override {}
+  MOCK_METHOD(void, SetKeywordSelected, (bool is_keyword_selected), (override));
+  MOCK_METHOD(void, UpdateContentSharingPolicy, (bool enabled), (override));
+  MOCK_METHOD(void, UpdateLensSearchEligibility, (bool eligible), (override));
+  MOCK_METHOD(void, UpdateAimEligibility, (bool eligible), (override));
+  void OnShowAiModePrefChanged(bool canShow) override {}
+
   mojo::PendingRemote<searchbox::mojom::Page> GetRemotePage() {
     return receiver_.BindNewPipeAndPassRemote();
   }
@@ -107,9 +120,13 @@ class RealboxSearchPreloadBrowserTest : public SearchPrefetchBaseBrowserTest {
   std::pair<GURL, GURL> StartPrefetchAndPrerender() {
     mojo::Remote<searchbox::mojom::PageHandler> remote_page_handler;
     RealboxSearchBrowserTestPage page;
-    RealboxHandler realbox_handler =
-        RealboxHandler(remote_page_handler.BindNewPipeAndPassReceiver(),
-                       browser()->profile(), GetWebContents());
+    RealboxHandler realbox_handler = RealboxHandler(
+        remote_page_handler.BindNewPipeAndPassReceiver(), browser()->profile(),
+        GetWebContents(),
+        base::BindLambdaForTesting(
+            []() -> contextual_search::ContextualSearchSessionHandle* {
+              return nullptr;
+            }));
     realbox_handler.SetPage(page.GetRemotePage());
     content::test::PrerenderHostRegistryObserver registry_observer(
         *GetWebContents());
@@ -190,10 +207,10 @@ IN_PROC_BROWSER_TEST_F(RealboxSearchPreloadWithSearchStatsBrowserTest,
 
   // Verify the prefetch and prerender URLs.
   // Only the prefetch URL should have the "pf=cs".
-  EXPECT_TRUE(base::Contains(prefetch_url.query(), "pf=cs&"));
-  EXPECT_FALSE(base::Contains(prerender_url.query(), "pf=cs&"));
-  EXPECT_TRUE(base::Contains(prefetch_url.query(), "gs_lcrp="));
-  EXPECT_TRUE(base::Contains(prerender_url.query(), "gs_lcrp="));
+  EXPECT_TRUE(base::Contains(prefetch_url.GetQuery(), "pf=cs&"));
+  EXPECT_FALSE(base::Contains(prerender_url.GetQuery(), "pf=cs&"));
+  EXPECT_TRUE(base::Contains(prefetch_url.GetQuery(), "gs_lcrp="));
+  EXPECT_TRUE(base::Contains(prerender_url.GetQuery(), "gs_lcrp="));
 
   // The prefetch should match the prerender.
   EXPECT_TRUE(IsSearchDestinationMatch(GetCanonicalSearchURL(prefetch_url),
@@ -206,13 +223,13 @@ IN_PROC_BROWSER_TEST_F(RealboxSearchPreloadWithoutSearchStatsBrowserTest,
 
   // Verify the prefetch and prerender URLs.
   // Only the prefetch URL should have the "pf=cs".
-  EXPECT_TRUE(base::Contains(prefetch_url.query(), "pf=cs&"));
-  EXPECT_FALSE(base::Contains(prerender_url.query(), "pf=cs&"));
+  EXPECT_TRUE(base::Contains(prefetch_url.GetQuery(), "pf=cs&"));
+  EXPECT_FALSE(base::Contains(prerender_url.GetQuery(), "pf=cs&"));
   // The prefetch URL should not have the "gs_lcrp" if
   // switches::kRemoveSearchboxStatsParamFromPrefetchRequests is true, while the
   // prerender URL should always have that.
-  EXPECT_FALSE(base::Contains(prefetch_url.query(), "gs_lcrp="));
-  EXPECT_TRUE(base::Contains(prerender_url.query(), "gs_lcrp="));
+  EXPECT_FALSE(base::Contains(prefetch_url.GetQuery(), "gs_lcrp="));
+  EXPECT_TRUE(base::Contains(prerender_url.GetQuery(), "gs_lcrp="));
 
   // The prefetch should match the prerender.
   EXPECT_TRUE(IsSearchDestinationMatch(GetCanonicalSearchURL(prefetch_url),
@@ -237,7 +254,11 @@ class RealboxHandlerTest : public InProcessBrowserTest,
     handler_ = std::make_unique<RealboxHandler>(
         mojo::PendingReceiver<searchbox::mojom::PageHandler>(),
         browser()->profile(),
-        /*web_contents=*/browser()->tab_strip_model()->GetActiveWebContents());
+        /*web_contents=*/browser()->tab_strip_model()->GetActiveWebContents(),
+        base::BindLambdaForTesting(
+            []() -> contextual_search::ContextualSearchSessionHandle* {
+              return nullptr;
+            }));
     handler_->SetPage(page_.BindAndGetRemote());
   }
 
@@ -263,8 +284,7 @@ IN_PROC_BROWSER_TEST_F(RealboxHandlerTest, RealboxUpdatesEditModelInput) {
   // Set a mock OmniboxEditModel.
   auto omnibox_edit_model =
       std::make_unique<testing::NiceMock<MockOmniboxEditModel>>(
-          handler_->omnibox_controller(),
-          /*view=*/nullptr);
+          handler_->omnibox_controller());
   raw_ptr<testing::NiceMock<MockOmniboxEditModel>> omnibox_edit_model_ =
       omnibox_edit_model.get();
   handler_->omnibox_controller()->SetEditModelForTesting(
@@ -291,7 +311,7 @@ IN_PROC_BROWSER_TEST_F(RealboxHandlerTest, RealboxUpdatesEditModelInput) {
   AutocompleteInput input;
   EXPECT_CALL(*autocomplete_controller_, Start(_))
       .Times(2)
-      .WillRepeatedly(DoAll(SaveArg<0>(&input)));
+      .WillRepeatedly(SaveArg<0>(&input));
 
   handler_->QueryAutocomplete(u"", /*prevent_inline_autocomplete=*/false);
 

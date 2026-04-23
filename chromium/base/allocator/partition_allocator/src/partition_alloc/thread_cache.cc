@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "partition_alloc/slot_start.h"
 #ifdef UNSAFE_BUFFERS_BUILD
 // TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
 #pragma allow_unsafe_buffers
@@ -248,27 +249,11 @@ void ThreadCacheRegistry::SetThreadCacheMultiplier(float multiplier) {
   }
 }
 
-void ThreadCacheRegistry::SetPurgingConfiguration(
-    const internal::base::TimeDelta min_purge_interval,
-    const internal::base::TimeDelta max_purge_interval,
-    const internal::base::TimeDelta default_purge_interval,
-    size_t min_cached_memory_for_purging_bytes) {
-  PA_CHECK(min_purge_interval <= default_purge_interval);
-  PA_CHECK(default_purge_interval <= max_purge_interval);
-  min_purge_interval_ = min_purge_interval;
-  max_purge_interval_ = max_purge_interval;
-  default_purge_interval_ = default_purge_interval;
-  min_cached_memory_for_purging_bytes_ = min_cached_memory_for_purging_bytes;
-  is_purging_configured_ = true;
-}
-
 void ThreadCacheRegistry::RunPeriodicPurge() {
   if (!periodic_purge_is_initialized_) {
     ThreadCache::EnsureThreadSpecificDataInitialized();
     periodic_purge_is_initialized_ = true;
   }
-
-  PA_CHECK(is_purging_configured_);
 
   // Summing across all threads can be slow, but is necessary. Otherwise we rely
   // on the assumption that the current thread is a good proxy for overall
@@ -304,15 +289,15 @@ void ThreadCacheRegistry::RunPeriodicPurge() {
   // scheduled purge with a small enough interval. This is the case for instance
   // of a renderer moving to foreground. To mitigate that, if cached memory
   // jumps is very large, make a greater leap to faster purging.
-  if (cached_memory_approx > 10 * min_cached_memory_for_purging_bytes_) {
+  if (cached_memory_approx > 10 * kMinCachedMemoryForPurgingBytes) {
     periodic_purge_next_interval_ =
-        std::min(default_purge_interval_, periodic_purge_next_interval_ / 2);
-  } else if (cached_memory_approx > 2 * min_cached_memory_for_purging_bytes_) {
+        std::min(kDefaultPurgeInterval, periodic_purge_next_interval_ / 2);
+  } else if (cached_memory_approx > 2 * kMinCachedMemoryForPurgingBytes) {
     periodic_purge_next_interval_ =
-        std::max(min_purge_interval_, periodic_purge_next_interval_ / 2);
-  } else if (cached_memory_approx < min_cached_memory_for_purging_bytes_) {
+        std::max(kMinPurgeInterval, periodic_purge_next_interval_ / 2);
+  } else if (cached_memory_approx < kMinCachedMemoryForPurgingBytes) {
     periodic_purge_next_interval_ =
-        std::min(max_purge_interval_, periodic_purge_next_interval_ * 2);
+        std::min(kMaxPurgeInterval, periodic_purge_next_interval_ * 2);
   }
 
   // Make sure that the next interval is in the right bounds. Even though the
@@ -324,7 +309,7 @@ void ThreadCacheRegistry::RunPeriodicPurge() {
   // background threads, but only ask them to purge their own cache at the next
   // allocation).
   periodic_purge_next_interval_ = std::clamp(
-      periodic_purge_next_interval_, min_purge_interval_, max_purge_interval_);
+      periodic_purge_next_interval_, kMinPurgeInterval, kMaxPurgeInterval);
 
   PurgeAll();
 }
@@ -335,7 +320,7 @@ int64_t ThreadCacheRegistry::GetPeriodicPurgeNextIntervalInMicroseconds()
 }
 
 void ThreadCacheRegistry::ResetForTesting() {
-  periodic_purge_next_interval_ = default_purge_interval_;
+  periodic_purge_next_interval_ = kDefaultPurgeInterval;
 }
 
 // static
@@ -650,7 +635,7 @@ void ThreadCache::FillBucket(size_t bucket_index) {
     // only used for direct-mapped allocations and single-slot ones anyway,
     // which are not handled here.
     size_t ret_slot_size;
-    uintptr_t slot_start =
+    internal::UntaggedSlotStart slot_start =
         root_->AllocFromBucket<AllocFlags::kFastPathOrReturnNull |
                                AllocFlags::kReturnNull>(
             &root_->buckets[bucket_index],
@@ -733,13 +718,16 @@ void ThreadCache::FreeAfter(internal::FreelistEntry* head, size_t slot_size) {
   // acquisitions can be expensive.
   internal::ScopedGuard guard(internal::PartitionRootLock(root_));
   while (head) {
-    uintptr_t slot_start = internal::SlotStartPtr2Addr(head);
+    internal::UntaggedSlotStart slot_start =
+        internal::SlotStart::Unchecked(head).Untag();
 #if PA_BUILDFLAG(HAS_64_BIT_POINTERS)
     head = head->GetNextForThreadCache(slot_size, offset_lookup_);
 #else
     head = head->GetNextForThreadCache(slot_size);
 #endif  // PA_BUILDFLAG(HAS_64_BIT_POINTERS)
-    root_->RawFreeLocked(slot_start);
+    internal::SlotSpanMetadata* slot_span =
+        internal::SlotSpanMetadata::FromSlotStart(slot_start, root_);
+    root_->RawFreeLocked(slot_start, slot_span);
   }
 }
 
@@ -841,7 +829,7 @@ PartitionRoot* ThreadCache::GetRoot() {
   return root_;
 }
 
-bool ThreadCache::IsInFreelist(uintptr_t address,
+bool ThreadCache::IsInFreelist(internal::UntaggedSlotStart address,
                                size_t bucket_index,
                                size_t& position) {
   PA_REENTRANCY_GUARD(is_in_thread_cache_);
@@ -862,7 +850,7 @@ bool ThreadCache::IsInFreelist(uintptr_t address,
   size_t index = 0;
   size_t length = bucket.count;
   while (entry != nullptr && index < length) {
-    if (address == internal::SlotStartPtr2Addr(entry)) {
+    if (address == internal::SlotStart::Unchecked(entry).Untag()) {
       position = index;
       return true;
     }

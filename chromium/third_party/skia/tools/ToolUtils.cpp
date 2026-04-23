@@ -82,6 +82,7 @@ const char* colortype_name(SkColorType ct) {
         case kRGBA_F16_SkColorType:           return "RGBA_F16";
         case kRGBA_F32_SkColorType:           return "RGBA_F32";
         case kR8G8_unorm_SkColorType:         return "R8G8_unorm";
+        case kR16_unorm_SkColorType:          return "R16_unorm";
         case kR16G16_unorm_SkColorType:       return "R16G16_unorm";
         case kR16G16_float_SkColorType:       return "R16G16_float";
         case kR16G16B16A16_unorm_SkColorType: return "R16G16B16A16_unorm";
@@ -116,6 +117,7 @@ const char* colortype_depth(SkColorType ct) {
         case kRGBA_F16_SkColorType:           return "F16";
         case kRGBA_F32_SkColorType:           return "F32";
         case kR8G8_unorm_SkColorType:         return "88";
+        case kR16_unorm_SkColorType:          return "R16";
         case kR16G16_unorm_SkColorType:       return "1616";
         case kR16G16_float_SkColorType:       return "F16F16";
         case kR16G16B16A16_unorm_SkColorType: return "16161616";
@@ -215,7 +217,7 @@ void add_to_text_blob_w_len(SkTextBlobBuilder* builder,
                             const SkFont&      font,
                             SkScalar           x,
                             SkScalar           y) {
-    int  count = font.countText(text, len, encoding);
+    size_t  count = font.countText(text, len, encoding);
     if (count < 1) {
         return;
     }
@@ -236,12 +238,12 @@ SkPath get_text_path(const SkFont&  font,
                    size_t         length,
                    SkTextEncoding encoding,
                    const SkPoint  pos[]) {
-    SkAutoToGlyphs        atg(font, text, length, encoding);
-    const int             count = atg.count();
+    SkAutoToGlyphs      atg(font, text, length, encoding);
+    const size_t        count = atg.count();
     AutoTArray<SkPoint> computedPos;
     if (pos == nullptr) {
         computedPos.reset(count);
-        font.getPos(atg, computedPos);
+        font.getPos(atg.glyphs(), computedPos);
         pos = computedPos.get();
     }
 
@@ -249,7 +251,7 @@ SkPath get_text_path(const SkFont&  font,
         SkPathBuilder  fBuilder;
         const SkPoint* fPos;
     } rec = {{}, pos};
-    font.getPaths(atg,
+    font.getPaths(atg.glyphs(),
                   [](const SkPath* src, const SkMatrix& mx, void* ctx) {
                       Rec* rec = (Rec*)ctx;
                       if (src) {
@@ -520,7 +522,7 @@ VariationSliders::VariationSliders(SkTypeface* typeface,
     std::unique_ptr<SkFontParameters::Variation::Axis[]> copiedAxes =
             std::make_unique<SkFontParameters::Variation::Axis[]>(numAxes);
 
-    numAxes = typeface->getVariationDesignParameters({copiedAxes.get(), numAxes});
+    numAxes = typeface->getVariationDesignParameters({copiedAxes.get(), (size_t)numAxes});
     if (numAxes < 0) {
         return;
     }
@@ -760,7 +762,8 @@ void ExtractPathsFromSKP(const char filepath[], std::function<PathSniffCallback>
         std::function<PathSniffCallback> fPathSniffCallback;
     };
 
-    sk_sp<SkPicture> skp = SkPicture::MakeFromStream(&stream);
+    // We don't need to decode images etc, so we can pass nullptr for the deserial procs.
+    sk_sp<SkPicture> skp = SkPicture::MakeFromStream(&stream, nullptr);
     if (!skp) {
         SkDebugf("ExtractPaths: couldn't load skp at \"%s\"\n", filepath);
         return;

@@ -162,6 +162,8 @@ bool CoreChecks::PreCallValidateCreateRayTracingPipelinesNV(VkDevice device, VkP
         const Location flag_loc = pipeline->GetCreateFlagsLoc(create_info_loc);
         skip |= ValidatePipelineCacheControlFlags(pipeline->create_flags, flag_loc,
                                                   "VUID-VkRayTracingPipelineCreateInfoNV-pipelineCreationCacheControl-02905");
+        skip |= ValidatePipeline64BitIndexingFlags(pipeline->create_flags, flag_loc,
+                                                   "VUID-VkRayTracingPipelineCreateInfoNV-flags-11798");
 
         if (create_info.maxRecursionDepth > phys_dev_ext_props.ray_tracing_props_nv.maxRecursionDepth) {
             skip |= LogError("VUID-VkRayTracingPipelineCreateInfoNV-maxRecursionDepth-03457", device,
@@ -180,7 +182,7 @@ bool CoreChecks::PreCallValidateCreateRayTracingPipelinesKHR(VkDevice device, Vk
                                                              const VkRayTracingPipelineCreateInfoKHR *pCreateInfos,
                                                              const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
                                                              const ErrorObject &error_obj, PipelineStates &pipeline_states,
-                                                             chassis::CreateRayTracingPipelinesKHR &) const {
+                                                             chassis::CreateRayTracingPipelinesKHR &chassis_state) const {
     bool skip = false;
 
     skip |= ValidateDeviceQueueSupport(error_obj.location);
@@ -217,9 +219,24 @@ bool CoreChecks::PreCallValidateCreateRayTracingPipelinesKHR(VkDevice device, Vk
             skip |= ValidatePipelineShaderStage(*pipeline, stage_ci, pCreateInfos[i].pNext,
                                                 create_info_loc.dot(Field::pStages, stage_index++));
         }
+
+        uint32_t stateless_data_i = 0;
+        for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++) {
+            if (const auto shader_ci = vku::FindStructInPNextChain<VkShaderModuleCreateInfo>(pCreateInfos[i].pStages[stage].pNext)) {
+                (void)shader_ci;
+                skip |= stateless_spirv_validator.Validate(
+                    *chassis_state.stateless_data[stateless_data_i].pipeline_pnext_module,
+                    chassis_state.stateless_data[stateless_data_i],
+                    create_info_loc.dot(Field::pStages, stage).pNext(Struct::VkShaderModuleCreateInfo, Field::pCode));
+                ++stateless_data_i;
+            }
+        }
+
         const Location flags_loc = pipeline->GetCreateFlagsLoc(create_info_loc);
         skip |= ValidatePipelineCacheControlFlags(pipeline->create_flags, flags_loc,
                                                   "VUID-VkRayTracingPipelineCreateInfoKHR-pipelineCreationCacheControl-02905");
+        skip |= ValidatePipeline64BitIndexingFlags(pipeline->create_flags, flags_loc,
+                                                   "VUID-VkRayTracingPipelineCreateInfoKHR-flags-11798");
 
         if (create_info.maxPipelineRayRecursionDepth > phys_dev_ext_props.ray_tracing_props_khr.maxRayRecursionDepth) {
             skip |=

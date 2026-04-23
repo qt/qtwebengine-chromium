@@ -19,6 +19,7 @@ def GlicCommonChecks(input_api, output_api):
 
 def _CheckGlicGeneratedApi(input_api, output_api):
     monitored_files = (
+        'chrome/common/actor_webui.mojom',
         'chrome/browser/glic/host/glic.mojom',
         'chrome/browser/resources/glic/glic_api_impl/generate.py',
         'chrome/browser/resources/glic/glic_api/glic_api.ts',
@@ -48,7 +49,7 @@ def _CheckGlicGeneratedApi(input_api, output_api):
 
 def _CheckRuntimeFeatureChecksIfModified(input_api, output_api):
     MONITORED_FILES = set((
-        'chrome/browser/resources/glic/glic_api_impl/glic_api_client.ts',
+        'chrome/browser/resources/glic/glic_api_impl/client/glic_api_client.ts',
         'chrome/browser/glic/host/glic.mojom',
         'chrome/browser/resources/glic/presubmit/check_runtime_features.py',
     ))

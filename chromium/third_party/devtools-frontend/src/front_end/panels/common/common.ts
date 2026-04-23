@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -69,7 +69,7 @@ export class TypeToAllowDialog {
           UI.UIUtils.createTextButton(i18nString(UIStrings.cancel), () => resolve(false), {jslogContext: 'cancel'});
 
       const allowButton = UI.UIUtils.createTextButton(i18nString(UIStrings.allow), () => {
-        resolve(input.value === options.typePhrase);
+        resolve(input.value === options.typePhrase || input.value === `'${options.typePhrase}'`);
       }, {jslogContext: 'confirm', variant: Buttons.Button.Variant.PRIMARY});
       allowButton.disabled = true;
 
@@ -95,8 +95,16 @@ export class TypeToAllowDialog {
 }
 
 export {AiCodeCompletionTeaser} from './AiCodeCompletionTeaser.js';
+export {AiCodeGenerationTeaser} from './AiCodeGenerationTeaser.js';
+export {AnnotationManager} from './AnnotationManager.js';
 export {FreDialog} from './FreDialog.js';
 export {GdpSignUpDialog} from './GdpSignUpDialog.js';
 export {AiCodeCompletionDisclaimer} from './AiCodeCompletionDisclaimer.js';
 export {AiCodeCompletionSummaryToolbar} from './AiCodeCompletionSummaryToolbar.js';
 export * from './BadgeNotification.js';
+export * as ExtensionPanel from './ExtensionPanel.js';
+export * as ExtensionServer from './ExtensionServer.js';
+export * as ExtensionView from './ExtensionView.js';
+export * as PersistenceUtils from './PersistenceUtils.js';
+export * as DOMLinkifier from './DOMLinkifier.js';
+export * as ExtensionIframe from './ExtensionView.js';

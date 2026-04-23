@@ -13,6 +13,7 @@
 #include "components/lens/lens_features.h"
 #include "components/lens/lens_overlay_invocation_source.h"
 #include "components/lens/lens_overlay_mime_type.h"
+#include "components/lens/lens_overlay_non_blocking_privacy_notice_user_action.h"
 #include "components/lens/lens_side_panel_iframe_load_status.h"
 #include "net/base/net_errors.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
@@ -54,6 +55,12 @@ std::string InvocationSourceToString(
       return "ContentAreaContextMenuText";
     case LensOverlayInvocationSource::kContentAreaContextMenuVideo:
       return "ContentAreaContextMenuVideo";
+    case LensOverlayInvocationSource::kNtpContextualQuery:
+      return "NtpContextualQuery";
+    case LensOverlayInvocationSource::kOmniboxContextualQuery:
+      return "OmniboxContextualQuery";
+    case LensOverlayInvocationSource::kContextualTasksComposebox:
+      return "ContextualTasksComposebox";
   }
 }
 
@@ -113,6 +120,23 @@ void RecordPermissionUserAction(LensPermissionUserAction user_action,
   const auto histogram_name =
       "Lens.Overlay.PermissionBubble.ByInvocationSource." +
       InvocationSourceToString(invocation_source) + ".UserAction";
+  base::UmaHistogramEnumeration(histogram_name, user_action);
+}
+
+void RecordNonBlockingPrivacyNoticeToBeShown(
+    LensOverlayInvocationSource invocation_source) {
+  base::UmaHistogramEnumeration("Lens.Overlay.NonBlockingPrivacyNotice.Shown",
+                                invocation_source);
+}
+
+void RecordNonBlockingPrivacyNoticeAccepted(
+    LensOverlayNonBlockingPrivacyNoticeUserAction user_action,
+    LensOverlayInvocationSource invocation_source) {
+  base::UmaHistogramEnumeration(
+      "Lens.Overlay.NonBlockingPrivacyNotice.Accepted", user_action);
+  const auto histogram_name =
+      "Lens.Overlay.NonBlockingPrivacyNotice.ByInvocationSource." +
+      InvocationSourceToString(invocation_source) + ".Accepted";
   base::UmaHistogramEnumeration(histogram_name, user_action);
 }
 
@@ -460,6 +484,15 @@ void RecordTimeToFirstInteraction(
       // Not recorded since the video context menu entry point results in a
       // search without the user having to interact with the overlay. Time to
       // first interaction in this case is essentially zero.
+      break;
+    case lens::LensOverlayInvocationSource::kNtpContextualQuery:
+    case lens::LensOverlayInvocationSource::kOmniboxContextualQuery:
+      // Not recorded since the ntp and omnibox contextual query flows do not
+      // use the Lens Overlay Controller.
+      break;
+    case LensOverlayInvocationSource::kContextualTasksComposebox:
+      // TODO(crbug.com/469460311): Add metrics for Contextual Tasks lens
+      // button.
       break;
   }
   event.SetFirstInteractionType(static_cast<int64_t>(first_interaction_type))

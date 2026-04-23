@@ -69,6 +69,7 @@
 #include "./centipede/centipede_interface.h"
 #include "./centipede/environment.h"
 #include "./centipede/execution_metadata.h"
+#include "./centipede/fuzztest_mutator.h"
 #include "./centipede/mutation_input.h"
 #include "./centipede/runner_interface.h"
 #include "./centipede/runner_result.h"
@@ -462,25 +463,27 @@ class CentipedeAdaptorRunnerCallbacks
         prng_(GetRandomSeed()) {}
 
   bool Execute(fuzztest::internal::ByteSpan input) override {
-    [[maybe_unused]] static bool check_if_not_skipped_on_setup = [&] {
-      if (runtime_.skipping_requested()) {
-        absl::FPrintF(GetStderr(),
-                      "[.] Skipping %s per request from the test setup.\n",
-                      fuzzer_impl_.test_.full_name());
-        CentipedeSetFailureDescription("SKIPPED TEST: Requested from setup");
-        // It has to use _Exit(1) to avoid trigger the reporting of regular
-        // setup failure while let Centipede be aware of this. Note that this
-        // skips the fixture teardown.
-        std::_Exit(1);
-      }
-      return true;
-    }();
     // Disable tracing until running the property function in
     // `CentipedeFxitureDriver::RunFuzzTestIteration()`
     const int old_traced = CentipedeSetCurrentThreadTraced(/*traced=*/0);
     absl::Cleanup tracing_restorer = [old_traced] {
       CentipedeSetCurrentThreadTraced(old_traced);
     };
+    static const bool skipped_on_setup = runtime_.skipping_requested();
+    if (skipped_on_setup) {
+      absl::FPrintF(GetStderr(),
+                    "[.] Skipping %s per request from the test setup.\n",
+                    fuzzer_impl_.test_.full_name());
+      CentipedeSetFailureDescription("SKIPPED TEST: Requested from setup");
+      return true;
+    }
+    if (runtime_.termination_requested()) {
+      absl::FPrintF(GetStderr(),
+                    "[.] Termination requested - exiting without executing "
+                    "further inputs.\n");
+      CentipedeSetFailureDescription("IGNORED FAILURE: Termination requested");
+      return false;
+    }
     // We should avoid doing anything other than executing the input here so
     // that we don't affect the execution time.
     auto parsed_input =
@@ -488,9 +491,9 @@ class CentipedeAdaptorRunnerCallbacks
     if (parsed_input.ok()) {
       fuzzer_impl_.RunOneInput({*std::move(parsed_input)});
       if (runtime_.external_failure_detected()) {
-        absl::FPrintF(GetStderr(),
-                      "[!] External failure detected - aborting.\n");
-        std::abort();
+        // This would take effect only if no previous description is set.
+        CentipedeSetFailureDescription(
+            "INPUT FAILURE: external failure detected.");
       }
       return true;
     }
@@ -524,8 +527,8 @@ class CentipedeAdaptorRunnerCallbacks
               std::function<void(fuzztest::internal::ByteSpan)>
                   new_mutant_callback) override {
     if (inputs.empty()) return false;
-    std::vector<std::unique_ptr<TablesOfRecentCompares>> input_cmp_tables(
-        inputs.size());
+    cmp_tables.resize(inputs.size());
+    absl::Cleanup cmp_tables_cleaner = [this]() { cmp_tables.clear(); };
     for (size_t i = 0; i < num_mutants; ++i) {
       const auto choice = absl::Uniform<double>(prng_, 0, 1);
       std::string mutant_data;
@@ -546,14 +549,16 @@ class CentipedeAdaptorRunnerCallbacks
         }
         auto mutant = FuzzTestFuzzerImpl::Input{*std::move(parsed_origin)};
         if (runtime_.run_mode() == RunMode::kFuzz &&
-            input_cmp_tables[origin_index] == nullptr) {
-          input_cmp_tables[origin_index] =
-              std::make_unique<TablesOfRecentCompares>(/*compact=*/true);
-          PopulateMetadata(inputs[origin_index].metadata,
-                           *input_cmp_tables[origin_index]);
+            !cmp_tables[origin_index].has_value() &&
+            inputs[origin_index].metadata != nullptr) {
+          cmp_tables[origin_index].emplace(/*compact=*/true);
+          PopulateCmpEntries(*inputs[origin_index].metadata,
+                             *cmp_tables[origin_index]);
         }
-        fuzzer_impl_.MutateValue(mutant, prng_,
-                                 {input_cmp_tables[origin_index].get()});
+        fuzzer_impl_.MutateValue(
+            mutant, prng_,
+            {cmp_tables[origin_index].has_value() ? &*cmp_tables[origin_index]
+                                                  : nullptr});
         mutant_data =
             fuzzer_impl_.params_domain_.SerializeCorpus(mutant.args).ToString();
       }
@@ -566,49 +571,12 @@ class CentipedeAdaptorRunnerCallbacks
   ~CentipedeAdaptorRunnerCallbacks() override { runtime_.UnsetCurrentArgs(); }
 
  private:
-  template <typename T>
-  static void InsertCmpEntryIntoIntegerDictionary(
-      const uint8_t* a, const uint8_t* b, TablesOfRecentCompares& cmp_tables) {
-    T a_int;
-    T b_int;
-    memcpy(&a_int, a, sizeof(T));
-    memcpy(&b_int, b, sizeof(T));
-    cmp_tables.GetMutable<sizeof(T)>().Insert(a_int, b_int);
-  }
-
-  static void PopulateMetadata(
-      const fuzztest::internal::ExecutionMetadata* metadata,
-      TablesOfRecentCompares& cmp_tables) {
-    if (metadata == nullptr) return;
-    metadata->ForEachCmpEntry([&cmp_tables](fuzztest::internal::ByteSpan a,
-                                            fuzztest::internal::ByteSpan b) {
-      FUZZTEST_CHECK(a.size() == b.size())
-          << "cmp operands must have the same size";
-      const size_t size = a.size();
-      if (size < kMinCmpEntrySize) return;
-      if (size > kMaxCmpEntrySize) return;
-      if (size == 2) {
-        InsertCmpEntryIntoIntegerDictionary<uint16_t>(a.data(), b.data(),
-                                                      cmp_tables);
-      } else if (size == 4) {
-        InsertCmpEntryIntoIntegerDictionary<uint32_t>(a.data(), b.data(),
-                                                      cmp_tables);
-      } else if (size == 8) {
-        InsertCmpEntryIntoIntegerDictionary<uint64_t>(a.data(), b.data(),
-                                                      cmp_tables);
-      }
-      cmp_tables.GetMutable<0>().Insert(a.data(), b.data(), size);
-    });
-  }
-
-  // Size limits on the cmp entries to be used in mutation.
-  static constexpr uint8_t kMaxCmpEntrySize = 15;
-  static constexpr uint8_t kMinCmpEntrySize = 2;
-
   Runtime& runtime_;
   FuzzTestFuzzerImpl& fuzzer_impl_;
   const Configuration& configuration_;
   absl::BitGen prng_;
+  std::vector<std::optional<fuzztest::internal::TablesOfRecentCompares>>
+      cmp_tables;
 };
 
 namespace {
@@ -670,7 +638,8 @@ class CentipedeFixtureDriver : public UntypedFixtureDriver {
       if (!runner_mode) CentipedePrepareProcessing();
       std::move(run_iteration_once)();
     });
-    if (runtime_.skipping_requested()) {
+    if (runtime_.skipping_requested() ||
+        runtime_.run_mode() == RunMode::kUnitTest) {
       CentipedeSetExecutionResult(nullptr, 0);
     }
     CentipedeFinalizeProcessing();
@@ -722,6 +691,8 @@ bool CentipedeFuzzerAdaptor::RunInFuzzingMode(
 
 bool CentipedeFuzzerAdaptor::ReplayCrashInSingleProcess(
     const Configuration& configuration) {
+  // Follow the legacy engine behavior to force fuzzing mode.
+  runtime_.SetRunMode(RunMode::kFuzz);
   TempDir crash_export_dir("fuzztest_crash");
   auto export_crash_env = CreateCentipedeEnvironmentFromConfiguration(
       configuration, /*workdir=*/"", test_.full_name(), runtime_.run_mode());
@@ -960,8 +931,10 @@ bool CentipedeFuzzerAdaptor::Run(int* argc, char*** argv, RunMode mode,
   [&] {
     runtime_.SetShouldTerminateOnNonFatalFailure(false);
     std::unique_ptr<TempDir> workdir;
-    if (configuration.corpus_database.empty() || mode == RunMode::kUnitTest)
+    if (configuration.corpus_database.empty() ||
+        (mode == RunMode::kUnitTest && configuration.workdir_root.empty())) {
       workdir = std::make_unique<TempDir>("fuzztest_workdir");
+    }
     const std::string workdir_path = workdir ? workdir->path() : "";
     const auto env = CreateCentipedeEnvironmentFromConfiguration(
         configuration, workdir_path, test_.full_name(), mode);

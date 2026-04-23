@@ -48,6 +48,8 @@ namespace {
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
 
+using IR_RobustnessDefaultTest = TransformTest;
+
 // Tests for non-binding variables
 using IR_RobustnessTest = TransformTestWithParam<bool>;
 
@@ -70,7 +72,7 @@ using IR_RobustnessWithIntegerRangeAnalysisTest = TransformTest;
 // Test signed vs unsigned indices.
 ////////////////////////////////////////////////////////////////
 
-TEST_P(IR_RobustnessTest, VectorLoad_ConstIndexViaLet) {
+TEST_F(IR_RobustnessDefaultTest, VectorLoad_ConstIndexViaLet) {
     auto* func = b.Function("foo", ty.u32());
     b.Append(func->Block(), [&] {
         auto* vec = b.Var("vec", ty.ptr(function, ty.vec4<u32>()));
@@ -104,13 +106,12 @@ TEST_P(IR_RobustnessTest, VectorLoad_ConstIndexViaLet) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, VectorLoad_DynamicIndex) {
+TEST_F(IR_RobustnessDefaultTest, VectorLoad_DynamicIndex) {
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
     func->SetParams({idx});
@@ -143,13 +144,12 @@ TEST_P(IR_RobustnessTest, VectorLoad_DynamicIndex) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, VectorLoad_DynamicIndex_Signed) {
+TEST_F(IR_RobustnessDefaultTest, VectorLoad_DynamicIndex_Signed) {
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.i32());
     func->SetParams({idx});
@@ -183,13 +183,12 @@ TEST_P(IR_RobustnessTest, VectorLoad_DynamicIndex_Signed) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, VectorStore_ConstIndexViaLet) {
+TEST_F(IR_RobustnessDefaultTest, VectorStore_ConstIndexViaLet) {
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         auto* vec = b.Var("vec", ty.ptr(function, ty.vec4<u32>()));
@@ -223,13 +222,12 @@ TEST_P(IR_RobustnessTest, VectorStore_ConstIndexViaLet) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, VectorStore_DynamicIndex) {
+TEST_F(IR_RobustnessDefaultTest, VectorStore_DynamicIndex) {
     auto* func = b.Function("foo", ty.void_());
     auto* idx = b.FunctionParam("idx", ty.u32());
     func->SetParams({idx});
@@ -262,13 +260,12 @@ TEST_P(IR_RobustnessTest, VectorStore_DynamicIndex) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, VectorStore_DynamicIndex_Signed) {
+TEST_F(IR_RobustnessDefaultTest, VectorStore_DynamicIndex_Signed) {
     auto* func = b.Function("foo", ty.void_());
     auto* idx = b.FunctionParam("idx", ty.i32());
     func->SetParams({idx});
@@ -302,13 +299,12 @@ TEST_P(IR_RobustnessTest, VectorStore_DynamicIndex_Signed) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Matrix_ConstIndex) {
+TEST_F(IR_RobustnessDefaultTest, Matrix_ConstIndex) {
     auto* func = b.Function("foo", ty.vec4<f32>());
     b.Append(func->Block(), [&] {
         auto* mat = b.Var("mat", ty.ptr(function, ty.mat4x4<f32>()));
@@ -332,13 +328,12 @@ TEST_P(IR_RobustnessTest, Matrix_ConstIndex) {
     auto* expect = src;
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
     EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Matrix_ConstIndexViaLet) {
+TEST_F(IR_RobustnessDefaultTest, Matrix_ConstIndexViaLet) {
     auto* func = b.Function("foo", ty.vec4<f32>());
     b.Append(func->Block(), [&] {
         auto* mat = b.Var("mat", ty.ptr(function, ty.mat4x4<f32>()));
@@ -375,13 +370,12 @@ TEST_P(IR_RobustnessTest, Matrix_ConstIndexViaLet) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Matrix_DynamicIndex) {
+TEST_F(IR_RobustnessDefaultTest, Matrix_DynamicIndex) {
     auto* func = b.Function("foo", ty.vec4<f32>());
     auto* idx = b.FunctionParam("idx", ty.u32());
     func->SetParams({idx});
@@ -417,13 +411,12 @@ TEST_P(IR_RobustnessTest, Matrix_DynamicIndex) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Matrix_DynamicIndex_Signed) {
+TEST_F(IR_RobustnessDefaultTest, Matrix_DynamicIndex_Signed) {
     auto* func = b.Function("foo", ty.vec4<f32>());
     auto* idx = b.FunctionParam("idx", ty.i32());
     func->SetParams({idx});
@@ -460,13 +453,12 @@ TEST_P(IR_RobustnessTest, Matrix_DynamicIndex_Signed) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Array_ConstSize_ConstIndex) {
+TEST_F(IR_RobustnessDefaultTest, Array_ConstSize_ConstIndex) {
     auto* func = b.Function("foo", ty.u32());
     b.Append(func->Block(), [&] {
         auto* arr = b.Var("arr", ty.ptr(function, ty.array<u32, 4>()));
@@ -490,13 +482,12 @@ TEST_P(IR_RobustnessTest, Array_ConstSize_ConstIndex) {
     auto* expect = src;
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
     EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Array_ConstSize_ConstIndexViaLet) {
+TEST_F(IR_RobustnessDefaultTest, Array_ConstSize_ConstIndexViaLet) {
     auto* func = b.Function("foo", ty.u32());
     b.Append(func->Block(), [&] {
         auto* arr = b.Var("arr", ty.ptr(function, ty.array<u32, 4>()));
@@ -533,13 +524,12 @@ TEST_P(IR_RobustnessTest, Array_ConstSize_ConstIndexViaLet) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Array_ConstSize_DynamicIndex) {
+TEST_F(IR_RobustnessDefaultTest, Array_ConstSize_DynamicIndex) {
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
     func->SetParams({idx});
@@ -575,13 +565,12 @@ TEST_P(IR_RobustnessTest, Array_ConstSize_DynamicIndex) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Array_ConstSize_DynamicIndex_Signed) {
+TEST_F(IR_RobustnessDefaultTest, Array_ConstSize_DynamicIndex_Signed) {
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.i32());
     func->SetParams({idx});
@@ -618,13 +607,12 @@ TEST_P(IR_RobustnessTest, Array_ConstSize_DynamicIndex_Signed) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, NestedArrays) {
+TEST_F(IR_RobustnessDefaultTest, NestedArrays) {
     auto* func = b.Function("foo", ty.u32());
     auto* idx1 = b.FunctionParam("idx1", ty.u32());
     auto* idx2 = b.FunctionParam("idx2", ty.u32());
@@ -667,13 +655,12 @@ TEST_P(IR_RobustnessTest, NestedArrays) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, NestedMixedTypes) {
+TEST_F(IR_RobustnessDefaultTest, NestedMixedTypes) {
     auto* structure = ty.Struct(mod.symbols.Register("structure"),
                                 {
                                     {mod.symbols.Register("arr"), ty.array(ty.mat3x4<f32>(), 4)},
@@ -726,17 +713,16 @@ structure = struct @align(16) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
 ////////////////////////////////////////////////////////////////
 // Test the clamp toggles for every other address space.
 ////////////////////////////////////////////////////////////////
 
-TEST_P(IR_RobustnessTest, Private_LoadVectorElement) {
+TEST_F(IR_RobustnessDefaultTest, Private_LoadVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(private_, ty.vec4<u32>()));
     mod.root_block->Append(vec);
 
@@ -777,13 +763,12 @@ $B1: {  # root
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_private = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Private_StoreVectorElement) {
+TEST_F(IR_RobustnessDefaultTest, Private_StoreVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(private_, ty.vec4<u32>()));
     mod.root_block->Append(vec);
 
@@ -824,13 +809,12 @@ $B1: {  # root
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_private = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Private_Access) {
+TEST_F(IR_RobustnessDefaultTest, Private_Access) {
     auto* arr = b.Var("arr", ty.ptr(private_, ty.array<u32, 4>()));
     mod.root_block->Append(arr);
 
@@ -874,10 +858,9 @@ $B1: {  # root
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_private = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
 TEST_P(IR_RobustnessTest, ImmediateData_LoadVectorElement) {
@@ -916,53 +899,6 @@ $B1: {  # root
     %4:u32 = min %idx, 3u
     %5:u32 = load_vector_element %vec, %4
     ret %5
-  }
-}
-)";
-
-    RobustnessConfig cfg;
-    cfg.clamp_immediate_data = GetParam();
-    Run(Robustness, cfg);
-
-    EXPECT_EQ(GetParam() ? expect : src, str());
-}
-
-TEST_P(IR_RobustnessTest, ImmediateData_StoreVectorElement) {
-    auto* vec = b.Var("vec", ty.ptr(immediate, ty.vec4<u32>()));
-    mod.root_block->Append(vec);
-
-    auto* func = b.Function("foo", ty.void_());
-    auto* idx = b.FunctionParam("idx", ty.u32());
-    func->SetParams({idx});
-    b.Append(func->Block(), [&] {
-        b.StoreVectorElement(vec, idx, b.Constant(0_u));
-        b.Return(func);
-    });
-
-    auto* src = R"(
-$B1: {  # root
-  %vec:ptr<immediate, vec4<u32>, read> = var undef
-}
-
-%foo = func(%idx:u32):void {
-  $B2: {
-    store_vector_element %vec, %idx, 0u
-    ret
-  }
-}
-)";
-    EXPECT_EQ(src, str());
-
-    auto* expect = R"(
-$B1: {  # root
-  %vec:ptr<immediate, vec4<u32>, read> = var undef
-}
-
-%foo = func(%idx:u32):void {
-  $B2: {
-    %4:u32 = min %idx, 3u
-    store_vector_element %vec, %4, 0u
-    ret
   }
 }
 )";
@@ -1231,57 +1167,6 @@ $B1: {  # root
     EXPECT_EQ((GetParam().enabled && !GetParam().ignore_bindings) ? expect : src, str());
 }
 
-TEST_P(IR_BindingVariableRobustnessTest, Unifom_StoreVectorElement) {
-    auto* vec = b.Var("vec", ty.ptr(uniform, ty.vec4<u32>()));
-    vec->SetBindingPoint(0, 0);
-    mod.root_block->Append(vec);
-
-    auto* func = b.Function("foo", ty.void_());
-    auto* idx = b.FunctionParam("idx", ty.u32());
-    func->SetParams({idx});
-    b.Append(func->Block(), [&] {
-        b.StoreVectorElement(vec, idx, b.Constant(0_u));
-        b.Return(func);
-    });
-
-    auto* src = R"(
-$B1: {  # root
-  %vec:ptr<uniform, vec4<u32>, read> = var undef @binding_point(0, 0)
-}
-
-%foo = func(%idx:u32):void {
-  $B2: {
-    store_vector_element %vec, %idx, 0u
-    ret
-  }
-}
-)";
-    EXPECT_EQ(src, str());
-
-    auto* expect = R"(
-$B1: {  # root
-  %vec:ptr<uniform, vec4<u32>, read> = var undef @binding_point(0, 0)
-}
-
-%foo = func(%idx:u32):void {
-  $B2: {
-    %4:u32 = min %idx, 3u
-    store_vector_element %vec, %4, 0u
-    ret
-  }
-}
-)";
-
-    RobustnessConfig cfg;
-    cfg.clamp_uniform = GetParam().enabled;
-    if (GetParam().ignore_bindings) {
-        cfg.bindings_ignored = {{0, 0}};
-    }
-    Run(Robustness, cfg);
-
-    EXPECT_EQ((GetParam().enabled && !GetParam().ignore_bindings) ? expect : src, str());
-}
-
 TEST_P(IR_BindingVariableRobustnessTest, Uniform_Access) {
     auto* arr = b.Var("arr", ty.ptr(uniform, ty.array<u32, 4>()));
     arr->SetBindingPoint(0, 0);
@@ -1336,7 +1221,7 @@ $B1: {  # root
     EXPECT_EQ((GetParam().enabled && !GetParam().ignore_bindings) ? expect : src, str());
 }
 
-TEST_P(IR_RobustnessTest, Workgroup_LoadVectorElement) {
+TEST_F(IR_RobustnessDefaultTest, Workgroup_LoadVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(workgroup, ty.vec4<u32>()));
     mod.root_block->Append(vec);
 
@@ -1377,13 +1262,12 @@ $B1: {  # root
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_workgroup = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Workgroup_StoreVectorElement) {
+TEST_F(IR_RobustnessDefaultTest, Workgroup_StoreVectorElement) {
     auto* vec = b.Var("vec", ty.ptr(workgroup, ty.vec4<u32>()));
     mod.root_block->Append(vec);
 
@@ -1424,13 +1308,12 @@ $B1: {  # root
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_workgroup = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, Workgroup_Access) {
+TEST_F(IR_RobustnessDefaultTest, Workgroup_Access) {
     auto* arr = b.Var("arr", ty.ptr(workgroup, ty.array<u32, 4>()));
     mod.root_block->Append(arr);
 
@@ -1474,17 +1357,16 @@ $B1: {  # root
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_workgroup = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
 ////////////////////////////////////////////////////////////////
 // Test clamping non-pointer values.
 ////////////////////////////////////////////////////////////////
 
-TEST_P(IR_RobustnessTest, ConstantVector_DynamicIndex) {
+TEST_F(IR_RobustnessDefaultTest, ConstantVector_DynamicIndex) {
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
     func->SetParams({idx});
@@ -1520,13 +1402,12 @@ TEST_P(IR_RobustnessTest, ConstantVector_DynamicIndex) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_value = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, ConstantArray_DynamicIndex) {
+TEST_F(IR_RobustnessDefaultTest, ConstantArray_DynamicIndex) {
     auto* func = b.Function("foo", ty.u32());
     auto* idx = b.FunctionParam("idx", ty.u32());
     func->SetParams({idx});
@@ -1563,13 +1444,12 @@ TEST_P(IR_RobustnessTest, ConstantArray_DynamicIndex) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_value = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
-TEST_P(IR_RobustnessTest, ParamValueArray_DynamicIndex) {
+TEST_F(IR_RobustnessDefaultTest, ParamValueArray_DynamicIndex) {
     auto* func = b.Function("foo", ty.u32());
     auto* arr = b.FunctionParam("arr", ty.array<u32, 4>());
     auto* idx = b.FunctionParam("idx", ty.u32());
@@ -1600,10 +1480,9 @@ TEST_P(IR_RobustnessTest, ParamValueArray_DynamicIndex) {
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_value = GetParam();
     Run(Robustness, cfg);
 
-    EXPECT_EQ(GetParam() ? expect : src, str());
+    EXPECT_EQ(expect, str());
 }
 
 ////////////////////////////////////////////////////////////////
@@ -5545,7 +5424,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_MaxBound_
         });
         b.Append(loop->Body(), [&] {
             // idx < 20u
-            auto* binary = b.LessThan<bool>(b.Load(idx), 20_u);
+            auto* binary = b.LessThan(b.Load(idx), 20_u);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -5602,7 +5481,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_MaxBound_
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -5623,7 +5501,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_MaxBound_
         });
         b.Append(loop->Body(), [&] {
             // idx < 19u
-            auto* binary = b.LessThan<bool>(b.Load(idx), 19_u);
+            auto* binary = b.LessThan(b.Load(idx), 19_u);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -5680,7 +5558,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_MaxBound_
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -5701,7 +5578,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_MaxBound_
         });
         b.Append(loop->Body(), [&] {
             // idx < 21u
-            auto* binary = b.LessThan<bool>(b.Load(idx), 21_u);
+            auto* binary = b.LessThan(b.Load(idx), 21_u);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -5759,7 +5636,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_MaxBound_
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -5791,7 +5667,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_IndexNoRa
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -5819,7 +5694,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithExpression_MaxB
         });
         b.Append(loop->Body(), [&] {
             // idx < 8
-            auto* binary = b.LessThan<bool>(b.Load(idx), 8_u);
+            auto* binary = b.LessThan(b.Load(idx), 8_u);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -5887,7 +5762,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithExpression_MaxB
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -5908,7 +5782,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_I32_Negat
         });
         b.Append(loop->Body(), [&] {
             // idx < 20
-            auto* binary = b.LessThan<bool>(b.Load(idx), 20_i);
+            auto* binary = b.LessThan(b.Load(idx), 20_i);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -5967,7 +5841,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_I32_Negat
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -5988,7 +5861,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_MaxBound_
         });
         b.Append(loop->Body(), [&] {
             // idx < 20
-            auto* binary = b.LessThan<bool>(b.Load(idx), 20_i);
+            auto* binary = b.LessThan(b.Load(idx), 20_i);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -6045,7 +5918,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_MaxBound_
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6067,7 +5939,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest,
         });
         b.Append(loop->Body(), [&] {
             // idx < 19
-            auto* binary = b.LessThan<bool>(b.Load(idx), 19_i);
+            auto* binary = b.LessThan(b.Load(idx), 19_i);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -6124,7 +5996,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest,
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6146,7 +6017,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest,
         });
         b.Append(loop->Body(), [&] {
             // idx < 21
-            auto* binary = b.LessThan<bool>(b.Load(idx), 21_i);
+            auto* binary = b.LessThan(b.Load(idx), 21_i);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -6205,7 +6076,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest,
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6238,7 +6108,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_IndexNoRa
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6262,7 +6131,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_DynamicSi
         });
         b.Append(loop->Body(), [&] {
             // idx < 20u
-            auto* binary = b.LessThan<bool>(b.Load(idx), 20_u);
+            auto* binary = b.LessThan(b.Load(idx), 20_u);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -6325,7 +6194,6 @@ $B1: {  # root
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.clamp_storage = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
@@ -6347,7 +6215,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, LoadVectorWithIndex_MaxBound_E
         });
         b.Append(loop->Body(), [&] {
             // idx < 4u
-            auto* binary = b.LessThan<bool>(b.Load(idx), 4_u);
+            auto* binary = b.LessThan(b.Load(idx), 4_u);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -6402,7 +6270,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, LoadVectorWithIndex_MaxBound_E
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6423,7 +6290,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, LoadVectorWithIndex_MaxBound_L
         });
         b.Append(loop->Body(), [&] {
             // idx < 2u
-            auto* binary = b.LessThan<bool>(b.Load(idx), 2_u);
+            auto* binary = b.LessThan(b.Load(idx), 2_u);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -6478,7 +6345,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, LoadVectorWithIndex_MaxBound_L
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6499,7 +6365,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, LoadVectorWithIndex_MaxBound_G
         });
         b.Append(loop->Body(), [&] {
             // idx < 5u
-            auto* binary = b.LessThan<bool>(b.Load(idx), 5_u);
+            auto* binary = b.LessThan(b.Load(idx), 5_u);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -6555,7 +6421,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, LoadVectorWithIndex_MaxBound_G
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6585,7 +6450,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, LoadVectorWithIndex_IndexNoRan
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6606,7 +6470,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, LoadVectorWithIndex_I32_Negati
         });
         b.Append(loop->Body(), [&] {
             // idx < 4
-            auto* binary = b.LessThan<bool>(b.Load(idx), 4_i);
+            auto* binary = b.LessThan(b.Load(idx), 4_i);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -6663,7 +6527,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, LoadVectorWithIndex_I32_Negati
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6684,7 +6547,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, StoreVectorWithIndex_MaxBound_
         });
         b.Append(loop->Body(), [&] {
             // idx < 4u
-            auto* binary = b.LessThan<bool>(b.Load(idx), 4_u);
+            auto* binary = b.LessThan(b.Load(idx), 4_u);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -6739,7 +6602,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, StoreVectorWithIndex_MaxBound_
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6760,7 +6622,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, StoreVectorWithIndex_MaxBound_
         });
         b.Append(loop->Body(), [&] {
             // idx < 2u
-            auto* binary = b.LessThan<bool>(b.Load(idx), 2_u);
+            auto* binary = b.LessThan(b.Load(idx), 2_u);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -6815,7 +6677,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, StoreVectorWithIndex_MaxBound_
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6836,7 +6697,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, StoreVectorWithIndex_MaxBound_
         });
         b.Append(loop->Body(), [&] {
             // idx < 5u
-            auto* binary = b.LessThan<bool>(b.Load(idx), 5_u);
+            auto* binary = b.LessThan(b.Load(idx), 5_u);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -6892,7 +6753,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, StoreVectorWithIndex_MaxBound_
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6922,7 +6782,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, StoreVectorWithIndex_IndexNoRa
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 
@@ -6943,7 +6802,7 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, StoreVectorWithIndex_I32_Negat
         });
         b.Append(loop->Body(), [&] {
             // idx < 4
-            auto* binary = b.LessThan<bool>(b.Load(idx), 4_i);
+            auto* binary = b.LessThan(b.Load(idx), 4_i);
             auto* ifelse = b.If(binary);
             b.Append(ifelse->True(), [&] { b.ExitIf(ifelse); });
             b.Append(ifelse->False(), [&] { b.ExitLoop(loop); });
@@ -7000,7 +6859,6 @@ TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, StoreVectorWithIndex_I32_Negat
 )";
 
     RobustnessConfig cfg;
-    cfg.clamp_function = true;
     cfg.use_integer_range_analysis = true;
     Run(Robustness, cfg);
 

@@ -144,11 +144,11 @@
 #include "content/common/pseudonymization_salt.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/browser_or_resource_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_host.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/global_routing_id.h"
+#include "content/public/browser/gpu_client.h"
 #include "content/public/browser/isolated_context_util.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/render_frame_host.h"
@@ -173,12 +173,11 @@
 #include "google_apis/gaia/gaia_config.h"
 #include "google_apis/gaia/gaia_switches.h"
 #include "gpu/command_buffer/client/gpu_switches.h"
-#include "gpu/command_buffer/service/gpu_switches.h"
+#include "gpu/config/gpu_finch_features.h"
 #include "gpu/config/gpu_switches.h"
 #include "ipc/constants.mojom.h"
 #include "ipc/ipc_channel_factory.h"
 #include "ipc/ipc_channel_proxy.h"
-#include "ipc/trace_ipc_message.h"
 #include "media/base/media_switches.h"
 #include "media/capture/capture_switches.h"
 #include "media/media_buildflags.h"
@@ -291,6 +290,30 @@
 #else
 #define MAYBEVLOG DVLOG
 #endif
+
+namespace features {
+
+// When enabled, the IPC channel will not be paused when launching non-guest
+// renderer processes. This makes it possible for all kinds of mojo calls
+// to be sent to the renderer process before OnProcessLaunched fires. When the
+// feature is disabled, those messages are instead queued because the IPC
+// channel is paused, and only flushed at OnProcessLaunched.
+BASE_FEATURE(kSkipIPCChannelPausingForNonGuests,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+const base::FeatureParam<bool> skip_channel_pausing_for_internal_webui_only{
+    &features::kSkipIPCChannelPausingForNonGuests, "internal_webui_only",
+    false};
+
+#if BUILDFLAG(IS_ANDROID)
+// The feature flag is added for a holdback experiment to estimate
+// the performance impace of the first spare renderer not using the warm-up
+// process in webview.
+BASE_FEATURE(kSpareRendererUseWarmupConnection,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
+
+}  // namespace features
 
 namespace content {
 
@@ -1323,10 +1346,17 @@ void RecordMissedReuseOpportunityMetric(
     return;
   }
 
-  CHECK(allocation_context.navigation_context);
-  auto context = allocation_context.navigation_context->is_outermost_main_frame
-                     ? RecentlyDestroyedHosts::Context::kMainFrame
-                     : RecentlyDestroyedHosts::Context::kSubframe;
+  // IsForNavigation() is true for all navigation-related allocations, but
+  // navigation_context is not guaranteed to be populated. This can happen when
+  // initializing a process for a newly created tab, which is treated as
+  // IsForNavigation() if the kTreatRFHInitRootAsForNavigation feature is
+  // turned on. In this case, we are creating a process for a main frame.
+  auto context =
+      (!allocation_context.navigation_context ||
+       allocation_context.navigation_context->is_outermost_main_frame)
+          ? RecentlyDestroyedHosts::Context::kMainFrame
+          : RecentlyDestroyedHosts::Context::kSubframe;
+
   RecentlyDestroyedHosts::RecordMetricIfReusableHostRecentlyDestroyed(
       context, base::TimeTicks::Now(),
       ProcessLock::FromSiteInfo(site_instance->GetSiteInfo()),
@@ -1545,6 +1575,15 @@ RenderProcessHost* RenderProcessHostImpl::CreateRenderProcessHost(
     flags |= RenderProcessFlags::kDisallowV8FeatureFlagOverrides;
   }
 
+#if !BUILDFLAG(IS_ANDROID)
+  if (site_instance) {
+    const GURL& site_url = site_instance->GetSiteURL();
+    if (GetContentClient()->browser()->IsInitialWebUIURL(site_url)) {
+      flags |= RenderProcessFlags::kForInitialWebUI;
+    }
+  }
+#endif  // !BUILDFLAG(IS_ANDROID)
+
   return new RenderProcessHostImpl(browser_context, storage_partition_impl,
                                    flags, is_spare_renderer);
 }
@@ -1583,21 +1622,22 @@ RenderProcessHostImpl::RenderProcessHostImpl(
                 true /* boost_for_pending_views */,
                 false /*boost_for_loading*/,
                 false /* boost_for_discard */,
-                is_spare_renderer
 #if BUILDFLAG(IS_ANDROID)
-                ,
+                is_spare_renderer,
                 ChildProcessImportance::NORMAL
-#endif
-#if !BUILDFLAG(IS_ANDROID)
-                ,
+#else
                 std::nullopt
 #endif
                 ),
       id_(ChildProcessHostImpl::GenerateChildProcessUniqueId()),
       browser_context_(browser_context),
-      storage_partition_impl_(storage_partition_impl->GetWeakPtr()),
+      storage_partition_impl_(storage_partition_impl),
       flags_(flags),
-      has_spare_renderer_priority_(is_spare_renderer),
+#if BUILDFLAG(IS_ANDROID)
+      spare_renderer_priority_status_(
+          is_spare_renderer ? SpareRendererPriorityStatus::kSpare
+                            : SpareRendererPriorityStatus::kNormal),
+#endif
       tracing_track_(
           perfetto::NamedTrack::FromPointer("RenderProcessHostImpl",
                                             this,
@@ -1639,9 +1679,9 @@ RenderProcessHostImpl::RenderProcessHostImpl(
   const int id = GetDeprecatedID();
   const uint64_t tracing_id =
       ChildProcessHostImpl::ChildProcessUniqueIdToTracingProcessId(id);
-  gpu_client_.reset(
-      new viz::GpuClient(std::make_unique<BrowserGpuClientDelegate>(), id,
-                         tracing_id, GetUIThreadTaskRunner({})));
+  gpu_client_ = std::make_unique<viz::GpuClient>(
+      std::make_unique<BrowserGpuClientDelegate>(), id, tracing_id,
+      /*enable_extra_handles_validation=*/false, GetUIThreadTaskRunner({}));
 }
 
 // static
@@ -1727,8 +1767,8 @@ RenderProcessHostImpl::~RenderProcessHostImpl() {
   UnregisterHost(GetID());
 
   // Remove the cache handles for the client at teardown if relevant.
-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableGpuShaderDiskCache)) {
+  if (features::IsShaderDiskCacheEnabled(
+          base::CommandLine::ForCurrentProcess())) {
     if (GetGpuDiskCacheFactorySingleton()) {
         gpu_client_->RemoveDiskCacheHandles();
     }
@@ -1760,6 +1800,15 @@ bool RenderProcessHostImpl::Init() {
   renderer_prefix =
       browser_command_line.GetSwitchValueNative(switches::kRendererCmdPrefix);
 
+#if BUILDFLAG(IS_ANDROID)
+  // If the spare renderer gets killed when graduating the priority to normal,
+  // we will set the priority to normal during re-initialization.
+  if (spare_renderer_priority_status_ ==
+      SpareRendererPriorityStatus::kGraduating) {
+    spare_renderer_priority_status_ = SpareRendererPriorityStatus::kNormal;
+  }
+#endif
+
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   int flags = renderer_prefix.empty() ? ChildProcessHost::CHILD_ALLOW_SELF
                                       : ChildProcessHost::CHILD_NORMAL;
@@ -1785,8 +1834,8 @@ bool RenderProcessHostImpl::Init() {
   // stored on the channels. Note that we also check if the factory is
   // initialized because in tests the factory may never have been initialized.
   if (!GetBrowserContext()->IsOffTheRecord() &&
-      !base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableGpuShaderDiskCache)) {
+      features::IsShaderDiskCacheEnabled(
+          base::CommandLine::ForCurrentProcess())) {
     if (auto* cache_factory = GetGpuDiskCacheFactorySingleton()) {
       for (const gpu::GpuDiskCacheType type : gpu::kGpuDiskCacheTypes) {
         auto handle = cache_factory->GetCacheHandle(
@@ -1803,14 +1852,16 @@ bool RenderProcessHostImpl::Init() {
   if (!channel_)
     InitializeChannelProxy();
 
-  // Unpause the Channel briefly. This will be paused again below if we launch a
-  // real child process. Note that messages may be sent in the short window
-  // between now and then (e.g. in response to RenderProcessWillLaunch) and we
-  // depend on those messages being sent right away.
-  //
-  // |channel_| must always be non-null here: either it was initialized in
-  // the constructor, or in the most recent call to ProcessDied().
-  channel_->Unpause(false /* flush */);
+  if (ShouldPauseChannelUntilProcessLaunched()) {
+    // Unpause the Channel briefly. This will be paused again below if we launch
+    // a real child process. Note that messages may be sent in the short window
+    // between now and then (e.g. in response to RenderProcessWillLaunch) and we
+    // depend on those messages being sent right away.
+    //
+    // |channel_| must always be non-null here: either it was initialized in
+    // the constructor, or in the most recent call to ProcessDied().
+    channel_->Unpause(false /* flush */);
+  }
 
   // Call the embedder first so that their IPC filters have priority.
   GetContentClient()->browser()->RenderProcessWillLaunch(this);
@@ -1838,7 +1889,8 @@ bool RenderProcessHostImpl::Init() {
           browser_context_),
       GetContentClient()->browser()->GetUserAgentMetadata(),
       storage_partition_impl_->cors_exempt_header_list(),
-      GetContentClient()->browser()->GetOriginTrialsSettings(), trace_id);
+      GetContentClient()->browser()->GetOriginTrialsSettings(),
+      GetContentClient()->browser()->GetCpuPerformanceTier(), trace_id);
 
   if (run_renderer_in_process()) {
     DCHECK(g_renderer_main_thread_factory);
@@ -1865,17 +1917,22 @@ bool RenderProcessHostImpl::Init() {
 #endif
     // As for execution sequence, this callback should have no any dependency
     // on starting in-process-render-thread.
-    // So put it here to trigger ChannelMojo initialization earlier to enable
-    // in-process-render-thread using ChannelMojo there.
+    // So put it here to trigger Channel initialization earlier to enable
+    // in-process-render-thread using Channel there.
+    for (auto* observer : GetAllCreationObservers()) {
+      observer->OnRenderProcessHostCreated(this);
+    }
     OnProcessLaunched();  // Fake a callback that the process is ready.
 
     in_process_renderer_->StartWithOptions(std::move(options));
 
     g_in_process_thread = in_process_renderer_.get();
 
-    // Make sure any queued messages on the channel are flushed in the case
-    // where we aren't launching a child process.
-    channel_->Flush();
+    if (ShouldPauseChannelUntilProcessLaunched()) {
+      // Make sure any queued messages on the channel are flushed in the case
+      // where we aren't launching a child process.
+      channel_->Flush();
+    }
   } else {
     // Build command line for renderer.  We call AppendRendererCommandLine()
     // first so the process type argument will appear first.
@@ -1923,14 +1980,26 @@ bool RenderProcessHostImpl::Init() {
             : nullptr,
         tracing_config_memory_region_, tracing_output_memory_region_);
 
-    TRACE_EVENT_BEGIN(
-        "ipc", "RenderProcessHostImpl.Channel.ProcessLaunchPauseToUnpause",
-        tracing_track_, ChromeTrackEvent::kRenderProcessHost, *this);
-    TRACE_EVENT_BEGIN(
-        "ipc", "RenderProcessHostImpl.Channel.ProcessLaunchPauseToFlush",
-        tracing_track_, ChromeTrackEvent::kRenderProcessHost, *this);
-    pause_channel_on_process_launch_time_ = base::TimeTicks::Now();
-    channel_->Pause();
+    // Send initialization messages to the renderer, before any other messages
+    // that might need them (e.g. navigation commits).
+    // Pass bits of global renderer state to the renderer.
+    NotifyRendererOfLockedStateUpdate();
+    // Send the initial system color info to the renderer.
+    ThemeHelper::GetInstance()->SendSystemColorInfo(GetRendererInterface());
+    for (auto* observer : GetAllCreationObservers()) {
+      observer->OnRenderProcessHostCreated(this);
+    }
+
+    if (ShouldPauseChannelUntilProcessLaunched()) {
+      TRACE_EVENT_BEGIN(
+          "ipc", "RenderProcessHostImpl.Channel.ProcessLaunchPauseToUnpause",
+          tracing_track_, ChromeTrackEvent::kRenderProcessHost, *this);
+      TRACE_EVENT_BEGIN(
+          "ipc", "RenderProcessHostImpl.Channel.ProcessLaunchPauseToFlush",
+          tracing_track_, ChromeTrackEvent::kRenderProcessHost, *this);
+      pause_channel_on_process_launch_time_ = base::TimeTicks::Now();
+      channel_->Pause();
+    }
 
     // In single process mode, browser-side tracing and memory will cover the
     // whole process including renderers.
@@ -2027,14 +2096,15 @@ void RenderProcessHostImpl::InitializeChannelProxy() {
   renderer_interface_.reset();
   channel_->GetRemoteAssociatedInterface(&renderer_interface_);
 
-  // We start the Channel in a paused state. It will be briefly unpaused again
-  // in Init() if applicable, before process launch is initiated.
-  TRACE_EVENT_BEGIN(
-      "ipc", "RenderProcessHostImpl.Channel.InitPauseToUnpauseTime",
-      tracing_track_, ChromeTrackEvent::kRenderProcessHost, *this);
-  pause_channel_on_init_time_ = base::TimeTicks::Now();
-  channel_->Pause();
-
+  if (ShouldPauseChannelUntilProcessLaunched()) {
+    // We start the Channel in a paused state. It will be briefly unpaused again
+    // in Init() if applicable, before process launch is initiated.
+    TRACE_EVENT_BEGIN(
+        "ipc", "RenderProcessHostImpl.Channel.InitPauseToUnpauseTime",
+        tracing_track_, ChromeTrackEvent::kRenderProcessHost, *this);
+    pause_channel_on_init_time_ = base::TimeTicks::Now();
+    channel_->Pause();
+  }
   InitializeSharedMemoryRegionsOnceChannelIsUp();
 }
 
@@ -2337,8 +2407,22 @@ void RenderProcessHostImpl::CreateOOPVideoDecoder(
   if (!video_decoder_factory_remote_.is_bound()) {
     auto creation_cb = GetVideoDecoderFactoryCreationCB();
     if (creation_cb.is_null()) {
+      mojo::PendingRemote<viz::mojom::Gpu> gpu_remote;
+      if (base::FeatureList::IsEnabled(media::kUseSharedImageInOOPVDProcess)) {
+        if (!oop_video_decoder_gpu_client_) {
+          mojo::PendingReceiver<viz::mojom::Gpu> gpu_receiver =
+              gpu_remote.InitWithNewPipeAndPassReceiver();
+          oop_video_decoder_gpu_client_ = content::CreateGpuClient(
+              std::move(gpu_receiver),
+              /*enable_extra_handles_validation=*/true);
+        } else {
+          oop_video_decoder_gpu_client_->Add(
+              gpu_remote.InitWithNewPipeAndPassReceiver());
+        }
+      }
       LaunchOOPVideoDecoderFactory(
-          video_decoder_factory_remote_.BindNewPipeAndPassReceiver());
+          video_decoder_factory_remote_.BindNewPipeAndPassReceiver(),
+          std::move(gpu_remote));
     } else {
       creation_cb.Run(
           video_decoder_factory_remote_.BindNewPipeAndPassReceiver());
@@ -3062,6 +3146,19 @@ bool RenderProcessHostImpl::GetIntersectsViewport() {
 }
 
 #if BUILDFLAG(IS_ANDROID)
+void RenderProcessHostImpl::GraduateSpareToNormalRendererPriority() {
+  if (spare_renderer_priority_status_ == SpareRendererPriorityStatus::kSpare) {
+    spare_renderer_priority_status_ = SpareRendererPriorityStatus::kGraduating;
+    UpdateProcessPriority();
+  }
+}
+
+bool RenderProcessHostImpl::
+    ShouldThrottleNavigationForSpareRendererGraduation() {
+  return !is_dead_ && spare_renderer_priority_status_ !=
+                          SpareRendererPriorityStatus::kNormal;
+}
+
 ChildProcessImportance RenderProcessHostImpl::GetEffectiveImportance() {
   return effective_importance_;
 }
@@ -3380,6 +3477,12 @@ bool RenderProcessHostImpl::IsForGuestsOnly() {
   return !!(flags_ & RenderProcessFlags::kForGuestsOnly);
 }
 
+#if !BUILDFLAG(IS_ANDROID)
+bool RenderProcessHostImpl::IsForInitialWebUI() const {
+  return (flags_ & RenderProcessFlags::kForInitialWebUI) != 0;
+}
+#endif
+
 bool RenderProcessHostImpl::IsJitDisabled() {
   return !!(flags_ & RenderProcessFlags::kJitDisabled);
 }
@@ -3396,11 +3499,37 @@ bool RenderProcessHostImpl::IsPdf() {
   return !!(flags_ & RenderProcessFlags::kPdf);
 }
 
-StoragePartitionImpl* RenderProcessHostImpl::GetStoragePartition() {
-  // TODO(crbug.com/40061679): Remove the `CHECK` after the ad-hoc
-  // debugging is no longer needed to investigate the bug.
-  CHECK(!!storage_partition_impl_);
+bool RenderProcessHostImpl::ShouldPauseChannelUntilProcessLaunched() {
+  if (IsForGuestsOnly()) {
+    // GuestView initialization requires WebViewRendererState, which is created
+    // when the speculative RenderFrameHost for the GuestView is created. This
+    // is after OnRenderProcessHostCreated(), and since we need to ensure no
+    // navigation is committeed before GuestView initialization, we still depend
+    // on IPC Channel pausing.
+    // TODO(crbug.com/448511116): Support earlier initialization for GuestViews,
+    // so that we can skip pausing in this case too.
+    return true;
+  }
 
+  if (base::FeatureList::IsEnabled(
+          features::kSkipIPCChannelPausingForNonGuests)) {
+    if (features::skip_channel_pausing_for_internal_webui_only.Get()) {
+#if !BUILDFLAG(IS_ANDROID)
+      // Skip pausing if we're on initial WebUI, so return false in that case.
+      return !IsForInitialWebUI();
+#else
+      // We're definitely not on initial WebUI, so return true to pause.
+      return true;
+#endif
+    }
+    // Skip pausing in all cases.
+    return false;
+  }
+  // Don't skip pausing.
+  return true;
+}
+
+StoragePartitionImpl* RenderProcessHostImpl::GetStoragePartition() {
   return storage_partition_impl_.get();
 }
 
@@ -3665,7 +3794,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
       switches::kDisableThreadedAnimation,
       switches::kEnableGpuBenchmarking,
       switches::kEnableClippedImageScaling,
-      switches::kHighlightNonLCDTextLayers,
+      switches::kDumpCompositorFrame,
       switches::kShowCompositedLayerBorders,
       switches::kShowFPSCounter,
       switches::kShowLayerAnimationBounds,
@@ -3950,44 +4079,6 @@ bool RenderProcessHostImpl::FastShutdownIfPossible(size_t page_count,
   return true;
 }
 
-bool RenderProcessHostImpl::Send(IPC::Message* msg) {
-  TRACE_IPC_MESSAGE_SEND("renderer_host", "RenderProcessHostImpl::Send", msg);
-
-  std::unique_ptr<IPC::Message> message(msg);
-
-  // |channel_| is only null after Cleanup(), at which point we don't care
-  // about delivering any messages.
-  if (!channel_)
-    return false;
-
-  DCHECK(!message->is_sync());
-  return channel_->Send(message.release());
-}
-
-bool RenderProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
-  // If we're about to be deleted, or have initiated the fast shutdown
-  // sequence, we ignore incoming messages.
-
-  if (deleting_soon_ || fast_shutdown_started_)
-    return false;
-
-  mark_child_process_activity_time();
-
-  // Dispatch incoming messages to the appropriate IPC::Listener.
-  IPC::Listener* listener = listeners_.Lookup(msg.routing_id());
-  if (!listener) {
-    if (msg.is_sync()) {
-      // The listener has gone away, so we must respond or else the caller
-      // will hang waiting for a reply.
-      IPC::Message* reply = IPC::SyncMessage::GenerateReply(&msg);
-      reply->set_reply_error();
-      Send(reply);
-    }
-    return true;
-  }
-  return listener->OnMessageReceived(msg);
-}
-
 void RenderProcessHostImpl::OnAssociatedInterfaceRequest(
     const std::string& interface_name,
     mojo::ScopedInterfaceEndpointHandle handle) {
@@ -4045,17 +4136,10 @@ void RenderProcessHostImpl::OnChannelError() {
   ProcessDied(info);
 }
 
-void RenderProcessHostImpl::OnBadMessageReceived(const IPC::Message& message) {
+void RenderProcessHostImpl::OnBadMessageReceived() {
   // Message de-serialization failed. We consider this a capital crime. Kill
   // the renderer if we have one.
-  auto type = message.type();
-  LOG(ERROR) << "bad message " << type << " terminating renderer.";
-
-  // The ReceivedBadMessage call below will trigger a DumpWithoutCrashing.
-  // Alias enough information here so that we can determine what the bad
-  // message was.
-  base::debug::Alias(&type);
-
+  LOG(ERROR) << "bad message, terminating renderer.";
   bad_message::ReceivedBadMessage(this,
                                   bad_message::RPH_DESERIALIZATION_FAILED);
 }
@@ -4603,8 +4687,7 @@ bool RenderProcessHostImpl::IsSuitableHost(
     RenderProcessHost* host,
     const IsolationContext& isolation_context,
     const SiteInfo& site_info) {
-  BrowserContext* browser_context =
-      isolation_context.browser_or_resource_context().ToBrowserContext();
+  BrowserContext* browser_context = isolation_context.browser_context();
   DCHECK(browser_context);
   if (run_renderer_in_process()) {
     DCHECK_EQ(host->GetBrowserContext(), browser_context)
@@ -4940,8 +5023,8 @@ RenderProcessHost* RenderProcessHostImpl::GetSoleProcessHostForSite(
     const IsolationContext& isolation_context,
     const SiteInfo& site_info) {
   // Look up the map of site to process for the given browser_context.
-  SiteProcessMap* map = GetSiteProcessMapForBrowserContext(
-      isolation_context.browser_or_resource_context().ToBrowserContext());
+  SiteProcessMap* map =
+      GetSiteProcessMapForBrowserContext(isolation_context.browser_context());
 
   // See if we have an existing process with appropriate bindings for this
   // site. If not, the caller should create a new process and register it.
@@ -5308,7 +5391,7 @@ void RenderProcessHostImpl::ProcessDied(
 
   within_process_died_observer_ = false;
 
-  if (!sent_process_created_) {
+  if (!sent_process_launched_) {
     // Observers who listen for process creation will not get the
     // RenderProcessExited event if the process fails to launch and dies
     // before creation, so we send a different event to the creation observers.
@@ -5588,13 +5671,11 @@ void RenderProcessHostImpl::UpdateProcessPriority() {
       media_stream_count_ > 0, has_immersive_xr_session_,
       foreground_service_worker_count_ > 0, frame_depth_, intersects_viewport_,
       pending_views_ > 0, /* boost_for_pending_views */
-      boost_for_loading_count_ > 0, is_discarding_, has_spare_renderer_priority_
+      boost_for_loading_count_ > 0, is_discarding_,
 #if BUILDFLAG(IS_ANDROID)
-      ,
+      spare_renderer_priority_status_ == SpareRendererPriorityStatus::kSpare,
       GetEffectiveImportance()
-#endif
-#if !BUILDFLAG(IS_ANDROID)
-          ,
+#else
       priority_override_
 #endif
   );
@@ -5707,19 +5788,21 @@ void RenderProcessHostImpl::OnProcessLaunched() {
     // yet to ensure that any initialization messages sent here (e.g., things
     // done in response to OnRenderProcessHostCreated; see below) preempt
     // already queued messages.
-    base::UmaHistogramMediumTimes(
-        "Mojo.Channel.ChannelInitPauseToUnpauseTime",
-        base::TimeTicks::Now() - pause_channel_on_init_time_);
-    base::UmaHistogramMediumTimes(
-        "Mojo.Channel.ProcessLaunchPauseToUnpauseTime",
-        base::TimeTicks::Now() - pause_channel_on_process_launch_time_);
-    // "RenderProcessHostImpl.Channel.InitPauseToUnpauseTime"
-    TRACE_EVENT_END("ipc", tracing_track_, ChromeTrackEvent::kRenderProcessHost,
-                    *this);
-    // "RenderProcessHostImpl.Channel.ProcessLaunchPauseToUnpauseTime"
-    TRACE_EVENT_END("ipc", tracing_track_, ChromeTrackEvent::kRenderProcessHost,
-                    *this);
-    channel_->Unpause(false /* flush */);
+    if (ShouldPauseChannelUntilProcessLaunched()) {
+      base::UmaHistogramMediumTimes(
+          "Mojo.Channel.ChannelInitPauseToUnpauseTime",
+          base::TimeTicks::Now() - pause_channel_on_init_time_);
+      base::UmaHistogramMediumTimes(
+          "Mojo.Channel.ProcessLaunchPauseToUnpauseTime",
+          base::TimeTicks::Now() - pause_channel_on_process_launch_time_);
+      // "RenderProcessHostImpl.Channel.InitPauseToUnpauseTime"
+      TRACE_EVENT_END("ipc", tracing_track_,
+                      ChromeTrackEvent::kRenderProcessHost, *this);
+      // "RenderProcessHostImpl.Channel.ProcessLaunchPauseToUnpauseTime"
+      TRACE_EVENT_END("ipc", tracing_track_,
+                      ChromeTrackEvent::kRenderProcessHost, *this);
+      channel_->Unpause(false /* flush */);
+    }
 
     gpu_client_->SetClientPid(GetProcess().Pid());
 
@@ -5757,15 +5840,9 @@ void RenderProcessHostImpl::OnProcessLaunched() {
     ShareMetricsMemoryRegion();
   }
 
-  // Pass bits of global renderer state to the renderer.
-  NotifyRendererOfLockedStateUpdate();
-
-  // Send the initial system color info to the renderer.
-  ThemeHelper::GetInstance()->SendSystemColorInfo(GetRendererInterface());
-
   // Remember when we call the creation observers, so we know when to send
   // creation failed events to the observers.
-  sent_process_created_ = true;
+  sent_process_launched_ = true;
 
   // NOTE: This needs to be before flushing queued messages, because
   // ExtensionService uses this notification to initialize the renderer
@@ -5774,10 +5851,11 @@ void RenderProcessHostImpl::OnProcessLaunched() {
   // The queued messages contain such things as "navigate". If this
   // notification was after, we can end up executing JavaScript before the
   // initialization happens.
-  for (auto* observer : GetAllCreationObservers())
-    observer->OnRenderProcessHostCreated(this);
+  for (auto* observer : GetAllCreationObservers()) {
+    observer->OnRenderProcessLaunched(this);
+  }
 
-  if (child_process_launcher_) {
+  if (child_process_launcher_ && ShouldPauseChannelUntilProcessLaunched()) {
     base::UmaHistogramMediumTimes(
         "Mojo.Channel.ChannelInitPauseToFlushTime",
         base::TimeTicks::Now() - pause_channel_on_init_time_);
@@ -5837,17 +5915,23 @@ void RenderProcessHostImpl::OnProcessLaunchFailed(int error_code) {
 
 #if BUILDFLAG(IS_ANDROID)
 bool RenderProcessHostImpl::CanUseWarmUpConnection() {
-  // We disable the spare renderer from using the warmed up connection
-  // because of potential failure to reset the binding state when the
-  // connection is not yet connected or already killed. In practice the
-  // warmed up connection is only created during the start up of the Chrome
-  // application and will not be used by the spare renderer. The filter is
-  // only added for test purposes.
-  return !has_spare_renderer_priority_;
+  // TODO(crbug.com/455620851): Remove the function after finishing the
+  // holdback experiment.
+  return base::FeatureList::IsEnabled(
+             features::kSpareRendererUseWarmupConnection) ||
+         !HasSpareRendererPriority();
 }
 
 bool RenderProcessHostImpl::HasSpareRendererPriority() {
-  return has_spare_renderer_priority_;
+  return spare_renderer_priority_status_ !=
+         SpareRendererPriorityStatus::kNormal;
+}
+
+void RenderProcessHostImpl::OnSpareRendererPriorityGraduated(bool is_alive) {
+  spare_renderer_priority_status_ = SpareRendererPriorityStatus::kNormal;
+  for (auto& observer : observers_) {
+    observer.SpareRendererPriorityGraduated(this, is_alive);
+  }
 }
 #endif  // BUILDFLAG(IS_ANDROID)
 
@@ -6068,7 +6152,7 @@ void RenderProcessHostImpl::ProvideSwapFileForRenderer() {
 #if BUILDFLAG(IS_ANDROID)
 
 void RenderProcessHostImpl::NotifyMemoryPressureToRenderer(
-    base::MemoryPressureListener::MemoryPressureLevel level) {
+    base::MemoryPressureLevel level) {
   child_process_->OnMemoryPressure(level);
 }
 
@@ -6079,13 +6163,6 @@ void RenderProcessHostImpl::GetBoundInterfacesForTesting(
   io_thread_host_impl_->AsyncCall(&IOThreadHostImpl::GetInterfacesForTesting)
       .WithArgs(std::ref(out));
   io_thread_host_impl_->FlushPostedTasksForTesting();  // IN-TEST
-}
-
-void RenderProcessHostImpl::GraduateSpareToNormalRendererPriority() {
-  if (has_spare_renderer_priority_) {
-    has_spare_renderer_priority_ = false;
-    UpdateProcessPriority();
-  }
 }
 
 bool RenderProcessHostImpl::IsOnlyHostingPrerenderedFramesOrEmpty() {

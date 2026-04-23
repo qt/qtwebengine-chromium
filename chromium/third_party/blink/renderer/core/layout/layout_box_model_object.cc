@@ -81,13 +81,19 @@ bool NeedsAnchorPositionScrollData(Element& element,
   if (!style.HasOutOfFlowPosition()) {
     return false;
   }
-  // There's an explicitly set default anchor.
-  if (style.PositionAnchor()) {
-    return true;
+  const StylePositionAnchor& position_anchor = style.PositionAnchor();
+  using Type = StylePositionAnchor::Type;
+  switch (position_anchor.GetType()) {
+    case Type::kNone:
+      return false;
+    case Type::kAuto:
+      // Now we have `position-anchor: auto`. We need `AnchorPositionScrollData`
+      // only if there's an implicit anchor element to track.
+      return static_cast<bool>(element.ImplicitAnchorElement());
+    case Type::kName:
+      // There's an explicitly set default anchor.
+      return true;
   }
-  // Now we have `position-anchor: auto`. We need `AnchorPositionScrollData`
-  // only if there's an implicit anchor element to track.
-  return element.ImplicitAnchorElement();
 }
 
 }  // namespace
@@ -871,10 +877,10 @@ LogicalRect LayoutBoxModelObject::LocalCaretRectForEmptyElement(
   }
   if (caret_shape != CaretShape::kBar && font_data) [[unlikely]] {
     if (caret_shape == CaretShape::kBlock) {
-      caret_width = LayoutUnit(font_data->AvgCharWidth());
+      caret_width = LayoutUnit(font_data->GetFontMetrics().ZeroWidth());
     } else if (caret_shape == CaretShape::kUnderscore) {
       height = caret_width;
-      caret_width = LayoutUnit(font_data->AvgCharWidth());
+      caret_width = LayoutUnit(font_data->GetFontMetrics().ZeroWidth());
       block_start =
           block_start + LayoutUnit(font_data->GetFontMetrics().Height());
     }

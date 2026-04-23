@@ -19,6 +19,8 @@
  */
 
 #include <assert.h>
+#include <sstream>
+#include <string>
 
 #include <vulkan/utility/vk_format_utils.h>
 #include <vulkan/vulkan_core.h>
@@ -34,6 +36,7 @@
 #include "utils/image_utils.h"
 #include "utils/math_utils.h"
 #include "state_tracker/data_graph_pipeline_session_state.h"
+#include "state_tracker/cmd_buffer_state.h"
 
 // For given mem object, verify that it is not null or UNBOUND, if it is, report error. Return skip value.
 bool CoreChecks::VerifyBoundMemoryIsValid(const vvl::DeviceMemory *memory_state, const LogObjectList &objlist,
@@ -983,8 +986,9 @@ bool CoreChecks::ValidateBindBufferMemory(VkBuffer buffer, VkDeviceMemory memory
         const VkImage dedicated_image = mem_info->GetDedicatedImage();
         if (dedicated_image != VK_NULL_HANDLE) {
             const LogObjectList objlist(buffer, memory);
-            skip |= LogError("VUID-vkBindBufferMemory-memory-10925", objlist,
-                             loc.pNext(Struct::VkMemoryDedicatedAllocateInfo, Field::pNext).dot(Field::image),
+            const char *vuid =
+                bind_buffer_mem_2 ? "VUID-VkBindBufferMemoryInfo-memory-10925" : "VUID-vkBindBufferMemory-memory-10925";
+            skip |= LogError(vuid, objlist, loc.pNext(Struct::VkMemoryDedicatedAllocateInfo, Field::pNext).dot(Field::image),
                              "is %s (not VK_NULL_HANDLE), but VkBindBufferMemoryInfo::buffer is %s.",
                              FormatHandle(dedicated_image).c_str(), FormatHandle(buffer).c_str());
         }
@@ -1637,6 +1641,25 @@ bool CoreChecks::ValidateBindTensorMemoryARM(uint32_t bindInfoCount, const VkBin
                     FormatHandle(bind_info.memory).c_str(), string_VkExternalMemoryHandleTypeFlagBits(mem_info->import_handle_type.value()));
             }
         }
+        if (tensor_state->create_info.flags & VK_TENSOR_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_ARM) {
+            const auto allocate_flags = vku::FindStructInPNextChain<VkMemoryAllocateFlagsInfo>(mem_info->allocate_info.pNext);
+            if (allocate_flags) {
+                if (!(allocate_flags->flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT)) {
+                    const LogObjectList objlist(bind_info.tensor, bind_info.memory);
+                    skip |= LogError("VUID-VkBindTensorMemoryInfoARM-tensor-09943", objlist, bind_info_loc.dot(Field::memory),
+                                     "(%s) is missing VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT required for "
+                                     "VK_TENSOR_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_ARM tensor (%s).",
+                                     FormatHandle(bind_info.memory).c_str(), FormatHandle(bind_info.tensor).c_str());
+                }
+                if (!(allocate_flags->flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT)) {
+                    const LogObjectList objlist(bind_info.tensor, bind_info.memory);
+                    skip |= LogError("VUID-VkBindTensorMemoryInfoARM-tensor-09944", objlist, bind_info_loc.dot(Field::memory),
+                                     "(%s) is missing VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT required for "
+                                     "VK_TENSOR_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_ARM tensor (%s).",
+                                     FormatHandle(bind_info.memory).c_str(), FormatHandle(bind_info.tensor).c_str());
+                }
+            }
+        }
     }
     return skip;
 }
@@ -1729,7 +1752,7 @@ bool CoreChecks::ValidateBindImageMemory(uint32_t bindInfoCount, const VkBindIma
                     // since its a non-disjoint image, finding VkImage in map is a duplicate
                     auto it = resources_bound.find(image_state->VkHandle());
                     if (it == resources_bound.end()) {
-                        std::array<uint32_t, 3> bound_index = {i, vvl::kU32Max, vvl::kU32Max};
+                        std::array<uint32_t, 3> bound_index = {i, vvl::kNoIndex32, vvl::kNoIndex32};
                         resources_bound.emplace(image_state->VkHandle(), bound_index);
                     } else {
                         const LogObjectList objlist(bind_info.image, bind_info.memory);
@@ -1783,11 +1806,11 @@ bool CoreChecks::ValidateBindImageMemory(uint32_t bindInfoCount, const VkBindIma
 
                 auto it = resources_bound.find(image_state->VkHandle());
                 if (it == resources_bound.end()) {
-                    std::array<uint32_t, 3> bound_index = {vvl::kU32Max, vvl::kU32Max, vvl::kU32Max};
+                    std::array<uint32_t, 3> bound_index = {vvl::kNoIndex32, vvl::kNoIndex32, vvl::kNoIndex32};
                     bound_index[plane] = i;
                     resources_bound.emplace(image_state->VkHandle(), bound_index);
                 } else {
-                    if (it->second[plane] == vvl::kU32Max) {
+                    if (it->second[plane] == vvl::kNoIndex32) {
                         it->second[plane] = i;
                     } else {
                         const LogObjectList objlist(bind_info.image, bind_info.memory);
@@ -1871,35 +1894,37 @@ bool CoreChecks::ValidateBindImageMemory(uint32_t bindInfoCount, const VkBindIma
                 const VkBuffer dedicated_buffer = mem_info->GetDedicatedBuffer();
                 if (dedicated_buffer != VK_NULL_HANDLE) {
                     const LogObjectList objlist(bind_info.image, bind_info.memory);
-                    skip |= LogError("VUID-vkBindImageMemory-memory-10926", objlist,
-                                     loc.pNext(Struct::VkMemoryDedicatedAllocateInfo, Field::pNext).dot(Field::buffer),
-                                     "is %s (not VK_NULL_HANDLE), but VkBindImageMemoryInfo::image is %s.",
-                                     FormatHandle(dedicated_buffer).c_str(), FormatHandle(bind_info.image).c_str());
+                    const char *vuid =
+                        bind_image_mem_2 ? "VUID-VkBindImageMemoryInfo-memory-10926" : "VUID-vkBindImageMemory-memory-10926";
+                    skip |=
+                        LogError(vuid, objlist, loc.pNext(Struct::VkMemoryDedicatedAllocateInfo, Field::pNext).dot(Field::buffer),
+                                 "is %s (not VK_NULL_HANDLE), but VkBindImageMemoryInfo::image is %s.",
+                                 FormatHandle(dedicated_buffer).c_str(), FormatHandle(bind_info.image).c_str());
                 }
 
                 auto chained_flags_struct = vku::FindStructInPNextChain<VkMemoryAllocateFlagsInfo>(mem_info->allocate_info.pNext);
                 const VkMemoryAllocateFlags memory_allocate_flags = chained_flags_struct ? chained_flags_struct->flags : 0;
-                if ((image_state->create_info.flags & VK_IMAGE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT) &&
-                    !(memory_allocate_flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT)) {
-                    const char *vuid = bind_image_mem_2 ? "VUID-VkBindImageMemoryInfo-descriptorBufferCaptureReplay-08113"
-                                                        : "VUID-vkBindImageMemory-descriptorBufferCaptureReplay-08113";
-                    const LogObjectList objlist(bind_info.image, bind_info.memory);
-                    skip |= LogError(vuid, objlist, loc.dot(Field::image),
-                                     "was created with the VK_IMAGE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT bit set,"
-                                     "but the bound memory was allocated with %s and needs "
-                                     "VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT.",
-                                     string_VkMemoryAllocateFlags(memory_allocate_flags).c_str());
-                }
-                if ((image_state->create_info.flags & VK_IMAGE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT) &&
-                    !(memory_allocate_flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT)) {
-                    const char *vuid =
-                        bind_image_mem_2 ? "VUID-VkBindImageMemoryInfo-image-09202" : "VUID-vkBindImageMemory-image-09202";
-                    const LogObjectList objlist(bind_info.image, bind_info.memory);
-                    skip |= LogError(vuid, objlist, loc.dot(Field::image),
-                                     "was created with the VK_IMAGE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT bit set,"
-                                     "but the bound memory was allocated with %s and needs "
-                                     "VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT.",
-                                     string_VkMemoryAllocateFlags(memory_allocate_flags).c_str());
+                if (image_state->create_info.flags & VK_IMAGE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT) {
+                    if ((memory_allocate_flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT) == 0) {
+                        const char *vuid = bind_image_mem_2 ? "VUID-VkBindImageMemoryInfo-descriptorBufferCaptureReplay-08113"
+                                                            : "VUID-vkBindImageMemory-descriptorBufferCaptureReplay-08113";
+                        const LogObjectList objlist(bind_info.image, bind_info.memory);
+                        skip |= LogError(vuid, objlist, loc.dot(Field::image),
+                                         "was created with the VK_IMAGE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT bit set, "
+                                         "but the bound memory was allocated with %s and needs "
+                                         "VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT.",
+                                         string_VkMemoryAllocateFlags(memory_allocate_flags).c_str());
+                    }
+                    if ((memory_allocate_flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT) == 0) {
+                        const char *vuid =
+                            bind_image_mem_2 ? "VUID-VkBindImageMemoryInfo-image-09202" : "VUID-vkBindImageMemory-image-09202";
+                        const LogObjectList objlist(bind_info.image, bind_info.memory);
+                        skip |= LogError(vuid, objlist, loc.dot(Field::image),
+                                         "was created with the VK_IMAGE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT bit set, "
+                                         "but the bound memory was allocated with %s and needs "
+                                         "VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT.",
+                                         string_VkMemoryAllocateFlags(memory_allocate_flags).c_str());
+                    }
                 }
 
                 // Validate export memory handles
@@ -2221,7 +2246,7 @@ bool CoreChecks::ValidateBindImageMemory(uint32_t bindInfoCount, const VkBindIma
         if (image_state && image_state->disjoint == true && !is_drm) {
             uint32_t total_planes = vkuFormatPlaneCount(image_state->create_info.format);
             for (uint32_t i = 0; i < total_planes; i++) {
-                if (resource.second[i] == vvl::kU32Max) {
+                if (resource.second[i] == vvl::kNoIndex32) {
                     skip |= LogError("VUID-vkBindImageMemory2-pBindInfos-02858", resource.first, error_obj.location,
                                      "Plane %" PRIu32
                                      " of the disjoint image was not bound. All %d planes need to bound individually "
@@ -2519,8 +2544,15 @@ bool CoreChecks::ValidateSparseImageMemoryBind(vvl::Image const *image_state, Vk
     skip |=
         ValidateImageSubresourceSparseImageMemoryBind(*image_state, bind.subresource, bind_loc, memory_loc.dot(Field::subresource));
 
-    for (auto const &requirements : image_state->sparse_requirements) {
-        VkExtent3D const &granularity = requirements.formatProperties.imageGranularity;
+    const VkSparseImageMemoryRequirements *requirements = nullptr;
+    for (size_t memoryReqNdx = 0; memoryReqNdx < image_state->sparse_requirements.size(); ++memoryReqNdx) {
+        if (image_state->sparse_requirements[memoryReqNdx].formatProperties.aspectMask & bind.subresource.aspectMask) {
+            requirements = &image_state->sparse_requirements[memoryReqNdx];
+            break;
+        }
+    }
+    if (requirements) {
+        VkExtent3D const &granularity = requirements->formatProperties.imageGranularity;
         if (SafeModulo(bind.offset.x, granularity.width) != 0) {
             skip |= LogError("VUID-VkSparseImageMemoryBind-offset-01107", image_state->Handle(),
                              bind_loc.dot(Field::offset).dot(Field::x),
@@ -2828,11 +2860,123 @@ bool CoreChecks::ValidateBindDataGraphPipelineSessionMemoryARM(const VkBindDataG
 }
 
 bool CoreChecks::PreCallValidateBindDataGraphPipelineSessionMemoryARM(VkDevice device, uint32_t bindInfoCount,
-                                                                      const VkBindDataGraphPipelineSessionMemoryInfoARM *pBindInfos,
-                                                                      const ErrorObject &error_obj) const {
+                                                                      const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos,
+                                                                      const ErrorObject& error_obj) const {
     bool skip = false;
     for (uint32_t i = 0; i < bindInfoCount; i++) {
         skip |= ValidateBindDataGraphPipelineSessionMemoryARM(pBindInfos[i], error_obj.location.dot(Field::pBindInfos, i));
     }
+    return skip;
+}
+
+bool CoreChecks::PreCallValidateCmdDecompressMemoryEXT(VkCommandBuffer commandBuffer,
+                                                       const VkDecompressMemoryInfoEXT* pDecompressMemoryInfoEXT,
+                                                       const ErrorObject& error_obj) const {
+    bool skip = false;
+    auto cb_state = GetRead<vvl::CommandBuffer>(commandBuffer);
+    const LogObjectList objlist(cb_state->Handle());
+
+    const Location memory_info_loc = error_obj.location.dot(Field::pDecompressMemoryInfoEXT);
+    for (uint32_t i = 0; i < pDecompressMemoryInfoEXT->regionCount; ++i) {
+        const auto& region = pDecompressMemoryInfoEXT->pRegions[i];
+        const Location region_loc = memory_info_loc.dot(Field::pRegions, i);
+        if (region.compressedSize > 0) {
+            const VkDeviceAddress start = region.srcAddress;
+            const VkDeviceSize size = region.compressedSize;
+
+            BufferAddressValidation<2> buffer_address_validator = {
+                {{{"VUID-VkDecompressMemoryRegionEXT-srcAddress-07686",
+                   [start, size](const vvl::Buffer &buffer_state) {
+                       const VkDeviceSize end =
+                           buffer_state.create_info.size - static_cast<VkDeviceSize>(start - buffer_state.deviceAddress);
+                       return size > end;
+                   },
+                   [size]() { return "The compressedSize (" + std::to_string(size) + ") does not fit in any buffer"; },
+                   kEmptyErrorMsgBuffer},
+                  {"VUID-VkDecompressMemoryRegionEXT-srcAddress-11764",
+                   [](const vvl::Buffer &buffer_state) {
+                       return (buffer_state.usage & VK_BUFFER_USAGE_2_MEMORY_DECOMPRESSION_BIT_EXT) == 0;
+                   },
+                   []() { return "The following buffers are missing VK_BUFFER_USAGE_2_MEMORY_DECOMPRESSION_BIT_EXT"; },
+                   kUsageErrorMsgBuffer}}}};
+
+            const Location src_loc = region_loc.dot(Field::srcAddress);
+            skip |= buffer_address_validator.ValidateDeviceAddress(*this, src_loc, objlist, start, size);
+        }
+
+        if (region.decompressedSize > 0) {
+            const VkDeviceAddress start = region.dstAddress;
+            const VkDeviceSize size = region.decompressedSize;
+            BufferAddressValidation<2> dst_range_validator = {
+                {{{"VUID-VkDecompressMemoryRegionEXT-dstAddress-07688",
+                   [start, size](const vvl::Buffer &buffer_state) {
+                       const VkDeviceSize end =
+                           buffer_state.create_info.size - static_cast<VkDeviceSize>(start - buffer_state.deviceAddress);
+                       return size > end;
+                   },
+                   [size]() { return "The decompressedSize (" + std::to_string(size) + ") does not fit in any buffer"; },
+                   kEmptyErrorMsgBuffer},
+                  {"VUID-VkDecompressMemoryRegionEXT-dstAddress-11765",
+                   [](const vvl::Buffer &buffer_state) {
+                       return (buffer_state.usage & VK_BUFFER_USAGE_2_MEMORY_DECOMPRESSION_BIT_EXT) == 0;
+                   },
+                   []() { return "The following buffers are missing VK_BUFFER_USAGE_2_MEMORY_DECOMPRESSION_BIT_EXT"; },
+                   kUsageErrorMsgBuffer}}}};
+
+            const Location dst_loc = region_loc.dot(Field::dstAddress);
+            skip |= dst_range_validator.ValidateDeviceAddress(*this, dst_loc, objlist, start, size);
+        }
+    }
+
+    return skip;
+}
+
+bool CoreChecks::PreCallValidateCmdDecompressMemoryIndirectCountEXT(VkCommandBuffer commandBuffer,
+                                                                    VkMemoryDecompressionMethodFlagsEXT decompressionMethod,
+                                                                    VkDeviceAddress indirectCommandsAddress,
+                                                                    VkDeviceAddress indirectCommandsCountAddress,
+                                                                    uint32_t maxDecompressionCount, uint32_t stride,
+                                                                    const ErrorObject& error_obj) const {
+    bool skip = false;
+    auto cb_state = GetRead<vvl::CommandBuffer>(commandBuffer);
+    const LogObjectList objlist(cb_state->Handle());
+
+    {
+        const VkDeviceSize max_range_size = static_cast<VkDeviceSize>(stride) * static_cast<VkDeviceSize>(maxDecompressionCount);
+        BufferAddressValidation<2> buffer_address_validator = {
+            {{{"VUID-vkCmdDecompressMemoryIndirectCountEXT-indirectCommandsAddress-07694",
+               [](const vvl::Buffer &buffer_state) { return (buffer_state.usage & VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT) == 0; },
+               []() { return "The following buffers are missing VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT"; }, kUsageErrorMsgBuffer},
+
+              {"VUID-vkCmdDecompressMemoryIndirectCountEXT-indirectCommandsAddress-11794",
+               [indirectCommandsAddress, stride, maxDecompressionCount](const vvl::Buffer &buffer_state) {
+                   if (maxDecompressionCount == 0 || stride == 0) return false;
+                   const vvl::range<VkDeviceSize> required_range(
+                       indirectCommandsAddress, indirectCommandsAddress + static_cast<VkDeviceSize>(stride) *
+                                                                              static_cast<VkDeviceSize>(maxDecompressionCount));
+                   const vvl::range<VkDeviceSize> buffer_address_range = buffer_state.DeviceAddressRange();
+                   return !buffer_address_range.includes(required_range);
+               },
+               [stride, maxDecompressionCount, max_range_size]() {
+                   return "The required " + std::to_string(max_range_size) + " byte (stride [" + std::to_string(stride) +
+                          "] * maxDecompressionCount [" + std::to_string(maxDecompressionCount) + "]) does not fit in any buffer";
+               },
+               kEmptyErrorMsgBuffer}}}};
+
+        const Location ic_addr_loc = error_obj.location.dot(Field::indirectCommandsAddress);
+        skip |=
+            buffer_address_validator.ValidateDeviceAddress(*this, ic_addr_loc, objlist, indirectCommandsAddress, max_range_size);
+    }
+
+    {
+        BufferAddressValidation<1> buffer_address_validator = {
+            {{{"VUID-vkCmdDecompressMemoryIndirectCountEXT-indirectCommandsCountAddress-07697",
+               [](const vvl::Buffer &buffer_state) { return (buffer_state.usage & VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT) == 0; },
+               []() { return "The following buffers are missing VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT"; }, kUsageErrorMsgBuffer}}}};
+
+        const Location ic_count_loc = error_obj.location.dot(Field::indirectCommandsCountAddress);
+        skip |= buffer_address_validator.ValidateDeviceAddress(*this, ic_count_loc, objlist, indirectCommandsCountAddress);
+    }
+
     return skip;
 }

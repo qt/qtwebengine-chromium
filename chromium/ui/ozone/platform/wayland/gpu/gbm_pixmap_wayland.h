@@ -40,7 +40,7 @@ class GbmPixmapWayland : public gfx::NativePixmap {
   bool InitializeBuffer(
       gfx::AcceleratedWidget widget,
       gfx::Size size,
-      gfx::BufferFormat format,
+      viz::SharedImageFormat format,
       NativePixmapUsageSet usage,
       std::optional<gfx::Size> visible_area_size = std::nullopt);
 
@@ -50,7 +50,7 @@ class GbmPixmapWayland : public gfx::NativePixmap {
   // scheduled as an overlay.
   bool InitializeBufferFromHandle(gfx::AcceleratedWidget widget,
                                   gfx::Size size,
-                                  gfx::BufferFormat format,
+                                  viz::SharedImageFormat format,
                                   gfx::NativePixmapHandle handle);
 
   // gfx::NativePixmap overrides:
@@ -62,7 +62,7 @@ class GbmPixmapWayland : public gfx::NativePixmap {
   size_t GetNumberOfPlanes() const override;
   bool SupportsZeroCopyWebGPUImport() const override;
   uint64_t GetBufferFormatModifier() const override;
-  gfx::BufferFormat GetBufferFormat() const override;
+  viz::SharedImageFormat GetSharedImageFormat() const override;
   gfx::Size GetBufferSize() const override;
   uint32_t GetUniqueId() const override;
   bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,

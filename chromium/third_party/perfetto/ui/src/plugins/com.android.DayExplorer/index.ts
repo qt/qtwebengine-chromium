@@ -18,21 +18,38 @@ import StandardGroupsPlugin from '../dev.perfetto.StandardGroups';
 import {PerfettoPlugin} from '../../public/plugin';
 import {createQueryCounterTrack} from '../../components/tracks/query_counter_track';
 import {TrackNode} from '../../public/workspace';
-import {STR, LONG} from '../../trace_processor/query_result';
+import {STR, LONG, LONG_NULL} from '../../trace_processor/query_result';
 import {SourceDataset} from '../../trace_processor/dataset';
 import {AreaSelection, areaSelectionsEqual} from '../../public/selection';
-import {Flamegraph} from '../../widgets/flamegraph';
+import {Flamegraph, FLAMEGRAPH_STATE_SCHEMA} from '../../widgets/flamegraph';
 import {
   metricsFromTableOrSubquery,
   QueryFlamegraph,
+  QueryFlamegraphWithMetrics,
 } from '../../components/query_flamegraph';
 import SupportPlugin from '../com.android.AndroidLongBatterySupport';
+import {Store} from '../../base/store';
+import {z} from 'zod';
+import {assertExists} from '../../base/logging';
 
 const DAY_EXPLORER_TRACK_KIND = 'day_explorer_counter_track';
 
-export default class implements PerfettoPlugin {
+const DAY_EXPLORER_PLUGIN_STATE_SCHEMA = z.object({
+  areaSelectionFlamegraphState: FLAMEGRAPH_STATE_SCHEMA.optional(),
+});
+
+type DayExplorerPluginState = z.infer<typeof DAY_EXPLORER_PLUGIN_STATE_SCHEMA>;
+
+export default class DayExplorerPlugin implements PerfettoPlugin {
   static readonly id = 'com.android.DayExplorer';
   static readonly dependencies = [StandardGroupsPlugin, SupportPlugin];
+
+  private store?: Store<DayExplorerPluginState>;
+
+  private migrateDayExplorerPluginState(init: unknown): DayExplorerPluginState {
+    const result = DAY_EXPLORER_PLUGIN_STATE_SCHEMA.safeParse(init);
+    return result.data ?? {};
+  }
 
   private support(ctx: Trace) {
     return ctx.plugins.getPlugin(SupportPlugin);
@@ -131,7 +148,7 @@ export default class implements PerfettoPlugin {
 
   private createDayExplorerFlameGraphPanel(trace: Trace) {
     let previousSelection: AreaSelection | undefined;
-    let flamegraph: QueryFlamegraph | undefined;
+    let flameagraphWithMetrics: QueryFlamegraphWithMetrics | undefined;
     return {
       id: 'day_explorer_flamegraph_selection',
       name: 'Day Explorer Flamegraph',
@@ -141,19 +158,36 @@ export default class implements PerfettoPlugin {
           !areaSelectionsEqual(previousSelection, selection);
         previousSelection = selection;
         if (selectionChanged) {
-          flamegraph = this.computeDayExplorerFlameGraph(trace, selection);
+          flameagraphWithMetrics = this.computeDayExplorerFlameGraph(
+            trace,
+            selection,
+          );
         }
-
-        if (flamegraph === undefined) {
+        if (flameagraphWithMetrics === undefined) {
           return undefined;
         }
-
-        return {isLoading: false, content: flamegraph.render()};
+        const store = assertExists(this.store);
+        const {flamegraph, metrics} = flameagraphWithMetrics;
+        return {
+          isLoading: false,
+          content: flamegraph.render({
+            metrics,
+            state: store.state.areaSelectionFlamegraphState,
+            onStateChange: (state) => {
+              store.edit((draft) => {
+                draft.areaSelectionFlamegraphState = state;
+              });
+            },
+          }),
+        };
       },
     };
   }
 
-  computeDayExplorerFlameGraph(trace: Trace, currentSelection: AreaSelection) {
+  private computeDayExplorerFlameGraph(
+    trace: Trace,
+    currentSelection: AreaSelection,
+  ): QueryFlamegraphWithMetrics | undefined {
     // The flame graph will be shown when any day explorer track is in the area
     // selection. The selection is used to filter by time, but not by track. All
     // day explorer tracks are considered for the graph.
@@ -204,12 +238,17 @@ export default class implements PerfettoPlugin {
         },
       ],
     );
-    return new QueryFlamegraph(trace, metrics, {
-      state: Flamegraph.createDefaultState(metrics),
+    const store = assertExists(this.store);
+    store.edit((draft) => {
+      draft.areaSelectionFlamegraphState = Flamegraph.updateState(
+        draft.areaSelectionFlamegraphState,
+        metrics,
+      );
     });
+    return {flamegraph: new QueryFlamegraph(trace), metrics};
   }
 
-  async addDayExplorerBehaviors(
+  async addDayExplorerUsage(
     ctx: Trace,
     support: SupportPlugin,
     groupName: string,
@@ -223,18 +262,18 @@ export default class implements PerfettoPlugin {
 
     await support.addSliceTrack(
       ctx,
-      'Day Explorer Behaviors',
+      'Day Explorer Device Usage',
       new SourceDataset({
         src: `
           SELECT
             ts,
             dur,
-            behavior as name
-          FROM day_explorer_behaviors
+            usage as name
+          FROM day_explorer_device_usage
         `,
         schema: {
           ts: LONG,
-          dur: LONG,
+          dur: LONG_NULL,
           name: STR,
         },
       }),
@@ -261,11 +300,11 @@ export default class implements PerfettoPlugin {
             alert('Positive number required');
             return;
           }
-          await this.addDayExplorerBehaviors(ctx, support, 'Day explorer');
+          await this.addDayExplorerUsage(ctx, support, 'Day Explorer');
           await this.addDayExplorerCounters(
             ctx,
             support,
-            'Day explorer',
+            'Day Explorer',
             limit,
           );
         },
@@ -274,6 +313,10 @@ export default class implements PerfettoPlugin {
   }
 
   async onTraceLoad(ctx: Trace): Promise<void> {
+    this.store = ctx.mountStore(DayExplorerPlugin.id, (init) =>
+      this.migrateDayExplorerPluginState(init),
+    );
+
     const support = this.support(ctx);
     const features = await support.features(ctx.engine);
 

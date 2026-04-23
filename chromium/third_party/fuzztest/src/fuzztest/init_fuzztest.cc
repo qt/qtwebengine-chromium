@@ -162,13 +162,25 @@ FUZZTEST_DEFINE_FLAG(
     "for an input if the execution of the property-function with the input "
     "takes longer than this time limit.");
 
-FUZZTEST_DEFINE_FLAG(std::optional<size_t>, jobs, std::nullopt,
-                     "The number of fuzzing jobs to run in parallel. If "
-                     "unspecified, the number of jobs is 1.");
+FUZZTEST_DEFINE_FLAG(
+    std::optional<size_t>, jobs, std::nullopt,
+    "The number of fuzzing jobs to run in parallel. If "
+    "unspecified, the number of jobs is 1. "
+    // TODO: b/385113025 - Simplify this once the configurations are unified.
+    "Temporarily, it is effective only when FuzzTest/Centipede configuration ("
+    "--config=fuzztest-experimental"
+    ") is used and --" FUZZTEST_FLAG_PREFIX "corpus_database is non-empty.");
 
 FUZZTEST_DEFINE_FLAG(
     bool, print_subprocess_log, false,
     "If set, print the log of the subprocesses spawned by FuzzTest.");
+
+FUZZTEST_DEFINE_FLAG(bool, unguided, false,
+                     "If used together with --" FUZZTEST_FLAG_PREFIX
+                     "fuzz or --" FUZZTEST_FLAG_PREFIX
+                     "fuzz_for, carries out fuzzing without coverage guidance. "
+                     "When used with --" FUZZTEST_FLAG_PREFIX
+                     "fuzz_for, regular tests also run by default.");
 
 // Internal flags - not part of the user interface.
 //
@@ -325,8 +337,14 @@ internal::Configuration CreateConfigurationsFromFlags(
   FUZZTEST_CHECK(!jobs.has_value() || *jobs > 0)
       << "If specified, --" << FUZZTEST_FLAG(jobs).Name()
       << " must be positive.";
+  std::string corpus_database = absl::GetFlag(FUZZTEST_FLAG(corpus_database));
+  if (!corpus_database.empty() && corpus_database[0] != '/' &&
+      std::getenv("TEST_SRCDIR")) {
+    corpus_database =
+        absl::StrCat(std::getenv("TEST_SRCDIR"), "/", corpus_database);
+  }
   return internal::Configuration{
-      absl::GetFlag(FUZZTEST_FLAG(corpus_database)),
+      corpus_database,
       /*stats_root=*/"",
       /*workdir_root=*/"",
       std::string(binary_identifier),
@@ -442,10 +460,13 @@ void InitFuzzTest(int* argc, char*** argv, std::string_view binary_id) {
       GTEST_FLAG_SET(filter, filter);
     }
   }
-  const RunMode run_mode =
-      fuzzing_time_limit.has_value() ? RunMode::kFuzz : RunMode::kUnitTest;
   // TODO(b/307513669): Use the Configuration class instead of Runtime.
-  runtime.SetRunMode(run_mode);
+  if (!absl::GetFlag(FUZZTEST_FLAG(unguided)) &&
+      fuzzing_time_limit.has_value()) {
+    runtime.SetRunMode(RunMode::kFuzz);
+  } else {
+    runtime.SetRunMode(RunMode::kUnitTest);
+  }
 }
 
 void ParseAbslFlags(int argc, char** argv) {

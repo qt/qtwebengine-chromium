@@ -5,8 +5,9 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Iterable, Self, Sequence
+from typing import TYPE_CHECKING, Any, Final, Iterable, Self, Sequence
 
+from immutabledict import immutabledict
 from typing_extensions import override
 
 from crossbench import exception
@@ -78,27 +79,34 @@ class ProbeListConfig(ConfigObject):
       probe_configs: Iterable[ProbeConfig] = (),
       probes: Iterable[Probe] = ()
   ) -> None:
-    self._probes: dict[str, Probe] = {}
+    self._probes: Final[immutabledict[str, Probe]] = self._init_probes(
+        probe_configs, probes)
+
+  def _init_probes(self, probe_configs: Iterable[ProbeConfig],
+                   probes: Iterable[Probe]) -> immutabledict[str, Probe]:
     if not probe_configs and not probes:
-      return
+      return immutabledict()
+    accumulator: dict[str, Probe] = {}
     for probe_config in probe_configs:
       with exception.annotate(f"Parsing --probe={probe_config.name}"):
-        self._add_probe_config(probe_config)
+        self._add_probe_config(accumulator, probe_config)
     for probe in probes:
-      self._add_probe(probe)
+      self._add_probe(accumulator, probe)
+    return immutabledict(accumulator)
 
   @property
-  def probes(self) -> list[Probe]:
-    return list(self._probes.values())
+  def probes(self) -> tuple[Probe, ...]:
+    return tuple(self._probes.values())
 
-  def _add_probe_config(self, probe_config: ProbeConfig) -> None:
+  def _add_probe_config(self, accumulator: dict[str, Probe],
+                        probe_config: ProbeConfig) -> None:
     probe: Probe = probe_config.new_instance()
-    self._add_probe(probe)
+    self._add_probe(accumulator, probe)
 
-  def _add_probe(self, probe: Probe) -> None:
-    if probe.name in self._probes:
+  def _add_probe(self, accumulator: dict[str, Probe], probe: Probe) -> None:
+    if probe.name in accumulator:
       raise ValueError(f"Duplicate probe: {probe.name}")
-    self._probes[probe.name] = probe
+    accumulator[probe.name] = probe
 
   def merge(self, other: Self, should_override: bool = False) -> Self:
     merged_probes = {probe.name: probe for probe in self.probes}
@@ -112,3 +120,11 @@ class ProbeListConfig(ConfigObject):
 
     merged = type(self)(probes=merged_probes.values())
     return merged
+
+  def __hash__(self) -> int:
+    return hash(self._probes)
+
+  def __eq__(self, other: object) -> bool:
+    if type(other) is ProbeListConfig:
+      return self._probes == other._probes
+    return False

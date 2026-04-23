@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import type * as SDK from '../core/sdk/sdk.js';
+import * as SDK from '../core/sdk/sdk.js';
 
 const base64Digits = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -32,8 +32,10 @@ export function encodeVlqList(list: number[]) {
   return list.map(encodeVlq).join('');
 }
 
-// Encode array mappings of the form "compiledLine:compiledColumn => srcFile:srcLine:srcColumn@name"
-// as a source map.
+/**
+ * Encode array mappings of the form "compiledLine:compiledColumn => srcFile:srcLine:srcColumn@name"
+ * as a source map.
+ **/
 export function encodeSourceMap(textMap: string[], sourceRoot?: string): SDK.SourceMap.SourceMapV3Object {
   let mappings = '';
   const sources: string[] = [];
@@ -127,4 +129,11 @@ export function encodeSourceMap(textMap: string[], sourceRoot?: string): SDK.Sou
     array.push(s);
     return array.length - 1;
   }
+}
+
+export function waitForAllSourceMapsProcessed(): Promise<unknown> {
+  return Promise.all(SDK.TargetManager.TargetManager.instance().targets().map(target => {
+    const model = target.model(SDK.DebuggerModel.DebuggerModel) as SDK.DebuggerModel.DebuggerModel;
+    return model.sourceMapManager().waitForSourceMapsProcessedForTest();
+  }));
 }

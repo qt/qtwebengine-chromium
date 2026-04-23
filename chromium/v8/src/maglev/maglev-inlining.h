@@ -84,9 +84,12 @@ class MaglevInliner {
     return v8_flags.print_maglev_graphs && is_tracing_enabled();
   }
 
+  CodeTracer* GetCodeTracer() const;
+  void PrintMaglevGraph(const char* msg,
+                        compiler::OptionalSharedFunctionInfoRef ref = {});
+
   static void UpdatePredecessorsOf(BasicBlock* block, BasicBlock* prev_pred,
                                    BasicBlock* new_pred);
-  void RemovePredecessorFollowing(ControlNode* control, BasicBlock* call_block);
 };
 
 }  // namespace v8::internal::maglev

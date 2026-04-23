@@ -2,7 +2,6 @@
 // Copyright 2025 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Root from '../../../core/root/root.js';
@@ -105,7 +104,6 @@ export const DEFAULT_VIEW = (
       </div>
     `,
     target,
-    { host: target },
   );
   // clang-format on
 };
@@ -113,10 +111,10 @@ export const DEFAULT_VIEW = (
 export type View = typeof DEFAULT_VIEW;
 
 export class ExploreWidget extends UI.Widget.Widget {
-  view: View;
-  constructor(element?: HTMLElement, view?: View) {
+  #view: View;
+  constructor(element?: HTMLElement, view = DEFAULT_VIEW) {
     super(element);
-    this.view = view ?? DEFAULT_VIEW;
+    this.#view = view;
   }
 
   override wasShown(): void {
@@ -185,7 +183,7 @@ export class ExploreWidget extends UI.Widget.Widget {
       });
     }
 
-    this.view(
+    this.#view(
         {
           featureCards,
         },

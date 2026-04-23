@@ -9,17 +9,130 @@
         ],
         'mixins': [
           'result_adapter_gtest_json',
+          'true_noop_merge',
         ],
-        'merge': {
-          # This should be removed in favor of updating the recipe code to allow
-          # the merge script to be skipped entirely. noop is needed currently
-          # because standard_gtest_merge does not work properly with the
-          # results output by --gtest_output. However, noop_merge locks us to
-          # a single shard, and we should not have any need for the outputs of
-          # merge scripts for Dawn.
-          'script': '//testing/merge_scripts/noop_merge.py',
+        'swarming': {
+          'shards': 2,
         },
         'test': 'dawn_end2end_tests',
+      },
+    },
+    'dawn_wire_trace_end2end_sws_gtests': {
+      'dawn_wire_trace_end2end_sws_tests': {
+        'args': [
+          '--adapter-vendor-id=0x1AE0',
+          '--use-wire',
+          '--wire-trace-dir=${ISOLATED_OUTDIR}/clusterfuzz',
+        ],
+        'mixins': [
+          'result_adapter_gtest_json',
+          'wire_trace_merge',
+        ],
+        'test': 'dawn_end2end_tests',
+      },
+    },
+    'dawn_end2end_real_hardware_common_gtests': {
+      'dawn_end2end_implicit_sync_tests': {
+        'args': [
+          '--enable-implicit-device-sync',
+        ],
+        'mixins': [
+          'dawn_end2end_real_hardware_gtests_common_args',
+          'result_adapter_gtest_json',
+          'true_noop_merge',
+        ],
+        'test': 'dawn_end2end_tests',
+        'swarming': {
+          # Primarily needed for Windows.
+          'shards': 2,
+        },
+      },
+      'dawn_end2end_skip_validation_tests': {
+        'args': [
+          '--enable-toggles=skip_validation',
+        ],
+        'mixins': [
+          'dawn_end2end_real_hardware_gtests_common_args',
+          'result_adapter_gtest_json',
+          'true_noop_merge',
+        ],
+        'test': 'dawn_end2end_tests',
+        'swarming': {
+          # Primarily needed for Windows.
+          'shards': 2,
+        },
+      },
+      'dawn_end2end_tests': {
+        'mixins': [
+          'dawn_end2end_real_hardware_gtests_common_args',
+          'result_adapter_gtest_json',
+          'true_noop_merge',
+        ],
+        'swarming': {
+          # Primarily needed for Windows.
+          'shards': 2,
+        },
+      },
+      'dawn_end2end_validation_layers_tests': {
+        'args': [
+          '--enable-backend-validation',
+        ],
+        'mixins': [
+          'dawn_end2end_real_hardware_gtests_common_args',
+          'result_adapter_gtest_json',
+          'true_noop_merge',
+        ],
+        'test': 'dawn_end2end_tests',
+        'swarming': {
+          # Primarily needed for Windows.
+          'shards': 3,
+        },
+      },
+      'dawn_end2end_wire_tests': {
+        'args': [
+          '--use-wire',
+        ],
+        'mixins': [
+          'dawn_end2end_real_hardware_gtests_common_args',
+          'result_adapter_gtest_json',
+          'true_noop_merge',
+        ],
+        'test': 'dawn_end2end_tests',
+        'swarming': {
+          # Primarily needed for Windows.
+          'shards': 2,
+        },
+      },
+    },
+    'dawn_end2end_real_hardware_win_only_gtests': {
+      'dawn_end2end_no_dxc_tests': {
+        'args': [
+          '--disable-toggles=use_dxc',
+        ],
+        'mixins': [
+          'dawn_end2end_real_hardware_gtests_common_args',
+          'result_adapter_gtest_json',
+          'true_noop_merge',
+        ],
+        'test': 'dawn_end2end_tests',
+        'swarming': {
+          'shards': 2,
+        },
+      },
+      'dawn_end2end_no_dxc_validation_layers_tests': {
+        'args': [
+          '--disable-toggles=use_dxc',
+          '--enable-backend-validation',
+        ],
+        'mixins': [
+          'dawn_end2end_real_hardware_gtests_common_args',
+          'result_adapter_gtest_json',
+          'true_noop_merge',
+        ],
+        'test': 'dawn_end2end_tests',
+        'swarming': {
+          'shards': 3,
+        },
       },
     },
     'dawn_end2end_sws_gtests': {
@@ -29,15 +142,10 @@
         ],
         'mixins': [
           'result_adapter_gtest_json',
+          'true_noop_merge',
         ],
-        'merge': {
-          # This should be removed in favor of updating the recipe code to allow
-          # the merge script to be skipped entirely. noop is needed currently
-          # because standard_gtest_merge does not work properly with the
-          # results output by --gtest_output. However, noop_merge locks us to
-          # a single shard, and we should not have any need for the outputs of
-          # merge scripts for Dawn.
-          'script': '//testing/merge_scripts/noop_merge.py',
+        'swarming': {
+          'shards': 3,
         },
         'test': 'dawn_end2end_tests',
       },
@@ -49,17 +157,13 @@
         ],
         'mixins': [
           'result_adapter_gtest_json',
+          'true_noop_merge',
         ],
-        'merge': {
-          # This should be removed in favor of updating the recipe code to allow
-          # the merge script to be skipped entirely. noop is needed currently
-          # because standard_gtest_merge does not work properly with the
-          # results output by --gtest_output. However, noop_merge locks us to
-          # a single shard, and we should not have any need for the outputs of
-          # merge scripts for Dawn.
-          'script': '//testing/merge_scripts/noop_merge.py',
-        },
         'test': 'dawn_end2end_tests',
+        'swarming': {
+          # Very slow on debug builds.
+          'shards': 6,
+        },
       },
     },
     'dawn_node_cts_sws_tests': {
@@ -72,26 +176,68 @@
           'webgpu:api,operation,adapter,requestDevice:default:*',
         ],
         'mixins': [
-          # TODO(crbug.com/441328362): Support running these tests on Swarming.
-          'no_swarming',
+          'result_adapter_single',
+          'true_noop_merge',
         ],
         'test': 'dawn_node_cts',
+      },
+    },
+    'dawn_node_cts_win_software_tests': {
+      'dawn_node_software_d3d12_cts': {
+        'args': [
+          '-backend',
+          'd3d12',
+          '-adapter',
+          'Microsoft Basic Render Driver',
+          'webgpu:api,operation,adapter,requestDevice:default:*',
+        ],
+        'mixins': [
+          'result_adapter_single',
+          'true_noop_merge',
+        ],
+        'test': 'dawn_node_cts',
+      },
+    },
+    'dawn_real_hardware_perf_tests': {
+      # This is run as a gtest instead of an isolated script since on the bots
+      # these are used more as a smoke test/to ensure that they continue to run
+      # rather than for actual perf results.
+      'dawn_perf_tests': {
+        'args': [
+          "--test-launcher-print-test-stdio=always",
+          "--test-launcher-jobs=1",
+          "--test-launcher-retry-limit=0",
+          # Tell the tests to only run one step for faster iteration.
+          "--override-steps=1",
+        ],
+        'linux_args': [
+          '--no-xvfb',
+        ],
+        'mixins': [
+          'result_adapter_gtest_json',
+          'true_noop_merge',
+        ],
       },
     },
     'dawn_unit_gtests': {
       'dawn_unittests': {
         'mixins': [
           'result_adapter_gtest_json',
+          'true_noop_merge',
         ],
-        'merge': {
-          # This should be removed in favor of updating the recipe code to allow
-          # the merge script to be skipped entirely. noop is needed currently
-          # because standard_gtest_merge does not work properly with the
-          # results output by --gtest_output. However, noop_merge locks us to
-          # a single shard, and we should not have any need for the outputs of
-          # merge scripts for Dawn.
-          'script': '//testing/merge_scripts/noop_merge.py',
-        },
+      },
+    },
+    'dawn_wire_trace_unit_gtests': {
+      'dawn_wire_trace_unittests': {
+        'args': [
+          '--use-wire',
+          '--wire-trace-dir=${ISOLATED_OUTDIR}/clusterfuzz',
+        ],
+        'mixins': [
+          'result_adapter_gtest_json',
+          'wire_trace_merge',
+        ],
+        'test': 'dawn_unittests',
       },
     },
     'dawn_wire_unit_gtests': {
@@ -101,70 +247,108 @@
         ],
         'mixins': [
           'result_adapter_gtest_json',
+          'true_noop_merge',
         ],
-        'merge': {
-          # This should be removed in favor of updating the recipe code to allow
-          # the merge script to be skipped entirely. noop is needed currently
-          # because standard_gtest_merge does not work properly with the
-          # results output by --gtest_output. However, noop_merge locks us to
-          # a single shard, and we should not have any need for the outputs of
-          # merge scripts for Dawn.
-          'script': '//testing/merge_scripts/noop_merge.py',
-        },
         'test': 'dawn_unittests',
       },
     },
-    'tint_fuzzer_corpus_tests': {
-      'tint_wgsl_fuzzer_corpus_tests': {
+    'tint_fuzzer_corpus_check_tests': {
+      'tint_wgsl_fuzzer_corpus_check_tests': {
         'args': [
-          'fuzz',
           '-check',
           '--append-cwd-as-build',
         ],
         'mixins': [
-          # TODO(crbug.com/441327468): Support running these tests on Swarming.
-          'no_swarming',
+          'result_adapter_single',
+          'true_noop_merge',
         ],
+        'swarming': {
+          # These tests normally take ~15 minutes, but can flakily hit the
+          # default 20 minute I/O timeout and cannot currently be sharded.
+          'io_timeout': 1800,
+        },
         'test': 'fuzzer_corpus_tests',
       },
-      'tint_ir_fuzzer_corpus_tests': {
+      'tint_ir_fuzzer_corpus_check_tests': {
         'args': [
-          'fuzz',
           '-check',
           '-ir',
           '--append-cwd-as-build',
         ],
         'mixins': [
-          # TODO(crbug.com/441327468): Support running these tests on Swarming.
-          'no_swarming',
+          'result_adapter_single',
+          'true_noop_merge',
         ],
         'test': 'fuzzer_corpus_tests',
+      },
+    },
+    'tint_fuzzer_corpus_generate_tests': {
+      'tint_wgsl_fuzzer_corpus_generate_tests': {
+        'args': [
+          '-generate',
+          '-out',
+          '${ISOLATED_OUTDIR}/clusterfuzz',
+          '--append-cwd-as-build',
+        ],
+        'mixins': [
+          'result_adapter_single',
+          'tint_wgsl_merge',
+        ],
+        'test': 'fuzzer_corpus_tests',
+      },
+      'tint_ir_fuzzer_corpus_generate_tests': {
+        'args': [
+          '-generate',
+          '-out',
+          '${ISOLATED_OUTDIR}/clusterfuzz',
+          '-ir',
+          '--append-cwd-as-build',
+        ],
+        'mixins': [
+          'result_adapter_single',
+          'tint_ir_merge',
+        ],
+        'test': 'fuzzer_corpus_tests',
+      },
+    },
+    'tint_benchmark': {
+      'tint_benchmark': {
+        'mixins': [
+          'result_adapter_single',
+          'true_noop_merge',
+        ],
+        'test': 'benchmarks',
       },
     },
     'tint_unit_gtests': {
       'tint_unittests': {
         'mixins': [
           'result_adapter_gtest_json',
+          'true_noop_merge',
         ],
-        'merge': {
-          # This should be removed in favor of updating the recipe code to allow
-          # the merge script to be skipped entirely. noop is needed currently
-          # because standard_gtest_merge does not work properly with the
-          # results output by --gtest_output. However, noop_merge locks us to
-          # a single shard, and we should not have any need for the outputs of
-          # merge scripts for Dawn.
-          'script': '//testing/merge_scripts/noop_merge.py',
-        },
       },
     },
   },
   'compound_suites': {
+    'real_hardware_common_gtests': [
+      'dawn_end2end_real_hardware_common_gtests',
+      'dawn_real_hardware_perf_tests',
+    ],
+    'real_hardware_win_gtests': [
+      'dawn_end2end_real_hardware_common_gtests',
+      'dawn_end2end_real_hardware_win_only_gtests',
+      'dawn_real_hardware_perf_tests',
+    ],
     'swiftshader_gtests': [
       'dawn_end2end_swangle_gtests',
       'dawn_end2end_sws_gtests',
       'dawn_unit_gtests',
       'dawn_wire_unit_gtests',
       'tint_unit_gtests',
+    ],
+    'swiftshader_isolated_scripts': [
+      'dawn_node_cts_sws_tests',
+      'tint_benchmark',
     ],
     # Same as swiftshader_gtests but with the addition of WARP end2end tests.
     'win_software_renderer_gtests': [
@@ -174,6 +358,14 @@
       'dawn_unit_gtests',
       'dawn_wire_unit_gtests',
       'tint_unit_gtests',
+    ],
+    'win_software_renderer_isolated_scripts': [
+      'dawn_node_cts_win_software_tests',
+      'tint_benchmark',
+    ],
+    'wire_trace_gtests': [
+      'dawn_wire_trace_end2end_sws_gtests',
+      'dawn_wire_trace_unit_gtests',
     ],
   },
 }

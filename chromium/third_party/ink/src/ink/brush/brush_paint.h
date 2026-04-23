@@ -19,8 +19,12 @@
 #include <string>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
+#include "absl/time/time.h"
+#include "ink/brush/color_function.h"
 #include "ink/geometry/angle.h"
+#include "ink/geometry/mesh_format.h"
 #include "ink/geometry/vec.h"
 
 namespace ink {
@@ -34,13 +38,23 @@ struct BrushPaint {
   enum class TextureMapping {
     // The texture will repeat according to a 2D affine transformation of
     // vertex positions. Each copy of the texture will have the same size
-    // and shape modulo reflections.
+    // and shape, modulo reflections.
+    //
+    // This mode does not support texture animations, so it ignores the
+    // `animation_frames`, `animation_rows`, `animation_columns`, and
+    // `animation_duration` fields.
     kTiling,
-    // The texture will morph to "wind along the path of the stroke." The
-    // horizontal axis of texture space will lie along the width of the stroke
-    // and the vertical axis will lie along the direction of travel of the
-    // stroke at each point.
-    kWinding,
+    // This mode is intended for use with particle brush coats (i.e. with a
+    // brush tip with a nonzero particle gap). A copy of the texture (or one
+    // animation frame thereof) will be "stamped" onto each particle of the
+    // stroke, scaled or rotated appropriately to cover the whole particle.
+    //
+    // Since the whole texture (or animation frame) is always scaled to the size
+    // of each particle and positioned atop each one, this mode ignores the
+    // `origin`, `size_unit`, `wrap_x`, `wrap_y`, and `size` fields.
+    kStamping,
+    // TODO: b/271837965 - Add kWinding mode to support winding-textured
+    // continuous (non-particle) strokes.
   };
 
   // Specification of the origin point to use for the texture.
@@ -215,6 +229,9 @@ struct BrushPaint {
     // Value of texture layer opacity to apply for this keyframe. This value
     // will override `TextureLayer::opacity`.
     std::optional<float> opacity;
+
+    friend bool operator==(const TextureKeyframe&,
+                           const TextureKeyframe&) = default;
   };
 
   struct TextureLayer {
@@ -263,6 +280,14 @@ struct BrushPaint {
     // for more details. Must be between 1 and 2^12 (inclusive).
     int animation_columns = 1;
 
+    // The length of time that it takes to loop through all of the
+    // `animation_frames` frames in the texture. This means that each frame will
+    // be displayed (on average) for `animation_duration / animation_frames`.
+    // Defaults to 1000 milliseconds, but ignored if `animation_frames` is 1
+    // (its default value) because that indicates that animation is disabled.
+    // Must be a whole number of milliseconds between 1 and 2^24 (inclusive).
+    absl::Duration animation_duration = absl::Seconds(1);
+
     // Animation keyframes; currently unused.
     //
     // TODO: b/373649343 - Decide if/how this should coexist with
@@ -277,23 +302,51 @@ struct BrushPaint {
     // "dst", which is the layer at index + 1. If index refers to the last
     // texture layer, then the layer at "index + 1" is the brush color layer.
     BlendMode blend_mode = BlendMode::kModulate;
+
+    friend bool operator==(const TextureLayer&, const TextureLayer&) = default;
+  };
+
+  // Specifies how parts of the stroke that intersect itself should be treated
+  // during the rendering process. The simplest example of this is with
+  // translucent, solid-color strokes - such as a highlighter - where a later
+  // part of a stroke that overlaps an earlier part of itself may appear with
+  // either double the opacity (self overlap is accumulated) or the same opacity
+  // (self overlap is discarded). More complex examples may involve color or
+  // opacity variations (e.g. with
+  // BrushBehavior::Target::HUE_OFFSET_IN_RADIANS`), or complex textures (e.g.
+  // with `TextureMapping::kStamping`).
+  //
+  enum class SelfOverlap {
+    // Any of the options listed below may be used, depending on what would be
+    // most efficient and feature-complete for the brush and the device.
+    kAny,
+    // Self overlap will be accumulated, meaning that both the overlapped
+    // content and the overlapping content will be drawn. For a translucent
+    // color stroke, this typically means that the overlapping portion will
+    // appear with double the opacity of the non-overlapping portions. This
+    // option is most analogous to physical writing and drawing, and it is the
+    // option that best matches the appearance as if the stroke were drawn as
+    // separate, shorter strokes. This is the default behavior for renderers
+    // that use the stroke mesh rather than its outline.
+    kAccumulate,
+    // Self overlap will be drawn in a way that discards the overlapping
+    // content. This can be used to make the stroke appear as if it's drawn as a
+    // PDF page object or annotation, where a stroke can be filled only with a
+    // solid color or textures using `TextureMapping::kTiling`. This is the
+    // default behavior for renderers that use the stroke outline rather than
+    // its mesh.
+    kDiscard,
   };
 
   std::vector<TextureLayer> texture_layers;
+  // Transformations to apply to the base brush color (in order) before drawing
+  // this coat of paint. When this list is empty, the base brush color will be
+  // used unchanged.
+  std::vector<ColorFunction> color_functions;
+  SelfOverlap self_overlap = SelfOverlap::kAny;
+
+  friend bool operator==(const BrushPaint&, const BrushPaint&) = default;
 };
-
-bool operator==(const BrushPaint::TextureKeyframe& lhs,
-                const BrushPaint::TextureKeyframe& rhs);
-bool operator!=(const BrushPaint::TextureKeyframe& lhs,
-                const BrushPaint::TextureKeyframe& rhs);
-
-bool operator==(const BrushPaint::TextureLayer& lhs,
-                const BrushPaint::TextureLayer& rhs);
-bool operator!=(const BrushPaint::TextureLayer& lhs,
-                const BrushPaint::TextureLayer& rhs);
-
-bool operator==(const BrushPaint& lhs, const BrushPaint& rhs);
-bool operator!=(const BrushPaint& lhs, const BrushPaint& rhs);
 
 namespace brush_internal {
 
@@ -308,6 +361,21 @@ absl::Status ValidateBrushPaintTopLevel(const BrushPaint& paint);
 absl::Status ValidateBrushPaintTextureLayer(
     const BrushPaint::TextureLayer& layer);
 
+// Adds the mesh attribute IDs that are required to properly render a mesh
+// with this brush paint to the given `attribute_ids` set. Note that other
+// attributes may also be required - either for core functionality (see
+// `AddRequiredAttributeIds`), or by the tip (see
+// `AddAttributeIdsRequiredByTip`) and/or other paint preferences.
+void AddAttributeIdsRequiredByPaint(
+    const BrushPaint& paint,
+    absl::flat_hash_set<MeshFormat::AttributeId>& attribute_ids);
+
+// Returns whether the given `paint` can be rendered with the given
+// `self_overlap` mode. If `paint` has `SelfOverlap::kAny`, then it allows all
+// self overlap modes.
+bool AllowsSelfOverlapMode(const BrushPaint& paint,
+                           BrushPaint::SelfOverlap self_overlap);
+
 std::string ToFormattedString(BrushPaint::TextureMapping texture_mapping);
 std::string ToFormattedString(BrushPaint::TextureOrigin texture_origin);
 std::string ToFormattedString(BrushPaint::TextureSizeUnit texture_size_unit);
@@ -315,6 +383,7 @@ std::string ToFormattedString(BrushPaint::TextureWrap texture_wrap);
 std::string ToFormattedString(BrushPaint::BlendMode blend_mode);
 std::string ToFormattedString(const BrushPaint::TextureKeyframe& keyframe);
 std::string ToFormattedString(const BrushPaint::TextureLayer& texture_layer);
+std::string ToFormattedString(BrushPaint::SelfOverlap self_overlap);
 std::string ToFormattedString(const BrushPaint& paint);
 
 }  // namespace brush_internal
@@ -355,6 +424,11 @@ void AbslStringify(Sink& sink, const BrushPaint::TextureLayer& texture_layer) {
 }
 
 template <typename Sink>
+void AbslStringify(Sink& sink, BrushPaint::SelfOverlap self_overlap) {
+  sink.Append(brush_internal::ToFormattedString(self_overlap));
+}
+
+template <typename Sink>
 void AbslStringify(Sink& sink, const BrushPaint& paint) {
   sink.Append(brush_internal::ToFormattedString(paint));
 }
@@ -376,25 +450,8 @@ H AbslHashValue(H h, const BrushPaint::TextureLayer& layer) {
 
 template <typename H>
 H AbslHashValue(H h, const BrushPaint& paint) {
-  return H::combine(std::move(h), paint.texture_layers);
-}
-
-inline bool operator!=(const BrushPaint::TextureKeyframe& lhs,
-                       const BrushPaint::TextureKeyframe& rhs) {
-  return !(lhs == rhs);
-}
-
-inline bool operator!=(const BrushPaint::TextureLayer& lhs,
-                       const BrushPaint::TextureLayer& rhs) {
-  return !(lhs == rhs);
-}
-
-inline bool operator==(const BrushPaint& lhs, const BrushPaint& rhs) {
-  return lhs.texture_layers == rhs.texture_layers;
-}
-
-inline bool operator!=(const BrushPaint& lhs, const BrushPaint& rhs) {
-  return !(lhs == rhs);
+  return H::combine(std::move(h), paint.texture_layers, paint.color_functions,
+                    paint.self_overlap);
 }
 
 }  // namespace ink

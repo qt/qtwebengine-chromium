@@ -27,30 +27,54 @@
 
 #include "src/tint/lang/spirv/writer/writer.h"
 
+#include "src/tint/api/helpers/generate_bindings.h"
 #include "src/tint/cmd/fuzz/ir/fuzz.h"
 #include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/transform/resource_binding_helper.h"
 #include "src/tint/lang/spirv/validate/validate.h"
-#include "src/tint/lang/spirv/writer/helpers/generate_bindings.h"
 #include "src/tint/lang/spirv/writer/printer/printer.h"
 
 namespace tint::spirv::writer {
 namespace {
 
 Result<SuccessType> IRFuzzer(core::ir::Module& module, const fuzz::ir::Context&, Options options) {
+    // TODO(375388101): We cannot run the backend for every entry point in the module unless we
+    // clone the whole module each time, so for now we just generate the first entry point.
+
+    // Strip the module down to a single entry point.
+    core::ir::Function* entry_point = nullptr;
+    for (auto& func : module.functions) {
+        if (func->IsEntryPoint()) {
+            entry_point = func;
+            break;
+        }
+    }
+    std::string ep_name;
+    if (entry_point) {
+        ep_name = module.NameOf(entry_point).NameView();
+    }
+    if (ep_name.empty()) {
+        // No entry point, just return success
+        return Success;
+    }
+    options.entry_point_name = ep_name;
+
     auto check = CanGenerate(module, options);
     if (check != Success) {
         return Failure{check.Failure().reason};
     }
 
-    options.bindings = GenerateBindings(module);
+    // TODO(454378504): Remove this when we always decompose uniform buffers.
+    if (!options.extensions.decompose_uniform_buffers) {
+        return Failure{"fuzzing requires decomposing uniform buffers"};
+    }
+
+    options.bindings = GenerateBindings(module, ep_name, false, false);
     options.resource_binding = tint::core::ir::transform::GenerateResourceBindingConfig(module);
 
     auto output = Generate(module, options);
-    if (output != Success) {
-        TINT_ICE() << "Generate() failed after CanGenerate() succeeded: "
-                   << output.Failure().reason;
-    }
+    TINT_ASSERT(output == Success)
+        << "Generate() failed after CanGenerate() succeeded: " << output.Failure().reason;
 
     spv_target_env target_env = SPV_ENV_VULKAN_1_1;
     switch (options.spirv_version) {
@@ -68,13 +92,11 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module, const fuzz::ir::Context&,
     }
 
     auto& spirv = output->spirv;
-    if (auto res = validate::Validate(Slice(spirv.data(), spirv.size()), target_env);
-        res != Success) {
-        TINT_ICE() << "output of SPIR-V writer failed to validate with SPIR-V Tools\n"
-                   << res.Failure() << "\n\n"
-                   << "IR:\n"
-                   << core::ir::Disassembler(module).Plain();
-    }
+    auto res = validate::Validate(Slice(spirv.data(), spirv.size()), target_env);
+    TINT_ASSERT(res == Success) << "output of SPIR-V writer failed to validate with SPIR-V Tools\n"
+                                << res.Failure() << "\n\n"
+                                << "IR:\n"
+                                << core::ir::Disassembler(module).Plain();
 
     return Success;
 }

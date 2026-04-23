@@ -28,6 +28,7 @@
 #include "ink/geometry/envelope.h"
 #include "ink/geometry/mesh.h"
 #include "ink/geometry/mesh_format.h"
+#include "ink/geometry/mesh_index_types.h"
 #include "ink/geometry/mesh_packing_types.h"
 #include "ink/geometry/partitioned_mesh.h"
 #include "ink/geometry/point.h"
@@ -186,8 +187,7 @@ MATCHER_P(QuadEqMatcher, expected,
             Property("width", &Quad::Width, FloatEq(expected.Width())),
             Property("height", &Quad::Height, FloatEq(expected.Height())),
             Property("rotation", &Quad::Rotation, AngleEq(expected.Rotation())),
-            Property("shear factor", &Quad::ShearFactor,
-                     FloatEq(expected.ShearFactor()))),
+            Property("skew", &Quad::Skew, FloatEq(expected.Skew()))),
       arg, result_listener);
 }
 
@@ -197,16 +197,16 @@ MATCHER_P2(QuadNearMatcher, expected, tolerance,
                         " Quad (expected: ", PrintToString(expected),
                         ", tolerance: ", PrintToString(tolerance), ")")) {
   return ExplainMatchResult(
-      AllOf(Property("center", &Quad::Center,
-                     PointNear(expected.Center(), tolerance)),
-            Property("width", &Quad::Width,
-                     FloatNear(expected.Width(), tolerance)),
-            Property("height", &Quad::Height,
-                     FloatNear(expected.Height(), tolerance)),
-            Property("rotation", &Quad::Rotation,
-                     AngleNear(expected.Rotation(), tolerance)),
-            Property("shear factor", &Quad::ShearFactor,
-                     FloatNear(expected.ShearFactor(), tolerance))),
+      AllOf(
+          Property("center", &Quad::Center,
+                   PointNear(expected.Center(), tolerance)),
+          Property("width", &Quad::Width,
+                   FloatNear(expected.Width(), tolerance)),
+          Property("height", &Quad::Height,
+                   FloatNear(expected.Height(), tolerance)),
+          Property("rotation", &Quad::Rotation,
+                   AngleNear(expected.Rotation(), tolerance)),
+          Property("skew", &Quad::Skew, FloatNear(expected.Skew(), tolerance))),
       arg, result_listener);
 }
 
@@ -606,13 +606,18 @@ Matcher<Envelope> EnvelopeNear(const Rect& expected, float tolerance) {
 
 Matcher<Mesh> MeshEq(const Mesh& mesh) { return MeshEqMatcher(mesh); }
 
-Matcher<PartitionedMesh::VertexIndexPair> VertexIndexPairEq(
-    PartitionedMesh::VertexIndexPair expected) {
+Matcher<VertexIndexPair> VertexIndexPairEq(VertexIndexPair expected) {
   return AllOf(
-      Field("mesh_index", &PartitionedMesh::VertexIndexPair::mesh_index,
-            expected.mesh_index),
-      Field("vertex_index", &PartitionedMesh::VertexIndexPair::vertex_index,
+      Field("mesh_index", &VertexIndexPair::mesh_index, expected.mesh_index),
+      Field("vertex_index", &VertexIndexPair::vertex_index,
             expected.vertex_index));
+}
+
+Matcher<TriangleIndexPair> TriangleIndexPairEq(TriangleIndexPair expected) {
+  return AllOf(
+      Field("mesh_index", &TriangleIndexPair::mesh_index, expected.mesh_index),
+      Field("triangle_index", &TriangleIndexPair::triangle_index,
+            expected.triangle_index));
 }
 
 Matcher<PartitionedMesh> PartitionedMeshDeepEq(

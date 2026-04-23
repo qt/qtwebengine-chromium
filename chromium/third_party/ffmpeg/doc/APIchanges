@@ -2,6 +2,86 @@ The last version increases of all libraries were on 2025-03-28
 
 API changes, most recent first:
 
+2025-11-01 - xxxxxxxxxx - lavc 62.19.100 - avcodec.h
+  Schedule AVCodecParser and av_parser_init() to use enum AVCodecID
+  for codec ids on the next major version bump.
+
+2025-11-01 - xxxxxxxxxx - lavc 62.18.100 - avcodec.h
+  Deprecate AVCodecParser fields priv_data_size, parser_init,
+  parser_parse, parser_close, and split with no replacement.
+
+2025-10-30 - xxxxxxxxxx - lavc 62.17.100 - packet.h
+  Add av_packet_side_data_from_frame() and av_packet_side_data_to_frame().
+
+2025-10-xx - xxxxxxxxxx - lavu 60.16.100 - pixfmt.h
+  Add AVCOL_TRC_EXT_BASE, AVCOL_TRC_V_LOG,
+  AVCOL_PRI_EXT_BASE and AVCOL_PRI_V_GAMUT.
+
+2025-10-xx - xxxxxxxxxx - lavu 60.14.100 - csp.h
+  Add av_csp_approximate_eotf_gamma().
+
+2025-08-xx - xxxxxxxxxx - lavf 62.6.100 - oggparsevorbis.h oggparseopus.h oggparseflac.h
+  Drop header packets from secondary chained ogg/{flac, opus, vorbis} streams
+  from demuxer output.
+
+2025-09-xx - xxxxxxxxxx - lavu 60.13.100 - hwcontext_d3d12va.h
+  Add resource_flags and heap_flags to AVD3D12VADeviceContext
+  Add heap_flags to AVD3D12VAFramesContext
+
+2025-09-xx - xxxxxxxx - lavf 62.5.100 - avformat.h
+  Add AV_FRAME_FILENAME_FLAGS_IGNORE_TRUNCATION
+
+2025-09-xx - xxxxxxxxxx - lavu 60.12.100 - hwcontext_d3d12va.h
+  Add support for texture array mode AVD3D12VAFrame.subresource_index,
+  AVD3D12VAFramesContext.texture_array
+  Add enum AVD3D12VAFrameFlags to define the behaviours of frame allocation.
+  Renanme AVD3D12VAFramesContext.flags to AVD3D12VAFramesContext.resource_flags.
+  Add flags to AVD3D12VAFramesContext
+  Add flags to AVD3D12VAFrame
+
+2025-09-xx - xxxxxxxxxx - lavfi 11.8.100 - buffersrc.h
+  Add AVBufferSrcParameters.alpha_mode.
+
+2025-09-xx - xxxxxxxxxx - lavfi 11.7.100 - buffersink.h
+  Add av_buffersink_get_alpha_mode().
+
+2025-09-xx - xxxxxxxxxx - lavc 62.15.100 - avcodec.h codec_par.h
+  Add AVCodecContext.alpha_mode, AVCodecParameters.alpha_mode, and
+  AV_CODEC_CONFIG_ALPHA_MODE.
+
+2025-09-xx - xxxxxxxxxx - lavfi 11.6.100 - avfilter.h
+  Add AVFilterLink.alpha_mode.
+
+2025-09-xx - xxxxxxxxxx - lavu 60.11.100 - frame.h pixfmt.h
+  Add AVAlphaMode, AVFrame.alpha_mode, av_alpha_mode_name() and
+  av_alpha_mode_from_name().
+
+2025-09-xx - xxxxxxxxxx - lsws 9.3.100 - swscale.h
+  Add SWS_UNSTABLE flag.
+
+2025-09-01 - xxxxxxxx - lavc 62.14.100 - packet.h
+  Add AV_PKT_DATA_EXIF
+
+2025-08-xx - xxxxxxxx - lavc 62.13.101 - exif.h
+  Add AV_EXIF_FLAG_RECURSIVE
+
+2025-08-19 - ad77345a5d1..fe496b0308f - lavc 62.13.100 - exif.h
+  Add:
+   - enum AVTiffDataType, enum AVExifHeaderMode
+   - struct AVExifMetadata, struct AVExifEntry
+   - av_exif_get_tag_name, av_exif_get_tag_id,
+     av_exif_set_entry, av_exif_get_entry,
+     av_exif_remove_entry, av_exif_parse_buffer,
+     av_exif_write, av_exif_free,
+     av_exif_ifd_to_dict, av_exif_clone_ifd,
+     av_exif_matrix_to_orientation,
+     av_exif_orientation_to_matrix,
+
+2025-08-19 - bb90b262d6d - lavu 60.10.100 - frame.h
+  Add AV_FRAME_DATA_EXIF.
+
+-------- 8< --------- FFmpeg 8.0 was cut here -------- 8< ---------
+
 2025-07-29 - 1c85a3832af - lavc 62.10.100 - smpte_436m.h
   Add a new public header smpte_436m.h with API for
   manipulating AV_CODEC_ID_SMPTE_436M_ANC data.

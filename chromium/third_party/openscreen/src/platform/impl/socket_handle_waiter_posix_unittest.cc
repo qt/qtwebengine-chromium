@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <unistd.h>  // For pipe() and close()
 
+#include <array>
 #include <cerrno>  // For errno
 #include <chrono>
 #include <iostream>

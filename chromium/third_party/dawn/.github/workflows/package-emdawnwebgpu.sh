@@ -52,14 +52,15 @@ third_party/emsdk/upstream/emscripten/emcmake cmake -S=. -B=out/wasm \
     -DCMAKE_BUILD_TYPE=Debug
 make -j4 -C out/wasm emdawnwebgpu_link_test
 
-# Switch the build type (in-place to save time), rebuild the link test (this
-# time with Closure, which verifies the linked JS to some extent), and build the
-# final package (which is not actually affected by build type).
+# Switch the build type (in-place to save time), rebuild the link test and a C++
+# sample (to verify webgpu_cpp.h builds and to run Closure, which verifies the
+# linked JS to some extent), and build the final package (which is not actually
+# affected by build type).
 # TODO: If we have Ninja (from depot_tools), we could use -G'Ninja Multi-Config'
 # to do multiple build types more cleanly.
 # https://cmake.org/cmake/help/latest/generator/Ninja%20Multi-Config.html
 cmake -S=. -B=out/wasm -DCMAKE_BUILD_TYPE=Release
-make -j4 -C out/wasm emdawnwebgpu_pkg emdawnwebgpu_link_test
+make -j4 -C out/wasm emdawnwebgpu_pkg emdawnwebgpu_link_test HelloTriangle
 
 # Get variables for documentation.
 SHA=$(git rev-parse HEAD)
@@ -113,9 +114,13 @@ LICENSE = "Some files: BSD 3-Clause License. Other files: Emscripten's license (
 DESCRIPTION = "Emdawnwebgpu implements webgpu.h on WebGPU, replacing -sUSE_WEBGPU. **For info on usage and filing feedback, see link below.**"
 URL = 'https://dawn.googlesource.com/dawn/+/${SHA}/src/emdawnwebgpu/pkg/README.md'
 
+
 # Emscripten <4.0.10 won't notice EXTERNAL_PORT and will try to use this.
 def get(ports, settings, shared):
     raise Exception('Remote ports require Emscripten 4.0.10+.')
+
+
+# (Make this look like a port so that the error message above can be hit.)
 def clear(ports, settings, shared):
     pass
 EOF

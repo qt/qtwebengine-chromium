@@ -36,11 +36,11 @@ _EXCLUDED_PATHS = [
     r'^front_end[\\/]third_party[\\/].*',  # 3rd party code
     # Apple copyright
     r'^front_end[\\/]ui[\\/]legacy[\\/]components[\\/]data_grid[\\/]DataGrid\.ts$',
+    r'^front_end[\\/]ui[\\/]legacy[\\/]tabbedPane\.css$',  # Apple copyright
     r'^node_modules[\\/].*',  # 3rd party code
     r'^scripts[\\/]build[\\/]build_inspector_overlay\.py$',  # Lines too long
     r'^scripts[\\/]build[\\/]code_generator_frontend\.py$',
     r'^scripts[\\/]deps[\\/]manage_node_deps\.py$',  # Lines too long
-    r'front_end[\\/]generated[\\/]ARIAProperties\.ts$'  # Auto-generated files
     # Auto-generated files
     r'front_end[\\/]generated[\\/]InspectorBackendCommands\.ts$'
 ]
@@ -122,10 +122,6 @@ def _CheckWithNodeScript(input_api,
 
     process = [devtools_paths.node_path(), script_path]
 
-    if allow_typescript:
-        process.insert(1, '--no-warnings=ExperimentalWarning')
-        process.insert(1, '--experimental-strip-types')
-
     return _ExecuteSubProcess(input_api,
                               output_api,
                               process,
@@ -133,8 +129,7 @@ def _CheckWithNodeScript(input_api,
                               message=message)
 
 
-def _GetFilesToLint(input_api, lint_config_files, default_linted_directories,
-                    accepted_endings):
+def _GetFilesToLint(input_api, lint_config_files, accepted_endings):
     run_full_check = False
     files_to_lint = []
 
@@ -142,17 +137,10 @@ def _GetFilesToLint(input_api, lint_config_files, default_linted_directories,
     if len(lint_config_files) != 0:
         run_full_check = True
     else:
+        root_dir = input_api.os_path.join(input_api.PresubmitLocalPath())
         # Only run the linter on files that are relevant, to save PRESUBMIT time.
-        files_to_lint = _GetAffectedFiles(input_api,
-                                          default_linted_directories, ['D'],
+        files_to_lint = _GetAffectedFiles(input_api, root_dir, ['D'],
                                           accepted_endings)
-
-        # Exclude front_end/third_party and front_end/generated files.
-        files_to_lint = [
-            file for file in files_to_lint
-            if "front_end/third_party" not in file
-            and "front_end/generated" not in file
-        ]
 
     should_bail_out = len(files_to_lint) == 0 and not run_full_check
     return should_bail_out, files_to_lint
@@ -223,24 +211,7 @@ def CheckDevToolsLint(input_api, output_api):
     lint_path = input_api.os_path.join(input_api.PresubmitLocalPath(),
                                        'scripts', 'test', 'run_lint_check.mjs')
 
-    front_end_directory = input_api.os_path.join(
-        input_api.PresubmitLocalPath(), 'front_end')
-
-    inspector_overlay_directory = input_api.os_path.join(
-        input_api.PresubmitLocalPath(), 'inspector_overlay')
-    test_directory = input_api.os_path.join(input_api.PresubmitLocalPath(),
-                                            'test')
-    scripts_directory = input_api.os_path.join(input_api.PresubmitLocalPath(),
-                                               'scripts')
-
-    default_linted_directories = [
-        front_end_directory,
-        test_directory,
-        scripts_directory,
-        inspector_overlay_directory,
-    ]
-
-    lint_related_files = [
+    lint_related_paths = [
         input_api.os_path.join(input_api.PresubmitLocalPath(),
                                'eslint.config.mjs'),
         input_api.os_path.join(input_api.PresubmitLocalPath(),
@@ -248,26 +219,23 @@ def CheckDevToolsLint(input_api, output_api):
         input_api.os_path.join(input_api.PresubmitLocalPath(),
                                '.stylelintignore'),
         # This file includes the LitAnalyzer rules
-        input_api.os_path.join(input_api.PresubmitLocalPath(),
+        input_api.os_path.join(input_api.PresubmitLocalPath(), 'front_end',
                                'tsconfig.json'),
-        input_api.os_path.join(scripts_directory, 'test',
-                               'run_lint_check.mjs'),
-    ]
-
-    lint_related_directories = [
+        input_api.os_path.join(input_api.PresubmitLocalPath(), 'scripts',
+                               'test', 'run_lint_check.mjs'),
         input_api.os_path.join(input_api.PresubmitLocalPath(), 'node_modules'),
     ]
 
-    lint_config_files = _GetAffectedFiles(
-        input_api, lint_related_directories,
-        [], [".js", ".mjs", ".ts"]) + _GetAffectedFiles(
-            input_api, lint_related_files, [], [])
+    lint_config_files = _GetAffectedFiles(input_api, lint_related_paths, [],
+                                          [])
 
     should_bail_out, files_to_lint = _GetFilesToLint(
-        input_api, lint_config_files, default_linted_directories,
-        ['.css', '.mjs', '.js', '.ts'])
+        input_api, lint_config_files, ['.css', '.mjs', '.js', '.ts'])
     if should_bail_out:
-        return []
+        # Run the formatter on all non-js like files
+        results = []
+        results.extend(_CheckFormat(input_api, output_api))
+        return results
 
     # If there are more than 50 files to check, don't bother and check
     # everything, so as to not run into command line length limits on Windows.
@@ -503,7 +471,6 @@ must be lower-case alphanumeric.
             ],
         )
     ]
-
 
 
 # Canned check wrappers below.

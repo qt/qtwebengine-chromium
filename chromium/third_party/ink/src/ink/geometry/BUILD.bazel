@@ -167,6 +167,7 @@ cc_library(
     hdrs = ["intersects.h"],
     deps = [
         ":affine_transform",
+        ":mesh_index_types",
         ":partitioned_mesh",
         ":point",
         ":quad",
@@ -242,6 +243,7 @@ cc_library(
 cc_test(
     name = "rect_test",
     srcs = ["rect_test.cc"],
+    shard_count = 10,
     deps = [
         ":fuzz_domains",
         ":point",
@@ -330,6 +332,7 @@ cc_library(
         ":envelope",
         ":mesh",
         ":mesh_format",
+        ":mesh_index_types",
         ":mesh_packing_types",
         ":partitioned_mesh",
         ":point",
@@ -351,6 +354,7 @@ cc_test(
         ":angle",
         ":mesh",
         ":mesh_format",
+        ":mesh_index_types",
         ":mesh_packing_types",
         ":mesh_test_helpers",
         ":partitioned_mesh",
@@ -368,6 +372,7 @@ cc_test(
 cc_test(
     name = "vec_test",
     srcs = ["vec_test.cc"],
+    shard_count = 10,
     deps = [
         ":angle",
         ":fuzz_domains",
@@ -447,9 +452,29 @@ cc_test(
 )
 
 cc_library(
+    name = "mesh_index_types",
+    hdrs = ["mesh_index_types.h"],
+    deps = [],
+)
+
+cc_library(
     name = "mesh_packing_types",
+    srcs = ["mesh_packing_types.cc"],
     hdrs = ["mesh_packing_types.h"],
-    deps = ["//ink/types:small_array"],
+    deps = [
+        "//ink/types:small_array",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_test(
+    name = "mesh_packing_types_test",
+    srcs = ["mesh_packing_types_test.cc"],
+    deps = [
+        ":mesh_packing_types",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
@@ -595,6 +620,7 @@ cc_library(
         ":envelope",
         ":mesh",
         ":mesh_format",
+        ":mesh_index_types",
         ":mesh_packing_types",
         ":mutable_mesh",
         ":point",
@@ -628,6 +654,7 @@ cc_test(
         ":angle",
         ":mesh",
         ":mesh_format",
+        ":mesh_index_types",
         ":mesh_packing_types",
         ":mesh_test_helpers",
         ":mutable_mesh",

@@ -24,6 +24,7 @@
 #include "ink/brush/brush_family.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/brush/brush_tip.h"
+#include "ink/brush/color_function.h"
 
 namespace ink {
 
@@ -40,6 +41,7 @@ BrushBehaviorNodeEq();
 ::testing::Matcher<std::tuple<BrushTip, BrushTip>> BrushTipEq();
 
 ::testing::Matcher<BrushPaint> BrushPaintEq(const BrushPaint& expected);
+::testing::Matcher<std::tuple<BrushPaint, BrushPaint>> BrushPaintEq();
 
 ::testing::Matcher<BrushPaint::TextureLayer> BrushPaintTextureLayerEq(
     const BrushPaint::TextureLayer& expected);
@@ -53,6 +55,10 @@ BrushPaintTextureLayerEq();
 ::testing::Matcher<BrushFamily> BrushFamilyEq(const BrushFamily& expected);
 
 ::testing::Matcher<Brush> BrushEq(const Brush& expected);
+
+::testing::Matcher<ColorFunction> ColorFunctionEq(
+    const ColorFunction& expected);
+::testing::Matcher<std::tuple<ColorFunction, ColorFunction>> ColorFunctionEq();
 
 }  // namespace ink
 

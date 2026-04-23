@@ -55,6 +55,7 @@
 #include "cc/tiles/tile_manager.h"
 #include "cc/tiles/tile_manager_client.h"
 #include "cc/trees/animated_paint_worklet_tracker.h"
+#include "cc/trees/frame_data.h"
 #include "cc/trees/image_animation_controller.h"
 #include "cc/trees/layer_tree_frame_sink_client.h"
 #include "cc/trees/layer_tree_host.h"
@@ -142,58 +143,9 @@ class CC_EXPORT LayerTreeHostImpl : public TileManagerClient,
                                     public MutatorHostClient,
                                     public ImageAnimationController::Client,
                                     public CompositorDelegateForInput,
-                                    public EventLatencyTracker {
+                                    public EventLatencyTracker,
+                                    public base::MemoryPressureListener {
  public:
-  // This structure is used to build all the state required for producing a
-  // single CompositorFrame. The |render_passes| list becomes the set of
-  // RenderPasses in the quad, and the other fields are used for computation
-  // or become part of the CompositorFrameMetadata.
-  struct CC_EXPORT FrameData {
-    FrameData();
-    FrameData(const FrameData&) = delete;
-    ~FrameData();
-
-    FrameData& operator=(const FrameData&) = delete;
-    void AsValueInto(base::trace_event::TracedValue* value) const;
-    std::string ToString() const;
-    void set_trees_in_viz_timestamps(
-        const viz::TreesInVizTiming& timing_details);
-
-    // frame_token is populated by the LayerTreeHostImpl when submitted.
-    uint32_t frame_token = 0;
-
-    bool checkerboarded_needs_raster = false;
-    bool checkerboarded_needs_record = false;
-
-    std::vector<viz::SurfaceId> activation_dependencies;
-    std::optional<uint32_t> deadline_in_frames;
-    bool use_default_lower_bound_deadline = false;
-    viz::CompositorRenderPassList render_passes;
-    // RAW_PTR_EXCLUSION: Renderer performance: visible in sampling profiler
-    // stacks.
-    RAW_PTR_EXCLUSION const RenderSurfaceList* render_surface_list = nullptr;
-    RAW_PTR_EXCLUSION LayerImplList will_draw_layers;
-    bool has_no_damage = false;
-    viz::BeginFrameAck begin_frame_ack;
-    // The original BeginFrameArgs that triggered the latest update from the
-    // main thread.
-    viz::BeginFrameArgs origin_begin_main_frame_args;
-    DamageReasonSet damage_reasons;
-    // Preferred frame rate of VideoLayerImpl mapped to number of layers.
-    base::flat_map<base::TimeDelta, uint32_t> video_layer_preferred_intervals;
-    // Indicates if there are SharedElementDrawQuads in this frame.
-    bool has_shared_element_resources = false;
-    // Indicates if this frame has a save directive which will add copy requests
-    // for render passes in the Viz process.
-    bool has_view_transition_save_directive = false;
-    // Indicates if this frame had any copy requests, and is used to ensure
-    // that we clear pending copy requests after drawing a frame and request
-    // a new tree commit.
-    bool has_copy_requests = false;
-    // Only set when LTHI is in TreesInViz mode
-    std::optional<viz::TreesInVizTiming> trees_in_viz_timing_details;
-  };
-
   // A struct of data for a single UIResource, including the backing
   // pixels, and metadata about it.
   struct CC_EXPORT UIResourceData {
@@ -466,7 +418,13 @@ class CC_EXPORT LayerTreeHostImpl : public TileManagerClient,
   // frame, and we should try to avoid displaying the frame. If
   // `PrepareToDraw()` is called, `DidDrawAllLayers()` must also be called,
   // regardless of whether `DrawLayers()` is called between the two.
-  virtual DrawResult PrepareToDraw(FrameData* frame);
+  //
+  // |expects_to_draw| will force DrawResult::kSuccess state, and damage to be
+  // set for this frame. This is only used in the trees_in_viz_in_viz_process
+  // mode, internally, CalculateRenderPasses will DCHECK if |expects_to_draw|
+  // does not match the actual behavior.
+  virtual DrawResult PrepareToDraw(FrameData* frame,
+                                   bool expects_to_draw = false);
 
   // If there is no damage, returns `std::nullopt`; otherwise, returns
   // information about the submitted frame including submit time and a set of
@@ -646,6 +604,7 @@ class CC_EXPORT LayerTreeHostImpl : public TileManagerClient,
   virtual void DidFinishImplFrame(const viz::BeginFrameArgs& args);
   void DidNotProduceFrame(const viz::BeginFrameAck& ack,
                           FrameSkippedReason reason);
+  void DidChangeBeginFrameSourcePaused(bool paused);
   void OnBeginImplFrameDeadline();
   void DidModifyTilePriorities(bool pending_update_tiles);
   // Requests that we do not produce frames until the new viz::LocalSurfaceId
@@ -866,7 +825,7 @@ class CC_EXPORT LayerTreeHostImpl : public TileManagerClient,
     return frame_trackers_.FrameSequenceTrackerActiveTypes();
   }
 
-  void RenewTreePriorityForTesting();
+  void RenewTreePriorityForTesting() { RenewTreePriority(); }
 
   void SetRenderFrameObserver(
       std::unique_ptr<RenderFrameMetadataObserver> observer);
@@ -934,7 +893,7 @@ class CC_EXPORT LayerTreeHostImpl : public TileManagerClient,
 
   void NotifyNewLocalSurfaceIdExpectedWhilePaused();
 
-  void ElasticOverscrollAnimationFinished();
+  void ElasticOverscrollAnimationFinished(ElementId finished_id);
 
   void set_send_frame_token_to_embedder(bool send_frame_token_to_embedder) {
     send_frame_token_to_embedder_ = send_frame_token_to_embedder;
@@ -993,6 +952,8 @@ class CC_EXPORT LayerTreeHostImpl : public TileManagerClient,
 
   void AnimateInternal();
 
+  void RenewTreePriority();
+
   // The function is called to update state on the sync tree after a commit
   // finishes or after the sync tree was created to invalidate content on the
   // impl thread.
@@ -1026,7 +987,13 @@ class CC_EXPORT LayerTreeHostImpl : public TileManagerClient,
   // This function should only be called from PrepareToDraw, as DidDrawAllLayers
   // must be called if this helper function is called.  Returns
   // DrawResult::kSuccess if the frame should be drawn.
-  DrawResult CalculateRenderPasses(FrameData* frame);
+  //
+  // |expects_to_draw| will force DrawResult::kSuccess state, and damage to be
+  // set for this frame. This is only used in the trees_in_viz_in_viz_process
+  // mode, and CalculateRenderPasses will DCHECK if |expects_to_draw| does not
+  // match the actual behavior.
+  DrawResult CalculateRenderPasses(FrameData* frame,
+                                   bool expects_to_draw = false);
 
   // Once a resource is uploaded or deleted, it is no longer an evicted id, this
   // removes it from the evicted set, and updates if we're able to draw now that
@@ -1062,8 +1029,7 @@ class CC_EXPORT LayerTreeHostImpl : public TileManagerClient,
   // active tree.
   void ActivateStateForImages();
 
-  void OnMemoryPressure(
-      base::MemoryPressureListener::MemoryPressureLevel level);
+  void OnMemoryPressure(base::MemoryPressureLevel level) override;
 
   void AllocateLocalSurfaceId();
 
@@ -1130,7 +1096,6 @@ class CC_EXPORT LayerTreeHostImpl : public TileManagerClient,
   std::unique_ptr<InputDelegateForCompositor> input_delegate_;
 
   const LayerTreeSettings settings_;
-  const bool use_layer_context_for_animations_;
 
   // This is set to true only if:
   //  . The compositor is running single-threaded (i.e. there is no separate
@@ -1341,7 +1306,8 @@ class CC_EXPORT LayerTreeHostImpl : public TileManagerClient,
   viz::VerticalScrollDirection last_vertical_scroll_direction_ =
       viz::VerticalScrollDirection::kNull;
 
-  std::unique_ptr<base::AsyncMemoryPressureListener> memory_pressure_listener_;
+  std::unique_ptr<base::AsyncMemoryPressureListenerRegistration>
+      memory_pressure_listener_registration_;
 
   PresentationTimeCallbackBuffer presentation_time_callbacks_;
 
@@ -1439,6 +1405,12 @@ class CC_EXPORT LayerTreeHostImpl : public TileManagerClient,
   // GenerateCompositorFrame() in viz is skipped, therefore, we need to
   // pass it from renderer to viz.
   bool send_frame_token_to_embedder_ = false;
+
+  // Settings whether we dump generated compositor frame during DrawLayers.
+  // They are for debug purposes for TreesInViz and TreeAnimationsInViz.
+  bool dump_compositor_frame_ = false;
+  uint32_t dump_compositor_frame_begin_ = 0;
+  uint32_t dump_compositor_frame_end_ = 0;
 
   // Must be the last member to ensure this is destroyed first in the
   // destruction order and invalidates all weak pointers.

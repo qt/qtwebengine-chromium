@@ -16,7 +16,7 @@
 
 namespace actor {
 
-// A logging class that records actions taken be the actor.
+// A logging class that records actions taken by the actor.
 // This class employs a buffering strategy to minimize the number of
 // IPCs sent to the browser. The following strategy is employed:
 // 1) If there is a pending event in the buffer, don't do anything just
@@ -75,9 +75,11 @@ class Journal {
                    const std::string& event_name,
                    std::vector<mojom::JournalDetailsPtr> details);
 
+  // Sends any buffered log entries to the browser process immediately.
+  void SendLogBuffer();
+
  private:
   void AddJournalEntry(mojom::JournalEntryPtr journal_entry);
-  void SendLogBuffer();
 
   mojo::AssociatedRemote<mojom::JournalClient> client_;
   std::vector<mojom::JournalEntryPtr> log_buffer_;

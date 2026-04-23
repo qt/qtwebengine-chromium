@@ -89,7 +89,7 @@ struct simpl_chol_helper {
         m_set[u] = v;
         u = next;
       }
-    };
+    }
   };
 
   // Computes the higher adjacency pattern by transposing the input lower adjacency matrix.

@@ -335,9 +335,10 @@ impl Encoder {
             } else if item.category == Category::Gainmap {
                 &self.gainmap_image_metadata
             } else {
-                match self.settings.sample_transform_recipe {
-                    SampleTransformRecipe::None => &self.image_metadata,
-                    SampleTransformRecipe::BitDepthExtension8b8b => {
+                match self.final_recipe.unwrap() {
+                    Recipe::Auto => unreachable!(),
+                    Recipe::None => &self.image_metadata,
+                    Recipe::BitDepthExtension8b8b => {
                         if item.is_sato() {
                             &self.image_metadata
                         } else {
@@ -348,7 +349,13 @@ impl Encoder {
                     }
                 }
             };
-            item.get_property_streams(&self.image_metadata, item_metadata, &mut property_streams)?;
+            item.get_property_streams(
+                &self.image_metadata,
+                item_metadata,
+                &mut property_streams,
+                self.settings.must_write_extended_pixi(),
+                self.settings.codec_supports_native_alpha_channel(),
+            )?;
         }
         // Deduplicate the property streams.
         let mut property_index_map = Vec::new();
@@ -416,13 +423,14 @@ impl Encoder {
         &mut self,
         stream: &mut OStream,
         duration: u64,
-        timestamp: u64,
+        creation_time: u64,
+        modification_time: u64,
     ) -> AvifResult<()> {
         stream.start_full_box("mvhd", (1, 0))?;
         // unsigned int(64) creation_time;
-        stream.write_u64(timestamp)?;
+        stream.write_u64(creation_time)?;
         // unsigned int(64) modification_time;
-        stream.write_u64(timestamp)?;
+        stream.write_u64(modification_time)?;
         // unsigned int(32) timescale;
         stream.write_u32(u32_from_u64(self.settings.timescale)?)?;
         // unsigned int(64) duration;
@@ -465,7 +473,8 @@ impl Encoder {
         stream: &mut OStream,
         duration: u64,
         total_duration: u64,
-        timestamp: u64,
+        creation_time: u64,
+        modification_time: u64,
     ) -> AvifResult<()> {
         for index in 0..self.items.len() {
             let item = &self.items[index];
@@ -473,7 +482,13 @@ impl Encoder {
                 continue;
             }
             stream.start_box("trak")?;
-            item.write_tkhd(stream, &self.image_metadata, total_duration, timestamp)?;
+            item.write_tkhd(
+                stream,
+                &self.image_metadata,
+                total_duration,
+                creation_time,
+                modification_time,
+            )?;
             item.write_tref(stream)?;
             item.write_edts(
                 stream,
@@ -491,9 +506,9 @@ impl Encoder {
                 {
                     stream.start_full_box("mdhd", (1, 0))?;
                     // unsigned int(64) creation_time;
-                    stream.write_u64(timestamp)?;
+                    stream.write_u64(creation_time)?;
                     // unsigned int(64) modification_time;
-                    stream.write_u64(timestamp)?;
+                    stream.write_u64(modification_time)?;
                     // unsigned int(32) timescale;
                     stream.write_u32(u32_from_u64(self.settings.timescale)?)?;
                     // unsigned int(64) duration;
@@ -640,7 +655,21 @@ impl Encoder {
         stream.finish_box()
     }
 
-    pub(crate) fn write_moov(&mut self, stream: &mut OStream) -> AvifResult<()> {
+    fn convert_unix_epoch_to_iso_bmff_epoch(value: u64) -> u64 {
+        // Unix epoch is seconds since midnight, Jan. 1, 1970 UTC.
+        // ISO BMFF epoch is seconds since midnight, Jan. 1 1904 UTC.
+        // There were 17 leap years in between 1904 (inclusive) and 1970 (exclusive). So the
+        // conversion formula would be:
+        const EPOCH_OFFSET: u64 = ((1970 - 1904) * 365 + 17) * 24 * 60 * 60; // 2082844800
+        checked_add!(value, EPOCH_OFFSET).unwrap_or(0)
+    }
+
+    pub(crate) fn write_moov(
+        &mut self,
+        stream: &mut OStream,
+        creation_time: Option<u64>,
+        modification_time: Option<u64>,
+    ) -> AvifResult<()> {
         if !self.is_sequence() {
             return Ok(());
         }
@@ -649,10 +678,15 @@ impl Encoder {
             .iter()
             .try_fold(0u64, |acc, &x| acc.checked_add(x))
             .ok_or(AvifError::UnknownError("".into()))?;
-        let timestamp: u64 = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let creation_time =
+            Self::convert_unix_epoch_to_iso_bmff_epoch(creation_time.unwrap_or_else(|| {
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+            }));
+        let modification_time =
+            Self::convert_unix_epoch_to_iso_bmff_epoch(modification_time.unwrap_or(creation_time));
         let total_duration_in_timescales = if self.settings.repetition_count.is_infinite() {
             u64::MAX
         } else {
@@ -663,12 +697,18 @@ impl Encoder {
             checked_mul!(frames_duration_in_timescales, loop_count)?
         };
         stream.start_box("moov")?;
-        self.write_mvhd(stream, total_duration_in_timescales, timestamp)?;
+        self.write_mvhd(
+            stream,
+            total_duration_in_timescales,
+            creation_time,
+            modification_time,
+        )?;
         self.write_tracks(
             stream,
             frames_duration_in_timescales,
             total_duration_in_timescales,
-            timestamp,
+            creation_time,
+            modification_time,
         )?;
         stream.finish_box()
     }

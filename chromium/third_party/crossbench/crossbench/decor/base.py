@@ -7,8 +7,8 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import enum
-from typing import (TYPE_CHECKING, ClassVar, Generic, Optional, Set, Type,
-                    TypeVar)
+from typing import TYPE_CHECKING, ClassVar, Generic, Optional, Set, Type, \
+    TypeVar
 
 from crossbench import plt
 from crossbench.config import ConfigParser

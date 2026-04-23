@@ -6,17 +6,13 @@ assert(is_win || is_mac || is_linux || is_chromeos)
 
 source_set("searchbox") {
   sources = [
-    "contextual_searchbox_handler.cc",
-    "contextual_searchbox_handler.h",
     "lens_searchbox_client.h",
     "lens_searchbox_handler.cc",
     "lens_searchbox_handler.h",
+    "omnibox_composebox_handler.cc",
+    "omnibox_composebox_handler.h",
     "realbox_handler.cc",
     "realbox_handler.h",
-    "searchbox_handler.cc",
-    "searchbox_handler.h",
-    "searchbox_omnibox_client.cc",
-    "searchbox_omnibox_client.h",
     "webui_omnibox_handler.cc",
     "webui_omnibox_handler.h",
   ]
@@ -24,9 +20,12 @@ source_set("searchbox") {
     "//base",
     "//chrome/browser:browser_public_dependencies",
     "//chrome/browser/ui/webui/new_tab_page/composebox/variations",
+    "//chrome/browser/ui/webui/top_chrome",
+    "//components/contextual_search:prefs",
     "//components/lens/proto/server:proto",
     "//components/omnibox/browser",
     "//components/omnibox/browser:mojo_bindings",
+    "//components/omnibox/browser:vector_icons",
     "//components/omnibox/composebox:mojo_bindings",
     "//components/sessions:session_id",
     "//components/url_formatter",
@@ -43,6 +42,8 @@ source_set("searchbox") {
     "//chrome/browser:browser_process",
     "//chrome/browser:global_features",
     "//chrome/browser/autocomplete",
+    "//chrome/browser/autocomplete:aim_eligibility_service",
+    "//chrome/browser/contextual_search",
     "//chrome/browser/omnibox",
     "//chrome/browser/preloading/search_preload",
     "//chrome/browser/profiles:profile",
@@ -52,19 +53,27 @@ source_set("searchbox") {
     "//chrome/browser/search_engines",
     "//chrome/browser/ui/bookmarks",
     "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/contextual_search",
     "//chrome/browser/ui/omnibox",
     "//chrome/browser/ui/search",
     "//chrome/browser/ui/tabs:tab_strip",
     "//chrome/browser/ui/views/location_bar",
     "//chrome/browser/ui/webui:webui_util",
+    "//chrome/browser/ui/webui/cr_components/composebox",
+    "//chrome/browser/ui/webui/cr_components/searchbox",
+    "//chrome/browser/ui/webui/metrics_reporter",
+    "//chrome/browser/ui/webui/omnibox_popup/mojom",
+    "//chrome/browser/ui/webui/top_chrome",
+    "//components/application_locale_storage",
     "//components/bookmarks/browser",
+    "//components/contextual_search:public",
     "//components/lens",
+    "//components/lens/proto/server:proto",
     "//components/navigation_metrics",
     "//components/omnibox/browser",
     "//components/omnibox/browser:location_bar",
     "//components/omnibox/browser:vector_icons",
     "//components/omnibox/common",
-    "//components/omnibox/composebox",
     "//components/prefs",
     "//components/profile_metrics",
     "//components/search",
@@ -73,6 +82,7 @@ source_set("searchbox") {
     "//components/strings:components_strings",
     "//components/strings:components_strings_grit",
     "//components/variations",
+    "//components/variations/service",
     "//components/vector_icons",
     "//content/public/browser",
     "//net",
@@ -80,6 +90,9 @@ source_set("searchbox") {
     "//ui/base",
     "//ui/webui/resources/cr_components/composebox:mojo_bindings",
   ]
+  if (!is_android) {
+    deps += [ "//chrome/browser/contextual_tasks" ]
+  }
 }
 
 source_set("searchbox_test_utils") {
@@ -91,7 +104,9 @@ source_set("searchbox_test_utils") {
   public_deps = [
     ":searchbox",
     "//base",
+    "//chrome/browser/ui/contextual_search",
     "//chrome/browser/ui/omnibox:test_support",
+    "//chrome/browser/ui/webui/cr_components/searchbox",
     "//components/lens",
     "//components/omnibox/browser",
     "//components/omnibox/browser:test_support",
@@ -100,6 +115,7 @@ source_set("searchbox_test_utils") {
     "//testing/gtest",
   ]
   deps = [
+    "//chrome/browser/ui/omnibox",
     "//components/omnibox/browser:vector_icons",
     "//components/search",
   ]
@@ -112,8 +128,11 @@ source_set("browser_tests") {
   deps = [
     ":searchbox",
     ":searchbox_test_utils",
+    "//chrome/browser/contextual_search",
     "//chrome/browser/ui",
+    "//chrome/browser/ui/contextual_search",
     "//chrome/browser/ui/omnibox",
+    "//chrome/browser/ui/webui/cr_components/searchbox",
     "//chrome/test:test_support_ui",
     "//components/lens",
     "//mojo/public/cpp/bindings",

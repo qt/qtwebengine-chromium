@@ -109,7 +109,7 @@ TEST_F(GlslWriterTest, StripAllNames_CombinedTextureSamplerName) {
 
     Options options;
     options.strip_all_names = true;
-    options.bindings.sampler_texture_to_name.insert(
+    options.sampler_texture_to_name.insert(
         {CombinedTextureSamplerPair{texture_bp, sampler_bp}, "tint_combined_texture_sampler"});
     ASSERT_TRUE(Generate(options)) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
@@ -127,7 +127,14 @@ TEST_F(GlslWriterTest, CanGenerate_TexelBufferUnsupported) {
     auto* var = b.Var("buf", ty.ptr<handle>(buffer_ty));
     mod.root_block->Append(var);
 
+    auto* ep = b.ComputeFunction("main");
+    b.Append(ep->Block(), [&] {
+        b.Let("x", var);
+        b.Return(ep);
+    });
+
     Options options;
+    options.entry_point_name = "main";
     auto result = CanGenerate(mod, options);
     ASSERT_NE(result, Success);
     EXPECT_THAT(result.Failure().reason,

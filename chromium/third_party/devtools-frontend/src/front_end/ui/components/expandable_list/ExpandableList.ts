@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
 import * as Lit from '../../lit/lit.js';
 import * as VisualLogging from '../../visual_logging/visual_logging.js';
@@ -16,7 +16,6 @@ export interface ExpandableListData {
 }
 
 export class ExpandableList extends HTMLElement {
-
   readonly #shadow = this.attachShadow({mode: 'open'});
   #expanded = false;
   #rows: Lit.TemplateResult[] = [];
@@ -47,7 +46,7 @@ export class ExpandableList extends HTMLElement {
         <div>
           ${this.#rows.length > 1 ?
             html`
-              <button title='${ifDefined(this.#title)}' aria-label='${ifDefined(this.#title)}' aria-expanded=${this.#expanded ? 'true' : 'false'} @click=${() => this.#onArrowClick()} class="arrow-icon-button">
+              <button title=${ifDefined(this.#title)} aria-label=${ifDefined(this.#title)} aria-expanded=${this.#expanded ? 'true' : 'false'} @click=${() => this.#onArrowClick()} class="arrow-icon-button">
                 <span class="arrow-icon ${this.#expanded ? 'expanded' : ''}"
                 jslog=${VisualLogging.expand().track({click: true})}></span>
               </button>

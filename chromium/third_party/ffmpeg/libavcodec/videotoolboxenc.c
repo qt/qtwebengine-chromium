@@ -1185,9 +1185,7 @@ static int vtenc_create_encoder(AVCodecContext   *avctx,
     VTEncContext *vtctx = avctx->priv_data;
     SInt32       bit_rate = avctx->bit_rate;
     SInt32       max_rate = avctx->rc_max_rate;
-    Float32      quality = avctx->global_quality / FF_QP2LAMBDA;
     CFNumberRef  bit_rate_num;
-    CFNumberRef  quality_num;
     CFNumberRef  bytes_per_second;
     CFNumberRef  one_second;
     CFArrayRef   data_rate_limits;
@@ -1247,11 +1245,13 @@ static int vtenc_create_encoder(AVCodecContext   *avctx,
         return AVERROR_EXTERNAL;
     }
 
-    if (avctx->flags & AV_CODEC_FLAG_QSCALE) {
-        quality = quality >= 100 ? 1.0 : quality / 100;
-        quality_num = CFNumberCreate(kCFAllocatorDefault,
-                                     kCFNumberFloat32Type,
-                                     &quality);
+    if (avctx->flags & AV_CODEC_FLAG_QSCALE || avctx->global_quality > 0) {
+        float factor = (avctx->flags & AV_CODEC_FLAG_QSCALE) ?
+                       FF_QP2LAMBDA * 100.0f : 100.0f;
+        Float32 quality = fminf(avctx->global_quality / factor, 1.0f);
+        CFNumberRef quality_num = CFNumberCreate(kCFAllocatorDefault,
+                                                 kCFNumberFloat32Type,
+                                                 &quality);
         if (!quality_num) return AVERROR(ENOMEM);
 
         status = VTSessionSetProperty(vtctx->session,
@@ -1709,7 +1709,14 @@ static int vtenc_configure_encoder(AVCodecContext *avctx)
 #endif
 
     // low-latency mode: eliminate frame reordering, follow a one-in-one-out encoding mode
-    if ((avctx->flags & AV_CODEC_FLAG_LOW_DELAY) && avctx->codec_id == AV_CODEC_ID_H264) {
+    if ((avctx->flags & AV_CODEC_FLAG_LOW_DELAY) &&
+        ((avctx->codec_id == AV_CODEC_ID_H264) || (TARGET_CPU_ARM64 && avctx->codec_id == AV_CODEC_ID_HEVC))) {
+        if (!avctx->bit_rate) {
+            av_log(avctx, AV_LOG_ERROR, "Doesn't support automatic bitrate in low_delay mode, "
+                                        "please specify bitrate explicitly\n");
+            status = AVERROR(EINVAL);
+            goto init_cleanup;
+        }
         CFDictionarySetValue(enc_info,
                              compat_keys.kVTVideoEncoderSpecification_EnableLowLatencyRateControl,
                              kCFBooleanTrue);

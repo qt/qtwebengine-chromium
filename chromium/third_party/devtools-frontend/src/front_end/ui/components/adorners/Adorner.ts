@@ -1,10 +1,11 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
 import type * as Platform from '../../../core/platform/platform.js';
 import {html, render} from '../../../ui/lit/lit.js';
+import * as UI from '../../legacy/legacy.js';
 import * as VisualElements from '../../visual_logging/visual_logging.js';
 
 import adornerStyles from './adorner.css.js';
@@ -15,7 +16,12 @@ export interface AdornerData {
   jslogContext?: string;
 }
 
+/**
+ * @deprecated Do not add new usages. The custom component will be removed an
+ * embedded into the corresponding views.
+ */
 export class Adorner extends HTMLElement {
+  static readonly observedAttributes = ['active', 'toggleable'];
   name = '';
 
   readonly #shadow = this.attachShadow({mode: 'open'});
@@ -37,7 +43,7 @@ export class Adorner extends HTMLElement {
   }
 
   override cloneNode(deep?: boolean): Node {
-    const node = super.cloneNode(deep) as Adorner;
+    const node = UI.UIUtils.cloneCustomElement(this, deep);
     node.data = {name: this.name, content: this.#content, jslogContext: this.#jslogContext};
     return node;
   }
@@ -48,6 +54,22 @@ export class Adorner extends HTMLElement {
     }
     if (this.#jslogContext && !this.getAttribute('jslog')) {
       this.setAttribute('jslog', `${VisualElements.adorner(this.#jslogContext)}`);
+    }
+    this.#render();
+  }
+
+  attributeChangedCallback(name: string, oldValue: string, newValue: string): void {
+    if (oldValue === newValue) {
+      return;
+    }
+
+    switch (name) {
+      case 'active':
+        this.toggle(newValue === 'true');
+        break;
+      case 'toggleable':
+        this.#isToggle = newValue === 'true';
+        break;
     }
   }
 

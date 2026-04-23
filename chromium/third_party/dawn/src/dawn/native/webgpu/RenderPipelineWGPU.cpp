@@ -30,6 +30,8 @@
 #include <string>
 #include <vector>
 #include "dawn/common/StringViewUtils.h"
+#include "dawn/native/webgpu/BindGroupLayoutWGPU.h"
+#include "dawn/native/webgpu/CaptureContext.h"
 #include "dawn/native/webgpu/DeviceWGPU.h"
 #include "dawn/native/webgpu/PipelineLayoutWGPU.h"
 #include "dawn/native/webgpu/ShaderModuleWGPU.h"
@@ -46,7 +48,9 @@ Ref<RenderPipeline> RenderPipeline::CreateUninitialized(
 
 RenderPipeline::RenderPipeline(Device* device,
                                const UnpackedPtr<RenderPipelineDescriptor>& descriptor)
-    : RenderPipelineBase(device, descriptor), ObjectWGPU(device->wgpu.renderPipelineRelease) {}
+    : RenderPipelineBase(device, descriptor),
+      RecordableObject(schema::ObjectType::RenderPipeline),
+      ObjectWGPU(device->wgpu.renderPipelineRelease) {}
 
 MaybeError RenderPipeline::InitializeImpl() {
     auto device = ToBackend(GetDevice());
@@ -54,24 +58,23 @@ MaybeError RenderPipeline::InitializeImpl() {
     WGPURenderPipelineDescriptor desc;
     std::vector<WGPUConstantEntry> vertexConstants;
     std::vector<std::string> vertexConstantsKeys;
-    std::array<WGPUVertexBufferLayout, kMaxVertexBuffers> vertexBuffers;
-    std::array<absl::InlinedVector<WGPUVertexAttribute, kMaxVertexAttributes>, kMaxVertexBuffers>
-        vertexAttributes;
+    PerVertexBuffer<WGPUVertexBufferLayout> vertexBuffers = {};
+    PerVertexBuffer<absl::InlinedVector<WGPUVertexAttribute, kMaxVertexAttributes>>
+        vertexAttributes = {};
     WGPUDepthStencilState depthStencil;
     WGPUFragmentState fragmentState;
     std::vector<WGPUConstantEntry> fragmentConstants;
     std::vector<std::string> fragmentConstantsKeys;
-    std::array<WGPUColorTargetState, kMaxColorAttachments> colorTargets;
-    std::array<WGPUBlendState, kMaxColorAttachments> blends;
+    PerColorAttachment<WGPUColorTargetState> colorTargets = {};
+    PerColorAttachment<WGPUBlendState> blends = {};
+    PerColorAttachment<WGPUColorTargetStateExpandResolveTextureDawn>
+        colorTargetStateExpandResolveTextureDawnExtensions = {};
 
     desc.nextInChain = nullptr;
     desc.label = ToOutputStringView(GetLabel());
     auto layout = GetLayout();
-    if (layout != nullptr) {
-        desc.layout = ToBackend(layout)->GetInnerHandle();
-    } else {
-        desc.layout = nullptr;
-    }
+    DAWN_ASSERT(layout != nullptr);
+    desc.layout = ToBackend(layout)->GetInnerHandle();
 
     // Vertex State
     const ProgrammableStage& vertex = GetStage(SingleShaderStage::Vertex);
@@ -85,7 +88,7 @@ MaybeError RenderPipeline::InitializeImpl() {
     // Vertex Buffers
     for (VertexAttributeLocation location : GetAttributeLocationsUsed()) {
         const VertexAttributeInfo& dawnAttr = GetAttribute(location);
-        vertexAttributes[static_cast<size_t>(dawnAttr.vertexBufferSlot)].push_back({
+        vertexAttributes[dawnAttr.vertexBufferSlot].push_back({
             .nextInChain = nullptr,
             .format = ToAPI(dawnAttr.format),
             .offset = dawnAttr.offset,
@@ -96,14 +99,14 @@ MaybeError RenderPipeline::InitializeImpl() {
     size_t bufferCount = 0;
     for (VertexBufferSlot slot : GetVertexBuffersUsed()) {
         const VertexBufferInfo& dawnBuffer = GetVertexBuffer(slot);
-        WGPUVertexBufferLayout* wgpuBuffer = &vertexBuffers[bufferCount];
+        WGPUVertexBufferLayout* wgpuBuffer = &vertexBuffers[slot];
         wgpuBuffer->arrayStride = dawnBuffer.arrayStride;
         wgpuBuffer->stepMode = ToAPI(dawnBuffer.stepMode);
 
-        auto& wgpuAttributes = vertexAttributes[static_cast<size_t>(slot)];
+        auto& wgpuAttributes = vertexAttributes[slot];
         wgpuBuffer->attributes = wgpuAttributes.data();
         wgpuBuffer->attributeCount = wgpuAttributes.size();
-        bufferCount++;
+        bufferCount = static_cast<size_t>(slot) + 1;
     }
     desc.vertex.bufferCount = bufferCount;
     desc.vertex.buffers = vertexBuffers.data();
@@ -147,18 +150,28 @@ MaybeError RenderPipeline::InitializeImpl() {
         uint32_t targetCount = 0;
         for (auto i : GetColorAttachmentsMask()) {
             const ColorTargetState* dawnTarget = GetColorTargetState(i);
-            WGPUColorTargetState* wgpuTarget = &colorTargets[targetCount];
+            WGPUColorTargetState* wgpuTarget = &colorTargets[i];
             wgpuTarget->nextInChain = nullptr;
             wgpuTarget->format = ToAPI(dawnTarget->format);
 
             if (dawnTarget->blend != nullptr) {
-                blends[targetCount] = ToWGPU(dawnTarget->blend);
-                wgpuTarget->blend = &blends[targetCount];
+                blends[i] = ToWGPU(dawnTarget->blend);
+                wgpuTarget->blend = &blends[i];
             } else {
                 wgpuTarget->blend = nullptr;
             }
             wgpuTarget->writeMask = ToAPI(dawnTarget->writeMask);
-            targetCount++;
+
+            if (GetAttachmentState()->GetExpandResolveInfo().resolveTargetsMask.test(i)) {
+                auto& e = colorTargetStateExpandResolveTextureDawnExtensions[i];
+                e = WGPU_COLOR_TARGET_STATE_EXPAND_RESOLVE_TEXTURE_DAWN_INIT;
+                e.enabled =
+                    GetAttachmentState()->GetExpandResolveInfo().attachmentsToExpandResolve.test(i);
+                e.chain.next = wgpuTarget->nextInChain;
+                wgpuTarget->nextInChain = &(e.chain);
+            }
+
+            targetCount = static_cast<size_t>(i) + 1;
         }
         fragmentState.targetCount = targetCount;
         fragmentState.targets = colorTargets.data();
@@ -170,6 +183,128 @@ MaybeError RenderPipeline::InitializeImpl() {
 
     mInnerHandle = device->wgpu.deviceCreateRenderPipeline(device->GetInnerHandle(), &desc);
     DAWN_ASSERT(mInnerHandle);
+    return {};
+}
+
+void RenderPipeline::SetLabelImpl() {
+    ToBackend(GetDevice())->CaptureSetLabel(this, GetLabel());
+}
+
+MaybeError RenderPipeline::AddReferenced(CaptureContext& captureContext) {
+    DAWN_TRY(
+        captureContext.AddResource(ToBackend(GetStage(SingleShaderStage::Vertex).module.Get())));
+    if (HasStage(SingleShaderStage::Fragment)) {
+        DAWN_TRY(captureContext.AddResource(
+            ToBackend(GetStage(SingleShaderStage::Fragment).module.Get())));
+    }
+    DAWN_TRY(captureContext.AddResource(ToBackend(GetLayout())));
+    return {};
+}
+
+schema::BlendComponent ToSchema(const BlendComponent* component) {
+    const BlendComponent& c = component ? *component : BlendComponent();
+    return {{
+        .operation = c.operation,
+        .srcFactor = c.srcFactor,
+        .dstFactor = c.dstFactor,
+    }};
+}
+
+schema::StencilFaceState ToSchema(const StencilFaceState& state) {
+    return {{
+        .compare = state.compare,
+        .failOp = state.failOp,
+        .depthFailOp = state.depthFailOp,
+        .passOp = state.passOp,
+    }};
+}
+
+MaybeError RenderPipeline::CaptureCreationParameters(CaptureContext& captureContext) {
+    std::vector<schema::VertexBufferLayout> buffers;
+    for (VertexBufferSlot slot : GetVertexBuffersUsed()) {
+        const auto& info = GetVertexBuffer(slot);
+
+        std::vector<schema::VertexAttribute> attributes;
+
+        for (VertexAttributeLocation loc : GetAttributeLocationsUsed()) {
+            const VertexAttributeInfo& attrib = GetAttribute(loc);
+            // Only use the attributes that use the current input
+            if (attrib.vertexBufferSlot != slot) {
+                continue;
+            }
+            attributes.push_back({{
+                .format = attrib.format,
+                .offset = attrib.offset,
+                .shaderLocation = uint32_t(attrib.shaderLocation),
+            }});
+        }
+
+        buffers.push_back({{
+            .arrayStride = info.arrayStride,
+            .stepMode = info.stepMode,
+            .attributes = attributes,
+        }});
+    }
+
+    const DepthStencilState defaultDepthStencilState;
+    const DepthStencilState* depthStencilState = GetDepthStencilState();
+    if (!depthStencilState) {
+        depthStencilState = &defaultDepthStencilState;
+    }
+    ProgrammableStage empty;
+    const ProgrammableStage& fragment =
+        HasStage(SingleShaderStage::Fragment) ? GetStage(SingleShaderStage::Fragment) : empty;
+    std::vector<schema::ColorTargetState> targets;
+    if (fragment.module != nullptr) {
+        for (auto slot : GetColorAttachmentsMask()) {
+            const auto& target = *GetColorTargetState(slot);
+            targets.push_back({{
+                .format = target.format,
+                .blend{{
+                    .color = ToSchema(target.blend ? &target.blend->color : nullptr),
+                    .alpha = ToSchema(target.blend ? &target.blend->alpha : nullptr),
+                }},
+                .writeMask = target.writeMask,
+            }});
+        }
+    }
+
+    schema::RenderPipeline data{{
+        .layoutId = captureContext.GetId(GetLayout()),
+        .vertex{{
+            .program = ToSchema(captureContext, GetStage(SingleShaderStage::Vertex)),
+            .buffers = buffers,
+        }},
+        .primitive{{
+            .topology = GetPrimitiveTopology(),
+            .stripIndexFormat = GetStripIndexFormat(),
+            .frontFace = GetFrontFace(),
+            .cullMode = GetCullMode(),
+            .unclippedDepth = HasUnclippedDepth(),
+        }},
+        .depthStencil{{
+            .format = depthStencilState->format,
+            .depthWriteEnabled = depthStencilState->depthWriteEnabled == wgpu::OptionalBool(true),
+            .depthCompare = depthStencilState->depthCompare,
+            .stencilFront = ToSchema(depthStencilState->stencilFront),
+            .stencilBack = ToSchema(depthStencilState->stencilBack),
+            .stencilReadMask = depthStencilState->stencilReadMask,
+            .stencilWriteMask = depthStencilState->stencilWriteMask,
+            .depthBias = depthStencilState->depthBias,
+            .depthBiasSlopeScale = depthStencilState->depthBiasSlopeScale,
+            .depthBiasClamp = depthStencilState->depthBiasClamp,
+        }},
+        .multisample{{
+            .count = GetSampleCount(),
+            .mask = GetSampleMask(),
+            .alphaToCoverageEnabled = IsAlphaToCoverageEnabled(),
+        }},
+        .fragment{{
+            .program = ToSchema(captureContext, fragment),
+            .targets = targets,
+        }},
+    }};
+    Serialize(captureContext, data);
     return {};
 }
 

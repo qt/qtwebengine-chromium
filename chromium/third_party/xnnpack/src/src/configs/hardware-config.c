@@ -33,6 +33,7 @@
 #if XNN_ARCH_HEXAGON
 // TODO - use CPUINFO
 #include <qurt.h>
+#include "HAP_farf.h"
 #include "HAP_power.h"  // NOLINT - part of the hexagon SDK
 #endif
 
@@ -77,6 +78,7 @@ static enum xnn_uarch cpuinfo_to_xnn_uarch(enum cpuinfo_uarch uarch) {
     case cpuinfo_uarch_dhyana: return xnn_uarch_dhyana;
     case cpuinfo_uarch_zen: return xnn_uarch_zen;
     case cpuinfo_uarch_zen4: return xnn_uarch_zen4;
+    case cpuinfo_uarch_zen5: return xnn_uarch_zen5;
 
     case cpuinfo_uarch_cortex_a5: return xnn_uarch_cortex_a5;
     case cpuinfo_uarch_cortex_a7: return xnn_uarch_cortex_a7;
@@ -135,7 +137,7 @@ static bool cpuinfo_uarch_to_dot(enum cpuinfo_uarch uarch) {
     default: return false;
   }
 }
-#endif  // XNN_ENABLE_CPUINFO
+#endif  // XNN_ENABLE_CPUINFO && XNN_ARCH_ARM
 
 static struct xnn_hardware_config hardware_config = {0};
 
@@ -151,7 +153,7 @@ static void set_arch_flag(uint64_t flag, bool value) {
 
 static void init_hardware_config(void) {
   hardware_config.arch_flags = 0;
-#if XNN_ARCH_ARM64 || XNN_ARCH_ARM
+#if (XNN_ARCH_ARM64 || XNN_ARCH_ARM) && XNN_ENABLE_CPUINFO
 #if XNN_PLATFORM_WINDOWS
   SYSTEM_INFO system_info;
   GetSystemInfo(&system_info);
@@ -182,7 +184,7 @@ static void init_hardware_config(void) {
   set_arch_flag(xnn_arch_arm_neon_v8, cpuinfo_has_arm_neon_v8());
 #endif
 
-#if XNN_ARCH_ARM
+#if XNN_ARCH_ARM && XNN_ENABLE_CPUINFO
   set_arch_flag(xnn_arch_arm_v6, cpuinfo_has_arm_v6());
   set_arch_flag(xnn_arch_arm_vfpv2, cpuinfo_has_arm_vfpv2());
 
@@ -192,7 +194,7 @@ static void init_hardware_config(void) {
   set_arch_flag(xnn_arch_arm_neon_dot, uarch_dot);
 #endif
 
-#if XNN_ARCH_ARM64
+#if XNN_ARCH_ARM64 && XNN_ENABLE_CPUINFO
   set_arch_flag(xnn_arch_arm_neon_dot, cpuinfo_has_arm_neon_dot());
   set_arch_flag(xnn_arch_arm_neon_i8mm, cpuinfo_has_arm_i8mm());
   set_arch_flag(xnn_arch_arm_sve, cpuinfo_has_arm_sve());
@@ -201,24 +203,23 @@ static void init_hardware_config(void) {
   set_arch_flag(xnn_arch_arm_sme2, cpuinfo_has_arm_sme2());
 #endif
 
-#if XNN_ARCH_X86 || XNN_ARCH_X86_64
-  const bool use_x86_avx512f = XNN_ENABLE_AVX512F && cpuinfo_has_x86_avx512f();
-  const bool use_x86_avx512skx = XNN_ENABLE_AVX512SKX && use_x86_avx512f &&
-      cpuinfo_has_x86_avx512bw() && cpuinfo_has_x86_avx512dq() && cpuinfo_has_x86_avx512vl();
+#if (XNN_ARCH_X86 || XNN_ARCH_X86_64) && XNN_ENABLE_CPUINFO
+  const bool use_x86_avx512skx = XNN_ENABLE_AVX512SKX && cpuinfo_has_x86_avx512f() && cpuinfo_has_x86_avx512bw() && cpuinfo_has_x86_avx512dq() && cpuinfo_has_x86_avx512vl();
   const bool use_x86_avx512vnni = XNN_ENABLE_AVX512VNNI && use_x86_avx512skx && cpuinfo_has_x86_avx512vnni();
   const bool use_x86_avx512vnnigfni = XNN_ENABLE_AVX512VNNIGFNI && use_x86_avx512vnni && cpuinfo_has_x86_gfni();
   const bool use_x86_avx512amx = XNN_ENABLE_AVX512AMX && XNN_ARCH_X86_64 && use_x86_avx512vnnigfni && cpuinfo_has_x86_amx_int8();
-  const bool use_x86_avx2 = cpuinfo_has_x86_avx2();
   const bool use_x86_avx256skx = XNN_ENABLE_AVX256SKX && cpuinfo_has_x86_avx512f() && cpuinfo_has_x86_avx512bw() && cpuinfo_has_x86_avx512dq() && cpuinfo_has_x86_avx512vl();
   const bool use_x86_avx256vnni = XNN_ENABLE_AVX256VNNI && use_x86_avx256skx && cpuinfo_has_x86_avx512vnni();
 
-  set_arch_flag(xnn_arch_x86_ssse3, cpuinfo_has_x86_ssse3());
-  set_arch_flag(xnn_arch_x86_sse4_1, cpuinfo_has_x86_sse4_1());
-  set_arch_flag(xnn_arch_x86_avx, cpuinfo_has_x86_avx());
-  set_arch_flag(xnn_arch_x86_f16c, cpuinfo_has_x86_f16c());
-  set_arch_flag(xnn_arch_x86_fma3, cpuinfo_has_x86_fma3());
-  set_arch_flag(xnn_arch_x86_avx2, use_x86_avx2);
-  set_arch_flag(xnn_arch_x86_avx512f, use_x86_avx512f);
+  set_arch_flag(xnn_arch_x86_sse, XNN_ENABLE_SSE && cpuinfo_has_x86_sse());
+  set_arch_flag(xnn_arch_x86_sse2, XNN_ENABLE_SSE2 && cpuinfo_has_x86_sse2());
+  set_arch_flag(xnn_arch_x86_ssse3, XNN_ENABLE_SSSE3 && cpuinfo_has_x86_ssse3());
+  set_arch_flag(xnn_arch_x86_sse4_1, XNN_ENABLE_SSE41 && cpuinfo_has_x86_sse4_1());
+  set_arch_flag(xnn_arch_x86_avx, XNN_ENABLE_AVX && cpuinfo_has_x86_avx());
+  set_arch_flag(xnn_arch_x86_f16c, XNN_ENABLE_F16C && cpuinfo_has_x86_f16c());
+  set_arch_flag(xnn_arch_x86_fma3, XNN_ENABLE_FMA3 && cpuinfo_has_x86_fma3());
+  set_arch_flag(xnn_arch_x86_avx2, XNN_ENABLE_AVX2 && cpuinfo_has_x86_avx2());
+  set_arch_flag(xnn_arch_x86_avx512f, XNN_ENABLE_AVX512F && cpuinfo_has_x86_avx512f());
   set_arch_flag(xnn_arch_x86_avx512skx, use_x86_avx512skx);
   set_arch_flag(xnn_arch_x86_avx512vbmi, XNN_ENABLE_AVX512VBMI && use_x86_avx512skx && cpuinfo_has_x86_avx512vbmi());
   set_arch_flag(xnn_arch_x86_avx512vnni, use_x86_avx512vnni);
@@ -226,8 +227,8 @@ static void init_hardware_config(void) {
   set_arch_flag(xnn_arch_x86_avx512fp16, XNN_ENABLE_AVX512FP16 && cpuinfo_has_x86_avx512fp16());
   set_arch_flag(xnn_arch_x86_avx512bf16, XNN_ENABLE_AVX512BF16 && cpuinfo_has_x86_avx512bf16());
   set_arch_flag(xnn_arch_x86_avx512amx, use_x86_avx512amx);
-  set_arch_flag(xnn_arch_x86_avxvnni, XNN_ENABLE_AVXVNNI && use_x86_avx2 && cpuinfo_has_x86_avxvnni());
-  set_arch_flag(xnn_arch_x86_avxvnniint8, XNN_ENABLE_AVXVNNIINT8 && use_x86_avx2 && cpuinfo_has_x86_avx_vnni_int8());
+  set_arch_flag(xnn_arch_x86_avxvnni, XNN_ENABLE_AVXVNNI && cpuinfo_has_x86_avx2() && cpuinfo_has_x86_avxvnni() && cpuinfo_has_x86_gfni());
+  set_arch_flag(xnn_arch_x86_avxvnniint8, XNN_ENABLE_AVXVNNIINT8 && cpuinfo_has_x86_avx2() && cpuinfo_has_x86_avx_vnni_int8() && cpuinfo_has_x86_gfni());
   set_arch_flag(xnn_arch_x86_avx256skx, use_x86_avx256skx);
   set_arch_flag(xnn_arch_x86_avx256vnni, use_x86_avx256vnni);
   set_arch_flag(xnn_arch_x86_avx256vnnigfni, XNN_ENABLE_AVX256VNNIGFNI && use_x86_avx256vnni && cpuinfo_has_x86_gfni());
@@ -242,6 +243,18 @@ static void init_hardware_config(void) {
 #endif
 #endif  // !XNN_ARCH_X86 && !XNN_ARCH_X86_64
 
+#if (XNN_ARCH_X86 || XNN_ARCH_X86_64) && !XNN_ENABLE_CPUINFO
+  // Without cpuinfo respect the build flags
+  set_arch_flag(xnn_arch_x86_sse, XNN_ENABLE_SSE);
+  set_arch_flag(xnn_arch_x86_sse2, XNN_ENABLE_SSE2);
+  set_arch_flag(xnn_arch_x86_ssse3, XNN_ENABLE_SSSE3);
+  set_arch_flag(xnn_arch_x86_sse4_1, XNN_ENABLE_SSE41);
+  set_arch_flag(xnn_arch_x86_avx, XNN_ENABLE_AVX);
+  set_arch_flag(xnn_arch_x86_f16c, XNN_ENABLE_F16C);
+  set_arch_flag(xnn_arch_x86_fma3, XNN_ENABLE_FMA3);
+  set_arch_flag(xnn_arch_x86_avx2, XNN_ENABLE_AVX2);
+#endif
+
 #if XNN_ARCH_HEXAGON
   qurt_arch_version_t vers = {0};
   unsigned int arch_version = 0;
@@ -251,10 +264,10 @@ static void init_hardware_config(void) {
   }
 
   // TODO: use xnn_log_info
-  printf("HEXAGON UARCH VERSION %x\n", arch_version);
+  FARF(ALWAYS, "HEXAGON UARCH VERSION %x\n", arch_version);
 
-  // TODO(b/435522481): Support v69.
-  if (arch_version >= 0x73) {
+  // v69 is in Samsung S22
+  if (arch_version >= 0x69) {
     set_arch_flag(xnn_arch_hvx, XNN_ENABLE_HVX);
   }
 
@@ -263,14 +276,14 @@ static void init_hardware_config(void) {
   if (qurt_sysenv_get_max_hw_threads(&hardware_threads) == QURT_EOK) {
     max_hthreads = hardware_threads.max_hthreads;
   }
-  printf("HEXAGON HTHREADS %d\n", max_hthreads);
+  FARF(ALWAYS, "HEXAGON HTHREADS %d\n", max_hthreads);
 
   unsigned int clkFreqHz = 0;
   HAP_power_response_t response = {.type = HAP_power_get_clk_Freq};
   if (HAP_power_get(NULL, &response) == AEE_SUCCESS) {
     clkFreqHz = response.clkFreqHz;
   }
-  printf("HEXAGON CLKFREQHZ %d\n", clkFreqHz);
+  FARF(ALWAYS, "HEXAGON CLKFREQHZ %d\n", clkFreqHz);
 #endif  // XNN_ARCH_HEXAGON
 
   #if XNN_ARCH_RISCV

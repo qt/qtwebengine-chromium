@@ -9,12 +9,6 @@
 
 namespace shared_highlighting {
 
-#if BUILDFLAG(IS_IOS)
-BASE_FEATURE(kSharedHighlightingAmp, base::FEATURE_DISABLED_BY_DEFAULT);
-#endif
-
-BASE_FEATURE(kSharedHighlightingManager, base::FEATURE_DISABLED_BY_DEFAULT);
-
 int GetPreemptiveLinkGenTimeoutLengthMs() {
 #if BUILDFLAG(IS_ANDROID)
   return 100;

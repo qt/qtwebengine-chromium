@@ -23,6 +23,7 @@ devtools_module("main") {
     "../../core/platform:bundle",
     "../../core/protocol_client:bundle",
     "../../core/sdk:bundle",
+    "../../foundation:bundle",
     "../../generated:protocol",
     "../../models/ai_assistance:bundle",
     "../../models/autofill_manager:bundle",
@@ -34,10 +35,11 @@ devtools_module("main") {
     "../../models/project_settings:bundle",
     "../../models/workspace:bundle",
     "../../panels/ai_assistance:bundle",
+    "../../panels/common:bundle",
     "../../panels/snippets:bundle",
     "../../panels/timeline:bundle",
     "../../ui/components/buttons:bundle",
-    "../../ui/components/icon_button:bundle",
+    "../../ui/kit:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/utils:bundle",
     "../../ui/legacy/theme_support:bundle",
@@ -65,7 +67,7 @@ devtools_entrypoint("bundle") {
     "../js_app:*",
     "../ndb_app:*",
     "../node_app:*",
-    "../rehydrated_devtools_app:*",
+    "../trace_app:*",
     "../worker_app:*",
   ]
 
@@ -88,8 +90,8 @@ devtools_entrypoint("meta") {
   ]
 
   visibility = [
-    "../rehydrated_devtools_app:*",
     "../shell/*",
+    "../trace_app:*",
   ]
 }
 

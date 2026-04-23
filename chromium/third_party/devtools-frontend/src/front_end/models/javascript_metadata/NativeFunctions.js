@@ -687,7 +687,7 @@ export const NativeFunctions = [
   {
     name: "toJSON",
     signatures: [["?key"]],
-    receivers: ["Date"]
+    receivers: ["Date","CSPViolationReportBody","ReportBody","CoopAccessViolationReportBody","DeprecationReportBody","DocumentPolicyViolationReportBody","IntegrityViolationReportBody","InterventionReportBody","PermissionsPolicyViolationReportBody","TestReportBody"]
   },
   {
     name: "parse",
@@ -708,11 +708,6 @@ export const NativeFunctions = [
     name: "parse",
     signatures: [["property","cssText"]],
     receivers: ["CSSStyleValue"]
-  },
-  {
-    name: "parse",
-    signatures: [["serializedOrigin"]],
-    receivers: ["Origin"]
   },
   {
     name: "parse",
@@ -986,7 +981,7 @@ export const NativeFunctions = [
   {
     name: "from",
     signatures: [["value"]],
-    receivers: ["Observable"]
+    receivers: ["Observable","Origin"]
   },
   {
     name: "drawArraysInstancedANGLE",
@@ -2346,7 +2341,7 @@ export const NativeFunctions = [
   {
     name: "clear",
     signatures: [["mask"]],
-    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "adoptNode",
@@ -3370,12 +3365,12 @@ export const NativeFunctions = [
   {
     name: "disable",
     signatures: [["cap"]],
-    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "enable",
     signatures: [["cap"]],
-    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "setHeaderValue",
@@ -4556,7 +4551,7 @@ export const NativeFunctions = [
   {
     name: "bufferData",
     signatures: [["target","size","usage"],["target","data","usage"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "bufferData",
@@ -4571,7 +4566,7 @@ export const NativeFunctions = [
   {
     name: "bufferSubData",
     signatures: [["target","offset","data"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "bufferSubData",
@@ -4586,7 +4581,7 @@ export const NativeFunctions = [
   {
     name: "compressedTexImage2D",
     signatures: [["target","level","internalformat","width","height","border","data"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "compressedTexImage2D",
@@ -4601,7 +4596,7 @@ export const NativeFunctions = [
   {
     name: "compressedTexSubImage2D",
     signatures: [["target","level","xoffset","yoffset","width","height","format","data"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "compressedTexSubImage2D",
@@ -4616,7 +4611,7 @@ export const NativeFunctions = [
   {
     name: "readPixels",
     signatures: [["x","y","width","height","format","type","pixels"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "readPixels",
@@ -4636,7 +4631,7 @@ export const NativeFunctions = [
   {
     name: "texImage2D",
     signatures: [["target","level","internalformat","format","type","pixels"],["target","level","internalformat","format","type","image"],["target","level","internalformat","format","type","canvas"],["target","level","internalformat","format","type","offscreenCanvas"],["target","level","internalformat","format","type","video"],["target","level","internalformat","format","type","bitmap"],["target","level","internalformat","format","type","frame"],["target","level","internalformat","width","height","border","format","type","pixels"]],
-    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "texImage2D",
@@ -4656,7 +4651,7 @@ export const NativeFunctions = [
   {
     name: "texSubImage2D",
     signatures: [["target","level","xoffset","yoffset","format","type","pixels"],["target","level","xoffset","yoffset","format","type","image"],["target","level","xoffset","yoffset","format","type","canvas"],["target","level","xoffset","yoffset","format","type","offscreenCanvas"],["target","level","xoffset","yoffset","format","type","video"],["target","level","xoffset","yoffset","format","type","bitmap"],["target","level","xoffset","yoffset","format","type","frame"],["target","level","xoffset","yoffset","width","height","format","type","pixels"]],
-    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "texSubImage2D",
@@ -4671,7 +4666,7 @@ export const NativeFunctions = [
   {
     name: "uniform1fv",
     signatures: [["location","v"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "uniform1fv",
@@ -4686,7 +4681,7 @@ export const NativeFunctions = [
   {
     name: "uniform1iv",
     signatures: [["location","v"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "uniform1iv",
@@ -4701,7 +4696,7 @@ export const NativeFunctions = [
   {
     name: "uniform2fv",
     signatures: [["location","v"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "uniform2fv",
@@ -4716,7 +4711,7 @@ export const NativeFunctions = [
   {
     name: "uniform2iv",
     signatures: [["location","v"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "uniform2iv",
@@ -4731,7 +4726,7 @@ export const NativeFunctions = [
   {
     name: "uniform3fv",
     signatures: [["location","v"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "uniform3fv",
@@ -4746,7 +4741,7 @@ export const NativeFunctions = [
   {
     name: "uniform3iv",
     signatures: [["location","v"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "uniform3iv",
@@ -4761,7 +4756,7 @@ export const NativeFunctions = [
   {
     name: "uniform4fv",
     signatures: [["location","v"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "uniform4fv",
@@ -4776,7 +4771,7 @@ export const NativeFunctions = [
   {
     name: "uniform4iv",
     signatures: [["location","v"]],
-    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextOverloads","WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "uniform4iv",
@@ -4796,7 +4791,7 @@ export const NativeFunctions = [
   {
     name: "uniformMatrix2fv",
     signatures: [["location","transpose","array"]],
-    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "uniformMatrix2fv",
@@ -4816,7 +4811,7 @@ export const NativeFunctions = [
   {
     name: "uniformMatrix3fv",
     signatures: [["location","transpose","array"]],
-    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "uniformMatrix3fv",
@@ -4836,7 +4831,7 @@ export const NativeFunctions = [
   {
     name: "uniformMatrix4fv",
     signatures: [["location","transpose","array"]],
-    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "uniformMatrix4fv",
@@ -5039,7 +5034,7 @@ export const NativeFunctions = [
   {
     name: "getParameter",
     signatures: [["pname"]],
-    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextBase","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
+    receivers: ["WebGLRenderingContextWebGPU","WebGLRenderingContext","WebGL2RenderingContextWebGPU","WebGL2RenderingContext"]
   },
   {
     name: "getParameter",
@@ -5356,18 +5351,13 @@ export const NativeFunctions = [
   },
   {
     name: "createImageBitmap",
-    signatures: [["image","?options"],["image","sx","sy","sw","sh","?options"]],
+    signatures: [["image","?options"],["imageBitmap","?options"],["image","sx","sy","sw","sh","?options"],["imageBitmap","sx","sy","sw","sh","?options"]],
     receivers: ["Window","WorkerGlobalScope"]
   },
   {
     name: "createImageBitmap",
-    signatures: [["image","?options"],["imageBitmap","?options"],["image","sx","sy","sw","sh","?options"],["imageBitmap","sx","sy","sw","sh","?options"]],
+    signatures: [["image","?options"],["image","sx","sy","sw","sh","?options"]],
     receivers: ["Window"]
-  },
-  {
-    name: "createImageBitmap",
-    signatures: [["imageBitmap","?options"],["imageBitmap","sx","sy","sw","sh","?options"]],
-    receivers: ["WorkerGlobalScope"]
   },
   {
     name: "fetch",
@@ -6046,7 +6036,13 @@ export const NativeFunctions = [
   },
   {
     name: "waitUntil",
-    signatures: [["f"]]
+    signatures: [["f"]],
+    receivers: ["ExtendableEvent"]
+  },
+  {
+    name: "waitUntil",
+    signatures: [["promise"]],
+    receivers: ["ViewTransition"]
   },
   {
     name: "respondWith",
@@ -6088,7 +6084,7 @@ export const NativeFunctions = [
   },
   {
     name: "addAnimation",
-    signatures: [["animation","action","behavior"]]
+    signatures: [["animation","activateBehavior","?deactivateBehavior"]]
   },
   {
     name: "removeAnimation",
@@ -6612,10 +6608,6 @@ export const NativeFunctions = [
     signatures: [["type","?options"]]
   },
   {
-    name: "Event",
-    signatures: [["type","?eventInitDict"]]
-  },
-  {
     name: "setFormControlRange",
     signatures: [["element","start","end"]]
   },
@@ -6994,6 +6986,10 @@ export const NativeFunctions = [
     signatures: [["...initRanges"]]
   },
   {
+    name: "getElementTransform",
+    signatures: [["element","draw_transform"]]
+  },
+  {
     name: "configureHighDynamicRange",
     signatures: [["options"]]
   },
@@ -7084,6 +7080,10 @@ export const NativeFunctions = [
   {
     name: "sendMessageToEmbedder",
     signatures: [["message"]]
+  },
+  {
+    name: "IntersectionObserver",
+    signatures: [["callback","?options"]]
   },
   {
     name: "layoutNextFragment",
@@ -7382,14 +7382,6 @@ export const NativeFunctions = [
     signatures: [["component","left","right"]]
   },
   {
-    name: "Origin",
-    signatures: [["?serializedOrigin"]]
-  },
-  {
-    name: "fromURL",
-    signatures: [["serializedURL"]]
-  },
-  {
     name: "isSameOrigin",
     signatures: [["other"]]
   },
@@ -7615,10 +7607,6 @@ export const NativeFunctions = [
   {
     name: "drawElementImage",
     signatures: [["element","x","y","?dwidth","?dheight"]]
-  },
-  {
-    name: "setHitTestRegions",
-    signatures: [["hitTestRegions"]]
   },
   {
     name: "Path2D",
@@ -7970,7 +7958,7 @@ export const NativeFunctions = [
   },
   {
     name: "createContext",
-    signatures: [["?options"],["gpuDevice"]]
+    signatures: [["?options"]]
   },
   {
     name: "MLGraphBuilder",
@@ -7982,7 +7970,7 @@ export const NativeFunctions = [
   },
   {
     name: "constant",
-    signatures: [["tensor"],["desc","buffer"]]
+    signatures: [["tensor"],["desc","buffer"],["type","value"]]
   },
   {
     name: "argMin",
@@ -8242,7 +8230,7 @@ export const NativeFunctions = [
   },
   {
     name: "softmax",
-    signatures: [["input","?options"],["input","axis","?options"]]
+    signatures: [["input","axis","?options"]]
   },
   {
     name: "softplus",
@@ -8443,6 +8431,14 @@ export const NativeFunctions = [
   {
     name: "sendPackets",
     signatures: [["packets"]]
+  },
+  {
+    name: "addRemoteCandidate",
+    signatures: [["candidate"]]
+  },
+  {
+    name: "setRemoteDtlsParameters",
+    signatures: [["params"]]
   },
   {
     name: "revoke",
@@ -8831,6 +8827,10 @@ export const NativeFunctions = [
     signatures: [["init"]]
   },
   {
+    name: "VideoFrame",
+    signatures: [["source","?init"],["data","init"]]
+  },
+  {
     name: "clipControlEXT",
     signatures: [["origin","depth"]]
   },
@@ -8896,11 +8896,11 @@ export const NativeFunctions = [
   },
   {
     name: "texElementImage2D",
-    signatures: [["target","level","internalformat","format","type","element"]]
+    signatures: [["target","level","internalformat","format","type","element"],["target","level","internalformat","width","height","format","type","element"]]
   },
   {
     name: "texElement2D",
-    signatures: [["target","level","internalformat","format","type","element"]]
+    signatures: [["target","level","internalformat","format","type","element"],["target","level","internalformat","width","height","format","type","element"]]
   },
   {
     name: "drawingBufferStorage",
@@ -9071,6 +9071,10 @@ export const NativeFunctions = [
     signatures: [["index","bindGroup","?dynamicOffsets"],["index","bindGroup","dynamicOffsetsData","dynamicOffsetsDataStart","dynamicOffsetsDataLength"]]
   },
   {
+    name: "setImmediates",
+    signatures: [["rangeOffset","data","?dataOffset","?size"]]
+  },
+  {
     name: "writeBuffer",
     signatures: [["buffer","bufferOffset","data","?dataElementOffset","?dataElementCount"],["buffer","bufferOffset","data","?dataByteOffset","?byteSize"]]
   },
@@ -9081,6 +9085,10 @@ export const NativeFunctions = [
   {
     name: "copyExternalImageToTexture",
     signatures: [["source","destination","copySize"]]
+  },
+  {
+    name: "copyElementImageToTexture",
+    signatures: [["source","destination"],["source","width","height","destination"]]
   },
   {
     name: "setIndexBuffer",
@@ -9317,6 +9325,10 @@ export const NativeFunctions = [
   {
     name: "requestSession",
     signatures: [["mode","?options"]]
+  },
+  {
+    name: "XRVisibilityMaskChangeEvent",
+    signatures: [["type","eventInitDict"]]
   },
   {
     name: "XRWebGLLayer",

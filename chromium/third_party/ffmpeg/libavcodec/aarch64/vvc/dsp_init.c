@@ -30,31 +30,19 @@
 #define BDOF_BLOCK_SIZE         16
 #define BDOF_MIN_BLOCK_SIZE     4
 
-void ff_vvc_prof_grad_filter_8x_neon(int16_t *gradient_h,
-                                     int16_t *gradient_v,
-                                     ptrdiff_t gradient_stride,
-                                     const int16_t *_src,
-                                     ptrdiff_t src_stride,
-                                     int width, int height);
 
-void ff_vvc_derive_bdof_vx_vy_neon(const int16_t *_src0, const int16_t *_src1,
-                                   int pad_mask,
-                                   const int16_t **gradient_h,
-                                   const int16_t **gradient_v,
-                                   int16_t *vx, int16_t *vy);
+void ff_alf_classify_sum_neon(int *sum0, int *sum1, int16_t *grad, uint32_t gshift, uint32_t steps);
+
 #define BIT_DEPTH 8
 #include "alf_template.c"
-#include "of_template.c"
 #undef BIT_DEPTH
 
 #define BIT_DEPTH 10
 #include "alf_template.c"
-#include "of_template.c"
 #undef BIT_DEPTH
 
 #define BIT_DEPTH 12
 #include "alf_template.c"
-#include "of_template.c"
 #undef BIT_DEPTH
 
 int ff_vvc_sad_neon(const int16_t *src0, const int16_t *src1, int dx, int dy,
@@ -110,9 +98,22 @@ W_AVG_FUN(12)
 
 DMVR_FUN(, 8)
 DMVR_FUN(, 12)
+DMVR_FUN(h_, 8)
+DMVR_FUN(h_, 10)
+DMVR_FUN(h_, 12)
+DMVR_FUN(v_, 8)
 DMVR_FUN(hv_, 8)
 DMVR_FUN(hv_, 10)
 DMVR_FUN(hv_, 12)
+
+#define APPLY_BDOF_FUNC(bd) \
+    void ff_vvc_apply_bdof_ ## bd ## _neon(uint8_t *_dst, ptrdiff_t _dst_stride, \
+        const int16_t *_src0, const int16_t *_src1, \
+        int block_w, int block_h);
+
+APPLY_BDOF_FUNC(8)
+APPLY_BDOF_FUNC(10)
+APPLY_BDOF_FUNC(12)
 
 void ff_vvc_dsp_init_aarch64(VVCDSPContext *const c, const int bd)
 {
@@ -194,8 +195,10 @@ void ff_vvc_dsp_init_aarch64(VVCDSPContext *const c, const int bd)
         c->inter.avg = ff_vvc_avg_8_neon;
         c->inter.w_avg = vvc_w_avg_8;
         c->inter.dmvr[0][0] = ff_vvc_dmvr_8_neon;
+        c->inter.dmvr[0][1] = ff_vvc_dmvr_h_8_neon;
+        c->inter.dmvr[1][0] = ff_vvc_dmvr_v_8_neon;
         c->inter.dmvr[1][1] = ff_vvc_dmvr_hv_8_neon;
-        c->inter.apply_bdof = apply_bdof_8;
+        c->inter.apply_bdof = ff_vvc_apply_bdof_8_neon;
 
         c->sao.band_filter[0] = ff_h26x_sao_band_filter_8x8_8_neon;
         for (int i = 1; i < FF_ARRAY_ELEMS(c->sao.band_filter); i++)
@@ -205,6 +208,7 @@ void ff_vvc_dsp_init_aarch64(VVCDSPContext *const c, const int bd)
             c->sao.edge_filter[i] = ff_vvc_sao_edge_filter_16x16_8_neon;
         c->alf.filter[LUMA] = alf_filter_luma_8_neon;
         c->alf.filter[CHROMA] = alf_filter_chroma_8_neon;
+        c->alf.classify = alf_classify_8_neon;
 
         if (have_i8mm(cpu_flags)) {
             c->inter.put[0][1][0][1] = ff_vvc_put_qpel_h4_8_neon_i8mm;
@@ -238,20 +242,24 @@ void ff_vvc_dsp_init_aarch64(VVCDSPContext *const c, const int bd)
     } else if (bd == 10) {
         c->inter.avg = ff_vvc_avg_10_neon;
         c->inter.w_avg = vvc_w_avg_10;
+        c->inter.dmvr[0][1] = ff_vvc_dmvr_h_10_neon;
         c->inter.dmvr[1][1] = ff_vvc_dmvr_hv_10_neon;
-        c->inter.apply_bdof = apply_bdof_10;
+        c->inter.apply_bdof = ff_vvc_apply_bdof_10_neon;
 
         c->alf.filter[LUMA] = alf_filter_luma_10_neon;
         c->alf.filter[CHROMA] = alf_filter_chroma_10_neon;
+        c->alf.classify = alf_classify_10_neon;
     } else if (bd == 12) {
         c->inter.avg = ff_vvc_avg_12_neon;
         c->inter.w_avg = vvc_w_avg_12;
         c->inter.dmvr[0][0] = ff_vvc_dmvr_12_neon;
+        c->inter.dmvr[0][1] = ff_vvc_dmvr_h_12_neon;
         c->inter.dmvr[1][1] = ff_vvc_dmvr_hv_12_neon;
-        c->inter.apply_bdof = apply_bdof_12;
+        c->inter.apply_bdof = ff_vvc_apply_bdof_12_neon;
 
         c->alf.filter[LUMA] = alf_filter_luma_12_neon;
         c->alf.filter[CHROMA] = alf_filter_chroma_12_neon;
+        c->alf.classify = alf_classify_12_neon;
     }
 
     c->inter.sad = ff_vvc_sad_neon;

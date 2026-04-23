@@ -12,7 +12,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "base/containers/fixed_flat_map.h"
 #include "base/memory/raw_ptr.h"
 #include "printing/buildflags/buildflags.h"
 #include "ui/base/glib/scoped_gsignal.h"
@@ -94,6 +93,7 @@ class GtkUi : public ui::LinuxUiAndTheme {
       ui::WindowButtonOrderObserver* observer) override;
   WindowFrameAction GetWindowFrameAction(
       WindowFrameActionSource source) override;
+  bool PrimaryPasteEnabled() const override;
   std::vector<std::string> GetCmdLineFlagsForCopy() const override;
 
   // ui::LinuxUiTheme:
@@ -123,6 +123,8 @@ class GtkUi : public ui::LinuxUiAndTheme {
   void OnCursorThemeSizeChanged(GtkSettings* settings, GtkParamSpec* param);
 
   void OnEnableAnimationsChanged(GtkSettings* settings, GtkParamSpec* param);
+
+  void OnPrimaryPasteChanged(GtkSettings* settings, GtkParamSpec* param);
 
   void OnGtkXftDpiChanged(GtkSettings* settings, GParamSpec* param);
 

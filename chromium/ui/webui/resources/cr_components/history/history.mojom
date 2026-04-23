@@ -189,6 +189,18 @@ interface PageHandler {
 
   // The user turns on the history sync by clicking the "Sync history" button.
   TurnOnHistorySync();
+
+  // Checks if the history sync promo should be shown on the history page.
+  [EnableIfNot=is_chromeos]
+  ShouldShowHistoryPageHistorySyncPromo() => (bool should_show);
+
+  // Records the time when the history sync promo was dismissed.
+  [EnableIfNot=is_chromeos]
+  RecordHistoryPageHistorySyncPromoDismissed();
+
+  // Increments the history page history sync promo shown count.
+  [EnableIfNot=is_chromeos]
+  IncrementHistoryPageHistorySyncPromoShownCount();
 };
 
 // WebUI-side handler for requests from browser.

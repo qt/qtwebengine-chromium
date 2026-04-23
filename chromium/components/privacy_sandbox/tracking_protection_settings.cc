@@ -14,6 +14,7 @@
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/content_settings/core/common/features.h"
 #include "components/content_settings/core/common/pref_names.h"
+#include "components/policy/core/common/management/management_service.h"
 #include "components/policy/core/common/management/platform_management_service.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
@@ -40,23 +41,12 @@ TrackingProtectionSettings::TrackingProtectionSettings(
       is_incognito_(is_incognito) {
   CHECK(pref_service_);
   CHECK(host_content_settings_map_);
-  content_settings_observation_.Observe(host_content_settings_map_.get());
 
   pref_change_registrar_.Init(pref_service_);
-  pref_change_registrar_.Add(
-      prefs::kEnableDoNotTrack,
-      base::BindRepeating(
-          &TrackingProtectionSettings::OnDoNotTrackEnabledPrefChanged,
-          base::Unretained(this)));
   pref_change_registrar_.Add(
       prefs::kIpProtectionEnabled,
       base::BindRepeating(
           &TrackingProtectionSettings::OnIpProtectionPrefChanged,
-          base::Unretained(this)));
-  pref_change_registrar_.Add(
-      prefs::kFingerprintingProtectionEnabled,
-      base::BindRepeating(
-          &TrackingProtectionSettings::OnFpProtectionPrefChanged,
           base::Unretained(this)));
   pref_change_registrar_.Add(
       prefs::kBlockAll3pcToggleEnabled,
@@ -84,6 +74,10 @@ TrackingProtectionSettings::TrackingProtectionSettings(
 #if !BUILDFLAG(IS_IOS)
   // It's possible enterprise status changed while profile was shut down.
   OnEnterpriseControlForPrefsChanged();
+  // Set Mode B pref to force rollback flow.
+  if (privacy_sandbox::kRollBackModeBForced.Get()) {
+    pref_service_->SetBoolean(prefs::kTrackingProtection3pcdEnabled, true);
+  }
 #endif
 }
 
@@ -95,15 +89,6 @@ void TrackingProtectionSettings::Shutdown() {
   management_service_ = nullptr;
   pref_change_registrar_.Reset();
   pref_service_ = nullptr;
-}
-
-void TrackingProtectionSettings::OnContentSettingChanged(
-    const ContentSettingsPattern& primary_pattern,
-    const ContentSettingsPattern& secondary_pattern,
-    ContentSettingsTypeSet content_type_set) {
-  if (content_type_set.Contains(ContentSettingsType::TRACKING_PROTECTION)) {
-    OnTrackingProtectionExceptionsChanged();
-  }
 }
 
 bool TrackingProtectionSettings::IsTrackingProtection3pcdEnabled() const {
@@ -122,63 +107,6 @@ bool TrackingProtectionSettings::AreAllThirdPartyCookiesBlocked() const {
 bool TrackingProtectionSettings::IsIpProtectionEnabled() const {
   return pref_service_->GetBoolean(prefs::kIpProtectionEnabled) &&
          base::FeatureList::IsEnabled(kIpProtectionUx);
-}
-
-bool TrackingProtectionSettings::IsFpProtectionEnabled() const {
-  return pref_service_->GetBoolean(prefs::kFingerprintingProtectionEnabled) &&
-         is_incognito_ &&
-         base::FeatureList::IsEnabled(kFingerprintingProtectionUx);
-}
-
-bool TrackingProtectionSettings::IsDoNotTrackEnabled() const {
-  return pref_service_->GetBoolean(prefs::kEnableDoNotTrack);
-}
-
-void TrackingProtectionSettings::AddTrackingProtectionException(
-    const GURL& first_party_url) {
-  host_content_settings_map_->SetContentSettingCustomScope(
-      ContentSettingsPattern::Wildcard(),
-      ContentSettingsPattern::FromURLToSchemefulSitePattern(first_party_url),
-      ContentSettingsType::TRACKING_PROTECTION, CONTENT_SETTING_ALLOW);
-}
-
-void TrackingProtectionSettings::RemoveTrackingProtectionException(
-    const GURL& first_party_url) {
-  // Exceptions added via `AddTrackingProtectionException` are site scoped. This
-  // resets both origin scoped and site scoped exceptions.
-  auto pattern =
-      ContentSettingsPattern::FromURLToSchemefulSitePattern(first_party_url);
-  content_settings::SettingInfo info;
-  host_content_settings_map_->GetContentSetting(
-      GURL(), first_party_url, ContentSettingsType::TRACKING_PROTECTION, &info);
-  if (!info.secondary_pattern.HasDomainWildcard()) {
-    pattern = info.secondary_pattern;
-  }
-  host_content_settings_map_->SetContentSettingCustomScope(
-      ContentSettingsPattern::Wildcard(), pattern,
-      ContentSettingsType::TRACKING_PROTECTION, CONTENT_SETTING_DEFAULT);
-}
-
-bool TrackingProtectionSettings::HasTrackingProtectionException(
-    const GURL& first_party_url,
-    content_settings::SettingInfo* info) const {
-  return host_content_settings_map_->GetContentSetting(
-             GURL(), first_party_url, ContentSettingsType::TRACKING_PROTECTION,
-             info) == CONTENT_SETTING_ALLOW;
-}
-
-ContentSettingsForOneType
-TrackingProtectionSettings::GetTrackingProtectionExceptions() const {
-  ContentSettingsForOneType all_settings =
-      host_content_settings_map_->GetSettingsForOneType(
-          ContentSettingsType::TRACKING_PROTECTION);
-  ContentSettingsForOneType exceptions;
-  for (const auto& setting : all_settings) {
-    if (setting.GetContentSetting() == CONTENT_SETTING_ALLOW) {
-      exceptions.push_back(setting);
-    }
-  }
-  return exceptions;
 }
 
 bool TrackingProtectionSettings::IsIpProtectionDisabledForEnterprise() {
@@ -207,21 +135,9 @@ void TrackingProtectionSettings::OnEnterpriseControlForPrefsChanged() {
   }
 }
 
-void TrackingProtectionSettings::OnDoNotTrackEnabledPrefChanged() {
-  for (auto& observer : observers_) {
-    observer.OnDoNotTrackEnabledChanged();
-  }
-}
-
 void TrackingProtectionSettings::OnIpProtectionPrefChanged() {
   for (auto& observer : observers_) {
     observer.OnIpProtectionEnabledChanged();
-  }
-}
-
-void TrackingProtectionSettings::OnFpProtectionPrefChanged() {
-  for (auto& observer : observers_) {
-    observer.OnFpProtectionEnabledChanged();
   }
 }
 
@@ -236,12 +152,6 @@ void TrackingProtectionSettings::OnTrackingProtection3pcdPrefChanged() {
     observer.OnTrackingProtection3pcdChanged();
     // 3PC blocking may change as a result of entering/leaving the experiment.
     observer.OnBlockAllThirdPartyCookiesChanged();
-  }
-}
-
-void TrackingProtectionSettings::OnTrackingProtectionExceptionsChanged() {
-  for (auto& observer : observers_) {
-    observer.OnTrackingProtectionExceptionsChanged();
   }
 }
 

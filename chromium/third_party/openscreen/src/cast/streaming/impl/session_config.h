@@ -25,7 +25,8 @@ struct SessionConfig final {
                 std::array<uint8_t, 16> aes_secret_key,
                 std::array<uint8_t, 16> aes_iv_mask,
                 bool is_pli_enabled = false,
-                StreamType stream_type = StreamType::kUnknown);
+                StreamType stream_type = StreamType::kUnknown,
+                bool are_receiver_event_logs_enabled = true);
   SessionConfig(const SessionConfig& other);
   SessionConfig(SessionConfig&& other) noexcept;
   SessionConfig& operator=(const SessionConfig& other);
@@ -59,6 +60,10 @@ struct SessionConfig final {
 
   // The type (e.g. audio or video) of the stream.
   StreamType stream_type = StreamType::kUnknown;
+
+  // Whether RTCP event logs from the Receiver are enabled. These are used for
+  // generating statistics. It is recommended that this generally be true.
+  bool are_receiver_event_logs_enabled = true;
 };
 
 }  // namespace openscreen::cast

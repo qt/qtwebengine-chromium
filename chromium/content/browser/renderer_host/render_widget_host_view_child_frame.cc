@@ -248,8 +248,9 @@ uint32_t RenderWidgetHostViewChildFrame::GetCaptureSequenceNumber() const {
 
 void RenderWidgetHostViewChildFrame::ShowWithVisibility(
     PageVisibilityState /*page_visibility*/) {
-  if (!host()->is_hidden())
+  if (!host()->IsHidden()) {
     return;
+  }
 
   if (!CanBecomeVisible())
     return;
@@ -261,8 +262,9 @@ void RenderWidgetHostViewChildFrame::ShowWithVisibility(
 }
 
 void RenderWidgetHostViewChildFrame::Hide() {
-  if (host()->is_hidden())
+  if (host()->IsHidden()) {
     return;
+  }
 
   host()->WasHidden();
 
@@ -271,7 +273,7 @@ void RenderWidgetHostViewChildFrame::Hide() {
 }
 
 bool RenderWidgetHostViewChildFrame::IsShowing() {
-  return !host()->is_hidden();
+  return !host()->IsHidden();
 }
 
 void RenderWidgetHostViewChildFrame::WasOccluded() {
@@ -637,6 +639,14 @@ void RenderWidgetHostViewChildFrame::GestureEventAck(
   input_helper_->GestureEventAckHelper(event, ack_source, ack_result);
 }
 
+void RenderWidgetHostViewChildFrame::OnUnconfirmedTapConvertedToTap() {
+  auto* root_view = GetRootView();
+  if (!root_view) {
+    return;
+  }
+  root_view->OnUnconfirmedTapConvertedToTap();
+}
+
 void RenderWidgetHostViewChildFrame::ForwardTouchpadZoomEventIfNecessary(
     const blink::WebGestureEvent& event,
     blink::mojom::InputEventResultState ack_result) {
@@ -858,9 +868,10 @@ uint64_t RenderWidgetHostViewChildFrame::GetNSViewId() const {
 void RenderWidgetHostViewChildFrame::CopyFromSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& output_size,
-    base::OnceCallback<void(const SkBitmap&)> callback) {
+    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+        callback) {
   if (!IsSurfaceAvailableForCopy()) {
-    std::move(callback).Run(SkBitmap());
+    std::move(callback).Run(viz::CopyOutputBitmapWithMetadata());
     return;
   }
 
@@ -869,10 +880,12 @@ void RenderWidgetHostViewChildFrame::CopyFromSurface(
           viz::CopyOutputRequest::ResultFormat::RGBA,
           viz::CopyOutputRequest::ResultDestination::kSystemMemory,
           base::BindOnce(
-              [](base::OnceCallback<void(const SkBitmap&)> callback,
+              [](base::OnceCallback<void(
+                     const viz::CopyOutputBitmapWithMetadata&)> callback,
                  std::unique_ptr<viz::CopyOutputResult> result) {
                 auto scoped_bitmap = result->ScopedAccessSkBitmap();
-                std::move(callback).Run(scoped_bitmap.GetOutScopedBitmap());
+                std::move(callback).Run(
+                    scoped_bitmap.GetOutScopedBitmapAndMetadata());
               },
               std::move(callback)));
 

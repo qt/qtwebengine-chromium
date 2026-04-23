@@ -40,6 +40,7 @@
 #include "include/private/base/SkTo.h"
 #include "src/base/SkEnumBitMask.h"
 #include "src/base/SkRectMemcpy.h"
+#include "src/capture/SkCapture.h"
 #include "src/capture/SkCaptureManager.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkCPUContextImpl.h"
@@ -138,13 +139,16 @@ Context::Context(sk_sp<SharedContext> sharedContext,
     }
 #endif
 
-    fSharedContext->globalCache()->setPipelineCallback(options.fPipelineCallback,
-                                                       options.fPipelineCallbackContext);
+    fSharedContext->globalCache()->setPipelineCallback(options.fPipelineCallbackContext,
+                                                       options.fPipelineCachingCallback,
+                                                       options.fPipelineCallback);
 
     fCPUContext = std::make_unique<skcpu::ContextImpl>();
     if (options.fEnableCapture) {
         fSharedContext->setCaptureManager(sk_make_sp<SkCaptureManager>());
     }
+
+    fPersistentPipelineStorage = options.fPersistentPipelineStorage;
 }
 
 Context::~Context() {
@@ -630,7 +634,7 @@ void Context::asyncReadPixelsYUV420(std::unique_ptr<Recorder> recorder,
     }
 
     this->finalizeAsyncReadPixels(std::move(recorder),
-                                  {transfers, readAlpha ? 4 : 3},
+                                  {transfers, readAlpha ? 4u : 3u},
                                   params.fCallback,
                                   params.fCallbackContext);
 }
@@ -751,7 +755,7 @@ Context::PixelTransferResult Context::transferPixels(Recorder* recorder,
     int bpp = isRGB888Format ? 3 : SkColorTypeBytesPerPixel(supportedColorType);
     size_t rowBytes = caps->getAlignedTextureDataRowBytes(bpp * srcRect.width());
     size_t size = SkAlignTo(rowBytes * srcRect.height(), caps->requiredTransferBufferAlignment());
-    sk_sp<Buffer> buffer = fResourceProvider->findOrCreateBuffer(
+    sk_sp<Buffer> buffer = fResourceProvider->findOrCreateNonShareableBuffer(
             size, BufferType::kXferGpuToCpu, AccessPattern::kHostVisible, "TransferToCpu");
     if (!buffer) {
         return {};
@@ -915,18 +919,26 @@ GpuStatsFlags Context::supportedGpuStats() const {
     return fSharedContext->caps()->supportedGpuStats();
 }
 
+void Context::syncPipelineData(size_t maxSize) {
+    ASSERT_SINGLE_OWNER
+
+    if (fPersistentPipelineStorage) {
+        fSharedContext->syncPipelineData(fPersistentPipelineStorage, maxSize);
+    }
+}
+
 void Context::startCapture() {
     if (fSharedContext->captureManager()) {
         fSharedContext->captureManager()->toggleCapture(true);
     }
 }
 
-void Context::endCapture() {
-    // TODO (b/412351769): Return an SkData block of serialized SKPs and other capture data
+sk_sp<SkCapture> Context::endCapture() {
     if (fSharedContext->captureManager()) {
         fSharedContext->captureManager()->toggleCapture(false);
-        fSharedContext->captureManager()->serializeCapture();
+        return fSharedContext->captureManager()->getLastCapture();
     }
+    return nullptr;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
@@ -1009,8 +1021,6 @@ bool ContextPriv::supportsPathRendererStrategy(PathRendererStrategy strategy) {
     AtlasProvider::PathAtlasFlagsBitMask pathAtlasFlags =
             AtlasProvider::QueryPathAtlasSupport(this->caps());
     switch (strategy) {
-        case PathRendererStrategy::kDefault:
-            return true;
         case PathRendererStrategy::kComputeAnalyticAA:
         case PathRendererStrategy::kComputeMSAA16:
         case PathRendererStrategy::kComputeMSAA8:

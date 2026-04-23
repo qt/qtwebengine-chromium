@@ -260,3 +260,17 @@ impl Pixels {
         }
     }
 }
+
+// From PixelInformationProperty semantics in ISO/IEC 23008-12/DAM 2.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u8)]
+pub enum ChannelIdc {
+    Unused = 0,
+    Unspecified = 1,
+    FirstColorChannel = 2,  // e.g. monochrome, Y, R, C
+    SecondColorChannel = 3, // e.g. U, Cb, G, M
+    ThirdColorChannel = 4,  // e.g. V, Cr, B, Y
+    Alpha = 5,
+    Depth = 6,
+    FourthColorChannel = 7, // e.g. K
+}

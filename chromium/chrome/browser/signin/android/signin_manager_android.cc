@@ -50,12 +50,6 @@ using base::android::JavaParamRef;
 
 namespace {
 
-// The cache expiration time for IsAccountManaged(), i.e. the maximum time
-// interval between two calls to IsAccountManaged() where the second may return
-// the cached outcome of the first (for the same user).
-constexpr base::TimeDelta kIsAccountManagedCacheExpirationTime =
-    base::Minutes(1);
-
 // A BrowsingDataRemover::Observer that clears Profile data and then invokes
 // a callback and deletes itself. It can be configured to delete all data
 // (for enterprise users) or only Google's service workers (for all users).
@@ -266,41 +260,6 @@ void SigninManagerAndroid::FetchPolicyBeforeSignIn(
                      std::move(policy_callback)));
 }
 
-void SigninManagerAndroid::IsAccountManaged(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& j_account_info,
-    const JavaParamRef<jobject>& j_callback) {
-  CoreAccountInfo account = ConvertFromJavaCoreAccountInfo(env, j_account_info);
-  base::android::ScopedJavaGlobalRef<jobject> callback(env, j_callback);
-
-  if (cached_is_account_managed_.has_value() &&
-      MatchesCachedIsAccountManagedEntry(*cached_is_account_managed_,
-                                         account)) {
-    // Cache hit, return cached value without issuing any request.
-    bool is_managed = cached_is_account_managed_->is_account_managed;
-    base::android::RunBooleanCallbackAndroid(callback, is_managed);
-    return;
-  }
-
-  RegisterPolicyWithAccount(
-      account,
-      base::BindOnce(
-          &SigninManagerAndroid::OnPolicyRegisterDoneForIsAccountManaged,
-          weak_factory_.GetWeakPtr(), account, std::move(callback)));
-}
-
-void SigninManagerAndroid::OnPolicyRegisterDoneForIsAccountManaged(
-    const CoreAccountInfo& account,
-    base::android::ScopedJavaGlobalRef<jobject> callback,
-    const std::optional<ManagementCredentials>& credentials) {
-  bool is_managed = credentials.has_value();
-  // Cache result in case IsAccountManaged() is invoked again for the same user.
-  cached_is_account_managed_.emplace(
-      account.gaia, is_managed,
-      base::Time::Now() + kIsAccountManagedCacheExpirationTime);
-  base::android::RunBooleanCallbackAndroid(callback, is_managed);
-}
-
 base::android::ScopedJavaLocalRef<jstring>
 SigninManagerAndroid::GetManagementDomain(JNIEnv* env) {
   base::android::ScopedJavaLocalRef<jstring> domain;
@@ -335,8 +294,8 @@ void SigninManagerAndroid::WipeData(Profile* profile,
   new ProfileDataRemover(profile, all_data, std::move(callback));
 }
 
-std::string JNI_SigninManagerImpl_ExtractDomainName(JNIEnv* env,
-                                                    std::string& email) {
+static std::string JNI_SigninManagerImpl_ExtractDomainName(JNIEnv* env,
+                                                           std::string& email) {
   return gaia::ExtractDomainName(email);
 }
 
@@ -350,3 +309,5 @@ void SigninManagerAndroid::SetUserAcceptedAccountManagement(
 bool SigninManagerAndroid::GetUserAcceptedAccountManagement(JNIEnv* env) {
   return enterprise_util::UserAcceptedAccountManagement(profile_);
 }
+
+DEFINE_JNI(SigninManagerImpl)

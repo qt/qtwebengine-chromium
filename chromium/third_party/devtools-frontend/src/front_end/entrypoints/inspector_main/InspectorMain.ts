@@ -46,26 +46,16 @@ const UIStrings = {
 } as const;
 const str_ = i18n.i18n.registerUIStrings('entrypoints/inspector_main/InspectorMain.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-let inspectorMainImplInstance: InspectorMainImpl;
 
 export class InspectorMainImpl implements Common.Runnable.Runnable {
-  static instance(opts: {
-    forceNew: boolean|null,
-  } = {forceNew: null}): InspectorMainImpl {
-    const {forceNew} = opts;
-    if (!inspectorMainImplInstance || forceNew) {
-      inspectorMainImplInstance = new InspectorMainImpl();
-    }
-
-    return inspectorMainImplInstance;
-  }
-
   async run(): Promise<void> {
     let firstCall = true;
     await SDK.Connections.initMainConnection(async () => {
       const type = Root.Runtime.Runtime.queryParam('v8only') ?
           SDK.Target.Type.NODE :
-          (Root.Runtime.Runtime.queryParam('targetType') === 'tab' ? SDK.Target.Type.TAB : SDK.Target.Type.FRAME);
+          (Root.Runtime.Runtime.queryParam('targetType') === 'tab' || Root.Runtime.Runtime.isTraceApp() ?
+               SDK.Target.Type.TAB :
+               SDK.Target.Type.FRAME);
       // TODO(crbug.com/1348385): support waiting for debugger with tab target.
       const waitForDebuggerInPage =
           type === SDK.Target.Type.FRAME && Root.Runtime.Runtime.queryParam('panel') === 'sources';
@@ -160,7 +150,7 @@ export class InspectorMainImpl implements Common.Runnable.Runnable {
   }
 }
 
-Common.Runnable.registerEarlyInitializationRunnable(InspectorMainImpl.instance);
+Common.Runnable.registerEarlyInitializationRunnable(() => new InspectorMainImpl());
 
 export class ReloadActionDelegate implements UI.ActionRegistration.ActionDelegate {
   handleAction(_context: UI.Context.Context, actionId: string): boolean {

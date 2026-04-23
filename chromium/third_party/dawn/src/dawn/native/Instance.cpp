@@ -224,6 +224,10 @@ InstanceBase::InstanceBase(const TogglesState& instanceToggles)
 InstanceBase::~InstanceBase() = default;
 
 void InstanceBase::DeleteThis() {
+    // Stop tracking events. See comment on ShutDown.
+    mEventManager.ShutDown();
+    mLoggingCallbackInfo = kEmptyLoggingCallbackInfo;
+
     // Flush all remaining callback tasks on all devices and on the instance.
     absl::flat_hash_set<DeviceBase*> devices;
     do {
@@ -242,17 +246,11 @@ void InstanceBase::DeleteThis() {
         mCallbackTaskManager->Flush();
     } while (!mCallbackTaskManager->IsEmpty());
 
-    RefCountedWithExternalCount::DeleteThis();
+    RefCounted::DeleteThis();
 }
 
 void InstanceBase::DisconnectDawnPlatform() {
     SetPlatform(nullptr);
-}
-
-void InstanceBase::WillDropLastExternalRef() {
-    // Stop tracking events. See comment on ShutDown.
-    mEventManager.ShutDown();
-    mLoggingCallbackInfo = kEmptyLoggingCallbackInfo;
 }
 
 // TODO(crbug.com/dawn/832): make the platform an initialization parameter of the instance.
@@ -597,6 +595,10 @@ bool InstanceBase::HasFeature(wgpu::InstanceFeatureName feature) const {
     return mInstanceFeatures.contains(feature);
 }
 
+bool InstanceBase::HasFeature(wgpu::WGSLLanguageFeatureName feature) const {
+    return mWGSLFeatures.contains(feature);
+}
+
 bool InstanceBase::ProcessEvents() {
     std::vector<Ref<DeviceBase>> devices;
     mDevicesList.Use([&](auto deviceList) {
@@ -730,7 +732,7 @@ void InstanceBase::GatherWGSLFeatures(const DawnWGSLBlocklist* wgslBlocklist) {
 }
 
 bool InstanceBase::APIHasWGSLLanguageFeature(wgpu::WGSLLanguageFeatureName feature) const {
-    return mWGSLFeatures.contains(feature);
+    return HasFeature(feature);
 }
 
 void InstanceBase::APIGetWGSLLanguageFeatures(SupportedWGSLLanguageFeatures* features) const {

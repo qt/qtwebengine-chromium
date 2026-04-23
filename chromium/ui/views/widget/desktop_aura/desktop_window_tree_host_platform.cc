@@ -329,9 +329,8 @@ void DesktopWindowTreeHostPlatform::OnWidgetInitDone() {
       GetWindowMaskForClipping().isEmpty());
 }
 
-void DesktopWindowTreeHostPlatform::OnWidgetThemeChanged(
-    ui::ColorProviderKey::ColorMode color_mode,
-    std::optional<SkColor> background_color) {}
+void DesktopWindowTreeHostPlatform::SetBackgroundColor(
+    SkColor background_color) {}
 
 void DesktopWindowTreeHostPlatform::OnActiveWindowChanged(bool active) {
 #if BUILDFLAG(IS_OZONE)
@@ -1049,7 +1048,7 @@ SkPath DesktopWindowTreeHostPlatform::GetWindowMaskForWindowShapeInPixels() {
   SkPath window_mask = GetWindowMask(GetWidget());
   // Convert SkPath in DIPs to pixels.
   if (!window_mask.isEmpty()) {
-    window_mask.transform(
+    window_mask = window_mask.makeTransform(
         gfx::TransformToFlattenedSkMatrix(GetRootTransform()));
   }
   return window_mask;

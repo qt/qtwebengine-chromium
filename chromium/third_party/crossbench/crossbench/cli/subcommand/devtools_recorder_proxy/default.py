@@ -29,7 +29,6 @@ if TYPE_CHECKING:
   from crossbench.plt.types import ListCmdArgs
   from crossbench.types import JsonDict
 
-
 CROSSBENCH_ROOT: pth.LocalPath = pth.LocalPath(__file__).parents[4]
 
 

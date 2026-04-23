@@ -118,7 +118,11 @@ bool DebugReport::LogMessage(VkFlags msg_flags, std::string_view vuid_text, cons
         // We want to print DebugPrintf message forever, otherwise user will mistake duplicate limit for things not printing
         (vuid_hash == 0x4fe1fef9) ||
         // GPU-AV gives lots of warnings on setup to inform user which settings we are adjusting under them
-        (vuid_hash == 0x24b5c69f);
+        (vuid_hash == 0x86fe6721);
+
+    // This lock needs to be here, duplicate_message_count_map is not safe to update on multiple threads
+    // see https://issues.angleproject.org/issues/450466850
+    std::unique_lock<std::mutex> lock(debug_output_mutex);
 
     // Count for this particular message is over the limit, ignore it
     bool at_message_limit = false;
@@ -138,8 +142,6 @@ bool DebugReport::LogMessage(VkFlags msg_flags, std::string_view vuid_text, cons
             }
         }
     }
-
-    std::unique_lock<std::mutex> lock(debug_output_mutex);
 
     std::vector<VkDebugUtilsLabelEXT> queue_labels;
     std::vector<VkDebugUtilsLabelEXT> cmd_buf_labels;
@@ -805,16 +807,14 @@ VKAPI_ATTR VkBool32 VKAPI_CALL MessengerLogCallback(VkDebugUtilsMessageSeverityF
     return false;
 }
 
+#ifdef VK_USE_PLATFORM_WIN32_KHR
 VKAPI_ATTR VkBool32 VKAPI_CALL MessengerWin32DebugOutputMsg(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                                                             VkDebugUtilsMessageTypeFlagsEXT message_type,
                                                             const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
                                                             [[maybe_unused]] void *user_data) {
     const std::string msg_buffer_str = CreateDefaultCallbackMessage(message_severity, message_type, *callback_data);
-    [[maybe_unused]] const char *cstr = msg_buffer_str.c_str();
-
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-    OutputDebugString(cstr);
-#endif
-
+    const char *cstr = msg_buffer_str.c_str();
+    OutputDebugStringA(cstr);
     return false;
 }
+#endif

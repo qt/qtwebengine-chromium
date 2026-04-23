@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("../../../../scripts/build/ninja/component_doc.gni")
 import("../../../../scripts/build/ninja/devtools_entrypoint.gni")
 import("../../../../scripts/build/ninja/devtools_module.gni")
 import("../../../../scripts/build/ninja/generate_css.gni")
@@ -12,11 +13,10 @@ generate_css("css_files") {
   sources = [ "tooltip.css" ]
 }
 
-devtools_module("tooltip") {
+devtools_ui_module("tooltip") {
   sources = [ "Tooltip.ts" ]
 
   deps = [
-    "../../../services/window_bounds:bundle",
     "../../../ui/legacy:bundle",
     "../../../ui/visual_logging:bundle",
     "../../lit:bundle",
@@ -34,7 +34,7 @@ devtools_entrypoint("bundle") {
   visibility = default_components_visibility
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [ "Tooltip.test.ts" ]
@@ -42,5 +42,13 @@ ts_library("unittests") {
   deps = [
     ":bundle",
     "../../../testing",
+  ]
+}
+
+component_doc("docs") {
+  sources = [ "Tooltip.docs.ts" ]
+  deps = [
+    ":bundle",
+    "../../lit:bundle",
   ]
 }

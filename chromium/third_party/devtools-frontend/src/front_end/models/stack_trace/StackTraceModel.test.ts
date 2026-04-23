@@ -10,7 +10,7 @@ import {protocolCallFrame, stringifyStackTrace} from '../../testing/StackTraceHe
 
 import * as StackTrace from './stack_trace.js';
 // TODO(crbug.com/444191656): Expose a `testing` bundle.
-// eslint-disable-next-line rulesdir/es-modules-import
+// eslint-disable-next-line @devtools/es-modules-import
 import * as StackTraceImpl from './stack_trace_impl.js';
 
 describeWithMockConnection('StackTraceModel', () => {
@@ -92,7 +92,8 @@ describeWithMockConnection('StackTraceModel', () => {
     it('correctly handles a async fragments from different targets', async () => {
       {
         let index = 0;
-        setMockConnectionResponseHandler('Debugger.enable', () => ({debuggerId: `target${index++}`}));
+        setMockConnectionResponseHandler(
+            'Debugger.enable', () => ({debuggerId: `target${index++}` as Protocol.Runtime.UniqueDebuggerId}));
         sinon.stub(SDK.DebuggerModel.DebuggerModel, 'resyncDebuggerIdForModels');
       }
       const {model} = setup();
@@ -137,6 +138,38 @@ describeWithMockConnection('StackTraceModel', () => {
         '--- setTimeout -------------------------',
         'at barFnX (bar.js:1:10)',
         'at barFnY (bar.js:2:20)',
+        '--- await ------------------------------',
+        'at bazFnY (baz.js:1:10)',
+        'at bazFnY (baz.js:2:20)',
+      ].join('\n'));
+    });
+
+    it('ignores empty async fragments', async () => {
+      const {model} = setup();
+
+      const stackTrace = await model.createFromProtocolRuntime(
+          {
+            callFrames: [
+              'foo.js:1:foo:1:10',
+              'foo.js:1:bar:2:20',
+            ].map(protocolCallFrame),
+            parent: {
+              description: 'setTimeout',
+              callFrames: [],
+              parent: {
+                description: 'await',
+                callFrames: [
+                  'baz.js:3:bazFnY:1:10',
+                  'baz.js:3:bazFnY:2:20',
+                ].map(protocolCallFrame),
+              }
+            }
+          },
+          identityTranslateFn);
+
+      assert.strictEqual(stringifyStackTrace(stackTrace), [
+        'at foo (foo.js:1:10)',
+        'at bar (foo.js:2:20)',
         '--- await ------------------------------',
         'at bazFnY (baz.js:1:10)',
         'at bazFnY (baz.js:2:20)',

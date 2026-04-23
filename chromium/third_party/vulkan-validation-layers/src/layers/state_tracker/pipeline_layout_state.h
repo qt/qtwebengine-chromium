@@ -22,6 +22,7 @@
 #include <vector>
 #include <memory>
 #include "state_tracker/state_object.h"
+#include "state_tracker/descriptor_set_layouts.h"
 #include "utils/hash_util.h"
 #include "utils/hash_vk_types.h"
 #include "containers/span.h"
@@ -32,9 +33,6 @@ class DeviceState;
 class DescriptorSetLayout;
 class DescriptorSetLayoutDef;
 }  // namespace vvl
-namespace spirv {
-struct ResourceInterfaceVariable;
-}  // namespace spirv
 
 // Canonical dictionary for the pipeline layout's layout of descriptorsetlayouts
 using DescriptorSetLayoutDef = vvl::DescriptorSetLayoutDef;
@@ -77,8 +75,7 @@ namespace vvl {
 // Store layouts and pushconstants for PipelineLayout
 class PipelineLayout : public StateObject {
   public:
-    using SetLayoutVector = std::vector<std::shared_ptr<vvl::DescriptorSetLayout const>>;
-    const SetLayoutVector set_layouts;
+    const DescriptorSetLayoutList set_layouts;
     // canonical form IDs for the "compatible for set" contents
     const PushConstantRangesId push_constant_ranges_layout;
     VkPipelineLayoutCreateFlags create_flags;
@@ -97,12 +94,10 @@ class PipelineLayout : public StateObject {
 
     VkPipelineLayoutCreateFlags CreateFlags() const { return create_flags; }
     bool IsIndependentSets() const { return (create_flags & VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT) != 0; }
-
-    const VkDescriptorSetLayoutBinding *FindBinding(const spirv::ResourceInterfaceVariable &variable) const;
 };
 
 }  // namespace vvl
 
-std::vector<PipelineLayoutCompatId> GetCompatForSet(const std::vector<std::shared_ptr<vvl::DescriptorSetLayout const>> &set_layouts,
+std::vector<PipelineLayoutCompatId> GetCompatForSet(const vvl::DescriptorSetLayoutList &set_layouts,
                                                     const PushConstantRangesId &push_constant_ranges,
                                                     VkPipelineLayoutCreateFlags pipeline_layout_create_flags);

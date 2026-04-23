@@ -15,7 +15,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("coverage") {
+devtools_ui_module("coverage") {
   sources = [
     "CoverageDecorationManager.ts",
     "CoverageListView.ts",
@@ -33,8 +33,10 @@ devtools_module("coverage") {
     "../../models/formatter:bundle",
     "../../models/text_utils:bundle",
     "../../models/workspace:bundle",
+    "../../ui/components/highlighting:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/data_grid:bundle",
+    "../../ui/legacy/components/settings_ui:bundle",
   ]
 }
 
@@ -68,7 +70,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

@@ -8,7 +8,6 @@
 #include "base/byte_count.h"
 #include "base/functional/callback_forward.h"
 #include "base/memory/memory_pressure_listener.h"
-#include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -26,8 +25,6 @@ namespace memory_pressure::win {
 class SystemMemoryPressureEvaluator
     : public memory_pressure::SystemMemoryPressureEvaluator {
  public:
-  using MemoryPressureLevel = base::MemoryPressureListener::MemoryPressureLevel;
-
   // The memory sampling period, currently 5s.
   static constexpr base::TimeDelta kDefaultPeriod = base::Seconds(5);
 
@@ -96,12 +93,12 @@ class SystemMemoryPressureEvaluator
   // Calculates the current instantaneous memory pressure level. This does not
   // use any hysteresis and simply returns the result at the current moment. Can
   // be called on any thread.
-  MemoryPressureLevel CalculateCurrentPressureLevel();
+  base::MemoryPressureLevel CalculateCurrentPressureLevel();
 
   // Gets system memory status. This is virtual as a unittesting hook. Returns
   // true if the system call succeeds, false otherwise. Can be called on any
   // thread.
-  virtual bool GetSystemMemoryStatus(MEMORYSTATUSEX* mem_status);
+  virtual bool GetSystemMemoryStatus(MEMORYSTATUSEX& mem_status);
 
   // Records histograms about committed memory based on `mem_status`.
   static void RecordCommitHistograms(const MEMORYSTATUSEX& mem_status);
@@ -123,10 +120,6 @@ class SystemMemoryPressureEvaluator
 
   // Ensures that this object is used from a single sequence.
   SEQUENCE_CHECKER(sequence_checker_);
-
-  // Weak pointer factory to ourself used for scheduling calls to
-  // CheckMemoryPressure/CheckMemoryPressureAndRecordStatistics via |timer_|.
-  base::WeakPtrFactory<SystemMemoryPressureEvaluator> weak_ptr_factory_{this};
 };
 
 }  // namespace memory_pressure::win

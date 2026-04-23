@@ -4,7 +4,7 @@
 
 // To propose any changes (additions, updates, or removals),
 // please file a bug with the details of your request under
-// https://issues.chromium.org/issues?q=componentid:1710335
+// https://crbug.com/new?component=1710335&template=2222632
 //
 // Chrome engineers will review, verify, and apply the proposed changes
 // to ensure obligations and compliance with regulatory requirements.
@@ -28,7 +28,7 @@
     // existing data should get a new version. Otherwise, existing data may
     // continue to be used and updates made here will not always appear.
     // Also then run tools/search_engine_choice/generate_search_engine_icons.py.
-    "kCurrentDataVersion": 191
+    "kCurrentDataVersion": 192
   },
 
   // The following engines are included in country lists and are added to the
@@ -122,7 +122,7 @@
       "keyword": "duckduckgo.com",
       "favicon_url": "https://duckduckgo.com/favicon.ico",
       "base_builtin_resource_id": "SEARCH_ENGINE_DUCKDUCKGO",
-      "logo_url": "https://staticcdn.duckduckgo.com/serp-fe/www/logos/dynamic/DuckDuckGoLogo.png",
+      "logo_url": "https://staticcdn.duckduckgo.com/android/DuckDuckGoLogo.png",
       "search_url": "https://duckduckgo.com/?q={searchTerms}",
       "suggest_url": "https://duckduckgo.com/ac/?q={searchTerms}&type=list",
       "new_tab_url": "https://duckduckgo.com/chrome_newtab",

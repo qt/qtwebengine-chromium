@@ -11,26 +11,18 @@
 #include "base/uuid.h"
 #include "components/autofill/core/browser/data_manager/autofill_ai/entity_instance_cleaner.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+#include "components/autofill/core/browser/integrators/autofill_ai/metrics/autofill_ai_metrics.h"
 #include "components/autofill/core/browser/permissions/autofill_ai/autofill_ai_permission_utils.h"
 #include "components/autofill/core/browser/strike_databases/autofill_ai/autofill_ai_save_strike_database_by_host.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "components/autofill/core/common/autofill_prefs.h"
+#include "components/prefs/pref_service.h"
 #include "components/sync/base/data_type.h"
 #include "components/sync/base/features.h"
 #include "components/sync/service/sync_service.h"
 #include "components/webdata/common/web_data_results.h"
 
 namespace autofill {
-
-namespace {
-
-// Returns true if any of the features that use wallet public passes are
-// enabled.
-bool WalletPublicPassesEnabled() {
-  return base::FeatureList::IsEnabled(syncer::kSyncWalletFlightReservations) ||
-         base::FeatureList::IsEnabled(syncer::kSyncWalletVehicleRegistrations);
-}
-
-}  // namespace
 
 EntityDataManager::EntityDataManager(
     PrefService* pref_service,
@@ -42,9 +34,7 @@ EntityDataManager::EntityDataManager(
     : webdata_service_(std::move(webdata_service)),
       entity_instance_cleaner_(this, sync_service, pref_service) {
   CHECK(webdata_service_);
-  if (WalletPublicPassesEnabled()) {
-    webdata_service_observation_.Observe(webdata_service_.get());
-  }
+  webdata_service_observation_.Observe(webdata_service_.get());
   LoadEntities();
   if (history_service) {
     history_service_observation_.Observe(history_service);
@@ -52,6 +42,41 @@ EntityDataManager::EntityDataManager(
   if (strike_database) {
     save_strike_db_by_host_ =
         std::make_unique<AutofillAiSaveStrikeDatabaseByHost>(strike_database);
+  }
+
+  // Initial Autofill AI users have their opt-in pref stored keyed by their
+  // gaia-id and not syncable. On the other hand, the new Autofill AI opt-in
+  // pref (`prefs::kAutofillAiSyncedOptInStatus`) is a regular syncable pref.
+  // The following code block migrates users who opted-in to the old pref to the
+  // new syncable pref. For the time being, it does not remove the old pref to
+  // allow rollbacks.
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillAiSetSyncablePrefFromAccountPref)) {
+    const PrefService::Preference* synced_pref =
+        pref_service->FindPreference(prefs::kAutofillAiSyncedOptInStatus);
+    CHECK(synced_pref);
+    if (HasSetLocalAutofillAiOptInStatus(pref_service, identity_manager)) {
+      if (!synced_pref->HasUserSetting()) {
+        const bool pref_migration_value =
+            GetAutofillAiOptInStatusFromNonSyncingPref(pref_service,
+                                                       identity_manager);
+        pref_service->SetBoolean(prefs::kAutofillAiSyncedOptInStatus,
+                                 pref_migration_value);
+        base::UmaHistogramEnumeration(
+            "Autofill.Ai.OptIn.PrefMigration",
+            pref_migration_value
+                ? AutofillAiPrefMigrationStatus::kPrefMigratedEnabled
+                : AutofillAiPrefMigrationStatus::kPrefMigratedDisabled);
+      } else {
+        base::UmaHistogramEnumeration(
+            "Autofill.Ai.OptIn.PrefMigration",
+            AutofillAiPrefMigrationStatus::kPrefNotMigratedAlreadySet);
+      }
+    } else {
+      base::UmaHistogramEnumeration(
+          "Autofill.Ai.OptIn.PrefMigration",
+          AutofillAiPrefMigrationStatus::kPrefNotMigratedAccountPrefNeverSet);
+    }
   }
 
   // This assumes that `EntityDataManager` is created once on profile creation.
@@ -85,6 +110,10 @@ void EntityDataManager::LoadEntities() {
           self->entities_ =
               base::flat_set<EntityInstance, EntityInstance::CompareByGuid>(
                   std::move(result).GetValue());
+          if (!self->entity_data_loaded_) {
+            self->entity_data_loaded_ = true;
+            LogStoredEntitiesCount(self->entities_);
+          }
           self->NotifyEntityInstancesChanged();
         }
       },
@@ -99,10 +128,11 @@ void EntityDataManager::AddOrUpdateEntityInstance(EntityInstance entity) {
             if (!self) {
               return;
             }
-            CHECK_EQ(eic.type(), EntityInstanceChange::UPDATE);
-            auto [it, inserted] = self->entities_.insert(*eic.data_model());
+            CHECK(eic.type() == EntityInstanceChange::ADD ||
+                  eic.type() == EntityInstanceChange::UPDATE);
+            auto [it, inserted] = self->entities_.insert(eic.data_model());
             if (!inserted) {
-              *it = *eic.data_model();
+              *it = eic.data_model();
             }
             self->NotifyEntityInstancesChanged();
           },
@@ -110,8 +140,13 @@ void EntityDataManager::AddOrUpdateEntityInstance(EntityInstance entity) {
 }
 
 void EntityDataManager::RemoveEntityInstance(EntityInstance::EntityId guid) {
+  base::optional_ref<const EntityInstance> entity_instance =
+      GetEntityInstance(guid);
+  if (!entity_instance) {
+    return;
+  }
   webdata_service_->RemoveEntityInstance(
-      std::move(guid),
+      *entity_instance,
       base::BindOnce(
           [](base::WeakPtr<EntityDataManager> self, EntityInstanceChange eic) {
             if (!self) {
@@ -151,8 +186,13 @@ base::optional_ref<EntityInstance> EntityDataManager::GetMutableEntityInstance(
   return *it;
 }
 
+bool EntityDataManager::HasPendingQueries() const {
+  return pending_query_ != 0;
+}
+
 void EntityDataManager::OnAutofillChangedBySync(syncer::DataType data_type) {
-  if (data_type == syncer::AUTOFILL_VALUABLE && WalletPublicPassesEnabled()) {
+  if (data_type == syncer::AUTOFILL_VALUABLE ||
+      data_type == syncer::AUTOFILL_VALUABLE_METADATA) {
     LoadEntities();
   }
 }
@@ -172,7 +212,7 @@ void EntityDataManager::RecordEntityUsed(const EntityInstance::EntityId& guid,
     return;
   }
   entity->RecordEntityUsed(use_date);
-  AddOrUpdateEntityInstance(*entity);
+  webdata_service_->UpdateEntityMetadata(*entity);
 }
 
 void EntityDataManager::NotifyEntityInstancesChanged() {

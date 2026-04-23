@@ -12,27 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {stringifyJsonWithBigints} from '../../../base/json_utils';
 import {SqlValue} from '../../../trace_processor/query_result';
 import {
   DataGridDataSource,
   DataSourceResult,
-  FilterDefinition,
   RowDef,
   Sorting,
   SortByColumn,
   DataGridModel,
   AggregateSpec,
   areAggregateArraysEqual,
+  DataGridFilter,
 } from './common';
 
 export class InMemoryDataSource implements DataGridDataSource {
   private data: ReadonlyArray<RowDef> = [];
   private filteredSortedData: ReadonlyArray<RowDef> = [];
   private aggregateResults: RowDef = {};
+  private distinctValuesCache = new Map<string, ReadonlyArray<SqlValue>>();
 
   // Cached state for diffing
   private oldSorting: Sorting = {direction: 'UNSORTED'};
-  private oldFilters: ReadonlyArray<FilterDefinition> = [];
+  private oldFilters: ReadonlyArray<DataGridFilter> = [];
   private aggregates?: ReadonlyArray<AggregateSpec>;
 
   constructor(data: ReadonlyArray<RowDef>) {
@@ -46,6 +48,7 @@ export class InMemoryDataSource implements DataGridDataSource {
       rows: this.filteredSortedData,
       totalRows: this.filteredSortedData.length,
       aggregates: this.aggregateResults,
+      distinctValues: this.distinctValuesCache,
     };
   }
 
@@ -53,6 +56,7 @@ export class InMemoryDataSource implements DataGridDataSource {
     sorting = {direction: 'UNSORTED'},
     filters = [],
     aggregates,
+    distinctValuesColumns,
   }: DataGridModel): void {
     if (
       !this.isSortByEqual(sorting, this.oldSorting) ||
@@ -76,6 +80,51 @@ export class InMemoryDataSource implements DataGridDataSource {
         this.aggregateResults = this.calcAggregates(result, aggregates);
       }
     }
+
+    // Handle distinct values requests
+    if (distinctValuesColumns) {
+      for (const column of distinctValuesColumns) {
+        if (!this.distinctValuesCache.has(column)) {
+          // Compute distinct values from base data (not filtered)
+          const uniqueValues = new Set<SqlValue>();
+          for (const row of this.data) {
+            uniqueValues.add(row[column]);
+          }
+
+          // Sort with null-aware comparison
+          const sorted = Array.from(uniqueValues).sort((a, b) => {
+            // Nulls come first
+            if (a === null && b === null) return 0;
+            if (a === null) return -1;
+            if (b === null) return 1;
+
+            // Type-specific sorting
+            if (typeof a === 'number' && typeof b === 'number') {
+              return a - b;
+            }
+            if (typeof a === 'bigint' && typeof b === 'bigint') {
+              return Number(a - b);
+            }
+            if (typeof a === 'string' && typeof b === 'string') {
+              return a.localeCompare(b);
+            }
+
+            // Default: convert to string and compare
+            return String(a).localeCompare(String(b));
+          });
+
+          this.distinctValuesCache.set(column, sorted);
+        }
+      }
+    }
+  }
+
+  /**
+   * Export all data with current filters/sorting applied.
+   */
+  async exportData(): Promise<readonly RowDef[]> {
+    // Return all the filtered and sorted data
+    return this.filteredSortedData;
   }
 
   private calcAggregates(
@@ -132,8 +181,6 @@ export class InMemoryDataSource implements DataGridDataSource {
   }
 
   private isSortByEqual(a: Sorting, b: Sorting): boolean {
-    if (a === b) return true;
-
     if (a.direction === 'UNSORTED' && b.direction === 'UNSORTED') {
       return true;
     }
@@ -152,39 +199,23 @@ export class InMemoryDataSource implements DataGridDataSource {
 
   // Helper function to compare arrays of filter definitions for equality.
   private areFiltersEqual(
-    filtersA: ReadonlyArray<FilterDefinition>,
-    filtersB: ReadonlyArray<FilterDefinition>,
+    filtersA: ReadonlyArray<DataGridFilter>,
+    filtersB: ReadonlyArray<DataGridFilter>,
   ): boolean {
-    if (filtersA === filtersB) return true;
     if (filtersA.length !== filtersB.length) return false;
 
     // Compare each filter
     return filtersA.every((filterA, index) => {
       const filterB = filtersB[index];
       return (
-        filterA.column === filterB.column &&
-        filterA.op === filterB.op &&
-        (!('value' in filterA) ||
-          !('value' in filterB) ||
-          this.isValueEqual(filterA.value, filterB.value))
+        stringifyJsonWithBigints(filterA) === stringifyJsonWithBigints(filterB)
       );
     });
   }
 
-  private isValueEqual(valueA: SqlValue, valueB: SqlValue): boolean {
-    if (valueA === valueB) return true;
-
-    if (valueA instanceof Uint8Array && valueB instanceof Uint8Array) {
-      if (valueA.length !== valueB.length) return false;
-      return valueA.every((byte, i) => byte === valueB[i]);
-    }
-
-    return false;
-  }
-
   private applyFilters(
     data: ReadonlyArray<RowDef>,
-    filters: ReadonlyArray<FilterDefinition>,
+    filters: ReadonlyArray<DataGridFilter>,
   ): ReadonlyArray<RowDef> {
     if (filters.length === 0) {
       return data;
@@ -223,6 +254,10 @@ export class InMemoryDataSource implements DataGridDataSource {
               return regex.test(value);
             }
             return false;
+          case 'in':
+            return filter.value.findIndex((v) => valuesEqual(v, value)) !== -1;
+          case 'not in':
+            return filter.value.findIndex((v) => valuesEqual(v, value)) === -1;
           default:
             return false;
         }

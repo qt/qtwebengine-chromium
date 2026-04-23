@@ -1,19 +1,17 @@
 // Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as SDK from '../../core/sdk/sdk.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
-import * as LegacyWrapper from '../../ui/components/legacy_wrapper/legacy_wrapper.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
-import * as NetworkComponents from './components/components.js';
 import {RequestHTMLView} from './RequestHTMLView.js';
 import {SignedExchangeInfoView} from './SignedExchangeInfoView.js';
 
@@ -55,6 +53,7 @@ export class RequestPreviewView extends UI.Widget.VBox {
   }
 
   override wasShown(): void {
+    super.wasShown();
     void this.doShowPreview();
   }
 
@@ -88,11 +87,6 @@ export class RequestPreviewView extends UI.Widget.VBox {
   async createPreview(): Promise<UI.Widget.Widget> {
     if (this.request.signedExchangeInfo()) {
       return new SignedExchangeInfoView(this.request);
-    }
-
-    if (this.request.webBundleInfo()) {
-      return LegacyWrapper.LegacyWrapper.legacyWrapper(
-          UI.Widget.VBox, new NetworkComponents.WebBundleInfoView.WebBundleInfoView(this.request));
     }
 
     const htmlErrorPreview = await this.htmlPreview();

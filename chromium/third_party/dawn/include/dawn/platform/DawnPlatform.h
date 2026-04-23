@@ -99,9 +99,9 @@ class DAWN_PLATFORM_EXPORT WorkerTaskPool {
 // in `namespace features`.
 enum class Features {
     kWebGPUUseDXC,
-    kWebGPUUseVulkanMemoryModel,
     kWebGPUEnableRangeAnalysisForRobustness,
     kWebGPUUseSpirv14,
+    kWebGPUDecomposeUniformBuffers,
 };
 
 class DAWN_PLATFORM_EXPORT Platform {

@@ -21,6 +21,10 @@ ci.defaults.set(
     builder_group = "chromium.chromiumos",
     builder_config_settings = builder_config.ci_settings(
         retry_failed_shards = True,
+        # TODO(crbug.com/451296512): VM has become unstable after kernel update,
+        # leading to frequent invalid shards. Retry them while the VM image is
+        # improved.
+        retry_invalid_shards = True,
     ),
     pool = ci_constants.DEFAULT_POOL,
     cores = 8,
@@ -29,6 +33,9 @@ ci.defaults.set(
     tree_closing = True,
     tree_closing_notifiers = ci_constants.DEFAULT_TREE_CLOSING_NOTIFIERS,
     execution_timeout = ci_constants.DEFAULT_EXECUTION_TIMEOUT,
+    experiments = {
+        "chromium_tests.resultdb_module": 100,
+    },
     health_spec = health_spec.modified_default({
         "Unhealthy": struct(
             build_time = struct(
@@ -303,6 +310,7 @@ ci.thin_tester(
         ],
         mixins = [
             "chromeos-generic-vm",
+            "retry_only_failed_tests",
         ],
     ),
     targets_settings = targets.settings(
@@ -821,6 +829,7 @@ ci.builder(
             "x86-64",
             "isolate_profile_data",
             "linux-jammy",
+            "retry_only_failed_tests",
         ],
         per_test_modifications = {
             "angle_unittests": targets.mixin(

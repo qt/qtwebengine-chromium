@@ -97,6 +97,7 @@ Register LiftoffAssembler::LoadOldFramePointer() {
     return fp;
   }
   LiftoffRegister old_fp = GetUnusedRegister(RegClass::kGpReg, {});
+  FreezeCacheState frozen(*this);
   Label done, call_runtime;
   LoadWord(old_fp.gp(), MemOperand(fp, TypedFrameConstants::kFrameTypeOffset));
   BranchShort(
@@ -242,7 +243,7 @@ void LiftoffAssembler::LoadSpillAddress(Register dst, int offset,
   SubWord(dst, fp, offset);
 }
 
-void LiftoffAssembler::FinishCode() { ForceConstantPoolEmissionWithoutJump(); }
+void LiftoffAssembler::FinishCode() { Assembler::FinishCode(); }
 
 void LiftoffAssembler::AbortCompilation() { AbortedCodeGeneration(); }
 
@@ -983,6 +984,7 @@ void LiftoffAssembler::emit_i32x4_trunc_sat_f64x2_s_zero(LiftoffRegister dst,
   VU.SetSimd128Half(E32, tu);
   VU.set(FPURoundingMode::RTZ);
   vfncvt_x_f_w(dst.fp().toV(), kSimd128ScratchReg, MaskType::Mask);
+  VU.set(FPURoundingMode::RNE);
 }
 
 void LiftoffAssembler::emit_i32x4_trunc_sat_f64x2_u_zero(LiftoffRegister dst,
@@ -994,6 +996,7 @@ void LiftoffAssembler::emit_i32x4_trunc_sat_f64x2_u_zero(LiftoffRegister dst,
   VU.SetSimd128Half(E32, tu);
   VU.set(FPURoundingMode::RTZ);
   vfncvt_xu_f_w(dst.fp().toV(), kSimd128ScratchReg, MaskType::Mask);
+  VU.set(FPURoundingMode::RNE);
 }
 
 void LiftoffAssembler::emit_i32x4_relaxed_trunc_f32x4_s(LiftoffRegister dst,
@@ -1004,6 +1007,7 @@ void LiftoffAssembler::emit_i32x4_relaxed_trunc_f32x4_s(LiftoffRegister dst,
   vmv_vv(kSimd128ScratchReg, src.fp().toV());
   vmv_vx(dst.fp().toV(), zero_reg);
   vfcvt_x_f_v(dst.fp().toV(), kSimd128ScratchReg, MaskType::Mask);
+  VU.set(FPURoundingMode::RNE);
 }
 void LiftoffAssembler::emit_i32x4_relaxed_trunc_f32x4_u(LiftoffRegister dst,
                                                         LiftoffRegister src) {
@@ -1014,6 +1018,7 @@ void LiftoffAssembler::emit_i32x4_relaxed_trunc_f32x4_u(LiftoffRegister dst,
   vmv_vv(kSimd128ScratchReg, src.fp().toV());
   vmv_vx(dst.fp().toV(), kScratchReg);
   vfcvt_xu_f_v(dst.fp().toV(), kSimd128ScratchReg, MaskType::Mask);
+  VU.set(FPURoundingMode::RNE);
 }
 
 void LiftoffAssembler::emit_i32x4_relaxed_trunc_f64x2_s_zero(
@@ -1528,37 +1533,55 @@ void LiftoffAssembler::emit_i32x4_dot_i16x8_s(LiftoffRegister dst,
                                               LiftoffRegister lhs,
                                               LiftoffRegister rhs) {
   VU.SetSimd128(E16);
-  vwmul_vv(kSimd128ScratchReg3, lhs.fp().toV(), rhs.fp().toV());
-  VU.SetSimd128x2(E32);
+  // kSimd128ScratchReg is used as a register group together with
+  // kSimd128ScratchReg2.
+  // kSimd128ScratchReg3 and kSimd128ScratchReg4 are used as a register
+  // group (independently), but neither will write in the second register
+  // of the group.
+  vwmul_vv(kSimd128ScratchReg, lhs.fp().toV(), rhs.fp().toV());
+  VU.SetSimd128x2(E32, CpuFeatures::vlen() == 128 ? tu : ta);
   li(kScratchReg, 0b01010101);
   vmv_sx(v0, kScratchReg);
-  vcompress_vv(kSimd128ScratchReg, kSimd128ScratchReg3, v0);
+  // The vcompress_vv instructions here and below will not overwrite any
+  // bits in the register that follow the destination register, as we
+  // have only 4 1-bits in the index constants and the tail is set to
+  // undisturbed (tu).
+  vcompress_vv(kSimd128ScratchReg3, kSimd128ScratchReg, v0);
 
   li(kScratchReg, 0b10101010);
   vmv_sx(kSimd128ScratchReg2, kScratchReg);
-  vcompress_vv(v0, kSimd128ScratchReg3, kSimd128ScratchReg2);
+  vcompress_vv(kSimd128ScratchReg4, kSimd128ScratchReg, kSimd128ScratchReg2);
   VU.SetSimd128(E32);
-  vadd_vv(dst.fp().toV(), kSimd128ScratchReg, v0);
+  vadd_vv(dst.fp().toV(), kSimd128ScratchReg3, kSimd128ScratchReg4);
 }
 
 void LiftoffAssembler::emit_i16x8_dot_i8x16_i7x16_s(LiftoffRegister dst,
                                                     LiftoffRegister lhs,
                                                     LiftoffRegister rhs) {
   VU.SetSimd128(E8);
-  vwmul_vv(kSimd128ScratchReg3, lhs.fp().toV(), rhs.fp().toV());
-  VU.SetSimd128x2(E16);
+  // kSimd128ScratchReg is used as a register group together with
+  // kSimd128ScratchReg2.
+  // kSimd128ScratchReg3 and kSimd128ScratchReg4 are used as a register
+  // group (independently), but neither will write in the second register
+  // of the group.
+  vwmul_vv(kSimd128ScratchReg, lhs.fp().toV(), rhs.fp().toV());
+  VU.SetSimd128x2(E16, CpuFeatures::vlen() == 128 ? tu : ta);
 
   constexpr int32_t FIRST_INDEX = 0b0101010101010101;
   constexpr int32_t SECOND_INDEX = 0b1010101010101010;
   li(kScratchReg, FIRST_INDEX);
   vmv_sx(v0, kScratchReg);
-  vcompress_vv(kSimd128ScratchReg, kSimd128ScratchReg3, v0);
+  // The vcompress_vv instructions here and below will not overwrite any
+  // bits in the register that follow the destination register, as we
+  // have only 8 1-bits in the index constants and the tail is set to
+  // undisturbed (tu).
+  vcompress_vv(kSimd128ScratchReg3, kSimd128ScratchReg, v0);
 
   li(kScratchReg, SECOND_INDEX);
   vmv_sx(kSimd128ScratchReg2, kScratchReg);
-  vcompress_vv(v0, kSimd128ScratchReg3, kSimd128ScratchReg2);
+  vcompress_vv(kSimd128ScratchReg4, kSimd128ScratchReg, kSimd128ScratchReg2);
   VU.SetSimd128(E16);
-  vadd_vv(dst.fp().toV(), kSimd128ScratchReg, v0);
+  vadd_vv(dst.fp().toV(), kSimd128ScratchReg3, kSimd128ScratchReg4);
 }
 
 void LiftoffAssembler::emit_i32x4_dot_i8x16_i7x16_add_s(LiftoffRegister dst,
@@ -1577,13 +1600,29 @@ void LiftoffAssembler::emit_i32x4_dot_i8x16_i7x16_add_s(LiftoffRegister dst,
   constexpr int32_t THIRD_INDEX = 0b0100010001000100;
   constexpr int32_t FOURTH_INDEX = 0b1000100010001000;
 
-  LiftoffRegister temp = GetUnusedRegister(
-      kFpCacheRegList.GetAdjacentFpRegsSet().MaskOut(LiftoffRegList{acc}));
-  VRegister temp1 =
-      GetUnusedRegister(kFpCacheRegList.GetAdjacentFpRegsSet().MaskOut(
-                            LiftoffRegList{temp, acc})).fp().toV();
+  VRegister temp0 = v0;
+  VRegister temp1 = v0;
+  if (CpuFeatures::vlen() == 128) {
+    LiftoffRegister temp = GetUnusedRegister(
+        kFpCacheRegList.GetAdjacentFpRegsSet().MaskOut(LiftoffRegList{acc}));
+    temp0 = temp.fp().toV();
+    temp = GetUnusedRegister(kFpCacheRegList.GetAdjacentFpRegsSet().MaskOut(
+        LiftoffRegList{temp, acc}));
+    temp1 = temp.fp().toV();
+  } else {
+    LiftoffRegister temp =
+        GetUnusedRegister(kFpCacheRegList.MaskOut(LiftoffRegList{acc}));
+    temp0 = temp.fp().toV();
+    temp =
+        GetUnusedRegister(kFpCacheRegList.MaskOut(LiftoffRegList{temp, acc}));
+    temp1 = temp.fp().toV();
+  }
 
-  VU.SetSimd128x2(E16);
+  // The vcompress_vv instructions below will not overwrite any
+  // bits in the register that follows compressed_part{1|2|3|4}, as we have
+  // only 8 1-bits in the index constants and the tail is set to undisturbed
+  // (tu).
+  VU.SetSimd128x2(E16, CpuFeatures::vlen() == 128 ? tu : ta);
   li(kScratchReg, FIRST_INDEX);
   vmv_sx(v0, kScratchReg);
   Simd128Register compressed_part1 = kSimd128ScratchReg3;
@@ -1596,7 +1635,7 @@ void LiftoffAssembler::emit_i32x4_dot_i8x16_i7x16_add_s(LiftoffRegister dst,
 
   li(kScratchReg, THIRD_INDEX);
   vmv_sx(v0, kScratchReg);
-  Simd128Register compressed_part3 = temp.fp().toV();
+  Simd128Register compressed_part3 = temp0;
   vcompress_vv(compressed_part3, intermediate, v0);  // i16*4 a
 
   li(kScratchReg, FOURTH_INDEX);
@@ -1939,6 +1978,7 @@ void LiftoffAssembler::emit_i32x4_sconvert_f32x4(LiftoffRegister dst,
   vmv_vv(kSimd128ScratchReg, src.fp().toV());
   vmv_vx(dst.fp().toV(), zero_reg);
   vfcvt_x_f_v(dst.fp().toV(), kSimd128ScratchReg, Mask);
+  VU.set(FPURoundingMode::RNE);
 }
 
 void LiftoffAssembler::emit_i32x4_uconvert_f32x4(LiftoffRegister dst,
@@ -1949,6 +1989,7 @@ void LiftoffAssembler::emit_i32x4_uconvert_f32x4(LiftoffRegister dst,
   vmv_vv(kSimd128ScratchReg, src.fp().toV());
   vmv_vx(dst.fp().toV(), zero_reg);
   vfcvt_xu_f_v(dst.fp().toV(), kSimd128ScratchReg, Mask);
+  VU.set(FPURoundingMode::RNE);
 }
 
 void LiftoffAssembler::emit_f32x4_sconvert_i32x4(LiftoffRegister dst,
@@ -1979,7 +2020,6 @@ void LiftoffAssembler::emit_i8x16_sconvert_i16x8(LiftoffRegister dst,
     // the 128-bit range.
     vslideup_vi(lhs_v, rhs_v, 8);
     VU.SetSimd128(E8);
-    VU.set(FPURoundingMode::RNE);
     vnclip_vi(dst_v, lhs_v, 0);
   } else {
     VU.SetSimd128(E16);
@@ -1987,7 +2027,6 @@ void LiftoffAssembler::emit_i8x16_sconvert_i16x8(LiftoffRegister dst,
     vmv_vv(kSimd128ScratchReg, lhs_v);
     vmv_vv(kSimd128ScratchReg2, rhs_v);
     VU.SetSimd128(E8);
-    VU.set(FPURoundingMode::RNE);
     vnclip_vi(dst_v, kSimd128ScratchReg, 0);
   }
 }
@@ -2009,7 +2048,6 @@ void LiftoffAssembler::emit_i8x16_uconvert_i16x8(LiftoffRegister dst,
     vslideup_vi(lhs_v, rhs_v, 8);
     vmax_vx(kSimd128ScratchReg, lhs_v, zero_reg);
     VU.SetSimd128(E8);
-    VU.set(FPURoundingMode::RNE);
     vnclipu_vi(dst_v, kSimd128ScratchReg, 0);
   } else {
     VU.SetSimd128(E16);
@@ -2019,7 +2057,6 @@ void LiftoffAssembler::emit_i8x16_uconvert_i16x8(LiftoffRegister dst,
     VU.SetSimd128x2(E16);
     vmax_vx(kSimd128ScratchReg, kSimd128ScratchReg, zero_reg);
     VU.SetSimd128(E8);
-    VU.set(FPURoundingMode::RNE);
     vnclipu_vi(dst_v, kSimd128ScratchReg, 0);
   }
 }
@@ -2040,7 +2077,6 @@ void LiftoffAssembler::emit_i16x8_sconvert_i32x4(LiftoffRegister dst,
     // the 128-bit range.
     vslideup_vi(lhs_v, rhs_v, 4);
     VU.SetSimd128(E16);
-    VU.set(FPURoundingMode::RNE);
     vnclip_vi(dst_v, lhs_v, 0);
   } else {
     VU.SetSimd128(E32);
@@ -2048,7 +2084,6 @@ void LiftoffAssembler::emit_i16x8_sconvert_i32x4(LiftoffRegister dst,
     vmv_vv(kSimd128ScratchReg, lhs_v);
     vmv_vv(kSimd128ScratchReg2, rhs_v);
     VU.SetSimd128(E16);
-    VU.set(FPURoundingMode::RNE);
     vnclip_vi(dst_v, kSimd128ScratchReg, 0);
   }
 }
@@ -2070,7 +2105,6 @@ void LiftoffAssembler::emit_i16x8_uconvert_i32x4(LiftoffRegister dst,
     vslideup_vi(lhs_v, rhs_v, 4);
     vmax_vx(kSimd128ScratchReg, lhs_v, zero_reg);
     VU.SetSimd128(E16);
-    VU.set(FPURoundingMode::RNE);
     vnclipu_vi(dst_v, kSimd128ScratchReg, 0);
   } else {
     VU.SetSimd128(E32);
@@ -2080,7 +2114,6 @@ void LiftoffAssembler::emit_i16x8_uconvert_i32x4(LiftoffRegister dst,
     VU.SetSimd128x2(E32);
     vmax_vx(kSimd128ScratchReg, kSimd128ScratchReg, zero_reg);
     VU.SetSimd128(E16);
-    VU.set(FPURoundingMode::RNE);
     vnclipu_vi(dst_v, kSimd128ScratchReg, 0);
   }
 }
@@ -2324,28 +2357,6 @@ void LiftoffAssembler::emit_f64x2_replace_lane(LiftoffRegister dst,
   vfmerge_vf(dst.fp().toV(), src2.fp(), src1.fp().toV());
 }
 
-void LiftoffAssembler::emit_s128_store_nonzero_if_nan(Register dst,
-                                                      LiftoffRegister src,
-                                                      Register tmp_gp,
-                                                      LiftoffRegister tmp_s128,
-                                                      ValueKind lane_kind) {
-  ASM_CODE_COMMENT(this);
-  if (lane_kind == kF32) {
-    VU.SetSimd128(E32);
-    vmfeq_vv(kSimd128ScratchReg, src.fp().toV(),
-             src.fp().toV());  // scratch <- !IsNan(tmp_fp)
-  } else {
-    VU.SetSimd128(E64);
-    DCHECK_EQ(lane_kind, kF64);
-    vmfeq_vv(kSimd128ScratchReg, src.fp().toV(),
-             src.fp().toV());  // scratch <- !IsNan(tmp_fp)
-  }
-  vmv_xs(kScratchReg, kSimd128ScratchReg);
-  not_(kScratchReg, kScratchReg);
-  andi(kScratchReg, kScratchReg, int32_t(lane_kind == kF32 ? 0xF : 0x3));
-  Sw(kScratchReg, MemOperand(dst));
-}
-
 void LiftoffAssembler::emit_f32x4_qfma(LiftoffRegister dst,
                                        LiftoffRegister src1,
                                        LiftoffRegister src2,
@@ -2508,25 +2519,6 @@ void LiftoffAssembler::DeallocateStackSlot(uint32_t size) {
 }
 
 void LiftoffAssembler::MaybeOSR() {}
-
-void LiftoffAssembler::emit_store_nonzero(Register dst) {
-  Sw(dst, MemOperand(dst));
-}
-
-void LiftoffAssembler::emit_store_nonzero_if_nan(Register dst, FPURegister src,
-                                                 ValueKind kind) {
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  li(scratch, 1);
-  if (kind == kF32) {
-    feq_s(scratch, src, src);  // rd <- !isNan(src)
-  } else {
-    DCHECK_EQ(kind, kF64);
-    feq_d(scratch, src, src);  // rd <- !isNan(src)
-  }
-  seqz(scratch, scratch);
-  Sw(scratch, MemOperand(dst));
-}
 
 void LiftoffAssembler::CallFrameSetupStub(int declared_function_index) {
 // The standard library used by gcc tryjobs does not consider `std::find` to be

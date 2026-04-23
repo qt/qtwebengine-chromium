@@ -10,12 +10,26 @@ source_set("model") {
   public_deps =
       [ "//components/user_data_importer/utility:safari_data_importer" ]
   deps = [
-    "//base",
     "//components/password_manager/core/browser/import:importer",
-    "//components/url_formatter",
+    "//ios/chrome/browser/data_import/public",
     "//ios/chrome/browser/safari_data_import/public",
-    "//ios/chrome/browser/shared/ui/util:url_with_title",
-    "//url",
+  ]
+}
+
+source_set("features") {
+  sources = [
+    "features.h",
+    "features.mm",
+  ]
+  deps = [
+    "//base",
+    "//components/autofill/core/common",
+    "//components/bookmarks/common",
+    "//components/history/core/common",
+    "//components/password_manager/core/common",
+    "//components/prefs",
+    "//ios/chrome/browser/shared/model/profile",
+    "//ios/chrome/browser/shared/public/features",
   ]
 }
 
@@ -25,6 +39,7 @@ source_set("unit_tests") {
   deps = [
     ":model",
     "//components/password_manager/core/browser/import:importer",
+    "//ios/chrome/browser/data_import/public",
     "//ios/chrome/browser/safari_data_import/public",
     "//ios/chrome/browser/shared/ui/util:url_with_title",
     "//testing/gtest",

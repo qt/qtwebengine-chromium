@@ -14,15 +14,18 @@ copy_to_gen("performance") {
     "frame-metrics/index.html",
     "interaction-tester.html",
     "lcp.png",
+    "minified-work.js",
     "selectorStats/css-style-invalidation.html",
     "selectorStats/page-with-style-perf-test.html",
     "selectorStats/page-with-style.css",
     "selectorStats/page-with-style.html",
     "selectorStats/slow-path-non-match.html",
+    "timeline/enhanced-trace.json.gz",
     "timeline/treeView-test-trace.json",
     "timeline/web.dev-trace.json.gz",
     "wasm/mainWasm_profile.json",
     "wasm/profiling.html",
     "wasm/profiling.wasm",
+    "work.js",
   ]
 }

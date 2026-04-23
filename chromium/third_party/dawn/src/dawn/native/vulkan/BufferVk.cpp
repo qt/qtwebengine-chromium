@@ -251,6 +251,12 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
     }
     mAllocatedSize = Align(size, kAlignment);
 
+    // Round uniform buffer sizes up to a multiple of 16 bytes since Tint will polyfill them as
+    // array<vec4u, ...>.
+    if (GetUsage() & wgpu::BufferUsage::Uniform) {
+        mAllocatedSize = Align(size, 16u);
+    }
+
     // Avoid passing ludicrously large sizes to drivers because it causes issues: drivers add
     // some constants to the size passed and align it, but for values close to the maximum
     // VkDeviceSize this can cause overflows and makes drivers crash or return bad sizes in the
@@ -293,26 +299,6 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
                                     mMemoryAllocation.GetOffset()),
         "vkBindBufferMemory"));
 
-    // The buffers with mappedAtCreation == true will be initialized in
-    // BufferBase::MapAtCreation().
-    if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting) &&
-        !mappedAtCreation) {
-        ClearBuffer(ToBackend(device->GetQueue())->GetPendingRecordingContext(), 0x01010101);
-    }
-
-    // Initialize the padding bytes to zero.
-    if (device->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse) && !mappedAtCreation) {
-        uint32_t paddingBytes = GetAllocatedSize() - GetSize();
-        if (paddingBytes > 0) {
-            uint32_t clearSize = Align(paddingBytes, 4);
-            uint64_t clearOffset = GetAllocatedSize() - clearSize;
-
-            CommandRecordingContext* recordingContext =
-                ToBackend(device->GetQueue())->GetPendingRecordingContext();
-            ClearBuffer(recordingContext, 0, clearOffset, clearSize);
-        }
-    }
-
     // Get if buffer is host visible and coherent. This can be the case even if the buffer was not
     // created with map usages, as on integrated GPUs all memory will typically be host visible.
     const size_t memoryType = ToBackend(mMemoryAllocation.GetResourceHeap())->GetMemoryType();
@@ -320,7 +306,42 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
         device->GetDeviceInfo().memoryTypes[memoryType].propertyFlags;
     mHostVisible = IsSubset(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, memoryPropertyFlags);
     mHostCoherent = IsSubset(VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memoryPropertyFlags);
-    mHasWriteTransitioned = false;
+
+    // The buffers with mappedAtCreation == true will be initialized in BufferBase::MapAtCreation().
+    if (!mappedAtCreation) {
+        uint32_t paddingClearSize = Align(GetAllocatedSize() - GetSize(), 4);
+        uint64_t paddingClearOffset = GetAllocatedSize() - paddingClearSize;
+
+        if (mHostVisible && GetSize() > 0) {
+            // For host visible buffers do initialization on CPU to avoid a GPU write that
+            // interferes with using the UploadData() fast path.
+            if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
+                DAWN_TRY(MapMemoryAndPerformOperation(
+                    0, mAllocatedSize,
+                    [](std::span<uint8_t> mapped) { std::ranges::fill(mapped, 0x01); }));
+            }
+            if (device->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse) &&
+                paddingClearSize > 0) {
+                DAWN_TRY(
+                    MapMemoryAndPerformOperation(paddingClearOffset, paddingClearSize,
+                                                 [&paddingClearSize](std::span<uint8_t> mapped) {
+                                                     DAWN_ASSERT(mapped.size() == paddingClearSize);
+                                                     std::ranges::fill(mapped, 0x0);
+                                                 }));
+            }
+        } else {
+            if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
+                ClearBuffer(ToBackend(device->GetQueue())->GetPendingRecordingContext(),
+                            0x01010101);
+            }
+            if (device->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse) &&
+                paddingClearSize > 0) {
+                CommandRecordingContext* recordingContext =
+                    ToBackend(device->GetQueue())->GetPendingRecordingContext();
+                ClearBuffer(recordingContext, 0, paddingClearOffset, paddingClearSize);
+            }
+        }
+    }
 
     SetLabelImpl();
 
@@ -409,10 +430,6 @@ MaybeError Buffer::InitializeHostMapped(const BufferHostMappedPointer* hostMappe
     mHostMappedDisposeCallback = hostMappedDesc->disposeCallback;
     mHostMappedDisposeUserdata = hostMappedDesc->userdata;
 
-    mHostVisible = false;
-    mHostCoherent = false;
-    mHasWriteTransitioned = false;
-
     SetLabelImpl();
 
     // Assume the data is initialized since an external pointer was provided.
@@ -429,13 +446,13 @@ VkBuffer Buffer::GetHandle() const {
 void Buffer::TransitionUsageNow(CommandRecordingContext* recordingContext,
                                 wgpu::BufferUsage usage,
                                 wgpu::ShaderStage shaderStage) {
-    TrackUsageAndGetResourceBarrier(recordingContext, usage, shaderStage);
-    recordingContext->EmitBufferBarriers(ToBackend(GetDevice()));
+    recordingContext->CheckBufferNeedsEagerTransition(this, usage);
+    BufferBarrier barrier = TrackUsageAndGetResourceBarrier(usage, shaderStage);
+    recordingContext->EmitBufferBarrierIfNecessary(ToBackend(GetDevice()), barrier);
 }
 
-void Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* recordingContext,
-                                             wgpu::BufferUsage usage,
-                                             wgpu::ShaderStage shaderStage) {
+BufferBarrier Buffer::TrackUsageAndGetResourceBarrier(wgpu::BufferUsage usage,
+                                                      wgpu::ShaderStage shaderStage) {
     if (shaderStage == wgpu::ShaderStage::None) {
         // If the buffer isn't used in any shader stages, ignore shader usages. Eg. ignore a uniform
         // buffer that isn't actually read in any shader.
@@ -443,16 +460,16 @@ void Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* recordingC
     }
 
     const bool isMapUsage = usage & kMappableBufferUsages;
-    if (!isMapUsage) {
+    if (isMapUsage) {
+        DAWN_ASSERT(shaderStage == wgpu::ShaderStage::None);
+        DAWN_ASSERT(IsSubset(usage, kMappableBufferUsages));
+        // HOST->GPU barriers aren't required. For MapRead, vkQueueSubmit() happens-after all CPU
+        // reads are complete. For MapWrite, the writes are made available to the "Host domain" with
+        // vkFlushMappedMemory() (or buffers are coherent) and there is an implicit "Host domain" ->
+        // "Device domain" barrier in vkQueueSubmit().
+    } else {
         // Request non CPU usage, so assume the buffer will be used in pending commands.
         MarkUsedInPendingCommands();
-    }
-
-    if (!isMapUsage && (GetInternalUsage() & kMappableBufferUsages)) {
-        // The buffer is mappable and the requested usage is not map usage, we need to add it
-        // into mappableBuffersForEagerTransition, so the buffer can be transitioned back to map
-        // usages at end of the submit.
-        recordingContext->mappableBuffersForEagerTransition.insert(this);
     }
 
     const bool readOnly = IsSubset(usage, kReadOnlyBufferUsages);
@@ -471,7 +488,7 @@ void Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* recordingC
         if (IsSubset(usage, mReadUsage) && IsSubset(shaderStage, mReadShaderStages)) {
             // This usage and shader stage has already waited for the last write.
             // No need for another barrier.
-            return;
+            return {};
         }
 
         if (usage & kReadOnlyShaderBufferUsages) {
@@ -480,12 +497,14 @@ void Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* recordingC
             usage |= GetInternalUsage() & kReadOnlyShaderBufferUsages;
         }
 
-        mReadUsage |= usage;
-        mReadShaderStages |= shaderStage;
+        if (!isMapUsage) {
+            mReadUsage |= usage;
+            mReadShaderStages |= shaderStage;
+        }
 
         if (mLastWriteUsage == wgpu::BufferUsage::None) {
             // Read dependency with no prior writes. No barrier needed.
-            return;
+            return {};
         }
 
         // Write -> read barrier.
@@ -494,16 +513,8 @@ void Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* recordingC
     } else {
         bool skipBarrier = false;
 
-        // vkQueueSubmit does an implicit domain and visibility operation. For HOST_COHERENT
-        // memory, we can ignore read (host)->write barriers. However, we can't necessarily
-        // skip the barrier if mReadUsage == MapRead, as we could still need a barrier for
-        // the last write. Instead, pretend the last host read didn't happen.
-        mReadUsage &= ~wgpu::BufferUsage::MapRead;
-
-        if ((mLastWriteUsage == wgpu::BufferUsage::None && mReadUsage == wgpu::BufferUsage::None) ||
-            IsSubset(usage | mLastWriteUsage | mReadUsage, kMappableBufferUsages)) {
-            // The buffer has never been used before, or the dependency is map->map. We don't need a
-            // barrier.
+        if (mLastWriteUsage == wgpu::BufferUsage::None && mReadUsage == wgpu::BufferUsage::None) {
+            // The buffer has never been used so we don't need a barrier.
             skipBarrier = true;
         } else if (mReadUsage == wgpu::BufferUsage::None) {
             // No reads since the last write.
@@ -516,26 +527,23 @@ void Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* recordingC
             srcStage = VulkanPipelineStage(mReadUsage, mReadShaderStages);
         }
 
-        mLastWriteUsage = usage;
-        mLastWriteShaderStage = shaderStage;
+        if (!isMapUsage) {
+            mLastWriteUsage = usage;
+            mLastWriteShaderStage = shaderStage;
 
-        mReadUsage = wgpu::BufferUsage::None;
-        mReadShaderStages = wgpu::ShaderStage::None;
+            mReadUsage = wgpu::BufferUsage::None;
+            mReadShaderStages = wgpu::ShaderStage::None;
+        }
 
         if (skipBarrier) {
-            return;
+            return {};
         }
     }
 
-    if (isMapUsage) {
-        // CPU usage, but a pipeline barrier is needed, so mark the buffer as used within the
-        // pending commands.
-        MarkUsedInPendingCommands();
-    }
-
-    recordingContext->AddBufferBarrier(srcAccess, /* dstAccess */ VulkanAccessFlags(usage),
-                                       srcStage,
-                                       /* dstStage */ VulkanPipelineStage(usage, shaderStage));
+    return BufferBarrier{.srcAccessMask = srcAccess,
+                         .dstAccessMask = VulkanAccessFlags(usage),
+                         .srcStages = srcStage,
+                         .dstStages = VulkanPipelineStage(usage, shaderStage)};
 }
 
 bool Buffer::IsCPUWritableAtCreation() const {
@@ -548,31 +556,40 @@ MaybeError Buffer::MapAtCreationImpl() {
 }
 
 MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
-    CommandRecordingContext* recordingContext =
-        ToBackend(GetDevice()->GetQueue())->GetPendingRecordingContext();
-
-    // TODO(crbug.com/dawn/852): initialize mapped buffer in CPU side.
-    EnsureDataInitialized(recordingContext);
-
-    if (mode & wgpu::MapMode::Read) {
-        TransitionUsageNow(recordingContext, wgpu::BufferUsage::MapRead);
-    } else {
-        DAWN_ASSERT(mode & wgpu::MapMode::Write);
-        TransitionUsageNow(recordingContext, wgpu::BufferUsage::MapWrite);
-    }
-
     return {};
 }
 
-void Buffer::FinalizeMapImpl() {
+MaybeError Buffer::FinalizeMapImpl(BufferState newState) {
+    Device* device = ToBackend(GetDevice());
+
+    if (NeedsInitialization() && GetSize() > 0 && newState == BufferState::Mapped) {
+        // Clear full allocated size, including padding bytes, except for zero sized buffers. For
+        // zero sized buffers GetMappedPointerImpl() points to const data which we can't clear.
+        std::memset(GetMappedPointerImpl(), 0, GetAllocatedSize());
+        GetDevice()->IncrementLazyClearCountForTesting();
+        SetInitialized(true);
+
+        // If the buffer is non-coherent then make sure either the whole buffer will be flushed
+        // later or flush it now.
+        if (!mHostCoherent &&
+            (MapMode() == wgpu::MapMode::Read || MapOffset() != 0 || MapSize() != GetSize())) {
+            VkDeviceSize nonCoherentAtomSize =
+                device->GetDeviceInfo().properties.limits.nonCoherentAtomSize;
+
+            VkMappedMemoryRange range =
+                GetMappedMemoryRange(mMemoryAllocation, 0, GetAllocatedSize(), nonCoherentAtomSize);
+
+            device->fn.FlushMappedMemoryRanges(device->GetVkDevice(), 1, &range);
+        }
+    }
+
     if (!mHostCoherent) {
         // Map reads always require invalidation. Map writes only require invalidation if the buffer
         // contents could have been modified by the GPU previously, eg. it's not being mapped on
         // creation and the buffer is GPU writable.
         if (MapMode() == wgpu::MapMode::Read ||
-            (GetState() != BufferState::MappedAtCreation &&
+            (newState != BufferState::MappedAtCreation &&
              !IsSubset(GetInternalUsage(), kReadOnlyBufferUsages | wgpu::BufferUsage::MapWrite))) {
-            Device* device = ToBackend(GetDevice());
             VkDeviceSize nonCoherentAtomSize =
                 device->GetDeviceInfo().properties.limits.nonCoherentAtomSize;
 
@@ -582,11 +599,12 @@ void Buffer::FinalizeMapImpl() {
             device->fn.InvalidateMappedMemoryRanges(device->GetVkDevice(), 1, &range);
         }
     }
+    return {};
 }
 
-void Buffer::UnmapImpl() {
+void Buffer::UnmapImpl(BufferState oldState) {
     // We keep CPU-visible memory mapped at all times but need to flush writes to GPU memory here.
-    if (!mHostCoherent && IsMappedState(GetState()) && MapMode() == wgpu::MapMode::Write) {
+    if (!mHostCoherent && IsMappedState(oldState) && MapMode() == wgpu::MapMode::Write) {
         Device* device = ToBackend(GetDevice());
         VkDeviceSize nonCoherentAtomSize =
             device->GetDeviceInfo().properties.limits.nonCoherentAtomSize;
@@ -612,91 +630,107 @@ MaybeError Buffer::UploadData(uint64_t bufferOffset, const void* data, size_t si
     Device* device = ToBackend(GetDevice());
 
     const bool isInUse = GetLastUsageSerial() > device->GetQueue()->GetCompletedCommandSerial();
+
+    // Check if the buffer might have pending writes on the GPU. Even if the write workload has
+    // finished, the write may still need a barrier to make the write available. For MapWrite
+    // buffers we know the GPU->HOST barrier was eagerly inserted. For other buffers we don't know
+    // if the right barrier was inserted and assume it wasn't.
+    const bool hasPendingWrites = !(GetInternalUsage() & wgpu::BufferUsage::MapWrite ||
+                                    mLastWriteUsage == wgpu::BufferUsage::None);
+
+    if (isInUse || hasPendingWrites || !mHostVisible) {
+        // Write to scratch buffer and copy into final destination buffer.
+        return BufferBase::UploadData(bufferOffset, data, size);
+    }
+
+    // Buffer does not have any pending uses and is CPU writable. We can map the buffer directly
+    // and write the contents, skipping the scratch buffer.
+
+    // If the buffer needs initialization request the full buffer is mapped.
+    bool needsZeroInitialization = NeedsInitialization() && size < GetSize();
+    uint64_t mapSize = needsZeroInitialization ? mAllocatedSize : size;
+    uint64_t mapOffset = needsZeroInitialization ? 0 : bufferOffset;
+
+    return MapMemoryAndPerformOperation(mapOffset, mapSize, [&](std::span<uint8_t> mapped) {
+        uint64_t dstOffset = 0;
+        if (needsZeroInitialization) {
+            DAWN_ASSERT(mapped.size() == mAllocatedSize);
+            std::ranges::fill(mapped, 0x0);
+            GetDevice()->IncrementLazyClearCountForTesting();
+            dstOffset = bufferOffset;
+        }
+        // The buffer is always initialized here, either by explicit zero initialization
+        // above or memcpy below.
+        SetInitialized(true);
+
+        DAWN_ASSERT(mapped.size() >= dstOffset + size);
+        memcpy(mapped.data() + dstOffset, data, size);
+    });
+}
+
+template <typename F>
+MaybeError Buffer::MapMemoryAndPerformOperation(uint64_t requestedOffset,
+                                                size_t requestedSize,
+                                                F&& op) {
+    Device* device = ToBackend(GetDevice());
     const bool isMappable = GetInternalUsage() & kMappableBufferUsages;
-    // Get if buffer has pending writes on the GPU. Even if the write workload has finished, the
-    // write may still need a barrier to make the write available.
-    const bool hasPendingWrites = !IsSubset(mLastWriteUsage, wgpu::BufferUsage::MapWrite);
 
-    if (!isInUse && !hasPendingWrites && mHostVisible) {
-        // Buffer does not have any pending uses and is CPU writable. We can map the buffer directly
-        // and write the contents, skipping the scratch buffer.
-        VkDeviceMemory deviceMemory = ToBackend(mMemoryAllocation.GetResourceHeap())->GetMemory();
-        uint8_t* memory;
-        uint64_t realOffset = bufferOffset;
-        if (!isMappable) {
-            // TODO(crbug.com/dawn/774): Persistently map frequently updated buffers instead of
-            // mapping/unmapping each time.
+    DAWN_ASSERT(mHostVisible);
+    DAWN_ASSERT(GetLastUsageSerial() <= device->GetQueue()->GetCompletedCommandSerial());
 
-            VkDeviceSize offset = mMemoryAllocation.GetOffset();
-            VkDeviceSize mapSize = mAllocatedSize;
-            if (!NeedsInitialization() && mHostCoherent) {
-                // We can map only the part of the buffer we need to upload the data.
-                // We avoid this for non-coherent memory as the mapping needs to be aligned to
-                // nonCoherentAtomSize.
-                offset += bufferOffset;
-                mapSize = size;
-                realOffset = 0;
-            }
+    VkDeviceMemory deviceMemory = ToBackend(mMemoryAllocation.GetResourceHeap())->GetMemory();
+    uint8_t* memory = nullptr;
+    uint64_t realOffset = requestedOffset;
 
-            void* mappedPointer;
-            DAWN_TRY(CheckVkSuccess(device->fn.MapMemory(device->GetVkDevice(), deviceMemory,
-                                                         offset, mapSize, 0, &mappedPointer),
-                                    "vkMapMemory"));
-            memory = static_cast<uint8_t*>(mappedPointer);
-        } else {
-            // Mappable buffers are already persistently mapped.
-            memory = mMemoryAllocation.GetMappedPointer();
+    if (isMappable) {
+        // Mappable buffers are already persistently mapped.
+        memory = mMemoryAllocation.GetMappedPointer();
+    } else {
+        // TODO(crbug.com/dawn/774): Persistently map frequently updated buffers instead of
+        // mapping/unmapping each time.
+        VkDeviceSize offset = mMemoryAllocation.GetOffset();
+        VkDeviceSize mapSize = mAllocatedSize;
+        if (mHostCoherent) {
+            // We can map only the part of the buffer we need to upload the data.
+            // We avoid this for non-coherent memory as the mapping needs to be aligned to
+            // nonCoherentAtomSize.
+            offset += requestedOffset;
+            mapSize = requestedSize;
+            realOffset = 0;
         }
 
-        VkMappedMemoryRange mappedMemoryRange = {};
-        mappedMemoryRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-        mappedMemoryRange.memory = deviceMemory;
-        mappedMemoryRange.offset = mMemoryAllocation.GetOffset();
-        mappedMemoryRange.size = mAllocatedSize;
-        if (!mHostCoherent) {
-            // For non-coherent memory we need to explicitly invalidate the memory range to make
-            // available GPU writes visible.
-            device->fn.InvalidateMappedMemoryRanges(device->GetVkDevice(), 1, &mappedMemoryRange);
-        }
-
-        if (NeedsInitialization()) {
-            memset(memory, 0, mAllocatedSize);
-            device->IncrementLazyClearCountForTesting();
-            SetInitialized(true);
-        }
-
-        // Copy data.
-        memcpy(memory + realOffset, data, size);
-
-        if (!mHostCoherent) {
-            // For non-coherent memory we need to explicitly flush the memory range to make the host
-            // write visible.
-            // TODO(crbug.com/dawn/774): Batch the flush calls instead of doing one per writeBuffer.
-            device->fn.FlushMappedMemoryRanges(device->GetVkDevice(), 1, &mappedMemoryRange);
-        }
-
-        if (!isMappable) {
-            device->fn.UnmapMemory(device->GetVkDevice(), deviceMemory);
-        }
-        return {};
+        void* mappedPointer;
+        DAWN_TRY(CheckVkSuccess(device->fn.MapMemory(device->GetVkDevice(), deviceMemory, offset,
+                                                     mapSize, 0, &mappedPointer),
+                                "vkMapMemory"));
+        memory = static_cast<uint8_t*>(mappedPointer);
     }
 
-    // Write to scratch buffer and copy into final destination buffer.
-    MaybeError error = BufferBase::UploadData(bufferOffset, data, size);
-
-    if (mHostVisible && !mHasWriteTransitioned) {
-        // Transition to MapWrite so the next time we try to upload data to this buffer, we can take
-        // the fast path. This avoids the issue where the first write will take the slow path due to
-        // zero initialization. Only attempt this once to avoid transitioning a buffer many times
-        // despite never getting the fast path.
-        CommandRecordingContext* recordingContext =
-            ToBackend(device->GetQueue())->GetPendingRecordingContext();
-        TransitionUsageNow(recordingContext, wgpu::BufferUsage::MapWrite);
-        device->GetQueue()->ForceEventualFlushOfCommands();
-        mHasWriteTransitioned = true;
+    VkMappedMemoryRange mappedMemoryRange = {};
+    mappedMemoryRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    mappedMemoryRange.memory = deviceMemory;
+    mappedMemoryRange.offset = mMemoryAllocation.GetOffset();
+    mappedMemoryRange.size = mAllocatedSize;
+    if (!mHostCoherent) {
+        // For non-coherent memory we need to explicitly invalidate the memory range to make
+        // available GPU writes visible.
+        device->fn.InvalidateMappedMemoryRanges(device->GetVkDevice(), 1, &mappedMemoryRange);
     }
 
-    return error;
+    // Pass a span that is exactly the offset/size requested even if a larger range was mapped.
+    op(std::span(memory + realOffset, requestedSize));
+
+    if (!mHostCoherent) {
+        // For non-coherent memory we need to explicitly flush the memory range to make the host
+        // write visible.
+        // TODO(crbug.com/dawn/774): Batch the flush calls instead of doing one per writeBuffer.
+        device->fn.FlushMappedMemoryRanges(device->GetVkDevice(), 1, &mappedMemoryRange);
+    }
+
+    if (!isMappable) {
+        device->fn.UnmapMemory(device->GetVkDevice(), deviceMemory);
+    }
+    return {};
 }
 
 void Buffer::DestroyImpl() {
@@ -789,15 +823,16 @@ void Buffer::TransitionMappableBuffersEagerly(Device* device,
     DAWN_ASSERT(!buffers.empty());
 
     size_t originalBufferCount = buffers.size();
+
+    BufferBarrier barrier;
     for (const Ref<Buffer>& buffer : buffers) {
         wgpu::BufferUsage mapUsage = buffer->GetInternalUsage() & kMappableBufferUsages;
-        buffer->TrackUsageAndGetResourceBarrier(recordingContext, mapUsage,
-                                                wgpu::ShaderStage::None);
+        barrier.Merge(buffer->TrackUsageAndGetResourceBarrier(mapUsage, wgpu::ShaderStage::None));
     }
     // TrackUsageAndGetResourceBarrier() should not modify recordingContext for map usages.
     DAWN_ASSERT(buffers.size() == originalBufferCount);
 
-    recordingContext->EmitBufferBarriers(device);
+    recordingContext->EmitBufferBarrierIfNecessary(device, barrier);
 }
 
 void Buffer::SetLabelImpl() {
@@ -828,4 +863,16 @@ void Buffer::ClearBuffer(CommandRecordingContext* recordingContext,
     DAWN_ASSERT(size % 4 == 0);
     device->fn.CmdFillBuffer(recordingContext->commandBuffer, mHandle, offset, size, clearValue);
 }
+
+bool BufferBarrier::IsEmpty() const {
+    return srcStages == 0 || dstStages == 0;
+}
+
+void BufferBarrier::Merge(const BufferBarrier& other) {
+    srcAccessMask |= other.srcAccessMask;
+    dstAccessMask |= other.dstAccessMask;
+    srcStages |= other.srcStages;
+    dstStages |= other.dstStages;
+}
+
 }  // namespace dawn::native::vulkan

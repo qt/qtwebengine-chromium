@@ -27,11 +27,7 @@ namespace actor {
 
 class PaintStabilityMonitorTest : public ChromeRenderViewTest {
  public:
-  PaintStabilityMonitorTest()
-      : journal_entry_(journal_.CreatePendingAsyncEntry(
-            /*task_id=*/TaskId(100),
-            "PaintStabilityMonitorTest",
-            {})) {
+  PaintStabilityMonitorTest() : task_id_(100) {
     feature_list_.InitAndEnableFeatureWithParameters(
         ::features::kGlicActor,
         {{::features::kActorPaintStabilityMode.name, "enabled"},
@@ -55,7 +51,7 @@ class PaintStabilityMonitorTest : public ChromeRenderViewTest {
   }
 
   Journal journal_;
-  std::unique_ptr<Journal::PendingAsyncEntry> journal_entry_;
+  TaskId task_id_;
 
  private:
   base::test::ScopedFeatureList feature_list_;
@@ -76,7 +72,8 @@ TEST_F(PaintStabilityMonitorTest, NoContentfulPaint) {
   bool did_reach_paint_stability = false;
   {
     std::unique_ptr<PaintStabilityMonitor> monitor =
-        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame());
+        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame(), task_id_,
+                                           journal_);
 
     bool result = SimulateElementClick("target");
     ASSERT_TRUE(result);
@@ -85,7 +82,7 @@ TEST_F(PaintStabilityMonitorTest, NoContentfulPaint) {
     EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(u"clickCount", &value));
     EXPECT_EQ(value, 1);
 
-    monitor->Start(journal_entry_.get());
+    monitor->Start();
     monitor->WaitForStable(base::BindLambdaForTesting(
         [&]() { did_reach_paint_stability = true; }));
     EXPECT_FALSE(did_reach_paint_stability);
@@ -119,7 +116,8 @@ TEST_F(PaintStabilityMonitorTest, SinglePaint) {
   bool did_reach_paint_stability = false;
   {
     std::unique_ptr<PaintStabilityMonitor> monitor =
-        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame());
+        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame(), task_id_,
+                                           journal_);
 
     bool result = SimulateElementClick("target");
     ASSERT_TRUE(result);
@@ -128,7 +126,7 @@ TEST_F(PaintStabilityMonitorTest, SinglePaint) {
     EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(u"clickCount", &value));
     EXPECT_EQ(value, 1);
 
-    monitor->Start(journal_entry_.get());
+    monitor->Start();
     monitor->WaitForStable(base::BindLambdaForTesting(
         [&]() { did_reach_paint_stability = true; }));
     EXPECT_FALSE(did_reach_paint_stability);
@@ -166,7 +164,8 @@ TEST_F(PaintStabilityMonitorTest, PaintStabilityReached_DelayedPaint) {
   bool did_reach_paint_stability = false;
   {
     std::unique_ptr<PaintStabilityMonitor> monitor =
-        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame());
+        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame(), task_id_,
+                                           journal_);
 
     bool result = SimulateElementClick("target");
     ASSERT_TRUE(result);
@@ -175,7 +174,7 @@ TEST_F(PaintStabilityMonitorTest, PaintStabilityReached_DelayedPaint) {
     EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(u"clickCount", &value));
     EXPECT_EQ(value, 1);
 
-    monitor->Start(journal_entry_.get());
+    monitor->Start();
     monitor->WaitForStable(base::BindLambdaForTesting(
         [&]() { did_reach_paint_stability = true; }));
     EXPECT_FALSE(did_reach_paint_stability);
@@ -235,7 +234,8 @@ TEST_F(PaintStabilityMonitorTest, PaintStabilityReached_MultiplePaints) {
   bool did_reach_paint_stability = false;
   {
     std::unique_ptr<PaintStabilityMonitor> monitor =
-        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame());
+        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame(), task_id_,
+                                           journal_);
 
     bool result = SimulateElementClick("target");
     ASSERT_TRUE(result);
@@ -244,7 +244,7 @@ TEST_F(PaintStabilityMonitorTest, PaintStabilityReached_MultiplePaints) {
     EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(u"clickCount", &value));
     EXPECT_EQ(value, 1);
 
-    monitor->Start(journal_entry_.get());
+    monitor->Start();
     monitor->WaitForStable(base::BindLambdaForTesting(
         [&]() { did_reach_paint_stability = true; }));
     EXPECT_FALSE(did_reach_paint_stability);
@@ -295,7 +295,8 @@ TEST_F(PaintStabilityMonitorTest, DelayedStabilityCallback) {
   bool did_reach_paint_stability = false;
   {
     std::unique_ptr<PaintStabilityMonitor> monitor =
-        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame());
+        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame(), task_id_,
+                                           journal_);
 
     bool result = SimulateElementClick("target");
     ASSERT_TRUE(result);
@@ -305,13 +306,17 @@ TEST_F(PaintStabilityMonitorTest, DelayedStabilityCallback) {
     EXPECT_EQ(value, 1);
 
     // Start the monitor, but don't WaitForStable yet.
-    monitor->Start(journal_entry_.get());
+    monitor->Start();
     Render();
 
     // This should be enough to trigger stability.
     task_environment_.FastForwardBy(GetSubsequentPaintTimeout());
     monitor->WaitForStable(base::BindLambdaForTesting(
         [&]() { did_reach_paint_stability = true; }));
+    // Fast-forwarding by a zero time delta runs any tasks that are ready to run
+    // at the current virtual time. In this case, it ensures that the callback
+    // passed to WaitForStable() is run if it was scheduled synchronously.
+    task_environment_.FastForwardBy(base::TimeDelta());
     EXPECT_TRUE(did_reach_paint_stability);
   }
 }
@@ -342,7 +347,8 @@ TEST_F(PaintStabilityMonitorTest, DelayedStabilityCallback_ResetTimer) {
   bool did_reach_paint_stability = false;
   {
     std::unique_ptr<PaintStabilityMonitor> monitor =
-        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame());
+        PaintStabilityMonitor::MaybeCreate(*GetMainRenderFrame(), task_id_,
+                                           journal_);
 
     bool result = SimulateElementClick("target");
     ASSERT_TRUE(result);
@@ -352,7 +358,7 @@ TEST_F(PaintStabilityMonitorTest, DelayedStabilityCallback_ResetTimer) {
     EXPECT_EQ(value, 1);
 
     // Start the monitor, but don't WaitForStable yet.
-    monitor->Start(journal_entry_.get());
+    monitor->Start();
     Render();
 
     // Even though stability was reached, this will reset the timer/stability

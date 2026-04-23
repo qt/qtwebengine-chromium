@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -24,6 +24,7 @@ import * as Tooltips from '../../ui/components/tooltips/tooltips.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import {AddDebugInfoURLDialog} from './AddSourceMapURLDialog.js';
@@ -449,6 +450,7 @@ export class DebuggerPlugin extends Plugin {
   }
 
   override willHide(): void {
+    super.willHide();
     this.popoverHelper?.hidePopover();
   }
 
@@ -1106,7 +1108,7 @@ export class DebuggerPlugin extends Plugin {
       }
       if (syntaxType === 'new') {
         const callee = syntaxNode.parent?.getChild('Expression');
-        if (callee && callee.name === 'VariableName' && state.sliceDoc(callee.from, callee.to) === 'Worker') {
+        if (callee?.name === 'VariableName' && state.sliceDoc(callee.from, callee.to) === 'Worker') {
           asyncCall = syntaxNode.parent;
         }
       }
@@ -1507,7 +1509,7 @@ export class DebuggerPlugin extends Plugin {
     }
 
     const resource = this.getSourceMapResource();
-    if (resource && resource.success === null) {
+    if (resource?.success === null) {
       // Don't create the infobar until we know whether loading succeeded or failed.
       return;
     }
@@ -1765,8 +1767,10 @@ export class BreakpointLocationRevealer implements
   }
 }
 
-// Enumerate non-breakable lines (lines without a known corresponding
-// position in the UISource).
+/**
+ * Enumerate non-breakable lines (lines without a known corresponding
+ * position in the UISource).
+ **/
 async function computeNonBreakableLines(
     state: CodeMirror.EditorState, transformer: SourceFrame.SourceFrame.Transformer,
     sourceCode: Workspace.UISourceCode.UISourceCode): Promise<readonly number[]> {
@@ -2001,11 +2005,12 @@ class ValueDecoration extends CodeMirror.WidgetType {
       const propertyCount = value.preview ? value.preview.properties.length : 0;
       const entryCount = value.preview?.entries ? value.preview.entries.length : 0;
       if (value.preview && propertyCount + entryCount < 10) {
-        formatter.appendObjectPreview(nameValuePair, value.preview, false /* isEntry */);
+        /* eslint-disable-next-line  @devtools/no-lit-render-outside-of-view */
+        render(formatter.renderObjectPreview(value.preview), nameValuePair.createChild('span'));
       } else {
         const propertyValue = ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.createPropertyValue(
             value, /* wasThrown */ false, /* showPreview */ false);
-        nameValuePair.appendChild(propertyValue.element);
+        nameValuePair.appendChild(propertyValue);
       }
     }
     return widget;
@@ -2043,8 +2048,10 @@ export function getVariableNamesByLine(
   toPos = editorState.doc.lineAt(toPos).from;
   const tree = CodeMirror.syntaxTree(editorState);
 
-  // Sibling scope is a scope that does not contain the current position.
-  // We will exclude variables that are defined (and used in those scopes (since we are currently outside of their lifetime).
+  /**
+   * Sibling scope is a scope that does not contain the current position.
+   * We will exclude variables that are defined (and used in those scopes (since we are currently outside of their lifetime).
+   **/
   function isSiblingScopeNode(node: {name: string, from: number, to: number}): boolean {
     return isScopeNode(node.name) && (node.to < currentPos || currentPos < node.from);
   }

@@ -65,60 +65,25 @@ impl dyn IO {
 pub type GenericIO = Box<dyn IO>;
 pub(crate) type Codec = Box<dyn crate::codecs::Decoder>;
 
-#[derive(Debug, Default, PartialEq)]
-pub enum CodecChoice {
-    #[default]
-    Auto,
-    Dav1d,
-    Libgav1,
-    MediaCodec,
-}
-
 impl CodecChoice {
-    fn get_codec(&self, is_avif: bool) -> Option<Codec> {
-        match self {
-            CodecChoice::Auto => {
-                // Preferred order of codecs in Auto mode: Android MediaCodec, Dav1d, Libgav1.
-                CodecChoice::MediaCodec
-                    .get_codec(is_avif)
-                    .or_else(|| CodecChoice::Dav1d.get_codec(is_avif))
-                    .or_else(|| CodecChoice::Libgav1.get_codec(is_avif))
-            }
-            CodecChoice::Dav1d => {
-                if !is_avif {
-                    return None;
-                }
-                #[cfg(feature = "dav1d")]
-                return Some(Box::<Dav1d>::default());
-                #[cfg(not(feature = "dav1d"))]
-                return None;
-            }
-            CodecChoice::Libgav1 => {
-                if !is_avif {
-                    return None;
-                }
-                #[cfg(feature = "libgav1")]
-                return Some(Box::<Libgav1>::default());
-                #[cfg(not(feature = "libgav1"))]
-                return None;
-            }
-            CodecChoice::MediaCodec => {
+    fn get_decoder_codec(&self, compression_format: CompressionFormat) -> Option<Codec> {
+        match compression_format {
+            CompressionFormat::Avif => match self {
+                CodecChoice::Aom => None, // Not used as a decoder.
                 #[cfg(feature = "android_mediacodec")]
-                return Some(Box::<MediaCodec>::default());
-                #[cfg(not(feature = "android_mediacodec"))]
-                return None;
-            }
+                CodecChoice::Auto | CodecChoice::MediaCodec => Some(Box::<MediaCodec>::default()),
+                #[cfg(feature = "dav1d")]
+                CodecChoice::Auto | CodecChoice::Dav1d => Some(Box::<Dav1d>::default()),
+                #[cfg(feature = "libgav1")]
+                CodecChoice::Auto | CodecChoice::Libgav1 => Some(Box::<Libgav1>::default()),
+                _ => None,
+            },
+            CompressionFormat::Heic => match self {
+                #[cfg(feature = "android_mediacodec")]
+                CodecChoice::Auto | CodecChoice::MediaCodec => Some(Box::<MediaCodec>::default()),
+                _ => None,
+            },
         }
-    }
-
-    #[allow(unused_mut)]
-    pub(crate) fn versions() -> String {
-        let mut versions: Vec<String> = vec![];
-        #[cfg(feature = "dav1d")]
-        {
-            versions.push(Dav1d::version());
-        }
-        versions.join(", ")
     }
 }
 
@@ -610,8 +575,8 @@ impl Decoder {
             self.gainmap.alt_clli = *clli;
         }
         if let Some(pixi) = tonemap_item.pixi() {
-            self.gainmap.alt_plane_count = pixi.plane_depths.len() as u8;
-            self.gainmap.alt_plane_depth = pixi.plane_depths[0];
+            self.gainmap.alt_plane_count = pixi.planes.len() as u8;
+            self.gainmap.alt_plane_depth = pixi.planes[0].depth;
         }
         // HEIC files created by Apple do not conform to these validation rules so skip them when
         // HEIC is enabled.
@@ -734,8 +699,7 @@ impl Decoder {
         if self.tiles[decoding_item.usize()].is_empty() {
             return Ok(());
         }
-        let mut search_size = 64;
-        while search_size < 4096 {
+        for search_size in (64..4096).step_by(64) {
             let tile_index = 0;
             self.prepare_sample(
                 /*image_index=*/ 0,
@@ -761,7 +725,6 @@ impl Decoder {
                 self.image.yuv_range = sequence_header.yuv_range;
                 break;
             }
-            search_size += 64;
         }
         Ok(())
     }
@@ -1087,6 +1050,19 @@ impl Decoder {
                     .input
                     .samples
                     .len() as u32;
+                // For image sequences, ensure that all the DecodingItems have the same number of
+                // samples. This check ensures that the image_count field set in the above line is
+                // correct.
+                if self.image.image_sequence_track_present
+                    && !self.tiles.iter().all(|tiles| {
+                        tiles.is_empty() || tiles[0].input.samples.len() as u32 == self.image_count
+                    })
+                {
+                    return AvifError::bmff_parse_failed(
+                        "not all items have the same number of samples",
+                    );
+                }
+
                 self.timescale = color_track.media_timescale as u64;
                 self.duration_in_timescales = color_track.media_duration;
                 if self.timescale != 0 {
@@ -1176,8 +1152,10 @@ impl Decoder {
                         let codec_config = item
                             .codec_config()
                             .ok_or(AvifError::BmffParseFailed("".into()))?;
-                        self.extra_inputs[idx].depth = codec_config.depth();
-                        self.extra_inputs[idx].yuv_format = codec_config.pixel_format();
+                        self.extra_inputs[idx].depth =
+                            depth_from_properties(&item.properties, "sato input")?;
+                        self.extra_inputs[idx].yuv_format =
+                            pixel_format_from_properties(&item.properties, "sato input")?;
                         self.extra_inputs[idx].chroma_sample_position =
                             codec_config.chroma_sample_position();
                     }
@@ -1287,8 +1265,10 @@ impl Decoder {
                     let codec_config = gainmap_item
                         .codec_config()
                         .ok_or(AvifError::BmffParseFailed("".into()))?;
-                    self.gainmap.image.depth = codec_config.depth();
-                    self.gainmap.image.yuv_format = codec_config.pixel_format();
+                    self.gainmap.image.depth =
+                        depth_from_properties(&gainmap_item.properties, "gain map")?;
+                    self.gainmap.image.yuv_format =
+                        pixel_format_from_properties(&gainmap_item.properties, "gain map")?;
                     self.gainmap.image.chroma_sample_position =
                         codec_config.chroma_sample_position();
                 }
@@ -1406,22 +1386,18 @@ impl Decoder {
 
             let codec_config = find_property!(color_properties, CodecConfiguration)
                 .ok_or(AvifError::BmffParseFailed("".into()))?;
-            self.image.depth = codec_config.depth();
+            self.image.depth = depth_from_properties(color_properties, "color")?;
             // A sample transform item can have a depth different from its input images (which is where
             // the codec config comes from). The depth from the pixi property should be used instead.
             if is_sample_transform {
                 if let Some(pixi) = find_property!(color_properties, PixelInformation) {
-                    self.image.depth = pixi.plane_depths[0];
+                    self.image.depth = pixi.planes[0].depth;
                 }
             }
 
-            self.image.yuv_format = codec_config.pixel_format();
+            self.image.yuv_format = pixel_format_from_properties(color_properties, "color")?;
             self.image.chroma_sample_position = codec_config.chroma_sample_position();
-            self.compression_format = if codec_config.is_avif() {
-                CompressionFormat::Avif
-            } else {
-                CompressionFormat::Heic
-            };
+            self.compression_format = codec_config.compression_format();
 
             if cicp_set {
                 self.parse_state = ParseState::Complete;
@@ -1493,7 +1469,7 @@ impl Decoder {
         let mut codec: Codec = match self
             .settings
             .codec_choice
-            .get_codec(tile.codec_config.is_avif())
+            .get_decoder_codec(tile.codec_config.compression_format())
         {
             None => return AvifError::no_codec_available(),
             Some(codec) => codec,
@@ -1645,6 +1621,15 @@ impl Decoder {
         decoding_item: DecodingItem,
         tile_index: usize,
     ) -> AvifResult<()> {
+        #[cfg(feature = "android_mediacodec")]
+        let signal_eos = if self.image.image_sequence_track_present {
+            // Never signal EOS for sequences as nth_image can be used to get any frame.
+            false
+        } else {
+            // For non sequence images, signal EOS only if this is the last tile in the
+            // category.
+            tile_index == self.tiles[decoding_item.usize()].len() - 1
+        };
         // Split the tiles array into two mutable arrays so that we can validate the
         // properties of tiles with index > 0 with that of the first tile.
         let (tiles_slice1, tiles_slice2) =
@@ -1670,12 +1655,18 @@ impl Decoder {
             }
             (_, Err(err)) => return Err(err),
         };
-        let next_image_result =
-            codec.get_next_image(data, sample.spatial_id, &mut tile.image, category);
+        let next_image_result = codec.get_next_image(
+            data,
+            sample.spatial_id,
+            &mut tile.image,
+            category,
+            #[cfg(feature = "android_mediacodec")]
+            signal_eos,
+        );
         if next_image_result.is_err() {
             if cfg!(feature = "android_mediacodec")
                 && cfg!(feature = "heic")
-                && tile.codec_config.is_heic()
+                && tile.codec_config.compression_format() == CompressionFormat::Heic
                 && category == Category::Alpha
             {
                 // When decoding HEIC on Android, if the alpha channel decoding fails, simply
@@ -1867,7 +1858,7 @@ impl Decoder {
         if next_image_result.is_err() {
             if cfg!(feature = "android_mediacodec")
                 && cfg!(feature = "heic")
-                && first_tile.codec_config.is_heic()
+                && first_tile.codec_config.compression_format() == CompressionFormat::Heic
                 && category == Category::Alpha
             {
                 // When decoding HEIC on Android, if the alpha channel decoding fails, simply
@@ -1875,8 +1866,7 @@ impl Decoder {
             } else {
                 return next_image_result;
             }
-        }
-        if !grid_image_helper.is_grid_complete()? {
+        } else if !grid_image_helper.is_grid_complete()? {
             return AvifError::unknown_error("codec did not decode all cells");
         }
         checked_incr!(
@@ -1939,6 +1929,17 @@ impl Decoder {
         }
     }
 
+    #[cfg(feature = "android_mediacodec")]
+    fn is_decoding_item_yuv400(&self, decoding_item: DecodingItem) -> bool {
+        !self.tiles[decoding_item.usize()].is_empty()
+            && matches!(
+                self.tiles[decoding_item.usize()][0]
+                    .codec_config
+                    .pixel_format(),
+                Some(PixelFormat::Yuv400)
+            )
+    }
+
     pub fn next_image(&mut self) -> AvifResult<()> {
         if self.io.is_none() {
             return AvifError::io_not_set();
@@ -1946,6 +1947,17 @@ impl Decoder {
         if !self.parsing_complete() {
             return AvifError::no_content();
         }
+
+        // Android MediaCodec does not support monochrome gainmaps for HEIC. So when decoding only
+        // such Gainmaps on Android, return an error instead of unnecessarily creating the codec.
+        #[cfg(feature = "android_mediacodec")]
+        if self.compression_format == CompressionFormat::Heic
+            && self.settings.image_content_to_decode == ImageContentType::GainMap
+            && self.is_decoding_item_yuv400(DecodingItem::GAINMAP)
+        {
+            return Err(AvifError::NoContent);
+        }
+
         if self.is_current_frame_fully_decoded() {
             for decoding_item in DecodingItem::ALL_USIZE {
                 self.tile_info[decoding_item].decoded_tile_count = 0;

@@ -9,6 +9,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/memory/raw_ref.h"
 #include "cc/mojo_embedder/mojo_embedder_export.h"
@@ -44,17 +45,21 @@ class CC_MOJO_EMBEDDER_EXPORT VizLayerContext
   base::TimeTicks UpdateDisplayTreeFrom(
       LayerTreeImpl& tree,
       viz::ClientResourceProvider& resource_provider,
-      viz::RasterContextProvider& context_provider,
+      gpu::SharedImageInterface* shared_image_interface,
       const gfx::Rect& viewport_damage_rect,
-      const viz::LocalSurfaceId& target_local_surface_id) override;
+      const viz::LocalSurfaceId& target_local_surface_id,
+      bool frame_has_damage) override;
   void UpdateDisplayTile(PictureLayerImpl& layer,
                          const Tile& tile,
                          viz::ClientResourceProvider& resource_provider,
-                         viz::RasterContextProvider& context_provider,
+                         gpu::SharedImageInterface* shared_image_interface,
                          bool update_damage) override;
 
   // viz::mojom::LayerContextClient:
   void OnRequestCommitForFrame(const viz::BeginFrameArgs& args) override;
+  void OnTilingsReadyForCleanup(
+      int32_t layer_id,
+      const std::vector<float>& tiling_scales_to_clean_up) override;
 
  private:
   // Serializes any changes to animation state on `tree` since the last push to

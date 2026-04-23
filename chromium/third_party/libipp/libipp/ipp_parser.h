@@ -16,7 +16,6 @@
 #include "errors.h"
 #include "ipp_attribute.h"
 #include "ipp_frame.h"
-#include "ipp_log.h"
 #include "parser.h"
 
 namespace ipp {
@@ -27,23 +26,18 @@ class Frame;
 struct RawAttribute;
 struct RawCollection;
 
-std::string_view ToStrViewVerbose(ParserCode code);
-
 class Parser {
  public:
   // Constructor, both parameters must not be nullptr. |frame| is used as
   // internal buffer to store intermediate form of parsed data. All spotted
-  // issues are logged to |log| (by push_back()).
-  Parser(FrameData* frame, std::vector<Log>* error_log, ParserLog& log)
-      : frame_(frame), errors_(error_log), log_(&log) {}
+  // issues are logged to |log|.
+  Parser(FrameData* frame, ParserLog& log) : frame_(frame), log_(&log) {}
 
   // Parses data from given buffer and saves it to internal buffer.
   bool ReadFrameFromBuffer(const uint8_t* ptr, const uint8_t* const buf_end);
 
   // Interpret the content from internal buffer and store it in |package|.
-  // If |log_unknown_values| is set then all attributes unknown in |package|
-  // are reported to the log.
-  bool SaveFrameToPackage(bool log_unknown_values, Frame* package);
+  bool SaveFrameToPackage(Frame* package);
 
   // Resets the state of the object to initial state. It does not modify
   // objects provided in the constructor (|frame| and |log|).
@@ -81,7 +75,6 @@ class Parser {
   FrameData* frame_;
 
   // Internal log: all errors & warnings are logged here.
-  std::vector<Log>* errors_;
   ParserLog* log_;
 
   // Temporary copies of begin/end pointers of the current buffer.

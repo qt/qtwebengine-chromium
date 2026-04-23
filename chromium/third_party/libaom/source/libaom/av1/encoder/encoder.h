@@ -34,6 +34,7 @@
 #include "av1/common/timing.h"
 
 #include "av1/encoder/aq_cyclicrefresh.h"
+#include "av1/encoder/av1_ext_ratectrl.h"
 #include "av1/encoder/av1_quantize.h"
 #include "av1/encoder/block.h"
 #include "av1/encoder/context_tree.h"
@@ -3706,6 +3707,16 @@ typedef struct AV1_COMP {
    * ROI map.
    */
   aom_roi_map_t roi;
+
+  /*!
+   * External rate control.
+   */
+  AOM_EXT_RATECTRL ext_ratectrl;
+
+  /*!
+   * Store TPL stats before propagation
+   */
+  AomTplGopStats extrc_tpl_gop_stats;
 } AV1_COMP;
 
 /*!

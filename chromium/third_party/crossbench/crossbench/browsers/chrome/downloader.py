@@ -10,16 +10,15 @@ import os
 import shutil
 import tempfile
 import zipfile
-from typing import (TYPE_CHECKING, ClassVar, Final, Iterable, Iterator,
-                    Optional, Type, cast)
+from typing import TYPE_CHECKING, ClassVar, Final, Iterable, Iterator, \
+    Optional, Type, cast
 
 from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.browsers.chrome.version import ChromeVersion
-from crossbench.browsers.downloader import (DMGArchiveHelper, Downloader,
-                                            IncompatibleVersionError,
-                                            RPMArchiveHelper)
+from crossbench.browsers.downloader import DMGArchiveHelper, Downloader, \
+    IncompatibleVersionError, RPMArchiveHelper
 from crossbench.browsers.version import BrowserVersion, BrowserVersionChannel
 from crossbench.helper import url_helper
 from crossbench.plt.android_adb import AndroidAdbPlatform

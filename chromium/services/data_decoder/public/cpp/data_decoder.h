@@ -13,7 +13,6 @@
 #include "base/time/time.h"
 #include "base/types/expected.h"
 #include "base/values.h"
-#include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/http/structured_headers.h"
 #include "services/data_decoder/public/cpp/service_provider.h"
@@ -73,7 +72,8 @@ class DataDecoder {
       ResultCallback<net::structured_headers::Dictionary>;
   using ValueParseCallback = ResultCallback<base::Value>;
   using GzipperCallback = ResultCallback<mojo_base::BigBuffer>;
-  using ValidationCallback = ResultCallback<bool>;
+  using ValidationCallback =
+      ResultCallback<payments::facilitated::mojom::PixQrCodeType>;
   using CancellationFlag = base::RefCountedData<bool>;
 
   // Returns a raw interface to the service instance. This launches an instance

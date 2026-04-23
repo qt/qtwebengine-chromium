@@ -26,8 +26,6 @@ static_library("net") {
     "delay_network_call.h",
     "dhcp_wpad_url_client.cc",
     "dhcp_wpad_url_client.h",
-    "network_portal_detector_test_impl.cc",
-    "network_portal_detector_test_impl.h",
     "network_pref_state_observer.cc",
     "network_pref_state_observer.h",
     "network_throttling_observer.cc",
@@ -48,6 +46,7 @@ static_library("net") {
     "//ash/public/cpp",
     "//base",
     "//chrome/browser/ash/app_list/arc",
+    "//chrome/browser/ash/certificate_provider",
     "//chrome/browser/ash/login/session",
     "//chrome/browser/ash/net/dns_over_https",
     "//chrome/browser/ash/notifications",
@@ -70,7 +69,7 @@ static_library("net") {
     "//chromeos/ash/components/mojo_service_manager",
     "//chromeos/ash/components/nearby/common/connections_manager",
     "//chromeos/ash/components/network",
-    "//chromeos/ash/components/network/portal_detector",
+    "//chromeos/ash/components/policy/policy_blocklist_service",
     "//chromeos/ash/components/sync_wifi",
     "//chromeos/ash/components/system",
     "//chromeos/ash/experiences/arc",
@@ -105,17 +104,6 @@ static_library("net") {
   ]
 }
 
-static_library("test_support") {
-  testonly = true
-
-  sources = [
-    "network_portal_detector_test_utils.cc",
-    "network_portal_detector_test_utils.h",
-  ]
-
-  deps = [ "//base" ]
-}
-
 source_set("unit_tests") {
   testonly = true
 
@@ -130,10 +118,10 @@ source_set("unit_tests") {
 
   deps = [
     ":net",
-    ":test_support",
     "//ash/constants",
     "//base",
     "//base/test:test_support",
+    "//chrome/browser/ash/certificate_provider",
     "//chrome/browser/ash/login/users:test_support",
     "//chrome/browser/ash/net/dns_over_https",
     "//chrome/browser/ash/net/dns_over_https:unit_tests",

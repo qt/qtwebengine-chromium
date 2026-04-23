@@ -14,6 +14,7 @@
 
 use crate::internal_utils::stream::*;
 use crate::parser::mp4box::*;
+use crate::utils::pixels::ChannelIdc;
 use crate::*;
 
 // Implementation for ISO/IEC 23008-12 3rd edition AMD 2 Low-overhead image file format.
@@ -367,13 +368,12 @@ pub(crate) fn parse_mini(stream: &mut IStream, offset: usize) -> AvifResult<Meta
         // entry 2
         ItemProperty::ImageSpatialExtents(ImageSpatialExtents { width, height }),
         // entry 3
-        // TODO: b/437307282 - Support extended pixi when available
-        ItemProperty::PixelInformation(PixelInformation {
-            plane_depths: vec![
-                bit_depth as u8;
-                chroma_subsampling_to_pixel_format(chroma_subsampling).plane_count()
-            ],
-        }),
+        ItemProperty::PixelInformation(create_extended_pixi(
+            bit_depth,
+            chroma_subsampling,
+            chroma_is_horizontally_centered,
+            chroma_is_vertically_centered,
+        )?),
         // entry 4
         ItemProperty::ColorInformation(ColorInformation::Nclx(Nclx {
             color_primaries,
@@ -406,12 +406,18 @@ pub(crate) fn parse_mini(stream: &mut IStream, offset: usize) -> AvifResult<Meta
         },
         // entry 8
         if alpha_item_data_size != 0 {
-            // TODO: b/437307282 - Support extended pixi when available
             ItemProperty::PixelInformation(PixelInformation {
-                // Note that alpha's av1C is_monochrome may be false.
-                // Some encoders do not support 4:0:0 and encode alpha with
-                // placeholder chroma planes to be ignored at decoding.
-                plane_depths: vec![bit_depth as u8],
+                planes: vec![PlanePixelInformation {
+                    depth: bit_depth as u8,
+                    channel_idc: Some(ChannelIdc::Alpha),
+                    // Note that alpha's av1C is_monochrome may be false.
+                    // Some encoders do not support 4:0:0 and encode alpha with
+                    // placeholder chroma planes to be ignored at decoding.
+                    // ISO/IEC 23008-12/DAM 2 also reconstructs the alpha pixi
+                    // entry as "subsampling_type set to 0", meaning 4:4:4.
+                    subsampling_type: Some(PixelFormat::Yuv444),
+                    subsampling_location: Some(ChromaSamplePosition::Colocated),
+                }],
             })
         } else {
             ItemProperty::Unused
@@ -468,14 +474,12 @@ pub(crate) fn parse_mini(stream: &mut IStream, offset: usize) -> AvifResult<Meta
         },
         // entry 19
         if gainmap_item_data_size != 0 {
-            // TODO: b/437307282 - Support extended pixi when available
-            ItemProperty::PixelInformation(PixelInformation {
-                plane_depths: vec![
-                    gainmap_bit_depth as u8;
-                    chroma_subsampling_to_pixel_format(gainmap_chroma_subsampling)
-                        .plane_count()
-                ],
-            })
+            ItemProperty::PixelInformation(create_extended_pixi(
+                gainmap_bit_depth,
+                gainmap_chroma_subsampling,
+                gainmap_chroma_is_horizontally_centered,
+                gainmap_chroma_is_vertically_centered,
+            )?)
         } else {
             ItemProperty::Unused
         },
@@ -980,6 +984,47 @@ fn pixel_format_and_centered_to_chroma_sample_position(
     }
 }
 
+fn create_extended_pixi(
+    bit_depth: u32,
+    chroma_subsampling: u32,
+    chroma_is_horizontally_centered: bool,
+    chroma_is_vertically_centered: bool,
+) -> Result<PixelInformation, AvifError> {
+    let mut pixi = PixelInformation {
+        planes: vec![PlanePixelInformation {
+            depth: bit_depth as u8,
+            channel_idc: Some(ChannelIdc::FirstColorChannel),
+            subsampling_type: Some(PixelFormat::Yuv444),
+            subsampling_location: Some(ChromaSamplePosition::Colocated),
+        }],
+    };
+    let pixel_format = chroma_subsampling_to_pixel_format(chroma_subsampling);
+    match pixel_format {
+        PixelFormat::Yuv400 => {}
+        PixelFormat::Yuv420 | PixelFormat::Yuv422 | PixelFormat::Yuv444 => {
+            let subsampling_location = pixel_format_and_centered_to_chroma_sample_position(
+                pixel_format,
+                chroma_is_horizontally_centered,
+                chroma_is_vertically_centered,
+            )?;
+            pixi.planes.push(PlanePixelInformation {
+                depth: bit_depth as u8,
+                channel_idc: Some(ChannelIdc::SecondColorChannel),
+                subsampling_type: Some(pixel_format),
+                subsampling_location: Some(subsampling_location),
+            });
+            pixi.planes.push(PlanePixelInformation {
+                depth: bit_depth as u8,
+                channel_idc: Some(ChannelIdc::ThirdColorChannel),
+                subsampling_type: Some(pixel_format),
+                subsampling_location: Some(subsampling_location),
+            });
+        }
+        _ => unreachable!(),
+    }
+    Ok(pixi)
+}
+
 fn check_subsampling(
     chroma_subsampling: u32,
     chroma_is_horizontally_centered: bool,
@@ -992,7 +1037,7 @@ fn check_subsampling(
         chroma_is_horizontally_centered,
         chroma_is_vertically_centered,
     )?;
-    if pixel_format != CodecConfiguration::Av1(codec_config.clone()).pixel_format()
+    if pixel_format != codec_config.pixel_format()
         || chroma_sample_position != codec_config.chroma_sample_position
     {
         return AvifError::bmff_parse_failed("Mismatch between mini and AV1 codec config");

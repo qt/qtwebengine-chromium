@@ -1,13 +1,13 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 /**
  * @file A list of pass/fail conditions for an insight.
  */
 
-import '../../../../ui/components/icon_button/icon_button.js';
+import '../../../../ui/kit/kit.js';
 
 import * as i18n from '../../../../core/i18n/i18n.js';
 import type * as Trace from '../../../../models/trace/trace.js';

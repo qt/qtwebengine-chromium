@@ -35,6 +35,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/current_thread.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
 #include "base/trace_event/optional_trace_event.h"
@@ -54,6 +55,7 @@
 #include "components/input/timeout_monitor.h"
 #include "components/input/utils.h"
 #include "components/viz/common/features.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/bad_message.h"
@@ -62,7 +64,6 @@
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
 #include "content/browser/file_system/browser_file_system_helper.h"
-#include "content/browser/file_system_access/file_system_access_manager_impl.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/agent_scheduling_group_host.h"
 #include "content/browser/renderer_host/data_transfer_util.h"
@@ -236,7 +237,7 @@ std::vector<DropData::Metadata> DropDataToMetaData(const DropData& drop_data) {
         DropData::Kind::STRING, ui::kMimeTypePlainText16));
   }
 
-  if (drop_data.url.is_valid()) {
+  if (!drop_data.url_infos.empty()) {
     metadata.push_back(DropData::Metadata::CreateForMimeType(
         DropData::Kind::STRING, ui::kMimeTypeUriList16));
   }
@@ -833,6 +834,12 @@ void RenderWidgetHostImpl::SetIsLoading(bool is_loading) {
   if (view_) {
     view_->SetIsLoading(is_loading);
   }
+}
+
+void RenderWidgetHostImpl::WillSendInputEventToRenderer(
+    const WebInputEvent& event) {
+  GetRenderInputRouter()->GetDispatchToRendererCallback().Run(
+      event, input::DispatchToRendererResult::kDispatched);
 }
 
 void RenderWidgetHostImpl::WasHidden() {
@@ -2058,7 +2065,9 @@ void RenderWidgetHostImpl::DragSourceSystemDragEnded() {
 void RenderWidgetHostImpl::FilterDropData(DropData* drop_data) {
   drop_data->view_id = GetRoutingID();
 
-  GetProcess()->FilterURL(true, &drop_data->url);
+  for (auto& url_info : drop_data->url_infos) {
+    GetProcess()->FilterURL(true, &url_info.url);
+  }
   if (drop_data->did_originate_from_renderer) {
     drop_data->filenames.clear();
   }
@@ -2395,7 +2404,7 @@ void RenderWidgetHostImpl::OnMouseEventAck(
   // by the renderer. eg. Back/Forward mouse buttons.
   if (delegate_ &&
       ack_result != blink::mojom::InputEventResultState::kConsumed &&
-      !is_hidden()) {
+      !IsHidden()) {
     delegate_->HandleMouseEvent(mouse_event.event);
   }
 }
@@ -2500,7 +2509,7 @@ void RenderWidgetHostImpl::RendererIsUnresponsive(
   is_unresponsive_ = true;
 
   base::UmaHistogramEnumeration("Renderer.Unresponsive.Reason", reason);
-  if (is_hidden()) {
+  if (IsHidden()) {
     base::UmaHistogramEnumeration("Renderer.Unresponsive.Reason.NotVisible",
                                   reason);
   } else {
@@ -2532,7 +2541,7 @@ void RenderWidgetHostImpl::DidOverscroll(
     ui::DidOverscrollParams overscroll_params = {
         params->accumulated_overscroll, params->latest_overscroll_delta,
         params->current_fling_velocity, params->causal_event_viewport_point,
-        params->overscroll_behavior};
+        params->overscroll_behavior,    params->source_device};
     view_->DidOverscroll(overscroll_params);
   }
 }
@@ -2568,7 +2577,7 @@ void RenderWidgetHostImpl::OnKeyboardEventAck(
   // We only send unprocessed key event upwards if we are not hidden,
   // because the user has moved away from us and no longer expect any effect
   // of this key event.
-  if (delegate_ && !processed && !is_hidden() &&
+  if (delegate_ && !processed && !IsHidden() &&
       !event.event.skip_if_unhandled) {
     delegate_->HandleKeyboardEvent(event.event);
   }
@@ -2670,8 +2679,16 @@ std::optional<bool> RenderWidgetHostImpl::IsDelegatedInkHovering() {
 void RenderWidgetHostImpl::NotifyObserversOfInputEvent(
     const WebInputEvent& event,
     bool dispatched_to_renderer) {
+  NotifyObserversOfInputEventWithSource(
+      event, input::InputEventSource::kBrowser, dispatched_to_renderer);
+}
+
+void RenderWidgetHostImpl::NotifyObserversOfInputEventWithSource(
+    const WebInputEvent& event,
+    input::InputEventSource source,
+    bool dispatched_to_renderer) {
   for (auto& observer : input_event_observers_) {
-    observer.OnInputEvent(*this, event);
+    observer.OnInputEvent(*this, event, source);
   }
   if (dispatched_to_renderer) {
     delegate_->DidReceiveInputEvent(this, event);
@@ -2857,8 +2874,11 @@ void RenderWidgetHostImpl::StartDragging(
       ChildProcessSecurityPolicyImpl::GetInstance();
 
   // Allow drag of Javascript URLs to enable bookmarklet drag to bookmark bar.
-  if (!filtered_data.url.SchemeIs(url::kJavaScriptScheme)) {
-    process->FilterURL(true, &filtered_data.url);
+  for (auto& url_info : filtered_data.url_infos) {
+    if (url_info.url.SchemeIs(url::kJavaScriptScheme)) {
+      continue;
+    }
+    process->FilterURL(true, &url_info.url);
   }
   process->FilterURL(false, &filtered_data.html_base_url);
   // Filter out any paths that the renderer didn't have access to. This prevents
@@ -3151,6 +3171,12 @@ void RenderWidgetHostImpl::OnStartStylusWriting() {
   }
 }
 
+void RenderWidgetHostImpl::OnUnconfirmedTapConvertedToTap() {
+  if (view_) {
+    view_->OnUnconfirmedTapConvertedToTap();
+  }
+}
+
 void RenderWidgetHostImpl::UpdateElementFocusForStylusWriting(
 #if BUILDFLAG(IS_WIN)
     const gfx::Rect& focus_widget_rect_in_dips
@@ -3423,7 +3449,7 @@ void RenderWidgetHostImpl::OnWheelEventAck(
     const input::MouseWheelEventWithLatencyInfo& wheel_event,
     blink::mojom::InputEventResultSource ack_source,
     blink::mojom::InputEventResultState ack_result) {
-  if (!is_hidden() && view_) {
+  if (!IsHidden() && view_) {
     if (ack_result != blink::mojom::InputEventResultState::kConsumed &&
         delegate_ && delegate_->HandleWheelEvent(wheel_event.event)) {
       ack_result = blink::mojom::InputEventResultState::kConsumed;
@@ -3549,8 +3575,9 @@ void RenderWidgetHostImpl::WindowSnapshotReachedScreen(int snapshot_id) {
 void RenderWidgetHostImpl::OnSnapshotFromSurfaceReceived(
     int snapshot_id,
     int retry_count,
-    const SkBitmap& bitmap) {
+    const viz::CopyOutputBitmapWithMetadata& result) {
   static constexpr int kMaxRetries = 5;
+  const SkBitmap& bitmap = result.bitmap;
   if (bitmap.drawsNothing() && retry_count < kMaxRetries) {
     GetView()->CopyFromSurface(
         gfx::Rect(), gfx::Size(),

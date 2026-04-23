@@ -95,6 +95,7 @@ fn main() -> Result<(), String> {
     // not generate bindings for these when they are called with allowlist_item instead of
     // allowlist_var.
     let allowlist_vars = &[
+        "AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM",
         "AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED",
         "AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED",
         "AMEDIACODEC_INFO_TRY_AGAIN_LATER",

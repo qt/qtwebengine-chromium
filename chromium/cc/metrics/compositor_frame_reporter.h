@@ -13,12 +13,10 @@
 #include <queue>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ptr_exclusion.h"
-#include "base/memory/raw_ref.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
 #include "cc/base/devtools_instrumentation.h"
@@ -30,10 +28,10 @@
 #include "cc/metrics/frame_sequence_tracker_collection.h"
 #include "cc/metrics/predictor_jank_tracker.h"
 #include "cc/metrics/scroll_jank_dropped_frame_tracker.h"
+#include "cc/metrics/scroll_jank_v4_processor.h"
 #include "cc/scheduler/scheduler.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_timing_details.h"
-#include "third_party/abseil-cpp/absl/container/inlined_vector.h"
 
 namespace viz {
 class FrameTimingDetails;
@@ -55,6 +53,7 @@ struct GlobalMetricsTrackers {
   RAW_PTR_EXCLUSION ScrollJankDroppedFrameTracker*
       scroll_jank_dropped_frame_tracker = nullptr;
   RAW_PTR_EXCLUSION ScrollJankUkmReporter* scroll_jank_ukm_reporter = nullptr;
+  RAW_PTR_EXCLUSION ScrollJankV4Processor* scroll_jank_v4_processor = nullptr;
   RAW_PTR_EXCLUSION FrameSorter* frame_sorter = nullptr;
 };
 
@@ -127,8 +126,8 @@ class CC_EXPORT CompositorFrameReporter {
   enum class TreesInVizBreakdown {
     kEndActivateToDrawLayers = 0,                          // in cc
     kDrawLayersToSubmitUpdateDisplayTree = 1,              // in cc
-    kSendUpdateDisplayTreeToRecieveUpdateDisplayTree = 2,  // cc-> viz
-    kRecieveUpdateDisplayTreeToStartPrepareToDraw = 3,     // viz
+    kSendUpdateDisplayTreeToReceiveUpdateDisplayTree = 2,  // cc-> viz
+    kReceiveUpdateDisplayTreeToStartPrepareToDraw = 3,     // viz
     kStartPrepareToDrawToStartDrawLayers = 4,              // viz
     kStartDrawLayersToSubmitCompositorFrame = 5,           // viz
     kTreesInVizBreakdownCount
@@ -172,20 +171,6 @@ class CC_EXPORT CompositorFrameReporter {
     kUpdateLayers = 9,
     kBeginMainSentToStarted = 10,
     kBreakdownCount
-  };
-
-  // These numbers are used for indexing UMA histograms. The order should be
-  // preserved, and entries should not be deleted.
-  //
-  // These represent ratios of stages in EventMetrics::DispatchStage to the
-  // VSync time when the event originally arrived. This can be different than
-  // the frame where this event was eventually presented.
-  enum class VSyncRatioType {
-    kArrivedInRendererVsVSyncRatioAfterVSync = 0,
-    kArrivedInRendererVsVSyncRatioBeforeVSync = 1,
-    kGenerationVsVsyncRatioAfterVSync = 2,
-    kGenerationVsVsyncRatioBeforeVSync = 3,
-    kVSyncRatioTypeCount
   };
 
   // To distinguish between impl and main reporter
@@ -314,6 +299,7 @@ class CC_EXPORT CompositorFrameReporter {
 
      private:
       bool HasValue() const;
+      void SkipBreakdownsIfNecessary();
 
       // RAW_PTR_EXCLUSION: Renderer performance: visible in sampling profiler
       // stacks.
@@ -341,61 +327,6 @@ class CC_EXPORT CompositorFrameReporter {
                static_cast<size_t>(
                    TreesInVizBreakdown::kTreesInVizBreakdownCount)>
         list_;
-  };
-
-  // Depending on the `EventMetrics` associated with a frame,
-  // `CompositorFrameReporter::ReportScrollJankMetrics()` might report scroll
-  // jank for the previous and/or current scroll. To streamline the reporting,
-  // we split it into stages based on the type of the metrics associated with
-  // the frame.
-  struct CC_EXPORT FrameJankReportingStage {
-    // A stage that corresponds to one or more scroll updates that were first
-    // presented in the frame. If `is_scroll_start` is true, the first scroll
-    // update in the frame was a `kFirstGestureScrollUpdate`. All other scroll
-    // updates were `kGestureScrollUpdate`s and/or
-    // `kInertialGestureScrollUpdate`s.
-    struct ScrollUpdates {
-      bool is_scroll_start;
-      base::raw_ref<ScrollUpdateEventMetrics> earliest_event;
-      base::raw_ref<ScrollUpdateEventMetrics> latest_event;
-      base::TimeTicks last_coalesced_ts;
-      int32_t fling_input_count;
-      int32_t normal_input_count;
-      float total_predicted_delta;
-      float total_raw_delta_pixels;
-      float max_abs_inertial_raw_delta_pixels;
-
-      bool operator==(const ScrollUpdates&) const = default;
-    };
-
-    // A stage that corresponds to a single scroll end event
-    // (`kGestureScrollEnd` or `kInertialGestureScrollEnd`).
-    struct ScrollEnd {
-      bool operator==(const ScrollEnd&) const = default;
-    };
-
-    std::variant<ScrollUpdates, ScrollEnd> stage;
-
-    // A chronologically ordered list of stages. For example, if the list
-    // contains a `ScrollEnd` and a `ScrollUpdates` (in this order), then the
-    // `ScrollEnd` corresponds to the end of the previous scroll and the
-    // `ScrollUpdates` is the start of a new scroll in the frame. The list
-    // can contain at most one of each stage, so it's length will be at most 2.
-    using List = absl::InlinedVector<FrameJankReportingStage, 2>;
-
-    explicit FrameJankReportingStage(
-        std::variant<ScrollUpdates, ScrollEnd> stage);
-    FrameJankReportingStage(const FrameJankReportingStage& stage);
-    ~FrameJankReportingStage();
-
-    bool operator==(const FrameJankReportingStage&) const = default;
-
-    // Calculates the scroll jank reporting stages based on `events_metrics`
-    // associated with a frame. This function will not modify `events_metrics`
-    // in any way. If there's a `ScrollUpdates` stage in the returned list,
-    // `ScrollUpdates::earliest_event` and `ScrollUpdates::latest_event` will be
-    // references to items in `events_metrics` (possibly the same item).
-    static List CalculateStages(const EventMetrics::List& events_metrics);
   };
 
   CompositorFrameReporter(const ActiveTrackers& active_trackers,
@@ -604,10 +535,14 @@ class CC_EXPORT CompositorFrameReporter {
       std::optional<TreesInVizBreakdown> trees_in_viz_breakdown,
       base::TimeDelta time_delta) const;
 
+  void DropEventMetricsWhichDidNotCauseFrameUpdate();
+
   void ReportEventLatencyMetrics() const;
   void ReportCompositorLatencyTraceEvents(const FrameInfo& info) const;
   void ReportEventLatencyTraceEvents() const;
   void ReportScrollJankMetrics();
+  void ReportScrollJankV1Metrics();
+  void ReportScrollJankV4Metrics();
 
   void ReportPaintMetric() const;
 
@@ -663,6 +598,12 @@ class CC_EXPORT CompositorFrameReporter {
 
   // List of metrics for events affecting this frame.
   EventMetrics::List events_metrics_;
+
+  // Whether metrics which didn't cause a frame update have already been removed
+  // from `events_metrics_`. This should only become true at the very end of a
+  // reporter's lifetime when it's being terminated so that these metrics
+  // wouldn't affect UMA metrics like EventLatency.TotalLatency.
+  bool dropped_non_damaging_events_metrics_ = false;
 
   // Total invalidated (repainted) area of a frame, normalized by the frame's
   // output size.

@@ -29,25 +29,25 @@ bazel_dep(name = "platforms", version = "0.0.10")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-# LINT.IfChange
+# LINT.IfChange(googletest)
 # Google Test framework, used by most unit-tests.
 http_archive(
     name = "com_google_googletest",
-    sha256 = "648b9430fca63acc68c59ee98f624dcbcd9c24ea6b278c306ab6b7f49f62034a",
-    strip_prefix = "googletest-d144031940543e15423a25ae5a8a74141044862f",
-    urls = ["https://github.com/google/googletest/archive/d144031940543e15423a25ae5a8a74141044862f.zip"],
+    sha256 = "ce7366fe57eb49928311189cb0e40e0a8bf3d3682fca89af30d884c25e983786",
+    strip_prefix = "googletest-release-1.12.0",
+    urls = ["https://github.com/google/googletest/archive/release-1.12.0.zip"],
 )
-# LINT.ThenChange(cmake/DownloadGoogleTest.cmake)
+# LINT.ThenChange(cmake/DownloadGoogleTest.cmake,WORKSPACE:googletest)
 
-# LINT.IfChange
+# LINT.IfChange(benchmark)
 # Google Benchmark library, used in micro-benchmarks.
 http_archive(
     name = "com_google_benchmark",
-    sha256 = "1ba14374fddcd9623f126b1a60945e4deac4cdc4fb25a5f25e7f779e36f2db52",
-    strip_prefix = "benchmark-d2a8a4ee41b923876c034afb939c4fc03598e622",
-    urls = ["https://github.com/google/benchmark/archive/d2a8a4ee41b923876c034afb939c4fc03598e622.zip"],
+    sha256 = "28c7cac12cc25d87d3dcc8cbdefa4b03c32d1a27bd50e37ca466d8127c1688d834800c38f3c587a396188ee5fb7d1bd0971b41a599a5c4787f8742cb39ca47db",
+    strip_prefix = "benchmark-1.5.3",
+    urls = ["https://github.com/google/benchmark/archive/v1.5.3.zip"],
 )
-# LINT.ThenChange(cmake/DownloadGoogleBenchmark.cmake)
+# LINT.ThenChange(cmake/DownloadGoogleBenchmark.cmake,WORKSPACE:benchmark)
 
 # LINT.IfChange
 # FXdiv library, used for repeated integer division by the same factor

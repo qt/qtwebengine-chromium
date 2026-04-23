@@ -48,8 +48,6 @@ using ChromeMLCancel = uintptr_t;
 using ChromeMLTSModel = uintptr_t;
 // Opaque handle to an instance of a ChromeML ASR stream.
 using ChromeMLASRStream = uintptr_t;
-// Opaque handle to a video-frame-specific ML inference engine.
-using ChromeMLInferenceEngine = uintptr_t;
 // Opaque handle to a constraint object.
 using ChromeMLConstraint = uintptr_t;
 
@@ -566,26 +564,6 @@ struct ChromeMLAPI {
   bool (*GetTokenizerParams)(ChromeMLModel model,
                              const ChromeMLGetTokenizerParamsFn& fn);
 
-  // Create new instance of ML inference engine, using the passed in `device`.
-  // `model_blob` should contain a binary blob of a TFLite model (read from
-  // .tflite file). `model_blob_size` is the size in bytes of `model_blob`. On
-  // failure, will return `0`.
-  ChromeMLInferenceEngine (*CreateInferenceEngine)(WGPUAdapterInfo adapter_info,
-                                                   WGPUDevice device,
-                                                   const char* model_blob,
-                                                   size_t model_blob_size);
-
-  // Runs inference on `source`, producing results into `destination`. `engine`
-  // must have been obtained from `CreateInferenceEngine()` call.
-  bool (*RunInference)(ChromeMLInferenceEngine engine,
-                       WGPUTexture source,
-                       WGPUTexture destination);
-
-  // Cleans up the instance of ML inference engine returned from
-  // `CreateInferenceEngine()` call. It is invalid to use `engine` for inference
-  // after this call.
-  void (*DestroyInferenceEngine)(ChromeMLInferenceEngine engine);
-
   // Creates a new TFLite delegate using the GPU inference engine.
   TfLiteDelegate* (*CreateGpuDelegate)();
 
@@ -600,7 +578,7 @@ struct ChromeMLAPI {
 };
 
 // Signature of the GetChromeMLAPI() function which the shared library exports.
-using ChromeMLAPIGetter = const ChromeMLAPI* (*)();
+using ChromeMLAPIGetter = const ChromeMLAPI* (*)(bool enable_litert_lm);
 
 }  // extern "C"
 

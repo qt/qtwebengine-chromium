@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2011 Google Inc.  All rights reserved.
@@ -36,15 +36,13 @@
 
 import './Toolbar.js';
 
-import type * as Common from '../../core/common/common.js';
+import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
-import * as Root from '../../core/root/root.js';
 import * as Geometry from '../../models/geometry/geometry.js';
-import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Buttons from '../components/buttons/buttons.js';
-import * as IconButton from '../components/icon_button/icon_button.js';
+import {Icon, type IconData} from '../kit/kit.js';
 import * as Lit from '../lit/lit.js';
 import * as VisualLogging from '../visual_logging/visual_logging.js';
 
@@ -54,12 +52,12 @@ import * as ARIAUtils from './ARIAUtils.js';
 import checkboxTextLabelStyles from './checkboxTextLabel.css.js';
 import confirmDialogStyles from './confirmDialog.css.js';
 import {Dialog} from './Dialog.js';
+import {appendStyle, deepActiveElement, rangeOfWord} from './DOMUtilities.js';
 import {GlassPane, PointerEventsBehavior, SizeBehavior} from './GlassPane.js';
-import inlineButtonStyles from './inlineButton.css.js';
 import inspectorCommonStyles from './inspectorCommon.css.js';
+import {InspectorView} from './InspectorView.js';
 import {KeyboardShortcut, Keys} from './KeyboardShortcut.js';
 import smallBubbleStyles from './smallBubble.css.js';
-import type {ToolbarButton} from './Toolbar.js';
 import {Tooltip} from './Tooltip.js';
 import {Widget} from './Widget.js';
 
@@ -125,9 +123,6 @@ const UIStrings = {
 } as const;
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/UIUtils.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-
-export const highlightedSearchResultClassName = 'highlighted-search-result';
-export const highlightedCurrentSearchResultClassName = 'current-search-result';
 
 export function installDragHandle(
     element: Element, elementDragStart: ((arg0: MouseEvent) => boolean)|null, elementDrag: (arg0: MouseEvent) => void,
@@ -360,7 +355,7 @@ export function isEditing(): boolean {
     return true;
   }
 
-  const focused = Platform.DOMUtilities.deepActiveElement(document);
+  const focused = deepActiveElement(document);
   if (!focused) {
     return false;
   }
@@ -582,8 +577,8 @@ export function handleElementValueModifications(
   }
 
   const originalValue = element.textContent;
-  const wordRange = Platform.DOMUtilities.rangeOfWord(
-      selectionRange.startContainer, selectionRange.startOffset, StyleValueDelimiters, element);
+  const wordRange =
+      rangeOfWord(selectionRange.startContainer, selectionRange.startOffset, StyleValueDelimiters, element);
   const wordString = wordRange.toString();
 
   if (suggestionHandler?.(wordString)) {
@@ -657,8 +652,8 @@ export function addPlatformClass(element: HTMLElement): void {
 }
 
 export function installComponentRootStyles(element: HTMLElement): void {
-  Platform.DOMUtilities.appendStyle(element, inspectorCommonStyles);
-  Platform.DOMUtilities.appendStyle(element, Buttons.textButtonStyles);
+  appendStyle(element, inspectorCommonStyles);
+  appendStyle(element, Buttons.textButtonStyles);
 
   // Detect overlay scrollbar enable by checking for nonzero scrollbar width.
   if (!Host.Platform.isMac() && measuredScrollbarWidth(element.ownerDocument) === 0) {
@@ -683,7 +678,7 @@ export class ElementFocusRestorer {
   private previous: HTMLElement|null;
   constructor(element: Element) {
     this.element = (element as HTMLElement | null);
-    this.previous = (Platform.DOMUtilities.deepActiveElement(element.ownerDocument) as HTMLElement | null);
+    this.previous = (deepActiveElement(element.ownerDocument) as HTMLElement | null);
     (element as HTMLElement).focus();
   }
 
@@ -697,17 +692,6 @@ export class ElementFocusRestorer {
     this.previous = null;
     this.element = null;
   }
-}
-
-export function highlightSearchResult(
-    element: Element, offset: number, length: number, domChanges?: HighlightChange[]): Element|null {
-  const result = highlightSearchResults(element, [new TextUtils.TextRange.SourceRange(offset, length)], domChanges);
-  return result.length ? result[0] : null;
-}
-
-export function highlightSearchResults(
-    element: Element, resultRanges: TextUtils.TextRange.SourceRange[], changes?: HighlightChange[]): Element[] {
-  return highlightRangesWithStyleClass(element, resultRanges, highlightedSearchResultClassName, changes);
 }
 
 export function runCSSAnimationOnce(element: Element, className: string): void {
@@ -724,166 +708,6 @@ export function runCSSAnimationOnce(element: Element, className: string): void {
   element.addEventListener('webkitAnimationEnd', animationEndCallback, false);
   element.addEventListener('animationcancel', animationEndCallback, false);
   element.classList.add(className);
-}
-
-export function highlightRangesWithStyleClass(
-    element: Element, resultRanges: TextUtils.TextRange.SourceRange[], styleClass: string,
-    changes?: HighlightChange[]): Element[] {
-  changes = changes || [];
-  const highlightNodes: Element[] = [];
-  const textNodes = element.childTextNodes();
-  const lineText = textNodes
-                       .map(function(node) {
-                         return node.textContent;
-                       })
-                       .join('');
-  const ownerDocument = element.ownerDocument;
-
-  if (textNodes.length === 0) {
-    return highlightNodes;
-  }
-
-  const nodeRanges: TextUtils.TextRange.SourceRange[] = [];
-  let rangeEndOffset = 0;
-  for (const textNode of textNodes) {
-    const range =
-        new TextUtils.TextRange.SourceRange(rangeEndOffset, textNode.textContent ? textNode.textContent.length : 0);
-    rangeEndOffset = range.offset + range.length;
-    nodeRanges.push(range);
-  }
-
-  let startIndex = 0;
-  for (let i = 0; i < resultRanges.length; ++i) {
-    const startOffset = resultRanges[i].offset;
-    const endOffset = startOffset + resultRanges[i].length;
-
-    while (startIndex < textNodes.length &&
-           nodeRanges[startIndex].offset + nodeRanges[startIndex].length <= startOffset) {
-      startIndex++;
-    }
-    let endIndex = startIndex;
-    while (endIndex < textNodes.length && nodeRanges[endIndex].offset + nodeRanges[endIndex].length < endOffset) {
-      endIndex++;
-    }
-    if (endIndex === textNodes.length) {
-      break;
-    }
-
-    const highlightNode = ownerDocument.createElement('span');
-    highlightNode.className = styleClass;
-    highlightNode.textContent = lineText.substring(startOffset, endOffset);
-
-    const lastTextNode = textNodes[endIndex];
-    const lastText = lastTextNode.textContent || '';
-    lastTextNode.textContent = lastText.substring(endOffset - nodeRanges[endIndex].offset);
-    changes.push({
-      node: (lastTextNode as Element),
-      type: 'changed',
-      oldText: lastText,
-      newText: lastTextNode.textContent,
-      nextSibling: undefined,
-      parent: undefined,
-    });
-
-    if (startIndex === endIndex && lastTextNode.parentElement) {
-      lastTextNode.parentElement.insertBefore(highlightNode, lastTextNode);
-      changes.push({
-        node: highlightNode,
-        type: 'added',
-        nextSibling: lastTextNode,
-        parent: lastTextNode.parentElement,
-        oldText: undefined,
-        newText: undefined,
-      });
-      highlightNodes.push(highlightNode);
-
-      const prefixNode =
-          ownerDocument.createTextNode(lastText.substring(0, startOffset - nodeRanges[startIndex].offset));
-      lastTextNode.parentElement.insertBefore(prefixNode, highlightNode);
-      changes.push({
-        node: prefixNode,
-        type: 'added',
-        nextSibling: highlightNode,
-        parent: lastTextNode.parentElement,
-        oldText: undefined,
-        newText: undefined,
-      });
-    } else {
-      const firstTextNode = textNodes[startIndex];
-      const firstText = firstTextNode.textContent || '';
-      const anchorElement = firstTextNode.nextSibling;
-
-      if (firstTextNode.parentElement) {
-        firstTextNode.parentElement.insertBefore(highlightNode, anchorElement);
-        changes.push({
-          node: highlightNode,
-          type: 'added',
-          nextSibling: anchorElement || undefined,
-          parent: firstTextNode.parentElement,
-          oldText: undefined,
-          newText: undefined,
-        });
-        highlightNodes.push(highlightNode);
-      }
-
-      firstTextNode.textContent = firstText.substring(0, startOffset - nodeRanges[startIndex].offset);
-      changes.push({
-        node: (firstTextNode as Element),
-        type: 'changed',
-        oldText: firstText,
-        newText: firstTextNode.textContent,
-        nextSibling: undefined,
-        parent: undefined,
-      });
-
-      for (let j = startIndex + 1; j < endIndex; j++) {
-        const textNode = textNodes[j];
-        const text = textNode.textContent;
-        textNode.textContent = '';
-        changes.push({
-          node: (textNode as Element),
-          type: 'changed',
-          oldText: text || undefined,
-          newText: textNode.textContent,
-          nextSibling: undefined,
-          parent: undefined,
-        });
-      }
-    }
-    startIndex = endIndex;
-    nodeRanges[startIndex].offset = endOffset;
-    nodeRanges[startIndex].length = lastTextNode.textContent.length;
-  }
-  return highlightNodes;
-}
-
-// Used in chromium/src/third_party/blink/web_tests/http/tests/devtools/components/utilities-highlight-results.js
-export function applyDomChanges(domChanges: HighlightChange[]): void {
-  for (let i = 0, size = domChanges.length; i < size; ++i) {
-    const entry = domChanges[i];
-    switch (entry.type) {
-      case 'added':
-        entry.parent?.insertBefore(entry.node, entry.nextSibling ?? null);
-        break;
-      case 'changed':
-        entry.node.textContent = entry.newText ?? null;
-        break;
-    }
-  }
-}
-
-export function revertDomChanges(domChanges: HighlightChange[]): void {
-  for (let i = domChanges.length - 1; i >= 0; --i) {
-    const entry = domChanges[i];
-    switch (entry.type) {
-      case 'added':
-        entry.node.remove();
-        break;
-      case 'changed':
-        entry.node.textContent = entry.oldText ?? null;
-        break;
-    }
-  }
 }
 
 export function measurePreferredSize(element: Element, containerElement?: Element|null): Geometry.Size {
@@ -1457,19 +1281,19 @@ export class CheckboxLabel extends HTMLElement {
 customElements.define('devtools-checkbox', CheckboxLabel);
 
 export class DevToolsIconLabel extends HTMLElement {
-  readonly #icon: IconButton.Icon.Icon;
+  readonly #icon: Icon;
 
   constructor() {
     super();
     const root = createShadowRootWithCoreStyles(this);
-    this.#icon = new IconButton.Icon.Icon();
+    this.#icon = new Icon();
     this.#icon.style.setProperty('margin-right', '4px');
     this.#icon.style.setProperty('vertical-align', 'baseline');
     root.appendChild(this.#icon);
     root.createChild('slot');
   }
 
-  set data(data: IconButton.Icon.IconData) {
+  set data(data: IconData) {
     this.#icon.data = data;
     // TODO(crbug.com/1427397): Clean this up. This was necessary so `DevToolsIconLabel` can use Lit icon
     //    while being backwards-compatible with the legacy Icon while working for both small and large icons.
@@ -1481,6 +1305,7 @@ export class DevToolsIconLabel extends HTMLElement {
   }
 }
 
+// eslint-disable-next-line @devtools/enforce-custom-element-prefix
 customElements.define('dt-icon-label', DevToolsIconLabel);
 
 export class DevToolsSmallBubble extends HTMLElement {
@@ -1499,6 +1324,7 @@ export class DevToolsSmallBubble extends HTMLElement {
   }
 }
 
+// eslint-disable-next-line @devtools/enforce-custom-element-prefix
 customElements.define('dt-small-bubble', DevToolsSmallBubble);
 
 export class DevToolsCloseButton extends HTMLElement {
@@ -1537,6 +1363,7 @@ export class DevToolsCloseButton extends HTMLElement {
   }
 }
 
+// eslint-disable-next-line @devtools/enforce-custom-element-prefix
 customElements.define('dt-close-button', DevToolsCloseButton);
 
 export function bindInput(
@@ -1757,15 +1584,6 @@ export class ConfirmDialog {
   }
 }
 
-export function createInlineButton(toolbarButton: ToolbarButton): Element {
-  const element = document.createElement('span');
-  const shadowRoot = createShadowRootWithCoreStyles(element, {cssFile: inlineButtonStyles});
-  element.classList.add('inline-button');
-  const toolbar = shadowRoot.createChild('devtools-toolbar');
-  toolbar.appendToolbarItem(toolbarButton);
-  return element;
-}
-
 export interface RenderedObject {
   element: HTMLElement;
   forceSelect(): void;
@@ -1809,15 +1627,6 @@ export interface Options {
   expand?: boolean;
 }
 
-export interface HighlightChange {
-  node: Element|Text;
-  type: string;
-  oldText?: string;
-  newText?: string;
-  nextSibling?: Node;
-  parent?: Node;
-}
-
 export const isScrolledToBottom = (element: Element): boolean => {
   // This code works only for 0-width border.
   // The scrollTop, clientHeight and scrollHeight are computed in double values internally.
@@ -1827,7 +1636,8 @@ export const isScrolledToBottom = (element: Element): boolean => {
   return Math.abs(element.scrollTop + element.clientHeight - element.scrollHeight) <= 2;
 };
 
-export function createSVGChild(element: Element, childType: string, className?: string): Element {
+export function createSVGChild<K extends keyof SVGElementTagNameMap>(
+    element: Element, childType: K, className?: string): SVGElementTagNameMap[K] {
   const child = element.ownerDocument.createElementNS('http://www.w3.org/2000/svg', childType);
   if (className) {
     child.setAttribute('class', className);
@@ -1929,7 +1739,7 @@ function updateWidgetfocusWidgetForNode(node: Node|null): void {
       break;
     }
 
-    parentWidget.defaultFocusedChild = widget;
+    parentWidget.setDefaultFocusedChild(widget);
     widget = parentWidget;
   }
 }
@@ -1937,7 +1747,7 @@ function updateWidgetfocusWidgetForNode(node: Node|null): void {
 function focusChanged(event: Event): void {
   const target = event.target as HTMLElement;
   const document = target ? target.ownerDocument : null;
-  const element = document ? Platform.DOMUtilities.deepActiveElement(document) : null;
+  const element = document ? deepActiveElement(document) : null;
   updateWidgetfocusWidgetForNode(element);
 }
 
@@ -1960,11 +1770,11 @@ export function createShadowRootWithCoreStyles(element: Element, options: {
   const {cssFile, delegatesFocus} = options;
 
   const shadowRoot = element.attachShadow({mode: 'open', delegatesFocus});
-  Platform.DOMUtilities.appendStyle(shadowRoot, inspectorCommonStyles, Buttons.textButtonStyles);
+  appendStyle(shadowRoot, inspectorCommonStyles, Buttons.textButtonStyles);
   if (Array.isArray(cssFile)) {
-    Platform.DOMUtilities.appendStyle(shadowRoot, ...cssFile);
+    appendStyle(shadowRoot, ...cssFile);
   } else if (cssFile) {
-    Platform.DOMUtilities.appendStyle(shadowRoot, cssFile);
+    appendStyle(shadowRoot, cssFile);
   }
   shadowRoot.addEventListener('focus', focusChanged, true);
   return shadowRoot;
@@ -1993,38 +1803,6 @@ export function measuredScrollbarWidth(document?: Document|null): number {
   cachedMeasuredScrollbarWidth = scrollDiv.offsetWidth - scrollDiv.clientWidth;
   document.body.removeChild(scrollDiv);
   return cachedMeasuredScrollbarWidth;
-}
-
-/**
- * Opens the given `url` in a new Chrome tab.
- *
- * If the `url` is a Google owned documentation page (currently that includes
- * `web.dev`, `developers.google.com`, and `developer.chrome.com`), the `url`
- * will also be checked for UTM parameters:
- *
- * - If no `utm_source` search parameter is present, this method will add a new
- *   search parameter `utm_source=devtools` to `url`.
- * - If no `utm_campaign` search parameter is present, and DevTools is running
- *   within a branded build, this method will add `utm_campaign=<channel>` to
- *   the search parameters, with `<channel>` being the release channel of
- *   Chrome ("stable", "beta", "dev", or "canary").
- *
- * @param url the URL to open in a new tab.
- * @throws TypeError if `url` is not a valid URL.
- * @see https://en.wikipedia.org/wiki/UTM_parameters
- */
-export function openInNewTab(url: URL|string): void {
-  url = new URL(`${url}`);
-  if (['developer.chrome.com', 'developers.google.com', 'web.dev'].includes(url.hostname)) {
-    if (!url.searchParams.has('utm_source')) {
-      url.searchParams.append('utm_source', 'devtools');
-    }
-    const {channel} = Root.Runtime.hostConfig;
-    if (!url.searchParams.has('utm_campaign') && typeof channel === 'string') {
-      url.searchParams.append('utm_campaign', channel);
-    }
-  }
-  Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(Platform.DevToolsPath.urlString`${url}`);
 }
 
 export interface PromotionDisplayState {
@@ -2135,6 +1913,7 @@ export function bindToAction(actionName: string): ReturnType<typeof Directives.r
   const action = ActionRegistry.instance().getAction(actionName);
 
   let setEnabled: (enabled: boolean) => void;
+  let toggled: () => void;
   function actionEnabledChanged(event: Common.EventTarget.EventTargetEvent<boolean>): void {
     setEnabled(event.data);
   }
@@ -2142,6 +1921,7 @@ export function bindToAction(actionName: string): ReturnType<typeof Directives.r
   return Directives.ref((e: Element|undefined) => {
     if (!e || !(e instanceof Buttons.Button.Button)) {
       action.removeEventListener(ActionRegistration.Events.ENABLED, actionEnabledChanged);
+      action.removeEventListener(ActionRegistration.Events.TOGGLED, toggled);
       return;
     }
 
@@ -2151,10 +1931,34 @@ export function bindToAction(actionName: string): ReturnType<typeof Directives.r
 
     action.addEventListener(ActionRegistration.Events.ENABLED, actionEnabledChanged);
 
+    const toggleable = action.toggleable();
     const title = action.title();
-    const iconName = action.icon();
+    const iconName = action.icon() ?? '';
     const jslogContext = action.id();
-    if (iconName) {
+    const toggledIconName = action.toggledIcon() ?? iconName;
+    const toggleType = action.toggleWithRedColor() ? Buttons.Button.ToggleType.RED : Buttons.Button.ToggleType.PRIMARY;
+    if (e.childNodes.length) {
+      e.jslogContext = jslogContext;
+    } else if (toggleable) {
+      toggled = () => {
+        e.toggled = action.toggled();
+        if (action.title()) {
+          e.title = action.title();
+          Tooltip.installWithActionBinding(e, action.title(), action.id());
+        }
+      };
+      action.addEventListener(ActionRegistration.Events.TOGGLED, toggled);
+      e.data = {
+        jslogContext,
+        title,
+        variant: Buttons.Button.Variant.ICON_TOGGLE,
+        iconName,
+        toggledIconName,
+        toggleType,
+        toggled: action.toggled(),
+      };
+      toggled();
+    } else if (iconName) {
       e.data = {iconName, jslogContext, title, variant: Buttons.Button.Variant.ICON};
     } else {
       e.data = {jslogContext, title, variant: Buttons.Button.Variant.TEXT};
@@ -2278,7 +2082,7 @@ export class HTMLElementWithLightDOMTemplate extends HTMLElement {
           this.#contentTemplate.content, {childList: true, attributes: true, subtree: true, characterData: true});
     }
     HTMLElementWithLightDOMTemplate.patchLitTemplate(template);
-    // eslint-disable-next-line rulesdir/no-lit-render-outside-of-view
+    // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
     render(template, this.#contentTemplate.content);
   }
 
@@ -2302,4 +2106,151 @@ export class HTMLElementWithLightDOMTemplate extends HTMLElement {
 
   protected removeNodes(_nodes: NodeList): void {
   }
+
+  static findCorrespondingElement(
+      sourceElement: HTMLElement, sourceRootElement: HTMLElement, targetRootElement: Element): Element|null {
+    let currentElement = sourceElement;
+    const childIndexesOnPathToRoot: number[] = [];
+    while (currentElement?.parentElement && currentElement !== sourceRootElement) {
+      childIndexesOnPathToRoot.push([...currentElement.parentElement.children].indexOf(currentElement));
+      currentElement = currentElement.parentElement;
+    }
+    if (!currentElement) {
+      return null;
+    }
+    let targetElement = targetRootElement;
+    for (const index of childIndexesOnPathToRoot.reverse()) {
+      targetElement = targetElement.children[index];
+    }
+    return targetElement;
+  }
+}
+
+/**
+ * @param text Text to copy to clipboard
+ * @param alert Message to send for a11y only required if there
+ * were other UI changes that visually indicated this copy happened.
+ */
+export function copyTextToClipboard(text: string, alert?: string): void {
+  Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(text);
+  if (alert) {
+    ARIAUtils.LiveAnnouncer.alert(alert);
+  }
+}
+
+export function getDevToolsBoundingElement(): HTMLElement {
+  return InspectorView.maybeGetInspectorViewInstance()?.element || document.body;
+}
+
+/**
+ * @deprecated Prefer {@link bindToSetting} as this function leaks the checkbox via the setting listener.
+ */
+export const bindCheckbox = function(
+    input: CheckboxLabel, setting: Common.Settings.Setting<boolean>, metric?: UserMetricOptions): void {
+  const setValue = bindCheckboxImpl(input, setting.set.bind(setting), metric);
+  setting.addChangeListener(event => setValue(event.data));
+  setValue(setting.get());
+};
+
+export const bindCheckboxImpl = function(
+    input: CheckboxLabel, apply: (value: boolean) => void, metric?: UserMetricOptions): (value: boolean) => void {
+  input.addEventListener('change', onInputChanged, false);
+
+  function onInputChanged(): void {
+    apply(input.checked);
+
+    if (input.checked && metric?.enable) {
+      Host.userMetrics.actionTaken(metric.enable);
+    }
+
+    if (!input.checked && metric?.disable) {
+      Host.userMetrics.actionTaken(metric.disable);
+    }
+
+    if (metric?.toggle) {
+      Host.userMetrics.actionTaken(metric.toggle);
+    }
+  }
+
+  return function setValue(value: boolean): void {
+    if (value !== input.checked) {
+      input.checked = value;
+    }
+  };
+};
+
+export const bindToSetting =
+    (settingOrName: string|Common.Settings.Setting<boolean|string>|Common.Settings.RegExpSetting,
+     stringValidator?: (newSettingValue: string) => boolean): ReturnType<typeof Directives.ref> => {
+      const setting = typeof settingOrName === 'string' ?
+          Common.Settings.Settings.instance().moduleSetting(settingOrName) :
+          settingOrName;
+
+      // We can't use `setValue` as the change listener directly, otherwise we won't
+      // be able to remove it again.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let setValue: (value: any) => void;
+      function settingChanged(): void {
+        setValue(setting.get());
+      }
+
+      if (setting.type() === Common.Settings.SettingType.BOOLEAN || typeof setting.defaultValue === 'boolean') {
+        return Directives.ref(e => {
+          if (e === undefined) {
+            setting.removeChangeListener(settingChanged);
+            return;
+          }
+
+          setting.addChangeListener(settingChanged);
+          setValue =
+              bindCheckboxImpl(e as CheckboxLabel, (setting as Common.Settings.Setting<boolean>).set.bind(setting));
+          setValue(setting.get());
+        });
+      }
+
+      if (setting.type() === Common.Settings.SettingType.REGEX || setting instanceof Common.Settings.RegExpSetting) {
+        return Directives.ref(e => {
+          if (e === undefined) {
+            setting.removeChangeListener(settingChanged);
+            return;
+          }
+
+          setting.addChangeListener(settingChanged);
+          setValue = bindInput(e as HTMLInputElement, setting.set.bind(setting), (value: string) => {
+            try {
+              new RegExp(value);
+              return true;
+            } catch {
+              return false;
+            }
+          }, /* numeric */ false);
+          setValue(setting.get());
+        });
+      }
+
+      if (typeof setting.defaultValue === 'string') {
+        return Directives.ref(e => {
+          if (e === undefined) {
+            setting.removeChangeListener(settingChanged);
+            return;
+          }
+
+          setting.addChangeListener(settingChanged);
+          setValue = bindInput(
+              e as HTMLInputElement, setting.set.bind(setting), stringValidator ?? (() => true), /* numeric */ false);
+          setValue(setting.get());
+        });
+      }
+
+      throw new Error(`Cannot infer type for setting  '${setting.name}'`);
+    };
+
+/**
+ * Track toggle action as a whole or
+ * track on and off action separately.
+ */
+export interface UserMetricOptions {
+  toggle?: Host.UserMetrics.Action;
+  enable?: Host.UserMetrics.Action;
+  disable?: Host.UserMetrics.Action;
 }

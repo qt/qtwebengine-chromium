@@ -28,9 +28,12 @@ export declare enum OperatorPrecedence {
     Lowest = 0,
     Invalid = -1
 }
+/**
+ * Note that this does not take into account parenthesization. You should check
+ * for parenthesization separately if it's relevant to your usage.
+ */
 export declare function getOperatorPrecedenceForNode(node: TSESTree.Node): OperatorPrecedence;
 type TSESTreeOperatorKind = ValueOf<TSESTree.BinaryOperatorToText> | ValueOf<TSESTree.PunctuatorTokenToText>;
 export declare function getOperatorPrecedence(nodeKind: SyntaxKind, operatorKind: SyntaxKind, hasArguments?: boolean): OperatorPrecedence;
 export declare function getBinaryOperatorPrecedence(kind: SyntaxKind | TSESTreeOperatorKind): OperatorPrecedence;
 export {};
-//# sourceMappingURL=getOperatorPrecedence.d.ts.map

@@ -437,7 +437,7 @@ void ReadAnythingAppModel::SetTreeInfoUrlInformation(
   tree_info.is_docs = url.SchemeIsHTTPOrHTTPS() &&
                       (url.DomainIs("docs.google.com") ||
                        url.DomainIs("docs.sandbox.google.com")) &&
-                      url.path().starts_with("/document") &&
+                      url.GetPath().starts_with("/document") &&
                       !url.ExtractFileName().empty();
 
   tree_info.is_url_information_set = true;
@@ -1033,6 +1033,7 @@ void ReadAnythingAppModel::ProcessGeneratedEvents(
       case ui::AXEventGenerator::Event::CHECKED_STATE_DESCRIPTION_CHANGED:
       case ui::AXEventGenerator::Event::CHILDREN_CHANGED:
       case ui::AXEventGenerator::Event::CONTROLS_CHANGED:
+      case ui::AXEventGenerator::Event::DEFAULT_ACTION_VERB_CHANGED:
       case ui::AXEventGenerator::Event::DETAILS_CHANGED:
       case ui::AXEventGenerator::Event::DESCRIBED_BY_CHANGED:
       case ui::AXEventGenerator::Event::DESCRIPTION_CHANGED:

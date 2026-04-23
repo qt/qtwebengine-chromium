@@ -10,8 +10,8 @@ import multiprocessing
 import os
 import re
 import subprocess
-from typing import (TYPE_CHECKING, ClassVar, Final, Iterable, Optional, Self,
-                    Type, cast)
+from typing import TYPE_CHECKING, ClassVar, Final, Iterable, Optional, Self, \
+    Type, cast
 
 from typing_extensions import override
 

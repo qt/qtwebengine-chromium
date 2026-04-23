@@ -33,6 +33,8 @@ class MockViewDelegate implements Timeline.TimelinePanel.TimelineModeViewDelegat
   }
   selectEntryAtTime(_events: Trace.Types.Events.Event[]|null, _time: number): void {
   }
+  zoomEvent(_event: Trace.Types.Events.Event): void {
+  }
   highlightEvent(_event: Trace.Types.Events.Event|null): void {
   }
   element = document.createElement('div');
@@ -142,7 +144,7 @@ describeWithEnvironment('TimelineFlameChartView', function() {
       });
       assert.isOk(networkRequest);
       const selection = Timeline.TimelineSelection.selectionFromEvent(networkRequest);
-      flameChartView.setSelectionAndReveal(selection);
+      await flameChartView.setSelectionAndReveal(selection);
       await raf();
       await assertScreenshot('timeline/timeline_with_network_selection.png');
     });
@@ -180,8 +182,9 @@ describeWithEnvironment('TimelineFlameChartView', function() {
       });
       assert.isOk(event);
       const selection = Timeline.TimelineSelection.selectionFromEvent(event);
-      flameChartView.setSelectionAndReveal(selection);
+      await flameChartView.setSelectionAndReveal(selection);
       await raf();
+
       await assertScreenshot('timeline/timeline_with_main_thread_selection.png');
     });
   });
@@ -303,6 +306,7 @@ describeWithEnvironment('TimelineFlameChartView', function() {
        flameChartView.getMainDataProvider().dispatchEventToListeners(
            Timeline.TimelineFlameChartDataProvider.Events.ENTRY_LABEL_ANNOTATION_ADDED,
            {entryIndex: 0, withLinkCreationButton: false});
+       await doubleRaf();
        sinon.assert.calledOnce(stub);
      });
 
@@ -1098,16 +1102,16 @@ describeWithEnvironment('TimelineFlameChartView', function() {
       // Find some task in the main thread that we can build an AI Call Tree from
       const task = allThreadEntriesInTrace(parsedTrace).find(event => {
         return Trace.Types.Events.isRunTask(event) && event.dur > 5_000 &&
-            AIAssistance.AICallTree.fromEvent(event, parsedTrace) !== null;
+            AIAssistance.AICallTree.AICallTree.fromEvent(event, parsedTrace) !== null;
       });
 
       assert.isOk(task);
-      UI.Context.Context.instance().setFlavor(AIAssistance.AgentFocus, null);
+      UI.Context.Context.instance().setFlavor(AIAssistance.AIContext.AgentFocus, null);
       const selection = Timeline.TimelineSelection.selectionFromEvent(task);
-      flameChartView.setSelectionAndReveal(selection);
+      await flameChartView.setSelectionAndReveal(selection);
       await doubleRaf();  // the updating of the AI Call Tree is done in a rAF to not block.
-      const flavor = UI.Context.Context.instance().flavor(AIAssistance.AgentFocus);
-      assert.instanceOf(flavor, AIAssistance.AgentFocus);
+      const flavor = UI.Context.Context.instance().flavor(AIAssistance.AIContext.AgentFocus);
+      assert.instanceOf(flavor, AIAssistance.AIContext.AgentFocus);
     });
   });
 

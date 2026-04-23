@@ -6,6 +6,16 @@
       'swarming_containment_auto',
     ],
     'machines': {
+      'dawn-linux-x64-builder-dbg': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-linux-x64-builder-rel': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
       'dawn-linux-x64-fuzz-dbg': {
         'os_type': 'linux',
         'mixins': [
@@ -15,7 +25,7 @@
           'x86-64',
         ],
         'test_suites': {
-          'isolated_scripts': 'tint_fuzzer_corpus_tests',
+          'isolated_scripts': 'tint_fuzzer_corpus_check_tests',
         },
       },
       'dawn-linux-x64-fuzz-rel': {
@@ -27,7 +37,47 @@
           'x86-64',
         ],
         'test_suites': {
-          'isolated_scripts': 'tint_fuzzer_corpus_tests',
+          'isolated_scripts': 'tint_fuzzer_corpus_check_tests',
+        },
+      },
+      'dawn-linux-x64-intel-uhd630-rel': {
+        'os_type': 'linux',
+        'mixins': [
+          'linux_intel_uhd_630_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_common_gtests',
+        },
+      },
+      'dawn-linux-x64-intel-uhd770-rel': {
+        'os_type': 'linux',
+        'mixins': [
+          'linux_intel_uhd_770_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_common_gtests',
+        },
+      },
+      'dawn-linux-x64-nvidia-gtx1660-rel': {
+        'os_type': 'linux',
+        'mixins': [
+          'linux_nvidia_gtx_1660_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_common_gtests',
+        },
+      },
+      'dawn-linux-x64-sws-clusterfuzz': {
+        'os_type': 'linux',
+        'mixins': [
+          'gpu-swarming-pool',
+          'no_gpu',
+          'linux-jammy',
+          'x86-64',
+        ],
+        'test_suites': {
+          'gtest_tests': 'wire_trace_gtests',
+          'isolated_scripts': 'tint_fuzzer_corpus_generate_tests',
         },
       },
       'dawn-linux-x64-sws-dbg': {
@@ -40,7 +90,7 @@
         ],
         'test_suites': {
           'gtest_tests': 'swiftshader_gtests',
-          'isolated_scripts': 'dawn_node_cts_sws_tests',
+          'isolated_scripts': 'swiftshader_isolated_scripts',
         },
       },
       'dawn-linux-x64-sws-rel': {
@@ -53,8 +103,18 @@
         ],
         'test_suites': {
           'gtest_tests': 'swiftshader_gtests',
-          'isolated_scripts': 'dawn_node_cts_sws_tests',
+          'isolated_scripts': 'swiftshader_isolated_scripts',
         },
+      },
+      'dawn-linux-x86-builder-dbg': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-linux-x86-builder-rel': {
+        'additional_compile_targets': [
+          'default',
+        ],
       },
       'dawn-linux-x86-fuzz-dbg': {
         'os_type': 'linux',
@@ -65,7 +125,7 @@
           'x86-64',
         ],
         'test_suites': {
-          'isolated_scripts': 'tint_fuzzer_corpus_tests',
+          'isolated_scripts': 'tint_fuzzer_corpus_check_tests',
         },
       },
       'dawn-linux-x86-fuzz-rel': {
@@ -77,7 +137,7 @@
           'x86-64',
         ],
         'test_suites': {
-          'isolated_scripts': 'tint_fuzzer_corpus_tests',
+          'isolated_scripts': 'tint_fuzzer_corpus_check_tests',
         },
       },
       'dawn-linux-x86-sws-dbg': {
@@ -104,6 +164,57 @@
           'gtest_tests': 'swiftshader_gtests',
         },
       },
+      'dawn-mac-arm64-builder-rel': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-mac-x64-builder-dbg': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-mac-x64-builder-rel': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-mac-arm64-apple-m2-rel': {
+        'os_type': 'mac',
+        'mixins': [
+          'mac_arm64_apple_m2_retina_gpu_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_common_gtests',
+        },
+      },
+      'dawn-mac-x64-amd-5300m-rel': {
+        'os_type': 'mac',
+        'mixins': [
+          'mac_retina_amd_gpu_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_common_gtests',
+        },
+      },
+      'dawn-mac-x64-amd-555x-rel': {
+        'os_type': 'mac',
+        'mixins': [
+          'mac_retina_amd_555x_gpu_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_common_gtests',
+        },
+      },
+      'dawn-mac-x64-intel-uhd630-rel': {
+        'os_type': 'mac',
+        'mixins': [
+          'mac_mini_intel_gpu_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_common_gtests',
+        },
+      },
       'dawn-mac-x64-sws-dbg': {
         'os_type': 'mac',
         'mixins': [
@@ -111,7 +222,7 @@
         ],
         'test_suites': {
           'gtest_tests': 'swiftshader_gtests',
-          'isolated_scripts': 'dawn_node_cts_sws_tests',
+          'isolated_scripts': 'swiftshader_isolated_scripts',
         },
       },
       'dawn-mac-x64-sws-rel': {
@@ -121,7 +232,90 @@
         ],
         'test_suites': {
           'gtest_tests': 'swiftshader_gtests',
-          'isolated_scripts': 'dawn_node_cts_sws_tests',
+          'isolated_scripts': 'swiftshader_isolated_scripts',
+        },
+      },
+      'dawn-win-arm64-builder-rel': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-win-arm64-qualcomm-snapdragonxelite-rel': {
+        'os_type': 'win',
+        'mixins': [
+          'win11_qualcomm_snapdragon_x_elite_stable',
+          'win_snapdragon_x_elite_gtest_args',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_win_gtests',
+        },
+      },
+      'dawn-win-x64-builder-asan': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-win-x64-builder-dbg': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-win-x64-builder-msvc-dbg': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-win-x64-builder-msvc-rel': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-win-x64-builder-rel': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-win-x64-intel-uhd630-asan': {
+        'os_type': 'win',
+        'mixins': [
+          'win10_intel_uhd_630_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_win_gtests',
+        },
+      },
+      'dawn-win-x64-intel-uhd630-rel': {
+        'os_type': 'win',
+        'mixins': [
+          'win10_intel_uhd_630_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_win_gtests',
+        },
+      },
+      'dawn-win-x64-intel-uhd770-rel': {
+        'os_type': 'win',
+        'mixins': [
+          'win10_intel_uhd_770_stable',
+        ],
+        'test_suites': {},
+      },
+      'dawn-win-x64-nvidia-gtx1660-asan': {
+        'os_type': 'win',
+        'mixins': [
+          'win10_nvidia_gtx_1660_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_win_gtests',
+        },
+      },
+      'dawn-win-x64-nvidia-gtx1660-rel': {
+        'os_type': 'win',
+        'mixins': [
+          'win10_nvidia_gtx_1660_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_win_gtests',
         },
       },
       'dawn-win-x64-sws-dbg': {
@@ -134,7 +328,20 @@
         ],
         'test_suites': {
           'gtest_tests': 'win_software_renderer_gtests',
-          'isolated_scripts': 'dawn_node_cts_sws_tests',
+          'isolated_scripts': 'win_software_renderer_isolated_scripts',
+        },
+      },
+      'dawn-win-x64-sws-msvc-dbg': {
+        'os_type': 'win',
+        'mixins': [
+          'gpu-swarming-pool',
+          'no_gpu',
+          'win10',
+          'x86-64',
+        ],
+        'test_suites': {
+          'gtest_tests': 'win_software_renderer_gtests',
+          'isolated_scripts': 'win_software_renderer_isolated_scripts',
         },
       },
       'dawn-win-x64-sws-msvc-rel': {
@@ -145,7 +352,10 @@
           'win10',
           'x86-64',
         ],
-        'test_suites': {},
+        'test_suites': {
+          'gtest_tests': 'win_software_renderer_gtests',
+          'isolated_scripts': 'win_software_renderer_isolated_scripts',
+        },
       },
       'dawn-win-x64-sws-rel': {
         'os_type': 'win',
@@ -157,7 +367,35 @@
         ],
         'test_suites': {
           'gtest_tests': 'win_software_renderer_gtests',
-          'isolated_scripts': 'dawn_node_cts_sws_tests',
+          'isolated_scripts': 'win_software_renderer_isolated_scripts',
+        },
+      },
+      'dawn-win-x86-builder-dbg': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-win-x86-builder-rel': {
+        'additional_compile_targets': [
+          'default',
+        ],
+      },
+      'dawn-win-x86-intel-uhd630-rel': {
+        'os_type': 'win',
+        'mixins': [
+          'win10_intel_uhd_630_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_win_gtests',
+        },
+      },
+      'dawn-win-x86-nvidia-gtx1660-rel': {
+        'os_type': 'win',
+        'mixins': [
+          'win10_nvidia_gtx_1660_stable',
+        ],
+        'test_suites': {
+          'gtest_tests': 'real_hardware_win_gtests',
         },
       },
       'dawn-win-x86-sws-dbg': {

@@ -1,0 +1,467 @@
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
+from google.protobuf import descriptor as _descriptor
+from typing import ClassVar as _ClassVar
+
+DESCRIPTOR: _descriptor.FileDescriptor
+
+class MeminfoCounters(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    MEMINFO_UNSPECIFIED: _ClassVar[MeminfoCounters]
+    MEMINFO_MEM_TOTAL: _ClassVar[MeminfoCounters]
+    MEMINFO_MEM_FREE: _ClassVar[MeminfoCounters]
+    MEMINFO_MEM_AVAILABLE: _ClassVar[MeminfoCounters]
+    MEMINFO_BUFFERS: _ClassVar[MeminfoCounters]
+    MEMINFO_CACHED: _ClassVar[MeminfoCounters]
+    MEMINFO_SWAP_CACHED: _ClassVar[MeminfoCounters]
+    MEMINFO_ACTIVE: _ClassVar[MeminfoCounters]
+    MEMINFO_INACTIVE: _ClassVar[MeminfoCounters]
+    MEMINFO_ACTIVE_ANON: _ClassVar[MeminfoCounters]
+    MEMINFO_INACTIVE_ANON: _ClassVar[MeminfoCounters]
+    MEMINFO_ACTIVE_FILE: _ClassVar[MeminfoCounters]
+    MEMINFO_INACTIVE_FILE: _ClassVar[MeminfoCounters]
+    MEMINFO_UNEVICTABLE: _ClassVar[MeminfoCounters]
+    MEMINFO_MLOCKED: _ClassVar[MeminfoCounters]
+    MEMINFO_SWAP_TOTAL: _ClassVar[MeminfoCounters]
+    MEMINFO_SWAP_FREE: _ClassVar[MeminfoCounters]
+    MEMINFO_DIRTY: _ClassVar[MeminfoCounters]
+    MEMINFO_WRITEBACK: _ClassVar[MeminfoCounters]
+    MEMINFO_ANON_PAGES: _ClassVar[MeminfoCounters]
+    MEMINFO_MAPPED: _ClassVar[MeminfoCounters]
+    MEMINFO_SHMEM: _ClassVar[MeminfoCounters]
+    MEMINFO_SLAB: _ClassVar[MeminfoCounters]
+    MEMINFO_SLAB_RECLAIMABLE: _ClassVar[MeminfoCounters]
+    MEMINFO_SLAB_UNRECLAIMABLE: _ClassVar[MeminfoCounters]
+    MEMINFO_KERNEL_STACK: _ClassVar[MeminfoCounters]
+    MEMINFO_PAGE_TABLES: _ClassVar[MeminfoCounters]
+    MEMINFO_COMMIT_LIMIT: _ClassVar[MeminfoCounters]
+    MEMINFO_COMMITED_AS: _ClassVar[MeminfoCounters]
+    MEMINFO_VMALLOC_TOTAL: _ClassVar[MeminfoCounters]
+    MEMINFO_VMALLOC_USED: _ClassVar[MeminfoCounters]
+    MEMINFO_VMALLOC_CHUNK: _ClassVar[MeminfoCounters]
+    MEMINFO_CMA_TOTAL: _ClassVar[MeminfoCounters]
+    MEMINFO_CMA_FREE: _ClassVar[MeminfoCounters]
+    MEMINFO_GPU: _ClassVar[MeminfoCounters]
+    MEMINFO_ZRAM: _ClassVar[MeminfoCounters]
+    MEMINFO_MISC: _ClassVar[MeminfoCounters]
+    MEMINFO_ION_HEAP: _ClassVar[MeminfoCounters]
+    MEMINFO_ION_HEAP_POOL: _ClassVar[MeminfoCounters]
+
+class VmstatCounters(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    VMSTAT_UNSPECIFIED: _ClassVar[VmstatCounters]
+    VMSTAT_NR_FREE_PAGES: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ALLOC_BATCH: _ClassVar[VmstatCounters]
+    VMSTAT_NR_INACTIVE_ANON: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ACTIVE_ANON: _ClassVar[VmstatCounters]
+    VMSTAT_NR_INACTIVE_FILE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ACTIVE_FILE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_UNEVICTABLE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_MLOCK: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ANON_PAGES: _ClassVar[VmstatCounters]
+    VMSTAT_NR_MAPPED: _ClassVar[VmstatCounters]
+    VMSTAT_NR_FILE_PAGES: _ClassVar[VmstatCounters]
+    VMSTAT_NR_DIRTY: _ClassVar[VmstatCounters]
+    VMSTAT_NR_WRITEBACK: _ClassVar[VmstatCounters]
+    VMSTAT_NR_SLAB_RECLAIMABLE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_SLAB_UNRECLAIMABLE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_PAGE_TABLE_PAGES: _ClassVar[VmstatCounters]
+    VMSTAT_NR_KERNEL_STACK: _ClassVar[VmstatCounters]
+    VMSTAT_NR_OVERHEAD: _ClassVar[VmstatCounters]
+    VMSTAT_NR_UNSTABLE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_BOUNCE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_VMSCAN_WRITE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_VMSCAN_IMMEDIATE_RECLAIM: _ClassVar[VmstatCounters]
+    VMSTAT_NR_WRITEBACK_TEMP: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ISOLATED_ANON: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ISOLATED_FILE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_SHMEM: _ClassVar[VmstatCounters]
+    VMSTAT_NR_DIRTIED: _ClassVar[VmstatCounters]
+    VMSTAT_NR_WRITTEN: _ClassVar[VmstatCounters]
+    VMSTAT_NR_PAGES_SCANNED: _ClassVar[VmstatCounters]
+    VMSTAT_WORKINGSET_REFAULT: _ClassVar[VmstatCounters]
+    VMSTAT_WORKINGSET_ACTIVATE: _ClassVar[VmstatCounters]
+    VMSTAT_WORKINGSET_NODERECLAIM: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ANON_TRANSPARENT_HUGEPAGES: _ClassVar[VmstatCounters]
+    VMSTAT_NR_FREE_CMA: _ClassVar[VmstatCounters]
+    VMSTAT_NR_SWAPCACHE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_DIRTY_THRESHOLD: _ClassVar[VmstatCounters]
+    VMSTAT_NR_DIRTY_BACKGROUND_THRESHOLD: _ClassVar[VmstatCounters]
+    VMSTAT_PGPGIN: _ClassVar[VmstatCounters]
+    VMSTAT_PGPGOUT: _ClassVar[VmstatCounters]
+    VMSTAT_PGPGOUTCLEAN: _ClassVar[VmstatCounters]
+    VMSTAT_PSWPIN: _ClassVar[VmstatCounters]
+    VMSTAT_PSWPOUT: _ClassVar[VmstatCounters]
+    VMSTAT_PGALLOC_DMA: _ClassVar[VmstatCounters]
+    VMSTAT_PGALLOC_NORMAL: _ClassVar[VmstatCounters]
+    VMSTAT_PGALLOC_MOVABLE: _ClassVar[VmstatCounters]
+    VMSTAT_PGFREE: _ClassVar[VmstatCounters]
+    VMSTAT_PGACTIVATE: _ClassVar[VmstatCounters]
+    VMSTAT_PGDEACTIVATE: _ClassVar[VmstatCounters]
+    VMSTAT_PGFAULT: _ClassVar[VmstatCounters]
+    VMSTAT_PGMAJFAULT: _ClassVar[VmstatCounters]
+    VMSTAT_PGREFILL_DMA: _ClassVar[VmstatCounters]
+    VMSTAT_PGREFILL_NORMAL: _ClassVar[VmstatCounters]
+    VMSTAT_PGREFILL_MOVABLE: _ClassVar[VmstatCounters]
+    VMSTAT_PGSTEAL_KSWAPD_DMA: _ClassVar[VmstatCounters]
+    VMSTAT_PGSTEAL_KSWAPD_NORMAL: _ClassVar[VmstatCounters]
+    VMSTAT_PGSTEAL_KSWAPD_MOVABLE: _ClassVar[VmstatCounters]
+    VMSTAT_PGSTEAL_DIRECT_DMA: _ClassVar[VmstatCounters]
+    VMSTAT_PGSTEAL_DIRECT_NORMAL: _ClassVar[VmstatCounters]
+    VMSTAT_PGSTEAL_DIRECT_MOVABLE: _ClassVar[VmstatCounters]
+    VMSTAT_PGSCAN_KSWAPD_DMA: _ClassVar[VmstatCounters]
+    VMSTAT_PGSCAN_KSWAPD_NORMAL: _ClassVar[VmstatCounters]
+    VMSTAT_PGSCAN_KSWAPD_MOVABLE: _ClassVar[VmstatCounters]
+    VMSTAT_PGSCAN_DIRECT_DMA: _ClassVar[VmstatCounters]
+    VMSTAT_PGSCAN_DIRECT_NORMAL: _ClassVar[VmstatCounters]
+    VMSTAT_PGSCAN_DIRECT_MOVABLE: _ClassVar[VmstatCounters]
+    VMSTAT_PGSCAN_DIRECT_THROTTLE: _ClassVar[VmstatCounters]
+    VMSTAT_PGINODESTEAL: _ClassVar[VmstatCounters]
+    VMSTAT_SLABS_SCANNED: _ClassVar[VmstatCounters]
+    VMSTAT_KSWAPD_INODESTEAL: _ClassVar[VmstatCounters]
+    VMSTAT_KSWAPD_LOW_WMARK_HIT_QUICKLY: _ClassVar[VmstatCounters]
+    VMSTAT_KSWAPD_HIGH_WMARK_HIT_QUICKLY: _ClassVar[VmstatCounters]
+    VMSTAT_PAGEOUTRUN: _ClassVar[VmstatCounters]
+    VMSTAT_ALLOCSTALL: _ClassVar[VmstatCounters]
+    VMSTAT_PGROTATED: _ClassVar[VmstatCounters]
+    VMSTAT_DROP_PAGECACHE: _ClassVar[VmstatCounters]
+    VMSTAT_DROP_SLAB: _ClassVar[VmstatCounters]
+    VMSTAT_PGMIGRATE_SUCCESS: _ClassVar[VmstatCounters]
+    VMSTAT_PGMIGRATE_FAIL: _ClassVar[VmstatCounters]
+    VMSTAT_COMPACT_MIGRATE_SCANNED: _ClassVar[VmstatCounters]
+    VMSTAT_COMPACT_FREE_SCANNED: _ClassVar[VmstatCounters]
+    VMSTAT_COMPACT_ISOLATED: _ClassVar[VmstatCounters]
+    VMSTAT_COMPACT_STALL: _ClassVar[VmstatCounters]
+    VMSTAT_COMPACT_FAIL: _ClassVar[VmstatCounters]
+    VMSTAT_COMPACT_SUCCESS: _ClassVar[VmstatCounters]
+    VMSTAT_COMPACT_DAEMON_WAKE: _ClassVar[VmstatCounters]
+    VMSTAT_UNEVICTABLE_PGS_CULLED: _ClassVar[VmstatCounters]
+    VMSTAT_UNEVICTABLE_PGS_SCANNED: _ClassVar[VmstatCounters]
+    VMSTAT_UNEVICTABLE_PGS_RESCUED: _ClassVar[VmstatCounters]
+    VMSTAT_UNEVICTABLE_PGS_MLOCKED: _ClassVar[VmstatCounters]
+    VMSTAT_UNEVICTABLE_PGS_MUNLOCKED: _ClassVar[VmstatCounters]
+    VMSTAT_UNEVICTABLE_PGS_CLEARED: _ClassVar[VmstatCounters]
+    VMSTAT_UNEVICTABLE_PGS_STRANDED: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ZSPAGES: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ION_HEAP: _ClassVar[VmstatCounters]
+    VMSTAT_NR_GPU_HEAP: _ClassVar[VmstatCounters]
+    VMSTAT_ALLOCSTALL_DMA: _ClassVar[VmstatCounters]
+    VMSTAT_ALLOCSTALL_MOVABLE: _ClassVar[VmstatCounters]
+    VMSTAT_ALLOCSTALL_NORMAL: _ClassVar[VmstatCounters]
+    VMSTAT_COMPACT_DAEMON_FREE_SCANNED: _ClassVar[VmstatCounters]
+    VMSTAT_COMPACT_DAEMON_MIGRATE_SCANNED: _ClassVar[VmstatCounters]
+    VMSTAT_NR_FASTRPC: _ClassVar[VmstatCounters]
+    VMSTAT_NR_INDIRECTLY_RECLAIMABLE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ION_HEAP_POOL: _ClassVar[VmstatCounters]
+    VMSTAT_NR_KERNEL_MISC_RECLAIMABLE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_SHADOW_CALL_STACK_BYTES: _ClassVar[VmstatCounters]
+    VMSTAT_NR_SHMEM_HUGEPAGES: _ClassVar[VmstatCounters]
+    VMSTAT_NR_SHMEM_PMDMAPPED: _ClassVar[VmstatCounters]
+    VMSTAT_NR_UNRECLAIMABLE_PAGES: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ZONE_ACTIVE_ANON: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ZONE_ACTIVE_FILE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ZONE_INACTIVE_ANON: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ZONE_INACTIVE_FILE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ZONE_UNEVICTABLE: _ClassVar[VmstatCounters]
+    VMSTAT_NR_ZONE_WRITE_PENDING: _ClassVar[VmstatCounters]
+    VMSTAT_OOM_KILL: _ClassVar[VmstatCounters]
+    VMSTAT_PGLAZYFREE: _ClassVar[VmstatCounters]
+    VMSTAT_PGLAZYFREED: _ClassVar[VmstatCounters]
+    VMSTAT_PGREFILL: _ClassVar[VmstatCounters]
+    VMSTAT_PGSCAN_DIRECT: _ClassVar[VmstatCounters]
+    VMSTAT_PGSCAN_KSWAPD: _ClassVar[VmstatCounters]
+    VMSTAT_PGSKIP_DMA: _ClassVar[VmstatCounters]
+    VMSTAT_PGSKIP_MOVABLE: _ClassVar[VmstatCounters]
+    VMSTAT_PGSKIP_NORMAL: _ClassVar[VmstatCounters]
+    VMSTAT_PGSTEAL_DIRECT: _ClassVar[VmstatCounters]
+    VMSTAT_PGSTEAL_KSWAPD: _ClassVar[VmstatCounters]
+    VMSTAT_SWAP_RA: _ClassVar[VmstatCounters]
+    VMSTAT_SWAP_RA_HIT: _ClassVar[VmstatCounters]
+    VMSTAT_WORKINGSET_RESTORE: _ClassVar[VmstatCounters]
+    VMSTAT_ALLOCSTALL_DEVICE: _ClassVar[VmstatCounters]
+    VMSTAT_ALLOCSTALL_DMA32: _ClassVar[VmstatCounters]
+    VMSTAT_BALLOON_DEFLATE: _ClassVar[VmstatCounters]
+    VMSTAT_BALLOON_INFLATE: _ClassVar[VmstatCounters]
+    VMSTAT_BALLOON_MIGRATE: _ClassVar[VmstatCounters]
+    VMSTAT_CMA_ALLOC_FAIL: _ClassVar[VmstatCounters]
+    VMSTAT_CMA_ALLOC_SUCCESS: _ClassVar[VmstatCounters]
+    VMSTAT_NR_FILE_HUGEPAGES: _ClassVar[VmstatCounters]
+    VMSTAT_NR_FILE_PMDMAPPED: _ClassVar[VmstatCounters]
+    VMSTAT_NR_FOLL_PIN_ACQUIRED: _ClassVar[VmstatCounters]
+    VMSTAT_NR_FOLL_PIN_RELEASED: _ClassVar[VmstatCounters]
+    VMSTAT_NR_SEC_PAGE_TABLE_PAGES: _ClassVar[VmstatCounters]
+    VMSTAT_NR_SHADOW_CALL_STACK: _ClassVar[VmstatCounters]
+    VMSTAT_NR_SWAPCACHED: _ClassVar[VmstatCounters]
+    VMSTAT_NR_THROTTLED_WRITTEN: _ClassVar[VmstatCounters]
+    VMSTAT_PGALLOC_DEVICE: _ClassVar[VmstatCounters]
+    VMSTAT_PGALLOC_DMA32: _ClassVar[VmstatCounters]
+    VMSTAT_PGDEMOTE_DIRECT: _ClassVar[VmstatCounters]
+    VMSTAT_PGDEMOTE_KSWAPD: _ClassVar[VmstatCounters]
+    VMSTAT_PGREUSE: _ClassVar[VmstatCounters]
+    VMSTAT_PGSCAN_ANON: _ClassVar[VmstatCounters]
+    VMSTAT_PGSCAN_FILE: _ClassVar[VmstatCounters]
+    VMSTAT_PGSKIP_DEVICE: _ClassVar[VmstatCounters]
+    VMSTAT_PGSKIP_DMA32: _ClassVar[VmstatCounters]
+    VMSTAT_PGSTEAL_ANON: _ClassVar[VmstatCounters]
+    VMSTAT_PGSTEAL_FILE: _ClassVar[VmstatCounters]
+    VMSTAT_THP_COLLAPSE_ALLOC: _ClassVar[VmstatCounters]
+    VMSTAT_THP_COLLAPSE_ALLOC_FAILED: _ClassVar[VmstatCounters]
+    VMSTAT_THP_DEFERRED_SPLIT_PAGE: _ClassVar[VmstatCounters]
+    VMSTAT_THP_FAULT_ALLOC: _ClassVar[VmstatCounters]
+    VMSTAT_THP_FAULT_FALLBACK: _ClassVar[VmstatCounters]
+    VMSTAT_THP_FAULT_FALLBACK_CHARGE: _ClassVar[VmstatCounters]
+    VMSTAT_THP_FILE_ALLOC: _ClassVar[VmstatCounters]
+    VMSTAT_THP_FILE_FALLBACK: _ClassVar[VmstatCounters]
+    VMSTAT_THP_FILE_FALLBACK_CHARGE: _ClassVar[VmstatCounters]
+    VMSTAT_THP_FILE_MAPPED: _ClassVar[VmstatCounters]
+    VMSTAT_THP_MIGRATION_FAIL: _ClassVar[VmstatCounters]
+    VMSTAT_THP_MIGRATION_SPLIT: _ClassVar[VmstatCounters]
+    VMSTAT_THP_MIGRATION_SUCCESS: _ClassVar[VmstatCounters]
+    VMSTAT_THP_SCAN_EXCEED_NONE_PTE: _ClassVar[VmstatCounters]
+    VMSTAT_THP_SCAN_EXCEED_SHARE_PTE: _ClassVar[VmstatCounters]
+    VMSTAT_THP_SCAN_EXCEED_SWAP_PTE: _ClassVar[VmstatCounters]
+    VMSTAT_THP_SPLIT_PAGE: _ClassVar[VmstatCounters]
+    VMSTAT_THP_SPLIT_PAGE_FAILED: _ClassVar[VmstatCounters]
+    VMSTAT_THP_SPLIT_PMD: _ClassVar[VmstatCounters]
+    VMSTAT_THP_SWPOUT: _ClassVar[VmstatCounters]
+    VMSTAT_THP_SWPOUT_FALLBACK: _ClassVar[VmstatCounters]
+    VMSTAT_THP_ZERO_PAGE_ALLOC: _ClassVar[VmstatCounters]
+    VMSTAT_THP_ZERO_PAGE_ALLOC_FAILED: _ClassVar[VmstatCounters]
+    VMSTAT_VMA_LOCK_ABORT: _ClassVar[VmstatCounters]
+    VMSTAT_VMA_LOCK_MISS: _ClassVar[VmstatCounters]
+    VMSTAT_VMA_LOCK_RETRY: _ClassVar[VmstatCounters]
+    VMSTAT_VMA_LOCK_SUCCESS: _ClassVar[VmstatCounters]
+    VMSTAT_WORKINGSET_ACTIVATE_ANON: _ClassVar[VmstatCounters]
+    VMSTAT_WORKINGSET_ACTIVATE_FILE: _ClassVar[VmstatCounters]
+    VMSTAT_WORKINGSET_NODES: _ClassVar[VmstatCounters]
+    VMSTAT_WORKINGSET_REFAULT_ANON: _ClassVar[VmstatCounters]
+    VMSTAT_WORKINGSET_REFAULT_FILE: _ClassVar[VmstatCounters]
+    VMSTAT_WORKINGSET_RESTORE_ANON: _ClassVar[VmstatCounters]
+    VMSTAT_WORKINGSET_RESTORE_FILE: _ClassVar[VmstatCounters]
+MEMINFO_UNSPECIFIED: MeminfoCounters
+MEMINFO_MEM_TOTAL: MeminfoCounters
+MEMINFO_MEM_FREE: MeminfoCounters
+MEMINFO_MEM_AVAILABLE: MeminfoCounters
+MEMINFO_BUFFERS: MeminfoCounters
+MEMINFO_CACHED: MeminfoCounters
+MEMINFO_SWAP_CACHED: MeminfoCounters
+MEMINFO_ACTIVE: MeminfoCounters
+MEMINFO_INACTIVE: MeminfoCounters
+MEMINFO_ACTIVE_ANON: MeminfoCounters
+MEMINFO_INACTIVE_ANON: MeminfoCounters
+MEMINFO_ACTIVE_FILE: MeminfoCounters
+MEMINFO_INACTIVE_FILE: MeminfoCounters
+MEMINFO_UNEVICTABLE: MeminfoCounters
+MEMINFO_MLOCKED: MeminfoCounters
+MEMINFO_SWAP_TOTAL: MeminfoCounters
+MEMINFO_SWAP_FREE: MeminfoCounters
+MEMINFO_DIRTY: MeminfoCounters
+MEMINFO_WRITEBACK: MeminfoCounters
+MEMINFO_ANON_PAGES: MeminfoCounters
+MEMINFO_MAPPED: MeminfoCounters
+MEMINFO_SHMEM: MeminfoCounters
+MEMINFO_SLAB: MeminfoCounters
+MEMINFO_SLAB_RECLAIMABLE: MeminfoCounters
+MEMINFO_SLAB_UNRECLAIMABLE: MeminfoCounters
+MEMINFO_KERNEL_STACK: MeminfoCounters
+MEMINFO_PAGE_TABLES: MeminfoCounters
+MEMINFO_COMMIT_LIMIT: MeminfoCounters
+MEMINFO_COMMITED_AS: MeminfoCounters
+MEMINFO_VMALLOC_TOTAL: MeminfoCounters
+MEMINFO_VMALLOC_USED: MeminfoCounters
+MEMINFO_VMALLOC_CHUNK: MeminfoCounters
+MEMINFO_CMA_TOTAL: MeminfoCounters
+MEMINFO_CMA_FREE: MeminfoCounters
+MEMINFO_GPU: MeminfoCounters
+MEMINFO_ZRAM: MeminfoCounters
+MEMINFO_MISC: MeminfoCounters
+MEMINFO_ION_HEAP: MeminfoCounters
+MEMINFO_ION_HEAP_POOL: MeminfoCounters
+VMSTAT_UNSPECIFIED: VmstatCounters
+VMSTAT_NR_FREE_PAGES: VmstatCounters
+VMSTAT_NR_ALLOC_BATCH: VmstatCounters
+VMSTAT_NR_INACTIVE_ANON: VmstatCounters
+VMSTAT_NR_ACTIVE_ANON: VmstatCounters
+VMSTAT_NR_INACTIVE_FILE: VmstatCounters
+VMSTAT_NR_ACTIVE_FILE: VmstatCounters
+VMSTAT_NR_UNEVICTABLE: VmstatCounters
+VMSTAT_NR_MLOCK: VmstatCounters
+VMSTAT_NR_ANON_PAGES: VmstatCounters
+VMSTAT_NR_MAPPED: VmstatCounters
+VMSTAT_NR_FILE_PAGES: VmstatCounters
+VMSTAT_NR_DIRTY: VmstatCounters
+VMSTAT_NR_WRITEBACK: VmstatCounters
+VMSTAT_NR_SLAB_RECLAIMABLE: VmstatCounters
+VMSTAT_NR_SLAB_UNRECLAIMABLE: VmstatCounters
+VMSTAT_NR_PAGE_TABLE_PAGES: VmstatCounters
+VMSTAT_NR_KERNEL_STACK: VmstatCounters
+VMSTAT_NR_OVERHEAD: VmstatCounters
+VMSTAT_NR_UNSTABLE: VmstatCounters
+VMSTAT_NR_BOUNCE: VmstatCounters
+VMSTAT_NR_VMSCAN_WRITE: VmstatCounters
+VMSTAT_NR_VMSCAN_IMMEDIATE_RECLAIM: VmstatCounters
+VMSTAT_NR_WRITEBACK_TEMP: VmstatCounters
+VMSTAT_NR_ISOLATED_ANON: VmstatCounters
+VMSTAT_NR_ISOLATED_FILE: VmstatCounters
+VMSTAT_NR_SHMEM: VmstatCounters
+VMSTAT_NR_DIRTIED: VmstatCounters
+VMSTAT_NR_WRITTEN: VmstatCounters
+VMSTAT_NR_PAGES_SCANNED: VmstatCounters
+VMSTAT_WORKINGSET_REFAULT: VmstatCounters
+VMSTAT_WORKINGSET_ACTIVATE: VmstatCounters
+VMSTAT_WORKINGSET_NODERECLAIM: VmstatCounters
+VMSTAT_NR_ANON_TRANSPARENT_HUGEPAGES: VmstatCounters
+VMSTAT_NR_FREE_CMA: VmstatCounters
+VMSTAT_NR_SWAPCACHE: VmstatCounters
+VMSTAT_NR_DIRTY_THRESHOLD: VmstatCounters
+VMSTAT_NR_DIRTY_BACKGROUND_THRESHOLD: VmstatCounters
+VMSTAT_PGPGIN: VmstatCounters
+VMSTAT_PGPGOUT: VmstatCounters
+VMSTAT_PGPGOUTCLEAN: VmstatCounters
+VMSTAT_PSWPIN: VmstatCounters
+VMSTAT_PSWPOUT: VmstatCounters
+VMSTAT_PGALLOC_DMA: VmstatCounters
+VMSTAT_PGALLOC_NORMAL: VmstatCounters
+VMSTAT_PGALLOC_MOVABLE: VmstatCounters
+VMSTAT_PGFREE: VmstatCounters
+VMSTAT_PGACTIVATE: VmstatCounters
+VMSTAT_PGDEACTIVATE: VmstatCounters
+VMSTAT_PGFAULT: VmstatCounters
+VMSTAT_PGMAJFAULT: VmstatCounters
+VMSTAT_PGREFILL_DMA: VmstatCounters
+VMSTAT_PGREFILL_NORMAL: VmstatCounters
+VMSTAT_PGREFILL_MOVABLE: VmstatCounters
+VMSTAT_PGSTEAL_KSWAPD_DMA: VmstatCounters
+VMSTAT_PGSTEAL_KSWAPD_NORMAL: VmstatCounters
+VMSTAT_PGSTEAL_KSWAPD_MOVABLE: VmstatCounters
+VMSTAT_PGSTEAL_DIRECT_DMA: VmstatCounters
+VMSTAT_PGSTEAL_DIRECT_NORMAL: VmstatCounters
+VMSTAT_PGSTEAL_DIRECT_MOVABLE: VmstatCounters
+VMSTAT_PGSCAN_KSWAPD_DMA: VmstatCounters
+VMSTAT_PGSCAN_KSWAPD_NORMAL: VmstatCounters
+VMSTAT_PGSCAN_KSWAPD_MOVABLE: VmstatCounters
+VMSTAT_PGSCAN_DIRECT_DMA: VmstatCounters
+VMSTAT_PGSCAN_DIRECT_NORMAL: VmstatCounters
+VMSTAT_PGSCAN_DIRECT_MOVABLE: VmstatCounters
+VMSTAT_PGSCAN_DIRECT_THROTTLE: VmstatCounters
+VMSTAT_PGINODESTEAL: VmstatCounters
+VMSTAT_SLABS_SCANNED: VmstatCounters
+VMSTAT_KSWAPD_INODESTEAL: VmstatCounters
+VMSTAT_KSWAPD_LOW_WMARK_HIT_QUICKLY: VmstatCounters
+VMSTAT_KSWAPD_HIGH_WMARK_HIT_QUICKLY: VmstatCounters
+VMSTAT_PAGEOUTRUN: VmstatCounters
+VMSTAT_ALLOCSTALL: VmstatCounters
+VMSTAT_PGROTATED: VmstatCounters
+VMSTAT_DROP_PAGECACHE: VmstatCounters
+VMSTAT_DROP_SLAB: VmstatCounters
+VMSTAT_PGMIGRATE_SUCCESS: VmstatCounters
+VMSTAT_PGMIGRATE_FAIL: VmstatCounters
+VMSTAT_COMPACT_MIGRATE_SCANNED: VmstatCounters
+VMSTAT_COMPACT_FREE_SCANNED: VmstatCounters
+VMSTAT_COMPACT_ISOLATED: VmstatCounters
+VMSTAT_COMPACT_STALL: VmstatCounters
+VMSTAT_COMPACT_FAIL: VmstatCounters
+VMSTAT_COMPACT_SUCCESS: VmstatCounters
+VMSTAT_COMPACT_DAEMON_WAKE: VmstatCounters
+VMSTAT_UNEVICTABLE_PGS_CULLED: VmstatCounters
+VMSTAT_UNEVICTABLE_PGS_SCANNED: VmstatCounters
+VMSTAT_UNEVICTABLE_PGS_RESCUED: VmstatCounters
+VMSTAT_UNEVICTABLE_PGS_MLOCKED: VmstatCounters
+VMSTAT_UNEVICTABLE_PGS_MUNLOCKED: VmstatCounters
+VMSTAT_UNEVICTABLE_PGS_CLEARED: VmstatCounters
+VMSTAT_UNEVICTABLE_PGS_STRANDED: VmstatCounters
+VMSTAT_NR_ZSPAGES: VmstatCounters
+VMSTAT_NR_ION_HEAP: VmstatCounters
+VMSTAT_NR_GPU_HEAP: VmstatCounters
+VMSTAT_ALLOCSTALL_DMA: VmstatCounters
+VMSTAT_ALLOCSTALL_MOVABLE: VmstatCounters
+VMSTAT_ALLOCSTALL_NORMAL: VmstatCounters
+VMSTAT_COMPACT_DAEMON_FREE_SCANNED: VmstatCounters
+VMSTAT_COMPACT_DAEMON_MIGRATE_SCANNED: VmstatCounters
+VMSTAT_NR_FASTRPC: VmstatCounters
+VMSTAT_NR_INDIRECTLY_RECLAIMABLE: VmstatCounters
+VMSTAT_NR_ION_HEAP_POOL: VmstatCounters
+VMSTAT_NR_KERNEL_MISC_RECLAIMABLE: VmstatCounters
+VMSTAT_NR_SHADOW_CALL_STACK_BYTES: VmstatCounters
+VMSTAT_NR_SHMEM_HUGEPAGES: VmstatCounters
+VMSTAT_NR_SHMEM_PMDMAPPED: VmstatCounters
+VMSTAT_NR_UNRECLAIMABLE_PAGES: VmstatCounters
+VMSTAT_NR_ZONE_ACTIVE_ANON: VmstatCounters
+VMSTAT_NR_ZONE_ACTIVE_FILE: VmstatCounters
+VMSTAT_NR_ZONE_INACTIVE_ANON: VmstatCounters
+VMSTAT_NR_ZONE_INACTIVE_FILE: VmstatCounters
+VMSTAT_NR_ZONE_UNEVICTABLE: VmstatCounters
+VMSTAT_NR_ZONE_WRITE_PENDING: VmstatCounters
+VMSTAT_OOM_KILL: VmstatCounters
+VMSTAT_PGLAZYFREE: VmstatCounters
+VMSTAT_PGLAZYFREED: VmstatCounters
+VMSTAT_PGREFILL: VmstatCounters
+VMSTAT_PGSCAN_DIRECT: VmstatCounters
+VMSTAT_PGSCAN_KSWAPD: VmstatCounters
+VMSTAT_PGSKIP_DMA: VmstatCounters
+VMSTAT_PGSKIP_MOVABLE: VmstatCounters
+VMSTAT_PGSKIP_NORMAL: VmstatCounters
+VMSTAT_PGSTEAL_DIRECT: VmstatCounters
+VMSTAT_PGSTEAL_KSWAPD: VmstatCounters
+VMSTAT_SWAP_RA: VmstatCounters
+VMSTAT_SWAP_RA_HIT: VmstatCounters
+VMSTAT_WORKINGSET_RESTORE: VmstatCounters
+VMSTAT_ALLOCSTALL_DEVICE: VmstatCounters
+VMSTAT_ALLOCSTALL_DMA32: VmstatCounters
+VMSTAT_BALLOON_DEFLATE: VmstatCounters
+VMSTAT_BALLOON_INFLATE: VmstatCounters
+VMSTAT_BALLOON_MIGRATE: VmstatCounters
+VMSTAT_CMA_ALLOC_FAIL: VmstatCounters
+VMSTAT_CMA_ALLOC_SUCCESS: VmstatCounters
+VMSTAT_NR_FILE_HUGEPAGES: VmstatCounters
+VMSTAT_NR_FILE_PMDMAPPED: VmstatCounters
+VMSTAT_NR_FOLL_PIN_ACQUIRED: VmstatCounters
+VMSTAT_NR_FOLL_PIN_RELEASED: VmstatCounters
+VMSTAT_NR_SEC_PAGE_TABLE_PAGES: VmstatCounters
+VMSTAT_NR_SHADOW_CALL_STACK: VmstatCounters
+VMSTAT_NR_SWAPCACHED: VmstatCounters
+VMSTAT_NR_THROTTLED_WRITTEN: VmstatCounters
+VMSTAT_PGALLOC_DEVICE: VmstatCounters
+VMSTAT_PGALLOC_DMA32: VmstatCounters
+VMSTAT_PGDEMOTE_DIRECT: VmstatCounters
+VMSTAT_PGDEMOTE_KSWAPD: VmstatCounters
+VMSTAT_PGREUSE: VmstatCounters
+VMSTAT_PGSCAN_ANON: VmstatCounters
+VMSTAT_PGSCAN_FILE: VmstatCounters
+VMSTAT_PGSKIP_DEVICE: VmstatCounters
+VMSTAT_PGSKIP_DMA32: VmstatCounters
+VMSTAT_PGSTEAL_ANON: VmstatCounters
+VMSTAT_PGSTEAL_FILE: VmstatCounters
+VMSTAT_THP_COLLAPSE_ALLOC: VmstatCounters
+VMSTAT_THP_COLLAPSE_ALLOC_FAILED: VmstatCounters
+VMSTAT_THP_DEFERRED_SPLIT_PAGE: VmstatCounters
+VMSTAT_THP_FAULT_ALLOC: VmstatCounters
+VMSTAT_THP_FAULT_FALLBACK: VmstatCounters
+VMSTAT_THP_FAULT_FALLBACK_CHARGE: VmstatCounters
+VMSTAT_THP_FILE_ALLOC: VmstatCounters
+VMSTAT_THP_FILE_FALLBACK: VmstatCounters
+VMSTAT_THP_FILE_FALLBACK_CHARGE: VmstatCounters
+VMSTAT_THP_FILE_MAPPED: VmstatCounters
+VMSTAT_THP_MIGRATION_FAIL: VmstatCounters
+VMSTAT_THP_MIGRATION_SPLIT: VmstatCounters
+VMSTAT_THP_MIGRATION_SUCCESS: VmstatCounters
+VMSTAT_THP_SCAN_EXCEED_NONE_PTE: VmstatCounters
+VMSTAT_THP_SCAN_EXCEED_SHARE_PTE: VmstatCounters
+VMSTAT_THP_SCAN_EXCEED_SWAP_PTE: VmstatCounters
+VMSTAT_THP_SPLIT_PAGE: VmstatCounters
+VMSTAT_THP_SPLIT_PAGE_FAILED: VmstatCounters
+VMSTAT_THP_SPLIT_PMD: VmstatCounters
+VMSTAT_THP_SWPOUT: VmstatCounters
+VMSTAT_THP_SWPOUT_FALLBACK: VmstatCounters
+VMSTAT_THP_ZERO_PAGE_ALLOC: VmstatCounters
+VMSTAT_THP_ZERO_PAGE_ALLOC_FAILED: VmstatCounters
+VMSTAT_VMA_LOCK_ABORT: VmstatCounters
+VMSTAT_VMA_LOCK_MISS: VmstatCounters
+VMSTAT_VMA_LOCK_RETRY: VmstatCounters
+VMSTAT_VMA_LOCK_SUCCESS: VmstatCounters
+VMSTAT_WORKINGSET_ACTIVATE_ANON: VmstatCounters
+VMSTAT_WORKINGSET_ACTIVATE_FILE: VmstatCounters
+VMSTAT_WORKINGSET_NODES: VmstatCounters
+VMSTAT_WORKINGSET_REFAULT_ANON: VmstatCounters
+VMSTAT_WORKINGSET_REFAULT_FILE: VmstatCounters
+VMSTAT_WORKINGSET_RESTORE_ANON: VmstatCounters
+VMSTAT_WORKINGSET_RESTORE_FILE: VmstatCounters

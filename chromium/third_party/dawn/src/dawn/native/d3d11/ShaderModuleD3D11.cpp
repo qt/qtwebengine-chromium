@@ -57,21 +57,16 @@ namespace dawn::native::d3d11 {
 ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     Device* device,
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-    const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult) {
-    Ref<ShaderModule> module = AcquireRef(new ShaderModule(device, descriptor, internalExtensions));
-    DAWN_TRY(module->Initialize(parseResult));
-    return module;
+    const std::vector<tint::wgsl::Extension>& internalExtensions) {
+    Ref<ShaderModule> shader = AcquireRef(new ShaderModule(device, descriptor, internalExtensions));
+    shader->Initialize();
+    return shader;
 }
 
 ShaderModule::ShaderModule(Device* device,
                            const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
                            std::vector<tint::wgsl::Extension> internalExtensions)
     : ShaderModuleBase(device, descriptor, std::move(internalExtensions)) {}
-
-MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult) {
-    return InitializeBase(parseResult);
-}
 
 ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     const ProgrammableStage& programmableStage,
@@ -85,14 +80,13 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     TRACE_EVENT0(device->GetPlatform(), General, "ShaderModuleD3D11::Compile");
     DAWN_ASSERT(!IsError());
 
-    const EntryPointMetadata& entryPoint = GetEntryPoint(programmableStage.entryPoint);
-
     d3d::D3DCompilationRequest req = {};
     req.tracePlatform = UnsafeUnserializedValue(device->GetPlatform());
     req.hlsl.shaderModel = 50;
     req.hlsl.disableSymbolRenaming = device->IsToggleEnabled(Toggle::DisableSymbolRenaming);
     req.hlsl.dumpShaders = device->IsToggleEnabled(Toggle::DumpShaders);
     req.hlsl.dumpShadersOnFailure = device->IsToggleEnabled(Toggle::DumpShadersOnFailure);
+    req.hlsl.tintOptions.entry_point_name = programmableStage.entryPoint;
     req.hlsl.tintOptions.remapped_entry_point_name = device->GetIsolatedEntryPointName();
 
     req.bytecode.hasShaderF16Feature = false;
@@ -115,84 +109,27 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
             break;
     }
 
-    const BindingInfoArray& moduleBindingInfo = entryPoint.bindings;
-
-    tint::Bindings bindings;
-
-    for (BindGroupIndex group : layout->GetBindGroupLayoutsMask()) {
-        const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
-        const auto& indices = layout->GetBindingTableIndexMap()[group];
-        const BindingGroupInfoMap& moduleGroupBindingInfo = moduleBindingInfo[group];
-
-        for (const auto& [binding, shaderBindingInfo] : moduleGroupBindingInfo) {
-            BindingIndex bindingIndex = bgl->GetBindingIndex(binding);
-            tint::BindingPoint srcBindingPoint{static_cast<uint32_t>(group),
-                                               static_cast<uint32_t>(binding)};
-            tint::BindingPoint dstBindingPoint{0u, indices[bindingIndex][stage]};
+    tint::Bindings bindings =
+        GenerateBindingRemapping(layout, stage, [&](BindGroupIndex group, BindingIndex index) {
+            tint::BindingPoint dstBindingPoint = tint::BindingPoint{
+                .group = 0,
+                .binding = layout->GetBindingTableIndexMap()[group][index][stage],
+            };
             DAWN_ASSERT(dstBindingPoint.binding != PipelineLayout::kInvalidSlot);
-
-            MatchVariant(
-                shaderBindingInfo.bindingInfo,
-                [&](const BufferBindingInfo& bindingInfo) {
-                    switch (bindingInfo.type) {
-                        case wgpu::BufferBindingType::Uniform:
-                            bindings.uniform.emplace(srcBindingPoint, dstBindingPoint);
-                            break;
-                        case kInternalStorageBufferBinding:
-                        case wgpu::BufferBindingType::Storage:
-                        case wgpu::BufferBindingType::ReadOnlyStorage:
-                        case kInternalReadOnlyStorageBufferBinding:
-                            bindings.storage.emplace(srcBindingPoint, dstBindingPoint);
-                            break;
-                        case wgpu::BufferBindingType::BindingNotUsed:
-                        case wgpu::BufferBindingType::Undefined:
-                            DAWN_UNREACHABLE();
-                            break;
-                    }
-                },
-                [&](const SamplerBindingInfo& bindingInfo) {
-                    bindings.sampler.emplace(srcBindingPoint, dstBindingPoint);
-                },
-                [&](const TextureBindingInfo& bindingInfo) {
-                    bindings.texture.emplace(srcBindingPoint, dstBindingPoint);
-                },
-                [&](const StorageTextureBindingInfo& bindingInfo) {
-                    bindings.storage_texture.emplace(srcBindingPoint, dstBindingPoint);
-                },
-                [&](const TexelBufferBindingInfo& bindingInfo) {
-                    // TODO(crbug/382544164): Prototype texel buffer feature
-                    DAWN_UNREACHABLE();
-                },
-                [&](const ExternalTextureBindingInfo& bindingInfo) {
-                    const auto& bindingMap = bgl->GetExternalTextureBindingExpansionMap();
-                    const auto& expansion = bindingMap.find(binding);
-                    DAWN_ASSERT(expansion != bindingMap.end());
-
-                    const auto& bindingExpansion = expansion->second;
-                    tint::BindingPoint plane0{
-                        0u, indices[bgl->GetBindingIndex(bindingExpansion.plane0)][stage]};
-                    tint::BindingPoint plane1{
-                        0u, indices[bgl->GetBindingIndex(bindingExpansion.plane1)][stage]};
-                    tint::BindingPoint metadata{
-                        0u, indices[bgl->GetBindingIndex(bindingExpansion.params)][stage]};
-                    bindings.external_texture.emplace(
-                        srcBindingPoint, tint::ExternalTexture{metadata, plane0, plane1});
-                },
-
-                [](const InputAttachmentBindingInfo&) { DAWN_UNREACHABLE(); });
-        }
-    }
+            return dstBindingPoint;
+        });
 
     req.hlsl.shaderModuleHash = GetHash();
     req.hlsl.inputProgram = UnsafeUnserializedValue(UseTintProgram());
-    req.hlsl.entryPointName = programmableStage.entryPoint.c_str();
     req.hlsl.stage = stage;
-    req.hlsl.substituteOverrideConfig = BuildSubstituteOverridesTransformConfig(programmableStage);
     req.hlsl.limits = LimitsForCompilationRequest::Create(device->GetLimits().v1);
     req.hlsl.adapterSupportedLimits = UnsafeUnserializedValue(
         LimitsForCompilationRequest::Create(device->GetAdapter()->GetLimits().v1));
     req.hlsl.maxSubgroupSize = device->GetAdapter()->GetPhysicalDevice()->GetSubgroupMaxSize();
 
+    req.hlsl.tintOptions.substitute_overrides_config = {
+        .map = BuildSubstituteOverridesTransformConfig(programmableStage),
+    };
     req.hlsl.tintOptions.disable_robustness = !device->IsRobustnessEnabled();
     req.hlsl.tintOptions.disable_workgroup_init =
         device->IsToggleEnabled(Toggle::DisableWorkgroupInit);

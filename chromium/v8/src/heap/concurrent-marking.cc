@@ -237,8 +237,7 @@ class ConcurrentMarking::JobTaskMajor : public v8::JobTask {
         code_flush_mode_(code_flush_mode),
         should_keep_ages_unchanged_(should_keep_ages_unchanged),
         trace_id_(reinterpret_cast<uint64_t>(concurrent_marking) ^
-                  concurrent_marking->heap_->tracer()->CurrentEpoch(
-                      GCTracer::Scope::MC_BACKGROUND_MARKING)) {}
+                  concurrent_marking->heap_->tracer()->CurrentEpoch()) {}
 
   ~JobTaskMajor() override = default;
   JobTaskMajor(const JobTaskMajor&) = delete;
@@ -285,8 +284,7 @@ class ConcurrentMarking::JobTaskMinor : public v8::JobTask {
   explicit JobTaskMinor(ConcurrentMarking* concurrent_marking)
       : concurrent_marking_(concurrent_marking),
         trace_id_(reinterpret_cast<uint64_t>(concurrent_marking) ^
-                  concurrent_marking->heap_->tracer()->CurrentEpoch(
-                      GCTracer::Scope::MINOR_MS_MARK_PARALLEL)) {}
+                  concurrent_marking->heap_->tracer()->CurrentEpoch()) {}
 
   ~JobTaskMinor() override = default;
   JobTaskMinor(const JobTaskMinor&) = delete;
@@ -322,6 +320,23 @@ class ConcurrentMarking::JobTaskMinor : public v8::JobTask {
  private:
   ConcurrentMarking* concurrent_marking_;
   const uint64_t trace_id_;
+};
+
+class ConcurrentMarking::MinorMarkingState {
+ public:
+  ~MinorMarkingState() { DCHECK_EQ(0, active_markers_); }
+
+  V8_INLINE void MarkerStarted() {
+    active_markers_.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  // Returns true if all markers are done.
+  V8_INLINE bool MarkerDone() {
+    return active_markers_.fetch_sub(1, std::memory_order_relaxed) == 1;
+  }
+
+ private:
+  std::atomic<int> active_markers_{0};
 };
 
 ConcurrentMarking::ConcurrentMarking(Heap* heap, WeakObjects* weak_objects)
@@ -477,23 +492,6 @@ void ConcurrentMarking::RunMajor(JobDelegate* delegate,
 
   DCHECK(task_state->local_pretenuring_feedback.empty());
 }
-
-class ConcurrentMarking::MinorMarkingState {
- public:
-  ~MinorMarkingState() { DCHECK_EQ(0, active_markers_); }
-
-  V8_INLINE void MarkerStarted() {
-    active_markers_.fetch_add(1, std::memory_order_relaxed);
-  }
-
-  // Returns true if all markers are done.
-  V8_INLINE bool MarkerDone() {
-    return active_markers_.fetch_sub(1, std::memory_order_relaxed) == 1;
-  }
-
- private:
-  std::atomic<int> active_markers_{0};
-};
 
 namespace {
 

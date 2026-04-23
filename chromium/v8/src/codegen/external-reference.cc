@@ -42,6 +42,7 @@
 #include "src/regexp/regexp-macro-assembler-arch.h"
 #include "src/regexp/regexp-result-vector.h"
 #include "src/regexp/regexp-stack.h"
+#include "src/sandbox/testing.h"
 #include "src/strings/string-search.h"
 #include "src/strings/unicode-inl.h"
 #include "third_party/fp16/src/include/fp16.h"
@@ -368,15 +369,11 @@ ExternalReference ExternalReference::memory_chunk_metadata_table_address() {
 
 #endif  // V8_ENABLE_SANDBOX
 
-#ifdef V8_ENABLE_LEAPTIERING
-
 ExternalReference ExternalReference::js_dispatch_table_address() {
   // TODO(saelo): maybe rename to js_dispatch_table_base_address?
   return ExternalReference(
       IsolateGroup::current()->js_dispatch_table()->base_address());
 }
-
-#endif  // V8_ENABLE_LEAPTIERING
 
 ExternalReference ExternalReference::interpreter_dispatch_table_address(
     Isolate* isolate) {
@@ -557,7 +554,7 @@ ExternalPointerHandle AllocateAndInitializeYoungExternalPointerTableEntry(
 #ifdef V8_ENABLE_SANDBOX
   return isolate->external_pointer_table().AllocateAndInitializeEntry(
       isolate->heap()->young_external_pointer_space(), pointer,
-      kExternalObjectValueTag);
+      kFastApiExternalTypeTag);
 #else
   return 0;
 #endif  // V8_ENABLE_SANDBOX
@@ -613,6 +610,7 @@ FUNCTION_REFERENCE(wasm_suspender_has_js_frames, wasm::suspender_has_js_frames)
 FUNCTION_REFERENCE(wasm_suspend_stack, wasm::suspend_stack)
 FUNCTION_REFERENCE(wasm_resume_jspi_stack, wasm::resume_jspi_stack)
 FUNCTION_REFERENCE(wasm_resume_wasmfx_stack, wasm::resume_wasmfx_stack)
+FUNCTION_REFERENCE(wasm_suspend_wasmfx_stack, wasm::suspend_wasmfx_stack)
 FUNCTION_REFERENCE(wasm_return_stack, wasm::return_stack)
 FUNCTION_REFERENCE(wasm_switch_to_the_central_stack,
                    wasm::switch_to_the_central_stack)
@@ -706,6 +704,7 @@ FUNCTION_REFERENCE(wasm_f16x8_demote_f64x2_zero,
                    wasm::f16x8_demote_f64x2_zero_wrapper)
 FUNCTION_REFERENCE(wasm_f16x8_qfma, wasm::f16x8_qfma_wrapper)
 FUNCTION_REFERENCE(wasm_f16x8_qfms, wasm::f16x8_qfms_wrapper)
+FUNCTION_REFERENCE(wasm_data_drop, wasm::data_drop_wrapper)
 FUNCTION_REFERENCE(wasm_memory_init, wasm::memory_init_wrapper)
 FUNCTION_REFERENCE(wasm_memory_copy, wasm::memory_copy_wrapper)
 FUNCTION_REFERENCE(wasm_memory_fill, wasm::memory_fill_wrapper)
@@ -866,6 +865,9 @@ ExternalReference ExternalReference::address_of_pending_message(
 }
 
 FUNCTION_REFERENCE(abort_with_reason, i::abort_with_reason)
+
+FUNCTION_REFERENCE(abort_with_sandbox_violation,
+                   i::abort_with_sandbox_violation)
 
 ExternalReference ExternalReference::address_of_min_int() {
   return ExternalReference(reinterpret_cast<Address>(&double_min_int_constant));
@@ -1133,8 +1135,7 @@ FUNCTION_REFERENCE(re_is_character_in_range_array,
                    RegExpMacroAssembler::IsCharacterInRangeArray)
 
 ExternalReference ExternalReference::re_word_character_map() {
-  return ExternalReference(
-      NativeRegExpMacroAssembler::word_character_map_address());
+  return ExternalReference(RegExpMacroAssembler::word_character_map_address());
 }
 
 ExternalReference
@@ -1232,13 +1233,15 @@ void* libc_memchr(void* string, int character, size_t search_length) {
 FUNCTION_REFERENCE(libc_memchr_function, libc_memchr)
 
 void* libc_memcpy(void* dest, const void* src, size_t n) {
-  return memcpy(dest, src, n);
+  base::MemCopy(dest, src, n);
+  return dest;
 }
 
 FUNCTION_REFERENCE(libc_memcpy_function, libc_memcpy)
 
 void* libc_memmove(void* dest, const void* src, size_t n) {
-  return memmove(dest, src, n);
+  base::MemMove(dest, src, n);
+  return dest;
 }
 
 FUNCTION_REFERENCE(libc_memmove_function, libc_memmove)
@@ -1252,14 +1255,16 @@ FUNCTION_REFERENCE(libc_memset_function, libc_memset)
 
 void relaxed_memcpy(volatile base::Atomic8* dest,
                     volatile const base::Atomic8* src, size_t n) {
-  base::Relaxed_Memcpy(dest, src, n);
+  base::Relaxed_Memcpy(const_cast<base::Atomic8*>(dest),
+                       const_cast<const base::Atomic8*>(src), n);
 }
 
 FUNCTION_REFERENCE(relaxed_memcpy_function, relaxed_memcpy)
 
 void relaxed_memmove(volatile base::Atomic8* dest,
                      volatile const base::Atomic8* src, size_t n) {
-  base::Relaxed_Memmove(dest, src, n);
+  base::Relaxed_Memmove(const_cast<base::Atomic8*>(dest),
+                        const_cast<const base::Atomic8*>(src), n);
 }
 
 FUNCTION_REFERENCE(relaxed_memmove_function, relaxed_memmove)
@@ -1964,6 +1969,22 @@ void abort_with_reason(int reason) {
   } else {
     base::OS::PrintError("abort: <unknown reason: %d>\n", reason);
   }
+  base::OS::Abort();
+  UNREACHABLE();
+}
+
+void abort_with_sandbox_violation() {
+  base::OS::PrintError("\n## V8 sandbox violation detected!\n\n");
+#ifdef V8_ENABLE_SANDBOX
+  // We're reporting a sandbox violation so we must disable the sandbox crash
+  // filter here (if it is enabled). Otherwise it will treat this crash as a
+  // controlled/harmless crash and filter it.
+  SandboxTesting::Disable();
+#endif  // V8_ENABLE_SANDBOX
+  // We must also update the abort mode so that OS::Abort() crashes. Otherwise
+  // it would do a normal exit if sandbox testing/fuzzing mode is enabled.
+  base::g_abort_mode = base::AbortMode::kDefault;
+
   base::OS::Abort();
   UNREACHABLE();
 }

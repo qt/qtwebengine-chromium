@@ -7,7 +7,6 @@ import("//content/common/features.gni")
 import("//content/public/common/features.gni")
 import("//device/vr/buildflags/buildflags.gni")
 import("//media/media_options.gni")
-import("//services/video_effects/args.gni")
 import("//third_party/protobuf/proto_library.gni")
 import("//third_party/webrtc/webrtc.gni")
 
@@ -78,8 +77,6 @@ source_set("browser_sources") {
     "browser_main_parts.cc",
     "browser_main_parts.h",
     "browser_main_runner.h",
-    "browser_or_resource_context.cc",
-    "browser_or_resource_context.h",
     "browser_plugin_guest_delegate.cc",
     "browser_plugin_guest_delegate.h",
     "browser_plugin_guest_manager.cc",
@@ -129,7 +126,6 @@ source_set("browser_sources") {
     "context_menu_params.h",
     "cookie_access_details.cc",
     "cookie_access_details.h",
-    "cookie_deprecation_label_manager.h",
     "cookie_insight_list_data.h",
     "cookie_insight_list_handler.h",
     "cookie_store_factory.h",
@@ -243,7 +239,6 @@ source_set("browser_sources") {
     "legacy_tech_cookie_issue_details.cc",
     "legacy_tech_cookie_issue_details.h",
     "login_delegate.h",
-    "login_metrics.h",
     "manifest_icon_downloader.h",
     "media_capture_devices.h",
     "media_device_id.cc",
@@ -295,6 +290,7 @@ source_set("browser_sources") {
     "overlay_window.h",
     "overscroll_configuration.h",
     "page.h",
+    "page_manifest_manager.h",
     "page_navigator.cc",
     "page_navigator.h",
     "page_user_data.h",
@@ -351,6 +347,8 @@ source_set("browser_sources") {
     "process_allocation_context.h",
     "process_selection_deferring_condition.cc",
     "process_selection_deferring_condition.h",
+    "process_selection_user_data.cc",
+    "process_selection_user_data.h",
     "process_visibility_util.h",
     "provision_fetcher_factory.h",
     "provision_fetcher_impl.cc",
@@ -380,7 +378,6 @@ source_set("browser_sources") {
     "renderer_preferences_util.cc",
     "renderer_preferences_util.h",
     "replaced_navigation_entry_data.h",
-    "resource_context.h",
     "resource_coordinator_service.h",
     "responsiveness_calculator_delegate.h",
     "restore_type.h",
@@ -417,6 +414,7 @@ source_set("browser_sources") {
     "session_storage_namespace.cc",
     "session_storage_namespace.h",
     "session_storage_usage_info.h",
+    "shape_detection_service.h",
     "shared_cors_origin_access_list.h",
     "shared_worker_instance.cc",
     "shared_worker_instance.h",
@@ -478,6 +476,7 @@ source_set("browser_sources") {
     "usb_chooser.cc",
     "usb_chooser.h",
     "usb_delegate.h",
+    "user_level_memory_pressure_metrics.h",
     "video_capture_device_launcher.cc",
     "video_capture_device_launcher.h",
     "video_capture_service.h",
@@ -536,7 +535,6 @@ source_set("browser_sources") {
     "webui_config.h",
     "webui_config_map.cc",
     "webui_config_map.h",
-    "worker_type.h",
     "zoom_level_delegate.h",
   ]
   configs += [
@@ -583,10 +581,10 @@ source_set("browser_sources") {
     "//services/on_device_model/public/mojom",
     "//services/resource_coordinator/public/cpp:resource_coordinator_cpp",
     "//services/service_manager/public/cpp",
+    "//services/shape_detection/public/mojom",
     "//services/tracing/public/cpp",
     "//services/tracing/public/mojom",
     "//services/video_capture/public/mojom",
-    "//services/video_effects/buildflags",
     "//services/viz/public/mojom",
 
     # We expose skia headers in the public API.
@@ -625,7 +623,6 @@ source_set("browser_sources") {
     "//ui/events",
     "//ui/gl",
     "//ui/shell_dialogs",
-    "//ui/surface",
   ]
 
   allow_circular_includes_from = [
@@ -750,10 +747,6 @@ source_set("browser_sources") {
 
   if (use_clang_profiling_inside_sandbox) {
     sources += [ "profiling_utils.h" ]
-  }
-
-  if (enable_video_effects) {
-    public_deps += [ "//services/video_effects/public/mojom" ]
   }
 }
 

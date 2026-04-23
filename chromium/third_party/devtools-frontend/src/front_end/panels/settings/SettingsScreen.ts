@@ -1,19 +1,20 @@
 // Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
-import '../../ui/components/cards/cards.js';
+import '../../ui/kit/kit.js';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
-import type * as Cards from '../../ui/components/cards/cards.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import * as UIHelpers from '../../ui/helpers/helpers.js';
+import {type Card, createIcon} from '../../ui/kit/kit.js';
+import * as SettingsUI from '../../ui/legacy/components/settings_ui/settings_ui.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {html, render} from '../../ui/lit/lit.js';
@@ -81,7 +82,7 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 let settingsScreenInstance: SettingsScreen;
 
-function createSettingsCard(heading: Common.UIString.LocalizedString, ...content: HTMLElement[]): Cards.Card.Card {
+function createSettingsCard(heading: Common.UIString.LocalizedString, ...content: HTMLElement[]): Card {
   const card = document.createElement('devtools-card');
   card.heading = heading;
   card.append(...content);
@@ -234,6 +235,7 @@ export class GenericSettingsTab extends UI.Widget.VBox implements SettingsTab {
         this.contentElement.createChild('div', 'settings-card-container-wrapper').createChild('div');
 
     this.containerElement.classList.add('settings-multicolumn-card-container');
+    this.syncSection.markAsRoot();
 
     // AI, GRID, MOBILE, EMULATION, and RENDERING are intentionally excluded from this list.
     // AI settings are displayed in their own tab.
@@ -315,11 +317,7 @@ export class GenericSettingsTab extends UI.Widget.VBox implements SettingsTab {
         new Promise<Host.InspectorFrontendHostAPI.SyncInformation>(
             resolve => Host.InspectorFrontendHost.InspectorFrontendHostInstance.getSyncInformation(resolve))
             .then(syncInfo => {
-              this.syncSection.data = {
-                syncInfo,
-                syncSetting: Common.Settings.moduleSetting('sync-preferences') as Common.Settings.Setting<boolean>,
-                receiveBadgesSetting: Common.Settings.Settings.instance().moduleSetting('receive-gdp-badges'),
-              };
+              this.syncSection.syncInfo = syncInfo;
               if (!syncInfo.isSyncActive || !syncInfo.arePreferencesSynced) {
                 this.#updateSyncSectionTimerId = window.setTimeout(this.updateSyncSection.bind(this), 500);
               }
@@ -328,11 +326,9 @@ export class GenericSettingsTab extends UI.Widget.VBox implements SettingsTab {
 
   private createExtensionSection(settings: Common.Settings.SettingRegistration[]): void {
     const sectionName = Common.Settings.SettingCategory.EXTENSIONS;
-    const settingUI = Components.Linkifier.LinkHandlerSettingUI.instance() as UI.SettingsUI.SettingUI;
+    const settingUI = Components.Linkifier.LinkHandlerSettingUI.instance();
     const element = settingUI.settingElement();
-    if (element) {
-      this.createStandardSectionElement(sectionName, settings, element);
-    }
+    this.createStandardSectionElement(sectionName, settings, element);
   }
 
   private createSectionElement(
@@ -343,7 +339,7 @@ export class GenericSettingsTab extends UI.Widget.VBox implements SettingsTab {
     } else if (category === Common.Settings.SettingCategory.ACCOUNT && settings.length > 0) {
       const syncCard = createSettingsCard(
           Common.SettingRegistration.getLocalizedSettingsCategory(Common.SettingRegistration.SettingCategory.ACCOUNT),
-          this.syncSection);
+          this.syncSection.element);
       this.containerElement.appendChild(syncCard);
     } else if (settings.length > 0) {
       this.createStandardSectionElement(category, settings);
@@ -357,7 +353,7 @@ export class GenericSettingsTab extends UI.Widget.VBox implements SettingsTab {
     const sectionElement = document.createElement('div');
     for (const settingRegistration of settings) {
       const setting = Common.Settings.Settings.instance().moduleSetting(settingRegistration.settingName);
-      const settingControl = UI.SettingsUI.createControlForSetting(setting);
+      const settingControl = SettingsUI.SettingsUI.createControlForSetting(setting);
       if (settingControl) {
         this.settingToControl.set(setting, settingControl);
         sectionElement.appendChild(settingControl);
@@ -385,8 +381,8 @@ export class GenericSettingsTab extends UI.Widget.VBox implements SettingsTab {
 }
 
 export class ExperimentsSettingsTab extends UI.Widget.VBox implements SettingsTab {
-  #experimentsSection: Cards.Card.Card|undefined;
-  #unstableExperimentsSection: Cards.Card.Card|undefined;
+  #experimentsSection: Card|undefined;
+  #unstableExperimentsSection: Card|undefined;
   private readonly experimentToControl = new Map<Root.Runtime.Experiment, HTMLElement>();
   private readonly containerElement: HTMLElement;
 
@@ -403,15 +399,13 @@ export class ExperimentsSettingsTab extends UI.Widget.VBox implements SettingsTa
     render(
         html`
         <devtools-toolbar>
-          <devtools-toolbar-input type="filter" placeholder=${
+          <devtools-toolbar-input autofocus type="filter" placeholder=${
             i18nString(UIStrings.searchExperiments)} style="flex-grow:1" @change=${
             this.#onFilterChanged.bind(this)}></devtools-toolbar-input>
         </devtools-toolbar>
     `,
         filterSection);
     this.renderExperiments('');
-    const filter = filterSection.querySelector('devtools-toolbar-input') as HTMLElement;
-    this.setDefaultFocusedElement(filter);
   }
 
   #onFilterChanged(e: CustomEvent<string>): void {
@@ -465,7 +459,7 @@ export class ExperimentsSettingsTab extends UI.Widget.VBox implements SettingsTa
   private createExperimentsWarningSubsection(warningMessage: string): HTMLElement {
     const subsection = document.createElement('div');
     subsection.classList.add('experiments-warning-subsection');
-    const warningIcon = IconButton.Icon.create('warning');
+    const warningIcon = createIcon('warning');
     subsection.appendChild(warningIcon);
     const warning = subsection.createChild('span');
     warning.textContent = warningMessage;
@@ -503,7 +497,7 @@ export class ExperimentsSettingsTab extends UI.Widget.VBox implements SettingsTa
         jslogContext: `${experiment.name}-documentation`,
         title: i18nString(UIStrings.learnMore),
       };
-      linkButton.addEventListener('click', () => UI.UIUtils.openInNewTab(experimentLink));
+      linkButton.addEventListener('click', () => UIHelpers.openInNewTab(experimentLink));
       linkButton.classList.add('link-icon');
 
       p.appendChild(linkButton);
@@ -548,7 +542,7 @@ export class ActionDelegate implements UI.ActionRegistration.ActionDelegate {
         void SettingsScreen.showSettingsScreen({focusTabHeader: true} as ShowSettingsScreenOptions);
         return true;
       case 'settings.documentation':
-        UI.UIUtils.openInNewTab('https://developer.chrome.com/docs/devtools/');
+        UIHelpers.openInNewTab('https://developer.chrome.com/docs/devtools/');
         return true;
       case 'settings.shortcuts':
         void SettingsScreen.showSettingsScreen({name: 'keybinds', focusTabHeader: true});
@@ -586,7 +580,7 @@ export class Revealer implements Common.Revealer.Revealer<Root.Runtime.Experimen
     }
 
     // Reveal settings views
-    for (const view of UI.ViewManager.getRegisteredViewExtensions()) {
+    for (const view of UI.ViewManager.ViewManager.instance().getRegisteredViewExtensions()) {
       const id = view.viewId();
       const location = view.location();
       if (location !== UI.ViewManager.ViewLocationValues.SETTINGS_VIEW) {

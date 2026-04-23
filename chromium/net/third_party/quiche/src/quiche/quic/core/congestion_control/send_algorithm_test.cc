@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <algorithm>
-#include <map>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -13,15 +13,20 @@
 #include "absl/strings/str_cat.h"
 #include "quiche/quic/core/congestion_control/rtt_stats.h"
 #include "quiche/quic/core/congestion_control/send_algorithm_interface.h"
+#include "quiche/quic/core/crypto/quic_random.h"
+#include "quiche/quic/core/quic_bandwidth.h"
+#include "quiche/quic/core/quic_clock.h"
+#include "quiche/quic/core/quic_connection_stats.h"
+#include "quiche/quic/core/quic_constants.h"
+#include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_types.h"
-#include "quiche/quic/core/quic_utils.h"
 #include "quiche/quic/platform/api/quic_logging.h"
 #include "quiche/quic/platform/api/quic_test.h"
-#include "quiche/quic/test_tools/mock_clock.h"
-#include "quiche/quic/test_tools/quic_config_peer.h"
 #include "quiche/quic/test_tools/quic_connection_peer.h"
 #include "quiche/quic/test_tools/quic_sent_packet_manager_peer.h"
 #include "quiche/quic/test_tools/quic_test_utils.h"
+#include "quiche/quic/test_tools/simulator/actor.h"
+#include "quiche/quic/test_tools/simulator/link.h"
 #include "quiche/quic/test_tools/simulator/quic_endpoint.h"
 #include "quiche/quic/test_tools/simulator/simulator.h"
 #include "quiche/quic/test_tools/simulator/switch.h"
@@ -120,21 +125,43 @@ struct TestParams {
 
 std::string TestParamToString(
     const testing::TestParamInfo<TestParams>& params) {
-  return absl::StrCat(
-      CongestionControlTypeToString(params.param.congestion_control_type), "_");
+  return CongestionControlTypeToString(params.param.congestion_control_type);
 }
 
 // Constructs various test permutations.
 std::vector<TestParams> GetTestParams() {
   std::vector<TestParams> params;
   for (const CongestionControlType congestion_control_type :
-       {kBBR, kCubicBytes, kRenoBytes, kPCC}) {
+       {kBBR, kBBRv2, kCubicBytes, kRenoBytes}) {
     params.push_back(TestParams(congestion_control_type));
   }
   return params;
 }
 
-}  // namespace
+// Adds a fixed amount of data to the simulated QUIC sender at a fixed time
+// interval.
+class ConstantRateDataSender : public simulator::Actor {
+ public:
+  ConstantRateDataSender(simulator::Simulator* simulator, std::string name,
+                         simulator::QuicEndpoint* endpoint, QuicBandwidth rate,
+                         QuicTimeDelta interval)
+      : Actor(simulator, std::move(name)),
+        endpoint_(endpoint),
+        interval_(interval),
+        chunk_size_(interval * rate) {
+    Schedule(clock_->Now());
+  }
+
+  void Act() override {
+    endpoint_->AddBytesToTransfer(chunk_size_);
+    Schedule(clock_->Now() + interval_);
+  }
+
+ private:
+  simulator::QuicEndpoint* endpoint_;
+  QuicTimeDelta interval_;
+  QuicByteCount chunk_size_;
+};
 
 class SendAlgorithmTest : public QuicTestWithParam<TestParams> {
  protected:
@@ -345,5 +372,41 @@ TEST_P(SendAlgorithmTest, LowRTTTransfer) {
   PrintTransferStats();
 }
 
+// In the scenario below, the IW/RTT implies a bandwidth that is much larger
+// than what the link can sustain, while the sender hits the app-limited state
+// often during the startup phase.
+TEST_P(SendAlgorithmTest, AppLimitedStart) {
+  constexpr QuicBandwidth kBandwidth = QuicBandwidth::FromKBitsPerSecond(900);
+  constexpr QuicTimeDelta kRtt = QuicTimeDelta::FromMilliseconds(20);
+  CreateSetup(kBandwidth, kRtt, 2 * kBandwidth * kRtt);
+
+  constexpr QuicBandwidth kDataRate = QuicBandwidth::FromKBitsPerSecond(1000);
+  constexpr QuicTimeDelta kInterval = QuicTimeDelta::FromMicroseconds(1e6 / 60);
+  ConstantRateDataSender sender(&simulator_, "Data Sender", &quic_sender_,
+                                kDataRate, kInterval);
+
+  simulator_.RunFor(QuicTimeDelta::FromSeconds(15));
+  PrintTransferStats();
+}
+
+TEST(NetworkParamsStringifyTest, Stringifies) {
+  SendAlgorithmInterface::NetworkParams params(
+      /*bandwidth=*/QuicBandwidth::FromKBitsPerSecond(1000),
+      /*rtt=*/QuicTime::Delta::FromSeconds(2),
+      /*allow_cwnd_to_decrease=*/true);
+
+  params.max_initial_congestion_window = 42;
+  params.is_rtt_trusted = true;
+
+  EXPECT_EQ(testing::PrintToString(params),
+            "NetworkParams { bandwidth: 1000.00 kbits/s (125.00 kbytes/s), "
+            "rtt: 2s, "
+            "max_initial_congestion_window: 42, "
+            "allow_cwnd_to_decrease: true, "
+            "is_rtt_trusted: true, "
+            "clamp_cwnd_and_rtt_before_send_algorithm: false}");
+}
+
+}  // namespace
 }  // namespace test
 }  // namespace quic

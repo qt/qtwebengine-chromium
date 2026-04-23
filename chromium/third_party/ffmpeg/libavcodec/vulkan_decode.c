@@ -26,7 +26,8 @@
 
 #define DECODER_IS_SDR(codec_id) \
     (((codec_id) == AV_CODEC_ID_FFV1) || \
-     ((codec_id) == AV_CODEC_ID_PRORES_RAW))
+     ((codec_id) == AV_CODEC_ID_PRORES_RAW) || \
+     ((codec_id) == AV_CODEC_ID_PRORES))
 
 #if CONFIG_H264_VULKAN_HWACCEL
 extern const FFVulkanDecodeDescriptor ff_vk_dec_h264_desc;
@@ -45,6 +46,9 @@ extern const FFVulkanDecodeDescriptor ff_vk_dec_ffv1_desc;
 #endif
 #if CONFIG_PRORES_RAW_VULKAN_HWACCEL
 extern const FFVulkanDecodeDescriptor ff_vk_dec_prores_raw_desc;
+#endif
+#if CONFIG_PRORES_VULKAN_HWACCEL
+extern const FFVulkanDecodeDescriptor ff_vk_dec_prores_desc;
 #endif
 
 static const FFVulkanDecodeDescriptor *dec_descs[] = {
@@ -65,6 +69,9 @@ static const FFVulkanDecodeDescriptor *dec_descs[] = {
 #endif
 #if CONFIG_PRORES_RAW_VULKAN_HWACCEL
     &ff_vk_dec_prores_raw_desc,
+#endif
+#if CONFIG_PRORES_VULKAN_HWACCEL
+    &ff_vk_dec_prores_desc,
 #endif
 };
 
@@ -1123,8 +1130,9 @@ int ff_vk_frame_params(AVCodecContext *avctx, AVBufferRef *hw_frames_ctx)
         }
     }
 
-    frames_ctx->width  = avctx->coded_width;
-    frames_ctx->height = avctx->coded_height;
+    const AVPixFmtDescriptor *pdesc = av_pix_fmt_desc_get(frames_ctx->sw_format);
+    frames_ctx->width  = FFALIGN(avctx->coded_width, 1 << pdesc->log2_chroma_w);
+    frames_ctx->height = FFALIGN(avctx->coded_height, 1 << pdesc->log2_chroma_h);
     frames_ctx->format = AV_PIX_FMT_VULKAN;
 
     hwfc->format[0]    = vkfmt;
@@ -1331,8 +1339,8 @@ int ff_vk_decode_init(AVCodecContext *avctx)
         dpb_frames = (AVHWFramesContext *)ctx->common.dpb_hwfc_ref->data;
         dpb_frames->format    = s->frames->format;
         dpb_frames->sw_format = s->frames->sw_format;
-        dpb_frames->width     = avctx->coded_width;
-        dpb_frames->height    = avctx->coded_height;
+        dpb_frames->width     = s->frames->width;
+        dpb_frames->height    = s->frames->height;
 
         dpb_hwfc = dpb_frames->hwctx;
         dpb_hwfc->create_pnext = (void *)ff_vk_find_struct(ctx->s.hwfc->create_pnext,

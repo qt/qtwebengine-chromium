@@ -32,7 +32,6 @@
 #include "chrome/browser/extensions/api/webstore_private/extension_install_status.h"
 #include "chrome/browser/extensions/extension_allowlist.h"
 #include "chrome/browser/extensions/extension_management.h"
-#include "chrome/browser/extensions/install_approval.h"
 #include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/extensions/manifest_v2_experiment_manager.h"
 #include "chrome/browser/extensions/mv2_experiment_stage.h"
@@ -58,11 +57,13 @@
 #include "content/public/browser/gpu_feature_checker.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/api/management/management_api.h"
 #include "extensions/browser/extension_dialog_auto_confirm.h"
 #include "extensions/browser/extension_function_constants.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/extensions_browser_client.h"
+#include "extensions/browser/install_approval.h"
 #include "extensions/browser/install_tracker.h"
 #include "extensions/browser/scoped_active_install.h"
 #include "extensions/buildflags/buildflags.h"
@@ -74,10 +75,6 @@
 #include "net/base/load_flags.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
-
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-#include "extensions/browser/api/management/management_api.h"
-#endif
 
 #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
@@ -496,7 +493,7 @@ void WebstorePrivateBeginInstallWithManifest3Function::OnWebstoreParseSuccess(
   std::string localized_name =
       details().localized_name ? *details().localized_name : std::string();
 
-  std::string error;
+  std::u16string error;
   dummy_extension_ = ExtensionInstallPrompt::GetLocalizedExtensionForDisplay(
       *parsed_manifest_, Extension::FROM_WEBSTORE, id, localized_name,
       std::string(), &error);
@@ -572,7 +569,6 @@ void WebstorePrivateBeginInstallWithManifest3Function::OnWebstoreParseFailure(
 
 void WebstorePrivateBeginInstallWithManifest3Function::RequestExtensionApproval(
     content::WebContents* web_contents) {
-#if BUILDFLAG(ENABLE_EXTENSIONS)
   SupervisedUserExtensionsDelegate* supervised_user_extensions_delegate =
       ManagementAPI::GetFactoryInstance()
           ->Get(profile_)
@@ -586,28 +582,21 @@ void WebstorePrivateBeginInstallWithManifest3Function::RequestExtensionApproval(
       *dummy_extension_, web_contents,
       gfx::ImageSkia::CreateFrom1xBitmap(icon_),
       std::move(extension_approval_callback));
-#else
-  // TODO(crbug.com/410616937): Support supervised user install controls on
-  // desktop Android.
-  NOTIMPLEMENTED() << "Supervised user checks not yet supported on Android.";
-  OnExtensionApprovalDone(
-      SupervisedUserExtensionsDelegate::ExtensionApprovalResult::kApproved);
-#endif
 }
 
 void WebstorePrivateBeginInstallWithManifest3Function::OnExtensionApprovalDone(
-    SupervisedUserExtensionsDelegate::ExtensionApprovalResult result) {
+    SupervisedExtensionApprovalResult result) {
   switch (result) {
-    case SupervisedUserExtensionsDelegate::ExtensionApprovalResult::kApproved:
+    case SupervisedExtensionApprovalResult::kApproved:
       OnExtensionApprovalApproved();
       break;
-    case SupervisedUserExtensionsDelegate::ExtensionApprovalResult::kCanceled:
+    case SupervisedExtensionApprovalResult::kCanceled:
       OnExtensionApprovalCanceled();
       break;
-    case SupervisedUserExtensionsDelegate::ExtensionApprovalResult::kFailed:
+    case SupervisedExtensionApprovalResult::kFailed:
       OnExtensionApprovalFailed();
       break;
-    case SupervisedUserExtensionsDelegate::ExtensionApprovalResult::kBlocked:
+    case SupervisedExtensionApprovalResult::kBlocked:
       OnExtensionApprovalBlocked();
       break;
   }
@@ -616,18 +605,12 @@ void WebstorePrivateBeginInstallWithManifest3Function::OnExtensionApprovalDone(
 
 void WebstorePrivateBeginInstallWithManifest3Function::
     OnExtensionApprovalApproved() {
-#if BUILDFLAG(ENABLE_EXTENSIONS)
   SupervisedUserExtensionsDelegate* supervised_user_extensions_delegate =
       ManagementAPI::GetFactoryInstance()
           ->Get(profile_)
           ->GetSupervisedUserExtensionsDelegate();
   CHECK(supervised_user_extensions_delegate);
   supervised_user_extensions_delegate->AddExtensionApproval(*dummy_extension_);
-#else
-  // TODO(crbug.com/410616937): Support supervised user install controls on
-  // desktop Android.
-  NOTIMPLEMENTED() << "Supervised user checks not yet supported on Android.";
-#endif
 
   HandleInstallProceed();
 }
@@ -1339,7 +1322,7 @@ void WebstorePrivateGetExtensionStatusFunction::OnManifestParsed(
     return;
   }
 
-  std::string error;
+  std::u16string error;
   auto dummy_extension = Extension::Create(
       base::FilePath(), mojom::ManifestLocation::kInternal, result->GetDict(),
       Extension::FROM_WEBSTORE, extension_id, &error);

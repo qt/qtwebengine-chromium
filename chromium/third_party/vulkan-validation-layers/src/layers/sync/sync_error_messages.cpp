@@ -46,7 +46,7 @@ std::string ErrorMessages::Error(const HazardResult& hazard, const CommandExecut
 }
 
 std::string ErrorMessages::BufferError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context, vvl::Func command,
-                                       const std::string& resource_description, const ResourceAccessRange range,
+                                       const std::string& resource_description, const AccessRange range,
                                        AdditionalMessageInfo additional_info) const {
     std::stringstream ss;
     ss << "\nBuffer access region: {\n";
@@ -60,7 +60,7 @@ std::string ErrorMessages::BufferError(const HazardResult& hazard, const Command
 
 std::string ErrorMessages::BufferCopyError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context,
                                            const vvl::Func command, const std::string& resource_description, uint32_t region_index,
-                                           ResourceAccessRange range) const {
+                                           AccessRange range) const {
     AdditionalMessageInfo additional_info;
     additional_info.properties.Add(kPropertyRegionIndex, region_index);
 
@@ -76,7 +76,7 @@ std::string ErrorMessages::BufferCopyError(const HazardResult& hazard, const Com
 
 std::string ErrorMessages::AccelerationStructureError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context,
                                                       const vvl::Func command, const std::string& resource_description,
-                                                      const ResourceAccessRange range, VkAccelerationStructureKHR as,
+                                                      const AccessRange range, VkAccelerationStructureKHR as,
                                                       const Location& as_location) const {
     AdditionalMessageInfo additional_info;
 
@@ -471,8 +471,9 @@ std::string ErrorMessages::FirstUseError(const HazardResult& hazard, const Comma
 
     // Use generic "resource" when resource handle is not specified for some reason (likely just a missing code).
     // TODO: specify resources in EndRenderPass (NegativeSyncVal.QSOBarrierHazard).
-    const std::string resource_description =
-        recorded_usage_info.resource_handle ? validator_.FormatHandle(recorded_usage_info.resource_handle) : "resource";
+    const std::string resource_description = (recorded_usage_info.resource_handle != NullVulkanTypedHandle)
+                                                 ? validator_.FormatHandle(recorded_usage_info.resource_handle)
+                                                 : "resource";
     return Error(hazard, exec_context, recorded_usage_info.command, resource_description, "SubmitTimeError", additional_info);
 }
 

@@ -15,14 +15,15 @@
  *
  */
 
-#ifdef FT_CONFIG_OPTION_USE_HARFBUZZ
-
 
 #include <freetype/freetype.h>
 #include <freetype/tttables.h>
 #include <freetype/tttags.h>
 
 #include <freetype/internal/ftstream.h>
+
+
+#ifdef FT_CONFIG_OPTION_USE_HARFBUZZ
 
 #include "afglobal.h"
 #include "afgsub.h"
@@ -363,11 +364,13 @@
     }
 
     globals->gsub                          = gsub;
+    globals->gsub_lookup_count             = lookupCount;
     globals->gsub_lookups_single_alternate = gsub_lookups_single_alternate;
 
     return;
 
   Fail:
+    globals->gsub_lookup_count = 0;
     FT_FREE( gsub );
     FT_FREE( gsub_lookups_single_alternate );
   }
@@ -649,6 +652,8 @@
     {
       FT_Error  error;
 
+      FT_UInt  real_lookupType = lookupType;
+
       FT_Byte*  subtable = table + FT_NEXT_USHORT( p );
 
 
@@ -657,11 +662,11 @@
         FT_Byte*  q = subtable + 2;
 
 
-        lookupType = FT_NEXT_USHORT( q );
-        subtable  += FT_PEEK_ULONG( q );
+        real_lookupType = FT_NEXT_USHORT( q );
+        subtable       += FT_PEEK_ULONG( q );
       }
 
-      if ( lookupType == 1 )
+      if ( real_lookupType == 1 )
       {
         FT_UInt  format = FT_PEEK_USHORT( subtable );
 

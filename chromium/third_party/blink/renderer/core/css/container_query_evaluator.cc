@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/core/css/scroll_state_query_snapshot.h"
 #include "third_party/blink/renderer/core/css/snapped_query_scroll_snapshot.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
+#include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/css/style_recalc_context.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
@@ -145,7 +146,7 @@ ContainerQueryEvaluator::ContainerQueryEvaluator(Element& container) {
       ContainerStuckPhysical::kNo, ContainerStuckPhysical::kNo, snapped_,
       static_cast<ContainerScrollableFlags>(ContainerScrollable::kNone),
       static_cast<ContainerScrollableFlags>(ContainerScrollable::kNone),
-      ContainerScrollDirection::kNone, ContainerScrollDirection::kNone,
+      ContainerScrolled::kNone, ContainerScrolled::kNone,
       WritingDirectionMode(WritingMode::kHorizontalTb, TextDirection::kLtr),
       PositionTryFallback());
   media_query_evaluator_ =
@@ -348,11 +349,10 @@ bool ContainerQueryEvaluator::EvalAndAdd(const ContainerQuery& query,
           MakeGarbageCollected<ScrollStateQuerySnapshot>(*container_element);
     }
   }
-  if (RuntimeEnabledFeatures::CSSScrollDirectionContainerQueriesEnabled() &&
-      !depends_on_scroll_direction_) {
-    depends_on_scroll_direction_ =
-        query.Selector().SelectsScrollDirectionContainers();
-    if (depends_on_scroll_direction_ && !scroll_state_snapshot_) {
+  if (RuntimeEnabledFeatures::CSSScrolledContainerQueriesEnabled() &&
+      !depends_on_scrolled_) {
+    depends_on_scrolled_ = query.Selector().SelectsScrolledContainers();
+    if (depends_on_scrolled_ && !scroll_state_snapshot_) {
       CHECK(media_query_evaluator_);
       Element* container_element = ContainerElement();
       CHECK(container_element);
@@ -424,11 +424,11 @@ ContainerQueryEvaluator::Change ContainerQueryEvaluator::ApplyScrollState() {
         scroll_state_snapshot_->ScrollableHorizontal(),
         scroll_state_snapshot_->ScrollableVertical());
     change = std::max(change, scrollable_change);
-    if (RuntimeEnabledFeatures::CSSScrollDirectionContainerQueriesEnabled()) {
-      Change scroll_direction_change = ScrollDirectionContainerChanged(
-          scroll_state_snapshot_->ScrollDirectionHorizontal(),
-          scroll_state_snapshot_->ScrollDirectionVertical());
-      change = std::max(change, scroll_direction_change);
+    if (RuntimeEnabledFeatures::CSSScrolledContainerQueriesEnabled()) {
+      Change scrolled_change =
+          ScrolledContainerChanged(scroll_state_snapshot_->ScrolledHorizontal(),
+                                   scroll_state_snapshot_->ScrolledVertical());
+      change = std::max(change, scrolled_change);
     }
   }
   Change snap_change = SnapContainerChanged(pending_snapped_);
@@ -487,19 +487,18 @@ ContainerQueryEvaluator::ScrollableContainerChanged(
 }
 
 ContainerQueryEvaluator::Change
-ContainerQueryEvaluator::ScrollDirectionContainerChanged(
-    ContainerScrollDirection scroll_direction_horizontal,
-    ContainerScrollDirection scroll_direction_vertical) {
-  if (scroll_direction_horizontal_ == scroll_direction_horizontal &&
-      scroll_direction_vertical_ == scroll_direction_vertical) {
+ContainerQueryEvaluator::ScrolledContainerChanged(
+    ContainerScrolled scrolled_horizontal,
+    ContainerScrolled scrolled_vertical) {
+  if (scrolled_horizontal_ == scrolled_horizontal &&
+      scrolled_vertical_ == scrolled_vertical) {
     return Change::kNone;
   }
 
-  UpdateContainerScrollDirection(scroll_direction_horizontal,
-                                 scroll_direction_vertical);
-  Change change = ComputeScrollDirectionChange();
+  UpdateContainerScrolled(scrolled_horizontal, scrolled_vertical);
+  Change change = ComputeScrolledChange();
   if (change != Change::kNone) {
-    ClearResults(change, kScrollDirectionContainer);
+    ClearResults(change, kScrolledContainer);
   }
 
   return change;
@@ -568,12 +567,12 @@ ContainerQueryEvaluator::StyleAffectingScrollStateChanged() {
   }
   change = std::max(change, scrollable_change);
 
-  if (RuntimeEnabledFeatures::CSSScrollDirectionContainerQueriesEnabled()) {
-    Change scroll_direction_change = ComputeScrollDirectionChange();
-    if (scroll_direction_change != Change::kNone) {
-      ClearResults(scroll_direction_change, kScrollDirectionContainer);
+  if (RuntimeEnabledFeatures::CSSScrolledContainerQueriesEnabled()) {
+    Change scrolled_change = ComputeScrolledChange();
+    if (scrolled_change != Change::kNone) {
+      ClearResults(scrolled_change, kScrolledContainer);
     }
-    change = std::max(change, scroll_direction_change);
+    change = std::max(change, scrolled_change);
   }
   return change;
 }
@@ -587,8 +586,7 @@ void ContainerQueryEvaluator::UpdateContainerValues() {
       existing_values.StuckVertical(), existing_values.SnappedFlags(),
       existing_values.ScrollableHorizontal(),
       existing_values.ScrollableVertical(),
-      existing_values.ScrollDirectionHorizontal(),
-      existing_values.ScrollDirectionVertical(),
+      existing_values.ScrolledHorizontal(), existing_values.ScrolledVertical(),
       existing_values.AbsContainerWritingDirection(),
       existing_values.AnchoredFallback());
   media_query_evaluator_ =
@@ -635,8 +633,7 @@ void ContainerQueryEvaluator::UpdateContainerSize(PhysicalSize size,
       existing_values.StuckHorizontal(), existing_values.StuckVertical(),
       existing_values.SnappedFlags(), existing_values.ScrollableHorizontal(),
       existing_values.ScrollableVertical(),
-      existing_values.ScrollDirectionHorizontal(),
-      existing_values.ScrollDirectionVertical(),
+      existing_values.ScrolledHorizontal(), existing_values.ScrolledVertical(),
       existing_values.AbsContainerWritingDirection(),
       existing_values.AnchoredFallback());
   media_query_evaluator_ =
@@ -657,8 +654,7 @@ void ContainerQueryEvaluator::UpdateContainerStuck(
       existing_values.Height(), stuck_horizontal, stuck_vertical,
       existing_values.SnappedFlags(), existing_values.ScrollableHorizontal(),
       existing_values.ScrollableVertical(),
-      existing_values.ScrollDirectionHorizontal(),
-      existing_values.ScrollDirectionVertical(),
+      existing_values.ScrolledHorizontal(), existing_values.ScrolledVertical(),
       existing_values.AbsContainerWritingDirection(),
       existing_values.AnchoredFallback());
   media_query_evaluator_ =
@@ -678,8 +674,7 @@ void ContainerQueryEvaluator::UpdateContainerSnapped(
       existing_values.StuckVertical(), snapped,
       existing_values.ScrollableHorizontal(),
       existing_values.ScrollableVertical(),
-      existing_values.ScrollDirectionHorizontal(),
-      existing_values.ScrollDirectionVertical(),
+      existing_values.ScrolledHorizontal(), existing_values.ScrolledVertical(),
       existing_values.AbsContainerWritingDirection(),
       existing_values.AnchoredFallback());
   media_query_evaluator_ =
@@ -700,19 +695,18 @@ void ContainerQueryEvaluator::UpdateContainerScrollable(
       existing_values.Height(), existing_values.StuckHorizontal(),
       existing_values.StuckVertical(), existing_values.Snapped(),
       scrollable_horizontal, scrollable_vertical,
-      existing_values.ScrollDirectionHorizontal(),
-      existing_values.ScrollDirectionVertical(),
+      existing_values.ScrolledHorizontal(), existing_values.ScrolledVertical(),
       existing_values.AbsContainerWritingDirection(),
       existing_values.AnchoredFallback());
   media_query_evaluator_ =
       MakeGarbageCollected<MediaQueryEvaluator>(query_values);
 }
 
-void ContainerQueryEvaluator::UpdateContainerScrollDirection(
-    ContainerScrollDirection scroll_direction_horizontal,
-    ContainerScrollDirection scroll_direction_vertical) {
-  scroll_direction_horizontal_ = scroll_direction_horizontal;
-  scroll_direction_vertical_ = scroll_direction_vertical;
+void ContainerQueryEvaluator::UpdateContainerScrolled(
+    ContainerScrolled scrolled_horizontal,
+    ContainerScrolled scrolled_vertical) {
+  scrolled_horizontal_ = scrolled_horizontal;
+  scrolled_vertical_ = scrolled_vertical;
 
   const MediaValues& existing_values = media_query_evaluator_->GetMediaValues();
   Element* container = existing_values.ContainerElement();
@@ -722,8 +716,8 @@ void ContainerQueryEvaluator::UpdateContainerScrollDirection(
       existing_values.Height(), existing_values.StuckHorizontal(),
       existing_values.StuckVertical(), existing_values.Snapped(),
       existing_values.ScrollableHorizontal(),
-      existing_values.ScrollableVertical(), scroll_direction_horizontal,
-      scroll_direction_vertical, existing_values.AbsContainerWritingDirection(),
+      existing_values.ScrollableVertical(), scrolled_horizontal,
+      scrolled_vertical, existing_values.AbsContainerWritingDirection(),
       existing_values.AnchoredFallback());
   media_query_evaluator_ =
       MakeGarbageCollected<MediaQueryEvaluator>(query_values);
@@ -743,8 +737,7 @@ void ContainerQueryEvaluator::UpdateAnchoredFallback(
       existing_values.StuckVertical(), existing_values.Snapped(),
       existing_values.ScrollableHorizontal(),
       existing_values.ScrollableVertical(),
-      existing_values.ScrollDirectionHorizontal(),
-      existing_values.ScrollDirectionVertical(),
+      existing_values.ScrolledHorizontal(), existing_values.ScrolledVertical(),
       abs_container_writing_direction, anchored_fallback);
   media_query_evaluator_ =
       MakeGarbageCollected<MediaQueryEvaluator>(query_values);
@@ -775,9 +768,9 @@ void ContainerQueryEvaluator::ClearResults(Change change,
           pair.key->Selector().SelectsSnapContainers()) ||
          (container_type == kScrollableContainer &&
           pair.key->Selector().SelectsScrollableContainers()) ||
-         (RuntimeEnabledFeatures::CSSScrollDirectionContainerQueriesEnabled() &&
-          container_type == kScrollDirectionContainer &&
-          pair.key->Selector().SelectsScrollDirectionContainers()) ||
+         (RuntimeEnabledFeatures::CSSScrolledContainerQueriesEnabled() &&
+          container_type == kScrolledContainer &&
+          pair.key->Selector().SelectsScrolledContainers()) ||
          (container_type == kAnchoredContainer &&
           pair.key->Selector().SelectsAnchoredContainers()) ||
          (container_type == kStyleContainer &&
@@ -880,13 +873,13 @@ ContainerQueryEvaluator::ComputeScrollableChange() const {
   return change;
 }
 
-ContainerQueryEvaluator::Change
-ContainerQueryEvaluator::ComputeScrollDirectionChange() const {
+ContainerQueryEvaluator::Change ContainerQueryEvaluator::ComputeScrolledChange()
+    const {
   Change change = Change::kNone;
 
   for (const auto& result : results_) {
     const ContainerQuery& query = *result.key;
-    if (!query.Selector().SelectsScrollDirectionContainers()) {
+    if (!query.Selector().SelectsScrolledContainers()) {
       continue;
     }
     if (Eval(query).value == result.value.value) {
@@ -982,7 +975,7 @@ StyleRecalcChange ContainerQueryEvaluator::ApplyScrollStateAndStyleChanges(
   // the container values and invalidate style for any changed queries.
   bool invalidate_for_font =
       (unit_flags_ & MediaQueryExpValue::kFontRelative) &&
-      old_style.GetFont() != new_style.GetFont();
+      !base::ValuesEquivalent(old_style.GetFont(), new_style.GetFont());
 
   // Writing direction changes may affect how logical queries match for size and
   // scroll-state() queries even when the physical size or scroll-state do not
@@ -1024,10 +1017,8 @@ StyleRecalcChange ContainerQueryEvaluator::ApplyScrollStateAndStyleChanges(
         break;
     }
   }
-  if (!base::ValuesEquivalent(old_style.InheritedVariables(),
-                              new_style.InheritedVariables()) ||
-      !base::ValuesEquivalent(old_style.NonInheritedVariables(),
-                              new_style.NonInheritedVariables()) ||
+  if (old_style.InheritedVariables() != new_style.InheritedVariables() ||
+      old_style.NonInheritedVariables() != new_style.NonInheritedVariables() ||
       DependsOnTreeCounting()) {
     switch (StyleContainerChanged()) {
       case ContainerQueryEvaluator::Change::kNone:

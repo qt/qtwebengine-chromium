@@ -24,23 +24,24 @@
 namespace ink::jni {
 
 jobject CreateJImmutableParallelogramOrThrow(JNIEnv* env, const Quad& quad) {
-  jobject center = CreateJImmutableVecFromPointOrThrow(
-      env, {quad.Center().x, quad.Center().y});
+  jobject center = CreateJImmutableVecFromPointOrThrow(env, quad.Center());
   if (env->ExceptionCheck()) return nullptr;
   return env->CallStaticObjectMethod(
       ClassImmutableParallelogram(env),
-      MethodImmutableParallelogramFromCenterDimensionsRotationAndShear(env),
-      center, quad.Width(), quad.Height(), quad.Rotation().ValueInRadians(),
-      quad.ShearFactor());
+      MethodImmutableParallelogramFromCenterDimensionsRotationInDegreesAndSkew(
+          env),
+      center, quad.Width(), quad.Height(), quad.Rotation().ValueInDegrees(),
+      quad.Skew());
 }
 
 void FillJMutableParallelogramOrThrow(JNIEnv* env, const Quad& quad,
                                       jobject mutable_parallelogram) {
-  env->CallVoidMethod(
+  env->CallObjectMethod(
       mutable_parallelogram,
-      MethodMutableParallelogramSetCenterDimensionsRotationAndShear(env),
+      MethodMutableParallelogramSetCenterDimensionsRotationInDegreesAndSkew(
+          env),
       quad.Center().x, quad.Center().y, quad.Width(), quad.Height(),
-      quad.Rotation().ValueInRadians(), quad.ShearFactor());
+      quad.Rotation().ValueInDegrees(), quad.Skew());
 }
 
 }  // namespace ink::jni

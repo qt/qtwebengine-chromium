@@ -51,6 +51,22 @@ import generate_buildbot_json
 
 # Add custom mixins here.
 ADDITIONAL_MIXINS = {
+    'dawn_end2end_real_hardware_gtests_common_args': {
+        'args': [
+            '--use-gpu-in-tests',
+            '--exclusive-device-type-preference=discrete,integrated',
+            '--test-launcher-retry-limit=0',
+            '--test-launcher-batch-limit=512',
+        ],
+        'linux_args': [
+            '--no-xvfb',
+        ],
+        'win_args': [
+            # TODO(crbug.com/454365243): Remove this filter when including these
+            # tests does not contribute to OOM issues.
+            '--gtest_filter=-*WebGPU_WebGPU_backend_on*',
+        ],
+    },
     'no_swarming': {
         'swarming': {
             'can_use_on_swarming_builders': False,
@@ -59,6 +75,61 @@ ADDITIONAL_MIXINS = {
     'result_adapter_gtest_json': {
         'resultdb': {
             'result_format': 'gtest_json',
+        },
+    },
+    'result_adapter_json': {
+        'resultdb': {
+            'result_format': 'json',
+        },
+    },
+    'result_adapter_single': {
+        'resultdb': {
+            'result_format': 'single',
+        },
+    },
+    'tint_ir_merge': {
+        'merge': {
+            'script': '//scripts/merge_scripts/generate_tint_fuzz_corpora.py',
+            'args': [
+                '--fuzzer-name',
+                'tint_ir_fuzzer',
+            ],
+        },
+    },
+    'tint_wgsl_merge': {
+        'merge': {
+            'script': '//scripts/merge_scripts/generate_tint_fuzz_corpora.py',
+            'args': [
+                '--fuzzer-name',
+                'tint_wgsl_fuzzer',
+            ],
+        },
+    },
+    'true_noop_merge': {
+        'merge': {
+            'script': '//scripts/merge_scripts/true_noop_merge.py',
+        },
+    },
+    'win_snapdragon_x_elite_gtest_args': {
+        'args': [
+            # Only use the physical GPU. On these devices, SwiftShader (0x1AE0),
+            # WARP (0x1414), and some unknown "integrated GPU" (0x5143) are all
+            # reported in addition to this.
+            '--adapter-vendor-id=0x4D4F4351',
+        ],
+    },
+    'wire_trace_merge': {
+        'merge': {
+            'script':
+            '//scripts/merge_scripts/generate_wire_trace_fuzz_corpora.py',
+            'args': [
+                '--fuzzer-name',
+                'dawn_wire_server_and_frontend_fuzzer',
+                '--fuzzer-name',
+                'dawn_wire_server_and_vulkan_backend_fuzzer',
+                '--fuzzer-name',
+                'dawn_wire_server_and_d3d12_backend_fuzzer',
+            ],
         },
     },
 }

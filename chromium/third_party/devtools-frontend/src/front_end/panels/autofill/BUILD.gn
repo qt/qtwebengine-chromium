@@ -12,7 +12,7 @@ generate_css("css_files") {
   sources = [ "autofillView.css" ]
 }
 
-devtools_module("autofill") {
+devtools_ui_module("autofill") {
   sources = [ "AutofillView.ts" ]
 
   deps = [
@@ -59,7 +59,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [ "AutofillView.test.ts" ]

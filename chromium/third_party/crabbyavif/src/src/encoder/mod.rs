@@ -94,9 +94,9 @@ impl TilingMode {
 
 #[derive(Clone, Copy, Debug)]
 pub struct MutableSettings {
-    pub quality: i32,
-    pub quality_alpha: i32,
-    pub quality_gainmap: i32,
+    pub quality: f32,
+    pub quality_alpha: f32,
+    pub quality_gainmap: f32,
     pub tiling_mode: TilingMode,
     pub scaling_mode: ScalingMode,
 }
@@ -104,17 +104,48 @@ pub struct MutableSettings {
 impl Default for MutableSettings {
     fn default() -> Self {
         Self {
-            quality: 60,
-            quality_alpha: 60,
-            quality_gainmap: 60,
+            quality: 60.0,
+            quality_alpha: 60.0,
+            quality_gainmap: 60.0,
             tiling_mode: Default::default(),
             scaling_mode: Default::default(),
         }
     }
 }
 
+// Scheme for splitting, combining and/or transforming the input samples to
+// bypass some codec or format limits.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Recipe {
+    // Automatically apply one of the Recipes below based on the input samples.
+    Auto,
+    // Do not split or transform the input samples. An error is returned if the
+    // selected codec or base video format does not support encoding the input
+    // samples as is (AV1 does not support 16-bit samples for example).
+    None,
+    // Encode the 8 most significant bits of each input image sample losslessly
+    // into a base image. The remaining 8 least significant bits are encoded in
+    // a separate hidden image item. The two are combined at decoding into one
+    // image with the same bit depth as the original image. It is backward
+    // compatible in the sense that it is possible to decode only the base image
+    // (ignoring the hidden image item), leading to a valid image but with
+    // precision loss (16-bit samples truncated to the 8 most significant bits).
+    BitDepthExtension8b8b,
+}
+
+impl CodecChoice {
+    fn get_item_type_and_encoder_codec(&self) -> Result<(&str, Codec), AvifError> {
+        match self {
+            #[cfg(feature = "aom")]
+            CodecChoice::Auto | CodecChoice::Aom => Ok(("av01", Box::<Aom>::default())),
+            _ => AvifError::no_codec_available(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Settings {
+    pub codec_choice: CodecChoice,
     pub threads: u32,
     pub speed: Option<u32>,
     pub header_format: HeaderFormat,
@@ -122,13 +153,17 @@ pub struct Settings {
     pub timescale: u64,
     pub repetition_count: RepetitionCount,
     pub extra_layer_count: u32,
-    pub sample_transform_recipe: SampleTransformRecipe,
+    pub recipe: Recipe,
+    pub force_write_extended_pixi: bool,
+    pub creation_time: Option<u64>,
+    pub modification_time: Option<u64>,
     pub mutable: MutableSettings,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Settings {
+            codec_choice: CodecChoice::default(),
             threads: 1,
             speed: None,
             header_format: HeaderFormat::default(),
@@ -136,7 +171,10 @@ impl Default for Settings {
             timescale: 1,
             repetition_count: RepetitionCount::Infinite,
             extra_layer_count: 0,
-            sample_transform_recipe: SampleTransformRecipe::None,
+            recipe: Recipe::None,
+            force_write_extended_pixi: false,
+            creation_time: None,
+            modification_time: None,
             mutable: Default::default(),
         }
     }
@@ -145,6 +183,15 @@ impl Default for Settings {
 impl Settings {
     pub(crate) fn is_valid(&self) -> bool {
         self.extra_layer_count < MAX_AV1_LAYER_COUNT as u32 && self.timescale > 0
+    }
+
+    pub(crate) fn must_write_extended_pixi(&self) -> bool {
+        // TODO: b/456440247 - Add support for codecs requiring extended pixi.
+        self.force_write_extended_pixi
+    }
+    pub(crate) fn codec_supports_native_alpha_channel(&self) -> bool {
+        // TODO: b/456440247 - Add support for codecs with native alpha channels.
+        false
     }
 }
 
@@ -174,22 +221,19 @@ pub(crate) type Codec = Box<dyn crate::codecs::Encoder>;
 pub(crate) type CodecSpecificOptions = HashMap<(Option<Category>, String), String>;
 
 #[derive(Default)]
-#[allow(dead_code)]
 pub struct Encoder {
     settings: Settings,
     items: Vec<Item>,
     image_metadata: Image,
     gainmap_image_metadata: Image,
     alt_image_metadata: Image,
-    quantizer: i32,
     primary_item_id: u16,
     alternative_item_ids: Vec<u16>,
-    single_image: bool,
     alpha_present: bool,
-    image_item_type: String,
-    config_property_name: String,
     duration_in_timescales: Vec<u64>,
     codec_specific_options: CodecSpecificOptions,
+    final_recipe: Option<Recipe>, // Decided when the first image is added.
+                                  // Guaranteed not to be Recipe::Auto.
 }
 
 impl Encoder {
@@ -255,17 +299,20 @@ impl Encoder {
             self.items.push(grid_item);
         }
         for cell_index in 0..cell_count {
+            let (item_type, codec) = self
+                .settings
+                .codec_choice
+                .get_item_type_and_encoder_codec()?;
             let item = Item {
                 id: u16_from_usize(self.items.len() + 1)?,
-                item_type: "av01".into(),
+                item_type: item_type.into(),
                 infe_name: category.infe_name(),
                 cell_index,
                 category,
                 dimg_from_id: if cell_count > 1 { Some(top_level_item_id) } else { None },
                 hidden_image: hidden || cell_count > 1,
                 extra_layer_count: self.settings.extra_layer_count,
-                #[cfg(feature = "aom")]
-                codec: Some(Box::<Aom>::default()),
+                codec: Some(codec),
                 ..Default::default()
             };
             if cell_count == 1 {
@@ -335,18 +382,13 @@ impl Encoder {
         self.alt_image_metadata.clli = Some(gainmap.alt_clli);
     }
 
-    fn validate_image_grid(
-        grid: &Grid,
-        images: &[&Image],
-        recipe: SampleTransformRecipe,
-    ) -> AvifResult<()> {
+    fn validate_image_grid(grid: &Grid, images: &[&Image], recipe: Recipe) -> AvifResult<()> {
         let first_image = images[0];
         let last_image = images.last().unwrap();
         for (index, image) in images.iter().enumerate() {
             if !matches!(
                 (image.depth, recipe),
-                (8 | 10 | 12, SampleTransformRecipe::None)
-                    | (16, SampleTransformRecipe::BitDepthExtension8b8b)
+                (8 | 10 | 12, Recipe::None) | (16, Recipe::BitDepthExtension8b8b)
             ) {
                 return AvifError::invalid_argument();
             }
@@ -407,7 +449,7 @@ impl Encoder {
             return AvifError::invalid_argument();
         }
         let gainmap_images: Vec<_> = gainmaps.iter().map(|x| &x.image).collect();
-        Self::validate_image_grid(grid, &gainmap_images, SampleTransformRecipe::None)?;
+        Self::validate_image_grid(grid, &gainmap_images, Recipe::None)?;
         // Ensure that the gainmap image does not have alpha. validate_image_grid() ensures that
         // either all the cell images have alpha or all of them don't. So it is sufficient to check
         // if the first cell image does not have alpha.
@@ -433,8 +475,14 @@ impl Encoder {
         if duration == 0 {
             duration = 1;
         }
+        let first_image = cell_images[0];
+        let final_recipe = self
+            .settings
+            .recipe
+            .self_or_auto_choose_depending_on(first_image);
         if self.items.is_empty() {
-            let first_image = cell_images[0];
+            assert!(self.final_recipe.is_none());
+            self.final_recipe = Some(final_recipe);
             let last_image = cell_images.last().unwrap();
             let grid = Grid {
                 rows: grid_rows,
@@ -442,7 +490,7 @@ impl Encoder {
                 width: (grid_columns - 1) * first_image.width + last_image.width,
                 height: (grid_rows - 1) * first_image.height + last_image.height,
             };
-            Self::validate_image_grid(&grid, cell_images, self.settings.sample_transform_recipe)?;
+            Self::validate_image_grid(&grid, cell_images, final_recipe)?;
             self.image_metadata = first_image.shallow_clone();
             if let Some(gainmaps) = gainmaps {
                 self.gainmap_image_metadata = gainmaps[0].image.shallow_clone();
@@ -450,7 +498,7 @@ impl Encoder {
             }
             let color_item_id = self.add_items(&grid, Category::Color, /*hidden=*/ false)?;
             self.primary_item_id = color_item_id;
-            self.alpha_present = first_image.has_plane(Plane::A)
+            self.alpha_present = first_image.has_alpha()
                 && if is_single_image {
                     // When encoding a single image in which the alpha plane exists but is entirely
                     // opaque, skip writing an alpha AV1 payload. This does not apply to image
@@ -460,7 +508,7 @@ impl Encoder {
                     true
                 };
 
-            if self.alpha_present {
+            if self.alpha_present && !self.settings.codec_supports_native_alpha_channel() {
                 let alpha_item_id =
                     self.add_items(&grid, Category::Alpha, /*hidden=*/ false)?;
                 let alpha_item = &mut self.items[alpha_item_id as usize - 1];
@@ -500,10 +548,14 @@ impl Encoder {
                 }
             }
 
-            match self.settings.sample_transform_recipe {
-                SampleTransformRecipe::None => {}
-                SampleTransformRecipe::BitDepthExtension8b8b => {
-                    if first_image.depth != 16 || gainmaps.is_some() {
+            match final_recipe {
+                Recipe::Auto => unreachable!(),
+                Recipe::None => {}
+                Recipe::BitDepthExtension8b8b => {
+                    if first_image.depth != 16 {
+                        return AvifError::invalid_argument();
+                    }
+                    if gainmaps.is_some() {
                         return AvifError::not_implemented();
                     }
                     self.create_bit_depth_extension_items(&grid)?;
@@ -525,6 +577,9 @@ impl Encoder {
                 // of the current image in that case.
                 || (self.image_metadata.alpha_present && !first_image.alpha_present)
             {
+                return AvifError::invalid_argument();
+            }
+            if self.final_recipe != Some(final_recipe) {
                 return AvifError::invalid_argument();
             }
         }
@@ -562,14 +617,15 @@ impl Encoder {
 
             // If used, contains the most or least significiant bits of the image.
             let bit_depth_extension_image;
-            match self.settings.sample_transform_recipe {
-                SampleTransformRecipe::None => assert!(!item.is_sato_least_significant_input),
-                SampleTransformRecipe::BitDepthExtension8b8b => {
+            match final_recipe {
+                Recipe::Auto => unreachable!(),
+                Recipe::None => assert!(!item.is_sato_least_significant_input),
+                Recipe::BitDepthExtension8b8b => {
                     if !item.is_sato_least_significant_input {
                         // Encoding the least significant bits of a sample does not
                         // make any sense if the other bits are lossily compressed.
                         // Encode the most significant bits losslessly.
-                        quality = 100;
+                        quality = 100.0;
                     }
                     bit_depth_extension_image =
                         Self::create_bit_depth_extension_image(image, item)?;
@@ -580,7 +636,7 @@ impl Encoder {
             let encoder_config = EncoderConfig {
                 tile_rows_log2,
                 tile_columns_log2,
-                quantizer: ((100 - quality) * 63 + 50) / 100,
+                quality,
                 disable_lagged_output: self.alpha_present,
                 is_single_image,
                 speed: self.settings.speed,
@@ -678,9 +734,17 @@ impl Encoder {
             // TODO: check if sample count == duration count.
 
             if !item.samples.is_empty() {
-                // Harvest codec configuration from sequence header.
-                let sequence_header = Av1SequenceHeader::parse_from_obus(&item.samples[0].data)?;
-                item.codec_configuration = CodecConfiguration::Av1(sequence_header.config);
+                match self.settings.codec_choice {
+                    CodecChoice::Auto | CodecChoice::Aom => {
+                        // Harvest codec configuration from AV1 sequence header.
+                        let sequence_header =
+                            Av1SequenceHeader::parse_from_obus(&item.samples[0].data)?;
+                        item.codec_configuration = CodecConfiguration::Av1(sequence_header.config);
+                    }
+                    CodecChoice::MediaCodec | CodecChoice::Dav1d | CodecChoice::Libgav1 => {
+                        return AvifError::no_codec_available()
+                    }
+                }
             }
         }
         let mut stream = OStream::default();
@@ -692,7 +756,11 @@ impl Encoder {
 
         self.write_ftyp(&mut stream)?;
         self.write_meta(&mut stream)?;
-        self.write_moov(&mut stream)?;
+        self.write_moov(
+            &mut stream,
+            self.settings.creation_time,
+            self.settings.modification_time,
+        )?;
         self.write_mdat(&mut stream)?;
         Ok(stream.data)
     }

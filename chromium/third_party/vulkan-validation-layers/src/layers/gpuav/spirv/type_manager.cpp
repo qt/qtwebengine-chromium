@@ -100,6 +100,9 @@ const Type& TypeManager::AddType(std::unique_ptr<Instruction> new_inst, SpvType 
         case SpvType::kFunction:
             function_types_.push_back(new_type);
             break;
+        case SpvType::kCooperativeMatrixKHR:
+            coop_mat_types_.push_back(new_type);
+            break;
         case SpvType::kStruct:
             break;  // don't track structs currently
         case SpvType::kCooperativeVectorNV:
@@ -526,10 +529,10 @@ const Constant& TypeManager::GetConstantUInt32(uint32_t value) {
         return GetConstantZeroUint32();
     }
 
-    const Type& uint32_type = module_.type_manager_.GetTypeInt(32, 0);
-    const Constant* constant = module_.type_manager_.FindConstantInt32(uint32_type.Id(), value);
+    const Type& uint32_type = GetTypeInt(32, 0);
+    const Constant* constant = FindConstantInt32(uint32_type.Id(), value);
     if (!constant) {
-        constant = &module_.type_manager_.CreateConstantUInt32(value);
+        constant = &CreateConstantUInt32(value);
     }
     return *constant;
 }
@@ -544,6 +547,18 @@ const Constant& TypeManager::GetConstantZeroUint32() {
         }
     }
     return *uint_32bit_zero_constants_;
+}
+
+// It is common to use uint32_t(1), so having it cached is helpful
+const Constant& TypeManager::GetConstantOneUint32() {
+    if (!uint_32bit_one_constants_) {
+        const Type& uint_32_type = GetTypeInt(32, 0);
+        uint_32bit_one_constants_ = FindConstantInt32(uint_32_type.Id(), 1);
+        if (!uint_32bit_one_constants_) {
+            uint_32bit_one_constants_ = &CreateConstantUInt32(1);
+        }
+    }
+    return *uint_32bit_one_constants_;
 }
 
 // It is common to use float(0) as a default, so having it cached is helpful
@@ -566,7 +581,7 @@ const Constant& TypeManager::GetConstantZeroVec3() {
     if (!vec3_zero_constants_) {
         const Type& float_32_type = GetTypeFloat(32);
         const Type& vec3_type = GetTypeVector(float_32_type, 3);
-        const uint32_t float32_0_id = module_.type_manager_.GetConstantZeroFloat32().Id();
+        const uint32_t float32_0_id = GetConstantZeroFloat32().Id();
 
         const uint32_t constant_id = module_.TakeNextId();
         auto new_inst = std::make_unique<Instruction>(6, spv::OpConstantComposite);
@@ -579,9 +594,9 @@ const Constant& TypeManager::GetConstantZeroVec3() {
 // It is common to use uvec4(0) as a default, so having it cached is helpful
 const Constant& TypeManager::GetConstantZeroUvec4() {
     if (!uvec4_zero_constants_) {
-        const Type& uint32_type = module_.type_manager_.GetTypeInt(32, false);
-        const Type& uvec4_type = module_.type_manager_.GetTypeVector(uint32_type, 4);
-        const uint32_t uint32_0_id = module_.type_manager_.GetConstantZeroUint32().Id();
+        const Type& uint32_type = GetTypeInt(32, false);
+        const Type& uvec4_type = GetTypeVector(uint32_type, 4);
+        const uint32_t uint32_0_id = GetConstantZeroUint32().Id();
 
         const uint32_t constant_id = module_.TakeNextId();
         auto new_inst = std::make_unique<Instruction>(7, spv::OpConstantComposite);
@@ -589,6 +604,25 @@ const Constant& TypeManager::GetConstantZeroUvec4() {
         uvec4_zero_constants_ = &AddConstant(std::move(new_inst), uvec4_type);
     }
     return *uvec4_zero_constants_;
+}
+
+const Constant& TypeManager::GetConstantZeroVector(const Type& vector_type) {
+    assert(vector_type.spv_type_ == SpvType::kVector);
+    const Type* component_type = FindTypeById(vector_type.inst_.Word(2));
+
+    const uint32_t vector_length = vector_type.VectorSize();
+    auto new_inst = std::make_unique<Instruction>(3 + vector_length, spv::OpConstantComposite);
+
+    const uint32_t constant_id = module_.TakeNextId();
+    std::vector<uint32_t> words = {vector_type.Id(), constant_id};
+
+    const uint32_t null_type_id = GetConstantNull(*component_type).Id();
+    for (uint32_t i = 0; i < vector_length; i++) {
+        words.emplace_back(null_type_id);
+    }
+    new_inst->Fill(words);
+
+    return AddConstant(std::move(new_inst), vector_type);
 }
 
 const Constant& TypeManager::GetConstantNull(const Type& type) {
@@ -642,9 +676,23 @@ bool Type::IsIVec3(const TypeManager& type_manager) const {
     return false;
 }
 
+uint32_t Type::VectorSize() const {
+    if (spv_type_ == SpvType::kVector) {
+        return inst_.Word(3);
+    }
+    return 0;
+}
+
+bool Type::Is64Bit() const {
+    if (spv_type_ == SpvType::kFloat || spv_type_ == SpvType::kInt) {
+        return inst_.Word(2) == 64;
+    }
+    return false;
+}
+
 uint32_t Constant::GetValueUint32() const {
-    assert(inst_.Opcode() == spv::OpConstant);
-    return inst_.Word(3);
+    assert(inst_.Opcode() == spv::OpConstant || inst_.Opcode() == spv::OpConstantNull);
+    return inst_.Opcode() == spv::OpConstantNull ? 0 : inst_.Word(3);
 }
 
 void TypeManager::AddUndef(std::unique_ptr<Instruction> new_inst) {

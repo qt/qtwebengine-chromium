@@ -192,6 +192,7 @@ struct packet_traits<float> : default_packet_traits {
     HasExpm1 = 1,
     HasNdtri = 1,
     HasExp = 1,
+    HasPow = 1,
     HasBessel = 1,
     HasSqrt = 1,
     HasRsqrt = 1,
@@ -199,7 +200,6 @@ struct packet_traits<float> : default_packet_traits {
     HasTanh = EIGEN_FAST_MATH,
     HasErf = EIGEN_FAST_MATH,
     HasErfc = EIGEN_FAST_MATH,
-    HasBlend = 1,
     HasSign = 0  // The manually vectorized version is slightly slower for SSE.
   };
 };
@@ -217,16 +217,18 @@ struct packet_traits<double> : default_packet_traits {
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
     HasTanh = EIGEN_FAST_MATH,
-    HasLog = 1,
     HasErf = EIGEN_FAST_MATH,
     HasErfc = EIGEN_FAST_MATH,
+    HasLog = 1,
     HasExp = 1,
+    HasLog1p = 1,
+    HasExpm1 = 1,
+    HasPow = 1,
     HasSqrt = 1,
     HasRsqrt = 1,
     HasCbrt = 1,
     HasATan = 1,
     HasATanh = 1,
-    HasBlend = 1
   };
 };
 template <>
@@ -241,7 +243,6 @@ struct packet_traits<int> : default_packet_traits {
     HasCmp = 1,
     HasDiv = 1,
     HasShift = 1,
-    HasBlend = 1
   };
 };
 template <>
@@ -253,11 +254,9 @@ struct packet_traits<uint32_t> : default_packet_traits {
     AlignedOnScalar = 1,
     size = 4,
 
-    HasDiv = 0,
     HasNegate = 0,
     HasCmp = 1,
     HasShift = 1,
-    HasBlend = 1
   };
 };
 template <>
@@ -269,10 +268,8 @@ struct packet_traits<int64_t> : default_packet_traits {
     AlignedOnScalar = 1,
     size = 2,
 
-    HasDiv = 0,
     HasCmp = 1,
     HasShift = 1,
-    HasBlend = 1
   };
 };
 #endif
@@ -285,10 +282,9 @@ struct packet_traits<bool> : default_packet_traits {
     AlignedOnScalar = 1,
     size = 16,
 
-    HasCmp = 1,  // note -- only pcmp_eq is defined
+    HasCmp = 1,
     HasShift = 0,
     HasAbs = 0,
-    HasAbs2 = 0,
     HasMin = 0,
     HasMax = 0,
     HasConj = 0,
@@ -881,7 +877,14 @@ template <>
 EIGEN_STRONG_INLINE Packet4ui pandnot<Packet4ui>(const Packet4ui& a, const Packet4ui& b) {
   return _mm_andnot_si128(b, a);
 }
-
+template <>
+EIGEN_STRONG_INLINE Packet16b pandnot<Packet16b>(const Packet16b& a, const Packet16b& b) {
+  return _mm_andnot_si128(b, a);
+}
+template <>
+EIGEN_STRONG_INLINE Packet16b pcmp_lt(const Packet16b& a, const Packet16b& b) {
+  return _mm_andnot_si128(a, b);
+}
 template <>
 EIGEN_STRONG_INLINE Packet4f pcmp_le(const Packet4f& a, const Packet4f& b) {
   return _mm_cmple_ps(a, b);
@@ -925,7 +928,11 @@ EIGEN_STRONG_INLINE Packet4i pcmp_eq(const Packet4i& a, const Packet4i& b) {
 }
 template <>
 EIGEN_STRONG_INLINE Packet4i pcmp_le(const Packet4i& a, const Packet4i& b) {
+#ifdef EIGEN_VECTORIZE_SSE4_1
+  return _mm_cmpeq_epi32(a, _mm_min_epi32(a, b));
+#else
   return por(pcmp_lt(a, b), pcmp_eq(a, b));
+#endif
 }
 template <>
 EIGEN_STRONG_INLINE Packet2l pcmp_lt(const Packet2l& a, const Packet2l& b) {
@@ -1666,9 +1673,9 @@ EIGEN_STRONG_INLINE Packet16b pgather<bool, Packet16b>(const bool* from, Index s
 template <>
 EIGEN_STRONG_INLINE void pscatter<float, Packet4f>(float* to, const Packet4f& from, Index stride) {
   to[stride * 0] = pfirst(from);
-  to[stride * 1] = pfirst(_mm_shuffle_ps(from, from, 1));
-  to[stride * 2] = pfirst(_mm_shuffle_ps(from, from, 2));
-  to[stride * 3] = pfirst(_mm_shuffle_ps(from, from, 3));
+  to[stride * 1] = pfirst(Packet4f(_mm_shuffle_ps(from, from, 1)));
+  to[stride * 2] = pfirst(Packet4f(_mm_shuffle_ps(from, from, 2)));
+  to[stride * 3] = pfirst(Packet4f(_mm_shuffle_ps(from, from, 3)));
 }
 template <>
 EIGEN_STRONG_INLINE void pscatter<double, Packet2d>(double* to, const Packet2d& from, Index stride) {
@@ -1985,77 +1992,39 @@ EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet16b, 16>& kernel) {
   kernel.packet[15] = _mm_unpackhi_epi64(u7, uf);
 }
 
-EIGEN_STRONG_INLINE __m128i sse_blend_mask(const Selector<2>& ifPacket) {
-  return _mm_set_epi64x(0 - ifPacket.select[1], 0 - ifPacket.select[0]);
-}
-
-EIGEN_STRONG_INLINE __m128i sse_blend_mask(const Selector<4>& ifPacket) {
-  return _mm_set_epi32(0 - ifPacket.select[3], 0 - ifPacket.select[2], 0 - ifPacket.select[1], 0 - ifPacket.select[0]);
-}
-
-template <>
-EIGEN_STRONG_INLINE Packet2l pblend(const Selector<2>& ifPacket, const Packet2l& thenPacket,
-                                    const Packet2l& elsePacket) {
-  const __m128i true_mask = sse_blend_mask(ifPacket);
-  return pselect<Packet2l>(true_mask, thenPacket, elsePacket);
-}
-template <>
-EIGEN_STRONG_INLINE Packet4i pblend(const Selector<4>& ifPacket, const Packet4i& thenPacket,
-                                    const Packet4i& elsePacket) {
-  const __m128i true_mask = sse_blend_mask(ifPacket);
-  return pselect<Packet4i>(true_mask, thenPacket, elsePacket);
-}
-template <>
-EIGEN_STRONG_INLINE Packet4ui pblend(const Selector<4>& ifPacket, const Packet4ui& thenPacket,
-                                     const Packet4ui& elsePacket) {
-  return (Packet4ui)pblend(ifPacket, (Packet4i)thenPacket, (Packet4i)elsePacket);
-}
-template <>
-EIGEN_STRONG_INLINE Packet4f pblend(const Selector<4>& ifPacket, const Packet4f& thenPacket,
-                                    const Packet4f& elsePacket) {
-  const __m128i true_mask = sse_blend_mask(ifPacket);
-  return pselect<Packet4f>(_mm_castsi128_ps(true_mask), thenPacket, elsePacket);
-}
-template <>
-EIGEN_STRONG_INLINE Packet2d pblend(const Selector<2>& ifPacket, const Packet2d& thenPacket,
-                                    const Packet2d& elsePacket) {
-  const __m128i true_mask = sse_blend_mask(ifPacket);
-  return pselect<Packet2d>(_mm_castsi128_pd(true_mask), thenPacket, elsePacket);
-}
-
 // Scalar path for pmadd with FMA to ensure consistency with vectorized path.
-#ifdef EIGEN_VECTORIZE_FMA
+#if defined(EIGEN_VECTORIZE_FMA)
 template <>
 EIGEN_STRONG_INLINE float pmadd(const float& a, const float& b, const float& c) {
-  return ::fmaf(a, b, c);
+  return std::fmaf(a, b, c);
 }
 template <>
 EIGEN_STRONG_INLINE double pmadd(const double& a, const double& b, const double& c) {
-  return ::fma(a, b, c);
+  return std::fma(a, b, c);
 }
 template <>
 EIGEN_STRONG_INLINE float pmsub(const float& a, const float& b, const float& c) {
-  return ::fmaf(a, b, -c);
+  return std::fmaf(a, b, -c);
 }
 template <>
 EIGEN_STRONG_INLINE double pmsub(const double& a, const double& b, const double& c) {
-  return ::fma(a, b, -c);
+  return std::fma(a, b, -c);
 }
 template <>
 EIGEN_STRONG_INLINE float pnmadd(const float& a, const float& b, const float& c) {
-  return ::fmaf(-a, b, c);
+  return std::fmaf(-a, b, c);
 }
 template <>
 EIGEN_STRONG_INLINE double pnmadd(const double& a, const double& b, const double& c) {
-  return ::fma(-a, b, c);
+  return std::fma(-a, b, c);
 }
 template <>
 EIGEN_STRONG_INLINE float pnmsub(const float& a, const float& b, const float& c) {
-  return ::fmaf(-a, b, -c);
+  return std::fmaf(-a, b, -c);
 }
 template <>
 EIGEN_STRONG_INLINE double pnmsub(const double& a, const double& b, const double& c) {
-  return ::fma(-a, b, -c);
+  return std::fma(-a, b, -c);
 }
 #endif
 
@@ -2181,7 +2150,6 @@ struct packet_traits<Eigen::half> : default_packet_traits {
     HasDiv    = 1,
     HasNegate = 0,
     HasAbs    = 0,
-    HasAbs2   = 0,
     HasMin    = 0,
     HasMax    = 0,
     HasConj   = 0,

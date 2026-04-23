@@ -45,14 +45,16 @@ if (tint_build_unittests || tint_build_benchmarks) {
 
 libtint_source_set("raise") {
   sources = [
+    "array_offset_from_immediate.cc",
+    "array_offset_from_immediate.h",
+    "array_offset_from_uniform.cc",
+    "array_offset_from_uniform.h",
     "binary_polyfill.cc",
     "binary_polyfill.h",
     "builtin_polyfill.cc",
     "builtin_polyfill.h",
     "decompose_storage_access.cc",
     "decompose_storage_access.h",
-    "decompose_uniform_access.cc",
-    "decompose_uniform_access.h",
     "localize_struct_array_assignment.cc",
     "localize_struct_array_assignment.h",
     "pixel_local.cc",
@@ -97,10 +99,11 @@ libtint_source_set("raise") {
 if (tint_build_unittests) {
   tint_unittests_source_set("unittests") {
     sources = [
+      "array_offset_from_immediate_test.cc",
+      "array_offset_from_uniform_test.cc",
       "binary_polyfill_test.cc",
       "builtin_polyfill_test.cc",
       "decompose_storage_access_test.cc",
-      "decompose_uniform_access_test.cc",
       "localize_struct_array_assignment_test.cc",
       "pixel_local_test.cc",
       "promote_initializers_test.cc",
@@ -119,6 +122,10 @@ if (tint_build_unittests) {
       "${tint_src_dir}/lang/core/ir/transform",
       "${tint_src_dir}/lang/core/ir/transform:unittests",
       "${tint_src_dir}/lang/core/type",
+      "${tint_src_dir}/lang/hlsl",
+      "${tint_src_dir}/lang/hlsl/intrinsic",
+      "${tint_src_dir}/lang/hlsl/ir",
+      "${tint_src_dir}/lang/hlsl/type",
       "${tint_src_dir}/lang/hlsl/writer/common",
       "${tint_src_dir}/lang/hlsl/writer/raise",
       "${tint_src_dir}/utils",

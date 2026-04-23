@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
   VersionData: TypeAlias = dict[str, Any]
 
+
 class ChromeDriverFinder:
 
   # Using CFT as abbreviation for Chrome For Testing here.

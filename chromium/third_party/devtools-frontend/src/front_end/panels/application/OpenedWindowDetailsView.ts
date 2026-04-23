@@ -1,13 +1,13 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import {createIcon} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import openedWindowDetailsViewStyles from './openedWindowDetailsView.css.js';
@@ -93,7 +93,7 @@ const booleanToYesNo = (b: boolean): Common.UIString.LocalizedString =>
     b ? i18nString(UIStrings.yes) : i18nString(UIStrings.no);
 
 function linkifyIcon(iconType: string, title: string, eventHandler: () => (void|Promise<void>)): Element {
-  const icon = IconButton.Icon.create(iconType, 'icon-link devtools-link');
+  const icon = createIcon(iconType, 'icon-link devtools-link');
   const button = document.createElement('button');
   UI.Tooltip.Tooltip.install(button, title);
   button.classList.add('devtools-link', 'link-style', 'text-button');
@@ -105,8 +105,8 @@ function linkifyIcon(iconType: string, title: string, eventHandler: () => (void|
   return button;
 }
 
-async function maybeCreateLinkToElementsPanel(opener: Protocol.Page.FrameId|SDK.ResourceTreeModel.ResourceTreeFrame|
-                                              undefined): Promise<Element|null> {
+async function maybeCreateLinkToElementsPanel(
+    opener: Protocol.Page.FrameId|SDK.ResourceTreeModel.ResourceTreeFrame|undefined): Promise<Element|null> {
   let openerFrame: SDK.ResourceTreeModel.ResourceTreeFrame|(SDK.ResourceTreeModel.ResourceTreeFrame | null)|null = null;
   if (opener instanceof SDK.ResourceTreeModel.ResourceTreeFrame) {
     openerFrame = opener;
@@ -136,7 +136,7 @@ async function maybeCreateLinkToElementsPanel(opener: Protocol.Page.FrameId|SDK.
   return linkElement;
 }
 
-export class OpenedWindowDetailsView extends UI.ThrottledWidget.ThrottledWidget {
+export class OpenedWindowDetailsView extends UI.Widget.VBox {
   private targetInfo: Protocol.Target.TargetInfo;
   private isWindowClosed: boolean;
   private readonly reportView: UI.ReportView.ReportView;
@@ -153,7 +153,6 @@ export class OpenedWindowDetailsView extends UI.ThrottledWidget.ThrottledWidget 
     this.isWindowClosed = isWindowClosed;
 
     this.contentElement.classList.add('frame-details-container');
-    // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
     this.reportView = new UI.ReportView.ReportView(this.buildTitle());
 
     this.reportView.show(this.contentElement);
@@ -169,10 +168,10 @@ export class OpenedWindowDetailsView extends UI.ThrottledWidget.ThrottledWidget 
     this.securitySection.setFieldVisible(i18nString(UIStrings.openerFrame), false);
     this.hasDOMAccessValue = this.securitySection.appendField(i18nString(UIStrings.accessToOpener));
     UI.Tooltip.Tooltip.install(this.hasDOMAccessValue, i18nString(UIStrings.showsWhetherTheOpenedWindowIs));
-    this.update();
+    this.requestUpdate();
   }
 
-  override async doUpdate(): Promise<void> {
+  override async performUpdate(): Promise<void> {
     this.reportView.setTitle(this.buildTitle());
     this.#urlFieldValue.textContent = this.targetInfo.url;
     this.#urlFieldValue.title = this.targetInfo.url;
@@ -208,7 +207,7 @@ export class OpenedWindowDetailsView extends UI.ThrottledWidget.ThrottledWidget 
   }
 }
 
-export class WorkerDetailsView extends UI.ThrottledWidget.ThrottledWidget {
+export class WorkerDetailsView extends UI.Widget.VBox {
   private readonly targetInfo: Protocol.Target.TargetInfo;
   private readonly reportView: UI.ReportView.ReportView;
   private readonly documentSection: UI.ReportView.Section;
@@ -221,7 +220,6 @@ export class WorkerDetailsView extends UI.ThrottledWidget.ThrottledWidget {
     this.targetInfo = targetInfo;
 
     this.contentElement.classList.add('frame-details-container');
-    // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
     this.reportView =
         new UI.ReportView.ReportView(this.targetInfo.title || this.targetInfo.url || i18nString(UIStrings.worker));
 
@@ -239,7 +237,7 @@ export class WorkerDetailsView extends UI.ThrottledWidget.ThrottledWidget {
 
     this.isolationSection = this.reportView.appendSection(i18nString(UIStrings.securityIsolation));
     this.coepPolicy = this.isolationSection.appendField(i18nString(UIStrings.crossoriginEmbedderPolicy));
-    this.update();
+    this.requestUpdate();
   }
 
   workerTypeToString(type: string): Common.UIString.LocalizedString {
@@ -295,7 +293,7 @@ export class WorkerDetailsView extends UI.ThrottledWidget.ThrottledWidget {
     }
   }
 
-  override async doUpdate(): Promise<void> {
+  override async performUpdate(): Promise<void> {
     await this.updateCoopCoepStatus();
   }
 }

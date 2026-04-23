@@ -407,7 +407,7 @@
     'swarming': {
       'dimensions': {
         'device_type': 'dm1q',
-        'device_os': 'UP1A.231005.007',
+        'device_os': 'AP3A.240905.015.A2',
         'device_os_type': 'user',
         'os': 'Android',
         'pool': 'chromium.tests.gpu',
@@ -433,6 +433,17 @@
         'display_attached': '1',
         'gpu': '8086:64a0',
         'os': 'Windows-11',
+        'pool': 'chromium.tests.gpu.experimental',
+      },
+    },
+  },
+  'gpu_win11_intel_arc_b570_experimental': {
+    'fail_if_unused': False,
+    'swarming': {
+      'dimensions': {
+        'display_attached': '1',
+        'gpu': '8086:e20c-32.0.101.8132',
+        'os': 'Windows-11-26100',
         'pool': 'chromium.tests.gpu.experimental',
       },
     },
@@ -511,10 +522,21 @@
     'fail_if_unused': False,
     'swarming': {
       'dimensions': {
-        'gpu': '1002:7480-24.2.8',
+        'gpu': '1002:7480-25.0.7',
         'os': 'Ubuntu-24.04',
         'display_attached': '1',
         'pool': 'chromium.tests.gpu',
+      },
+    },
+  },
+  'linux_intel_arc_b570_experimental': {
+    'fail_if_unused': False,
+    'swarming': {
+      'dimensions': {
+        'gpu': '8086:e20c-25.0.7',
+        'os': 'Ubuntu-24.04',
+        'display_attached': '1',
+        'pool': 'chromium.tests.gpu.experimental',
       },
     },
   },
@@ -564,8 +586,18 @@
     'fail_if_unused': False,
     'swarming': {
       'dimensions': {
-        'gpu': '10de:2184-440.100',
-        'os': 'Ubuntu-18.04.5|Ubuntu-18.04.6',
+        'gpu': '10de:2184-535.183.01',
+        'os': 'Ubuntu-22.04',
+        'pool': 'chromium.tests.gpu',
+      },
+    },
+  },
+  'linux_nvidia_rtx_4070_super_stable': {
+    'fail_if_unused': False,
+    'swarming': {
+      'dimensions': {
+        'gpu': '10de:2783-580.95.05',
+        'os': 'Ubuntu-24.04',
         'pool': 'chromium.tests.gpu',
       },
     },
@@ -701,6 +733,19 @@
       },
     },
   },
+  'mac_retina_amd_555x_gpu_stable': {
+    'fail_if_unused': False,
+    'swarming': {
+      'dimensions': {
+        'cpu': 'x86-64',
+        'gpu': '1002:67ef',
+        'hidpi': '1',
+        'os': 'Mac-14.4.1',
+        'pool': 'chromium.tests.gpu',
+        'display_attached': '1',
+      },
+    },
+  },
   'mac_retina_amd_gpu_experimental': {
     'fail_if_unused': False,
     'swarming': {
@@ -746,6 +791,19 @@
       },
     },
   },
+  'no_tombstones': {
+    'fail_if_unused': False,
+    'args': [
+      '--do-not-store-tombstones',
+    ],
+  },
+  'non-gce': {
+    'swarming': {
+      'dimensions': {
+        'gce': '0',
+      },
+    },
+  },
   'nvidia_geforce_gtx_1660': {
     'swarming': {
       'dimensions': {
@@ -782,6 +840,21 @@
   'skylab-50-tests-per-shard': {
     'skylab': {
       'cros_test_max_in_shard': 50
+    },
+  },
+  'skylab-rdb-gtest': {
+    'resultdb': {
+      'result_format': 'gtest',
+    },
+  },
+  'skylab-rdb-native': {
+    'resultdb': {
+      'result_format': 'native',
+    },
+  },
+  'skylab-rdb-tast': {
+    'resultdb': {
+      'result_format': 'tast',
     },
   },
   'swarming_containment_auto': {
@@ -839,7 +912,7 @@
       'dimensions': {
         'display_attached': '1',
         'gpu': '1002:7340-31.0.24002.92',
-        'os': 'Windows-10-19045.3930',
+        'os': 'Windows-10-19045',
         'pool': 'chromium.tests.gpu',
       },
     },
@@ -883,7 +956,7 @@
       'dimensions': {
         'display_attached': '1',
         'gpu': '8086:4680-31.0.101.5333',
-        'os': 'Windows-10-19045.3930',
+        'os': 'Windows-10-19045',
         'pool': 'chromium.tests.gpu',
       },
     },
@@ -959,7 +1032,7 @@
     'swarming': {
       'dimensions': {
         'display_attached': '1',
-        'gpu': '10de:2783-32.0.15.8088',
+        'gpu': '10de:2783-32.0.15.8129',
         'os': 'Windows-11',
         'pool': 'chromium.tests.gpu',
       },
@@ -978,6 +1051,19 @@
       },
     },
   },
+  'win11_qualcomm_snapdragon_x_elite_stable': {
+    'fail_if_unused': False,
+    'swarming': {
+      'dimensions': {
+        'display_attached': '1',
+        'screen_scaling_percent': '100',
+        'cpu': 'arm64',
+        'gpu': 'qcom:0c36-31.0.121.1',
+        'os': 'Windows-11-26100',
+        'pool': 'chromium.tests.gpu',
+      },
+    },
+  },
   'x86-64': {
     'fail_if_unused': False,
     'swarming': {
@@ -989,12 +1075,12 @@
   'xcode_26_main': {
     'args': [
       '--xcode-build-version',
-      '17a324',
+      '17a400',
     ],
     'swarming': {
       'named_caches': [
         {
-          'name': 'xcode_ios_17a324',
+          'name': 'xcode_ios_17a400',
           'path': 'Xcode.app',
         },
       ],

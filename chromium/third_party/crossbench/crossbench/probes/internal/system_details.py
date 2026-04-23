@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
-from crossbench.probes.internal.base import (InternalJsonResultProbe,
-                                             InternalJsonResultProbeContext)
+from crossbench.probes.internal.base import InternalJsonResultProbe, \
+    InternalJsonResultProbeContext
 
 if TYPE_CHECKING:
   from crossbench.runner.actions import Actions

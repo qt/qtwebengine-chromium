@@ -30,7 +30,9 @@
 
 #include <cstddef>
 #include <cstdint>
+
 #include "base/check_op.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_animation_trigger_behavior.h"
 #include "third_party/blink/renderer/core/style/computed_style_base_constants.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
@@ -94,6 +96,10 @@ enum PseudoId : uint8_t {
   kPseudoIdViewTransitionImagePair,
   kPseudoIdViewTransitionOld,
   kPseudoIdViewTransitionNew,
+
+  kPseudoIdOverscrollAreaParent,
+  kPseudoIdOverscrollClientArea,
+
   // Internal IDs follow:
   kPseudoIdFirstLineInherited,
 
@@ -114,12 +120,13 @@ enum PseudoId : uint8_t {
   kPseudoIdDetailsContent,
   kPseudoIdPickerSelect,
   kPseudoIdPermissionIcon,
+
   // Special values follow:
   kAfterLastInternalPseudoId,
   kPseudoIdInvalid,
   kFirstPublicPseudoId = kPseudoIdFirstLine,
   kLastTrackedPublicPseudoId = kPseudoIdGrammarError,
-  kLastPublicPseudoId = kPseudoIdViewTransitionNew,
+  kLastPublicPseudoId = kPseudoIdOverscrollClientArea,
   kFirstInternalPseudoId = kPseudoIdFirstLineInherited,
 };
 
@@ -479,6 +486,13 @@ enum class LineLogicalSide {
   kOver,
   kUnder,
 };
+inline bool operator==(LineLogicalSide line_logical_side,
+                       RubyPosition ruby_position) {
+  return (line_logical_side == LineLogicalSide::kOver &&
+          ruby_position == RubyPosition::kOver) ||
+         (line_logical_side == LineLogicalSide::kUnder &&
+          ruby_position == RubyPosition::kUnder);
+}
 
 constexpr size_t kScrollbarGutterBits = 2;
 enum ScrollbarGutter {
@@ -543,7 +557,9 @@ enum class GeometryBox {
   // <geometry-box> = <shape-box> | fill-box | stroke-box | view-box
   kFillBox,
   kStrokeBox,
-  kViewBox
+  kViewBox,
+  // Additional value for border-shape: a box halfway between border and padding
+  kHalfBorderBox
 };
 
 // https://drafts.fxtf.org/css-masking/#typedef-compositing-operator
@@ -575,14 +591,11 @@ enum class TryTactic : uint8_t {
   kFlipBlock,
   kFlipInline,
   kFlipStart,
+  kFlipX,
+  kFlipY,
 };
 
-enum class EAnimationTriggerBehavior : uint8_t {
-  kOnce,
-  kRepeat,
-  kAlternate,
-  kState,
-};
+typedef V8AnimationTriggerBehavior::Enum EAnimationTriggerBehavior;
 
 // TODO(crbug.com/332933527): Support anchors-valid.
 static const size_t kPositionVisibilityBits = 2;

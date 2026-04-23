@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Optional
 from typing_extensions import override
 
 from crossbench.benchmarks.base import Benchmark
+from crossbench.cli import ui
 from crossbench.cli.ui import timer
 from crossbench.helper import input_helper
 from crossbench.parse import DurationParser, ObjectParser
@@ -46,8 +47,7 @@ class ManualStory(Story, metaclass=abc.ABCMeta):
   def setup(self, run: Run) -> None:
     if self._start_after is None:
       logging.info("-" * 80)
-      logging.critical("Press enter to start:")
-      input()
+      ui.prompt("Press enter to start:")
     elif self._start_after.total_seconds():
       logging.critical("-" * 80)
       logging.critical(
@@ -69,9 +69,10 @@ class ManualStory(Story, metaclass=abc.ABCMeta):
 
   def _wait_for_input(self) -> None:
     if self._run_for is None:
-      logging.critical("Press enter to stop:")
       with contextlib.suppress(KeyboardInterrupt):
-        input()
+        # Print two lines so the timer does not overwrite the message
+        logging.info("Press enter to stop:")
+        ui.prompt()
     else:
       logging.critical(
           "Measurement has started. The browser will close in %s"

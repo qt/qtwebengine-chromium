@@ -278,13 +278,12 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // Max number of "constants" where each constant is a 16-byte float4
     limits->v1.maxUniformBufferBindingSize = D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT * 16;
 
-    if (gpu_info::IsQualcommACPI(GetVendorId())) {
-        // limit of number of texels in a buffer == (1 << 27)
-        // D3D11_REQ_BUFFER_RESOURCE_TEXEL_COUNT_2_TO_EXP
-        // This limit doesn't apply to a raw buffer, but only applies to
-        // typed, or structured buffer. so this could be a QC driver bug.
-        limits->v1.maxStorageBufferBindingSize = uint64_t(1)
-                                                 << D3D11_REQ_BUFFER_RESOURCE_TEXEL_COUNT_2_TO_EXP;
+    if (gpu_info::IsQualcommACPI(GetVendorId()) &&
+        gpu_info::GetQualcommACPIGen(GetVendorId(), GetDeviceId()) <=
+            gpu_info::QualcommACPIGen::Adreno7xx) {
+        // Due to hardware limitation, Raw Buffers can only address 2^28 bytes instead of the
+        // guaranteed 2^31 bytes.
+        limits->v1.maxStorageBufferBindingSize = 1 << 28;
     } else {
         limits->v1.maxStorageBufferBindingSize = kAssumedMaxBufferSize;
     }
@@ -298,7 +297,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 
     // D3D11 uses internal uniform buffers to support immediate data. The space is enough for
     // 64 bytes.
-    limits->v1.maxImmediateSize = kMaxSupportedImmediateDataBytes;
+    limits->v1.maxImmediateSize = kMaxImmediateDataBytes;
 
     // The BlitTextureToBuffer helper requires the alignment to be 4.
     limits->texelCopyBufferRowAlignmentLimits.minTexelCopyBufferRowAlignment = 4;
@@ -351,11 +350,26 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::ClearColorWithDraw, true);
     }
 
+    // TODO(crbug.com/458062283): older intel drivers seems to produce buggy shaders. Especially if
+    // they are very complex. Current workaround is disable FXC optimizations.
+    if (gpu_info::IsIntel(vendorId) &&
+        gpu_info::GetIntelGen(vendorId, deviceId) <= gpu_info::IntelGen::Gen9) {
+        const gpu_info::IntelWindowsDriverVersion kKnownGoodDriverVersion = {31, 0, 101, 2121};
+        if (gpu_info::IntelWindowsDriverVersion(GetDriverVersion()) < kKnownGoodDriverVersion) {
+            deviceToggles->Default(Toggle::D3DSkipShaderOptimizations, true);
+        }
+    }
+
     // Enable the integer range analysis for shader robustness by default if the corresponding
     // platform feature is enabled.
     deviceToggles->Default(
         Toggle::EnableIntegerRangeAnalysisInRobustness,
         platform->IsFeatureEnabled(platform::Features::kWebGPUEnableRangeAnalysisForRobustness));
+
+    // TODO(crbug.com/454782021): hang on Qualcomm Adreno X1.
+    if (gpu_info::IsQualcommACPI(vendorId)) {
+        deviceToggles->ForceSet(Toggle::D3D11DelayFlushToGPU, false);
+    }
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
@@ -378,7 +392,8 @@ MaybeError PhysicalDevice::ResetInternalDeviceForTestingImpl() {
     return {};
 }
 
-void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
+                                               const TogglesState&) const {
     if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
         // https://microsoft.github.io/DirectX-Specs/d3d/D3D12GPUUploadHeaps.html describes
         // the properties of D3D12 Default/Upload/Readback heaps. The assumption is that these are

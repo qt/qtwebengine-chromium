@@ -17,6 +17,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/types/expected.h"
 #include "base/types/pass_key.h"
+#include "content/browser/indexed_db/indexed_db_data_loss_info.h"
 #include "content/browser/indexed_db/indexed_db_external_object_storage.h"
 #include "content/browser/indexed_db/instance/backing_store.h"
 #include "content/browser/indexed_db/instance/sqlite/active_blob_streamer.h"
@@ -24,6 +25,7 @@
 #include "content/browser/indexed_db/instance/sqlite/blob_writer.h"
 #include "content/browser/indexed_db/status.h"
 #include "content/common/content_export.h"
+#include "mojo/public/cpp/base/big_buffer.h"
 #include "sql/streaming_blob_handle.h"
 #include "third_party/blink/public/common/indexeddb/indexeddb_key_path.h"
 #include "third_party/blink/public/common/indexeddb/indexeddb_key_range.h"
@@ -73,6 +75,9 @@ class CONTENT_EXPORT DatabaseConnection {
   ~DatabaseConnection();
 
   const blink::IndexedDBDatabaseMetadata& metadata() const { return metadata_; }
+  const IndexedDBDataLossInfo& data_loss_info() const {
+    return data_loss_info_;
+  }
 
   // Gets the version of the database that is actually committed. This can be
   // different from the version in `metadata_` during a version change
@@ -242,13 +247,22 @@ class CONTENT_EXPORT DatabaseConnection {
       IndexedDBValue value,
       int64_t record_row_id);
 
+  // Decompresses bytes found in the database. Will return an error and mark the
+  // database as corrupt on failure.
+  StatusOr<mojo_base::BigBuffer> Decompress(
+      base::span<const uint8_t> compressed,
+      int compression_type);
+
   // Changes the size at which blobs are chunked.
   static void OverrideMaxBlobSizeForTesting(base::ByteCount size);
 
  private:
+  friend class BackingStoreSqliteTest;
   FRIEND_TEST_ALL_PREFIXES(DatabaseConnectionTest, TooNew);
 
   DatabaseConnection(base::FilePath path, BackingStoreImpl& backing_store);
+
+  bool in_memory() const { return path_.empty(); }
 
   // All startup/initialization tasks that can error are performed here. Will
   // return Status::OK() on success. `name` must be provided if the database is
@@ -294,8 +308,9 @@ class CONTENT_EXPORT DatabaseConnection {
 
   // The connection needs to be held open when there are active blobs or an
   // active BackingStore::Database referencing it. This will return false if
-  // that's the case.
-  bool CanBeDestroyed() const;
+  // that's the case. Even when this is false, `this` may be destroyed if the
+  // `BucketContext` is force-closed.
+  bool CanSelfDestruct() const;
 
   // Attempts to read metadata from the SQLite DB for storing in memory (in
   // `metadata_`).
@@ -331,8 +346,11 @@ class CONTENT_EXPORT DatabaseConnection {
     kBlobChunkMissing = 12,
     kObjectStoreNotFound = 13,
     kBlobTypeUnknown = 14,
+    kV8FormatTooNewOrMissing = 15,
+    kUtf16StringUnreadable = 16,
+    kDecompressionFailure = 17,
 
-    kMaxValue = kBlobTypeUnknown,
+    kMaxValue = kDecompressionFailure,
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/storage/enums.xml:IndexedDbSqliteSpecificEvent)
 
@@ -394,8 +412,10 @@ class CONTENT_EXPORT DatabaseConnection {
   // database. The contents of the blobs are not written until commit time. The
   // objects in this map are also used to vend bytes (via their connected mojo
   // remote) if the client reads a value after writing but before committing.
-  // ("Pending" blobs.)
-  std::map<int64_t, IndexedDBExternalObject> blobs_to_write_;
+  // ("Pending" blobs.) Note that some of these blobs may be associated with
+  // records that were added and later deleted (or replaced) in the same commit.
+  // A check to verify the blobs are still needed is performed at commit time.
+  std::map<int64_t, IndexedDBExternalObject> blobs_staged_for_commit_;
 
   // This map will be empty until `CommitTransactionPhaseOne()` is called, at
   // which point it will be populated with helper objects that feed the blob
@@ -431,6 +451,10 @@ class CONTENT_EXPORT DatabaseConnection {
   // True once `DeleteIdbDatabase` has been called, or if a fatal error occurred
   // that we can't recover from.
   bool marked_for_permanent_deletion_ = false;
+
+  // Information relating to any previous data that may have been lost while
+  // attempting to open this database.
+  IndexedDBDataLossInfo data_loss_info_;
 
   // TODO(crbug.com/419203257): this should invalidate its weak pointers when
   // `db_` is closed.

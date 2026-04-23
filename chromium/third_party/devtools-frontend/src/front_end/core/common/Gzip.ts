@@ -5,7 +5,7 @@
 /**
  * Quickly determine if gzipped, by seeing if the first 3 bytes of the file header match the gzip signature
  */
-export function isGzip(ab: ArrayBuffer): boolean {
+export function isGzip(ab: ArrayBufferLike): boolean {
   const buf = new Uint8Array(ab);
   if (!buf || buf.length < 3) {
     return false;
@@ -15,7 +15,7 @@ export function isGzip(ab: ArrayBuffer): boolean {
 }
 
 /** Decode a gzipped _or_ plain text ArrayBuffer to a decoded string */
-export async function arrayBufferToString(ab: ArrayBuffer): Promise<string> {
+export async function arrayBufferToString(ab: ArrayBufferLike): Promise<string> {
   if (isGzip(ab)) {
     return await decompress(ab);
   }
@@ -37,7 +37,7 @@ export async function fileToString(file: File): Promise<string> {
  * Decompress a gzipped ArrayBuffer to a string.
  * Consider using `arrayBufferToString` instead, which can handle both gzipped and plain text buffers.
  */
-export async function decompress(gzippedBuffer: ArrayBuffer): Promise<string> {
+export async function decompress(gzippedBuffer: ArrayBufferLike): Promise<string> {
   const buffer = await gzipCodec(gzippedBuffer, new DecompressionStream('gzip'));
   const str = new TextDecoder('utf-8').decode(buffer);
   return str;
@@ -48,17 +48,19 @@ export async function compress(str: string): Promise<ArrayBuffer> {
   return buffer;
 }
 
-// Private coder/decoder
-function gzipCodec(buffer: Uint8Array<ArrayBufferLike>|ArrayBuffer, codecStream: CompressionStream|DecompressionStream):
-    Promise<ArrayBuffer> {
-  const {readable, writable} = new TransformStream();
+/** Private coder/decoder **/
+async function gzipCodec(
+    buffer: Uint8Array<ArrayBufferLike>|ArrayBufferLike,
+    codecStream: CompressionStream|DecompressionStream): Promise<ArrayBuffer> {
+  const readable = new ReadableStream({
+    start(controller) {
+      controller.enqueue(buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer);
+      controller.close();
+    }
+  });
   const codecReadable = readable.pipeThrough(codecStream);
-
-  const writer = writable.getWriter();
-  void writer.write(buffer);
-  void writer.close();
   // A response is a convenient way to get an ArrayBuffer from a ReadableStream.
-  return new Response(codecReadable).arrayBuffer();
+  return await new Response(codecReadable).arrayBuffer();
 }
 
 export function decompressStream(stream: ReadableStream): ReadableStream {

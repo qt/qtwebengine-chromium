@@ -397,7 +397,11 @@ class CONTENT_EXPORT PrerenderHost {
   }
 
   bool should_pause_javascript_execution() const {
-    return attributes_.should_pause_javascript_execution;
+    return attributes_.prerender_action_type ==
+           blink::mojom::SpeculationAction::kPrerenderUntilScript;
+  }
+  blink::mojom::SpeculationAction speculation_action() const {
+    return attributes_.prerender_action_type;
   }
 
   bool IsInitialNavigation(const NavigationRequest& navigation_request) const;
@@ -474,8 +478,8 @@ class CONTENT_EXPORT PrerenderHost {
     RenderFrameHostImpl* GetProspectiveOuterDocument() override;
     void SetFocusedFrame(FrameTreeNode* node,
                          SiteInstanceGroup* source) override;
-    FrameTree* GetOwnedPictureInPictureFrameTree() override;
-    FrameTree* GetPictureInPictureOpenerFrameTree() override;
+    FrameTree* GetOwnedDocumentPictureInPictureFrameTree() override;
+    FrameTree* GetDocumentPictureInPictureOpenerFrameTree() override;
     bool OnRenderFrameProxyVisibilityChanged(
         RenderFrameProxyHost* render_frame_proxy_host,
         blink::mojom::FrameVisibility visibility) override;
@@ -494,6 +498,12 @@ class CONTENT_EXPORT PrerenderHost {
     void ActivateAndShowRepostFormWarningDialog() override;
     bool ShouldPreserveAbortedURLs() override;
     void UpdateOverridingUserAgent() override {}
+#if BUILDFLAG(IS_ANDROID)
+    scoped_refptr<viz::RasterContextProvider> GetRasterContextProvider()
+        override;
+    gfx::ColorSpace GetOutputColorSpace(gfx::ContentColorUsage color_usage,
+                                        bool needs_alpha) override;
+#endif  // BUILDFLAG(IS_ANDROID)
 
     LoadingOutcome WaitForLoadStopForTesting();
 

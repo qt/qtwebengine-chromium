@@ -121,6 +121,9 @@ base::span<const base::cstring_view> ChromeURLHosts() {
       kChromeUIPrefsInternalsHost,
       kChromeUIProfileInternalsHost,
       content::kChromeUIQuotaInternalsHost,
+#if !BUILDFLAG(IS_ANDROID)
+      kChromeUIReloadButtonHost,
+#endif
       kChromeUISignInInternalsHost,
       kChromeUISiteEngagementHost,
 #if !BUILDFLAG(IS_ANDROID)
@@ -134,6 +137,9 @@ base::span<const base::cstring_view> ChromeURLHosts() {
       kChromeUITermsHost,
 #endif
       kChromeUITranslateInternalsHost,
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+      kChromeUIUpdaterHost,
+#endif
       kChromeUIUsbInternalsHost,
       kChromeUIUserActionsHost,
       kChromeUIVersionHost,

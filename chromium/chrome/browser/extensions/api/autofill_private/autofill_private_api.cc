@@ -64,6 +64,7 @@
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/strings/grit/components_branded_strings.h"
 #include "components/strings/grit/components_strings.h"
+#include "components/wallet/core/browser/walletable_permission_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_function.h"
 #include "extensions/browser/extension_function_registry.h"
@@ -1073,11 +1074,12 @@ AutofillPrivateGetEntityInstanceByGuidFunction::Run() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// AutofillPrivateGetAllEntityTypesFunction
+// AutofillPrivateGetWritableEntityTypesFunction
 
 ExtensionFunction::ResponseAction
-AutofillPrivateGetAllEntityTypesFunction::Run() {
-  const auto all_types = autofill::DenseSet<EntityType>::all();
+AutofillPrivateGetWritableEntityTypesFunction::Run() {
+  auto all_types = autofill::DenseSet<EntityType>::all();
+
   std::vector<autofill_private::EntityType> result;
   result.reserve(all_types.size());
   for (EntityType entity_type : all_types) {
@@ -1085,19 +1087,17 @@ AutofillPrivateGetAllEntityTypesFunction::Run() {
             autofill_client()->GetVariationConfigCountryCode())) {
       continue;
     }
-    autofill_private::EntityType& api_type = result.emplace_back();
-    api_type.type_name = base::to_underlying(entity_type.name());
-    api_type.type_name_as_string =
-        base::UTF16ToUTF8(entity_type.GetNameForI18n());
-    api_type.add_entity_type_string =
-        autofill_ai_util::GetAddEntityTypeStringForI18n(entity_type);
-    api_type.edit_entity_type_string =
-        autofill_ai_util::GetEditEntityTypeStringForI18n(entity_type);
-    api_type.delete_entity_type_string =
-        autofill_ai_util::GetDeleteEntityTypeStringForI18n(entity_type);
+    if (entity_type.read_only()) {
+      continue;
+    }
+    // TODO(crbug.com/454892936): Provide the correct value for
+    // `supports_wallet_storage`.
+    result.push_back(autofill_ai_util::EntityTypeToPrivateApiEntityType(
+        entity_type, /*supports_wallet_storage=*/false));
   }
+
   return RespondNow(ArgumentList(
-      autofill_private::GetAllEntityTypes::Results::Create(result)));
+      autofill_private::GetWritableEntityTypes::Results::Create(result)));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1169,6 +1169,30 @@ AutofillPrivateSetAutofillAiOptInStatusFunction::Run() {
   return RespondNow(ArgumentList(
       api::autofill_private::SetAutofillAiOptInStatus::Results::Create(
           /*success=*/true)));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// AutofillPrivateGetWalletablePassDetectionOptInStatusFunction
+
+ExtensionFunction::ResponseAction
+AutofillPrivateGetWalletablePassDetectionOptInStatusFunction::Run() {
+  return RespondNow(WithArguments(wallet::GetWalletablePassDetectionOptInStatus(
+      autofill_client()->GetPrefs(), autofill_client()->GetIdentityManager())));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// AutofillPrivateSetWalletablePassDetectionOptInStatusFunction
+
+ExtensionFunction::ResponseAction
+AutofillPrivateSetWalletablePassDetectionOptInStatusFunction::Run() {
+  std::optional<autofill_private::SetWalletablePassDetectionOptInStatus::Params>
+      params = autofill_private::SetWalletablePassDetectionOptInStatus::Params::
+          Create(args());
+  EXTENSION_FUNCTION_VALIDATE(params);
+  wallet::SetWalletablePassDetectionOptInStatus(
+      autofill_client()->GetPrefs(), autofill_client()->GetIdentityManager(),
+      params->opted_in);
+  return RespondNow(NoArguments());
 }
 
 }  // namespace extensions

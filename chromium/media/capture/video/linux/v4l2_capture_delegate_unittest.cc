@@ -315,9 +315,9 @@ class MockV4l2GpuClient : public VideoCaptureDevice::Client {
 class MockCaptureHandleProvider
     : public VideoCaptureDevice::Client::Buffer::HandleProvider {
  public:
-  MockCaptureHandleProvider(const gfx::Size& size, gfx::BufferFormat format) {
-    gmb_handle_ =
-        gpu::TestSharedImageInterface::CreatePixmapHandle(size, format);
+  MockCaptureHandleProvider(const gfx::Size& size,
+                            viz::SharedImageFormat format) {
+    gmb_handle_ = gpu::TestSharedImageInterface::CreateGMBHandle(format, size);
   }
   // Duplicate as an writable (unsafe) shared memory region.
   base::UnsafeSharedMemoryRegion DuplicateAsUnsafeRegion() override {
@@ -356,7 +356,6 @@ class V4l2CaptureDelegateGPUMemoryBufferTest
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
         ::switches::kVideoCaptureUseGpuMemoryBuffer);
     test_sii_ = base::MakeRefCounted<gpu::TestSharedImageInterface>();
-    test_sii_->UseTestGMBInSharedImageCreationWithBufferUsage();
     VideoCaptureGpuChannelHost::GetInstance().SetSharedImageInterface(
         test_sii_);
   }
@@ -459,7 +458,7 @@ TEST_P(V4l2CaptureDelegateGPUMemoryBufferTest, CameraCaptureOneCopy) {
             EXPECT_EQ(format, PIXEL_FORMAT_NV12);
             capture_buffer->handle_provider =
                 std::make_unique<MockCaptureHandleProvider>(
-                    size, gfx::BufferFormat::YUV_420_BIPLANAR);
+                    size, viz::MultiPlaneFormat::kNV12);
             return VideoCaptureDevice::Client::ReserveResult::kSucceeded;
           });
 

@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as NetworkTimeCalculator from '../../models/network_time_calculator/network_time_calculator.js';
-import {getCleanTextContentFromElements, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {describeWithLocale} from '../../testing/EnvironmentHelpers.js';
+import {assertScreenshot, getCleanTextContentFromElements, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
 
 import * as Network from './network.js';
 
@@ -58,7 +60,8 @@ function createNetworkRequest(
   return request;
 }
 
-describeWithLocale('ResourceTimingView', () => {
+describe('ResourceTimingView', () => {
+  setupLocaleHooks();
   it('RequestTimeRanges has router evaluation field with SW router source as network', async () => {
     const request = createNetworkRequest(
         Protocol.Network.ServiceWorkerRouterSource.Network, Protocol.Network.ServiceWorkerRouterSource.Network);
@@ -140,15 +143,18 @@ describeWithLocale('ResourceTimingView', () => {
   });
 
   it('Timing table has router evaluation field with detail tabs', async () => {
+    stubNoopSettings();
     const request = createNetworkRequest(
         Protocol.Network.ServiceWorkerRouterSource.Network, Protocol.Network.ServiceWorkerRouterSource.Network);
 
-    const component =
-        new Network.RequestTimingView.RequestTimingView(request, new NetworkTimeCalculator.NetworkTimeCalculator(true));
+    const component = Network.RequestTimingView.RequestTimingView.create(
+        request, new NetworkTimeCalculator.NetworkTimeCalculator(true));
     const div = document.createElement('div');
     renderElementIntoDOM(div);
     component.markAsRoot();
     component.show(div);
+
+    await component.updateComplete;
 
     // Test if we correctly set details element
     const routerEvaluationDetailsElement = document.querySelector('.router-evaluation-timing-bar-details');
@@ -169,5 +175,38 @@ describeWithLocale('ResourceTimingView', () => {
     const networkString = String(Protocol.Network.ServiceWorkerRouterSource.Network);
     assert.strictEqual(content[0], `Matched source: ${networkString}`, 'matched source does not match');
     assert.strictEqual(content[1], `Actual source: ${networkString}`, 'actual source does not match');
+  });
+
+  it('Timing table shows throttling indicator', async () => {
+    stubNoopSettings();
+    const container = document.createElement('div');
+    renderElementIntoDOM(container, {includeCommonStyles: true});
+
+    const request = createNetworkRequest(
+        Protocol.Network.ServiceWorkerRouterSource.Cache, Protocol.Network.ServiceWorkerRouterSource.Cache);
+    const timeRanges = NetworkTimeCalculator.calculateRequestTimeRanges(request, 100);
+
+    const wasThrottled = new SDK.NetworkManager.AppliedNetworkConditions(SDK.NetworkManager.Slow3GConditions, '');
+    const input: Parameters<typeof Network.RequestTimingView.DEFAULT_VIEW>[0] = {
+      requestUnfinished: false,
+      requestStartTime: 0,
+      requestIssueTime: 0,
+      totalDuration: 100,
+      startTime: 0,
+      endTime: 100,
+      timeRanges,
+      calculator: new NetworkTimeCalculator.NetworkTimeCalculator(true),
+      serverTimings: [],
+      wasThrottled
+    };
+
+    Network.RequestTimingView.DEFAULT_VIEW(input, {}, container);
+    await assertScreenshot('network/request-timing-view-throttling.png');
+
+    const icon = container.querySelector<HTMLElement>('devtools-icon[name=watch]');
+    assert.exists(icon);
+    const revealStub = sinon.stub(Common.Revealer.RevealerRegistry.instance(), 'reveal');
+    icon.click();
+    sinon.assert.calledOnceWithExactly(revealStub, wasThrottled, false);
   });
 });

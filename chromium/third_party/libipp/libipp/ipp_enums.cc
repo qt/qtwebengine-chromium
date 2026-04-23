@@ -4431,8 +4431,9 @@ struct EnumVals {
   const char* str(uint16_t val) const {
     const Val2str e = {val, 0};
     auto it = std::lower_bound(vs, vs + size, e);
-    if (it == vs + size || it->val != val)
+    if (it == vs + size || it->val != val) {
       return "";
+    }
     return kAllStrings[it->str];
   }
   bool val(const char* str, uint16_t* out) const {
@@ -4440,8 +4441,9 @@ struct EnumVals {
       return (strcmp(kAllStrings[a.str], b) < 0);
     };
     auto it = std::lower_bound(sv, sv + size, str, comp_less);
-    if (it == sv + size || strcmp(kAllStrings[it->str], str) != 0)
+    if (it == sv + size || strcmp(kAllStrings[it->str], str) != 0) {
       return false;
+    }
     *out = it->val;
     return true;
   }
@@ -4521,8 +4523,9 @@ namespace ipp {
 
 std::string ToString(AttrName name, int value) {
   const uint16_t i = static_cast<uint16_t>(name);
-  if (i >= 598)
+  if (i >= 598) {
     return "";
+  }
   return kAllEnums[kAttrNameToEnumId[i]].str(value);
 }
 
@@ -4798,816 +4801,997 @@ std::string ToString(E_y_image_position v) {
 }
 
 bool FromString(const std::string& s, AttrName name, int* value) {
-  if (value == nullptr)
+  if (value == nullptr) {
     return false;
+  }
   const uint16_t i = static_cast<uint16_t>(name);
-  if (i >= 598)
+  if (i >= 598) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[kAttrNameToEnumId[i]].val(s.c_str(), &val)))
+  if (!(kAllEnums[kAttrNameToEnumId[i]].val(s.c_str(), &val))) {
     return false;
+  }
   *value = val;
   return true;
 }
 
 bool FromString(const std::string& s, GroupTag* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[1].val(s.c_str(), &val)))
+  if (!(kAllEnums[1].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<GroupTag>(val);
   return true;
 }
 bool FromString(const std::string& s, AttrName* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[2].val(s.c_str(), &val)))
+  if (!(kAllEnums[2].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<AttrName>(val);
   return true;
 }
 bool FromString(const std::string& s, E_auth_info_required* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[3].val(s.c_str(), &val)))
+  if (!(kAllEnums[3].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_auth_info_required>(val);
   return true;
 }
 bool FromString(const std::string& s, E_baling_type* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[4].val(s.c_str(), &val)))
+  if (!(kAllEnums[4].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_baling_type>(val);
   return true;
 }
 bool FromString(const std::string& s, E_baling_when* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[5].val(s.c_str(), &val)))
+  if (!(kAllEnums[5].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_baling_when>(val);
   return true;
 }
 bool FromString(const std::string& s, E_binding_reference_edge* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[6].val(s.c_str(), &val)))
+  if (!(kAllEnums[6].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_binding_reference_edge>(val);
   return true;
 }
 bool FromString(const std::string& s, E_binding_type* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[7].val(s.c_str(), &val)))
+  if (!(kAllEnums[7].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_binding_type>(val);
   return true;
 }
 bool FromString(const std::string& s, E_coating_sides* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[8].val(s.c_str(), &val)))
+  if (!(kAllEnums[8].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_coating_sides>(val);
   return true;
 }
 bool FromString(const std::string& s, E_coating_type* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[9].val(s.c_str(), &val)))
+  if (!(kAllEnums[9].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_coating_type>(val);
   return true;
 }
 bool FromString(const std::string& s, E_compression* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[10].val(s.c_str(), &val)))
+  if (!(kAllEnums[10].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_compression>(val);
   return true;
 }
 bool FromString(const std::string& s, E_cover_back_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[11].val(s.c_str(), &val)))
+  if (!(kAllEnums[11].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_cover_back_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_cover_type* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[12].val(s.c_str(), &val)))
+  if (!(kAllEnums[12].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_cover_type>(val);
   return true;
 }
 bool FromString(const std::string& s, E_covering_name* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[13].val(s.c_str(), &val)))
+  if (!(kAllEnums[13].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_covering_name>(val);
   return true;
 }
 bool FromString(const std::string& s, E_current_page_order* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[14].val(s.c_str(), &val)))
+  if (!(kAllEnums[14].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_current_page_order>(val);
   return true;
 }
 bool FromString(const std::string& s, E_document_digital_signature* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[15].val(s.c_str(), &val)))
+  if (!(kAllEnums[15].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_document_digital_signature>(val);
   return true;
 }
 bool FromString(const std::string& s, E_document_format_details_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[16].val(s.c_str(), &val)))
+  if (!(kAllEnums[16].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_document_format_details_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_document_format_varying_attributes* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[17].val(s.c_str(), &val)))
+  if (!(kAllEnums[17].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_document_format_varying_attributes>(val);
   return true;
 }
 bool FromString(const std::string& s, E_feed_orientation* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[18].val(s.c_str(), &val)))
+  if (!(kAllEnums[18].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_feed_orientation>(val);
   return true;
 }
 bool FromString(const std::string& s, E_finishing_template* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[19].val(s.c_str(), &val)))
+  if (!(kAllEnums[19].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_finishing_template>(val);
   return true;
 }
 bool FromString(const std::string& s, E_finishings* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[20].val(s.c_str(), &val)))
+  if (!(kAllEnums[20].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_finishings>(val);
   return true;
 }
 bool FromString(const std::string& s, E_folding_direction* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[21].val(s.c_str(), &val)))
+  if (!(kAllEnums[21].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_folding_direction>(val);
   return true;
 }
 bool FromString(const std::string& s, E_identify_actions* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[22].val(s.c_str(), &val)))
+  if (!(kAllEnums[22].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_identify_actions>(val);
   return true;
 }
 bool FromString(const std::string& s, E_imposition_template* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[23].val(s.c_str(), &val)))
+  if (!(kAllEnums[23].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_imposition_template>(val);
   return true;
 }
 bool FromString(const std::string& s, E_input_orientation_requested* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[24].val(s.c_str(), &val)))
+  if (!(kAllEnums[24].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_input_orientation_requested>(val);
   return true;
 }
 bool FromString(const std::string& s, E_input_quality* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[25].val(s.c_str(), &val)))
+  if (!(kAllEnums[25].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_input_quality>(val);
   return true;
 }
 bool FromString(const std::string& s, E_input_sides* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[26].val(s.c_str(), &val)))
+  if (!(kAllEnums[26].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_input_sides>(val);
   return true;
 }
 bool FromString(const std::string& s, E_ipp_features_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[27].val(s.c_str(), &val)))
+  if (!(kAllEnums[27].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_ipp_features_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_ipp_versions_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[28].val(s.c_str(), &val)))
+  if (!(kAllEnums[28].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_ipp_versions_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_account_type* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[29].val(s.c_str(), &val)))
+  if (!(kAllEnums[29].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_account_type>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_accounting_output_bin* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[30].val(s.c_str(), &val)))
+  if (!(kAllEnums[30].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_accounting_output_bin>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_accounting_sheets_type* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[31].val(s.c_str(), &val)))
+  if (!(kAllEnums[31].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_accounting_sheets_type>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_collation_type* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[32].val(s.c_str(), &val)))
+  if (!(kAllEnums[32].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_collation_type>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_delay_output_until* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[33].val(s.c_str(), &val)))
+  if (!(kAllEnums[33].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_delay_output_until>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_error_action* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[34].val(s.c_str(), &val)))
+  if (!(kAllEnums[34].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_error_action>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_error_sheet_when* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[35].val(s.c_str(), &val)))
+  if (!(kAllEnums[35].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_error_sheet_when>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_hold_until* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[36].val(s.c_str(), &val)))
+  if (!(kAllEnums[36].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_hold_until>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_mandatory_attributes* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[37].val(s.c_str(), &val)))
+  if (!(kAllEnums[37].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_mandatory_attributes>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_password_encryption* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[38].val(s.c_str(), &val)))
+  if (!(kAllEnums[38].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_password_encryption>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_sheets* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[39].val(s.c_str(), &val)))
+  if (!(kAllEnums[39].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_sheets>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_spooling_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[40].val(s.c_str(), &val)))
+  if (!(kAllEnums[40].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_spooling_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_state* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[41].val(s.c_str(), &val)))
+  if (!(kAllEnums[41].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_state>(val);
   return true;
 }
 bool FromString(const std::string& s, E_job_state_reasons* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[42].val(s.c_str(), &val)))
+  if (!(kAllEnums[42].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_job_state_reasons>(val);
   return true;
 }
 bool FromString(const std::string& s, E_laminating_type* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[43].val(s.c_str(), &val)))
+  if (!(kAllEnums[43].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_laminating_type>(val);
   return true;
 }
 bool FromString(const std::string& s, E_material_color* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[44].val(s.c_str(), &val)))
+  if (!(kAllEnums[44].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_material_color>(val);
   return true;
 }
 bool FromString(const std::string& s, E_media* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[45].val(s.c_str(), &val)))
+  if (!(kAllEnums[45].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_media>(val);
   return true;
 }
 bool FromString(const std::string& s, E_media_back_coating* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[46].val(s.c_str(), &val)))
+  if (!(kAllEnums[46].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_media_back_coating>(val);
   return true;
 }
 bool FromString(const std::string& s, E_media_grain* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[47].val(s.c_str(), &val)))
+  if (!(kAllEnums[47].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_media_grain>(val);
   return true;
 }
 bool FromString(const std::string& s, E_media_input_tray_check* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[48].val(s.c_str(), &val)))
+  if (!(kAllEnums[48].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_media_input_tray_check>(val);
   return true;
 }
 bool FromString(const std::string& s, E_media_key* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[49].val(s.c_str(), &val)))
+  if (!(kAllEnums[49].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_media_key>(val);
   return true;
 }
 bool FromString(const std::string& s, E_media_pre_printed* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[50].val(s.c_str(), &val)))
+  if (!(kAllEnums[50].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_media_pre_printed>(val);
   return true;
 }
 bool FromString(const std::string& s, E_media_ready* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[51].val(s.c_str(), &val)))
+  if (!(kAllEnums[51].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_media_ready>(val);
   return true;
 }
 bool FromString(const std::string& s, E_media_source* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[52].val(s.c_str(), &val)))
+  if (!(kAllEnums[52].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_media_source>(val);
   return true;
 }
 bool FromString(const std::string& s, E_media_tooth* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[53].val(s.c_str(), &val)))
+  if (!(kAllEnums[53].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_media_tooth>(val);
   return true;
 }
 bool FromString(const std::string& s, E_media_type* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[54].val(s.c_str(), &val)))
+  if (!(kAllEnums[54].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_media_type>(val);
   return true;
 }
 bool FromString(const std::string& s, E_multiple_document_handling* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[55].val(s.c_str(), &val)))
+  if (!(kAllEnums[55].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_multiple_document_handling>(val);
   return true;
 }
 bool FromString(const std::string& s, E_multiple_operation_time_out_action* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[56].val(s.c_str(), &val)))
+  if (!(kAllEnums[56].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_multiple_operation_time_out_action>(val);
   return true;
 }
 bool FromString(const std::string& s, E_notify_events* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[57].val(s.c_str(), &val)))
+  if (!(kAllEnums[57].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_notify_events>(val);
   return true;
 }
 bool FromString(const std::string& s, E_notify_pull_method* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[58].val(s.c_str(), &val)))
+  if (!(kAllEnums[58].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_notify_pull_method>(val);
   return true;
 }
 bool FromString(const std::string& s, E_operations_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[59].val(s.c_str(), &val)))
+  if (!(kAllEnums[59].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_operations_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_page_delivery* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[60].val(s.c_str(), &val)))
+  if (!(kAllEnums[60].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_page_delivery>(val);
   return true;
 }
 bool FromString(const std::string& s, E_pdf_versions_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[61].val(s.c_str(), &val)))
+  if (!(kAllEnums[61].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_pdf_versions_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_pdl_init_file_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[62].val(s.c_str(), &val)))
+  if (!(kAllEnums[62].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_pdl_init_file_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_pdl_override_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[63].val(s.c_str(), &val)))
+  if (!(kAllEnums[63].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_pdl_override_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_presentation_direction_number_up* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[64].val(s.c_str(), &val)))
+  if (!(kAllEnums[64].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_presentation_direction_number_up>(val);
   return true;
 }
 bool FromString(const std::string& s, E_print_color_mode* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[65].val(s.c_str(), &val)))
+  if (!(kAllEnums[65].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_print_color_mode>(val);
   return true;
 }
 bool FromString(const std::string& s, E_print_content_optimize* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[66].val(s.c_str(), &val)))
+  if (!(kAllEnums[66].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_print_content_optimize>(val);
   return true;
 }
 bool FromString(const std::string& s, E_print_rendering_intent* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[67].val(s.c_str(), &val)))
+  if (!(kAllEnums[67].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_print_rendering_intent>(val);
   return true;
 }
 bool FromString(const std::string& s, E_print_scaling* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[68].val(s.c_str(), &val)))
+  if (!(kAllEnums[68].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_print_scaling>(val);
   return true;
 }
 bool FromString(const std::string& s, E_printer_state* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[69].val(s.c_str(), &val)))
+  if (!(kAllEnums[69].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_printer_state>(val);
   return true;
 }
 bool FromString(const std::string& s, E_printer_state_reasons* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[70].val(s.c_str(), &val)))
+  if (!(kAllEnums[70].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_printer_state_reasons>(val);
   return true;
 }
 bool FromString(const std::string& s, E_proof_print_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[71].val(s.c_str(), &val)))
+  if (!(kAllEnums[71].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_proof_print_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_pwg_raster_document_sheet_back* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[72].val(s.c_str(), &val)))
+  if (!(kAllEnums[72].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_pwg_raster_document_sheet_back>(val);
   return true;
 }
 bool FromString(const std::string& s, E_pwg_raster_document_type_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[73].val(s.c_str(), &val)))
+  if (!(kAllEnums[73].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_pwg_raster_document_type_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_requested_attributes* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[74].val(s.c_str(), &val)))
+  if (!(kAllEnums[74].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_requested_attributes>(val);
   return true;
 }
 bool FromString(const std::string& s, E_save_disposition* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[75].val(s.c_str(), &val)))
+  if (!(kAllEnums[75].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_save_disposition>(val);
   return true;
 }
 bool FromString(const std::string& s, E_separator_sheets_type* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[76].val(s.c_str(), &val)))
+  if (!(kAllEnums[76].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_separator_sheets_type>(val);
   return true;
 }
 bool FromString(const std::string& s, E_sheet_collate* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[77].val(s.c_str(), &val)))
+  if (!(kAllEnums[77].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_sheet_collate>(val);
   return true;
 }
 bool FromString(const std::string& s, E_status_code* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[78].val(s.c_str(), &val)))
+  if (!(kAllEnums[78].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_status_code>(val);
   return true;
 }
 bool FromString(const std::string& s, E_stitching_method* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[79].val(s.c_str(), &val)))
+  if (!(kAllEnums[79].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_stitching_method>(val);
   return true;
 }
 bool FromString(const std::string& s, E_stitching_reference_edge* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[80].val(s.c_str(), &val)))
+  if (!(kAllEnums[80].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_stitching_reference_edge>(val);
   return true;
 }
 bool FromString(const std::string& s, E_trimming_type* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[81].val(s.c_str(), &val)))
+  if (!(kAllEnums[81].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_trimming_type>(val);
   return true;
 }
 bool FromString(const std::string& s, E_trimming_when* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[82].val(s.c_str(), &val)))
+  if (!(kAllEnums[82].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_trimming_when>(val);
   return true;
 }
 bool FromString(const std::string& s, E_uri_authentication_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[83].val(s.c_str(), &val)))
+  if (!(kAllEnums[83].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_uri_authentication_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_uri_security_supported* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[84].val(s.c_str(), &val)))
+  if (!(kAllEnums[84].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_uri_security_supported>(val);
   return true;
 }
 bool FromString(const std::string& s, E_which_jobs* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[85].val(s.c_str(), &val)))
+  if (!(kAllEnums[85].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_which_jobs>(val);
   return true;
 }
 bool FromString(const std::string& s, E_x_image_position* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[86].val(s.c_str(), &val)))
+  if (!(kAllEnums[86].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_x_image_position>(val);
   return true;
 }
 bool FromString(const std::string& s, E_xri_authentication* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[87].val(s.c_str(), &val)))
+  if (!(kAllEnums[87].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_xri_authentication>(val);
   return true;
 }
 bool FromString(const std::string& s, E_xri_security* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[88].val(s.c_str(), &val)))
+  if (!(kAllEnums[88].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_xri_security>(val);
   return true;
 }
 bool FromString(const std::string& s, E_y_image_position* v) {
-  if (v == nullptr)
+  if (v == nullptr) {
     return false;
+  }
   uint16_t val;
-  if (!(kAllEnums[89].val(s.c_str(), &val)))
+  if (!(kAllEnums[89].val(s.c_str(), &val))) {
     return false;
+  }
   *v = static_cast<E_y_image_position>(val);
   return true;
 }

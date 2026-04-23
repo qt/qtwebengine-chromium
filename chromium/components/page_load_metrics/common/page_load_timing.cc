@@ -22,7 +22,7 @@ mojom::PageLoadTimingPtr CreatePageLoadTiming() {
       std::vector<mojo::StructPtr<mojom::BackForwardCacheTiming>>{},
       std::optional<base::TimeDelta>(), std::optional<base::TimeDelta>(),
       std::optional<base::TimeDelta>(), std::optional<base::TimeDelta>(),
-      std::optional<base::TimeDelta>());
+      std::optional<base::TimeDelta>(), /*monotonic_paint_timing=*/nullptr);
 }
 
 mojom::LargestContentfulPaintTimingPtr CreateLargestContentfulPaintTiming() {
@@ -32,8 +32,11 @@ mojom::LargestContentfulPaintTimingPtr CreateLargestContentfulPaintTiming() {
 }
 
 mojom::SoftNavigationMetricsPtr CreateSoftNavigationMetrics() {
-  return mojom::SoftNavigationMetrics::New(
-      0, base::Milliseconds(0), 0, CreateLargestContentfulPaintTiming());
+  auto timing = mojom::SoftNavigationMetrics::New();
+  timing->navigation_id = 0;
+  timing->start_time = base::Milliseconds(0);
+  timing->largest_contentful_paint = CreateLargestContentfulPaintTiming();
+  return timing;
 }
 
 bool IsEmpty(const page_load_metrics::mojom::DocumentTiming& timing) {
@@ -81,9 +84,13 @@ bool IsEmpty(const mojom::LargestContentfulPaintTiming& timing) {
           IsEmpty(*timing.resource_load_timings));
 }
 
+bool IsEmpty(const mojom::MonotonicPaintTiming& timing) {
+  return !timing.first_paint && !timing.first_contentful_paint;
+}
+
 bool IsEmpty(const mojom::SoftNavigationMetrics& timing) {
   return !timing.count && timing.start_time.is_zero() &&
-         !timing.navigation_id &&
+         !timing.navigation_id && !timing.same_document_metrics_token &&
          (!timing.largest_contentful_paint ||
           IsEmpty(*timing.largest_contentful_paint));
 }
@@ -104,7 +111,9 @@ bool IsEmpty(const page_load_metrics::mojom::PageLoadTiming& timing) {
          timing.back_forward_cache_timings.empty() &&
          !timing.user_timing_mark_fully_loaded &&
          !timing.user_timing_mark_fully_visible &&
-         !timing.user_timing_mark_interactive;
+         !timing.user_timing_mark_interactive &&
+         (!timing.monotonic_paint_timing ||
+          IsEmpty(*timing.monotonic_paint_timing));
 }
 
 void InitPageLoadTimingForTest(mojom::PageLoadTiming* timing) {
@@ -117,6 +126,7 @@ void InitPageLoadTimingForTest(mojom::PageLoadTiming* timing) {
   timing->paint_timing->experimental_largest_contentful_paint =
       CreateLargestContentfulPaintTiming();
   timing->parse_timing = mojom::ParseTiming::New();
+  timing->monotonic_paint_timing.reset();
   timing->back_forward_cache_timings.clear();
 }
 

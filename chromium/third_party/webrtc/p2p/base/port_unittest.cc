@@ -69,7 +69,6 @@
 #include "rtc_base/network_constants.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "test/create_test_environment.h"
@@ -278,7 +277,7 @@ static void SendPingAndReceiveResponse(Connection* lconn,
       ReceivedIpPacket(rport->last_stun_buf(), SocketAddress(), std::nullopt));
 }
 
-class TestChannel : public sigslot::has_slots<> {
+class TestChannel {
  public:
   // Takes ownership of `p1` (but not `p2`).
   explicit TestChannel(std::unique_ptr<Port> p1) : port_(std::move(p1)) {
@@ -293,7 +292,7 @@ class TestChannel : public sigslot::has_slots<> {
         [this](PortInterface* port) { OnSrcPortDestroyed(port); });
   }
 
-  ~TestChannel() override { Stop(); }
+  ~TestChannel() { Stop(); }
 
   int complete_count() { return complete_count_; }
   Connection* conn() { return conn_; }
@@ -422,7 +421,7 @@ class TestChannel : public sigslot::has_slots<> {
   bool connection_ready_to_send_ = false;
 };
 
-class PortTest : public ::testing::Test, public sigslot::has_slots<> {
+class PortTest : public ::testing::Test {
  public:
   PortTest()
       : ss_(new VirtualSocketServer()),
@@ -1721,7 +1720,7 @@ TEST_F(PortTest, TestDelayedBindingUdp) {
   port->PrepareAddress();
 
   EXPECT_EQ(0U, port->Candidates().size());
-  socket->SignalAddressReady(socket, kLocalAddr2);
+  socket->NotifyAddressReady(socket, kLocalAddr2);
 
   EXPECT_EQ(1U, port->Candidates().size());
 }
@@ -1784,7 +1783,7 @@ void PortTest::TestCrossFamilyPorts(int type) {
           .WillOnce(Return(absl::WrapUnique(socket)));
       ports[i] = CreateUdpPort(addresses[i], &factory);
       socket->set_state(AsyncPacketSocket::STATE_BINDING);
-      socket->SignalAddressReady(socket, addresses[i]);
+      socket->NotifyAddressReady(socket, addresses[i]);
     } else if (type == SOCK_STREAM) {
       FakeAsyncListenSocket* socket = new FakeAsyncListenSocket();
       EXPECT_CALL(factory, CreateServerTcpSocket)
@@ -1855,7 +1854,7 @@ TEST_F(PortTest, TestUdpSingleAddressV6CrossTypePorts) {
         .WillOnce(Return(absl::WrapUnique(socket)));
     ports[i] = CreateUdpPort(addresses[i], &factory);
     socket->set_state(AsyncPacketSocket::STATE_BINDING);
-    socket->SignalAddressReady(socket, addresses[i]);
+    socket->NotifyAddressReady(socket, addresses[i]);
     ports[i]->PrepareAddress();
   }
 
@@ -1889,7 +1888,7 @@ TEST_F(PortTest, TestUdpMultipleAddressesV6CrossTypePorts) {
         CreateUdpPortMultipleAddrs(addresses[i], kLinkLocalIPv6Addr, &factory);
     ports[i]->SetIceTiebreaker(kTiebreakerDefault);
     socket->set_state(AsyncPacketSocket::STATE_BINDING);
-    socket->SignalAddressReady(socket, addresses[i]);
+    socket->NotifyAddressReady(socket, addresses[i]);
     ports[i]->PrepareAddress();
   }
 
@@ -3991,32 +3990,6 @@ TEST_F(PortTest, TestAddConnectionWithSameAddress) {
   Thread::Current()->ProcessMessages(300);
   EXPECT_TRUE(port->GetConnection(address) != nullptr);
 }
-
-#if RTC_DCHECK_IS_ON && GTEST_HAS_DEATH_TEST && !defined(WEBRTC_ANDROID)
-class DeathChannel : public sigslot::has_slots<> {
- public:
-  explicit DeathChannel(std::unique_ptr<Port> port) : port_(std::move(port)) {}
-  void IgnoredSlot(PortInterface* /* port */) {}
-  void AddSignal() {
-    port_->SignalRoleConflict.connect(this, &DeathChannel::IgnoredSlot);
-  }
-  void AddCallback() {
-    port_->SubscribeRoleConflict([]() {});
-  }
-
- private:
-  std::unique_ptr<Port> port_;
-};
-
-class PortDeathTest : public PortTest {};
-
-TEST_F(PortDeathTest, AddSignalThenCallback) {
-  DeathChannel dc(CreateRawTestPort());
-  dc.AddSignal();
-  EXPECT_DEATH(dc.AddCallback(), "");
-}
-
-#endif  // RTC_DCHECK_IS_ON && GTEST_HAS_DEATH_TEST && !defined(WEBRTC_ANDROID)
 
 // TODO(webrtc:11463) : Move Connection tests into separate unit test
 // splitting out shared test code as needed.

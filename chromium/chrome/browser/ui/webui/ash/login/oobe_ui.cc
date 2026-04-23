@@ -172,7 +172,6 @@
 #include "ui/display/screen.h"
 #include "ui/events/devices/device_data_manager.h"
 #include "ui/events/devices/input_device.h"
-#include "ui/webui/color_change_listener/color_change_handler.h"
 #include "ui/webui/resources/grit/webui_resources.h"
 
 namespace ash {
@@ -311,8 +310,6 @@ void CreateAndAddOobeUIDataSource(Profile* profile,
 
   source->AddBoolean("isOsInstallAllowed", switches::IsOsInstallAllowed());
   source->AddBoolean("isOobeFlow", is_oobe_flow);
-  source->AddBoolean("isOobeLazyLoadingEnabled",
-                     features::IsOobeLazyLoadingEnabled());
   source->AddBoolean("isOobeAiIntroEnabled", features::IsOobeAiIntroEnabled());
   source->AddBoolean("isJellyEnabled", features::IsOobeJellyEnabled());
   source->AddBoolean("isOobeJellyEnabled", features::IsOobeJellyEnabled());
@@ -390,7 +387,7 @@ void CreateAndAddOobeUIDataSource(Profile* profile,
 }
 
 std::string GetDisplayType(const GURL& url) {
-  std::string path = url.path().size() ? url.path().substr(1) : "";
+  std::string path = url.GetPath().size() ? url.GetPath().substr(1) : "";
 
   constexpr auto kKnownDisplayTypes = base::MakeFixedFlatSet<std::string_view>(
       {OobeUI::kAppLaunchSplashDisplay, OobeUI::kGaiaSigninDisplay,
@@ -685,12 +682,6 @@ void OobeUI::BindInterface(
     mojo::PendingReceiver<common::mojom::WebUiSyslogEmitter> receiver) {
   webui_syslog_emitter_ = std::make_unique<WebUiSyslogEmitter>();
   webui_syslog_emitter_->BindInterface(std::move(receiver));
-}
-
-void OobeUI::BindInterface(
-    mojo::PendingReceiver<color_change_listener::mojom::PageHandler> receiver) {
-  color_provider_handler_ = std::make_unique<ui::ColorChangeHandler>(
-      web_ui()->GetWebContents(), std::move(receiver));
 }
 
 void OobeUI::BindInterface(

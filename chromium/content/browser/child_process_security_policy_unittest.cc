@@ -71,7 +71,7 @@ class ChildProcessSecurityPolicyTestBrowserClient
   ChildProcessSecurityPolicyTestBrowserClient() {}
 
   bool IsHandledURL(const GURL& url) override {
-    return base::Contains(schemes_, url.scheme());
+    return base::Contains(schemes_, url.GetScheme());
   }
 
   void ClearSchemes() {
@@ -189,8 +189,8 @@ class ChildProcessSecurityPolicyTest
         SiteInfo::GetSiteForOrigin(origin),
         {IsolatedOriginEntry(
             origin, true /* applies_to_future_browsing_instances */,
-            browsing_instance_id, nullptr, nullptr, isolate_all_subdomains,
-            IsolatedOriginSource::TEST)});
+            browsing_instance_id, /*browser_context=*/nullptr,
+            isolate_all_subdomains, IsolatedOriginSource::TEST)});
   }
   auto GetIsolatedOriginEntry(int browsing_instance_id,
                               const url::Origin& origin,
@@ -208,11 +208,10 @@ class ChildProcessSecurityPolicyTest
                               const url::Origin& origin) {
     return std::pair<GURL, std::vector<IsolatedOriginEntry>>(
         SiteInfo::GetSiteForOrigin(origin),
-        {IsolatedOriginEntry(
-            origin, applies_to_future_browsing_instances, browsing_instance_id,
-            browser_context,
-            browser_context ? browser_context->GetResourceContext() : nullptr,
-            false /* isolate_all_subdomains */, IsolatedOriginSource::TEST)});
+        {IsolatedOriginEntry(origin, applies_to_future_browsing_instances,
+                             browsing_instance_id, browser_context,
+                             false /* isolate_all_subdomains */,
+                             IsolatedOriginSource::TEST)});
   }
   // Converts |origin| -> (site_url, {entry})
   //     where site_url is created from |origin| and
@@ -238,12 +237,14 @@ class ChildProcessSecurityPolicyTest
         SiteInfo::GetSiteForOrigin(origin1),
         {IsolatedOriginEntry(
              origin1, true /* applies_to_future_browsing_contexts */,
-             SiteInstanceImpl::NextBrowsingInstanceId(), nullptr, nullptr,
-             origin1_isolate_all_subdomains, IsolatedOriginSource::TEST),
+             SiteInstanceImpl::NextBrowsingInstanceId(),
+             /*browser_context=*/nullptr, origin1_isolate_all_subdomains,
+             IsolatedOriginSource::TEST),
          IsolatedOriginEntry(
              origin2, true /* applies_to_future_browsing_contexts */,
-             SiteInstanceImpl::NextBrowsingInstanceId(), nullptr, nullptr,
-             origin2_isolate_all_subdomains, IsolatedOriginSource::TEST)});
+             SiteInstanceImpl::NextBrowsingInstanceId(),
+             /*browser_context=*/nullptr, origin2_isolate_all_subdomains,
+             IsolatedOriginSource::TEST)});
   }
 
   bool IsIsolatedOrigin(BrowserContext* context,
@@ -2371,9 +2372,7 @@ TEST_P(ChildProcessSecurityPolicyTest,
             foo_instance->GetIsolationContext().browsing_instance_id());
   EXPECT_EQ(BrowsingInstanceId::FromUnsafeValue(initial_id.value() + 1),
             SiteInstanceImpl::NextBrowsingInstanceId());
-  EXPECT_EQ(&context1, foo_instance->GetIsolationContext()
-                           .browser_or_resource_context()
-                           .ToBrowserContext());
+  EXPECT_EQ(&context1, foo_instance->GetIsolationContext().browser_context());
 
   // Isolating foo.com in |context1| is allowed and should add a new
   // IsolatedOriginEntry.  This wouldn't introduce any additional isolation,
@@ -3303,17 +3302,16 @@ TEST_P(ChildProcessSecurityPolicyTest, CannotLockUsedProcessToSite) {
 }
 
 // Test that
-// ChildProcessSecurityPolicyImpl::AddV8OptimizationDisabledStateForOrigin()
+// ChildProcessSecurityPolicyImpl::AddV8OptimizationDisabledStateForOriginIfNotCached()
 // ignores opaque origins.
-TEST_P(ChildProcessSecurityPolicyTest,
-       AddV8OptimizationDisabledStateForOpaqueOrigin) {
+TEST_P(ChildProcessSecurityPolicyTest, AddV8OptimizationStateForOpaqueOrigin) {
   ChildProcessSecurityPolicyImpl* p =
       ChildProcessSecurityPolicyImpl::GetInstance();
   BrowsingInstanceId browsing_instance_id =
       SiteInstanceImpl::NextBrowsingInstanceId();
   url::Origin opaque_origin;
 
-  p->AddV8OptimizationDisabledStateForOrigin(
+  p->AddV8OptimizationDisabledStateForOriginIfNotCached(
       browsing_instance_id, opaque_origin,
       /*are_v8_optimizations_disabled=*/false);
   std::optional<bool> are_v8_optimizations_disabled_result =
@@ -3322,17 +3320,17 @@ TEST_P(ChildProcessSecurityPolicyTest,
 }
 
 // Test the behavior of
-// ChildProcessSecurityPolicyImpl::AddV8OptimizationDisabledStateForOrigin()
+// ChildProcessSecurityPolicyImpl::AddV8OptimizationDisabledStateForOriginIfNotCached()
 // for non-opaque origins.
 TEST_P(ChildProcessSecurityPolicyTest,
-       AddV8OptimizationDisabledStateForNonOpaqueOrigin) {
+       AddV8OptimizationStateForNonOpaqueOrigin) {
   ChildProcessSecurityPolicyImpl* p =
       ChildProcessSecurityPolicyImpl::GetInstance();
   BrowsingInstanceId browsing_instance_id =
       BrowsingInstanceId::FromUnsafeValue(1);
   url::Origin origin = url::Origin::Create(GURL("https://foo.com"));
 
-  p->AddV8OptimizationDisabledStateForOrigin(
+  p->AddV8OptimizationDisabledStateForOriginIfNotCached(
       browsing_instance_id, origin, /*are_v8_optimizations_disabled=*/false);
   EXPECT_EQ(std::optional<bool>(false),
             p->LookupAreV8OptimizationsDisabled(browsing_instance_id, origin));
@@ -3349,6 +3347,26 @@ TEST_P(ChildProcessSecurityPolicyTest,
   EXPECT_FALSE(p->LookupAreV8OptimizationsDisabled(
                     BrowsingInstanceId::FromUnsafeValue(2), origin)
                    .has_value());
+}
+
+TEST_P(ChildProcessSecurityPolicyTest, AddV8OptimizationState_AlreadyCached) {
+  ChildProcessSecurityPolicyImpl* p =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+  BrowsingInstanceId browsing_instance_id =
+      BrowsingInstanceId::FromUnsafeValue(1);
+  url::Origin origin = url::Origin::Create(GURL("https://foo.com"));
+
+  p->AddV8OptimizationDisabledStateForOriginIfNotCached(
+      browsing_instance_id, origin, /*are_v8_optimizations_disabled=*/false);
+  EXPECT_EQ(std::optional<bool>(false),
+            p->LookupAreV8OptimizationsDisabled(browsing_instance_id, origin));
+
+  // Check that calling AddV8OptimizationDisabledStateForOriginIfNotCached() is
+  // a no-op if the value is already cached.
+  p->AddV8OptimizationDisabledStateForOriginIfNotCached(
+      browsing_instance_id, origin, /*are_v8_optimizations_disabled=*/true);
+  EXPECT_EQ(std::optional<bool>(false),
+            p->LookupAreV8OptimizationsDisabled(browsing_instance_id, origin));
 }
 
 INSTANTIATE_TEST_SUITE_P(

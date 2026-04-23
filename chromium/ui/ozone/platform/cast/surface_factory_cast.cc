@@ -58,8 +58,8 @@ class CastPixmap : public gfx::NativePixmap {
   size_t GetDmaBufOffset(size_t plane) const override { return 0; }
   size_t GetDmaBufPlaneSize(size_t plane) const override { return 0; }
   uint64_t GetBufferFormatModifier() const override { return 0; }
-  gfx::BufferFormat GetBufferFormat() const override {
-    return gfx::BufferFormat::BGRA_8888;
+  viz::SharedImageFormat GetSharedImageFormat() const override {
+    return viz::SinglePlaneFormat::kBGRA_8888;
   }
   size_t GetNumberOfPlanes() const override { return 1; }
   bool SupportsZeroCopyWebGPUImport() const override {
@@ -130,7 +130,7 @@ scoped_refptr<gfx::NativePixmap> SurfaceFactoryCast::CreateNativePixmap(
     gfx::AcceleratedWidget widget,
     gpu::VulkanDeviceQueue* device_queue,
     gfx::Size size,
-    gfx::BufferFormat format,
+    viz::SharedImageFormat format,
     gfx::BufferUsage usage,
     std::optional<gfx::Size> framebuffer_size) {
   DCHECK(!framebuffer_size || framebuffer_size == size);

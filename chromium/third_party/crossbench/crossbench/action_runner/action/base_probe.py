@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Any, Type
 from immutabledict import immutabledict
 from typing_extensions import override
 
-from crossbench.action_runner.action.action import (ACTION_TIMEOUT, Action,
-                                                    ActionT)
+from crossbench.action_runner.action.action import ACTION_TIMEOUT, Action, \
+    ActionT
 from crossbench.action_runner.action.action_type import ActionType
 from crossbench.cli.config.probe import PROBE_LOOKUP
 

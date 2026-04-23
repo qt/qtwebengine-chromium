@@ -17,6 +17,7 @@
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/ResourceProvider.h"
+#include "src/gpu/graphite/SerializationUtils.h"
 #include "src/gpu/graphite/ThreadSafeResourceProvider.h"
 
 namespace skgpu::graphite {
@@ -63,11 +64,10 @@ void SharedContext::setCaptureManager(sk_sp<SkCaptureManager> captureManager) {
                                            const RenderPassDesc& rpDesc) {
     const ShaderCodeDictionary* dict = ctx->shaderCodeDictionary();
     const RenderStep* step = ctx->rendererProvider()->lookup(gpDesc.renderStepID());
-    return GetPipelineLabel(dict, rpDesc, step, gpDesc.paintParamsID());
+    return GetPipelineLabel(ctx->caps(), dict, rpDesc, step, gpDesc.paintParamsID());
 }
 
 sk_sp<GraphicsPipeline> SharedContext::findOrCreateGraphicsPipeline(
-        ResourceProvider* resourceProvider,
         const RuntimeEffectDictionary* runtimeDict,
         const UniqueKey& pipelineKey,
         const GraphicsPipelineDesc& pipelineDesc,
@@ -103,15 +103,27 @@ sk_sp<GraphicsPipeline> SharedContext::findOrCreateGraphicsPipeline(
                              "compilationID", compilationID);
 #endif
 
-        pipeline = resourceProvider->createGraphicsPipeline(runtimeDict, pipelineKey,
-                                                            pipelineDesc, renderPassDesc,
-                                                            pipelineCreationFlags,
-                                                            compilationID);
+        pipeline = this->createGraphicsPipeline(runtimeDict, pipelineKey,
+                                                pipelineDesc, renderPassDesc,
+                                                pipelineCreationFlags,
+                                                compilationID);
         if (pipeline) {
-            globalCache->invokePipelineCallback(this, pipelineDesc, renderPassDesc);
             // TODO: Should we store a null pipeline if we failed to create one so that subsequent
             // usage immediately sees that the pipeline cannot be created, vs. retrying every time?
-            pipeline = globalCache->addGraphicsPipeline(pipelineKey, std::move(pipeline));
+            bool addedToCache;
+            std::tie(pipeline, addedToCache) = globalCache->addGraphicsPipeline(pipelineKey,
+                                                                                pipeline);
+
+            if (addedToCache && globalCache->hasPipelineCallback()) {
+                sk_sp<SkData> data = PipelineDescToData(this->caps(),
+                                                        this->shaderCodeDictionary(),
+                                                        pipelineDesc,
+                                                        renderPassDesc);
+                globalCache->invokePipelineCallback(
+                    ContextOptions::PipelineCacheOp::kAddingPipeline,
+                    pipeline.get(),
+                    std::move(data));
+            }
         }
     }
     return pipeline;

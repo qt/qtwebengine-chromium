@@ -1,15 +1,15 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
 import '../icon_button/icon_button.js';
 
 import * as Common from '../../../core/common/common.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as IssuesManager from '../../../models/issues_manager/issues_manager.js';
+import type * as IconButton from '../../../ui/components/icon_button/icon_button.js';
 import {html, render} from '../../lit/lit.js';
-import type * as IconButton from '../icon_button/icon_button.js';
 
 import issueCounterStyles from './issueCounter.css.js';
 

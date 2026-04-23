@@ -7,13 +7,13 @@
 #include <cstdint>
 #include <memory>
 
+#include "base/check.h"
 #include "base/functional/callback.h"
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
 #include "chrome/common/actor.mojom.h"
 #include "chrome/common/actor/action_result.h"
-#include "chrome/common/actor/actor_utils.h"
 #include "chrome/common/actor/journal_details_builder.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/renderer/actor/click_tool.h"
@@ -36,12 +36,15 @@ using content::RenderFrame;
 namespace actor {
 
 ToolExecutor::ToolExecutor(RenderFrame* frame, Journal& journal)
-    : frame_(*frame), journal_(journal) {}
+    : frame_(*frame), journal_(journal) {
+  CHECK(base::FeatureList::IsEnabled(features::kGlicActor));
+}
 
 ToolExecutor::~ToolExecutor() {
   if (completion_callback_) {
     std::move(completion_callback_)
         .Run(MakeResult(mojom::ActionResultCode::kExecutorDestroyed,
+                        /*requires_page_stabilization=*/false,
                         "The tool executor was destroyed before invocation "
                         "could complete."));
   }
@@ -52,6 +55,7 @@ void ToolExecutor::InvokeTool(mojom::ToolInvocationPtr invocation,
   if (tool_) {
     std::move(callback).Run(
         MakeResult(mojom::ActionResultCode::kExecutorBusy,
+                   /*requires_page_stabilization=*/false,
                    "Another tool invocation is still running."));
     return;
   }
@@ -147,16 +151,8 @@ void ToolExecutor::InvokeTool(mojom::ToolInvocationPtr invocation,
       NOTREACHED();
   }
 
-  // If GeneralPageStabilityMode is kAllEnabled, the monitor is created in a
-  // separate mojo call from the browser.
-  if (!UseGeneralPageStabilityAllTools()) {
-    page_stability_monitor_ = std::make_unique<PageStabilityMonitor>(
-        *frame_, tool_->SupportsPaintStability(), invocation->task_id,
-        *journal_);
-  }
-
-  if (features::kGlicActorScrollTargetIntoView.Get()) {
-    tool_->EnsureTargetInView();
+  if (tool_->EnsureTargetInView()) {
+    performed_scroll_into_view_ = true;
   }
 
   execute_journal_entry_ = journal_->CreatePendingAsyncEntry(
@@ -166,22 +162,37 @@ void ToolExecutor::InvokeTool(mojom::ToolInvocationPtr invocation,
                                 weak_ptr_factory_.GetWeakPtr()));
 }
 
+void ToolExecutor::CancelTool(const actor::TaskId& task_id) {
+  journal_->Log(
+      task_id, "ToolExecutor::CancelTool",
+      JournalDetailsBuilder().Add("tool_already_finished", !tool_).Build());
+
+  weak_ptr_factory_.InvalidateWeakPtrs();
+  if (!tool_) {
+    // Benign race condition: the tool has already finished.
+    CHECK(!completion_callback_);
+    return;
+  }
+
+  // The browser and renderer should agree on the active tool.
+  CHECK_EQ(tool_->task_id(), task_id);
+
+  tool_->Cancel();
+
+  // The result code doesn't matter as it will be ignored by the browser
+  // process.
+  ToolFinished(MakeResult(mojom::ActionResultCode::kInvokeCanceled));
+}
+
 void ToolExecutor::ToolFinished(mojom::ActionResultPtr result) {
   execute_journal_entry_.reset();
   result->execution_end_time = base::TimeTicks::Now();
-  if (page_stability_monitor_) {
-    page_stability_monitor_->NotifyWhenStable(
-        tool_->ExecutionObservationDelay(),
-        base::BindOnce(&ToolExecutor::OnCompletion,
-                       weak_ptr_factory_.GetWeakPtr(), std::move(result)));
-  } else {
-    OnCompletion(std::move(result));
-  }
+  result->requires_page_stabilization |= performed_scroll_into_view_;
+  OnCompletion(std::move(result));
 }
 
 void ToolExecutor::OnCompletion(mojom::ActionResultPtr result) {
   CHECK(completion_callback_);
-  page_stability_monitor_.reset();
 
   CHECK(tool_);
   // Release current tool so we can accept a new tool invocation.

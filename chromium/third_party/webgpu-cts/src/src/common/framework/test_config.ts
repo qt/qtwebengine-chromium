@@ -1,4 +1,4 @@
-import { assert } from '../util/util.js';
+import { assert, hasFeature } from '../util/util.js';
 
 export type TestConfig = {
   /**
@@ -13,10 +13,16 @@ export type TestConfig = {
   maxSubcasesInFlight: number;
 
   /**
-   * Every `subcasesBetweenAttemptingGC` subcases, run `attemptGarbageCollection()`.
+   * After this many subcases run on the page, run `attemptGarbageCollection()`.
    * Setting to `Infinity` disables this. Setting to 1 attempts GC every time (slow!).
    */
   subcasesBetweenAttemptingGC: number;
+
+  /**
+   * After this many cases use a device, destroy and replace it to free GPU resources.
+   * Setting to `Infinity` disables this. Setting to 1 gets a new device every time (slow!).
+   */
+  casesBetweenReplacingDevice: number;
 
   testHeartbeatCallback: () => void;
 
@@ -67,6 +73,7 @@ export const globalTestConfig: TestConfig = {
   enableDebugLogs: false,
   maxSubcasesInFlight: 100,
   subcasesBetweenAttemptingGC: 5000,
+  casesBetweenReplacingDevice: Infinity,
   testHeartbeatCallback: () => {},
   noRaceWithRejectOnTimeout: false,
   unrollConstEvalLoops: false,
@@ -83,7 +90,7 @@ export const globalTestConfig: TestConfig = {
 // is trying to test that compatibility devices have the correct validation.
 export function isCompatibilityDevice(device: GPUDevice) {
   if (globalTestConfig.compatibility) {
-    assert(!device.features.has('core-features-and-limits'));
+    assert(!hasFeature(device.features, 'core-features-and-limits'));
   }
   return globalTestConfig.compatibility;
 }

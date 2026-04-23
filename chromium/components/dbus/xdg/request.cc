@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/nix/xdg_util.h"
 #include "base/unguessable_token.h"
@@ -61,7 +62,7 @@ void Request::Initialize(dbus::ObjectProxy* object_proxy,
 
   options["handle_token"] =
       dbus_utils::Variant::Wrap<"s">(std::move(handle_token));
-  dbus_utils::internal::WriteValue(*writer, options);
+  dbus_utils::WriteValue(*writer, options);
   object_proxy->CallMethodWithErrorResponse(
       method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
       base::BindOnce(&Request::OnMethodResponse,
@@ -170,7 +171,7 @@ void Request::OnResponseSignal(dbus::Signal* signal) {
       return;
   }
 
-  auto results = dbus_utils::internal::ReadValue<Dictionary>(reader);
+  auto results = dbus_utils::ReadValue<Dictionary>(reader);
   if (!results) {
     LOG(ERROR) << "Failed to read results dictionary.";
     Finish(base::unexpected(ResponseError::kInvalidSignalResponse));

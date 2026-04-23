@@ -150,7 +150,8 @@ CredentialUIEntry::CredentialUIEntry(const PasskeyCredential& passkey)
       username(base::UTF8ToUTF16(passkey.username())),
       user_display_name(base::UTF8ToUTF16(passkey.display_name())),
       creation_time(passkey.creation_time()),
-      hidden(passkey.hidden()) {
+      hidden(passkey.hidden()),
+      rp_id(passkey.rp_id()) {
   CHECK(!passkey.credential_id().empty());
   CredentialFacet facet;
   facet.url = GURL(base::StrCat(
@@ -313,7 +314,7 @@ std::string CreateSortKey(const CredentialUIEntry& credential) {
   }
 
   // Add a scheme to distinguish between http and https websites.
-  key += credential.GetURL().scheme();
+  key += credential.GetURL().GetScheme();
 
   if (!credential.blocked_by_user) {
     key += kSortKeyPartsSeparator + base::UTF16ToUTF8(credential.username) +

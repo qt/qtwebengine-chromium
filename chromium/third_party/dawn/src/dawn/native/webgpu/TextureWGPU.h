@@ -32,35 +32,47 @@
 #include "dawn/native/Forward.h"
 #include "dawn/native/Texture.h"
 #include "dawn/native/webgpu/ObjectWGPU.h"
+#include "dawn/native/webgpu/RecordableObject.h"
 #include "dawn/webgpu.h"
 
 namespace dawn::native::webgpu {
 
 class Device;
 
-class Texture final : public TextureBase, public ObjectWGPU<WGPUTexture> {
+class Texture final : public TextureBase, public RecordableObject, public ObjectWGPU<WGPUTexture> {
   public:
     static ResultOrError<Ref<Texture>> Create(Device* device,
                                               const UnpackedPtr<TextureDescriptor>& descriptor);
 
+    MaybeError AddReferenced(CaptureContext& captureContext) override;
+    MaybeError CaptureCreationParameters(CaptureContext& context) override;
+    MaybeError CaptureContentIfNeeded(CaptureContext& context,
+                                      schema::ObjectId id,
+                                      bool newResource) override;
+
   private:
-    Texture(Device* device,
-            const UnpackedPtr<TextureDescriptor>& descriptor,
-            WGPUTexture innerTexture);
+    Texture(Device* device, const UnpackedPtr<TextureDescriptor>& descriptor);
     void DestroyImpl() override;
+    void SetLabelImpl() override;
 };
 
-class TextureView final : public TextureViewBase, public ObjectWGPU<WGPUTextureView> {
+class TextureView final : public TextureViewBase,
+                          public RecordableObject,
+                          public ObjectWGPU<WGPUTextureView> {
   public:
     static ResultOrError<Ref<TextureView>> Create(
         TextureBase* texture,
         const UnpackedPtr<TextureViewDescriptor>& descriptor);
+
+    MaybeError AddReferenced(CaptureContext& captureContext) override;
+    MaybeError CaptureCreationParameters(CaptureContext& context) override;
 
   private:
     TextureView(TextureBase* texture,
                 const UnpackedPtr<TextureViewDescriptor>& descriptor,
                 WGPUTextureView innerView);
     ~TextureView() override = default;
+    void SetLabelImpl() override;
 };
 
 }  // namespace dawn::native::webgpu

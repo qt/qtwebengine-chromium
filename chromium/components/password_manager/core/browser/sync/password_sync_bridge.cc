@@ -730,10 +730,8 @@ std::optional<syncer::ModelError> PasswordSyncBridge::MergeFullSyncData(
         password_store_sync_->GetMetadataStore(), syncer::PASSWORDS,
         base::BindRepeating(&syncer::DataTypeLocalChangeProcessor::ReportError,
                             change_processor()->GetWeakPtr()));
-    // |metadata_change_list| must have been created via
-    // CreateMetadataChangeList() so downcasting is safe.
-    static_cast<syncer::InMemoryMetadataChangeList*>(metadata_change_list.get())
-        ->TransferChangesTo(&sync_metadata_store_change_list);
+
+    metadata_change_list->TransferChangesTo(&sync_metadata_store_change_list);
     std::optional<syncer::ModelError> error = change_processor()->GetError();
     if (error) {
       metrics_util::LogPasswordSyncState(
@@ -754,18 +752,6 @@ std::optional<syncer::ModelError> PasswordSyncBridge::MergeFullSyncData(
 
   metrics_util::LogPasswordSyncState(
       metrics_util::PasswordSyncState::kSyncingOk);
-  if (password_store_sync_->IsAccountStore()) {
-    int password_count = std::ranges::count_if(
-        entity_data,
-        [](const std::unique_ptr<syncer::EntityChange>& entity_change) {
-          return !entity_change->data()
-                      .specifics.password()
-                      .client_only_encrypted_data()
-                      .blacklisted();
-        });
-    metrics_util::LogDownloadedPasswordsCountFromAccountStoreAfterUnlock(
-        password_count);
-  }
 
   sync_enabled_or_disabled_cb_.Run();
   return std::nullopt;
@@ -912,10 +898,7 @@ PasswordSyncBridge::ApplyIncrementalSyncChanges(
         password_store_sync_->GetMetadataStore(), syncer::PASSWORDS,
         base::BindRepeating(&syncer::DataTypeLocalChangeProcessor::ReportError,
                             change_processor()->GetWeakPtr()));
-    // |metadata_change_list| must have been created via
-    // CreateMetadataChangeList() so downcasting is safe.
-    static_cast<syncer::InMemoryMetadataChangeList*>(metadata_change_list.get())
-        ->TransferChangesTo(&sync_metadata_store_change_list);
+    metadata_change_list->TransferChangesTo(&sync_metadata_store_change_list);
     std::optional<syncer::ModelError> error = change_processor()->GetError();
     if (error) {
       metrics_util::LogApplySyncChangesState(

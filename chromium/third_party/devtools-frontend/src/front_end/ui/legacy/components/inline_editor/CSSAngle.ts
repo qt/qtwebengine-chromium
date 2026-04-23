@@ -1,7 +1,7 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import './CSSAngleEditor.js';
 import './CSSAngleSwatch.js';
@@ -99,7 +99,7 @@ export class CSSAngle extends HTMLElement {
       this.angleElement = this.querySelector<HTMLElement>('.css-angle');
     }
     if (!this.swatchElement) {
-      this.swatchElement = this.querySelector<HTMLElement>('devtools-css-angle-swatch');
+      this.swatchElement = this.querySelector('devtools-css-angle-swatch');
     }
     if (!this.angleElement || !this.swatchElement) {
       return;

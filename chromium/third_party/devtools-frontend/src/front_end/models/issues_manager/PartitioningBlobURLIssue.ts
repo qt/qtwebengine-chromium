@@ -23,12 +23,10 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('models/issues_manager/PartitioningBlobURLIssue.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
-export class PartitioningBlobURLIssue extends Issue {
-  readonly #issueDetails: Protocol.Audits.PartitioningBlobURLIssueDetails;
-
-  constructor(issueDetails: Protocol.Audits.PartitioningBlobURLIssueDetails, issuesModel: SDK.IssuesModel.IssuesModel) {
-    super(Protocol.Audits.InspectorIssueCode.PartitioningBlobURLIssue, issuesModel);
-    this.#issueDetails = issueDetails;
+export class PartitioningBlobURLIssue extends Issue<Protocol.Audits.PartitioningBlobURLIssueDetails> {
+  constructor(
+      issueDetails: Protocol.Audits.PartitioningBlobURLIssueDetails, issuesModel: SDK.IssuesModel.IssuesModel|null) {
+    super(Protocol.Audits.InspectorIssueCode.PartitioningBlobURLIssue, issueDetails, issuesModel);
   }
 
   getCategory(): IssueCategory {
@@ -36,7 +34,7 @@ export class PartitioningBlobURLIssue extends Issue {
   }
 
   getDescription(): MarkdownIssueDescription {
-    const fileName = this.#issueDetails.partitioningBlobURLInfo ===
+    const fileName = this.details().partitioningBlobURLInfo ===
             Protocol.Audits.PartitioningBlobURLInfo.BlockedCrossPartitionFetching ?
         'fetchingPartitionedBlobURL.md' :
         'navigatingPartitionedBlobURL.md';
@@ -55,20 +53,17 @@ export class PartitioningBlobURLIssue extends Issue {
     };
   }
 
-  details(): Protocol.Audits.PartitioningBlobURLIssueDetails {
-    return this.#issueDetails;
-  }
-
   getKind(): IssueKind {
     return IssueKind.BREAKING_CHANGE;
   }
 
   primaryKey(): string {
-    return JSON.stringify(this.#issueDetails);
+    return JSON.stringify(this.details());
   }
 
-  static fromInspectorIssue(issuesModel: SDK.IssuesModel.IssuesModel, inspectorIssue: Protocol.Audits.InspectorIssue):
-      PartitioningBlobURLIssue[] {
+  static fromInspectorIssue(
+      issuesModel: SDK.IssuesModel.IssuesModel|null,
+      inspectorIssue: Protocol.Audits.InspectorIssue): PartitioningBlobURLIssue[] {
     const details = inspectorIssue.details.partitioningBlobURLIssueDetails;
     if (!details) {
       console.warn('Partitioning BlobURL issue without details received.');

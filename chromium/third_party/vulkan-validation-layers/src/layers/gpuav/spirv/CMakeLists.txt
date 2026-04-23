@@ -27,16 +27,19 @@ target_sources(gpu_av_spirv PRIVATE
     buffer_device_address_pass.cpp
     ray_query_pass.h
     ray_query_pass.cpp
+    sanitizer_pass.h
+    sanitizer_pass.cpp
     debug_printf_pass.h
     debug_printf_pass.cpp
     post_process_descriptor_indexing_pass.h
     post_process_descriptor_indexing_pass.cpp
-    vertex_attribute_fetch_oob.h
-    vertex_attribute_fetch_oob.cpp
+    vertex_attribute_fetch_oob_pass.h
+    vertex_attribute_fetch_oob_pass.cpp
     log_error_pass.h
     log_error_pass.cpp
 
     # Framework
+    cooperative_matrix.h
     function_basic_block.h
     function_basic_block.cpp
     interface.h

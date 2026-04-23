@@ -389,10 +389,10 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Supports StorageTextureAccess 'read-write' on several additional formats.",
       "https://gpuweb.github.io/gpuweb/#texture-formats-tier2", FeatureInfo::FeatureState::Stable}},
     {Feature::TextureComponentSwizzle,
-     {"Texture component swizzle lets you to specify how the channels of a texture (red, green, "
-      "blue, and alpha) are mapped to the color components when accessed by a shader.",
-      "https://github.com/gpuweb/gpuweb/blob/main/proposals/texture-component-swizzle.md",
-      FeatureInfo::FeatureState::Experimental}},
+     {"Allows GPUTextureViews to rearrange or replace the color components from texture's "
+      "red/green/blue/alpha channels when used as a TEXTURE_BINDING.",
+      "https://gpuweb.github.io/gpuweb/#texture-component-swizzle",
+      FeatureInfo::FeatureState::Stable}},
     {Feature::CoreFeaturesAndLimits,
      {"Lifts all compatibility mode restrictions (features and limits) to core when enabled on a "
       "device.",
@@ -433,7 +433,24 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       FeatureInfo::FeatureState::Stable}},
     {Feature::ChromiumExperimentalBindless,
      {"Experimental support for the prototype of a bindless extension",
-      "https://hackmd.io/@kangz/bindless-proposal", FeatureInfo::FeatureState::Experimental}}};
+      "https://hackmd.io/@kangz/bindless-proposal", FeatureInfo::FeatureState::Experimental}},
+    {Feature::AdapterPropertiesWGPU,
+     {"Support querying WebGPU backend info from the adapter.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "adapter_properties.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedBufferMemoryD3D12SharedMemoryFileMappingHandle,
+     {"Supports importing a shared memory file mapping handle as shared buffer memory.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_buffer.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::SharedTextureMemoryD3D12Resource,
+     {"Support importing ID3D12Resource as shared texture memory.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_texture.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::ChromiumExperimentalSamplingResourceTable,
+     {"Experimental support for the bindless sampling resource table",
+      "https://github.com/Kangz/gpuweb/blob/bindless/proposals/bindless.md",
+      FeatureInfo::FeatureState::Experimental}}};
 
 }  // anonymous namespace
 

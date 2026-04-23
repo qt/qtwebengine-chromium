@@ -138,7 +138,7 @@ class D3D11VideoDecoderWrapperImpl : public D3D11VideoDecoderWrapper {
         return false;
       }
 
-      memcpy(buffer.data(), slice_info_bytes_.data(), slice_info_bytes_.size());
+      buffer.data().copy_prefix_from(slice_info_bytes_);
       slice_info_bytes_.clear();
 
       if (!buffer.Commit()) {
@@ -385,7 +385,7 @@ std::unique_ptr<D3D11VideoDecoderWrapper> D3D11VideoDecoderWrapper::Create(
         std::move(video_decoder));
   }
 
-  if (supported_d3d11_version == D3D_FEATURE_LEVEL_11_1) {
+  if (supported_d3d11_version >= D3D_FEATURE_LEVEL_11_1) {
     ComD3D11VideoContext1 video_context1;
     hr = video_context.As(&video_context1);
     CHECK_EQ(hr, S_OK);

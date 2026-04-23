@@ -8,9 +8,6 @@
 #include <limits>
 
 #include "base/time/time.h"
-#include "third_party/blink/public/common/privacy_budget/identifiability_metric_builder.h"
-#include "third_party/blink/public/common/privacy_budget/identifiability_study_settings.h"
-#include "third_party/blink/public/common/privacy_budget/identifiable_surface.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
@@ -27,12 +24,12 @@
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/modules/event_target_modules.h"
 #include "third_party/blink/renderer/modules/mediarecorder/blob_event.h"
+#include "third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.h"
 #include "third_party/blink/renderer/modules/mediarecorder/video_track_recorder.h"
 #include "third_party/blink/renderer/platform/blob/blob_data.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_descriptor.h"
 #include "third_party/blink/renderer/platform/network/mime/content_type.h"
-#include "third_party/blink/renderer/platform/privacy_budget/identifiability_digest_helpers.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -234,8 +231,8 @@ MediaRecorder::MediaRecorder(ExecutionContext* context,
                                      GetBitrateModeFromOptions(options))) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotSupportedError,
-        "Failed to initialize native MediaRecorder the type provided (" +
-            mime_type_ + ") is not supported.");
+        StrCat({"Failed to initialize native MediaRecorder the type provided (",
+                mime_type_, ") is not supported."}));
   }
 
   audio_bits_per_second_ = bitrates.audio_bps.value_or(kDefaultAudioBitRate);
@@ -402,18 +399,9 @@ bool MediaRecorder::isTypeSupported(ExecutionContext* context,
   // not available to support the concrete media encoding.
   // https://w3c.github.io/mediacapture-record/#dom-mediarecorder-istypesupported
   ContentType content_type(type);
-  bool result = handler->CanSupportMimeType(content_type.GetType(),
-                                            content_type.Parameter("codecs"));
-  if (IdentifiabilityStudySettings::Get()->ShouldSampleType(
-          blink::IdentifiableSurface::Type::kMediaRecorder_IsTypeSupported)) {
-    blink::IdentifiabilityMetricBuilder(context->UkmSourceID())
-        .Add(blink::IdentifiableSurface::FromTypeAndToken(
-                 blink::IdentifiableSurface::Type::
-                     kMediaRecorder_IsTypeSupported,
-                 IdentifiabilityBenignStringToken(type)),
-             result)
-        .Record(context->UkmRecorder());
-  }
+  bool result = handler->CanSupportMimeType(
+      content_type.GetType(), content_type.Parameter("codecs"),
+      MediaRecorderHandler::CanSupportMimeTypeCaller::kIsTypeSupported);
 
   return result;
 }

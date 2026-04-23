@@ -1,7 +1,7 @@
 // Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import type * as Platform from '../../core/platform/platform.js';
@@ -178,13 +178,15 @@ function getCssEvaluationElement(): HTMLElement {
   return cssEvaluationElement;
 }
 
-// These functions use an element in the frontend to evaluate CSS. The advantage
-// of this is that it is synchronous and doesn't require a CDP method. The
-// disadvantage is it lacks context that would allow substitutions such as
-// `var()` and `calc()` to be resolved correctly, and if the user is doing
-// remote debugging there is a possibility that the CSS behavior is different
-// between the two browser versions. We use it for type checking after
-// substitutions (but not for actual evaluation) and for applying units.
+/**
+ * These functions use an element in the frontend to evaluate CSS. The advantage
+ * of this is that it is synchronous and doesn't require a CDP method. The
+ * disadvantage is it lacks context that would allow substitutions such as
+ * `var()` and `calc()` to be resolved correctly, and if the user is doing
+ * remote debugging there is a possibility that the CSS behavior is different
+ * between the two browser versions. We use it for type checking after
+ * substitutions (but not for actual evaluation) and for applying units.
+ **/
 export function localEvalCSS(value: string, type: string): string|null {
   const element = getCssEvaluationElement();
   element.setAttribute('data-value', value);
@@ -192,9 +194,11 @@ export function localEvalCSS(value: string, type: string): string|null {
   return element.computedStyleMap().get('--evaluation')?.toString() ?? null;
 }
 
-// It is important to establish whether a type is valid, because if it is not,
-// the current behavior of blink is to ignore the fallback and parse as a
-// raw string, returning '' if the attribute is not set.
+/**
+ * It is important to establish whether a type is valid, because if it is not,
+ * the current behavior of blink is to ignore the fallback and parse as a
+ * raw string, returning '' if the attribute is not set.
+ **/
 export function isValidCSSType(type: string): boolean {
   const element = getCssEvaluationElement();
   element.setAttribute('data-custom-expr', `attr(data-nonexistent ${type}, "good")`);
@@ -1068,21 +1072,28 @@ export class CustomFunctionMatcher extends matcherBase(CustomFunctionMatch) {
   }
 }
 
-export class FlexGridMatch implements Match {
-  constructor(readonly text: string, readonly node: CodeMirror.SyntaxNode, readonly isFlex: boolean) {
+export const enum LayoutType {
+  FLEX = 'flex',
+  GRID = 'grid',
+  GRID_LANES = 'grid-lanes',
+}
+
+export class FlexGridGridLanesMatch implements Match {
+  constructor(readonly text: string, readonly node: CodeMirror.SyntaxNode, readonly layoutType: LayoutType) {
   }
 }
 
 // clang-format off
-export class FlexGridMatcher extends matcherBase(FlexGridMatch) {
+export class FlexGridGridLanesMatcher extends matcherBase(FlexGridGridLanesMatch) {
   // clang-format on
   static readonly FLEX = ['flex', 'inline-flex', 'block flex', 'inline flex'];
   static readonly GRID = ['grid', 'inline-grid', 'block grid', 'inline grid'];
+  static readonly GRID_LANES = ['grid-lanes', 'inline-grid-lanes', 'block grid-lanes', 'inline grid-lanes'];
   override accepts(propertyName: string): boolean {
     return propertyName === 'display';
   }
 
-  override matches(node: CodeMirror.SyntaxNode, matching: BottomUpTreeMatching): FlexGridMatch|null {
+  override matches(node: CodeMirror.SyntaxNode, matching: BottomUpTreeMatching): FlexGridGridLanesMatch|null {
     if (node.name !== 'Declaration') {
       return null;
     }
@@ -1094,11 +1105,14 @@ export class FlexGridMatcher extends matcherBase(FlexGridMatch) {
                        .map(node => matching.getComputedText(node).trim())
                        .filter(value => value);
     const text = values.join(' ');
-    if (FlexGridMatcher.FLEX.includes(text)) {
-      return new FlexGridMatch(matching.ast.text(node), node, true);
+    if (FlexGridGridLanesMatcher.FLEX.includes(text)) {
+      return new FlexGridGridLanesMatch(matching.ast.text(node), node, LayoutType.FLEX);
     }
-    if (FlexGridMatcher.GRID.includes(text)) {
-      return new FlexGridMatch(matching.ast.text(node), node, false);
+    if (FlexGridGridLanesMatcher.GRID.includes(text)) {
+      return new FlexGridGridLanesMatch(matching.ast.text(node), node, LayoutType.GRID);
+    }
+    if (FlexGridGridLanesMatcher.GRID_LANES.includes(text)) {
+      return new FlexGridGridLanesMatch(matching.ast.text(node), node, LayoutType.GRID_LANES);
     }
     return null;
   }
@@ -1133,8 +1147,10 @@ export class GridTemplateMatcher extends matcherBase(GridTemplateMatch) {
     // `needClosingLineNames` tracks if the current row can still consume an optional LineNames,
     // which will decide if we should start a new line or not when a LineNames is encountered.
     let needClosingLineNames = false;
-    // Gather row definitions of [<line-names>? <string> <track-size>? <line-names>?], which
-    // be rendered into separate lines.
+    /**
+     * Gather row definitions of [<line-names>? <string> <track-size>? <line-names>?], which
+     * be rendered into separate lines.
+     **/
     function parseNodes(nodes: CodeMirror.SyntaxNode[], varParsingMode = false): void {
       for (const curNode of nodes) {
         if (matching.getMatch(curNode) instanceof BaseVariableMatch) {
@@ -1221,7 +1237,7 @@ export class AnchorFunctionMatcher extends matcherBase(AnchorFunctionMatch) {
     if (node.name === 'VariableName') {
       // Double-dashed anchor reference to be rendered with a link to its matching anchor.
       let parent = node.parent;
-      if (!parent || parent.name !== 'ArgList') {
+      if (parent?.name !== 'ArgList') {
         return null;
       }
       parent = parent.parent;
@@ -1247,7 +1263,7 @@ export class AnchorFunctionMatcher extends matcherBase(AnchorFunctionMatch) {
   }
 }
 
-// For linking `position-anchor: --anchor-name`.
+/** For linking `position-anchor: --anchor-name`. **/
 export class PositionAnchorMatch implements Match {
   constructor(readonly text: string, readonly matching: BottomUpTreeMatching, readonly node: CodeMirror.SyntaxNode) {
   }

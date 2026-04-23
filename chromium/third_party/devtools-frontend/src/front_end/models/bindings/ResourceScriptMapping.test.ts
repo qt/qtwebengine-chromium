@@ -37,9 +37,10 @@ describeWithMockConnection('ResourceScriptMapping', () => {
       resourceMapping,
       targetManager,
       ignoreListManager,
+      workspace,
     });
-    target = createTarget();
     backend = new MockProtocolBackend();
+    target = createTarget();
     resourceScriptMapping = new Bindings.ResourceScriptMapping.ResourceScriptMapping(
         target.model(SDK.DebuggerModel.DebuggerModel) as SDK.DebuggerModel.DebuggerModel, workspace,
         debuggerWorkspaceBinding);

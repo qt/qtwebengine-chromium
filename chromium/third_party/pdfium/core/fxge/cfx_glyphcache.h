@@ -15,9 +15,9 @@
 #include "core/fxcrt/observed_ptr.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/cfx_face.h"
+#include "core/fxge/fx_font.h"
 
 #if defined(PDF_USE_SKIA)
-#include "core/fxge/fx_font.h"
 #include "third_party/skia/include/core/SkRefCnt.h"  // nogncheck
 #endif
 
@@ -36,7 +36,7 @@ class CFX_GlyphCache final : public Retainable, public Observable {
                                          bool bFontStyle,
                                          const CFX_Matrix& matrix,
                                          int dest_width,
-                                         int anti_alias,
+                                         FontAntiAliasingMode anti_alias,
                                          CFX_TextRenderOptions* text_options);
   const CFX_Path* LoadGlyphPath(const CFX_Font* font,
                                 uint32_t glyph_index,
@@ -69,20 +69,20 @@ class CFX_GlyphCache final : public Retainable, public Observable {
                                                bool bFontStyle,
                                                const CFX_Matrix& matrix,
                                                int dest_width,
-                                               int anti_alias);
+                                               FontAntiAliasingMode anti_alias);
   std::unique_ptr<CFX_GlyphBitmap> RenderGlyph_Nativetext(
       const CFX_Font* font,
       uint32_t glyph_index,
       const CFX_Matrix& matrix,
       int dest_width,
-      int anti_alias);
+      FontAntiAliasingMode anti_alias);
   CFX_GlyphBitmap* LookUpGlyphBitmap(const CFX_Font* font,
                                      const CFX_Matrix& matrix,
                                      const ByteString& FaceGlyphsKey,
                                      uint32_t glyph_index,
                                      bool bFontStyle,
                                      int dest_width,
-                                     int anti_alias);
+                                     FontAntiAliasingMode anti_alias);
   RetainPtr<CFX_Face> const face_;
   std::map<ByteString, SizeGlyphCache> size_map_;
   std::map<PathMapKey, std::unique_ptr<CFX_Path>> path_map_;

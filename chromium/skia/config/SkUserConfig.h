@@ -135,13 +135,15 @@ SK_API void SkDebugf_FileLine(const char* file,
 
 #define SK_AVOID_SLOW_RASTER_PIPELINE_BLURS
 
-#define SK_SUPPORT_UNSPANNED_APIS
-
 #define SK_DISABLE_LEGACY_NONRECORDER_IMAGE_APIS
 
 #define SK_SUPPORT_LEGACY_RRECT_TRANSFORM
 
 #define SK_ENABLE_SKOTTIE_FILLRULE
+
+// Ensures Chromium is not using any mutable path APIs.  Only remove after the
+// editing methods on SkPath are truly gone.
+#define SK_HIDE_PATH_EDIT_METHODS
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi
 

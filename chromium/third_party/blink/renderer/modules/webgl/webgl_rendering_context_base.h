@@ -39,11 +39,9 @@
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
-#include "third_party/blink/renderer/bindings/core/v8/v8_canvas_element_hit_test_region.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_webgl_context_attributes.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_context_creation_attributes_core.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
-#include "third_party/blink/renderer/core/html/canvas/ukm_parameters.h"
 #include "third_party/blink/renderer/core/layout/content_change_type.h"
 #include "third_party/blink/renderer/core/typed_arrays/array_buffer_view_helpers.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_typed_array.h"
@@ -140,10 +138,6 @@ class MODULES_EXPORT WebGLRenderingContextBase
   ~WebGLRenderingContextBase() override;
 
   HTMLCanvasElement* canvas() const;
-
-  const UkmParameters GetUkmParameters() const {
-    return Host()->GetUkmParameters();
-  }
 
   virtual String ContextName() const = 0;
   virtual void RegisterContextExtensions() = 0;
@@ -430,6 +424,16 @@ class MODULES_EXPORT WebGLRenderingContextBase
                     Element* element,
                     ExceptionState& exception_state);
 
+  void texElement2D(GLenum target,
+                    GLint level,
+                    GLint internalformat,
+                    GLsizei width,
+                    GLsizei height,
+                    GLenum format,
+                    GLenum type,
+                    Element* element,
+                    ExceptionState& exception_state);
+
   void texElementImage2D(GLenum target,
                          GLint level,
                          GLint internalformat,
@@ -438,7 +442,14 @@ class MODULES_EXPORT WebGLRenderingContextBase
                          Element* element,
                          ExceptionState& exception_state);
 
-  void setHitTestRegions(VectorOf<CanvasElementHitTestRegion> hit_test_regions,
+  void texElementImage2D(GLenum target,
+                         GLint level,
+                         GLint internalformat,
+                         GLsizei width,
+                         GLsizei height,
+                         GLenum format,
+                         GLenum type,
+                         Element* element,
                          ExceptionState& exception_state);
 
   void texParameterf(GLenum target, GLenum pname, GLfloat param);
@@ -616,8 +627,9 @@ class MODULES_EXPORT WebGLRenderingContextBase
 
   void Trace(Visitor*) const override;
 
-  // Returns approximate gpu memory allocated per pixel.
-  int AllocatedBufferCountPerPixel() const override;
+  // Returns approximate gpu memory allocated.
+  base::ByteCount AllocatedBufferSize() const override;
+  int AllocatedBufferCountPerPixel() const override { NOTREACHED(); }
 
   // Returns the drawing buffer size after it is, probably, has scaled down
   // to the maximum supported canvas size.
@@ -642,7 +654,7 @@ class MODULES_EXPORT WebGLRenderingContextBase
   SkAlphaType GetAlphaType() const override;
   viz::SharedImageFormat GetSharedImageFormat() const override;
   gfx::ColorSpace GetColorSpace() const override;
-  scoped_refptr<StaticBitmapImage> GetImage(FlushReason) override;
+  scoped_refptr<StaticBitmapImage> GetImage() override;
   void SetHdrMetadata(const gfx::HDRMetadata& hdr_metadata) override;
 
   V8UnionHTMLCanvasElementOrOffscreenCanvas* getHTMLOrOffscreenCanvas() const;
@@ -719,12 +731,10 @@ class MODULES_EXPORT WebGLRenderingContextBase
 
   // CanvasRenderingContext implementation.
   bool IsComposited() const override { return true; }
-  bool CanUseDrawingBufferSIWithoutCopyForLowLatency();
   void PageVisibilityChanged() override;
   void SizeChanged() override;
   scoped_refptr<StaticBitmapImage> PaintRenderingResultsToSnapshot(
-      SourceDrawingBuffer source_buffer,
-      FlushReason reason) override;
+      SourceDrawingBuffer source_buffer) override;
   void ClearMarkedCanvasDirty() override { marked_canvas_dirty_ = false; }
   scoped_refptr<CanvasResource> PaintRenderingResultsToResource(
       SourceDrawingBuffer source_buffer,
@@ -1922,10 +1932,6 @@ class MODULES_EXPORT WebGLRenderingContextBase
                                       HTMLImageElement*,
                                       ExceptionState&);
 
-  void DrawElementImage(scoped_refptr<Image> image,
-                        TexImageParams params,
-                        ExceptionState& exception_state);
-
   void TexImageHelperCanvasRenderingContextHost(const SecurityOrigin*,
                                                 TexImageParams params,
                                                 CanvasRenderingContextHost*,
@@ -1977,7 +1983,7 @@ class MODULES_EXPORT WebGLRenderingContextBase
   scoped_refptr<ExternalCanvasResource> ExportLowLatencyCanvasResource(
       SourceDrawingBuffer source_buffer);
 
-  CanvasResourceProviderSharedImage* GetOrCreateCanvasResourceProvider();
+  CanvasResourceProviderSharedImage* GetSharedImageResourceProvider();
 
   // Attempts to paint the most recent rendering results into a
   // CanvasResourceProvider. Returns the CanvasResourceProvider if the paint
@@ -2008,13 +2014,6 @@ class MODULES_EXPORT WebGLRenderingContextBase
       WebGraphicsContext3DProvider* context_provider);
   static unsigned CurrentMaxGLContexts();
 
-  void RecordIdentifiableGLParameterDigest(GLenum pname,
-                                           IdentifiableToken value);
-
-  void RecordShaderPrecisionFormatForStudy(GLenum shader_type,
-                                           GLenum precision_type,
-                                           WebGLShaderPrecisionFormat* format);
-
   void Dispose() override;
 
   // PushFrameWithCopy will make a potential copy if the resource is accelerated
@@ -2023,6 +2022,16 @@ class MODULES_EXPORT WebGLRenderingContextBase
   // PushFrameNoCopy will try and export the content of the DrawingBuffer as a
   // ExtenralCanvasResource.
   bool PushFrameNoCopy();
+
+  void TexElementImage2DInternal(GLenum target,
+                                 GLint level,
+                                 GLint internalformat,
+                                 std::optional<GLsizei> width,
+                                 std::optional<GLsizei> height,
+                                 GLenum format,
+                                 GLenum type,
+                                 Element* element,
+                                 ExceptionState& exception_state);
 
   // Used to provide accelerated snapshots and CanvasResources holding the
   // current content.
@@ -2063,8 +2072,6 @@ class MODULES_EXPORT WebGLRenderingContextBase
   int number_of_user_allocated_multisampled_renderbuffers_;
 
   bool has_been_drawn_to_ = false;
-
-  uint32_t number_of_context_losses_ = 0;
 
   // Tracks if the context has ever called glBeginPixelLocalStorageANGLE. If it
   // has, we need to start using the pixel local storage interrupt mechanism

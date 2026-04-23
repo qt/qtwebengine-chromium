@@ -6,6 +6,7 @@
 
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/functional/callback_helpers.h"
 #include "base/rand_util.h"
 #include "base/task/thread_pool.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -109,6 +110,8 @@ class PredictionModelStoreTest : public testing::Test {
     std::unique_ptr<base::RunLoop> run_loop = std::make_unique<base::RunLoop>();
     prediction_model_store_->LoadModel(
         optimization_target, model_cache_key,
+        base::ThreadPool::CreateSequencedTaskRunner(
+            {base::MayBlock(), base::TaskPriority::BEST_EFFORT}),
         base::BindOnce(&PredictionModelStoreTest::OnPredictionModelLoaded,
                        base::Unretained(this), run_loop.get()));
     run_loop->Run();

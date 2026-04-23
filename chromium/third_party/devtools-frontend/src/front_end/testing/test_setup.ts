@@ -35,7 +35,7 @@ before(async function() {
   // Some latin characters to trigger the latin font file to be loaded.
   // Additional non-latin characters can be included if needed.
   div.innerText = 'abc';
-  // eslint-disable-next-line rulesdir/no-document-body-mutation
+  // eslint-disable-next-line @devtools/no-document-body-mutation
   document.body.append(div);
   await document.fonts.ready;
   div.remove();
@@ -70,16 +70,17 @@ beforeEach(async () => {
 
   // Some unit tests exercise code that assumes a ThemeSupport instance is available.
   // Run this in a beforeEach in case an individual test overrides it.
-  const setting = createFakeSetting('theme', 'default');
+  const setting = createFakeSetting('ui-theme', 'default');
   ThemeSupport.ThemeSupport.instance({forceNew: true, setting});
 
   startTrackingAsyncActivity();
 });
 
 afterEach(async function() {
-  await cleanTestDOM(this.currentTest?.fullTitle());
+  cleanTestDOM(this.currentTest?.fullTitle());
   await checkForPendingActivity(this.currentTest?.fullTitle());
   stopTrackingAsyncActivity();
   // Clear out any Sinon stubs or spies between individual tests.
+  sinon.clock?.runToLast();
   sinon.restore();
 });

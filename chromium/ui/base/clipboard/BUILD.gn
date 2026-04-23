@@ -16,7 +16,10 @@ component("clipboard_types") {
   sources = [
     "clipboard_buffer.h",
     "clipboard_constants.h",
+    "clipboard_url_info.h",
   ]
+
+  public_deps = [ "//url" ]
 
   if (use_blink) {
     sources += [ "clipboard_format_type.h" ]
@@ -187,6 +190,10 @@ component("clipboard") {
 
   if (is_android) {
     deps += [ "//ui/base:clipboard_jni_headers" ]
+  }
+
+  if (is_linux) {
+    deps += [ "//ui/linux:linux_ui" ]
   }
 
   if (is_mac) {

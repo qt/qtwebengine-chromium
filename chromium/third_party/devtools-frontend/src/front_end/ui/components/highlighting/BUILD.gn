@@ -8,8 +8,12 @@ import("../../../../scripts/build/ninja/generate_css.gni")
 import("../../../../scripts/build/typescript/typescript.gni")
 import("../visibility.gni")
 
-devtools_module("highlighting") {
-  sources = [ "HighlightManager.ts" ]
+devtools_ui_module("highlighting") {
+  sources = [
+    "HighlightElement.ts",
+    "HighlightManager.ts",
+    "MarkupHighlight.ts",
+  ]
   deps = [ "../../../models/text_utils:bundle" ]
 }
 
@@ -21,10 +25,17 @@ devtools_entrypoint("bundle") {
   visibility = default_components_visibility
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
-  sources = [ "HighlightManager.test.ts" ]
+  sources = [
+    "HighlightElement.test.ts",
+    "HighlightManager.test.ts",
+    "MarkupHighlight.test.ts",
+  ]
 
-  deps = [ ":bundle" ]
+  deps = [
+    ":bundle",
+    "../../../testing",
+  ]
 }

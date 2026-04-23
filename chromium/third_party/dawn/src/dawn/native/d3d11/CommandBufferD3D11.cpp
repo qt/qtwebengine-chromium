@@ -365,8 +365,7 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
 
             case Command::CopyBufferToTexture: {
                 CopyBufferToTextureCmd* copy = mCommands.NextCommand<CopyBufferToTextureCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -377,16 +376,16 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 Buffer* buffer = ToBackend(src.buffer.Get());
                 uint64_t bufferOffset = src.offset;
                 Ref<BufferBase> stagingBuffer;
+                const TypedTexelBlockInfo& blockInfo = GetBlockInfo(dst);
+
                 // If the buffer is not mappable, we need to create a staging buffer and copy the
                 // data from the buffer to the staging buffer.
                 if (!buffer->IsCPUReadable()) {
-                    const TexelBlockInfo& blockInfo =
-                        ToBackend(dst.texture)->GetFormat().GetAspectInfo(dst.aspect).block;
                     // TODO(dawn:1768): use compute shader to copy data from buffer to texture.
                     BufferDescriptor desc;
-                    DAWN_TRY_ASSIGN(desc.size,
-                                    ComputeRequiredBytesInCopy(blockInfo, copy->copySize,
-                                                               src.bytesPerRow, src.rowsPerImage));
+                    desc.size =
+                        ComputeRequiredBytesInCopy(blockInfo, blockInfo.ToBlock(copy->copySize),
+                                                   src.blocksPerRow, src.rowsPerImage);
                     desc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
                     DAWN_TRY_ASSIGN(stagingBuffer, Buffer::Create(ToBackend(GetDevice()),
                                                                   Unpack(&desc), commandContext));
@@ -409,8 +408,11 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
 
                 DAWN_ASSERT(scopedMap.GetMappedData());
                 const uint8_t* data = scopedMap.GetMappedData() + bufferOffset;
-                DAWN_TRY(texture->Write(commandContext, subresources, dst.origin, copy->copySize,
-                                        data, src.bytesPerRow, src.rowsPerImage));
+                uint64_t bytesPerRow = blockInfo.ToBytes(src.blocksPerRow);
+                DAWN_TRY(texture->Write(commandContext, subresources, dst.origin.ToOrigin3D(),
+                                        copy->copySize.ToExtent3D(), data,
+                                        static_cast<uint32_t>(bytesPerRow),
+                                        static_cast<uint32_t>(src.rowsPerImage)));
 
                 buffer->MarkUsedInPendingCommands();
                 break;
@@ -418,8 +420,7 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
 
             case Command::CopyTextureToBuffer: {
                 CopyTextureToBufferCmd* copy = mCommands.NextCommand<CopyTextureToBufferCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -447,9 +448,13 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                     return {};
                 };
 
+                const TypedTexelBlockInfo& blockInfo = GetBlockInfo(src);
+                uint64_t bytesPerRow = blockInfo.ToBytes(dst.blocksPerRow);
+
                 DAWN_TRY(ToBackend(src.texture)
-                             ->Read(commandContext, subresources, src.origin, copy->copySize,
-                                    dst.bytesPerRow, dst.rowsPerImage, callback));
+                             ->Read(commandContext, subresources, src.origin.ToOrigin3D(),
+                                    copy->copySize.ToExtent3D(), static_cast<uint32_t>(bytesPerRow),
+                                    static_cast<uint32_t>(dst.rowsPerImage), callback));
 
                 dst.buffer->MarkUsedInPendingCommands();
                 break;
@@ -457,8 +462,7 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
 
             case Command::CopyTextureToTexture: {
                 CopyTextureToTextureCmd* copy = mCommands.NextCommand<CopyTextureToTextureCmd>();
-                if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
-                    copy->copySize.depthOrArrayLayers == 0) {
+                if (copy->copySize.IsEmpty()) {
                     // Skip no-op copies.
                     continue;
                 }
@@ -614,12 +618,12 @@ MaybeError CommandBuffer::ExecuteComputePass(
                 break;
             }
 
-            case Command::SetImmediateData: {
-                SetImmediateDataCmd* cmd = mCommands.NextCommand<SetImmediateDataCmd>();
+            case Command::SetImmediates: {
+                SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
                 uint8_t* value = nullptr;
                 value = mCommands.NextData<uint8_t>(cmd->size);
-                immediates.SetImmediateData(cmd->offset, value, cmd->size);
+                immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }
 
@@ -873,12 +877,12 @@ MaybeError CommandBuffer::ExecuteRenderPass(
                 break;
             }
 
-            case Command::SetImmediateData: {
-                SetImmediateDataCmd* cmd = mCommands.NextCommand<SetImmediateDataCmd>();
+            case Command::SetImmediates: {
+                SetImmediatesCmd* cmd = mCommands.NextCommand<SetImmediatesCmd>();
                 DAWN_ASSERT(cmd->size > 0);
                 uint8_t* value = nullptr;
                 value = mCommands.NextData<uint8_t>(cmd->size);
-                immediates.SetImmediateData(cmd->offset, value, cmd->size);
+                immediates.SetImmediates(cmd->offset, value, cmd->size);
                 break;
             }
 

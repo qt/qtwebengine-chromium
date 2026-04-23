@@ -1,7 +1,7 @@
 // Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -150,8 +150,10 @@ export const TrackNames = [
   'Extension',
   'ServerTimings',
 ] as const;
-// Network track will use TrackAppender interface, but it won't be shown in Main flamechart.
-// So manually add it to TrackAppenderName.
+/**
+ * Network track will use TrackAppender interface, but it won't be shown in Main flamechart.
+ * So manually add it to TrackAppenderName.
+ **/
 export type TrackAppenderName = typeof TrackNames[number]|'Network';
 
 export type DrawOverride = PerfUI.FlameChart.DrawOverride;

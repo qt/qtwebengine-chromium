@@ -2,12 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+enum RtcTransportWireProtocol {"dtls", "dtls-srtp"};
+
 dictionary RtcTransportConfig {
   DOMString name;
 
   // ICE configuration.
   sequence<RTCIceServer> iceServers;
-  boolean iceControlling;
+  required boolean iceControlling;
+  RtcTransportWireProtocol wireProtocol = "dtls-srtp";
+};
+
+dictionary RtcTransportICECandidateInit {
+  required DOMString address;
+  required unsigned short port;
+  required DOMString usernameFragment;
+  required DOMString password;
+  required RTCIceCandidateType type;
 };
 
 dictionary RtcSendPacketParameters {
@@ -16,9 +27,17 @@ dictionary RtcSendPacketParameters {
   long long id;
 
   // TODO(crbug.com/443019066): Change to support BYOB.
-  ArrayBuffer data;
+  required ArrayBuffer data;
 
   DOMHighResTimeStamp desiredSendTime;
+};
+
+enum RtcTransportSslRole {"server", "client"};
+
+dictionary RtcDtlsParameters {
+  required RtcTransportSslRole sslRole;
+  required DOMString fingerprintDigestAlgorithm;
+  required ArrayBuffer fingerprint;
 };
 
 [
@@ -26,16 +45,19 @@ dictionary RtcSendPacketParameters {
     SecureContext,
     RuntimeEnabled=RTCRtpTransport
 ] interface RtcTransport {
-  [CallWith=ExecutionContext] constructor(RtcTransportConfig name);
+  [CallWith=ExecutionContext, RaisesException] constructor(RtcTransportConfig name);
 
   void sendPackets(sequence<RtcSendPacketParameters> packets);
   sequence<RtcReceivedPacket> getReceivedPackets();
 
   attribute EventHandler onicecandidate;
+  [RaisesException] void addRemoteCandidate(RtcTransportICECandidateInit candidate);
 
-  // TODO(crbug.com/443019066): Add connection state events once they're discussed in the
-  //                            W3C WebRTC packet-level API design group.
+  // Transport encryption negotiation
+  void setRemoteDtlsParameters(RtcDtlsParameters params);
+  readonly attribute DOMString fingerprintDigestAlgorithm;
+  readonly attribute ArrayBuffer fingerprint;
 
-  // TODO(crbug.com/443019066): Add methods for providing remote ICE config and candidates
-  //                            that the app has received via app-level signalling.
+  attribute EventHandler onwritablechange;
+  [CallWith=ScriptState] Promise<boolean> writable();
 };

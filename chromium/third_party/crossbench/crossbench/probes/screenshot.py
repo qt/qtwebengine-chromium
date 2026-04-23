@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, ClassVar, Optional, Self, Sequence, Type
 
 from typing_extensions import override
 
-from crossbench.action_runner.screenshot_annotation import (
-    ScreenshotAnnotation, annotate_screenshot_svg)
+from crossbench.action_runner.screenshot_annotation import \
+    ScreenshotAnnotation, annotate_screenshot_svg
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
 from crossbench.probes.probe_error import ProbeMissingDataError
 from crossbench.probes.result_location import ResultLocation

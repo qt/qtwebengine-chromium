@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
@@ -45,15 +45,18 @@ import type * as Elements from '../../models/elements/elements.js';
 import type * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
+import type {DirectiveResult} from '../../third_party/lit/lib/directive.js';
 import * as Adorners from '../../ui/components/adorners/adorners.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
 import * as Highlighting from '../../ui/components/highlighting/highlighting.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
+import {createIcon, Icon} from '../../ui/kit/kit.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import * as Lit from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import * as PanelsCommon from '../common/common.js';
 import * as Emulation from '../emulation/emulation.js';
 import * as Media from '../media/media.js';
 
@@ -64,6 +67,8 @@ import {ElementsPanel} from './ElementsPanel.js';
 import {type ElementsTreeOutline, MappedCharToEntity} from './ElementsTreeOutline.js';
 import {ImagePreviewPopover} from './ImagePreviewPopover.js';
 import {getRegisteredDecorators, type MarkerDecorator, type MarkerDecoratorRegistration} from './MarkerDecorator.js';
+
+const {html, nothing, render, Directives: {ref, repeat}} = Lit;
 
 const UIStrings = {
   /**
@@ -190,11 +195,14 @@ const UIStrings = {
   /**
    * @description ARIA label for Elements Tree adorners
    */
-  enableMasonryMode: 'Enable masonry mode',
   /**
    * @description ARIA label for Elements Tree adorners
    */
-  disableMasonryMode: 'Disable masonry mode',
+  enableGridLanesMode: 'Enable grid-lanes mode',
+  /**
+   * @description ARIA label for Elements Tree adorners
+   */
+  disableGridLanesMode: 'Disable grid-lanes mode',
   /**
    * @description ARIA label for an elements tree adorner
    */
@@ -221,6 +229,16 @@ const UIStrings = {
    * the overlay showing CSS scroll snapping for the current element.
    */
   disableScrollSnap: 'Disable scroll-snap overlay',
+  /**
+   * @description Label of an adorner in the Elements panel. When clicked, it enables
+   * the overlay showing the container overlay for the current element.
+   */
+  enableContainer: 'Enable container overlay',
+  /**
+   * @description Label of an adorner in the Elements panel. When clicked, it disables
+   * the overlay showing container for the current element.
+   */
+  disableContainer: 'Disable container overlay',
   /**
    * @description Label of an adorner in the Elements panel. When clicked, it forces
    * the element into applying its starting-style rules.
@@ -335,12 +353,7 @@ const enum TagType {
 
 interface OpeningTagContext {
   tagType: TagType.OPENING;
-  readonly adornerContainer: HTMLElement;
-  adorners: Set<Adorners.Adorner.Adorner>;
-  styleAdorners: Set<Adorners.Adorner.Adorner>;
-  readonly adornersThrottler: Common.Throttler.Throttler;
   canAddAttributes: boolean;
-  slot?: Adorners.Adorner.Adorner;
 }
 
 interface ClosingTagContext {
@@ -353,11 +366,204 @@ export function isOpeningTag(context: TagTypeContext): context is OpeningTagCont
   return context.tagType === TagType.OPENING;
 }
 
+export interface ViewInput {
+  containerAdornerActive: boolean;
+  flexAdornerActive: boolean;
+  gridAdornerActive: boolean;
+
+  showAdAdorner: boolean;
+  showContainerAdorner: boolean;
+  showFlexAdorner: boolean;
+  showGridAdorner: boolean;
+  showGridLanesAdorner: boolean;
+  showMediaAdorner: boolean;
+  isSubgrid: boolean;
+
+  adorners?: Set<Adorners.Adorner.Adorner>;
+  nodeInfo?: DocumentFragment;
+
+  onGutterClick: (e: Event) => void;
+  onAdornerAdded: (adorner: Adorners.Adorner.Adorner) => void;
+  onAdornerRemoved: (adorner: Adorners.Adorner.Adorner) => void;
+  onContainerAdornerClick: (e: Event) => void;
+  onFlexAdornerClick: (e: Event) => void;
+  onGridAdornerClick: (e: Event) => void;
+  onMediaAdornerClick: (e: Event) => void;
+}
+
+export interface ViewOutput {
+  gutterContainer?: HTMLElement;
+  decorationsElement?: HTMLElement;
+  contentElement?: HTMLElement;
+}
+
+function adornerRef(input: ViewInput): DirectiveResult<typeof Lit.Directives.RefDirective> {
+  let adorner: Adorners.Adorner.Adorner|undefined;
+  return ref((el?: Element) => {
+    if (adorner) {
+      input.onAdornerRemoved(adorner);
+    }
+    adorner = el as Adorners.Adorner.Adorner;
+
+    if (adorner) {
+      if (ElementsPanel.instance().isAdornerEnabled(adorner.name)) {
+        adorner.show();
+      } else {
+        adorner.hide();
+      }
+      input.onAdornerAdded(adorner);
+    }
+  });
+}
+
+export const DEFAULT_VIEW = (input: ViewInput, output: ViewOutput, target: HTMLElement): void => {
+  const adAdornerConfig =
+      ElementsComponents.AdornerManager.getRegisteredAdorner(ElementsComponents.AdornerManager.RegisteredAdorners.AD);
+  const containerAdornerConfig = ElementsComponents.AdornerManager.getRegisteredAdorner(
+      ElementsComponents.AdornerManager.RegisteredAdorners.CONTAINER);
+  const flexAdornerConfig =
+      ElementsComponents.AdornerManager.getRegisteredAdorner(ElementsComponents.AdornerManager.RegisteredAdorners.FLEX);
+  const gridAdornerConfig =
+      ElementsComponents.AdornerManager.getRegisteredAdorner(ElementsComponents.AdornerManager.RegisteredAdorners.GRID);
+  const subgridAdornerConfig = ElementsComponents.AdornerManager.getRegisteredAdorner(
+      ElementsComponents.AdornerManager.RegisteredAdorners.SUBGRID);
+  const gridLanesAdornerConfig = ElementsComponents.AdornerManager.getRegisteredAdorner(
+      ElementsComponents.AdornerManager.RegisteredAdorners.GRID_LANES);
+  const mediaAdornerConfig = ElementsComponents.AdornerManager.getRegisteredAdorner(
+      ElementsComponents.AdornerManager.RegisteredAdorners.MEDIA);
+  const hasAdorners = input.adorners?.size || input.showAdAdorner || input.showContainerAdorner ||
+      input.showFlexAdorner || input.showGridAdorner || input.showGridLanesAdorner || input.showMediaAdorner;
+  // clang-format off
+  render(html`
+    <div ${ref(el => { output.contentElement = el as HTMLElement; })}>
+      ${input.nodeInfo ? html`<span class="highlight">${input.nodeInfo}</span>` : nothing}
+      <div class="gutter-container" @click=${input.onGutterClick} ${ref(el => { output.gutterContainer = el as HTMLElement; })}>
+        <devtools-icon name="dots-horizontal"></devtools-icon>
+        <div class="hidden" ${ref(el => { output.decorationsElement = el as HTMLElement; })}></div>
+      </div>
+      ${hasAdorners ? html`<div class="adorner-container ${!hasAdorners ? 'hidden' : ''}">
+        ${input.showAdAdorner ? html`<devtools-adorner
+          aria-label=${i18nString(UIStrings.thisFrameWasIdentifiedAsAnAd)}
+          .data=${{name: adAdornerConfig.name, jslogContext: adAdornerConfig.name}}
+          ${adornerRef(input)}>
+          <span>${adAdornerConfig.name}</span>
+        </devtools-adorner>` : nothing}
+        ${input.showContainerAdorner ? html`<devtools-adorner
+          class=clickable
+          role=button
+          toggleable=true
+          tabindex=0
+          .data=${{name: containerAdornerConfig.name, jslogContext: containerAdornerConfig.name}}
+          jslog=${VisualLogging.adorner(containerAdornerConfig.name).track({click: true})}
+          active=${input.containerAdornerActive}
+          aria-label=${input.containerAdornerActive ? i18nString(UIStrings.enableContainer) : i18nString(UIStrings.disableContainer)}
+          @click=${input.onContainerAdornerClick}
+          @keydown=${(event: KeyboardEvent) => {
+            if (event.code === 'Enter' || event.code === 'Space') {
+              input.onContainerAdornerClick(event);
+              event.stopPropagation();
+            }
+          }}
+          ${adornerRef(input)}>
+          <span>${containerAdornerConfig.name}</span>
+        </devtools-adorner>`: nothing}
+        ${input.showFlexAdorner ? html`<devtools-adorner
+          class=clickable
+          role=button
+          toggleable=true
+          tabindex=0
+          .data=${{name: flexAdornerConfig.name, jslogContext: flexAdornerConfig.name}}
+          jslog=${VisualLogging.adorner(flexAdornerConfig.name).track({click: true})}
+          active=${input.flexAdornerActive}
+          aria-label=${input.flexAdornerActive ? i18nString(UIStrings.disableFlexMode) : i18nString(UIStrings.enableFlexMode)}
+          @click=${input.onFlexAdornerClick}
+          @keydown=${(event: KeyboardEvent) => {
+            if (event.code === 'Enter' || event.code === 'Space') {
+              input.onFlexAdornerClick(event);
+              event.stopPropagation();
+            }
+          }}
+          ${adornerRef(input)}>
+          <span>${flexAdornerConfig.name}</span>
+        </devtools-adorner>`: nothing}
+        ${input.showGridAdorner ? html`<devtools-adorner
+          class=clickable
+          role=button
+          toggleable=true
+          tabindex=0
+          .data=${{
+            name: input.isSubgrid ? subgridAdornerConfig.name : gridAdornerConfig.name,
+            jslogContext: input.isSubgrid ? subgridAdornerConfig.name : gridAdornerConfig.name,
+          }}
+          jslog=${VisualLogging.adorner(input.isSubgrid ? subgridAdornerConfig.name : gridAdornerConfig.name).track({click: true})}
+          active=${input.gridAdornerActive}
+          aria-label=${input.gridAdornerActive ? i18nString(UIStrings.disableGridMode) : i18nString(UIStrings.enableGridMode)}
+          @click=${input.onGridAdornerClick}
+          @keydown=${(event: KeyboardEvent) => {
+            if (event.code === 'Enter' || event.code === 'Space') {
+              input.onGridAdornerClick(event);
+              event.stopPropagation();
+            }
+          }}
+          ${adornerRef(input)}>
+          <span>${input.isSubgrid ? subgridAdornerConfig.name : gridAdornerConfig.name}</span>
+        </devtools-adorner>`: nothing}
+        ${input.showGridLanesAdorner ? html`<devtools-adorner
+          class=clickable
+          role=button
+          toggleable=true
+          tabindex=0
+          .data=${{name: gridLanesAdornerConfig.name, jslogContext: gridLanesAdornerConfig.name}}
+          jslog=${VisualLogging.adorner(gridLanesAdornerConfig.name).track({click: true})}
+          active=${input.gridAdornerActive}
+          aria-label=${input.gridAdornerActive ? i18nString(UIStrings.disableGridLanesMode) : i18nString(UIStrings.enableGridLanesMode)}
+          @click=${input.onGridAdornerClick}
+          @keydown=${(event: KeyboardEvent) => {
+            if (event.code === 'Enter' || event.code === 'Space') {
+              input.onGridAdornerClick(event);
+              event.stopPropagation();
+            }
+          }}
+          ${adornerRef(input)}>
+          <span>${gridLanesAdornerConfig.name}</span>
+        </devtools-adorner>`: nothing}
+        ${input.showMediaAdorner ? html`<devtools-adorner
+          class=clickable
+          role=button
+          tabindex=0
+          .data=${{name: mediaAdornerConfig.name, jslogContext: mediaAdornerConfig.name}}
+          jslog=${VisualLogging.adorner(mediaAdornerConfig.name).track({click: true})}
+          aria-label=${i18nString(UIStrings.openMediaPanel)}
+          @click=${input.onMediaAdornerClick}
+          @keydown=${(event: KeyboardEvent) => {
+            if (event.code === 'Enter' || event.code === 'Space') {
+              input.onMediaAdornerClick(event);
+              event.stopPropagation();
+            }
+          }}
+          ${adornerRef(input)}>
+          <span class="adorner-with-icon">
+            ${mediaAdornerConfig.name}<devtools-icon name="select-element"></devtools-icon>
+          </span>
+        </devtools-adorner>`: nothing}
+        ${repeat(Array.from((input.adorners ?? new Set()).values()).sort(adornerComparator), adorner => {
+          return adorner;
+        })}
+      </div>`: nothing}
+    </div>
+  `, target);
+  // clang-format on
+};
+
 export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
   nodeInternal: SDK.DOMModel.DOMNode;
   override treeOutline: ElementsTreeOutline|null;
-  private gutterContainer: HTMLElement;
-  private readonly decorationsElement: HTMLElement;
+
+  // Handled by the view output for now.
+  gutterContainer!: HTMLElement;
+  decorationsElement!: HTMLElement;
+  contentElement!: HTMLElement;
+
   private searchQuery: string|null;
   #expandedChildrenLimit: number;
   private readonly decorationsThrottler: Common.Throttler.Throttler;
@@ -369,12 +575,19 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
   selectionElement?: HTMLDivElement;
   private hintElement?: HTMLElement;
   private aiButtonContainer?: HTMLElement;
-  private contentElement: HTMLElement;
   #elementIssues = new Map<string, IssuesManager.Issue.Issue>();
   #nodeElementToIssue = new Map<Element, IssuesManager.Issue.Issue[]>();
   #highlights: Range[] = [];
 
   readonly tagTypeContext: TagTypeContext;
+
+  #adornersThrottler = new Common.Throttler.Throttler(100);
+  #adorners = new Set<Adorners.Adorner.Adorner>();
+  #nodeInfo?: DocumentFragment;
+  #containerAdornerActive = false;
+  #flexAdornerActive = false;
+  #gridAdornerActive = false;
+  #layout: SDK.CSSModel.LayoutProperties|null = null;
 
   constructor(node: SDK.DOMModel.DOMNode, isClosingTag?: boolean) {
     // The title will be updated in onattach.
@@ -387,13 +600,6 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
           drag: true,
           click: true,
         })}`);
-    this.contentElement = this.listItemElement.createChild('div');
-    this.gutterContainer = this.contentElement.createChild('div', 'gutter-container');
-    this.gutterContainer.addEventListener('click', this.showContextMenu.bind(this));
-    const gutterMenuIcon = new IconButton.Icon.Icon();
-    gutterMenuIcon.name = 'dots-horizontal';
-    this.gutterContainer.append(gutterMenuIcon);
-    this.decorationsElement = this.gutterContainer.createChild('div', 'hidden');
 
     this.searchQuery = null;
     this.#expandedChildrenLimit = InitialChildrenLimit;
@@ -409,27 +615,19 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     } else {
       this.tagTypeContext = {
         tagType: TagType.OPENING,
-        adornerContainer: this.contentElement.createChild('div', 'adorner-container hidden'),
-        adorners: new Set(),
-        styleAdorners: new Set(),
-        adornersThrottler: new Common.Throttler.Throttler(100),
         canAddAttributes: this.nodeInternal.nodeType() === Node.ELEMENT_NODE,
       };
       void this.updateStyleAdorners();
 
-      if (node.isAdFrameNode()) {
-        const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
-            ElementsComponents.AdornerManager.RegisteredAdorners.AD);
-        const adorner = this.adorn(config);
-        UI.Tooltip.Tooltip.install(adorner, i18nString(UIStrings.thisFrameWasIdentifiedAsAnAd));
-      }
-
       void this.updateScrollAdorner();
+
+      void this.#updateAdorners();
     }
     this.expandAllButtonElement = null;
+    this.performUpdate();
 
     if (this.nodeInternal.retained && !this.isClosingTag()) {
-      const icon = new IconButton.Icon.Icon();
+      const icon = new Icon();
       icon.name = 'small-status-dot';
       icon.style.color = 'var(--icon-error)';
       icon.classList.add('extra-small');
@@ -443,6 +641,34 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     if (this.nodeInternal.detached && !this.isClosingTag()) {
       this.listItemNode.setAttribute('title', 'Detached Tree Node');
     }
+
+    node.domModel().overlayModel().addEventListener(
+        SDK.OverlayModel.Events.PERSISTENT_CONTAINER_QUERY_OVERLAY_STATE_CHANGED, event => {
+          const {nodeId: eventNodeId, enabled} = event.data;
+          if (eventNodeId !== node.id) {
+            return;
+          }
+          this.#containerAdornerActive = enabled;
+          this.performUpdate();
+        });
+    node.domModel().overlayModel().addEventListener(
+        SDK.OverlayModel.Events.PERSISTENT_FLEX_CONTAINER_OVERLAY_STATE_CHANGED, event => {
+          const {nodeId: eventNodeId, enabled} = event.data;
+          if (eventNodeId !== node.id) {
+            return;
+          }
+          this.#flexAdornerActive = enabled;
+          this.performUpdate();
+        });
+    node.domModel().overlayModel().addEventListener(
+        SDK.OverlayModel.Events.PERSISTENT_GRID_OVERLAY_STATE_CHANGED, event => {
+          const {nodeId: eventNodeId, enabled} = event.data;
+          if (eventNodeId !== node.id) {
+            return;
+          }
+          this.#gridAdornerActive = enabled;
+          this.performUpdate();
+        });
   }
 
   static animateOnDOMUpdate(treeElement: ElementsTreeElement): void {
@@ -495,6 +721,112 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
     function setPseudoStateCallback(pseudoState: string, enabled: boolean): void {
       node.domModel().cssModel().forcePseudoState(node, pseudoState, enabled);
+    }
+  }
+
+  get adorners(): Adorners.Adorner.Adorner[] {
+    return Array.from(this.#adorners);
+  }
+
+  performUpdate(): void {
+    DEFAULT_VIEW(
+        {
+          containerAdornerActive: this.#containerAdornerActive,
+          adorners: !this.isClosingTag() ? this.#adorners : undefined,
+          showAdAdorner: this.nodeInternal.isAdFrameNode(),
+          showContainerAdorner: Boolean(this.#layout?.isContainer) && !this.isClosingTag(),
+          showFlexAdorner: Boolean(this.#layout?.isFlex) && !this.isClosingTag(),
+          flexAdornerActive: this.#flexAdornerActive,
+          showGridAdorner: Boolean(this.#layout?.isGrid) && !this.isClosingTag(),
+          showGridLanesAdorner: Boolean(this.#layout?.isGridLanes) && !this.isClosingTag(),
+          showMediaAdorner: this.node().isMediaNode() && !this.isClosingTag(),
+          gridAdornerActive: this.#gridAdornerActive,
+          isSubgrid: Boolean(this.#layout?.isSubgrid),
+          nodeInfo: this.#nodeInfo,
+          onGutterClick: this.showContextMenu.bind(this),
+          onAdornerAdded: adorner => {
+            ElementsPanel.instance().registerAdorner(adorner);
+          },
+          onAdornerRemoved: adorner => {
+            ElementsPanel.instance().deregisterAdorner(adorner);
+          },
+          onContainerAdornerClick: (event: Event) => this.#onContainerAdornerClick(event),
+          onFlexAdornerClick: (event: Event) => this.#onFlexAdornerClick(event),
+          onGridAdornerClick: (event: Event) => this.#onGridAdornerClick(event),
+          onMediaAdornerClick: (event: Event) => this.#onMediaAdornerClick(event),
+        },
+        this, this.listItemElement);
+  }
+
+  #onContainerAdornerClick(event: Event): void {
+    event.stopPropagation();
+    const node = this.node();
+    const nodeId = node.id;
+    if (!nodeId) {
+      return;
+    }
+    const model = node.domModel().overlayModel();
+    if (model.isHighlightedContainerQueryInPersistentOverlay(nodeId)) {
+      model.hideContainerQueryInPersistentOverlay(nodeId);
+      this.#containerAdornerActive = false;
+    } else {
+      model.highlightContainerQueryInPersistentOverlay(nodeId);
+      this.#containerAdornerActive = true;
+      Badges.UserBadges.instance().recordAction(Badges.BadgeAction.MODERN_DOM_BADGE_CLICKED);
+    }
+    void this.updateAdorners();
+  }
+
+  #onFlexAdornerClick(event: Event): void {
+    event.stopPropagation();
+    const node = this.node();
+    const nodeId = node.id;
+    if (!nodeId) {
+      return;
+    }
+    const model = node.domModel().overlayModel();
+    if (model.isHighlightedFlexContainerInPersistentOverlay(nodeId)) {
+      model.hideFlexContainerInPersistentOverlay(nodeId);
+      this.#flexAdornerActive = false;
+    } else {
+      model.highlightFlexContainerInPersistentOverlay(nodeId);
+      this.#flexAdornerActive = true;
+      Badges.UserBadges.instance().recordAction(Badges.BadgeAction.MODERN_DOM_BADGE_CLICKED);
+    }
+    void this.updateAdorners();
+  }
+
+  #onGridAdornerClick(event: Event): void {
+    event.stopPropagation();
+    const node = this.node();
+    const nodeId = node.id;
+    if (!nodeId) {
+      return;
+    }
+    const model = node.domModel().overlayModel();
+    if (model.isHighlightedGridInPersistentOverlay(nodeId)) {
+      model.hideGridInPersistentOverlay(nodeId);
+      this.#gridAdornerActive = false;
+    } else {
+      model.highlightGridInPersistentOverlay(nodeId);
+      this.#gridAdornerActive = true;
+      if (this.#layout?.isSubgrid) {
+        Badges.UserBadges.instance().recordAction(Badges.BadgeAction.MODERN_DOM_BADGE_CLICKED);
+      }
+    }
+    void this.updateAdorners();
+  }
+
+  async #onMediaAdornerClick(event: Event): Promise<void> {
+    event.stopPropagation();
+    await UI.ViewManager.ViewManager.instance().showView('medias');
+    const view = UI.ViewManager.ViewManager.instance().view('medias');
+    if (view) {
+      const widget = await view.widget();
+      if (widget instanceof Media.MainView.MainView) {
+        await widget.waitForInitialPlayers();
+        widget.selectPlayerByDOMNodeId(this.node().backendNodeId());
+      }
     }
   }
 
@@ -645,14 +977,15 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     if (nodeShortcut) {
       const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
           ElementsComponents.AdornerManager.RegisteredAdorners.SLOT);
-      this.tagTypeContext.slot = this.adornSlot(config, this.tagTypeContext);
+      const adorner = this.adornSlot(config);
+      this.#adorners.add(adorner);
       const deferredNode = nodeShortcut.deferredNode;
-      this.tagTypeContext.slot.addEventListener('click', () => {
+      adorner.addEventListener('click', () => {
         deferredNode.resolve(node => {
           void Common.Revealer.reveal(node);
         });
       });
-      this.tagTypeContext.slot.addEventListener('mousedown', e => e.consume(), false);
+      adorner.addEventListener('mousedown', e => e.consume(), false);
     }
   }
 
@@ -735,7 +1068,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
   }
 
   override async expandRecursively(): Promise<void> {
-    await this.nodeInternal.getSubtree(-1, true);
+    await this.nodeInternal.getSubtree(100, true);
     await super.expandRecursively(Number.MAX_VALUE);
   }
 
@@ -757,6 +1090,13 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
   override select(omitFocus?: boolean, selectedByUser?: boolean): boolean {
     if (this.editing) {
+      return false;
+    }
+    const handledByFloaty = UI.Floaty.onFloatyClick({
+      type: UI.Floaty.FloatyContextTypes.ELEMENT_NODE_ID,
+      data: {nodeId: this.nodeInternal.id},
+    });
+    if (handledByFloaty) {
       return false;
     }
     return super.select(omitFocus, selectedByUser);
@@ -943,7 +1283,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     const isEditable = this.hasEditableNode();
     // clang-format off
     if (isEditable && !this.editing) {
-      contextMenu.editSection().appendItem(i18nString(UIStrings.editAsHtml), this.editAsHTML.bind(this), {jslogContext: 'elements.edit-as-html'});
+      contextMenu.editSection().appendItem(i18nString(UIStrings.editAsHtml), this.editAsHTML.bind(this), { jslogContext: 'elements.edit-as-html' });
     }
     // clang-format on
     const isShadowRoot = this.nodeInternal.isShadowRoot();
@@ -1740,7 +2080,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       return;
     }
 
-    const nodeInfo = this.nodeTitleInfo(updateRecord || null);
+    this.#nodeInfo = this.nodeTitleInfo(updateRecord || null);
     if (this.nodeInternal.nodeType() === Node.DOCUMENT_FRAGMENT_NODE && this.nodeInternal.isInShadowTree() &&
         this.nodeInternal.shadowRootType()) {
       this.childrenListElement.classList.add('shadow-root');
@@ -1757,19 +2097,10 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         this.childrenListElement.classList.add('shadow-root-depth-' + depth);
       }
     }
-    this.contentElement.removeChildren();
-    const highlightElement = this.contentElement.createChild('span', 'highlight');
-    highlightElement.append(nodeInfo);
+    this.performUpdate();
     // fixme: make it clear that `this.title = x` is a setter with significant side effects
     this.title = this.contentElement;
     this.updateDecorations();
-    this.contentElement.prepend(this.gutterContainer);
-    if (isOpeningTag(this.tagTypeContext)) {
-      this.contentElement.append(this.tagTypeContext.adornerContainer);
-    }
-    delete this.selectionElement;
-    delete this.hintElement;
-    delete this.aiButtonContainer;
     if (this.selected) {
       this.createSelection();
       this.createHint();
@@ -1940,7 +2271,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         ++highlightIndex;
       }
       element.setTextContentTruncatedIfNeeded(value);
-      UI.UIUtils.highlightRangesWithStyleClass(element, result.entityRanges, 'webkit-html-entity-value');
+      Highlighting.highlightRangesWithStyleClass(element, result.entityRanges, 'webkit-html-entity-value');
     }
 
     const hasText = (forceValue || value.length > 0);
@@ -2088,7 +2419,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     if (!relatedElement) {
       return;
     }
-    const link = await Common.Linkifier.Linkifier.linkify(relatedElement, {
+    const link = PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(relatedElement, {
       preventKeyboardFocus: true,
       tooltip,
       textContent: linkContainer.textContent || undefined,
@@ -2208,7 +2539,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
           }
           const result = convertUnicodeCharsToHTMLEntities(firstChild.nodeValue());
           textNodeElement.textContent = Platform.StringUtilities.collapseWhitespace(result.text);
-          UI.UIUtils.highlightRangesWithStyleClass(textNodeElement, result.entityRanges, 'webkit-html-entity-value');
+          Highlighting.highlightRangesWithStyleClass(textNodeElement, result.entityRanges, 'webkit-html-entity-value');
           UI.UIUtils.createTextChild(titleDOM, '\u200B');
           this.buildTagDOM(titleDOM, tagName, true, false, updateRecord);
           if (updateRecord?.hasChangedChildren()) {
@@ -2248,7 +2579,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
               'jslog', `${VisualLogging.value('text-node').track({change: true, dblclick: true})}`);
           const result = convertUnicodeCharsToHTMLEntities(node.nodeValue());
           textNodeElement.textContent = Platform.StringUtilities.collapseWhitespace(result.text);
-          UI.UIUtils.highlightRangesWithStyleClass(textNodeElement, result.entityRanges, 'webkit-html-entity-value');
+          Highlighting.highlightRangesWithStyleClass(textNodeElement, result.entityRanges, 'webkit-html-entity-value');
           UI.UIUtils.createTextChild(titleDOM, '"');
           if (updateRecord?.isCharDataModified()) {
             UI.UIUtils.runCSSAnimationOnce(textNodeElement, 'dom-update-highlight');
@@ -2463,15 +2794,15 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       jslogContext: name,
     };
     if (isOpeningTag(this.tagTypeContext)) {
-      this.tagTypeContext.adorners.add(adorner);
+      this.#adorners.add(adorner);
       ElementsPanel.instance().registerAdorner(adorner);
-      this.updateAdorners(this.tagTypeContext);
+      this.updateAdorners();
     }
     return adorner;
   }
 
-  adornSlot({name}: {name: string}, context: OpeningTagContext): Adorners.Adorner.Adorner {
-    const linkIcon = IconButton.Icon.create('select-element');
+  adornSlot({name}: {name: string}): Adorners.Adorner.Adorner {
+    const linkIcon = createIcon('select-element');
     const slotText = document.createElement('span');
     slotText.textContent = name;
     const adornerContent = document.createElement('span');
@@ -2484,41 +2815,17 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       content: adornerContent,
       jslogContext: 'slot',
     };
-    context.adorners.add(adorner);
+    this.#adorners.add(adorner);
     ElementsPanel.instance().registerAdorner(adorner);
-    this.updateAdorners(context);
+    this.updateAdorners();
     return adorner;
   }
 
-  adornMedia({name}: {name: string}): Adorners.Adorner.Adorner {
-    const adornerContent = document.createElement('span');
-
-    adornerContent.textContent = name;
-    adornerContent.classList.add('adorner-with-icon');
-
-    const linkIcon = IconButton.Icon.create('select-element');
-    adornerContent.append(linkIcon);
-
-    const adorner = new Adorners.Adorner.Adorner();
-    adorner.data = {
-      name,
-      content: adornerContent,
-      jslogContext: 'media',
-    };
-    if (isOpeningTag(this.tagTypeContext)) {
-      this.tagTypeContext.adorners.add(adorner);
-      ElementsPanel.instance().registerAdorner(adorner);
-      this.updateAdorners(this.tagTypeContext);
-    }
-    return adorner;
-  }
-
-  removeAdorner(adornerToRemove: Adorners.Adorner.Adorner, context: OpeningTagContext): void {
+  removeAdorner(adornerToRemove: Adorners.Adorner.Adorner): void {
     ElementsPanel.instance().deregisterAdorner(adornerToRemove);
     adornerToRemove.remove();
-    context.adorners.delete(adornerToRemove);
-    context.styleAdorners.delete(adornerToRemove);
-    this.updateAdorners(context);
+    this.#adorners.delete(adornerToRemove);
+    this.updateAdorners();
   }
 
   /**
@@ -2529,35 +2836,35 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       return;
     }
 
-    for (const adorner of this.tagTypeContext.adorners) {
+    for (const adorner of this.#adorners) {
       if (adorner.name === adornerType || !adornerType) {
-        this.removeAdorner(adorner, this.tagTypeContext);
+        this.removeAdorner(adorner);
       }
     }
   }
 
-  private updateAdorners(context: OpeningTagContext): void {
-    void context.adornersThrottler.schedule(this.#updateAdorners.bind(null, context));
+  updateAdorners(): void {
+    // TODO: remove adornersThrottler in favour of throttled updated (requestUpdate/performUpdate).
+    void this.#adornersThrottler.schedule(this.#updateAdorners.bind(this));
   }
 
-  #updateAdorners(context: OpeningTagContext): Promise<void> {
-    const adornerContainer = context.adornerContainer;
-    if (!adornerContainer) {
-      return Promise.resolve();
+  async #updateAdorners(): Promise<void> {
+    if (this.isClosingTag()) {
+      this.performUpdate();
+      return;
     }
-    const adorners = [...context.adorners].sort(adornerComparator);
-    if (context.slot) {
-      adorners.push(context.slot);
+    const node = this.node();
+    const nodeId = node.id;
+    if (node.nodeType() !== Node.COMMENT_NODE && node.nodeType() !== Node.DOCUMENT_FRAGMENT_NODE &&
+        node.nodeType() !== Node.TEXT_NODE && nodeId !== undefined) {
+      this.#layout = await node.domModel().cssModel().getLayoutPropertiesFromComputedStyle(nodeId);
+    } else {
+      this.#layout = null;
     }
-
-    adornerContainer.removeChildren();
-    for (const adorner of adorners) {
-      adornerContainer.appendChild(adorner);
-    }
-    adornerContainer.classList.toggle('hidden', adorners.length === 0);
-    return Promise.resolve();
+    this.performUpdate();
   }
 
+  // TODO: remove in favour of updateAdorners.
   async updateStyleAdorners(): Promise<void> {
     if (!isOpeningTag(this.tagTypeContext)) {
       return;
@@ -2569,46 +2876,35 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         node.nodeType() === Node.TEXT_NODE || nodeId === undefined) {
       return;
     }
-
     const layout = await node.domModel().cssModel().getLayoutPropertiesFromComputedStyle(nodeId);
-    for (const styleAdorner of this.tagTypeContext.styleAdorners) {
-      this.removeAdorner(styleAdorner, this.tagTypeContext);
-    }
+    // TODO: move this to the template.
+    this.removeAdornersByType(ElementsComponents.AdornerManager.RegisteredAdorners.SUBGRID);
+    this.removeAdornersByType(ElementsComponents.AdornerManager.RegisteredAdorners.GRID);
+    this.removeAdornersByType(ElementsComponents.AdornerManager.RegisteredAdorners.GRID_LANES);
+    this.removeAdornersByType(ElementsComponents.AdornerManager.RegisteredAdorners.FLEX);
+    this.removeAdornersByType(ElementsComponents.AdornerManager.RegisteredAdorners.SCROLL_SNAP);
+    this.removeAdornersByType(ElementsComponents.AdornerManager.RegisteredAdorners.MEDIA);
+    this.removeAdornersByType(ElementsComponents.AdornerManager.RegisteredAdorners.STARTING_STYLE);
+    this.removeAdornersByType(ElementsComponents.AdornerManager.RegisteredAdorners.POPOVER);
     if (layout) {
-      if (layout.isGrid) {
-        this.pushGridAdorner(this.tagTypeContext, layout.isSubgrid);
-      }
-      if (layout.isMasonry) {
-        this.pushMasonryAdorner(this.tagTypeContext);
-      }
-      if (layout.isFlex) {
-        this.pushFlexAdorner(this.tagTypeContext);
-      }
       if (layout.hasScroll) {
-        this.pushScrollSnapAdorner(this.tagTypeContext);
+        this.pushScrollSnapAdorner();
       }
-      if (layout.isContainer) {
-        this.pushContainerAdorner(this.tagTypeContext);
-      }
-    }
-
-    if (node.isMediaNode()) {
-      this.pushMediaAdorner(this.tagTypeContext);
     }
 
     if (Root.Runtime.hostConfig.devToolsStartingStyleDebugging?.enabled) {
       const affectedByStartingStyles = node.affectedByStartingStyles();
       if (affectedByStartingStyles) {
-        this.pushStartingStyleAdorner(this.tagTypeContext);
+        this.pushStartingStyleAdorner();
       }
     }
 
     if (node.attributes().find(attr => attr.name === 'popover')) {
-      this.pushPopoverAdorner(this.tagTypeContext);
+      this.pushPopoverAdorner();
     }
   }
 
-  pushPopoverAdorner(context: OpeningTagContext): void {
+  pushPopoverAdorner(): void {
     if (!Root.Runtime.hostConfig.devToolsAllowPopoverForcing?.enabled) {
       return;
     }
@@ -2629,7 +2925,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         if (!treeElement || !isOpeningTag(treeElement.tagTypeContext)) {
           return;
         }
-        const adorner = treeElement.tagTypeContext.adorners.values().find(adorner => adorner.name === config.name);
+        const adorner = this.#adorners.values().find(adorner => adorner.name === config.name);
         adorner?.toggle(false);
       }
     };
@@ -2640,97 +2936,10 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       ariaLabelActive: i18nString(UIStrings.stopForceOpenPopover),
     });
 
-    context.styleAdorners.add(adorner);
+    this.#adorners.add(adorner);
   }
 
-  pushGridAdorner(context: OpeningTagContext, isSubgrid: boolean): void {
-    const node = this.node();
-    const nodeId = node.id;
-    if (!nodeId) {
-      return;
-    }
-
-    const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
-        isSubgrid ? ElementsComponents.AdornerManager.RegisteredAdorners.SUBGRID :
-                    ElementsComponents.AdornerManager.RegisteredAdorners.GRID);
-    const adorner = this.adorn(config);
-    adorner.classList.add('grid');
-
-    const onClick = ((() => {
-                       if (adorner.isActive()) {
-                         node.domModel().overlayModel().highlightGridInPersistentOverlay(nodeId);
-                         if (isSubgrid) {
-                           Badges.UserBadges.instance().recordAction(Badges.BadgeAction.MODERN_DOM_BADGE_CLICKED);
-                         }
-                       } else {
-                         node.domModel().overlayModel().hideGridInPersistentOverlay(nodeId);
-                       }
-                     }) as EventListener);
-    adorner.addInteraction(onClick, {
-      isToggle: true,
-      shouldPropagateOnKeydown: false,
-      ariaLabelDefault: i18nString(UIStrings.enableGridMode),
-      ariaLabelActive: i18nString(UIStrings.disableGridMode),
-    });
-
-    node.domModel().overlayModel().addEventListener(
-        SDK.OverlayModel.Events.PERSISTENT_GRID_OVERLAY_STATE_CHANGED, event => {
-          const {nodeId: eventNodeId, enabled} = event.data;
-          if (eventNodeId !== nodeId) {
-            return;
-          }
-          adorner.toggle(enabled);
-        });
-
-    context.styleAdorners.add(adorner);
-    if (node.domModel().overlayModel().isHighlightedGridInPersistentOverlay(nodeId)) {
-      adorner.toggle(true);
-    }
-  }
-
-  pushMasonryAdorner(context: OpeningTagContext): void {
-    const node = this.node();
-    const nodeId = node.id;
-    if (!nodeId) {
-      return;
-    }
-
-    const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
-        ElementsComponents.AdornerManager.RegisteredAdorners.MASONRY);
-    const adorner = this.adorn(config);
-    adorner.classList.add('masonry');
-
-    const onClick = ((() => {
-                       if (adorner.isActive()) {
-                         node.domModel().overlayModel().highlightGridInPersistentOverlay(nodeId);
-                         Badges.UserBadges.instance().recordAction(Badges.BadgeAction.MODERN_DOM_BADGE_CLICKED);
-                       } else {
-                         node.domModel().overlayModel().hideGridInPersistentOverlay(nodeId);
-                       }
-                     }) as EventListener);
-    adorner.addInteraction(onClick, {
-      isToggle: true,
-      shouldPropagateOnKeydown: false,
-      ariaLabelDefault: i18nString(UIStrings.enableMasonryMode),
-      ariaLabelActive: i18nString(UIStrings.disableMasonryMode),
-    });
-
-    node.domModel().overlayModel().addEventListener(
-        SDK.OverlayModel.Events.PERSISTENT_GRID_OVERLAY_STATE_CHANGED, event => {
-          const {nodeId: eventNodeId, enabled} = event.data;
-          if (eventNodeId !== nodeId) {
-            return;
-          }
-          adorner.toggle(enabled);
-        });
-
-    context.styleAdorners.add(adorner);
-    if (node.domModel().overlayModel().isHighlightedGridInPersistentOverlay(nodeId)) {
-      adorner.toggle(true);
-    }
-  }
-
-  pushScrollSnapAdorner(context: OpeningTagContext): void {
+  pushScrollSnapAdorner(): void {
     const node = this.node();
     const nodeId = node.id;
     if (!nodeId) {
@@ -2766,14 +2975,14 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
           adorner.toggle(enabled);
         });
 
-    context.styleAdorners.add(adorner);
+    this.#adorners.add(adorner);
 
     if (node.domModel().overlayModel().isHighlightedScrollSnapInPersistentOverlay(nodeId)) {
       adorner.toggle(true);
     }
   }
 
-  pushStartingStyleAdorner(context: OpeningTagContext): void {
+  pushStartingStyleAdorner(): void {
     const node = this.node();
     const nodeId = node.id;
     if (!nodeId) {
@@ -2800,134 +3009,15 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       ariaLabelActive: i18nString(UIStrings.disableStartingStyle),
     });
 
-    context.styleAdorners.add(adorner);
-  }
-
-  pushFlexAdorner(context: OpeningTagContext): void {
-    const node = this.node();
-    const nodeId = node.id;
-    if (!nodeId) {
-      return;
-    }
-    const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
-        ElementsComponents.AdornerManager.RegisteredAdorners.FLEX);
-    const adorner = this.adorn(config);
-    adorner.classList.add('flex');
-
-    const onClick = ((() => {
-                       const model = node.domModel().overlayModel();
-                       if (adorner.isActive()) {
-                         model.highlightFlexContainerInPersistentOverlay(nodeId);
-                       } else {
-                         model.hideFlexContainerInPersistentOverlay(nodeId);
-                       }
-                     }) as EventListener);
-
-    adorner.addInteraction(onClick, {
-      isToggle: true,
-      shouldPropagateOnKeydown: false,
-      ariaLabelDefault: i18nString(UIStrings.enableFlexMode),
-      ariaLabelActive: i18nString(UIStrings.disableFlexMode),
-    });
-
-    node.domModel().overlayModel().addEventListener(
-        SDK.OverlayModel.Events.PERSISTENT_FLEX_CONTAINER_OVERLAY_STATE_CHANGED, event => {
-          const {nodeId: eventNodeId, enabled} = event.data;
-          if (eventNodeId !== nodeId) {
-            return;
-          }
-
-          adorner.toggle(enabled);
-        });
-
-    context.styleAdorners.add(adorner);
-
-    if (node.domModel().overlayModel().isHighlightedFlexContainerInPersistentOverlay(nodeId)) {
-      adorner.toggle(true);
-    }
-  }
-
-  pushContainerAdorner(context: OpeningTagContext): void {
-    const node = this.node();
-    const nodeId = node.id;
-    if (!nodeId) {
-      return;
-    }
-    const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
-        ElementsComponents.AdornerManager.RegisteredAdorners.CONTAINER);
-    const adorner = this.adorn(config);
-    adorner.classList.add('container');
-
-    const onClick = ((() => {
-                       const model = node.domModel().overlayModel();
-                       if (adorner.isActive()) {
-                         model.highlightContainerQueryInPersistentOverlay(nodeId);
-                         Badges.UserBadges.instance().recordAction(Badges.BadgeAction.MODERN_DOM_BADGE_CLICKED);
-                       } else {
-                         model.hideContainerQueryInPersistentOverlay(nodeId);
-                       }
-                     }) as EventListener);
-
-    adorner.addInteraction(onClick, {
-      isToggle: true,
-      shouldPropagateOnKeydown: false,
-      ariaLabelDefault: i18nString(UIStrings.enableScrollSnap),
-      ariaLabelActive: i18nString(UIStrings.disableScrollSnap),
-    });
-
-    node.domModel().overlayModel().addEventListener(
-        SDK.OverlayModel.Events.PERSISTENT_CONTAINER_QUERY_OVERLAY_STATE_CHANGED, event => {
-          const {nodeId: eventNodeId, enabled} = event.data;
-          if (eventNodeId !== nodeId) {
-            return;
-          }
-          adorner.toggle(enabled);
-        });
-
-    context.styleAdorners.add(adorner);
-    if (node.domModel().overlayModel().isHighlightedContainerQueryInPersistentOverlay(nodeId)) {
-      adorner.toggle(true);
-    }
-  }
-
-  pushMediaAdorner(context: OpeningTagContext): void {
-    const node = this.node();
-    const nodeId = node.id;
-    if (!nodeId) {
-      return;
-    }
-    const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
-        ElementsComponents.AdornerManager.RegisteredAdorners.MEDIA);
-    const adorner = this.adornMedia(config);
-    adorner.classList.add('media');
-    const onClick = (async(): Promise<void> => {
-                      await UI.ViewManager.ViewManager.instance().showView('medias');
-                      const view = UI.ViewManager.ViewManager.instance().view('medias');
-                      if (view) {
-                        const widget = await view.widget();
-                        if (widget instanceof Media.MainView.MainView) {
-                          await widget.waitForInitialPlayers();
-                          widget.selectPlayerByDOMNodeId(node.backendNodeId());
-                        }
-                      }
-                    }) as EventListener;
-
-    adorner.addInteraction(onClick, {
-      isToggle: false,
-      shouldPropagateOnKeydown: false,
-      ariaLabelDefault: i18nString(UIStrings.openMediaPanel),
-      ariaLabelActive: i18nString(UIStrings.openMediaPanel),
-    });
-
-    context.styleAdorners.add(adorner);
+    this.#adorners.add(adorner);
   }
 
   updateScrollAdorner(): void {
     if (!isOpeningTag(this.tagTypeContext)) {
       return;
     }
-    const scrollAdorner = this.tagTypeContext.adorners.values().find(
-        x => x.name === ElementsComponents.AdornerManager.RegisteredAdorners.SCROLL);
+    const scrollAdorner =
+        this.#adorners.values().find(x => x.name === ElementsComponents.AdornerManager.RegisteredAdorners.SCROLL);
     // Check if the node is scrollable, or if it's the <html> element and the document is scrollable
     // because the top-level document (#document) doesn't have a corresponding tree element.
     const needsAScrollAdorner = (this.node().nodeName() === 'HTML' && this.node().ownerDocument?.isScrollable()) ||
@@ -2935,7 +3025,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     if (needsAScrollAdorner && !scrollAdorner) {
       this.pushScrollAdorner();
     } else if (!needsAScrollAdorner && scrollAdorner) {
-      this.removeAdorner(scrollAdorner, this.tagTypeContext);
+      this.removeAdorner(scrollAdorner);
     }
   }
 
@@ -2950,14 +3040,16 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
 export const InitialChildrenLimit = 500;
 
-// A union of HTML4 and HTML5-Draft elements that explicitly
-// or implicitly (for HTML5) forbid the closing tag.
+/**
+ * A union of HTML4 and HTML5-Draft elements that explicitly
+ * or implicitly (for HTML5) forbid the closing tag.
+ **/
 export const ForbiddenClosingTagElements = new Set<string>([
   'area', 'base',  'basefont', 'br',   'canvas',   'col',  'command', 'embed',  'frame', 'hr',
   'img',  'input', 'keygen',   'link', 'menuitem', 'meta', 'param',   'source', 'track', 'wbr',
 ]);
 
-// These tags we do not allow editing their tag name.
+/** These tags we do not allow editing their tag name. **/
 export const EditTagBlocklist = new Set<string>(['html', 'head', 'body']);
 
 export function adornerComparator(adornerA: Adorners.Adorner.Adorner, adornerB: Adorners.Adorner.Adorner): number {
@@ -3000,8 +3092,10 @@ export interface EditorHandles {
   resize: () => void;
 }
 
-// As a privacy measure we are logging elements tree outline as a flat list where every tree item is a
-// child of a tree outline.
+/**
+ * As a privacy measure we are logging elements tree outline as a flat list where every tree item is a
+ * child of a tree outline.
+ **/
 function loggingParentProvider(e: Element): Element|undefined {
   const treeElement = UI.TreeOutline.TreeElement.getTreeElementBylistItemNode(e);
   return treeElement?.treeOutline?.contentElement;

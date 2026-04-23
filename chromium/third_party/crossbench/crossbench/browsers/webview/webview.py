@@ -31,6 +31,6 @@ class Webview(ChromeWebDriverAndroid, metaclass=abc.ABCMeta):
 
   @override
   def _extract_version(self) -> BrowserVersion:
-    webview_provider = self.platform.sh_stdout(
-        "settings", "get", "global", "webview_provider").strip()
+    webview_provider = self.platform.sh_stdout("settings", "get", "global",
+                                               "webview_provider").strip()
     return self.version_cls().parse(self.platform.app_version(webview_provider))

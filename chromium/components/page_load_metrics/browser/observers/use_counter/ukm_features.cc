@@ -140,7 +140,6 @@ UseCounterMetricsRecorder::GetAllowedUkmFeatures() {
           WebFeature::kThirdPartyFileSystem,
           WebFeature::kThirdPartyIndexedDb,
           WebFeature::kThirdPartyCacheStorage,
-          WebFeature::kDeclarativeShadowRoot,
           WebFeature::kOverlayPopup,
           WebFeature::kOverlayPopupAd,
           WebFeature::kTrustTokenXhr,
@@ -220,7 +219,6 @@ UseCounterMetricsRecorder::GetAllowedUkmFeatures() {
           WebFeature::kWebCodecsAudioEncoder,
           WebFeature::kWebCodecsVideoFrameFromImage,
           WebFeature::kWebCodecsVideoFrameFromBuffer,
-          WebFeature::kPrivateNetworkAccessPreflightWarning,
           WebFeature::kWebBluetoothGetAvailability,
           WebFeature::kCookieHasNotBeenRefreshedIn201To300Days,
           WebFeature::kCookieHasNotBeenRefreshedIn301To350Days,
@@ -392,10 +390,6 @@ UseCounterMetricsRecorder::GetAllowedUkmFeatures() {
           WebFeature::kGamepadHapticActuatorType,
           WebFeature::kV8Navigator_JoinAdInterestGroup_Method,
           WebFeature::kFormValidationShowedMessage,
-          WebFeature::kPartitionedPopin_OpenAttempt,
-          WebFeature::kPartitionedPopin_Opened,
-          WebFeature::kV8Window_PopinContextTypesSupported_Method,
-          WebFeature::kV8Window_PopinContextType_Method,
           WebFeature::kSpeculationRulesHeader,
           WebFeature::kGeolocationGetCurrentPosition,
           WebFeature::kGeolocationWatchPosition,
@@ -458,7 +452,6 @@ UseCounterMetricsRecorder::GetAllowedUkmFeatures() {
           WebFeature::kLanguageModel_PromptStreaming,
           WebFeature::kLanguageModel_Prompt_Input_Image,
           WebFeature::kLanguageModel_Prompt_Input_Audio,
-          WebFeature::kCrossOriginSameSiteCookieAccessViaStorageAccessAPI,
           WebFeature::kCredentialManagerCreateFederatedCredential,
           WebFeature::kCredentialManagerStoreFederatedCredential,
           WebFeature::kCredentialManagerGetLegacyFederatedCredential,
@@ -466,13 +459,19 @@ UseCounterMetricsRecorder::GetAllowedUkmFeatures() {
           WebFeature::kXSLProcessingInstruction,
           WebFeature::kXSLTProcessor,
           WebFeature::kXMLExternalResourceLoad,
+          WebFeature::kXMLExternalResourceLoadEntitiesOnly,
           WebFeature::kProofreader_Create,
           WebFeature::kProofreader_Proofread,
           WebFeature::kDeviceBoundSessionRegistered,
           WebFeature::kDeviceBoundSessionRequestInScope,
           WebFeature::kDeviceBoundSessionRequestDeferral,
-          // NOTE: before adding new use counters here, verify in UMA that their
-          // emissions are very rare, e.g. <1% of page loads.
+          WebFeature::kFedCmErrorCodeAttribute,
+          WebFeature::kFedCmErrorErrorAttribute,
+          WebFeature::kWebRTCLocalNetworkAccessPublicToLocal,
+          WebFeature::kWebRTCLocalNetworkAccessPublicToLoopback,
+          WebFeature::kWebRTCLocalNetworkAccessLocalToLoopback,
+          // NOTE: before adding new use counters here, verify in UMA that
+          // their emissions are very rare, e.g. <1% of page loads.
       }));
   return *opt_in_features;
 }

@@ -23,6 +23,7 @@ constexpr uint8_t kControlX = 0x18;
 constexpr uint8_t kControlZ = 0x1a;
 constexpr uint8_t kEscape = 0x1b;
 constexpr uint8_t kSpace = 0x20;
+constexpr uint8_t kDelete = 0x7F;
 
 }  // namespace ascii
 }  // namespace pdfium

@@ -94,10 +94,6 @@ function isNetworkAgentFeatureAvailable(config?: Root.Runtime.HostConfig): boole
 function isPerformanceAgentFeatureAvailable(config?: Root.Runtime.HostConfig): boolean {
   return (config?.aidaAvailability?.enabled && (config?.devToolsAiAssistancePerformanceAgent?.enabled)) === true;
 }
-function isPerformanceInsightsAgentFeatureAvailable(config?: Root.Runtime.HostConfig): boolean {
-  return (config?.aidaAvailability?.enabled && config?.devToolsAiAssistancePerformanceAgent?.enabled &&
-          config?.devToolsAiAssistancePerformanceAgent.insightsEnabled) === true;
-}
 
 function isFileAgentFeatureAvailable(config?: Root.Runtime.HostConfig): boolean {
   return (config?.aidaAvailability?.enabled && (config?.devToolsAiAssistanceFileAgent?.enabled)) === true;
@@ -165,6 +161,7 @@ UI.ActionRegistration.registerActionExtension({
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
   title: titleForAiAssistanceActions,
+  configurableBindings: false,
   featurePromotionId: 'ai-assistance',
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
@@ -180,6 +177,7 @@ UI.ActionRegistration.registerActionExtension({
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
   title: titleForAiAssistanceActions,
+  configurableBindings: false,
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
@@ -195,6 +193,7 @@ UI.ActionRegistration.registerActionExtension({
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
   title: titleForAiAssistanceActions,
+  configurableBindings: false,
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
@@ -210,6 +209,7 @@ UI.ActionRegistration.registerActionExtension({
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
   title: titleForAiAssistanceActions,
+  configurableBindings: false,
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
@@ -225,6 +225,7 @@ UI.ActionRegistration.registerActionExtension({
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
   title: titleForAiAssistanceActions,
+  configurableBindings: false,
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
@@ -240,6 +241,7 @@ UI.ActionRegistration.registerActionExtension({
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
   title: titleForAiAssistanceActions,
+  configurableBindings: false,
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
@@ -249,45 +251,13 @@ UI.ActionRegistration.registerActionExtension({
 });
 
 UI.ActionRegistration.registerActionExtension({
-  actionId: 'drjones.performance-insight-context',
-  contextTypes(): [] {
-    return [];
-  },
-  category: UI.ActionRegistration.ActionCategory.GLOBAL,
-  title: titleForAiAssistanceActions,
-  async loadActionDelegate() {
-    const AiAssistance = await loadAiAssistanceModule();
-    return new AiAssistance.ActionDelegate();
-  },
-  condition: config => {
-    return isPerformanceInsightsAgentFeatureAvailable(config) && !isPolicyRestricted(config) &&
-        !isGeoRestricted(config);
-  }
-});
-
-UI.ActionRegistration.registerActionExtension({
-  actionId: 'drjones.performance-panel-full-context',
-  contextTypes(): [] {
-    return [];
-  },
-  category: UI.ActionRegistration.ActionCategory.GLOBAL,
-  title: titleForAiAssistanceActions,
-  async loadActionDelegate() {
-    const AiAssistance = await loadAiAssistanceModule();
-    return new AiAssistance.ActionDelegate();
-  },
-  condition: config => {
-    return isPerformanceAgentFeatureAvailable(config) && !isPolicyRestricted(config) && !isGeoRestricted(config);
-  }
-});
-
-UI.ActionRegistration.registerActionExtension({
   actionId: 'drjones.sources-floating-button',
   contextTypes(): [] {
     return [];
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
   title: titleForAiAssistanceActions,
+  configurableBindings: false,
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
@@ -302,6 +272,7 @@ UI.ActionRegistration.registerActionExtension({
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
   title: titleForAiAssistanceActions,
+  configurableBindings: false,
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();

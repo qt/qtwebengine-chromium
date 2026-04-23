@@ -678,11 +678,13 @@ void HTMLSelectElement::RecalcListItems() const {
         current_ancestor_optgroup = current_optgroup;
         list_items_.push_back(current_html_element);
       }
-    } else if (IsA<HTMLOptionElement>(*current_html_element) ||
-               IsA<HTMLHRElement>(*current_html_element)) {
-      // Don't look for nested <option>s to match other option element
-      // traversals.
+    } else if (ShouldIgnoreDescendantsForOptionTraversals(
+                   current_html_element)) {
       skip_children = true;
+    }
+
+    if (IsA<HTMLHRElement>(current_html_element) ||
+        IsA<HTMLOptionElement>(current_html_element)) {
       list_items_.push_back(current_html_element);
     }
 
@@ -1777,21 +1779,6 @@ bool HTMLSelectElement::IsPopoverPickerElement(const Element* element) {
   return false;
 }
 
-// static
-HTMLSelectElement* HTMLSelectElement::GetSelectForPopoverPickerElement(
-    const Element* element) {
-  if (auto* root = DynamicTo<ShadowRoot>(element->parentNode())) {
-    if (element->ShadowPseudoId() == shadow_element_names::kPickerSelect) {
-      return DynamicTo<HTMLSelectElement>(root->host());
-    }
-  }
-  return nullptr;
-}
-
-bool HTMLSelectElement::IsAppearanceBase() const {
-  return select_type_->IsAppearanceBase();
-}
-
 bool HTMLSelectElement::IsAppearanceBasePicker() const {
   return select_type_->IsAppearanceBasePicker();
 }
@@ -1933,29 +1920,34 @@ void HTMLSelectElement::UpdateAllSelectedcontents(
 }
 
 // static
-HTMLSelectElement* HTMLSelectElement::NearestAncestorSelectNoNesting(
-    const Element& element) {
-  unsigned num_ancestor_optgroups = 0;
+std::pair<HTMLSelectElement*, HTMLOptGroupElement*>
+HTMLSelectElement::AssociatedSelectAndOptgroup(const Element& element) {
+  HTMLOptGroupElement* ancestor_optgroup = nullptr;
   for (Node& ancestor : NodeTraversal::AncestorsOf(element)) {
     if (IsA<HTMLOptionElement>(ancestor)) {
       // Elements nested inside of an <option> are not associated with the
       // <select>.
-      return nullptr;
-    } else if (IsA<HTMLOptGroupElement>(ancestor)) {
-      if (num_ancestor_optgroups || IsA<HTMLOptGroupElement>(element)) {
+      return std::make_pair(nullptr, ancestor_optgroup);
+    } else if (auto* new_ancestor_optgroup =
+                   DynamicTo<HTMLOptGroupElement>(ancestor)) {
+      if (ancestor_optgroup || IsA<HTMLOptGroupElement>(element)) {
         // Doubly-nested <optgroup>s and their descendants are not <select>
         // associated.
-        return nullptr;
+        return std::make_pair(nullptr, ancestor_optgroup);
       }
-      num_ancestor_optgroups++;
+      ancestor_optgroup = new_ancestor_optgroup;
     } else if (IsA<HTMLHRElement>(ancestor)) {
       // Descendants of <hr> elements are not <select> associated.
-      return nullptr;
+      return std::make_pair(nullptr, ancestor_optgroup);
+    } else if (RuntimeEnabledFeatures::SelectDisallowDatalistEnabled() &&
+               IsA<HTMLDataListElement>(ancestor)) {
+      // Descendants of <datalist> elements are not <select> associated.
+      return std::make_pair(nullptr, ancestor_optgroup);
     } else if (auto* select = DynamicTo<HTMLSelectElement>(ancestor)) {
-      return select;
+      return std::make_pair(select, ancestor_optgroup);
     }
   }
-  return nullptr;
+  return std::make_pair(nullptr, ancestor_optgroup);
 }
 
 FocusableState HTMLSelectElement::SupportsFocus(
@@ -1988,19 +1980,35 @@ String HTMLSelectElement::MultipleOptionsSelectedText(
                             localized_number_string);
 }
 
-bool HTMLSelectElement::SupportsBaseAppearance() const {
-  if (!IsMultiple() ||
-      RuntimeEnabledFeatures::CustomizableSelectMultiplePopupEnabled()) {
-    // Single-selects are always supported. When
-    // CustomizableSelectMultiplePopup is enabled, then all modes are
-    // supported.
-    return true;
-  } else if (RuntimeEnabledFeatures::CustomizableSelectInPageEnabled()) {
-    // CustomizableSelectInPage allows multi-selects to be base appearance
-    // but only if they are in-page ListBox selects.
-    return !UsesMenuList();
+bool HTMLSelectElement::SupportsBaseAppearanceInternal(
+    BaseAppearanceValue appearance_value) const {
+  if (!RuntimeEnabledFeatures::AppearanceBaseEnabled() &&
+      appearance_value == BaseAppearanceValue::kBase) {
+    return false;
   }
-  return false;
+  if (RuntimeEnabledFeatures::CustomizableSelectMultiplePopupEnabled()) {
+    return true;
+  }
+  if (RuntimeEnabledFeatures::CustomizableSelectInPageEnabled()) {
+    if (UsesMenuList() && IsMultiple()) {
+      return false;
+    }
+    return true;
+  }
+  return !IsMultiple() && UsesMenuList();
+}
+
+// static
+bool HTMLSelectElement::ShouldIgnoreDescendantsForOptionTraversals(
+    Element* element) {
+  // Nested <optgroup>s also should be ignored in places that call this, but
+  // this method doesn't have enough context to handle that case.
+  if (RuntimeEnabledFeatures::SelectDisallowDatalistEnabled() &&
+      IsA<HTMLDataListElement>(element)) {
+    return true;
+  }
+  return IsA<HTMLSelectElement>(element) || IsA<HTMLOptionElement>(element) ||
+         IsA<HTMLHRElement>(element);
 }
 
 }  // namespace blink

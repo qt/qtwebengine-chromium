@@ -46,7 +46,6 @@ if TYPE_CHECKING:
   from crossbench.plt.process_meminfo import ProcessMeminfo
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
-
 # Android is high-tech and reads chrome flags from an app-specific file.
 # TODO: extend support to more than just chrome.
 _FLAG_ROOT: pth.AnyPosixPath = pth.AnyPosixPath("/data/local/tmp/")
@@ -150,6 +149,12 @@ class ChromiumWebDriverAndroid(ChromiumBasedWebDriver):
   @override
   def meminfo(self, timeout: dt.timedelta) -> list[ProcessMeminfo]:
     return self.platform.process_meminfo(self.android_package, timeout)
+
+  @override
+  def dump_java_heap(self, label: str, trace_buffer_size_kb: int,
+                     timeout: dt.timedelta) -> pth.AnyPath:
+    return self.platform.dump_java_heap(self.android_package, label,
+                                        trace_buffer_size_kb, timeout)
 
   def _restore_chrome_flags(self) -> None:
     atexit.unregister(self._restore_chrome_flags)

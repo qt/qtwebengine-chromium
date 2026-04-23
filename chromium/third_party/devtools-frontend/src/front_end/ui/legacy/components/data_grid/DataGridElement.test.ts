@@ -4,7 +4,7 @@
 
 import './data_grid.js';
 
-import {renderElementIntoDOM} from '../../../../testing/DOMHelpers.js';
+import {raf, renderElementIntoDOM} from '../../../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../../../testing/EnvironmentHelpers.js';
 import * as RenderCoordinator from '../../../../ui/components/render_coordinator/render_coordinator.js';
 import * as Lit from '../../../../ui/lit/lit.js';
@@ -76,7 +76,7 @@ describeWithEnvironment('DataGrid', () => {
 
   it('can initialize data from template', async () => {
     const element = await renderDataGrid(html`
-        <devtools-data-grid striped name=${'Display Name'}>
+        <devtools-data-grid striped name="Display Name">
           <table>
             <tr>
               <th id="column-1">Column 1</th>
@@ -125,7 +125,7 @@ describeWithEnvironment('DataGrid', () => {
 
   it('can filter data', async () => {
     await renderDataGrid(html`
-        <devtools-data-grid striped name=${'Display Name'}>
+        <devtools-data-grid striped name="Display Name">
           <table>
             <tr>
               <th id="column-1">Column 1</th>
@@ -144,7 +144,7 @@ describeWithEnvironment('DataGrid', () => {
     // clang-format off
     const element = await renderDataGrid(html`
         <devtools-data-grid
-            striped name=${'Display Name'}
+            striped name="Display Name"
             .filters=${[{key: 'column-1', text: '3',  negative: false}]}>
           <table>
             <tr>
@@ -169,7 +169,7 @@ describeWithEnvironment('DataGrid', () => {
 
   it('can set selection from template', async () => {
     let element = await renderDataGrid(html`
-        <devtools-data-grid striped name=${'Display Name'}>
+        <devtools-data-grid striped name="Display Name">
           <table>
             <tr>
               <th id="column-1">Column 1</th>
@@ -189,7 +189,7 @@ describeWithEnvironment('DataGrid', () => {
     assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 1: Value 3, Column 2: Value 4');
 
     element = await renderDataGrid(html`
-        <devtools-data-grid striped name=${'Display Name'}>
+        <devtools-data-grid striped name="Display Name">
           <table>
             <tr>
               <th id="column-1">Column 1</th>
@@ -212,13 +212,13 @@ describeWithEnvironment('DataGrid', () => {
   it('supports editable columns', async () => {
     const editCallback = sinon.stub();
     const element = await renderDataGrid(html`
-        <devtools-data-grid striped name=${'Display Name'} @edit=${editCallback as () => void}>
+        <devtools-data-grid striped name="Display Name">
           <table>
             <tr>
               <th id="column-1" editable>Column 1</th>
               <th id="column-2">Column 2</th>
             </tr>
-            <tr>
+            <tr @edit=${editCallback as () => void}>
               <td>Value 1</td>
               <td>Value 2</td>
             </tr>
@@ -229,8 +229,8 @@ describeWithEnvironment('DataGrid', () => {
     getFocusedElement().textContent = 'New Value';
     sendKeydown(element, 'Enter');
     sinon.assert.calledOnce(editCallback);
-    assert.isTrue(editCallback.firstCall.args[0].detail.node.textContent.includes('Value 1'));
-    assert.isTrue(editCallback.firstCall.args[0].detail.node.textContent.includes('Value 2'));
+    assert.isTrue(editCallback.firstCall.args[0].target.textContent.includes('Value 1'));
+    assert.isTrue(editCallback.firstCall.args[0].target.textContent.includes('Value 2'));
     assert.strictEqual(editCallback.firstCall.args[0].detail.columnId, 'column-1');
     assert.strictEqual(editCallback.firstCall.args[0].detail.valueBeforeEditing, 'Value 1');
     assert.strictEqual(editCallback.firstCall.args[0].detail.newText, 'New Value');
@@ -240,19 +240,18 @@ describeWithEnvironment('DataGrid', () => {
     const createCallback = sinon.stub();
     const editCallback = sinon.stub();
     const element = await renderDataGrid(html`
-        <devtools-data-grid striped name=${'Display Name'}
-                            @create=${createCallback as () => void}
-                            @edit=${editCallback as () => void}>
+        <devtools-data-grid striped name="Display Name"
+                            @create=${createCallback as () => void}>
           <table>
             <tr>
               <th id="column-1" editable>Column 1</th>
               <th id="column-2" editable>Column 2</th>
             </tr>
-            <tr>
+            <tr @edit=${editCallback as () => void}>
               <td>Value 1</td>
               <td>Value 2</td>
             </tr>
-            <tr placeholder>
+            <tr placeholder @edit=${editCallback as () => void}>
             </tr>
           </table>
         </devtools-data-grid>`);
@@ -267,7 +266,158 @@ describeWithEnvironment('DataGrid', () => {
     sendKeydown(element, 'Tab');
     sinon.assert.notCalled(editCallback);
     sinon.assert.calledOnce(createCallback);
-    assert.deepEqual(createCallback.firstCall.args[0].detail,
-                           {'column-1': 'New Value 1', 'column-2': 'New Value 2'});
+    assert.deepEqual(
+        createCallback.firstCall.args[0].detail, {'column-1': 'New Value 1', 'column-2': 'New Value 2'});
+  });
+
+  it('can display nested nodes', async () => {
+    const element = await renderDataGrid(html`
+        <devtools-data-grid striped name="Display Name">
+          <table>
+            <tr>
+              <th id="column-1">Column 1</th>
+              <th id="column-2">Column 2</th>
+            </tr>
+            <tr>
+              <td>Parent Value 1</td>
+              <td>Parent Value 2</td>
+              <td>
+                <table>
+                  <tr>
+                    <td>Child Value 1</td>
+                    <td>Child Value 2</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </devtools-data-grid>`);
+
+    // Navigate to parent row.
+    sendKeydown(element, 'ArrowDown');
+    // It should identify it as a parent and collapsed.
+    assert.strictEqual(
+        getAlertAnnouncement(element),
+        'Display Name Row collapsed level 1, Column 1: Parent Value 1, Column 2: Parent Value 2');
+
+    // Expand parent row.
+    sendKeydown(element, 'ArrowRight');
+    assert.strictEqual(
+        getAlertAnnouncement(element),
+        'Display Name Row expanded level 1, Column 1: Parent Value 1, Column 2: Parent Value 2');
+
+    await raf();
+
+    // Navigate to child row.
+    sendKeydown(element, 'ArrowDown');
+    assert.strictEqual(
+        getAlertAnnouncement(element),
+        'Display Name Row  level 2, Column 1: Child Value 1, Column 2: Child Value 2');
+  });
+
+  it('dispatches open event on expanding', async () => {
+    const openCallback = sinon.stub();
+    const element = await renderDataGrid(html`
+        <devtools-data-grid striped name="Display Name">
+          <table>
+            <tr>
+              <th id="column-1">Column 1</th>
+            </tr>
+            <tr @open=${openCallback as () => void}>
+              <td>Parent Value 1</td>
+              <td>
+                <table>
+                  <tr>
+                    <td>Child Value 1</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </devtools-data-grid>`);
+
+    // Navigate to parent row.
+    sendKeydown(element, 'ArrowDown');
+    // Expand parent row.
+    sendKeydown(element, 'Enter');
+
+    sinon.assert.calledOnce(openCallback);
+  });
+
+  it('can set initial sort order from template', async () => {
+    const element = await renderDataGrid(html`
+        <devtools-data-grid striped name="Display Name">
+          <table>
+            <tr>
+              <th id="column-1" sort="descending">Column 1</th>
+            </tr>
+            <tr><td>Value B</td></tr>
+            <tr><td>Value A</td></tr>
+            <tr><td>Value C</td></tr>
+          </table>
+        </devtools-data-grid>`);
+    // After initial render, rows should be sorted descending by column-1.
+    // So C, B, A.
+    sendKeydown(element, 'ArrowDown');
+    assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 1: Value C');
+    sendKeydown(element, 'ArrowDown');
+    assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 1: Value B');
+    sendKeydown(element, 'ArrowDown');
+    assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 1: Value A');
+  });
+
+  it('can be styled with a style tag', async () => {
+    const element = await renderDataGrid(html`
+        <devtools-data-grid .template=${html`
+          <table>
+            <style>
+              .test-class {
+                color: red;
+              }
+            </style>
+            <tr><th id="column-1">Column</th></tr>
+            <tr><td class="test-class">Value</td></tr>
+          </table>`}>
+        </devtools-data-grid>`);
+
+    const cell = element.shadowRoot?.querySelector('.test-class');
+    assert.instanceOf(cell, HTMLTableCellElement);
+    const cellStyle = window.getComputedStyle(cell);
+    assert.strictEqual(cellStyle.color, 'rgb(255, 0, 0)');
+  });
+
+  it('resorts when a node is updated', async () => {
+    const element = await renderDataGrid(html`
+        <devtools-data-grid striped name="Display Name">
+          <table>
+            <tr>
+              <th id="column-1" sortable sort="ascending">Column 1</th>
+            </tr>
+            <tr><td data-value="1">Value 1</td></tr>
+            <tr><td data-value="3">Value 3</td></tr>
+          </table>
+        </devtools-data-grid>`);
+
+    sendKeydown(element, 'ArrowDown');
+    assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 1: Value 1');
+    sendKeydown(element, 'ArrowDown');
+    assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 1: Value 3');
+
+    // Update the first row's value to something that should make it go last.
+    const rowToUpdate = element.querySelector('tr:nth-child(2)');  // this is the first data row
+    assert.instanceOf(rowToUpdate, HTMLTableRowElement);
+    const cellToUpdate = rowToUpdate.querySelector('td');
+    assert.instanceOf(cellToUpdate, HTMLTableCellElement);
+    cellToUpdate.setAttribute('data-value', '5');
+    cellToUpdate.textContent = 'Value 5';
+
+    // wait for mutation observer to pick it up and re-render
+    await RenderCoordinator.done({waitForWork: true});
+
+    // After re-sort, order is Value 3, Value 5. Selection was on "Value 3".
+    // It remains on it, which is now the first row.
+    assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 1: Value 3');
+    sendKeydown(element, 'ArrowDown');
+    assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 1: Value 5');
   });
 });

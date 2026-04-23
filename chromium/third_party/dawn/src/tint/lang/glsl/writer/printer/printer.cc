@@ -141,7 +141,7 @@ class Printer : public tint::TextGenerator {
         // Find the entry point that we are emitting code for. There should be exactly one.
         for (auto& func : ir_.functions) {
             if (func->IsEntryPoint()) {
-                TINT_ASSERT(stage_ == core::ir::Function::PipelineStage::kUndefined);
+                TINT_IR_ASSERT(ir_, stage_ == core::ir::Function::PipelineStage::kUndefined);
                 stage_ = func->Stage();
             }
         }
@@ -334,7 +334,7 @@ class Printer : public tint::TextGenerator {
 
             if (func->IsCompute()) {
                 auto wg_opt = func->WorkgroupSizeAsConst();
-                TINT_ASSERT(wg_opt.has_value());
+                TINT_IR_ASSERT(ir_, wg_opt.has_value());
 
                 auto& wg = wg_opt.value();
                 Line() << "layout(local_size_x = " << wg[0] << ", local_size_y = " << wg[1]
@@ -449,7 +449,7 @@ class Printer : public tint::TextGenerator {
                 out << "w";
                 break;
             default:
-                TINT_UNREACHABLE() << "invalid index for component";
+                TINT_IR_UNREACHABLE(ir_) << "invalid index for component";
         }
     }
 
@@ -605,7 +605,7 @@ class Printer : public tint::TextGenerator {
 
         auto* current_type = a->Object()->Type()->UnwrapPtr();
         for (auto* index : a->Indices()) {
-            TINT_ASSERT(current_type);
+            TINT_IR_ASSERT(ir_, current_type);
             Switch(
                 current_type,  //
                 [&](const core::type::Struct* s) {
@@ -627,7 +627,7 @@ class Printer : public tint::TextGenerator {
     }
 
     void EmitLet(const core::ir::Let* l) {
-        TINT_ASSERT(!l->Result()->Type()->Is<core::type::Pointer>());
+        TINT_IR_ASSERT(ir_, !l->Result()->Type()->Is<core::type::Pointer>());
 
         auto out = Line();
 
@@ -757,8 +757,8 @@ class Printer : public tint::TextGenerator {
             if (is_host_shareable) {
                 if (DAWN_UNLIKELY(ir_offset < glsl_offset)) {
                     // Unimplementable layout
-                    TINT_UNREACHABLE() << "Structure member offset (" << ir_offset
-                                       << ") is behind GLSL offset (" << glsl_offset << ")";
+                    TINT_IR_UNREACHABLE(ir_) << "Structure member offset (" << ir_offset
+                                             << ") is behind GLSL offset (" << glsl_offset << ")";
                 }
 
                 // Generate padding if required
@@ -806,7 +806,8 @@ class Printer : public tint::TextGenerator {
         // anything it depends on will emit to the preamble first, and then it copies the text
         // buffer into the preamble.
         TextBuffer str_buf;
-        Line(&str_buf) << "\n" << "struct " << StructName(str) << " {";
+        Line(&str_buf) << "\n"
+                       << "struct " << StructName(str) << " {";
 
         str_buf.IncrementIndent();
 
@@ -856,7 +857,7 @@ class Printer : public tint::TextGenerator {
                 args << "[]";
             } else {
                 auto count = arr->ConstantCount();
-                TINT_ASSERT(count.has_value());
+                TINT_IR_ASSERT(ir_, count.has_value());
 
                 args << "[" << count.value() << "]";
             }
@@ -887,12 +888,12 @@ class Printer : public tint::TextGenerator {
         }
 
         auto* constant_count = ary->Count()->As<core::type::ConstantArrayCount>();
-        TINT_ASSERT(constant_count != nullptr);
+        TINT_IR_ASSERT(ir_, constant_count != nullptr);
         out << "[" << constant_count->value << "]";
     }
 
     void EmitTextureType(StringStream& out, const core::type::Texture* t) {
-        TINT_ASSERT(!t->Is<core::type::ExternalTexture>());
+        TINT_IR_ASSERT(ir_, !t->Is<core::type::ExternalTexture>());
 
         auto* storage = t->As<core::type::StorageTexture>();
         auto* sampled = t->As<core::type::SampledTexture>();
@@ -921,14 +922,14 @@ class Printer : public tint::TextGenerator {
                             case core::TexelFormat::kR32Uint:
                                 break;
                             default:
-                                TINT_UNREACHABLE() << "invalid texel format for read-write :"
-                                                   << storage->TexelFormat();
+                                TINT_IR_UNREACHABLE(ir_) << "invalid texel format for read-write :"
+                                                         << storage->TexelFormat();
                         }
                     }
                     break;
                 }
                 default:
-                    TINT_UNREACHABLE() << "invalid storage access";
+                    TINT_IR_UNREACHABLE(ir_) << "invalid storage access";
             }
         }
         auto* subtype = sampled   ? sampled->Type()
@@ -971,7 +972,7 @@ class Printer : public tint::TextGenerator {
                 out << "CubeArray";
                 break;
             default:
-                TINT_UNREACHABLE() << "unknown texture dimension: " << t->Dim();
+                TINT_IR_UNREACHABLE(ir_) << "unknown texture dimension: " << t->Dim();
         }
         if (t->Is<core::type::DepthTexture>()) {
             out << "Shadow";
@@ -1006,7 +1007,7 @@ class Printer : public tint::TextGenerator {
             EmitValue(out, var->Initializer());
         } else if (space == core::AddressSpace::kPrivate ||
                    space == core::AddressSpace::kFunction) {
-            TINT_ASSERT(ptr);
+            TINT_IR_ASSERT(ir_, ptr);
             out << " = ";
             EmitZeroValue(out, ptr->UnwrapPtr());
         }
@@ -1048,7 +1049,7 @@ class Printer : public tint::TextGenerator {
                 EmitIOVar(var);
                 break;
             case core::AddressSpace::kPixelLocal:
-                TINT_UNREACHABLE() << "PixelLocal not supported";
+                TINT_IR_UNREACHABLE(ir_) << "PixelLocal not supported";
             default: {
                 auto out = Line();
                 EmitVar(out, var);
@@ -1059,7 +1060,7 @@ class Printer : public tint::TextGenerator {
 
     void EmitStorageVar(core::ir::Var* var) {
         const auto& bp = var->BindingPoint();
-        TINT_ASSERT(bp.has_value());
+        TINT_IR_ASSERT(ir_, bp.has_value());
 
         EmitLayoutBinding(Line(), bp.value(), std::nullopt, {LayoutFormat::kStd430});
 
@@ -1070,7 +1071,7 @@ class Printer : public tint::TextGenerator {
 
     void EmitUniformVar(core::ir::Var* var) {
         const auto& bp = var->BindingPoint();
-        TINT_ASSERT(bp.has_value());
+        TINT_IR_ASSERT(ir_, bp.has_value());
 
         EmitLayoutBinding(Line(), bp.value(), std::nullopt, {LayoutFormat::kStd140});
 
@@ -1097,7 +1098,7 @@ class Printer : public tint::TextGenerator {
         if (auto* storage = ptr->UnwrapPtr()->As<core::type::StorageTexture>()) {
             const auto& bp = var->BindingPoint();
 
-            TINT_ASSERT(bp.has_value());
+            TINT_IR_ASSERT(ir_, bp.has_value());
             EmitLayoutBinding(out, bp.value(), {storage->TexelFormat()}, std::nullopt);
             out << " ";
         }
@@ -1107,8 +1108,8 @@ class Printer : public tint::TextGenerator {
         if (auto* combined_texture_sampler = var->As<ir::CombinedTextureSamplerVar>()) {
             CombinedTextureSamplerPair key{combined_texture_sampler->TextureBindingPoint(),
                                            combined_texture_sampler->SamplerBindingPoint()};
-            auto itr = options_.bindings.sampler_texture_to_name.find(key);
-            if (itr != options_.bindings.sampler_texture_to_name.end()) {
+            auto itr = options_.sampler_texture_to_name.find(key);
+            if (itr != options_.sampler_texture_to_name.end()) {
                 names_.Add(var->Result(), itr->second);
             }
         }
@@ -1127,7 +1128,7 @@ class Printer : public tint::TextGenerator {
 
         auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
         auto* str = ptr->StoreType()->As<core::type::Struct>();
-        TINT_ASSERT(str);
+        TINT_IR_ASSERT(ir_, str);
         names_.Add(str, kImmediateStructName);
         EmitStructType(str);
 
@@ -1175,7 +1176,7 @@ class Printer : public tint::TextGenerator {
                        std::string_view name,
                        std::string_view type_suffix,
                        const core::type::Struct* str) {
-        TINT_ASSERT(str);
+        TINT_IR_ASSERT(ir_, str);
 
         // Prefix the buffer name to avoid collisions between different stages in the same pipeline.
         auto str_name = StructName(str);
@@ -1215,7 +1216,7 @@ class Printer : public tint::TextGenerator {
                            const tint::BindingPoint& bp,
                            std::optional<core::TexelFormat> texel_format,
                            std::optional<LayoutFormat> layout_format) {
-        TINT_ASSERT(!(texel_format.has_value() && layout_format.has_value()));
+        TINT_IR_ASSERT(ir_, !(texel_format.has_value() && layout_format.has_value()));
 
         out << "layout(binding = " << bp.binding;
 
@@ -1235,7 +1236,7 @@ class Printer : public tint::TextGenerator {
             out << ", ";
             switch (texel_format.value()) {
                 case core::TexelFormat::kBgra8Unorm:
-                    TINT_ICE() << "bgra8unorm should have been polyfilled to rgba8unorm";
+                    TINT_IR_ICE(ir_) << "bgra8unorm should have been polyfilled to rgba8unorm";
                 case core::TexelFormat::kR32Uint:
                     out << "r32ui";
                     break;
@@ -1354,7 +1355,7 @@ class Printer : public tint::TextGenerator {
                     out << "rgba16_snorm";
                     break;
                 case core::TexelFormat::kUndefined:
-                    TINT_UNREACHABLE() << "invalid texel format";
+                    TINT_IR_UNREACHABLE(ir_) << "invalid texel format";
             }
         }
         out << ")";
@@ -1450,7 +1451,7 @@ class Printer : public tint::TextGenerator {
             case glsl::BuiltinFn::kExtTextureLodOffset:
                 return glsl::BuiltinFn::kTextureLodOffset;
             default:
-                TINT_UNREACHABLE() << "invalid function for conversion: " << fn;
+                TINT_IR_UNREACHABLE(ir_) << "invalid function for conversion: " << fn;
         }
     }
 
@@ -1584,7 +1585,7 @@ class Printer : public tint::TextGenerator {
                 }
                 break;
             default:
-                TINT_UNIMPLEMENTED() << u->Op();
+                TINT_IR_UNIMPLEMENTED(ir_) << u->Op();
         }
         out << "(";
         EmitValue(out, u->Val());
@@ -1632,7 +1633,7 @@ class Printer : public tint::TextGenerator {
                 case core::BinaryOp::kLogicalOr:
                     // These should have been replaced by if statements as GLSL is not
                     // short-circuting.
-                    TINT_UNREACHABLE() << "logical and/or should not be present";
+                    TINT_IR_UNREACHABLE(ir_) << "logical and/or should not be present";
             }
             return "<error>";
         };
@@ -1804,7 +1805,7 @@ class Printer : public tint::TextGenerator {
                 out << "unpackUnorm4x8";
                 break;
             default:
-                TINT_UNREACHABLE() << "unhandled core builtin: " << func;
+                TINT_IR_UNREACHABLE(ir_) << "unhandled core builtin: " << func;
         }
     }
 
@@ -1917,7 +1918,7 @@ class Printer : public tint::TextGenerator {
         ScopedParen sp(out);
 
         auto count = ary->ConstantCount();
-        TINT_ASSERT(count.has_value());
+        TINT_IR_ASSERT(ir_, count.has_value());
 
         for (size_t i = 0; i < count; ++i) {
             if (i > 0) {
@@ -1953,7 +1954,7 @@ class Printer : public tint::TextGenerator {
                 if (address_space == core::AddressSpace::kIn) {
                     return "gl_FragCoord";
                 }
-                TINT_UNREACHABLE();
+                TINT_IR_UNREACHABLE(ir_);
             }
             case core::BuiltinValue::kVertexIndex:
                 return "gl_VertexID";
@@ -1981,7 +1982,7 @@ class Printer : public tint::TextGenerator {
                 } else {
                     return "gl_SampleMask";
                 }
-                TINT_UNREACHABLE();
+                TINT_IR_UNREACHABLE(ir_);
             }
             case core::BuiltinValue::kPointSize:
                 return "gl_PointSize";
@@ -1996,7 +1997,7 @@ class Printer : public tint::TextGenerator {
                 EmitExtension(kEXTFragmentShaderBarycentric);
                 return "gl_BaryCoordEXT";
             default:
-                TINT_UNREACHABLE();
+                TINT_IR_UNREACHABLE(ir_);
         }
     }
 };

@@ -548,6 +548,11 @@ void ReadAnythingAppController::OnStringAttributeChanged(
     ax::mojom::StringAttribute attr,
     const std::string& old_value,
     const std::string& new_value) {
+  // Return early when the images flag is disabled to avoid potential crashes.
+  if (!features::IsReadAnythingImagesViaAlgorithmEnabled()) {
+    return;
+  }
+
   ui::AXNode* rm_node = model_.GetAXNode(node->id());
   if (!rm_node) {
     return;
@@ -555,8 +560,7 @@ void ReadAnythingAppController::OnStringAttributeChanged(
   // When the src for an image changes (e.g if an image was lazy loaded and
   // previously had a placeholder image), request the updated image. The info
   // will be returned via OnImageDataDownloaded.
-  if (features::IsReadAnythingImagesViaAlgorithmEnabled() &&
-      attr == ax::mojom::StringAttribute::kUrl &&
+  if (attr == ax::mojom::StringAttribute::kUrl &&
       rm_node->GetRole() == ax::mojom::Role::kImage) {
     RequestImageData(node->id());
   }
@@ -726,6 +730,8 @@ void ReadAnythingAppController::RecordDistillationSuccess() {
     distillationStatus = read_anything::mojom::DistillationStatus::kFailure;
   }
 
+  page_handler_->OnDistillationStatus(distillationStatus,
+                                      model_.words_distilled());
   ukm::builders::Accessibility_ReadAnything_Distillation(
       model_.GetUkmSourceId())
       .SetDistillationStatus(static_cast<int>(distillationStatus))
@@ -1143,6 +1149,8 @@ gin::ObjectTemplateBuilder ReadAnythingAppController::GetObjectTemplateBuilder(
                    &ReadAnythingAppController::IsReadAloudEnabled)
       .SetProperty("isTsTextSegmentationEnabled",
                    &ReadAnythingAppController::IsTsTextSegmentationEnabled)
+      .SetProperty("isReadabilityEnabled",
+                   &ReadAnythingAppController::IsReadabilityEnabled)
       .SetProperty("isChromeOsAsh", &ReadAnythingAppController::IsChromeOsAsh)
       .SetProperty("baseLanguageForSpeech",
                    &ReadAnythingAppController::GetLanguageCodeForSpeech)
@@ -1159,6 +1167,7 @@ gin::ObjectTemplateBuilder ReadAnythingAppController::GetObjectTemplateBuilder(
       .SetMethod("getHtmlTag", &ReadAnythingAppController::GetHtmlTag)
       .SetMethod("getLanguage", &ReadAnythingAppController::GetLanguage)
       .SetMethod("getTextContent", &ReadAnythingAppController::GetTextContent)
+      .SetMethod("getPrefixText", &ReadAnythingAppController::GetPrefixText)
       .SetMethod("getUrl", &ReadAnythingAppController::GetUrl)
       .SetMethod("getAltText", &ReadAnythingAppController::GetAltText)
       .SetMethod("shouldBold", &ReadAnythingAppController::ShouldBold)
@@ -1206,6 +1215,7 @@ gin::ObjectTemplateBuilder ReadAnythingAppController::GetObjectTemplateBuilder(
                  &ReadAnythingAppController::OnSelectionChange)
       .SetMethod("onCollapseSelection",
                  &ReadAnythingAppController::OnCollapseSelection)
+      .SetMethod("onDistilled", &ReadAnythingAppController::OnDistilled)
       .SetProperty("supportedFonts",
                    &ReadAnythingAppController::GetSupportedFonts)
       .SetProperty("allFonts", &ReadAnythingAppController::GetAllFonts)
@@ -1502,6 +1512,14 @@ std::u16string ReadAnythingAppController::GetTextContent(
   return a11y::GetTextContent(ax_node, model_.is_pdf(), IsGoogleDocs());
 }
 
+std::u16string ReadAnythingAppController::GetPrefixText(
+    ui::AXNodeID ax_node_id) const {
+  ui::AXNode* ax_node = model_.GetAXNode(ax_node_id);
+  CHECK(ax_node);
+
+  return a11y::GetPrefixText(ax_node, model_.is_pdf(), IsGoogleDocs());
+}
+
 std::string ReadAnythingAppController::GetTextDirection(
     ui::AXNodeID ax_node_id) const {
   ui::AXNode* ax_node = model_.GetAXNode(ax_node_id);
@@ -1614,6 +1632,12 @@ bool ReadAnythingAppController::IsReadAloudEnabled() const {
 
 bool ReadAnythingAppController::IsTsTextSegmentationEnabled() const {
   return features::IsReadAnythingReadAloudTSTextSegmentationEnabled();
+}
+
+// Returns true if the experimental flag allowing testing with alternative
+// distillation methods such as Readability.js is enabled.
+bool ReadAnythingAppController::IsReadabilityEnabled() const {
+  return features::IsReadAnythingWithReadabilityEnabled();
 }
 
 bool ReadAnythingAppController::IsChromeOsAsh() const {
@@ -1802,6 +1826,10 @@ void ReadAnythingAppController::OnCopy() const {
 
 void ReadAnythingAppController::OnNoTextContent() {
   Distill();
+}
+
+void ReadAnythingAppController::OnDistilled(int word_count) {
+  model_.set_words_distilled(word_count);
 }
 
 void ReadAnythingAppController::UpdateWordsSeen(int words_seen) {
@@ -2081,9 +2109,12 @@ void ReadAnythingAppController::OnTtsEngineInstalled() {
 }
 #endif
 
-void ReadAnythingAppController::OnReadingModeHidden() {
+void ReadAnythingAppController::OnReadingModeHidden(bool tab_active) {
   model_.set_will_hide(true);
-  if (read_aloud_model_.speech_playing()) {
+  // If the tab is not active but RM is hidden, then the tab was switched and
+  // speech was not stopped. If the tab is still active and RM is hidden, then
+  // RM was closed, so log the speech stopped.
+  if (read_aloud_model_.speech_playing() && tab_active) {
     read_aloud_model_.LogSpeechStop(
         ReadAloudAppModel::ReadAloudStopSource::kCloseReadingMode);
   }

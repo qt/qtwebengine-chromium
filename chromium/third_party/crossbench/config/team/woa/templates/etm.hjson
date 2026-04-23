@@ -1,17 +1,17 @@
 {
-  browsers: {
-    chrome: {
-      browser: chrome-stable
-      driver: {
-        type: adb
+  "browsers": {
+    "chrome": {
+      "browser": "chrome-stable"
+      "driver": {
+        "type": "adb"
       }
     }
   }
-  env: {}
-  probes: {
-    trace_processor: {}
-    perfetto: {
-      textproto:
+  "env": {}
+  "probes": {
+    "trace_processor": {}
+    "perfetto": {
+      "textproto":
         '''
         buffers {
           size_kb: 300000
@@ -33,11 +33,11 @@
         }
         '''
     }
-    etm: {
-      cpu: 7
-      aux_buffer_size: 32M
-      record_timestamp: true
-      record_cycles: true
+    "etm": {
+      "cpu": 7
+      "aux_buffer_size": "32M"
+      "record_timestamp": true
+      "record_cycles": true
     }
   }
 }

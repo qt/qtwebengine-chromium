@@ -10,7 +10,6 @@
 #include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
 #include "base/observer_list.h"
 #include "base/strings/string_number_conversions.h"
@@ -65,10 +64,12 @@ bool VariationsHeaderKey::operator<(const VariationsHeaderKey& other) const {
 // function variations::CreateSimpleURLLoaderWithVariationsHeader().
 
 // static
-VariationsIdsProvider* VariationsIdsProvider::CreateInstance(Mode mode) {
+VariationsIdsProvider* VariationsIdsProvider::CreateInstance(
+    Mode mode,
+    std::unique_ptr<base::Clock> clock) {
   base::AutoLock lock(GetInstanceLock());
   DCHECK(!g_instance);
-  g_instance = new VariationsIdsProvider(mode);
+  g_instance = new VariationsIdsProvider(mode, std::move(clock));
   return g_instance;
 }
 
@@ -77,12 +78,6 @@ VariationsIdsProvider* VariationsIdsProvider::GetInstance() {
   base::AutoLock lock(GetInstanceLock());
   DCHECK(g_instance);
   return g_instance;
-}
-
-void VariationsIdsProvider::SetClockFunc(
-    VariationsIdsProvider::ClockFunction clock_func) {
-  base::AutoLock lock(lock_);
-  clock_func_ = std::move(clock_func);
 }
 
 variations::mojom::VariationsHeadersPtr
@@ -163,31 +158,24 @@ void VariationsIdsProvider::SetLowEntropySourceValue(
 }
 
 VariationsIdsProvider::ForceIdsResult VariationsIdsProvider::ForceVariationIds(
+    base::PassKey<VariationsFieldTrialCreator> pass_key,
     const std::vector<std::string>& variation_ids,
     const std::string& command_line_variation_ids) {
-  base::AutoLock scoped_lock(lock_);
+  return ForceVariationIdsImpl(variation_ids, command_line_variation_ids);
+}
 
-  force_enabled_ids_set_.clear();
-  ResetLastUpdateTime();
-
-  if (!AddVariationIdsToSet(variation_ids, /*should_dedupe=*/true,
-                            &force_enabled_ids_set_)) {
-    return ForceIdsResult::INVALID_VECTOR_ENTRY;
-  }
-
-  if (!ParseVariationIdsParameter(command_line_variation_ids,
-                                  /*should_dedupe=*/true,
-                                  &force_enabled_ids_set_)) {
-    return ForceIdsResult::INVALID_SWITCH_ENTRY;
-  }
-  return ForceIdsResult::SUCCESS;
+VariationsIdsProvider::ForceIdsResult VariationsIdsProvider::ForceVariationIds(
+    base::PassKey<android_webview::AwBrowserMainParts> pass_key,
+    const std::vector<std::string>& variation_ids,
+    const std::string& command_line_variation_ids) {
+  return ForceVariationIdsImpl(variation_ids, command_line_variation_ids);
 }
 
 VariationsIdsProvider::ForceIdsResult
 VariationsIdsProvider::ForceVariationIdsForTesting(
     const std::vector<std::string>& variation_ids,
     const std::string& command_line_variation_ids) {
-  return ForceVariationIds(variation_ids, command_line_variation_ids);
+  return ForceVariationIdsImpl(variation_ids, command_line_variation_ids);
 }
 
 bool VariationsIdsProvider::ForceDisableVariationIds(
@@ -258,10 +246,13 @@ void VariationsIdsProvider::ResetForTesting() {
   force_disabled_ids_set_.clear();
   variations_headers_map_.clear();
   observer_list_.clear();
-  clock_func_.Reset();
 }
 
-VariationsIdsProvider::VariationsIdsProvider(Mode mode) : mode_(mode) {}
+VariationsIdsProvider::VariationsIdsProvider(Mode mode,
+                                             std::unique_ptr<base::Clock> clock)
+    : mode_(mode), clock_(std::move(clock)) {
+  CHECK(clock_);
+}
 
 VariationsIdsProvider::~VariationsIdsProvider() {
   base::FieldTrialList::RemoveObserver(this);
@@ -269,15 +260,16 @@ VariationsIdsProvider::~VariationsIdsProvider() {
 
 // static
 VariationsIdsProvider* VariationsIdsProvider::CreateInstanceForTesting(
-    Mode mode) {
+    Mode mode,
+    std::unique_ptr<base::Clock> clock) {
   base::AutoLock lock(GetInstanceLock());
   VariationsIdsProvider* previous_instance = g_instance;
-  g_instance = new VariationsIdsProvider(mode);
+  g_instance = new VariationsIdsProvider(mode, std::move(clock));
   return previous_instance;
 }
 
 // static
-void VariationsIdsProvider::DestroyInstanceForTesting(
+void VariationsIdsProvider::ResetInstanceForTesting(
     VariationsIdsProvider* previous_instance) {
   base::AutoLock lock(GetInstanceLock());
   delete g_instance;
@@ -380,6 +372,28 @@ void VariationsIdsProvider::MaybeUpdateVariationIDsAndHeaders() {
   for (auto* observer : observer_list_) {
     observer->VariationIdsHeaderUpdated();
   }
+}
+
+VariationsIdsProvider::ForceIdsResult
+VariationsIdsProvider::ForceVariationIdsImpl(
+    const std::vector<std::string>& variation_ids,
+    const std::string& command_line_variation_ids) {
+  base::AutoLock scoped_lock(lock_);
+
+  force_enabled_ids_set_.clear();
+  ResetLastUpdateTime();
+
+  if (!AddVariationIdsToSet(variation_ids, /*should_dedupe=*/true,
+                            &force_enabled_ids_set_)) {
+    return ForceIdsResult::INVALID_VECTOR_ENTRY;
+  }
+
+  if (!ParseVariationIdsParameter(command_line_variation_ids,
+                                  /*should_dedupe=*/true,
+                                  &force_enabled_ids_set_)) {
+    return ForceIdsResult::INVALID_SWITCH_ENTRY;
+  }
+  return ForceIdsResult::SUCCESS;
 }
 
 void VariationsIdsProvider::AddActiveVariationIds(base::Time current_time) {
@@ -502,8 +516,8 @@ std::string VariationsIdsProvider::GenerateBase64EncodedProto(
   // here. Force a hard maximum on the ID count in case the Variations server
   // returns too many IDs and DOSs receiving servers with large requests.
   DCHECK_LE(total_id_count, 75U);
-  UMA_HISTOGRAM_COUNTS_100("Variations.Headers.ExperimentCount",
-                           total_id_count);
+  base::UmaHistogramCounts100("Variations.Headers.ExperimentCount",
+                              total_id_count);
   if (total_id_count > 100) {
     return std::string();
   }
@@ -617,11 +631,6 @@ bool VariationsIdsProvider::IsDuplicateId(VariationID id) {
     }
   }
   return false;
-}
-
-base::Time VariationsIdsProvider::GetCurrentTime() const {
-  lock_.AssertAcquired();
-  return clock_func_ ? clock_func_.Run() : base::Time::Now();
 }
 
 void VariationsIdsProvider::SetLastUpdateTime(base::Time time) {

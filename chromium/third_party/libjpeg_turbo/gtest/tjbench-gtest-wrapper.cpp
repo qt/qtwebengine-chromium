@@ -99,7 +99,7 @@ TEST_P(TJBenchTest, TestTileBaseline) {
   // Read test image as string and compute MD5 sum.
   std::string test_image_data;
   ASSERT_TRUE(base::ReadFileToString(test_image_path, &test_image_data));
-  const std::string md5 = base::MD5String(test_image_data);
+  const std::string md5 = GetMd5AsHex(test_image_data);
   // Compare expected MD5 sum against that of test image.
   EXPECT_EQ(std::get<1>(GetParam()), md5);
 }
@@ -170,7 +170,7 @@ TEST_P(TJBenchTestMerged, TestTileMerged) {
   // Read test image as string and compute MD5 sum.
   std::string test_image_data;
   ASSERT_TRUE(base::ReadFileToString(test_image_path, &test_image_data));
-  const std::string md5 = base::MD5String(test_image_data);
+  const std::string md5 = GetMd5AsHex(test_image_data);
   // Compare expected MD5 sum against that of test image.
   EXPECT_EQ(std::get<1>(GetParam()), md5);
 }

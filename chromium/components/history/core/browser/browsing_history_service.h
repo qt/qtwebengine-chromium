@@ -15,7 +15,7 @@
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "base/task/cancelable_task_tracker.h"
@@ -136,12 +136,6 @@ class BrowsingHistoryService : public HistoryServiceObserver,
 
     // Whether the last call to Web History timed out.
     bool sync_timed_out = false;
-
-    // Whether the last call to Web History returned successfully with a message
-    // body. During continuation queries we are not guaranteed to always make a
-    // call to WebHistory, and this value could reflect the state from previous
-    // queries.
-    bool has_synced_results = false;
   };
 
   BrowsingHistoryService(BrowsingHistoryDriver* driver,

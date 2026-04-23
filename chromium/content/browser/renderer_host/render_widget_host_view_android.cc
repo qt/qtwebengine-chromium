@@ -11,6 +11,7 @@
 
 #include "base/android/android_info.h"
 #include "base/android/callback_android.h"
+#include "base/android/device_info.h"
 #include "base/android/jni_string.h"
 #include "base/auto_reset.h"
 #include "base/command_line.h"
@@ -37,6 +38,7 @@
 #include "cc/slim/layer.h"
 #include "components/input/cursor_manager.h"
 #include "components/input/events_helper.h"
+#include "components/input/features.h"
 #include "components/input/input_router.h"
 #include "components/input/render_widget_host_input_event_router.h"
 #include "components/input/switches.h"
@@ -44,8 +46,10 @@
 #include "components/input/web_input_event_builders_android.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
 #include "components/viz/common/quads/compositor_frame.h"
+#include "components/viz/common/resources/release_callback.h"
 #include "components/viz/common/surfaces/frame_sink_id_allocator.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
@@ -167,6 +171,20 @@ gfx::RectF GetSelectionRect(const ui::TouchSelectionController& controller) {
   rect.Union(controller.GetStartHandleRect());
   rect.Union(controller.GetEndHandleRect());
   return rect;
+}
+
+bool IsTooltipsEnabled() {
+  if (!base::FeatureList::IsEnabled(kTooltips)) {
+    return false;
+  }
+
+  // Only show on desktop devices up to B due to tooltips bug b/445244223.
+  if (base::android::android_info::sdk_int() <=
+      base::android::android_info::SDK_VERSION_BAKLAVA) {
+    return base::android::device_info::is_desktop();
+  }
+
+  return true;
 }
 
 void WakeUpGpu(GpuProcessHost* host) {
@@ -629,7 +647,7 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
     gfx::NativeView parent_native_view,
     cc::slim::Layer* parent_layer)
     : RenderWidgetHostViewBase(widget_host),
-      is_showing_(!widget_host->is_hidden()),
+      is_showing_(!widget_host->IsHidden()),
       is_window_visible_(true),
       is_window_activity_started_(true),
       ime_adapter_android_(nullptr),
@@ -732,7 +750,7 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
     widget_host->input_router()->MakeActive();
   }
 
-  if (base::FeatureList::IsEnabled(kTooltips)) {
+  if (IsTooltipsEnabled()) {
     cursor_manager_ = std::make_unique<input::CursorManager>(this);
   }
 }
@@ -1064,11 +1082,12 @@ void RenderWidgetHostViewAndroid::WriteContentBitmapToDiskAsync(
     jint height,
     const jni_zero::JavaParamRef<jstring>& jpath,
     const jni_zero::JavaParamRef<jobject>& jcallback) {
-  base::OnceCallback<void(const SkBitmap&)> result_callback = base::BindOnce(
-      &RenderWidgetHostViewAndroid::OnFinishGetContentBitmap,
-      weak_ptr_factory_.GetWeakPtr(),
-      base::android::ScopedJavaGlobalRef<jobject>(env, jcallback),
-      base::android::ConvertJavaStringToUTF8(env, jpath));
+  base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+      result_callback = base::BindOnce(
+          &RenderWidgetHostViewAndroid::OnFinishGetContentBitmap,
+          weak_ptr_factory_.GetWeakPtr(),
+          base::android::ScopedJavaGlobalRef<jobject>(env, jcallback),
+          base::android::ConvertJavaStringToUTF8(env, jpath));
 
   CopyFromSurface(gfx::Rect(), gfx::Size(width, height),
                   std::move(result_callback));
@@ -1324,7 +1343,7 @@ int RenderWidgetHostViewAndroid::GetMouseWheelMinimumGranularity() const {
 }
 
 void RenderWidgetHostViewAndroid::UpdateCursor(const ui::Cursor& cursor) {
-  if (base::FeatureList::IsEnabled(kTooltips)) {
+  if (IsTooltipsEnabled()) {
     GetCursorManager()->UpdateCursor(this, cursor);
   }
   view_.OnCursorChanged(cursor);
@@ -1407,9 +1426,18 @@ void RenderWidgetHostViewAndroid::SendStateOnTouchTransfer(
 
   const float y_offset_pix =
       host()->delegate()->GetCurrentTouchSequenceYOffset();
+
+  std::optional<std::unique_ptr<ui::MotionEventAndroid>> motion_event_android =
+      std::nullopt;
+  if (input::features::kForwardEventsSeenOnBrowserToViz.Get()) {
+    motion_event_android =
+        static_cast<const ui::MotionEventAndroidJava&>(event).CreateFor(
+            gfx::PointF(event.GetX(0), event.GetY(0)));
+  }
   remote->StateOnTouchTransfer(input::mojom::TouchTransferState::New(
       event.GetRawDownTime(), GetFrameSinkId(), y_offset_pix,
-      view_.GetDipScale(), browser_would_have_handled));
+      view_.GetDipScale(), browser_would_have_handled,
+      std::move(motion_event_android)));
 }
 
 bool RenderWidgetHostViewAndroid::IsMojoRIRDelegateConnectionSetup() {
@@ -1706,6 +1734,7 @@ void RenderWidgetHostViewAndroid::DidEnterBackForwardCache() {
   //
   // Called after to prevent prematurely evict the BFCached surface.
   host()->ForceFirstFrameAfterNavigationTimeout();
+  mouse_wheel_phase_handler_.DidEnterBackForwardCache();
 }
 
 void RenderWidgetHostViewAndroid::ActivatedOrEvictedFromBackForwardCache() {
@@ -1792,7 +1821,7 @@ void RenderWidgetHostViewAndroid::Destroy() {
 
 void RenderWidgetHostViewAndroid::UpdateTooltipUnderCursor(
     const std::u16string& tooltip_text) {
-  if (!base::FeatureList::IsEnabled(kTooltips)) {
+  if (!IsTooltipsEnabled()) {
     return;
   }
 
@@ -1803,7 +1832,7 @@ void RenderWidgetHostViewAndroid::UpdateTooltipUnderCursor(
 
 void RenderWidgetHostViewAndroid::UpdateTooltip(
     const std::u16string& tooltip_text) {
-  if (!base::FeatureList::IsEnabled(kTooltips)) {
+  if (!IsTooltipsEnabled()) {
     return;
   }
   if (tooltip_observer_for_testing_) {
@@ -1850,10 +1879,11 @@ bool RenderWidgetHostViewAndroid::HasFallbackSurface() const {
 void RenderWidgetHostViewAndroid::CopyFromSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& output_size,
-    base::OnceCallback<void(const SkBitmap&)> callback) {
+    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+        callback) {
   TRACE_EVENT0("cc", "RenderWidgetHostViewAndroid::CopyFromSurface");
   if (!IsSurfaceAvailableForCopy()) {
-    std::move(callback).Run(SkBitmap());
+    std::move(callback).Run(viz::CopyOutputBitmapWithMetadata());
     return;
   }
 
@@ -1865,21 +1895,28 @@ void RenderWidgetHostViewAndroid::CopyFromSurface(
   delegated_frame_host_->CopyFromCompositingSurface(
       src_subrect, output_size,
       base::BindOnce(
-          [](base::OnceCallback<void(const SkBitmap&)> callback,
-             const SkBitmap& bitmap) {
+          [](base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+                 callback,
+             const viz::CopyOutputBitmapWithMetadata& result) {
             TRACE_EVENT0(
                 "cc", "RenderWidgetHostViewAndroid::CopyFromSurface finished");
-            std::move(callback).Run(bitmap);
+            std::move(callback).Run(result);
           },
           std::move(callback)),
       /*capture_exact_surface_id=*/false,
       /*ipc_delay=*/base::TimeDelta());
 }
 
+ui::FilteredGestureProvider*
+RenderWidgetHostViewAndroid::GetFilteredGestureProviderForTesting() {
+  return &gesture_provider_;
+}
+
 void RenderWidgetHostViewAndroid::CopyFromExactSurface(
     const gfx::Rect& src_rect,
     const gfx::Size& output_size,
-    base::OnceCallback<void(const SkBitmap&)> callback) {
+    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+        callback) {
   CopyFromExactSurfaceWithIpcDelay(src_rect, output_size, std::move(callback),
                                    /*ipc_delay=*/base::TimeDelta());
 }
@@ -1887,7 +1924,7 @@ void RenderWidgetHostViewAndroid::CopyFromExactSurface(
 void RenderWidgetHostViewAndroid::CopyFromExactSurfaceWithIpcDelay(
     const gfx::Rect& src_rect,
     const gfx::Size& output_size,
-    base::OnceCallback<void(const SkBitmap&)> callback,
+    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)> callback,
     base::TimeDelta ipc_delay) {
   CHECK(IsSurfaceAvailableForCopy())
       << "To copy the exact surface, it must be available for copy (embedded "
@@ -1896,18 +1933,15 @@ void RenderWidgetHostViewAndroid::CopyFromExactSurfaceWithIpcDelay(
   CHECK(delegated_frame_host_);
 
   delegated_frame_host_->CopyFromCompositingSurface(
-      src_rect, output_size,
-      base::BindOnce(
-          [](base::OnceCallback<void(const SkBitmap&)> callback,
-             const SkBitmap& bitmap) { std::move(callback).Run(bitmap); },
-          std::move(callback)),
+      src_rect, output_size, std::move(callback),
       /*capture_exact_surface_id=*/true, ipc_delay);
 }
 
 void RenderWidgetHostViewAndroid::CopySharedImageFromExactSurface(
     const gfx::Rect& src_rect,
     const gfx::Size& output_size,
-    base::OnceCallback<void(scoped_refptr<gpu::ClientSharedImage>)> callback) {
+    base::OnceCallback<void(scoped_refptr<gpu::ClientSharedImage>,
+                            viz::ReleaseCallback)> callback) {
   CHECK(IsSurfaceAvailableForCopy())
       << "To copy the exact surface, it must be available for copy (embedded "
          "via the browser).";
@@ -1915,7 +1949,7 @@ void RenderWidgetHostViewAndroid::CopySharedImageFromExactSurface(
   CHECK(delegated_frame_host_);
   auto context_provider = GetRasterContextProvider();
   if (!context_provider) {
-    std::move(callback).Run(nullptr);
+    std::move(callback).Run(nullptr, viz::ReleaseCallback());
     return;
   }
 
@@ -2134,7 +2168,8 @@ void RenderWidgetHostViewAndroid::ShowTouchSelectionContextMenu(
 void RenderWidgetHostViewAndroid::SynchronousCopyContents(
     const gfx::Rect& src_subrect_dip,
     const gfx::Size& dst_size_in_pixel,
-    base::OnceCallback<void(const SkBitmap&)> callback) {
+    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+        callback) {
   // Note: When |src_subrect| is empty, a conversion from the view size must
   // be made instead of using |current_frame_size_|. The latter sometimes also
   // includes extra height for the toolbar UI, which is not intended for
@@ -2159,7 +2194,7 @@ void RenderWidgetHostViewAndroid::SynchronousCopyContents(
   int output_height = output_size_in_pixel.height();
 
   if (!sync_compositor_) {
-    std::move(callback).Run(SkBitmap());
+    std::move(callback).Run(viz::CopyOutputBitmapWithMetadata());
     return;
   }
 
@@ -2170,7 +2205,7 @@ void RenderWidgetHostViewAndroid::SynchronousCopyContents(
       (float)output_width / (float)input_size_in_pixel.width(),
       (float)output_height / (float)input_size_in_pixel.height());
   sync_compositor_->DemandDrawSw(&canvas, /*software_canvas=*/true);
-  std::move(callback).Run(bitmap);
+  std::move(callback).Run(viz::CopyOutputBitmapWithMetadata{.bitmap = bitmap});
 }
 
 WebContentsAccessibilityAndroid*
@@ -2273,7 +2308,8 @@ void RenderWidgetHostViewAndroid::OnDidUpdateVisualPropertiesComplete(
 void RenderWidgetHostViewAndroid::OnFinishGetContentBitmap(
     const base::android::JavaRef<jobject>& callback,
     const std::string& path,
-    const SkBitmap& bitmap) {
+    const viz::CopyOutputBitmapWithMetadata& result) {
+  const SkBitmap& bitmap = result.bitmap;
   JNIEnv* env = base::android::AttachCurrentThread();
   if (!bitmap.drawsNothing()) {
     auto task_runner = base::ThreadPool::CreateSequencedTaskRunner(
@@ -2338,8 +2374,9 @@ void RenderWidgetHostViewAndroid::HideInternal() {
     StopObservingRootWindow();
   }
 
-  if (!host() || host()->is_hidden())
+  if (!host() || host()->IsHidden()) {
     return;
+  }
 
   if (overscroll_controller_)
     overscroll_controller_->Disable();
@@ -3065,6 +3102,9 @@ void RenderWidgetHostViewAndroid::OnAttachedToWindow() {
 void RenderWidgetHostViewAndroid::OnDetachedFromWindow() {
   StopObservingRootWindow();
   OnDetachCompositor();
+  if (input_transfer_handler_) {
+    input_transfer_handler_->OnDetachedFromWindow();
+  }
 }
 
 void RenderWidgetHostViewAndroid::OnAttachCompositor() {
@@ -3209,6 +3249,11 @@ void RenderWidgetHostViewAndroid::CreateOverscrollControllerIfPossible() {
 
   overscroll_controller_ = std::make_unique<OverscrollControllerAndroid>(
       overscroll_refresh_handler, compositor, view_.GetDipScale(), host());
+
+  const auto& web_prefs =
+      host()->owner_delegate()->GetWebkitPreferencesForWidget();
+  SetTouchpadOverscrollHistoryNavigation(
+      web_prefs.enable_touchpad_overscroll_history_navigation);
 }
 
 void RenderWidgetHostViewAndroid::SetOverscrollControllerForTesting(
@@ -3749,6 +3794,17 @@ void RenderWidgetHostViewAndroid::EvictInternal() {
   local_surface_id_allocator_.Invalidate();
 }
 
+void RenderWidgetHostViewAndroid::SetTouchpadOverscrollHistoryNavigation(
+    bool enabled) {
+  if (overscroll_controller_) {
+    overscroll_controller_->SetTouchpadOverscrollHistoryNavigation(enabled);
+  }
+}
+
+void RenderWidgetHostViewAndroid::OnUnconfirmedTapConvertedToTap() {
+  gesture_provider_.OnUnconfirmedTapConvertedToTap();
+}
+
 CompositorImpl* RenderWidgetHostViewAndroid::GetCompositorImpl() {
   if (!using_browser_compositor_) {
     return nullptr;
@@ -3767,3 +3823,5 @@ bool RenderWidgetHostViewAndroid::IsHitTestReady() {
 }
 
 }  // namespace content
+
+DEFINE_JNI(RenderWidgetHostViewImpl)

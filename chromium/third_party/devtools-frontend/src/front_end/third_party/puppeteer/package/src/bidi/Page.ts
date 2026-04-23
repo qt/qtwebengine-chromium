@@ -17,6 +17,7 @@ import type {
   GeolocationOptions,
   MediaFeature,
   PageEvents,
+  ReloadOptions,
   WaitTimeoutOptions,
 } from '../api/Page.js';
 import {
@@ -137,9 +138,7 @@ export class BidiPage extends Page {
   /**
    * @internal
    */
-  _userAgentHeaders: Record<string, string> = {};
-  #userAgentInterception?: string;
-  #userAgentPreloadScript?: string;
+  #overrideNavigatorPropertiesPreloadScript?: string;
   override async setUserAgent(
     userAgentOrOptions:
       | string
@@ -185,26 +184,9 @@ export class BidiPage extends Page {
     const enable = userAgent !== '';
     userAgent = userAgent ?? (await this.#browserContext.browser().userAgent());
 
-    this._userAgentHeaders = enable
-      ? {
-          'User-Agent': userAgent,
-        }
-      : {};
+    await this.#frame.browsingContext.setUserAgent(enable ? userAgent : null);
 
-    this.#userAgentInterception = await this.#toggleInterception(
-      [Bidi.Network.InterceptPhase.BeforeRequestSent],
-      this.#userAgentInterception,
-      enable,
-    );
-
-    const overrideNavigatorProperties = (
-      userAgent: string,
-      platform: string | undefined,
-    ) => {
-      Object.defineProperty(navigator, 'userAgent', {
-        value: userAgent,
-        configurable: true,
-      });
+    const overrideNavigatorProperties = (platform: string | undefined) => {
       if (platform) {
         Object.defineProperty(navigator, 'platform', {
           value: platform,
@@ -218,16 +200,15 @@ export class BidiPage extends Page {
       frames.push(...frame.childFrames());
     }
 
-    if (this.#userAgentPreloadScript) {
+    if (this.#overrideNavigatorPropertiesPreloadScript) {
       await this.removeScriptToEvaluateOnNewDocument(
-        this.#userAgentPreloadScript,
+        this.#overrideNavigatorPropertiesPreloadScript,
       );
     }
     const [evaluateToken] = await Promise.all([
       enable
         ? this.evaluateOnNewDocument(
             overrideNavigatorProperties,
-            userAgent,
             platform || undefined,
           )
         : undefined,
@@ -236,16 +217,15 @@ export class BidiPage extends Page {
       ...frames.map(frame => {
         return frame.evaluate(
           overrideNavigatorProperties,
-          userAgent,
           platform || undefined,
         );
       }),
     ]);
-    this.#userAgentPreloadScript = evaluateToken?.identifier;
+    this.#overrideNavigatorPropertiesPreloadScript = evaluateToken?.identifier;
   }
 
   override async setBypassCSP(enabled: boolean): Promise<void> {
-    // TODO: handle CDP-specific cases such as mprach.
+    // TODO: handle CDP-specific cases such as MPArch.
     await this._client().send('Page.setBypassCSP', {enabled});
   }
 
@@ -282,6 +262,10 @@ export class BidiPage extends Page {
     contentWidth: number;
     contentHeight: number;
   }): Promise<void> {
+    throw new Error('Method not implemented for WebDriver BiDi yet.');
+  }
+
+  override openDevTools(): Promise<Page> {
     throw new Error('Method not implemented for WebDriver BiDi yet.');
   }
 
@@ -332,11 +316,13 @@ export class BidiPage extends Page {
   }
 
   override async reload(
-    options: WaitForOptions = {},
+    options: ReloadOptions = {},
   ): Promise<BidiHTTPResponse | null> {
     const [response] = await Promise.all([
       this.#frame.waitForNavigation(options),
-      this.#frame.browsingContext.reload(),
+      this.#frame.browsingContext.reload({
+        ignoreCache: options.ignoreCache ? true : undefined,
+      }),
     ]).catch(
       rewriteNavigationError(
         this.url(),
@@ -429,18 +415,42 @@ export class BidiPage extends Page {
 
   override async setViewport(viewport: Viewport | null): Promise<void> {
     if (!this.browser().cdpSupported) {
-      await this.#frame.browsingContext.setViewport({
-        viewport:
-          viewport?.width && viewport?.height
+      const viewportSize =
+        viewport?.width && viewport?.height
+          ? {
+              width: viewport.width,
+              height: viewport.height,
+            }
+          : null;
+
+      const devicePixelRatio = viewport?.deviceScaleFactor
+        ? viewport.deviceScaleFactor
+        : null;
+
+      // If `viewport` is not set, remove screen orientation override.
+      const screenOrientation: Bidi.Emulation.ScreenOrientation | null =
+        viewport
+          ? viewport.isLandscape
             ? {
-                width: viewport.width,
-                height: viewport.height,
+                natural: Bidi.Emulation.ScreenOrientationNatural.Landscape,
+                type: 'landscape-primary',
               }
-            : null,
-        devicePixelRatio: viewport?.deviceScaleFactor
-          ? viewport.deviceScaleFactor
-          : null,
-      });
+            : {
+                natural: Bidi.Emulation.ScreenOrientationNatural.Portrait,
+                type: 'portrait-primary',
+              }
+          : null;
+
+      await Promise.all([
+        this.#frame.browsingContext.setViewport({
+          viewport: viewportSize,
+          devicePixelRatio,
+        }),
+        this.#frame.browsingContext.setScreenOrientationOverride(
+          screenOrientation,
+        ),
+      ]);
+
       this.#viewport = viewport;
       return;
     }
@@ -626,7 +636,7 @@ export class BidiPage extends Page {
       );
       return;
     }
-    // TODO: handle CDP-specific cases such as mprach.
+    // TODO: handle CDP-specific cases such as MPArch.
     await this._client().send('Network.setCacheDisabled', {
       cacheDisabled: !enabled,
     });
@@ -711,11 +721,19 @@ export class BidiPage extends Page {
     return [...this.#workers];
   }
 
-  #userInterception?: string;
+  get isNetworkInterceptionEnabled(): boolean {
+    return (
+      Boolean(this.#requestInterception) ||
+      Boolean(this.#extraHeadersInterception) ||
+      Boolean(this.#authInterception)
+    );
+  }
+
+  #requestInterception?: string;
   override async setRequestInterception(enable: boolean): Promise<void> {
-    this.#userInterception = await this.#toggleInterception(
+    this.#requestInterception = await this.#toggleInterception(
       [Bidi.Network.InterceptPhase.BeforeRequestSent],
-      this.#userInterception,
+      this.#requestInterception,
       enable,
     );
   }
@@ -788,7 +806,7 @@ export class BidiPage extends Page {
 
   override async setOfflineMode(enabled: boolean): Promise<void> {
     if (!this.#browserContext.browser().cdpSupported) {
-      throw new UnsupportedOperation();
+      return await this.#frame.browsingContext.setOfflineMode(enabled);
     }
 
     if (!this.#emulatedNetworkConditions) {
@@ -807,8 +825,20 @@ export class BidiPage extends Page {
     networkConditions: NetworkConditions | null,
   ): Promise<void> {
     if (!this.#browserContext.browser().cdpSupported) {
-      throw new UnsupportedOperation();
+      if (
+        !networkConditions?.offline &&
+        ((networkConditions?.upload ?? -1) >= 0 ||
+          (networkConditions?.download ?? -1) >= 0 ||
+          (networkConditions?.latency ?? 0) > 0)
+      ) {
+        // WebDriver BiDi supports only offline mode.
+        throw new UnsupportedOperation();
+      }
+      return await this.#frame.browsingContext.setOfflineMode(
+        networkConditions?.offline ?? false,
+      );
     }
+
     if (!this.#emulatedNetworkConditions) {
       this.#emulatedNetworkConditions = {
         offline: networkConditions?.offline ?? false,
@@ -1054,7 +1084,7 @@ export function bidiToPuppeteerCookie(
 ): Cookie {
   const partitionKey = bidiCookie[CDP_SPECIFIC_PREFIX + 'partitionKey'];
 
-  function getParitionKey(): {partitionKey?: Cookie['partitionKey']} {
+  function getPartitionKey(): {partitionKey?: Cookie['partitionKey']} {
     if (typeof partitionKey === 'string') {
       return {partitionKey};
     }
@@ -1096,7 +1126,7 @@ export function bidiToPuppeteerCookie(
       'partitionKeyOpaque',
       'priority',
     ),
-    ...getParitionKey(),
+    ...getPartitionKey(),
   };
 }
 

@@ -15,6 +15,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -25,7 +26,7 @@
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/read_only_shared_memory_region.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_multi_source_observation.h"
 #include "base/sequence_checker.h"
@@ -113,7 +114,7 @@ class ClientSideDetectionService
 
   void OnURLLoaderComplete(network::SimpleURLLoader* url_loader,
                            base::Time start_time,
-                           std::unique_ptr<std::string> response_body);
+                           std::optional<std::string> response_body);
 
   // Sends a request to the SafeBrowsing servers with the ClientPhishingRequest.
   // The URL scheme of the |url()| in the request should be HTTP.  This method

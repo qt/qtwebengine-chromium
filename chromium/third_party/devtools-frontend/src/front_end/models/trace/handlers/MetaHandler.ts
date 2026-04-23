@@ -6,6 +6,10 @@ import * as Platform from '../../../core/platform/platform.js';
 import * as Helpers from '../helpers/helpers.js';
 import * as Types from '../types/types.js';
 
+import type {FinalizeOptions} from './types.js';
+
+let config: {showAllEvents: boolean};
+
 // We track the renderer processes we see in each frame on the way through the trace.
 let rendererProcessesByFrameId: FrameProcessData = new Map();
 
@@ -349,7 +353,9 @@ export function handleEvent(event: Types.Events.Event): void {
   }
 }
 
-export async function finalize(): Promise<void> {
+export async function finalize(options?: FinalizeOptions): Promise<void> {
+  config = {showAllEvents: Boolean(options?.showAllEvents)};
+
   // We try to set the minimum time by finding the event with the smallest
   // timestamp. However, if we also got a timestamp from the
   // TracingStartedInBrowser event, we should always use that.
@@ -431,6 +437,7 @@ export async function finalize(): Promise<void> {
 }
 
 export interface MetaHandlerData {
+  config: {showAllEvents: boolean};
   traceIsGeneric: boolean;
   traceBounds: Types.Timing.TraceWindowMicro;
   browserProcessId: Types.Events.ProcessID;
@@ -472,26 +479,29 @@ export interface MetaHandlerData {
   devicePixelRatio?: number;
 }
 
-// Each frame has a single render process at a given time but it can have
-// multiple render processes  during a trace, for example if a navigation
-// occurred in the frame. This map tracks the process that was active for
-// each frame at each point in time. Also, because a process can be
-// assigned to multiple URLs, there is a window for each URL a process
-// was assigned.
-//
-// Note that different sites always end up in different render
-// processes, however two different URLs can point to the same site.
-// For example: https://google.com and https://maps.google.com point to
-// the same site.
-// Read more about this in
-// https://developer.chrome.com/articles/renderingng-architecture/#threads
-// and https://web.dev/same-site-same-origin/
+/**
+ * Each frame has a single render process at a given time but it can have
+ * multiple render processes  during a trace, for example if a navigation
+ * occurred in the frame. This map tracks the process that was active for
+ * each frame at each point in time. Also, because a process can be
+ * assigned to multiple URLs, there is a window for each URL a process
+ * was assigned.
+ *
+ * Note that different sites always end up in different render
+ * processes, however two different URLs can point to the same site.
+ * For example: https://google.com and https://maps.google.com point to
+ * the same site.
+ * Read more about this in
+ * https://developer.chrome.com/articles/renderingng-architecture/#threads
+ * and https://web.dev/same-site-same-origin/
+ **/
 export type FrameProcessData =
     Map<string,
         Map<Types.Events.ProcessID, Array<{frame: Types.Events.TraceFrame, window: Types.Timing.TraceWindowMicro}>>>;
 
 export function data(): MetaHandlerData {
   return {
+    config,
     traceBounds,
     browserProcessId,
     browserThreadId,

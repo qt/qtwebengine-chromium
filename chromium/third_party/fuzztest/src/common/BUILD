@@ -17,13 +17,9 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
-VISIBILITY = ["//visibility:public"]
+DEFAULT_VISIBILITY = ["//visibility:public"]
 
-EXTENDED_API_VISIBILITY = VISIBILITY
-
-PUBLIC_API_VISIBILITY = VISIBILITY
-
-package(default_visibility = VISIBILITY)
+package(default_visibility = DEFAULT_VISIBILITY)
 
 licenses(["notice"])
 
@@ -58,7 +54,6 @@ cc_library(
         "@com_google_fuzztest//fuzztest:disable_riegeli": ["CENTIPEDE_DISABLE_RIEGELI"],
         "//conditions:default": [],
     }),
-    visibility = PUBLIC_API_VISIBILITY,
     deps = [
         ":defs",
         ":hash",
@@ -86,9 +81,20 @@ cc_library(
 )
 
 cc_library(
+    name = "crashing_input_filename",
+    srcs = ["crashing_input_filename.cc"],
+    hdrs = ["crashing_input_filename.h"],
+    deps = [
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@com_google_fuzztest//fuzztest/internal:io",
+    ],
+)
+
+cc_library(
     name = "defs",
     hdrs = ["defs.h"],
-    visibility = PUBLIC_API_VISIBILITY,
     deps = ["@abseil-cpp//absl/types:span"],
 )
 
@@ -96,7 +102,6 @@ cc_library(
     name = "hash",
     srcs = ["hash.cc"],
     hdrs = ["hash.h"],
-    visibility = EXTENDED_API_VISIBILITY,
     deps = [
         ":defs",
         ":sha1",
@@ -225,6 +230,15 @@ cc_test(
         ":defs",
         ":test_util",
         "@abseil-cpp//absl/status",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "crashing_input_filename_test",
+    srcs = ["crashing_input_filename_test.cc"],
+    deps = [
+        ":crashing_input_filename",
         "@googletest//:gtest_main",
     ],
 )

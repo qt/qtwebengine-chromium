@@ -9,7 +9,6 @@
 #include <utility>
 
 #include "base/functional/bind.h"
-#include "base/functional/callback_forward.h"
 #include "base/functional/callback_helpers.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
@@ -65,7 +64,7 @@ constexpr auto kWithUserGesture = UserGestureStatus::kWithUserGesture;
 // Returns a simplified URL representation for ease of comparison in tests.
 // Just host+path.
 std::string FormatURL(const GURL& url) {
-  return base::StrCat({url.host_piece(), url.path_piece()});
+  return base::StrCat({url.host(), url.path()});
 }
 
 void AppendRedirect(std::vector<std::string>* redirects,

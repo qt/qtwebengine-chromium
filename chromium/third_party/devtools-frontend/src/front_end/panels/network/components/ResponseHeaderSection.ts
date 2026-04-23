@@ -1,7 +1,7 @@
 // Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
@@ -29,7 +29,6 @@ import {
   type HeaderEditedEvent,
   type HeaderEditorDescriptor,
   type HeaderRemovedEvent,
-  type HeaderSectionRow,
   type HeaderSectionRowData,
   isValidHeaderName,
 } from './HeaderSectionRow.js';
@@ -515,7 +514,7 @@ export class ResponseHeaderSection extends ResponseHeaderSectionBase {
     this.#updateOverrides(this.#headerEditors[index].name, this.#headerEditors[index].value || '', index);
     this.#render();
 
-    const rows = this.shadow.querySelectorAll<HeaderSectionRow>('devtools-header-section-row');
+    const rows = this.shadow.querySelectorAll('devtools-header-section-row');
     const [lastRow] = Array.from(rows).slice(-1);
     lastRow?.focus();
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.HeaderOverrideHeaderAdded);

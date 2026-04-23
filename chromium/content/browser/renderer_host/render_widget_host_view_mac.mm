@@ -226,7 +226,7 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget)
   viz::FrameSinkId frame_sink_id = host()->GetFrameSinkId();
 
   browser_compositor_ = std::make_unique<BrowserCompositorMac>(
-      this, this, host()->is_hidden(), frame_sink_id);
+      this, this, host()->IsHidden(), frame_sink_id);
   DCHECK(![GetInProcessNSView() window]);
 
   host()->SetView(this);
@@ -494,7 +494,7 @@ void RenderWidgetHostViewMac::WasUnOccluded() {
 
 void RenderWidgetHostViewMac::NotifyHostAndDelegateOnWasShown(
     blink::mojom::RecordContentToVisibleTimeRequestPtr tab_switch_start_state) {
-  DCHECK(host_->is_hidden());
+  DCHECK(host_->IsHidden());
 
   // SetRenderWidgetHostIsHidden may cause a state transition that switches to
   // a new instance of DelegatedFrameHost and calls WasShown, which causes
@@ -525,7 +525,7 @@ void RenderWidgetHostViewMac::
     RequestSuccessfulPresentationTimeFromHostOrDelegate(
         blink::mojom::RecordContentToVisibleTimeRequestPtr
             visible_time_request) {
-  DCHECK(!host_->is_hidden());
+  DCHECK(!host_->IsHidden());
   DCHECK(visible_time_request);
 
   // No state transition here so don't use
@@ -544,15 +544,16 @@ void RenderWidgetHostViewMac::
 
 void RenderWidgetHostViewMac::
     CancelSuccessfulPresentationTimeRequestForHostAndDelegate() {
-  DCHECK(!host_->is_hidden());
+  DCHECK(!host_->IsHidden());
   host()->CancelSuccessfulPresentationTimeRequest();
   browser_compositor_->GetDelegatedFrameHost()
       ->CancelSuccessfulPresentationTimeRequest();
 }
 
 void RenderWidgetHostViewMac::WasOccluded() {
-  if (host()->is_hidden())
+  if (host()->IsHidden()) {
     return;
+  }
 
   host()->WasHidden();
   browser_compositor_->SetRenderWidgetHostIsHidden(true);
@@ -667,6 +668,7 @@ void RenderWidgetHostViewMac::DidEnterBackForwardCache() {
   //
   // Called after to prevent prematurely evict the BFCached surface.
   host()->ForceFirstFrameAfterNavigationTimeout();
+  mouse_wheel_phase_handler_.DidEnterBackForwardCache();
 }
 
 void RenderWidgetHostViewMac::ActivatedOrEvictedFromBackForwardCache() {
@@ -776,7 +778,7 @@ void RenderWidgetHostViewMac::OnSelectionBoundsChanged(
   gfx_caret_rect += window_frame_in_screen_dip_.OffsetFromOrigin();
 
   // Note that UAZoomChangeFocus wants unflipped screen coordinates.
-  NSRect caret_rect = NSRectFromCGRect(gfx_caret_rect.ToCGRect());
+  NSRect caret_rect = gfx_caret_rect.ToCGRect();
   UAZoomChangeFocus(&caret_rect, &caret_rect, kUAZoomFocusTypeInsertionPoint);
 }
 
@@ -879,13 +881,13 @@ void RenderWidgetHostViewMac::UpdateScreenInfo() {
 
   // During auto-resize it is the responsibility of the caller to ensure that
   // the NSView and RenderWidgetHostImpl are kept in sync.
-  if (host()->auto_resize_enabled())
-    return;
-
-  if (host()->delegate())
-    host()->delegate()->SendScreenRects();
-  else
-    host()->SendScreenRects();
+  if (!host()->auto_resize_enabled()) {
+    if (host()->delegate()) {
+      host()->delegate()->SendScreenRects();
+    } else {
+      host()->SendScreenRects();
+    }
+  }
 
   // Update with the latest display list from the remote process if needed.
   bool current_display_changed = false;
@@ -1043,7 +1045,8 @@ uint32_t RenderWidgetHostViewMac::GetCaptureSequenceNumber() const {
 void RenderWidgetHostViewMac::CopyFromSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
-    base::OnceCallback<void(const SkBitmap&)> callback) {
+    base::OnceCallback<void(const viz::CopyOutputBitmapWithMetadata&)>
+        callback) {
   base::WeakPtr<RenderWidgetHostImpl> popup_host;
   base::WeakPtr<DelegatedFrameHost> popup_frame_host;
   if (popup_child_host_view_) {
@@ -1064,6 +1067,11 @@ void RenderWidgetHostViewMac::CopyFromSurface(
 void RenderWidgetHostViewMac::EnsureSurfaceSynchronizedForWebTest() {
   ++latest_capture_sequence_number_;
   browser_compositor_->ForceNewSurfaceId();
+}
+
+ui::FilteredGestureProvider*
+RenderWidgetHostViewMac::GetFilteredGestureProviderForTesting() {
+  return &gesture_provider_;
 }
 
 void RenderWidgetHostViewMac::OnDidUpdateVisualPropertiesComplete(
@@ -1311,7 +1319,7 @@ void RenderWidgetHostViewMac::FocusedNodeChanged(
   // Don't do anything if it's an editable node, as this will be handled by
   // OnSelectionBoundsChanged instead.
   if (UAZoomEnabled() && !is_editable_node) {
-    NSRect bounds = NSRectFromCGRect(node_bounds_in_screen.ToCGRect());
+    NSRect bounds = node_bounds_in_screen.ToCGRect();
     UAZoomChangeFocus(&bounds, nullptr, kUAZoomFocusTypeOther);
   }
 }
@@ -1325,6 +1333,10 @@ void RenderWidgetHostViewMac::ClearFallbackSurfaceForCommitPending() {
 void RenderWidgetHostViewMac::ResetFallbackToFirstNavigationSurface() {
   browser_compositor_->GetDelegatedFrameHost()
       ->ResetFallbackToFirstNavigationSurface();
+}
+
+void RenderWidgetHostViewMac::OnUnconfirmedTapConvertedToTap() {
+  gesture_provider_.OnUnconfirmedTapConvertedToTap();
 }
 
 bool RenderWidgetHostViewMac::RequestRepaintOnNewSurface() {
@@ -1471,7 +1483,7 @@ void RenderWidgetHostViewMac::DidOverscroll(
   ns_view_->DidOverscroll(blink::mojom::DidOverscrollParams::New(
       params.accumulated_overscroll, params.latest_overscroll_delta,
       params.current_fling_velocity, params.causal_event_viewport_point,
-      params.overscroll_behavior));
+      params.overscroll_behavior, params.source_device));
 }
 
 std::unique_ptr<SyntheticGestureTarget>

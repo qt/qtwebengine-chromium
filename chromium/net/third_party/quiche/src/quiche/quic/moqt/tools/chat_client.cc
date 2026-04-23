@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/functional/bind_front.h"
@@ -23,10 +24,10 @@
 #include "quiche/quic/core/quic_server_id.h"
 #include "quiche/quic/moqt/moqt_known_track_publisher.h"
 #include "quiche/quic/moqt/moqt_messages.h"
+#include "quiche/quic/moqt/moqt_object.h"
 #include "quiche/quic/moqt/moqt_outgoing_queue.h"
-#include "quiche/quic/moqt/moqt_priority.h"
-#include "quiche/quic/moqt/moqt_publisher.h"
 #include "quiche/quic/moqt/moqt_session.h"
+#include "quiche/quic/moqt/moqt_session_callbacks.h"
 #include "quiche/quic/moqt/moqt_session_interface.h"
 #include "quiche/quic/moqt/tools/moq_chat.h"
 #include "quiche/quic/moqt/tools/moqt_client.h"
@@ -40,39 +41,45 @@
 
 namespace moqt::moq_chat {
 
-std::optional<MoqtPublishNamespaceErrorReason>
-ChatClient::OnIncomingPublishNamespace(
+void ChatClient::OnIncomingPublishNamespace(
     const moqt::TrackNamespace& track_namespace,
-    std::optional<VersionSpecificParameters> parameters) {
+    std::optional<VersionSpecificParameters> parameters,
+    moqt::MoqtResponseCallback callback) {
+  if (!session_is_open_) {
+    return;
+  }
   if (track_namespace == GetUserNamespace(my_track_name_)) {
     // Ignore PUBLISH_NAMESPACE for my own track.
-    return std::optional<MoqtPublishNamespaceErrorReason>();
+    std::move(callback)(std::nullopt);
+    return;
   }
   std::optional<FullTrackName> track_name = ConstructTrackNameFromNamespace(
       track_namespace, GetChatId(my_track_name_));
   if (!parameters.has_value()) {
     std::cout << "PUBLISH_NAMESPACE_DONE for " << track_namespace.ToString()
               << "\n";
-    if (track_name.has_value() && other_users_.contains(*track_name)) {
-      session_->Unsubscribe(*track_name);
+    if (track_name.has_value()) {
       other_users_.erase(*track_name);
     }
-    return std::nullopt;
+    return;
   }
   std::cout << "PUBLISH_NAMESPACE for " << track_namespace.ToString() << "\n";
   if (!track_name.has_value()) {
     std::cout << "PUBLISH_NAMESPACE rejected, invalid namespace\n";
-    return std::make_optional<MoqtPublishNamespaceErrorReason>(
-        RequestErrorCode::kTrackDoesNotExist, "Not a subscribed namespace");
+    std::move(callback)(std::make_optional<MoqtPublishNamespaceErrorReason>(
+        RequestErrorCode::kTrackDoesNotExist, "Not a subscribed namespace"));
+    return;
   }
   if (other_users_.contains(*track_name)) {
     std::cout << "Duplicate PUBLISH_NAMESPACE, send OK and ignore\n";
-    return std::nullopt;
+    std::move(callback)(std::nullopt);
+    return;
   }
   if (GetUsername(my_track_name_) == GetUsername(*track_name)) {
     std::cout << "PUBLISH_NAMESPACE for a previous instance of my track, "
                  "do not subscribe\n";
-    return std::nullopt;
+    std::move(callback)(std::nullopt);
+    return;
   }
   VersionSpecificParameters subscribe_parameters(
       AuthTokenType::kOutOfBand, std::string(GetUsername(my_track_name_)));
@@ -81,7 +88,7 @@ ChatClient::OnIncomingPublishNamespace(
     ++subscribes_to_make_;
     other_users_.emplace(*track_name);
   }
-  return std::nullopt;  // Send PUBLISH_NAMESPACE_OK.
+  std::move(callback)(std::nullopt);  // Send PUBLISH_NAMESPACE_OK.
 }
 
 ChatClient::ChatClient(const quic::QuicServerId& server_id,
@@ -91,8 +98,8 @@ ChatClient::ChatClient(const quic::QuicServerId& server_id,
                        absl::string_view localhost,
                        quic::QuicEventLoop* event_loop)
     : my_track_name_(ConstructTrackName(chat_id, username, localhost)),
-      event_loop_(event_loop),
       remote_track_visitor_(this),
+      event_loop_(event_loop),
       interface_(std::move(interface)) {
   if (event_loop_ == nullptr) {
     quic::QuicDefaultClock* clock = quic::QuicDefaultClock::Get();
@@ -155,11 +162,14 @@ void ChatClient::OnTerminalLineInput(absl::string_view input_message) {
   if (input_message == "/exit") {
     // Clean teardown of SUBSCRIBE_NAMESPACE, PUBLISH_NAMESPACE, SUBSCRIBE.
     session_->UnsubscribeNamespace(GetChatNamespace(my_track_name_));
+    // TODO(martinduke): Add a session API to send PUBLISH_DONE.
     session_->PublishNamespaceDone(GetUserNamespace(my_track_name_));
     for (const auto& track_name : other_users_) {
       session_->Unsubscribe(track_name);
     }
+    session_->callbacks() = MoqtSessionCallbacks();
     other_users_.clear();
+    session_->Close();
     session_is_open_ = false;
     return;
   }
@@ -170,8 +180,7 @@ void ChatClient::OnTerminalLineInput(absl::string_view input_message) {
 
 void ChatClient::RemoteTrackVisitor::OnReply(
     const FullTrackName& full_track_name,
-    std::optional<Location> /*largest_id*/,
-    std::optional<absl::string_view> reason_phrase) {
+    std::variant<SubscribeOkData, MoqtRequestError> response) {
   auto it = client_->other_users_.find(full_track_name);
   if (it == client_->other_users_.end()) {
     std::cout << "Error: received reply for unknown user "
@@ -180,18 +189,19 @@ void ChatClient::RemoteTrackVisitor::OnReply(
   }
   --client_->subscribes_to_make_;
   std::cout << "Subscription to user " << GetUsername(*it) << " ";
-  if (reason_phrase.has_value()) {
-    std::cout << "REJECTED, reason = " << *reason_phrase << "\n";
-    client_->other_users_.erase(it);
-  } else {
+  if (std::holds_alternative<SubscribeOkData>(response)) {
     std::cout << "ACCEPTED\n";
+  } else {
+    auto request_error = std::get<MoqtRequestError>(response);
+    std::cout << "REJECTED, reason = "
+              << std::get<MoqtRequestError>(response).reason_phrase << "\n";
+    client_->other_users_.erase(it);
   }
 }
 
 void ChatClient::RemoteTrackVisitor::OnObjectFragment(
-    const FullTrackName& full_track_name,
-    const PublishedObjectMetadata& /*metadata*/, absl::string_view object,
-    bool end_of_message) {
+    const FullTrackName& full_track_name, const PublishedObjectMetadata&,
+    absl::string_view object, bool end_of_message) {
   if (!end_of_message) {
     std::cerr << "Error: received partial message despite requesting "
                  "buffering\n";
@@ -242,9 +252,12 @@ bool ChatClient::PublishNamespaceAndSubscribeNamespace() {
 
   // Send SUBSCRIBE_NAMESPACE. Pop 3 levels of namespace to get to
   // {moq-chat, chat-id}
+  bool subscribe_response_received = false;
   MoqtOutgoingSubscribeNamespaceCallback subscribe_namespace_callback =
-      [this](TrackNamespace track_namespace,
-             std::optional<RequestErrorCode> error, absl::string_view reason) {
+      [&, this](TrackNamespace track_namespace,
+                std::optional<RequestErrorCode> error,
+                absl::string_view reason) {
+        subscribe_response_received = true;
         if (error.has_value()) {
           std::cout << "SUBSCRIBE_NAMESPACE rejected, " << reason << "\n";
           session_->Error(MoqtError::kInternalError,
@@ -261,7 +274,7 @@ bool ChatClient::PublishNamespaceAndSubscribeNamespace() {
                                std::move(subscribe_namespace_callback),
                                parameters);
 
-  while (session_is_open_ && is_syncing()) {
+  while (session_is_open_ && !subscribe_response_received) {
     RunEventLoop();
   }
   return session_is_open_;

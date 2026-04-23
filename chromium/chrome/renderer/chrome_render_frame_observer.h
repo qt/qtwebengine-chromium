@@ -22,6 +22,7 @@
 
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/common/actor.mojom.h"
+#include "chrome/common/actor/task_id.h"
 #include "chrome/renderer/actor/tool_executor.h"
 #endif
 
@@ -91,7 +92,8 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
       mojo::ScopedInterfaceEndpointHandle* handle) override;
   void ReadyToCommitNavigation(
       blink::WebDocumentLoader* document_loader) override;
-  void DidSetPageLifecycleState(bool restoring_from_bfcache) override;
+  void DidSetPageLifecycleState(
+      blink::BFCacheStateChange bfcache_change) override;
   void DidFinishLoad() override;
   void DidCreateNewDocument() override;
   void DidCommitProvisionalLoad(ui::PageTransition transition) override;
@@ -124,12 +126,12 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
 #endif
   void GetMediaFeedURL(GetMediaFeedURLCallback callback) override;
   void LoadBlockedPlugins(const std::string& identifier) override;
-  void SetSupportsDraggableRegions(bool supports_draggable_regions) override;
   void SetShouldDeferMediaLoad(bool should_defer) override;
 
 #if !BUILDFLAG(IS_ANDROID)
   void InvokeTool(actor::mojom::ToolInvocationPtr request,
                   InvokeToolCallback callback) override;
+  void CancelTool(const actor::TaskId& task_id) override;
   void StartActorJournal(
       mojo::PendingAssociatedRemote<actor::mojom::JournalClient> client)
       override;
@@ -177,7 +179,7 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
                             const gfx::Size& requested_image_max_size);
 
   // Check if the image need to encode to fit requested image format.
-  static bool NeedsEncodeImage(const std::string& image_extension,
+  static bool NeedsEncodeImage(const std::string& mime_type,
                                chrome::mojom::ImageFormat image_format);
 
   // Check if the image is an animated Webp image by looking for animation

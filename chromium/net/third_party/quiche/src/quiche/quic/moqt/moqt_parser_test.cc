@@ -225,6 +225,23 @@ TEST_P(MoqtParserTest, OneByteAtATime) {
   }
 }
 
+// In OneByteAtATime, the message is received one byte at a time, and
+// immediately processed; here, it is received all at once, but the stream
+// receive buffer is represented as a sequence of one-byte chunks.
+TEST_P(MoqtParserTest, OneByteAtATimePeek) {
+  control_stream_.set_peek_one_byte_at_a_time(true);
+  data_stream_.set_peek_one_byte_at_a_time(true);
+  std::unique_ptr<TestMessageBase> message = MakeMessage();
+  message->MakeObjectEndOfStream();
+  ProcessData(message->PacketSample(), true);
+  ASSERT_EQ(visitor_.messages_received_, 1);
+  EXPECT_TRUE(message->EqualFieldValues(*visitor_.last_message_));
+  EXPECT_TRUE(visitor_.end_of_message_);
+  if (IsDataStream()) {
+    EXPECT_EQ(visitor_.object_payload(), "foo");
+  }
+}
+
 TEST_P(MoqtParserTest, OneByteAtATimeLongerVarints) {
   std::unique_ptr<TestMessageBase> message = MakeMessage();
   message->ExpandVarints();
@@ -356,6 +373,7 @@ TEST_F(MoqtMessageSpecificTest, ThreePartObject) {
   EXPECT_EQ(visitor_.messages_received_, 1);
   EXPECT_TRUE(message->EqualFieldValues(*visitor_.last_message_));
   EXPECT_TRUE(visitor_.end_of_message_);
+  EXPECT_TRUE(visitor_.fin_received_);
   EXPECT_EQ(visitor_.object_payload(), "foobardeadbeef");
   EXPECT_FALSE(visitor_.parsing_error_.has_value());
 }
@@ -390,6 +408,7 @@ TEST_F(MoqtMessageSpecificTest, ThreePartObjectFirstIncomplete) {
   EXPECT_EQ(visitor_.messages_received_, 1);
   EXPECT_TRUE(message->EqualFieldValues(*visitor_.last_message_));
   EXPECT_TRUE(visitor_.end_of_message_);
+  EXPECT_TRUE(visitor_.fin_received_);
   EXPECT_EQ(*visitor_.object_payloads_.crbegin(), "bar");
   EXPECT_FALSE(visitor_.parsing_error_.has_value());
 }
@@ -1733,6 +1752,7 @@ TEST_F(MoqtDataParserStateMachineTest, ReadAll) {
   stream_.Receive("", /*fin=*/true);
   parser_.ReadAllData();
   EXPECT_EQ(visitor_.parsing_error_, std::nullopt);
+  EXPECT_TRUE(visitor_.fin_received_);
 }
 
 TEST_F(MoqtDataParserStateMachineTest, ReadObjects) {
@@ -1747,6 +1767,7 @@ TEST_F(MoqtDataParserStateMachineTest, ReadObjects) {
   ASSERT_EQ(visitor_.messages_received_, 2);
   EXPECT_EQ(visitor_.object_payloads_[1], "bar");
   EXPECT_EQ(visitor_.parsing_error_, std::nullopt);
+  EXPECT_TRUE(visitor_.fin_received_);
 }
 
 TEST_F(MoqtDataParserStateMachineTest, ReadTypeThenObjects) {
@@ -1765,6 +1786,7 @@ TEST_F(MoqtDataParserStateMachineTest, ReadTypeThenObjects) {
   ASSERT_EQ(visitor_.messages_received_, 2);
   EXPECT_EQ(visitor_.object_payloads_[1], "bar");
   EXPECT_EQ(visitor_.parsing_error_, std::nullopt);
+  EXPECT_TRUE(visitor_.fin_received_);
 }
 
 }  // namespace moqt::test

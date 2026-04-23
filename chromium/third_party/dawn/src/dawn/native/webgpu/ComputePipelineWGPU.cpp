@@ -30,6 +30,8 @@
 #include <string>
 #include <vector>
 #include "dawn/common/StringViewUtils.h"
+#include "dawn/native/webgpu/BindGroupLayoutWGPU.h"
+#include "dawn/native/webgpu/CaptureContext.h"
 #include "dawn/native/webgpu/DeviceWGPU.h"
 #include "dawn/native/webgpu/PipelineLayoutWGPU.h"
 #include "dawn/native/webgpu/ShaderModuleWGPU.h"
@@ -46,18 +48,17 @@ Ref<ComputePipeline> ComputePipeline::CreateUninitialized(
 
 ComputePipeline::ComputePipeline(Device* device,
                                  const UnpackedPtr<ComputePipelineDescriptor>& descriptor)
-    : ComputePipelineBase(device, descriptor), ObjectWGPU(device->wgpu.computePipelineRelease) {}
+    : ComputePipelineBase(device, descriptor),
+      RecordableObject(schema::ObjectType::ComputePipeline),
+      ObjectWGPU(device->wgpu.computePipelineRelease) {}
 
 MaybeError ComputePipeline::InitializeImpl() {
     WGPUComputePipelineDescriptor desc;
     desc.nextInChain = nullptr;
     desc.label = ToOutputStringView(GetLabel());
     const PipelineLayoutBase* layout = GetLayout();
-    if (layout != nullptr) {
-        desc.layout = ToBackend(layout)->GetInnerHandle();
-    } else {
-        desc.layout = nullptr;
-    }
+    DAWN_ASSERT(layout != nullptr);
+    desc.layout = ToBackend(layout)->GetInnerHandle();
 
     const ProgrammableStage& stage = GetStage(SingleShaderStage::Compute);
     desc.compute.nextInChain = nullptr;
@@ -73,6 +74,27 @@ MaybeError ComputePipeline::InitializeImpl() {
     auto device = ToBackend(GetDevice());
     mInnerHandle = device->wgpu.deviceCreateComputePipeline(device->GetInnerHandle(), &desc);
     DAWN_ASSERT(mInnerHandle);
+    return {};
+}
+
+void ComputePipeline::SetLabelImpl() {
+    ToBackend(GetDevice())->CaptureSetLabel(this, GetLabel());
+}
+
+MaybeError ComputePipeline::AddReferenced(CaptureContext& captureContext) {
+    DAWN_TRY(
+        captureContext.AddResource(ToBackend(GetStage(SingleShaderStage::Compute).module.Get())));
+    DAWN_TRY(captureContext.AddResource(ToBackend(GetLayout())));
+    return {};
+}
+
+MaybeError ComputePipeline::CaptureCreationParameters(CaptureContext& captureContext) {
+    auto& stage = GetStage(SingleShaderStage::Compute);
+    schema::ComputePipeline data{{
+        .layoutId = captureContext.GetId(GetLayout()),
+        .compute = ToSchema(captureContext, stage),
+    }};
+    Serialize(captureContext, data);
     return {};
 }
 

@@ -157,7 +157,8 @@ class BrowsingHistoryHandlerTest : public ChromeRenderViewHostTestHarness {
                 /*matching_algorithm=*/options.matching_algorithm,
                 /*host_only=*/options.host_only,
                 /*visit_order=*/options.visit_order,
-                /*app_id=*/options.app_id)))
+                /*app_id=*/options.app_id,
+                /*include_actor_visits=*/true)))
         .Times(1)
         .WillOnce([&, mock_results](const std::u16string& search_text,
                                     const QueryOptions& options) {
@@ -176,7 +177,6 @@ class BrowsingHistoryHandlerTest : public ChromeRenderViewHostTestHarness {
           info.search_text = search_text;
           info.reached_beginning = true;
           info.sync_timed_out = false;
-          info.has_synced_results = true;
           handler_->OnQueryComplete(
               mock_results.empty() ? results : mock_results, info,
               base::OnceClosure());
@@ -319,10 +319,9 @@ TEST_F(BrowsingHistoryHandlerTest, RequestAccountInfo) {
       callback;
   history::mojom::AccountInfoPtr account_info_ptr;
   EXPECT_CALL(callback, Run(_))
-      .WillOnce(testing::Invoke(
-          [&](history::mojom::AccountInfoPtr ptr) {
-            account_info_ptr = std::move(ptr);
-          }));
+      .WillOnce([&](history::mojom::AccountInfoPtr ptr) {
+        account_info_ptr = std::move(ptr);
+      });
 
   handler()->RequestAccountInfo(callback.Get());
 
@@ -360,16 +359,125 @@ TEST_F(BrowsingHistoryHandlerTest, SendsUpdatedInfoOnAccountChange) {
   EXPECT_CALL(*mock_page(), SendAccountInfo(_));
   // Update the account info with all the necessary fields for
   // AccountInfo::isValid() to be true.
-  account_info.hosted_domain = "example.com";
-  account_info.full_name = "Test User";
-  account_info.given_name = "Test";
-  account_info.picture_url = "http://example.com/test.jpg";
+  account_info = AccountInfo::Builder(account_info)
+                     .SetFullName("Test User")
+                     .SetGivenName("Test")
+                     .SetHostedDomain("example.com")
+                     .SetAvatarUrl("http://example.com/test.jpg")
+                     .Build();
   ASSERT_TRUE(account_info.IsValid());
 
   signin::UpdateAccountInfoForAccount(identity_manager, account_info);
 
   mock_page()->FlushForTesting();
 }
-#endif
+
+TEST_F(BrowsingHistoryHandlerTest, IncludeActorVisits) {
+  std::u16string query = u"test";
+  QueryOptions options;
+  options.include_actor_visits = true;
+
+  MockHistoryServiceCall(query, options);
+  RunQueryHistory("test");
+}
+
+class BrowsingHistoryHandlerHistorySyncPromoTest
+    : public BrowsingHistoryHandlerTest,
+      public testing::WithParamInterface<bool> {
+ public:
+  void SetUp() override {
+    BrowsingHistoryHandlerTest::SetUp();
+    SetUpIdentityState();
+  }
+
+ private:
+  // Sets up the identity state based on the test parameter.
+  // If the parameter is `true`, a primary account is set up. Otherwise, the
+  // profile is left signed out.
+  void SetUpIdentityState() {
+    if (GetParam()) {
+      signin::IdentityManager* identity_manager =
+          IdentityManagerFactory::GetForProfile(profile());
+      signin::MakePrimaryAccountAvailable(identity_manager, "test@example.com",
+                                          signin::ConsentLevel::kSignin);
+    }
+  }
+};
+
+TEST_P(BrowsingHistoryHandlerHistorySyncPromoTest,
+       ShouldShowHistoryPageHistorySyncPromoShownLessThanThreshold) {
+  for (int i = 0; i < 4; ++i) {
+    handler()->IncrementHistoryPageHistorySyncPromoShownCount();
+  }
+  base::MockCallback<
+      BrowsingHistoryHandler::ShouldShowHistoryPageHistorySyncPromoCallback>
+      callback;
+  EXPECT_CALL(callback, Run(true));
+  handler()->ShouldShowHistoryPageHistorySyncPromo(callback.Get());
+}
+
+TEST_P(BrowsingHistoryHandlerHistorySyncPromoTest,
+       ShouldShowHistoryPageHistorySyncPromoShownEqualToThreshold) {
+  for (int i = 0; i < 5; ++i) {
+    handler()->IncrementHistoryPageHistorySyncPromoShownCount();
+  }
+  base::MockCallback<
+      BrowsingHistoryHandler::ShouldShowHistoryPageHistorySyncPromoCallback>
+      callback;
+  EXPECT_CALL(callback, Run(false));
+  handler()->ShouldShowHistoryPageHistorySyncPromo(callback.Get());
+}
+
+TEST_P(BrowsingHistoryHandlerHistorySyncPromoTest,
+       ShouldShowHistoryPageHistorySyncPromoDismissedOnceCooldownPassed) {
+  handler()->RecordHistoryPageHistorySyncPromoDismissed();
+  handler()->test_clock()->Advance(base::Days(8));
+  base::MockCallback<
+      BrowsingHistoryHandler::ShouldShowHistoryPageHistorySyncPromoCallback>
+      callback;
+  EXPECT_CALL(callback, Run(true));
+  handler()->ShouldShowHistoryPageHistorySyncPromo(callback.Get());
+}
+
+TEST_P(BrowsingHistoryHandlerHistorySyncPromoTest,
+       ShouldShowHistoryPageHistorySyncPromoDismissedOnceCooldownNotPassed) {
+  handler()->RecordHistoryPageHistorySyncPromoDismissed();
+  handler()->test_clock()->Advance(base::Days(6));
+  base::MockCallback<
+      BrowsingHistoryHandler::ShouldShowHistoryPageHistorySyncPromoCallback>
+      callback;
+  EXPECT_CALL(callback, Run(false));
+  handler()->ShouldShowHistoryPageHistorySyncPromo(callback.Get());
+}
+
+TEST_P(BrowsingHistoryHandlerHistorySyncPromoTest,
+       ShouldShowHistoryPageHistorySyncPromoShownAfterDismissal) {
+  handler()->RecordHistoryPageHistorySyncPromoDismissed();
+  handler()->test_clock()->Advance(base::Days(8));
+  base::MockCallback<
+      BrowsingHistoryHandler::ShouldShowHistoryPageHistorySyncPromoCallback>
+      callback_before_shown_after_dismissal;
+  EXPECT_CALL(callback_before_shown_after_dismissal, Run(true));
+  handler()->ShouldShowHistoryPageHistorySyncPromo(
+      callback_before_shown_after_dismissal.Get());
+
+  handler()->IncrementHistoryPageHistorySyncPromoShownCount();
+
+  base::MockCallback<
+      BrowsingHistoryHandler::ShouldShowHistoryPageHistorySyncPromoCallback>
+      callback_shown_after_dismissal;
+  EXPECT_CALL(callback_shown_after_dismissal, Run(false));
+  handler()->ShouldShowHistoryPageHistorySyncPromo(
+      callback_shown_after_dismissal.Get());
+}
+
+INSTANTIATE_TEST_SUITE_P(,
+                         BrowsingHistoryHandlerHistorySyncPromoTest,
+                         testing::Bool(),
+                         [](const testing::TestParamInfo<bool>& info) {
+                           return info.param ? "SignedIn" : "SignedOut";
+                         });
+
+#endif  // !BUILDFLAG(IS_CHROMEOS)
 
 }  // namespace history

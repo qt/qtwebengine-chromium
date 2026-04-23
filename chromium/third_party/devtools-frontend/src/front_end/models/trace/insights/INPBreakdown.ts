@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import * as i18n from '../../../core/i18n/i18n.js';
-import type * as Handlers from '../handlers/handlers.js';
+import * as Handlers from '../handlers/handlers.js';
 import * as Helpers from '../helpers/helpers.js';
 import type {SyntheticInteractionPair} from '../types/TraceEvents.js';
 import type * as Types from '../types/types.js';
@@ -21,7 +21,7 @@ export const UIStrings = {
    * @description Text to tell the user about the longest user interaction.
    */
   description:
-      'Start investigating with the longest subpart. [Delays can be minimized](https://web.dev/articles/optimize-inp#optimize_interactions). To reduce processing duration, [optimize the main-thread costs](https://web.dev/articles/optimize-long-tasks), often JS.',
+      'Start investigating [how to improve INP](https://developer.chrome.com/docs/performance/insights/inp-breakdown) by looking at the longest subpart.',
   /**
    * @description Title for the performance insight "INP breakdown", which shows a breakdown of INP by subparts / sections.
    */
@@ -67,13 +67,25 @@ export function isINPBreakdownInsight(insight: InsightModel): insight is INPBrea
 }
 
 function finalize(partialModel: PartialInsightModel<INPBreakdownInsightModel>): INPBreakdownInsightModel {
+  let state: INPBreakdownInsightModel['state'] = 'pass';
+  if (partialModel.longestInteractionEvent) {
+    const classification = Handlers.ModelHandlers.UserInteractions.scoreClassificationForInteractionToNextPaint(
+        partialModel.longestInteractionEvent.dur);
+    if (classification === Handlers.ModelHandlers.PageLoadMetrics.ScoreClassification.GOOD) {
+      state = 'informative';
+    } else {
+      state = 'fail';
+    }
+  }
+
   return {
     insightKey: InsightKeys.INP_BREAKDOWN,
     strings: UIStrings,
     title: i18nString(UIStrings.title),
     description: i18nString(UIStrings.description),
+    docs: 'https://developer.chrome.com/docs/performance/insights/inp-breakdown',
     category: InsightCategory.INP,
-    state: partialModel.longestInteractionEvent ? 'informative' : 'pass',
+    state,
     ...partialModel,
   };
 }

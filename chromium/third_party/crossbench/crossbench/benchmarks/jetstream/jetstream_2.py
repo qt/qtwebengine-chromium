@@ -7,23 +7,23 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import logging
-from typing import (TYPE_CHECKING, Any, ClassVar, MutableMapping, Optional,
-                    Sequence, Type)
+from typing import TYPE_CHECKING, Any, ClassVar, Final, Mapping, Optional, \
+    Sequence, Type
 
+from immutabledict import immutabledict
 from typing_extensions import override
 
 from crossbench.action_runner.action.enums import ReadyState
 from crossbench.benchmarks.base import PressBenchmarkStoryFilter
-from crossbench.benchmarks.jetstream.jetstream import (JetStreamBenchmark,
-                                                       JetStreamProbe,
-                                                       JetStreamProbeContext,
-                                                       JetStreamStory)
+from crossbench.benchmarks.jetstream.jetstream import JetStreamBenchmark, \
+    JetStreamProbe, JetStreamProbeContext, JetStreamStory
 from crossbench.helper import url_helper
 from crossbench.parse import NumberParser
 
 if TYPE_CHECKING:
   import argparse
 
+  from crossbench.runner.actions import Actions
   from crossbench.runner.run import Run
 
 
@@ -108,23 +108,14 @@ class JetStream2Story(JetStreamStory, metaclass=abc.ABCMeta):
 
   def __init__(self,
                substories: Sequence[str] = (),
-               iterations: Optional[int] = None,
-               url: Optional[str] = None) -> None:
-    self._iterations: int | None = iterations
-    if iterations is not None:
-      self._iterations = NumberParser.positive_int(
-          self._iterations, "iteration count", parse_str=False)
-    super().__init__(url=url, substories=substories)
+               url: Optional[str] = None,
+               url_params: Optional[Mapping[str, str]] = None) -> None:
+    self._url_params: Final[Mapping[str, str]] = immutabledict(url_params or {})
+    super().__init__(substories=substories, url=url)
 
   @property
-  def iterations(self) -> Optional[int]:
-    return self._iterations
-
-  @property
-  def url_params(self) -> MutableMapping[str, str]:
-    params: MutableMapping[str, str] = {}
-    if iterations := self.iterations:
-      params["iterationCount"] = str(iterations)
+  def url_params(self) -> dict[str, str]:
+    params: dict[str, str] = dict(self._url_params)
     return params
 
   @override
@@ -142,24 +133,26 @@ class JetStream2Story(JetStreamStory, metaclass=abc.ABCMeta):
           url=self.get_run_url(run),
           ready_state=ReadyState.COMPLETE,
           timeout=dt.timedelta(seconds=10))
-      if self._substories != self.SUBSTORIES:
-        actions.wait_js_condition(
-            "return globalThis?.JetStream?.benchmarks?.length > 0;",
-            0.1,
-            timeout=10)
-        actions.js(
-            """
+      self.setup_stories(actions)
+      actions.wait_js_condition(
+          'return document.querySelectorAll("#results>.benchmark").length > 0;',
+          1,
+          timeout=self.duration + dt.timedelta(seconds=30))
+
+  def setup_stories(self, actions: Actions) -> None:
+    if self.substories == self.SUBSTORIES:
+      return
+    actions.wait_js_condition(
+        "return globalThis?.JetStream?.benchmarks?.length > 0;",
+        0.1,
+        timeout=10)
+    actions.js(
+        """
         let benchmarks = arguments[0];
         JetStream.benchmarks = JetStream.benchmarks.filter(
             benchmark => benchmarks.includes(benchmark.name));
         """,
-            arguments=[self._substories])
-      actions.wait_js_condition(
-          """
-        return document.querySelectorAll("#results>.benchmark").length > 0;
-      """,
-          1,
-          timeout=self.duration + dt.timedelta(seconds=30))
+        arguments=[self.substories])
 
 
 ProbeClsTupleT = tuple[Type[JetStream2Probe], ...]
@@ -174,8 +167,8 @@ class JetStream2BenchmarkStoryFilter(PressBenchmarkStoryFilter):
       cls, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser = super().add_cli_arguments(parser)
     parser.add_argument(
-        "--iterations",
         "--iteration-count",
+        "--iterations",
         default=None,
         type=NumberParser.positive_int,
         help="Number of iterations each JetStream subtest is run "
@@ -185,14 +178,32 @@ class JetStream2BenchmarkStoryFilter(PressBenchmarkStoryFilter):
         "overhead of starting up a whole new browser. \n"
         "This option is not supported on the official benchmark "
         "before version 3.0.")
+    parser.add_argument(
+        "--worst-case-count",
+        "--worst",
+        default=None,
+        type=NumberParser.positive_int,
+        help="Number of iterations each JetStream subtest uses to calculate "
+        "the worst score. \n"
+        "This option is not supported on the official benchmark "
+        "before version 3.0.")
     return parser
 
   @classmethod
   @override
   def kwargs_from_cli(cls, args: argparse.Namespace) -> dict[str, Any]:
     kwargs = super().kwargs_from_cli(args)
-    kwargs["iterations"] = args.iterations
+    kwargs["url_params"] = cls.url_params_from_cli(args)
     return kwargs
+
+  @classmethod
+  def url_params_from_cli(cls, args: argparse.Namespace) -> dict[str, str]:
+    url_params: dict[str, str] = {}
+    if worst_case_count := args.worst_case_count:
+      url_params["worstCaseCount"] = str(worst_case_count)
+    if iteration_count := args.iteration_count:
+      url_params["iterationCount"] = str(iteration_count)
+    return url_params
 
   def __init__(self,
                story_cls: Type[JetStream2Story],
@@ -200,8 +211,8 @@ class JetStream2BenchmarkStoryFilter(PressBenchmarkStoryFilter):
                args: Optional[argparse.Namespace] = None,
                separate: bool = False,
                url: Optional[str] = None,
-               iterations: Optional[int] = None) -> None:
-    self.iterations = iterations
+               url_params: Optional[Mapping[str, str]] = None) -> None:
+    self._url_params: Final[Mapping[str, str]] = immutabledict(url_params or {})
     assert issubclass(story_cls, JetStream2Story)
     super().__init__(story_cls, patterns, args, separate, url)
 
@@ -209,7 +220,7 @@ class JetStream2BenchmarkStoryFilter(PressBenchmarkStoryFilter):
   def create_stories_from_names(self, names: list[str],
                                 separate: bool) -> Sequence[JetStream2Story]:
     return self.story_cls.from_names(
-        names, separate=separate, url=self.url, iterations=self.iterations)
+        names, separate=separate, url=self.url, url_params=self._url_params)
 
 
 class JetStream2Benchmark(JetStreamBenchmark):

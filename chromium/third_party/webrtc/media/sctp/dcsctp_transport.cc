@@ -33,7 +33,6 @@
 #include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/transport/data_channel_transport_interface.h"
-#include "media/sctp/sctp_transport_internal.h"
 #include "net/dcsctp/public/dcsctp_message.h"
 #include "net/dcsctp/public/dcsctp_options.h"
 #include "net/dcsctp/public/dcsctp_socket.h"
@@ -49,6 +48,7 @@
 #include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/network/received_packet.h"
+#include "rtc_base/random.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/thread.h"
@@ -198,11 +198,22 @@ bool DcSctpTransport::Start(const SctpOptions& options) {
   RTC_DCHECK(options.max_message_size > 0);
   RTC_DLOG(LS_INFO) << debug_name_ << "->Start(local=" << options.local_port
                     << ", remote=" << options.remote_port
-                    << ", max_message_size=" << options.max_message_size << ")";
+                    << ", max_message_size=" << options.max_message_size
+                    << ", local_init="
+                    << (options.local_init.has_value() ? "(set)" : "(not set)")
+                    << ", remote_init="
+                    << (options.remote_init.has_value() ? "(set)" : "(not set)")
+                    << ")";
 
   if (!socket_) {
     dcsctp::DcSctpOptions dcsctp_options =
         CreateDcSctpOptions(options, env_.field_trials());
+    if (options.local_init.has_value()) {
+      local_init_ = *options.local_init;
+    }
+    if (options.remote_init.has_value()) {
+      remote_init_ = *options.remote_init;
+    }
     std::unique_ptr<dcsctp::PacketObserver> packet_observer;
     if (RTC_LOG_CHECK_LEVEL(LS_VERBOSE)) {
       packet_observer =
@@ -218,6 +229,17 @@ bool DcSctpTransport::Start(const SctpOptions& options) {
           << debug_name_ << "->Start(local=" << options.local_port
           << ", remote=" << options.remote_port
           << "): Can't change ports on already started transport.";
+      return false;
+    }
+    if (options.local_init != local_init_ ||
+        options.remote_init != remote_init_) {
+      RTC_LOG(LS_ERROR)
+          << debug_name_ << "->Start("
+          << "local_init="
+          << (options.local_init.has_value() ? "(set)" : "(not set)")
+          << ", remote_init="
+          << (options.remote_init.has_value() ? "(set)" : "(not set)")
+          << "): Can't change sctp-init on already started transport.";
       return false;
     }
     socket_->SetMaxMessageSize(options.max_message_size);
@@ -738,7 +760,10 @@ void DcSctpTransport::MaybeConnectSocket() {
                   : "UNSET");
   if (transport_ && transport_->writable() && socket_ &&
       socket_->state() == dcsctp::SocketState::kClosed) {
-    socket_->Connect();
+    if (!(local_init_.has_value() && remote_init_.has_value())) {
+      return socket_->Connect();
+    }
+    socket_->ConnectWithConnectionToken(*local_init_, *remote_init_);
   }
 }
 
@@ -761,6 +786,19 @@ dcsctp::DcSctpOptions DcSctpTransport::CreateDcSctpOptions(
       field_trials.IsEnabled("WebRTC-DataChannelMessageInterleaving");
 
   return dcsctp_options;
+}
+
+std::vector<uint8_t> DcSctpTransport::GenerateConnectionToken(
+    const Environment& env) {
+  RTC_DCHECK(env.field_trials().IsEnabled("WebRTC-Sctp-Snap"))
+      << "Only implemented under field trial.";
+  Random random(env.clock().TimeInMicroseconds());
+  auto temp_factory = std::make_unique<dcsctp::DcSctpSocketFactory>();
+  return temp_factory->GenerateConnectionToken(
+      CreateDcSctpOptions({}, env.field_trials()),
+      [&random](uint32_t low, uint32_t high) {
+        return random.Rand(low, high);
+      });
 }
 
 }  // namespace webrtc

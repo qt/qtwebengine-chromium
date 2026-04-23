@@ -124,17 +124,19 @@ export function isEntriesLinkAnnotation(annotation: Annotation): annotation is E
   return annotation.type === 'ENTRIES_LINK';
 }
 
-// Serializable keys are created for trace events to be able to save
-// references to timeline events in a trace file. These keys enable
-// user modifications that can be saved. See go/cpq:event-data-json for
-// more details on the key format.
+/**
+ * Serializable keys are created for trace events to be able to save
+ * references to timeline events in a trace file. These keys enable
+ * user modifications that can be saved. See go/cpq:event-data-json for
+ * more details on the key format.
+ **/
 export type RawEventKey = `${EventKeyType.RAW_EVENT}-${number}`;
 export type SyntheticEventKey = `${EventKeyType.SYNTHETIC_EVENT}-${number}`;
 export type ProfileCallKey = `${EventKeyType.PROFILE_CALL}-${ProcessID}-${ThreadID}-${SampleIndex}-${Protocol.integer}`;
 export type LegacyTimelineFrameKey = `${EventKeyType.LEGACY_TIMELINE_FRAME}-${number}`;
 export type SerializableKey = RawEventKey|ProfileCallKey|SyntheticEventKey|LegacyTimelineFrameKey;
 
-// Serializable keys values objects contain data that maps the keys to original Trace Events
+/** Serializable keys values objects contain data that maps the keys to original Trace Events **/
 export interface RawEventKeyValues {
   type: EventKeyType.RAW_EVENT;
   rawIndex: number;
@@ -172,9 +174,11 @@ export interface Modifications {
   annotations: SerializedAnnotations;
 }
 
-// IMPORTANT: this is the same as PerfUI.FlameChart.PersistedGroupConfig
-// However, the PerfUI code should not depend on the model/trace, and similarly
-// this model cannot depend on that code, so we duplicate it.
+/**
+ * IMPORTANT: this is the same as PerfUI.FlameChart.PersistedGroupConfig
+ * However, the PerfUI code should not depend on the model/trace, and similarly
+ * this model cannot depend on that code, so we duplicate it.
+ **/
 export interface TrackVisualConfig {
   hidden: boolean;
   expanded: boolean;
@@ -215,6 +219,8 @@ export interface MetaData {
   cruxFieldData?: CrUXManager.PageResult[];
   /** Currently only stores JS maps, not CSS. This never stores data url source maps. */
   sourceMaps?: MetadataSourceMap[];
+  /** Currently only stores HTML and CSS resources. */
+  resources?: MetadataResource[];
   visualTrackConfig?: PersistedTraceVisualConfig;
   hostDPR?: number;
 }
@@ -224,6 +230,13 @@ export interface MetadataSourceMap {
   /** If not defined, then this was a data url. */
   sourceMapUrl?: string;
   sourceMap: SDK.SourceMap.SourceMapV3;
+}
+
+export interface MetadataResource {
+  url: string;
+  frame: string;
+  content: string;
+  mimeType: string;
 }
 
 export type Contents = TraceFile|Event[];

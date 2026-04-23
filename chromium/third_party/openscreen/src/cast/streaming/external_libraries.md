@@ -58,29 +58,42 @@ You can use [Homebrew](https://brew.sh/) to install the libraries needed to comp
 standalone sender and receiver applications.
 
 ```sh
-brew install ffmpeg SDL2
+brew install ffmpeg sdl2 opus libvpx aom
 ```
 
 To compile and link against these libraries, set the path arguments as follows
-in your `gn.args`.  Adjust for your current version of MacOS and the versions of
-the brew formulae you installed.
+in your `gn args`.
 
+**Important**: Using Homebrew's top-level include directory
+(`/opt/homebrew/include`) can cause header conflicts with the project's internal
+BoringSSL. You must use the specific include paths for each library from
+Homebrew's `Cellar` directory.
+
+Homebrew libraries are often built for the latest version of macOS. You may need
+to set the `mac_deployment_target` to match the version of macOS you are running
+to avoid linker errors. For example, on macOS Sonoma (version 14):
+
+You will need to replace the `<version>` placeholders with the actual versions
+installed on your system. You can find these in `/opt/homebrew/Cellar/`.
 
 ```python
-mac_deployment_target=14
-mac_min_system_version=14
+mac_deployment_target="14.0"
+
 have_ffmpeg=true
-ffmpeg_lib_dirs=["/opt/homebrew/lib"]
-ffmpeg_include_dirs=["/opt/homebrew/Cellar/ffmpeg/7.0.1/include"]
 have_libsdl2=true
-libsdl2_lib_dirs=["/opt/homebrew/lib"]
-libsdl2_include_dirs=["/opt/homebrew/Cellar/sdl2/2.30.5/include"]
 have_libopus=true
-libopus_lib_dirs=["/opt/homebrew/lib"]
-libopus_include_dirs=["/opt/homebrew/Cellar/opus/1.5.2/include"]
 have_libvpx=true
-libvpx_lib_dirs=["/opt/homebrew/lib"]
-libvpx_include_dirs=["/opt/homebrew/Cellar/libvpx/1.13.1/include"]
+have_libaom=true
+
+# Homebrew on Apple Silicon installs to /opt/homebrew.
+# On Intel macs, it's /usr/local.
+external_lib_dirs=["/opt/homebrew/lib"]
+
+ffmpeg_include_dirs=["/opt/homebrew/Cellar/ffmpeg/<version>/include"]
+libsdl2_include_dirs=["/opt/homebrew/Cellar/sdl2/<version>/include"]
+libopus_include_dirs=["/opt/homebrew/Cellar/opus/<version>/include"]
+libvpx_include_dirs=["/opt/homebrew/Cellar/libvpx/<version>/include"]
+libaom_include_dirs=["/opt/homebrew/Cellar/aom/<version>/include"]
 ```
 
 ## libaom

@@ -15,7 +15,6 @@
 #include "base/functional/callback_forward.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "base/types/strong_alias.h"
 #include "build/build_config.h"
 #include "components/autofill/content/common/mojom/autofill_agent.mojom.h"
@@ -146,11 +145,11 @@ class PasswordAutofillAgent : public content::RenderFrameObserver,
                               const std::u16string& old_password,
                               const std::u16string& new_password,
                               FillChangePasswordFormCallback callback) override;
-  void SubmitFormWithEnter(FieldRendererId field,
-                           SubmitFormWithEnterCallback callback) override;
   void SetLoggingState(bool active) override;
   void AnnotateFieldsWithParsingResult(
       const ParsingResult& parsing_result) override;
+  void CheckViewAreaVisible(FieldRendererId field_id,
+                            CheckViewAreaVisibleCallback callback) override;
 #if BUILDFLAG(IS_ANDROID)
   void TriggerFormSubmission() override;
 #endif

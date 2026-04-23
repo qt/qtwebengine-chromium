@@ -57,6 +57,9 @@ specific_include_rules = {
     "+src/compiler/access-builder.h",
     "+src/compiler/wasm-compiler.h",
   ],
+  "module-instantiate\.cc": [
+    "+src/compiler/fast-api-calls.h",
+  ],
   "simd-shuffle\.h": [
     "+src/compiler/backend/instruction-codes.h",
   ],
@@ -72,6 +75,7 @@ specific_include_rules = {
   "wrappers-inl\.h": [
     "+src/compiler/turboshaft/define-assembler-macros.inc",
     "+src/compiler/turboshaft/undef-assembler-macros.inc",
+    "+src/heap/factory-base-inl.h",
   ]
 
 }

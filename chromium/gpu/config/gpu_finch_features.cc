@@ -154,19 +154,19 @@ BASE_FEATURE(kAdjustGpuProcessPriority, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kClearGrShaderDiskCacheOnInvalidPrefix,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Controls the decode acceleration of JPEG images (as opposed to camera
-// captures) in Chrome OS using the VA-API.
-// TODO(andrescj): remove or enable by default in Chrome OS once
-// https://crbug.com/868400 is resolved.
-BASE_FEATURE(kVaapiJpegImageDecodeAcceleration,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+// When enabled, Chrome will use the shader disk cache. This feature provides a
+// kill-switch for working around issues with the disk cache and assessing the
+// performance value of the disk cache. The --disable-gpu-shader-disk-cache flag
+// overrides this feature and forces the disk cache to be disabled.
+BASE_FEATURE(kGpuShaderDiskCache, base::FEATURE_ENABLED_BY_DEFAULT);
 
-// Controls the decode acceleration of WebP images in Chrome OS using the
-// VA-API.
-// TODO(gildekel): remove or enable by default in Chrome OS once
-// https://crbug.com/877694 is resolved.
-BASE_FEATURE(kVaapiWebPImageDecodeAcceleration,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+bool IsShaderDiskCacheEnabled(const base::CommandLine* command_line) {
+  if (command_line->HasSwitch(switches::kDisableGpuShaderDiskCache)) {
+    return false;
+  }
+
+  return base::FeatureList::IsEnabled(kGpuShaderDiskCache);
+}
 
 // Enable Vulkan graphics backend for compositing and rasterization. Defaults to
 // native implementation if --use-vulkan flag is not used. Otherwise
@@ -195,7 +195,7 @@ BASE_FEATURE(kEnableDrDc,
 // Enable WebGPU on gpu service side only. This is used with origin trial and
 // enabled by default on supported platforms.
 #if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || \
-    BUILDFLAG(IS_ANDROID)
+    BUILDFLAG(IS_ANDROID) || BUILDFLAG(USE_WEBGPU_ON_VULKAN_VIA_GL_INTEROP)
 #define WEBGPU_ENABLED base::FEATURE_ENABLED_BY_DEFAULT
 #else
 #define WEBGPU_ENABLED base::FEATURE_DISABLED_BY_DEFAULT
@@ -222,6 +222,10 @@ const base::FeatureParam<std::string> kWebGPUEnabledToggles{
 // Note that the comma should be URL-encoded.
 const base::FeatureParam<std::string> kWebGPUUnsafeFeatures{
     &kWebGPUService, "UnsafeFeatures", ""};
+// Whether to enable Dawn's spontaneous wire mode on the server side for faster
+// async resolution and timed wait any on the client side.
+const base::FeatureParam<bool> kWebGPUSpontaneousWireServer{
+    &kWebGPUService, "DawnSpontaneousWireServer", true};
 // List of WGSL feature names, delimited by ,
 // The FeatureParam may be overridden via Finch config, or via the command line
 // For example:
@@ -231,12 +235,12 @@ const base::FeatureParam<std::string> kWebGPUUnsafeFeatures{
 const base::FeatureParam<std::string> kWGSLUnsafeFeatures{
     &kWebGPUService, "UnsafeWGSLFeatures", ""};
 
-BASE_FEATURE(kWebGPUUseVulkanMemoryModel, base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kWebGPUEnableRangeAnalysisForRobustness,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kWebGPUUseSpirv14, base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kWebGPUDecomposeUniformBuffers, base::FEATURE_ENABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_ANDROID)
 
@@ -302,7 +306,7 @@ const base::FeatureParam<std::string> kDrDcBlockListByAndroidBuildFP{
 // Note: This can also be overridden by
 // --enable-skia-graphite & --disable-skia-graphite.
 BASE_FEATURE(kSkiaGraphite,
-#if ((BUILDFLAG(IS_MAC) && defined(ARCH_CPU_ARM64)) || BUILDFLAG(IS_IOS))
+#if BUILDFLAG(IS_APPLE)
              base::FEATURE_ENABLED_BY_DEFAULT
 #else
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -349,7 +353,7 @@ BASE_FEATURE_PARAM(bool,
                    kSkiaGraphiteDawnUsePersistentCache,
                    &kSkiaGraphite,
                    "dawn_use_persistent_cache",
-                   false);
+                   BUILDFLAG(IS_ANDROID));
 
 const base::FeatureParam<int> kSkiaGraphiteMaxPendingRecordings{
     &kSkiaGraphite, "max_pending_recordings", 100};
@@ -365,6 +369,9 @@ BASE_FEATURE_PARAM(bool,
                    &kSkiaGraphite,
                    "enable_deferred_submit",
                    true);
+
+const base::FeatureParam<bool> kSkiaGraphiteEnableMSAAOnNewerIntel{
+    &kSkiaGraphite, "enable_msaa_on_newer_intel", true};
 
 #if BUILDFLAG(IS_WIN)
 // Whether the we should DumpWithoutCrashing when D3D related errors are detected.
@@ -428,15 +435,6 @@ const base::FeatureParam<int> kGPUBlockListTestGroupId{&kGPUBlockListTestGroup,
 BASE_FEATURE(kGPUDriverBugListTestGroup, base::FEATURE_DISABLED_BY_DEFAULT);
 const base::FeatureParam<int> kGPUDriverBugListTestGroupId{
     &kGPUDriverBugListTestGroup, "test_group", 0};
-
-bool UseGles2ForOopR() {
-#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_X86_FAMILY)
-  // GLES3 is not supported on emulators with passthrough. crbug.com/1423712
-  if (gl::UsePassthroughCommandDecoder(base::CommandLine::ForCurrentProcess()))
-    return true;
-#endif
-  return false;
-}
 
 bool IsUsingVulkan() {
 #if BUILDFLAG(IS_ANDROID)
@@ -767,7 +765,7 @@ bool IsAndroidSurfaceControlEnabled() {
           switches::kDisableAndroidNativeFenceSyncForTesting)) {
     return false;
   }
-  // LINT.ThenChange(//gpu/config/gpu_finch_features.cc:AndroidSurfaceControlCondition)
+  // LINT.ThenChange(//ui/gl/gl_display.cc:AndroidSurfaceControlCondition)
 
   // On WebView we require thread-safe media to use SurfaceControl
   if (IsUsingThreadSafeMediaForWebView()) {
@@ -884,4 +882,14 @@ BASE_FEATURE(kWebGPUCompatibilityMode, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kWebGPUAndroidOpenGLES, base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_WIN)
+BASE_FEATURE(kWebGPUQualcommWindows, base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
+
+// Enables runtime configuration of the GPU watchdog timeout via
+// experimentation.
+BASE_FEATURE(kConfigurableGPUWatchdogTimeout,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+const base::FeatureParam<int> kConfigurableGPUWatchdogTimeoutSeconds{
+    &kConfigurableGPUWatchdogTimeout, "watchdog_timeout_seconds", 30};
 }  // namespace features

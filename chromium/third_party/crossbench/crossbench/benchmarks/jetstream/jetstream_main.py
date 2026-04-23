@@ -8,9 +8,8 @@ from typing import TYPE_CHECKING, ClassVar, Type
 
 from typing_extensions import override
 
-from crossbench.benchmarks.jetstream.jetstream_3 import (
-    JetStream3Benchmark, JetStream3Probe, JetStream3ProbeContext,
-    JetStream3Story, ProbeClsTupleT)
+from crossbench.benchmarks.jetstream.jetstream_3 import JetStream3Benchmark, \
+    JetStream3Probe, JetStream3ProbeContext, JetStream3Story, ProbeClsTupleT
 
 if TYPE_CHECKING:
   from crossbench.benchmarks.base import VersionParts
@@ -38,50 +37,59 @@ class JetStreamMainStory(JetStream3Story):
   URL_CHROME_FORK: ClassVar[
       str] = "https://chromium-workloads.web.app/jetstream/main-custom/"
   # Contents of running:
-  # JSON.stringify(JetStream.benchmarks.map(e => e.name), undefined, " ")
+  # JSON.stringify(BENCHMARKS.map(e => e.name).sort((a, b) => a.toLowerCase() < b.toLowerCase() ? 1 : -1), undefined, " ")
   SUBSTORIES: ClassVar[tuple[str, ...]] = (
       "zlib-wasm",
       "WSL",
+      "web-ssr",
+      "validatorjs",
       "UniPoker",
-      "uglify-js-wtb",
-      "typescript",
+      "typescript-octane",
+      "typescript-lib",
       "tsf-wasm",
+      "transformersjs-whisper-wasm",
+      "transformersjs-bert-wasm",
+      "threejs",
       "tfjs-wasm-simd",
       "tfjs-wasm",
-      "tagcloud-SP",
       "sync-fs",
-      "string-unpack-code-SP",
+      "Sunspider",
       "stanford-crypto-sha256",
       "stanford-crypto-pbkdf2",
       "stanford-crypto-aes",
       "sqlite3-wasm",
       "splay",
+      "source-map-wtb",
       "segmentation",
       "richards-wasm",
       "richards",
-      "regexp",
-      "regex-dna-SP",
+      "regexp-octane",
       "raytrace-public-class-fields",
       "raytrace-private-class-fields",
       "raytrace",
       "quicksort-wasm",
       "proxy-vue",
       "proxy-mobx",
-      "prepack-wtb",
+      "prismjs-startup-es6",
+      "prismjs-startup-es5",
+      "prettier-wtb",
+      "postcss-wtb",
       "pdfjs",
       "OfflineAssembler",
       "octane-code-load",
       "navier-stokes",
-      "n-body-SP",
       "multi-inspector-code-load",
       "ML",
       "mandreel",
       "lebab-wtb",
       "lazy-collections",
+      "Kotlin-compose-wasm",
       "json-stringify-inspector",
       "json-parse-inspector",
-      "jshint-wtb",
+      "jsdom-d3-startup",
       "js-tokens",
+      "j2cl-box2d-wasm",
+      "intl",
       "HashSet-wasm",
       "hash-map",
       "gcc-loops-wasm",
@@ -89,42 +97,47 @@ class JetStreamMainStory(JetStream3Story):
       "gaussian-blur",
       "FlightPlanner",
       "first-inspector-code-load",
+      "esprima-next-wtb",
       "espree-wtb",
       "earley-boyer",
       "doxbee-promise",
       "doxbee-async",
+      "dotnet-interp-wasm",
+      "dotnet-aot-wasm",
       "delta-blue",
-      "date-format-xparb-SP",
-      "date-format-tofte-SP",
-      "Dart-flute-wasm",
-      "crypto-sha1-SP",
-      "crypto-md5-SP",
-      "crypto-aes-SP",
+      "Dart-flute-todomvc-wasm",
+      "Dart-flute-complex-wasm",
       "crypto",
-      "coffeescript-wtb",
       "chai-wtb",
       "cdjs",
       "Box2D",
       "bomb-workers",
+      "bigint-paillier",
+      "bigint-noble-secp256k1",
       "bigint-noble-ed25519",
+      "bigint-noble-bls12-381",
+      "bigint-bigdenary",
       "Basic",
-      "base64-SP",
+      "babylonjs-startup-es6",
+      "babylonjs-startup-es5",
+      "babylonjs-scene-es6",
+      "babylonjs-scene-es5",
       "babylon-wtb",
       "Babylon",
+      "babel-wtb",
+      "babel-minify-wtb",
       "async-fs",
       "argon2-wasm",
       "Air",
       "ai-astar",
       "acorn-wtb",
       "8bitbench-wasm",
-      "3d-raytrace-SP",
-      "3d-cube-SP",
   )
 
 
 class JetStreamMainBenchmark(JetStream3Benchmark):
   """
-  Benchmark runner for the JetStream main developement vresion.
+  Benchmark runner for the JetStream main development version.
   """
 
   NAME: ClassVar[str] = "jetstream_main"

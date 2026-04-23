@@ -7,7 +7,7 @@ import("../../../scripts/build/ninja/devtools_module.gni")
 import("../../../scripts/build/typescript/typescript.gni")
 import("../visibility.gni")
 
-devtools_module("console_counters") {
+devtools_ui_module("console_counters") {
   sources = [ "WarningErrorCounter.ts" ]
 
   deps = [
@@ -53,7 +53,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [ "console_counters.test.ts" ]

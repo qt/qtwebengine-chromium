@@ -1,7 +1,7 @@
 // Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -456,12 +456,12 @@ export class TimelineFlameChartView extends Common.ObjectWrapper.eventMixin<Even
     this.#overlays.addEventListener(Overlays.Overlays.EventReferenceClick.eventName, event => {
       const eventRef = (event as Overlays.Overlays.EventReferenceClick);
       const fromTraceEvent = selectionFromEvent(eventRef.event);
-      this.openSelectionDetailsView(fromTraceEvent);
+      void this.openSelectionDetailsView(fromTraceEvent);
     });
 
     // This is for the detail view of layout shift.
     this.element.addEventListener(TimelineInsights.EventRef.EventReferenceClick.eventName, event => {
-      this.setSelectionAndReveal(selectionFromEvent(event.event));
+      void this.setSelectionAndReveal(selectionFromEvent(event.event));
     });
 
     this.element.addEventListener('keydown', this.#keydownHandler.bind(this));
@@ -622,10 +622,10 @@ export class TimelineFlameChartView extends Common.ObjectWrapper.eventMixin<Even
     }
 
     const fieldMetricResultsByNavigationId = new Map<string, Trace.Insights.Common.CrUXFieldMetricResults|null>();
-    for (const [key, insightSet] of insights) {
-      if (insightSet.navigation) {
+    for (const insightSet of insights.values()) {
+      if (insightSet.navigation?.args.data?.navigationId) {
         fieldMetricResultsByNavigationId.set(
-            key,
+            insightSet.navigation.args.data.navigationId,
             Trace.Insights.Common.getFieldMetricsForInsightSet(
                 insightSet, metadata, CrUXManager.CrUXManager.instance().getSelectedScope()));
       }
@@ -777,7 +777,7 @@ export class TimelineFlameChartView extends Common.ObjectWrapper.eventMixin<Even
 
   hoverAnnotationInSidebar(annotation: Trace.Types.File.Annotation): void {
     const overlay = ModificationsManager.activeManager()?.getOverlaybyAnnotation(annotation);
-    if (overlay && overlay.type === 'ENTRY_LABEL') {
+    if (overlay?.type === 'ENTRY_LABEL') {
       this.#overlays.highlightOverlay(overlay);
     }
   }
@@ -1408,6 +1408,7 @@ export class TimelineFlameChartView extends Common.ObjectWrapper.eventMixin<Even
   }
 
   override willHide(): void {
+    super.willHide();
     this.#networkPersistedGroupConfigSetting.removeChangeListener(this.resizeToPreferredHeights, this);
     Workspace.IgnoreListManager.IgnoreListManager.instance().removeChangeListener(this.#boundRefreshAfterIgnoreList);
   }
@@ -1428,6 +1429,23 @@ export class TimelineFlameChartView extends Common.ObjectWrapper.eventMixin<Even
     } else {
       this.chartSplitWidget.hideSidebar();
     }
+  }
+
+  zoomEvent(event: Trace.Types.Events.Event): void {
+    const traceBounds = TraceBounds.TraceBounds.BoundsManager.instance().state()?.micro.entireTraceBounds;
+    if (!traceBounds) {
+      return;
+    }
+
+    this.#expandEntryTrack(event);
+    this.revealEventVertically(event);
+    const entryWindow = Trace.Helpers.Timing.traceWindowFromMicroSeconds(
+        event.ts,
+        Trace.Types.Timing.Micro(event.ts + (event.dur ?? 0)),
+    );
+    const expandedBounds = Trace.Helpers.Timing.expandWindowByPercentOrToOneMillisecond(entryWindow, traceBounds, 100);
+    TraceBounds.TraceBounds.BoundsManager.instance().setTimelineVisibleWindow(
+        expandedBounds, {ignoreMiniMapBounds: true, shouldAnimate: true});
   }
 
   revealEvent(event: Trace.Types.Events.Event): void {
@@ -1451,7 +1469,7 @@ export class TimelineFlameChartView extends Common.ObjectWrapper.eventMixin<Even
     }
   }
 
-  setSelectionAndReveal(selection: TimelineSelection|null): void {
+  async setSelectionAndReveal(selection: TimelineSelection|null): Promise<void> {
     if (selection && this.#currentSelection && selectionsEqual(selection, this.#currentSelection)) {
       return;
     }
@@ -1489,8 +1507,7 @@ export class TimelineFlameChartView extends Common.ObjectWrapper.eventMixin<Even
     this.networkFlameChart.setSelectedEntry(networkIndex);
 
     if (this.detailsView) {
-      // TODO(crbug.com/1459265):  Change to await after migration work.
-      void this.detailsView.setSelection(selection);
+      await this.detailsView.setSelection(selection);
     }
 
     // Create the entry selected overlay if the selection represents a trace event
@@ -1518,25 +1535,25 @@ export class TimelineFlameChartView extends Common.ObjectWrapper.eventMixin<Even
 
       const event = selectionIsEvent(selection) ? selection.event : null;
 
-      let focus = UI.Context.Context.instance().flavor(AIAssistance.AgentFocus);
+      let focus = UI.Context.Context.instance().flavor(AIAssistance.AIContext.AgentFocus);
       if (focus) {
         focus = focus.withEvent(event);
       } else if (event) {
-        focus = AIAssistance.AgentFocus.fromEvent(this.#parsedTrace, event);
+        focus = AIAssistance.AIContext.AgentFocus.fromEvent(this.#parsedTrace, event);
       } else {
         focus = null;
       }
 
-      UI.Context.Context.instance().setFlavor(AIAssistance.AgentFocus, focus);
+      UI.Context.Context.instance().setFlavor(AIAssistance.AIContext.AgentFocus, focus);
     });
   }
 
   // Only opens the details view of a selection. This is used for Timing Markers. Timing markers replace
   // their entry with a new UI. Because of that, their entries can no longer be "selected" in the timings track,
   // so if clicked, we only open their details view.
-  openSelectionDetailsView(selection: TimelineSelection|null): void {
+  async openSelectionDetailsView(selection: TimelineSelection|null): Promise<void> {
     if (this.detailsView) {
-      void this.detailsView.setSelection(selection);
+      await this.detailsView.setSelection(selection);
     }
   }
 
@@ -1593,12 +1610,13 @@ export class TimelineFlameChartView extends Common.ObjectWrapper.eventMixin<Even
     this.mainFlameChart.showAllGroups();
   }
 
-  private onAddEntryLabelAnnotation(
+  private async onAddEntryLabelAnnotation(
       dataProvider: TimelineFlameChartDataProvider|TimelineFlameChartNetworkDataProvider,
-      event: Common.EventTarget.EventTargetEvent<{entryIndex: number, withLinkCreationButton: boolean}>): void {
+      event: Common.EventTarget.EventTargetEvent<{entryIndex: number, withLinkCreationButton: boolean}>):
+      Promise<void> {
     const selection = dataProvider.createSelection(event.data.entryIndex);
     if (selectionIsEvent(selection)) {
-      this.setSelectionAndReveal(selection);
+      await this.setSelectionAndReveal(selection);
       ModificationsManager.activeManager()?.createAnnotation(
           {
             type: 'ENTRY_LABEL',
@@ -1646,6 +1664,18 @@ export class TimelineFlameChartView extends Common.ObjectWrapper.eventMixin<Even
   #onEntryInvoked(
       dataProvider: TimelineFlameChartDataProvider|TimelineFlameChartNetworkDataProvider,
       event: Common.EventTarget.EventTargetEvent<number>): void {
+    const selectedEvent = dataProvider.eventByIndex(event.data);
+    if (this.#parsedTrace && selectedEvent) {
+      const handledByFloaty = UI.Floaty.onFloatyClick({
+        type: UI.Floaty.FloatyContextTypes.PERFORMANCE_EVENT,
+        data: {event: selectedEvent, traceStartTime: this.#parsedTrace.data.Meta.traceBounds.min}
+      });
+      if (handledByFloaty) {
+        // If this was added to the Floaty context, we do not need to actually
+        // select the event.
+        return;
+      }
+    }
     this.#updateSelectedEntryStatus(dataProvider, event);
 
     const entryIndex = event.data;

@@ -19,9 +19,7 @@
 #include "base/containers/contains.h"
 #include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
-#include "base/files/file_util.h"
 #include "base/functional/bind.h"
-#include "base/functional/callback_forward.h"
 #include "base/functional/callback_helpers.h"
 #include "base/functional/concurrent_closures.h"
 #include "base/location.h"
@@ -37,6 +35,7 @@
 #include "base/task/thread_pool.h"
 #include "base/threading/sequence_local_storage_slot.h"
 #include "base/types/optional_util.h"
+#include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "components/attribution_reporting/features.h"
 #include "components/leveldb_proto/public/proto_database_provider.h"
@@ -49,6 +48,7 @@
 #include "components/services/storage/public/mojom/storage_service.mojom.h"
 #include "components/services/storage/shared_storage/shared_storage_manager.h"
 #include "components/services/storage/storage_service_impl.h"
+#include "components/variations/net/omnibox_autofocus_http_headers.h"
 #include "components/variations/net/variations_http_headers.h"
 #include "content/browser/aggregation_service/aggregation_service.h"
 #include "content/browser/aggregation_service/aggregation_service_impl.h"
@@ -65,7 +65,6 @@
 #include "content/browser/cache_storage/cache_storage_control_wrapper.h"
 #include "content/browser/code_cache/generated_code_cache.h"
 #include "content/browser/code_cache/generated_code_cache_context.h"
-#include "content/browser/cookie_deprecation_label/cookie_deprecation_label_manager_impl.h"
 #include "content/browser/cookie_store/cookie_store_manager.h"
 #include "content/browser/devtools/devtools_background_services_context_impl.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
@@ -157,6 +156,7 @@
 #include "services/network/public/mojom/url_loader_network_service_observer.mojom.h"
 #include "storage/browser/blob/blob_url_registry.h"
 #include "storage/browser/quota/quota_client_type.h"
+#include "storage/browser/quota/quota_features.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "storage/browser/quota/quota_manager_impl.h"
 #include "storage/browser/quota/quota_settings.h"
@@ -1270,14 +1270,27 @@ void StoragePartitionImpl::RegisterKeepAliveHandle(
 }
 
 void StoragePartitionImpl::RevokeNetworkForNoncesInNetworkContext(
-    const std::vector<base::UnguessableToken>& nonces,
-    network::mojom::NetworkContext::RevokeNetworkForNoncesCallback callback) {
-  GetNetworkContext()->RevokeNetworkForNonces(nonces, std::move(callback));
+    const std::map<base::UnguessableToken, std::set<std::string>>&
+        nonces_to_patterns,
+    base::OnceClosure callback) {
+  std::vector<network::mojom::NonceAndAllowlistedPatternsPtr> dest_vector;
+  for (const auto& pair : nonces_to_patterns) {
+    // Create a new Mojo struct pointer for each map entry.
+    auto nonce_and_patterns =
+        network::mojom::NonceAndAllowlistedPatterns::New();
+    nonce_and_patterns->nonce = pair.first;
+    nonce_and_patterns->allowlisted_patterns.assign(pair.second.begin(),
+                                                    pair.second.end());
+    dest_vector.push_back(std::move(nonce_and_patterns));
+  }
+  GetNetworkContext()->RevokeNetworkForNonces(std::move(dest_vector),
+                                              std::move(callback));
 
-  // Save nonces in `StoragePartitionImpl`. When there is a crash of
-  // `NetworkService`, the network revocation nonces of `NetworkContext` will be
-  // restored using this.
-  network_revocation_nonces_.insert(std::begin(nonces), std::end(nonces));
+  // Save nonces and allowlisted URLs in `StoragePartitionImpl`. When there is a
+  // crash of `NetworkService`, the network revocation nonces of
+  // `NetworkContext` will be restored using this.
+  network_revocation_nonces_.insert(nonces_to_patterns.begin(),
+                                    nonces_to_patterns.end());
 }
 
 void StoragePartitionImpl::ClearNoncesInNetworkContextAfterDelay(
@@ -1309,7 +1322,7 @@ void StoragePartitionImpl::RemoveKeepAliveHandleFromMap(
   auto it = navigation_state_keep_alive_map_.find(frame_token);
   if (it != navigation_state_keep_alive_map_.end() &&
       it->second == keep_alive) {
-    navigation_state_keep_alive_map_.erase(frame_token);
+    navigation_state_keep_alive_map_.erase(it);
   }
 }
 
@@ -1353,11 +1366,19 @@ void StoragePartitionImpl::Initialize(
   // QuotaManager prior to the QuotaManager being used. We do them
   // all together here prior to handing out a reference to anything
   // that utilizes the QuotaManager.
+  const bool report_static_storage_quota =
+      GetContentClient()
+          ->browser()
+          ->GetOverrideValueForStaticStorageQuota(browser_context_)
+          .value_or(base::FeatureList::IsEnabled(
+              storage::features::kStaticStorageQuota));
+
   quota_context_ = base::MakeRefCounted<QuotaContext>(
       is_in_memory(), partition_path_,
       browser_context_->GetSpecialStoragePolicy(),
       base::BindRepeating(&StoragePartitionImpl::GetQuotaSettings,
-                          weak_factory_.GetWeakPtr()));
+                          weak_factory_.GetWeakPtr()),
+      report_static_storage_quota);
   quota_manager_ = quota_context_->quota_manager();
   scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy =
       quota_manager_->proxy();
@@ -1454,20 +1475,6 @@ void StoragePartitionImpl::Initialize(
 
   bluetooth_allowed_devices_map_ =
       std::make_unique<BluetoothAllowedDevicesMap>();
-
-  // Must be initialized before the
-  // `shared_url_loader_factory_for_browser_process_`. Cookie deprecation
-  // traffic labels should not be sent for off-the-record profiles, unless the
-  // "enable_otr_profiles" feature parameter is true.
-  if (base::FeatureList::IsEnabled(
-          features::kCookieDeprecationFacilitatedTesting) &&
-      base::FeatureList::IsEnabled(
-          features::kCookieDeprecationFacilitatedTestingLabels) &&
-      (!is_in_memory() ||
-       features::kCookieDeprecationFacilitatedTestingEnableOTRProfiles.Get())) {
-    cookie_deprecation_label_manager_ =
-        std::make_unique<CookieDeprecationLabelManagerImpl>(browser_context_);
-  }
 
   shared_url_loader_factory_for_browser_process_ = std::make_unique<
       ReconnectableURLLoaderFactoryForIOThreadWrapper>(base::BindRepeating(
@@ -1973,12 +1980,6 @@ StoragePartitionImpl::GetPrivateAggregationDataModel() {
   return private_aggregation_manager_.get();
 }
 
-CookieDeprecationLabelManager*
-StoragePartitionImpl::GetCookieDeprecationLabelManager() {
-  CHECK(initialized_);
-  return cookie_deprecation_label_manager_.get();
-}
-
 void StoragePartitionImpl::DeleteStaleSessionData() {
   GetDOMStorageContext()->StartScavengingUnusedSessionStorage();
   // We need to delay deleting stale session cookies until after the cookie db
@@ -2170,8 +2171,8 @@ void StoragePartitionImpl::OnAuthRequired(
           const GURL& last_committed_url = rfh->GetLastCommittedURL();
           if (rfh->LoadedWithCacheControlNoStoreHeader() &&
               auth_info.challenger ==
-                  url::SchemeHostPort(last_committed_url.scheme(),
-                                      last_committed_url.host(),
+                  url::SchemeHostPort(last_committed_url.GetScheme(),
+                                      last_committed_url.GetHost(),
                                       last_committed_url.IntPort())) {
             BackForwardCacheCanStoreDocumentResult flattened_reasons;
             flattened_reasons.No(BackForwardCacheMetrics::NotRestoredReason::
@@ -2227,11 +2228,6 @@ void StoragePartitionImpl::OnLocalNetworkAccessPermissionRequired(
 
   // Currently requesting the Local Network Access permission is restricted to
   // subresource requests and subframe navigation requests.
-  // TODO(crbug.com/404887285): Denying permission for a subframe navigation
-  // results in an error page with text that isn't quite true anymore: "The
-  // connection is blocked because it was initiated by a public page to connect
-  // to devices or servers on your private network. Reload this page to allow
-  // the connection." The last sentence should be removed.
 
   // Handle document (Case 1) and navigation (Case 2) contexts.
   if (context.navigation_or_document()) {
@@ -3284,8 +3280,8 @@ void StoragePartitionImpl::ClearDataForOrigin(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(initialized_);
   CookieDeletionFilterPtr deletion_filter = CookieDeletionFilter::New();
-  if (!storage_origin.host().empty()) {
-    deletion_filter->host_name = storage_origin.host();
+  if (!storage_origin.GetHost().empty()) {
+    deletion_filter->host_name = storage_origin.GetHost();
   }
   // Construct a |BrowsingDataFilterBuilder| instead of just passing a storage
   // key based on the origin directly. This is needed to be able to delete the
@@ -3454,30 +3450,6 @@ void StoragePartitionImpl::WaitForDeletionTasksForTesting() {
     base::RunLoop loop;
     on_deletion_helpers_done_callback_ = loop.QuitClosure();
     loop.Run();
-  }
-}
-
-void StoragePartitionImpl::WaitForCodeCacheShutdownForTesting() {
-  DCHECK(initialized_);
-  if (generated_code_cache_context_) {
-    // If this is still running its initialization task it may check
-    // enabled features on a sequenced worker pool which could race
-    // between ScopedFeatureList destruction.
-    base::RunLoop loop;
-    GeneratedCodeCacheContext::RunOrPostTask(
-        generated_code_cache_context_, FROM_HERE,
-        base::BindOnce(
-            [](scoped_refptr<GeneratedCodeCacheContext> context,
-               base::OnceClosure quit) {
-              context->generated_js_code_cache()->GetBackend(base::BindOnce(
-                  [](base::OnceClosure quit, disk_cache::Backend*) {
-                    std::move(quit).Run();
-                  },
-                  std::move(quit)));
-            },
-            generated_code_cache_context_, loop.QuitClosure()));
-    loop.Run();
-    generated_code_cache_context_->Shutdown();
   }
 }
 
@@ -3678,7 +3650,7 @@ void StoragePartitionImpl::InitNetworkContext() {
   context_params->cors_exempt_header_list.push_back(
       GetCorsExemptRequestedWithHeaderName());
   variations::UpdateCorsExemptHeaderForVariations(context_params.get());
-
+  variations::UpdateCorsExemptHeaderForOmniboxAutofocus(context_params.get());
   cors_exempt_header_list_ = context_params->cors_exempt_header_list;
 
   if (base::FeatureList::IsEnabled(
@@ -3702,25 +3674,27 @@ void StoragePartitionImpl::InitNetworkContext() {
     }
   }
 
-  if (cookie_deprecation_label_manager_) {
-    context_params->cookie_deprecation_label =
-        cookie_deprecation_label_manager_->GetValue().value_or("");
-  }
-
   network_context_owner_->network_context.reset();
   CreateNetworkContextInNetworkService(
       network_context_owner_->network_context.BindNewPipeAndPassReceiver(),
       std::move(context_params));
   DCHECK(network_context_owner_->network_context);
 
-  // Restore the saved network revocation nonces. This allows fenced frames'
-  // untrusted network access states to be persisted in case of a
-  // `NetworkService` crash.
-  std::vector<base::UnguessableToken> nonces(
-      std::begin(network_revocation_nonces_),
-      std::end(network_revocation_nonces_));
+  // Restore the saved network revocation nonces. This allows network access
+  // states to be persisted in case of a `NetworkService` crash.
+  std::vector<network::mojom::NonceAndAllowlistedPatternsPtr> dest_vector;
+  for (const auto& pair : network_revocation_nonces_) {
+    // Create a new Mojo struct pointer for each map entry.
+    auto nonce_and_patterns =
+        network::mojom::NonceAndAllowlistedPatterns::New();
+    nonce_and_patterns->nonce = pair.first;
+    nonce_and_patterns->allowlisted_patterns.assign(pair.second.begin(),
+                                                    pair.second.end());
+    dest_vector.push_back(std::move(nonce_and_patterns));
+  }
+
   network_context_owner_->network_context->RevokeNetworkForNonces(
-      nonces, base::NullCallback());
+      std::move(dest_vector), base::NullCallback());
 
   network_context_client_receiver_.reset();
   network_context_owner_->network_context->SetClient(
@@ -3874,11 +3848,12 @@ StoragePartitionImpl::GetRenderFrameHostIdFromNetworkContext() {
 
 void StoragePartitionImpl::IncrementActiveDocumentCount(
     const net::NetworkIsolationKey& nik) {
-  if (active_document_per_nik_count_.contains(nik)) {
-    active_document_per_nik_count_[nik]++;
-    CHECK_GT(active_document_per_nik_count_[nik], 1);
+  if (auto it = active_document_per_nik_count_.find(nik);
+      it != active_document_per_nik_count_.end()) {
+    it->second++;
+    CHECK_GT(it->second, 1);
   } else {
-    active_document_per_nik_count_[nik] = 1;
+    active_document_per_nik_count_.emplace(nik, 1);
     if (keep_alive_url_loader_service_) {
       keep_alive_url_loader_service_->DidObserveNewlyActiveDocumentWithNIK(nik);
     }
@@ -3887,19 +3862,30 @@ void StoragePartitionImpl::IncrementActiveDocumentCount(
 
 void StoragePartitionImpl::DecrementActiveDocumentCount(
     const net::NetworkIsolationKey& nik) {
-  CHECK(active_document_per_nik_count_.contains(nik));
-  active_document_per_nik_count_[nik]--;
-  if (active_document_per_nik_count_[nik] == 0) {
-    active_document_per_nik_count_.erase(nik);
+  auto it = active_document_per_nik_count_.find(nik);
+  CHECK(it != active_document_per_nik_count_.end());
+  it->second--;
+  if (it->second == 0) {
+    active_document_per_nik_count_.erase(it);
   }
 }
 
 int StoragePartitionImpl::GetActiveDocumentCount(
     const net::NetworkIsolationKey& nik) {
-  if (!active_document_per_nik_count_.contains(nik)) {
+  auto it = active_document_per_nik_count_.find(nik);
+  if (it == active_document_per_nik_count_.end()) {
     return 0;
   }
-  return active_document_per_nik_count_[nik];
+  return it->second;
+}
+
+base::UnguessableToken StoragePartitionImpl::GetPartitionUUIDPerStorageKey(
+    const blink::StorageKey& storage_key) {
+  auto uuid = partition_uuid_per_storage_key_.find(storage_key);
+  return uuid == partition_uuid_per_storage_key_.end()
+             ? partition_uuid_per_storage_key_[storage_key] =
+                   base::UnguessableToken::Create()
+             : uuid->second;
 }
 
 void StoragePartitionImpl::OnScenarioMatchChanged(

@@ -9,8 +9,8 @@ from typing import Final, Optional
 
 from typing_extensions import override
 
-from crossbench.browsers.version import (BrowserVersion, BrowserVersionChannel,
-                                         PartialBrowserVersionError)
+from crossbench.browsers.version import BrowserVersion, \
+    BrowserVersionChannel, PartialBrowserVersionError
 
 
 class ChromiumVersion(BrowserVersion):

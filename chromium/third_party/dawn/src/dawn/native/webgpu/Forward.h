@@ -43,6 +43,7 @@ class PhysicalDevice;
 class PipelineLayout;
 class QuerySet;
 class Queue;
+class RenderBundle;
 class RenderPipeline;
 class Sampler;
 class ShaderModule;
@@ -61,6 +62,7 @@ struct WebGPUBackendTraits {
     using PipelineLayoutType = PipelineLayout;
     using QuerySetType = QuerySet;
     using QueueType = Queue;
+    using RenderBundleType = RenderBundle;
     using RenderPipelineType = RenderPipeline;
     using SamplerType = Sampler;
     using ShaderModuleType = ShaderModule;

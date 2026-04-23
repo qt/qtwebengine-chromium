@@ -26,6 +26,15 @@ namespace switches {
 // letter code from ISO-639.
 const char kAcceptLang[] = "accept-lang";
 
+#if BUILDFLAG(IS_MAC)
+// Only if we're running in an unsigned build, passing this flag will allow
+// app shims whose code signature does not match what chrome is expecting to
+// still connect to chrome. This is used by some tests to allow the test to
+// pretend to be a valid app shim.
+const char kAllowAppShimSignatureMismatchForTests[] =
+    "allow-appshim-signature-mismatch-for-tests";
+#endif
+
 // Allows third-party content included on a page to prompt for a HTTP basic
 // auth username/password pair.
 const char kAllowCrossOriginAuthPrompt[] = "allow-cross-origin-auth-prompt";
@@ -246,6 +255,11 @@ const char kDiskCacheDir[] = "disk-cache-dir";
 // Forces the maximum disk space to be used by the disk cache, in bytes.
 const char kDiskCacheSize[] = "disk-cache-size";
 
+#if BUILDFLAG(IS_MAC)
+// Skips initializing the shares NSApplication instance in ChromeTestSuite.
+const char kDoNotCreateNSAppForTests[] = "do-not-create-nsapp-for-tests";
+#endif
+
 // Do not de-elevate the browser on launch. Used after de-elevating to prevent
 // infinite loops.
 const char kDoNotDeElevateOnLaunch[] = "do-not-de-elevate";
@@ -276,6 +290,9 @@ const char kEnableDevToolsPwaHandler[] = "enable-devtools-pwa-handler";
 
 // Enables Domain Reliability Monitoring.
 const char kEnableDomainReliability[] = "enable-domain-reliability";
+
+// Enables the experimental GreenDev UI in DevTools.
+const char kEnableDevToolsGreenDevUi[] = "devtools-greendev-ui";
 
 // Enables logging for extension activity.
 const char kEnableExtensionActivityLogging[] =
@@ -324,14 +341,6 @@ const char kExtensionContentVerificationEnforceStrict[] = "enforce_strict";
 
 // Name of the command line flag to allow the experimental actor API.
 const char kExtensionExperimentalActor[] = "enable-extension-actor-api";
-
-// Turns on extension install verification if it would not otherwise have been
-// turned on.
-const char kExtensionsInstallVerification[] = "extensions-install-verification";
-
-// Specifies a comma-separated list of extension ids that should be forced to
-// be treated as not from the webstore when doing install verification.
-const char kExtensionsNotWebstore[] = "extensions-not-webstore";
 
 // Specifies the variation of Zero State extensions toolbar recommendation to
 // show.
@@ -512,6 +521,9 @@ const char kOpenInNewWindow[] = "new-window";
 // Example: --focus=https://meet.google.com/*,app:abc123
 const char kFocus[] = "focus";
 
+// Specifies a file path to write JSON focus result information.
+const char kFocusResultFile[] = "focus-result-file";
+
 // Packages an extension to a .crx installable file from a given directory.
 const char kPackExtension[] = "pack-extension";
 
@@ -565,7 +577,8 @@ const char kProxyAutoDetect[] = "proxy-auto-detect";
 // Specifies a list of hosts for whom we bypass proxy settings and use direct
 // connections. Ignored if --proxy-auto-detect or --no-proxy-server are also
 // specified. This is a comma-separated list of bypass rules. See:
-// "net/proxy_resolution/proxy_bypass_rules.h" for the format of these rules.
+// "net/proxy_resolution/proxy_host_matching_rules.h" for the format of these
+// rules.
 const char kProxyBypassList[] = "proxy-bypass-list";
 
 // Uses the pac script at the given URL
@@ -969,6 +982,9 @@ const char kGlicSkipReloadAfterNavigation[] =
     "glic-skip-reload-after-navigation";
 // Whether additional logging is enabled in the glic api host.
 const char kGlicHostLogging[] = "glic-host-logging";
+// Whether to show web actuation toggle in the Chrome AI settings page.
+const char kGlicAlwaysShowWebActuationToggle[] =
+    "glic-always-show-web-actuation-toggle";
 
 // List of URL patterns in the glic webview to redirect to an admin blocked
 // panel, as a space-separated list.

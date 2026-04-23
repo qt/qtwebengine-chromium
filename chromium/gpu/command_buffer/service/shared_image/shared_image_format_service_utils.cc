@@ -12,7 +12,6 @@
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/vulkan/vulkan_ycbcr_info.h"
-#include "ui/gfx/buffer_format_util.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_version_info.h"
 
@@ -193,6 +192,66 @@ GLenum GLInternalFormat(viz::SharedImageFormat format, int plane_index) {
   }
 }
 
+// Returns texture storage format for given `format`.
+GLenum TextureStorageFormat(viz::SharedImageFormat format,
+                            int plane_index,
+                            bool use_angle_rgbx_format) {
+  DCHECK(format.IsValidPlaneIndex(plane_index));
+  if (format.is_single_plane()) {
+    if (format == viz::SinglePlaneFormat::kRGBA_8888) {
+      return GL_RGBA8_OES;
+    } else if (format == viz::SinglePlaneFormat::kBGRA_8888) {
+      return GL_BGRA8_EXT;
+    } else if (format == viz::SinglePlaneFormat::kRGBA_F16) {
+      return GL_RGBA16F_EXT;
+    } else if (format == viz::SinglePlaneFormat::kRGBA_4444) {
+      return GL_RGBA4;
+    } else if (format == viz::SinglePlaneFormat::kALPHA_8) {
+      return GL_ALPHA8_EXT;
+    } else if (format == viz::SinglePlaneFormat::kBGR_565) {
+      return GL_RGB565;
+    } else if (format == viz::SinglePlaneFormat::kR_8) {
+      return GL_R8_EXT;
+    } else if (format == viz::SinglePlaneFormat::kRG_88) {
+      return GL_RG8_EXT;
+    } else if (format == viz::SinglePlaneFormat::kLUMINANCE_F16) {
+      return GL_LUMINANCE16F_EXT;
+    } else if (format == viz::SinglePlaneFormat::kR_F16) {
+      return GL_R16F_EXT;
+    } else if (format == viz::SinglePlaneFormat::kR_16) {
+      return GL_R16_EXT;
+    } else if (format == viz::SinglePlaneFormat::kRG_1616) {
+      return GL_RG16_EXT;
+    } else if (format == viz::SinglePlaneFormat::kRGBX_8888 ||
+               format == viz::SinglePlaneFormat::kBGRX_8888) {
+      return use_angle_rgbx_format ? GL_RGBX8_ANGLE : GL_RGB8_OES;
+    } else if (format == viz::SinglePlaneFormat::kETC1) {
+      return GL_ETC1_RGB8_OES;
+    } else if (format == viz::SinglePlaneFormat::kRGBA_1010102 ||
+               format == viz::SinglePlaneFormat::kBGRA_1010102) {
+      return GL_RGB10_A2_EXT;
+    }
+
+    NOTREACHED();
+  }
+
+  // For multiplanar formats without external sampler, GL formats are per
+  // plane. For single channel 8-bit planes Y, U, V, A return GL_R8_EXT. For
+  // single channel 10/16-bit planes Y,  U, V, A return GL_R16_EXT. For 2
+  // channel plane 8-bit UV return GL_RG8_EXT. For 2 channel plane 10/16-bit
+  // UV return GL_RG16_EXT.
+  int num_channels = format.NumChannelsInPlane(plane_index);
+  DCHECK_LE(num_channels, 2);
+  switch (format.channel_format()) {
+    case ChannelFormat::k8:
+      return num_channels == 2 ? GL_RG8_EXT : GL_R8_EXT;
+    case ChannelFormat::k10:
+    case ChannelFormat::k16:
+      return num_channels == 2 ? GL_RG16_EXT : GL_R16_EXT;
+    case ChannelFormat::k16F:
+      return num_channels == 2 ? GL_RG16F_EXT : GL_R16F_EXT;
+  }
+}
 }  // namespace
 
 bool IsSizeForBufferHandleValid(const gfx::Size& size,
@@ -204,77 +263,20 @@ bool IsSizeForBufferHandleValid(const gfx::Size& size,
 #if BUILDFLAG(IS_CHROMEOS)
   // Allow odd size for CrOS.
   // TODO(https://crbug.com/1208788, https://crbug.com/1224781): Merge this
-  // with the path that uses gfx::IsOddHeightMultiPlanarBuffersAllowed.
+  // with the path that uses viz::IsOddSizeMultiPlanarBuffersAllowed.
   return true;
 #else
   auto [width_scale, height_scale] = format.GetSubsamplingScale();
   if (size.width() % width_scale &&
-      !gfx::IsOddWidthMultiPlanarBuffersAllowed()) {
+      !viz::IsOddSizeMultiPlanarBuffersAllowed()) {
     return false;
   }
   if (size.height() % height_scale &&
-      !gfx::IsOddHeightMultiPlanarBuffersAllowed()) {
+      !viz::IsOddSizeMultiPlanarBuffersAllowed()) {
     return false;
   }
   return true;
 #endif  // BUILDFLAG(IS_CHROMEOS)
-}
-
-// Wraps functions from shared_image_format_utils.h that are made private with
-// friending to prevent their existing client-side usage (which is an
-// anti-pattern) from growing within a class that
-// SharedImageFormatRestrictedUtils can friend. (Note that if
-// SharedImageFormatRestrictedUtils instead directly friended the
-// service-side calling functions, any client-side code could then also
-// directly call those service-side calling functions as well, defeating the
-// purpose).
-class SharedImageFormatRestrictedUtilsAccessor {
- public:
-
-  // Returns texture storage format for given `format`.
-  static GLenum TextureStorageFormat(viz::SharedImageFormat format,
-                                     int plane_index,
-                                     bool use_angle_rgbx_format) {
-    DCHECK(format.IsValidPlaneIndex(plane_index));
-    if (format.is_single_plane()) {
-      return viz::SharedImageFormatRestrictedSinglePlaneUtils::
-          ToGLTextureStorageFormat(format, use_angle_rgbx_format);
-    }
-
-    // For multiplanar formats without external sampler, GL formats are per
-    // plane. For single channel 8-bit planes Y, U, V, A return GL_R8_EXT. For
-    // single channel 10/16-bit planes Y,  U, V, A return GL_R16_EXT. For 2
-    // channel plane 8-bit UV return GL_RG8_EXT. For 2 channel plane 10/16-bit
-    // UV return GL_RG16_EXT.
-    int num_channels = format.NumChannelsInPlane(plane_index);
-    DCHECK_LE(num_channels, 2);
-    switch (format.channel_format()) {
-      case ChannelFormat::k8:
-        return num_channels == 2 ? GL_RG8_EXT : GL_R8_EXT;
-      case ChannelFormat::k10:
-      case ChannelFormat::k16:
-        return num_channels == 2 ? GL_RG16_EXT : GL_R16_EXT;
-      case ChannelFormat::k16F:
-        return num_channels == 2 ? GL_RG16F_EXT : GL_R16F_EXT;
-    }
-  }
-};
-
-// This class method is primarily meant to be accessed by gpu service side code
-// with the exception of some client needing access temporarily until the
-// BufferFormat usage is deprecated. This requires usage of below wrapper class
-// to access this method from service side code conveniently.
-class GPU_GLES2_EXPORT SharedImageFormatToBufferFormatRestrictedUtilsAccessor {
- public:
-  static gfx::BufferFormat ToBufferFormat(viz::SharedImageFormat format) {
-    return viz::SharedImageFormatToBufferFormatRestrictedUtils::ToBufferFormat(
-        format);
-  }
-};
-
-gfx::BufferFormat ToBufferFormat(viz::SharedImageFormat format) {
-  return SharedImageFormatToBufferFormatRestrictedUtilsAccessor::ToBufferFormat(
-      format);
 }
 
 SkYUVAInfo::PlaneConfig ToSkYUVAPlaneConfig(viz::SharedImageFormat format) {
@@ -364,8 +366,7 @@ GLFormatDesc GLFormatCaps::ToGLFormatDesc(viz::SharedImageFormat format,
   gl_format.data_format = GLDataFormat(format, plane_index);
   gl_format.image_internal_format = GLInternalFormat(format, plane_index);
   gl_format.storage_internal_format =
-      SharedImageFormatRestrictedUtilsAccessor::TextureStorageFormat(
-          format, plane_index, angle_rgbx_internal_format_);
+      TextureStorageFormat(format, plane_index, angle_rgbx_internal_format_);
   if (format.is_multi_plane()) {
     gl_format.data_format =
         GetFallbackFormatIfNotSupported(gl_format.data_format);
@@ -520,6 +521,8 @@ DXGI_FORMAT ToDXGIFormat(viz::SharedImageFormat format) {
     return DXGI_FORMAT_R8G8B8A8_UNORM;
   } else if (format == viz::MultiPlaneFormat::kNV12) {
     return DXGI_FORMAT_NV12;
+  } else if (format == viz::SinglePlaneFormat::kRGBA_1010102) {
+    return DXGI_FORMAT_R10G10B10A2_UNORM;
   } else if (format == viz::SinglePlaneFormat::kR_8) {
     // TOOD(crbug.com/416285370): Remove these single channel format checks.
     return DXGI_FORMAT_R8_UNORM;

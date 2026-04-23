@@ -15,11 +15,12 @@
 #include "ink/brush/brush_coat.h"
 
 #include <string>
-#include <variant>
-#include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
 #include "ink/brush/brush_behavior.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/brush/brush_tip.h"
@@ -27,41 +28,36 @@
 
 namespace ink {
 namespace brush_internal {
-namespace {
-
-bool BrushTipUsesColorShift(const BrushTip& tip) {
-  for (const BrushBehavior& behavior : tip.behaviors) {
-    for (const BrushBehavior::Node& node : behavior.nodes) {
-      if (const auto* output = std::get_if<BrushBehavior::TargetNode>(&node)) {
-        switch (output->target) {
-          case BrushBehavior::Target::kHueOffsetInRadians:
-          case BrushBehavior::Target::kSaturationMultiplier:
-          case BrushBehavior::Target::kLuminosity:
-            return true;
-          default:
-            break;
-        }
-      }
-    }
-  }
-  return false;
-}
-
-}  // namespace
 
 absl::Status ValidateBrushCoat(const BrushCoat& coat) {
   if (absl::Status status = ValidateBrushTip(coat.tip); !status.ok()) {
     return status;
   }
-  if (absl::Status status = ValidateBrushPaint(coat.paint); !status.ok()) {
-    return status;
+  if (coat.paint_preferences.empty()) {
+    return absl::InvalidArgumentError(
+        "BrushCoat::paint_preferences must not be empty");
+  }
+  for (const BrushPaint& paint : coat.paint_preferences) {
+    if (absl::Status status = ValidateBrushPaint(paint); !status.ok()) {
+      return status;
+    }
   }
   return absl::OkStatus();
 }
 
-std::vector<MeshFormat::AttributeId> GetRequiredAttributeIds(
-    const BrushCoat& coat) {
-  std::vector<MeshFormat::AttributeId> ids = {
+void AddAttributeIdsRequiredByCoat(
+    const BrushCoat& coat,
+    absl::flat_hash_set<MeshFormat::AttributeId>& attribute_ids) {
+  AddRequiredAttributeIds(attribute_ids);
+  AddAttributeIdsRequiredByTip(coat.tip, attribute_ids);
+  for (const BrushPaint& paint : coat.paint_preferences) {
+    AddAttributeIdsRequiredByPaint(paint, attribute_ids);
+  }
+}
+
+void AddRequiredAttributeIds(
+    absl::flat_hash_set<MeshFormat::AttributeId>& attribute_ids) {
+  attribute_ids.insert({
       // All meshes must have a kPosition attribute.
       MeshFormat::AttributeId::kPosition,
       // The side/forward attributes are always required, in order to support
@@ -74,24 +70,13 @@ std::vector<MeshFormat::AttributeId> GetRequiredAttributeIds(
       // brush behavior), in order to support overlap behavior for translucent
       // colors.
       MeshFormat::AttributeId::kOpacityShift,
-  };
-
-  if (BrushTipUsesColorShift(coat.tip)) {
-    ids.push_back(MeshFormat::AttributeId::kColorShiftHsl);
-  }
-
-  for (const BrushPaint::TextureLayer& layer : coat.paint.texture_layers) {
-    if (layer.mapping == BrushPaint::TextureMapping::kWinding) {
-      ids.push_back(MeshFormat::AttributeId::kSurfaceUv);
-      break;
-    }
-  }
-
-  return ids;
+  });
 }
 
 std::string ToFormattedString(const BrushCoat& coat) {
-  return absl::StrFormat("BrushCoat{tip=%v, paint=%v}", coat.tip, coat.paint);
+  return absl::StrFormat(
+      "BrushCoat{tip=%v, paint_preferences=%v}", coat.tip,
+      absl::StrCat("{", absl::StrJoin(coat.paint_preferences, ", "), "}"));
 }
 
 }  // namespace brush_internal

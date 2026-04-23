@@ -697,8 +697,8 @@ bool AVCDecoderConfigurationRecord::Parse(BoxReader* reader) {
   return ParseInternal(reader, reader->media_log());
 }
 
-bool AVCDecoderConfigurationRecord::Parse(const uint8_t* data, int data_size) {
-  BufferReader reader(data, data_size);
+bool AVCDecoderConfigurationRecord::Parse(base::span<const uint8_t> data) {
+  BufferReader reader(data.data(), data.size());
   NullMediaLog media_log;
   return ParseInternal(&reader, &media_log);
 }
@@ -1235,6 +1235,7 @@ bool VideoSampleEntry::Parse(BoxReader* reader) {
       video_info.codec = VideoCodec::kH264;
       video_info.profile = H264Parser::ProfileIDCToVideoCodecProfile(
           avc_config->profile_indication);
+      video_info.level = avc_config->avc_level;
       // It can be Dolby Vision stream if there is dvvC box.
       std::tie(video_info, dv_info) = MaybeParseDOVI(reader, video_info);
       frame_bitstream_converter =
@@ -1857,13 +1858,29 @@ bool AudioSampleEntry::Parse(BoxReader* reader) {
 #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
   if (format == FOURCC_AC3 ||
       (format == FOURCC_ENCA && sinf.format.format == FOURCC_AC3)) {
-    RCHECK_MEDIA_LOGGED(reader->ReadChild(&ac3), reader->media_log(),
-                        "Failure parsing AC3SpecificBox (dac3)");
+    if (!(reader->ReadChild(&ac3))) {
+      MEDIA_LOG(ERROR, reader->media_log())
+          << "Failure parsing AC3SpecificBox (dac3)";
+      RCHECK_MEDIA_LOGGED(
+          channelcount != CHANNEL_LAYOUT_NONE, reader->media_log(),
+          "Channel configuration is undetermined. The primary "
+          "AC3SpecificBox(dac3) failed to parse, and the fallback "
+          "AudioSampleEntry channel count was zero (0), indicating no "
+          "valid channel information.");
+    }
   }
   if (format == FOURCC_EAC3 ||
       (format == FOURCC_ENCA && sinf.format.format == FOURCC_EAC3)) {
-    RCHECK_MEDIA_LOGGED(reader->ReadChild(&eac3), reader->media_log(),
-                        "Failure parsing EC3SpecificBox (dec3)");
+    if (!(reader->ReadChild(&eac3))) {
+      MEDIA_LOG(ERROR, reader->media_log())
+          << "Failure parsing EC3SpecificBox (dec3)";
+      RCHECK_MEDIA_LOGGED(
+          channelcount != CHANNEL_LAYOUT_NONE, reader->media_log(),
+          "Channel configuration is undetermined. The primary "
+          "EC3SpecificBox (dec3) failed to parse, and the fallback "
+          "AudioSampleEntry channel count was zero (0), indicating no "
+          "valid channel information.");
+    }
   }
 #endif  // BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
 
@@ -2413,10 +2430,10 @@ MovieFragment::~MovieFragment() = default;
 FourCC MovieFragment::BoxType() const { return FOURCC_MOOF; }
 
 bool MovieFragment::Parse(BoxReader* reader) {
-  RCHECK(reader->ScanChildren() &&
-         reader->ReadChild(&header) &&
-         reader->ReadChildren(&tracks) &&
-         reader->MaybeReadChildren(&pssh));
+  RCHECK(reader->ScanChildren());
+  RCHECK(reader->ReadChild(&header));
+  RCHECK(reader->MaybeReadChildren(&tracks));
+  RCHECK(reader->MaybeReadChildren(&pssh));
   return true;
 }
 

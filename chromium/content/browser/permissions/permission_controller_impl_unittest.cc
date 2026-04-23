@@ -91,8 +91,8 @@ class TestPermissionManager : public MockPermissionManager {
       url = render_frame_host->GetLastCommittedOrigin().GetURL();
     }
 
-    if (override_status_.contains(url)) {
-      return PermissionResult(override_status_[url]);
+    if (auto it = override_status_.find(url); it != override_status_.end()) {
+      return PermissionResult(it->second);
     }
 
     return PermissionResult(PermissionStatus::ASK);
@@ -251,32 +251,32 @@ class PermissionControllerImplTest : public ::testing::Test {
         browser_context_.GetPermissionControllerDelegate());
   }
 
-  OverrideStatus SetDevtoolsPermissionOverrideAndWait(
+  OverrideStatus SetPermissionOverrideAndWait(
       const std::optional<url::Origin>& requesting_origin,
       const std::optional<url::Origin>& embedding_origin,
       PermissionType permission,
       PermissionStatus status) {
     base::test::TestFuture<OverrideStatus> future;
-    permission_controller()->SetOverrideForDevTools(
+    permission_controller()->SetPermissionOverride(
         requesting_origin, embedding_origin, permission, status,
         future.GetCallback());
     return future.Get();
   }
 
-  OverrideStatus GrantDevtoolsPermissionsOverrideAndWait(
+  OverrideStatus GrantPermissionOverridesAndWait(
       const std::optional<url::Origin>& requesting_origin,
       const std::optional<url::Origin>& embedding_origin,
       const std::vector<PermissionType>& permissions) {
     base::test::TestFuture<OverrideStatus> future;
-    permission_controller()->GrantOverridesForDevTools(
+    permission_controller()->GrantPermissionOverrides(
         requesting_origin, embedding_origin, permissions, future.GetCallback());
 
     return future.Get();
   }
 
-  void ResetDevtoolsPermissionsOverrideAndWait() {
+  void ResetPermissionOverridesAndWait() {
     base::test::TestFuture<void> future;
-    permission_controller()->ResetOverridesForDevTools(future.GetCallback());
+    permission_controller()->ResetPermissionOverrides(future.GetCallback());
     ASSERT_TRUE(future.Wait());
   }
 
@@ -307,11 +307,11 @@ TEST_F(PermissionControllerImplTest,
   for (const auto& test_case : kTestPermissionRequestCases) {
     // Need to reset overrides for each case to ensure delegation is as
     // expected.
-    ResetDevtoolsPermissionsOverrideAndWait();
+    ResetPermissionOverridesAndWait();
     for (const auto& permission_status_pair : test_case.overrides) {
-      SetDevtoolsPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
-                                           permission_status_pair.first,
-                                           permission_status_pair.second);
+      SetPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
+                                   permission_status_pair.first,
+                                   permission_status_pair.second);
     }
 
     // Expect request permission from current document calls if override are
@@ -406,11 +406,11 @@ TEST_F(PermissionControllerImplTest,
   for (const auto& test_case : kTestPermissionRequestCases) {
     // Need to reset overrides for each case to ensure delegation is as
     // expected.
-    ResetDevtoolsPermissionsOverrideAndWait();
+    ResetPermissionOverridesAndWait();
     for (const auto& permission_status_pair : test_case.overrides) {
-      SetDevtoolsPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
-                                           permission_status_pair.first,
-                                           permission_status_pair.second);
+      SetPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
+                                   permission_status_pair.first,
+                                   permission_status_pair.second);
     }
 
     // Expect request permission call if override are missing.
@@ -493,9 +493,9 @@ TEST_F(PermissionControllerImplTest,
   PermissionStatus sync_status = GetPermissionStatusForWorker(
       PermissionType::BACKGROUND_SYNC,
       /*render_process_host=*/nullptr, kTestOrigin);
-  SetDevtoolsPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
-                                       PermissionType::GEOLOCATION,
-                                       PermissionStatus::DENIED);
+  SetPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
+                               PermissionType::GEOLOCATION,
+                               PermissionStatus::DENIED);
 
   base::MockCallback<PermissionResultCallback> geo_callback;
   permission_controller()->SubscribeToPermissionResultChange(
@@ -514,25 +514,25 @@ TEST_F(PermissionControllerImplTest,
   // Geolocation should change status, so subscriber is updated.
   EXPECT_CALL(geo_callback, Run(PermissionResult(PermissionStatus::ASK)));
   EXPECT_CALL(sync_callback, Run).Times(0);
-  SetDevtoolsPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
-                                       PermissionType::GEOLOCATION,
-                                       PermissionStatus::ASK);
+  SetPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
+                               PermissionType::GEOLOCATION,
+                               PermissionStatus::ASK);
 
   // Callbacks should not be called again because permission status has not
   // changed.
-  SetDevtoolsPermissionOverrideAndWait(
-      kTestOrigin, kTestOrigin, PermissionType::BACKGROUND_SYNC, sync_status);
-  SetDevtoolsPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
-                                       PermissionType::GEOLOCATION,
-                                       PermissionStatus::ASK);
+  SetPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
+                               PermissionType::BACKGROUND_SYNC, sync_status);
+  SetPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
+                               PermissionType::GEOLOCATION,
+                               PermissionStatus::ASK);
 }
 
 TEST_F(PermissionControllerImplTest,
        PermissionsCannotBeOverriddenIfNotOverridable) {
   url::Origin kTestOrigin = url::Origin::Create(GURL(kTestUrl));
-  EXPECT_EQ(SetDevtoolsPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
-                                                 PermissionType::GEOLOCATION,
-                                                 PermissionStatus::DENIED),
+  EXPECT_EQ(SetPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
+                                         PermissionType::GEOLOCATION,
+                                         PermissionStatus::DENIED),
             OverrideStatus::kOverrideSet);
 
   // Delegate will be called, but prevents override from being set.
@@ -540,9 +540,9 @@ TEST_F(PermissionControllerImplTest,
               IsPermissionOverridable(PermissionType::GEOLOCATION, testing::_,
                                       testing::_))
       .WillOnce(testing::Return(false));
-  EXPECT_EQ(SetDevtoolsPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
-                                                 PermissionType::GEOLOCATION,
-                                                 PermissionStatus::ASK),
+  EXPECT_EQ(SetPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
+                                         PermissionType::GEOLOCATION,
+                                         PermissionStatus::ASK),
             OverrideStatus::kOverrideNotSet);
 
   PermissionStatus status = GetPermissionStatusForWorker(
@@ -555,14 +555,14 @@ TEST_F(PermissionControllerImplTest,
        GrantPermissionsReturnsStatusesBeingSetIfOverridable) {
   GURL kUrl(kTestUrl);
   url::Origin kTestOrigin = url::Origin::Create(kUrl);
-  SetDevtoolsPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
-                                       PermissionType::GEOLOCATION,
-                                       PermissionStatus::DENIED);
-  SetDevtoolsPermissionOverrideAndWait(
-      kTestOrigin, kTestOrigin, PermissionType::MIDI, PermissionStatus::ASK);
-  SetDevtoolsPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
-                                       PermissionType::BACKGROUND_SYNC,
-                                       PermissionStatus::ASK);
+  SetPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
+                               PermissionType::GEOLOCATION,
+                               PermissionStatus::DENIED);
+  SetPermissionOverrideAndWait(kTestOrigin, kTestOrigin, PermissionType::MIDI,
+                               PermissionStatus::ASK);
+  SetPermissionOverrideAndWait(kTestOrigin, kTestOrigin,
+                               PermissionType::BACKGROUND_SYNC,
+                               PermissionStatus::ASK);
   // Delegate will be called, but prevents override from being set.
   EXPECT_CALL(*mock_manager(),
               IsPermissionOverridable(PermissionType::GEOLOCATION, testing::_,
@@ -574,7 +574,7 @@ TEST_F(PermissionControllerImplTest,
 
   // Since one cannot be overridden, none are overridden.
   EXPECT_EQ(OverrideStatus::kOverrideNotSet,
-            GrantDevtoolsPermissionsOverrideAndWait(
+            GrantPermissionOverridesAndWait(
                 kTestOrigin, kTestOrigin,
                 {PermissionType::MIDI, PermissionType::GEOLOCATION,
                  PermissionType::BACKGROUND_SYNC}));
@@ -606,7 +606,7 @@ TEST_F(PermissionControllerImplTest,
       .WillOnce(testing::Return(true));
   // If all can be set, overrides will be stored.
   EXPECT_EQ(OverrideStatus::kOverrideSet,
-            GrantDevtoolsPermissionsOverrideAndWait(
+            GrantPermissionOverridesAndWait(
                 kTestOrigin, kTestOrigin,
                 {PermissionType::MIDI, PermissionType::GEOLOCATION,
                  PermissionType::BACKGROUND_SYNC}));
@@ -634,15 +634,14 @@ TEST_F(PermissionControllerImplTest, SetOverrideEmbeddingOriginMatters) {
 
   // Create distinct overrides because embedding origin matters for
   // STORAGE_ACCESS_GRANT.
-  EXPECT_EQ(
-      SetDevtoolsPermissionOverrideAndWait(
-          requesting_origin, embedding_origin_1,
-          PermissionType::STORAGE_ACCESS_GRANT, PermissionStatus::GRANTED),
-      OverrideStatus::kOverrideSet);
+  EXPECT_EQ(SetPermissionOverrideAndWait(requesting_origin, embedding_origin_1,
+                                         PermissionType::STORAGE_ACCESS_GRANT,
+                                         PermissionStatus::GRANTED),
+            OverrideStatus::kOverrideSet);
 
-  EXPECT_EQ(SetDevtoolsPermissionOverrideAndWait(
-                requesting_origin, embedding_origin_2,
-                PermissionType::STORAGE_ACCESS_GRANT, PermissionStatus::DENIED),
+  EXPECT_EQ(SetPermissionOverrideAndWait(requesting_origin, embedding_origin_2,
+                                         PermissionType::STORAGE_ACCESS_GRANT,
+                                         PermissionStatus::DENIED),
             OverrideStatus::kOverrideSet);
 
   const blink::mojom::PermissionDescriptorPtr
@@ -655,11 +654,15 @@ TEST_F(PermissionControllerImplTest, SetOverrideEmbeddingOriginMatters) {
                 embedding_origin_1)
                 .status,
             PermissionStatus::GRANTED);
+
+  // For the STORAGE_ACCESS_GRANT permission, the DENIED status must be masked
+  // as ASK (PROMPT) when queried to prevent any attempt at retaliating against
+  // users who would reject a prompt.
   EXPECT_EQ(GetPermissionResultForOriginWithoutContext(
                 storage_access_permission_descriptor, requesting_origin,
                 embedding_origin_2)
                 .status,
-            PermissionStatus::DENIED);
+            PermissionStatus::ASK);
 
   // Pairs without overrides should return ASK.
   url::Origin no_overrides_origin =
@@ -681,12 +684,12 @@ TEST_F(PermissionControllerImplTest, SetOverrideCrashesOnSingleOrigin) {
 
   // Setting overrides should crash if only one origin is provided.
   EXPECT_DEATH_IF_SUPPORTED(
-      permission_controller()->SetOverrideForDevTools(
+      permission_controller()->SetPermissionOverride(
           kTestOrigin, std::nullopt, PermissionType::GEOLOCATION,
           PermissionStatus::GRANTED, base::DoNothing()),
       "");
   EXPECT_DEATH_IF_SUPPORTED(
-      permission_controller()->SetOverrideForDevTools(
+      permission_controller()->SetPermissionOverride(
           std::nullopt, kTestOrigin, PermissionType::GEOLOCATION,
           PermissionStatus::GRANTED, base::DoNothing()),
       "");
@@ -697,12 +700,12 @@ TEST_F(PermissionControllerImplTest, GrantOverridesCrashesOnSingleOrigin) {
 
   // Granting overrides should crash if only one origin is provided.
   EXPECT_DEATH_IF_SUPPORTED(
-      permission_controller()->GrantOverridesForDevTools(
+      permission_controller()->GrantPermissionOverrides(
           kTestOrigin, std::nullopt, {PermissionType::GEOLOCATION},
           base::DoNothing()),
       "");
   EXPECT_DEATH_IF_SUPPORTED(
-      permission_controller()->GrantOverridesForDevTools(
+      permission_controller()->GrantPermissionOverrides(
           std::nullopt, kTestOrigin, {PermissionType::GEOLOCATION},
           base::DoNothing()),
       "");

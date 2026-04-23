@@ -30,6 +30,7 @@
 #include <vector>
 #include "src/tint/lang/core/ir/core_builtin_call.h"
 #include "src/tint/lang/core/ir/module.h"
+#include "src/tint/lang/core/ir/referenced_module_vars.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/ir/var.h"
 #include "src/tint/lang/core/type/binding_array.h"
@@ -59,7 +60,43 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
             if (ba->Count()->Is<core::type::RuntimeArrayCount>()) {
                 return Failure("runtime binding array not supported by the GLSL backend");
             }
+
+            // TODO(464058128): Add support for binding_array<texture_1d<*>, N> in the
+            // TexturePolyfill transform.
+            auto* tex = ba->ElemType()->As<core::type::Texture>();
+            if (tex && tex->Dim() == core::type::TextureDimension::k1d) {
+                return Failure(
+                    "1D textures inside binding arrays are not yet supported by the GLSL backend");
+            }
         }
+    }
+
+    for (auto* i : ir.Instructions()) {
+        auto* call = i->As<core::ir::CoreBuiltinCall>();
+        if (!call) {
+            continue;
+        }
+
+        if (call->Func() == core::BuiltinFn::kGetResource ||
+            call->Func() == core::BuiltinFn::kHasResource) {
+            return Failure("resource tables not supported by the GLSL backend");
+        }
+    }
+
+    core::ir::Function* ep_func = nullptr;
+    for (auto* f : ir.functions) {
+        if (!f->IsEntryPoint()) {
+            continue;
+        }
+        if (ir.NameOf(f).NameView() == options.entry_point_name) {
+            ep_func = f;
+            break;
+        }
+    }
+
+    // No entrypoint, so no bindings needed
+    if (!ep_func) {
+        return Failure("entry point not found");
     }
 
     // Make sure that every texture variable is in the texture_builtins_from_uniform binding list,
@@ -67,12 +104,11 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
     // TODO(https://issues.chromium.org/427172887) Be more precise for the
     // texture_builtins_from_uniform checks. Also ensure there is at most one user-declared
     // immediate.
-    for (auto* inst : *ir.root_block) {
-        auto* var = inst->As<core::ir::Var>();
+    core::ir::ReferencedModuleVars<const core::ir::Module> referenced_module_vars{ir};
+    auto& refs = referenced_module_vars.TransitiveReferences(ep_func);
 
-        if (!var) {
-            continue;
-        }
+    Vector<tint::BindingPoint, 4> ext_tex_bps;
+    for (auto* var : refs) {
         auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
 
         // The pixel_local extension is not supported by the GLSL backend.
@@ -93,7 +129,7 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
                 !handle_type->IsAnyOf<core::type::StorageTexture, core::type::ExternalTexture>()) {
                 bool found = false;
                 auto binding = options.bindings.texture.at(var->BindingPoint().value());
-                for (auto& bp : options.bindings.texture_builtins_from_uniform.ubo_contents) {
+                for (auto& bp : options.texture_builtins_from_uniform.ubo_contents) {
                     if (bp.binding == binding) {
                         if (bp.count < count) {
                             return Failure(
@@ -129,7 +165,7 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
         // user-declared immediate validation handled later by helper.
     }
 
-    auto user_immediate_res = core::ir::ValidateSingleUserImmediate(ir);
+    auto user_immediate_res = core::ir::ValidateSingleUserImmediate(ir, ep_func);
     if (user_immediate_res != Success) {
         return user_immediate_res.Failure();
     }
@@ -163,14 +199,16 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
                 for (auto* member : str->Members()) {
                     if (member->Attributes().builtin == core::BuiltinValue::kSubgroupId ||
                         member->Attributes().builtin == core::BuiltinValue::kSubgroupInvocationId ||
-                        member->Attributes().builtin == core::BuiltinValue::kSubgroupSize) {
+                        member->Attributes().builtin == core::BuiltinValue::kSubgroupSize ||
+                        member->Attributes().builtin == core::BuiltinValue::kNumSubgroups) {
                         return Failure("subgroups are not supported by the GLSL backend");
                     }
                 }
             } else {
                 if (param->Builtin() == core::BuiltinValue::kSubgroupId ||
                     param->Builtin() == core::BuiltinValue::kSubgroupInvocationId ||
-                    param->Builtin() == core::BuiltinValue::kSubgroupSize) {
+                    param->Builtin() == core::BuiltinValue::kSubgroupSize ||
+                    param->Builtin() == core::BuiltinValue::kNumSubgroups) {
                     return Failure("subgroups are not supported by the GLSL backend");
                 }
             }

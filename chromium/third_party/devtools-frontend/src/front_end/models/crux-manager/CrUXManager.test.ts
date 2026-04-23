@@ -87,6 +87,7 @@ describeWithMockConnection('CrUXManager', () => {
         syncedStorage: dummyStorage,
         globalStorage,
         localStorage: dummyStorage,
+        settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
       });
       const manager = CrUXManager.CrUXManager.instance({forceNew: true});
       manager.getConfigSetting().set({enabled: true});
@@ -102,6 +103,7 @@ describeWithMockConnection('CrUXManager', () => {
         syncedStorage: dummyStorage,
         globalStorage: dummyStorage,
         localStorage: dummyStorage,
+        settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
       });
       const manager = CrUXManager.CrUXManager.instance({forceNew: true});
       manager.getConfigSetting().set({enabled: true});
@@ -144,6 +146,7 @@ describeWithMockConnection('CrUXManager', () => {
         'url-PHONE': mockResponse(),
         'url-TABLET': null,
         warnings: [],
+        normalizedUrl: 'https://example.com/',
       });
 
       assert.deepEqual(fetchBodies, [
@@ -259,6 +262,7 @@ describeWithMockConnection('CrUXManager', () => {
         'url-PHONE': null,
         'url-TABLET': null,
         warnings: [],
+        normalizedUrl: 'https://example.com/',
       });
     });
 
@@ -350,6 +354,7 @@ describeWithMockConnection('CrUXManager', () => {
         'url-PHONE': mockResponse({pageScope: 'url', deviceScope: 'PHONE'}),
         'url-TABLET': null,
         warnings: [],
+        normalizedUrl: '',
       });
     });
 
@@ -526,6 +531,7 @@ describeWithMockConnection('CrUXManager', () => {
         'url-PHONE': null,
         'url-TABLET': null,
         warnings: [],
+        normalizedUrl: '',
       });
     });
 

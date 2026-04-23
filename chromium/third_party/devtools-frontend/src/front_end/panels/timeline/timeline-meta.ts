@@ -87,9 +87,10 @@ UI.ViewManager.registerViewExtension({
   title: i18nLazyString(UIStrings.performance),
   commandPrompt: i18nLazyString(UIStrings.showPerformance),
   order: 50,
-  async loadView() {
+  async loadView(universe) {
     const Timeline = await loadTimelineModule();
-    return Timeline.TimelinePanel.TimelinePanel.instance();
+    const resourceLoader = universe.context.get(SDK.PageResourceLoader.PageResourceLoader);
+    return Timeline.TimelinePanel.TimelinePanel.instance({forceNew: true, resourceLoader});
   },
 });
 
@@ -321,16 +322,6 @@ Common.Settings.registerSettingExtension({
   settingName: 'annotations-hidden',
   settingType: Common.Settings.SettingType.BOOLEAN,
   defaultValue: false,
-});
-
-Common.Linkifier.registerLinkifier({
-  contextTypes() {
-    return maybeRetrieveContextTypes(Timeline => [Timeline.CLSLinkifier.CLSRect]);
-  },
-  async loadLinkifier() {
-    const Timeline = await loadTimelineModule();
-    return Timeline.CLSLinkifier.Linkifier.instance();
-  },
 });
 
 UI.ContextMenu.registerItem({

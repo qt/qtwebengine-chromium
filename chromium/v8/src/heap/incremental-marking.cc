@@ -16,6 +16,7 @@
 #include "src/flags/flags.h"
 #include "src/handles/global-handles.h"
 #include "src/heap/base/incremental-marking-schedule.h"
+#include "src/heap/base/unsafe-json-emitter.h"
 #include "src/heap/concurrent-marking.h"
 #include "src/heap/gc-tracer-inl.h"
 #include "src/heap/gc-tracer.h"
@@ -54,6 +55,7 @@ static constexpr v8::base::TimeDelta kMaxStepSizeOnTask =
     v8::base::TimeDelta::FromMilliseconds(1);
 static constexpr v8::base::TimeDelta kMaxStepSizeOnAllocation =
     v8::base::TimeDelta::FromMilliseconds(5);
+static_assert(kMaxStepSizeOnAllocation <= kMaxSynchronuousGCOperation);
 
 #ifndef DEBUG
 static constexpr size_t kV8ActivationThreshold = 8 * MB;
@@ -133,7 +135,8 @@ bool IncrementalMarking::IsBelowActivationThresholds() const {
 }
 
 void IncrementalMarking::Start(GarbageCollector garbage_collector,
-                               GarbageCollectionReason gc_reason) {
+                               GarbageCollectionReason gc_reason,
+                               const char* reason) {
   CHECK(IsStopped());
   CHECK_IMPLIES(garbage_collector == GarbageCollector::MARK_COMPACTOR,
                 !heap_->sweeping_in_progress());
@@ -190,12 +193,8 @@ void IncrementalMarking::Start(GarbageCollector garbage_collector,
                                  : GCTracer::Scope::MINOR_MS_INCREMENTAL_START;
   DCHECK(!current_trace_id_.has_value());
   current_trace_id_.emplace(reinterpret_cast<uint64_t>(this) ^
-                            heap_->tracer()->CurrentEpoch(scope_id));
-  TRACE_EVENT2("v8",
-               is_major ? "V8.GCIncrementalMarkingStart"
-                        : "V8.GCMinorIncrementalMarkingStart",
-               "epoch", heap_->tracer()->CurrentEpoch(scope_id), "reason",
-               ToString(gc_reason));
+                            heap_->tracer()->CurrentEpoch());
+
   TRACE_GC_EPOCH_WITH_FLOW(heap()->tracer(), scope_id, ThreadKind::kMain,
                            current_trace_id_.value(),
                            TRACE_EVENT_FLAG_FLOW_OUT);
@@ -754,7 +753,7 @@ void IncrementalMarking::Step(v8::base::TimeDelta max_duration,
   NestedTimedHistogramScope incremental_marking_scope(
       isolate()->counters()->gc_incremental_marking());
   TRACE_EVENT1("v8", "V8.GCIncrementalMarking", "epoch",
-               heap_->tracer()->CurrentEpoch(GCTracer::Scope::MC_INCREMENTAL));
+               heap_->tracer()->CurrentEpoch());
   TRACE_GC_EPOCH_WITH_FLOW(
       heap_->tracer(), GCTracer::Scope::MC_INCREMENTAL, ThreadKind::kMain,
       current_trace_id_.value(),
@@ -762,7 +761,6 @@ void IncrementalMarking::Step(v8::base::TimeDelta max_duration,
   DCHECK(IsMajorMarking());
   const auto start = v8::base::TimeTicks::Now();
 
-  std::optional<SafepointScope> safepoint_scope;
   // Conceptually an incremental marking step (even though it always runs on the
   // main thread) may introduce a form of concurrent marking when background
   // threads access the heap concurrently (e.g. concurrent compilation). On
@@ -775,17 +773,12 @@ void IncrementalMarking::Step(v8::base::TimeDelta max_duration,
   DCHECK(!v8_flags.concurrent_marking);
   // Ensure that the isolate has no shared heap. Otherwise a shared GC might
   // happen when trying to enter the safepoint.
-  const bool did_run =
-      isolate()->heap()->safepoint()->RunIfCanAvoidGlobalSafepoint(
-          [&safepoint_scope, this]() {
-            AllowGarbageCollection allow_gc;
-            safepoint_scope.emplace(isolate(), SafepointKind::kIsolate);
-          });
-  CHECK_IMPLIES(!isolate()->has_shared_space(), did_run);
-  if (!did_run) {
+  std::optional<IsolateSafepointScope> safepoint_scope =
+      heap()->safepoint()->ReachSafepointWithoutTriggeringGC();
+  CHECK_IMPLIES(!isolate()->has_shared_space(), safepoint_scope.has_value());
+  if (!safepoint_scope.has_value()) {
     // A safepoint was not established. Marking now may result in false
     // positives. Bailout instead.
-    CHECK(!safepoint_scope.has_value());
     return;
   }
 #endif

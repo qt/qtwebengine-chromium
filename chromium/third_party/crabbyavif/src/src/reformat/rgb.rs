@@ -17,14 +17,19 @@ use super::libyuv;
 use super::rgb_impl;
 use super::sharpyuv;
 
+use crate::checked_mul;
 use crate::image::Plane;
 use crate::image::YuvRange;
 use crate::internal_utils::*;
 use crate::utils::pixels::*;
-use crate::*;
+use crate::AvifError;
+use crate::AvifResult;
+use crate::Category;
+use crate::MatrixCoefficients;
+use crate::PixelFormat;
 
 #[repr(C)]
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Format {
     Rgb,
     #[default]
@@ -166,8 +171,8 @@ pub(crate) enum Mode {
     YcgcoRo,
 }
 
-impl From<&image::Image> for Mode {
-    fn from(image: &image::Image) -> Self {
+impl From<&crate::image::Image> for Mode {
+    fn from(image: &crate::image::Image) -> Self {
         match image.matrix_coefficients {
             MatrixCoefficients::Identity => Mode::Identity,
             MatrixCoefficients::Ycgco => Mode::Ycgco,
@@ -191,11 +196,13 @@ impl Image {
         self.max_channel() as f32
     }
 
-    pub fn create_from_yuv(image: &image::Image) -> Self {
+    pub fn create_from_yuv(image: &crate::image::Image) -> Self {
         Self {
             width: image.width,
             height: image.height,
             depth: image.depth,
+            // In libavif, Rgba is the default format. So we cannot set this based on
+            // image.alpha_present without breaking the C API contract.
             format: Format::Rgba,
             chroma_upsampling: ChromaUpsampling::Automatic,
             chroma_downsampling: ChromaDownsampling::Automatic,
@@ -339,7 +346,7 @@ impl Image {
         Ok(())
     }
 
-    pub fn convert_from_yuv(&mut self, image: &image::Image) -> AvifResult<()> {
+    pub fn convert_from_yuv(&mut self, image: &crate::image::Image) -> AvifResult<()> {
         if !image.has_plane(Plane::Y) || !image.depth_valid() || !self.depth_valid() {
             return AvifError::reformat_failed();
         }
@@ -453,7 +460,7 @@ impl Image {
         Ok(())
     }
 
-    pub fn convert_to_yuv(&self, image: &mut image::Image) -> AvifResult<()> {
+    pub fn convert_to_yuv(&self, image: &mut crate::image::Image) -> AvifResult<()> {
         if self.format == Format::Rgb565 || self.is_float {
             return AvifError::not_implemented();
         }
@@ -567,6 +574,7 @@ mod tests {
     use crate::image::ALL_PLANES;
     use crate::image::MAX_PLANE_COUNT;
     use crate::Category;
+    use crate::ColorPrimaries;
 
     use test_case::test_case;
     use test_case::test_matrix;
@@ -667,7 +675,7 @@ mod tests {
     fn rgb_conversion(rgb_param_index: usize) -> AvifResult<()> {
         let rgb_params = &RGB_PARAMS[rgb_param_index];
         let yuv_params = &YUV_PARAMS[rgb_params.params.0];
-        let mut image = image::Image {
+        let mut image = crate::image::Image {
             width: yuv_params.width,
             height: yuv_params.height,
             depth: yuv_params.depth,
@@ -675,7 +683,7 @@ mod tests {
             color_primaries: yuv_params.color_primaries,
             matrix_coefficients: yuv_params.matrix_coefficients,
             yuv_range: yuv_params.yuv_range,
-            ..image::Image::default()
+            ..crate::image::Image::default()
         };
         image.allocate_planes(Category::Color)?;
         image.allocate_planes(Category::Alpha)?;
@@ -686,6 +694,7 @@ mod tests {
                 continue;
             }
             let plane_width = image.width(plane);
+            #[allow(clippy::needless_range_loop)]
             for y in 0..image.height(plane) {
                 let row16 = image.row16_mut(plane, y as u32)?;
                 let dst = &mut row16[..plane_width];

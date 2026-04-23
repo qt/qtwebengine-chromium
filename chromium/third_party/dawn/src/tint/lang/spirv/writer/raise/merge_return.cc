@@ -165,7 +165,7 @@ struct State {
     /// them in a new `if` instruction that checks the `continue_execution` flag.
     /// @param control the control instruction that should have its merge conditionalized
     void ConditionalizeMerge(core::ir::ControlInstruction* control) {
-        auto* next = control->next.Get();
+        auto* next = control->next;
 
         // If there are no instructions after the control instruction then we must be at the
         // top-level function block (where the final return has been removed), so there's nothing to
@@ -181,7 +181,7 @@ struct State {
             if (exit_target->IsAnyOf<core::ir::Loop, core::ir::Switch>()) {
                 b.InsertBefore(next, [&] {
                     auto* load = b.Load(continue_execution);
-                    auto* cond = b.If(b.Not<bool>(load));
+                    auto* cond = b.If(b.Not(load));
                     b.Append(cond->True(), [&] {  //
                         ExitFromControl(exit_target);
                     });
@@ -245,7 +245,7 @@ struct State {
             // Propagate results from the conditional `if` through the new exit.
             Vector<core::ir::Value*, 8> exit_args;
             exit_args.Resize(control->Block()->Parent()->Results().Length());
-            TINT_ASSERT(cond->Results().Length() == exit_args.Length());
+            TINT_IR_ASSERT(ir, cond->Results().Length() == exit_args.Length());
             for (size_t i = 0; i < cond->Results().Length(); ++i) {
                 exit_args[i] = cond->Results()[i];
             }

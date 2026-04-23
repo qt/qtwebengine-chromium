@@ -31,6 +31,16 @@ using testing::InSequence;
 using testing::NiceMock;
 using testing::StrEq;
 
+namespace {
+
+#if BUILDFLAG(IS_APPLE)
+static constexpr int kModifier = FWL_EVENTFLAG_MetaKey;
+#else
+static constexpr int kModifier = FWL_EVENTFLAG_ControlKey;
+#endif
+
+}  // namespace
+
 using FPDFFormFillEmbedderTest = EmbedderTest;
 
 // A base class for many related tests that involve clicking and typing into
@@ -858,12 +868,19 @@ TEST_F(FPDFFormFillEmbedderTest, TabWithModifiers) {
   ASSERT_FALSE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Tab,
                               FWL_EVENTFLAG_AltKey));
 
+  ASSERT_FALSE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Tab,
+                              FWL_EVENTFLAG_MetaKey));
+
   ASSERT_FALSE(
       FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Tab,
                      (FWL_EVENTFLAG_ControlKey | FWL_EVENTFLAG_ShiftKey)));
 
   ASSERT_FALSE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Tab,
                               (FWL_EVENTFLAG_AltKey | FWL_EVENTFLAG_ShiftKey)));
+
+  ASSERT_FALSE(
+      FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Tab,
+                     (FWL_EVENTFLAG_MetaKey | FWL_EVENTFLAG_ShiftKey)));
 }
 
 TEST_F(FPDFFormFillEmbedderTest, KeyPressWithNoFocusedAnnot) {
@@ -894,7 +911,82 @@ TEST_F(FPDFFormFillEmbedderTest, KeyPressWithNoFocusedAnnot) {
   }
 }
 
+TEST_F(FPDFFormFillEmbedderTest, DoNotHandleShortcutsOnKeyDown) {
+  ASSERT_TRUE(OpenDocument("annotiter.pdf"));
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  // Select the first form field
+  ASSERT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Tab, 0));
+  int page_index = -2;
+  FPDF_ANNOTATION annot = nullptr;
+  EXPECT_TRUE(FORM_GetFocusedAnnot(form_handle(), &page_index, &annot));
+  EXPECT_EQ(0, page_index);
+  ASSERT_TRUE(annot);
+  EXPECT_EQ(1, FPDFPage_GetAnnotIndex(page.get(), annot));
+  FPDFPage_CloseAnnot(annot);
+
+  // Ensure that FORM_OnKeyDown actually handles some events
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Left, 0));
+  // TODO(448699368): This should work with the meta key on macos
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Home,
+                             FWL_EVENTFLAG_ControlKey));
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Home, 0));
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Up, 0));
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Right, 0));
+
+  // Edit shortcuts should not be handled by PDFium so that embedders can handle
+  // these shortcuts on platforms like MacOS which don't send OnChar events for
+  // the shortcuts.
+  EXPECT_FALSE(
+      FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_A, kModifier));
+  EXPECT_FALSE(
+      FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_C, kModifier));
+  EXPECT_FALSE(
+      FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_V, kModifier));
+  EXPECT_FALSE(
+      FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_X, kModifier));
+  EXPECT_FALSE(
+      FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Z, kModifier));
+  EXPECT_FALSE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Z,
+                              kModifier | FWL_EVENTFLAG_ShiftKey));
+}
+
 #ifdef PDF_ENABLE_XFA
+TEST_F(FPDFFormFillEmbedderTest, DoNotHandleShortcutsOnKeyDownXFA) {
+  ASSERT_TRUE(OpenDocument("simple_xfa.pdf"));
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  // Select the first form field
+  ASSERT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Tab, 0));
+
+  // Ensure that FORM_OnKeyDown actually handles some events
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Left, 0));
+  // TODO(448699368): This should work with the meta key on macos
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Home,
+                             FWL_EVENTFLAG_ControlKey));
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Home, 0));
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Up, 0));
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Right, 0));
+
+  // Edit shortcuts should not be handled by PDFium so that embedders can handle
+  // these shortcuts on platforms like MacOS which don't send OnChar events for
+  // the shortcuts.
+  EXPECT_FALSE(
+      FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_A, kModifier));
+  EXPECT_FALSE(
+      FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_C, kModifier));
+  EXPECT_FALSE(
+      FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_V, kModifier));
+  EXPECT_FALSE(
+      FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_X, kModifier));
+  EXPECT_FALSE(
+      FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Z, kModifier));
+  EXPECT_FALSE(FORM_OnKeyDown(form_handle(), page.get(), FWL_VKEY_Z,
+                              kModifier | FWL_EVENTFLAG_ShiftKey));
+}
+
 TEST_F(FPDFFormFillEmbedderTest, XFAFormFillFirstTab) {
   ASSERT_TRUE(OpenDocument("xfa/email_recommended.pdf"));
   ScopedPage page = LoadScopedPage(0);
@@ -1365,7 +1457,11 @@ TEST_F(FPDFFormFillEmbedderTest, FormText) {
 TEST_F(FPDFFormFillEmbedderTest, Bug1281) {
   const char* reverse_byte_order_checksum = []() {
     if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+#if BUILDFLAG(IS_APPLE) && defined(ARCH_CPU_ARM64)
+      return "982dc4898d0ff78920be831538763d65";
+#else
       return "8077970bbd10333f18186a9bb459bbe6";
+#endif
     }
     return "24fff03d1e663b7ece5f6e69ad837124";
   }();
@@ -3358,6 +3454,47 @@ TEST_F(FPDFFormFillTextFormEmbedderTest, ContinuouslyReplaceSelection) {
 
   PerformUndo();
   EXPECT_EQ(FocusedFieldText(), "UVW");
+  EXPECT_EQ(Selection(), "");
+}
+
+TEST_F(FPDFFormFillTextFormEmbedderTest, RedoCutSelection) {
+  ClickOnFormFieldAtPoint(RegularFormBegin());
+  EXPECT_FALSE(CanUndo());
+  EXPECT_FALSE(CanRedo());
+
+  TypeTextIntoTextField(2, RegularFormBegin());
+  EXPECT_EQ(FocusedFieldText(), "AB");
+  EXPECT_EQ(Selection(), "");
+  EXPECT_TRUE(CanUndo());
+  EXPECT_FALSE(CanRedo());
+
+  // ctrl+a
+  EXPECT_TRUE(FORM_SelectAllText(form_handle(), page()));
+  EXPECT_TRUE(CanUndo());
+  EXPECT_FALSE(CanRedo());
+  EXPECT_EQ(FocusedFieldText(), "AB");
+  EXPECT_EQ(Selection(), "AB");
+
+  // ctrl+x
+  ScopedFPDFWideString text_to_insert = GetFPDFWideString(L"");
+  FORM_ReplaceSelection(form_handle(), page(), text_to_insert.get());
+  EXPECT_TRUE(CanUndo());
+  EXPECT_FALSE(CanRedo());
+  EXPECT_EQ(FocusedFieldText(), "");
+  EXPECT_EQ(Selection(), "");
+
+  // ctrl+z
+  PerformUndo();
+  EXPECT_TRUE(CanUndo());
+  EXPECT_TRUE(CanRedo());
+  EXPECT_EQ(FocusedFieldText(), "AB");
+  EXPECT_EQ(Selection(), "AB");
+
+  // ctrl+shift+z
+  PerformRedo();
+  EXPECT_TRUE(CanUndo());
+  EXPECT_FALSE(CanRedo());
+  EXPECT_EQ(FocusedFieldText(), "");
   EXPECT_EQ(Selection(), "");
 }
 

@@ -40,32 +40,28 @@ export function getReleaseNote(): ReleaseNote {
 }
 
 let releaseNote: ReleaseNote = {
-  version: 83,
-  header: 'What\'s new in DevTools 142',
+  version: 144,
+  header: 'What\'s new in DevTools 144',
   markdownLinks: [
     {
-      key: 'perf-ai-agent',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-142/#perf-ai-agent',
+      key: 'request-conditions',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-144/#request-conditions',
     },
     {
-      key: 'ai-code-completion',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-142/#ai-code-completion',
+      key: 'mcp-server',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-144/#mcp-server',
     },
     {
-      key: 'gdp',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-142/#gdp',
-    },
-    {
-      key: 'ai-main-button',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-142/#ai-main-button',
+      key: 'adopted-stylesheets',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-144/#adopted-stylesheets',
     },
   ],
   videoLinks: [
     {
-      description: 'See past highlights from Chrome 141',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-141' as Platform.DevToolsPath.UrlString,
+      description: 'See past highlights from Chrome 144',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-144' as Platform.DevToolsPath.UrlString,
       type: VideoType.WHATS_NEW,
     },
   ],
-  link: 'https://developer.chrome.com/blog/new-in-devtools-142/',
+  link: 'https://developer.chrome.com/blog/new-in-devtools-144/',
 };

@@ -1,7 +1,7 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
@@ -33,8 +33,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-import * as Platform from '../../../../core/platform/platform.js';
 import type * as NetworkTimeCalculator from '../../../../models/network_time_calculator/network_time_calculator.js';
+import * as UI from '../../legacy.js';
 import * as ThemeSupport from '../../theme_support/theme_support.js';
 
 import {DEFAULT_FONT_SIZE, getFontFamilyForCanvas} from './Font.js';
@@ -51,7 +51,7 @@ export class TimelineGrid {
 
   constructor() {
     this.element = document.createElement('div');
-    Platform.DOMUtilities.appendStyle(this.element, timelineGridStyles);
+    UI.DOMUtilities.appendStyle(this.element, timelineGridStyles);
 
     this.#dividersElement = this.element.createChild('div', 'resources-dividers');
 

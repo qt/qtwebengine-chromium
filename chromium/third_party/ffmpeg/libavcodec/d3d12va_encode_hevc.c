@@ -279,9 +279,8 @@ static int d3d12va_encode_hevc_init_sequence_params(AVCodecContext *avctx)
     }
 
     if (support.SupportFlags & D3D12_VIDEO_ENCODER_SUPPORT_FLAG_RECONSTRUCTED_FRAMES_REQUIRE_TEXTURE_ARRAYS) {
-        av_log(avctx, AV_LOG_ERROR, "D3D12 video encode on this device requires texture array support, "
-               "but it's not implemented.\n");
-        return AVERROR_PATCHWELCOME;
+        ctx->is_texture_array = 1;
+        av_log(avctx, AV_LOG_DEBUG, "D3D12 video encode on this device uses texture array mode.\n");
     }
 
     desc = av_pix_fmt_desc_get(base_ctx->input_frames->sw_format);
@@ -705,6 +704,7 @@ static int d3d12va_encode_hevc_close(AVCodecContext *avctx)
 #define FLAGS (AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM)
 static const AVOption d3d12va_encode_hevc_options[] = {
     HW_BASE_ENCODE_COMMON_OPTIONS,
+    D3D12VA_ENCODE_COMMON_OPTIONS,
     D3D12VA_ENCODE_RC_OPTIONS,
 
     { "qp", "Constant QP (for P-frames; scaled by qfactor/qoffset for I/B)",
@@ -762,6 +762,7 @@ static const FFCodecDefault d3d12va_encode_hevc_defaults[] = {
     { "b_qoffset",      "0"   },
     { "qmin",           "-1"  },
     { "qmax",           "-1"  },
+    { "refs",           "0"   },
     { NULL },
 };
 

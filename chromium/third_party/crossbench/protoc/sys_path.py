@@ -11,6 +11,7 @@ from typing import Iterator
 MODULE_DIR = Path(__file__).parent.resolve()
 GEN_DIR = MODULE_DIR / "gen"
 
+
 @contextmanager
 def protoc_in_sys_path() -> Iterator[None]:
   prev_path = sys.path

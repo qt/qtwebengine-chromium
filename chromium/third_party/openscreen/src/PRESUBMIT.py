@@ -49,6 +49,18 @@ def _CheckLicenses(input_api, output_api):
     return []
 
 
+def _CheckGeneratedInfraFiles(input_api, output_api):
+    files = input_api.UnixLocalPaths()
+    if (any(f.endswith('.star') for f in files)
+            and all(not f.endswith('.cfg') for f in files)):
+        return [
+            output_api.PresubmitPromptWarning(
+                'You changed .star files, but didn\'t run `lucicfg generate '
+                'infra/config/global/main.star`')
+        ]
+
+    return []
+
 def _CheckDeps(input_api, output_api):
     """Checks DEPS rules and returns a list of violations."""
     deps_checker = DepsChecker(input_api.PresubmitLocalPath())
@@ -265,6 +277,8 @@ def _CommonChecks(input_api, output_api):
 
     # Run tools/licenses on code change.
     results.extend(_CheckLicenses(input_api, output_api))
+
+    results.extend(_CheckGeneratedInfraFiles(input_api, output_api))
 
     return results
 

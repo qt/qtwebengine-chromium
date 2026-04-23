@@ -1,7 +1,7 @@
 Name: libjpeg-turbo
 URL: https://github.com/libjpeg-turbo/libjpeg-turbo/
 Version: 3.1.0
-License: IJG, BSD-3, Zlib
+License: IJG, BSD-3-Clause, Zlib
 License File: LICENSE.md
 Security Critical: yes
 Shipped: yes

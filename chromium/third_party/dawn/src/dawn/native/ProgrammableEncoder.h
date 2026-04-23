@@ -51,10 +51,11 @@ class ProgrammableEncoder : public ApiObjectBase {
     void APIInsertDebugMarker(StringView groupLabel);
     void APIPopDebugGroup();
     void APIPushDebugGroup(StringView groupLabel);
-    void APISetImmediateData(uint32_t offset, const void* data, size_t size);
+    void APISetImmediates(uint32_t offset, const void* data, size_t size);
 
   protected:
     bool IsValidationEnabled() const;
+    bool NeedsIndirectDrawGPUValidation() const;
     MaybeError ValidateProgrammableEncoderEnd() const;
 
     // Compute and render passes do different things on SetBindGroup. These are helper functions
@@ -83,6 +84,7 @@ class ProgrammableEncoder : public ApiObjectBase {
 
   private:
     const bool mValidationEnabled;
+    const bool mNeedsIndirectDrawGPUValidation;
 };
 
 }  // namespace dawn::native

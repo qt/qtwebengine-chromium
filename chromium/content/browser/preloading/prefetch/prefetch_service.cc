@@ -494,7 +494,7 @@ base::WeakPtr<PrefetchContainer> PrefetchService::CreatePrefetchContainer(
 bool PrefetchService::IsPrefetchDuplicate(
     GURL& url,
     std::optional<net::HttpNoVarySearchData> no_vary_search_hint) {
-  TRACE_EVENT0("loading", "PrefetchService::IsPrefetchDuplicate");
+  TRACE_EVENT("loading", "PrefetchService::IsPrefetchDuplicate");
   for (const auto& [key, prefetch_container] : owned_prefetches()) {
     if (IsPrefetchStale(prefetch_container->GetWeakPtr())) {
       continue;
@@ -583,7 +583,7 @@ bool PrefetchService::IsPrefetchAttemptFailedOrDiscardedInternal(
 
 bool PrefetchService::IsPrefetchStale(
     base::WeakPtr<PrefetchContainer> prefetch_container) {
-  TRACE_EVENT0("loading", "PrefetchService::IsPrefetchStale");
+  TRACE_EVENT("loading", "PrefetchService::IsPrefetchStale");
   if (!prefetch_container) {
     return true;
   }
@@ -597,7 +597,9 @@ bool PrefetchService::IsPrefetchStale(
     case PrefetchContainer::LoadState::kEligible:
     case PrefetchContainer::LoadState::kStarted:
     case PrefetchContainer::LoadState::kDeterminedHead:
-    case PrefetchContainer::LoadState::kCompletedOrFailed:
+    case PrefetchContainer::LoadState::kFailedDeterminedHead:
+    case PrefetchContainer::LoadState::kCompleted:
+    case PrefetchContainer::LoadState::kFailed:
       break;
   }
 
@@ -623,7 +625,7 @@ struct PrefetchService::CheckEligibilityParams final {
   bool IsProxyRequired() const {
     CHECK(prefetch_container);
     return prefetch_container->IsProxyRequiredForURL(url) &&
-           !ShouldPrefetchBypassProxyForTestHost(url.host());
+           !ShouldPrefetchBypassProxyForTestHost(url.GetHost());
   }
 
   base::WeakPtr<PrefetchContainer> prefetch_container;
@@ -664,8 +666,8 @@ PrefetchService::AddPrefetchRequestWithoutStartingPrefetchForTesting(
 void PrefetchService::PrefetchUrl(
     base::WeakPtr<PrefetchContainer> prefetch_container) {
   CHECK(prefetch_container);
-  TRACE_EVENT1("loading", "PrefetchService::PrefetchUrl", "prefetch_url",
-               prefetch_container->GetURL());
+  TRACE_EVENT("loading", "PrefetchService::PrefetchUrl", "prefetch_url",
+              prefetch_container->GetURL());
 
   auto params = CheckEligibilityParams(
       {.prefetch_container = prefetch_container,
@@ -906,14 +908,13 @@ void PrefetchService::OnGotServiceWorkerResult(
 
   // End "PrefetchService::CheckHasServiceWorker" trace event.
   TRACE_EVENT_END("loading", perfetto::Track::FromPointer(this));
-  TRACE_EVENT1("loading", "PrefetchService::OnGotServiceWorkerResult",
-               "prefetch_url",
-               prefetch_container ? prefetch_container->GetURL().spec() : "");
+  TRACE_EVENT("loading", "PrefetchService::OnGotServiceWorkerResult",
+              "prefetch_url",
+              prefetch_container ? prefetch_container->GetURL().spec() : "");
   if (!prefetch_container) {
     std::move(params).Finish(PreloadingEligibility::kEligible);
     return;
   }
-  CHECK(prefetch_container);
   if (auto* preloading_attempt = static_cast<PreloadingAttemptImpl*>(
           prefetch_container->request().attempt())) {
     const auto duration =
@@ -989,9 +990,9 @@ void PrefetchService::OnGotCookiesForEligibilityCheck(
 
   // End "PrefetchService::CheckCookies" trace event.
   TRACE_EVENT_END("loading", perfetto::Track::FromPointer(this));
-  TRACE_EVENT1("loading", "PrefetchService::OnGotCookiesForEligibilityCheck",
-               "prefetch_url",
-               prefetch_container ? prefetch_container->GetURL().spec() : "");
+  TRACE_EVENT("loading", "PrefetchService::OnGotCookiesForEligibilityCheck",
+              "prefetch_url",
+              prefetch_container ? prefetch_container->GetURL().spec() : "");
   if (!prefetch_container) {
     std::move(params).Finish(PreloadingEligibility::kEligible);
     return;
@@ -1078,9 +1079,9 @@ void PrefetchService::OnGotProxyLookupResult(CheckEligibilityParams params,
   const auto prefetch_container = params.prefetch_container;
   // End "PrefetchService::ProxyCheck" trace event.
   TRACE_EVENT_END("loading", perfetto::Track::FromPointer(this));
-  TRACE_EVENT1("loading", "PrefetchService::OnGotProxyLookupResult",
-               "prefetch_url",
-               prefetch_container ? prefetch_container->GetURL().spec() : "");
+  TRACE_EVENT("loading", "PrefetchService::OnGotProxyLookupResult",
+              "prefetch_url",
+              prefetch_container ? prefetch_container->GetURL().spec() : "");
   if (!prefetch_container) {
     std::move(params).Finish(PreloadingEligibility::kEligible);
     return;
@@ -1101,9 +1102,9 @@ void PrefetchService::OnGotEligibilityForNonRedirect(
   const auto prefetch_container = params.prefetch_container;
   // End "PrefetchService::CheckEligibility" trace event.
   TRACE_EVENT_END("loading", perfetto::Track::FromPointer(this));
-  TRACE_EVENT1("loading", "PrefetchService::OnGotEligibilityForNonRedirect",
-               "prefetch_url",
-               prefetch_container ? prefetch_container->GetURL().spec() : "");
+  TRACE_EVENT("loading", "PrefetchService::OnGotEligibilityForNonRedirect",
+              "prefetch_url",
+              prefetch_container ? prefetch_container->GetURL().spec() : "");
   if (!prefetch_container) {
     return;
   }
@@ -1171,11 +1172,41 @@ void PrefetchService::OnGotEligibilityForRedirect(
   const auto prefetch_container = params.prefetch_container;
   // End "PrefetchService::CheckEligibility" trace event.
   TRACE_EVENT_END("loading", perfetto::Track::FromPointer(this));
-  TRACE_EVENT1("loading", "PrefetchService::OnGotEligibilityForRedirect",
-               "prefetch_url",
-               prefetch_container ? prefetch_container->GetURL().spec() : "");
+  TRACE_EVENT("loading", "PrefetchService::OnGotEligibilityForRedirect",
+              "prefetch_url",
+              prefetch_container ? prefetch_container->GetURL().spec() : "");
   if (!prefetch_container) {
     return;
+  }
+
+  // Returns `false` if `OnGotEligibilityForRedirect()` should be early-returned
+  // because the prefetch was already terminated during the eligiblity check.
+  const auto check_streaming_loader = [&]() {
+    // TODO(crbug.com/396133768): Consider setting appropriate PrefetchStatus.
+    auto streaming_url_loader = prefetch_container->GetStreamingURLLoader();
+    if (streaming_url_loader) {
+      return true;
+    }
+    if (!UsePrefetchScheduler()) {
+      if (active_prefetch_ == prefetch_container->key()) {
+        active_prefetch_ = std::nullopt;
+        Prefetch();
+      }
+    } else {
+      // TODO(crbug.com/400761083): Use
+      // `ResetPrefetchContainerAndProgressAsync()` instead.
+      RemoveFromSchedulerAndProgressAsync(*prefetch_container);
+    }
+    return false;
+  };
+
+  if (base::FeatureList::IsEnabled(features::kPrefetchGracefulNotification)) {
+    if (!check_streaming_loader()) {
+      // TODO(crbug.com/400761083): Turn this into `CHECK_EQ()`.
+      DUMP_WILL_BE_CHECK_EQ(prefetch_container->GetLoadState(),
+                            PrefetchContainer::LoadState::kFailed);
+      return;
+    }
   }
 
   const bool eligible = eligibility == PreloadingEligibility::kEligible;
@@ -1209,21 +1240,13 @@ void PrefetchService::OnGotEligibilityForRedirect(
     }
   }
 
-  // TODO(crbug.com/396133768): Consider setting appropriate PrefetchStatus.
-  auto streaming_url_loader = prefetch_container->GetStreamingURLLoader();
-  if (!streaming_url_loader) {
-    if (!UsePrefetchScheduler()) {
-      if (active_prefetch_ == prefetch_container->key()) {
-        active_prefetch_ = std::nullopt;
-        Prefetch();
-      }
-    } else {
-      // TODO(crbug.com/400761083): Use
-      // `ResetPrefetchContainerAndProgressAsync()` instead.
-      RemoveFromSchedulerAndProgressAsync(*prefetch_container);
+  if (!base::FeatureList::IsEnabled(features::kPrefetchGracefulNotification)) {
+    if (!check_streaming_loader()) {
+      return;
     }
-    return;
   }
+  auto streaming_url_loader = prefetch_container->GetStreamingURLLoader();
+  CHECK(streaming_url_loader);
 
   // If the redirect is not eligible and the prefetch is not a decoy, then stop
   // the prefetch.
@@ -1392,9 +1415,7 @@ void PrefetchService::MayReleasePrefetch(
 
   if (!UsePrefetchScheduler()) {
     ResetPrefetchContainer(prefetch_container);
-    if (base::FeatureList::IsEnabled(
-            features::kPrefetchQueueingPartialFixWithoutScheduler) &&
-        !active_prefetch_) {
+    if (!active_prefetch_) {
       base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(&PrefetchService::Prefetch,
                                     weak_method_factory_.GetWeakPtr()));
@@ -1536,6 +1557,11 @@ void PrefetchService::EvictPrefetch(
 
 bool PrefetchService::StartSinglePrefetch(
     base::PassKey<PrefetchScheduler>,
+    base::WeakPtr<PrefetchContainer> prefetch_container) {
+  return StartSinglePrefetch(std::move(prefetch_container));
+}
+
+bool PrefetchService::StartSinglePrefetchForTesting(
     base::WeakPtr<PrefetchContainer> prefetch_container) {
   return StartSinglePrefetch(std::move(prefetch_container));
 }
@@ -1705,8 +1731,8 @@ void PrefetchService::OnPrefetchRedirect(
     base::WeakPtr<PrefetchContainer> prefetch_container,
     const net::RedirectInfo& redirect_info,
     network::mojom::URLResponseHeadPtr redirect_head) {
-  TRACE_EVENT1("loading", "PrefetchService::OnPrefetchRedirect", "prefetch_url",
-               prefetch_container ? prefetch_container->GetURL().spec() : "");
+  TRACE_EVENT("loading", "PrefetchService::OnPrefetchRedirect", "prefetch_url",
+              prefetch_container ? prefetch_container->GetURL().spec() : "");
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (!prefetch_container) {
@@ -1807,9 +1833,9 @@ std::optional<PrefetchErrorOnResponseReceived>
 PrefetchService::OnPrefetchResponseStarted(
     base::WeakPtr<PrefetchContainer> prefetch_container,
     network::mojom::URLResponseHead* head) {
-  TRACE_EVENT1("loading", "PrefetchService::OnPrefetchResponseStarted",
-               "prefetch_url",
-               prefetch_container ? prefetch_container->GetURL().spec() : "");
+  TRACE_EVENT("loading", "PrefetchService::OnPrefetchResponseStarted",
+              "prefetch_url",
+              prefetch_container ? prefetch_container->GetURL().spec() : "");
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (!prefetch_container || prefetch_container->IsDecoy()) {
@@ -1881,9 +1907,9 @@ void PrefetchService::OnPrefetchCompletedOrFailed(
     PrefetchContainer& prefetch_container,
     const network::URLLoaderCompletionStatus& completion_status,
     const std::optional<int>& response_code) {
-  TRACE_EVENT2("loading", "PrefetchService::OnPrefetchCompletedOrFailed",
-               "prefetch_url", prefetch_container.GetURL().spec(),
-               "completion_status.error_code", completion_status.error_code);
+  TRACE_EVENT("loading", "PrefetchService::OnPrefetchCompletedOrFailed",
+              "prefetch_url", prefetch_container.GetURL().spec(),
+              "completion_status.error_code", completion_status.error_code);
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(IsPrefetchContainerInActiveSet(prefetch_container));
 
@@ -1984,6 +2010,18 @@ PrefetchService::CollectMatchCandidates(
   return CollectMatchCandidatesGeneric(
       owned_prefetches(), key, is_nav_prerender,
       std::move(serving_page_metrics_container));
+}
+
+PrefetchContainer* PrefetchService::FindPrefetchAheadOfPrerenderForMetrics(
+    const PreloadPipelineInfo& pipeline_info) {
+  for (const auto& it : owned_prefetches()) {
+    auto& prefetch_container = it.second;
+    if (prefetch_container->HasPreloadPipelineInfoForMetrics(pipeline_info)) {
+      return prefetch_container.get();
+    }
+  }
+
+  return nullptr;
 }
 
 base::WeakPtr<PrefetchContainer> PrefetchService::MatchUrl(

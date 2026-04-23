@@ -482,6 +482,7 @@ endforeach
 fcstdint_h = fs.copyfile('src/fcstdint.h.in', 'fcstdint.h')
 
 makealias = files('src/makealias.py')[0]
+fcobjs_h = files('src/fcobjs.h')[0]
 
 
 subdir('fontconfig')
@@ -510,6 +511,7 @@ tools_man_pages = []
 # Do not reorder
 subdir('fc-case')
 subdir('fc-lang')
+subdir('fc-const')
 subdir('src')
 
 if get_option('fontations').enabled()

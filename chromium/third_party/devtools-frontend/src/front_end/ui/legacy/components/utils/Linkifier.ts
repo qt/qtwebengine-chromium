@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../../../core/common/common.js';
 import * as Host from '../../../../core/host/host.js';
@@ -12,10 +12,13 @@ import * as SDK from '../../../../core/sdk/sdk.js';
 import type * as Protocol from '../../../../generated/protocol.js';
 import * as Bindings from '../../../../models/bindings/bindings.js';
 import * as Breakpoints from '../../../../models/breakpoints/breakpoints.js';
+import type * as StackTrace from '../../../../models/stack_trace/stack_trace.js';
 import * as TextUtils from '../../../../models/text_utils/text_utils.js';
 import type * as Trace from '../../../../models/trace/trace.js';
 import * as Workspace from '../../../../models/workspace/workspace.js';
-import type * as IconButton from '../../../components/icon_button/icon_button.js';
+import * as UIHelpers from '../../../helpers/helpers.js';
+import type {Icon} from '../../../kit/kit.js';
+import {html, render} from '../../../lit/lit.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
 
@@ -228,7 +231,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     let fallbackAnchor: HTMLElement|null = null;
     const linkifyURLOptions: LinkifyURLOptions = {
       lineNumber,
-      maxLength: this.maxLength,
+      maxLength: options?.maxLength ?? this.maxLength,
       columnNumber: options?.columnNumber,
       showColumnNumber: Boolean(options?.showColumnNumber),
       className: options?.className,
@@ -319,7 +322,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
 
   linkifyRawLocation(
       rawLocation: SDK.DebuggerModel.Location, fallbackUrl: Platform.DevToolsPath.UrlString,
-      className?: string): Element {
+      className?: string): HTMLElement {
     return this.linkifyScriptLocation(
         rawLocation.debuggerModel.target(), rawLocation.scriptId, fallbackUrl, rawLocation.lineNumber, {
           columnNumber: rawLocation.columnNumber,
@@ -339,6 +342,53 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     return this.maybeLinkifyScriptLocation(
         target, String(callFrame.scriptId) as Protocol.Runtime.ScriptId,
         callFrame.url as Platform.DevToolsPath.UrlString, callFrame.lineNumber, linkifyOptions);
+  }
+
+  maybeLinkifyStackTraceFrame(
+      target: SDK.Target.Target|null, frame: StackTrace.StackTrace.Frame, options?: LinkifyOptions): HTMLElement|null {
+    let fallbackAnchor: HTMLElement|null = null;
+    const linkifyURLOptions: LinkifyURLOptions = {
+      ...options,
+      lineNumber: frame.line,
+      maxLength: this.maxLength,
+      columnNumber: frame.column,
+      showColumnNumber: Boolean(options?.showColumnNumber),
+      className: options?.className,
+      tabStop: options?.tabStop,
+      inlineFrameIndex: options?.inlineFrameIndex ?? 0,
+      userMetric: options?.userMetric,
+      jslogContext: options?.jslogContext || 'script-location',
+      omitOrigin: options?.omitOrigin,
+    };
+    const {className = ''} = linkifyURLOptions;
+    if (frame.url) {
+      fallbackAnchor = Linkifier.linkifyURL(frame.url as Platform.DevToolsPath.UrlString, linkifyURLOptions);
+    }
+    if (!target || target.isDisposed()) {
+      return fallbackAnchor;
+    }
+
+    const createLinkOptions: CreateLinkOptions = {
+      tabStop: options?.tabStop,
+      jslogContext: 'script-location',
+    };
+    const {link, linkInfo} = Linkifier.createLink(
+        fallbackAnchor?.textContent ? fallbackAnchor.textContent : '', className, createLinkOptions);
+    linkInfo.enableDecorator = this.useLinkDecorator;
+    linkInfo.fallback = fallbackAnchor;
+    linkInfo.userMetric = options?.userMetric;
+
+    const linkDisplayOptions: LinkDisplayOptions = {
+      showColumnNumber: linkifyURLOptions.showColumnNumber ?? false,
+      revealBreakpoint: options?.revealBreakpoint,
+    };
+
+    const uiLocation = frame.uiSourceCode?.uiLocation(frame.line, frame.column) ?? null;
+    this.updateAnchorFromUILocation(link, linkDisplayOptions, uiLocation);
+
+    const anchors = (this.anchorsByTarget.get(target) as Element[]);
+    anchors.push(link);
+    return link;
   }
 
   linkifyStackTraceTopFrame(target: SDK.Target.Target|null, stackTrace: Protocol.Runtime.StackTrace): HTMLElement {
@@ -459,6 +509,20 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       return;
     }
 
+    this.#anchorUpdaters.set(anchor, function(this: Linkifier, anchor: HTMLElement) {
+      void this.updateAnchor(anchor, options, liveLocation);
+    });
+    this.updateAnchorFromUILocation(anchor, options, uiLocation);
+  }
+
+  private updateAnchorFromUILocation(
+      anchor: HTMLElement, options: LinkDisplayOptions, uiLocation: Workspace.UISourceCode.UILocation|null): void {
+    if (!uiLocation) {
+      anchor.classList.add('invalid-link');
+      anchor.removeAttribute('role');
+      return;
+    }
+
     Linkifier.bindUILocation(anchor, uiLocation);
     if (options.revealBreakpoint) {
       Linkifier.bindBreakpoint(anchor, uiLocation);
@@ -466,9 +530,6 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
 
     const text = uiLocation.linkText(true /* skipTrim */, options.showColumnNumber);
     Linkifier.setTrimmedText(anchor, text, this.maxLength);
-    this.#anchorUpdaters.set(anchor, function(this: Linkifier, anchor: HTMLElement) {
-      void this.updateAnchor(anchor, options, liveLocation);
-    });
 
     let titleText: string = uiLocation.uiSourceCode.url();
     if (uiLocation.uiSourceCode.mimeType() === 'application/wasm') {
@@ -860,7 +921,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
         section: 'reveal',
         title: UI.UIUtils.openLinkExternallyLabel(),
         jslogContext: 'open-in-new-tab',
-        handler: () => UI.UIUtils.openInNewTab(url),
+        handler: () => UIHelpers.openInNewTab(url),
       });
       result.push({
         section: 'clipboard',
@@ -885,7 +946,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
 }
 
 export interface LinkDecorator extends Common.EventTarget.EventTarget<LinkDecorator.EventTypes> {
-  linkIcon(uiSourceCode: Workspace.UISourceCode.UISourceCode): IconButton.Icon.Icon|null;
+  linkIcon(uiSourceCode: Workspace.UISourceCode.UISourceCode): Icon|null;
 }
 
 export namespace LinkDecorator {
@@ -919,7 +980,7 @@ export class LinkContextMenuProvider implements UI.ContextMenu.Provider<Node> {
 
 let linkHandlerSettingUIInstance: LinkHandlerSettingUI;
 
-export class LinkHandlerSettingUI implements UI.SettingsUI.SettingUI {
+export class LinkHandlerSettingUI {
   private element: HTMLSelectElement;
 
   private constructor() {
@@ -960,8 +1021,14 @@ export class LinkHandlerSettingUI implements UI.SettingsUI.SettingUI {
     Linkifier.linkHandlerSetting().set(value);
   }
 
-  settingElement(): Element|null {
-    return UI.SettingsUI.createCustomSetting(i18nString(UIStrings.linkHandling), this.element);
+  settingElement(): Element {
+    const p = document.createElement('p');
+    p.classList.add('settings-select');
+    const label = p.createChild('label');
+    label.textContent = i18nString(UIStrings.linkHandling);
+    UI.ARIAUtils.bindLabelToControl(label, this.element);
+    p.appendChild(this.element);
+    return p;
   }
 }
 
@@ -1039,7 +1106,7 @@ export class ContentProviderContextMenuProvider implements
 }
 
 interface LinkInfo {
-  icon: IconButton.Icon.Icon|null;
+  icon: Icon|null;
   enableDecorator: boolean;
   uiLocation: Workspace.UISourceCode.UILocation|null;
   liveLocation: Bindings.LiveLocation.LiveLocation|null;
@@ -1073,7 +1140,7 @@ export interface LinkifyOptions {
   className?: string;
   columnNumber?: number;
   showColumnNumber?: boolean;
-  inlineFrameIndex: number;
+  inlineFrameIndex?: number;
   tabStop?: boolean;
   userMetric?: Host.UserMetrics.Action;
   jslogContext?: string;
@@ -1083,6 +1150,7 @@ export interface LinkifyOptions {
    * {@link LinkDisplayOptions.revealBreakpoint}
    */
   revealBreakpoint?: boolean;
+  maxLength?: number;
 }
 
 interface CreateLinkOptions {
@@ -1107,10 +1175,12 @@ interface LinkDisplayOptions {
   revealBreakpoint?: boolean;
 }
 
-// The filter function for the openResourceHandlers. Returns true if the `url`
-// should be considered for a particular handler. `specificSchemeHandlers`
-// is the set of all schemes handled by all registered DevTools extensions
-// (that specify a particular scheme).
+/**
+ * The filter function for the openResourceHandlers. Returns true if the `url`
+ * should be considered for a particular handler. `specificSchemeHandlers`
+ * is the set of all schemes handled by all registered DevTools extensions
+ * (that specify a particular scheme).
+ **/
 export type LinkHandlerPredicate = (url: Platform.DevToolsPath.UrlString, specificSchemeHandlers: Set<string>) =>
     boolean;
 
@@ -1139,4 +1209,46 @@ export const enum Events {
 
 export interface EventTypes {
   [Events.LIVE_LOCATION_UPDATED]: Bindings.LiveLocation.LiveLocation;
+}
+
+interface ScriptLocationViewInput {
+  target?: SDK.Target.Target;
+  scriptId?: Protocol.Runtime.ScriptId;
+  sourceURL: Platform.DevToolsPath.UrlString;
+  lineNumber?: number;
+  options?: LinkifyOptions;
+  linkifier: Linkifier;
+}
+
+type ScriptLocationView = (input: ScriptLocationViewInput, output: undefined, target: HTMLElement) => void;
+
+const DEFAULT_SCRIPT_LOCATION_VIEW: ScriptLocationView = (input, _output, target) => {
+  render(
+      html`${
+          input.linkifier.linkifyScriptLocation(
+              input.target ?? null, input.scriptId ?? null, input.sourceURL, input.lineNumber, input.options)}`,
+      target);
+};
+
+export class ScriptLocationLink extends UI.Widget.Widget {
+  target?: SDK.Target.Target;
+  scriptId?: Protocol.Runtime.ScriptId;
+  sourceURL = '' as Platform.DevToolsPath.UrlString;
+  lineNumber?: number;
+  options?: LinkifyOptions;
+  linkifier = new Linkifier();
+  #view: ScriptLocationView;
+
+  constructor(element: HTMLElement, view = DEFAULT_SCRIPT_LOCATION_VIEW) {
+    super(element);
+    this.#view = view;
+  }
+
+  override performUpdate(): void {
+    this.#view(this, undefined, this.contentElement);
+  }
+
+  override onDetach(): void {
+    this.linkifier.dispose();
+  }
 }

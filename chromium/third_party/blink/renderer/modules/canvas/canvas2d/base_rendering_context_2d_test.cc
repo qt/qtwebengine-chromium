@@ -93,7 +93,7 @@ class TestRenderingContext2D final
   int Width() const override { return 300; }
   int Height() const override { return 300; }
 
-  bool CanCreateCanvas2dResourceProvider() override { return false; }
+  bool CanCreateResourceProvider() override { return false; }
 
   RespectImageOrientationEnum RespectImageOrientation() const override {
     return kRespectImageOrientation;
@@ -175,15 +175,13 @@ class TestRenderingContext2D final
     return nullptr;
   }
 
-  CanvasResourceProvider* GetOrCreateCanvas2DResourceProvider() override {
+  CanvasResourceProvider* GetOrCreateResourceProvider() override {
     return nullptr;
   }
 
   // Implementing pure virtual functions from CanvasRenderingContext.
-  scoped_refptr<StaticBitmapImage> GetImage(FlushReason) override {
-    return nullptr;
-  }
-  std::unique_ptr<CanvasResourceProvider> ReplaceResourceProviderForCanvas2D(
+  scoped_refptr<StaticBitmapImage> GetImage() override { return nullptr; }
+  std::unique_ptr<CanvasResourceProvider> ReplaceResourceProvider(
       std::unique_ptr<CanvasResourceProvider>) override {
     return nullptr;
   }
@@ -202,21 +200,6 @@ BeginLayerOptions* FilterOption(blink::V8TestingScope& scope,
   BeginLayerOptions* options = BeginLayerOptions::Create();
   options->setFilter(ParseFilter(scope, filter));
   return options;
-}
-
-TEST(BaseRenderingContextTests, BlockCanvasReadback) {
-  test::TaskEnvironment task_environment;
-  V8TestingScope scope;
-  auto* context = MakeGarbageCollected<TestRenderingContext2D>(scope);
-
-  // When the BlockCanvasReadback feature is enabled, reading back should
-  // throw a DOM exception.
-  DummyExceptionStateForTesting exception_state;
-  ScopedBlockCanvasReadbackForTest scoped_feature(true);
-  context->getImageData(0, 0, 10, 10, exception_state);
-  EXPECT_TRUE(exception_state.HadException());
-  EXPECT_EQ(exception_state.CodeAs<DOMExceptionCode>(),
-            DOMExceptionCode::kNotAllowedError);
 }
 
 TEST(BaseRenderingContextLayerTests, ContextLost) {

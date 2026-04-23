@@ -62,21 +62,17 @@ V8TaskPriority::Enum V8TaskEnumFromWebSchedulingPriority(
 }
 }  // namespace
 
-const char DOMScheduler::kSupplementName[] = "DOMScheduler";
-
 DOMScheduler* DOMScheduler::scheduler(ExecutionContext& context) {
-  DOMScheduler* scheduler =
-      Supplement<ExecutionContext>::From<DOMScheduler>(context);
+  DOMScheduler* scheduler = context.GetDOMScheduler();
   if (!scheduler) {
     scheduler = MakeGarbageCollected<DOMScheduler>(&context);
-    Supplement<ExecutionContext>::ProvideTo(context, scheduler);
+    context.SetDOMScheduler(scheduler);
   }
   return scheduler;
 }
 
 DOMScheduler::DOMScheduler(ExecutionContext* context)
     : ExecutionContextLifecycleObserver(context),
-      Supplement<ExecutionContext>(*context),
       fixed_priority_task_signals_(kWebSchedulingPriorityCount) {
   if (context->IsContextDestroyed()) {
     return;
@@ -99,7 +95,6 @@ void DOMScheduler::Trace(Visitor* visitor) const {
   visitor->Trace(signal_to_continuation_queue_map_);
   ScriptWrappable::Trace(visitor);
   ExecutionContextLifecycleObserver::Trace(visitor);
-  Supplement<ExecutionContext>::Trace(visitor);
 }
 
 ScriptPromise<IDLAny> DOMScheduler::postTask(
@@ -208,20 +203,17 @@ SchedulerTaskContext* DOMScheduler::GetSchedulerTaskContextForYield() {
   bool can_use_context = task_context->CanPropagateTo(*GetExecutionContext());
   // Record use counters for non-trival inheritance, i.e. cases where the
   // inheritance can change the scheduling in a meaningful way.
-  if (RuntimeEnabledFeatures::
-          SchedulerYieldDisallowCrossFrameInheritanceEnabled()) {
-    AbortSignal* abort_source = task_context->AbortSource();
-    DOMTaskSignal* priority_source = task_context->PrioritySource();
-    if ((abort_source && abort_source->CanAbort()) ||
-        (priority_source && (!priority_source->HasFixedPriority() ||
-                             priority_source->priority().AsEnum() !=
-                                 V8TaskPriority::Enum::kUserVisible))) {
-      UseCounter::Count(
-          GetExecutionContext(),
-          can_use_context
-              ? WebFeature::kSchedulerYieldNonTrivialInherit
-              : WebFeature::kSchedulerYieldNonTrivialInheritCrossFrameIgnored);
-    }
+  AbortSignal* abort_source = task_context->AbortSource();
+  DOMTaskSignal* priority_source = task_context->PrioritySource();
+  if ((abort_source && abort_source->CanAbort()) ||
+      (priority_source && (!priority_source->HasFixedPriority() ||
+                           priority_source->priority().AsEnum() !=
+                               V8TaskPriority::Enum::kUserVisible))) {
+    UseCounter::Count(
+        GetExecutionContext(),
+        can_use_context
+            ? WebFeature::kSchedulerYieldNonTrivialInherit
+            : WebFeature::kSchedulerYieldNonTrivialInheritCrossFrameIgnored);
   }
   return can_use_context ? task_context : nullptr;
 }

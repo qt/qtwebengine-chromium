@@ -22,24 +22,26 @@ export interface RegisteredAdorner {
 }
 
 export enum RegisteredAdorners {
-  GRID = 'grid',
-  SUBGRID = 'subgrid',
-  MASONRY = 'masonry',
-  FLEX = 'flex',
   AD = 'ad',
-  SCROLL_SNAP = 'scroll-snap',
-  STARTING_STYLE = 'starting-style',
   CONTAINER = 'container',
-  SLOT = 'slot',
-  TOP_LAYER = 'top-layer',
-  REVEAL = 'reveal',
+  FLEX = 'flex',
+  GRID = 'grid',
+  GRID_LANES = 'grid-lanes',
   MEDIA = 'media',
-  SCROLL = 'scroll',
   POPOVER = 'popover',
+  REVEAL = 'reveal',
+  SCROLL = 'scroll',
+  SCROLL_SNAP = 'scroll-snap',
+  SLOT = 'slot',
+  STARTING_STYLE = 'starting-style',
+  SUBGRID = 'subgrid',
+  TOP_LAYER = 'top-layer',
 }
 
-// This enum-like const object serves as the authoritative registry for all the
-// adorners available.
+/**
+ * This enum-like const object serves as the authoritative registry for all the
+ * adorners available.
+ **/
 export function getRegisteredAdorner(which: RegisteredAdorners): RegisteredAdorner {
   switch (which) {
     case RegisteredAdorners.GRID:
@@ -54,9 +56,9 @@ export function getRegisteredAdorner(which: RegisteredAdorners): RegisteredAdorn
         category: AdornerCategories.LAYOUT,
         enabledByDefault: true,
       };
-    case RegisteredAdorners.MASONRY:
+    case RegisteredAdorners.GRID_LANES:
       return {
-        name: 'masonry',
+        name: 'grid-lanes',
         category: AdornerCategories.LAYOUT,
         enabledByDefault: true,
       };
@@ -215,7 +217,7 @@ const OrderedAdornerCategories = [
   AdornerCategories.DEFAULT,
 ];
 
-// Use idx + 1 for the order to avoid JavaScript's 0 == false issue
+/** Use idx + 1 for the order to avoid JavaScript's 0 == false issue **/
 export const AdornerCategoryOrder = new Map(OrderedAdornerCategories.map((category, idx) => [category, idx + 1]));
 
 export function compareAdornerNamesByCategory(nameA: string, nameB: string): number {

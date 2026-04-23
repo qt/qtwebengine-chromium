@@ -35,7 +35,6 @@
 
 namespace gl
 {
-enum class BigGLEnum;
 enum class GLESEnum;
 }  // namespace gl
 
@@ -362,7 +361,6 @@ class ResourceTracker final : angle::NonCopyable
         mBufferBindingCalls.clear();
         mStartingBuffersMappedInitial.clear();
         mStartingBuffersMappedCurrent.clear();
-        mMaxShaderPrograms = 0;
         mStartingFenceSyncs.clear();
         mFenceSyncRegenCalls.clear();
         mFenceSyncsToRegen.clear();

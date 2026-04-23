@@ -4,19 +4,21 @@
 
 import type * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import {describeWithLocale} from '../../testing/EnvironmentHelpers.js';
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
 import {MockIssuesModel} from '../../testing/MockIssuesModel.js';
 import * as IssuesManager from '../issues_manager/issues_manager.js';
 
-function createProtocolIssue(sharedDictionaryIssueDetails: Protocol.Audits.SharedDictionaryIssueDetails):
-    Protocol.Audits.InspectorIssue {
-  return {
-    code: Protocol.Audits.InspectorIssueCode.SharedDictionaryIssue,
-    details: {sharedDictionaryIssueDetails},
-  };
-}
+describe('SharedDictionaryIssue', () => {
+  setupLocaleHooks();
 
-describeWithLocale('SharedDictionaryIssue', () => {
+  function createProtocolIssue(sharedDictionaryIssueDetails: Protocol.Audits.SharedDictionaryIssueDetails):
+      Protocol.Audits.InspectorIssue {
+    return {
+      code: Protocol.Audits.InspectorIssueCode.SharedDictionaryIssue,
+      details: {sharedDictionaryIssueDetails},
+    };
+  }
+
   const mockModel = new MockIssuesModel([]) as unknown as SDK.IssuesModel.IssuesModel;
 
   it('can be created for various error reasons', () => {
@@ -32,8 +34,10 @@ describeWithLocale('SharedDictionaryIssue', () => {
       Protocol.Audits.SharedDictionaryError.WriteErrorInsufficientResources,
       Protocol.Audits.SharedDictionaryError.WriteErrorInvalidMatchField,
       Protocol.Audits.SharedDictionaryError.WriteErrorInvalidStructuredHeader,
+      Protocol.Audits.SharedDictionaryError.WriteErrorInvalidTTLField,
       Protocol.Audits.SharedDictionaryError.WriteErrorNavigationRequest,
       Protocol.Audits.SharedDictionaryError.WriteErrorNoMatchField,
+      Protocol.Audits.SharedDictionaryError.WriteErrorNonIntegerTTLField,
       Protocol.Audits.SharedDictionaryError.WriteErrorNonListMatchDestField,
       Protocol.Audits.SharedDictionaryError.WriteErrorNonSecureContext,
       Protocol.Audits.SharedDictionaryError.WriteErrorNonStringIdField,

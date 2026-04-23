@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#include "base/functional/callback_forward.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
@@ -34,9 +33,7 @@
 
 using ApiPermissionStatus =
     content::FederatedIdentityApiPermissionContextDelegate::PermissionStatus;
-using FetchStatus = content::IdpNetworkRequestManager::FetchStatus;
 using LoginState = content::IdentityRequestAccount::LoginState;
-using ParseStatus = content::IdpNetworkRequestManager::ParseStatus;
 using blink::mojom::RequestUserInfoStatus;
 using ::testing::_;
 using ::testing::NiceMock;
@@ -62,7 +59,7 @@ constexpr char kAccountUsername[] = "@julius";
 
 struct AccountConfig {
   std::string id;
-  std::optional<IdentityRequestAccount::LoginState> login_state;
+  std::optional<LoginState> login_state;
   bool was_granted_sharing_permission;
 };
 
@@ -165,7 +162,7 @@ class TestIdpNetworkRequestManager : public MockIdpNetworkRequestManager {
                        endpoints, idp_metadata));
   }
 
-  void SendAccountsRequest(const url::Origin& idp_origin,
+  bool SendAccountsRequest(const url::Origin& idp_origin,
                            const GURL& accounts_url,
                            const std::string& client_id,
                            AccountsRequestCallback callback) override {
@@ -187,6 +184,7 @@ class TestIdpNetworkRequestManager : public MockIdpNetworkRequestManager {
         FROM_HERE,
         base::BindOnce(std::move(callback), config_.accounts_fetch_status,
                        std::move(accounts)));
+    return true;
   }
 
   bool DidFetchAnyEndpoint() {

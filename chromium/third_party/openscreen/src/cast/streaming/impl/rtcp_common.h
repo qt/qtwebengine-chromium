@@ -13,7 +13,7 @@
 
 #include "cast/streaming/impl/ntp_time.h"
 #include "cast/streaming/impl/rtp_defines.h"
-#include "cast/streaming/impl/statistics_defines.h"
+#include "cast/streaming/impl/statistics_common.h"
 #include "cast/streaming/public/frame_id.h"
 #include "cast/streaming/rtp_time.h"
 #include "cast/streaming/ssrc.h"
@@ -177,7 +177,7 @@ struct PacketNack {
 struct RtcpReceiverEventLogMessage {
   // The statistics event type, may be either a receiver side frame event or
   // packet event.
-  StatisticsEventType type;
+  StatisticsEvent::Type type;
 
   // The time at which this event occurred.
   Clock::time_point timestamp;

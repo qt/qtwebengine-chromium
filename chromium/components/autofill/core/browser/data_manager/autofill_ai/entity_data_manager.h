@@ -52,6 +52,28 @@ class EntityDataManager : public KeyedService,
                           public AutofillWebDataServiceObserverOnUISequence,
                           history::HistoryServiceObserver {
  public:
+  // Autofill AI enabled pref migration status.
+  //
+  // These values are persisted to logs. Entries should not be renumbered and
+  // numeric values should never be reused.
+  // LINT.IfChange(AutofillAiPrefMigrationStatus)
+  enum class AutofillAiPrefMigrationStatus {
+    // This means the `kAutofillAiEnabled` pref was set to true due to
+    // the account keyed pref being enabled.
+    kPrefMigratedEnabled = 0,
+    // This means the `kAutofillAiEnabled` pref was set to false due to
+    // the account keyed pref being enabled.
+    kPrefMigratedDisabled = 1,
+    // This means the `kAutofillAiEnabled` pref was previously enabled or
+    // disabled.
+    kPrefNotMigratedAlreadySet = 2,
+    // This means that the original account keyed pref was never set, therefore
+    // no migration happened.
+    kPrefNotMigratedAccountPrefNeverSet = 3,
+    kMaxValue = kPrefNotMigratedAccountPrefNeverSet
+  };
+  // LINT.ThenChange(/tools/metrics/histograms/metadata/autofill/enums.xml:AutofillAiPrefMigrationStatus)
+
   class Observer : public base::CheckedObserver {
    public:
     virtual void OnEntityInstancesChanged() {}
@@ -97,6 +119,9 @@ class EntityDataManager : public KeyedService,
   base::optional_ref<const EntityInstance> GetEntityInstance(
       const EntityInstance::EntityId& guid) const LIFETIME_BOUND;
 
+  // Returns if there are any pending queries to the web database.
+  bool HasPendingQueries() const;
+
   // AutofillWebDataServiceObserver:
   void OnAutofillChangedBySync(syncer::DataType data_type) override;
 
@@ -123,6 +148,10 @@ class EntityDataManager : public KeyedService,
 
   base::optional_ref<EntityInstance> GetMutableEntityInstance(
       const EntityInstance::EntityId& guid);
+
+  // Boolean that allows the EntityDataManager to differentiate between initial
+  // data loads and data updates.
+  bool entity_data_loaded_ = false;
 
   // Non-null except perhaps in TestEntityDataManager, which overrides all
   // functions that access it.

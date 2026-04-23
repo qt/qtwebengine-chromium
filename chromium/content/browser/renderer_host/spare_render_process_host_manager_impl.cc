@@ -4,6 +4,8 @@
 
 #include "content/browser/renderer_host/spare_render_process_host_manager_impl.h"
 
+#include <optional>
+
 #include "base/check.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/memory/memory_pressure_monitor.h"
@@ -165,6 +167,9 @@ std::string GetCategorizedSpareProcessMaybeTakeTimeUMAName(
     case SpareProcessMaybeTakeAction::kRefusedNonNavigation:
       action_name = "RefusedNonNavigation";
       break;
+    case SpareProcessMaybeTakeAction::kCannotAddThrottle:
+      action_name = "CannotAddThrottle";
+      break;
   }
   return base::StrCat(
       {"BrowserRenderProcessHost.SpareProcessMaybeTakeTime.", action_name});
@@ -226,7 +231,7 @@ bool IsCurrentlyUnderMemoryPressure() {
 
   return memory_pressure_monitor->GetCurrentPressureLevel(
              base::MemoryPressureMonitorTag::kSpareRendererHostManager) !=
-         base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE;
+         base::MEMORY_PRESSURE_LEVEL_NONE;
 }
 
 // Returns the number of spare hosts that should be created. Ensures the field
@@ -322,25 +327,20 @@ void LogSpareProcessTakeActionUMAs(
 
 // Returns the MemoryPressureLevel threshold that determines when a spare RPH
 // can be created or killed.
-base::MemoryPressureListener::MemoryPressureLevel
-GetMemoryPressureLevelThreshold() {
+base::MemoryPressureLevel GetMemoryPressureLevelThreshold() {
   if (base::FeatureList::IsEnabled(kSpareRPHUseCriticalMemoryPressure)) {
-    return base::MemoryPressureListener::MemoryPressureLevel::
-        MEMORY_PRESSURE_LEVEL_CRITICAL;
+    return base::MEMORY_PRESSURE_LEVEL_CRITICAL;
   }
-  return base::MemoryPressureListener::MemoryPressureLevel::
-      MEMORY_PRESSURE_LEVEL_MODERATE;
+  return base::MEMORY_PRESSURE_LEVEL_MODERATE;
 }
 
 }  // namespace
 
 SpareRenderProcessHostManagerImpl::SpareRenderProcessHostManagerImpl()
-    : memory_pressure_listener_(
+    : memory_pressure_listener_registration_(
           FROM_HERE,
           base::MemoryPressureListenerTag::kSpareRenderProcessHostManagerImpl,
-          base::BindRepeating(
-              &SpareRenderProcessHostManagerImpl::OnMemoryPressure,
-              base::Unretained(this))),
+          this),
       check_memory_pressure_timer_(
           FROM_HERE,
           base::Minutes(5),
@@ -642,9 +642,14 @@ RenderProcessHost* SpareRenderProcessHostManagerImpl::MaybeTakeSpare(
       //    launched.
       // 2. The SiteInstance has opted out of using the spare process.
       // 3. The SiteInstance is a guest SiteInstance.
+      // 4. The SiteInstance is a initial WebUI SiteInstance.
       site_instance->HasProcess() ||
-      !site_instance->CanAssociateWithSpareProcess() ||
-      site_instance->IsGuest()) {
+      !site_instance->CanAssociateWithSpareProcess() || site_instance->IsGuest()
+#if !BUILDFLAG(IS_ANDROID)
+      || GetContentClient()->browser()->IsInitialWebUIURL(
+             site_instance->GetSiteURL())
+#endif
+  ) {
     action = SpareProcessMaybeTakeAction::kRefusedBySiteInstance;
   } else if (site_instance->GetSiteInfo().is_pdf()) {
     action = SpareProcessMaybeTakeAction::kRefusedForPdfContent;
@@ -656,12 +661,25 @@ RenderProcessHost* SpareRenderProcessHostManagerImpl::MaybeTakeSpare(
     action = SpareProcessMaybeTakeAction::kRefusedForV8OptimizationMismatch;
   }
 #if BUILDFLAG(IS_ANDROID)
-  else if (features::kAndroidSpareRendererOnlyForNavigation.Get() &&
-           !allocation_context.IsForNavigation() &&
-           // Always allow test to allocate a spare renderer so as
-           // not to break existing tests.
-           allocation_context.source != ProcessAllocationSource::kTest) {
+  // Always allow test to allocate a spare renderer so as
+  // not to break existing tests.
+  else if (allocation_context.source == ProcessAllocationSource::kTest) {
+    action = SpareProcessMaybeTakeAction::kSpareTaken;
+  } else if (features::kAndroidSpareRendererOnlyForNavigation.Get() &&
+             !allocation_context.IsForNavigation()) {
     action = SpareProcessMaybeTakeAction::kRefusedNonNavigation;
+  } else if (base::FeatureList::IsEnabled(
+                 features::kAndroidWarmUpSpareRendererWithTimeout) &&
+             features::kAndroidSpareRendererAddNavigationThrottle.Get() &&
+             (!allocation_context.navigation_context.has_value() ||
+              allocation_context.navigation_context->stage !=
+                  ProcessAllocationNavigationStage::kBeforeNetworkRequest)) {
+    // All the renderers returned by MaybeTakeSpare is of lowest priority on
+    // Android. To ensure the liveness of the renderer process, we need to
+    // add a throttle to ensure the priority update before deciding the final
+    // renderer process for the navigation. Thus we can only use the spare
+    // renderer for navigation before sending the network request.
+    action = SpareProcessMaybeTakeAction::kCannotAddThrottle;
   }
 #endif
   else {
@@ -704,12 +722,14 @@ RenderProcessHost* SpareRenderProcessHostManagerImpl::MaybeTakeSpare(
     CHECK(no_spare_renderer_reason_ == NoSpareRendererReason::kProcessLimit);
   }
 
+#if BUILDFLAG(IS_ANDROID)
   // SetHasSpareRendererPriority(false) will cause the priority to drop until
   // further updates are made. For navigation requests we will keep the priority
   // until the RenderFrameHostImpl constructor sets the priority.
   if (returned_process && !allocation_context.IsForNavigation()) {
     returned_process->GraduateSpareToNormalRendererPriority();
   }
+#endif
 
   return returned_process;
 }
@@ -754,8 +774,9 @@ SpareRenderProcessHostManagerImpl::DoesEmbedderAllowSpareUsage(
   // V8 optimizations are globally enabled or disabled for a whole process,
   // and spare renderers always have V8 optimizations enabled, so we can never
   // use them if they're supposed to be disabled for this site.
-  if (GetContentClient()->browser()->AreV8OptimizationsDisabledForSite(
-          browser_context, site_instance->GetSiteInfo().GetProcessLockURL())) {
+  if (!GetContentClient()->browser()->AreV8OptimizationsEnabledForSite(
+          browser_context, std::nullopt,
+          site_instance->GetSiteInfo().GetProcessLockURL())) {
     return ContentBrowserClient::SpareProcessRefusedByEmbedderReason::
         V8OptimizationsDisabled;
   }
@@ -957,13 +978,12 @@ void SpareRenderProcessHostManagerImpl::SetIsBrowserIdle(bool is_browser_idle) {
 }
 
 void SpareRenderProcessHostManagerImpl::OnMemoryPressure(
-    base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
+    base::MemoryPressureLevel memory_pressure_level) {
   if (memory_pressure_level < GetMemoryPressureLevelThreshold()) {
     return;
   }
 
-  CHECK_NE(memory_pressure_level,
-           base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE);
+  CHECK_NE(memory_pressure_level, base::MEMORY_PRESSURE_LEVEL_NONE);
   if (check_memory_pressure_timer_.IsRunning() ||
       !base::FeatureList::IsEnabled(kKillSpareRenderOnMemoryPressure)) {
     return;

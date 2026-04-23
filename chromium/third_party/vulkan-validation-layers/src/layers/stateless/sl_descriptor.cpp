@@ -571,6 +571,10 @@ bool Device::ValidateMutableDescriptorTypeCreateInfo(const VkDescriptorSetLayout
                     skip |= LogError("VUID-VkMutableDescriptorTypeListEXT-pDescriptorTypes-04603", device, type_loc,
                                      "is VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK.");
                     break;
+                case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
+                    skip |= LogError("VUID-VkMutableDescriptorTypeListEXT-pDescriptorTypes-09696", device, type_loc,
+                                     "is VK_DESCRIPTOR_TYPE_TENSOR_ARM.");
+                    break;
                 default:
                     break;
             }
@@ -627,8 +631,9 @@ bool Device::ValidateDescriptorSetLayoutCreateInfo(const VkDescriptorSetLayoutCr
                         skip |= LogError(
                             "VUID-VkDescriptorSetLayoutCreateInfo-pBindings-07303", device,
                             binding_loc.pNext(Struct::VkMutableDescriptorTypeCreateInfoEXT, Field::mutableDescriptorTypeListCount),
-                            "(%" PRIu32 ") is less than %" PRIu32 " but descriptorType is VK_DESCRIPTOR_TYPE_MUTABLE_EXT", i,
-                            mutable_descriptor_type->mutableDescriptorTypeListCount);
+                            "(%" PRIu32 ") is less than or equal to %" PRIu32 ", but pBindings[%" PRIu32
+                            " ].descriptorType is VK_DESCRIPTOR_TYPE_MUTABLE_EXT",
+                            mutable_descriptor_type->mutableDescriptorTypeListCount, i, i);
                     }
                 } else {
                     skip |= LogError("VUID-VkDescriptorSetLayoutCreateInfo-pBindings-07303", device,
@@ -1203,6 +1208,15 @@ bool Device::manual_PreCallValidateGetDescriptorEXT(VkDevice device, const VkDes
                 skip |= LogError("VUID-VkDescriptorAddressInfoEXT-None-09508", device, address_loc.dot(Field::format),
                                  "is VK_FORMAT_UNDEFINED.");
             }
+        }
+    }
+
+    const auto *tensor_struct = vku::FindStructInPNextChain<VkDescriptorGetTensorInfoARM>(pDescriptorInfo->pNext);
+    if (tensor_struct) {
+        if (!enabled_features.nullDescriptor && tensor_struct->tensorView == VK_NULL_HANDLE) {
+            skip |= LogError("VUID-VkDescriptorGetTensorInfoARM-nullDescriptor-09899", device,
+                             error_obj.location.dot(Field::pNext).dot(Field::tensorView),
+                             "is VK_NULL_HANDLE and the nullDescriptor feature is not enabled.");
         }
     }
     return skip;

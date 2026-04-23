@@ -50,8 +50,12 @@ devtools_entrypoint("bundle") {
 
   visibility = [
     ":*",
+    "../../../mcp/*",
+    "../../core/sdk:foundation_unittests",
+    "../../core/sdk:foundation_unittests_node_typecheck",
     "../../core/sdk:unittests",
     "../../entrypoints/main/*",
+    "../../foundation/*",
     "../../legacy_test_runner/*",
     "../../panels/application/*",
     "../../panels/console/*",
@@ -105,7 +109,10 @@ ts_library("unittests") {
   deps = [
     ":bundle",
     "../../core/common:bundle",
+    "../../core/root:bundle",
+    "../../core/sdk:bundle",
     "../../testing",
+    "../../third_party/source-map-scopes-codec:bundle",
     "../persistence:bundle",
     "../stack_trace:impl",
     "../text_utils:bundle",

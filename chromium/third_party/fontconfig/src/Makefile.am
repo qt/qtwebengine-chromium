@@ -21,7 +21,7 @@
 #  TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 #  PERFORMANCE OF THIS SOFTWARE.
 
-SUBDIRS=fontconfig fc-case fc-lang src \
+SUBDIRS=fontconfig fc-case fc-lang fc-const src \
 	fc-cache fc-cat fc-conflist fc-list fc-match \
 	fc-pattern fc-query fc-scan fc-validate conf.d \
 	its po po-conf test

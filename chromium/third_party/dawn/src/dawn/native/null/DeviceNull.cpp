@@ -95,7 +95,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     GetDefaultLimitsForSupportedFeatureLevel(limits);
-    limits->v1.maxImmediateSize = kMaxSupportedImmediateDataBytes;
+    limits->v1.maxImmediateSize = kMaxImmediateDataBytes;
     limits->dynamicBindingArrayLimits.maxDynamicBindingArraySize = kMaxDynamicBindingArraySize;
     return {};
 }
@@ -114,7 +114,8 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
     return Device::Create(adapter, descriptor, deviceToggles, std::move(lostEvent));
 }
 
-void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
+                                               const TogglesState&) const {
     if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
         auto* heapInfo = new MemoryHeapInfo[1];
         memoryHeapProperties->heapCount = 1;
@@ -235,10 +236,9 @@ ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescripto
 }
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-    const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult) {
+    const std::vector<tint::wgsl::Extension>& internalExtensions) {
     Ref<ShaderModule> module = AcquireRef(new ShaderModule(this, descriptor, internalExtensions));
-    DAWN_TRY(module->Initialize(parseResult));
+    module->Initialize();
     return module;
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
@@ -297,7 +297,7 @@ MaybeError Device::CopyFromStagingToBuffer(BufferBase* source,
     return {};
 }
 
-MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
+MaybeError Device::CopyFromStagingToTextureImpl(BufferBase* source,
                                                 const TexelCopyBufferLayout& src,
                                                 const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
@@ -401,13 +401,15 @@ MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) 
     return {};
 }
 
-void Buffer::FinalizeMapImpl() {}
+MaybeError Buffer::FinalizeMapImpl(BufferState newState) {
+    return {};
+}
 
 void* Buffer::GetMappedPointerImpl() {
     return mBackingData.get();
 }
 
-void Buffer::UnmapImpl() {}
+void Buffer::UnmapImpl(BufferState oldState) {}
 
 void Buffer::DestroyImpl() {
     // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
@@ -482,44 +484,35 @@ MaybeError Queue::WaitForIdleForDestructionImpl() {
 MaybeError ComputePipeline::InitializeImpl() {
     const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);
 
+    tint::null::writer::Options tintOptions;
+    tintOptions.entry_point_name = computeStage.entryPoint;
+    tintOptions.substitute_overrides_config = {
+        .map = BuildSubstituteOverridesTransformConfig(computeStage),
+    };
+
     // Convert the AST program to an IR module.
     auto ir =
         tint::wgsl::reader::ProgramToLoweredIR(computeStage.module->GetTintProgram()->program);
     DAWN_INVALID_IF(ir != tint::Success, "An error occurred while generating Tint IR\n%s",
                     ir.Failure().reason);
 
-    auto singleEntryPointResult =
-        tint::core::ir::transform::SingleEntryPoint(ir.Get(), computeStage.entryPoint.c_str());
-    DAWN_INVALID_IF(singleEntryPointResult != tint::Success,
-                    "Pipeline single entry point (IR) failed:\n%s",
-                    singleEntryPointResult.Failure().reason);
+    tint::Result<tint::null::writer::Output> tintResult =
+        tint::null::writer::Generate(ir.Get(), tintOptions);
 
-    // this needs to run after SingleEntryPoint transform which removes unused
-    // overrides for the current entry point.
-    tint::core::ir::transform::SubstituteOverridesConfig cfg;
-    cfg.map = BuildSubstituteOverridesTransformConfig(computeStage);
-
-    auto substituteOverridesResult = tint::core::ir::transform::SubstituteOverrides(ir.Get(), cfg);
-    DAWN_INVALID_IF(substituteOverridesResult != tint::Success,
-                    "Pipeline override substitution (IR) failed:\n%s",
-                    substituteOverridesResult.Failure().reason);
+    DAWN_INVALID_IF(tintResult != tint::Success, "An error occurred while running Null writer\n%s",
+                    tintResult.Failure().reason);
 
     auto limits = LimitsForCompilationRequest::Create(GetDevice()->GetLimits().v1);
     auto adapterSupportedLimits =
         LimitsForCompilationRequest::Create(GetDevice()->GetAdapter()->GetLimits().v1);
     auto maxSubgroupSize = GetDevice()->GetAdapter()->GetPhysicalDevice()->GetSubgroupMaxSize();
 
-    //  Workgroup validation has to come after overrides to have been substituted.
-    auto wgInfo = tint::core::ir::GetWorkgroupInfo(ir.Get());
-
-    DAWN_INVALID_IF(wgInfo != tint::Success, "Getting workgroup info has failed (IR):\n%s",
-                    wgInfo.Failure().reason);
-
     Extent3D _;
     DAWN_TRY_ASSIGN(_, ValidateComputeStageWorkgroupSize(
-                           wgInfo.Get().x, wgInfo.Get().y, wgInfo.Get().z,
-                           wgInfo.Get().storage_size, computeStage.metadata->usesSubgroupMatrix,
-                           maxSubgroupSize, limits, adapterSupportedLimits));
+                           tintResult->workgroup_info.x, tintResult->workgroup_info.y,
+                           tintResult->workgroup_info.z, tintResult->workgroup_info.storage_size,
+                           computeStage.metadata->usesSubgroupMatrix, maxSubgroupSize, limits,
+                           adapterSupportedLimits));
 
     return {};
 }
@@ -575,12 +568,6 @@ void SwapChain::DetachFromSurfaceImpl() {
         mTexture->APIDestroy();
         mTexture = nullptr;
     }
-}
-
-// ShaderModule
-
-MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult) {
-    return InitializeBase(parseResult);
 }
 
 uint32_t Device::GetOptimalBytesPerRowAlignment() const {

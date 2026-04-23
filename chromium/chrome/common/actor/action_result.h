@@ -32,13 +32,15 @@ bool IsOk(const mojom::ActionResult& result);
 
 bool IsOk(mojom::ActionResultCode code);
 
-mojom::ActionResultPtr MakeOkResult();
+bool RequiresPageStabilization(const mojom::ActionResult& result);
 
-// TODO(crbug.com/409558980): Replace generic errors with tool-specific ones,
-// and remove this function.
-mojom::ActionResultPtr MakeErrorResult();
+mojom::ActionResultPtr MakeOkResult(bool requires_page_stabilization = true);
 
+// TODO(b/459615712): Rename this to MakeErrorResult to make it clear that this
+// shouldn't be used for successful results as the default page_stabilization
+// argument makes this error-prone. This is runtime asserted inside.
 mojom::ActionResultPtr MakeResult(mojom::ActionResultCode code,
+                                  bool requires_page_stabilization = false,
                                   std::string_view msg = std::string_view());
 
 std::string ToDebugString(const mojom::ActionResult& result);

@@ -54,6 +54,9 @@ enum WriteBarrierMode {
   // object resides in the young generation. This allows to remove barriers in
   // scenarios where static write barrier removal wouldn't be allowed.
   SKIP_WRITE_BARRIER_SCOPE,
+  // Skips the write barrier during GC atomic pause. The GC uses explicit
+  // barriers where needed.
+  SKIP_WRITE_BARRIER_FOR_GC,
   // Skips the write barrier in CSA/Turbofan. Used to skip Turbofan's
   // verification in the MemoryOptimizer.
   UNSAFE_SKIP_WRITE_BARRIER,
@@ -384,7 +387,7 @@ class Object : public AllStatic {
 
   V8_WARN_UNUSED_RESULT static Maybe<bool> CannotCreateProperty(
       Isolate* isolate, DirectHandle<JSAny> receiver, DirectHandle<Object> name,
-      DirectHandle<Object> value, Maybe<ShouldThrow> should_throw);
+      Maybe<ShouldThrow> should_throw);
   V8_WARN_UNUSED_RESULT static Maybe<bool> WriteToReadOnlyProperty(
       LookupIterator* it, DirectHandle<Object> value,
       Maybe<ShouldThrow> should_throw);
@@ -709,10 +712,6 @@ IS_TYPE_FUNCTION_DECL(PropertyDictionary)
 IS_TYPE_FUNCTION_DECL(AnyHole)
 #undef IS_TYPE_FUNCTION_DECL
 
-// Predicate for IsAnyHole which can be used on any object type -- the standard
-// IsAnyHole check cannot be used for Code space objects.
-V8_INLINE bool SafeIsAnyHole(Tagged<Object> obj);
-
 V8_INLINE bool IsNumber(Tagged<Object> obj, ReadOnlyRoots roots);
 
 // Oddball checks are faster when they are raw pointer comparisons, so the
@@ -829,7 +828,7 @@ class MapWord {
 
   // View this map word as a forwarding address.
   inline Tagged<HeapObject> ToForwardingAddress(
-      Tagged<HeapObject> map_word_host);
+      Tagged<HeapObject> map_word_host) const;
 
   constexpr inline Address ptr() const { return value_; }
 

@@ -540,6 +540,12 @@ struct avifEncoder {
     avifIOStats ioStats;
     avifDiagnostics diag;
     int32_t qualityGainMap;
+    /// Used when encoding an image sequence. Specified in seconds since midnight, Jan. 1, 1970 UTC
+    /// (the Unix epoch) If set to 0 (the default), now() is used.
+    uint64_t creationTime;
+    /// Used when encoding an image sequence. Specified in seconds since midnight, Jan. 1, 1970 UTC
+    /// (the Unix epoch) If set to 0 (the default), now() is used.
+    uint64_t modificationTime;
     Box<Encoder> rust_encoder;
     bool rust_encoder_initialized;
     Box<CodecSpecificOptions> codec_specific_options;

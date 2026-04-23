@@ -31,7 +31,7 @@ bool AddRulesToPolicy(int ruleset_fd,
   for (const auto& path : paths) {
     base::ScopedFD parent_fd(open(path.c_str(), O_PATH | O_CLOEXEC));
     if (!parent_fd.is_valid()) {
-      PLOG(ERROR) << "open failed for " << path;
+      PLOG(ERROR) << "Could not add rule for path, because open failed for " << path;
       continue;
     }
     struct landlock_path_beneath_attr path_beneath = {
@@ -100,7 +100,14 @@ bool ApplyLandlock(sandbox::mojom::Sandbox sandbox_type) {
       "/data/app",
       // Allow read-only access to /proc/self. This is needed for the process
       // to introspect its own state.
-      "/proc/self", "/sys"};
+      "/proc/self",
+      // Allow access to /proc/sys/kernel/random, which ashmem may use to
+      // obtain entropy for ASLR.
+      "/proc/sys/kernel/random", "/sys",
+      // TODO(crbug.com/462103953): tighten these broad rules once the Corsola
+      // issue is resolved and we've confirmed the precise paths needed.
+      "/system/vendor/lib", "/system/vendor/lib64", "/vendor/lib",
+      "/vendor/lib64"};
   uint64_t ro_access =
       LANDLOCK_ACCESS_FS_READ_FILE | LANDLOCK_ACCESS_FS_READ_DIR;
   if (!AddRulesToPolicy(ruleset_fd.get(), allowed_ro_paths, ro_access)) {

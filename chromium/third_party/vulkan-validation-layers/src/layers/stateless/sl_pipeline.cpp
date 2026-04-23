@@ -814,7 +814,7 @@ bool Device::manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
                         skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-pDynamicStates-03380", device,
                                          viewport_loc.dot(Field::scissorCount),
                                          "(%" PRIu32 ") must be zero when VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT is used.",
-                                         viewport_state.viewportCount);
+                                         viewport_state.scissorCount);
                     }
                 } else {
                     if (viewport_state.scissorCount == 0) {
@@ -848,7 +848,7 @@ bool Device::manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
                         }
 
                         const int64_t x_sum = static_cast<int64_t>(scissor.offset.x) + static_cast<int64_t>(scissor.extent.width);
-                        if (x_sum > std::numeric_limits<int32_t>::max()) {
+                        if (x_sum > vvl::kI32Max) {
                             skip |= LogError("VUID-VkPipelineViewportStateCreateInfo-offset-02822", device, scissor_loc,
                                              "offset.x (%" PRId32 ") + extent.width (%" PRId32 ") is %" PRIi64
                                              " which will overflow int32_t.",
@@ -856,7 +856,7 @@ bool Device::manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
                         }
 
                         const int64_t y_sum = static_cast<int64_t>(scissor.offset.y) + static_cast<int64_t>(scissor.extent.height);
-                        if (y_sum > std::numeric_limits<int32_t>::max()) {
+                        if (y_sum > vvl::kI32Max) {
                             skip |= LogError("VUID-VkPipelineViewportStateCreateInfo-offset-02823", device, scissor_loc,
                                              "offset.y (%" PRId32 ") + extent.height (%" PRId32 ") is %" PRIi64
                                              " which will overflow int32_t.",
@@ -1413,7 +1413,7 @@ bool Device::ValidateDepthClampRange(const VkDepthClampRangeEXT &depth_clamp_ran
 
     if (!IsExtEnabled(extensions.vk_ext_depth_range_unrestricted)) {
         if (depth_clamp_range.minDepthClamp < 0.0) {
-            skip |= LogError("VUID-VkDepthClampRangeEXT-pDepthClampRange-09648", device, loc.dot(Field::minDepth),
+            skip |= LogError("VUID-VkDepthClampRangeEXT-pDepthClampRange-09648", device, loc.dot(Field::minDepthClamp),
                              "(%f) is below 0.0 (and VK_EXT_depth_range_unrestricted is not enabled).",
                              depth_clamp_range.minDepthClamp);
         }

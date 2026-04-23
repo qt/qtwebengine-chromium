@@ -9,8 +9,10 @@
 #include <utility>
 
 #include "base/byte_count.h"
+#include "base/byte_size.h"
 #include "base/check.h"
 #include "base/containers/heap_array.h"
+#include "base/containers/to_vector.h"
 #include "base/functional/callback.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
@@ -20,7 +22,10 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/types/expected.h"
+#include "base/types/expected_macros.h"
 #include "build/build_config.h"
+#include "content/browser/indexed_db/indexed_db_data_format_version.h"
+#include "content/browser/indexed_db/indexed_db_reporting.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
 #include "content/browser/indexed_db/instance/backing_store.h"
 #include "content/browser/indexed_db/instance/record.h"
@@ -28,6 +33,7 @@
 #include "content/browser/indexed_db/instance/sqlite/backing_store_database_impl.h"
 #include "content/browser/indexed_db/instance/sqlite/backing_store_transaction_impl.h"
 #include "content/browser/indexed_db/status.h"
+#include "mojo/public/cpp/base/big_buffer.h"
 #include "sql/database.h"
 #include "sql/error_delegate_util.h"
 #include "sql/meta_table.h"
@@ -38,6 +44,8 @@
 #include "third_party/blink/public/common/indexeddb/indexeddb_key_path.h"
 #include "third_party/blink/public/common/indexeddb/indexeddb_metadata.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom.h"
+#include "third_party/snappy/src/snappy.h"
+#include "third_party/zstd/src/lib/zstd.h"
 
 // TODO(crbug.com/40253999): Rename the file to indicate that it contains
 // backend-agnostic utils to encode/decode IDB types, and potentially move the
@@ -74,6 +82,13 @@
 
 namespace content::indexed_db::sqlite {
 namespace {
+
+// Persisted to disk; do not reuse or change values.
+enum class CompressionType : uint8_t {
+  kUncompressed = 0,  // Not compressed.
+  kZstd = 1,          // Standalone ZSTD with no dictionary.
+  kSnappy = 2,        // Snappy.
+};
 
 // Used for tests.
 std::optional<base::ByteCount> g_max_blob_size_override;
@@ -117,14 +132,16 @@ void BindKeyPath(sql::Statement& statement,
       NOTREACHED();
   }
 }
-blink::IndexedDBKeyPath ColumnKeyPath(sql::Statement& statement,
-                                      int column_index) {
+
+StatusOr<blink::IndexedDBKeyPath> ColumnKeyPath(sql::Statement& statement,
+                                                int column_index) {
   if (statement.GetColumnType(column_index) == sql::ColumnType::kNull) {
     // `Null` key path.
     return blink::IndexedDBKeyPath();
   }
-  std::u16string encoded;
-  statement.ColumnBlobAsString16(column_index, &encoded);
+  ASSIGN_OR_RETURN(
+      std::u16string encoded, statement.ColumnBlobAsString16(column_index),
+      []() { return Status::Corruption("Key path unexpected size"); });
   std::vector<std::u16string> parts = base::SplitString(
       encoded, kKeyPathSeparator, base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
   if (parts.empty()) {
@@ -138,6 +155,55 @@ blink::IndexedDBKeyPath ColumnKeyPath(sql::Statement& statement,
   // `Array` key path.
   return blink::IndexedDBKeyPath(std::move(parts));
 }
+
+StatusOr<mojo_base::BigBuffer> DoDecompress(
+    base::span<const uint8_t> compressed,
+    int compression_type) {
+  if (compression_type == static_cast<int>(CompressionType::kUncompressed)) {
+    return mojo_base::BigBuffer(compressed);
+  }
+
+  if (compression_type == static_cast<int>(CompressionType::kZstd)) {
+    uint64_t decompressed_size =
+        ZSTD_getFrameContentSize(compressed.data(), compressed.size());
+    if (decompressed_size == ZSTD_CONTENTSIZE_UNKNOWN ||
+        decompressed_size == ZSTD_CONTENTSIZE_ERROR) {
+      return base::unexpected(Status::Corruption("ZSTD decompression failed"));
+    }
+
+    mojo_base::BigBuffer decompressed(decompressed_size);
+    if (ZSTD_isError(ZSTD_decompress(decompressed.data(), decompressed.size(),
+                                     compressed.data(), compressed.size()))) {
+      return base::unexpected(Status::Corruption("ZSTD decompression failed"));
+    }
+
+    return std::move(decompressed);
+  }
+
+  if (compression_type == static_cast<int>(CompressionType::kSnappy)) {
+    size_t decompressed_length;
+    base::span<const char> src = base::as_chars(compressed);
+    if (!snappy::GetUncompressedLength(src.data(), src.size(),
+                                       &decompressed_length)) {
+      return base::unexpected(
+          Status::Corruption("Snappy decompression failed"));
+    }
+
+    mojo_base::BigBuffer decompressed(decompressed_length);
+    base::span<char> dest = base::as_writable_chars(base::span(decompressed));
+    if (!snappy::RawUncompress(src.data(), src.size(), dest.data())) {
+      return base::unexpected(
+          Status::Corruption("Snappy decompression failed"));
+    }
+
+    return std::move(decompressed);
+  }
+
+  return base::unexpected(Status::Corruption("unknown compression type"));
+}
+
+// Key used in MetaTable to track the data encoding version used by Blink/V8.
+constexpr std::string_view kV8DataVersionKey = "v8_data_version";
 
 // These are schema versions of our implementation of `sql::Database`; not the
 // version supplied by the application for the IndexedDB database.
@@ -198,6 +264,7 @@ Status CreateSchema(sql::Database* db, std::u16string_view name) {
                                      "CREATE TABLE records "
                                      "(row_id INTEGER PRIMARY KEY,"
                                      " object_store_id INTEGER NOT NULL,"
+                                     " compression_type INTEGER NOT NULL,"
                                      " key BLOB NOT NULL,"
                                      " value BLOB NOT NULL)");
   // Create the index separately so it can be given a name (which is referenced
@@ -244,7 +311,9 @@ Status CreateSchema(sql::Database* db, std::u16string_view name) {
       db,
       "CREATE TABLE blobs "
       // This row id will be used as the IndexedDBExternalObject::blob_number_.
-      "(row_id INTEGER PRIMARY KEY,"
+      // AUTOINCREMENT prevents reuse of an ID if a blob is deleted, to avoid
+      // confusion in `blobs_staged_for_commit_` which uses this ID.
+      "(row_id INTEGER PRIMARY KEY AUTOINCREMENT,"
       // Corresponds to `IndexedDBExternalObject::ObjectType`.
       " object_type INTEGER NOT NULL,"
       // Null for FSA handles.
@@ -395,7 +464,8 @@ class ObjectStoreCursorImpl : public BackingStoreCursorImpl {
       bool key_only,
       bool ascending_order) {
     std::vector<std::string_view> query_pieces = StartRecordRangeQuery(
-        key_only ? "SELECT key" : "SELECT key, value, row_id", key_range);
+        key_only ? "SELECT key" : "SELECT key, value, compression_type, row_id",
+        key_range);
     if (ascending_order) {
       query_pieces.push_back(
           " AND (@is_first_seek = 1 OR key > @position)"
@@ -466,14 +536,16 @@ class ObjectStoreCursorImpl : public BackingStoreCursorImpl {
   StatusOr<std::unique_ptr<Record>> ReadRow(
       sql::Statement& statement) override {
     CHECK(statement.Succeeded());
-    statement.ColumnBlobAsString(0, &position_);
+    position_ = statement.ColumnBlobAsString(0);
     blink::IndexedDBKey key = DecodeSortableIDBKey(position_);
     if (key_only_) {
       return std::make_unique<ObjectStoreKeyOnlyRecord>(std::move(key));
     }
+    base::span<const uint8_t> bits = statement.ColumnBlob(1);
+    int compression_type = statement.ColumnInt(2);
     IndexedDBValue value;
-    statement.ColumnBlobAsVector(1, &value.bits);
-    int64_t record_row_id = statement.ColumnInt64(2);
+    ASSIGN_OR_RETURN(value.bits, db()->Decompress(bits, compression_type));
+    int64_t record_row_id = statement.ColumnInt64(3);
     return db()
         ->AddExternalObjectMetadataToValue(std::move(value), record_row_id)
         .transform([&](IndexedDBValue value_with_metadata) {
@@ -529,6 +601,7 @@ class IndexCursorImpl : public BackingStoreCursorImpl {
     } else {
       query_pieces.push_back(
           ", records.value"
+          ", records.compression_type"
           ", records.row_id"
           " FROM index_references INNER JOIN records"
           "  ON index_references.record_row_id = records.row_id");
@@ -687,19 +760,23 @@ class IndexCursorImpl : public BackingStoreCursorImpl {
   StatusOr<std::unique_ptr<Record>> ReadRow(
       sql::Statement& statement) override {
     CHECK(statement.Succeeded());
-
-    statement.ColumnBlobAsString(0, &position_);
+    position_ = statement.ColumnBlobAsString(0);
     blink::IndexedDBKey key = DecodeSortableIDBKey(position_);
-    statement.ColumnBlobAsString(1, &object_store_position_);
+    object_store_position_ = statement.ColumnBlobAsString(1);
     blink::IndexedDBKey primary_key =
         DecodeSortableIDBKey(object_store_position_);
     if (key_only_) {
       return std::make_unique<IndexKeyOnlyRecord>(std::move(key),
                                                   std::move(primary_key));
     }
+
+    base::span<const uint8_t> bits = statement.ColumnBlob(2);
+    int compression_type = statement.ColumnInt(3);
     IndexedDBValue value;
-    statement.ColumnBlobAsVector(2, &value.bits);
-    int64_t record_row_id = statement.ColumnInt64(3);
+    ASSIGN_OR_RETURN(value.bits, db()->Decompress(bits, compression_type));
+
+    int64_t record_row_id = statement.ColumnInt64(4);
+
     return db()
         ->AddExternalObjectMetadataToValue(std::move(value), record_row_id)
         .transform([&](IndexedDBValue value_with_metadata) {
@@ -746,14 +823,19 @@ StatusOr<std::unique_ptr<DatabaseConnection>> DatabaseConnection::Open(
   auto connection =
       base::WrapUnique(new DatabaseConnection(path, backing_store));
   Status s = connection->Init(name);
-  if (!s.ok()) {
+  if (!path.empty() && !s.ok()) {
+    IndexedDBDataLossInfo loss;
+    if (connection->marked_for_permanent_deletion_) {
+      loss.status = blink::mojom::IDBDataLoss::Total;
+      loss.message = s.ToString();
+    }
     // If opening fails, recover or destroy the DB and try once more. This is
     // accomplished by destroying `connection`, since the destructor handles
     // errors.
-    // TODO(crbug.com/419272070): add logging for success rate of second
-    // attempt.
     connection = base::WrapUnique(new DatabaseConnection(path, backing_store));
     s = connection->Init(name);
+    connection->data_loss_info_ = std::move(loss);
+    s.Log("IndexedDB.SQLite.OpenRetryResult");
   }
   if (!s.ok()) {
     return base::unexpected(s);
@@ -771,7 +853,7 @@ void DatabaseConnection::Release(base::WeakPtr<DatabaseConnection> db) {
   // in case the page reopens the same database soon.
   DatabaseConnection* db_ptr = db.get();
   db.reset();
-  if (db_ptr->CanBeDestroyed()) {
+  if (db_ptr->CanSelfDestruct()) {
     db_ptr->backing_store_->DestroyConnection(db_ptr->metadata_.name);
   }
 }
@@ -781,15 +863,24 @@ DatabaseConnection::DatabaseConnection(base::FilePath path,
     : path_(path), backing_store_(backing_store) {}
 
 DatabaseConnection::~DatabaseConnection() {
-  if (!db_ || path_.empty()) {
+  // Although generally active blobs will keep `this` alive, in some cases such
+  // as when the backing store is being force-closed, blobs may still be active.
+  active_blobs_.clear();
+
+  if (!db_ || in_memory()) {
     return;
   }
 
-  if (marked_for_permanent_deletion_) {
+  bool had_sql_error =
+      !sql::IsSqliteSuccessCode(sql::ToSqliteResultCode(db_->GetErrorCode()));
+
+  // When the database never finished initializing, it will be zygotic. This
+  // could happen if version change transaction was aborted/rolled back. In this
+  // case the newly created database should be deleted.
+  if (marked_for_permanent_deletion_ || (IsZygotic() && !had_sql_error)) {
     db_.reset();
     sql::Database::Delete(path_);
-  } else if (!sql::IsSqliteSuccessCode(
-                 sql::ToSqliteResultCode(db_->GetErrorCode()))) {
+  } else if (had_sql_error) {
     LogEvent(SpecificEvent::kDatabaseHadSqlError);
 
     // Note that `DatabaseConnection` does not set an error callback on
@@ -819,14 +910,14 @@ Status DatabaseConnection::Init(std::optional<std::u16string_view> name) {
 
   constexpr sql::Database::Tag kSqlTag = "IndexedDB";
   constexpr sql::Database::Tag kSqlTagInMemory = "IndexedDBEphemeral";
-  db_ = std::make_unique<sql::Database>(
-      sql::DatabaseOptions()
-          .set_exclusive_locking(true)
-          .set_wal_mode(true)
-          .set_enable_triggers(true),
-      path_.empty() ? kSqlTagInMemory : kSqlTag);
+  db_ =
+      std::make_unique<sql::Database>(sql::DatabaseOptions()
+                                          .set_exclusive_locking(true)
+                                          .set_wal_mode(true)
+                                          .set_enable_triggers(true),
+                                      in_memory() ? kSqlTagInMemory : kSqlTag);
 
-  if (path_.empty()) {
+  if (in_memory()) {
     RETURN_STATUS_ON_ERROR(db_->OpenInMemory());
   } else {
     RETURN_STATUS_ON_ERROR(db_->Open(path_));
@@ -839,7 +930,8 @@ Status DatabaseConnection::Init(std::optional<std::u16string_view> name) {
   sql::Transaction transaction(db_.get());
   RETURN_STATUS_ON_ERROR(transaction.Begin());
 
-  if (!sql::MetaTable::DoesTableExist(db_.get())) {
+  const bool is_new_db = !sql::MetaTable::DoesTableExist(db_.get());
+  if (is_new_db) {
     IDB_RETURN_IF_ERROR(CreateSchema(db_.get(), *name));
   }
 
@@ -851,6 +943,26 @@ Status DatabaseConnection::Init(std::optional<std::u16string_view> name) {
     return Fatal(Status::NotFound("Database too new"),
                  SpecificEvent::kDatabaseTooNew);
   }
+
+  // The "data format version" refers to the encoding routine Blink/V8 uses to
+  // serialize values. It will always be backwards compatible, but we may open a
+  // database that is too new (written by a future version of the browser),
+  // which will be a fatal error.
+  const auto current_data_format = IndexedDBDataFormatVersion::GetCurrent();
+  if (!is_new_db) {
+    int64_t data_format_version;
+    if (!meta_table_->GetValue(kV8DataVersionKey, &data_format_version)) {
+      return Fatal(Status::Corruption("Missing data format version"),
+                   SpecificEvent::kV8FormatTooNewOrMissing);
+    }
+    if (!current_data_format.IsAtLeast(
+            IndexedDBDataFormatVersion::Decode(data_format_version))) {
+      return Fatal(
+          Status::NotFound("Unintelligible data format version: too new"),
+          SpecificEvent::kV8FormatTooNewOrMissing);
+    }
+  }
+  meta_table_->SetValue(kV8DataVersionKey, current_data_format.Encode());
 
   switch (meta_table_->GetVersionNumber()) {
     // ...
@@ -900,7 +1012,7 @@ int64_t DatabaseConnection::GetCommittedVersion() const {
 }
 
 uint64_t DatabaseConnection::GetInMemorySize() const {
-  CHECK(path_.empty());
+  CHECK(in_memory());
   // TODO(crbug.com/419203257): For consistency, consider using this logic while
   // reporting usage of on-disk databases too.
   //
@@ -974,21 +1086,23 @@ Status DatabaseConnection::CommitTransactionPhaseOne(
     const BackingStoreTransactionImpl& transaction,
     BlobWriteCallback callback,
     SerializeFsaCallback serialize_fsa_handle) {
-  if (transaction.mode() == blink::mojom::IDBTransactionMode::ReadOnly ||
-      blobs_to_write_.empty()) {
-    return std::move(callback).Run(
-        BlobWriteResult::kRunPhaseTwoAndReturnResult,
-        storage::mojom::WriteBlobToFileResult::kSuccess);
-  }
-
   CHECK(blob_write_callback_.is_null());
   CHECK(blob_writers_.empty());
   CHECK_EQ(outstanding_external_object_writes_, 0U);
 
-  blob_write_callback_ = std::move(callback);
+  std::map<int64_t, IndexedDBExternalObject> blobs_to_commit =
+      std::move(blobs_staged_for_commit_);
+  for (auto& [blob_row_id, external_object] : blobs_to_commit) {
+    {
+      // The blob may have been added and deleted in the same txn.
+      sql::Statement statement(db_->GetCachedStatement(
+          SQL_FROM_HERE, "SELECT 1 FROM blobs WHERE row_id = ?"));
+      statement.BindInt64(0, blob_row_id);
+      if (!statement.Step()) {
+        continue;
+      }
+    }
 
-  auto blobs_to_write = std::move(blobs_to_write_);
-  for (auto& [blob_row_id, external_object] : blobs_to_write) {
     ++outstanding_external_object_writes_;
     if (external_object.object_type() ==
         IndexedDBExternalObject::ObjectType::kFileSystemAccessHandle) {
@@ -1012,6 +1126,13 @@ Status DatabaseConnection::CommitTransactionPhaseOne(
     blob_writers_[blob_row_id] = std::move(writer);
   }
 
+  if (outstanding_external_object_writes_ == 0) {
+    return std::move(callback).Run(
+        BlobWriteResult::kRunPhaseTwoAndReturnResult);
+  }
+
+  CHECK_NE(transaction.mode(), blink::mojom::IDBTransactionMode::ReadOnly);
+  blob_write_callback_ = std::move(callback);
   return Status::OK();
 }
 
@@ -1056,9 +1177,7 @@ void DatabaseConnection::OnBlobWriteComplete(int64_t blob_row_id,
   }
 
   if (--outstanding_external_object_writes_ == 0) {
-    std::move(blob_write_callback_)
-        .Run(BlobWriteResult::kRunPhaseTwoAsync,
-             storage::mojom::WriteBlobToFileResult::kSuccess);
+    std::move(blob_write_callback_).Run(BlobWriteResult::kRunPhaseTwoAsync);
   }
 }
 
@@ -1085,8 +1204,7 @@ void DatabaseConnection::CancelBlobWriting() {
   outstanding_external_object_writes_ = 0;
   if (blob_write_callback_) {
     std::move(blob_write_callback_)
-        .Run(BlobWriteResult::kRunPhaseTwoAsync,
-             storage::mojom::WriteBlobToFileResult::kError);
+        .Run(base::unexpected(Status::IOError("Error")));
   }
 }
 
@@ -1115,8 +1233,8 @@ void DatabaseConnection::RollBackTransaction(
     return;
   }
 
-  // Abort ongoing blob writes, if any.
-  // TODO(crbug.com/419208485): Be sure to test this case.
+  // Abort ongoing or future blob writes, if any.
+  blobs_staged_for_commit_.clear();
   blob_write_callback_.Reset();
   CancelBlobWriting();
 
@@ -1424,10 +1542,10 @@ StatusOr<IndexedDBValue> DatabaseConnection::GetValue(
   int64_t record_row_id;
 
   {
-    sql::Statement statement(
-        db_->GetCachedStatement(SQL_FROM_HERE,
-                                "SELECT row_id, value FROM records "
-                                "WHERE object_store_id = ? AND key = ?"));
+    sql::Statement statement(db_->GetCachedStatement(
+        SQL_FROM_HERE,
+        "SELECT row_id, value, compression_type FROM records "
+        "WHERE object_store_id = ? AND key = ?"));
     statement.BindInt64(0, object_store_id);
     statement.BindBlob(1, EncodeSortableIDBKey(key));
     if (!statement.Step()) {
@@ -1435,7 +1553,10 @@ StatusOr<IndexedDBValue> DatabaseConnection::GetValue(
       return IndexedDBValue();
     }
     record_row_id = statement.ColumnInt64(0);
-    statement.ColumnBlobAsVector(1, &value.bits);
+
+    base::span<const uint8_t> bits = statement.ColumnBlob(1);
+    int compression_type = statement.ColumnInt(2);
+    ASSIGN_OR_RETURN(value.bits, Decompress(bits, compression_type));
   }
 
   return AddExternalObjectMetadataToValue(std::move(value), record_row_id);
@@ -1464,10 +1585,11 @@ StatusOr<IndexedDBValue> DatabaseConnection::AddExternalObjectMetadataToValue(
                IndexedDBExternalObject::ObjectType::kFileSystemAccessHandle));
     while (statement.Step()) {
       const int64_t blob_row_id = statement.ColumnInt64(0);
-      if (auto it = blobs_to_write_.find(blob_row_id);
-          it != blobs_to_write_.end()) {
+      if (auto it = blobs_staged_for_commit_.find(blob_row_id);
+          it != blobs_staged_for_commit_.end()) {
         // If the blob is being written in this transaction, copy the external
-        // object (and later the Blob mojo endpoint) from `blobs_to_write_`.
+        // object (and later the Blob mojo endpoint) from
+        // `blobs_staged_for_commit_`.
         value.external_objects.emplace_back(it->second);
       } else {
         auto object_type = static_cast<IndexedDBExternalObject::ObjectType>(
@@ -1510,8 +1632,8 @@ StatusOr<IndexedDBValue> DatabaseConnection::AddExternalObjectMetadataToValue(
                IndexedDBExternalObject::ObjectType::kFileSystemAccessHandle));
     while (statement.Step()) {
       const int64_t blob_row_id = statement.ColumnInt64(0);
-      if (auto it = blobs_to_write_.find(blob_row_id);
-          it != blobs_to_write_.end()) {
+      if (auto it = blobs_staged_for_commit_.find(blob_row_id);
+          it != blobs_staged_for_commit_.end()) {
         mojo::PendingRemote<blink::mojom::FileSystemAccessTransferToken>
             token_clone;
         it->second.file_system_access_token_remote()->Clone(
@@ -1537,15 +1659,77 @@ StatusOr<BackingStore::RecordIdentifier> DatabaseConnection::PutRecord(
   // Insert record, including inline data.
   const std::string encoded_key = EncodeSortableIDBKey(key);
   {
+    // `bits_copy` *may* be used to briefly own the data that is copied into the
+    // SQL db. NB: this is declared here to ensure its lifetime exceeds that of
+    // `statement`.
+    std::vector<uint8_t> bits_copy;
+    // `bits_span` *will* refer to the data that should be copied into the SQL
+    // db.
+    base::span<const uint8_t> bits_span;
+
     // "INSERT OR REPLACE" deletes the row corresponding to
     // [object_store_id, key] if it exists and inserts a new row with `value`.
     sql::Statement statement(db_->GetCachedStatement(
         SQL_FROM_HERE,
         "INSERT OR REPLACE INTO records "
-        "(object_store_id, key, value) VALUES (?, ?, ?)"));
+        "(object_store_id, key, compression_type, value) VALUES (?, ?, ?, ?)"));
     statement.BindInt64(0, object_store_id);
     statement.BindBlob(1, encoded_key);
-    statement.BindBlob(2, std::move(value.bits));
+
+    CompressionType compression_type = CompressionType::kUncompressed;
+
+    static constexpr base::ByteSize kMinimumCompressionSize(64);
+    static constexpr float kMinimumCompressionRatio = 0.8f;
+    if (value.bits.storage_type() ==
+        mojo_base::BigBuffer::StorageType::kSharedMemory) {
+      // Make a copy of the bits if they are in shared memory before attempting
+      // to compress. See BigBuffer docs re: TOCTOU bugs.
+      bits_copy = base::ToVector(std::move(value.bits));
+      bits_span = base::span(bits_copy);
+    } else {
+      bits_span = base::span(value.bits);
+    }
+
+    // Maybe compress, updating `bits_span` and `bits_copy` as appropriate.
+    if (bits_span.size() >= kMinimumCompressionSize.InBytes()) {
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_FUCHSIA)
+      size_t max_compressed_size = ZSTD_compressBound(bits_span.size());
+      std::vector<uint8_t> compressed_bits(max_compressed_size);
+
+      // Compression level of -4 yields compression output similar to Snappy.
+      size_t compressed_length = ZSTD_compress(
+          compressed_bits.data(), compressed_bits.size(), bits_span.data(),
+          bits_span.size(), /*compressionLevel=*/-4);
+      compression_type = CompressionType::kZstd;
+#else
+      size_t max_compressed_size =
+          snappy::MaxCompressedLength(bits_span.size());
+      std::vector<uint8_t> compressed_bits(max_compressed_size);
+      size_t compressed_length = 0;
+      base::span<const char> src = base::as_chars(bits_span);
+      base::span<char> dest =
+          base::as_writable_chars(base::span(compressed_bits));
+      snappy::RawCompress(src.data(), src.size(), dest.data(),
+                          &compressed_length);
+      compression_type = CompressionType::kSnappy;
+#endif
+      if (compressed_length <= bits_span.size() * kMinimumCompressionRatio) {
+        compressed_bits.resize(compressed_length);
+        bits_copy = std::move(compressed_bits);
+        bits_span = base::span(bits_copy);
+      } else {
+        compression_type = CompressionType::kUncompressed;
+      }
+    }
+
+    statement.BindInt(2, static_cast<int>(compression_type));
+    // Passing `bits_span` directly would make an unnecessary copy via
+    // `RefCountedBytes`, so construct a `RefCountedStaticMemory`, which doesn't
+    // copy. This is safe as long as `statement` is destroyed and clears the
+    // `RefCountedStaticMemory` binding *before* the object that owns that
+    // memory (`bits_copy` or `value.bits`) is destroyed.
+    statement.BindBlob(
+        3, base::MakeRefCounted<base::RefCountedStaticMemory>(bits_span));
     RUN_STATEMENT_RETURN_ON_ERROR(statement);
   }
   const int64_t record_row_id = db_->GetLastInsertRowId();
@@ -1628,12 +1812,11 @@ StatusOr<BackingStore::RecordIdentifier> DatabaseConnection::PutRecord(
       RUN_STATEMENT_RETURN_ON_ERROR(statement);
     }
 
-    // TODO(crbug.com/419208485): Consider writing the blobs eagerly (but still
-    // asynchronously) so that transaction commit is expedited.
-    auto rv = blobs_to_write_.emplace(blob_row_id,
-                                      // TODO(crbug.com/419208485): this type is
-                                      // copy only at the moment.
-                                      std::move(external_object));
+    auto rv =
+        blobs_staged_for_commit_.emplace(blob_row_id,
+                                         // TODO(crbug.com/419208485): this type
+                                         // is copy only at the moment.
+                                         std::move(external_object));
     CHECK(rv.second);
   }
   OnRecordsModified(object_store_id);
@@ -1720,9 +1903,7 @@ StatusOr<blink::IndexedDBKey> DatabaseConnection::GetFirstPrimaryKeyForIndexKey(
   statement.BindInt64(1, index_id);
   statement.BindBlob(2, EncodeSortableIDBKey(key));
   if (statement.Step()) {
-    std::string primary_key;
-    statement.ColumnBlobAsString(0, &primary_key);
-    return DecodeSortableIDBKey(primary_key);
+    return DecodeSortableIDBKey(statement.ColumnBlobAsString(0));
   }
   RETURN_IF_STATEMENT_ERRORED(statement);
   // Not found.
@@ -1782,7 +1963,7 @@ DatabaseConnection::CreateAllExternalObjects(
           mojo_token;
       if (object.is_file_system_access_remote_valid()) {
         // The remote will be valid if this is a pending FSA handle i.e. came
-        // from `blobs_to_write_`.
+        // from `blobs_staged_for_commit_`.
         object.file_system_access_token_remote()->Clone(
             mojo_token.InitWithNewPipeAndPassReceiver());
       } else {
@@ -1797,7 +1978,7 @@ DatabaseConnection::CreateAllExternalObjects(
     mojo::PendingReceiver<blink::mojom::Blob> receiver =
         mojo_object->get_blob_or_file()->blob.InitWithNewPipeAndPassReceiver();
     // The remote will be valid if this is a pending blob i.e. came from
-    // `blobs_to_write_`.
+    // `blobs_staged_for_commit_`.
     if (object.is_remote_valid()) {
       object.Clone(std::move(receiver));
       continue;
@@ -1815,7 +1996,9 @@ DatabaseConnection::CreateAllExternalObjects(
                               /*readonly=*/true),
           GetMaxBlobSize().InBytes(),
           base::BindOnce(&DatabaseConnection::OnBlobBecameInactive,
-                         base::Unretained(this), object.blob_number()));
+                         base::Unretained(this), object.blob_number()),
+          base::BindRepeating(&LogNetError, "IndexedDB.BackingStore.ReadBlob",
+                              in_memory()));
       it = active_blobs_.insert({object.blob_number(), std::move(streamer)})
                .first;
       if (!AddActiveBlobReference(object.blob_number())) {
@@ -1835,7 +2018,7 @@ void DatabaseConnection::DeleteIdbDatabase(
   interface_wrapper_weak_factory_.InvalidateWeakPtrs();
   CHECK(!blob_writers_weak_factory_.HasWeakPtrs());
 
-  if (CanBeDestroyed()) {
+  if (CanSelfDestruct()) {
     // Fast path: skip explicitly deleting data as the whole database will be
     // dropped.
     backing_store_->DestroyConnection(metadata_.name);
@@ -1861,9 +2044,8 @@ void DatabaseConnection::DeleteIdbDatabase(
       }();
 
   // If there are any errors in the above, then blobs will probably error out
-  // too, so abandon the blobs.
+  // too, so go ahead and destroy `this`.
   if (!success) {
-    active_blobs_.clear();
     backing_store_->DestroyConnection(metadata_.name);
     // `this` is deleted.
   }
@@ -1888,7 +2070,7 @@ void DatabaseConnection::OnBlobBecameInactive(int64_t blob_number) {
     }
   }
 
-  if (CanBeDestroyed()) {
+  if (CanSelfDestruct()) {
     backing_store_->DestroyConnection(metadata_.name);
     // `this` is deleted.
     return;
@@ -1906,7 +2088,13 @@ bool DatabaseConnection::AddActiveBlobReference(int64_t blob_number) {
   return statement.Run();
 }
 
-bool DatabaseConnection::CanBeDestroyed() const {
+bool DatabaseConnection::CanSelfDestruct() const {
+  // In-memory databases must remain alive until the BrowserContext is destroyed
+  // (which destroys the BackingStore).
+  if (in_memory() && !marked_for_permanent_deletion_) {
+    return false;
+  }
+
   return active_blobs_.empty() &&
          !interface_wrapper_weak_factory_.HasWeakPtrs();
 }
@@ -2001,7 +2189,10 @@ DatabaseConnection::GenerateIndexedDbMetadata() {
           Fatal(Status::Corruption("Missing table `indexed_db_metadata`"),
                 SpecificEvent::kMissingMetadataTable));
     }
-    statement.ColumnBlobAsString16(0, &metadata.name);
+    ASSIGN_OR_RETURN(metadata.name, statement.ColumnBlobAsString16(0), [&]() {
+      return Fatal(Status::Corruption("Database name is unexpected size"),
+                   SpecificEvent::kUtf16StringUnreadable);
+    });
     metadata.version = statement.ColumnInt64(1);
   }
 
@@ -2013,8 +2204,17 @@ DatabaseConnection::GenerateIndexedDbMetadata() {
     while (statement.Step()) {
       blink::IndexedDBObjectStoreMetadata store_metadata;
       store_metadata.id = statement.ColumnInt64(0);
-      statement.ColumnBlobAsString16(1, &store_metadata.name);
-      store_metadata.key_path = ColumnKeyPath(statement, 2);
+      ASSIGN_OR_RETURN(
+          store_metadata.name, statement.ColumnBlobAsString16(1), [&]() {
+            return Fatal(
+                Status::Corruption("Object store name is unexpected size"),
+                SpecificEvent::kUtf16StringUnreadable);
+          });
+      ASSIGN_OR_RETURN(store_metadata.key_path, ColumnKeyPath(statement, 2),
+                       [&](Status error) {
+                         return Fatal(error,
+                                      SpecificEvent::kUtf16StringUnreadable);
+                       });
       store_metadata.auto_increment = statement.ColumnBool(3);
       max_object_store_id = std::max(max_object_store_id, store_metadata.id);
       metadata.object_stores[store_metadata.id] = std::move(store_metadata);
@@ -2032,8 +2232,16 @@ DatabaseConnection::GenerateIndexedDbMetadata() {
       blink::IndexedDBIndexMetadata index_metadata;
       int64_t object_store_id = statement.ColumnInt64(0);
       index_metadata.id = statement.ColumnInt64(1);
-      statement.ColumnBlobAsString16(2, &index_metadata.name);
-      index_metadata.key_path = ColumnKeyPath(statement, 3);
+      ASSIGN_OR_RETURN(
+          index_metadata.name, statement.ColumnBlobAsString16(2), [&]() {
+            return Fatal(Status::Corruption("Index name is unexpected size"),
+                         SpecificEvent::kUtf16StringUnreadable);
+          });
+      ASSIGN_OR_RETURN(index_metadata.key_path, ColumnKeyPath(statement, 3),
+                       [&](Status error) {
+                         return Fatal(error,
+                                      SpecificEvent::kUtf16StringUnreadable);
+                       });
       index_metadata.unique = statement.ColumnBool(4);
       index_metadata.multi_entry = statement.ColumnBool(5);
       blink::IndexedDBObjectStoreMetadata& store_metadata =
@@ -2049,7 +2257,7 @@ DatabaseConnection::GenerateIndexedDbMetadata() {
 }
 
 void DatabaseConnection::LogEvent(SpecificEvent event) const {
-  if (path_.empty()) {
+  if (in_memory()) {
     base::UmaHistogramEnumeration("IndexedDB.SQLite.SpecificEvent.InMemory",
                                   event);
   } else {
@@ -2069,6 +2277,15 @@ void DatabaseConnection::ValidateInputs(int64_t object_store_id,
   auto iter = metadata_.object_stores.find(object_store_id);
   CHECK(iter != metadata_.object_stores.end());
   CHECK(iter->second.indexes.contains(index_id));
+}
+
+StatusOr<mojo_base::BigBuffer> DatabaseConnection::Decompress(
+    base::span<const uint8_t> compressed,
+    int compression_type) {
+  return DoDecompress(compressed, compression_type)
+      .transform_error([&](Status status) {
+        return Fatal(status, SpecificEvent::kDecompressionFailure);
+      });
 }
 
 // static

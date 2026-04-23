@@ -75,8 +75,19 @@ class SimplifiedOptimizationReducer : public Next {
 
     Handle<HeapObject> cst;
     if (kind == TruncateJSPrimitiveToUntaggedOp::UntaggedKind::kInt32 &&
-        matcher_.MatchHeapConstant(input, &cst) && IsHeapNumber(*cst)) {
-      return __ Word32Constant(DoubleToInt32(Cast<HeapNumber>(cst)->value()));
+        matcher_.MatchHeapConstant(input, &cst)) {
+      if (Tagged<OptimizedOut> optimized_out; TryCast(*cst, &optimized_out)) {
+        // OptimizedOut happens in dead code, so this truncation doesn't matter.
+        return __ Word32Constant(0);
+      } else if (Tagged<TheHole> hole; TryCast(*cst, &hole)) {
+        // Holes are allowed for InputAssumptions::kNumberOrOddballOrHole.
+        // Hole->Undefined->NaN->0.
+        return __ Word32Constant(0);
+      } else if (Tagged<HeapNumber> heap_number; TryCast(*cst, &heap_number)) {
+        return __ Word32Constant(DoubleToInt32(heap_number->value()));
+      } else if (Tagged<Oddball> oddball; TryCast(*cst, &oddball)) {
+        return __ Word32Constant(DoubleToInt32(oddball->to_number_raw()));
+      }
     }
 
     goto no_change;
@@ -112,12 +123,12 @@ class SimplifiedOptimizationReducer : public Next {
 
     switch (kind) {
       case ObjectIsOp::Kind::kSmi:
-        switch (DecideObjectIsSmi(input)) {
-          case Decision::kTrue:
+        switch (__ DecideObjectIsSmi(input)) {
+          case IsSmiDecision::kTrue:
             return __ Word32Constant(1);
-          case Decision::kFalse:
+          case IsSmiDecision::kFalse:
             return __ Word32Constant(0);
-          case Decision::kUnknown:
+          case IsSmiDecision::kUnknown:
             goto no_change;
         }
       case ObjectIsOp::Kind::kArrayBufferView:
@@ -135,11 +146,11 @@ class SimplifiedOptimizationReducer : public Next {
       case ObjectIsOp::Kind::kSymbol:
       case ObjectIsOp::Kind::kUndetectable:
       case ObjectIsOp::Kind::kNonCallable:
-        switch (DecideObjectIsSmi(input)) {
-          case Decision::kTrue:
+        switch (__ DecideObjectIsSmi(input)) {
+          case IsSmiDecision::kTrue:
             return __ Word32Constant(0);
-          case Decision::kFalse:
-          case Decision::kUnknown:
+          case IsSmiDecision::kFalse:
+          case IsSmiDecision::kUnknown:
             goto no_change;
         }
 
@@ -147,11 +158,11 @@ class SimplifiedOptimizationReducer : public Next {
       case ObjectIsOp::Kind::kNumberOrUndefined:
       case ObjectIsOp::Kind::kNumberFitsInt32:
       case ObjectIsOp::Kind::kNumberOrBigInt:
-        switch (DecideObjectIsSmi(input)) {
-          case Decision::kTrue:
+        switch (__ DecideObjectIsSmi(input)) {
+          case IsSmiDecision::kTrue:
             return __ Word32Constant(1);
-          case Decision::kFalse:
-          case Decision::kUnknown:
+          case IsSmiDecision::kFalse:
+          case IsSmiDecision::kUnknown:
             goto no_change;
         }
 
@@ -223,45 +234,6 @@ class SimplifiedOptimizationReducer : public Next {
   }
 
  private:
-  enum class Decision : uint8_t { kUnknown, kTrue, kFalse };
-  Decision DecideObjectIsSmi(V<Object> idx) {
-    const Operation& op = __ Get(idx);
-    switch (op.opcode) {
-      case Opcode::kConstant: {
-        const ConstantOp& cst = op.Cast<ConstantOp>();
-        if (cst.kind == ConstantOp::Kind::kNumber) {
-          // For kNumber, we don't know yet whether this will turn into a Smi or
-          // a HeapNumber.
-          return Decision::kUnknown;
-        }
-        return (cst.IsIntegral() || cst.kind == ConstantOp::Kind::kSmi)
-                   ? Decision::kTrue
-                   : Decision::kFalse;
-      }
-      case Opcode::kAllocate:
-        return Decision::kFalse;
-      case Opcode::kConvertUntaggedToJSPrimitive: {
-        using Kind = ConvertUntaggedToJSPrimitiveOp::JSPrimitiveKind;
-        switch (op.Cast<ConvertUntaggedToJSPrimitiveOp>().kind) {
-          case Kind::kBigInt:
-          case Kind::kBoolean:
-          case Kind::kHeapNumber:
-          case Kind::kHeapNumberOrUndefined:
-          case Kind::kString:
-            return Decision::kFalse;
-          case Kind::kSmi:
-            return Decision::kTrue;
-          case Kind::kNumber:
-            return Decision::kUnknown;
-        }
-        UNREACHABLE();
-      }
-      default:
-        break;
-    }
-
-    return Decision::kUnknown;
-  }
   const OperationMatcher& matcher_ = __ matcher();
 };
 

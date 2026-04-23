@@ -747,12 +747,14 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   DirectHandle<WasmTrustedInstanceData> NewWasmTrustedInstanceData(bool shared);
   DirectHandle<WasmDispatchTable> NewWasmDispatchTable(
       int length, wasm::CanonicalValueType table_type, bool shared);
+  DirectHandle<WasmDispatchTableForImports> NewWasmDispatchTableForImports(
+      int length, bool shared);
   DirectHandle<WasmTypeInfo> NewWasmTypeInfo(
       wasm::CanonicalValueType type, wasm::CanonicalValueType element_type,
       DirectHandle<Map> opt_parent, int num_supertypes, bool shared);
   DirectHandle<WasmInternalFunction> NewWasmInternalFunction(
       DirectHandle<TrustedObject> ref, int function_index, bool shared,
-      WasmCodePointer call_target);
+      WasmCodePointer call_target, const wasm::CanonicalSig* sig);
   DirectHandle<WasmFuncRef> NewWasmFuncRef(
       DirectHandle<WasmInternalFunction> internal_function,
       DirectHandle<Map> rtt, bool shared);
@@ -764,8 +766,8 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
       DirectHandle<Code> export_wrapper,
       DirectHandle<WasmTrustedInstanceData> instance_data,
       DirectHandle<WasmFuncRef> func_ref,
-      DirectHandle<WasmInternalFunction> internal_function,
-      const wasm::CanonicalSig* sig, int wrapper_budget, wasm::Promise promise);
+      DirectHandle<WasmInternalFunction> internal_function, int wrapper_budget,
+      wasm::Promise promise);
   DirectHandle<WasmImportData> NewWasmImportData(
       DirectHandle<HeapObject> callable, wasm::Suspend suspend,
       MaybeDirectHandle<WasmTrustedInstanceData> instance_data,
@@ -787,16 +789,17 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
       DirectHandle<WasmSuspenderObject> suspender, wasm::OnResume on_resume);
   DirectHandle<WasmSuspenderObject> NewWasmSuspenderObject();
   DirectHandle<WasmSuspenderObject> NewWasmSuspenderObjectInitialized();
-  DirectHandle<WasmContinuationObject> NewWasmContinuationObject();
+  DirectHandle<WasmContinuationObject> NewWasmContinuationObject(
+      wasm::StackMemory* stack);
   DirectHandle<WasmStruct> NewWasmStruct(const wasm::StructType* type,
                                          wasm::WasmValue* args,
                                          DirectHandle<Map> map);
   // The resulting struct will be uninitialized, which means GC might fail for
   // reference structs until initialization. Follow this up with a
   // {DisallowGarbageCollection} scope until initialization.
-  Handle<WasmStruct> NewWasmStructUninitialized(
-      const wasm::StructType* type, DirectHandle<Map> map,
-      AllocationType allocation = AllocationType::kYoung);
+  Handle<WasmStruct> NewWasmStructUninitialized(const wasm::StructType* type,
+                                                DirectHandle<Map> map,
+                                                AllocationType allocation);
 
   DirectHandle<WasmArray> NewWasmArray(wasm::ValueType element_type,
                                        uint32_t length,
@@ -807,7 +810,8 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
       DirectHandle<Map> map);
   DirectHandle<WasmArray> NewWasmArrayFromMemory(
       uint32_t length, DirectHandle<Map> map,
-      wasm::CanonicalValueType element_type, Address source);
+      wasm::CanonicalValueType element_type,
+      base::Vector<const uint8_t> source);
   // Returns a handle to a WasmArray if successful, or a Smi containing a
   // {MessageTemplate} if computing the array's elements leads to an error.
   DirectHandle<Object> NewWasmArrayFromElementSegment(
@@ -901,7 +905,8 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
 
   // Create an External object for V8's external API.
   Handle<JSObject> NewExternal(
-      void* value, AllocationType allocation = AllocationType::kYoung);
+      void* value, ExternalPointerTag tag,
+      AllocationType allocation = AllocationType::kYoung);
 
   // Create a CppHeapExternal object for V8's external API.
   Handle<CppHeapExternalObject> NewCppHeapExternal(

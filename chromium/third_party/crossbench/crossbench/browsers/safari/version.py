@@ -25,6 +25,7 @@ _COMPLEX_VERSION_RE: Final[re.Pattern] = re.compile(
     r"(?P<parts>[\d.]+))"
     r"\).*")
 
+
 class SafariVersion(BrowserVersion):
   _MIN_MAJOR_PARTS_LEN: Final[int] = 3
   _MIN_PARTS_LEN: Final[int] = 3

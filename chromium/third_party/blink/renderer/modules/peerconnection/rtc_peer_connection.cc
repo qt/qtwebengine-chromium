@@ -201,7 +201,7 @@ bool CallErrorCallbackIfSignalingStateClosed(
 bool IsIceCandidateMissingSdpMidAndMLineIndex(
     const RTCIceCandidateInit* candidate) {
   return (candidate->sdpMid().IsNull() &&
-          !candidate->hasSdpMLineIndexNonNull());
+          !candidate->sdpMLineIndex().has_value());
 }
 
 RTCOfferOptionsPlatform* ConvertToRTCOfferOptionsPlatform(
@@ -233,17 +233,15 @@ RTCIceCandidatePlatform* ConvertToRTCIceCandidatePlatform(
     ExecutionContext* context,
     const RTCIceCandidateInit* candidate) {
   // TODO(guidou): Change default value to -1. crbug.com/614958.
-  uint16_t sdp_m_line_index = 0;
-  if (candidate->hasSdpMLineIndexNonNull()) {
-    sdp_m_line_index = candidate->sdpMLineIndexNonNull();
-  } else {
+  uint16_t sdp_m_line_index = candidate->sdpMLineIndex().value_or(0);
+  if (!candidate->sdpMLineIndex()) {
     UseCounter::Count(context,
                       WebFeature::kRTCIceCandidateDefaultSdpMLineIndex);
   }
   return MakeGarbageCollected<RTCIceCandidatePlatform>(
       candidate->candidate(), candidate->sdpMid(), sdp_m_line_index,
       candidate->usernameFragment(),
-      /*url can not be reconstruncted*/ String());
+      /*url can not be reconstructed*/ String());
 }
 
 webrtc::PeerConnectionInterface::IceTransportsType IceTransportPolicyFromEnum(
@@ -352,14 +350,14 @@ webrtc::PeerConnectionInterface::RTCConfiguration ParseConfiguration(
         if (!url.IsValid()) {
           exception_state->ThrowDOMException(
               DOMExceptionCode::kSyntaxError,
-              "'" + url_string + "' is not a valid URL.");
+              StrCat({"'", url_string, "' is not a valid URL."}));
           return {};
         }
         bool is_valid_turn = IsValidTurnURL(url);
         if (!is_valid_turn && !IsValidStunURL(url)) {
           exception_state->ThrowDOMException(
               DOMExceptionCode::kSyntaxError,
-              "'" + url_string + "' is not a valid stun or turn URL.");
+              StrCat({"'", url_string, "' is not a valid stun or turn URL."}));
           return {};
         }
         if (is_valid_turn &&
@@ -419,7 +417,7 @@ webrtc::PeerConnectionInterface::RTCConfiguration ParseConfiguration(
 bool SdpMismatch(String old_sdp, String new_sdp, String attribute) {
   // Look for an attribute that is present in both old and new SDP
   // and is modified which is not allowed.
-  String attribute_with_prefix = "\na=" + attribute + ":";
+  String attribute_with_prefix = StrCat({"\na=", attribute, ":"});
   const wtf_size_t new_attribute_pos = new_sdp.Find(attribute_with_prefix);
   if (new_attribute_pos == kNotFound) {
     return true;
@@ -1066,16 +1064,18 @@ ScriptPromise<IDLUndefined> RTCPeerConnection::setLocalDescription(
         context,
         WebFeature::kRTCPeerConnectionSetLocalDescriptionLegacyCompliant);
   } else {
-    if (!success_callback)
+    if (!success_callback) {
       UseCounter::Count(
           context,
           WebFeature::
               kRTCPeerConnectionSetLocalDescriptionLegacyNoSuccessCallback);
-    if (!error_callback)
+    }
+    if (!error_callback) {
       UseCounter::Count(
           context,
           WebFeature::
               kRTCPeerConnectionSetLocalDescriptionLegacyNoFailureCallback);
+    }
   }
   if (!session_description_init->hasType() ||
       session_description_init->type() != V8RTCSdpType::Enum::kRollback) {
@@ -1169,16 +1169,18 @@ ScriptPromise<IDLUndefined> RTCPeerConnection::setRemoteDescription(
         context,
         WebFeature::kRTCPeerConnectionSetRemoteDescriptionLegacyCompliant);
   } else {
-    if (!success_callback)
+    if (!success_callback) {
       UseCounter::Count(
           context,
           WebFeature::
               kRTCPeerConnectionSetRemoteDescriptionLegacyNoSuccessCallback);
-    if (!error_callback)
+    }
+    if (!error_callback) {
       UseCounter::Count(
           context,
           WebFeature::
               kRTCPeerConnectionSetRemoteDescriptionLegacyNoFailureCallback);
+    }
   }
 
   if (ContainsLegacyRtpDataChannel(session_description_init->sdp())) {
@@ -1386,11 +1388,12 @@ ScriptPromise<RTCCertificate> RTCPeerConnection::generateCertificate(
                 ->ToNumber(script_state->GetIsolate()->GetCurrentContext())
                 .ToLocalChecked()
                 ->Value();
-        if (expires_double >= 0) {
+
+        if (base::IsValueInRangeForNumericType<DOMTimeStamp>(expires_double)) {
           expires = static_cast<DOMTimeStamp>(expires_double);
         } else {
           exception_state.ThrowTypeError(
-              "Negative value for expires attribute.");
+              "The value for 'expires' is outside the valid range.");
           return EmptyPromise();
         }
       } else {
@@ -2465,7 +2468,9 @@ void RTCPeerConnection::DidModifyTransceivers(
     // stream was added containing the receiver's track.
     if (is_remote_description_or_rollback &&
         ((!previously_had_recv && transceiver->FiredDirectionHasRecv()) ||
-         add_list_prev_size != add_list.size())) {
+         add_list_prev_size != add_list.size()) &&
+        transceiver->currentDirection() !=
+            V8RTCRtpTransceiverDirection::Enum::kStopped) {
       // "Process the addition of a remote track".
       // https://w3c.github.io/webrtc-pc/#process-remote-track-addition
       track_events.push_back(transceiver);

@@ -10,7 +10,6 @@
 #include <string>
 
 #include "base/cancelable_callback.h"
-#include "base/feature_list.h"
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
@@ -204,6 +203,8 @@ class DiceWebSigninInterceptor : public KeyedService,
   FRIEND_TEST_ALL_PREFIXES(
       DiceWebSigninInterceptorTest,
       ForcedEnterpriseInterceptionTestNoForcedInterception);
+  FRIEND_TEST_ALL_PREFIXES(DiceWebSigninInterceptorTest,
+                           ShouldShowEnterpriseDialog_AlwaysAsk);
   FRIEND_TEST_ALL_PREFIXES(DiceWebSigninInterceptorTest, StateResetTest);
   FRIEND_TEST_ALL_PREFIXES(ManagedProfileRequiredNavigationThrottleTest,
                            CancelsWithInterstitialWhenForcedInterception);

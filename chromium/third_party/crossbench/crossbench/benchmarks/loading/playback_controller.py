@@ -82,7 +82,7 @@ class ForeverPlaybackController(PlaybackController):
 
 @dataclasses.dataclass(frozen=True)
 class TimeoutPlaybackController(PlaybackController):
-  duration : dt.timedelta
+  duration: dt.timedelta
 
   def __iter__(self) -> Iterator[int]:
     end = dt.datetime.now() + self.duration
@@ -97,7 +97,7 @@ class TimeoutPlaybackController(PlaybackController):
 
 @dataclasses.dataclass(frozen=True)
 class RepeatPlaybackController(PlaybackController):
-  count : int
+  count: int
 
   def __post_init__(self) -> None:
     NumberParser.positive_int(self.count, " page playback count")

@@ -18,7 +18,7 @@ import {createAutocompleteMatch, SearchboxBrowserProxy} from './searchbox_browse
 import type {SearchboxIconElement} from './searchbox_icon.js';
 import {getCss} from './searchbox_match.css.js';
 import {getHtml} from './searchbox_match.html.js';
-import {decodeString16, mojoTimeTicks} from './utils.js';
+import {mojoTimeTicks} from './utils.js';
 
 
 
@@ -37,6 +37,13 @@ enum AcMatchClassificationStyle {
 // clang-format on
 
 const ENTITY_MATCH_TYPE: string = 'search-suggest-entity';
+
+// Represents the initial selection when a match is created or reset.
+const defaultSelection: OmniboxPopupSelection = {
+  line: -1,
+  state: SelectionLineState.kNormal,
+  actionIndex: 0,
+};
 
 type ActionEvent = CustomEvent<{
   event: PointerEvent | KeyboardEvent,
@@ -177,11 +184,7 @@ export class SearchboxMatchElement extends CrLitElement {
   accessor isEntitySuggestion: boolean = false;
   accessor isRichSuggestion: boolean = false;
   accessor match: AutocompleteMatch = createAutocompleteMatch();
-  accessor selection: OmniboxPopupSelection = {
-    line: -1,
-    state: SelectionLineState.kNormal,
-    actionIndex: 0,
-  };
+  accessor selection: OmniboxPopupSelection = defaultSelection;
   accessor matchIndex: number = -1;
   accessor sideType: SideType = SideType.kDefaultPrimary;
   accessor showThumbnail: boolean = false;
@@ -232,6 +235,7 @@ export class SearchboxMatchElement extends CrLitElement {
       this.removeButtonAriaLabel_ = this.computeRemoveButtonAriaLabel_();
       this.separatorText_ = this.computeSeparatorText_();
       this.tailSuggestPrefix_ = this.computeTailSuggestPrefix_();
+      this.selection = defaultSelection;
     }
 
     const changedPrivateProperties =
@@ -284,7 +288,13 @@ export class SearchboxMatchElement extends CrLitElement {
         /* are_matches_showing */ true, e.button || 0, e.altKey, e.ctrlKey,
         e.metaKey, e.shiftKey);
 
-    this.fire('match-click');
+    // Duplicates the logic in `ui::DispositionFromClick()`.
+    const backgroundTab = (e.metaKey || e.ctrlKey) && e.shiftKey;
+    // 'match-click' event is used to close the dropdown. Don't do so when
+    // opening a background tab so users can open multiple matches.
+    if (!backgroundTab) {
+      this.fire('match-click');
+    }
   }
 
   private onMatchFocusin_() {
@@ -322,11 +332,22 @@ export class SearchboxMatchElement extends CrLitElement {
     if (!this.match) {
       return '';
     }
-    return decodeString16(this.match.a11yLabel);
+    return this.match.a11yLabel;
   }
 
-  private sanitizeInnerHtml_(html: string): TrustedHTML {
-    return sanitizeInnerHtml(html, {attrs: ['class']});
+  /**
+   * Sanitizes .innerHTML from `renderTextWithClassifications_()` through
+   * `sanitizeInnerHtml` to ensure it only contains allowed tags.
+   * @param innerHtml The .innerHTML from `renderTextWithClassifications_()`
+   * @return Sanitized TrustedHTML safe for rendering
+   */
+  private sanitizeInnerHtml_(innerHtml: string): TrustedHTML {
+    try {
+      return sanitizeInnerHtml(innerHtml, {attrs: ['class']});
+    } catch (e) {
+      // If sanitization fails return empty HTML.
+      return window.trustedTypes!.emptyHTML;
+    }
   }
 
   private computeContentsHtml_(): TrustedHTML {
@@ -350,14 +371,11 @@ export class SearchboxMatchElement extends CrLitElement {
     if (!this.match) {
       return window.trustedTypes!.emptyHTML;
     }
-    const match = this.match;
-    if (match.answer) {
-      return this.sanitizeInnerHtml_(this.getMatchDescription_());
-    }
     return this.sanitizeInnerHtml_(
         this.renderTextWithClassifications_(
                 this.getMatchDescription_(),
-                this.getMatchDescriptionClassifications_())
+                this.match.answer ? [] :
+                                    this.getMatchDescriptionClassifications_())
             .innerHTML);
   }
 
@@ -388,7 +406,7 @@ export class SearchboxMatchElement extends CrLitElement {
     if (!this.match) {
       return '';
     }
-    return decodeString16(this.match.removeButtonA11yLabel);
+    return this.match.removeButtonA11yLabel;
   }
 
   private computeSeparatorText_(): string {
@@ -401,7 +419,7 @@ export class SearchboxMatchElement extends CrLitElement {
     if (!this.match || !this.match.tailSuggestCommonPrefix) {
       return '';
     }
-    const prefix = decodeString16(this.match.tailSuggestCommonPrefix);
+    const prefix = this.match.tailSuggestCommonPrefix;
     // Replace last space with non breaking space since spans collapse
     // trailing white spaces and the prefix always ends with a white space.
     if (prefix.slice(-1) === ' ') {
@@ -453,17 +471,36 @@ export class SearchboxMatchElement extends CrLitElement {
    */
   private renderTextWithClassifications_(
       text: string, classifications: ACMatchClassification[]): Element {
-    return classifications
-        .map(({offset, style}, index) => {
-          const next = classifications[index + 1] || {offset: text.length};
-          const subText = text.substring(offset, next.offset);
-          const classes = this.convertClassificationStyleToCssClasses_(style);
-          return this.createSpanWithClasses_(subText, classes);
-        })
-        .reduce((container, currentElement) => {
-          container.appendChild(currentElement);
-          return container;
-        }, document.createElement('span'));
+    const container = document.createElement('span');
+
+    // If no classifications are provided, render the entire text unstyled.
+    if (classifications.length === 0) {
+      container.appendChild(this.createSpanWithClasses_(text, []));
+      return container;
+    }
+
+    // If the first classification doesn't start at 0, render the prefix text
+    // unstyled. `AutocompleteMatch::ValidateClassifications()` guarantees the
+    // first offset is 0, however this is only validated in debug builds.
+    const firstClassification = classifications[0]!;
+    if (firstClassification.offset > 0) {
+      const prefix = text.substring(0, firstClassification.offset);
+      container.appendChild(this.createSpanWithClasses_(prefix, []));
+    }
+
+    classifications.map(({offset, style}, index) => {
+      // Each classification defines a region from its offset to the next
+      // classification's offset or end of string for the last one. This covers
+      // the entire string with no gaps.
+      const nextOffset = index + 1 < classifications.length ?
+          classifications[index + 1]!.offset :
+          text.length;
+      const subString = text.substring(offset, nextOffset);
+      const classes = this.convertClassificationStyleToCssClasses_(style);
+      container.appendChild(this.createSpanWithClasses_(subString, classes));
+    });
+
+    return container;
   }
 
   private getMatchContents_(): string {
@@ -477,8 +514,7 @@ export class SearchboxMatchElement extends CrLitElement {
     const matchDescription =
         match.answer ? match.answer.secondLine : match.description;
 
-    return decodeString16(
-        match.swapContentsAndDescription ? matchDescription : matchContents);
+    return match.swapContentsAndDescription ? matchDescription : matchContents;
   }
 
   private getMatchDescription_(): string {
@@ -492,8 +528,7 @@ export class SearchboxMatchElement extends CrLitElement {
     const matchDescription =
         match.answer ? match.answer.secondLine : match.description;
 
-    return decodeString16(
-        match.swapContentsAndDescription ? matchContents : matchDescription);
+    return match.swapContentsAndDescription ? matchContents : matchDescription;
   }
 
   private getMatchContentsClassifications_(): ACMatchClassification[] {

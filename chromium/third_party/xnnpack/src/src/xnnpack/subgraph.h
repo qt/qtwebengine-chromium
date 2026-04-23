@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2020-2025 Google LLC
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
@@ -43,6 +43,9 @@
 #define XNN_VALUE_FLAG_ONE_CONSUMER 0x00000200
 #define XNN_VALUE_FLAG_FP16_COMPATIBLE 0x00000400
 #define XNN_VALUE_FLAG_LAYOUT_NCHW 0x00000800
+#define XNN_VALUE_FLAG_SHAPE_IS_STATIC 0x00001000
+#define XNN_VALUE_FLAG_IS_ZERO 0x00002000
+#define XNN_VALUE_FLAG_IS_ONE 0x00004000
 
 /// Create explicit `pack-lh` nodes, instead of pack the data on the fly
 /// in a temporary buffer in the consuming op. Inline packing reduces memory
@@ -50,11 +53,15 @@
 /// because of tiling.
 #define XNN_FLAG_NO_INLINED_LHS_PACKING 0x00004000
 
+/// Do not attempt to elide subgraph nodes with this flag set.
+#define XNN_NODE_FLAG_DONT_ELIDE 0x00800000
+#define XNN_NODE_FLAG_REQUIRES_ROW_SUM 0x01000000
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#ifdef XNN_SLINKY_AVAILABLE
+#ifdef XNN_SLINKY_ENABLED
 /// Slinky interface -- unused unless XNN_FLAG_SLINKY_ENABLED is set
 struct slinky_pipeline;
 typedef struct slinky_pipeline* slinky_pipeline_t;
@@ -64,7 +71,7 @@ void slinky_setup_pipeline(xnn_runtime_t runtime);
 void slinky_destroy_pipeline(xnn_runtime_t runtime);
 enum xnn_status slinky_reshape_pipeline(xnn_runtime_t runtime);
 enum xnn_status slinky_invoke_pipeline(xnn_runtime_t runtime);
-#endif  // XNN_SLINKY_AVAILABLE
+#endif  // XNN_SLINKY_ENABLED
 
 struct xnn_shape {
   size_t num_dims;
@@ -92,6 +99,8 @@ struct xnn_value_quantization {
       /// Per-channel multiplication factor to convert quantized elements to
       /// real representation.
       const float* channelwise_scale;
+      /// Per-channel offset from zero of the quantized elements.
+      const float* channelwise_zero_point;
       /// Index of the channel dimension with per-channel quantization
       /// parameters.
       size_t channel_dimension;
@@ -116,9 +125,13 @@ struct xnn_value_quantization {
       /// Per-batch quantization parameters factor to convert quantized
       /// elements to real representation.
       struct xnn_quantization_params* dynamic_params;
+      /// Per-batch sum of the quantized input.
+      float* row_sum;
       /// Number of (struct xnn_quantization_params) * sizeof(struct
-      /// xnn_quantization_params)
+      /// xnn_quantization_params).
       size_t dynamic_params_size;
+      /// Number of (float) * sizeof(float) for row_sum.
+      size_t row_sum_size;
     };
   };
 };
@@ -205,7 +218,7 @@ struct xnn_runtime_value {
   struct xnn_shape shape;
   /// Size of tensor.
   size_t size;
-  /// Per-value quantization parameters. 40 bytes.
+  /// Per-value quantization parameters. 52 bytes.
   struct xnn_value_quantization quantization;
   /// Unique ID for the value.
   uint32_t id;
@@ -258,6 +271,10 @@ XNN_INLINE static bool xnn_value_is_valid(enum xnn_value_type value_type) {
 XNN_INLINE static bool xnn_value_is_static(
     enum xnn_allocation_type allocation_type) {
   return allocation_type == xnn_allocation_type_static;
+}
+
+XNN_INLINE static bool xnn_value_is_const(uint32_t flags) {
+  return (flags & (XNN_VALUE_FLAG_IS_ZERO | XNN_VALUE_FLAG_IS_ONE)) != 0;
 }
 
 struct xnn_node;
@@ -514,12 +531,11 @@ struct xnn_runtime {
   bool has_been_setup;
   bool memory_planned;
 
-#ifdef XNN_SLINKY_AVAILABLE
+#ifdef XNN_SLINKY_ENABLED
   // Fields used by Slinky -- unused unless XNN_FLAG_SLINKY_ENABLED is set
   slinky_pipeline_t slinky_pipeline;
   xnn_threadpool_t xnn_threadpool;
-  xnn_threadpool_t owned_xnn_threadpool;
-#endif  // XNN_SLINKY_AVAILABLE
+#endif  // XNN_SLINKY_ENABLED
 };
 
 enum xnn_status xnn_insert_clamp_node(xnn_subgraph_t subgraph, float output_min,
@@ -537,7 +553,8 @@ enum xnn_status xnn_subgraph_add_nodes(xnn_subgraph_t subgraph,
 
 uint32_t xnn_subgraph_get_value_flags(xnn_subgraph_t subgraph,
                                       uint32_t value_id);
-size_t xnn_subgraph_get_value_size(xnn_subgraph_t subgraph, uint32_t value_id);
+enum xnn_datatype xnn_subgraph_get_value_datatype(xnn_subgraph_t subgraph,
+                                                  uint32_t value_id);
 uint32_t xnn_subgraph_get_num_external_values(xnn_subgraph_t subgraph);
 uint32_t xnn_subgraph_get_num_nodes(xnn_subgraph_t subgraph);
 uint32_t xnn_subgraph_get_num_values(xnn_subgraph_t subgraph);
@@ -585,10 +602,29 @@ size_t xnn_shape_multiply_trailing_dims(const struct xnn_shape* shape,
 // The size of the given dimension, which can also be a negative index.
 size_t xnn_shape_get_dim(const struct xnn_shape* shape, int64_t dim);
 
+// Returns `true` if the two shapes match.
+bool xnn_shape_match(const struct xnn_shape* shape_a,
+                     const struct xnn_shape* shape_b);
+
+// Computes the broadcasted shape of a binary operation.
+enum xnn_status xnn_shape_binary_broadcast(const struct xnn_shape* shape_a,
+                                           const struct xnn_shape* shape_b,
+                                           struct xnn_shape* shape_out);
+
+// Fills any zeros in the dimensions of `shape_b` using the known number of
+// elements in `shape_a`.
+enum xnn_status xnn_shape_fill_gaps(const struct xnn_shape* shape_a,
+                                    struct xnn_shape* shape_b);
+
 // Get the size in bytes to hold dynamic quant params
 size_t xnn_tensor_get_dynamic_quant_param_size(enum xnn_datatype datatype,
                                                const struct xnn_shape* shape,
                                                size_t num_nonbatch_dims);
+
+// Get the size in bytes to hold row_sum
+size_t xnn_tensor_get_row_sum_size(enum xnn_datatype datatype,
+                                   const struct xnn_shape* shape,
+                                   size_t num_nonbatch_dims);
 
 XNN_INLINE static size_t xnn_tensor_get_rounded_dynamic_quant_param_size(
     const struct xnn_runtime_value* value) {
@@ -596,13 +632,27 @@ XNN_INLINE static size_t xnn_tensor_get_rounded_dynamic_quant_param_size(
          value->datatype == xnn_datatype_qduint8);
 
   // We may read out of bounds for qparams.
-  return xnn_get_rounded_size(value->quantization.dynamic_params_size +
-                              XNN_EXTRA_QUANTIZATION_PARAMS *
-                                  sizeof(struct xnn_quantization_params));
+  return xnn_get_rounded_size(
+      value->quantization.dynamic_params_size + XNN_EXTRA_QUANTIZATION_PARAMS *
+          sizeof(struct xnn_quantization_params));
+}
+
+XNN_INLINE static size_t xnn_tensor_get_rounded_row_sum_size(
+    const struct xnn_runtime_value* value) {
+  assert(value->datatype == xnn_datatype_qdint8 ||
+         value->datatype == xnn_datatype_qduint8);
+
+  // We may read out of bounds for qparams.
+  return xnn_get_rounded_size(
+      value->quantization.row_sum_size + XNN_EXTRA_QUANTIZATION_PARAMS *
+          sizeof(float));
 }
 
 // Rewrites the subgraph such that values have exactly one producer.
 void xnn_subgraph_rewrite_ssa(xnn_subgraph_t subgraph);
+// Rewrites the subgraph such that nodes requiring row_sum propagate a
+// corresponding flag XNN_NODE_FLAG_REQUIRES_ROW_SUM.
+enum xnn_status xnn_subgraph_rewrite_for_row_sum(xnn_subgraph_t subgraph);
 
 enum xnn_status xnn_subgraph_optimize(xnn_subgraph_t subgraph, uint32_t flags);
 
@@ -642,6 +692,14 @@ XNN_INTERNAL enum xnn_node_type xnn_reduce_operator_to_node_type(
     enum xnn_reduce_operator type);
 XNN_INTERNAL enum xnn_reduce_operator xnn_node_type_to_reduce_operator(
     enum xnn_node_type type);
+
+// Returns the number of threads in a Threadpool.
+int xnn_threadpool_num_threads(xnn_threadpool_t threadpool);
+
+// Schedules a task on a Threadpool.
+enum xnn_status xnn_threadpool_schedule(xnn_threadpool_t threadpool,
+                                        void* context,
+                                        void (*task)(void* context));
 
 #ifdef __cplusplus
 }  // extern "C"

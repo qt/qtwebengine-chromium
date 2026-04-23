@@ -7,6 +7,19 @@ if (window.location.href === 'https://en.m.wikipedia.org/wiki/Taylor_Swift') {
   const language_xpath = '//span[text()=\'Afrikaans\']';
   const image_selector = '.infobox-image';
 
+  function onFrameRendered(callback) {
+    // The first rAF requests a frame to be rendered. When it's done, the
+    // second rAF is called. So the callback is invoked when the first frame
+    // has been rendered.
+    // This is a poor approximation of when the frame is actually shown on the
+    // device screen, since it ignores all work beyond Renderer process
+    // (GPU process/surfaceflinger). But it's the best we can do using pure
+    // WebAPI.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(callback);
+    });
+  }
+
   const button_observer = new MutationObserver(mutations => {
     const button = document.querySelector(language_button_selector);
 
@@ -29,6 +42,9 @@ if (window.location.href === 'https://en.m.wikipedia.org/wiki/Taylor_Swift') {
     }
     performance.mark('LoadLine2/wikipedia_article/interactive');
     language_observer.disconnect();
+    onFrameRendered(() => {
+      performance.mark('LoadLine2/wikipedia_article/interactive_raf');
+    });
   });
 
   const image_observer = new MutationObserver(mutations => {
@@ -38,6 +54,9 @@ if (window.location.href === 'https://en.m.wikipedia.org/wiki/Taylor_Swift') {
     }
     image_observer.disconnect();
     performance.mark('LoadLine2/wikipedia_article/visual');
+    onFrameRendered(() => {
+      performance.mark('LoadLine2/wikipedia_article/visual_raf');
+    });
   });
 
   button_observer.observe(document, {childList: true, subtree: true});

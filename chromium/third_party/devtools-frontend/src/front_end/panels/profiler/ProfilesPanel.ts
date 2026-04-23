@@ -1,7 +1,7 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2008 Apple Inc. All Rights Reserved.
@@ -32,10 +32,9 @@ import '../../ui/legacy/legacy.js';
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
-import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
-// eslint-disable-next-line rulesdir/es-modules-import
+import {createIcon} from '../../ui/kit/kit.js';
+// eslint-disable-next-line @devtools/es-modules-import
 import objectValueStyles from '../../ui/legacy/components/object_ui/objectValue.css.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -241,7 +240,7 @@ export class ProfilesPanel extends UI.Panel.PanelWithSidebar implements DataDisp
     if (!this.toggleRecordAction.enabled()) {
       return true;
     }
-    const toggleButton = Platform.DOMUtilities.deepActiveElement(this.element.ownerDocument);
+    const toggleButton = UI.DOMUtilities.deepActiveElement(this.element.ownerDocument);
     const type = this.selectedProfileType;
     if (!type) {
       return true;
@@ -669,7 +668,7 @@ export class ProfilesSidebarTreeElement extends UI.TreeOutline.TreeElement {
         .createChild('span', 'title-container')
         .createChild('span', 'title')
         .textContent = i18nString(UIStrings.profiles);
-    this.setLeadingIcons([IconButton.Icon.create('tune')]);
+    this.setLeadingIcons([createIcon('tune')]);
   }
 }
 

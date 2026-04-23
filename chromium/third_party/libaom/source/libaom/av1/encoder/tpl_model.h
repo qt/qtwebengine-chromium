@@ -29,6 +29,7 @@ struct TPL_INFO;
 
 #include "config/aom_config.h"
 
+#include "aom/aom_tpl.h"
 #include "aom_scale/yv12config.h"
 #include "aom_util/aom_pthread.h"
 
@@ -234,6 +235,16 @@ typedef struct TplParams {
    * reference frame type.
    */
   const YV12_BUFFER_CONFIG *ref_frame[INTER_REFS_PER_FRAME];
+
+  /*!
+   * The buffer for the past gop's last frame's src.
+   */
+  YV12_BUFFER_CONFIG prev_gop_arf_src;
+
+  /*!
+   * Display order of the past gop's last frame.
+   */
+  int64_t prev_gop_arf_disp_order;
 
   /*!
    * Parameters related to synchronization for top-right dependency in row based
@@ -685,6 +696,12 @@ int_mv av1_compute_mv_difference(const TplDepFrame *tpl_frame, int row, int col,
  */
 double av1_tpl_compute_frame_mv_entropy(const TplDepFrame *tpl_frame,
                                         uint8_t right_shift);
+
+/*!\brief Free the memory allocated for cpi->extrc_tpl_gop_stats.
+ *
+ * \param[in] extrc_tpl_gop_stats TPL stats for the GOP used for external RC.
+ */
+void av1_free_tpl_gop_stats(AomTplGopStats *extrc_tpl_gop_stats);
 
 #if CONFIG_RATECTRL_LOG
 typedef struct {

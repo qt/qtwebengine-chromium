@@ -12,8 +12,10 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
+#include "components/content_settings/core/common/features.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/permissions/embedded_permission_control_checker.h"
 #include "content/browser/permissions/permission_controller_impl.h"
@@ -28,6 +30,7 @@
 #include "third_party/blink/public/common/features_generated.h"
 #include "third_party/blink/public/common/permissions/permission_utils.h"
 #include "third_party/blink/public/mojom/permissions/permission.mojom-shared.h"
+#include "third_party/blink/public/mojom/permissions/permission_status.mojom-data-view.h"
 #include "url/origin.h"
 
 using blink::mojom::EmbeddedPermissionControlClient;
@@ -57,7 +60,6 @@ PermissionStatusToEmbeddedPermissionControlResult(PermissionStatus status) {
     case PermissionStatus::GRANTED:
       return EmbeddedPermissionControlResult::kGranted;
     case PermissionStatus::DENIED:
-    case blink::mojom::PermissionStatus::UNSATISFIED_OPTIONS:
       return EmbeddedPermissionControlResult::kDenied;
     case PermissionStatus::ASK:
       return EmbeddedPermissionControlResult::kDismissed;
@@ -155,7 +157,17 @@ void PermissionServiceImpl::RegisterPageEmbeddedPermissionControl(
     std::vector<PermissionDescriptorPtr> permissions,
     blink::mojom::EmbeddedPermissionRequestDescriptorPtr descriptor,
     mojo::PendingRemote<EmbeddedPermissionControlClient> observer) {
-  if (!base::FeatureList::IsEnabled(blink::features::kPermissionElement)) {
+  if (descriptor->geolocation &&
+      !base::FeatureList::IsEnabled(blink::features::kGeolocationElement)) {
+    bad_message::ReceivedBadMessage(
+        context_->render_frame_host()->GetProcess(),
+        bad_message::PSI_REGISTER_PERMISSION_ELEMENT_WITHOUT_FEATURE);
+    return;
+  }
+
+  if (!descriptor->geolocation &&
+      !base::FeatureList::IsEnabled(blink::features::kPermissionElement) &&
+      !base::FeatureList::IsEnabled(blink::features::kUserMediaElement)) {
     bad_message::ReceivedBadMessage(
         context_->render_frame_host()->GetProcess(),
         bad_message::PSI_REGISTER_PERMISSION_ELEMENT_WITHOUT_FEATURE);
@@ -169,9 +181,9 @@ void PermissionServiceImpl::RegisterPageEmbeddedPermissionControl(
       web_contents->GetPrimaryPage());
   std::set<PermissionName> permission_names;
   for (const auto& permission : permissions) {
-    // Ensure all requested permissions are device permissions and check for
-    // duplicates.
-    if (!PermissionUtil::IsDevicePermission(permission) ||
+    // Check for duplicates, and ensure we're only handling permission types
+    // which can be accessed through embedded controls:
+    if (PermissionUtil::IsEmbeddablePermission(permission) &&
         !permission_names.insert(permission->name).second) {
       ReceivedBadMessage();
       return;
@@ -203,7 +215,11 @@ void PermissionServiceImpl::OnPageEmbeddedPermissionControlRegistered(
   std::vector<PermissionStatus> statuses(permissions.size());
   std::ranges::transform(
       permissions, statuses.begin(), [&](const auto& permission) {
-        return this->GetCombinedPermissionAndDeviceResult(permission).status;
+        bool should_include_device_status =
+            PermissionUtil::IsDevicePermission(permission);
+        return should_include_device_status
+                   ? GetCombinedPermissionAndDeviceResult(permission).status
+                   : GetPermissionResultForCurrentContext(permission).status;
       });
   client->OnEmbeddedPermissionControlRegistered(/*allow=*/true,
                                                 std::move(statuses));
@@ -213,7 +229,9 @@ void PermissionServiceImpl::RequestPageEmbeddedPermission(
     std::vector<PermissionDescriptorPtr> permissions,
     EmbeddedPermissionRequestDescriptorPtr descriptor,
     RequestPageEmbeddedPermissionCallback callback) {
-  if (!base::FeatureList::IsEnabled(blink::features::kPermissionElement)) {
+  if (!base::FeatureList::IsEnabled(
+          descriptor->geolocation ? blink::features::kGeolocationElement
+                                  : blink::features::kPermissionElement)) {
     bad_message::ReceivedBadMessage(
         context_->render_frame_host()->GetProcess(),
         bad_message::PSI_REQUEST_EMBEDDED_PERMISSION_WITHOUT_FEATURE);
@@ -373,7 +391,7 @@ void PermissionServiceImpl::AddPermissionObserver(
       /*should_include_device_status*/ false, std::move(observer));
 }
 
-void PermissionServiceImpl::AddCombinedPermissionObserver(
+void PermissionServiceImpl::AddPageEmbeddedPermissionObserver(
     PermissionDescriptorPtr permission,
     PermissionStatus last_known_status,
     mojo::PendingRemote<blink::mojom::PermissionObserver> observer) {

@@ -9,7 +9,7 @@ import type {DOMPinnedWebIDLProp, DOMPinnedWebIDLType} from '../common/JavaScrip
 import type {DebuggerModel, FunctionDetails} from './DebuggerModel.js';
 import type {RuntimeModel} from './RuntimeModel.js';
 
-// This cannot be an interface due to "instanceof RemoteObject" checks in the code.
+/** This cannot be an interface due to "instanceof RemoteObject" checks in the code. **/
 export abstract class RemoteObject {
   static fromLocalObject(value: unknown): RemoteObject {
     return new LocalJSONObject(value);
@@ -841,6 +841,10 @@ export class LocalJSONObject extends RemoteObject {
       return 'date';
     }
 
+    if (this.#value instanceof Error) {
+      return 'error';
+    }
+
     return undefined;
   }
 
@@ -966,7 +970,7 @@ export class RemoteArray {
   }
 
   static objectAsArray(object: RemoteObject|null): RemoteArray {
-    if (!object || object.type !== 'object' || (object.subtype !== 'array' && object.subtype !== 'typedarray')) {
+    if (object?.type !== 'object' || (object.subtype !== 'array' && object.subtype !== 'typedarray')) {
       throw new Error('Object is empty or not an array');
     }
     return new RemoteArray(object);

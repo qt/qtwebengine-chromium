@@ -201,8 +201,8 @@ const char* GetFontFamily(uint32_t nStyle, const ByteString& fontname) {
 
 ByteString ParseStyle(const ByteString& bsStyle, size_t iStart) {
   ByteStringView bsRegion = bsStyle.AsStringView().Substr(iStart);
-  size_t iIndex = bsRegion.Find(',').value_or(bsRegion.GetLength());
-  return ByteString(bsRegion.First(iIndex));
+  size_t index = bsRegion.Find(',').value_or(bsRegion.GetLength());
+  return ByteString(bsRegion.First(index));
 }
 
 struct FX_FontStyle {
@@ -513,7 +513,9 @@ void CFX_FontMapper::LoadInstalledFonts() {
     return;
   }
 
-  font_info_->EnumFontList(this);
+  if (!skip_font_enumeration_) {
+    font_info_->EnumFontList(this);
+  }
   list_loaded_ = true;
 }
 
@@ -730,7 +732,13 @@ RetainPtr<CFX_Face> CFX_FontMapper::FindSubstFont(const ByteString& name,
     if (!is_cjk) {
       if (!CheckSupportThirdPartFont(family, &pitch_family)) {
         is_italic = italic_angle != 0;
-        weight = old_weight;
+        // When `skip_font_enumeration_` is true (version 2), CFX_FontMapper
+        // relies on `MapFont()` to handle font matching with the correct
+        // weight. Don't reset weight here as it would break bold/light font
+        // variants.
+        if (!skip_font_enumeration_) {
+          weight = old_weight;
+        }
       }
       if (IsNarrowFontName(subst_name)) {
         family = kNarrowFamily;
@@ -910,19 +918,19 @@ RetainPtr<CFX_Face> CFX_FontMapper::GetCachedTTCFace(void* font_handle,
   size_t font_offset = ttc_size - data_size;
   size_t face_index =
       GetTTCIndex(font_desc->FontData().first(ttc_size), font_offset);
-  RetainPtr<CFX_Face> pFace(font_desc->GetFace(face_index));
-  if (pFace) {
-    return pFace;
+  RetainPtr<CFX_Face> face(font_desc->GetFace(face_index));
+  if (face) {
+    return face;
   }
 
-  pFace = font_mgr_->NewFixedFace(
+  face = font_mgr_->NewFixedFace(
       font_desc, font_desc->FontData().first(ttc_size), face_index);
-  if (!pFace) {
+  if (!face) {
     return nullptr;
   }
 
-  font_desc->SetFace(face_index, pFace.Get());
-  return pFace;
+  font_desc->SetFace(face_index, face.Get());
+  return face;
 }
 
 RetainPtr<CFX_Face> CFX_FontMapper::GetCachedFace(void* font_handle,
@@ -942,19 +950,19 @@ RetainPtr<CFX_Face> CFX_FontMapper::GetCachedFace(void* font_handle,
     font_desc = font_mgr_->AddCachedFontDesc(subst_name, weight, is_italic,
                                              std::move(font_data));
   }
-  RetainPtr<CFX_Face> pFace(font_desc->GetFace(0));
-  if (pFace) {
-    return pFace;
+  RetainPtr<CFX_Face> face(font_desc->GetFace(0));
+  if (face) {
+    return face;
   }
 
-  pFace = font_mgr_->NewFixedFace(font_desc,
-                                  font_desc->FontData().first(data_size), 0);
-  if (!pFace) {
+  face = font_mgr_->NewFixedFace(font_desc,
+                                 font_desc->FontData().first(data_size), 0);
+  if (!face) {
     return nullptr;
   }
 
-  font_desc->SetFace(0, pFace.Get());
-  return pFace;
+  font_desc->SetFace(0, face.Get());
+  return face;
 }
 
 // static

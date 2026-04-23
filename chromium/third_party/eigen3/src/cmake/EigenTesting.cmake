@@ -75,7 +75,7 @@ macro(ei_add_test_internal testname testname_with_suffix)
 
   # let the user pass flags.
   if(${ARGC} GREATER 2)
-    separate_arguments(compile_options NATIVE_COMMAND ${ARGV2})
+    separate_arguments(compile_options NATIVE_COMMAND "${ARGV2}")
     target_compile_options(${targetname} PRIVATE ${compile_options})
   endif()
 
@@ -453,6 +453,9 @@ macro(ei_set_sitename)
 endmacro()
 
 macro(ei_get_compilerver VAR)
+    if (NOT CMAKE_CXX_COMPILER_ID)
+      set(CMAKE_CXX_COMPILER_ID "<unknown>")
+    endif()
     if(MSVC)
       set(${VAR} "${CMAKE_CXX_COMPILER_VERSION}")
     elseif(${CMAKE_CXX_COMPILER_ID} MATCHES "PGI")

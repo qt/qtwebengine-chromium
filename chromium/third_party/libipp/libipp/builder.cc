@@ -293,9 +293,10 @@ std::size_t GetFrameLength(const Frame& frame,
     // Each group starts with 1-byte group-tag ...
     length += 1;
     // ... and consists of list of tag-name-value.
-    for (const auto& tnv : grp.content)
+    for (const auto& tnv : grp.content) {
       // Tag + name_size + name + value_size + value.
       length += (1 + 2 + tnv.name.size() + 2 + tnv.value.size());
+    }
   }
   // end-of-attributes-tag + blob_with_data.
   length += 1 + frame.Data().size();

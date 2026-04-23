@@ -63,7 +63,7 @@ if (build_with_chromium) {
     public_deps = [
       ":net_quic_proto",
       "//third_party/abseil",
-      "//third_party/abseil:abseil_quiche",
+      "//third_party/abseil:abseil_quiche_and_protobuf",
       "//third_party/boringssl",
       "//third_party/googleurl",
     ]

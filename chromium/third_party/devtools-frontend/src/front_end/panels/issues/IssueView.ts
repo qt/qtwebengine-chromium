@@ -1,19 +1,20 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable @devtools/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as Protocol from '../../generated/protocol.js';
+import type {AggregatedIssue} from '../../models/issues_manager/IssueAggregator.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
 import * as Adorners from '../../ui/components/adorners/adorners.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.js';
 import * as MarkdownView from '../../ui/components/markdown_view/markdown_view.js';
+import {Icon} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
@@ -27,6 +28,7 @@ import {AffectedElementsWithLowContrastView} from './AffectedElementsWithLowCont
 import {AffectedHeavyAdView} from './AffectedHeavyAdView.js';
 import {AffectedMetadataAllowedSitesView} from './AffectedMetadataAllowedSitesView.js';
 import {AffectedPartitioningBlobURLView} from './AffectedPartitioningBlobURLView.js';
+import {AffectedPermissionElementsView} from './AffectedPermissionElementsView.js';
 import {AffectedItem, AffectedResourcesView, extractShortPath} from './AffectedResourcesView.js';
 import {AffectedSharedArrayBufferIssueDetailsView} from './AffectedSharedArrayBufferIssueDetailsView.js';
 import {AffectedSourcesView} from './AffectedSourcesView.js';
@@ -36,7 +38,6 @@ import * as Components from './components/components.js';
 import type {HiddenIssuesMenuData} from './components/HideIssuesMenu.js';
 import {CorsIssueDetailsView} from './CorsIssueDetailsView.js';
 import {GenericIssueDetailsView} from './GenericIssueDetailsView.js';
-import type {AggregatedIssue} from './IssueAggregator.js';
 
 const UIStrings = {
   /**
@@ -159,7 +160,7 @@ class AffectedMixedContentView extends AffectedResourcesView {
 
     let count = 0;
     for (const issue of mixedContentIssues) {
-      const details = issue.getDetails();
+      const details = issue.details();
       this.appendAffectedMixedContent(details);
       count++;
     }
@@ -221,7 +222,7 @@ export class IssueView extends UI.TreeOutline.TreeElement {
   affectedResources: UI.TreeOutline.TreeElement;
   readonly #affectedResourceViews: AffectedResourcesView[];
   #aggregatedIssuesCount: HTMLElement|null;
-  #issueKindIcon: IconButton.Icon.Icon|null = null;
+  #issueKindIcon: Icon|null = null;
   #hasBeenExpandedBefore: boolean;
   #throttle: Common.Throttler.Throttler;
   #needsUpdateOnExpand = true;
@@ -260,6 +261,7 @@ export class IssueView extends UI.TreeOutline.TreeElement {
       new AffectedMetadataAllowedSitesView(this, this.#issue, 'metadata-allowed-sites-details'),
       new AffectedDescendantsWithinSelectElementView(this, this.#issue, 'disallowed-select-descendants-details'),
       new AffectedPartitioningBlobURLView(this, this.#issue, 'partitioning-blob-url-details'),
+      new AffectedPermissionElementsView(this, this.#issue, 'permission-element-elements'),
     ];
     this.#hiddenIssuesMenu = new Components.HideIssuesMenu.HideIssuesMenu();
     this.#aggregatedIssuesCount = null;
@@ -336,7 +338,7 @@ export class IssueView extends UI.TreeOutline.TreeElement {
   #appendHeader(): void {
     const header = document.createElement('div');
     header.classList.add('header');
-    this.#issueKindIcon = new IconButton.Icon.Icon();
+    this.#issueKindIcon = new Icon();
     this.#issueKindIcon.classList.add('leading-issue-icon', 'extra-large');
     this.#aggregatedIssuesCount = document.createElement('span');
     const countAdorner = new Adorners.Adorner.Adorner();

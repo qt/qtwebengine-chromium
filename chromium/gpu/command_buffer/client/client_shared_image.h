@@ -7,10 +7,12 @@
 
 #include <optional>
 
+#include "base/byte_count.h"
 #include "base/containers/span.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ptr_exclusion.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/unsafe_shared_memory_pool.h"
 #include "base/task/single_thread_task_runner.h"
@@ -94,29 +96,26 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
   // plane.
   class GPU_COMMAND_BUFFER_CLIENT_EXPORT ScopedMapping {
    public:
-    virtual ~ScopedMapping() = default;
+    ScopedMapping(const gfx::Size& size, viz::SharedImageFormat format);
+    ~ScopedMapping();
 
-    virtual base::span<uint8_t> GetMemoryForPlane(
-        const uint32_t plane_index) = 0;
+    base::span<uint8_t> GetMemoryForPlane(const uint32_t plane_index);
 
     SkPixmap GetSkPixmapForPlane(const uint32_t plane_index,
                                  SkImageInfo sk_image_info);
 
     // Returns plane stride.
-    virtual size_t Stride(const uint32_t plane_index) = 0;
+    size_t Stride(const uint32_t plane_index);
 
     // Returns the size of the buffer.
-    virtual gfx::Size Size() = 0;
+    gfx::Size Size();
 
     // Returns whether the underlying resource is shared memory.
-    virtual bool IsSharedMemory() = 0;
+    bool IsSharedMemory();
 
    private:
     friend class ClientSharedImage;
 
-    static std::unique_ptr<ScopedMapping> Create(
-        SharedImageMetadata metadata_,
-        base::WritableSharedMemoryMapping* mapping);
     static std::unique_ptr<ScopedMapping> Create(
         SharedImageMetadata metadata_,
         MappableBuffer* mappable_buffer,
@@ -130,6 +129,13 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
         MappableBuffer* mappable_buffer,
         base::OnceCallback<void(std::unique_ptr<ScopedMapping>)> result_cb,
         bool success);
+
+    bool Init(MappableBuffer* mappable_buffer, bool is_already_mapped);
+
+    // RAW_PTR_EXCLUSION: Performance reasons (based on analysis of MotionMark).
+    RAW_PTR_EXCLUSION MappableBuffer* buffer_ = nullptr;
+    gfx::Size size_;
+    viz::SharedImageFormat format_;
   };
 
   // `sii_holder` must not be null.
@@ -158,6 +164,9 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
 
   const Mailbox& mailbox() const { return mailbox_; }
   viz::SharedImageFormat format() const { return metadata_.format; }
+  base::ByteCount EstimatedSizeInBytes() const {
+    return base::ByteCount(format().EstimatedSizeInBytes(size()));
+  }
   gfx::Size size() const { return metadata_.size; }
   const gfx::ColorSpace& color_space() const { return metadata_.color_space; }
   GrSurfaceOrigin surface_origin() const { return metadata_.surface_origin; }
@@ -242,13 +251,12 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
       uint32_t texture_target);
 
   using AsyncMapCompletionCallback = base::OnceCallback<void(bool)>;
-
   static scoped_refptr<ClientSharedImage> CreateForTesting(
       const Mailbox& mailbox,
       const SharedImageMetadata& metadata,
       const SyncToken& sync_token,
-      gfx::BufferUsage buffer_usage,
-      scoped_refptr<SharedImageInterfaceHolder> sii_holder);
+      uint32_t texture_target,
+      bool is_software = false);
 
   // Used to control execution of `MapAsync()` completion callbacks. On a
   // `MapAsync()` invocation the completion callback will be passed to this
@@ -396,7 +404,6 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
   SyncToken destruction_sync_token_;
 
   std::unique_ptr<MappableBuffer> mappable_buffer_;
-  base::WritableSharedMemoryMapping shared_memory_mapping_;
   std::optional<gfx::BufferUsage> buffer_usage_;
   scoped_refptr<SharedImageInterfaceHolder> sii_holder_;
 
@@ -420,10 +427,10 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
   scoped_refptr<base::SingleThreadTaskRunner>
       copy_native_buffer_to_shmem_task_runner_;
 
-  bool is_software_ = false;
-
   // The texture target returned by `GetTextureTarget()`.
   uint32_t texture_target_ = 0;
+
+  bool is_software_ = false;
 
   AsyncMapInvokedCallback async_map_invoked_callback_for_testing_;
   bool premapped_for_testing_;
@@ -464,7 +471,8 @@ struct GPU_COMMAND_BUFFER_CLIENT_EXPORT ExportedSharedImage {
                       std::string debug_label,
                       std::optional<gfx::GpuMemoryBufferHandle> buffer_handle,
                       std::optional<gfx::BufferUsage> buffer_usage,
-                      uint32_t texture_target);
+                      uint32_t texture_target,
+                      bool is_software);
 
   Mailbox mailbox_;
   SharedImageMetadata metadata_;
@@ -473,6 +481,7 @@ struct GPU_COMMAND_BUFFER_CLIENT_EXPORT ExportedSharedImage {
   std::optional<gfx::GpuMemoryBufferHandle> buffer_handle_;
   std::optional<gfx::BufferUsage> buffer_usage_;
   uint32_t texture_target_ = 0;
+  bool is_software_ = false;
 };
 
 class GPU_COMMAND_BUFFER_CLIENT_EXPORT SharedImageTexture {
@@ -567,6 +576,11 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT WebGPUTextureScopedAccess {
   void SetNeedsPresent(bool needs_present);
   const wgpu::dawn::wire::client::Texture& texture();
 
+  // This method is used to clear the context before the object is destroyed.
+  // This is necessary to avoid a dangling pointer crash when the context is
+  // lost.
+  void ClearContext();
+
  private:
   friend class ClientSharedImage;
   WebGPUTextureScopedAccess(
@@ -578,7 +592,7 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT WebGPUTextureScopedAccess {
       uint64_t usage,
       webgpu::MailboxFlags mailbox_flags);
 
-  const raw_ptr<webgpu::WebGPUInterface> webgpu_;
+  raw_ptr<webgpu::WebGPUInterface> webgpu_;
   std::unique_ptr<wgpu::dawn::wire::client::Texture> texture_;
   raw_ptr<gpu::ClientSharedImage> shared_image_;
   uint32_t device_id_ = 0;
@@ -617,8 +631,8 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT WebGPUBufferScopedAccess {
   const raw_ptr<webgpu::WebGPUInterface> webgpu_;
   std::unique_ptr<wgpu::dawn::wire::client::Buffer> buffer_;
   raw_ptr<gpu::ClientSharedImage> shared_image_;
-  uint32_t wire_buffer_id_ = 0;
-  uint32_t wire_buffer_generation_ = 0;
+  uint32_t buffer_id_ = 0;
+  uint32_t buffer_generation_ = 0;
 };
 
 }  // namespace gpu

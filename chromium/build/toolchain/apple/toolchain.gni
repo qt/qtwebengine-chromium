@@ -6,6 +6,7 @@
 # some enhancements since the commands on Mac are slightly different than on
 # Linux.
 
+import("//build/config/apple/arch.gni")
 import("//build/config/apple/symbols.gni")
 import("//build/config/clang/clang.gni")
 import("//build/config/compiler/compiler.gni")
@@ -235,12 +236,33 @@ template("single_apple_toolchain") {
                      rebase_path("//tools/clang/dsymutil/bin/dsymutil",
                                  root_build_dir) + " "
 
+      # All the toolchains are defined in the context of the default toolchain,
+      # this means that the global variable `current_cpu` is not correct, it
+      # will be the one for the default toolchain.
+      #
+      # This means that the code cannot use the variable `dsym_arch` defined in
+      # build/config/apple/symbols.gni since it is defined from `current_cpu`.
+      #
+      # Instead declare another local variable `_dsym_arch` based from the
+      # toolchain `toolchain_args.current_cpu` which will be used when targets
+      # are evaluated in the context of the current toolchain.
+      _archs_mapping_os = archs_mapping[toolchain_args.current_os]
+      if (defined(_archs_mapping_os[toolchain_args.current_cpu])) {
+        _archs_mapping_os_cpu = _archs_mapping_os[toolchain_args.current_cpu]
+        _dsym_arch = _archs_mapping_os_cpu.dsym_arch
+      } else {
+        not_needed([ "_archs_mapping_os" ])
+        assert("cpu unsupported ${toolchain_args.current_cpu}")
+      }
+
       dsym_output_dir =
           "{{root_out_dir}}/{{target_output_name}}{{output_extension}}.dSYM"
       dsym_output = [
         "$dsym_output_dir/Contents/Info.plist",
         "$dsym_output_dir/Contents/Resources/DWARF/" +
             "{{target_output_name}}{{output_extension}}",
+        "$dsym_output_dir/Contents/Resources/Relocations/" +
+            "$_dsym_arch/{{target_output_name}}{{output_extension}}.yml",
       ]
     } else {
       dsym_switch = ""
@@ -248,6 +270,12 @@ template("single_apple_toolchain") {
 
     if (_save_unstripped_output) {
       _unstripped_output = "{{root_out_dir}}/{{target_output_name}}{{output_extension}}.unstripped"
+    }
+
+    if (system_headers_in_deps) {
+      md = "-MD"
+    } else {
+      md = "-MMD"
     }
 
     if (toolchain_has_rust) {
@@ -398,7 +426,7 @@ template("single_apple_toolchain") {
     tool("cc") {
       depfile = "{{output}}.d"
       precompiled_header_type = "gcc"
-      command = "$coverage_wrapper$cc -MMD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} -c {{source}} -o {{output}}"
+      command = "$coverage_wrapper$cc $md -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} -c {{source}} -o {{output}}"
       depsformat = "gcc"
       description = "CC {{output}}"
       outputs = [ "$object_subdir/{{source_name_part}}.o" ]
@@ -407,7 +435,7 @@ template("single_apple_toolchain") {
     tool("cxx") {
       depfile = "{{output}}.d"
       precompiled_header_type = "gcc"
-      command = "$coverage_wrapper$cxx -MMD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} {{module_deps_no_self}} -c {{source}} -o {{output}}"
+      command = "$coverage_wrapper$cxx $md -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} {{module_deps_no_self}} -c {{source}} -o {{output}}"
       depsformat = "gcc"
       description = "CXX {{output}}"
       outputs = [ "$object_subdir/{{source_name_part}}.o" ]
@@ -428,7 +456,7 @@ template("single_apple_toolchain") {
     tool("asm") {
       # For GCC we can just use the C compiler to compile assembly.
       depfile = "{{output}}.d"
-      command = "$cc -MMD -MF $depfile {{defines}} {{include_dirs}} {{asmflags}} -c {{source}} -o {{output}}"
+      command = "$cc $md -MF $depfile {{defines}} {{include_dirs}} {{asmflags}} -c {{source}} -o {{output}}"
       depsformat = "gcc"
       description = "ASM {{output}}"
       outputs = [ "$object_subdir/{{source_name_part}}.o" ]
@@ -437,7 +465,7 @@ template("single_apple_toolchain") {
     tool("objc") {
       depfile = "{{output}}.d"
       precompiled_header_type = "gcc"
-      command = "$coverage_wrapper$cc -MMD -MF $depfile {{defines}} {{include_dirs}} {{framework_dirs}} {{cflags}} {{cflags_objc}} -c {{source}} -o {{output}}"
+      command = "$coverage_wrapper$cc $md -MF $depfile {{defines}} {{include_dirs}} {{framework_dirs}} {{cflags}} {{cflags_objc}} -c {{source}} -o {{output}}"
       depsformat = "gcc"
       description = "OBJC {{output}}"
       outputs = [ "$object_subdir/{{source_name_part}}.o" ]
@@ -446,7 +474,7 @@ template("single_apple_toolchain") {
     tool("objcxx") {
       depfile = "{{output}}.d"
       precompiled_header_type = "gcc"
-      command = "$coverage_wrapper$cxx -MMD -MF $depfile {{defines}} {{include_dirs}} {{framework_dirs}} {{cflags}} {{cflags_objcc}} -c {{source}} -o {{output}}"
+      command = "$coverage_wrapper$cxx $md -MF $depfile {{defines}} {{include_dirs}} {{framework_dirs}} {{cflags}} {{cflags_objcc}} -c {{source}} -o {{output}}"
       depsformat = "gcc"
       description = "OBJCXX {{output}}"
       outputs = [ "$object_subdir/{{source_name_part}}.o" ]

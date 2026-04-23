@@ -12,14 +12,23 @@ endif
 
 ifndef SUBDIR
 
+LINK = $(LD) $(1)
+
+ifeq ($(LD),$(CC))
+ifneq ($(CXX),)
+LDXX := $(CXX)
+LINK = $(if $(filter -lstdc++,$(1)),$(LDXX) $(filter-out -lstdc++,$(1)),$(LD) $(1))
+endif
+endif
+
 BIN2CEXE = ffbuild/bin2c$(HOSTEXESUF)
 BIN2C = $(BIN2CEXE)
 
 ifndef V
 Q      = @
 ECHO   = printf "$(1)\t%s\n" $(2)
-BRIEF  = CC CXX OBJCC HOSTCC HOSTLD AS X86ASM AR LD STRIP CP WINDRES NVCC BIN2C METALCC METALLIB
-SILENT = DEPCC DEPHOSTCC DEPAS DEPX86ASM RANLIB RM
+BRIEF  = CC CXX OBJCC HOSTCC HOSTLD AS X86ASM AR LD LDXX STRIP CP WINDRES NVCC BIN2C METALCC METALLIB
+SILENT = DEPCC DEPCXX DEPHOSTCC DEPAS DEPX86ASM RANLIB RM
 
 MSG    = $@
 M      = @$(call ECHO,$(TAG),$@);
@@ -42,7 +51,7 @@ OBJCCFLAGS  = $(CPPFLAGS) $(CFLAGS) $(OBJCFLAGS)
 ASFLAGS    := $(CPPFLAGS) $(ASFLAGS)
 # Use PREPEND here so that later (target-dependent) additions to CPPFLAGS
 # end up in CXXFLAGS.
-$(call PREPEND,CXXFLAGS, CPPFLAGS CFLAGS)
+$(call PREPEND,CXXFLAGS, CPPFLAGS)
 X86ASMFLAGS += $(IFLAGS:%=%/) -I$(<D)/ -Pconfig.asm
 
 HOSTCCFLAGS = $(IFLAGS) $(HOSTCPPFLAGS) $(HOSTCFLAGS)

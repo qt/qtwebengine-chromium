@@ -8,14 +8,41 @@ import contextlib
 import datetime as dt
 import json
 import logging
+from contextlib import closing
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Self, Tuple
-
 import websocket
+from websocket import create_connection
 
 if TYPE_CHECKING:
+  from crossbench.browsers.browser import Browser
   from crossbench.plt.base import Platform
 
-class DevToolsClient:
+
+class DevToolsInBrowserClient():
+  """Manages communication with the Chrome DevTools Protocol from within
+     the browser context.
+  """
+
+  def open_frontend(self, browser: Browser, panel_name: str) -> None:
+    with closing(create_connection(browser.ws_endpoint)) as ws:
+      ws.send(
+          json.dumps({
+              "id": 1,  # short lived connection, id can be anything
+              "method": "Target.openDevTools",
+              "params": {
+                  "targetId": browser.current_window_id(),
+                  "panelId": panel_name
+              },
+          }))
+      result = json.loads(ws.recv())
+      if "result" not in result:
+        raise RuntimeError(f"Failed to open DevTools. Response: {result}")
+      if "targetId" not in result["result"]:
+        raise RuntimeError(f"Failed to open DevTools, no targetId: {result}")
+      self._devtools_window_id = result["result"]["targetId"]
+
+
+class DevToolsRemoteClient:
   """Manages communication with the Chrome DevTools Protocol."""
 
   def __init__(self,

@@ -18,7 +18,7 @@
 # ~~~
 cmake_minimum_required(VERSION 3.22.1)
 
-project(VULKAN_LOADER VERSION 1.4.328 LANGUAGES C)
+project(VULKAN_LOADER VERSION 1.4.335 LANGUAGES C)
 
 option(CODE_COVERAGE "Enable Code Coverage" OFF)
 if (CODE_COVERAGE)
@@ -52,7 +52,7 @@ if(WIN32)
     set(BUILD_DLL_VERSIONINFO "" CACHE STRING "Set the version to be used in the loader.rc file. Default value is the currently generated header version")
 endif()
 
-find_package(VulkanHeaders ${CMAKE_PROJECT_VERSION} CONFIG QUIET)
+find_package(VulkanHeaders ${PROJECT_VERSION} CONFIG QUIET)
 
 include(GNUInstallDirs)
 
@@ -226,6 +226,17 @@ if(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR (CMAKE_C_COMPILER_ID STREQUAL "Clang" A
 
     # Enable control flow guard
     target_link_options(loader_common_options INTERFACE "LINKER:/guard:cf")
+
+    # Enable CET for 32-bit and 64-bit x86 architectures
+    if (CMAKE_GENERATOR_PLATFORM MATCHES "Win32|x64")
+        target_link_options(loader_common_options INTERFACE "LINKER:/cetcompat")
+    endif()
+
+    # Enable EH Continuation Metadata for 64-bit architectures
+    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+        target_compile_options(loader_common_options INTERFACE $<$<COMPILE_LANGUAGE::CXX,C>:/guard:ehcont>)
+        target_link_options(loader_common_options INTERFACE "LINKER:/guard:ehcont")
+    endif()
 
     # Prevent <windows.h> from polluting the code. guards against things like MIN and MAX
     target_compile_definitions(loader_common_options INTERFACE WIN32_LEAN_AND_MEAN)

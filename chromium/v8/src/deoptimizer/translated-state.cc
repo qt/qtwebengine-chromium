@@ -557,7 +557,7 @@ Tagged<Object> TranslatedValue::GetRawValue() const {
   // If we have a value, return it.
   if (materialization_state() == kFinished) {
     int smi;
-    if (!IsAnyHole(*storage_) && IsHeapNumber(*storage_) &&
+    if (IsHeapNumber(*storage_) &&
         DoubleToSmiInteger(Object::NumberValue(*storage_), &smi)) {
       return Smi::FromInt(smi);
     }
@@ -568,7 +568,7 @@ Tagged<Object> TranslatedValue::GetRawValue() const {
   switch (kind()) {
     case kTagged: {
       Tagged<Object> object = raw_literal();
-      if (!IsAnyHole(object) && IsSlicedString(object)) {
+      if (IsSlicedString(object)) {
         // If {object} is a sliced string of length smaller than
         // SlicedString::kMinLength, then trim the underlying SeqString and
         // return it. This assumes that such sliced strings are only built by
@@ -2186,11 +2186,11 @@ void TranslatedState::MaterializeFixedDoubleArray(TranslatedFrame* frame,
     CHECK_NE(TranslatedValue::kCapturedObject,
              frame->values_[*value_index].kind());
     DirectHandle<Object> value = frame->values_[*value_index].GetValue();
-    if (value.is_identical_to(isolate()->factory()->the_hole_value())) {
-      array->set_the_hole(isolate(), i);
-    } else {
-      CHECK(IsNumber(*value));
+    if (IsNumber(*value)) {
       array->set(i, Object::NumberValue(*value));
+    } else {
+      CHECK(value.is_identical_to(isolate()->factory()->the_hole_value()));
+      array->set_the_hole(isolate(), i);
     }
     (*value_index)++;
   }
@@ -2203,9 +2203,16 @@ void TranslatedState::MaterializeHeapNumber(TranslatedFrame* frame,
   CHECK_NE(TranslatedValue::kCapturedObject,
            frame->values_[*value_index].kind());
   DirectHandle<Object> value = frame->values_[*value_index].GetValue();
-  CHECK(IsNumber(*value));
-  Handle<HeapNumber> box =
-      isolate()->factory()->NewHeapNumber(Object::NumberValue(*value));
+  Handle<HeapNumber> box;
+  if (value.is_identical_to(isolate()->factory()->the_hole_value())) {
+    // See is_hole_nan conversions in maglev-code-generator.cc and
+    // turbolev-graph-builder.cc.
+    box = isolate()->factory()->NewHeapNumber(
+        std::numeric_limits<double>::quiet_NaN());
+  } else {
+    CHECK(IsNumber(*value));
+    box = isolate()->factory()->NewHeapNumber(Object::NumberValue(*value));
+  }
   (*value_index)++;
   slot->set_storage(box);
 }
@@ -2556,7 +2563,6 @@ void TranslatedState::InitializeJSObjectAt(
     uint8_t marker = object_storage->ReadField<uint8_t>(offset);
     InstanceType instance_type = map->instance_type();
     USE(instance_type);
-#ifdef V8_ENABLE_LEAPTIERING
     if (InstanceTypeChecker::IsJSFunction(instance_type) &&
         offset == JSFunction::kDispatchHandleOffset) {
       // The JSDispatchHandle will be materialized as a number, but we need
@@ -2569,7 +2575,6 @@ void TranslatedState::InitializeJSObjectAt(
           JSFunction::kDispatchHandleOffset, handle.value());
       continue;
     }
-#endif  // V8_ENABLE_LEAPTIERING
 #ifdef V8_ENABLE_SANDBOX
     if (InstanceTypeChecker::IsJSRegExp(instance_type) &&
         offset == JSRegExp::kDataOffset) {
@@ -2600,7 +2605,7 @@ void TranslatedState::InitializeJSObjectAt(
 
     CHECK_EQ(kStoreTagged, marker);
     DirectHandle<Object> field_value = slot->GetValue();
-    DCHECK_IMPLIES(!IsAnyHole(*field_value) && IsHeapNumber(*field_value),
+    DCHECK_IMPLIES(IsHeapNumber(*field_value),
                    !IsSmiDouble(Object::NumberValue(*field_value)));
     WRITE_FIELD(*object_storage, offset, *field_value);
     WRITE_BARRIER(*object_storage, offset, *field_value);
@@ -2651,7 +2656,7 @@ void TranslatedState::InitializeObjectWithTaggedFieldsAt(
     } else {
       CHECK(marker == kStoreTagged || i == 1);
       field_value = slot->GetValue();
-      DCHECK_IMPLIES(!IsAnyHole(*field_value) && IsHeapNumber(*field_value),
+      DCHECK_IMPLIES(IsHeapNumber(*field_value),
                      !IsSmiDouble(Object::NumberValue(*field_value)));
     }
     WRITE_FIELD(*object_storage, offset, *field_value);

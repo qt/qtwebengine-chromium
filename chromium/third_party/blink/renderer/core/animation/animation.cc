@@ -42,6 +42,7 @@
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_timeline_range_offset.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_cssnumericvalue_double.h"
+#include "third_party/blink/renderer/core/animation/animation_effect.h"
 #include "third_party/blink/renderer/core/animation/animation_timeline.h"
 #include "third_party/blink/renderer/core/animation/animation_utils.h"
 #include "third_party/blink/renderer/core/animation/compositor_animations.h"
@@ -78,12 +79,14 @@
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
+#include "third_party/blink/renderer/core/svg/svg_element.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/event_loop.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/perfetto/include/perfetto/tracing/track.h"
@@ -226,6 +229,59 @@ void RecordCompositorAnimationFailureReasons(
   }
 }
 
+// Helper function to record both UMA histogram and UseCounter for animation
+// types
+void RecordAnimationTypeAndUseCounter(BlinkAnimationType animation_type,
+                                      WebFeature web_feature,
+                                      ExecutionContext* execution_context) {
+  UMA_HISTOGRAM_ENUMERATION("Blink.Animation.AnimationType", animation_type,
+                            BlinkAnimationType::kAnimationTypeEnumMax);
+  UseCounter::Count(execution_context, web_feature);
+}
+
+void RecordAnimationTypeMetrics(
+    bool is_svg_animation,
+    CompositorAnimations::FailureReasons failure_reasons,
+    ExecutionContext* execution_context) {
+  RecordAnimationTypeAndUseCounter(BlinkAnimationType::kAllAnimations,
+                                   WebFeature::kAnimationAllTypes,
+                                   execution_context);
+
+  if (is_svg_animation) {
+    RecordAnimationTypeAndUseCounter(BlinkAnimationType::kSvgAnimations,
+                                     WebFeature::kAnimationSvgTypes,
+                                     execution_context);
+  }
+
+  if (failure_reasons == CompositorAnimations::kNoFailure) {
+    // Record all composited animations in the general metric.
+    RecordAnimationTypeAndUseCounter(BlinkAnimationType::kCompositedAnimations,
+                                     WebFeature::kAnimationCompositedTypes,
+                                     execution_context);
+    if (is_svg_animation) {
+      // SVG animations are recorded in both metrics: the general composited
+      // animations metric (above) for overall statistics, and the SVG-specific
+      // metric (below) for tracking SVG animation behavior separately.
+      RecordAnimationTypeAndUseCounter(
+          BlinkAnimationType::kSvgCompositedAnimations,
+          WebFeature::kAnimationSvgCompositedTypes, execution_context);
+    }
+  } else {
+    // Record all non-composited animations in the general metric.
+    RecordAnimationTypeAndUseCounter(
+        BlinkAnimationType::kNonCompositedAnimations,
+        WebFeature::kAnimationNonCompositedTypes, execution_context);
+    // SVG animations are recorded in both metrics: the general non-composited
+    // animations metric (above) for overall statistics, and the SVG-specific
+    // metric (below) for tracking SVG animation behavior separately.
+    if (is_svg_animation) {
+      RecordAnimationTypeAndUseCounter(
+          BlinkAnimationType::kSvgNonCompositedAnimations,
+          WebFeature::kAnimationSvgNonCompositedTypes, execution_context);
+    }
+  }
+}
+
 Element* OriginatingElement(Element* owning_element) {
   if (owning_element->IsPseudoElement()) {
     return owning_element->parentElement();
@@ -258,10 +314,42 @@ constexpr const char* AnimationTraceCategories() {
   return "blink.animations,devtools.timeline,benchmark,rail";
 }
 
+class ScopedCommitStylesTiming {
+  STACK_ALLOCATED();
+
+ public:
+  ScopedCommitStylesTiming(Animation* animation, bool endpoint_inclusive)
+      : animation_(animation), endpoint_inclusive_(endpoint_inclusive) {
+    if (endpoint_inclusive_) {
+      animation_->InvalidateEffect();
+      animation_->Update(kTimingUpdateCommitStyles);
+    }
+  }
+
+  ~ScopedCommitStylesTiming() {
+    if (endpoint_inclusive_) {
+      animation_->InvalidateEffect();
+      animation_->Update(kTimingUpdateOnDemand);
+    }
+  }
+
+ private:
+  Animation* animation_;
+  const bool endpoint_inclusive_;
+};
+
 // Consider boundaries aligned if they round to the same integer pixel value.
 const double kScrollBoundaryTolerance = 0.5;
 
 }  // namespace
+
+// static
+bool Animation::CompareAnimations(const Member<Animation>& left,
+                                  const Member<Animation>& right) {
+  return HasLowerCompositeOrdering(
+      left.Get(), right.Get(),
+      Animation::CompareAnimationsOrdering::kTreeOrder);
+}
 
 Animation* Animation::Create(AnimationEffect* effect,
                              AnimationTimeline* timeline,
@@ -276,14 +364,7 @@ Animation* Animation::Create(AnimationEffect* effect,
   DCHECK(IsA<DocumentTimeline>(timeline) || timeline->IsScrollTimeline());
 
   if (effect && timeline->IsScrollTimeline()) {
-    if (effect->timing_.iteration_duration) {
-      if (effect->timing_.iteration_duration->is_inf()) {
-        exception_state.ThrowTypeError(
-            "Effect duration cannot be Infinity when used with Scroll "
-            "Timelines");
-        return nullptr;
-      }
-    } else {
+    if (!effect->timing_.iteration_duration) {
       // TODO(crbug.com/1216527)
       // Eventually we hope to be able to be more flexible with
       // iteration_duration "auto" and its interaction with start_delay and
@@ -768,6 +849,13 @@ bool Animation::PreCommit(
               base::OptionalToPtr(unsupported_properties_for_tracing));
       RecordCompositorAnimationFailureReasons(failure_reasons);
 
+      // Record animation type metrics
+      auto* keyframe_effect = DynamicTo<KeyframeEffect>(content_.Get());
+      const bool is_svg_animation =
+          keyframe_effect && IsA<SVGElement>(keyframe_effect->EffectTarget());
+      RecordAnimationTypeMetrics(is_svg_animation, failure_reasons,
+                                 GetExecutionContext());
+
       if (failure_reasons == CompositorAnimations::kNoFailure) {
         // We could still have a stale compositor keyframe model ID if
         // a previous cancel failed due to not having a layout object at the
@@ -1061,8 +1149,10 @@ void Animation::setTimeline(AnimationTimeline* timeline) {
   // the old timeline and the new one. We do this by storing the progress using
   // the old current time and the effect end based on the old timeline. Pending
   // spec issue: https://github.com/w3c/csswg-drafts/issues/6452
-  double progress = 0;
-  if (old_current_time && !EffectEnd().is_zero()) {
+  // crbug.com/440368332: safeguard against 0 / infinity, or
+  // +/-infinity / infinity, which are undefined.
+  std::optional<double> progress;
+  if (old_current_time && !EffectEnd().is_zero() && !EffectEnd().is_inf()) {
     progress = old_current_time.value() / EffectEnd();
   }
 
@@ -1097,17 +1187,17 @@ void Animation::setTimeline(AnimationTimeline* timeline) {
 
       case V8AnimationPlayState::Enum::kRunning:
       case V8AnimationPlayState::Enum::kFinished:
-        if (old_current_time) {
+        if (progress) {
           start_time_ = std::nullopt;
-          hold_time_ = progress * EffectEnd();
+          hold_time_ = progress.value() * EffectEnd();
         }
         PlayInternal(AutoRewind::kEnabled, ASSERT_NO_EXCEPTION);
         return;
 
       case V8AnimationPlayState::Enum::kPaused:
-        if (old_current_time) {
+        if (progress) {
           start_time_ = std::nullopt;
-          hold_time_ = progress * EffectEnd();
+          hold_time_ = progress.value() * EffectEnd();
         }
         break;
 
@@ -1116,7 +1206,11 @@ void Animation::setTimeline(AnimationTimeline* timeline) {
     }
   } else if (old_current_time && old_timeline &&
              !old_timeline->IsMonotonicallyIncreasing()) {
-    SetCurrentTimeInternal(progress * EffectEnd());
+    // crbug.com/440368332: avoid undefined if progress is 0 and EffectEnd is
+    // infinite.
+    if (progress) {
+      SetCurrentTimeInternal(progress.value() * EffectEnd());
+    }
   }
 
   // 4. If the start time of animation is resolved, make the animation’s hold
@@ -1613,7 +1707,6 @@ void Animation::PlayInternal(AutoRewind auto_rewind,
 
   bool aborted_pause = pending_pause_;
   bool has_pending_ready_promise = false;
-  std::optional<AnimationTimeDelta> seek_time;
   bool has_finite_timeline =
       timeline_ && !timeline_->IsMonotonicallyIncreasing();
   bool enable_seek =
@@ -1724,7 +1817,7 @@ void Animation::PlayInternal(AutoRewind auto_rewind,
   // the start time or playback rate, then we can abort early as there is no
   // need for a ready promise. The remaining steps are for setting up and
   // resolving the ready promise.
-  if (!hold_time_ && !seek_time && !has_finite_timeline && !aborted_pause &&
+  if (!hold_time_ && !has_finite_timeline && !aborted_pause &&
       !pending_playback_rate_) {
     return;
   }
@@ -2521,7 +2614,15 @@ Animation::NativePaintWorkletReasons Animation::GetNativePaintWorkletReasons()
   NativePaintWorkletReasons reasons = kNoPaintWorklet;
   if (const KeyframeEffect* keyframe_effect =
           DynamicTo<KeyframeEffect>(effect())) {
+    // Suppress composited background color animations when in forced colors
+    // mode to avoid clobbering a transparent fill. Normally, a composited
+    // background color needs to paint even if transparent as the fill might not
+    // remain transparent.
+    // TODO(kevers): There is room to optimize here as if in forced color mode
+    // and forced colors are active for the element, we can optimize out the
+    // animation as having no visual effect.
     if (RuntimeEnabledFeatures::CompositeBGColorAnimationEnabled() &&
+        GetDocument() && !GetDocument()->InForcedColorsMode() &&
         keyframe_effect->Affects(
             PropertyHandle(GetCSSPropertyBackgroundColor()))) {
       reasons |= kBackgroundColorPaintWorklet;
@@ -3526,6 +3627,13 @@ void Animation::commitStyles(ExceptionState& exception_state) {
   // 2. If, after applying any pending style changes, target is not being
   //    rendered, throw an "InvalidStateError" DOMException and abort these
   //    steps.
+
+  // If endpoint-inclusive feature is enabled, update animations' phases in an
+  // endpoint-inclusive way (See the spec 5.4). This is done before style update
+  // for efficiency.
+  ScopedCommitStylesTiming timing_update(
+      this, RuntimeEnabledFeatures::EndpointInclusiveCommitStylesEnabled());
+
   target->GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kJavaScript);
   if (!target->GetLayoutObject()) {
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
@@ -3555,7 +3663,10 @@ void Animation::commitStyles(ExceptionState& exception_state) {
   //       associated animation has a higher composite order than animation.
   //   5.4 Let effect value be the result of calculating the result of
   //       partialEffectStack for property using target’s computed style
-  //       (see § 5.4.3 Calculating the result of an effect stack).
+  //       (see § 5.4.3 Calculating the result of an effect stack) and setting
+  //       the endpoint-inclusive active interval flag to true when calculating
+  //       the animation effect phase (see § 4.6.6 Animation effect phases and
+  //       states).
   //   5.5 Set a CSS declaration property for effect value in inline style.
   // 6. Update style attribute for inline style.
   ActiveInterpolationsMap interpolations_map =
@@ -3707,6 +3818,11 @@ void Animation::AddTrigger(AnimationTrigger* trigger) {
 
 void Animation::RemoveTrigger(AnimationTrigger* trigger) {
   triggers_.erase(trigger);
+}
+
+const HeapHashSet<WeakMember<AnimationTrigger>>&
+Animation::GetTriggersForTest() {
+  return triggers_;
 }
 
 void Animation::DisassociateTriggers() {

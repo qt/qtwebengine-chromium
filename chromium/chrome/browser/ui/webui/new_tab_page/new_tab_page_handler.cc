@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -20,6 +21,7 @@
 #include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
+#include "base/hash/hash.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_string_value_serializer.h"
@@ -42,14 +44,17 @@
 #include "chrome/browser/new_tab_page/modules/new_tab_page_modules.h"
 #include "chrome/browser/new_tab_page/new_tab_page_util.h"
 #include "chrome/browser/new_tab_page/promos/promo_service_factory.h"
+#include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/promos/promos_pref_names.h"
 #include "chrome/browser/promos/promos_utils.h"
 #include "chrome/browser/search/background/ntp_custom_background_service.h"
+#include "chrome/browser/search/background/ntp_custom_background_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/themes/custom_theme_supplier.h"
 #include "chrome/browser/themes/theme_properties.h"
+#include "chrome/browser/ui/actions/chrome_action_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -57,6 +62,7 @@
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/browser/ui/hats/hats_service.h"
 #include "chrome/browser/ui/hats/hats_service_factory.h"
+#include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "chrome/browser/ui/views/new_tab_footer/footer_controller.h"
 #include "chrome/browser/ui/views/side_panel/customize_chrome/customize_chrome_utils.h"
 #include "chrome/browser/ui/webui/new_tab_footer/new_tab_footer_helper.h"
@@ -86,12 +92,15 @@
 #include "components/segmentation_platform/public/prediction_options.h"
 #include "components/segmentation_platform/public/segmentation_platform_service.h"
 #include "components/sync/service/sync_service.h"
+#include "components/user_education/common/feature_promo/feature_promo_controller.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
+#include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/actions/actions.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/theme_provider.h"
 #include "ui/color/color_provider.h"
@@ -446,6 +455,14 @@ const char NewTabPageHandler::kModuleDismissedHistogram[] =
     "NewTabPage.Modules.Dismissed";
 const char NewTabPageHandler::kModuleRestoredHistogram[] =
     "NewTabPage.Modules.Restored";
+const char NewTabPageHandler::kModuleAutoRemovalHistogram[] =
+    "NewTabPage.Modules.AutoRemoval";
+const char NewTabPageHandler::kModuleAutoRemovalUndoneHistogram[] =
+    "NewTabPage.Modules.AutoRemovalUndone";
+const char NewTabPageHandler::kModuleAutoRemovalModuleIdHistogram[] =
+    "NewTabPage.Modules.AutoRemovalModuleId";
+const char NewTabPageHandler::kModuleAutoRemovalUndoneModuleIdHistogram[] =
+    "NewTabPage.Modules.AutoRemovalUndoneModuleId";
 
 NewTabPageHandler::NewTabPageHandler(
     mojo::PendingReceiver<new_tab_page::mojom::PageHandler>
@@ -459,8 +476,6 @@ NewTabPageHandler::NewTabPageHandler(
     segmentation_platform::SegmentationPlatformService*
         segmentation_platform_service,
     content::WebContents* web_contents,
-    std::unique_ptr<NewTabPageFeaturePromoHelper>
-        customize_chrome_feature_promo_helper,
     const base::Time& ntp_navigation_start_time,
     const std::vector<ntp::ModuleIdDetail>* module_id_details)
     : SettingsEnabledObserver(
@@ -473,13 +488,15 @@ NewTabPageHandler::NewTabPageHandler(
       segmentation_platform_service_(segmentation_platform_service),
       profile_(profile),
       web_contents_(web_contents),
-      feature_promo_helper_(std::move(customize_chrome_feature_promo_helper)),
+      feature_promo_helper_(std::make_unique<NewTabPageFeaturePromoHelper>()),
       ntp_navigation_start_time_(ntp_navigation_start_time),
       module_id_details_(module_id_details),
       logger_(profile,
               GURL(chrome::kChromeUINewTabPageURL),
               ntp_navigation_start_time),
       promo_service_(PromoServiceFactory::GetForProfile(profile)),
+      microsoft_auth_service_(
+          MicrosoftAuthServiceFactory::GetForProfile(profile)),
       interaction_module_id_trigger_dict_(
           MakeModuleInteractionTriggerIdDictionary()),
       browser_window_changed_subscription_(
@@ -510,7 +527,6 @@ NewTabPageHandler::NewTabPageHandler(
     }
   }
 
-  microsoft_auth_service_ = MicrosoftAuthServiceFactory::GetForProfile(profile);
   if (microsoft_auth_service_) {
     microsoft_auth_service_->AddObserver(this);
   }
@@ -542,6 +558,11 @@ NewTabPageHandler::NewTabPageHandler(
       prefs::kSeedColorChangeCount,
       base::BindRepeating(&NewTabPageHandler::MaybeShowWebstoreToast,
                           base::Unretained(this)));
+
+  pref_change_registrar_.Add(
+      prefs::kNtpToolChipsVisible,
+      base::BindRepeating(&NewTabPageHandler::UpdateActionChipsVisibility,
+                          base::Unretained(this)));
 }
 
 NewTabPageHandler::~NewTabPageHandler() {
@@ -561,6 +582,7 @@ void NewTabPageHandler::RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterListPref(prefs::kNtpHiddenModules);
   registry->RegisterListPref(prefs::kNtpModulesOrder);
   registry->RegisterBooleanPref(prefs::kNtpModulesVisible, true);
+  registry->RegisterBooleanPref(prefs::kNtpToolChipsVisible, true);
   registry->RegisterIntegerPref(prefs::kNtpCustomizeChromeButtonOpenCount, 0);
   registry->RegisterDictionaryPref(prefs::kNtpModulesInteractedCountDict);
   registry->RegisterDictionaryPref(prefs::kNtpModulesLoadedCountDict);
@@ -568,6 +590,11 @@ void NewTabPageHandler::RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kNtpOutlookModuleVisible, false);
   registry->RegisterBooleanPref(prefs::kNtpSharepointModuleVisible, false);
   registry->RegisterIntegerPref(prefs::kNtpComposeButtonShownCountPrefName, 0);
+  registry->RegisterIntegerPref(
+      prefs::kNtpCustomizeChromeSidePanelAutoOpeningsCount, 0);
+  registry->RegisterBooleanPref(prefs::kNtpCustomizeChromeExplicitlyClosed,
+                                false);
+  registry->RegisterBooleanPref(prefs::kNtpCustomizeChromeIPHAutoOpened, false);
 }
 
 void NewTabPageHandler::SetMostVisitedSettings(ntp_tiles::TileType type,
@@ -581,8 +608,11 @@ void NewTabPageHandler::SetMostVisitedSettings(ntp_tiles::TileType type,
 
   ntp_tiles::TileType old_type = GetTileType();
   if (old_type != type) {
-    profile_->GetPrefs()->SetInteger(ntp_prefs::kNtpShortcutsType,
-                                     static_cast<int>(type));
+    profile_->GetPrefs()->SetBoolean(ntp_prefs::kNtpCustomLinksVisible,
+                                     type == ntp_tiles::TileType::kCustomLinks);
+    profile_->GetPrefs()->SetBoolean(
+        ntp_prefs::kNtpEnterpriseShortcutsVisible,
+        type == ntp_tiles::TileType::kEnterpriseShortcuts);
     logger_.LogEvent(NTP_CUSTOMIZE_SHORTCUT_TOGGLE_TYPE,
                      base::TimeDelta() /* unused */);
   }
@@ -626,7 +656,7 @@ void NewTabPageHandler::OnDismissModule(const std::string& module_id) {
   base::UmaHistogramExactLinear(histogram_prefix, 1, 1);
   base::UmaHistogramExactLinear(histogram_prefix + "." + module_id, 1, 1);
 
-  IncrementDictPrefKeyCount(prefs::kNtpModulesInteractedCountDict, module_id);
+  RecordModuleInteraction(module_id);
   MaybeLaunchInteractionSurvey(kDismissInteraction, module_id);
 }
 
@@ -637,6 +667,7 @@ void NewTabPageHandler::OnRestoreModule(const std::string& module_id) {
 }
 
 void NewTabPageHandler::SetModulesVisible(bool visible) {
+  DisableModuleAutoRemoval(profile_, ntp_modules::kAllModulesId);
   profile_->GetPrefs()->SetBoolean(prefs::kNtpModulesVisible, visible);
 }
 
@@ -653,8 +684,40 @@ void NewTabPageHandler::SetModuleDisabled(const std::string& module_id,
     list.EraseValue(module_id_value);
   }
 
-  IncrementDictPrefKeyCount(prefs::kNtpModulesInteractedCountDict, module_id);
+  RecordModuleInteraction(module_id);
   MaybeLaunchInteractionSurvey(kDisableInteraction, module_id);
+}
+
+void NewTabPageHandler::SetModulesDisabled(
+    const std::vector<std::string>& module_ids,
+    bool disabled) {
+  if (module_ids.empty()) {
+    return;
+  }
+
+  ScopedListPrefUpdate update(profile_->GetPrefs(), prefs::kNtpDisabledModules);
+  base::Value::List& list = update.Get();
+  // Histogram for the total number of times auto removal/undo is triggered.
+  base::UmaHistogramExactLinear(disabled ? kModuleAutoRemovalHistogram
+                                         : kModuleAutoRemovalUndoneHistogram,
+                                1, 1);
+  // Sparse Histogram for the number of times auto removal/undo is triggered
+  // for each module.
+  const std::string sparse_histogram =
+      disabled ? kModuleAutoRemovalModuleIdHistogram
+               : kModuleAutoRemovalUndoneModuleIdHistogram;
+  for (const auto& module_id : module_ids) {
+    base::Value module_id_value(module_id);
+    if (disabled) {
+      if (!base::Contains(list, module_id_value)) {
+        list.Append(std::move(module_id_value));
+        DisableModuleAutoRemoval(profile_, module_id);
+      }
+    } else {
+      list.EraseValue(module_id_value);
+    }
+    base::UmaHistogramSparse(sparse_histogram, base::PersistentHash(module_id));
+  }
 }
 
 void NewTabPageHandler::UpdateDisabledModules() {
@@ -687,6 +750,8 @@ void NewTabPageHandler::UpdateDisabledModules() {
 
 void NewTabPageHandler::OnModulesLoadedWithData(
     const std::vector<std::string>& module_ids) {
+  UpdateModulesStaleness(profile_, module_ids);
+
   for (const auto& module_id : module_ids) {
     IncrementDictPrefKeyCount(prefs::kNtpModulesLoadedCountDict, module_id);
   }
@@ -733,7 +798,7 @@ void NewTabPageHandler::OnModulesLoadedWithData(
 }
 
 void NewTabPageHandler::OnModuleUsed(const std::string& module_id) {
-  IncrementDictPrefKeyCount(prefs::kNtpModulesInteractedCountDict, module_id);
+  RecordModuleInteraction(module_id);
   MaybeLaunchInteractionSurvey(kUseInteraction, module_id);
 }
 
@@ -748,6 +813,57 @@ void NewTabPageHandler::GetModulesIdNames(GetModulesIdNamesCallback callback) {
   }
 
   std::move(callback).Run(std::move(modules_details));
+}
+
+void NewTabPageHandler::GetModulesEligibleForRemoval(
+    GetModulesEligibleForRemovalCallback callback) {
+  callback = mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+      std::move(callback), std::vector<std::string>());
+
+  // (1) Skip modules removal if the feature flag is not enabled.
+  std::vector<std::string> removal_eligible_module_ids;
+  if (!base::FeatureList::IsEnabled(
+          ntp_features::kNtpFeatureOptimizationModuleRemoval)) {
+    return;
+  }
+
+  // (2) Skip modules removal if it's a managed preference.
+  if (profile_->GetPrefs()->IsManagedPreference(prefs::kNtpModulesVisible)) {
+    return;
+  }
+
+  // (3) Skip modules removal if it's force disabled for all modules.
+  const base::Value::Dict& module_removal_disabled_dict =
+      profile_->GetPrefs()->GetDict(
+          ntp_prefs::kNtpModulesAutoRemovalDisabledDict);
+  const bool is_all_module_removal_disabled =
+      module_removal_disabled_dict.FindBool(ntp_modules::kAllModulesId)
+          .value_or(false);
+
+  if (is_all_module_removal_disabled) {
+    return;
+  }
+
+  // (4) Otherwise, we check for each module if the module auto removal is not
+  // force disabled and if the staleness count is above the threshold.
+  const int staleness_threshold =
+      ntp_features::kStaleModulesCountThreshold.Get();
+  const base::Value::Dict& staleness_counts_dict =
+      profile_->GetPrefs()->GetDict(ntp_prefs::kNtpModuleStalenessCountDict);
+
+  for (const auto& module_id_detail : *module_id_details_) {
+    const bool is_module_removal_disabled =
+        module_removal_disabled_dict.FindBool(module_id_detail.id_)
+            .value_or(false);
+    const int staleness_count =
+        staleness_counts_dict.FindInt(module_id_detail.id_).value_or(0);
+    const bool is_above_threshold = staleness_count >= staleness_threshold;
+    if (!is_module_removal_disabled && is_above_threshold) {
+      removal_eligible_module_ids.push_back(module_id_detail.id_);
+    }
+  }
+
+  return std::move(callback).Run(std::move(removal_eligible_module_ids));
 }
 
 void NewTabPageHandler::SetModulesOrder(
@@ -796,6 +912,10 @@ void NewTabPageHandler::UpdateModulesLoadable() {
   }
 }
 
+void NewTabPageHandler::UpdateActionChipsVisibility() {
+  page_->SetActionChipsVisibility(IsActionChipsVisible());
+}
+
 void NewTabPageHandler::UpdateFooterVisibility() {
   if (!base::FeatureList::IsEnabled(ntp_features::kNtpFooter)) {
     return;
@@ -820,31 +940,6 @@ void NewTabPageHandler::UpdateFooterVisibility() {
   OnFooterVisibilityUpdated(footer_controller->GetFooterVisible(web_contents_));
 }
 
-void NewTabPageHandler::MaybeShowFeaturePromo(
-    new_tab_page::mojom::IphFeature iph_feature) {
-  CHECK(profile_);
-  CHECK(profile_->GetPrefs());
-
-  // If a sign-in dialog is being currently displayed, the promo should not be
-  // shown to avoid conflict. The sign-in dialog would be shown as soon as the
-  // browser is opened, before the promo.
-  bool is_signin_modal_dialog_open =
-      feature_promo_helper_->IsSigninModalDialogOpen(web_contents_.get());
-  if (is_signin_modal_dialog_open) {
-    return;
-  }
-
-  switch (iph_feature) {
-    case new_tab_page::mojom::IphFeature::kCustomizeChrome: {
-      feature_promo_helper_->MaybeShowFeaturePromo(
-          feature_engagement::kIPHDesktopCustomizeChromeRefreshFeature,
-          web_contents_.get());
-    } break;
-    default:
-      NOTREACHED();
-  }
-}
-
 void NewTabPageHandler::OnAppRendered(double time) {
   logger_.LogEvent(NTP_APP_RENDERED,
                    base::Time::FromMillisecondsSinceUnixEpoch(time) -
@@ -863,7 +958,7 @@ void NewTabPageHandler::OnPromoRendered(double time,
                    base::Time::FromMillisecondsSinceUnixEpoch(time) -
                        ntp_navigation_start_time_);
   if (log_url.has_value() && log_url->is_valid()) {
-    Fetch(*log_url, base::BindOnce([](bool, std::unique_ptr<std::string>) {}));
+    Fetch(*log_url, base::NullCallback());
   }
 }
 
@@ -942,7 +1037,7 @@ void NewTabPageHandler::OnDoodleImageClicked(
   if (type == new_tab_page::mojom::DoodleImageType::kCta &&
       log_url.has_value()) {
     // We just ping the server to indicate a CTA image has been clicked.
-    Fetch(*log_url, base::BindOnce([](bool, std::unique_ptr<std::string>) {}));
+    Fetch(*log_url, base::NullCallback());
   }
 }
 
@@ -996,7 +1091,7 @@ void NewTabPageHandler::OnDoodleShared(
                       .GoogleBaseURLValue())
                  .Resolve(query);
   // We just ping the server to indicate a doodle has been shared.
-  Fetch(url, base::BindOnce([](bool s, std::unique_ptr<std::string>) {}));
+  Fetch(url, base::NullCallback());
 }
 
 void NewTabPageHandler::OnPromoLinkClicked() {
@@ -1150,6 +1245,18 @@ void NewTabPageHandler::OnBrowserWindowInterfaceChanged() {
   footer_controller_observation_.Observe(footer_controller);
 }
 
+void NewTabPageHandler::MaybeTriggerAutomaticCustomizeChromePromo() {
+  feature_promo_helper_->MaybeTriggerAutomaticCustomizeChromePromo(
+      web_contents_);
+}
+
+void NewTabPageHandler::RecordContextMenuClick() {
+  int current_count =
+      profile_->GetPrefs()->GetInteger(ntp_prefs::kNtpContextMenuClickCount);
+  profile_->GetPrefs()->SetInteger(ntp_prefs::kNtpContextMenuClickCount,
+                                   current_count + 1);
+}
+
 void NewTabPageHandler::LogEvent(NTPLoggingEventType event) {
   logger_.LogEvent(event, base::TimeDelta() /* unused */);
 }
@@ -1196,19 +1303,22 @@ void NewTabPageHandler::Fetch(const GURL& url,
 
 void NewTabPageHandler::OnFetchResult(const network::SimpleURLLoader* loader,
                                       OnFetchResultCallback on_result,
-                                      std::unique_ptr<std::string> body) {
+                                      std::optional<std::string> body) {
   bool success = loader->NetError() == net::OK && loader->ResponseInfo() &&
                  loader->ResponseInfo()->headers &&
                  loader->ResponseInfo()->headers->response_code() >= 200 &&
                  loader->ResponseInfo()->headers->response_code() <= 299 &&
                  body;
-  std::move(on_result).Run(success, std::move(body));
+  if (on_result) {
+    std::move(on_result).Run(success, std::move(body));
+  }
   loader_map_.erase(loader);
 }
 
 void NewTabPageHandler::OnLogFetchResult(OnDoodleImageRenderedCallback callback,
                                          bool success,
-                                         std::unique_ptr<std::string> body) {
+                                         std::optional<std::string> body) {
+  CHECK(!success || body);
   if (!success || body->size() < 4 || body->substr(0, 4) != ")]}'") {
     std::move(callback).Run("", std::nullopt, "");
     return;
@@ -1241,8 +1351,19 @@ void NewTabPageHandler::OnLogFetchResult(OnDoodleImageRenderedCallback callback,
 }
 
 ntp_tiles::TileType NewTabPageHandler::GetTileType() const {
-  return static_cast<ntp_tiles::TileType>(
-      profile_->GetPrefs()->GetInteger(ntp_prefs::kNtpShortcutsType));
+  // TODO(crbug.com/444707872): Update logic to account for multi-select
+  // support for shortcuts.
+  if (profile_->GetPrefs()->GetBoolean(
+          ntp_prefs::kNtpEnterpriseShortcutsVisible)) {
+    return ntp_tiles::TileType::kEnterpriseShortcuts;
+  }
+  return profile_->GetPrefs()->GetBoolean(ntp_prefs::kNtpCustomLinksVisible)
+             ? ntp_tiles::TileType::kCustomLinks
+             : ntp_tiles::TileType::kTopSites;
+}
+
+bool NewTabPageHandler::IsActionChipsVisible() const {
+  return profile_->GetPrefs()->GetBoolean(prefs::kNtpToolChipsVisible);
 }
 
 bool NewTabPageHandler::IsShortcutsVisible() const {
@@ -1272,6 +1393,11 @@ void NewTabPageHandler::MaybeShowWebstoreToast() {
   if (profile_->GetPrefs()->GetInteger(prefs::kSeedColorChangeCount) <= 3) {
     page_->ShowWebstoreToast();
   }
+}
+
+void NewTabPageHandler::RecordModuleInteraction(const std::string& module_id) {
+  DisableModuleAutoRemoval(profile_, module_id);
+  IncrementDictPrefKeyCount(prefs::kNtpModulesInteractedCountDict, module_id);
 }
 
 void NewTabPageHandler::IncrementDictPrefKeyCount(const std::string& pref_name,

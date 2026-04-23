@@ -253,6 +253,12 @@ void PageLoadMetricsForwardObserver::OnFirstImagePaintInPage(
 void PageLoadMetricsForwardObserver::OnFirstContentfulPaintInPage(
     const mojom::PageLoadTiming& timing) {}
 
+void PageLoadMetricsForwardObserver::OnMonotonicFirstPaintInPage(
+    const mojom::PageLoadTiming& timing) {}
+
+void PageLoadMetricsForwardObserver::OnMonotonicFirstContentfulPaintInPage(
+    const mojom::PageLoadTiming& timing) {}
+
 void PageLoadMetricsForwardObserver::
     OnFirstPaintAfterBackForwardCacheRestoreInPage(
         const mojom::BackForwardCacheTiming& timing,
@@ -472,13 +478,6 @@ void PageLoadMetricsForwardObserver::DidActivatePrerenderedPage(
 
 void PageLoadMetricsForwardObserver::DidActivatePreviewedPage(
     base::TimeTicks activation_time) {}
-
-void PageLoadMetricsForwardObserver::OnV8MemoryChanged(
-    const std::vector<MemoryUpdate>& memory_updates) {
-  if (!parent_observer_)
-    return;
-  parent_observer_->OnV8MemoryChanged(memory_updates);
-}
 
 void PageLoadMetricsForwardObserver::OnSharedStorageWorkletHostCreated() {
   if (!parent_observer_)

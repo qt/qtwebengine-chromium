@@ -31,8 +31,9 @@
 #include "quiche/quic/moqt/moqt_session_callbacks.h"
 #include "quiche/quic/moqt/moqt_session_interface.h"
 #include "quiche/quic/moqt/moqt_subscribe_windows.h"
+#include "quiche/quic/moqt/moqt_trace_recorder.h"
 #include "quiche/quic/moqt/moqt_track.h"
-#include "quiche/quic/moqt/namespace_tree.h"
+#include "quiche/quic/moqt/session_namespace_tree.h"
 #include "quiche/common/platform/api/quiche_export.h"
 #include "quiche/common/platform/api/quiche_logging.h"
 #include "quiche/common/quiche_buffer_allocator.h"
@@ -65,7 +66,7 @@ class MoqtPublishingMonitorInterface {
 
   virtual void OnObjectAckSupportKnown(
       std::optional<quic::QuicTimeDelta> time_window) = 0;
-  virtual void OnObjectAckReceived(uint64_t group_id, uint64_t object_id,
+  virtual void OnObjectAckReceived(Location location,
                                    quic::QuicTimeDelta delta_from_deadline) = 0;
 };
 
@@ -76,10 +77,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
               std::unique_ptr<quic::QuicAlarmFactory> alarm_factory,
               MoqtSessionCallbacks callbacks = MoqtSessionCallbacks());
   ~MoqtSession() {
-    is_closing_ = true;
-    if (goaway_timeout_alarm_ != nullptr) {
-      goaway_timeout_alarm_->PermanentCancel();
-    }
+    CleanUpState();
     std::move(callbacks_.session_deleted_callback)();
   }
 
@@ -101,17 +99,6 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
                           VersionSpecificParameters parameters);
   bool UnsubscribeNamespace(TrackNamespace track_namespace);
 
-  // Send a PUBLISH_NAMESPACE message for |track_namespace|, and call
-  // |publish_namespace_callback| when the response arrives. Will fail
-  // immediately if there is already an unresolved PUBLISH_NAMESPACE for that
-  // namespace.
-  void PublishNamespace(
-      TrackNamespace track_namespace,
-      MoqtOutgoingPublishNamespaceCallback publish_namespace_callback,
-      VersionSpecificParameters parameters);
-  // Returns true if message was sent, false if there is no PUBLISH_NAMESPACE to
-  // cancel.
-  bool PublishNamespaceDone(TrackNamespace track_namespace);
   // Allows the subscriber to declare it will not subscribe to |track_namespace|
   // anymore.
   void CancelPublishNamespace(TrackNamespace track_namespace,
@@ -154,6 +141,10 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
                             uint64_t num_previous_groups, MoqtPriority priority,
                             std::optional<MoqtDeliveryOrder> delivery_order,
                             VersionSpecificParameters parameters) override;
+  void PublishNamespace(TrackNamespace track_namespace,
+                        MoqtOutgoingPublishNamespaceCallback callback,
+                        VersionSpecificParameters parameters) override;
+  bool PublishNamespaceDone(TrackNamespace track_namespace) override;
   quiche::QuicheWeakPtr<MoqtSessionInterface> GetWeakPtr() override {
     return weak_ptr_factory_.Create();
   }
@@ -182,7 +173,10 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
                                                         interface);
   }
 
-  void Close() { session_->CloseSession(0, "Application closed"); }
+  void Close() {
+    session_->CloseSession(0, "Application closed");
+    CleanUpState();
+  }
 
   // Tells the session that the highest send order for pending streams in a
   // subscription has changed. If |old_send_order| is nullopt, this is the
@@ -196,6 +190,8 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
   void GrantMoreRequests(uint64_t num_requests);
 
   void UseAlternateDeliveryTimeout() { alternate_delivery_timeout_ = true; }
+
+  MoqtTraceRecorder& trace_recorder() { return trace_recorder_; }
 
  private:
   friend class test::MoqtSessionPeer;
@@ -233,7 +229,6 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
     void OnSubscribeOkMessage(const MoqtSubscribeOk& message) override;
     void OnSubscribeErrorMessage(const MoqtSubscribeError& message) override;
     void OnUnsubscribeMessage(const MoqtUnsubscribe& message) override;
-    // There is no state to update for SUBSCRIBE_DONE.
     void OnPublishDoneMessage(const MoqtPublishDone& /*message*/) override;
     void OnSubscribeUpdateMessage(const MoqtSubscribeUpdate& message) override;
     void OnPublishNamespaceMessage(
@@ -312,8 +307,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
     // webtransport::StreamVisitor implementation.
     void OnCanRead() override;
     void OnCanWrite() override {}
-    void OnResetStreamReceived(
-        webtransport::StreamErrorCode /*error*/) override {}
+    void OnResetStreamReceived(webtransport::StreamErrorCode) override {}
     void OnStopSendingReceived(
         webtransport::StreamErrorCode /*error*/) override {}
     void OnWriteSideInDataRecvdState() override {}
@@ -322,6 +316,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
     // TODO: Handle a stream FIN.
     void OnObjectMessage(const MoqtObject& message, absl::string_view payload,
                          bool end_of_message) override;
+    void OnFin() override { fin_received_ = true; }
     void OnParsingError(MoqtError error_code,
                         absl::string_view reason) override;
 
@@ -339,6 +334,8 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
 
     uint64_t next_object_id_ = 0;
     bool no_more_objects_ = false;  // EndOfGroup or EndOfTrack was received.
+    std::optional<DataStreamIndex> index_;  // Only set for subscribe.
+    bool fin_received_ = false;
     MoqtSession* session_;
     webtransport::Stream* stream_;
     // Once the subscribe ID is identified, set it here.
@@ -352,7 +349,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
    public:
     PublishedSubscription(MoqtSession* session,
                           std::shared_ptr<MoqtTrackPublisher> track_publisher,
-                          const MoqtSubscribe& subscribe,
+                          const MoqtSubscribe& subscribe, uint64_t track_alias,
                           MoqtPublishingMonitorInterface* monitoring_interface);
     // TODO(martinduke): Immediately reset all the streams.
     ~PublishedSubscription();
@@ -364,7 +361,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
 
     uint64_t request_id() const { return request_id_; }
     MoqtTrackPublisher& publisher() { return *track_publisher_; }
-    std::optional<uint64_t> track_alias() const { return track_alias_; }
+    uint64_t track_alias() const { return track_alias_; }
     std::optional<Location> largest_sent() const { return largest_sent_; }
     MoqtPriority subscriber_priority() const { return subscriber_priority_; }
     std::optional<MoqtDeliveryOrder> subscriber_delivery_order() const {
@@ -383,13 +380,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
     void OnSubgroupAbandoned(uint64_t group, uint64_t subgroup,
                              webtransport::StreamErrorCode error_code) override;
     void OnGroupAbandoned(uint64_t group_id) override;
-    void ProcessObjectAck(const MoqtObjectAck& message) {
-      if (monitoring_interface_ == nullptr) {
-        return;
-      }
-      monitoring_interface_->OnObjectAckReceived(
-          message.group_id, message.object_id, message.delta_from_deadline);
-    }
+    void ProcessObjectAck(const MoqtObjectAck& message);
 
     // Updates the window and other properties of the subscription in question.
     void Update(Location start, std::optional<uint64_t> end,
@@ -463,7 +454,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
     MoqtSession* session_;
     std::shared_ptr<MoqtTrackPublisher> track_publisher_;
     uint64_t request_id_;
-    std::optional<const uint64_t> track_alias_;
+    const uint64_t track_alias_;
     MoqtFilterType filter_type_;
     bool forward_;
     // If window_ is nullopt, any arriving objects are ignored. This could be
@@ -580,11 +571,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
     class FetchStreamVisitor : public webtransport::StreamVisitor {
      public:
       FetchStreamVisitor(std::shared_ptr<PublishedFetch> fetch,
-                         webtransport::Stream* stream)
-          : fetch_(fetch), stream_(stream) {
-        fetch->fetch_task()->SetObjectAvailableCallback(
-            [this]() { this->OnCanWrite(); });
-      }
+                         webtransport::Stream* stream);
       ~FetchStreamVisitor() {
         std::shared_ptr<PublishedFetch> fetch = fetch_.lock();
         if (fetch != nullptr) {
@@ -712,7 +699,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
   };
 
   // Private members of MoqtSession.
-  // Returns true if SUBSCRIBE_DONE was sent.
+  // Returns true if PUBLISH_DONE was sent.
   bool PublishIsDone(uint64_t request_id, PublishDoneCode code,
                      absl::string_view error_reason);
   void MaybeDestroySubscription(SubscribeRemoteTrack* subscribe);
@@ -783,6 +770,10 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
   // the error can be propagated downstream, if necessary.
   void OnMalformedTrack(RemoteTrack* track);
 
+  // When the session is closing, clean up state without waiting for the
+  // underlying WebTransport session to be destroyed.
+  void CleanUpState();
+
   bool is_closing_ = false;
   webtransport::Session* session_;
   MoqtSessionParameters parameters_;
@@ -795,6 +786,8 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
 
   bool sent_goaway_ = false;
   bool received_goaway_ = false;
+
+  MoqtTraceRecorder trace_recorder_;
 
   // Upstream SUBSCRIBE state.
   // Upstream SUBSCRIBEs and FETCHes, indexed by subscribe_id.
@@ -845,6 +838,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
   // All outgoing PUBLISH_NAMESPACE.
   absl::flat_hash_map<TrackNamespace, MoqtOutgoingPublishNamespaceCallback>
       outgoing_publish_namespaces_;
+  absl::flat_hash_set<TrackNamespace> incoming_publish_namespaces_;
 
   // The value is nullptr after OK or ERROR is received. The entry is deleted
   // when sending UNSUBSCRIBE_NAMESPACE, to make sure the application doesn't
@@ -858,7 +852,7 @@ class QUICHE_EXPORT MoqtSession : public MoqtSessionInterface,
       pending_outgoing_subscribe_namespaces_;
   absl::flat_hash_set<TrackNamespace> outgoing_subscribe_namespaces_;
   // It's an error if the namespaces overlap, so keep track of them.
-  NamespaceTree incoming_subscribe_namespace_;
+  SessionNamespaceTree incoming_subscribe_namespace_;
 
   // The minimum request ID the peer can use that is monotonically increasing.
   uint64_t next_incoming_request_id_ = 0;

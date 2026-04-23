@@ -1,7 +1,7 @@
 // Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable rulesdir/no-lit-render-outside-of-view */
+/* eslint-disable @devtools/no-lit-render-outside-of-view, @devtools/enforce-custom-element-definitions-location */
 
 import * as Platform from '../../../core/platform/platform.js';
 import * as UI from '../../legacy/legacy.js';
@@ -9,7 +9,6 @@ import * as Lit from '../../lit/lit.js';
 import * as VisualLogging from '../../visual_logging/visual_logging.js';
 import * as Buttons from '../buttons/buttons.js';
 import * as CodeHighlighter from '../code_highlighter/code_highlighter.js';
-import * as ComponentHelpers from '../helpers/helpers.js';
 import * as RenderCoordinator from '../render_coordinator/render_coordinator.js';
 
 import treeOutlineStyles from './treeOutline.css.js';
@@ -479,7 +478,7 @@ export class TreeOutline<TreeNodeDataType> extends HTMLElement {
         jslog=${VisualLogging.treeItem(node.jslogContext).track({click: true, keydown: 'ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Enter|Space|Home|End'})}
         @click=${this.#onNodeClick}
         track-dom-node-to-tree-node=${trackDOMNodeToTreeNode(this.#domNodeToTreeNodeMap, node)}
-        on-render=${ComponentHelpers.Directives.nodeRenderedCallback(domNode => {
+        ${Lit.Directives.ref(domNode => {
          /**
           * Because TreeNodes are lazily rendered, you can call
           * `outline.expandToAndSelect(NodeX)`, but `NodeX` will be rendered at some

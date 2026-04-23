@@ -50,7 +50,7 @@ const yyyymmdd = "2006-01-02"
 
 var (
 	repoFlag    = flag.String("repo", "dawn", "the project (tint or dawn)")
-	userFlag    = flag.String("user", defaultUser(), "user name / email")
+	userFlag    = flag.String("user", defaultUser(oswrapper.GetRealOSWrapper()), "user name / email")
 	afterFlag   = flag.String("after", "", "start date")
 	beforeFlag  = flag.String("before", "", "end date")
 	daysFlag    = flag.Int("days", 182, "interval in days (used if --after is not specified)")
@@ -58,10 +58,12 @@ var (
 	authFlags   = authcli.Flags{}
 )
 
-func defaultUser() string {
+// TODO(crbug.com/416755658): Add unittest coverage once exec is handled via
+// dependency injection.
+func defaultUser(osW oswrapper.OSWrapper) string {
 	if gitExe, err := exec.LookPath("git"); err == nil {
-		if g, err := git.New(gitExe); err == nil {
-			if cwd, err := os.Getwd(); err == nil {
+		if g, err := git.New(gitExe, osW); err == nil {
+			if cwd, err := osW.Getwd(); err == nil {
 				if r, err := g.Open(cwd); err == nil {
 					if cfg, err := r.Config(nil); err == nil {
 						return cfg["user.email"]
@@ -83,6 +85,8 @@ func main() {
 	}
 }
 
+// TODO(crbug.com/460178080): Add unittest coverage once Gerrit interactions
+// support dependency injection.
 func run() error {
 	var after, before time.Time
 	var err error

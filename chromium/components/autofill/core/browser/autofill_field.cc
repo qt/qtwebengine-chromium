@@ -419,7 +419,7 @@ AutofillFormatString::AutofillFormatString() = default;
 AutofillFormatString::AutofillFormatString(std::u16string v,
                                            FormatString_Type type)
     : value(std::move(v)), type(type) {
-  // TODO(crbug.com/446883719): Add a DCHECK that the format is valid.
+  DCHECK(IsValid(value, type));
 }
 
 AutofillFormatString::AutofillFormatString(const AutofillFormatString&) =
@@ -434,6 +434,24 @@ AutofillFormatString& AutofillFormatString::operator=(AutofillFormatString&&) =
     default;
 
 AutofillFormatString::~AutofillFormatString() = default;
+
+// static
+bool AutofillFormatString::IsValid(std::u16string_view value,
+                                   FormatString_Type type) {
+  switch (type) {
+    case FormatString_Type_DATE:
+      return data_util::IsValidDateFormat(value);
+    case FormatString_Type_AFFIX:
+      return data_util::IsValidAffixFormat(value);
+    case FormatString_Type_FLIGHT_NUMBER:
+      return data_util::IsValidFlightNumberFormat(value);
+    case FormatString_Type_ICU_DATE:
+      // TODO(crbug.com/464004123): Add validation for ICU date format strings.
+      return true;
+  }
+  // Graceful catch-all because the `type` may come from the server.
+  return false;
+}
 
 AutofillField::AutofillField() {
   local_type_predictions_.fill(NO_SERVER_DATA);
@@ -526,7 +544,6 @@ void AutofillField::set_server_predictions(
     std::vector<FieldPrediction> predictions) {
   overall_type_ = std::nullopt;
   server_predictions_.clear();
-  experimental_server_predictions_.clear();
 
   for (auto& prediction : predictions) {
     MaybeAddServerPrediction(std::move(prediction));
@@ -584,8 +601,6 @@ void AutofillField::MaybeAddServerPrediction(FieldPrediction prediction) {
     if (base::FeatureList::IsEnabled(features::kAutofillAiWithDataSchema)) {
       server_predictions_.push_back(std::move(prediction));
     }
-  } else {
-    experimental_server_predictions_.push_back(std::move(prediction));
   }
 }
 
@@ -619,9 +634,7 @@ AutofillType AutofillField::MakeAutofillType(FieldType primary_field_type,
   // Indicates whether `ft` may be part of the union type.
   auto is_union_type_candidate = [](FieldType ft) {
     return GroupTypeOfFieldType(ft) == FieldTypeGroup::kAutofillAi &&
-           base::FeatureList::IsEnabled(features::kAutofillAiWithDataSchema) &&
-           base::FeatureList::IsEnabled(
-               features::kAutofillUnionTypesForAutofillAi);
+           base::FeatureList::IsEnabled(features::kAutofillAiWithDataSchema);
   };
 
   // Returns the union of

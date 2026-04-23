@@ -58,7 +58,7 @@ struct State {
     core::ir::Var* texture_uniform_data_ = nullptr;
 
     /// Map from binding point to index into uniform structure
-    Hashmap<BindingInfo, uint32_t, 2> binding_point_to_uniform_offset_{};
+    Hashmap<BindingPoint, uint32_t, 2> binding_point_to_uniform_offset_{};
 
     /// Process the module.
     void Process() {
@@ -89,7 +89,7 @@ struct State {
                     TextureFromUniform(call);
                     break;
                 default:
-                    TINT_UNREACHABLE();
+                    TINT_IR_UNREACHABLE(ir);
             }
         }
     }
@@ -108,7 +108,7 @@ struct State {
 
         // Wrap the array<vec4> in a struct as GLSL cannot have uniforms that are arrays directly.
         Vector<core::type::Manager::StructMemberDesc, 1> members;
-        members.Push({ir.symbols.New("metadata"), ty.array(ty.vec4(ty.u32()), vec4_count)});
+        members.Push({ir.symbols.New("metadata"), ty.array(ty.vec4u(), vec4_count)});
         auto* strct =
             ir.Types().Struct(ir.symbols.New("TintTextureUniformData"), std::move(members));
 
@@ -137,11 +137,11 @@ struct State {
             },
             [&](core::ir::Access* access) -> TextureVariablePath {
                 auto* binding_array = access->Object();
-                TINT_ASSERT(access->Indices().Length() == 1);
+                TINT_IR_ASSERT(ir, access->Indices().Length() == 1);
                 auto* index = access->Indices()[0];
 
                 TextureVariablePath path = PathForTexture(binding_array);
-                TINT_ASSERT(path.index == nullptr);
+                TINT_IR_ASSERT(ir, path.index == nullptr);
                 path.index = index;
                 return path;
             },
@@ -152,7 +152,10 @@ struct State {
     core::ir::Value* GetAccessFromUniform(core::ir::Value* arg) {
         auto path = PathForTexture(arg);
 
-        BindingInfo binding = {path.var->BindingPoint()->binding};
+        BindingPoint binding = {
+            .group = 0,
+            .binding = path.var->BindingPoint()->binding,
+        };
         uint32_t metadata_offset = *binding_point_to_uniform_offset_.Get(binding);
 
         // Returns the u32 at `metadata_offset` + `path.index` (if present) in
@@ -166,8 +169,8 @@ struct State {
         auto* index_in_array = b.Divide(ty.u32(), offset, u32(4));
         auto* index_in_vector = b.Modulo(ty.u32(), offset, u32(4));
 
-        auto* vec4_ptr = b.Access(ty.ptr<uniform>(ty.vec4(ty.u32())), texture_uniform_data_, u32(0),
-                                  index_in_array);
+        auto* vec4_ptr =
+            b.Access(ty.ptr<uniform>(ty.vec4u()), texture_uniform_data_, u32(0), index_in_array);
         auto* vec4_value = b.Load(vec4_ptr);
         auto* u32_value = b.Access(ty.u32(), vec4_value, index_in_vector);
         return u32_value->Result();

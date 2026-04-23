@@ -15,7 +15,6 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_seekablemultistream.h"
-#include "core/fxcodec/jpeg/jpeg_progressive_decoder.h"
 #include "core/fxcrt/autonuller.h"
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/fixed_size_data_vector.h"
@@ -40,14 +39,6 @@
 #include "xfa/fxfa/cxfa_ffwidgethandler.h"
 #include "xfa/fxfa/cxfa_fontmgr.h"
 #include "xfa/fxfa/cxfa_readynodeiterator.h"
-
-#ifdef PDF_ENABLE_XFA_BMP
-#include "core/fxcodec/bmp/bmp_progressive_decoder.h"
-#endif
-
-#ifdef PDF_ENABLE_XFA_GIF
-#include "core/fxcodec/gif/gif_progressive_decoder.h"
-#endif
 
 namespace {
 
@@ -108,23 +99,9 @@ RetainPtr<CPDF_SeekableMultiStream> CreateXFAMultiStream(
 void CPDFXFA_ModuleInit() {
   CFGAS_GEModule::Create();
   BC_Library_Init();
-#ifdef PDF_ENABLE_XFA_BMP
-  fxcodec::BmpProgressiveDecoder::InitializeGlobals();
-#endif
-#ifdef PDF_ENABLE_XFA_GIF
-  fxcodec::GifProgressiveDecoder::InitializeGlobals();
-#endif
-  fxcodec::JpegProgressiveDecoder::InitializeGlobals();
 }
 
 void CPDFXFA_ModuleDestroy() {
-  fxcodec::JpegProgressiveDecoder::DestroyGlobals();
-#ifdef PDF_ENABLE_XFA_GIF
-  fxcodec::GifProgressiveDecoder::DestroyGlobals();
-#endif
-#ifdef PDF_ENABLE_XFA_BMP
-  fxcodec::BmpProgressiveDecoder::DestroyGlobals();
-#endif
   BC_Library_Destroy();
   CFGAS_GEModule::Destroy();
 }
@@ -301,8 +278,12 @@ uint32_t CPDFXFA_Context::DeletePage(int page_index) {
   // if it's a valid page in the document.
   uint32_t page_obj_num = pdfdoc_->DeletePage(page_index);
 
+  if (page_obj_num != 0) {
+    --page_count_;
+  }
+
   if (fxcrt::IndexInBounds(xfa_page_list_, page_index)) {
-    xfa_page_list_.erase(xfa_page_list_.begin() + page_index);
+    xfa_page_list_.erase(std::next(xfa_page_list_.begin(), page_index));
     for (int i = page_index; i < fxcrt::CollectionSize<int>(xfa_page_list_);
          i++) {
       if (xfa_page_list_[i]) {
@@ -312,6 +293,14 @@ uint32_t CPDFXFA_Context::DeletePage(int page_index) {
   }
 
   return page_obj_num;
+}
+
+void CPDFXFA_Context::PagesInserted(int page_index, size_t num_pages) {
+  if (fxcrt::IndexInBounds(xfa_page_list_, page_index)) {
+    xfa_page_list_.insert(std::next(xfa_page_list_.begin(), page_index),
+                          num_pages, nullptr);
+    page_count_ += num_pages;
+  }
 }
 
 bool CPDFXFA_Context::ContainsExtensionForm() const {

@@ -100,12 +100,8 @@ class Duration32 {
 
   bool IsFinite() const;
 
-  friend bool operator==(Duration32 a, Duration32 b);
-  friend bool operator!=(Duration32 a, Duration32 b);
-  friend bool operator<(Duration32 a, Duration32 b);
-  friend bool operator>(Duration32 a, Duration32 b);
-  friend bool operator<=(Duration32 a, Duration32 b);
-  friend bool operator>=(Duration32 a, Duration32 b);
+  friend bool operator==(const Duration32&, const Duration32&) = default;
+  friend auto operator<=>(const Duration32&, const Duration32&) = default;
 
   friend Duration32 operator-(Duration32 d);
 
@@ -174,30 +170,6 @@ inline absl::Duration Duration32::ToAbseil() const {
 
 inline bool Duration32::IsFinite() const {
   return std::isfinite(value_seconds_);
-}
-
-inline bool operator==(Duration32 a, Duration32 b) {
-  return a.value_seconds_ == b.value_seconds_;
-}
-
-inline bool operator!=(Duration32 a, Duration32 b) {
-  return a.value_seconds_ != b.value_seconds_;
-}
-
-inline bool operator<(Duration32 a, Duration32 b) {
-  return a.value_seconds_ < b.value_seconds_;
-}
-
-inline bool operator>(Duration32 a, Duration32 b) {
-  return a.value_seconds_ > b.value_seconds_;
-}
-
-inline bool operator<=(Duration32 a, Duration32 b) {
-  return a.value_seconds_ <= b.value_seconds_;
-}
-
-inline bool operator>=(Duration32 a, Duration32 b) {
-  return a.value_seconds_ >= b.value_seconds_;
 }
 
 inline Duration32 operator-(Duration32 d) {

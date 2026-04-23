@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Helpers from '../../../testing/DOMHelpers.js';  // eslint-disable-line rulesdir/es-modules-import
-import {assertScreenshot, raf} from '../../../testing/DOMHelpers.js';
+import {assertScreenshot, raf, renderElementIntoDOM} from '../../../testing/DOMHelpers.js';
 import {
-  describeWithLocale,
-} from '../../../testing/EnvironmentHelpers.js';
+  setupLocaleHooks,
+} from '../../../testing/LocaleHelpers.js';
 import * as RenderCoordinator from '../render_coordinator/render_coordinator.js';
 
 import * as Dialogs from './dialogs.js';
 
-describeWithLocale('ShortcutDialog', () => {
+describe('ShortcutDialog', () => {
+  setupLocaleHooks();
   async function getShortcutDialog(open?: boolean, prependedElement?: HTMLElement) {
     const container = document.createElement('div');
     container.style.width = '600px';
@@ -41,7 +41,7 @@ describeWithLocale('ShortcutDialog', () => {
       open
     };
     container.append(shortcutDialog);
-    Helpers.renderElementIntoDOM(container);
+    renderElementIntoDOM(container);
     await RenderCoordinator.done();
     await raf();
 

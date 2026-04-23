@@ -70,7 +70,7 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
     from generators.dispatch_vector_generator import DispatchVectorGenerator
     from generators.function_pointers_generator import FunctionPointersOutputGenerator
     from generators.best_practices_generator import BestPracticesOutputGenerator
-    from generators.deprecation_generator import DeprecationGenerator
+    from generators.legacy_generator import LegacyGenerator
     from generators.spirv_validation_generator import SpirvValidationHelperOutputGenerator
     from generators.spirv_grammar_generator import SpirvGrammarHelperOutputGenerator
     from generators.command_validation_generator import CommandValidationOutputGenerator
@@ -258,12 +258,12 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
             'generator' : BestPracticesOutputGenerator,
             'genCombined': True,
         },
-        'deprecation.cpp' : {
-            'generator' : DeprecationGenerator,
+        'legacy.cpp' : {
+            'generator' : LegacyGenerator,
             'genCombined': True,
         },
-        'deprecation.h' : {
-            'generator' : DeprecationGenerator,
+        'legacy.h' : {
+            'generator' : LegacyGenerator,
             'genCombined': True,
         },
         'sync_validation_types.h' : {
@@ -298,6 +298,11 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
         'spirv_tools_commit_id.h' : {
             'genCombined': False,
             'generator' : SpirvToolCommitIdOutputGenerator,
+        },
+        'command_validation.h' : {
+            'generator' : CommandValidationOutputGenerator,
+            'genCombined': True,
+            'options' : [valid_usage_file],
         },
         'command_validation.cpp' : {
             'generator' : CommandValidationOutputGenerator,

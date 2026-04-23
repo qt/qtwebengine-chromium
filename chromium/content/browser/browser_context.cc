@@ -203,7 +203,8 @@ BrowserContext::StartBrowserPrefetchRequest(
     std::unique_ptr<PrefetchRequestStatusListener> request_status_listener,
     base::TimeDelta ttl,
     bool should_append_variations_header,
-    bool should_disable_block_until_head_timeout) {
+    bool should_disable_block_until_head_timeout,
+    bool should_bypass_http_cache) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   TRACE_EVENT0("loading", "BrowserContext::StartBrowserPrefetchRequest");
 
@@ -225,7 +226,7 @@ BrowserContext::StartBrowserPrefetchRequest(
       std::move(priority),
       /*attempt=*/nullptr, additional_headers,
       std::move(request_status_listener), ttl, should_append_variations_header,
-      should_disable_block_until_head_timeout);
+      should_disable_block_until_head_timeout, should_bypass_http_cache);
   return prefetch_service->AddPrefetchRequestWithHandle(std::move(request));
 }
 
@@ -379,10 +380,6 @@ BrowserContext::RetrieveInProgressDownloadManager() {
 void BrowserContext::WriteIntoTrace(
     perfetto::TracedProto<ChromeBrowserContext> proto) const {
   perfetto::WriteIntoTracedProto(std::move(proto), impl());
-}
-
-ResourceContext* BrowserContext::GetResourceContext() const {
-  return impl()->GetResourceContext();
 }
 
 void BrowserContext::BackfillPopupHeuristicGrants(

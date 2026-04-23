@@ -18,15 +18,6 @@ namespace {
 
 using PlaneConfig = SharedImageFormat::PlaneConfig;
 
-static size_t ConvertBitsToBytes(size_t bits) {
-  size_t bytes = bits / 8;
-  // Don't add anything to `bits` to avoid potential overflow.
-  if ((bits & 7) != 0) {
-    ++bytes;
-  }
-  return bytes;
-}
-
 const char* SinglePlaneFormatToString(SharedImageFormat format) {
   CHECK(format.is_single_plane());
   if (format == SinglePlaneFormat::kRGBA_8888) {
@@ -168,14 +159,26 @@ std::optional<size_t> SharedImageFormat::MaybeEstimatedPlaneSizeInBytes(
   if (is_single_plane()) {
     DCHECK_EQ(plane_index, 0);
 
-    base::CheckedNumeric<size_t> bits_per_row = BitsPerPixel();
-    bits_per_row *= size.width();
-    if (!bits_per_row.IsValid()) {
-      return std::nullopt;
+    if (singleplanar_format() == mojom::SingleplanarFormat::ETC1) {
+      // ETC stores 4x4 blocks. No risk of overflow on alignup as width/height
+      // are positive signed values converted to unsigned.
+      size_t block_width = base::bits::AlignUp<size_t>(size.width(), 4) >> 2;
+      size_t block_height = base::bits::AlignUp<size_t>(size.height(), 4) >> 2;
+
+      // ETC uses 8 bytes per block.
+      base::CheckedNumeric<size_t> estimated_bytes = 8;
+      estimated_bytes *= block_width;
+      estimated_bytes *= block_height;
+
+      if (!estimated_bytes.IsValid()) {
+        return std::nullopt;
+      }
+
+      return estimated_bytes.ValueOrDie();
     }
 
-    base::CheckedNumeric<size_t> estimated_bytes =
-        ConvertBitsToBytes(bits_per_row.ValueOrDie());
+    base::CheckedNumeric<size_t> estimated_bytes = BytesPerPixel();
+    estimated_bytes *= size.width();
     estimated_bytes *= size.height();
     if (!estimated_bytes.IsValid()) {
       return std::nullopt;
@@ -369,11 +372,11 @@ bool SharedImageFormat::IsCompressed() const {
          singleplanar_format() == mojom::SingleplanarFormat::ETC1;
 }
 
-int SharedImageFormat::BitsPerPixel() const {
+int SharedImageFormat::BytesPerPixel() const {
   CHECK(is_single_plane());
   switch (singleplanar_format()) {
     case mojom::SingleplanarFormat::RGBA_F16:
-      return 64;
+      return 8;
     case mojom::SingleplanarFormat::BGRA_8888:
     case mojom::SingleplanarFormat::RGBA_8888:
     case mojom::SingleplanarFormat::RGBX_8888:
@@ -381,19 +384,21 @@ int SharedImageFormat::BitsPerPixel() const {
     case mojom::SingleplanarFormat::RGBA_1010102:
     case mojom::SingleplanarFormat::BGRA_1010102:
     case mojom::SingleplanarFormat::RG_1616:
-      return 32;
+      return 4;
     case mojom::SingleplanarFormat::RGBA_4444:
     case mojom::SingleplanarFormat::LUMINANCE_F16:
     case mojom::SingleplanarFormat::R_F16:
     case mojom::SingleplanarFormat::R_16:
     case mojom::SingleplanarFormat::BGR_565:
     case mojom::SingleplanarFormat::RG_88:
-      return 16;
+      return 2;
     case mojom::SingleplanarFormat::ALPHA_8:
     case mojom::SingleplanarFormat::R_8:
-      return 8;
+      return 1;
     case mojom::SingleplanarFormat::ETC1:
-      return 4;
+      // ETC compression is blocked based and can't be expressed as bytes per
+      // pixel.
+      break;
   }
   NOTREACHED();
 }

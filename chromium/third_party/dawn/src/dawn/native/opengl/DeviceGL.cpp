@@ -157,7 +157,8 @@ Device::~Device() {
 MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
     // Directly set the context current and use mGL instead of calling GetGL as GetGL will notify
     // the (yet inexistent) queue that GL was used.
-    mContext->MakeCurrent();
+    ContextEGL::ScopedMakeCurrent scopedCurrentContext;
+    DAWN_TRY_ASSIGN(scopedCurrentContext, mContext->MakeCurrent());
     mContext->RequestRequiredExtensionsExplicitly();
 
     const OpenGLFunctions& gl = mGL;
@@ -236,7 +237,7 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
         mArrayLengthBuffer = ToBackend(std::move(buffer));
     }
 
-    return {};
+    return scopedCurrentContext.End();
 }
 
 const GLFormat& Device::GetGLFormat(const Format& format) {
@@ -285,9 +286,8 @@ ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescripto
 }
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
-    const std::vector<tint::wgsl::Extension>& internalExtensions,
-    ShaderModuleParseResult* parseResult) {
-    return ShaderModule::Create(this, descriptor, internalExtensions, parseResult);
+    const std::vector<tint::wgsl::Extension>& internalExtensions) {
+    return ShaderModule::Create(this, descriptor, internalExtensions);
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
                                                               SwapChainBase* previousSwapChain,
@@ -381,7 +381,12 @@ Ref<TextureBase> Device::CreateTextureWrappingEGLImage(const ExternalImageDescri
 ResultOrError<Ref<TextureBase>> Device::CreateTextureWrappingEGLImageImpl(
     const ExternalImageDescriptor* descriptor,
     ::EGLImage image) {
-    const OpenGLFunctions& gl = GetGL();
+    // TODO(451928481): We cannot defer the GL work here because the external texture may be
+    // deleted after this method returns. In the future, we should deprecate this method and
+    // require clients to use SharedTextureMemory for better lifetime management.
+    ContextEGL::ScopedMakeCurrent scopedCurrentContext;
+    DAWN_TRY_ASSIGN(scopedCurrentContext, mContext->MakeCurrent());
+    const OpenGLFunctions& gl = GetGL(/*makeCurrent=*/false);
 
     TextureDescriptor reifiedDescriptor =
         FromAPI(descriptor->cTextureDescriptor)->WithTrivialFrontendDefaults();
@@ -419,6 +424,9 @@ ResultOrError<Ref<TextureBase>> Device::CreateTextureWrappingEGLImageImpl(
     auto result = AcquireRef(new Texture(this, textureDescriptor, tex, OwnsHandle::No));
     result->SetIsSubresourceContentInitialized(descriptor->isInitialized,
                                                result->GetAllSubresources());
+
+    DAWN_TRY(scopedCurrentContext.End());
+
     return result;
 }
 
@@ -435,7 +443,12 @@ Ref<TextureBase> Device::CreateTextureWrappingGLTexture(const ExternalImageDescr
 ResultOrError<Ref<TextureBase>> Device::CreateTextureWrappingGLTextureImpl(
     const ExternalImageDescriptor* descriptor,
     GLuint texture) {
-    const OpenGLFunctions& gl = GetGL();
+    // TODO(451928481): We cannot defer the GL work here because the external texture may be
+    // deleted after this method returns. In the future, we should deprecate this method and
+    // require clients to use SharedTextureMemory for better lifetime management.
+    ContextEGL::ScopedMakeCurrent scopedCurrentContext;
+    DAWN_TRY_ASSIGN(scopedCurrentContext, mContext->MakeCurrent());
+    const OpenGLFunctions& gl = GetGL(/*makeCurrent=*/false);
 
     TextureDescriptor reifiedDescriptor =
         FromAPI(descriptor->cTextureDescriptor)->WithTrivialFrontendDefaults();
@@ -464,12 +477,32 @@ ResultOrError<Ref<TextureBase>> Device::CreateTextureWrappingGLTextureImpl(
     auto result = AcquireRef(new Texture(this, textureDescriptor, texture, OwnsHandle::No));
     result->SetIsSubresourceContentInitialized(descriptor->isInitialized,
                                                result->GetAllSubresources());
+
+    DAWN_TRY(scopedCurrentContext.End());
+
     return result;
 }
 
 MaybeError Device::TickImpl() {
     DAWN_TRY(ToBackend(GetQueue())->SubmitFenceSync());
     return {};
+}
+
+MaybeError Device::FlushPendingGLCommands() {
+    std::vector<GLWorkFunc> workList;
+    mPendingGLWorkList.Use([&](auto pendingList) { std::swap(workList, *pendingList); });
+
+    if (workList.empty()) {
+        return {};
+    }
+
+    ContextEGL::ScopedMakeCurrent scopedCurrentContext;
+    DAWN_TRY_ASSIGN(scopedCurrentContext, mContext->MakeCurrent());
+    const OpenGLFunctions& gl = GetGL(/*makeCurrent=*/false);
+    for (auto& work : workList) {
+        DAWN_TRY(work(gl));
+    }
+    return scopedCurrentContext.End();
 }
 
 MaybeError Device::CopyFromStagingToBuffer(BufferBase* source,
@@ -480,7 +513,7 @@ MaybeError Device::CopyFromStagingToBuffer(BufferBase* source,
     return DAWN_UNIMPLEMENTED_ERROR("Device unable to copy from staging buffer.");
 }
 
-MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
+MaybeError Device::CopyFromStagingToTextureImpl(BufferBase* source,
                                                 const TexelCopyBufferLayout& src,
                                                 const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
@@ -493,6 +526,15 @@ void Device::DestroyImpl() {
 
     mTextureBuiltinsBuffer = nullptr;
     mArrayLengthBuffer = nullptr;
+}
+
+void Device::MarkGLUsed(ExecutionQueueBase::SubmitMode submitMode) const {
+    if (submitMode == ExecutionQueueBase::SubmitMode::Normal) {
+        // - Only need fence sync if submit mode is normal. So the commands will be flushed and a
+        // fence is inserted in next Tick().
+        // - For passive mode, the commands will eventually be flushed in Queue::Submit().
+        ToBackend(GetQueue())->SetNeedsFenceSync();
+    }
 }
 
 uint32_t Device::GetOptimalBytesPerRowAlignment() const {
@@ -526,9 +568,11 @@ const AHBFunctions* Device::GetOrLoadAHBFunctions() {
 #endif  // DAWN_PLATFORM_IS(ANDROID)
 }
 
-const OpenGLFunctions& Device::GetGL() const {
-    mContext->MakeCurrent();
-    ToBackend(GetQueue())->OnGLUsed();
+const OpenGLFunctions& Device::GetGL(bool makeCurrent) const {
+    if (makeCurrent) {
+        mContext->DeprecatedMakeCurrent();
+    }
+    MarkGLUsed(ExecutionQueueBase::SubmitMode::Normal);
     return mGL;
 }
 
@@ -538,8 +582,8 @@ int Device::GetMaxTextureMaxAnisotropy() const {
 
 const EGLFunctions& Device::GetEGL(bool makeCurrent) const {
     if (makeCurrent) {
-        mContext->MakeCurrent();
-        ToBackend(GetQueue())->OnGLUsed();
+        mContext->DeprecatedMakeCurrent();
+        MarkGLUsed(ExecutionQueueBase::SubmitMode::Normal);
     }
     return ToBackend(GetPhysicalDevice())->GetDisplay()->egl;
 }

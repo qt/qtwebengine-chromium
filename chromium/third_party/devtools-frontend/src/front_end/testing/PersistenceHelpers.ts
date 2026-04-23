@@ -15,9 +15,11 @@ import {
 import {createResource, getMainFrame} from './ResourceTreeHelpers.js';
 import {createFileSystemUISourceCode} from './UISourceCodeHelpers.js';
 
-// This helper sets up a file system and a file system uiSourceCode that can be used for
-// Persistence testing. As soon as a script is added that has the given `networkScriptUrl` and the `content`,
-// PersistenceImpl will try to bind the network uiSourceCode with this file system uiSourceCode.
+/**
+ * This helper sets up a file system and a file system uiSourceCode that can be used for
+ * Persistence testing. As soon as a script is added that has the given `networkScriptUrl` and the `content`,
+ * PersistenceImpl will try to bind the network uiSourceCode with this file system uiSourceCode.
+ **/
 export function createFileSystemFileForPersistenceTests(
     fileSystemScript: {
       fileSystemFileUrl: Platform.DevToolsPath.UrlString,
@@ -50,8 +52,8 @@ export function createFileSystemFileForPersistenceTests(
 function dispatchDocumentOpened(target: SDK.Target.Target, origin: Platform.DevToolsPath.UrlString) {
   dispatchEvent(target, 'Page.documentOpened', {
     frame: {
-      id: 'main',
-      loaderId: 'foo',
+      id: 'main' as Protocol.Page.FrameId,
+      loaderId: 'foo' as Protocol.Network.LoaderId,
       url: `${origin}/index.html`,
       domainAndRegistry: 'site',
       securityOrigin: origin,

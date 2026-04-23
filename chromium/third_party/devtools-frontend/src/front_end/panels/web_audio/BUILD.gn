@@ -12,7 +12,7 @@ generate_css("css_files") {
   sources = [ "webAudio.css" ]
 }
 
-devtools_module("web_audio") {
+devtools_ui_module("web_audio") {
   sources = [
     "WebAudioModel.ts",
     "WebAudioView.ts",
@@ -25,6 +25,8 @@ devtools_module("web_audio") {
     "../../core/sdk:bundle",
     "../../generated:protocol",
     "../../ui/legacy:bundle",
+    "../../ui/lit:bundle",
+    "../../ui/visual_logging:bundle",
   ]
 }
 
@@ -56,7 +58,7 @@ devtools_entrypoint("meta") {
   visibility = [ "../../entrypoints/*" ]
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [

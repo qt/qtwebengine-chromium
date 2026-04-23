@@ -31,6 +31,7 @@
 #include "ink/strokes/input/recorded_test_inputs.h"
 #include "ink/strokes/input/stroke_input.h"
 #include "ink/strokes/input/stroke_input_batch.h"
+#include "ink/strokes/internal/stroke_input_modeler.h"
 #include "ink/strokes/internal/stroke_shape_builder.h"
 #include "ink/strokes/internal/stroke_shape_update.h"
 #include "ink/types/duration.h"
@@ -45,15 +46,18 @@ namespace {
 void BuildStrokeShapeIncrementally(
     const Brush& brush,
     const std::vector<std::pair<StrokeInputBatch, StrokeInputBatch>>& inputs,
-    StrokeShapeBuilder& builder) {
+    StrokeInputModeler& input_modeler, StrokeShapeBuilder& builder) {
   ABSL_CHECK_EQ(brush.CoatCount(), 1u);
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush.GetCoats()[0],
-                      brush.GetSize(), brush.GetEpsilon());
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(),
+                            brush.GetEpsilon());
+  benchmark::DoNotOptimize(input_modeler);
+  builder.StartStroke(brush.GetCoats()[0], brush.GetSize(), brush.GetEpsilon());
   benchmark::DoNotOptimize(builder);
   for (const auto& [real_inputs, predicted_inputs] : inputs) {
-    StrokeShapeUpdate update = builder.ExtendStroke(
-        real_inputs, predicted_inputs,
-        real_inputs.Get(real_inputs.Size() - 1).elapsed_time);
+    input_modeler.ExtendStroke(real_inputs, predicted_inputs,
+                               real_inputs.Last().elapsed_time);
+    benchmark::DoNotOptimize(input_modeler);
+    StrokeShapeUpdate update = builder.ExtendStroke(input_modeler);
     benchmark::DoNotOptimize(builder);
     benchmark::DoNotOptimize(update);
   }
@@ -68,21 +72,26 @@ void BuildStrokeShapeIncrementally(
 void BuildStrokeShapeIncrementally(
     const Brush& brush,
     const std::vector<std::pair<StrokeInputBatch, StrokeInputBatch>>& inputs) {
+  StrokeInputModeler input_modeler;
+  benchmark::DoNotOptimize(input_modeler);
   StrokeShapeBuilder builder;
   benchmark::DoNotOptimize(builder);
-  BuildStrokeShapeIncrementally(brush, inputs, builder);
+  BuildStrokeShapeIncrementally(brush, inputs, input_modeler, builder);
 }
 
 // Starts a new stroke on the passed in builder and adds StrokeInputBatch.
 void BuildStrokeShapeAllAtOnce(const Brush& brush,
                                const StrokeInputBatch& inputs,
+                               StrokeInputModeler& input_modeler,
                                StrokeShapeBuilder& builder) {
+  benchmark::DoNotOptimize(input_modeler);
+  input_modeler.StartStroke(BrushFamily::DefaultInputModel(),
+                            brush.GetEpsilon());
+  input_modeler.ExtendStroke(inputs, {}, Duration32::Infinite());
   benchmark::DoNotOptimize(builder);
   ABSL_CHECK_EQ(brush.CoatCount(), 1u);
-  builder.StartStroke(BrushFamily::DefaultInputModel(), brush.GetCoats()[0],
-                      brush.GetSize(), brush.GetEpsilon());
-  StrokeShapeUpdate update =
-      builder.ExtendStroke(inputs, {}, Duration32::Infinite());
+  builder.StartStroke(brush.GetCoats()[0], brush.GetSize(), brush.GetEpsilon());
+  StrokeShapeUpdate update = builder.ExtendStroke(input_modeler);
   benchmark::DoNotOptimize(update);
 }
 
@@ -93,9 +102,11 @@ void BuildStrokeShapeAllAtOnce(const Brush& brush,
 // that combines all Input count for this stroke.
 void BuildStrokeShapeAllAtOnce(const Brush& brush,
                                const StrokeInputBatch& inputs) {
+  StrokeInputModeler input_modeler;
+  benchmark::DoNotOptimize(input_modeler);
   StrokeShapeBuilder builder;
   benchmark::DoNotOptimize(builder);
-  BuildStrokeShapeAllAtOnce(brush, inputs, builder);
+  BuildStrokeShapeAllAtOnce(brush, inputs, input_modeler, builder);
 }
 
 Brush MakeDefaultBrush(float size, float epsilon) {
@@ -275,12 +286,14 @@ void BM_StraightLineIncrementalPrewarmed(benchmark::State& state) {
   Rect bounds = Rect::FromTwoPoints({0, 0}, {100, 100});
   auto inputs = MakeIncrementalStraightLineInputs(bounds);
   Brush brush = MakeDefaultBrush(20, 0.05);
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeIncrementally(brush, inputs, builder);
+  BuildStrokeShapeIncrementally(brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
 
   while (state.KeepRunningBatch(inputs.size())) {
-    BuildStrokeShapeIncrementally(brush, inputs, builder);
+    BuildStrokeShapeIncrementally(brush, inputs, input_modeler, builder);
   }
 }
 BENCHMARK(BM_StraightLineIncrementalPrewarmed);
@@ -301,11 +314,14 @@ void BM_StraightLineCompletePrewarmed(benchmark::State& state) {
   Rect bounds = Rect::FromTwoPoints({0, 0}, {100, 100});
   StrokeInputBatch inputs = MakeCompleteStraightLineInputs(bounds);
   Brush brush = MakeDefaultBrush(20, 0.05);
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeAllAtOnce(brush, inputs, builder);
+  BuildStrokeShapeAllAtOnce(brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
   for (auto s : state) {
-    BuildStrokeShapeAllAtOnce(brush, inputs, builder);
+    BuildStrokeShapeAllAtOnce(brush, inputs, input_modeler, builder);
+    benchmark::DoNotOptimize(input_modeler);
     benchmark::DoNotOptimize(builder);
   }
   state.SetLabel(absl::StrCat("Input count: ", inputs.Size()));
@@ -327,12 +343,14 @@ void BM_SpringShapeIncrementalPrewarmed(benchmark::State& state) {
   Rect bounds = Rect::FromTwoPoints({0, 0}, {100, 100});
   auto inputs = MakeIncrementalSpringShapeInputs(bounds);
   Brush brush = MakeDefaultBrush(20, 0.05);
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeIncrementally(brush, inputs, builder);
+  BuildStrokeShapeIncrementally(brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
 
   while (state.KeepRunningBatch(inputs.size())) {
-    BuildStrokeShapeIncrementally(brush, inputs, builder);
+    BuildStrokeShapeIncrementally(brush, inputs, input_modeler, builder);
   }
 }
 BENCHMARK(BM_SpringShapeIncrementalPrewarmed);
@@ -353,11 +371,14 @@ void BM_SpringShapeCompletePreWarmed(benchmark::State& state) {
   Rect bounds = Rect::FromTwoPoints({0, 0}, {100, 100});
   StrokeInputBatch inputs = MakeCompleteSpringShapeInputs(bounds);
   Brush brush = MakeDefaultBrush(20, 0.05);
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeAllAtOnce(brush, inputs, builder);
+  BuildStrokeShapeAllAtOnce(brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
   for (auto s : state) {
-    BuildStrokeShapeAllAtOnce(brush, inputs, builder);
+    BuildStrokeShapeAllAtOnce(brush, inputs, input_modeler, builder);
+    benchmark::DoNotOptimize(input_modeler);
     benchmark::DoNotOptimize(builder);
   }
   state.SetLabel(absl::StrCat("Input count: ", inputs.Size()));
@@ -379,12 +400,14 @@ void BM_SpringShapeIncrementalPrewarmedSingleBehavior(benchmark::State& state) {
   Rect bounds = Rect::FromTwoPoints({0, 0}, {100, 100});
   auto inputs = MakeIncrementalSpringShapeInputs(bounds);
   Brush brush = MakeSingleBehaviorBrush(20, 0.05);
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeIncrementally(brush, inputs, builder);
+  BuildStrokeShapeIncrementally(brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
 
   while (state.KeepRunningBatch(inputs.size())) {
-    BuildStrokeShapeIncrementally(brush, inputs, builder);
+    BuildStrokeShapeIncrementally(brush, inputs, input_modeler, builder);
   }
 }
 BENCHMARK(BM_SpringShapeIncrementalPrewarmedSingleBehavior);
@@ -405,11 +428,14 @@ void BM_SpringShapeCompletePreWarmedSingleBehavior(benchmark::State& state) {
   Rect bounds = Rect::FromTwoPoints({0, 0}, {100, 100});
   StrokeInputBatch inputs = MakeCompleteSpringShapeInputs(bounds);
   Brush brush = MakeSingleBehaviorBrush(20, 0.05);
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeAllAtOnce(brush, inputs, builder);
+  BuildStrokeShapeAllAtOnce(brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
   for (auto s : state) {
-    BuildStrokeShapeAllAtOnce(brush, inputs, builder);
+    BuildStrokeShapeAllAtOnce(brush, inputs, input_modeler, builder);
+    benchmark::DoNotOptimize(input_modeler);
     benchmark::DoNotOptimize(builder);
   }
   state.SetLabel(absl::StrCat("Input count: ", inputs.Size()));
@@ -432,12 +458,14 @@ void BM_SpringShapeIncrementalPrewarmedMultipleBehavior(
   Rect bounds = Rect::FromTwoPoints({0, 0}, {100, 100});
   auto inputs = MakeIncrementalSpringShapeInputs(bounds);
   Brush brush = MakeMultiBehaviorBrush(20, 0.05);
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeIncrementally(brush, inputs, builder);
+  BuildStrokeShapeIncrementally(brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
 
   while (state.KeepRunningBatch(inputs.size())) {
-    BuildStrokeShapeIncrementally(brush, inputs, builder);
+    BuildStrokeShapeIncrementally(brush, inputs, input_modeler, builder);
   }
 }
 BENCHMARK(BM_SpringShapeIncrementalPrewarmedMultipleBehavior);
@@ -458,11 +486,14 @@ void BM_SpringShapeCompletePreWarmedMultipleBehavior(benchmark::State& state) {
   Rect bounds = Rect::FromTwoPoints({0, 0}, {100, 100});
   StrokeInputBatch inputs = MakeCompleteSpringShapeInputs(bounds);
   Brush brush = MakeMultiBehaviorBrush(20, 0.05);
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeAllAtOnce(brush, inputs, builder);
+  BuildStrokeShapeAllAtOnce(brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
   for (auto s : state) {
-    BuildStrokeShapeAllAtOnce(brush, inputs, builder);
+    BuildStrokeShapeAllAtOnce(brush, inputs, input_modeler, builder);
+    benchmark::DoNotOptimize(input_modeler);
     benchmark::DoNotOptimize(builder);
   }
   state.SetLabel(absl::StrCat("Input count: ", inputs.Size()));
@@ -556,11 +587,14 @@ void BM_SyntheticStraightLineOverlappingRectangleBrushtipsPrewarmed(
   auto brush = Brush::Create(*brush_family, Color::GoogleBlue(), 1, 0.25);
   ABSL_CHECK_OK(brush);
 
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+  BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
   for (auto s : state) {
-    BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+    BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+    benchmark::DoNotOptimize(input_modeler);
     benchmark::DoNotOptimize(builder);
   }
   state.SetLabel(absl::StrCat("Input count: ", inputs.Size()));
@@ -637,11 +671,14 @@ void BM_SyntheticStraightLineHueChangeRectangleBrushtipsPrewarmed(
   auto brush = Brush::Create(*brush_family, Color::GoogleBlue(), 1, 0.25);
   ABSL_CHECK_OK(brush);
 
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+  BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
   for (auto s : state) {
-    BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+    BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+    benchmark::DoNotOptimize(input_modeler);
     benchmark::DoNotOptimize(builder);
   }
   state.SetLabel(absl::StrCat("Input count: ", inputs.Size()));
@@ -683,11 +720,14 @@ void BM_SyntheticStraightLineNoRotationRectangleBrushtipsPrewarmed(
   auto brush = Brush::Create(*brush_family, Color::GoogleBlue(), 1, 0.25);
   ABSL_CHECK_OK(brush);
 
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+  BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
   for (auto s : state) {
-    BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+    BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+    benchmark::DoNotOptimize(input_modeler);
     benchmark::DoNotOptimize(builder);
   }
   state.SetLabel(absl::StrCat("Input count: ", inputs.Size()));
@@ -763,11 +803,14 @@ void BM_SyntheticStraightLineOverlappingPillBrushtipsPrewarmed(
   auto brush = Brush::Create(*brush_family, Color::GoogleBlue(), 1, 0.25);
   ABSL_CHECK_OK(brush);
 
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+  BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
   for (auto s : state) {
-    BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+    BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+    benchmark::DoNotOptimize(input_modeler);
     benchmark::DoNotOptimize(builder);
   }
   state.SetLabel(absl::StrCat("Input count: ", inputs.Size()));
@@ -843,11 +886,14 @@ void BM_SyntheticStraightLineHueChangePillBrushtipsPrewarmed(
   auto brush = Brush::Create(*brush_family, Color::GoogleBlue(), 1, 0.25);
   ABSL_CHECK_OK(brush);
 
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+  BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
   for (auto s : state) {
-    BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+    BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+    benchmark::DoNotOptimize(input_modeler);
     benchmark::DoNotOptimize(builder);
   }
   state.SetLabel(absl::StrCat("Input count: ", inputs.Size()));
@@ -888,11 +934,14 @@ void BM_SyntheticStraightLineNoRotationPillBrushtipsPrewarmed(
   auto brush = Brush::Create(*brush_family, Color::GoogleBlue(), 1, 0.25);
   ABSL_CHECK_OK(brush);
 
+  StrokeInputModeler input_modeler;
   StrokeShapeBuilder builder;
-  BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+  BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+  benchmark::DoNotOptimize(input_modeler);
   benchmark::DoNotOptimize(builder);
   for (auto s : state) {
-    BuildStrokeShapeAllAtOnce(*brush, inputs, builder);
+    BuildStrokeShapeAllAtOnce(*brush, inputs, input_modeler, builder);
+    benchmark::DoNotOptimize(input_modeler);
     benchmark::DoNotOptimize(builder);
   }
   state.SetLabel(absl::StrCat("Input count: ", inputs.Size()));

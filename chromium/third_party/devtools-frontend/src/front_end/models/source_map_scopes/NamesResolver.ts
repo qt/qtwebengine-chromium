@@ -3,13 +3,12 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../bindings/bindings.js';
 import * as Formatter from '../formatter/formatter.js';
 import * as TextUtils from '../text_utils/text_utils.js';
-
-import {scopeTreeForScript} from './ScopeTreeCache.js';
 
 interface CachedScopeMap {
   sourceMap: SDK.SourceMap.SourceMap|undefined;
@@ -50,16 +49,7 @@ scopeTree:
     return null;
   }
 
-  const text = await getTextFor(script);
-  if (!text) {
-    return null;
-  }
-
-  const scopeTree = await scopeTreeForScript(script);
-  if (!scopeTree) {
-    return null;
-  }
-  return {scopeTree, text};
+  return await SDK.ScopeTreeCache.scopeTreeForScript(script);
 };
 
 /**
@@ -240,7 +230,7 @@ const resolveScope = async(script: SDK.Script.Script, scopeChain: Formatter.Form
                     return;
                   }
                 }
-                // If there is no entry with the name field, try to infer the name from the source positions.
+                /** If there is no entry with the name field, try to infer the name from the source positions. **/
                 async function resolvePosition(): Promise<void> {
                   if (!sourceMap) {
                     return;
@@ -381,7 +371,9 @@ export const resolveScopeChain =
     return scopeChain;
   }
 
-  scopeChain = callFrame.script.sourceMap()?.resolveScopeChain(callFrame);
+  scopeChain = Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.USE_SOURCE_MAP_SCOPES) ?
+      callFrame.script.sourceMap()?.resolveScopeChain(callFrame) :
+      null;
   if (scopeChain) {
     return scopeChain;
   }
@@ -684,10 +676,12 @@ export class RemoteObject extends SDK.RemoteObject.RemoteObject {
   }
 }
 
-// Resolve the frame's function name using the name associated with the opening
-// paren that starts the scope. If there is no name associated with the scope
-// start or if the function scope does not start with a left paren (e.g., arrow
-// function with one parameter), the resolution returns null.
+/**
+ * Resolve the frame's function name using the name associated with the opening
+ * paren that starts the scope. If there is no name associated with the scope
+ * start or if the function scope does not start with a left paren (e.g., arrow
+ * function with one parameter), the resolution returns null.
+ **/
 async function getFunctionNameFromScopeStart(
     script: SDK.Script.Script, lineNumber: number, columnNumber: number): Promise<string|null> {
   // To reduce the overhead of resolving function names,

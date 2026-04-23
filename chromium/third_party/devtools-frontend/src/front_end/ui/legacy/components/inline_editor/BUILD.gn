@@ -24,7 +24,7 @@ generate_css("css_files") {
   ]
 }
 
-devtools_module("inline_editor") {
+devtools_ui_module("inline_editor") {
   sources = [
     "AnimationTimingModel.ts",
     "AnimationTimingUI.ts",
@@ -77,6 +77,9 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility = [
+    # IMPORTANT: Be careful when extending visibility of front_end/ui/legacy/*,
+    # as the UI modules should only be used to actually build user interfaces,
+    # and the business logic should never depend on the UI modules.
     ":*",
     "../../../../panels/animation/*",
     "../../../../panels/application/*",
@@ -89,7 +92,7 @@ devtools_entrypoint("bundle") {
   visibility += devtools_ui_legacy_visibility
 }
 
-ts_library("unittests") {
+devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
