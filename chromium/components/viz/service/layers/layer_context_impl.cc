@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/notimplemented.h"
 #include "base/notreached.h"
@@ -1648,6 +1649,16 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
   // need to be validated, and the dependency can be cyclic (e.g. scroll nodes
   // may index transform nodes and transform nodes may index scroll nodes).
   cc::PropertyTrees& property_trees = *layers.property_trees();
+
+  // Any update to the display tree requires a new draw properties update if
+  // validation fails and returns early, because we may have already mutated
+  // some state (like taking render surfaces or resizing trees).
+  base::ScopedClosureRunner cleanup(base::BindOnce(
+      [](cc::LayerTreeImpl* layers) {
+        layers->set_needs_update_draw_properties();
+      },
+      &layers));
+
   const bool transform_size_changed = ResizePropertyTree(
       property_trees.transform_tree_mutable(), update->num_transform_nodes);
   const bool clip_size_changed = ResizePropertyTree(
@@ -1900,6 +1911,7 @@ base::expected<void, std::string> LayerContextImpl::DoUpdateDisplayTree(
   RETURN_IF_ERROR(DeserializeAnimationUpdates(*update, *animation_host));
   host_impl_->ActivateAnimations();
 
+  cleanup.ReplaceClosure(base::DoNothing());
   return base::ok();
 }
 
