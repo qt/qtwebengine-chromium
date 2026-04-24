@@ -1336,7 +1336,7 @@ void AdAuctionServiceImpl::OnGotAuctionDataAndKey(
   }
 
   if (!ad_auction_page_data->GetContextForAdAuctionRequest(
-          ContextMapKey(state.request_id, seller))) {
+          ContextMapKey{state.request_id, seller})) {
     AdAuctionRequestContext context(
         seller, std::move(state.data->group_names),
         std::move(*maybe_request).ReleaseContext(), state.start_time,

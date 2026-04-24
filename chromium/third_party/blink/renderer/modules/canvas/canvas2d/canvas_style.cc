@@ -134,7 +134,7 @@ void CanvasStyle::ApplyToFlags(cc::PaintFlags& flags,
     case kImagePattern:
       GetCanvasPattern()->GetPattern()->ApplyToFlags(
           flags, GetCanvasPattern()->GetTransform().ToSkMatrix());
-      flags.setColor(SkColor4f(0.0f, 0.0f, 0.0f, global_alpha));
+      flags.setColor(SkColor4f{0.0f, 0.0f, 0.0f, global_alpha});
       break;
     default:
       NOTREACHED();

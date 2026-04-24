@@ -53,8 +53,8 @@ float EffectiveCurvature(Superellipse superellipse, const gfx::SizeF& radius) {
 gfx::QuadF ComputeHullQuad(const ContouredRect::Corner& corner) {
   const gfx::PointF half_corner = corner.HalfCorner();
   const gfx::PointF perpendicular_line =
-      half_corner + gfx::LineF(corner.Outer(), half_corner).Normal();
-  const gfx::LineF tangent_line(half_corner, perpendicular_line);
+      half_corner + gfx::LineF{corner.Outer(), half_corner}.Normal();
+  const gfx::LineF tangent_line{half_corner, perpendicular_line};
   auto intersection_point_1 =
       tangent_line.IntersectionWith({corner.Start(), corner.Center()});
   auto intersection_point_2 =

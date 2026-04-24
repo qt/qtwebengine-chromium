@@ -969,7 +969,7 @@ void FindIntersection(const gfx::PointF& p1,
                       const gfx::PointF& d2,
                       gfx::PointF& intersection) {
   intersection =
-      gfx::LineF(p1, p2).IntersectionWith({d1, d2}).value_or(intersection);
+      gfx::LineF{p1, p2}.IntersectionWith({d1, d2}).value_or(intersection);
 }
 
 void ClipOutHalfCornerWithMiter(GraphicsContext& context,
@@ -979,19 +979,19 @@ void ClipOutHalfCornerWithMiter(GraphicsContext& context,
   const CornerInfo& other_corner_of_same_side = corners[1];
   const gfx::PointF& opposite_corner = corners[2].outer.Outer();
   const gfx::PointF& adjacent_corner = corners[3].outer.Outer();
-  const gfx::LineF miter_line(corner_to_slice.outer.Outer(),
-                              corner_to_slice.unadjusted_inner_edge);
+  const gfx::LineF miter_line{corner_to_slice.outer.Outer(),
+                              corner_to_slice.unadjusted_inner_edge};
 
   // When the corners intersect, we check if the intersection of the
   // nearest tangent line of the superellipse intersects with the miter line,
   // and whether that intersection is inside the other corner's bounding box.
   // If so, that overlap might be visible, so we clip out a hexagon that
   // starts from the miter incision and continues back at the tangent.
-  const gfx::LineF inner_tangent_of_other_corner(
+  const gfx::LineF inner_tangent_of_other_corner{
       other_corner_of_same_side.inner.End(),
       other_corner_of_same_side.inner.IsConcave()
           ? other_corner_of_same_side.inner.QuadraticControlPoint()
-          : other_corner_of_same_side.inner.Start());
+          : other_corner_of_same_side.inner.Start()};
   const std::optional<gfx::PointF> intersection_between_tangent_and_miter =
       inner_tangent_of_other_corner.IntersectionWith(miter_line);
   if (intersection_between_tangent_and_miter.has_value() &&

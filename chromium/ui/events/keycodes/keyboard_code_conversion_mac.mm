@@ -147,7 +147,9 @@ DomKey DomKeyFromKeyCode(unsigned short key_code) {
       {kVK_RightArrow, DomKey::ARROW_RIGHT},
       {kVK_DownArrow, DomKey::ARROW_DOWN},
       {kVK_UpArrow, DomKey::ARROW_UP},
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       {kVK_ContextualMenu, DomKey::CONTEXT_MENU},
+#endif
       {kVK_JIS_Eisu, DomKey::EISU},
       {kVK_JIS_Kana, DomKey::KANJI_MODE},
   });

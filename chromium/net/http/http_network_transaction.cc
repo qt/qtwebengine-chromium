@@ -187,7 +187,7 @@ class DuplicateRequestLogger final {
       StartTimer();
     }
     auto now = base::TimeTicks::Now();
-    Entry& entry = entry_queue_.emplace(now, url);
+    Entry& entry = entry_queue_.emplace(Entry{now, url});
     auto [hash_it, was_inserted] =
         entry_map_.try_emplace(entry.url.possibly_invalid_spec(), &entry);
     if (was_inserted) {

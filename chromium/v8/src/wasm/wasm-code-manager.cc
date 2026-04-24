@@ -2729,7 +2729,7 @@ std::vector<UnpublishedWasmCode> NativeModule::AddCompiledCode(
     size_t code_size = RoundUp<kCodeAlignment>(result.code_desc.instr_size);
     base::Vector<uint8_t> this_code_space = code_space.SubVector(0, code_size);
     code_space += code_size;
-    generated_code.emplace_back(
+    generated_code.emplace_back(UnpublishedWasmCode{
         AddCodeWithCodeSpace(
             result.func_index, result.code_desc, result.frame_slot_count,
             result.ool_spill_count, result.tagged_parameter_slots,
@@ -2739,7 +2739,7 @@ std::vector<UnpublishedWasmCode> NativeModule::AddCompiledCode(
             result.deopt_data.as_vector(), GetCodeKind(result),
             result.result_tier, result.for_debugging,
             result.frame_has_feedback_slot, this_code_space, jump_tables),
-        std::move(result.assumptions));
+        std::move(result.assumptions)});
   }
   DCHECK_EQ(0, code_space.size());
 

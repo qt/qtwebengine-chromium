@@ -254,7 +254,7 @@ const WavyGeometry& GetWavyGeometry(const DecorationGeometry& line_geometry) {
 
   const WavyParams params{line_geometry.wavy_wave, line_geometry.Thickness()};
   if (!wavy_cache || wavy_cache->key != params) {
-    wavy_cache.emplace(params, WavyGeometry(params));
+    wavy_cache.emplace(WavyCache{params, WavyGeometry(params)});
   }
   return wavy_cache->geometry;
 }

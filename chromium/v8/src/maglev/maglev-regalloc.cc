@@ -1247,7 +1247,8 @@ void StraightForwardRegisterAllocator::AddMoveBeforeCurrentNode(
     node_it_ = block->nodes().end();
   } else {
     // We should not add any gap move before a GetSecondReturnedValue.
-    patches_.emplace_back(node_it_ - block->nodes().begin(), gap_move);
+    patches_.emplace_back(
+        BlockPatch{node_it_ - block->nodes().begin(), gap_move});
   }
 }
 

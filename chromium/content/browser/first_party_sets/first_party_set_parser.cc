@@ -331,7 +331,7 @@ class ParseContext {
       parsed_sets.push_back(std::move(set));
       previous_size = warnings_.size();
     }
-    return ParsedPolicySetsInfoForField(parsed_sets, all_aliases);
+    return ParsedPolicySetsInfoForField{parsed_sets, all_aliases};
   }
 
   // Updates the context to include the given set and aliases.
@@ -747,8 +747,8 @@ FirstPartySetParser::ParseSetsFromEnterprisePolicy(
         std::move(replacements.aliases);
     aliases.insert(std::make_move_iterator(additions.aliases.begin()),
                    std::make_move_iterator(additions.aliases.end()));
-    return MergedPolicySetLists(std::move(replacements).sets,
-                                std::move(additions).sets, std::move(aliases));
+    return MergedPolicySetLists{std::move(replacements).sets,
+                                std::move(additions).sets, std::move(aliases)};
   }();
 
   if (set_lists.has_value()) {

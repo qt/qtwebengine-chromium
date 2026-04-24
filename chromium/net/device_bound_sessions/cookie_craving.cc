@@ -415,7 +415,8 @@ bool CookieCraving::ShouldIncludeForRequest(
           now + base::Days(1), now, IsSecure(), IsHttpOnly(), SameSite(),
           COOKIE_PRIORITY_DEFAULT, PartitionKey(), &status);
   CookieAccessResultList included_cravings;
-  included_cravings.emplace_back(std::move(*canonical_cookie));
+  included_cravings.emplace_back(
+      CookieWithAccessResult{std::move(*canonical_cookie)});
   CookieAccessResultList excluded_cravings;
   return request->network_delegate()->AnnotateAndMoveUserBlockedCookies(
       *request, first_party_set_metadata, included_cravings, excluded_cravings);

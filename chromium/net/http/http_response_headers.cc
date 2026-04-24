@@ -972,7 +972,8 @@ void HttpResponseHeaders::AddToParsed(size_t name_begin,
                                       size_t name_end,
                                       size_t value_begin,
                                       size_t value_end) {
-  parsed_.emplace_back(name_begin, name_end, value_begin, value_end);
+  parsed_.emplace_back(
+      ParsedHeader{name_begin, name_end, value_begin, value_end});
 }
 
 void HttpResponseHeaders::AddNonCacheableHeaders(HeaderSet* result) const {

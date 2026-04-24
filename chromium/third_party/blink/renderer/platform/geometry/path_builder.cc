@@ -275,7 +275,7 @@ PathBuilder& PathBuilder::AddContouredRect(
     MoveTo(top_right_corner.Start());
     AddCorner(top_right_corner);
     if (!top_right_corner.IsHyperellipse()) {
-      LineTo(gfx::LineF(outer_rect.top_right(), outer_rect.bottom_right())
+      LineTo(gfx::LineF{outer_rect.top_right(), outer_rect.bottom_right()}
                  .IntersectionWith({top_right_corner.QuadraticControlPoint(),
                                     top_right_corner.End()})
                  .value_or(
@@ -283,7 +283,7 @@ PathBuilder& PathBuilder::AddContouredRect(
     }
 
     if (!bottom_right_corner.IsHyperellipse()) {
-      LineTo(gfx::LineF(outer_rect.top_right(), outer_rect.bottom_right())
+      LineTo(gfx::LineF{outer_rect.top_right(), outer_rect.bottom_right()}
                  .IntersectionWith({bottom_right_corner.QuadraticControlPoint(),
                                     bottom_right_corner.Start()})
                  .value_or(gfx::PointF(outer_rect.right(),
@@ -293,14 +293,14 @@ PathBuilder& PathBuilder::AddContouredRect(
     AddCorner(bottom_right_corner);
 
     if (!bottom_right_corner.IsHyperellipse()) {
-      LineTo(gfx::LineF(outer_rect.bottom_left(), outer_rect.bottom_right())
+      LineTo(gfx::LineF{outer_rect.bottom_left(), outer_rect.bottom_right()}
                  .IntersectionWith({bottom_right_corner.QuadraticControlPoint(),
                                     bottom_right_corner.End()})
                  .value_or(gfx::PointF(origin_rect.Rect().right(),
                                        outer_rect.bottom())));
     }
     if (!bottom_left_corner.IsHyperellipse()) {
-      LineTo(gfx::LineF(outer_rect.bottom_left(), outer_rect.bottom_right())
+      LineTo(gfx::LineF{outer_rect.bottom_left(), outer_rect.bottom_right()}
                  .IntersectionWith({bottom_left_corner.QuadraticControlPoint(),
                                     bottom_left_corner.Start()})
                  .value_or(
@@ -308,7 +308,7 @@ PathBuilder& PathBuilder::AddContouredRect(
     }
     AddCorner(bottom_left_corner);
     if (!bottom_left_corner.IsHyperellipse()) {
-      LineTo(gfx::LineF(outer_rect.bottom_left(), outer_rect.origin())
+      LineTo(gfx::LineF{outer_rect.bottom_left(), outer_rect.origin()}
                  .IntersectionWith({bottom_left_corner.QuadraticControlPoint(),
                                     bottom_left_corner.End()})
                  .value_or(
@@ -316,7 +316,7 @@ PathBuilder& PathBuilder::AddContouredRect(
     }
     if (!top_left_corner.IsHyperellipse()) {
       LineTo(
-          gfx::LineF(outer_rect.bottom_left(), outer_rect.origin())
+          gfx::LineF{outer_rect.bottom_left(), outer_rect.origin()}
               .IntersectionWith({top_left_corner.QuadraticControlPoint(),
                                  top_left_corner.Start()})
               .value_or(gfx::PointF(outer_rect.x(), origin_rect.Rect().y())));
@@ -324,13 +324,13 @@ PathBuilder& PathBuilder::AddContouredRect(
     AddCorner(top_left_corner);
     if (!top_left_corner.IsHyperellipse()) {
       LineTo(
-          gfx::LineF(outer_rect.top_right(), outer_rect.origin())
+          gfx::LineF{outer_rect.top_right(), outer_rect.origin()}
               .IntersectionWith({top_left_corner.QuadraticControlPoint(),
                                  top_left_corner.End()})
               .value_or(gfx::PointF(origin_rect.Rect().x(), outer_rect.y())));
     }
     if (!top_right_corner.IsHyperellipse()) {
-      LineTo(gfx::LineF(outer_rect.top_right(), outer_rect.origin())
+      LineTo(gfx::LineF{outer_rect.top_right(), outer_rect.origin()}
                  .IntersectionWith({top_right_corner.QuadraticControlPoint(),
                                     top_right_corner.Start()})
                  .value_or(

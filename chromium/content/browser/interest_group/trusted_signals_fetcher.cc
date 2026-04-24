@@ -202,7 +202,7 @@ void CollectContextualData(
         contextual_data_ids_map) {
   if (bidding_partition.buyer_tkv_signals != nullptr) {
     contextual_data_ids_map[*bidding_partition.buyer_tkv_signals].emplace_back(
-        compression_group_id, bidding_partition.partition_id);
+        IsolationIndex{compression_group_id, bidding_partition.partition_id});
   }
 }
 
@@ -214,7 +214,7 @@ void CollectContextualData(
         contextual_data_ids_map) {
   if (scoring_partition.seller_tkv_signals != nullptr) {
     contextual_data_ids_map[*scoring_partition.seller_tkv_signals].emplace_back(
-        compression_group_id, scoring_partition.partition_id);
+        IsolationIndex{compression_group_id, scoring_partition.partition_id});
   }
 }
 

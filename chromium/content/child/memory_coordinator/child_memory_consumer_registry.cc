@@ -106,8 +106,8 @@ void ChildMemoryConsumerRegistry::OnMemoryConsumerAdded(
 
     // Add to `consumer_infos_` to facilitate iteration by external callers.
     consumer_infos_.emplace_back(
-        std::string(consumer_id), traits,
-        CreateRegisteredMemoryConsumer(&consumer_group));
+        ConsumerInfo{std::string(consumer_id), traits,
+                     CreateRegisteredMemoryConsumer(&consumer_group)});
   }
 
   CHECK(consumer_group.traits() == traits);

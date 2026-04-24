@@ -101,7 +101,8 @@ std::unique_ptr<dawn::platform::WaitableEvent> AsyncWorkerThreadPool::PostWorker
     {
         // Lock the task queue and push a new task onto it.
         std::unique_lock<std::mutex> lock(mMutex);
-        mPendingTasks.emplace(callback, userdata, waitableEvent->GetWaitableEventImpl());
+        mPendingTasks.emplace(
+            AsyncWorkerThreadPoolTask{callback, userdata, waitableEvent->GetWaitableEventImpl()});
         EnsureThreads();
     }
 

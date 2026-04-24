@@ -151,7 +151,7 @@ class StringEscapeAnalysisReducer : public Next {
     }
 
    private:
-    ElidedStringPart(Kind kind, V<String> index) : data(index), kind(kind) {}
+    ElidedStringPart(Kind kind, V<String> index) : data{index}, kind(kind) {}
   };
 
   void Analyze() {

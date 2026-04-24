@@ -741,8 +741,8 @@ bool SampleDebugReport(
     if (blink::features::kFledgeDebugReportLockout.Get() !=
         base::Milliseconds(0)) {
       new_debug_report_lockout_and_cooldowns.lockout =
-          DebugReportLockout(now_nearest_next_hour,
-                             blink::features::kFledgeDebugReportLockout.Get());
+          DebugReportLockout{now_nearest_next_hour,
+                             blink::features::kFledgeDebugReportLockout.Get()};
     }
   }
   base::UmaHistogramBoolean(
@@ -3015,12 +3015,12 @@ class InterestGroupAuction::BuyerHelper
         }
         // If the matching ad does not have size specified, the bid to be
         // created should not have size specified to fall back to old behavior.
-        selected_ad_components.emplace_back(
+        selected_ad_components.emplace_back(Bid::ComponentAdInfo{
             blink::AdDescriptor(ad_component_descriptor.url,
                                 matching_ad_component->size_group
                                     ? ad_component_descriptor.size
                                     : std::nullopt),
-            matching_ad_component);
+            matching_ad_component});
       }
     }
 
@@ -3590,7 +3590,7 @@ bool InterestGroupAuction::HandleServerResponseImpl(
 
   AdAuctionRequestContext* request_context =
       ad_auction_page_data->GetContextForAdAuctionRequest(
-          ContextMapKey(config_->server_response->request_id, config_->seller));
+          ContextMapKey{config_->server_response->request_id, config_->seller});
   if (!request_context) {
     // The corresponding context for the requested blob couldn't be found.
     saved_response_.emplace();

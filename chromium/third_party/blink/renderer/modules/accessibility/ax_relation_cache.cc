@@ -465,12 +465,13 @@ AXRelationCache::GetTextRelationAttributes() {
       std::array<std::pair<QualifiedName, Element::TinyBloomFilter>, 3>;
   DEFINE_STATIC_LOCAL(
       QualifiedNameArray, text_attributes,
-      ({{html_names::kAriaLabelledbyAttr,
-         Element::FilterForAttribute(html_names::kAriaLabelledbyAttr)},
-        {html_names::kAriaLabeledbyAttr,
-         Element::FilterForAttribute(html_names::kAriaLabeledbyAttr)},
-        {html_names::kAriaDescribedbyAttr,
-         Element::FilterForAttribute(html_names::kAriaDescribedbyAttr)}}));
+      (QualifiedNameArray{
+          {{html_names::kAriaLabelledbyAttr,
+            Element::FilterForAttribute(html_names::kAriaLabelledbyAttr)},
+           {html_names::kAriaLabeledbyAttr,
+            Element::FilterForAttribute(html_names::kAriaLabeledbyAttr)},
+           {html_names::kAriaDescribedbyAttr,
+            Element::FilterForAttribute(html_names::kAriaDescribedbyAttr)}}}));
   return text_attributes;
 }
 
@@ -572,16 +573,17 @@ AXRelationCache::GetOtherRelationAttributes() {
       std::array<std::pair<QualifiedName, Element::TinyBloomFilter>, 5>;
   DEFINE_STATIC_LOCAL(
       QualifiedNameArray, attributes,
-      ({{html_names::kAriaControlsAttr,
-         Element::FilterForAttribute(html_names::kAriaControlsAttr)},
-        {html_names::kAriaDetailsAttr,
-         Element::FilterForAttribute(html_names::kAriaDetailsAttr)},
-        {html_names::kAriaErrormessageAttr,
-         Element::FilterForAttribute(html_names::kAriaErrormessageAttr)},
-        {html_names::kAriaFlowtoAttr,
-         Element::FilterForAttribute(html_names::kAriaFlowtoAttr)},
-        {html_names::kAriaActionsAttr,
-         Element::FilterForAttribute(html_names::kAriaActionsAttr)}}));
+      (QualifiedNameArray{
+          {{html_names::kAriaControlsAttr,
+            Element::FilterForAttribute(html_names::kAriaControlsAttr)},
+           {html_names::kAriaDetailsAttr,
+            Element::FilterForAttribute(html_names::kAriaDetailsAttr)},
+           {html_names::kAriaErrormessageAttr,
+            Element::FilterForAttribute(html_names::kAriaErrormessageAttr)},
+           {html_names::kAriaFlowtoAttr,
+            Element::FilterForAttribute(html_names::kAriaFlowtoAttr)},
+           {html_names::kAriaActionsAttr,
+            Element::FilterForAttribute(html_names::kAriaActionsAttr)}}}));
   return attributes;
 }
 

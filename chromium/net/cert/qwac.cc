@@ -45,7 +45,7 @@ std::optional<std::vector<QcStatement>> ParseQcStatements(
     if (statement_parser.HasMore()) {
       return std::nullopt;
     }
-    results.emplace_back(statement_id, statement_info);
+    results.emplace_back(QcStatement{statement_id, statement_info});
   }
 
   return results;

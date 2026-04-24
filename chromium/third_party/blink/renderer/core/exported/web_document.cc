@@ -297,8 +297,8 @@ std::vector<WebDraggableRegion> WebDocument::DraggableRegions() const {
   const Document* document = ConstUnwrap<Document>();
   if (document->HasDraggableRegions()) {
     return base::ToVector(document->DraggableRegions(), [](const auto& value) {
-      return WebDraggableRegion(value.draggable,
-                                ToPixelSnappedRect(value.bounds));
+      return WebDraggableRegion{value.draggable,
+                                ToPixelSnappedRect(value.bounds)};
     });
   }
   return {};

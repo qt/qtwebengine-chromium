@@ -51,8 +51,8 @@ void GridSizingTree::SetSizingNodeData(const BlockNode& grid_node,
     }
 
     const auto* item_layout_box = grid_item.node.GetLayoutBox();
-    const SubgriddedItemIndices subgridded_item_indices(current_item_index++,
-                                                        grid_node_index);
+    const SubgriddedItemIndices subgridded_item_indices{current_item_index++,
+                                                        grid_node_index};
 
     DCHECK(!subgridded_item_data_lookup_map_.Contains(item_layout_box));
     subgridded_item_data_lookup_map_.insert(item_layout_box,

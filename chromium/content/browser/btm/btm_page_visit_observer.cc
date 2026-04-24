@@ -112,10 +112,10 @@ class NavigationState
 
     int i = 0;
     for (const size_t redirect_chain_index : server_redirect_chain_indices_) {
-      navigation.server_redirects.emplace_back(
+      navigation.server_redirects.emplace_back(BtmServerRedirectInfo{
           urls[i],
           btm::GetRedirectSourceId(&navigation_handle, redirect_chain_index),
-          IsWrite(accesses[i]));
+          IsWrite(accesses[i])});
       i += 1;
     }
 
@@ -197,7 +197,8 @@ void BtmPageVisitObserver::DidFinishNavigation(
       state->CreateNavigationInfo(*navigation_handle);
   // Don't report the visit right away; put it in the pending queue and wait a
   // bit to see if we receive any late cookie notifications.
-  pending_visits_.emplace_back(std::move(current_page_), std::move(navigation));
+  pending_visits_.emplace_back(
+      VisitTuple{std::move(current_page_), std::move(navigation)});
   base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&BtmPageVisitObserver::ReportVisit,

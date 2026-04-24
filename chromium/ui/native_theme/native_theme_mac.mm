@@ -568,6 +568,7 @@ NativeThemeMac::NativeThemeMac(bool configure_web_instance,
                     theme->set_inverted_colors(InvertedColors());
                     theme->NotifyOnNativeThemeUpdated();
                   }];
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
   if (@available(macOS 15.0, *)) {
     non_blinking_cursor_token_ = [[NSNotificationCenter defaultCenter]
         addObserverForName:
@@ -578,7 +579,7 @@ NativeThemeMac::NativeThemeMac(bool configure_web_instance,
                   theme->NotifyOnNativeThemeUpdated();
                 }];
   }
-
+#endif
   if (configure_web_instance) {
     ConfigureWebInstance();
   }
@@ -597,9 +598,11 @@ bool NativeThemeMac::PrefersNonBlinkingCursor() const {
   if (prefers_non_blinking_cursor_for_testing_) {
     return true;
   }
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
   if (@available(macOS 15.0, *)) {
     return AXPrefersNonBlinkingTextInsertionIndicator();
   }
+#endif
   return false;
 }
 

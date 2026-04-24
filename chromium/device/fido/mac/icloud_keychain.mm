@@ -445,10 +445,12 @@ class API_AVAILABLE(macos(13.3)) Authenticator : public FidoAuthenticator {
         ASAuthorizationPlatformPublicKeyCredentialRegistration*
             platform_result =
                 (ASAuthorizationPlatformPublicKeyCredentialRegistration*)result;
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
         if (platform_result.prf != nil) {
           response.prf_enabled = platform_result.prf.isSupported;
           response.prf_results = PrfOutputToBytes(platform_result.prf);
         }
+#endif
       }
     }
     if (@available(macOS 14.0, *)) {
@@ -550,9 +552,11 @@ class API_AVAILABLE(macos(13.3)) Authenticator : public FidoAuthenticator {
                                 class]]) {
         ASAuthorizationPlatformPublicKeyCredentialAssertion* platform_result =
             (ASAuthorizationPlatformPublicKeyCredentialAssertion*)result;
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
         if (platform_result.prf != nil) {
           response.hmac_secret = PrfOutputToBytes(platform_result.prf);
         }
+#endif
       }
     }
     if (@available(macOS 14.0, *)) {

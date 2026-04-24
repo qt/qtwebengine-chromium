@@ -188,7 +188,7 @@ bool SessionInclusionRules::AddUrlRuleIfValid(InclusionResult rule_type,
     }
   }
 
-  url_rules_.emplace_back(rule_type, host_pattern, path_prefix);
+  url_rules_.emplace_back(UrlRule{rule_type, host_pattern, path_prefix});
   return true;
 }
 
@@ -302,8 +302,8 @@ std::optional<SessionInclusionRules> SessionInclusionRules::CreateFromProto(
       return std::nullopt;
     }
 
-    params.specifications.emplace_back(*rule_type, rule_proto.host_pattern(),
-                                       rule_proto.path_prefix());
+    params.specifications.emplace_back(SessionParams::Scope::Specification{
+        *rule_type, rule_proto.host_pattern(), rule_proto.path_prefix()});
   }
 
   // We use an empty refresh URL because the implicit refresh rule is already

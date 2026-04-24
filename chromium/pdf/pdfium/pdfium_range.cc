@@ -233,7 +233,8 @@ const std::vector<gfx::Rect>& PDFiumRange::GetScreenRects(
       text_run_rect.Union(screen_rect);
     }
     if (!text_run_rect.IsEmpty()) {
-      text_runs.emplace_back(text_run_rect, next_char_index - char_index);
+      text_runs.emplace_back(ScreenRectTextRunInfo{
+          text_run_rect, static_cast<size_t>(next_char_index - char_index)});
     }
 
     char_index = next_char_index;

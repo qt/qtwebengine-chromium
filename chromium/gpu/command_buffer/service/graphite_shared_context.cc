@@ -36,8 +36,8 @@ void* CreateAsyncReadContextThreadSafe(
           : nullptr;
 
   // Wrapped the old callback with a new thread safe callback.
-  return new AsyncReadContext(std::move(old_callback), old_callbackContext,
-                              std::move(task_runner));
+  return new AsyncReadContext{std::move(old_callback), old_callbackContext,
+                              std::move(task_runner)};
 }
 
 static void ReadPixelsCallbackThreadSafe(

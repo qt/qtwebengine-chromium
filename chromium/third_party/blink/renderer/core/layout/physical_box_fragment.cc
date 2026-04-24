@@ -352,9 +352,10 @@ PhysicalBoxFragment::PhysicalBoxFragment(
 
   children_.ReserveInitialCapacity(builder->children_.size());
   for (auto& child : builder->children_) {
+    PhysicalOffset offset =
+        converter.ToPhysical(child.offset, child.fragment->Size());
     children_.emplace_back(
-        std::move(child.fragment),
-        converter.ToPhysical(child.offset, child.fragment->Size()));
+        PhysicalFragmentLink{std::move(child.fragment), offset});
   }
 
   if (HasItems()) {

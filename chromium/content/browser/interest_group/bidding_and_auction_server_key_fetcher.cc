@@ -119,10 +119,12 @@ std::vector<BiddingAndAuctionServerKey> KeysFromProto(
     if (key_proto.id_str().empty()) {
       std::string id_str;
       base::AppendHexEncodedByte(key_proto.id(), id_str);
-      keys.emplace_back(std::move(*key_proto.mutable_key()), std::move(id_str));
+      keys.emplace_back(BiddingAndAuctionServerKey{
+          std::move(*key_proto.mutable_key()), std::move(id_str)});
     } else {
-      keys.emplace_back(std::move(*key_proto.mutable_key()),
-                        std::move(*key_proto.mutable_id_str()));
+      keys.emplace_back(
+          BiddingAndAuctionServerKey{std::move(*key_proto.mutable_key()),
+                                     std::move(*key_proto.mutable_id_str())});
     }
   }
   return keys;

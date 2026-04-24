@@ -1237,7 +1237,7 @@ InlineLayoutAlgorithm::ShapeLineClampEllipsis(const InlineNode& node) {
   FontHeight text_metrics =
       font_data->GetFontMetrics().GetFontHeight(node.Style().GetFontBaseline());
 
-  return LineClampEllipsis(ellipsis_text, shape_result, text_metrics);
+  return LineClampEllipsis{ellipsis_text, shape_result, text_metrics};
 }
 
 LayoutUnit InlineLayoutAlgorithm::SetupLineClampEllipsis() {

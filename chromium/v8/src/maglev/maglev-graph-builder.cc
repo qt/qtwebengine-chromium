@@ -8269,13 +8269,14 @@ MaybeReduceResult MaglevGraphBuilder::TryBuildInlineCall(
       generic_call->exception_handler_info());
   catch_details.deopt_frame_distance++;
   float score = call_frequency / bytecode.length();
-  MaglevCallSiteInfo* call_site = zone()->New<MaglevCallSiteInfo>(
-      MaglevCallerDetails{
-          arguments, &generic_call->lazy_deopt_info()->top_frame(),
-          known_node_aspects().Clone(zone()), loop_effects_,
-          unobserved_context_slot_stores_, catch_details, IsInsideLoop(),
-          /* is_eager_inline */ false, call_frequency},
-      generic_call, feedback_cell, score, bytecode.length());
+  MaglevCallSiteInfo* call_site =
+      zone()->New<MaglevCallSiteInfo>(MaglevCallSiteInfo{
+          MaglevCallerDetails{
+              arguments, &generic_call->lazy_deopt_info()->top_frame(),
+              known_node_aspects().Clone(zone()), loop_effects_,
+              unobserved_context_slot_stores_, catch_details, IsInsideLoop(),
+              /* is_eager_inline */ false, call_frequency},
+          generic_call, feedback_cell, score, bytecode.length()});
   graph()->inlineable_calls().push(call_site);
   return generic_call;
 }
@@ -8309,11 +8310,12 @@ ReduceResult MaglevGraphBuilder::BuildEagerInlineCall(
   auto arguments_vector = GetArgumentsAsArrayOfValueNodes(shared, args);
   DeoptFrame* deopt_frame =
       GetDeoptFrameForEagerCall(inner_unit, function, arguments_vector);
-  MaglevCallerDetails* caller_details = zone()->New<MaglevCallerDetails>(
-      arguments_vector, deopt_frame,
-      current_interpreter_frame_.known_node_aspects(), loop_effects_,
-      unobserved_context_slot_stores_, catch_block_details, IsInsideLoop(),
-      /* is_eager_inline */ true, call_frequency);
+  MaglevCallerDetails* caller_details =
+      zone()->New<MaglevCallerDetails>(MaglevCallerDetails{
+          arguments_vector, deopt_frame,
+          current_interpreter_frame_.known_node_aspects(), loop_effects_,
+          unobserved_context_slot_stores_, catch_block_details, IsInsideLoop(),
+          /* is_eager_inline */ true, call_frequency});
 
   // Create a new graph builder for the inlined function.
   MaglevGraphBuilder inner_graph_builder(local_isolate_, inner_unit, graph_,

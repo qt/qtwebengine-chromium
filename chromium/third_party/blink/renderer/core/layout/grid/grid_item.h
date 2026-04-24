@@ -233,7 +233,8 @@ struct CORE_EXPORT GridItemData : public GarbageCollected<GridItemData> {
     if (contribution_sizes) {
       contribution_sizes->Encompass(block_size);
     } else {
-      contribution_sizes = block_size;
+      // note matches the semantics of MinMaxSizes::operator=
+      contribution_sizes = MinMaxSizes{block_size, block_size};
     }
   }
 

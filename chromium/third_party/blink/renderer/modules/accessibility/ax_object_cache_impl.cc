@@ -5771,8 +5771,8 @@ AXObjectCacheImpl::TakeLocationChangsForSerialization() {
 
       cached_bounding_boxes_.Set(
           changed_bounds_id,
-          CachedLocationChange(std::move(new_location), scroll_offset.x(),
-                               scroll_offset.y()));
+          CachedLocationChange{std::move(new_location), scroll_offset.x(),
+                               scroll_offset.y()});
     }
   }
 
@@ -6455,7 +6455,7 @@ void AXObjectCacheImpl::SetCachedBoundingBox(AXID id,
   // in cached_bounding_boxes_, to help with comparing if it really changed
   // or not when sending another serialization later.
   cached_bounding_boxes_.Set(id,
-                             CachedLocationChange(bounds, scroll_x, scroll_y));
+                             CachedLocationChange{bounds, scroll_x, scroll_y});
 }
 
 void AXObjectCacheImpl::HandleScrollPositionChanged(

@@ -254,33 +254,33 @@ void TrustedBiddingSignalsUrlBuilder::BuildTrustedBiddingSignalsURL(
         base::StrCat({"hostname=", base::EscapeQueryParamValue(
                                        hostname_, /*use_plus=*/true)});
     main_fragments_.emplace_back(
-        UrlField::kBase,
-        SetQueryParam(trusted_signals_url_, host_name_param).spec());
+        UrlPiece{UrlField::kBase,
+                 SetQueryParam(trusted_signals_url_, host_name_param).spec()});
   }
 
   main_fragments_.emplace_back(
-      UrlField::kInterestGroupNames,
-      CreateQueryParamPiece("interestGroupNames", creating_new_url,
-                            new_interest_group_names));
+      UrlPiece{UrlField::kInterestGroupNames,
+               CreateQueryParamPiece("interestGroupNames", creating_new_url,
+                                     new_interest_group_names)});
 
   if (!new_bidding_signals_keys.empty()) {
     bool key_was_empty = aux_fragments_.empty();
-    aux_fragments_.emplace_back(
-        UrlField::kKeys,
-        CreateQueryParamPiece("keys", key_was_empty, new_bidding_signals_keys));
+    aux_fragments_.emplace_back(UrlPiece{
+        UrlField::kKeys, CreateQueryParamPiece("keys", key_was_empty,
+                                               new_bidding_signals_keys)});
   }
 
   if (creating_new_url) {
     if (experiment_group_id_.has_value()) {
-      main_fragments_.emplace_back(
+      main_fragments_.emplace_back(UrlPiece{
           UrlField::kExperimentGroupId,
           base::StrCat({"&experimentGroupId=",
-                        base::NumberToString(experiment_group_id_.value())}));
+                        base::NumberToString(experiment_group_id_.value())})});
     }
     if (!trusted_bidding_signals_slot_size_param_.empty()) {
-      main_fragments_.emplace_back(
+      main_fragments_.emplace_back(UrlPiece{
           UrlField::kSlotSizeParam,
-          base::StrCat({"&", trusted_bidding_signals_slot_size_param_}));
+          base::StrCat({"&", trusted_bidding_signals_slot_size_param_})});
     }
   }
 }
@@ -332,8 +332,8 @@ void TrustedScoringSignalsUrlBuilder::BuildTrustedScoringSignalsURL(
         base::StrCat({"hostname=", base::EscapeQueryParamValue(
                                        hostname_, /*use_plus=*/true)});
     main_fragments_.emplace_back(
-        UrlField::kBase,
-        SetQueryParam(trusted_signals_url_, host_name_param).spec());
+        UrlPiece{UrlField::kBase,
+                 SetQueryParam(trusted_signals_url_, host_name_param).spec()});
   }
 
   auto extract_render_url =
@@ -343,24 +343,24 @@ void TrustedScoringSignalsUrlBuilder::BuildTrustedScoringSignalsURL(
 
   // TODO(crbug.com/40264073): Find a way to rename renderUrls to renderURLs.
   main_fragments_.emplace_back(
-      UrlField::kRenderUrls,
-      CreateQueryParamPiece("renderUrls", creating_new_url, new_ads,
-                            extract_render_url));
+      UrlPiece{UrlField::kRenderUrls,
+               CreateQueryParamPiece("renderUrls", creating_new_url, new_ads,
+                                     extract_render_url)});
 
   bool components_was_empty = aux_fragments_.empty();
   if (!new_component_ads.empty()) {
-    aux_fragments_.emplace_back(
+    aux_fragments_.emplace_back(UrlPiece{
         UrlField::kAdComponentRenderUrls,
         CreateQueryParamPiece("adComponentRenderUrls", components_was_empty,
-                              new_component_ads, extract_render_url));
+                              new_component_ads, extract_render_url)});
   }
 
   if (creating_new_url) {
     if (experiment_group_id_.has_value()) {
-      main_fragments_.emplace_back(
+      main_fragments_.emplace_back(UrlPiece{
           UrlField::kExperimentGroupId,
           base::StrCat({"&experimentGroupId=",
-                        base::NumberToString(experiment_group_id_.value())}));
+                        base::NumberToString(experiment_group_id_.value())})});
     }
   }
 
@@ -388,44 +388,44 @@ void TrustedScoringSignalsUrlBuilder::BuildTrustedScoringSignalsURL(
       return creative_info.buyer_and_seller_reporting_id;
     };
 
-    main_fragments_.emplace_back(
+    main_fragments_.emplace_back(UrlPiece{
         UrlField::kAdCreativeScanningMetadata,
         CreateQueryParamPiece("adCreativeScanningMetadata", creating_new_url,
-                              new_ads, extract_creative_scan_metadata));
+                              new_ads, extract_creative_scan_metadata)});
     if (!new_component_ads.empty()) {
-      aux_fragments_.emplace_back(
+      aux_fragments_.emplace_back(UrlPiece{
           UrlField::kAdComponentCreativeScanningMetadata,
           CreateQueryParamPiece("adComponentCreativeScanningMetadata",
                                 components_was_empty, new_component_ads,
-                                extract_creative_scan_metadata));
+                                extract_creative_scan_metadata)});
     }
 
-    main_fragments_.emplace_back(
+    main_fragments_.emplace_back(UrlPiece{
         UrlField::kAdSizes, CreateQueryParamPiece("adSizes", creating_new_url,
                                                   new_ads, extract_size,
-                                                  /*escape=*/false));
+                                                  /*escape=*/false)});
 
     if (!new_component_ads.empty()) {
-      aux_fragments_.emplace_back(
+      aux_fragments_.emplace_back(UrlPiece{
           UrlField::kAdComponentSizes,
           CreateQueryParamPiece("adComponentSizes", components_was_empty,
                                 new_component_ads, extract_size,
-                                /*escape=*/false));
+                                /*escape=*/false)});
     }
 
-    main_fragments_.emplace_back(
+    main_fragments_.emplace_back(UrlPiece{
         UrlField::kAdBuyer, CreateQueryParamPiece("adBuyer", creating_new_url,
-                                                  new_ads, extract_buyer));
+                                                  new_ads, extract_buyer)});
     if (!new_component_ads.empty()) {
-      aux_fragments_.emplace_back(
+      aux_fragments_.emplace_back(UrlPiece{
           UrlField::kAdComponentBuyer,
           CreateQueryParamPiece("adComponentBuyer", components_was_empty,
-                                new_component_ads, extract_buyer));
+                                new_component_ads, extract_buyer)});
     }
-    main_fragments_.emplace_back(
+    main_fragments_.emplace_back(UrlPiece{
         UrlField::kBuyerAndSellerReportingIds,
         CreateQueryParamPiece("adBuyerAndSellerReportingIds", creating_new_url,
-                              new_ads, extract_buyer_and_seller_reporting_id));
+                              new_ads, extract_buyer_and_seller_reporting_id)});
   } else {
     DCHECK(!ContainsNonUrlInfo(new_ads));
     DCHECK(!ContainsNonUrlInfo(new_component_ads));

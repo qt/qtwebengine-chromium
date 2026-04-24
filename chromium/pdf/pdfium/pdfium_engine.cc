@@ -1100,7 +1100,7 @@ void PDFiumEngine::SetCaretBrowsingEnabled(bool enabled) {
       return;
     }
     // TODO(crbug.com/427242881): Determine the starting position of the caret.
-    caret_ = std::make_unique<PdfCaret>(this, PageCharacterIndex(0, 0));
+    caret_ = std::make_unique<PdfCaret>(this, PageCharacterIndex{0, 0});
   }
 
   // TODO(crbug.com/427778119): Set caret blink interval.
@@ -1449,7 +1449,8 @@ void PDFiumEngine::OnTextOrLinkAreaClickInternal(const PointData& point_data,
       // TODO(crbug.com/427133561): Handle corner case of clicking to the right
       // of the last char on a page.
       caret_->SetChar(
-          PageCharacterIndex(point_data.page_index, point_data.char_index));
+          PageCharacterIndex{static_cast<uint32_t>(point_data.page_index),
+                             static_cast<uint32_t>(point_data.char_index)});
     }
   } else if (click_count == 2 || click_count == 3) {
     OnMultipleClick(click_count, point_data.page_index, point_data.char_index);

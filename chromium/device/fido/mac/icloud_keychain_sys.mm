@@ -23,7 +23,7 @@ namespace {
 NSData* ToNSData(base::span<const uint8_t> data) {
   return [NSData dataWithBytes:data.data() length:data.size()];
 }
-
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
 API_AVAILABLE(macos(15.0))
 ASAuthorizationPublicKeyCredentialPRFAssertionInputValues* ToInputValues(
     const device::PRFInput& input) {
@@ -55,7 +55,7 @@ ToPerCredValues(base::span<const device::PRFInput> inputs) {
 
   return ret;
 }
-
+#endif  // #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
 }  // namespace
 
 // ICloudKeychainPresentationDelegate simply returns an `NSWindow` when asked by
@@ -345,6 +345,7 @@ class API_AVAILABLE(macos(13.3)) NativeSystemInterface
       create_request.displayName =
           base::SysUTF8ToNSString(*request.user.display_name);
     }
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
     if (@available(macOS 15.0, *)) {
       if (request.prf && !request.prf_input) {
         create_request.prf =
@@ -356,7 +357,7 @@ class API_AVAILABLE(macos(13.3)) NativeSystemInterface
                 initWithInputValues:ToInputValues(*request.prf_input)];
       }
     }
-
+#endif
     create_controller_ = [[ICloudKeychainCreateController alloc]
         initWithAuthorizationRequests:@[ create_request ]];
     [create_controller_ setRequest:std::move(request)];
@@ -401,6 +402,7 @@ class API_AVAILABLE(macos(13.3)) NativeSystemInterface
     get_request.allowedCredentials = allowedCredentials;
     [get_request setShouldShowHybridTransport:false];
     get_request.userVerificationPreference = Convert(request.user_verification);
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
     if (@available(macOS 15.0, *)) {
       if (!request.prf_inputs.empty()) {
         ASAuthorizationPublicKeyCredentialPRFAssertionInputValues*
@@ -414,6 +416,7 @@ class API_AVAILABLE(macos(13.3)) NativeSystemInterface
                 perCredentialInputValues:ToPerCredValues(request.prf_inputs)];
       }
     }
+#endif
     if (@available(macOS 14.0, *)) {
       if (large_blob_inputs.read) {
         auto* large_blob_input =

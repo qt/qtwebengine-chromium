@@ -390,13 +390,14 @@ class V8_EXPORT_PRIVATE WasmModuleBuilder : public ZoneObject {
     DCHECK_NE(current_recursive_group_start_, -1);
     uint32_t num_types_in_recgroup = base::checked_cast<uint32_t>(
         types_.size() - current_recursive_group_start_);
-    recursive_groups_.emplace_back(current_recursive_group_start_,
-                                   num_types_in_recgroup);
+    recursive_groups_.emplace_back(
+        RecGroup{base::checked_cast<uint32_t>(current_recursive_group_start_),
+                 num_types_in_recgroup});
     current_recursive_group_start_ = -1;
   }
 
   void AddRecursiveTypeGroup(uint32_t start, uint32_t size) {
-    recursive_groups_.emplace_back(start, size);
+    recursive_groups_.emplace_back(RecGroup{start, size});
   }
 
   // Writing methods.

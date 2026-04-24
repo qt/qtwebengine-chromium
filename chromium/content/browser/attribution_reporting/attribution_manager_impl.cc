@@ -1236,7 +1236,7 @@ void AttributionManagerImpl::SendReport(base::OnceClosure web_ui_callback,
   if (base::FeatureList::IsEnabled(kAttributionReportExpiry) &&
       now > GetReportExpiryTime(report)) {
     OnReportSent(std::move(web_ui_callback), std::move(report),
-                 SendResult(SendResult::Expired()));
+                 SendResult{SendResult::Expired()});
     return;
   }
 

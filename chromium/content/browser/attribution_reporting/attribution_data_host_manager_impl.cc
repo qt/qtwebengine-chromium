@@ -335,7 +335,8 @@ AttributionDataHostManagerImpl::SequentialTimeoutsTimer::
 
 void AttributionDataHostManagerImpl::SequentialTimeoutsTimer::Start(
     base::OnceClosure callback) {
-  timeouts_.emplace_back(base::TimeTicks::Now() + delay_, std::move(callback));
+  timeouts_.emplace_back(
+      Timeout{base::TimeTicks::Now() + delay_, std::move(callback)});
 
   MaybeStartTimer();
 }
@@ -1150,8 +1151,8 @@ void AttributionDataHostManagerImpl::RegisterDataHost(
         // usage. In case the limit is reached, we drop the receiver.
         if (receivers_it->second.size() < kMaxDeferredReceiversPerNavigation) {
           RecordRegisterDataHostHostOutcome(RegisterDataHostOutcome::kDeferred);
-          receivers_it->second.emplace_back(std::move(data_host),
-                                            std::move(receiver_context));
+          receivers_it->second.emplace_back(DeferredReceiver{
+              std::move(data_host), std::move(receiver_context)});
         } else {
           RecordRegisterDataHostHostOutcome(RegisterDataHostOutcome::kDropped);
         }

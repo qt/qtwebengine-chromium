@@ -140,7 +140,7 @@ void AdAuctionPageData::RegisterAdAuctionRequestContext(
     AdAuctionRequestContext context) {
   url::Origin seller = context.seller;
   context_map_.insert(
-      std::make_pair(ContextMapKey(id, seller), std::move(context)));
+      std::make_pair(ContextMapKey{id, seller}, std::move(context)));
 }
 
 AdAuctionRequestContext* AdAuctionPageData::GetContextForAdAuctionRequest(

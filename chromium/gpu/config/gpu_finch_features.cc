@@ -594,7 +594,7 @@ bool IsSkiaGraphiteSupportedByDevice(const base::CommandLine* command_line) {
                               model_name_split->variant == 1;
     if (!is_imac_15_1) {
       static constexpr struct {
-        std::string category;
+        std::string_view category;
         int32_t min_supported_model;
       } kModelSupportData[] = {
           {"MacBookPro", 13}, {"MacBookAir", 8}, {"MacBook", 9},

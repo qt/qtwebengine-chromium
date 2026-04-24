@@ -153,8 +153,8 @@ void RendererNavigationMetricsManager::AddCreateViewEvent(
   }
 
   auto& timeline = GetOrCreateTimeline(*navigation_metrics_token);
-  timeline.create_view_events.emplace_back(start_time,
-                                           start_time + elapsed_time);
+  timeline.create_view_events.emplace_back(
+      Timeline::TimelineEvent{start_time, start_time + elapsed_time});
 }
 
 void RendererNavigationMetricsManager::AddCreateRemoteChildrenEvent(
@@ -172,7 +172,7 @@ void RendererNavigationMetricsManager::AddCreateRemoteChildrenEvent(
 
   auto& timeline = GetOrCreateTimeline(*navigation_metrics_token);
   timeline.create_remote_children_events.emplace_back(
-      start_time, start_time + elapsed_time);
+      Timeline::TimelineEvent{start_time, start_time + elapsed_time});
 }
 
 void RendererNavigationMetricsManager::AddCreateFrameEvent(
@@ -198,7 +198,8 @@ void RendererNavigationMetricsManager::AddCreateFrameEvent(
   // CreateFrame call (which is more relevant for navigation latency), by
   // overwriting the start/end times if they already exist. In the future,
   // these calls could potentially be tracked as separate events.
-  timeline.create_frame_event.emplace(start_time, start_time + elapsed_time);
+  timeline.create_frame_event.emplace(
+      Timeline::TimelineEvent{start_time, start_time + elapsed_time});
 }
 
 void RendererNavigationMetricsManager::MarkCommitStart(

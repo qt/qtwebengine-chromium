@@ -67,8 +67,8 @@ base::expected<std::vector<Ciphertext>, absl::Status> CreateCiphertext(
     if (!maybe_e.ok()) {
       return base::unexpected(maybe_e.status());
     }
-    ciphertext.emplace_back(std::move(maybe_u).value(),
-                            std::move(maybe_e).value());
+    ciphertext.emplace_back(
+        Ciphertext{std::move(maybe_u).value(), std::move(maybe_e).value()});
   }
   return ciphertext;
 }

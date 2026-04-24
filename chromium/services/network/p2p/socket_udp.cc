@@ -310,7 +310,7 @@ bool P2PSocketUdp::HandleReadResult(int result) {
     delegate_->DumpPacket(data, true);
     net::DscpAndEcn last_tos =
         socket_ == nullptr
-            ? net::DscpAndEcn(net::DSCP_DEFAULT, net::ECN_DEFAULT)
+            ? net::DscpAndEcn{net::DSCP_DEFAULT, net::ECN_DEFAULT}
             : socket_->GetLastTos();
     auto packet = mojom::P2PReceivedPacket::New(
         data, recv_address_,

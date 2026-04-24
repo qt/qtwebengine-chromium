@@ -392,7 +392,7 @@ ANGLE_INLINE void FastVector<T, N, Storage>::emplace_back(Args &&...args)
 {
     if (mSize == mReservedSize)
         ensure_capacity(mSize + 1);
-    mData[mSize++] = std::move(T(std::forward<Args>(args)...));
+    mData[mSize++] = std::move(T{std::forward<Args>(args)...});
 }
 
 template <class T, size_t N, class Storage>

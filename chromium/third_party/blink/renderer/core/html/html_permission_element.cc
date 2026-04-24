@@ -1132,7 +1132,7 @@ bool HTMLPermissionElement::UpdateSnapshot() {
 }
 
 bool HTMLPermissionElement::NotifyClickingDisablePseudoStateChanged() {
-  ClickingDisablePseudoState new_state(HasInvalidStyle(), IsOccluded());
+  ClickingDisablePseudoState new_state{HasInvalidStyle(), IsOccluded()};
   if (new_state.is_occluded != pseudo_state_.is_occluded) {
     PseudoStateChanged(CSSSelector::kPseudoPermissionElementOccluded);
   }

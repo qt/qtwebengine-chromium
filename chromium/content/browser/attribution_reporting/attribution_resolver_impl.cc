@@ -980,7 +980,7 @@ AttributionResolverImpl::MaybeCreateAggregatableAttributionReport(
   base::Time report_time =
       GetAggregatableReportTime(trigger, attribution_info.time);
 
-  return CreateReportResult::AggregatableSuccess(AttributionReport(
+  return CreateReportResult::AggregatableSuccess{AttributionReport{
       attribution_info, AttributionReport::Id(kUnsetRecordId), report_time,
       /*initial_report_time=*/report_time, delegate_->NewReportID(),
       /*failed_send_attempts=*/0,
@@ -989,7 +989,7 @@ AttributionResolverImpl::MaybeCreateAggregatableAttributionReport(
           trigger_registration.aggregatable_trigger_config,
           source.source_time(), std::move(contributions),
           source.common_info().source_origin()),
-      source.common_info().reporting_origin(), source.debug_key()));
+      source.common_info().reporting_origin(), source.debug_key()}};
 }
 
 bool AttributionResolverImpl::GenerateNullAggregatableReportsAndStoreReports(
@@ -1387,7 +1387,7 @@ AttributionResolverImpl::MaybeReplaceLowerPriorityEventLevelReport(
     return ReplaceReportError();
   }
 
-  return ReplaceOldReport(*std::move(replaced));
+  return ReplaceOldReport{*std::move(replaced)};
 }
 
 CreateReportResult::EventLevel
@@ -1403,7 +1403,7 @@ AttributionResolverImpl::MaybeStoreEventLevelReport(
 
   if (source.active_state() ==
       StoredSource::ActiveState::kReachedEventLevelAttributionLimit) {
-    return CreateReportResult::ExcessiveEventLevelReports(std::move(report));
+    return CreateReportResult::ExcessiveEventLevelReports{std::move(report)};
   }
 
   std::unique_ptr<AttributionStorageSql::Transaction> transaction =
@@ -1430,11 +1430,11 @@ AttributionResolverImpl::MaybeStoreEventLevelReport(
             return commit_and_return(
                 drop.source_deactivated
                     ? CreateReportResult::EventLevel(
-                          CreateReportResult::ExcessiveEventLevelReports(
-                              std::move(report)))
+                          CreateReportResult::ExcessiveEventLevelReports{
+                              std::move(report)})
                     : CreateReportResult::EventLevel(
-                          CreateReportResult::PriorityTooLow(
-                              std::move(report))));
+                          CreateReportResult::PriorityTooLow{
+                              std::move(report)}));
           },
           [&](AddNewReport) -> std::optional<CreateReportResult::EventLevel> {
             DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);

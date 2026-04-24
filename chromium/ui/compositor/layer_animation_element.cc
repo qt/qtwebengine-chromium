@@ -627,8 +627,7 @@ LayerAnimationElement::TargetValue::TargetValue()
       visibility(false),
       brightness(0.0f),
       grayscale(0.0f),
-      color(SK_ColorBLACK) {
-}
+      color{SK_ColorBLACK} {}
 
 LayerAnimationElement::TargetValue::TargetValue(
     const LayerAnimationDelegate* delegate)

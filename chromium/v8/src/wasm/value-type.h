@@ -708,7 +708,7 @@ class ValueTypeBase {
 
   constexpr TypeIndex raw_index() const {
     DCHECK(has_index());
-    return TypeIndex(value_type_impl::PayloadField::decode(bit_field_));
+    return TypeIndex{value_type_impl::PayloadField::decode(bit_field_)};
   }
 
   uint32_t bit_field_;

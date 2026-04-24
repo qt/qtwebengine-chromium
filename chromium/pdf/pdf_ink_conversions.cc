@@ -31,7 +31,7 @@ SkColor GetSkColorFromInkBrush(const ink::Brush& brush) {
 }
 
 ink::Point InkPointFromGfxPoint(const gfx::PointF& point) {
-  return ink::Point(point.x(), point.y());
+  return ink::Point{point.x(), point.y()};
 }
 
 }  // namespace chrome_pdf

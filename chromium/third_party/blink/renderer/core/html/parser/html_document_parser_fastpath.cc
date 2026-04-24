@@ -83,7 +83,7 @@ struct MatchedCharacter {
 // first matched character in the vector.
 template <typename D, typename VectorT>
   requires(sizeof(hwy::HWY_NAMESPACE::TFromD<D>) == 1)
-HWY_ATTR ALWAYS_INLINE MatchedCharacter TryMatch(D tag,
+ALWAYS_INLINE HWY_ATTR MatchedCharacter TryMatch(D tag,
                                                  VectorT input,
                                                  VectorT interesting1,
                                                  VectorT interesting2,
@@ -110,7 +110,7 @@ HWY_ATTR ALWAYS_INLINE MatchedCharacter TryMatch(D tag,
 // than keep subspaning over and over again.
 template <typename T, typename VectorT>
   requires(sizeof(T) == 1)
-HWY_ATTR ALWAYS_INLINE uint8_t SimdAdvanceAndLookup(base::span<const T> span,
+ALWAYS_INLINE HWY_ATTR uint8_t SimdAdvanceAndLookup(base::span<const T> span,
                                                     size_t& pos,
                                                     VectorT interesting1,
                                                     VectorT interesting2,
@@ -162,7 +162,7 @@ HWY_ATTR ALWAYS_INLINE uint8_t SimdAdvanceAndLookup(base::span<const T> span,
 // not available on NEON (as opposed to SVE) and is emulated in Highway.
 template <typename T, typename VectorT>
   requires(sizeof(T) == 2)
-HWY_ATTR ALWAYS_INLINE uint8_t SimdAdvanceAndLookup(base::span<const T> span,
+ALWAYS_INLINE HWY_ATTR uint8_t SimdAdvanceAndLookup(base::span<const T> span,
                                                     size_t& pos,
                                                     VectorT interesting1,
                                                     VectorT interesting2,

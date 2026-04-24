@@ -53,7 +53,7 @@ class CheckedContiguousIterator {
   // This function CHECKs that `start <= end` and will terminate otherwise.
   UNSAFE_BUFFER_USAGE constexpr CheckedContiguousIterator(T* start,
                                                           const T* end)
-      : CheckedContiguousIterator(AssumeValid(start, start, end)) {
+      : CheckedContiguousIterator(AssumeValid{start, start, end}) {
     CHECK(start <= end);
   }
 
@@ -68,7 +68,7 @@ class CheckedContiguousIterator {
   UNSAFE_BUFFER_USAGE constexpr CheckedContiguousIterator(const T* start,
                                                           T* current,
                                                           const T* end)
-      : CheckedContiguousIterator(AssumeValid(start, current, end)) {
+      : CheckedContiguousIterator(AssumeValid{start, current, end}) {
     CHECK(start <= current);
     CHECK(current <= end);
   }

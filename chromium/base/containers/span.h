@@ -929,7 +929,7 @@ class GSL_POINTER span {
     // constraints, so the iterator's requirement that begin <= current <= end
     // is guaranteed to be true.
     return UNSAFE_BUFFERS(iterator(
-        typename iterator::AssumeValid(data(), data(), data() + extent)));
+        typename iterator::AssumeValid{data(), data(), data() + extent}));
   }
   constexpr const_iterator cbegin() const noexcept {
     return const_iterator(begin());
@@ -944,8 +944,8 @@ class GSL_POINTER span {
     // iterator constructor: `data() + extent` must not overflow given the above
     // constraints, so the iterator's requirement that begin <= current <= end
     // is guaranteed to be true.
-    return UNSAFE_BUFFERS(iterator(typename iterator::AssumeValid(
-        data(), data() + extent, data() + extent)));
+    return UNSAFE_BUFFERS(iterator(typename iterator::AssumeValid{
+        data(), data() + extent, data() + extent}));
   }
   constexpr const_iterator cend() const noexcept {
     return const_iterator(end());
@@ -1406,7 +1406,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
     // constraints, so the iterator's requirement that begin <= current <= end
     // is guaranteed to be true.
     return UNSAFE_BUFFERS(iterator(
-        typename iterator::AssumeValid(data(), data(), data() + size())));
+        typename iterator::AssumeValid{data(), data(), data() + size()}));
   }
   constexpr const_iterator cbegin() const noexcept {
     return const_iterator(begin());
@@ -1421,8 +1421,8 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
     // iterator constructor: `data() + size()` must not overflow given the above
     // constraints, so the iterator's requirement that begin <= current <= end
     // is guaranteed to be true.
-    return UNSAFE_BUFFERS(iterator(typename iterator::AssumeValid(
-        data(), data() + size(), data() + size())));
+    return UNSAFE_BUFFERS(iterator(typename iterator::AssumeValid{
+        data(), data() + size(), data() + size()}));
   }
   constexpr const_iterator cend() const noexcept {
     return const_iterator(end());

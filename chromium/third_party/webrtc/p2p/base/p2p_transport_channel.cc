@@ -1327,7 +1327,7 @@ void P2PTransportChannel::CheckLocalNetworkAccessPermission(
   std::unique_ptr<LocalNetworkAccessPermissionInterface> permission_query =
       lna_permission_factory_->Create();
   auto permission_query_ptr = permission_query.get();
-  permission_queries_.emplace_back(candidate, std::move(permission_query));
+  permission_queries_.emplace_back(CandidateAndPermission{candidate, std::move(permission_query)});
 
   RTC_LOG(LS_VERBOSE) << "Asynchronously requesting LNA permission."
                       << candidate.address().HostAsSensitiveURIString();
