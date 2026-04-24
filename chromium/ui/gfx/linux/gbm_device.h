@@ -35,6 +35,10 @@ class GbmDevice {
       gfx::NativePixmapHandle handle) = 0;
 
   virtual bool CanCreateBufferForFormat(uint32_t format) = 0;
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+  virtual struct gbm_device* GetNativeDevice() = 0;
+#endif
 };
 
 }  // namespace ui
