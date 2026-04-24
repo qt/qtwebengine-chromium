@@ -1115,6 +1115,10 @@ void WebContentsViewAura::StartDragging(
     const blink::mojom::DragEventSourceInfo& event_info,
     RenderWidgetHostImpl* source_rwh) {
   aura::Window* root_window = GetNativeView()->GetRootWindow();
+  // Disallow reentrant drag which could be an attempt to exploit drag state.
+  if (drag_security_info_.did_initiate()) {
+    return;
+  }
   if (!aura::client::GetDragDropClient(root_window)) {
     web_contents_->SystemDragEnded(source_rwh);
     return;

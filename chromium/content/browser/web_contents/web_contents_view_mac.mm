@@ -206,6 +206,10 @@ void WebContentsViewMac::StartDragging(
     const gfx::Rect& drag_obj_rect,
     const blink::mojom::DragEventSourceInfo& event_info,
     RenderWidgetHostImpl* source_rwh) {
+  // Disallow reentrant drag which could be an attempt to exploit drag state.
+  if (drag_source_start_rwh_) {
+    return;
+  }
   // By allowing nested tasks, the code below also allows Close(),
   // which would deallocate |this|.  The same problem can occur while
   // processing -sendEvent:, so Close() is deferred in that case.
@@ -644,6 +648,8 @@ void WebContentsViewMac::PerformEndDrag(uint32_t drag_operation,
       transformed_screen_point.x(), transformed_screen_point.y(),
       static_cast<ui::mojom::DragOperation>(drag_operation),
       drag_source_start_rwh_.get());
+
+  drag_source_start_rwh_.reset();
 }
 
 void WebContentsViewMac::DraggingEntered(DraggingInfoPtr dragging_info,
