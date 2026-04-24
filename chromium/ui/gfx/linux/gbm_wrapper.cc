@@ -482,6 +482,12 @@ class Device final : public ui::GbmDevice {
   }
 #endif
 
+#if BUILDFLAG(IS_QTWEBENGINE)
+  struct gbm_device* GetNativeDevice() override {
+    return device_.get();
+  }
+#endif
+
  private:
   std::vector<uint64_t> GetFilteredModifiers(
       uint32_t format,
