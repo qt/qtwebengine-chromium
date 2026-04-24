@@ -107,7 +107,7 @@ std::optional<MatchResultICU> FindResults::Iterator::EarliestMatch() const {
                                    });
   std::optional<MatchResultICU> result;
   if (min_iter != match_list_.end() && min_iter->has_value()) {
-    result.emplace((**min_iter).start, (**min_iter).length);
+    result.emplace(MatchResultICU{(**min_iter).start, (**min_iter).length});
   }
   return result;
 }

@@ -601,7 +601,7 @@ blink::StorageKey ServiceWorkerClient::CalculateStorageKeyForUpdateUrls(
   const url::Origin origin = url::Origin::Create(url);
 
   const std::optional<blink::StorageKey> storage_key = absl::visit(
-      base::Overloaded(
+      base::Overloaded{
           [&](GlobalRenderFrameHostId render_frame_host_id) {
             // We use `ongoing_navigation_frame_tree_node_id_` instead of
             // `render_frame_host_id` because this method is called before
@@ -623,7 +623,7 @@ blink::StorageKey ServiceWorkerClient::CalculateStorageKeyForUpdateUrls(
                                  process->GetStoragePartition(),
                                  shared_worker_token, origin)
                            : std::nullopt;
-          }),
+          }},
       client_info_);
 
   if (storage_key) {

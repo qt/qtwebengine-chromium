@@ -1019,7 +1019,8 @@ LayoutUnit InlineLayoutAlgorithm::SetupLineClampEllipsis() {
   FontHeight text_metrics = font_data->GetFontMetrics().GetFontHeight(
       Node().Style().GetFontBaseline());
 
-  line_clamp_ellipsis_.emplace(ellipsis_text, shape_result, text_metrics);
+  line_clamp_ellipsis_.emplace(
+      LineClampEllipsis{ellipsis_text, shape_result, text_metrics});
   return shape_result->SnappedWidth();
 }
 

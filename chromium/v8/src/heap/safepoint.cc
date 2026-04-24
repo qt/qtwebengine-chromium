@@ -158,7 +158,9 @@ void IsolateSafepoint::SetSafepointRequestedFlags(
         CHECK_NOT_NULL(qos_override);
       }
 
-      running_local_heaps.emplace_back(local_heap, qos_override);
+      running_local_heaps.emplace_back(
+          RunningLocalHeap{local_heap, qos_override});
+
 #else
       running_local_heaps.emplace_back(local_heap);
 #endif

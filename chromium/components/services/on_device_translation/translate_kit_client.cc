@@ -307,8 +307,8 @@ TranslateKitClient::TranslatorImpl::MaybeCreate(
   CHECK(client->translate_kit_create_translator_func_);
   std::uintptr_t translator_ptr = client->translate_kit_create_translator_func_(
       *client->maybe_kit_ptr_,
-      TranslateKitLanguage(source_lang.c_str(), source_lang.length()),
-      TranslateKitLanguage(target_lang.c_str(), target_lang.length()));
+      TranslateKitLanguage{source_lang.c_str(), source_lang.length()},
+      TranslateKitLanguage{target_lang.c_str(), target_lang.length()});
   if (!translator_ptr) {
     return nullptr;
   }
@@ -334,7 +334,7 @@ std::optional<std::string> TranslateKitClient::TranslatorImpl::Translate(
   CHECK(client_->translator_translate_func_);
   std::string output;
   if (client_->translator_translate_func_(
-          translator_ptr_, TranslateKitInputText(text.c_str(), text.length()),
+          translator_ptr_, TranslateKitInputText{text.c_str(), text.length()},
           TranslateCallback, reinterpret_cast<uintptr_t>(&text))) {
     return text;
   }

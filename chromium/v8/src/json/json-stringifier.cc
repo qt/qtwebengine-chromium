@@ -2486,31 +2486,32 @@ FastJsonStringifierResult FastJsonStringifier<Char>::SerializeJSObject(
         case UNDEFINED:
           break;
         case UNCHANGED:
-          stack_.emplace_back(ContinuationRecord::kObject, obj,
-                              i.as_uint32() + 1);
+          stack_.emplace_back(ContinuationRecord{ContinuationRecord::kObject,
+                                                 obj, i.as_uint32() + 1});
           // property can be an object or array. We don't need to distinguish
           // as index is 0 anyways.
-          stack_.emplace_back(ContinuationRecord::kObject, property, 0);
+          stack_.emplace_back(
+              ContinuationRecord{ContinuationRecord::kObject, property, 0});
           result = SerializeObjectKey(key_name, comma, no_gc);
           if constexpr (is_one_byte) {
             if (V8_UNLIKELY(result != SUCCESS)) {
               DCHECK_EQ(result, CHANGE_ENCODING);
-              stack_.emplace_back(ContinuationRecord::kObjectKey, key_name,
-                                  comma);
+              stack_.emplace_back(ContinuationRecord{
+                  ContinuationRecord::kObjectKey, key_name, comma});
               return result;
             }
           }
           return result;
         case CHANGE_ENCODING:
           DCHECK(is_one_byte);
-          stack_.emplace_back(ContinuationRecord::kObject, obj,
-                              i.as_uint32() + 1);
-          stack_.emplace_back(ContinuationRecord::kResumeFromOther, property,
-                              0);
+          stack_.emplace_back(ContinuationRecord{ContinuationRecord::kObject,
+                                                 obj, i.as_uint32() + 1});
+          stack_.emplace_back(ContinuationRecord{
+              ContinuationRecord::kResumeFromOther, property, 0});
           result = SerializeObjectKey(key_name, comma, no_gc);
           if (V8_UNLIKELY(result != SUCCESS)) {
-            stack_.emplace_back(ContinuationRecord::kObjectKey, key_name,
-                                comma);
+            stack_.emplace_back(ContinuationRecord{
+                ContinuationRecord::kObjectKey, key_name, comma});
             return result;
           }
           DCHECK(IsString(property));
@@ -2659,12 +2660,16 @@ FastJsonStringifierResult FastJsonStringifier<Char>::SerializeFixedArrayElement(
         return SUCCESS;
       case CHANGE_ENCODING:
         DCHECK(IsString(obj));
-        stack_.emplace_back(ContinuationRecord::kArray, array, i + 1);
-        stack_.emplace_back(ContinuationRecord::kResumeFromOther, obj, 0);
+        stack_.emplace_back(
+            ContinuationRecord{ContinuationRecord::kArray, array, i + 1});
+        stack_.emplace_back(
+            ContinuationRecord{ContinuationRecord::kResumeFromOther, obj, 0});
         return result;
       case UNCHANGED:
-        stack_.emplace_back(ContinuationRecord::kArray, array, i + 1);
-        stack_.emplace_back(ContinuationRecord::kResumeFromOther, obj, 0);
+        stack_.emplace_back(
+            ContinuationRecord{ContinuationRecord::kArray, array, i + 1});
+        stack_.emplace_back(
+            ContinuationRecord{ContinuationRecord::kResumeFromOther, obj, 0});
         return result;
       default:
         return result;
@@ -2742,7 +2747,8 @@ FastJsonStringifierResult FastJsonStringifier<Char>::SerializeObject(
   if constexpr (is_one_byte) {
     if (V8_UNLIKELY(result == CHANGE_ENCODING)) {
       DCHECK(IsString(object));
-      stack_.emplace_back(ContinuationRecord::kResumeFromOther, object, 0);
+      stack_.emplace_back(
+          ContinuationRecord{ContinuationRecord::kResumeFromOther, object, 0});
       return result;
     }
   } else {

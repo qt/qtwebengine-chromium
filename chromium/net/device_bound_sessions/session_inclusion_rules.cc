@@ -209,8 +209,8 @@ bool SessionInclusionRules::AddUrlRuleIfValid(InclusionResult rule_type,
 
   // Skip the eTLD lookups if the host pattern is an exact match.
   if (host_pattern_is_host) {
-    url_rules_.emplace_back(rule_type, std::move(host_matcher_rule),
-                            path_prefix);
+    url_rules_.emplace_back(
+        UrlRule{rule_type, std::move(host_matcher_rule), path_prefix});
     return true;
   }
 
@@ -238,7 +238,8 @@ bool SessionInclusionRules::AddUrlRuleIfValid(InclusionResult rule_type,
     return false;
   }
 
-  url_rules_.emplace_back(rule_type, std::move(host_matcher_rule), path_prefix);
+  url_rules_.emplace_back(
+      UrlRule{rule_type, std::move(host_matcher_rule), path_prefix});
   return true;
 }
 

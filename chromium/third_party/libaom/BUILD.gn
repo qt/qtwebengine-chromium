@@ -361,7 +361,7 @@ static_library("libaom") {
       ":libaom_intrinsics_neon_dotprod",
       ":libaom_intrinsics_neon_i8mm",
     ]
-    if (!is_win && is_clang) {
+    if (!is_win && is_clang && !is_mac) {
       deps += [
         ":libaom_intrinsics_sve",
         ":libaom_intrinsics_sve2",

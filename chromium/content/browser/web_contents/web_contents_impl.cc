@@ -11889,10 +11889,10 @@ void WebContentsImpl::SetPartitionedPopinOpenerOnNewWindowIfNeeded(
       static_cast<WebContentsImpl*>(opener->delegate()));
   new_window->partitioned_popin_opener_ = opener->GetWeakPtr();
   new_window->partitioned_popin_opener_properties_ =
-      PartitionedPopinOpenerProperties(
+      PartitionedPopinOpenerProperties{
           opener->GetMainFrame()->GetLastCommittedOrigin(),
           opener->ComputeSiteForCookies(),
-          opener->GetStorageKey().ancestor_chain_bit());
+          opener->GetStorageKey().ancestor_chain_bit()};
   opened_partitioned_popin_ = new_window->GetWeakPtr();
 }
 

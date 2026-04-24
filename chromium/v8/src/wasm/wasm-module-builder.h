@@ -388,14 +388,14 @@ class V8_EXPORT_PRIVATE WasmModuleBuilder : public ZoneObject {
   void EndRecursiveTypeGroup() {
     // Make sure we are in a recursive group.
     DCHECK_NE(current_recursive_group_start_, -1);
-    recursive_groups_.emplace_back(
-        current_recursive_group_start_,
-        static_cast<uint32_t>(types_.size()) - current_recursive_group_start_);
+    recursive_groups_.emplace_back(RecGroup{
+        static_cast<uint32_t>(current_recursive_group_start_),
+        static_cast<uint32_t>(types_.size()) - current_recursive_group_start_});
     current_recursive_group_start_ = -1;
   }
 
   void AddRecursiveTypeGroup(uint32_t start, uint32_t size) {
-    recursive_groups_.emplace_back(start, size);
+    recursive_groups_.emplace_back(RecGroup{start, size});
   }
 
   // Writing methods.

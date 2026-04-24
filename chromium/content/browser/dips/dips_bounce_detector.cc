@@ -551,11 +551,11 @@ UrlAndSourceId RedirectChainDetector::GetLastCommittedURL() const {
   // We can't use RenderFrameHost::GetLastCommittedURL() because that returns an
   // empty URL while the tab is closing (i.e. within
   // WebContentsObserver::WebContentsDestroyed)
-  return UrlAndSourceId(
+  return UrlAndSourceId{
       WebContentsObserver::web_contents()->GetLastCommittedURL(),
       WebContentsObserver::web_contents()
           ->GetPrimaryMainFrame()
-          ->GetPageUkmSourceId());
+          ->GetPageUkmSourceId()};
 }
 
 namespace dips {
@@ -700,8 +700,8 @@ void BtmBounceDetector::DidStartNavigation(
       !client_detection_state_.has_value()) {
     server_bounce_detection_state->navigation_start =
         delegate_->GetLastCommittedURL().url.is_empty()
-            ? UrlAndSourceId(navigation_handle->GetInitiator(),
-                             ukm::kInvalidSourceId)
+            ? UrlAndSourceId{navigation_handle->GetInitiator(),
+                             ukm::kInvalidSourceId}
             : delegate_->GetLastCommittedURL();
     return;
   }
@@ -1094,9 +1094,10 @@ void BtmBounceDetector::DidFinishNavigation(
     // TODO(crbug.com/371802472): Add back the checks removed during
     // crrev.com/c/5912983 after investigating why the checks fail on Windows.
     redirects.push_back(BtmRedirectInfo::CreateForServer(
-        /*url=*/UrlAndSourceId(
-            navigation_handle->GetRedirectChain()[i + offset],
-            navigation_handle->GetRedirectSourceId(i + offset)),
+        /*url=*/UrlAndSourceId{navigation_handle
+                                   ->GetRedirectChain()[i + offset],
+                               navigation_handle->GetRedirectSourceId(i +
+                                                                      offset)},
         /*access_type=*/access_types[i + offset],
         /*time=*/clock_->Now(),
         /*was_response_cached=*/
@@ -1109,16 +1110,16 @@ void BtmBounceDetector::DidFinishNavigation(
   if (navigation_handle->HasCommitted()) {
     committed_redirect_context_.AppendCommitted(
         std::move(server_state->navigation_start), std::move(redirects),
-        UrlAndSourceId(navigation_handle->GetURL(),
-                       navigation_handle->GetNextPageUkmSourceId()),
+        UrlAndSourceId{navigation_handle->GetURL(),
+                       navigation_handle->GetNextPageUkmSourceId()},
         current_page_has_interaction);
   } else {
     // For uncommitted navigations, treat the last URL visited as a server
     // redirect, so it is considered a potential tracker.
     const size_t i = access_types.size() - 1;
     redirects.push_back(BtmRedirectInfo::CreateForServer(
-        /*url=*/UrlAndSourceId(navigation_handle->GetRedirectChain()[i],
-                               navigation_handle->GetRedirectSourceId(i)),
+        /*url=*/UrlAndSourceId{navigation_handle->GetRedirectChain()[i],
+                               navigation_handle->GetRedirectSourceId(i)},
         /*access_type=*/access_types[i],
         /*time=*/clock_->Now(),
         /*was_response_cached=*/navigation_handle->WasResponseCached(),

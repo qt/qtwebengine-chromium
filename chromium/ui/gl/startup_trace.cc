@@ -54,7 +54,7 @@ StartupTrace::ScopedStage::~ScopedStage() {
 StartupTrace::ScopedStage StartupTrace::AddStage(const char* name) {
   DCHECK(!base::SequencedTaskRunner::HasCurrentDefault() ||
          task_runner_->RunsTasksInCurrentSequence());
-  stages_.emplace_back(name, base::TimeTicks::Now(), base::TimeTicks());
+  stages_.emplace_back(Stage{name, base::TimeTicks::Now(), base::TimeTicks()});
   return StartupTrace::ScopedStage{stages_.size()};
 }
 

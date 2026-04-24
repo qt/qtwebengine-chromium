@@ -716,7 +716,7 @@ void RootCompositorFrameSinkImpl::FrameIntervalDeciderResultCallback(
       result);
 #else
   base::TimeDelta interval = absl::visit(
-      base::Overloaded(
+      base::Overloaded{
           [](FrameIntervalDecider::FrameIntervalClass frame_interval_class) {
             switch (frame_interval_class) {
               case FrameIntervalDecider::FrameIntervalClass::kBoost:
@@ -725,7 +725,7 @@ void RootCompositorFrameSinkImpl::FrameIntervalDeciderResultCallback(
                 return FrameRateDecider::UnspecifiedFrameInterval();
             }
           },
-          [](base::TimeDelta interval) { return interval; }),
+          [](base::TimeDelta interval) { return interval; }},
       result);
 #endif
 

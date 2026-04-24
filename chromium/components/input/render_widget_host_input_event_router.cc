@@ -1776,7 +1776,9 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
   }
   if (touchscreen_gesture_target_) {
     touchscreen_gesture_event_debug_queue_.emplace_back(
-        gesture_event.GetType(), gesture_event.SourceDevice(), is_emulated);
+        TouchscreenGestureEventDebugData{gesture_event.GetType(),
+                                         gesture_event.SourceDevice(),
+                                         is_emulated});
   }
 
   // If we set a target and it's not in the map, we won't get notified if the

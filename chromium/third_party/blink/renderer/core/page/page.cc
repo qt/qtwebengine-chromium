@@ -268,10 +268,10 @@ Page::Page(base::PassKey<Page>,
               v8_compile_hints::V8CrowdsourcedCompileHintsConsumer>()),
       browsing_context_group_info_(browsing_context_group_info) {
   if (partitioned_popin_params) {
-    partitioned_popin_opener_properties_ = PartitionedPopinOpenerProperties(
+    partitioned_popin_opener_properties_ = PartitionedPopinOpenerProperties{
         SecurityOrigin::CreateFromUrlOrigin(
             partitioned_popin_params->opener_top_frame_origin),
-        partitioned_popin_params->opener_site_for_cookies);
+        partitioned_popin_params->opener_site_for_cookies};
   }
   DCHECK(!AllPages().Contains(this));
   AllPages().insert(this);

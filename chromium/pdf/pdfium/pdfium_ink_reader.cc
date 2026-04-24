@@ -187,7 +187,8 @@ std::vector<ReadV2InkPathResult> ReadV2InkPathsFromPageAsModeledShapes(
     if (!shape.has_value()) {
       continue;
     }
-    results.emplace_back(page_object, std::move(shape.value()));
+    results.emplace_back(
+        ReadV2InkPathResult{page_object, std::move(shape.value())});
   }
   return results;
 }

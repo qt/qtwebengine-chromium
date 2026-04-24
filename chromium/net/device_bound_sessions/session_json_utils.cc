@@ -100,7 +100,7 @@ std::optional<ParsedSessionParams> ParseSessionInstructionJson(
 
   std::optional<bool> continue_value = maybe_root->FindBool("continue");
   if (continue_value.has_value() && *continue_value == false) {
-    return SessionTerminationParams(*session_id);
+    return SessionTerminationParams{*session_id};
   }
 
   std::string* refresh_url = maybe_root->FindString("refresh_url");

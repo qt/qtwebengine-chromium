@@ -346,7 +346,7 @@ std::optional<NoVarySearchCache::LookupResult> NoVarySearchCache::Lookup(
   // Move to head of `lru_` list.
   best_match->MoveToHead(lru_);
 
-  return LookupResult(original_url, best_match->CreateEraseHandle());
+  return LookupResult{original_url, best_match->CreateEraseHandle()};
 }
 
 void NoVarySearchCache::MaybeInsert(const HttpRequestInfo& request,
@@ -478,7 +478,7 @@ NoVarySearchCache::FindQueryStringInList(QueryStringList& query_strings,
     GURL node_url = query_string->ReconstructOriginalURL(base_url);
     CHECK(node_url.is_valid());
     if (nvs_data.AreEquivalent(url, node_url)) {
-      return FindQueryStringResult(query_string, std::move(node_url));
+      return FindQueryStringResult{query_string, std::move(node_url)};
     }
   }
   return std::nullopt;

@@ -88,8 +88,8 @@ void OnDataSigned(
     return;
   }
 
-  std::move(callback).Run(RegistrationFetcher::RegistrationTokenResult(
-      registration_token.value(), key_id));
+  std::move(callback).Run(RegistrationFetcher::RegistrationTokenResult{
+      registration_token.value(), key_id});
 }
 
 void SignChallengeWithKey(

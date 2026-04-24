@@ -161,6 +161,7 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
       return [CrCoreCursor cursorWithType:CrCoreCursorType::kHelp];
     case ui::mojom::CursorType::kEastResize:
     case ui::mojom::CursorType::kEastPanning:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionRight
@@ -168,8 +169,12 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
       } else {
         return [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeEast];
       }
+#else
+      return [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeEast];
+#endif
     case ui::mojom::CursorType::kNorthResize:
     case ui::mojom::CursorType::kNorthPanning:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionTop
@@ -178,8 +183,12 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
         return
             [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeNorth];
       }
+#else
+      return [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeNorth];
+#endif
     case ui::mojom::CursorType::kNorthEastResize:
     case ui::mojom::CursorType::kNorthEastPanning:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionTopRight
@@ -188,8 +197,13 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
         return [CrCoreCursor
             cursorWithType:CrCoreCursorType::kFrameResizeNortheast];
       }
+#else
+      return
+          [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeNortheast];
+#endif
     case ui::mojom::CursorType::kNorthWestResize:
     case ui::mojom::CursorType::kNorthWestPanning:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionTopLeft
@@ -198,8 +212,13 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
         return [CrCoreCursor
             cursorWithType:CrCoreCursorType::kFrameResizeNorthwest];
       }
+#else
+      return
+          [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeNorthwest];
+#endif
     case ui::mojom::CursorType::kSouthResize:
     case ui::mojom::CursorType::kSouthPanning:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionBottom
@@ -208,8 +227,13 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
         return
             [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeSouth];
       }
+#else
+      return [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeSouth];
+
+#endif
     case ui::mojom::CursorType::kSouthEastResize:
     case ui::mojom::CursorType::kSouthEastPanning:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionBottomRight
@@ -218,8 +242,13 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
         return [CrCoreCursor
             cursorWithType:CrCoreCursorType::kFrameResizeSoutheast];
       }
+#else
+      return
+          [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeSoutheast];
+#endif
     case ui::mojom::CursorType::kSouthWestResize:
     case ui::mojom::CursorType::kSouthWestPanning:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionBottomLeft
@@ -228,8 +257,14 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
         return [CrCoreCursor
             cursorWithType:CrCoreCursorType::kFrameResizeSouthwest];
       }
+#else
+      return
+          [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeSouthwest];
+
+#endif
     case ui::mojom::CursorType::kWestResize:
     case ui::mojom::CursorType::kWestPanning:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionLeft
@@ -237,7 +272,11 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
       } else {
         return [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeWest];
       }
+#else
+      return [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeWest];
+#endif
     case ui::mojom::CursorType::kNorthSouthResize:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionTop
@@ -246,7 +285,12 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
         return [CrCoreCursor
             cursorWithType:CrCoreCursorType::kFrameResizeNorthSouth];
       }
+#else
+      return [CrCoreCursor
+          cursorWithType:CrCoreCursorType::kFrameResizeNorthSouth];
+#endif
     case ui::mojom::CursorType::kEastWestResize:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionLeft
@@ -255,7 +299,12 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
         return [CrCoreCursor
             cursorWithType:CrCoreCursorType::kFrameResizeEastWest];
       }
+#else
+      return
+          [CrCoreCursor cursorWithType:CrCoreCursorType::kFrameResizeEastWest];
+#endif
     case ui::mojom::CursorType::kNorthEastSouthWestResize:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionTopRight
@@ -264,7 +313,12 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
         return [CrCoreCursor
             cursorWithType:CrCoreCursorType::kFrameResizeNortheastSouthwest];
       }
+#else
+      return [CrCoreCursor
+          cursorWithType:CrCoreCursorType::kFrameResizeNortheastSouthwest];
+#endif
     case ui::mojom::CursorType::kNorthWestSouthEastResize:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return [NSCursor
             frameResizeCursorFromPosition:NSCursorFrameResizePositionTopLeft
@@ -273,18 +327,30 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
         return [CrCoreCursor
             cursorWithType:CrCoreCursorType::kFrameResizeNorthwestSoutheast];
       }
+#else
+      return [CrCoreCursor
+          cursorWithType:CrCoreCursorType::kFrameResizeNorthwestSoutheast];
+#endif
     case ui::mojom::CursorType::kColumnResize:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return NSCursor.columnResizeCursor;
       } else {
         return NSCursor.resizeLeftRightCursor;
       }
+#else
+      return NSCursor.resizeLeftRightCursor;
+#endif
     case ui::mojom::CursorType::kRowResize:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return NSCursor.rowResizeCursor;
       } else {
         return NSCursor.resizeUpDownCursor;
       }
+#else
+      return NSCursor.resizeUpDownCursor;
+#endif
     case ui::mojom::CursorType::kMiddlePanning:
     case ui::mojom::CursorType::kMiddlePanningVertical:
     case ui::mojom::CursorType::kMiddlePanningHorizontal:
@@ -312,17 +378,25 @@ NSCursor* GetNativeCursor(const ui::Cursor& cursor) {
     case ui::mojom::CursorType::kNone:
       return NoneNSCursor();
     case ui::mojom::CursorType::kZoomIn:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return NSCursor.zoomInCursor;
       } else {
         return [CrCoreCursor cursorWithType:CrCoreCursorType::kZoomIn];
       }
+#else
+      return [CrCoreCursor cursorWithType:CrCoreCursorType::kZoomIn];
+#endif
     case ui::mojom::CursorType::kZoomOut:
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
       if (@available(macOS 15.0, *)) {
         return NSCursor.zoomOutCursor;
       } else {
         return [CrCoreCursor cursorWithType:CrCoreCursorType::kZoomOut];
       }
+#else
+      return [CrCoreCursor cursorWithType:CrCoreCursorType::kZoomOut];
+#endif
     case ui::mojom::CursorType::kGrab:
       return NSCursor.openHandCursor;
     case ui::mojom::CursorType::kGrabbing:
