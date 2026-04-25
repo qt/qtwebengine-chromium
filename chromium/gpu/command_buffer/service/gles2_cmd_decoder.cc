@@ -609,6 +609,13 @@ class GLES2DecoderImpl : public GLES2Decoder,
   void RestoreVertexAttribArray(unsigned index) override {
     RestoreStateForAttrib(index, true);
   }
+  void PauseTransformFeedback() override {
+    if (state_.bound_transform_feedback.get() &&
+        state_.bound_transform_feedback->active() &&
+        !state_.bound_transform_feedback->paused()) {
+      state_.api()->glPauseTransformFeedbackFn();
+    }
+  }
   void RestoreBufferBinding(unsigned int target) override;
   void RestoreFramebufferBindings() const override;
   void RestoreRenderbufferBindings() override;
