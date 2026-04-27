@@ -68,7 +68,8 @@ std::shared_ptr<ShaderTranslateTask> ShaderMtl::compile(const gl::Context *conte
 
     options->separateCompoundStructDeclarations = true;
 
-    if (context->isWebGL() && mState.getShaderType() != gl::ShaderType::Compute)
+    const bool isHardened = context->isWebGL() || context->isHardenedContext();
+    if (isHardened && mState.getShaderType() != gl::ShaderType::Compute)
     {
         options->initOutputVariables = true;
     }
