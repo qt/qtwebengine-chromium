@@ -82,7 +82,14 @@ KURL CSSUrlData::ResolveUrl(const Document& document) const {
   //
   // Having the more spec-compliant behavior for the dangling markup edge case
   // should be fine.
-  return document.CompleteURL(relative_url_);
+  KURL url = document.CompleteURL(relative_url_);
+  // Manually propagate the dangling markup flag when resolving from a string
+  // that has already been canonicalized (and thus lost its newlines).
+  // This ensures that URLs that were originally flagged as dangling markup
+  // (e.g. because they contained raw newlines) remain blocked even after
+  // round-tripping through CSS Typed OM or other internal conversions.
+  url.SetPotentiallyDanglingMarkup();
+  return url;
 }
 
 bool CSSUrlData::ReResolveUrl(const Document& document) const {
@@ -137,9 +144,13 @@ const CSSUrlData* CSSUrlData::MakeResolvedIfDanglingMarkup(
 }
 
 const CSSUrlData* CSSUrlData::MakeWithoutReferrer() const {
+  // Preserve the dangling markup and local flags which might otherwise be lost
+  // when re-parsing the absolute URL.
+
   return MakeGarbageCollected<CSSUrlData>(
-      relative_url_, KURL(absolute_url_), Referrer(),
-      is_from_origin_clean_style_sheet_, is_ad_related_);
+      base::PassKey<CSSUrlData>(), relative_url_, absolute_url_, Referrer(),
+      is_from_origin_clean_style_sheet_, is_ad_related_, is_local_,
+      potentially_dangling_markup_);
 }
 
 bool CSSUrlData::IsLocal(const Document& document) const {
