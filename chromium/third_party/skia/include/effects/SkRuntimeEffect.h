@@ -319,8 +319,8 @@ private:
     uint32_t fHash;
     uint32_t fStableKey;
 
-    std::unique_ptr<SkSL::Program> fBaseProgram;
-    std::unique_ptr<SkSL::RP::Program> fRPProgram;
+    std::unique_ptr<const SkSL::Program> fBaseProgram;
+    std::unique_ptr<const SkSL::RP::Program> fRPProgram;
     mutable SkOnce fCompileRPProgramOnce;
     const SkSL::FunctionDefinition& fMain;
     std::vector<Uniform> fUniforms;
