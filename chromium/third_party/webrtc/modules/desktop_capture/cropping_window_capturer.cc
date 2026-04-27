@@ -53,6 +53,9 @@ void CroppingWindowCapturer::CaptureFrame() {
         screen_capturer_->SetExcludedWindow(excluded_window_);
       }
       screen_capturer_->Start(this);
+    // We record the window position here at capture time; it may differ at
+    // frame delivery time.
+    last_window_rect_ = GetWindowRectInVirtualScreen();
     }
     screen_capturer_->CaptureFrame();
   } else {
@@ -74,6 +77,7 @@ bool CroppingWindowCapturer::GetSourceList(SourceList* sources) {
 bool CroppingWindowCapturer::SelectSource(SourceId id) {
   if (window_capturer_->SelectSource(id)) {
     selected_window_ = id;
+    last_window_rect_ = {};
     return true;
   }
   return false;
@@ -98,15 +102,14 @@ void CroppingWindowCapturer::OnCaptureResult(
     return;
   }
 
-  DesktopRect window_rect = GetWindowRectInVirtualScreen();
-  if (window_rect.is_empty()) {
+  if (last_window_rect_.is_empty()) {
     RTC_LOG(LS_WARNING) << "Window rect is empty";
     callback_->OnCaptureResult(Result::ERROR_TEMPORARY, nullptr);
     return;
   }
 
   std::unique_ptr<DesktopFrame> cropped_frame =
-      CreateCroppedDesktopFrame(std::move(screen_frame), window_rect);
+      CreateCroppedDesktopFrame(std::move(screen_frame), last_window_rect_);
 
   if (!cropped_frame) {
     RTC_LOG(LS_WARNING) << "Window is outside of the captured display";
