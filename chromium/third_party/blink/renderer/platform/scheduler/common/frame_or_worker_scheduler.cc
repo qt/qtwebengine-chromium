@@ -130,9 +130,19 @@ void FrameOrWorkerScheduler::RemoveLifecycleObserver(
 }
 
 void FrameOrWorkerScheduler::NotifyLifecycleObservers() {
+  // Snapshot before invoking callbacks: a callback can (e.g. via Oilpan lazy
+  // sweep running ~IDBDatabase -> ~LifecycleObserverHandle) reentrantly call
+  // RemoveLifecycleObserver(), which erases from |lifecycle_observers_| and
+  // may shrink and free the HashMap backing while a range-for iterator still
+  // points into it.
+  Vector<std::pair<ObserverType, OnLifecycleStateChangedCallback>> snapshot;
+  snapshot.ReserveInitialCapacity(lifecycle_observers_.size());
   for (const auto& observer : lifecycle_observers_) {
-    observer.value->GetCallback().Run(
-        CalculateLifecycleState(observer.value->GetObserverType()));
+    snapshot.emplace_back(observer.value->GetObserverType(),
+                          observer.value->GetCallback());
+  }
+  for (const auto& entry : snapshot) {
+    entry.second.Run(CalculateLifecycleState(entry.first));
   }
 }
 
