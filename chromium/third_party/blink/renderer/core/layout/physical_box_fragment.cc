@@ -329,9 +329,10 @@ PhysicalBoxFragment::PhysicalBoxFragment(
   const WritingModeConverter converter(
       {block_or_line_writing_mode, builder->Direction()}, size);
   for (auto& child : builder->children_) {
-    children_.emplace_back(PhysicalFragmentLink{
-        std::move(child.fragment),
-        converter.ToPhysical(child.offset, child.fragment->Size())});
+    PhysicalOffset offset =
+        converter.ToPhysical(child.offset, child.fragment->Size());
+    children_.emplace_back(
+        PhysicalFragmentLink{std::move(child.fragment), offset});
   }
 
   if (HasItems()) {
