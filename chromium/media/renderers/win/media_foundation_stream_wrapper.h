@@ -52,6 +52,8 @@ class MediaFoundationStreamWrapper
   MediaFoundationStreamWrapper();
   ~MediaFoundationStreamWrapper() override;
 
+  IFACEMETHODIMP_(ULONG) Release() override;
+
   static HRESULT Create(int stream_id,
                         IMFMediaSource* parent_source,
                         DemuxerStream* demuxer_stream,
