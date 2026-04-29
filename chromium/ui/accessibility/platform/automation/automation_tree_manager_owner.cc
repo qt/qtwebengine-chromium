@@ -1067,6 +1067,7 @@ void AutomationTreeManagerOwner::DispatchAccessibilityEvents(
                                            mouse_location)) {
     DLOG(ERROR) << tree_wrapper->ax_tree()->error();
     GetAutomationV8Bindings()->SendTreeSerializationError(tree_id);
+    DestroyAccessibilityTree(tree_id);
     return;
   }
 
