@@ -452,6 +452,7 @@ class WebMainLoop;
 
 namespace QtWebEngineCore {
 class DevToolsFrontendQt;
+class NSSCryptoModuleDelegateQt;
 class PrefServiceAdapter;
 class ProfileAdapter;
 class PermissionManagerQt;
@@ -795,6 +796,8 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitives {
   friend class syncer::HttpBridge;
   friend class syncer::GetLocalChangesRequest;
   friend class updater::SystemctlLauncherScopedAllowBaseSyncPrimitives;
+
+  friend class QtWebEngineCore::NSSCryptoModuleDelegateQt;
 
   // Usage that should be fixed:
   // Sorted by class name (with namespace).
