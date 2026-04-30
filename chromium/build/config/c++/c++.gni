@@ -150,6 +150,7 @@ if (libcxx_target_type == "shared_library" ||
 if ((!use_custom_libcxx || !use_custom_libcxx_for_host) &&
     # Standalone use of //build outside of Chromium can disable libc++.
     build_with_chromium &&
+    !is_qtwebengine &&
     # Try to avoid spamming the console lots. It's not actually
     # toolchain-specific.
     current_toolchain == default_toolchain) {
