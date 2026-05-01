@@ -501,6 +501,7 @@ Called by update_bad_message_reasons.py.-->
   <int value="333" label="DT_DUPLICATE_CHILD_TARGET_CREATED"/>
   <int value="334" label="RFH_MODAL_DIALOG_FROM_SANDBOXED_FRAME"/>
   <int value="335" label="SWSI_CROSS_ORIGIN_SCRIPT_URL"/>
+  <int value="336" label="RFH_INVALID_NAVIGATION_HEADERS"/>
 </enum>
 
 <enum name="BadMessageReasonExtensions">

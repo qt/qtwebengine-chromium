@@ -361,6 +361,7 @@ enum BadMessageReason {
   DT_DUPLICATE_CHILD_TARGET_CREATED = 333,
   RFH_MODAL_DIALOG_FROM_SANDBOXED_FRAME = 334,
   SWSI_CROSS_ORIGIN_SCRIPT_URL = 335,
+  RFH_INVALID_NAVIGATION_HEADERS = 336,
 
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the
