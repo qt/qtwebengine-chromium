@@ -47,7 +47,12 @@
     _menu = [[NSMenu alloc] initWithTitle:@""];
     _menu.autoenablesItems = NO;
     _index = -1;
-    _fontSize = fontSize;
+    // LINT.IfChange(fontSize)
+    // Blink caps font sizes to 10,000 but browser process code can't rely on
+    // the renderer to behave correctly.
+    // https://crbug.com/508452241
+    _fontSize = std::min(fontSize, 10'000.0);
+    // LINT.ThenChange(//chromium/third_party/blink/renderer/core/style/computed_style_constants.h:kMaximumAllowedFontSize)
     _rightAligned = rightAligned;
     for (const auto& item : items) {
       [self addItem:item];
