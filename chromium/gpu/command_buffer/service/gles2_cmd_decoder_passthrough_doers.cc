@@ -670,6 +670,7 @@ error::Error GLES2DecoderPassthroughImpl::DoBufferData(GLenum target,
   CheckErrorCallbackState();
   api()->glBufferDataFn(target, size, data, usage);
   if (CheckErrorCallbackState()) {
+    resources_->mapped_buffer_map.erase(bound_buffers_[target]);
     return error::kNoError;
   }
 
