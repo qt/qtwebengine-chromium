@@ -590,10 +590,12 @@ if (is_mac) {
       has_exe_suffix = _symupload_toolchain_has_exe_suffix
       target = ":$target_name($_symupload_toolchain)"
     }
-    copy_exe("breakpad_unittests") {
-      testonly = true
-      has_exe_suffix = _tests_launcher_toolchain_has_exe_suffix
-      target = ":$target_name($_tests_launcher_toolchain)"
+    if(!is_qtwebengine && !is_qtpdf) {
+      copy_exe("breakpad_unittests") {
+        testonly = true
+        has_exe_suffix = _tests_launcher_toolchain_has_exe_suffix
+        target = ":$target_name($_tests_launcher_toolchain)"
+      }
     }
   } else if (current_toolchain == host_toolchain && current_cpu == "arm64") {
     # TODO(crbug.com/349268750): This alias exists because the official Mac
