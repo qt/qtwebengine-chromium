@@ -5376,6 +5376,7 @@ size_t FramebufferDesc::hash() const
 
 void FramebufferDesc::reset()
 {
+    mPadding                  = 0;
     mMaxIndex                 = 0;
     mHasColorFramebufferFetch = false;
     mLayerCount               = 0;
