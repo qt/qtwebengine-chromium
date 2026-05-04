@@ -671,20 +671,21 @@ error::Error GLES2DecoderPassthroughImpl::DoBufferData(GLenum target,
   CheckErrorCallbackState();
   api()->glBufferDataFn(target, size, data, usage);
 
-  // Calling glBufferData on a mapped buffer implicitly unmaps it. ANGLE's
-  // gl::Buffer::bufferDataImpl performs this unmap unconditionally BEFORE
-  // attempting the new allocation, so the driver pointer stored in
-  // mapped_buffer_map is invalidated even when glBufferDataFn raises an
-  // error (e.g. GL_OUT_OF_MEMORY). Erase the stale entry before any early
-  // return; otherwise a subsequent DoUnmapBuffer would memcpy renderer-
-  // controlled data into the freed driver mapping.
+  if (CheckErrorCallbackState()) {
+    // Calling buffer data on a mapped buffer will implicitly unmap it
+    // (https://registry.khronos.org/OpenGL-Refpages/es3.1/html/glMapBufferRange.xhtml)
+    // Even if it returns an error.
+    resources_->mapped_buffer_map.erase(bound_buffers_[target]);
+    return error::kNoError;
+  }
+
   if (target == GL_ELEMENT_ARRAY_BUFFER) {
     LazilyUpdateCurrentlyBoundElementArrayBuffer();
   }
 
+  // Calling buffer data on a mapped buffer will implicitly unmap it
   resources_->mapped_buffer_map.erase(bound_buffers_[target]);
 
-  CheckErrorCallbackState();
   return error::kNoError;
 }
 
