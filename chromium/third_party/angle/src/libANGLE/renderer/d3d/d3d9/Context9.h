@@ -52,7 +52,7 @@ class Context9 : public ContextD3D
     // Query and Fence creation
     QueryImpl *createQuery(gl::QueryType type) override;
     FenceNVImpl *createFenceNV() override;
-    SyncImpl *createSync() override;
+    SyncImpl *createSync(const gl::Context *context) override;
 
     // Transform Feedback creation
     TransformFeedbackImpl *createTransformFeedback(

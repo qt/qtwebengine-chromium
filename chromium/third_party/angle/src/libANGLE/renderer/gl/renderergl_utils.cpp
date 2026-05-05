@@ -2696,6 +2696,10 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // exposed.
     ANGLE_FEATURE_CONDITION(features, bgraTexImageFormatsBroken, IsQualcomm(vendor));
 
+    // Recreate FBO upon flush/finish/fencesync under certain conditions to work around Qualcomm
+    // driver bugs.
+    ANGLE_FEATURE_CONDITION(features, recreateFboUponFlush, isQualcomm);
+
     // glGenerateMipmap may silently fail on mesa, leaving mips that are expected to be recreated to
     // match the base level in their original shape, hidden from ANGLE and its validation.
     ANGLE_FEATURE_CONDITION(features, recreateMipmapLevelsBeforeGenerate, isMesa);
