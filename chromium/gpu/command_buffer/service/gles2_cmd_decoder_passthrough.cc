@@ -1648,6 +1648,12 @@ void GLES2DecoderPassthroughImpl::MarkContextLost(
     return;
   }
 
+  // SECURITY: crbug.com/500187083. Unconditionally clear the debug callback
+  // if current context IsCurrent before it gets lost to prevent UAF.
+  if (context_ && context_->IsCurrent(nullptr) && api()) {
+    api()->glDebugMessageCallbackFn(nullptr, nullptr);
+  }
+
   // Don't make GL calls in here, the context might not be current.
   command_buffer_service()->SetContextLostReason(reason);
   context_lost_ = true;
