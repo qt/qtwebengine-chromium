@@ -594,6 +594,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   }
   void removeAttributeNS(const AtomicString& namespace_uri,
                          const AtomicString& local_name);
+  void RemoveAllAttributes();
 
   Attr* DetachAttribute(wtf_size_t index);
 
@@ -2250,7 +2251,6 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   ElementRareDataVector& EnsureElementRareData();
 
   void RemoveAttrNodeList();
-  void DetachAllAttrNodesFromElement();
   void DetachAttrNodeFromElementWithValue(Attr*, const AtomicString& value);
   void DetachAttrNodeAtIndex(Attr*, wtf_size_t index);
 

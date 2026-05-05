@@ -1000,6 +1000,16 @@ void Element::removeAttribute(const QualifiedName& name) {
   RemoveAttributeInternal(index, AttributeModificationReason::kDirectly);
 }
 
+void Element::RemoveAllAttributes() {
+  while (hasAttributes()) {
+    const AttributeCollection& attributes = GetElementData()->Attributes();
+    // Use a reason of kByCloning since our caller is going to use the cloning
+    // process to restore a different set of attributes.
+    RemoveAttributeInternal(attributes.size() - 1,
+                            AttributeModificationReason::kByCloning);
+  }
+}
+
 void Element::SetBooleanAttribute(const QualifiedName& name, bool value) {
   if (value) {
     setAttribute(name, g_empty_atom);
@@ -3636,9 +3646,14 @@ void Element::StripScriptingAttributes(
 
 void Element::ParserSetAttributes(
     const Vector<Attribute, kAttributePrealloc>& attribute_vector) {
+  // We must start with a newly-created element.  If we don't, it would not be
+  // safe to batch the AttributeChanged notifications the way we do, since on
+  // elements that are not newly-created, AttributeChanged might run script.
   DCHECK(!isConnected());
   DCHECK(!parentNode());
   DCHECK(!element_data_);
+  DCHECK(!HasChildren());
+  DCHECK_EQ(attribute_or_class_bloom_, 0u);
 
   if (!attribute_vector.empty()) {
     if (ElementDataCache* cache = GetDocument().GetElementDataCache()) {
@@ -3649,9 +3664,6 @@ void Element::ParserSetAttributes(
           ShareableElementData::CreateWithAttributes(attribute_vector);
     }
 
-    // NOTE: AttributeChanged() will add back the class names (if any),
-    // so it is safe to reset the filter here.
-    attribute_or_class_bloom_ = 0;
     for (const Attribute& attribute : attribute_vector) {
       attribute_or_class_bloom_ |= FilterForAttribute(attribute.GetName());
     }
@@ -10572,22 +10584,6 @@ void Element::DetachAttrNodeFromElementWithValue(Attr* attr_node,
   }
 }
 
-void Element::DetachAllAttrNodesFromElement() {
-  AttrNodeList* list = GetAttrNodeList();
-  if (!list) {
-    return;
-  }
-
-  AttributeCollection attributes = GetElementData()->Attributes();
-  for (const Attribute& attr : attributes) {
-    if (Attr* attr_node = AttrIfExists(attr.GetName())) {
-      attr_node->DetachFromElementWithValue(attr.Value());
-    }
-  }
-
-  RemoveAttrNodeList();
-}
-
 void Element::WillRecalcStyle(const StyleRecalcChange) {
   DCHECK(HasCustomStyleCallbacks());
 }
@@ -10607,10 +10603,16 @@ void Element::AdjustStyle(ComputedStyleBuilder&) {
 }
 
 void Element::CloneAttributesFrom(const Element& other) {
-  if (GetElementRareData()) {
-    DetachAllAttrNodesFromElement();
-  }
-
+  // We must start with a newly-created element.  If we don't, it would not be
+  // safe to batch the AttributeChanged notifications the way we do, since on
+  // elements that are not newly-created, AttributeChanged might run script.
+  DCHECK(!isConnected());
+  DCHECK(!parentNode());
+  DCHECK(!element_data_);
+  DCHECK(!HasChildren());
+  CHECK_EQ(attribute_or_class_bloom_, 0u);
+  CHECK(!hasAttributes());
+  CHECK(!GetAttrNodeList());
   other.SynchronizeAllAttributes();
   if (!other.element_data_) {
     element_data_.Clear();
@@ -10661,11 +10663,6 @@ void Element::CloneAttributesFrom(const Element& other) {
     element_data_ = other.element_data_->MakeUniqueCopy();
   }
 
-  // Since we're going through the list of attributes now, we use the
-  // opportunity to recreate the Bloom filter; in particular, it may
-  // be different from the source's Bloom filter if it came from a document
-  // with different quirks mode setting.
-  attribute_or_class_bloom_ = 0;
   for (const Attribute& attr : element_data_->Attributes()) {
     AttributeChanged(
         AttributeModificationParams(attr.GetName(), g_null_atom, attr.Value(),
