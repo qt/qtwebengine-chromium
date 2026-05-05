@@ -1003,6 +1003,22 @@ bool TIntermAggregate::hasSideEffects() const
     return false;
 }
 
+bool TIntermAggregate::isSafeToExecuteInShortCircuit() const
+{
+    if (mOp == EOpConstruct)
+    {
+        for (TIntermNode *component : mArguments)
+        {
+            if (!component->isSafeToExecuteInShortCircuit())
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 void TIntermBlock::appendStatement(TIntermNode *statement)
 {
     // Declaration nodes with no children can appear if it was an empty declaration or if all the
@@ -1281,6 +1297,17 @@ bool TIntermOperator::isFunctionCall() const
         default:
             return false;
     }
+}
+
+bool TIntermOperator::isShortCircuitNeeded() const
+{
+    if (mOp != EOpLogicalAnd && mOp != EOpLogicalOr)
+    {
+        return false;
+    }
+
+    ASSERT(getChildCount() == 2);
+    return !getChildNode(1)->isSafeToExecuteInShortCircuit();
 }
 
 TOperator TIntermBinary::GetMulOpBasedOnOperands(const TType &left, const TType &right)
@@ -1759,6 +1786,11 @@ void TIntermSwizzle::setHasFoldedDuplicateOffsets(bool hasFoldedDuplicateOffsets
 bool TIntermSwizzle::offsetsMatch(uint32_t offset) const
 {
     return mSwizzleOffsets.size() == 1 && mSwizzleOffsets[0] == offset;
+}
+
+bool TIntermSwizzle::isSafeToExecuteInShortCircuit() const
+{
+    return mOperand->isSafeToExecuteInShortCircuit();
 }
 
 ImmutableString TIntermSwizzle::getOffsetsAsXYZW() const
@@ -2304,6 +2336,12 @@ const ImmutableString &TIntermBinary::getIndexStructFieldName() const
     const int index             = mRight->getAsConstantUnion()->getIConst(0);
 
     return structure->fields()[index]->name();
+}
+
+bool TIntermBinary::isSafeToExecuteInShortCircuit() const
+{
+    return (mOp == EOpIndexDirectInterfaceBlock || mOp == EOpIndexDirectStruct) &&
+           mLeft->isSafeToExecuteInShortCircuit();
 }
 
 TIntermTyped *TIntermUnary::fold(TDiagnostics *diagnostics)
