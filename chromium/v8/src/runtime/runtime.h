@@ -621,7 +621,7 @@ namespace internal {
   F(SetPriorityBestEffort, 0, 1)              \
   F(SetPriorityUserVisible, 0, 1)             \
   F(SetPriorityUserBlocking, 0, 1)            \
-  F(OptimizeMaglevOnNextCall, 1, 1)           \
+  F(OptimizeMaglevOnNextCall, -1, 1)          \
   F(OptimizeFunctionOnNextCall, -1, 1)        \
   F(OptimizeOsr, -1, 1)                       \
   F(PrepareFunctionForOptimization, -1, 1)    \
