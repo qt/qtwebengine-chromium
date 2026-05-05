@@ -323,6 +323,7 @@ class CONTENT_EXPORT NavigationRequest
       bool is_same_document,
       const GURL& url,
       const url::Origin& origin,
+      const std::optional<url::Origin>& initiator_origin,
       const std::optional<GURL>& initiator_base_url,
       const net::IsolationInfo& isolation_info_for_subresources,
       blink::mojom::ReferrerPtr referrer,
@@ -491,6 +492,8 @@ class CONTENT_EXPORT NavigationRequest
   std::optional<NavigationDiscardReason> GetNavigationDiscardReason() override;
   // NOTE: Read function comments in NavigationHandle before use!
   std::optional<url::Origin> GetOriginToCommit() override;
+  bool IsPageActivation() const override;
+  bool IsNavigatingFromInitialEmptyDocument() const override;
   // End of NavigationHandle implementation.
 
   // mojom::NavigationRendererCancellationListener implementation:
@@ -1070,10 +1073,6 @@ class CONTENT_EXPORT NavigationRequest
   // This is the same as |NavigationHandle::IsServedFromBackForwardCache|, but
   // adds a const qualifier.
   bool IsServedFromBackForwardCache() const;
-
-  // Whether this navigation is activating an existing page (e.g. served from
-  // the BackForwardCache or Prerender)
-  bool IsPageActivation() const override;
 
   // Returns whether the navigation type is a restore navigation.
   bool IsRestore() const;
