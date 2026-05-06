@@ -113,6 +113,14 @@ GeolocationProviderImpl::AddLocationUpdateCallback(
   return subscription;
 }
 
+mojom::GeopositionResultPtr GeolocationProviderImpl::GetCachedPosition() {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+  if (result_) {
+    return result_.Clone();
+  }
+  return nullptr;
+}
+
 void GeolocationProviderImpl::OverrideLocationForTesting(
     mojom::GeopositionResultPtr result) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
