@@ -92,9 +92,25 @@ void LegacyRenderWidgetHostHWND::UpdateParent(HWND new_parent) {
       GetWindowEventTarget(GetParent())->HandleParentChanged();
     }
 
+    // ::SetParent and CreateDirectManipulationHelper (CoCreateInstance /
+    // IDirectManipulationManager::Activate / Enable) can synchronously dispatch
+    // window messages. Re-entrant dispatch may reach
+    // RenderWidgetHostViewAura::OnWindowDestroying ->
+    // LegacyRenderWidgetHostHWND::Destroy() -> ::DestroyWindow() ->
+    // WM_NCDESTROY -> OnNCDestroy -> delete this. Guard against |this| being
+    // freed mid-method, matching the pattern used in OnKeyboardRange et al.
+    base::WeakPtr<LegacyRenderWidgetHostHWND> ref(
+        msg_handler_weak_factory_.GetWeakPtr());
+
     ::SetParent(hwnd(), new_parent);
+    if (!ref) {
+      return;
+    }
 
     CreateDirectManipulationHelper();
+    if (!ref) {
+      return;
+    }
 
     // Reset tooltips when parent changed; otherwise tooltips could stay open as
     // the former parent wouldn't be forwarded any mouse leave messages.
@@ -107,7 +123,12 @@ void LegacyRenderWidgetHostHWND::UpdateParent(HWND new_parent) {
     // DirectManipulationHelper only needs to be re-created if the parent
     // subsequently changes.
     if (!direct_manipulation_helper_) {
+      base::WeakPtr<LegacyRenderWidgetHostHWND> ref(
+          msg_handler_weak_factory_.GetWeakPtr());
       CreateDirectManipulationHelper();
+      if (!ref) {
+        return;
+      }
     }
   }
 }
