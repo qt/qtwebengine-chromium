@@ -559,7 +559,6 @@ bool GetCompressedTexSizeInBytes(const char* function_name,
           base::CheckDiv(base::CheckAdd(height, kEACAndETC2BlockSize - 1),
                          kEACAndETC2BlockSize);
       bytes_required *= 8;
-      bytes_required *= depth;
       break;
     case GL_COMPRESSED_RG11_EAC:
     case GL_COMPRESSED_SIGNED_RG11_EAC:
@@ -572,7 +571,6 @@ bool GetCompressedTexSizeInBytes(const char* function_name,
           base::CheckDiv(base::CheckAdd(height, kEACAndETC2BlockSize - 1),
                          kEACAndETC2BlockSize);
       bytes_required *= 16;
-      bytes_required *= depth;
       break;
     case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT:
     case GL_COMPRESSED_RGBA_BPTC_UNORM_EXT:
@@ -583,7 +581,6 @@ bool GetCompressedTexSizeInBytes(const char* function_name,
       bytes_required *= base::CheckDiv(
           base::CheckAdd(height, kBPTCBlockHeight - 1), kBPTCBlockHeight);
       bytes_required *= 16;
-      bytes_required *= depth;
       break;
     case GL_COMPRESSED_RED_RGTC1_EXT:
     case GL_COMPRESSED_SIGNED_RED_RGTC1_EXT:
@@ -592,7 +589,6 @@ bool GetCompressedTexSizeInBytes(const char* function_name,
       bytes_required *= base::CheckDiv(
           base::CheckAdd(height, kRGTCBlockHeight - 1), kRGTCBlockHeight);
       bytes_required *= 8;
-      bytes_required *= depth;
       break;
     case GL_COMPRESSED_RED_GREEN_RGTC2_EXT:
     case GL_COMPRESSED_SIGNED_RED_GREEN_RGTC2_EXT:
@@ -601,7 +597,6 @@ bool GetCompressedTexSizeInBytes(const char* function_name,
       bytes_required *= base::CheckDiv(
           base::CheckAdd(height, kRGTCBlockHeight - 1), kRGTCBlockHeight);
       bytes_required *= 16;
-      bytes_required *= depth;
       break;
     default:
       if (function_name && error_state) {
@@ -610,6 +605,8 @@ bool GetCompressedTexSizeInBytes(const char* function_name,
       }
       return false;
   }
+
+  bytes_required *= depth;
 
   if (!bytes_required.IsValid()) {
     if (function_name && error_state) {
