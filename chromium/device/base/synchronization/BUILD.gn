@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//device/device.gni")
+
 source_set("synchronization") {
   sources = [
     "one_writer_seqlock.cc",
@@ -10,4 +12,7 @@ source_set("synchronization") {
   ]
 
   deps = [ "//base" ]
+
+  configs -= device_remove_configs
+  configs += device_add_configs
 }
