@@ -1,0 +1,24 @@
+# Copyright (C) 2026 The Qt Company Ltd.
+# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+
+import("//build/config/compiler/compiler.gni")
+
+declare_args() {
+  device_symbol_level = symbol_level
+}
+
+device_remove_configs = []
+device_add_configs = []
+
+if (device_symbol_level != symbol_level) {
+  device_remove_configs += [ "//build/config/compiler:default_symbols" ]
+  if (device_symbol_level == 0) {
+    device_add_configs += [ "//build/config/compiler:no_symbols" ]
+  } else if (device_symbol_level == 1) {
+    device_add_configs += [ "//build/config/compiler:minimal_symbols" ]
+  } else if (device_symbol_level == 2) {
+    device_add_configs += [ "//build/config/compiler:symbols" ]
+  } else {
+    assert(false)
+  }
+}

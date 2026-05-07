@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//device/device.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 
 mojom_component("mojom") {
@@ -69,4 +70,9 @@ mojom_component("mojom") {
 
   cpp_typemaps = [ shared_cpp_typemap ]
   blink_cpp_typemaps = [ shared_cpp_typemap ]
+
+  removed_cpp_configs = device_remove_configs
+  cpp_configs = device_add_configs
+  blink_removed_cpp_configs = device_remove_configs
+  blink_cpp_configs = device_add_configs
 }

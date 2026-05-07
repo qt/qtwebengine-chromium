@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//device/device.gni")
 import("//device/vr/buildflags/buildflags.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 
@@ -42,6 +43,11 @@ mojom_component("vr_service") {
 
   cpp_typemaps = [ shared_cpp_typemap ]
   blink_cpp_typemaps = [ shared_cpp_typemap ]
+
+  removed_cpp_configs = device_remove_configs
+  cpp_configs = device_add_configs
+  blink_removed_cpp_configs = device_remove_configs
+  blink_cpp_configs = device_add_configs
 }
 
 # Separating the public mojom interface into vr_service and isolated_xr_service
@@ -67,6 +73,9 @@ mojom_component("isolated_xr_service") {
   ]
 
   deps = [ "//services/viz/public/mojom" ]
+
+  removed_cpp_configs = device_remove_configs
+  cpp_configs = device_add_configs
 }
 
 mojom_component("test_mojom") {
@@ -81,6 +90,9 @@ mojom_component("test_mojom") {
     "//ui/gfx/geometry/mojom",
     "//ui/gfx/mojom",
   ]
+
+  removed_cpp_configs = device_remove_configs
+  cpp_configs = device_add_configs
 }
 
 component("vr_public_typemaps") {
@@ -101,6 +113,9 @@ component("vr_public_typemaps") {
   ]
 
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
+
+  configs -= device_remove_configs
+  configs += device_add_configs
 }
 
 mojom_component("xr_common") {
@@ -134,4 +149,9 @@ mojom_component("xr_common") {
 
   webui_module_path = "/"
   generate_legacy_js_bindings = true
+
+  blink_removed_cpp_configs = device_remove_configs
+  blink_cpp_configs = device_add_configs
+  removed_cpp_configs = device_remove_configs
+  cpp_configs = device_add_configs
 }

@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//device/device.gni")
+
 # This target contains only those files that are shared by the Device Gamepad
 # implementation and all Device Gamepad clients, including Blink. Add a file
 # here only if it meets the following constraints:
@@ -24,6 +26,9 @@ component("shared_with_blink") {
   # Do not add deps here per the above comment.
   defines = [ "IS_GAMEPAD_PUBLIC_IMPL" ]
   public_deps = [ "//base" ]
+
+  configs -= device_remove_configs
+  configs += device_add_configs
 }
 
 # Normally typemap traits sources should be build directly into mojom targets
@@ -44,6 +49,9 @@ component("shared_typemap_traits") {
     "//base",
     "//device/gamepad/public/mojom:mojom_shared",
   ]
+
+  configs -= device_remove_configs
+  configs += device_add_configs
 }
 
 component("switches") {
@@ -58,4 +66,7 @@ component("switches") {
   ]
   public_deps = [ "//base" ]
   defines = [ "GAMEPAD_FEATURES_IMPLEMENTATION" ]
+
+  configs -= device_remove_configs
+  configs += device_add_configs
 }

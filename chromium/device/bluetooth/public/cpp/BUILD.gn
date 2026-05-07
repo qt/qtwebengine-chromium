@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//device/device.gni")
+
 source_set("cpp") {
   sources = [
     "bluetooth_address.cc",
@@ -11,6 +13,9 @@ source_set("cpp") {
   ]
   deps = [ "//base" ]
   public_deps = [ ":features" ]
+
+  configs -= device_remove_configs
+  configs += device_add_configs
 }
 
 component("features") {
@@ -21,4 +26,7 @@ component("features") {
   ]
   deps = [ "//base" ]
   defines = [ "BLUETOOTH_FEATURES_IMPLEMENTATION" ]
+
+  configs -= device_remove_configs
+  configs += device_add_configs
 }

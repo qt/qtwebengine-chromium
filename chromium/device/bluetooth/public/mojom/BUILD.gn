@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//device/device.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 
 mojom("mojom") {
@@ -66,6 +67,11 @@ mojom("mojom") {
       traits_public_deps = [ "//device/bluetooth" ]
     },
   ]
+
+  removed_cpp_configs = device_remove_configs
+  cpp_configs = device_add_configs
+  blink_removed_cpp_configs = device_remove_configs
+  blink_cpp_configs = device_add_configs
 }
 
 mojom("fake_bluetooth_interfaces") {

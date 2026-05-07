@@ -298,6 +298,9 @@ if (enable_vr) {
         "//ui/gl/init",
       ]
     }
+
+    configs -= device_remove_configs
+    configs += device_add_configs
   }
 
   component("vr_test_hook") {
