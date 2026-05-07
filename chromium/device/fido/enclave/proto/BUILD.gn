@@ -2,8 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//device/device.gni")
 import("//third_party/protobuf/proto_library.gni")
 
 proto_library("proto") {
   sources = [ "evidence.proto" ]
+  remove_configs = device_remove_configs
+  extra_configs = device_add_configs
 }

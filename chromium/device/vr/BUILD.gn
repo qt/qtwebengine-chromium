@@ -320,6 +320,9 @@ if (enable_vr) {
         "//ui/gl/init",
       ]
     }
+
+    configs -= device_remove_configs
+    configs += device_add_configs
   }
 
   source_set("vr_test_hook") {

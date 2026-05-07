@@ -6,6 +6,7 @@ import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
 import("//device/bluetooth/cast_bluetooth.gni")
 import("//device/bluetooth/emulation/buildflags.gni")
+import("//device/device.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
@@ -650,6 +651,9 @@ component("bluetooth") {
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+  configs -= device_remove_configs
+  configs += device_add_configs
 }
 
 static_library("mocks") {
