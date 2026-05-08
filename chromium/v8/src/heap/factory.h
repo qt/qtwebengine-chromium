@@ -335,8 +335,14 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
 
   DirectHandle<JSStringIterator> NewJSStringIterator(Handle<String> string);
 
-  DirectHandle<String> NewInternalizedStringImpl(DirectHandle<String> string,
-                                                 int len, uint32_t hash_field);
+  // `known_one_byte_content` indicates that the caller (typically the
+  // string-table lookup path that just hashed `string`) knows the content
+  // fits in one byte; the impl then allocates a SeqOneByteString even when
+  // `string`'s representation is two-byte. False is always safe.
+  DirectHandle<String> NewInternalizedStringImpl(
+      DirectHandle<String> string, int len, uint32_t hash_field,
+      bool known_one_byte_content = false);
+
 
   // Compute the internalization strategy for the input string.
   //
@@ -347,10 +353,14 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   // Internalized strings return kAlreadyTransitioned.
   //
   // All other strings are internalized by flattening and copying and return
-  // kCopy.
+  // kCopy. `known_one_byte_content` forces kCopy for two-byte rep strings
+  // whose content fits in one byte, so NewInternalizedStringImpl can
+  // allocate a one-byte internalized copy instead of locking in the wider
+  // representation via an in-place map swap.
   V8_WARN_UNUSED_RESULT StringTransitionStrategy
   ComputeInternalizationStrategyForString(
-      DirectHandle<String> string, MaybeDirectHandle<Map>* internalized_map);
+      DirectHandle<String> string, MaybeDirectHandle<Map>* internalized_map,
+      bool known_one_byte_content = false);
 
   // Creates an internalized copy of an external string. |string| must be
   // of type StringClass.

@@ -936,8 +936,11 @@ MaybeDirectHandle<String> Factory::NewStringFromTwoByteLittleEndian(
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 DirectHandle<String> Factory::NewInternalizedStringImpl(
-    DirectHandle<String> string, int len, uint32_t hash_field) {
-  if (string->IsOneByteRepresentation()) {
+    DirectHandle<String> string, int len, uint32_t hash_field,
+    bool known_one_byte_content) {
+  const bool one_byte =
+      string->IsOneByteRepresentation() || known_one_byte_content;
+  if (one_byte) {
     DirectHandle<SeqOneByteString> result =
         AllocateRawOneByteInternalizedString(len, hash_field);
     DisallowGarbageCollection no_gc;
@@ -953,7 +956,8 @@ DirectHandle<String> Factory::NewInternalizedStringImpl(
 }
 
 StringTransitionStrategy Factory::ComputeInternalizationStrategyForString(
-    DirectHandle<String> string, MaybeDirectHandle<Map>* internalized_map) {
+    DirectHandle<String> string, MaybeDirectHandle<Map>* internalized_map,
+    bool known_one_byte_content) {
   // The serializer requires internalized strings to be in ReadOnlySpace s.t.
   // other objects referencing the string can be allocated in RO space
   // themselves.
@@ -979,6 +983,14 @@ StringTransitionStrategy Factory::ComputeInternalizationStrategyForString(
   Tagged<Map> map = string->map();
   *internalized_map = GetInPlaceInternalizedStringMap(map);
   if (!internalized_map->is_null()) {
+    // The map says 2-byte but the caller verified the content fits in one
+    // byte; fall back to kCopy so NewInternalizedStringImpl can allocate a
+    // one-byte internalized string. Otherwise the in-place map swap would
+    // lock the wider representation in for the lifetime of the intern entry.
+    if (known_one_byte_content && !InstanceTypeChecker::IsOneByteString(map)) {
+      *internalized_map = MaybeDirectHandle<Map>();
+      return StringTransitionStrategy::kCopy;
+    }
     return StringTransitionStrategy::kInPlace;
   }
   if (InstanceTypeChecker::IsInternalizedString(map)) {
