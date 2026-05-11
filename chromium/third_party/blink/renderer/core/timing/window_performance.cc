@@ -95,11 +95,14 @@
 #include "third_party/blink/renderer/core/timing/soft_navigation_entry.h"
 #include "third_party/blink/renderer/core/timing/speculation_data.h"
 #include "third_party/blink/renderer/core/timing/visibility_state_entry.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_cross_origin_mode.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_deque.h"
 #include "third_party/blink/renderer/platform/heap/forward.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/loader/fetch/cross_origin_attribute_value.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
@@ -1512,9 +1515,7 @@ SpeculationData* WindowPerformance::getSpeculations() {
       window->document()->Fetcher()->GetPreloadRecords();
   for (const auto& [url, info] : preload_records) {
     preloads.push_back(MakeGarbageCollected<PreloadData>(
-        url, info.resource_type,
-        info.crossorigin.value_or(kCrossOriginAttributeNotSet),
-        info.used_time));
+        url, info.as, info.crossorigin, info.used_time));
   }
 
   return MakeGarbageCollected<SpeculationData>(std::move(preloads));
