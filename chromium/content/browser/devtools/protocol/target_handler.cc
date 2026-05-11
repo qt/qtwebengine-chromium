@@ -438,10 +438,11 @@ class TargetHandler::RequestThrottle : public TargetHandler::Throttle {
 
 class TargetHandler::Session : public DevToolsAgentHostClient {
  public:
-  static std::string Attach(TargetHandler* handler,
-                            DevToolsAgentHost* agent_host,
-                            bool waiting_for_debugger,
-                            bool flatten_protocol) {
+  static std::optional<std::string> Attach(
+      TargetHandler* handler,
+      scoped_refptr<DevToolsAgentHost> agent_host,
+      bool waiting_for_debugger,
+      bool flatten_protocol) {
     std::string id = base::UnguessableToken::Create().ToString();
     // We don't support or allow the non-flattened protocol when in binary mode.
     // So, we coerce the setting to true, as the non-flattened mode is
@@ -449,10 +450,10 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
     if (handler->root_session_->GetClient()->UsesBinaryProtocol()) {
       flatten_protocol = true;
     }
-    Session* session = new Session(handler, agent_host, id, flatten_protocol);
-    handler->attached_sessions_[id].reset(session);
+    auto session = base::WrapUnique(
+        new Session(handler, agent_host, id, flatten_protocol));
     DevToolsAgentHostImpl* agent_host_impl =
-        static_cast<DevToolsAgentHostImpl*>(agent_host);
+        static_cast<DevToolsAgentHostImpl*>(agent_host.get());
     if (flatten_protocol) {
       using Mode = DevToolsSession::Mode;
       const Mode mode =
@@ -463,16 +464,25 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
       base::OnceClosure resume_callback;
       if (waiting_for_debugger) {
         resume_callback = base::BindOnce(&Session::ResumeIfThrottled,
-                                         base::Unretained(session));
+                                         base::Unretained(session.get()));
       }
       DevToolsSession* devtools_session =
           handler->root_session_->AttachChildSession(
-              id, agent_host_impl, session, mode, std::move(resume_callback));
+              id, agent_host_impl, session.get(), mode,
+              std::move(resume_callback));
+      if (!devtools_session) {
+        session->agent_host_ = nullptr;
+        return std::nullopt;
+      }
       session->devtools_session_ = devtools_session;
     } else {
-      agent_host_impl->AttachClient(session);
+      if (!agent_host_impl->AttachClient(session.get())) {
+        session->agent_host_ = nullptr;
+        return std::nullopt;
+      }
     }
-    handler->frontend_->AttachedToTarget(id, BuildTargetInfo(agent_host),
+    handler->attached_sessions_[id] = std::move(session);
+    handler->frontend_->AttachedToTarget(id, BuildTargetInfo(agent_host.get()),
                                          waiting_for_debugger);
     return id;
   }
@@ -563,11 +573,11 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
   friend class TargetHandler;
 
   Session(TargetHandler* handler,
-          DevToolsAgentHost* agent_host,
+          scoped_refptr<DevToolsAgentHost> agent_host,
           const std::string& id,
           bool flatten_protocol)
       : handler_(handler),
-        agent_host_(agent_host),
+        agent_host_(std::move(agent_host)),
         id_(id),
         flatten_protocol_(flatten_protocol) {}
 
@@ -598,6 +608,10 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
   void AgentHostClosed(DevToolsAgentHost* agent_host) override {
     DCHECK(agent_host == agent_host_.get());
     Detach(true);
+  }
+
+  bool MayAttachToRenderFrameHost(RenderFrameHost* rfh) override {
+    return GetRootClient()->MayAttachToRenderFrameHost(rfh);
   }
 
   bool MayAttachToURL(const GURL& url, bool is_webui) override {
@@ -903,9 +917,12 @@ bool TargetHandler::AutoAttach(TargetAutoAttacher* source,
       host->GetType() == DevToolsAgentHost::kTypeServiceWorker) {
     return false;
   }
-  std::string session_id =
+  std::optional<std::string> session_id =
       Session::Attach(this, host, waiting_for_debugger, flatten_auto_attach_);
-  Session* session = attached_sessions_[session_id].get();
+  if (!session_id) {
+    return false;
+  }
+  Session* session = attached_sessions_[*session_id].get();
   session->auto_attacher_id_ = reinterpret_cast<uintptr_t>(source);
   auto_attached_sessions_[host] = session;
   return true;
@@ -1144,8 +1161,12 @@ Response TargetHandler::AttachToTarget(const std::string& target_id,
   if (!agent_host) {
     return Response::InvalidParams(kTargetNotFound);
   }
-  *out_session_id =
+  std::optional<std::string> session_id =
       Session::Attach(this, agent_host.get(), false, flatten.value_or(false));
+  if (!session_id) {
+    return Response::ServerError(kNotAllowedErrorTH);
+  }
+  *out_session_id = *session_id;
   return Response::Success();
 }
 
@@ -1156,7 +1177,12 @@ Response TargetHandler::AttachToBrowserTarget(std::string* out_session_id) {
   scoped_refptr<DevToolsAgentHost> agent_host =
       DevToolsAgentHost::CreateForBrowser(
           nullptr, DevToolsAgentHost::CreateServerSocketCallback());
-  *out_session_id = Session::Attach(this, agent_host.get(), false, true);
+  std::optional<std::string> session_id =
+      Session::Attach(this, agent_host.get(), false, true);
+  if (!session_id) {
+    return Response::ServerError(kNotAllowedErrorTH);
+  }
+  *out_session_id = *session_id;
   return Response::Success();
 }
 
