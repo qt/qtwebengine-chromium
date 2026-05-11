@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/compiler/compiler.gni")
 import("//build/config/jumbo.gni")
 import("//mojo/public/tools/bindings/mojom_rust.gni")
 import("//third_party/closure_compiler/closure_args.gni")
@@ -51,6 +52,10 @@ declare_args() {
   # corresponding "foo_js_library_for_compile" target generated.
   if (is_chromeos) {
     enable_mojom_closure_compile = enable_js_type_check && optimize_webui
+  }
+
+  if (is_qtwebengine) {
+    mojo_symbol_level = symbol_level
   }
 }
 
@@ -1655,6 +1660,26 @@ template("mojom") {
       configs += [ "//build/config/compiler:wexit_time_destructors" ]
       configs -= minus_configs
       configs += extra_configs
+      if (is_qtwebengine && mojo_symbol_level != symbol_level) {
+        _has_default = false
+        foreach (c, configs) {
+          if (c == "//build/config/compiler:default_symbols") {
+            _has_default = true
+          }
+        }
+        if (_has_default) {
+          configs -= [ "//build/config/compiler:default_symbols" ]
+          if (mojo_symbol_level == 0) {
+            configs += [ "//build/config/compiler:no_symbols" ]
+          } else if (mojo_symbol_level == 1) {
+            configs += [ "//build/config/compiler:minimal_symbols" ]
+          } else if (mojo_symbol_level == 2) {
+            configs += [ "//build/config/compiler:symbols" ]
+          } else {
+            assert(false)
+          }
+        }
+      }
       if (output_file_base_paths != []) {
         sources = []
         foreach(base_path, output_file_base_paths) {
