@@ -3467,6 +3467,22 @@
       "features": [
         "max_num_hw_video_decoders_10"
       ]
+    },
+    {
+      "id": 442,
+      "description": "Qualcomm GPUs crash when invalidating incomplete framebuffers",
+      "cr_bugs": [507508103],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Qualcomm.*",
+      "driver_version": {
+        "op": "<",
+        "value": "881"
+      },
+      "features": [
+        "dont_invalidate_incomplete_fbos"
+      ]
     }
   ]
 }
