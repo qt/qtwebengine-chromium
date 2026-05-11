@@ -7,6 +7,7 @@
 
 #include <utility>
 
+#include "src/ast/ast-function-literal-id-reindexer.h"
 #include "src/ast/scopes.h"
 #include "src/common/message-template.h"
 #include "src/objects/function-kind.h"
@@ -327,6 +328,7 @@ class ExpressionScope {
     return base::IsInRange(type_, kMaybeArrowParameterDeclaration,
                            kMaybeAsyncArrowParameterDeclaration);
   }
+
   bool IsCertainlyPattern() const { return IsCertainlyDeclaration(); }
   bool CanBeParameterDeclaration() const {
     return base::IsInRange(type_, kMaybeArrowParameterDeclaration,
@@ -754,7 +756,8 @@ class ArrowHeadParsingScope : public ExpressionParsingScope<Types> {
             kind == FunctionKind::kArrowFunction
                 ? ExpressionScope<Types>::kMaybeArrowParameterDeclaration
                 : ExpressionScope<Types>::kMaybeAsyncArrowParameterDeclaration),
-        function_literal_id_(function_literal_id) {
+        function_literal_id_(function_literal_id),
+        allow_reindex_scope_(&parser->max_drift_) {
     DCHECK(kind == FunctionKind::kAsyncArrowFunction ||
            kind == FunctionKind::kArrowFunction);
     DCHECK(this->CanBeDeclaration());
@@ -840,6 +843,7 @@ class ArrowHeadParsingScope : public ExpressionParsingScope<Types> {
   int function_literal_id_;
   bool has_simple_parameter_list_ = true;
   bool uses_this_ = false;
+  AllowReindexScope allow_reindex_scope_;
 };
 
 }  // namespace internal
