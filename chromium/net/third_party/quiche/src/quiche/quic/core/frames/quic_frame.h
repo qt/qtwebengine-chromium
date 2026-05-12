@@ -152,6 +152,9 @@ QUICHE_EXPORT void RemoveFramesForStream(QuicFrames* frames,
 // Returns true if |frames| contains at least one message frame.
 QUICHE_EXPORT bool HasMessageFrame(const QuicFrames& frames);
 
+// Returns true if |frames| contains only data frames.
+QUICHE_EXPORT bool HasOnlyDatagramFrame(const QuicFrames& frames);
+
 // Returns true if |type| is a retransmittable control frame.
 QUICHE_EXPORT bool IsControlFrame(QuicFrameType type);
 

@@ -192,6 +192,15 @@ bool HasMessageFrame(const QuicFrames& frames) {
   return false;
 }
 
+bool HasOnlyDatagramFrame(const QuicFrames& frames) {
+  for (const QuicFrame& frame : frames) {
+    if (frame.type != MESSAGE_FRAME) {
+      return false;
+    }
+  }
+  return !frames.empty();
+}
+
 bool IsControlFrame(QuicFrameType type) {
   switch (type) {
     case RST_STREAM_FRAME:
