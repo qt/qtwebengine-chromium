@@ -46,6 +46,8 @@ ANGLE_INLINE bool operator<(const AttributeRange &a, const AttributeRange &b)
 class VertexArrayVk : public VertexArrayImpl
 {
   public:
+    using VertexArrayGeneration = UniqueSerial;
+
     VertexArrayVk(ContextVk *contextVk,
                   const gl::VertexArrayState &state,
                   const gl::VertexArrayBuffers &vertexArrayBuffers);
@@ -160,6 +162,15 @@ class VertexArrayVk : public VertexArrayImpl
         return mStreamingVertexAttribsMask;
     }
 
+    // skip dependency add just getter
+    gl::AttributesMask getCurrentEnabledAttribsMask() const { return mCurrentEnabledAttributesMask; }
+
+    VertexArrayGeneration getDefaultAttribsGeneration() const { return mDefaultAttribsGeneration; }
+    void setDefaultAttribsGeneration(VertexArrayGeneration generation)
+    {
+        mDefaultAttribsGeneration = generation;
+    }
+
   private:
     gl::AttributesMask mergeClientAttribsRange(
         vk::Renderer *renderer,
@@ -232,6 +243,9 @@ class VertexArrayVk : public VertexArrayImpl
     // Track client and/or emulated attribs that we have to stream their buffer contents
     gl::AttributesMask mStreamingVertexAttribsMask;
     gl::AttributesMask mNeedsConversionAttribMask;
+
+    // Tracks if default vertex attribute buffers have been invalidated.
+    VertexArrayGeneration mDefaultAttribsGeneration;
 
     // The attrib/binding dirty bits that requires graphics pipeline update
     gl::VertexArray::DirtyBindingBits mBindingDirtyBitsRequiresPipelineUpdate;
