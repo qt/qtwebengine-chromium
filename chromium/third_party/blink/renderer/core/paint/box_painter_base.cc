@@ -1289,7 +1289,8 @@ void BoxPainterBase::PaintFillLayer(
         SVGMaskPainter::PaintSVGMaskLayer(
             context, *mask_source, bg_paint_context.ImageClient(),
             reference_box, zoom, composite_op,
-            bg_layer.MaskMode() == EFillMaskMode::kMatchSource);
+            bg_layer.MaskMode() == EFillMaskMode::kMatchSource,
+            paint_info.GetPaintFlags());
         return;
       }
     }

@@ -459,7 +459,7 @@ PaintResult PaintLayerPainter::Paint(GraphicsContext& context,
     if (const auto* properties = object.FirstFragment().PaintProperties()) {
       if (properties->Mask()) {
         if (object.IsSVGForeignObject()) {
-          SVGMaskPainter::Paint(context, object, object);
+          SVGMaskPainter::Paint(context, object, object, paint_flags);
         } else {
           PaintWithPhase(PaintPhase::kMask, context, paint_flags);
         }
