@@ -7538,10 +7538,10 @@ xmlParseReference(xmlParserCtxtPtr ctxt) {
             if ((cur->type == XML_TEXT_NODE) ||
                 (ctxt->sax->cdataBlock == NULL)) {
                 if (ctxt->sax->characters != NULL)
-                    ctxt->sax->characters(ctxt, cur->content, len);
+                    ctxt->sax->characters(ctxt->userData, cur->content, len);
             } else {
                 if (ctxt->sax->cdataBlock != NULL)
-                    ctxt->sax->cdataBlock(ctxt, cur->content, len);
+                    ctxt->sax->cdataBlock(ctxt->userData, cur->content, len);
             }
 
             cur = cur->next;
@@ -7561,10 +7561,10 @@ xmlParseReference(xmlParserCtxtPtr ctxt) {
                 if ((cur->type == XML_TEXT_NODE) ||
                     (ctxt->sax->cdataBlock == NULL)) {
                     if (ctxt->sax->characters != NULL)
-                        ctxt->sax->characters(ctxt, cur->content, len);
+                        ctxt->sax->characters(ctxt->userData, cur->content, len);
                 } else {
                     if (ctxt->sax->cdataBlock != NULL)
-                        ctxt->sax->cdataBlock(ctxt, cur->content, len);
+                        ctxt->sax->cdataBlock(ctxt->userData, cur->content, len);
                 }
 
                 break;
