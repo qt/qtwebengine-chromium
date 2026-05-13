@@ -126,6 +126,7 @@ angle::Result StreamVertexDataWithDivisor(ContextVk *contextVk,
                                           size_t dstStride,
                                           VertexCopyFunction vertexLoadFunction,
                                           uint32_t divisor,
+                                          size_t skipVertices,
                                           size_t numSrcVertices)
 {
     vk::Renderer *renderer = contextVk->getRenderer();
@@ -133,10 +134,20 @@ angle::Result StreamVertexDataWithDivisor(ContextVk *contextVk,
     uint8_t *dst = dstBufferHelper->getMappedMemory();
 
     // Each source vertex is used `divisor` times before advancing. Clamp to avoid OOB reads.
-    size_t clampedSize = std::min(numSrcVertices * dstStride * divisor, bytesToAllocate);
+    size_t clampedSize =
+        std::min((skipVertices + numSrcVertices * divisor) * dstStride, bytesToAllocate);
 
     ASSERT(clampedSize % dstStride == 0);
     ASSERT(divisor > 0);
+
+    // If base instance is non-zero, a number of vertices are skipped.  Since they are not used, set
+    // them to zero.
+    if (skipVertices > 0)
+    {
+        memset(dst, 0, std::min(skipVertices * dstStride, bytesToAllocate));
+        dst += skipVertices * dstStride;
+        srcData += skipVertices * srcStride;
+    }
 
     uint32_t srcVertexUseCount = 0;
     for (size_t dataCopied = 0; dataCopied < clampedSize; dataCopied += dstStride)
@@ -1220,6 +1231,7 @@ gl::AttributesMask VertexArrayVk::mergeClientAttribsRange(
 angle::Result VertexArrayVk::updateStreamedAttribs(const gl::Context *context,
                                                    GLint firstVertex,
                                                    GLsizei vertexOrIndexCount,
+                                                   GLsizei baseInstance,
                                                    GLsizei instanceCount,
                                                    gl::DrawElementsType indexTypeOrInvalid,
                                                    const void *indices)
@@ -1280,7 +1292,7 @@ angle::Result VertexArrayVk::updateStreamedAttribs(const gl::Context *context,
             if (divisor > renderer->getMaxVertexAttribDivisor())
             {
                 // Divisor will be set to 1 & so update buffer to have 1 attrib per instance
-                size_t bytesToAllocate = instanceCount * stride;
+                size_t bytesToAllocate = static_cast<size_t>(baseInstance + instanceCount) * stride;
 
                 // Allocate buffer for results
                 ANGLE_TRY(contextVk->allocateStreamedVertexBuffer(attribIndex, bytesToAllocate,
@@ -1302,10 +1314,13 @@ angle::Result VertexArrayVk::updateStreamedAttribs(const gl::Context *context,
                             static_cast<uint32_t>(ComputeVertexAttributeTypeSize(attrib));
 
                         size_t numVertices = GetVertexCount(bufferVk, binding, srcAttributeSize);
+                        numVertices        = numVertices < static_cast<size_t>(baseInstance)
+                                                 ? 0
+                                                 : numVertices - baseInstance;
 
                         ANGLE_TRY(StreamVertexDataWithDivisor(
                             contextVk, vertexDataBuffer, src, bytesToAllocate, binding.getStride(),
-                            stride, vertexFormat.getVertexLoadFunction(compressed), divisor,
+                            stride, vertexFormat.getVertexLoadFunction(compressed), divisor, baseInstance,
                             numVertices));
 
                         ANGLE_TRY(bufferVk->unmapImpl(contextVk));
@@ -1322,12 +1337,13 @@ angle::Result VertexArrayVk::updateStreamedAttribs(const gl::Context *context,
                     size_t numVertices = instanceCount;
                     ANGLE_TRY(StreamVertexDataWithDivisor(
                         contextVk, vertexDataBuffer, src, bytesToAllocate, binding.getStride(),
-                        stride, vertexFormat.getVertexLoadFunction(compressed), divisor,
+                        stride, vertexFormat.getVertexLoadFunction(compressed), divisor, baseInstance,
                         numVertices));
                 }
             }
             else
             {
+                // TODO: Test and take baseInstance into account. http://anglebug.com/512867159
                 ASSERT(binding.getBuffer().get() == nullptr);
                 size_t count           = UnsignedCeilDivide(instanceCount, divisor);
                 size_t bytesToAllocate = count * stride;
