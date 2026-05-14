@@ -185,6 +185,7 @@ enum class Feature
     ForceNearestFiltering,
     ForceNearestMipFiltering,
     ForceNonCSBaseMipmapGeneration,
+    ForceRenderableFallbackFormat,
     ForceRobustResourceInit,
     ForceSampleUsageForAhbBackedImages,
     ForceSubmitImmutableTextureUpdates,
