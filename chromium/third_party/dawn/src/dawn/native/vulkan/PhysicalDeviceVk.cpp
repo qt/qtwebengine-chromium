@@ -1000,7 +1000,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     if (!GetDeviceInfo().HasExt(DeviceExt::ZeroInitializeWorkgroupMemory) ||
         GetDeviceInfo().zeroInitializeWorkgroupMemoryFeatures.shaderZeroInitializeWorkgroupMemory ==
             VK_FALSE ||
-        IsAndroidARM() || gpu_info::IsImgTec(GetVendorId())) {
+        gpu_info::IsARM(GetVendorId()) || gpu_info::IsImgTec(GetVendorId())) {
         deviceToggles->ForceSet(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, false);
     }
     // By default try to initialize workgroup memory with OpConstantNull according to the Vulkan
