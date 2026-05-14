@@ -557,6 +557,11 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
 
   // ui::GestureConsumer:
   bool RequiresDoubleTapGestureEvents() const override;
+  base::WeakPtr<ui::GestureConsumer> GetWeakPtr() override;
+
+  // This method is provided to return a WeakPtr of aura::Window instead of
+  // ui::GestureConsumer, as c++ do not support template covariant return type.
+  base::WeakPtr<aura::Window> GetWeakPtrAsWindow();
 
   // Returns |state| as a string. This is generally only useful for debugging.
   static const std::u16string OcclusionStateToString(OcclusionState state);
@@ -871,6 +876,8 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   base::WeakPtr<cc::LayerTreeFrameSink> frame_sink_;
 
   size_t delete_block_count_ = 0;
+
+  base::WeakPtrFactory<Window> weak_factory_{this};
 };
 
 }  // namespace aura
