@@ -450,3 +450,29 @@ TEST_F(CPDFPageContentGeneratorTest, ProcessFormWithPath) {
       "99999 4.6500001 2.98 3.4560001 .23999999 c 3.102 4.6700001 l h f Q\n",
       ByteString(process_buf));
 }
+
+TEST_F(CPDFPageContentGeneratorTest, ProcessContentMarksWithProperties) {
+  auto doc = std::make_unique<CPDF_TestDocument>();
+  doc->CreateNewDoc();
+
+  RetainPtr<CPDF_Dictionary> page_dict(doc->CreateNewPage(0));
+  auto test_page = pdfium::MakeRetain<CPDF_Page>(doc.get(), page_dict);
+
+  auto path_obj = std::make_unique<CPDF_PathObject>();
+  path_obj->set_filltype(CFX_FillRenderOptions::FillType::kWinding);
+  path_obj->path().AppendRect(0, 0, 10, 10);
+  path_obj->SetDirty(true);
+
+  auto marks_dict = pdfium::MakeRetain<CPDF_Dictionary>();
+  path_obj->GetContentMarks()->AddMarkWithPropertiesHolder(
+      "M1", marks_dict, "Property Name With Space");
+
+  test_page->AppendPageObject(std::move(path_obj));
+
+  CPDF_PageContentGenerator generator(test_page.Get());
+  fxcrt::ostringstream buf;
+  EXPECT_TRUE(generator.ProcessPageObjects(&buf));
+  ByteString content(buf);
+
+  EXPECT_TRUE(content.Contains("/M1 /Property#20Name#20With#20Space BDC"));
+}
