@@ -1184,11 +1184,14 @@ CJS_Result CJS_Field::set_display(CJS_Runtime* pRuntime,
   if (!m_bCanSet)
     return CJS_Result::Failure(JSMessage::kReadOnlyError);
 
+  int value = pRuntime->ToInt32(vp);
+  if (!m_pFormFillEnv) {
+      return CJS_Result::Failure(JSMessage::kBadObjectError);
+  }
   if (m_bDelay) {
-    AddDelay_Int(FP_DISPLAY, pRuntime->ToInt32(vp));
+    AddDelay_Int(FP_DISPLAY, value);
   } else {
-    SetDisplay(m_pFormFillEnv.Get(), m_FieldName, m_nFormControlIndex,
-               pRuntime->ToInt32(vp));
+    SetDisplay(m_pFormFillEnv.Get(), m_FieldName, m_nFormControlIndex, value);
   }
   return CJS_Result::Success();
 }
