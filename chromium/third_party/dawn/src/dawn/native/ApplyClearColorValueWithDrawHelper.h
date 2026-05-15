@@ -52,7 +52,7 @@ struct KeyOfApplyClearColorValueWithDrawPipelines {
     uint32_t sampleCount = 0;
     wgpu::TextureFormat depthStencilFormat = wgpu::TextureFormat::Undefined;
     bool hasPLS = false;
-    uint64_t totalPixelLocalStorageSize;
+    uint64_t totalPixelLocalStorageSize = 0;
     std::vector<wgpu::PipelineLayoutStorageAttachment> plsAttachments;
 };
 
