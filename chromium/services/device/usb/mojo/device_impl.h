@@ -53,6 +53,7 @@ class DeviceImpl : public mojom::UsbDevice, public device::UsbDevice::Observer {
   bool HasControlTransferPermission(
       mojom::UsbControlTransferType type,
       mojom::UsbControlTransferRecipient recipient,
+      uint8_t request,
       uint16_t index);
 
   // Handles completion of an open request.

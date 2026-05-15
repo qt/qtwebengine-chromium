@@ -40,6 +40,14 @@ BASE_FEATURE(kWebUsbProtectedClassControlTransferBlock,
              "WebUsbProtectedClassControlTransferBlock",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// When enabled, WebUSB control transfers enforce a positive matching allowlist
+// for Standard requests (permitting only GET_STATUS, GET_DESCRIPTOR,
+// GET_CONFIGURATION, GET_INTERFACE, SYNCH_FRAME). All other Standard requests
+// are strictly blocked.
+BASE_FEATURE(kWebUsbEnforceStandardRequestAllowlist,
+             "WebUsbEnforceStandardRequestAllowlist",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 #if BUILDFLAG(IS_WIN)
 // Enable integration with the Windows system-level location permission.
 BASE_FEATURE(kWinSystemLocationPermission,
