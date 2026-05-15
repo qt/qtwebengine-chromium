@@ -281,7 +281,7 @@ std::optional<Color> HighlightStyleUtils::MaybeResolveColor(
                                  pseudo, property, search_text_is_active_match);
   }
   if (pseudo_style) {
-    bool is_current_color;
+    bool is_current_color = false;
     Color result = pseudo_style->VisitedDependentColor(To<Longhand>(property),
                                                        &is_current_color);
     if (!is_current_color) {

@@ -329,6 +329,10 @@ void StyleColor::ColorOrUnresolvedColorFunction::Trace(Visitor* visitor) const {
 Color StyleColor::Resolve(const Color& current_color,
                           mojom::blink::ColorScheme color_scheme,
                           bool* is_current_color) const {
+  if (is_current_color) {
+    *is_current_color = IsCurrentColor();
+  }
+
   if (IsUnresolvedColorFunction()) {
     Color result =
         color_or_unresolved_color_function_.unresolved_color_function->Resolve(
@@ -337,10 +341,6 @@ Color StyleColor::Resolve(const Color& current_color,
       result.ConvertToColorSpace(Color::ColorSpace::kSRGB);
     }
     return result;
-  }
-
-  if (is_current_color) {
-    *is_current_color = IsCurrentColor();
   }
   if (IsCurrentColor()) {
     return current_color;
