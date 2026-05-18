@@ -150,6 +150,7 @@ int GrVkPipelineStateBuilder::loadShadersFromCache(SkReadBuffer* cached,
             if (outShaderModules[i]) {
                 GR_VK_CALL(fGpu->vkInterface(),
                            DestroyShaderModule(fGpu->device(), outShaderModules[i], nullptr));
+                outShaderModules[i] = VK_NULL_HANDLE;
             }
         }
         return 0;
@@ -277,6 +278,7 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
                 if (shaderModules[i]) {
                     GR_VK_CALL(fGpu->vkInterface(), DestroyShaderModule(fGpu->device(),
                                                                         shaderModules[i], nullptr));
+                    shaderModules[i] = VK_NULL_HANDLE;
                 }
             }
             return nullptr;
@@ -351,6 +353,7 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
         if (shaderModules[i]) {
             GR_VK_CALL(fGpu->vkInterface(), DestroyShaderModule(fGpu->device(), shaderModules[i],
                                                                 nullptr));
+            shaderModules[i] = VK_NULL_HANDLE;
         }
     }
 
