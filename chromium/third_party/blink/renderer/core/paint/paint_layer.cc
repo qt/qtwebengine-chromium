@@ -1452,10 +1452,12 @@ PaintLayer* PaintLayer::HitTestLayer(
             recursion_data.location) &&
         GetLayoutBox()->HitTestOverflowControl(
             result, recursion_data.location, layer_fragments[0].layer_offset)) {
-      if (z_offset && local_transform_state) {
-        *z_offset = ComputeZOffset(*local_transform_state);
+      if (!z_offset || !local_transform_state ||
+          IsHitCandidateForDepthOrder(
+              this, false, z_offset, local_transform_state,
+              result.GetHitTestRequest().IsHitTestVisualOverflow())) {
+        return this;
       }
-      return this;
     }
   }
 
