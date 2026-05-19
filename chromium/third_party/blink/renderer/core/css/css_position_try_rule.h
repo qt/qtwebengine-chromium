@@ -54,7 +54,7 @@ class CSSPositionTryRule final : public CSSRule {
   CSSStyleDeclaration* style() const;
   Type GetType() const final { return kPositionTryRule; }
 
-  String name() const { return position_try_rule_->Name(); }
+  String name() const;
   String cssText() const final;
   void Reattach(StyleRuleBase*) final;
 
