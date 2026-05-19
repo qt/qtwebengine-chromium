@@ -2445,8 +2445,11 @@ bool BoxFragmentPainter::NodeAtPoint(const HitTestContext& hit_test,
   }
 
   if (style.HasBorderRadius() &&
-      HitTestClippedOutByBorder(hit_test.location, physical_offset))
-    return false;
+      HitTestClippedOutByBorder(hit_test.location, physical_offset)) {
+        if (!hit_test.result->GetHitTestRequest().IsHitTestVisualOverflow()) {
+      return false;
+      }
+  }
 
   bool pointer_events_bounding_box = false;
   bool hit_test_self = fragment.IsInSelfHitTestingPhase(hit_test.phase);
