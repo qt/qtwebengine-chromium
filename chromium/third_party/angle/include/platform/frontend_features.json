@@ -241,6 +241,13 @@
                 "GL_NV_shader_noperspective_interpolation requires shader transformations to function at all on some drivers."
             ],
             "issue": "https://anglebug.com/398857482"
+        },
+        {
+            "name": "set_need_init_on_invalidation",
+            "category": "Features",
+            "description": [
+                "Set Texture's InitState to MayNeedInit inside invalidateFramebuffer or discardFramebuffer."
+            ]
         }
     ]
 }

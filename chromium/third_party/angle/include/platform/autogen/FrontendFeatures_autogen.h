@@ -201,6 +201,12 @@ struct FrontendFeatures : FeatureSetBase
         &members,
     };
 
+    FeatureInfo setNeedInitOnInvalidation = {
+        "setNeedInitOnInvalidation",
+        FeatureCategory::FrontendFeatures,
+        &members,
+    };
+
 };
 
 inline FrontendFeatures::FrontendFeatures()  = default;
