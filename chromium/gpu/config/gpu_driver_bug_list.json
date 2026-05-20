@@ -3708,6 +3708,19 @@
       "features": [
         "dont_invalidate_incomplete_fbos"
       ]
+    },
+    {
+      "id": 480,
+      "cr_bugs": [520656244],
+      "description": "Reattach FBO depth/stencil attachments when they are reallocated on Qualcomm GPUs",
+      "gl_vendor": "Qualcomm.*",
+      "driver_version": {
+        "op": "<",
+        "value": "878"
+      },
+      "features": [
+        "reattach_fbo_depth_stencil_on_reallocation"
+      ]
     }
   ]
 }

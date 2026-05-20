@@ -44,6 +44,7 @@ class GPU_GLES2_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
     virtual GLsizei samples() const = 0;
     virtual GLuint object_name() const = 0;
     virtual GLint level() const = 0;
+    virtual GLenum target() const = 0;
     virtual bool cleared() const = 0;
     virtual void SetCleared(
         RenderbufferManager* renderbuffer_manager,
@@ -56,6 +57,7 @@ class GPU_GLES2_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
     virtual bool IsRenderbuffer(Renderbuffer* renderbuffer) const = 0;
     virtual bool IsSameAttachment(const Attachment* attachment) const = 0;
     virtual bool Is3D() const = 0;
+    virtual GLint layer() const;
 
     // If it's a 3D texture attachment, return true if
     // FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER is smaller than the number of
@@ -113,6 +115,9 @@ class GPU_GLES2_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   // 'unbind_attachments_on_bound_render_fbo_delete'.  The Framebuffer must be
   // bound when calling this.
   void DoUnbindGLAttachmentsForWorkaround(GLenum target);
+
+  // Re-attaches all current attachments for recreateFbo workaround.
+  void ReattachAttachments(GLenum framebuffer_target);
 
   // Attaches a renderbuffer to a particlar attachment.
   // Pass null to detach.
@@ -244,6 +249,7 @@ class GPU_GLES2_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
 
  private:
   friend class FramebufferManager;
+  void set_service_id(GLuint id) { service_id_ = id; }
   friend class base::RefCounted<Framebuffer>;
 
   ~Framebuffer();
@@ -365,6 +371,9 @@ class GPU_GLES2_EXPORT FramebufferManager {
   // Gets a client id for a given service id.
   bool GetClientId(GLuint service_id, GLuint* client_id) const;
 
+  // Recreates the service ID for a framebuffer (allocates new, deletes old).
+  void RecreateFramebufferServiceId(Framebuffer* framebuffer);
+
   void MarkAttachmentsAsCleared(
     Framebuffer* framebuffer,
     RenderbufferManager* renderbuffer_manager,
@@ -373,6 +382,12 @@ class GPU_GLES2_EXPORT FramebufferManager {
   void MarkAsComplete(Framebuffer* framebuffer);
 
   bool IsComplete(const Framebuffer* framebuffer);
+
+  std::vector<std::pair<scoped_refptr<Framebuffer>, GLenum>>
+  GetBindingFramebuffersForTexture(TextureRef* texture_ref);
+
+  std::vector<std::pair<scoped_refptr<Framebuffer>, GLenum>>
+  GetBindingFramebuffersForRenderbuffer(Renderbuffer* renderbuffer);
 
   void IncFramebufferStateChangeCount() {
     // make sure this is never 0.
