@@ -37,7 +37,7 @@ namespace media {
 // leaked to give the orphaned OS thread a valid memory address to read.
 class API_AVAILABLE(macos(14.2)) CatapIoProcProxy {
  public:
-  CatapIoProcProxy(raw_ptr<CatapAudioInputStreamSource> source)
+  CatapIoProcProxy(raw_ptr<CatapAudioInputStream> source)
       : source_(source) {}
 
   // Called from the main sequence during teardown.
@@ -47,11 +47,11 @@ class API_AVAILABLE(macos(14.2)) CatapIoProcProxy {
   }
 
   // Called by the CoreAudio high-priority thread.
-  void ForwardSample(const AudioBuffer* input_buffer,
+  void ForwardSample(const base::span<const AudioBuffer> input_buffers,
                      const AudioTimeStamp* input_time) {
     base::AutoLock auto_lock(lock_);
     if (source_) {
-      source_->OnCatapSample(input_buffer, input_time);
+      source_->OnCatapSample(input_buffers, input_time);
     }
   }
 
@@ -59,7 +59,7 @@ class API_AVAILABLE(macos(14.2)) CatapIoProcProxy {
   // Lock to protect access to source_ and to ensure that ForwardSample()
   // finishes before Detach() returns.
   base::Lock lock_;
-  raw_ptr<CatapAudioInputStreamSource> source_ GUARDED_BY(lock_);
+  raw_ptr<CatapAudioInputStream> source_ GUARDED_BY(lock_);
 };
 
 namespace {
