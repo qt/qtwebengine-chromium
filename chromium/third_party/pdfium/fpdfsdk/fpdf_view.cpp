@@ -487,7 +487,7 @@ FPDF_EXPORT FPDF_PAGE FPDF_CALLCONV FPDF_LoadPage(FPDF_DOCUMENT document,
 #endif  // PDF_ENABLE_XFA
 
   RetainPtr<CPDF_Dictionary> dict = doc->GetMutablePageDictionary(page_index);
-  if (!dict) {
+  if (!CPDF_Page::IsValidPageDictLoose(dict)) {
     return nullptr;
   }
 
@@ -1136,7 +1136,7 @@ FPDF_GetPageSizeByIndexF(FPDF_DOCUMENT document,
 #endif  // PDF_ENABLE_XFA
 
   RetainPtr<CPDF_Dictionary> dict = doc->GetMutablePageDictionary(page_index);
-  if (!dict) {
+  if (!CPDF_Page::IsValidPageDictLoose(dict)) {
     return false;
   }
 

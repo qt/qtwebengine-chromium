@@ -216,25 +216,25 @@ FPDF_EXPORT FPDF_PAGE FPDF_CALLCONV FPDFPage_New(FPDF_DOCUMENT document,
   }
 
   page_index = std::clamp(page_index, 0, doc->GetPageCount());
-  RetainPtr<CPDF_Dictionary> pPageDict(doc->CreateNewPage(page_index));
-  if (!pPageDict) {
+  RetainPtr<CPDF_Dictionary> page_dict(doc->CreateNewPage(page_index));
+  if (!page_dict) {
     return nullptr;
   }
 
-  pPageDict->SetRectFor(pdfium::page_object::kMediaBox,
+  page_dict->SetRectFor(pdfium::page_object::kMediaBox,
                         CFX_FloatRect(0, 0, width, height));
-  pPageDict->SetNewFor<CPDF_Number>(pdfium::page_object::kRotate, 0);
-  pPageDict->SetNewFor<CPDF_Dictionary>(pdfium::page_object::kResources);
+  page_dict->SetNewFor<CPDF_Number>(pdfium::page_object::kRotate, 0);
+  page_dict->SetNewFor<CPDF_Dictionary>(pdfium::page_object::kResources);
 
 #ifdef PDF_ENABLE_XFA
   if (doc->GetExtension()) {
-    auto pXFAPage = pdfium::MakeRetain<CPDFXFA_Page>(doc, page_index);
-    pXFAPage->LoadPDFPageFromDict(pPageDict);
-    return FPDFPageFromIPDFPage(pXFAPage.Leak());  // Caller takes ownership.
+    auto xfa_page = pdfium::MakeRetain<CPDFXFA_Page>(doc, page_index);
+    CHECK(xfa_page->LoadPDFPageFromDict(std::move(page_dict)));
+    return FPDFPageFromIPDFPage(xfa_page.Leak());  // Caller takes ownership.
   }
 #endif  // PDF_ENABLE_XFA
 
-  auto pPage = pdfium::MakeRetain<CPDF_Page>(doc, pPageDict);
+  auto pPage = pdfium::MakeRetain<CPDF_Page>(doc, std::move(page_dict));
   pPage->AddPageImageCache();
   pPage->ParseContent();
 
