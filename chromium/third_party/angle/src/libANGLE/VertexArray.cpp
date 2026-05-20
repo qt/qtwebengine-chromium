@@ -300,7 +300,7 @@ ANGLE_INLINE void VertexArrayPrivate::updateCachedTransformFeedbackBindingValida
     size_t bindingIndex,
     const Buffer *buffer)
 {
-    const bool hasConflict = buffer && buffer->hasWebGLXFBBindingConflict(true);
+    const bool hasConflict = buffer && buffer->hasTFBBindingConflict();
     mCachedTransformFeedbackConflictedBindingsMask.set(bindingIndex, hasConflict);
 }
 
@@ -378,10 +378,10 @@ ANGLE_INLINE VertexArray::DirtyBindingBits VertexArray::bindVertexBufferImpl(con
             boundBuffer->addRef();
             boundBuffer->onNonTFBindingChanged(1);
             boundBuffer->addVertexArrayBinding(context, bindingIndex);
-            if (context->isWebGL())
+            if (context->isWebGL() || context->isHardenedContext())
             {
                 mCachedTransformFeedbackConflictedBindingsMask.set(
-                    bindingIndex, boundBuffer->hasWebGLXFBBindingConflict(true));
+                    bindingIndex, boundBuffer->hasTFBBindingConflict());
             }
             mBufferBindingMask.set(bindingIndex);
             mState.mClientMemoryAttribsMask &= ~binding->getBoundAttributesMask();
@@ -394,10 +394,7 @@ ANGLE_INLINE VertexArray::DirtyBindingBits VertexArray::bindVertexBufferImpl(con
         }
         else
         {
-            if (context->isWebGL())
-            {
-                mCachedTransformFeedbackConflictedBindingsMask.set(bindingIndex, false);
-            }
+            mCachedTransformFeedbackConflictedBindingsMask.set(bindingIndex, false);
             mState.mClientMemoryAttribsMask |= binding->getBoundAttributesMask();
             updateCachedArrayBuffersMasks(false, false, false, binding->getBoundAttributesMask());
         }
@@ -713,7 +710,7 @@ void VertexArray::onBind(const Context *context)
             }
         }
 
-        if (context->isWebGL())
+        if (context->isWebGL() || context->isHardenedContext())
         {
             updateCachedTransformFeedbackBindingValidation(bindingIndex, bufferGL);
         }

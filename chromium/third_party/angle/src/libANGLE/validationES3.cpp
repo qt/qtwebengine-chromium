@@ -228,6 +228,7 @@ bool ValidateColorMaskForSharedExponentColorBuffer(const Context *context,
 
     return true;
 }
+
 }  // anonymous namespace
 
 bool ValidateTexImageFormatCombination(const Context *context,
@@ -3345,8 +3346,8 @@ bool ValidateCopyBufferSubData(const Context *context,
         return false;
     }
 
-    if (readBuffer->hasWebGLXFBBindingConflict(context->isWebGL()) ||
-        writeBuffer->hasWebGLXFBBindingConflict(context->isWebGL()))
+    if ((context->isWebGL() || context->isHardenedContext()) &&
+        (readBuffer->hasTFBBindingConflict() || writeBuffer->hasTFBBindingConflict()))
     {
         ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kBufferBoundForTransformFeedback);
         return false;

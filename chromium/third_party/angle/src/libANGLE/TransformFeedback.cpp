@@ -181,6 +181,15 @@ angle::Result TransformFeedback::begin(const Context *context,
     {
         mState.mVertexCapacity = 0;
     }
+
+    for (auto &buffer : mState.mIndexedBuffers)
+    {
+        if (buffer.get())
+        {
+            buffer->onTFActiveChanged(context, true);
+        }
+    }
+
     return angle::Result::Continue;
 }
 
@@ -205,6 +214,14 @@ angle::Result TransformFeedback::end(const Context *context)
     for (const ShaderType shaderType : gl::AllShaderTypes())
     {
         mState.mPPOPrograms[shaderType].value = 0;
+    }
+
+    for (auto &buffer : mState.mIndexedBuffers)
+    {
+        if (buffer.get())
+        {
+            buffer->onTFActiveChanged(context, false);
+        }
     }
 
     return angle::Result::Continue;
@@ -401,7 +418,7 @@ bool TransformFeedback::buffersBoundForOtherUseInWebGL() const
 {
     for (auto &buffer : mState.mIndexedBuffers)
     {
-        if (buffer.get() && buffer->hasWebGLXFBBindingConflict(true))
+        if (buffer.get() && buffer->isBoundToTFAndNonTFSimultaneously())
         {
             return true;
         }

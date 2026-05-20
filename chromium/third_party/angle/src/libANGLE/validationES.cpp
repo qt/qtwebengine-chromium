@@ -692,7 +692,7 @@ ANGLE_INLINE const char *ValidateProgramDrawStates(const Context *context,
                 return gl::err::kUniformBufferTooSmall;
             }
 
-            if (uniformBuffer->hasWebGLXFBBindingConflict(context->isWebGL()))
+            if (uniformBuffer->hasTFBBindingConflict())
             {
                 return gl::err::kUniformBufferBoundForTransformFeedback;
             }
@@ -1397,7 +1397,8 @@ bool ValidImageDataSize(const Context *context,
             ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kIntegerOverflow);
             return false;
         }
-        if (pixelUnpackBuffer->hasWebGLXFBBindingConflict(context->isWebGL()))
+        if ((context->isWebGL() || context->isHardenedContext()) &&
+            pixelUnpackBuffer->hasTFBBindingConflict())
         {
             ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION,
                                    kPixelUnpackBufferBoundForTransformFeedback);
@@ -4660,8 +4661,8 @@ const char *ValidateDrawElementsStates(const Context *context)
 
     if (elementArrayBuffer)
     {
-        if (ANGLE_UNLIKELY(context->isWebGL()) &&
-            elementArrayBuffer->hasWebGLXFBBindingConflict(context->isWebGL()))
+        if (ANGLE_UNLIKELY(context->isWebGL() || context->isHardenedContext()) &&
+            elementArrayBuffer->hasTFBBindingConflict())
         {
             return kElementArrayBufferBoundForTransformFeedback;
         }
@@ -7449,8 +7450,8 @@ bool ValidatePixelPack(const Context *context,
         ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kBufferMapped);
         return false;
     }
-    if (pixelPackBuffer != nullptr &&
-        pixelPackBuffer->hasWebGLXFBBindingConflict(context->isWebGL()))
+    if (pixelPackBuffer != nullptr && (context->isWebGL() || context->isHardenedContext()) &&
+        pixelPackBuffer->hasTFBBindingConflict())
     {
         ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kPixelPackBufferBoundForTransformFeedback);
         return false;
