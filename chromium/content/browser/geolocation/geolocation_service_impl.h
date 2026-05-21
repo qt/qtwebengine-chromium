@@ -78,6 +78,9 @@ class CONTENT_EXPORT GeolocationServiceImpl
   void OnDisconnected();
 
  private:
+  // Private helper to manage connection lifetimes.
+  class GeolocationProxy;
+
   // Creates the Geolocation Service.
   void CreateGeolocationWithPermissionStatus(
       mojo::PendingReceiver<device::mojom::Geolocation> receiver,
@@ -86,6 +89,8 @@ class CONTENT_EXPORT GeolocationServiceImpl
 
   void IncrementActivityCount();
   void DecrementActivityCount();
+
+  void OnProxyDisconnected(GeolocationProxy* proxy);
 
   raw_ptr<device::mojom::GeolocationContext, DanglingUntriaged>
       geolocation_context_;
@@ -112,6 +117,10 @@ class CONTENT_EXPORT GeolocationServiceImpl
   // the frame is updating the geolocation information. However, it can also be
   // stopped because the permission status changed.
   bool is_sending_updates_ = false;
+
+  // Active proxies managing connections between the renderer and the backing
+  // GeolocationImpl.
+  std::vector<std::unique_ptr<GeolocationProxy>> active_proxies_;
 
   base::WeakPtrFactory<GeolocationServiceImpl> weak_factory_{this};
 };
