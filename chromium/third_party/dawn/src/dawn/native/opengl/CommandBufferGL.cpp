@@ -346,6 +346,9 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
 
         for (BindingIndex bindingIndex : Range(group->GetLayout()->GetBindingCount())) {
             const BindingInfo& bindingInfo = group->GetLayout()->GetBindingInfo(bindingIndex);
+            if (bindingInfo.visibility == wgpu::ShaderStage::None) {
+                continue;
+            }
             DAWN_TRY(MatchVariant(
                 bindingInfo.bindingLayout,
                 [&](const BufferBindingInfo& layout) -> MaybeError {
